@@ -27,6 +27,7 @@ type InitArgs struct {
 	Seed                string
 	Password            string
 	ExplorerURL         string
+	ExplorerWSURL       string
 	WithTransactionFeed bool
 }
 
@@ -67,6 +68,7 @@ type InitWithWalletArgs struct {
 	Seed                string
 	Password            string
 	ExplorerURL         string
+	ExplorerWSURL       string
 	WithTransactionFeed bool
 }
 

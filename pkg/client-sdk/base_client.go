@@ -223,7 +223,7 @@ func (a *arkClient) initWithWallet(
 		return fmt.Errorf("failed to connect to server: %s", err)
 	}
 
-	explorerSvc, err := getExplorer(args.ExplorerURL, info.Network)
+	explorerSvc, err := getExplorer(args.ExplorerURL, args.ExplorerWSURL, info.Network)
 	if err != nil {
 		return fmt.Errorf("failed to setup explorer: %s", err)
 	}
@@ -321,7 +321,7 @@ func (a *arkClient) init(
 		return fmt.Errorf("failed to connect to server: %s", err)
 	}
 
-	explorerSvc, err := getExplorer(args.ExplorerURL, info.Network)
+	explorerSvc, err := getExplorer(args.ExplorerURL, args.ExplorerWSURL, info.Network)
 	if err != nil {
 		return fmt.Errorf("failed to setup explorer: %s", err)
 	}
@@ -381,7 +381,7 @@ func (a *arkClient) init(
 		VtxoMinAmount:              info.VtxoMinAmount,
 		VtxoMaxAmount:              info.VtxoMaxAmount,
 	}
-	walletSvc, err := getWallet(a.store.ConfigStore(), &cfgData, supportedWallets)
+	walletSvc, err := getWallet(a.store.ConfigStore(), explorerSvc, &cfgData, supportedWallets)
 	if err != nil {
 		return err
 	}
@@ -441,14 +441,14 @@ func getClient(
 	return factory(serverUrl)
 }
 
-func getExplorer(explorerURL, network string) (explorer.Explorer, error) {
+func getExplorer(explorerURL, explorerWSURL, network string) (explorer.Explorer, error) {
 	if explorerURL == "" {
 		var ok bool
 		if explorerURL, ok = defaultNetworks[network]; !ok {
 			return nil, fmt.Errorf("invalid network")
 		}
 	}
-	return explorer.NewExplorer(explorerURL, utils.NetworkFromString(network)), nil
+	return explorer.NewExplorer(explorerURL, explorerWSURL, utils.NetworkFromString(network))
 }
 
 func getIndexer(clientType, serverUrl string) (indexer.Indexer, error) {
@@ -462,11 +462,11 @@ func getIndexer(clientType, serverUrl string) (indexer.Indexer, error) {
 }
 
 func getWallet(
-	configStore types.ConfigStore, data *types.Config, supportedWallets utils.SupportedType[struct{}],
+	configStore types.ConfigStore, explorerSvc explorer.Explorer, data *types.Config, supportedWallets utils.SupportedType[struct{}],
 ) (wallet.WalletService, error) {
 	switch data.WalletType {
 	case wallet.SingleKeyWallet:
-		return getSingleKeyWallet(configStore)
+		return getSingleKeyWallet(configStore, explorerSvc)
 	default:
 		return nil, fmt.Errorf(
 			"unsupported wallet type '%s', please select one of: %s",
@@ -475,13 +475,13 @@ func getWallet(
 	}
 }
 
-func getSingleKeyWallet(configStore types.ConfigStore) (wallet.WalletService, error) {
+func getSingleKeyWallet(configStore types.ConfigStore, explorerSvc explorer.Explorer) (wallet.WalletService, error) {
 	walletStore, err := getWalletStore(configStore.GetType(), configStore.GetDatadir())
 	if err != nil {
 		return nil, err
 	}
 
-	return singlekeywallet.NewBitcoinWallet(configStore, walletStore)
+	return singlekeywallet.NewBitcoinWallet(configStore, explorerSvc, walletStore)
 }
 
 func getWalletStore(storeType, datadir string) (walletstore.WalletStore, error) {

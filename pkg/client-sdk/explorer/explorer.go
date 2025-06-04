@@ -2,13 +2,16 @@ package explorer
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ark-network/ark/common"
@@ -16,6 +19,7 @@ import (
 	"github.com/ark-network/ark/pkg/client-sdk/types"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -38,20 +42,43 @@ type Explorer interface {
 	) (confirmed bool, blocktime int64, err error)
 	BaseUrl() string
 	GetFeeRate() (float64, error)
+	TrackAddress(addr string) error
+	ListenAddresses(messageHandler func([]BlockUtxo) error) error
+}
+
+type AddrTracker struct {
+	conn          *websocket.Conn
+	subscribedMu  sync.Mutex
+	subscribedMap map[string]struct{}
 }
 
 type explorerSvc struct {
-	cache   *utils.Cache[string]
-	baseUrl string
-	net     common.Network
+	cache       *utils.Cache[string]
+	baseUrl     string
+	net         common.Network
+	addrTracker *AddrTracker
 }
 
-func NewExplorer(baseUrl string, net common.Network) Explorer {
-	return &explorerSvc{
-		cache:   utils.NewCache[string](),
-		baseUrl: baseUrl,
-		net:     net,
+func NewExplorer(baseUrl string, wsUrl string, net common.Network) (Explorer, error) {
+	//create addr tracker
+	var addrTracker *AddrTracker = nil
+	if net != common.BitcoinRegTest {
+		wsUrl = utils.DeriveWsURl(baseUrl, wsUrl)
+		tracker, err := NewAddrTracker(wsUrl)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to create address tracker: %w", err,
+			)
+		}
+		addrTracker = tracker
 	}
+
+	return &explorerSvc{
+		cache:       utils.NewCache[string](),
+		baseUrl:     baseUrl,
+		addrTracker: addrTracker,
+		net:         net,
+	}, nil
 }
 
 func (e *explorerSvc) BaseUrl() string {
@@ -60,6 +87,14 @@ func (e *explorerSvc) BaseUrl() string {
 
 func (e *explorerSvc) GetNetwork() common.Network {
 	return e.net
+}
+
+func (e *explorerSvc) TrackAddress(addr string) error {
+	if e.addrTracker != nil {
+		return e.addrTracker.TrackAddress(addr)
+	}
+	return nil
+
 }
 
 func (e *explorerSvc) GetFeeRate() (float64, error) {
@@ -275,6 +310,13 @@ func (e *explorerSvc) GetRedeemedVtxosBalance(
 	return
 }
 
+func (e *explorerSvc) ListenAddresses(messageHandler func([]BlockUtxo) error) error {
+	if e.addrTracker == nil {
+		return fmt.Errorf("address tracker not initialized")
+	}
+	return e.addrTracker.ListenAddresses(messageHandler)
+}
+
 func (e *explorerSvc) GetTxBlockTime(
 	txid string,
 ) (confirmed bool, blocktime int64, err error) {
@@ -465,4 +507,103 @@ func newUtxo(explorerUtxo utxo, delay common.RelativeLocktime, tapscripts []stri
 		CreatedAt:   createdAt,
 		Tapscripts:  tapscripts,
 	}
+}
+
+func NewAddrTracker(
+	wsURL string,
+) (*AddrTracker, error) {
+	dialer := websocket.Dialer{
+		Proxy:            http.ProxyFromEnvironment,
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	conn, resp, err := dialer.DialContext(context.TODO(), wsURL, nil)
+	if err != nil {
+		if resp != nil {
+			return nil, fmt.Errorf("dial failed: %v (http status %d)", err, resp.StatusCode)
+		}
+		return nil, fmt.Errorf("dial failed: %w", err)
+	}
+
+	t := &AddrTracker{
+		conn:          conn,
+		subscribedMap: make(map[string]struct{}),
+	}
+
+	return t, nil
+}
+
+// AddAddress subscribes to a new address if it wasn’t already tracked.
+func (t *AddrTracker) TrackAddress(addr string) error {
+	t.subscribedMu.Lock()
+	defer t.subscribedMu.Unlock()
+
+	if _, already := t.subscribedMap[addr]; already {
+		// Already subscribed—no need to send again.
+		return nil
+	}
+
+	payload := struct {
+		Addr string `json:"track-address"`
+	}{
+		Addr: addr,
+	}
+
+	if err := t.conn.WriteJSON(payload); err != nil {
+		return fmt.Errorf("failed to write subscribe for %s: %w", addr, err)
+	}
+
+	t.subscribedMap[addr] = struct{}{}
+	return nil
+}
+
+func (t *AddrTracker) ListenAddresses(messageHandler func([]BlockUtxo) error) error {
+	// Send ping every 25s to keep alive
+	go func() {
+		ticker := time.NewTicker(25 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := t.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Println("Ping failed:", err)
+				return
+			}
+		}
+	}()
+
+	for {
+		var payload WSBlockTransactions
+		err := t.conn.ReadJSON(&payload)
+		if err != nil {
+			return fmt.Errorf("read message failed: %w", err)
+		}
+
+		if len(payload.BlockTransactions) == 0 {
+			continue
+		}
+
+		utxos := t.deriveUtxos(payload)
+		err = messageHandler(utxos)
+		if err != nil {
+			return err
+		}
+	}
+
+}
+
+func (t *AddrTracker) deriveUtxos(block WSBlockTransactions) []BlockUtxo {
+	utxos := make([]BlockUtxo, 0, len(t.subscribedMap))
+	for _, rawTransaction := range block.BlockTransactions {
+
+		for index, out := range rawTransaction.Vout {
+			if _, ok := t.subscribedMap[out.ScriptPubKeyAddr]; ok {
+				utxos = append(utxos, BlockUtxo{
+					Txid:             rawTransaction.Txid,
+					VoutIndex:        index,
+					ScriptPubAddress: out.ScriptPubKeyAddr,
+					Value:            out.Value,
+				})
+			}
+		}
+	}
+	return utxos
 }

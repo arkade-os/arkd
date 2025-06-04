@@ -30,6 +30,7 @@ type Config struct {
 	BoardingExitDelay          common.RelativeLocktime
 	BoardingDescriptorTemplate string
 	ExplorerURL                string
+	ExplorerWSURL              string
 	ForfeitAddress             string
 	WithTransactionFeed        bool
 	MarketHourStartTime        int64

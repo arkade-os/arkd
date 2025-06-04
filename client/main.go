@@ -82,8 +82,14 @@ var (
 	}
 	explorerFlag = &cli.StringFlag{
 		Name:  "explorer",
-		Usage: "the url of the explorer to use",
+		Usage: "the base url of the explorer to use",
 	}
+
+	explorerWSFlag = &cli.StringFlag{
+		Name:  "explorer-ws",
+		Usage: "the ws url of the explorer to use",
+	}
+
 	passwordFlag = &cli.StringFlag{
 		Name:  "password",
 		Usage: "password to unlock the wallet",
@@ -161,7 +167,7 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return initArkSdk(ctx)
 		},
-		Flags: []cli.Flag{networkFlag, passwordFlag, privateKeyFlag, urlFlag, explorerFlag, restFlag},
+		Flags: []cli.Flag{networkFlag, passwordFlag, privateKeyFlag, urlFlag, explorerFlag, explorerWSFlag, restFlag},
 	}
 	configCommand = cli.Command{
 		Name:  "config",
@@ -249,12 +255,14 @@ func initArkSdk(ctx *cli.Context) error {
 
 	return arkSdkClient.Init(
 		ctx.Context, arksdk.InitArgs{
-			ClientType:  clientType,
-			WalletType:  arksdk.SingleKeyWallet,
-			ServerUrl:   ctx.String(urlFlag.Name),
-			Seed:        ctx.String(privateKeyFlag.Name),
-			Password:    string(password),
-			ExplorerURL: ctx.String(explorerFlag.Name),
+			ClientType:          clientType,
+			WalletType:          arksdk.SingleKeyWallet,
+			ServerUrl:           ctx.String(urlFlag.Name),
+			Seed:                ctx.String(privateKeyFlag.Name),
+			Password:            string(password),
+			ExplorerURL:         ctx.String(explorerFlag.Name),
+			ExplorerWSURL:       ctx.String(explorerWSFlag.Name),
+			WithTransactionFeed: false,
 		},
 	)
 }
@@ -277,6 +285,7 @@ func config(ctx *cli.Context) error {
 		"boarding_exit_delay":          cfgData.BoardingExitDelay,
 		"boarding_descriptor_template": cfgData.BoardingDescriptorTemplate,
 		"explorer_url":                 cfgData.ExplorerURL,
+		"explorer_ws_url":              cfgData.ExplorerWSURL,
 		"forfeit_address":              cfgData.ForfeitAddress,
 		"utxo_min_amount":              cfgData.UtxoMinAmount,
 		"utxo_max_amount":              cfgData.UtxoMaxAmount,
@@ -315,6 +324,7 @@ func receive(ctx *cli.Context) error {
 		"boarding_address": boardingAddr,
 		"offchain_address": offchainAddr,
 	})
+
 }
 
 func settle(ctx *cli.Context) error {

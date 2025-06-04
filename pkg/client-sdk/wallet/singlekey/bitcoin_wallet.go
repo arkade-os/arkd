@@ -28,7 +28,7 @@ type bitcoinWallet struct {
 }
 
 func NewBitcoinWallet(
-	configStore types.ConfigStore, walletStore walletstore.WalletStore,
+	configStore types.ConfigStore, explorerSvc explorer.Explorer, walletStore walletstore.WalletStore,
 ) (wallet.WalletService, error) {
 	walletData, err := walletStore.GetWallet()
 	if err != nil {
@@ -39,6 +39,7 @@ func NewBitcoinWallet(
 			configStore: configStore,
 			walletStore: walletStore,
 			walletData:  walletData,
+			explorerSvc: explorerSvc,
 		},
 	}, nil
 }
@@ -105,6 +106,12 @@ func (w *bitcoinWallet) NewAddress(
 		return nil, nil, err
 	}
 
+	// Track boarding address
+	if err := w.explorerSvc.TrackAddress(
+		boardingAddr.Address); err != nil {
+		return nil, nil, fmt.Errorf("failed to track boarding address: %w", err)
+	}
+
 	return &wallet.TapscriptsAddress{
 		Tapscripts: offchainAddr.Tapscripts,
 		Address:    encodedOffchainAddr,
@@ -117,6 +124,12 @@ func (w *bitcoinWallet) NewAddresses(
 	offchainAddr, boardingAddr, err := w.getAddress(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Track boarding address
+	if err := w.explorerSvc.TrackAddress(
+		boardingAddr.Address); err != nil {
+		return nil, nil, fmt.Errorf("failed to track boarding address: %w", err)
 	}
 
 	offchainAddrs := make([]wallet.TapscriptsAddress, 0, num)

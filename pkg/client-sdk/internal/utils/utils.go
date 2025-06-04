@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"net/url"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/ark-network/ark/common"
@@ -241,4 +243,33 @@ func deriveKey(password, salt []byte) ([]byte, []byte, error) {
 	keySize := 32
 	key := pbkdf2.Key(password, salt, iterations, keySize, sha256.New)
 	return key, salt, nil
+}
+
+func DeriveWsURl(baseUrl string, wsUrl string) string {
+	if wsUrl == "" {
+		parsedUrl, err := url.Parse(baseUrl)
+		if err != nil || parsedUrl.Scheme == "" {
+			// fallback if baseUrl is malformed or empty
+			wsUrl = "ws://" + baseUrl
+		} else {
+			switch parsedUrl.Scheme {
+			case "http":
+				parsedUrl.Scheme = "ws"
+			case "https":
+				parsedUrl.Scheme = "wss"
+			case "ws", "wss":
+				// already correct scheme
+			default:
+				// default fallback
+				parsedUrl.Scheme = "ws"
+			}
+			wsUrl = parsedUrl.String()
+		}
+		// Append "/ws" if not already present
+		if !strings.HasSuffix(wsUrl, "/ws") {
+			wsUrl = strings.TrimRight(wsUrl, "/") + "/ws"
+		}
+	}
+
+	return wsUrl
 }
