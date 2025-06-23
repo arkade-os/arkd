@@ -1093,23 +1093,24 @@ func (a *covenantlessArkClient) listenForArkTxs(ctx context.Context) {
 				continue
 			}
 
-			myPubkeys := make(map[string]struct{})
+			myScripts := make(map[string]struct{})
 			for _, addr := range offchainAddrs {
-				// nolint:all
+				// nolint
 				decoded, _ := common.DecodeAddress(addr.Address)
-				pubkey := hex.EncodeToString(decoded.VtxoTapKey.SerializeCompressed()[1:])
-				myPubkeys[pubkey] = struct{}{}
+				// nolint
+				script, _ := common.P2TRScript(decoded.VtxoTapKey)
+				myScripts[hex.EncodeToString(script)] = struct{}{}
 			}
 
 			if event.CommitmentTx != nil {
-				if err := a.handleCommitmentTx(ctxBg, myPubkeys, event.CommitmentTx); err != nil {
+				if err := a.handleCommitmentTx(ctxBg, myScripts, event.CommitmentTx); err != nil {
 					log.WithError(err).Error("failed to process commitment tx")
 					continue
 				}
 			}
 
 			if event.ArkTx != nil {
-				if err := a.handleArkTx(ctxBg, myPubkeys, event.ArkTx); err != nil {
+				if err := a.handleArkTx(ctxBg, myScripts, event.ArkTx); err != nil {
 					log.WithError(err).Error("failed to process ark tx")
 					continue
 				}

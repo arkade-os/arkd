@@ -73,10 +73,11 @@ func (v Vtxo) IsRecoverable() bool {
 }
 
 func (v Vtxo) Address(server *secp256k1.PublicKey, net common.Network) (string, error) {
-	pubkeyBytes, err := hex.DecodeString(v.Script)
+	buf, err := hex.DecodeString(v.Script)
 	if err != nil {
 		return "", err
 	}
+	pubkeyBytes := buf[2:]
 
 	pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
 	if err != nil {
