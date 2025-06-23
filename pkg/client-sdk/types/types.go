@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ark-network/ark/common"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -73,21 +72,15 @@ func (v Vtxo) IsRecoverable() bool {
 }
 
 func (v Vtxo) Address(server *secp256k1.PublicKey, net common.Network) (string, error) {
-	buf, err := hex.DecodeString(v.Script)
-	if err != nil {
-		return "", err
-	}
-	pubkeyBytes := buf[2:]
-
-	pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+	vtxoScript, err := hex.DecodeString(v.Script)
 	if err != nil {
 		return "", err
 	}
 
 	a := &common.Address{
 		HRP:        net.Addr,
+		VtxoScript: vtxoScript,
 		Server:     server,
-		VtxoTapKey: pubkey,
 	}
 
 	return a.Encode()
@@ -214,14 +207,7 @@ func (o Receiver) ToTxOut() (*wire.TxOut, bool, error) {
 
 		isOnchain = true
 	} else {
-		pkScript, err = common.P2TRScript(arkAddress.VtxoTapKey)
-		if err != nil {
-			return nil, false, err
-		}
-	}
-
-	if len(pkScript) == 0 {
-		return nil, false, fmt.Errorf("invalid address")
+		pkScript = arkAddress.VtxoScript
 	}
 
 	return &wire.TxOut{

@@ -9,28 +9,7 @@ import (
 	"github.com/ark-network/ark/server/internal/core/application"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
 )
-
-// From interface type to app type
-
-func parseAddress(addr string) (*common.Address, error) {
-	if len(addr) <= 0 {
-		return nil, fmt.Errorf("missing address")
-	}
-	return common.DecodeAddress(addr)
-}
-
-func parseArkAddress(addr string) (string, error) {
-	a, err := parseAddress(addr)
-	if err != nil {
-		return "", err
-	}
-	if _, err := btcutil.DecodeAddress(addr, nil); err == nil {
-		return "", fmt.Errorf("must be an ark address")
-	}
-	return hex.EncodeToString(schnorr.SerializePubKey(a.VtxoTapKey)), nil
-}
 
 // From app type to interface type
 

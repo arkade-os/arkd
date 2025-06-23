@@ -1243,7 +1243,7 @@ func (s *covenantlessService) ListVtxos(ctx context.Context, address string) ([]
 		return nil, nil, fmt.Errorf("address does not match server pubkey")
 	}
 
-	pubkey := hex.EncodeToString(schnorr.SerializePubKey(decodedAddress.VtxoTapKey))
+	pubkey := hex.EncodeToString(decodedAddress.VtxoScript[2:])
 
 	return s.repoManager.Vtxos().GetAllNonRedeemedVtxos(ctx, pubkey)
 }
@@ -1359,11 +1359,15 @@ func (s *covenantlessService) GetTxRequestQueue(
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse pubkey: %s", err)
 			}
+			vtxoScript, err := common.P2TRScript(vtxoTapKey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get vtxo script: %s", err)
+			}
 
 			address := common.Address{
 				HRP:        s.network.Addr,
 				Server:     s.pubkey,
-				VtxoTapKey: vtxoTapKey,
+				VtxoScript: vtxoScript,
 			}
 
 			addressStr, err := address.Encode()

@@ -62,10 +62,13 @@ func (w *bitcoinWallet) GetAddresses(
 	}
 
 	netParams := utils.ToBitcoinNetwork(data.Network)
+	vtxoTapKey, err := schnorr.ParsePubKey(offchainAddr.Address.VtxoScript[2:])
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 
 	redemptionAddr, err := btcutil.NewAddressTaproot(
-		schnorr.SerializePubKey(offchainAddr.Address.VtxoTapKey),
-		&netParams,
+		schnorr.SerializePubKey(vtxoTapKey), &netParams,
 	)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -501,11 +504,15 @@ func (w *bitcoinWallet) getArkAddresses(
 	if err != nil {
 		return nil, nil, err
 	}
+	vtxoScript, err := common.P2TRScript(vtxoTapKey)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	offchainAddress := &common.Address{
 		HRP:        data.Network.Addr,
 		Server:     data.ServerPubKey,
-		VtxoTapKey: vtxoTapKey,
+		VtxoScript: vtxoScript,
 	}
 
 	boardingVtxoScript := tree.NewDefaultVtxoScript(

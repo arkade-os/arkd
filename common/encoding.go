@@ -11,8 +11,8 @@ import (
 // Address represents an Ark address with HRP, server public key, and VTXO Taproot public key
 type Address struct {
 	HRP        string
+	VtxoScript []byte
 	Server     *secp256k1.PublicKey
-	VtxoTapKey *secp256k1.PublicKey
 }
 
 // Encode converts the address to its bech32m string representation
@@ -20,13 +20,15 @@ func (a *Address) Encode() (string, error) {
 	if a.Server == nil {
 		return "", fmt.Errorf("missing server public key")
 	}
-	if a.VtxoTapKey == nil {
-		return "", fmt.Errorf("missing vtxo tap public key")
+	if len(a.VtxoScript) <= 0 {
+		return "", fmt.Errorf("missing vtxo script")
 	}
 
-	combinedKey := append(
-		schnorr.SerializePubKey(a.Server), schnorr.SerializePubKey(a.VtxoTapKey)...,
-	)
+	if !IsP2TRScript(a.VtxoScript) {
+		return "", fmt.Errorf("invalid vtxo script, must be P2TR")
+	}
+
+	combinedKey := append(a.VtxoScript, schnorr.SerializePubKey(a.Server)...)
 	grp, err := bech32.ConvertBits(combinedKey, 8, 5, true)
 	if err != nil {
 		return "", err
@@ -37,7 +39,7 @@ func (a *Address) Encode() (string, error) {
 // DecodeAddress parses a bech32m encoded address string and returns an Address object
 func DecodeAddress(addr string) (*Address, error) {
 	if len(addr) == 0 {
-		return nil, fmt.Errorf("address is empty")
+		return nil, fmt.Errorf("missing address")
 	}
 
 	prefix, buf, err := bech32.DecodeNoLimit(addr)
@@ -45,26 +47,25 @@ func DecodeAddress(addr string) (*Address, error) {
 		return nil, err
 	}
 	if prefix != Bitcoin.Addr && prefix != BitcoinTestNet.Addr && prefix != BitcoinRegTest.Addr {
-		return nil, fmt.Errorf("invalid prefix")
+		return nil, fmt.Errorf("unknown prefix")
 	}
 	grp, err := bech32.ConvertBits(buf, 5, 8, false)
 	if err != nil {
 		return nil, err
 	}
 
-	serverKey, err := schnorr.ParsePubKey(grp[:32])
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %s", err)
+	vtxoScript := grp[:34]
+	if !IsP2TRScript(vtxoScript) {
+		return nil, fmt.Errorf("failed to parse vtxo script, must be P2TR")
 	}
-
-	vtxoKey, err := schnorr.ParsePubKey(grp[32:])
+	serverKey, err := schnorr.ParsePubKey(grp[34:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse server public key: %s", err)
 	}
 
 	return &Address{
 		HRP:        prefix,
+		VtxoScript: vtxoScript,
 		Server:     serverKey,
-		VtxoTapKey: vtxoKey,
 	}, nil
 }

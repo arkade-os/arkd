@@ -1098,8 +1098,7 @@ func (a *covenantlessArkClient) listenForArkTxs(ctx context.Context) {
 				// nolint
 				decoded, _ := common.DecodeAddress(addr.Address)
 				// nolint
-				script, _ := common.P2TRScript(decoded.VtxoTapKey)
-				myScripts[hex.EncodeToString(script)] = struct{}{}
+				myScripts[hex.EncodeToString(decoded.VtxoScript)] = struct{}{}
 			}
 
 			if event.CommitmentTx != nil {
@@ -2551,8 +2550,6 @@ func (a *covenantlessArkClient) validateOffchainReceiver(
 		return err
 	}
 
-	vtxoTapKey := schnorr.SerializePubKey(rcvAddr.VtxoTapKey)
-
 	leaves := vtxoGraph.Leaves()
 	for _, leaf := range leaves {
 		for _, output := range leaf.UnsignedTx.TxOut {
@@ -2560,7 +2557,7 @@ func (a *covenantlessArkClient) validateOffchainReceiver(
 				continue
 			}
 
-			if bytes.Equal(output.PkScript[2:], vtxoTapKey) {
+			if bytes.Equal(output.PkScript, rcvAddr.VtxoScript) {
 				if output.Value != int64(receiver.Amount) {
 					continue
 				}
