@@ -669,7 +669,7 @@ func parsePubkey(pubkey string) (string, error) {
 		return "", fmt.Errorf("invalid pubkey format: %s", err)
 	}
 	if len(buf) != 32 {
-		return "", fmt.Errorf("invalid pubkey length: got %d, expeted 32", len(buf))
+		return "", fmt.Errorf("invalid pubkey length: got %d, expected 32", len(buf))
 	}
 	if _, err := schnorr.ParsePubKey(buf); err != nil {
 		return "", fmt.Errorf("invalid schnorr pubkey: %s", err)
