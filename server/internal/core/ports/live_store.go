@@ -39,7 +39,7 @@ type ForfeitTxsStore interface {
 	Pop() ([]string, error)
 	AllSigned() bool
 	Len() int
-	GetConnectorsIndexes() map[string]domain.Outpoint
+	GetConnectorsIndexes() map[string]domain.VtxoKey
 }
 
 type OffChainTxStore interface {

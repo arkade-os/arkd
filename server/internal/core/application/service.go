@@ -1860,14 +1860,7 @@ func (s *covenantlessService) startFinalization(roundTiming roundTiming, request
 			listOfCosignersPubkeys = append(listOfCosignersPubkeys, pubkey)
 		}
 
-		vtxoTreeChunks, err = vtxoTree.Serialize()
-		if err != nil {
-			s.liveStore.CurrentRound().Fail(fmt.Errorf("failed to serialize vtxo tree: %s", err))
-			log.WithError(err).Warn("failed to serialize vtxo tree")
-			return
-		}
-
-		s.propagateRoundSigningStartedEvent(vtxoTreeChunks, listOfCosignersPubkeys)
+		s.propagateRoundSigningStartedEvent(vtxoTree, listOfCosignersPubkeys)
 
 		select {
 		case <-time.After(thirdOfRemainingDuration):
@@ -1958,8 +1951,7 @@ func (s *covenantlessService) startFinalization(roundTiming roundTiming, request
 
 	round := s.liveStore.CurrentRound().Get()
 	_, err = round.StartFinalization(
-		connectorAddress, connectorsChunks, vtxoTreeChunks, round.Txid, round.CommitmentTx,
-		s.liveStore.ForfeitTxs().GetConnectorsIndexes(), s.vtxoTreeExpiry.Seconds(),
+		connectorAddress, connectorsChunks, vtxoTreeChunks, round.Txid, round.CommitmentTx, s.vtxoTreeExpiry.Seconds(),
 	)
 	if err != nil {
 		s.liveStore.CurrentRound().Fail(fmt.Errorf("failed to start finalization: %s", err))
@@ -2182,19 +2174,31 @@ func (s *covenantlessService) propagateEvents(round *domain.Round) {
 	// because it contains the vtxoTree and connectorsTree
 	// and we need to propagate them in specific BatchTree events
 	case domain.RoundFinalizationStarted:
-		graph, err := tree.NewTxGraph(ev.VtxoTree)
+		vtxoGraph, err := tree.NewTxGraph(ev.VtxoTree)
 		if err != nil {
 			log.WithError(err).Warn("failed to create vtxo tree")
 			return
 		}
+
 		events = append(
 			events,
-			batchTreeSignatureEvents(graph, 0, round.Id)...,
+			batchTreeSignatureEvents(vtxoGraph, 0, round.Id)...,
 		)
-		events = append(
-			events,
-			batchTreeEvents(ev.Connectors, 1, round.Id)...,
-		)
+
+		if len(ev.Connectors) > 0 {
+			connectorsGraph, err := tree.NewTxGraph(ev.Connectors)
+			if err != nil {
+				log.WithError(err).Warn("failed to create connectors tree")
+				return
+			}
+
+			connectorsIndex := s.liveStore.ForfeitTxs().GetConnectorsIndexes()
+
+			events = append(
+				events,
+				batchTreeEvents(connectorsGraph, 1, round.Id, getConnectorTreeTopic(connectorsIndex))...,
+			)
+		}
 	case domain.RoundFinalized:
 		lastEvent = RoundFinalized{lastEvent.(domain.RoundFinalized), round.Txid}
 	}
@@ -2223,10 +2227,11 @@ func (s *covenantlessService) propagateBatchStartedEvent(requests []ports.TimedT
 	s.eventsCh <- []domain.Event{ev}
 }
 
-func (s *covenantlessService) propagateRoundSigningStartedEvent(unsignedVtxoTreeChunks []tree.TxGraphChunk, cosignersPubkeys []string) {
+func (s *covenantlessService) propagateRoundSigningStartedEvent(unsignedVtxoGraph *tree.TxGraph, cosignersPubkeys []string) {
 	round := s.liveStore.CurrentRound().Get()
+
 	events := append(
-		batchTreeEvents(unsignedVtxoTreeChunks, 0, round.Id),
+		batchTreeEvents(unsignedVtxoGraph, 0, round.Id, getVtxoTreeTopic),
 		RoundSigningStarted{
 			RoundEvent: domain.RoundEvent{
 				Id:   round.Id,
@@ -2602,19 +2607,37 @@ func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {
 	return
 }
 
-func batchTreeEvents(chunks []tree.TxGraphChunk, batchIndex int32, roundId string) []domain.Event {
+func batchTreeEvents(
+	graph *tree.TxGraph,
+	batchIndex int32,
+	roundId string,
+	getTopic func(g *tree.TxGraph) ([]string, error),
+) []domain.Event {
 	events := make([]domain.Event, 0)
 
-	for _, chunk := range chunks {
+	if err := graph.Apply(func(g *tree.TxGraph) (bool, error) {
+		chunk, err := g.RootChunk()
+		if err != nil {
+			return false, err
+		}
+
+		topic, err := getTopic(g)
+		if err != nil {
+			return false, err
+		}
+
 		events = append(events, BatchTree{
 			RoundEvent: domain.RoundEvent{
 				Id:   roundId,
 				Type: domain.EventTypeUndefined,
 			},
 			BatchIndex: batchIndex,
-			Topic:      []string{}, // TODO
+			Topic:      topic,
 			Chunk:      chunk,
 		})
+		return true, nil
+	}); err != nil {
+		log.WithError(err).Error("failed to send batchTree events")
 	}
 
 	return events
@@ -2626,12 +2649,17 @@ func batchTreeSignatureEvents(graph *tree.TxGraph, batchIndex int32, roundId str
 	_ = graph.Apply(func(g *tree.TxGraph) (bool, error) {
 		sig := g.Root.Inputs[0].TaprootKeySpendSig
 
+		topic, err := getVtxoTreeTopic(g)
+		if err != nil {
+			return false, err
+		}
+
 		events = append(events, BatchTreeSignature{
 			RoundEvent: domain.RoundEvent{
 				Id:   roundId,
 				Type: domain.EventTypeUndefined,
 			},
-			Topic:      []string{},
+			Topic:      topic,
 			BatchIndex: batchIndex,
 			Signature:  hex.EncodeToString(sig),
 			Txid:       g.Root.UnsignedTx.TxID(),
@@ -2641,4 +2669,47 @@ func batchTreeSignatureEvents(graph *tree.TxGraph, batchIndex int32, roundId str
 	})
 
 	return events
+}
+
+// getVtxoTreeTopic returns the list of topics for vtxo graph
+// it returns the list of cosigner public keys used to compute the musig2 key
+func getVtxoTreeTopic(g *tree.TxGraph) ([]string, error) {
+	cosignerKeys, err := tree.GetCosignerKeys(g.Root.Inputs[0])
+	if err != nil {
+		return nil, err
+	}
+
+	topics := make([]string, 0, len(cosignerKeys))
+	for _, key := range cosignerKeys {
+		topics = append(topics, hex.EncodeToString(key.SerializeCompressed()))
+	}
+
+	return topics, nil
+}
+
+// getConnectorTreeTopic returns the list of topics for connector graph
+// it returns the list of vtxo outpoints associated with the connector
+func getConnectorTreeTopic(connectorsIndex map[string]domain.VtxoKey) func(g *tree.TxGraph) ([]string, error) {
+	return func(g *tree.TxGraph) ([]string, error) {
+		leaves := g.Leaves()
+		topics := make([]string, 0, len(leaves))
+
+		for _, leaf := range leaves {
+			leafTxid := leaf.UnsignedTx.TxID()
+			for outIndex, output := range leaf.UnsignedTx.TxOut {
+				if bytes.Equal(output.PkScript, tree.ANCHOR_PKSCRIPT) {
+					continue
+				}
+
+				outpoint := domain.Outpoint{
+					Txid: leafTxid,
+					VOut: uint32(outIndex),
+				}
+
+				topics = append(topics, connectorsIndex[outpoint.String()].String())
+			}
+		}
+
+		return topics, nil
+	}
 }

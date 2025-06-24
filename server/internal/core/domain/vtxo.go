@@ -14,7 +14,18 @@ type VtxoKey struct {
 	Txid string
 	VOut uint32
 }
-type Outpoint VtxoKey
+
+// implements ports.TxOutpoint interface
+func (k VtxoKey) GetTxid() string {
+	return k.Txid
+}
+
+// implements ports.TxOutpoint interface
+func (k VtxoKey) GetIndex() uint32 {
+	return k.VOut
+}
+
+type Outpoint = VtxoKey
 
 func (k VtxoKey) String() string {
 	return fmt.Sprintf("%s:%d", k.Txid, k.VOut)

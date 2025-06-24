@@ -33,6 +33,12 @@ func NewRedeemBranch(
 		return nil, err
 	}
 
+	// If subGraph is nil, it means there's no path from root to the vtxo
+	// This could happen if the vtxo is not part of the graph
+	if subGraph == nil {
+		return nil, fmt.Errorf("no path found to vtxo %s in graph", vtxo.Txid)
+	}
+
 	branch := make([]*psbt.Packet, 0)
 	_ = subGraph.Apply(func(g *tree.TxGraph) (bool, error) {
 		branch = append(branch, g.Root)

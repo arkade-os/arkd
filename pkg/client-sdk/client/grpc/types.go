@@ -44,12 +44,9 @@ func (e event) toBatchEvent() (any, error) {
 	}
 
 	if ee := e.GetBatchFinalization(); ee != nil {
-		connectorsIndex := connectorsIndexFromProto{ee.GetConnectorsIndex()}.parse()
-
 		return client.BatchFinalizationEvent{
-			Id:              ee.GetId(),
-			Tx:              ee.GetCommitmentTx(),
-			ConnectorsIndex: connectorsIndex,
+			Id: ee.GetId(),
+			Tx: ee.GetCommitmentTx(),
 		}, nil
 	}
 
@@ -137,19 +134,4 @@ func (v vtxos) toVtxos() []types.Vtxo {
 		list = append(list, vtxo{vv}.toVtxo())
 	}
 	return list
-}
-
-type connectorsIndexFromProto struct {
-	connectorsIndex map[string]*arkv1.Outpoint
-}
-
-func (c connectorsIndexFromProto) parse() map[string]types.VtxoKey {
-	connectorsIndex := make(map[string]types.VtxoKey)
-	for vtxoOutpointStr, connectorOutpoint := range c.connectorsIndex {
-		connectorsIndex[vtxoOutpointStr] = types.VtxoKey{
-			Txid: connectorOutpoint.GetTxid(),
-			VOut: connectorOutpoint.GetVout(),
-		}
-	}
-	return connectorsIndex
 }

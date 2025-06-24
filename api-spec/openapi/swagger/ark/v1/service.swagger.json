@@ -109,6 +109,18 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "topics",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
+          }
+        ],
         "tags": [
           "ArkService"
         ]
@@ -416,13 +428,6 @@
         },
         "commitmentTx": {
           "type": "string"
-        },
-        "connectorsIndex": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/definitions/v1Outpoint"
-          },
-          "title": "vtxo outpoint encoded as string -\u003e connector outpoint"
         }
       }
     },

@@ -14,6 +14,7 @@ import (
 	"github.com/go-openapi/runtime"
 	cr "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
+	"github.com/go-openapi/swag"
 )
 
 // NewArkServiceGetEventStreamParams creates a new ArkServiceGetEventStreamParams object,
@@ -60,6 +61,10 @@ ArkServiceGetEventStreamParams contains all the parameters to send to the API en
 	Typically these are written to a http.Request.
 */
 type ArkServiceGetEventStreamParams struct {
+
+	// Topics.
+	Topics []string
+
 	timeout    time.Duration
 	Context    context.Context
 	HTTPClient *http.Client
@@ -113,6 +118,17 @@ func (o *ArkServiceGetEventStreamParams) SetHTTPClient(client *http.Client) {
 	o.HTTPClient = client
 }
 
+// WithTopics adds the topics to the ark service get event stream params
+func (o *ArkServiceGetEventStreamParams) WithTopics(topics []string) *ArkServiceGetEventStreamParams {
+	o.SetTopics(topics)
+	return o
+}
+
+// SetTopics adds the topics to the ark service get event stream params
+func (o *ArkServiceGetEventStreamParams) SetTopics(topics []string) {
+	o.Topics = topics
+}
+
 // WriteToRequest writes these params to a swagger request
 func (o *ArkServiceGetEventStreamParams) WriteToRequest(r runtime.ClientRequest, reg strfmt.Registry) error {
 
@@ -121,8 +137,36 @@ func (o *ArkServiceGetEventStreamParams) WriteToRequest(r runtime.ClientRequest,
 	}
 	var res []error
 
+	if o.Topics != nil {
+
+		// binding items for topics
+		joinedTopics := o.bindParamTopics(reg)
+
+		// query array param topics
+		if err := r.SetQueryParam("topics", joinedTopics...); err != nil {
+			return err
+		}
+	}
+
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
 	return nil
+}
+
+// bindParamArkServiceGetEventStream binds the parameter topics
+func (o *ArkServiceGetEventStreamParams) bindParamTopics(formats strfmt.Registry) []string {
+	topicsIR := o.Topics
+
+	var topicsIC []string
+	for _, topicsIIR := range topicsIR { // explode []string
+
+		topicsIIV := topicsIIR // string as string
+		topicsIC = append(topicsIC, topicsIIV)
+	}
+
+	// items.CollectionFormat: "multi"
+	topicsIS := swag.JoinByFormat(topicsIC, "multi")
+
+	return topicsIS
 }

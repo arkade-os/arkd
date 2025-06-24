@@ -1,4 +1,4 @@
-.PHONY: build clean cov help integrationtest lint run run-mutinynet test vet migrate sqlc pg pgtest droppg droppgtest psql pgmigrate pgsqlc
+.PHONY: build clean cov help integrationtest lint run run-light run-mutinynet test vet migrate sqlc pg pgtest droppg droppgtest psql pgmigrate pgsqlc
 
 define setup_env
     $(eval include $(1))
@@ -39,6 +39,12 @@ lint:
 run: clean
 	@echo "Running arkd in regtest"
 	$(call setup_env, envs/dev.env)
+	go run ./cmd/arkd
+
+## run-light: run arkd in light mode
+run-light: clean
+	@echo "Running arkd in light mode"
+	$(call setup_env, envs/light.env)
 	go run ./cmd/arkd
 
 ## test: runs unit and component tests

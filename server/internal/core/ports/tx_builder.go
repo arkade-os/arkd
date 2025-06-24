@@ -27,6 +27,11 @@ type BoardingInput struct {
 	Amount uint64
 }
 
+type ValidForfeitTx struct {
+	Tx        string
+	Connector domain.Outpoint
+}
+
 type TxBuilder interface {
 	// BuildRoundTx builds a round tx for the given offchain and boarding tx
 	// requests. It expects an optional list of connector addresses of expired
@@ -48,8 +53,7 @@ type TxBuilder interface {
 	// connectors.
 	VerifyForfeitTxs(
 		vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, txs []string,
-		connectorIndex map[string]domain.Outpoint,
-	) (valid map[domain.VtxoKey]string, err error)
+	) (valid map[domain.VtxoKey]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []SweepInput) (txid string, signedSweepTx string, err error)
 	GetSweepInput(graph *tree.TxGraph) (vtxoTreeExpiry *common.RelativeLocktime, sweepInput SweepInput, err error)
 	FinalizeAndExtract(tx string) (txhex string, err error)

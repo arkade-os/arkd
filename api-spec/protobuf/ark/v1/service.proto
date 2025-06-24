@@ -187,7 +187,9 @@ message SubmitSignedForfeitTxsRequest {
 }
 message SubmitSignedForfeitTxsResponse {}
 
-message GetEventStreamRequest {}
+message GetEventStreamRequest {
+  repeated string topics = 1;
+}
 message GetEventStreamResponse {
   oneof event {
     BatchStartedEvent batch_started = 1;

@@ -308,12 +308,7 @@ func testStartFinalization(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
-			events, err = round.StartFinalization("", connectors, vtxoTree, "txid", roundTx, map[string]domain.Outpoint{
-				txid: {
-					Txid: txid,
-					VOut: 0,
-				},
-			}, expiration)
+			events, err = round.StartFinalization("", connectors, vtxoTree, "txid", roundTx, expiration)
 			require.NoError(t, err)
 			require.Len(t, events, 1)
 			require.True(t, round.IsStarted())
@@ -431,12 +426,7 @@ func testStartFinalization(t *testing.T) {
 			}
 
 			for _, f := range fixtures {
-				events, err := f.round.StartFinalization("", f.connectors, f.tree, f.txid, f.roundTx, map[string]domain.Outpoint{
-					txid: {
-						Txid: txid,
-						VOut: 0,
-					},
-				}, f.expiration)
+				events, err := f.round.StartFinalization("", f.connectors, f.tree, f.txid, f.roundTx, f.expiration)
 				require.EqualError(t, err, f.expectedErr)
 				require.Empty(t, events)
 			}
@@ -456,12 +446,7 @@ func testEndFinalization(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
-			events, err = round.StartFinalization("", connectors, vtxoTree, "txid", roundTx, map[string]domain.Outpoint{
-				txid: {
-					Txid: txid,
-					VOut: 0,
-				},
-			}, expiration)
+			events, err = round.StartFinalization("", connectors, vtxoTree, "txid", roundTx, expiration)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 

@@ -129,7 +129,6 @@ func (r *Round) StartFinalization(
 	vtxoTree []tree.TxGraphChunk,
 	txid string,
 	roundTx string,
-	connectorsIndex map[string]Outpoint,
 	vtxoTreeExpiration int64,
 ) ([]Event, error) {
 	if len(roundTx) <= 0 {
@@ -158,7 +157,6 @@ func (r *Round) StartFinalization(
 		ConnectorAddress:   connectorAddress,
 		Txid:               txid,
 		RoundTx:            roundTx,
-		ConnectorsIndex:    connectorsIndex,
 		VtxoTreeExpiration: vtxoTreeExpiration,
 	}
 	r.raise(event)
