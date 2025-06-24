@@ -26,7 +26,7 @@ func TestAddressEncoding(t *testing.T) {
 		Address struct {
 			Valid []struct {
 				Addr              string `json:"addr"`
-				ExpectedVersion   uint32 `json:"expectedVersion"`
+				ExpectedVersion   uint8  `json:"expectedVersion"`
 				ExpectedPrefix    string `json:"expectedPrefix"`
 				ExpectedUserKey   string `json:"expectedUserKey"`
 				ExpectedServerKey string `json:"expectedServerKey"`

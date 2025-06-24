@@ -16,7 +16,7 @@
       },
       {
         "addr": "tark1x0lm8hhr2wc6n6lyemtyh9rz8rg2ftpkfun46aca56kjg3ws0tsztfpuanaquxc6faedvjk3tax0575y6perapg3e95654pk8r4fjecs5fyd2",
-        "expectedError": "failed to parse server public key"
+        "expectedError": "invalid address bytes length"
       }
     ]
   }
