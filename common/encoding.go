@@ -16,8 +16,8 @@ type Address struct {
 	VtxoTapKey *secp256k1.PublicKey
 }
 
-// Encode converts the address to its bech32m string representation.
-func (a *Address) Encode() (string, error) {
+// EncodeV0 converts the address to its bech32m string representation.
+func (a *Address) EncodeV0() (string, error) {
 	if a.Server == nil {
 		return "", fmt.Errorf("missing server public key")
 	}
@@ -35,8 +35,8 @@ func (a *Address) Encode() (string, error) {
 	return bech32.EncodeM(a.HRP, grp)
 }
 
-// DecodeAddress parses a bech32m encoded address string and returns an Address struct.
-func DecodeAddress(addr string) (*Address, error) {
+// DecodeAddressV0 parses a bech32m encoded address string and returns an Address struct.
+func DecodeAddressV0(addr string) (*Address, error) {
 	if len(addr) == 0 {
 		return nil, fmt.Errorf("mssing address")
 	}
@@ -53,7 +53,16 @@ func DecodeAddress(addr string) (*Address, error) {
 		return nil, err
 	}
 
+	// [version, serverKey, vtxoKey]
+	if len(grp) != 1+33+33 {
+		return nil, fmt.Errorf("invalid address bytes length, expected 67 got %d", len(grp))
+	}
+
 	version := uint32(grp[0])
+	if version != 0 {
+		return nil, fmt.Errorf("invalid address version, expected 0 got %d", version)
+	}
+
 	serverKey, err := schnorr.ParsePubKey(grp[1:33])
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse server public key: %s", err)

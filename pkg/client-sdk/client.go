@@ -506,7 +506,7 @@ func (a *covenantlessArkClient) SendOffChain(
 			return "", fmt.Errorf("all receiver addresses must be offchain addresses")
 		}
 
-		addr, err := common.DecodeAddress(receiver.To)
+		addr, err := common.DecodeAddressV0(receiver.To)
 		if err != nil {
 			return "", fmt.Errorf("invalid receiver address: %s", err)
 		}
@@ -1096,7 +1096,7 @@ func (a *covenantlessArkClient) listenForArkTxs(ctx context.Context) {
 			myScripts := make(map[string]struct{})
 			for _, addr := range offchainAddrs {
 				// nolint
-				decoded, _ := common.DecodeAddress(addr.Address)
+				decoded, _ := common.DecodeAddressV0(addr.Address)
 				// nolint
 				script, _ := common.P2TRScript(decoded.VtxoTapKey)
 				myScripts[hex.EncodeToString(script)] = struct{}{}
@@ -1659,7 +1659,7 @@ func (a *covenantlessArkClient) sendOffchain(
 
 	// validate receivers and create outputs
 	for _, receiver := range receivers {
-		rcvAddr, err := common.DecodeAddress(receiver.To)
+		rcvAddr, err := common.DecodeAddressV0(receiver.To)
 		if err != nil {
 			return "", fmt.Errorf("invalid receiver address: %s", err)
 		}
@@ -2013,7 +2013,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 	step := start
 	hasOffchainOutput := false
 	for _, receiver := range receivers {
-		if _, err := common.DecodeAddress(receiver.To); err == nil {
+		if _, err := common.DecodeAddressV0(receiver.To); err == nil {
 			hasOffchainOutput = true
 			break
 		}
@@ -2546,7 +2546,7 @@ func (a *covenantlessArkClient) validateOffchainReceiver(
 ) error {
 	found := false
 
-	rcvAddr, err := common.DecodeAddress(receiver.To)
+	rcvAddr, err := common.DecodeAddressV0(receiver.To)
 	if err != nil {
 		return err
 	}

@@ -278,7 +278,7 @@ func buildOffchainTx(
 			return "", nil, fmt.Errorf("receiver %d is onchain", i)
 		}
 
-		addr, err := common.DecodeAddress(receiver.To)
+		addr, err := common.DecodeAddressV0(receiver.To)
 		if err != nil {
 			return "", nil, err
 		}

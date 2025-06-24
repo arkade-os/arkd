@@ -1234,7 +1234,7 @@ func (s *covenantlessService) SignRoundTx(ctx context.Context, signedRoundTx str
 }
 
 func (s *covenantlessService) ListVtxos(ctx context.Context, address string) ([]domain.Vtxo, []domain.Vtxo, error) {
-	decodedAddress, err := common.DecodeAddress(address)
+	decodedAddress, err := common.DecodeAddressV0(address)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to decode address: %s", err)
 	}
@@ -1366,7 +1366,7 @@ func (s *covenantlessService) GetTxRequestQueue(
 				VtxoTapKey: vtxoTapKey,
 			}
 
-			addressStr, err := address.Encode()
+			addressStr, err := address.EncodeV0()
 			if err != nil {
 				return nil, fmt.Errorf("failed to encode address: %s", err)
 			}

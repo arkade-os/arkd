@@ -18,7 +18,7 @@ func parseAddress(addr string) (*common.Address, error) {
 	if len(addr) <= 0 {
 		return nil, fmt.Errorf("missing address")
 	}
-	return common.DecodeAddress(addr)
+	return common.DecodeAddressV0(addr)
 }
 
 func parseArkAddress(addr string) (string, error) {

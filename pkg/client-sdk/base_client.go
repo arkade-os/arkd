@@ -198,7 +198,7 @@ func (a *arkClient) NotifyIncomingFunds(
 		return nil, fmt.Errorf("wallet not initialized")
 	}
 
-	decoded, err := common.DecodeAddress(addr)
+	decoded, err := common.DecodeAddressV0(addr)
 	if err != nil {
 		return nil, err
 	}

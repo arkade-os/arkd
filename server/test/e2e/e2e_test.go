@@ -568,7 +568,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
 		require.NoError(t, err)
 
-		aliceAddr, err := common.DecodeAddress(offchainAddr)
+		aliceAddr, err := common.DecodeAddressV0(offchainAddr)
 		require.NoError(t, err)
 
 		_, err = utils.RunCommand("nigiri", "faucet", boardingAddress)
@@ -642,7 +642,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			RevealedScript: merkleProof.Script,
 		}
 
-		bobAddrStr, err := bobAddr.Encode()
+		bobAddrStr, err := bobAddr.EncodeV0()
 		require.NoError(t, err)
 
 		wg.Add(1)
@@ -1192,7 +1192,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	aliceAddr, err := common.DecodeAddress(offchainAddr)
+	aliceAddr, err := common.DecodeAddressV0(offchainAddr)
 	require.NoError(t, err)
 
 	_, err = utils.RunCommand("nigiri", "faucet", boardingAddress)
@@ -1255,7 +1255,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		RevealedScript: merkleProof.Script,
 	}
 
-	bobAddrStr, err := bobAddr.Encode()
+	bobAddrStr, err := bobAddr.EncodeV0()
 	require.NoError(t, err)
 
 	wg.Add(1)
@@ -1430,7 +1430,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	aliceAddr, err := common.DecodeAddress(offchainAddr)
+	aliceAddr, err := common.DecodeAddressV0(offchainAddr)
 	require.NoError(t, err)
 
 	_, err = utils.RunCommand("nigiri", "faucet", boardingAddress)
@@ -1504,7 +1504,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		RevealedScript: merkleProof.Script,
 	}
 
-	bobAddrStr, err := bobAddr.Encode()
+	bobAddrStr, err := bobAddr.EncodeV0()
 	require.NoError(t, err)
 
 	wg.Add(1)
