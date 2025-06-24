@@ -283,16 +283,15 @@ func buildOffchainTx(
 			return "", nil, err
 		}
 
-		newVtxoScript := addr.VtxoScript
+		var newVtxoScript []byte
+
 		if receiver.Amount < dustLimit {
-			vtxoTapKey, err := schnorr.ParsePubKey(addr.VtxoScript[2:])
-			if err != nil {
-				return "", nil, err
-			}
-			newVtxoScript, err = common.SubDustScript(vtxoTapKey)
-			if err != nil {
-				return "", nil, err
-			}
+			newVtxoScript, err = common.SubDustScript(addr.VtxoTapKey)
+		} else {
+			newVtxoScript, err = common.P2TRScript(addr.VtxoTapKey)
+		}
+		if err != nil {
+			return "", nil, err
 		}
 
 		outs = append(outs, &wire.TxOut{

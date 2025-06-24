@@ -30,6 +30,7 @@ import (
 	singlekeywallet "github.com/ark-network/ark/pkg/client-sdk/wallet/singlekey"
 	inmemorystore "github.com/ark-network/ark/pkg/client-sdk/wallet/singlekey/store/inmemory"
 	utils "github.com/ark-network/ark/server/test/e2e"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -618,14 +619,12 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 
 		vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
 		require.NoError(t, err)
-		outputScript, err := common.P2TRScript(vtxoTapKey)
-		require.NoError(t, err)
 
 		closure := vtxoScript.ForfeitClosures()[0]
 
 		bobAddr := common.Address{
 			HRP:        "tark",
-			VtxoScript: outputScript,
+			VtxoTapKey: vtxoTapKey,
 			Server:     aliceAddr.Server,
 		}
 
@@ -685,13 +684,16 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		var bobOutput *wire.TxOut
 		var bobOutputIndex uint32
 		for i, out := range virtualPtx.UnsignedTx.TxOut {
-			if bytes.Equal(out.PkScript, bobAddr.VtxoScript) {
+			if bytes.Equal(out.PkScript[2:], schnorr.SerializePubKey(bobAddr.VtxoTapKey)) {
 				bobOutput = out
 				bobOutputIndex = uint32(i)
 				break
 			}
 		}
 		require.NotNil(t, bobOutput)
+
+		alicePkScript, err := common.P2TRScript(aliceAddr.VtxoTapKey)
+		require.NoError(t, err)
 
 		tapscripts := make([]string, 0, len(vtxoScript.Closures))
 		for _, closure := range vtxoScript.Closures {
@@ -724,7 +726,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			[]*wire.TxOut{
 				{
 					Value:    bobOutput.Value,
-					PkScript: aliceAddr.VtxoScript,
+					PkScript: alicePkScript,
 				},
 			},
 			&tree.CSVMultisigClosure{
@@ -1230,14 +1232,12 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 
 	vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
 	require.NoError(t, err)
-	outputScript, err := common.P2TRScript(vtxoTapKey)
-	require.NoError(t, err)
 
 	closure := vtxoScript.ForfeitClosures()[0]
 
 	bobAddr := common.Address{
 		HRP:        "tark",
-		VtxoScript: outputScript,
+		VtxoTapKey: vtxoTapKey,
 		Server:     aliceAddr.Server,
 	}
 
@@ -1295,13 +1295,16 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	var bobOutput *wire.TxOut
 	var bobOutputIndex uint32
 	for i, out := range virtualPtx.UnsignedTx.TxOut {
-		if bytes.Equal(out.PkScript, bobAddr.VtxoScript) {
+		if bytes.Equal(out.PkScript[2:], schnorr.SerializePubKey(bobAddr.VtxoTapKey)) {
 			bobOutput = out
 			bobOutputIndex = uint32(i)
 			break
 		}
 	}
 	require.NotNil(t, bobOutput)
+
+	alicePkScript, err := common.P2TRScript(aliceAddr.VtxoTapKey)
+	require.NoError(t, err)
 
 	tapscripts := make([]string, 0, len(vtxoScript.Closures))
 	for _, closure := range vtxoScript.Closures {
@@ -1334,7 +1337,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		[]*wire.TxOut{
 			{
 				Value:    bobOutput.Value,
-				PkScript: aliceAddr.VtxoScript,
+				PkScript: alicePkScript,
 			},
 		},
 		&tree.CSVMultisigClosure{
@@ -1478,14 +1481,12 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 
 	vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
 	require.NoError(t, err)
-	outputScript, err := common.P2TRScript(vtxoTapKey)
-	require.NoError(t, err)
 
 	closure := vtxoScript.ForfeitClosures()[0]
 
 	bobAddr := common.Address{
 		HRP:        "tark",
-		VtxoScript: outputScript,
+		VtxoTapKey: vtxoTapKey,
 		Server:     aliceAddr.Server,
 	}
 
@@ -1544,13 +1545,16 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	var bobOutput *wire.TxOut
 	var bobOutputIndex uint32
 	for i, out := range virtualPtx.UnsignedTx.TxOut {
-		if bytes.Equal(out.PkScript, bobAddr.VtxoScript) {
+		if bytes.Equal(out.PkScript[2:], schnorr.SerializePubKey(bobAddr.VtxoTapKey)) {
 			bobOutput = out
 			bobOutputIndex = uint32(i)
 			break
 		}
 	}
 	require.NotNil(t, bobOutput)
+
+	alicePkScript, err := common.P2TRScript(aliceAddr.VtxoTapKey)
+	require.NoError(t, err)
 
 	tapscripts := make([]string, 0, len(vtxoScript.Closures))
 	for _, closure := range vtxoScript.Closures {
@@ -1583,7 +1587,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		[]*wire.TxOut{
 			{
 				Value:    bobOutput.Value,
-				PkScript: aliceAddr.VtxoScript,
+				PkScript: alicePkScript,
 			},
 		},
 		&tree.CSVMultisigClosure{

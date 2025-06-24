@@ -202,8 +202,12 @@ func (a *arkClient) NotifyIncomingFunds(
 	if err != nil {
 		return nil, err
 	}
+	script, err := common.P2TRScript(decoded.VtxoTapKey)
+	if err != nil {
+		return nil, err
+	}
 
-	scripts := []string{hex.EncodeToString(decoded.VtxoScript)}
+	scripts := []string{hex.EncodeToString(script)}
 	subId, err := a.indexer.SubscribeForScripts(ctx, "", scripts)
 	if err != nil {
 		return nil, err

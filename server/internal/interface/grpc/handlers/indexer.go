@@ -9,7 +9,6 @@ import (
 	"time"
 
 	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
-	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/server/internal/core/application"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -649,17 +648,6 @@ func parseArkAddresses(addresses []string) ([]string, error) {
 		pubkeys = append(pubkeys, pubkey)
 	}
 	return pubkeys, nil
-}
-
-func parseArkAddress(addr string) (string, error) {
-	if len(addr) <= 0 {
-		return "", fmt.Errorf("missing address")
-	}
-	decoded, err := common.DecodeAddress(addr)
-	if err != nil {
-		return "", fmt.Errorf("invalid address: %s", err)
-	}
-	return hex.EncodeToString(decoded.VtxoScript[2:]), nil
 }
 
 func parseScripts(scripts []string) ([]string, error) {
