@@ -122,12 +122,13 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.VtxoKey, []domain.
 				Txid: txid,
 				VOut: uint32(outIndex),
 			},
-			PubKey:         hex.EncodeToString(out.PkScript[2:]),
-			Amount:         uint64(out.Value),
-			ExpireAt:       offchainTx.ExpiryTimestamp,
-			CommitmentTxid: offchainTx.RootCommitmentTxId,
-			RedeemTx:       offchainTx.VirtualTx,
-			CreatedAt:      offchainTx.EndingTimestamp,
+			PubKey:             hex.EncodeToString(out.PkScript[2:]),
+			Amount:             uint64(out.Value),
+			ExpireAt:           offchainTx.ExpiryTimestamp,
+			CommitmentTxids:    offchainTx.CommitmentTxidsList(),
+			RootCommitmentTxid: offchainTx.RootCommitmentTxId,
+			RedeemTx:           offchainTx.VirtualTx,
+			CreatedAt:          offchainTx.EndingTimestamp,
 		})
 	}
 
@@ -254,12 +255,13 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
 			vtxos = append(vtxos, domain.Vtxo{
-				VtxoKey:        domain.VtxoKey{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
-				PubKey:         vtxoPubkey,
-				Amount:         uint64(out.Value),
-				CommitmentTxid: round.Txid,
-				CreatedAt:      createdAt,
-				ExpireAt:       expireAt,
+				VtxoKey:            domain.VtxoKey{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
+				PubKey:             vtxoPubkey,
+				Amount:             uint64(out.Value),
+				CommitmentTxids:    []string{round.Txid},
+				RootCommitmentTxid: round.Txid,
+				CreatedAt:          createdAt,
+				ExpireAt:           expireAt,
 			})
 		}
 	}

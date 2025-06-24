@@ -192,6 +192,14 @@ func (s *OffchainTx) IsFailed() bool {
 	return s.Stage.Failed
 }
 
+func (s *OffchainTx) CommitmentTxidsList() []string {
+	list := make([]string, 0, len(s.CommitmentTxids))
+	for _, txid := range s.CommitmentTxids {
+		list = append(list, txid)
+	}
+	return list
+}
+
 func (s *OffchainTx) on(event Event, replayed bool) {
 	switch e := event.(type) {
 	case OffchainTxRequested:

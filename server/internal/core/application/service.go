@@ -397,9 +397,9 @@ func (s *covenantlessService) SubmitOffchainTx(
 	rootCommitmentTxid := ""
 	for _, vtxo := range spentVtxos {
 		indexedSpentVtxos[vtxo.VtxoKey] = vtxo
-		commitmentTxsByCheckpointTxid[checkpointTxsByVtxoKey[vtxo.VtxoKey]] = vtxo.CommitmentTxid
+		commitmentTxsByCheckpointTxid[checkpointTxsByVtxoKey[vtxo.VtxoKey]] = vtxo.RootCommitmentTxid
 		if vtxo.ExpireAt < expiration {
-			rootCommitmentTxid = vtxo.CommitmentTxid
+			rootCommitmentTxid = vtxo.RootCommitmentTxid
 			expiration = vtxo.ExpireAt
 		}
 	}
