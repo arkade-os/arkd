@@ -54,8 +54,8 @@ func DecodeAddressV0(addr string) (*Address, error) {
 	}
 
 	// [version, serverKey, vtxoKey]
-	if len(grp) != 1+33+33 {
-		return nil, fmt.Errorf("invalid address bytes length, expected 67 got %d", len(grp))
+	if len(grp) != 1+32+32 {
+		return nil, fmt.Errorf("invalid address bytes length, expected 65 got %d", len(grp))
 	}
 
 	version := uint32(grp[0])
