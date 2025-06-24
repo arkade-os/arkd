@@ -19,16 +19,16 @@ type Tx struct {
 }
 
 type Vtxo struct {
-	Txid           string
-	Vout           int64
-	Script         string
-	Amount         int64
-	CommitmentTxid string
-	SpentBy        sql.NullString
-	Spent          bool
-	ExpiresAt      int64
-	CreatedAt      int64
-	Preconfirmed   bool
-	Swept          bool
-	Redeemed       bool
+	Txid            string
+	Vout            int64
+	Script          string
+	Amount          int64
+	CommitmentTxids string
+	SpentBy         sql.NullString
+	Spent           bool
+	ExpiresAt       int64
+	CreatedAt       int64
+	Preconfirmed    bool
+	Swept           bool
+	Redeemed        bool
 }

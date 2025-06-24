@@ -2,14 +2,12 @@ package arksdk
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +17,6 @@ import (
 	"github.com/ark-network/ark/common/note"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/pkg/client-sdk/client"
-	"github.com/ark-network/ark/pkg/client-sdk/indexer"
 	"github.com/ark-network/ark/pkg/client-sdk/types"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -29,185 +26,6 @@ import (
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
-
-func findVtxosSpent(vtxos []types.Vtxo, id string) []types.Vtxo {
-	var result []types.Vtxo
-	leftVtxos := make([]types.Vtxo, 0)
-	for _, v := range vtxos {
-		if v.SpentBy == id {
-			result = append(result, v)
-		} else {
-			leftVtxos = append(leftVtxos, v)
-		}
-	}
-	// Update the given list with only the left vtxos.
-	copy(vtxos, leftVtxos)
-	return result
-}
-
-func findVtxosSpentInSettlement(vtxos []types.Vtxo, vtxo types.Vtxo) []types.Vtxo {
-	if vtxo.Preconfirmed {
-		return nil
-	}
-	return findVtxosSpent(vtxos, vtxo.CommitmentTxid)
-}
-
-func findVtxosSpentInPayment(vtxos []types.Vtxo, vtxo types.Vtxo) []types.Vtxo {
-	return findVtxosSpent(vtxos, vtxo.Txid)
-}
-
-func findVtxosResultedFromSpentBy(vtxos []types.Vtxo, spentByTxid string) []types.Vtxo {
-	var result []types.Vtxo
-	for _, v := range vtxos {
-		if !v.Preconfirmed && v.CommitmentTxid == spentByTxid {
-			result = append(result, v)
-			break
-		}
-		if v.Txid == spentByTxid {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
-func reduceVtxosAmount(vtxos []types.Vtxo) uint64 {
-	var total uint64
-	for _, v := range vtxos {
-		total += v.Amount
-	}
-	return total
-}
-
-func getVtxo(usedVtxos []types.Vtxo, spentByVtxos []types.Vtxo) types.Vtxo {
-	if len(usedVtxos) > 0 {
-		return usedVtxos[0]
-	}
-	if len(spentByVtxos) > 0 {
-		return spentByVtxos[0]
-	}
-	return types.Vtxo{}
-}
-
-func vtxosToTxHistory(
-	spendable, spent []types.Vtxo, boardingRounds map[string]struct{}, indexerSvc indexer.Indexer,
-) ([]types.Transaction, error) {
-	txs := make([]types.Transaction, 0)
-
-	// Receivals
-
-	// All vtxos are receivals unless:
-	// - they resulted from a settlement (either boarding or refresh)
-	// - they are the change of a spend tx
-	vtxosLeftToCheck := append([]types.Vtxo{}, spent...)
-	for _, vtxo := range append(spendable, spent...) {
-		if _, ok := boardingRounds[vtxo.CommitmentTxid]; !vtxo.Preconfirmed && ok {
-			continue
-		}
-		settleVtxos := findVtxosSpentInSettlement(vtxosLeftToCheck, vtxo)
-		settleAmount := reduceVtxosAmount(settleVtxos)
-		if vtxo.Amount <= settleAmount {
-			continue // settlement or change, ignore
-		}
-
-		spentVtxos := findVtxosSpentInPayment(vtxosLeftToCheck, vtxo)
-		spentAmount := reduceVtxosAmount(spentVtxos)
-		if vtxo.Amount <= spentAmount {
-			continue // settlement or change, ignore
-		}
-
-		txKey := types.TransactionKey{
-			CommitmentTxid: vtxo.CommitmentTxid,
-		}
-		settled := !vtxo.Preconfirmed
-		if vtxo.Preconfirmed {
-			txKey = types.TransactionKey{
-				ArkTxid: vtxo.Txid,
-			}
-			settled = vtxo.SpentBy != ""
-		}
-
-		txs = append(txs, types.Transaction{
-			TransactionKey: txKey,
-			Amount:         vtxo.Amount - settleAmount - spentAmount,
-			Type:           types.TxReceived,
-			CreatedAt:      vtxo.CreatedAt,
-			Settled:        settled,
-		})
-	}
-
-	// Sendings
-
-	// All "spentBy" vtxos are payments unless:
-	// - they are settlements
-
-	// aggregate spent by spentId
-	vtxosBySpentBy := make(map[string][]types.Vtxo)
-	for _, v := range spent {
-		if len(v.SpentBy) <= 0 {
-			continue
-		}
-
-		if _, ok := vtxosBySpentBy[v.SpentBy]; !ok {
-			vtxosBySpentBy[v.SpentBy] = make([]types.Vtxo, 0)
-		}
-		vtxosBySpentBy[v.SpentBy] = append(vtxosBySpentBy[v.SpentBy], v)
-	}
-
-	for sb := range vtxosBySpentBy {
-		resultedVtxos := findVtxosResultedFromSpentBy(append(spendable, spent...), sb)
-		resultedAmount := reduceVtxosAmount(resultedVtxos)
-		spentAmount := reduceVtxosAmount(vtxosBySpentBy[sb])
-		if spentAmount <= resultedAmount {
-			continue // settlement, ignore
-		}
-		vtxo := getVtxo(resultedVtxos, vtxosBySpentBy[sb])
-		if resultedAmount == 0 {
-			// send all: fetch the created vtxo (not belong to us) to source
-			// creation and expiration timestamps
-			opts := &indexer.GetVtxosRequestOption{}
-			// nolint:all
-			opts.WithOutpoints([]indexer.Outpoint{{Txid: sb, VOut: 0}})
-			resp, err := indexerSvc.GetVtxos(context.Background(), *opts)
-			if err != nil {
-				return nil, err
-			}
-			vtxo = types.Vtxo{
-				VtxoKey: types.VtxoKey{
-					Txid: sb,
-					VOut: 0,
-				},
-				CommitmentTxid: resp.Vtxos[0].CommitmentTxid,
-				ExpiresAt:      resp.Vtxos[0].ExpiresAt,
-				CreatedAt:      resp.Vtxos[0].CreatedAt,
-				Preconfirmed:   resp.Vtxos[0].Preconfirmed,
-			}
-		}
-
-		txKey := types.TransactionKey{
-			CommitmentTxid: vtxo.CommitmentTxid,
-		}
-		if vtxo.Preconfirmed {
-			txKey = types.TransactionKey{
-				ArkTxid: vtxo.Txid,
-			}
-		}
-
-		txs = append(txs, types.Transaction{
-			TransactionKey: txKey,
-			Amount:         spentAmount - resultedAmount,
-			Type:           types.TxSent,
-			CreatedAt:      vtxo.CreatedAt,
-			Settled:        true,
-		})
-
-	}
-
-	sort.SliceStable(txs, func(i, j int) bool {
-		return txs[i].CreatedAt.After(txs[j].CreatedAt)
-	})
-
-	return txs, nil
-}
 
 type arkTxInput struct {
 	client.TapscriptsVtxo

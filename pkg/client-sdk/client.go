@@ -984,30 +984,7 @@ func (a *covenantlessArkClient) GetTransactionHistory(
 		return history, nil
 	}
 
-	spendableVtxos, spentVtxos, err := a.ListVtxos(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	boardingTxs, commitmentTxsToIgnore, err := a.getBoardingTxs(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	offchainTxs, err := vtxosToTxHistory(
-		spendableVtxos, spentVtxos, commitmentTxsToIgnore, a.indexer,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	history := append(boardingTxs, offchainTxs...)
-	// Sort the slice by age
-	sort.SliceStable(history, func(i, j int) bool {
-		return history[i].CreatedAt.IsZero() || history[i].CreatedAt.After(history[j].CreatedAt)
-	})
-
-	return history, nil
+	return a.fetchTxHistory(ctx)
 }
 
 func (a *covenantlessArkClient) RegisterIntent(
@@ -1122,25 +1099,16 @@ func (a *covenantlessArkClient) listenForArkTxs(ctx context.Context) {
 
 func (a *covenantlessArkClient) refreshDb(ctx context.Context) error {
 	// fetch new data
+	history, err := a.fetchTxHistory(ctx)
+	if err != nil {
+		return err
+	}
 	spendableVtxos, spentVtxos, err := a.ListVtxos(ctx)
 	if err != nil {
 		return err
 	}
 
-	boardingTxs, commitmentTxsToIgnore, err := a.getBoardingTxs(ctx)
-	if err != nil {
-		return err
-	}
-
-	offchainTxs, err := vtxosToTxHistory(
-		spendableVtxos, spentVtxos, commitmentTxsToIgnore, a.indexer,
-	)
-	if err != nil {
-		return err
-	}
-
-	newTxs := append(offchainTxs, boardingTxs...)
-	if err := a.refreshTxDb(newTxs); err != nil {
+	if err := a.refreshTxDb(history); err != nil {
 		return err
 	}
 
@@ -2749,9 +2717,9 @@ func (a *covenantlessArkClient) getRedeemBranches(
 			continue
 		}
 
-		if _, ok := vtxoTrees[vtxo.CommitmentTxid]; !ok {
+		if _, ok := vtxoTrees[vtxo.CommitmentTxids[0]]; !ok {
 			vtxoTree, err := a.indexer.GetFullVtxoTree(
-				ctx, indexer.Outpoint{Txid: vtxo.CommitmentTxid, VOut: 0},
+				ctx, indexer.Outpoint{Txid: vtxo.CommitmentTxids[0], VOut: 0},
 			)
 			if err != nil {
 				return nil, err
@@ -2762,11 +2730,11 @@ func (a *covenantlessArkClient) getRedeemBranches(
 				return nil, err
 			}
 
-			vtxoTrees[vtxo.CommitmentTxid] = graph
+			vtxoTrees[vtxo.CommitmentTxids[0]] = graph
 		}
 
 		redeemBranch, err := redemption.NewRedeemBranch(
-			a.explorer, vtxoTrees[vtxo.CommitmentTxid], vtxo,
+			a.explorer, vtxoTrees[vtxo.CommitmentTxids[0]], vtxo,
 		)
 		if err != nil {
 			return nil, err
@@ -3064,17 +3032,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 
 	for _, vtxo := range commitmentTx.SpendableVtxos {
 		if _, ok := myPubkeys[vtxo.Script]; ok {
-			vtxosToAdd = append(vtxosToAdd, types.Vtxo{
-				VtxoKey: types.VtxoKey{
-					Txid: vtxo.Txid,
-					VOut: vtxo.VOut,
-				},
-				Script:         vtxo.Script,
-				Amount:         vtxo.Amount,
-				CommitmentTxid: vtxo.CommitmentTxid,
-				ExpiresAt:      vtxo.ExpiresAt,
-				CreatedAt:      time.Now(),
-			})
+			vtxosToAdd = append(vtxosToAdd, vtxo)
 		}
 	}
 
@@ -3366,4 +3324,42 @@ func (a *covenantlessArkClient) handleOptions(
 	}
 
 	return sessions, signerPubKeys, nil
+}
+
+func (a *covenantlessArkClient) fetchTxHistory(ctx context.Context) ([]types.Transaction, error) {
+	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	indexedHistory := make(map[string]types.Transaction)
+	for _, addr := range offchainAddrs {
+		resp, err := a.indexer.GetTransactionHistory(ctx, addr.Address)
+		if err != nil {
+			return nil, err
+		}
+		for _, tx := range resp.History {
+			indexedHistory[tx.String()] = tx
+		}
+	}
+
+	boardingTxs, commitmentTxsToIgnore, err := a.getBoardingTxs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for txid := range commitmentTxsToIgnore {
+		delete(indexedHistory, txid)
+	}
+
+	allHistory := append([]types.Transaction{}, boardingTxs...)
+	for _, tx := range indexedHistory {
+		allHistory = append(allHistory, tx)
+	}
+
+	sort.SliceStable(allHistory, func(i, j int) bool {
+		return allHistory[i].CreatedAt.IsZero() || allHistory[i].CreatedAt.After(allHistory[j].CreatedAt)
+	})
+
+	return allHistory, nil
 }

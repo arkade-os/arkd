@@ -375,16 +375,21 @@ func (a *grpcClient) GetTransactionHistory(
 		return nil, err
 	}
 
-	history := make([]indexer.TxHistoryRecord, 0, len(resp.GetHistory()))
+	history := make([]types.Transaction, 0, len(resp.GetHistory()))
 	for _, record := range resp.GetHistory() {
-		history = append(history, indexer.TxHistoryRecord{
-			CommitmentTxid: record.GetCommitmentTxid(),
-			ArkTxid:        record.GetVirtualTxid(),
-			Type:           indexer.TxType(record.GetType()),
-			Amount:         record.GetAmount(),
-			CreatedAt:      record.GetCreatedAt(),
-			IsSettled:      record.GetIsSettled(),
-			SettledBy:      record.GetSettledBy(),
+		txType := types.TxSent
+		if record.GetType() == arkv1.IndexerTxType_INDEXER_TX_TYPE_RECEIVED {
+			txType = types.TxReceived
+		}
+		history = append(history, types.Transaction{
+			TransactionKey: types.TransactionKey{
+				CommitmentTxid: record.GetCommitmentTxid(),
+				ArkTxid:        record.GetVirtualTxid(),
+			},
+			Type:      txType,
+			Amount:    record.GetAmount(),
+			CreatedAt: time.Unix(record.GetCreatedAt(), 0),
+			Settled:   record.GetIsSettled(),
 		})
 	}
 
@@ -596,15 +601,15 @@ func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) types.Vtxo {
 			Txid: vtxo.GetOutpoint().GetTxid(),
 			VOut: vtxo.GetOutpoint().GetVout(),
 		},
-		Script:         vtxo.GetScript(),
-		CommitmentTxid: vtxo.GetCommitmentTxid(),
-		Amount:         vtxo.GetAmount(),
-		CreatedAt:      time.Unix(vtxo.GetCreatedAt(), 0),
-		ExpiresAt:      time.Unix(vtxo.GetExpiresAt(), 0),
-		Preconfirmed:   vtxo.GetIsPreconfirmed(),
-		Swept:          vtxo.GetIsSwept(),
-		Spent:          vtxo.GetIsSpent(),
-		Redeemed:       vtxo.GetIsRedeemed(),
-		SpentBy:        vtxo.GetSpentBy(),
+		Script:          vtxo.GetScript(),
+		CommitmentTxids: vtxo.GetCommitmentTxids(),
+		Amount:          vtxo.GetAmount(),
+		CreatedAt:       time.Unix(vtxo.GetCreatedAt(), 0),
+		ExpiresAt:       time.Unix(vtxo.GetExpiresAt(), 0),
+		Preconfirmed:    vtxo.GetIsPreconfirmed(),
+		Swept:           vtxo.GetIsSwept(),
+		Spent:           vtxo.GetIsSpent(),
+		Redeemed:        vtxo.GetIsRedeemed(),
+		SpentBy:         vtxo.GetSpentBy(),
 	}
 }

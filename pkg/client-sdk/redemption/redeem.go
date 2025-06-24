@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/ark-network/ark/common/tree"
@@ -90,7 +91,15 @@ func (r *CovenantlessRedeemBranch) RedeemPath() ([]string, error) {
 func (r *CovenantlessRedeemBranch) ExpiresAt() (*time.Time, error) {
 	lastKnownBlocktime := int64(0)
 
-	confirmed, blocktime, _ := r.explorer.GetTxBlockTime(r.vtxo.CommitmentTxid)
+	var confirmed bool
+	blocktime := int64(math.MaxInt64)
+	for _, txid := range r.vtxo.CommitmentTxids {
+		rConfirmed, rBlocktime, _ := r.explorer.GetTxBlockTime(txid)
+		if confirmed && rBlocktime < blocktime {
+			blocktime = rBlocktime
+			confirmed = rConfirmed
+		}
+	}
 
 	if confirmed {
 		lastKnownBlocktime = blocktime

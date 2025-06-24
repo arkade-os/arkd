@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS vtxo (
 	vout INTEGER NOT NULL,
 	script TEXT NOT NULL,
 	amount INTEGER NOT NULL,
-	commitment_txid TEXT NOT NULL,
+	commitment_txids TEXT NOT NULL,
 	spent_by TEXT,
 	spent BOOLEAN NOT NULL,
 	expires_at INTEGER NOT NULL,
