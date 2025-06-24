@@ -2165,7 +2165,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 				if len(connectorsGraphChunks) > 0 {
 					connectorsGraph, err = tree.NewTxGraph(connectorsGraphChunks)
 					if err != nil {
-						return "", fmt.Errorf("failed to create connectors graph: %s", err)
+						return "", fmt.Errorf("failed to create branch of connector tree: %s", err)
 					}
 				}
 
