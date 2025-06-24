@@ -2123,7 +2123,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 				}
 				vtxoGraph, err = tree.NewTxGraph(vtxoGraphChunks)
 				if err != nil {
-					return "", fmt.Errorf("failed to create vtxo graph: %s", err)
+					return "", fmt.Errorf("failed to create branch of vtxo tree: %s", err)
 				}
 
 				log.Info("tree signing session started, sending nonces...")
