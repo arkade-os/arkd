@@ -872,8 +872,11 @@
           "type": "string",
           "format": "int64"
         },
-        "commitmentTxid": {
-          "type": "string"
+        "commitmentTxids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         },
         "preconfirmed": {
           "type": "boolean"
