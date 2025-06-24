@@ -18,7 +18,6 @@ import (
 	walletstore "github.com/ark-network/ark/pkg/client-sdk/wallet/singlekey/store"
 	filestore "github.com/ark-network/ark/pkg/client-sdk/wallet/singlekey/store/file"
 	inmemorystore "github.com/ark-network/ark/pkg/client-sdk/wallet/singlekey/store/inmemory"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
@@ -199,14 +198,16 @@ func (a *arkClient) NotifyIncomingFunds(
 		return nil, fmt.Errorf("wallet not initialized")
 	}
 
-	decoded, err := common.DecodeAddress(addr)
+	decoded, err := common.DecodeAddressV0(addr)
+	if err != nil {
+		return nil, err
+	}
+	script, err := common.P2TRScript(decoded.VtxoTapKey)
 	if err != nil {
 		return nil, err
 	}
 
-	scripts := []string{
-		hex.EncodeToString(schnorr.SerializePubKey(decoded.VtxoTapKey)),
-	}
+	scripts := []string{hex.EncodeToString(script)}
 	subId, err := a.indexer.SubscribeForScripts(ctx, "", scripts)
 	if err != nil {
 		return nil, err

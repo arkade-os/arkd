@@ -73,10 +73,11 @@ func (v Vtxo) IsRecoverable() bool {
 }
 
 func (v Vtxo) Address(server *secp256k1.PublicKey, net common.Network) (string, error) {
-	pubkeyBytes, err := hex.DecodeString(v.Script)
+	buf, err := hex.DecodeString(v.Script)
 	if err != nil {
 		return "", err
 	}
+	pubkeyBytes := buf[2:]
 
 	pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
 	if err != nil {
@@ -89,7 +90,7 @@ func (v Vtxo) Address(server *secp256k1.PublicKey, net common.Network) (string, 
 		VtxoTapKey: pubkey,
 	}
 
-	return a.Encode()
+	return a.EncodeV0()
 }
 
 type VtxoEventType int
@@ -198,7 +199,7 @@ func (o Receiver) ToTxOut() (*wire.TxOut, bool, error) {
 	var pkScript []byte
 	isOnchain := false
 
-	arkAddress, err := common.DecodeAddress(o.To)
+	arkAddress, err := common.DecodeAddressV0(o.To)
 	if err != nil {
 		// decode onchain address
 		btcAddress, err := btcutil.DecodeAddress(o.To, nil)
