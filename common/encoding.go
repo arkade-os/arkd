@@ -10,7 +10,7 @@ import (
 
 // Address represents an Ark address with Vvrsion, prefix, server public key, and VTXO taproot key.
 type Address struct {
-	Version    uint32
+	Version    uint8
 	HRP        string
 	Server     *secp256k1.PublicKey
 	VtxoTapKey *secp256k1.PublicKey
@@ -58,7 +58,7 @@ func DecodeAddressV0(addr string) (*Address, error) {
 		return nil, fmt.Errorf("invalid address bytes length, expected 65 got %d", len(grp))
 	}
 
-	version := uint32(grp[0])
+	version := uint8(grp[0])
 	if version != 0 {
 		return nil, fmt.Errorf("invalid address version, expected 0 got %d", version)
 	}
