@@ -25,7 +25,7 @@ message Vtxo {
   string script = 3;
   int64 created_at = 4;
   int64 expires_at = 5;
-  string commitment_txid = 6;
+  repeated string commitment_txids = 6;
   bool preconfirmed = 7;
   bool swept = 8;
   bool redeemed = 9;

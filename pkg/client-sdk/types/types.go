@@ -56,16 +56,16 @@ func (v VtxoKey) String() string {
 
 type Vtxo struct {
 	VtxoKey
-	Script         string
-	Amount         uint64
-	CommitmentTxid string
-	ExpiresAt      time.Time
-	CreatedAt      time.Time
-	Preconfirmed   bool
-	Swept          bool
-	Redeemed       bool
-	Spent          bool
-	SpentBy        string
+	Script          string
+	Amount          uint64
+	CommitmentTxids []string
+	ExpiresAt       time.Time
+	CreatedAt       time.Time
+	Preconfirmed    bool
+	Swept           bool
+	Redeemed        bool
+	Spent           bool
+	SpentBy         string
 }
 
 func (v Vtxo) IsRecoverable() bool {

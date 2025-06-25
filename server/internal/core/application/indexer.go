@@ -317,7 +317,7 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 			// if the vtxo is not preconfirmed, it means it's a leaf of a batch tree
 			// add the branch until the commitment tx
 			vtxoTree, err := i.GetVtxoTree(ctx, Outpoint{
-				Txid: vtxo.CommitmentTxid,
+				Txid: vtxo.RootCommitmentTxid,
 				VOut: 0,
 			}, nil)
 			if err != nil {
@@ -451,7 +451,7 @@ func (i *indexerService) vtxosToTxs(
 			continue // settlement or change, ignore
 		}
 
-		commitmentTxid := vtxo.CommitmentTxid
+		commitmentTxid := vtxo.RootCommitmentTxid
 		virtualTxid := ""
 		settled := !vtxo.IsPreconfirmed()
 		settledBy := ""
@@ -510,7 +510,7 @@ func (i *indexerService) vtxosToTxs(
 			vtxo = vtxos[0]
 		}
 
-		commitmentTxid := vtxo.CommitmentTxid
+		commitmentTxid := vtxo.RootCommitmentTxid
 		virtualTxid := ""
 		if vtxo.IsPreconfirmed() {
 			virtualTxid = vtxo.Txid
@@ -539,7 +539,7 @@ func findVtxosSpentInSettlement(vtxos []domain.Vtxo, vtxo domain.Vtxo) []domain.
 	if vtxo.IsPreconfirmed() {
 		return nil
 	}
-	return findVtxosSpent(vtxos, vtxo.CommitmentTxid)
+	return findVtxosSpent(vtxos, vtxo.RootCommitmentTxid)
 }
 
 func findVtxosSpent(vtxos []domain.Vtxo, id string) []domain.Vtxo {
@@ -572,7 +572,7 @@ func findVtxosSpentInPayment(vtxos []domain.Vtxo, vtxo domain.Vtxo) []domain.Vtx
 func findVtxosResultedFromSpentBy(vtxos []domain.Vtxo, spentByTxid string) []domain.Vtxo {
 	var result []domain.Vtxo
 	for _, v := range vtxos {
-		if !v.IsPreconfirmed() && v.CommitmentTxid == spentByTxid {
+		if !v.IsPreconfirmed() && v.RootCommitmentTxid == spentByTxid {
 			result = append(result, v)
 			break
 		}

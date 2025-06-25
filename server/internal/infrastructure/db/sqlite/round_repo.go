@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
@@ -581,19 +582,24 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 }
 
 func combinedRowToVtxo(row queries.RequestVtxoVw) domain.Vtxo {
+	var commitmentTxids []string
+	if commitments, ok := row.Commitments.(string); ok && commitments != "" {
+		commitmentTxids = strings.Split(commitments, ",")
+	}
 	return domain.Vtxo{
 		VtxoKey: domain.VtxoKey{
 			Txid: row.Txid.String,
 			VOut: uint32(row.Vout.Int64),
 		},
-		Amount:         uint64(row.Amount.Int64),
-		PubKey:         row.Pubkey.String,
-		CommitmentTxid: row.RoundTx.String,
-		SpentBy:        row.SpentBy.String,
-		Spent:          row.Spent.Bool,
-		Redeemed:       row.Redeemed.Bool,
-		Swept:          row.Swept.Bool,
-		ExpireAt:       row.ExpireAt.Int64,
+		Amount:             uint64(row.Amount.Int64),
+		PubKey:             row.Pubkey.String,
+		RootCommitmentTxid: row.RoundTx.String,
+		CommitmentTxids:    commitmentTxids,
+		SpentBy:            row.SpentBy.String,
+		Spent:              row.Spent.Bool,
+		Redeemed:           row.Redeemed.Bool,
+		Swept:              row.Swept.Bool,
+		ExpireAt:           row.ExpireAt.Int64,
 	}
 }
 

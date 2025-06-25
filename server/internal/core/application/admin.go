@@ -219,15 +219,9 @@ func (a *adminService) CreateNotes(ctx context.Context, value uint32, quantity i
 				Txid: bip322Input.OutPoint.Hash.String(),
 				VOut: bip322Input.OutPoint.Index,
 			},
-			Amount:         uint64(note.Value),
-			PubKey:         hex.EncodeToString(bip322Input.WitnessUtxo.PkScript[2:]),
-			CommitmentTxid: "",
-			SpentBy:        "",
-			Spent:          false,
-			Redeemed:       false,
-			Swept:          false,
-			CreatedAt:      now,
-			RedeemTx:       "",
+			Amount:    uint64(note.Value),
+			PubKey:    hex.EncodeToString(bip322Input.WitnessUtxo.PkScript[2:]),
+			CreatedAt: now,
 		}
 
 		notes = append(notes, note.String())

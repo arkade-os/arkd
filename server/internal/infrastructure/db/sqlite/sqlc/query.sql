@@ -131,7 +131,7 @@ SELECT
     ) AS total_output_vtxos,
     (
         SELECT MAX(v.expire_at)
-        FROM vtxo v
+        FROM vtxo_vw v
         WHERE v.round_tx = r.txid
     ) AS expires_at
 FROM round r
@@ -148,8 +148,8 @@ LEFT OUTER JOIN tx ON round.id=tx.round_id
 WHERE round.txid = ? AND tx.type = 'connector';
 
 -- name: GetSpendableVtxosWithPubKey :many
-SELECT vtxo.* FROM vtxo
-WHERE vtxo.pubkey = ? AND vtxo.spent = false AND vtxo.swept = false;
+SELECT vtxo_vw.* FROM vtxo_vw
+WHERE vtxo_vw.pubkey = ? AND vtxo_vw.spent = false AND vtxo_vw.swept = false;
 
 -- name: SelectSweptRoundsConnectorAddress :many
 SELECT round.connector_address FROM round
@@ -175,27 +175,30 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE SE
     created_at = EXCLUDED.created_at,
     redeem_tx = EXCLUDED.redeem_tx;
 
+-- name: InsertVtxoCommitmentTxid :exec
+INSERT INTO vtxo_commitment_txid(vtxo_txid, vtxo_vout, commitment_txid) VALUES (?, ?, ?);
+
 -- name: SelectSweepableVtxos :many
-SELECT sqlc.embed(vtxo) FROM vtxo
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE redeemed = false AND swept = false;
 
 -- name: SelectNotRedeemedVtxos :many
-SELECT sqlc.embed(vtxo) FROM vtxo
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE redeemed = false;
 
 -- name: SelectNotRedeemedVtxosWithPubkey :many
-SELECT sqlc.embed(vtxo) FROM vtxo
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE redeemed = false AND pubkey = ?;
 
 -- name: SelectVtxoByOutpoint :one
-SELECT sqlc.embed(vtxo) FROM vtxo
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE txid = ? AND vout = ?;
 
 -- name: SelectAllVtxos :many
-SELECT sqlc.embed(vtxo) FROM vtxo;
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
 -- name: SelectVtxosByRoundTxid :many
-SELECT sqlc.embed(vtxo) FROM vtxo
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE round_tx = ?;
 
 -- name: MarkVtxoAsRedeemed :exec
@@ -239,13 +242,13 @@ LEFT OUTER JOIN tx ON round.id=tx.round_id
 WHERE round.txid = ? AND tx.type = 'tree';
 
 -- name: SelectVtxosWithPubkey :many
-SELECT sqlc.embed(vtxo) FROM vtxo WHERE pubkey = ?;
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey = ?;
 
 -- name: GetExistingRounds :many
 SELECT txid FROM round WHERE txid IN (sqlc.slice('txids'));
 
 -- name: SelectLeafVtxosByRoundTxid :many
-SELECT sqlc.embed(vtxo) FROM vtxo
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE round_tx = ? AND (redeem_tx IS NULL or redeem_tx = '');
 
 -- name: UpsertVirtualTx :exec

@@ -1078,8 +1078,11 @@
         "spentBy": {
           "type": "string"
         },
-        "commitmentTxid": {
-          "type": "string"
+        "commitmentTxids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

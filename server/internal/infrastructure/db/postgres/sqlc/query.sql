@@ -126,7 +126,7 @@ SELECT
     ) AS total_output_vtxos,
     (
         SELECT MAX(v.expire_at)
-        FROM vtxo v
+        FROM vtxo_vw v
         WHERE v.commitment_txid = r.txid
     ) AS expires_at
 FROM round_commitment_tx_vw r
@@ -174,6 +174,10 @@ VALUES (@txid, @vout, @pubkey, @amount, @commitment_txid, @spent_by, @spent, @re
     swept = EXCLUDED.swept,
     expire_at = EXCLUDED.expire_at,
     created_at = EXCLUDED.created_at;
+
+-- name: InsertVtxoCommitmentTxid :exec
+INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
+VALUES (@vtxo_txid, @vtxo_vout, @commitment_txid);
 
 -- name: SelectSweepableVtxos :many
 SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw

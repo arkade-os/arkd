@@ -60,23 +60,23 @@ func (q *Queries) InsertTx(ctx context.Context, arg InsertTxParams) error {
 
 const insertVtxo = `-- name: InsertVtxo :exec
 INSERT INTO vtxo (
-    txid, vout, script, amount, commitment_txid, spent_by, spent, preconfirmed, expires_at, created_at, swept, redeemed
+    txid, vout, script, amount, commitment_txids, spent_by, spent, preconfirmed, expires_at, created_at, swept, redeemed
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertVtxoParams struct {
-	Txid           string
-	Vout           int64
-	Script         string
-	Amount         int64
-	CommitmentTxid string
-	SpentBy        sql.NullString
-	Spent          bool
-	Preconfirmed   bool
-	ExpiresAt      int64
-	CreatedAt      int64
-	Swept          bool
-	Redeemed       bool
+	Txid            string
+	Vout            int64
+	Script          string
+	Amount          int64
+	CommitmentTxids string
+	SpentBy         sql.NullString
+	Spent           bool
+	Preconfirmed    bool
+	ExpiresAt       int64
+	CreatedAt       int64
+	Swept           bool
+	Redeemed        bool
 }
 
 func (q *Queries) InsertVtxo(ctx context.Context, arg InsertVtxoParams) error {
@@ -85,7 +85,7 @@ func (q *Queries) InsertVtxo(ctx context.Context, arg InsertVtxoParams) error {
 		arg.Vout,
 		arg.Script,
 		arg.Amount,
-		arg.CommitmentTxid,
+		arg.CommitmentTxids,
 		arg.SpentBy,
 		arg.Spent,
 		arg.Preconfirmed,
@@ -170,7 +170,7 @@ func (q *Queries) SelectAllTxs(ctx context.Context) ([]Tx, error) {
 }
 
 const selectAllVtxos = `-- name: SelectAllVtxos :many
-SELECT txid, vout, script, amount, commitment_txid, spent_by, spent, expires_at, created_at, preconfirmed, swept, redeemed from vtxo
+SELECT txid, vout, script, amount, commitment_txids, spent_by, spent, expires_at, created_at, preconfirmed, swept, redeemed from vtxo
 `
 
 func (q *Queries) SelectAllVtxos(ctx context.Context) ([]Vtxo, error) {
@@ -187,7 +187,7 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]Vtxo, error) {
 			&i.Vout,
 			&i.Script,
 			&i.Amount,
-			&i.CommitmentTxid,
+			&i.CommitmentTxids,
 			&i.SpentBy,
 			&i.Spent,
 			&i.ExpiresAt,
@@ -256,7 +256,7 @@ func (q *Queries) SelectTxs(ctx context.Context, txids []string) ([]Tx, error) {
 }
 
 const selectVtxo = `-- name: SelectVtxo :one
-SELECT txid, vout, script, amount, commitment_txid, spent_by, spent, expires_at, created_at, preconfirmed, swept, redeemed
+SELECT txid, vout, script, amount, commitment_txids, spent_by, spent, expires_at, created_at, preconfirmed, swept, redeemed
 FROM vtxo
 WHERE txid = ?1 AND vout = ?2
 `
@@ -274,7 +274,7 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (Vtxo, e
 		&i.Vout,
 		&i.Script,
 		&i.Amount,
-		&i.CommitmentTxid,
+		&i.CommitmentTxids,
 		&i.SpentBy,
 		&i.Spent,
 		&i.ExpiresAt,

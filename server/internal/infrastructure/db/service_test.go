@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"reflect"
 	"sort"
@@ -545,16 +546,20 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 					Txid: randomString(32),
 					VOut: 0,
 				},
-				PubKey: pubkey,
-				Amount: 1000,
+				PubKey:             pubkey,
+				Amount:             1000,
+				RootCommitmentTxid: "root",
+				CommitmentTxids:    []string{"root", "cmt1", "cmt2"},
 			},
 			{
 				VtxoKey: domain.VtxoKey{
 					Txid: randomString(32),
 					VOut: 1,
 				},
-				PubKey: pubkey,
-				Amount: 2000,
+				PubKey:             pubkey,
+				Amount:             2000,
+				RootCommitmentTxid: "root",
+				CommitmentTxids:    []string{"root"},
 			},
 		}
 		newVtxos := append(userVtxos, domain.Vtxo{
@@ -562,8 +567,10 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				Txid: randomString(32),
 				VOut: 1,
 			},
-			PubKey: pubkey2,
-			Amount: 2000,
+			PubKey:             pubkey2,
+			Amount:             2000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
 		})
 
 		vtxoKeys := make([]domain.VtxoKey, 0, len(userVtxos))
@@ -594,7 +601,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		vtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.NoError(t, err)
-		require.Exactly(t, userVtxos, vtxos)
+		checkVtxos(t, userVtxos, vtxos)
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, pubkey)
 		require.NoError(t, err)
@@ -605,7 +612,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		sortedSpendableVtxos := sortVtxos(spendableVtxos)
 		sort.Sort(sortedSpendableVtxos)
 
-		require.Exactly(t, sortedSpendableVtxos, sortedVtxos)
+		checkVtxos(t, sortedSpendableVtxos, sortedVtxos)
 		require.Empty(t, spentVtxos)
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, "")
@@ -624,7 +631,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, pubkey)
 		require.NoError(t, err)
-		require.Exactly(t, vtxos[1:], spendableVtxos)
+		checkVtxos(t, vtxos[1:], spendableVtxos)
 		require.Len(t, spentVtxos, len(vtxoKeys[:1]))
 	})
 }
@@ -903,6 +910,11 @@ func randomTx() string {
 
 type sortVtxos []domain.Vtxo
 
+func (a sortVtxos) String() string {
+	buf, _ := json.Marshal(a)
+	return string(buf)
+}
+
 func (a sortVtxos) Len() int           { return len(a) }
 func (a sortVtxos) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a sortVtxos) Less(i, j int) bool { return a[i].Txid < a[j].Txid }
@@ -912,3 +924,21 @@ type sortReceivers []domain.Receiver
 func (a sortReceivers) Len() int           { return len(a) }
 func (a sortReceivers) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a sortReceivers) Less(i, j int) bool { return a[i].Amount < a[j].Amount }
+
+func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
+	for i, v := range gotVtxos {
+		expected := expectedVtxos[i]
+		require.Exactly(t, expected.VtxoKey, v.VtxoKey)
+		require.Exactly(t, expected.Amount, v.Amount)
+		require.Exactly(t, expected.CreatedAt, v.CreatedAt)
+		require.Exactly(t, expected.ExpireAt, v.ExpireAt)
+		require.Exactly(t, expected.PubKey, v.PubKey)
+		require.Exactly(t, expected.RedeemTx, v.RedeemTx)
+		require.Exactly(t, expected.Redeemed, v.Redeemed)
+		require.Exactly(t, expected.RootCommitmentTxid, v.RootCommitmentTxid)
+		require.Exactly(t, expected.Spent, v.Spent)
+		require.Exactly(t, expected.SpentBy, v.SpentBy)
+		require.Exactly(t, expected.Swept, v.Swept)
+		require.ElementsMatch(t, expected.CommitmentTxids, v.CommitmentTxids)
+	}
+}
