@@ -343,7 +343,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 					}
 
 					if len(connectorTx.UnsignedTx.TxOut) <= int(input.PreviousOutPoint.Index) {
-						continue
+						return nil, fmt.Errorf("connector vout %d out of range [0, %d]", input.PreviousOutPoint.Index), len(connectorTx.UnsignedTx.TxOut) -1)
 					}
 
 					connectorOutput = connectorTx.UnsignedTx.TxOut[input.PreviousOutPoint.Index]
