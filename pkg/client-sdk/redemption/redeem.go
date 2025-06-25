@@ -19,25 +19,11 @@ type CovenantlessRedeemBranch struct {
 	explorer       explorer.Explorer
 }
 
-func NewRedeemBranch(
-	explorer explorer.Explorer,
-	graph *tree.TxGraph, vtxo types.Vtxo,
-) (*CovenantlessRedeemBranch, error) {
-	vtxoTreeExpiry, err := tree.GetVtxoTreeExpiry(graph.Root.Inputs[0])
+func NewRedeemBranch(explorer explorer.Explorer, branch []*psbt.Packet, vtxo types.Vtxo) (*CovenantlessRedeemBranch, error) {
+	vtxoTreeExpiry, err := tree.GetVtxoTreeExpiry(branch[0].Inputs[0])
 	if err != nil {
 		return nil, err
 	}
-
-	subGraph, err := graph.SubGraph([]string{vtxo.Txid})
-	if err != nil {
-		return nil, err
-	}
-
-	branch := make([]*psbt.Packet, 0)
-	_ = subGraph.Apply(func(g *tree.TxGraph) (bool, error) {
-		branch = append(branch, g.Root)
-		return true, nil
-	})
 
 	return &CovenantlessRedeemBranch{
 		vtxo:           vtxo,

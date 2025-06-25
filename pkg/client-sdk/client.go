@@ -2739,36 +2739,36 @@ func (a *covenantlessArkClient) getMatureUtxos(ctx context.Context) ([]types.Utx
 func (a *covenantlessArkClient) getRedeemBranches(
 	ctx context.Context, vtxos []types.Vtxo,
 ) (map[string]*redemption.CovenantlessRedeemBranch, error) {
-	vtxoTrees := make(map[string]*tree.TxGraph, 0)
 	redeemBranches := make(map[string]*redemption.CovenantlessRedeemBranch, 0)
 
-	for i := range vtxos {
-		vtxo := vtxos[i]
-
-		// TODO: handle exit for preconfirmed change vtxos
-		if vtxo.Preconfirmed {
-			continue
-		}
-
-		if _, ok := vtxoTrees[vtxo.CommitmentTxid]; !ok {
-			vtxoTree, err := a.indexer.GetFullVtxoTree(
-				ctx, indexer.Outpoint{Txid: vtxo.CommitmentTxid, VOut: 0},
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			graph, err := tree.NewTxGraph(vtxoTree)
-			if err != nil {
-				return nil, err
-			}
-
-			vtxoTrees[vtxo.CommitmentTxid] = graph
-		}
-
-		redeemBranch, err := redemption.NewRedeemBranch(
-			a.explorer, vtxoTrees[vtxo.CommitmentTxid], vtxo,
+	for _, vtxo := range vtxos {
+		chainResponse, err := a.indexer.GetVtxoChain(
+			ctx, indexer.Outpoint{Txid: vtxo.Txid, VOut: vtxo.VOut},
 		)
+		if err != nil {
+			return nil, err
+		}
+
+		txids := make([]string, 0, len(chainResponse.Chain))
+		for _, node := range chainResponse.Chain {
+			txids = append(txids, node.Txid)
+		}
+
+		txs, err := a.indexer.GetVirtualTxs(ctx, txids)
+		if err != nil {
+			return nil, err
+		}
+
+		branch := make([]*psbt.Packet, 0, len(txs.Txs))
+		for _, tx := range txs.Txs {
+			packet, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+			if err != nil {
+				return nil, err
+			}
+			branch = append(branch, packet)
+		}
+
+		redeemBranch, err := redemption.NewRedeemBranch(a.explorer, branch, vtxo)
 		if err != nil {
 			return nil, err
 		}
