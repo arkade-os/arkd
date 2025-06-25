@@ -2671,8 +2671,7 @@ func batchTreeSignatureEvents(graph *tree.TxGraph, batchIndex int32, roundId str
 	return events
 }
 
-// getVtxoTreeTopic returns the list of topics for vtxo graph
-// it returns the list of cosigner public keys used to compute the musig2 key
+// getVtxoTreeTopic returns the list of topics (cosigner keys) for the given vtxo subtree
 func getVtxoTreeTopic(g *tree.TxGraph) ([]string, error) {
 	cosignerKeys, err := tree.GetCosignerKeys(g.Root.Inputs[0])
 	if err != nil {
