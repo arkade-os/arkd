@@ -335,25 +335,8 @@ func (e *indexerService) GetVtxoChain(ctx context.Context, request *arkv1.GetVtx
 
 	chain := make([]*arkv1.IndexerChain, 0)
 	for _, c := range resp.Chain {
-		spends := make([]*arkv1.IndexerChainedTx, 0, len(c.Txs))
-		for _, tx := range c.Txs {
-			var txType arkv1.IndexerChainedTxType
-			switch strings.ToLower(tx.Type) {
-			case "commitment":
-				txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_COMMITMENT
-			case "virtual":
-				txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_VIRTUAL
-			default:
-				txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_UNSPECIFIED
-			}
-			spends = append(spends, &arkv1.IndexerChainedTx{
-				Txid: tx.Txid,
-				Type: txType,
-			})
-		}
 		chain = append(chain, &arkv1.IndexerChain{
 			Txid:      c.Txid,
-			Spends:    spends,
 			ExpiresAt: c.ExpiresAt,
 		})
 	}
@@ -571,7 +554,7 @@ func parseOutpoints(outpoints []string) ([]application.Outpoint, error) {
 		}
 		outs = append(outs, application.Outpoint{
 			Txid: txid,
-			Vout: uint32(vout),
+			VOut: uint32(vout),
 		})
 	}
 	return outs, nil
@@ -587,7 +570,7 @@ func parseOutpoint(outpoint *arkv1.IndexerOutpoint) (*application.Outpoint, erro
 	}
 	return &application.Outpoint{
 		Txid: txid,
-		Vout: outpoint.GetVout(),
+		VOut: outpoint.GetVout(),
 	}, nil
 }
 

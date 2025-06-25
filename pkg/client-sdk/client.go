@@ -20,7 +20,6 @@ import (
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/pkg/client-sdk/client"
 	"github.com/ark-network/ark/pkg/client-sdk/explorer"
-	"github.com/ark-network/ark/pkg/client-sdk/indexer"
 	"github.com/ark-network/ark/pkg/client-sdk/internal/utils"
 	"github.com/ark-network/ark/pkg/client-sdk/redemption"
 	"github.com/ark-network/ark/pkg/client-sdk/types"
@@ -691,7 +690,7 @@ func (a *covenantlessArkClient) StartUnilateralExit(ctx context.Context) error {
 	isWaitingForConfirmation := false
 
 	for _, branch := range redeemBranches {
-		branchTxs, err := branch.RedeemPath()
+		nextTx, err := branch.NextRedeemTx()
 		if err != nil {
 			if err, ok := err.(redemption.ErrPendingConfirmation); ok {
 				// the branch tx is in the mempool, we must wait for confirmation
@@ -705,17 +704,9 @@ func (a *covenantlessArkClient) StartUnilateralExit(ctx context.Context) error {
 			return err
 		}
 
-		if len(branchTxs) <= 0 {
-			continue
-		}
-
-		// due to current P2A relay policy, we can't broadcast the branch tx until its parent tx is
-		// confirmed so we'll broadcast only the first tx of every branch
-		firstTx := branchTxs[0]
-
-		if _, ok := transactionsMap[firstTx]; !ok {
-			transactions = append(transactions, firstTx)
-			transactionsMap[firstTx] = struct{}{}
+		if _, ok := transactionsMap[nextTx]; !ok {
+			transactions = append(transactions, nextTx)
+			transactionsMap[nextTx] = struct{}{}
 		}
 	}
 
@@ -1533,7 +1524,7 @@ func (a *covenantlessArkClient) completeUnilateralExit(
 		return "", err
 	}
 
-	feeAmount := uint64(math.Ceil(float64(vbytes)*feeRate) + 50)
+	feeAmount := uint64(math.Ceil(float64(vbytes)*feeRate) + 100)
 
 	if targetAmount-feeAmount <= a.Dust {
 		return "", fmt.Errorf("not enough funds to cover network fees")
@@ -2742,33 +2733,7 @@ func (a *covenantlessArkClient) getRedeemBranches(
 	redeemBranches := make(map[string]*redemption.CovenantlessRedeemBranch, 0)
 
 	for _, vtxo := range vtxos {
-		chainResponse, err := a.indexer.GetVtxoChain(
-			ctx, indexer.Outpoint{Txid: vtxo.Txid, VOut: vtxo.VOut},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		txids := make([]string, 0, len(chainResponse.Chain))
-		for _, node := range chainResponse.Chain {
-			txids = append(txids, node.Txid)
-		}
-
-		txs, err := a.indexer.GetVirtualTxs(ctx, txids)
-		if err != nil {
-			return nil, err
-		}
-
-		branch := make([]*psbt.Packet, 0, len(txs.Txs))
-		for _, tx := range txs.Txs {
-			packet, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-			if err != nil {
-				return nil, err
-			}
-			branch = append(branch, packet)
-		}
-
-		redeemBranch, err := redemption.NewRedeemBranch(a.explorer, branch, vtxo)
+		redeemBranch, err := redemption.NewRedeemBranch(ctx, a.explorer, a.indexer, vtxo)
 		if err != nil {
 			return nil, err
 		}

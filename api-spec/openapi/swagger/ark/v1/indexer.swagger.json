@@ -929,38 +929,11 @@
         "txid": {
           "type": "string"
         },
-        "spends": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/v1IndexerChainedTx"
-          }
-        },
         "expiresAt": {
           "type": "string",
           "format": "int64"
         }
       }
-    },
-    "v1IndexerChainedTx": {
-      "type": "object",
-      "properties": {
-        "txid": {
-          "type": "string"
-        },
-        "type": {
-          "$ref": "#/definitions/v1IndexerChainedTxType"
-        }
-      }
-    },
-    "v1IndexerChainedTxType": {
-      "type": "string",
-      "enum": [
-        "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED",
-        "INDEXER_CHAINED_TX_TYPE_VIRTUAL",
-        "INDEXER_CHAINED_TX_TYPE_COMMITMENT"
-      ],
-      "default": "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED"
     },
     "v1IndexerNode": {
       "type": "object",

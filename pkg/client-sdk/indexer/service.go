@@ -163,11 +163,5 @@ type TxHistoryRecord struct {
 
 type ChainWithExpiry struct {
 	Txid      string
-	Spends    []ChainTx
 	ExpiresAt int64
-}
-
-type ChainTx struct {
-	Txid string
-	Type string
 }

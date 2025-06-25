@@ -14,7 +14,7 @@ type VtxoKey struct {
 	Txid string
 	VOut uint32
 }
-type Outpoint VtxoKey
+type Outpoint = VtxoKey
 
 func (k VtxoKey) String() string {
 	return fmt.Sprintf("%s:%d", k.Txid, k.VOut)
@@ -49,7 +49,7 @@ type Vtxo struct {
 	CreatedAt      int64
 }
 
-func (v Vtxo) IsPending() bool {
+func (v Vtxo) IsPreconfirmed() bool {
 	return len(v.RedeemTx) > 0
 }
 

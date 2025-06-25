@@ -423,7 +423,6 @@ func (a *grpcClient) GetVtxoChain(
 	for _, c := range resp.GetChain() {
 		chain = append(chain, indexer.ChainWithExpiry{
 			Txid:      c.Txid,
-			Spends:    txChain{c.GetSpends()}.parse(),
 			ExpiresAt: c.GetExpiresAt(),
 		})
 	}
@@ -565,21 +564,6 @@ func parsePage(page *arkv1.IndexerPageResponse) *indexer.PageResponse {
 		Next:    page.GetNext(),
 		Total:   page.GetTotal(),
 	}
-}
-
-type txChain struct {
-	chain []*arkv1.IndexerChainedTx
-}
-
-func (c txChain) parse() []indexer.ChainTx {
-	txs := make([]indexer.ChainTx, 0, len(c.chain))
-	for _, tx := range c.chain {
-		txs = append(txs, indexer.ChainTx{
-			Txid: tx.GetTxid(),
-			Type: tx.GetType().String(),
-		})
-	}
-	return txs
 }
 
 func newIndexerVtxos(vtxos []*arkv1.IndexerVtxo) []types.Vtxo {

@@ -7,9 +7,7 @@ package models
 
 import (
 	"context"
-	"strconv"
 
-	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
 )
@@ -22,89 +20,17 @@ type V1IndexerChain struct {
 	// expires at
 	ExpiresAt string `json:"expiresAt,omitempty"`
 
-	// spends
-	Spends []*V1IndexerChainedTx `json:"spends"`
-
 	// txid
 	Txid string `json:"txid,omitempty"`
 }
 
 // Validate validates this v1 indexer chain
 func (m *V1IndexerChain) Validate(formats strfmt.Registry) error {
-	var res []error
-
-	if err := m.validateSpends(formats); err != nil {
-		res = append(res, err)
-	}
-
-	if len(res) > 0 {
-		return errors.CompositeValidationError(res...)
-	}
 	return nil
 }
 
-func (m *V1IndexerChain) validateSpends(formats strfmt.Registry) error {
-	if swag.IsZero(m.Spends) { // not required
-		return nil
-	}
-
-	for i := 0; i < len(m.Spends); i++ {
-		if swag.IsZero(m.Spends[i]) { // not required
-			continue
-		}
-
-		if m.Spends[i] != nil {
-			if err := m.Spends[i].Validate(formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
-					return ve.ValidateName("spends" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
-					return ce.ValidateName("spends" + "." + strconv.Itoa(i))
-				}
-				return err
-			}
-		}
-
-	}
-
-	return nil
-}
-
-// ContextValidate validate this v1 indexer chain based on the context it is used
+// ContextValidate validates this v1 indexer chain based on context it is used
 func (m *V1IndexerChain) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
-	var res []error
-
-	if err := m.contextValidateSpends(ctx, formats); err != nil {
-		res = append(res, err)
-	}
-
-	if len(res) > 0 {
-		return errors.CompositeValidationError(res...)
-	}
-	return nil
-}
-
-func (m *V1IndexerChain) contextValidateSpends(ctx context.Context, formats strfmt.Registry) error {
-
-	for i := 0; i < len(m.Spends); i++ {
-
-		if m.Spends[i] != nil {
-
-			if swag.IsZero(m.Spends[i]) { // not required
-				return nil
-			}
-
-			if err := m.Spends[i].ContextValidate(ctx, formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
-					return ve.ValidateName("spends" + "." + strconv.Itoa(i))
-				} else if ce, ok := err.(*errors.CompositeError); ok {
-					return ce.ValidateName("spends" + "." + strconv.Itoa(i))
-				}
-				return err
-			}
-		}
-
-	}
-
 	return nil
 }
 

@@ -243,50 +243,109 @@ func TestSettleInSameRound(t *testing.T) {
 }
 
 func TestUnilateralExit(t *testing.T) {
-	var receive utils.ArkReceive
-	receiveStr, err := runArkCommand("receive")
-	require.NoError(t, err)
+	t.Run("leaf vtxo", func(t *testing.T) {
+		var receive utils.ArkReceive
+		receiveStr, err := runArkCommand("receive")
+		require.NoError(t, err)
 
-	err = json.Unmarshal([]byte(receiveStr), &receive)
-	require.NoError(t, err)
+		err = json.Unmarshal([]byte(receiveStr), &receive)
+		require.NoError(t, err)
 
-	_, err = utils.RunCommand("nigiri", "faucet", receive.Boarding)
-	require.NoError(t, err)
+		_, err = utils.RunCommand("nigiri", "faucet", receive.Boarding)
+		require.NoError(t, err)
 
-	time.Sleep(5 * time.Second)
+		time.Sleep(5 * time.Second)
 
-	_, err = runArkCommand("settle", "--password", utils.Password)
-	require.NoError(t, err)
+		_, err = runArkCommand("settle", "--password", utils.Password)
+		require.NoError(t, err)
 
-	time.Sleep(3 * time.Second)
+		time.Sleep(3 * time.Second)
 
-	var balance utils.ArkBalance
-	balanceStr, err := runArkCommand("balance")
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
-	require.NotZero(t, balance.Offchain.Total)
+		var balance utils.ArkBalance
+		balanceStr, err := runArkCommand("balance")
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
+		require.NotZero(t, balance.Offchain.Total)
 
-	_, err = utils.RunCommand("nigiri", "faucet", receive.Onchain)
-	require.NoError(t, err)
+		_, err = utils.RunCommand("nigiri", "faucet", receive.Onchain)
+		require.NoError(t, err)
 
-	time.Sleep(5 * time.Second)
+		time.Sleep(5 * time.Second)
 
-	_, err = runArkCommand("redeem", "--force", "--password", utils.Password)
-	require.NoError(t, err)
+		_, err = runArkCommand("redeem", "--force", "--password", utils.Password)
+		require.NoError(t, err)
 
-	err = utils.GenerateBlock()
-	require.NoError(t, err)
+		err = utils.GenerateBlock()
+		require.NoError(t, err)
 
-	time.Sleep(5 * time.Second)
+		time.Sleep(5 * time.Second)
 
-	balanceStr, err = runArkCommand("balance")
-	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
-	require.Zero(t, balance.Offchain.Total)
-	require.Greater(t, len(balance.Onchain.Locked), 0)
+		balanceStr, err = runArkCommand("balance")
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
+		require.Zero(t, balance.Offchain.Total)
+		require.Greater(t, len(balance.Onchain.Locked), 0)
 
-	lockedBalance := balance.Onchain.Locked[0].Amount
-	require.NotZero(t, lockedBalance)
+		lockedBalance := balance.Onchain.Locked[0].Amount
+		require.NotZero(t, lockedBalance)
+	})
+
+	t.Run("preconfirmed vtxo", func(t *testing.T) {
+		var receive utils.ArkReceive
+		receiveStr, err := runArkCommand("receive")
+		require.NoError(t, err)
+
+		err = json.Unmarshal([]byte(receiveStr), &receive)
+		require.NoError(t, err)
+
+		_, err = utils.RunCommand("nigiri", "faucet", receive.Boarding, "0.00001")
+		require.NoError(t, err)
+
+		time.Sleep(5 * time.Second)
+
+		_, err = runArkCommand("settle", "--password", utils.Password)
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		_, err = runArkCommand("send", "--to", receive.Offchain, "--amount", "1000", "--password", utils.Password)
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Second)
+
+		var balance utils.ArkBalance
+		balanceStr, err := runArkCommand("balance")
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
+		require.NotZero(t, balance.Offchain.Total)
+
+		_, err = utils.RunCommand("nigiri", "faucet", receive.Onchain)
+		require.NoError(t, err)
+
+		time.Sleep(5 * time.Second)
+
+		_, err = runArkCommand("redeem", "--force", "--password", utils.Password)
+		require.NoError(t, err)
+
+		// generate bunch of blocks to make sure also the checkpoints are confirmed
+		err = utils.GenerateBlocks(5)
+		require.NoError(t, err)
+
+		_, err = runArkCommand("redeem", "--force", "--password", utils.Password)
+		require.NoError(t, err)
+
+		err = utils.GenerateBlocks(1)
+		require.NoError(t, err)
+
+		balanceStr, err = runArkCommand("balance")
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
+		require.Zero(t, balance.Offchain.Total)
+		require.Greater(t, len(balance.Onchain.Locked), 0)
+
+		lockedBalance := balance.Onchain.Locked[0].Amount
+		require.NotZero(t, lockedBalance)
+	})
 }
 
 func TestCollaborativeExit(t *testing.T) {
@@ -389,36 +448,13 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 		}
 	}
 
-	vtxoTree, err := indexerSvc.GetFullVtxoTree(ctx, indexer.Outpoint{
-		Txid: vtxo.CommitmentTxid,
-		VOut: 0,
-	})
-	require.NoError(t, err)
-
 	expl := explorer.NewExplorer("http://localhost:3000", common.BitcoinRegTest)
 
-	graph, err := tree.NewTxGraph(vtxoTree)
+	branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
 	require.NoError(t, err)
 
-	branch, err := redemption.NewRedeemBranch(expl, graph, vtxo)
-	require.NoError(t, err)
-
-	txs, err := branch.RedeemPath()
-	require.NoError(t, err)
-
-	for _, tx := range txs {
-		var transaction wire.MsgTx
-		err := transaction.Deserialize(hex.NewDecoder(strings.NewReader(tx)))
-		require.NoError(t, err)
-
-		childTx := utils.BumpAnchorTx(t, &transaction, expl)
-
-		_, err = expl.Broadcast(tx, childTx)
-		require.NoError(t, err)
-
-		time.Sleep(1 * time.Second)
-		err = utils.GenerateBlock()
-		require.NoError(t, err)
+	for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
+		utils.BumpAndBroadcast(t, parentTx, expl)
 	}
 
 	// give time for the server to detect and process the fraud
@@ -502,25 +538,13 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		}
 		require.NotEmpty(t, vtxo)
 
-		vtxoTree, err := indexerSvc.GetFullVtxoTree(ctx, indexer.Outpoint{
-			Txid: vtxo.CommitmentTxid,
-			VOut: 0,
-		})
-		require.NoError(t, err)
-
 		expl := explorer.NewExplorer("http://localhost:3000", common.BitcoinRegTest)
 
-		graph, err := tree.NewTxGraph(vtxoTree)
+		branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
 		require.NoError(t, err)
 
-		branch, err := redemption.NewRedeemBranch(expl, graph, vtxo)
-		require.NoError(t, err)
-
-		txs, err := branch.RedeemPath()
-		require.NoError(t, err)
-
-		for _, tx := range txs {
-			utils.BumpAndBroadcast(t, tx, expl)
+		for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
+			utils.BumpAndBroadcast(t, parentTx, expl)
 		}
 
 		// give time for the server to detect and process the fraud
@@ -803,23 +827,11 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		}
 		require.True(t, found)
 
-		vtxoTree, err := indexerSvc.GetFullVtxoTree(ctx, indexer.Outpoint{
-			Txid: initialTreeVtxo.CommitmentTxid,
-			VOut: 0,
-		})
+		branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerSvc, initialTreeVtxo)
 		require.NoError(t, err)
 
-		graph, err := tree.NewTxGraph(vtxoTree)
-		require.NoError(t, err)
-
-		branch, err := redemption.NewRedeemBranch(explorer, graph, initialTreeVtxo)
-		require.NoError(t, err)
-
-		txs, err := branch.RedeemPath()
-		require.NoError(t, err)
-
-		for _, tx := range txs {
-			utils.BumpAndBroadcast(t, tx, explorer)
+		for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
+			utils.BumpAndBroadcast(t, parentTx, explorer)
 		}
 
 		// give time for the server to detect and process the fraud

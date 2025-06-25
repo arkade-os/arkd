@@ -431,24 +431,12 @@ func (a *restClient) GetVtxoChain(
 
 	chain := make([]indexer.ChainWithExpiry, 0, len(resp.Payload.Chain))
 	for _, v := range resp.Payload.Chain {
-		spends := make([]indexer.ChainTx, 0, len(v.Spends))
-		for _, tx := range v.Spends {
-			txType := "virtual"
-			if *tx.Type == models.V1IndexerChainedTxTypeINDEXERCHAINEDTXTYPECOMMITMENT {
-				txType = "commitment"
-			}
-			spends = append(spends, indexer.ChainTx{
-				Txid: tx.Txid,
-				Type: txType,
-			})
-		}
 		expiresAt, err := strconv.ParseInt(v.ExpiresAt, 10, 64)
 		if err != nil {
 			return nil, err
 		}
 		chain = append(chain, indexer.ChainWithExpiry{
 			Txid:      v.Txid,
-			Spends:    spends,
 			ExpiresAt: expiresAt,
 		})
 	}

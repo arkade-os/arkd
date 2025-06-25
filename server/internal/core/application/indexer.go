@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -185,14 +186,7 @@ func (i *indexerService) GetVtxos(
 func (i *indexerService) GetVtxosByOutpoint(
 	ctx context.Context, outpoints []Outpoint, page *Page,
 ) (*GetVtxosResp, error) {
-	keys := make([]domain.VtxoKey, 0, len(outpoints))
-	for _, outpoint := range outpoints {
-		keys = append(keys, domain.VtxoKey{
-			Txid: outpoint.Txid,
-			VOut: outpoint.Vout,
-		})
-	}
-	vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, keys)
+	vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, outpoints)
 	if err != nil {
 		return nil, err
 	}
@@ -265,119 +259,109 @@ func filterByDate(txs []TxHistoryRecord, start, end int64) []TxHistoryRecord {
 }
 
 func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error) {
-	chainMap := make(map[vtxoKeyWithCreatedAt]ChainWithExpiry)
+	chain := make([]ChainWithExpiry, 0)
+	nextVtxos := []domain.VtxoKey{vtxoKey}
 
-	outpoint := domain.VtxoKey{
-		Txid: vtxoKey.Txid,
-		VOut: vtxoKey.Vout,
-	}
-	vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{outpoint})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(vtxos) == 0 {
-		return nil, fmt.Errorf("vtxo not found for outpoint: %v", outpoint)
-	}
-	vtxo := vtxos[0]
-
-	if err := i.buildChain(ctx, vtxo, chainMap); err != nil {
-		return nil, err
-	}
-
-	chainSlice := make([]vtxoKeyWithCreatedAt, 0, len(chainMap))
-	for vtxo := range chainMap {
-		chainSlice = append(chainSlice, vtxo)
-	}
-
-	sort.Slice(chainSlice, func(i, j int) bool {
-		return chainSlice[i].CreatedAt > chainSlice[j].CreatedAt
-	})
-
-	pagedChainSlice, pageResp := paginate(chainSlice, page, maxPageSizeVtxoChain)
-
-	chain := make([]ChainWithExpiry, 0, len(pagedChainSlice))
-	for _, vtxo := range pagedChainSlice {
-		chain = append(chain, chainMap[vtxo])
-	}
-
-	return &VtxoChainResp{
-		Chain:              chain,
-		Page:               pageResp,
-		RootCommitmentTxid: vtxo.CommitmentTxid,
-		Depth:              getMaxDepth(chainMap),
-	}, nil
-}
-
-func (i *indexerService) buildChain(
-	ctx context.Context,
-	vtxo domain.Vtxo,
-	chain map[vtxoKeyWithCreatedAt]ChainWithExpiry,
-) error {
-	key := vtxoKeyWithCreatedAt{
-		VtxoKey:   vtxo.VtxoKey,
-		CreatedAt: vtxo.CreatedAt,
-	}
-	if _, ok := chain[key]; !ok {
-		chain[key] = ChainWithExpiry{
-			Txid:      vtxo.Txid,
-			Txs:       make([]ChainTx, 0),
-			ExpiresAt: vtxo.ExpireAt,
-		}
-	} else {
-		return nil
-	}
-
-	//finish chain if this is the leaf Vtxo
-	if !vtxo.IsPending() {
-		txs := chain[key].Txs
-		txs = append(txs, ChainTx{
-			Txid: vtxo.CommitmentTxid,
-			Type: "commitment",
-		})
-		chain[key] = ChainWithExpiry{
-			Txid:      vtxo.Txid,
-			Txs:       txs,
-			ExpiresAt: chain[key].ExpiresAt,
-		}
-		return nil
-	}
-
-	redeemPsbt, err := psbt.NewFromRawBytes(strings.NewReader(vtxo.RedeemTx), true)
-	if err != nil {
-		return err
-	}
-
-	for _, in := range redeemPsbt.UnsignedTx.TxIn {
-		txs := chain[key].Txs
-		txs = append(txs, ChainTx{
-			Txid: in.PreviousOutPoint.Hash.String(),
-			Type: "virtual",
-		})
-		chain[key] = ChainWithExpiry{
-			Txid:      chain[key].Txid,
-			Txs:       txs,
-			ExpiresAt: chain[key].ExpiresAt,
-		}
-		parentOutpoint := domain.VtxoKey{
-			Txid: in.PreviousOutPoint.Hash.String(),
-			VOut: in.PreviousOutPoint.Index,
-		}
-		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{parentOutpoint})
+	for len(nextVtxos) > 0 {
+		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if len(vtxos) == 0 {
-			return fmt.Errorf("vtxo not found for outpoint: %v", parentOutpoint)
+			return nil, fmt.Errorf("vtxo not found for outpoint: %s", nextVtxos)
 		}
 
-		if err := i.buildChain(ctx, vtxos[0], chain); err != nil {
-			return err
+		newNextVtxos := make([]domain.VtxoKey, 0)
+
+		for _, vtxo := range vtxos {
+			// if the vtxo is preconfirmed, it means it has been created by an offchain tx
+			// we need to add the virtual tx + the associated checkpoints txs
+			// also, we have to populate the newNextVtxos with the checkpoints inputs
+			// in order to continue the chain in the next iteration
+			if vtxo.IsPreconfirmed() {
+				offchainTx, err := i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
+				if err != nil {
+					return nil, fmt.Errorf("failed to retrieve offchain tx: %s", err)
+				}
+
+				// add the virtual tx
+				chain = append(chain, ChainWithExpiry{
+					Txid:      vtxo.Txid,
+					ExpiresAt: vtxo.ExpireAt,
+				})
+
+				// add the checkpoints txs
+				for _, b64 := range offchainTx.CheckpointTxs {
+					ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
+					if err != nil {
+						return nil, fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
+					}
+
+					chain = append(chain, ChainWithExpiry{
+						Txid:      ptx.UnsignedTx.TxID(),
+						ExpiresAt: vtxo.ExpireAt,
+					})
+
+					// populate newNextVtxos with checkpoints inputs
+					for _, in := range ptx.UnsignedTx.TxIn {
+						newNextVtxos = append(newNextVtxos, domain.VtxoKey{Txid: in.PreviousOutPoint.Hash.String(), VOut: in.PreviousOutPoint.Index})
+					}
+				}
+
+				continue
+			}
+
+			// if the vtxo is not preconfirmed, it means it's a leaf of a batch tree
+			// add the branch until the commitment tx
+			vtxoTree, err := i.GetVtxoTree(ctx, Outpoint{
+				Txid: vtxo.CommitmentTxid,
+				VOut: 0,
+			}, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			graph, err := tree.NewTxGraph(vtxoTree.Nodes)
+			if err != nil {
+				return nil, err
+			}
+			branch, err := graph.SubGraph([]string{vtxo.Txid})
+			if err != nil {
+				return nil, err
+			}
+
+			fromRootToVtxo := make([]string, 0)
+			if err := branch.Apply(func(tx *tree.TxGraph) (bool, error) {
+				fromRootToVtxo = append(fromRootToVtxo, tx.Root.UnsignedTx.TxID())
+				return true, nil
+			}); err != nil {
+				return nil, err
+			}
+
+			// reverse fromRootToVtxo
+			fromVtxoToRoot := make([]ChainWithExpiry, 0, len(fromRootToVtxo))
+			for i := len(fromRootToVtxo) - 1; i >= 0; i-- {
+				fromVtxoToRoot = append(fromVtxoToRoot, ChainWithExpiry{
+					Txid:      fromRootToVtxo[i],
+					ExpiresAt: vtxo.ExpireAt,
+				})
+			}
+
+			chain = append(chain, fromVtxoToRoot...)
 		}
+
+		nextVtxos = newNextVtxos
 	}
 
-	return nil
+	pagedChainSlice, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
+
+	return &VtxoChainResp{
+		Chain:              pagedChainSlice,
+		Page:               pageResp,
+		RootCommitmentTxid: chain[len(chain)-1].Txid,
+		Depth:              int32(len(chain)),
+	}, nil
 }
 
 func (i *indexerService) GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error) {
@@ -466,9 +450,9 @@ func (i *indexerService) vtxosToTxs(
 
 		commitmentTxid := vtxo.CommitmentTxid
 		virtualTxid := ""
-		settled := !vtxo.IsPending()
+		settled := !vtxo.IsPreconfirmed()
 		settledBy := ""
-		if vtxo.IsPending() {
+		if vtxo.IsPreconfirmed() {
 			virtualTxid = vtxo.Txid
 			commitmentTxid = ""
 			settled = vtxo.SpentBy != ""
@@ -525,7 +509,7 @@ func (i *indexerService) vtxosToTxs(
 
 		commitmentTxid := vtxo.CommitmentTxid
 		virtualTxid := ""
-		if vtxo.IsPending() {
+		if vtxo.IsPreconfirmed() {
 			virtualTxid = vtxo.Txid
 			commitmentTxid = ""
 		}
@@ -549,7 +533,7 @@ func (i *indexerService) vtxosToTxs(
 }
 
 func findVtxosSpentInSettlement(vtxos []domain.Vtxo, vtxo domain.Vtxo) []domain.Vtxo {
-	if vtxo.IsPending() {
+	if vtxo.IsPreconfirmed() {
 		return nil
 	}
 	return findVtxosSpent(vtxos, vtxo.CommitmentTxid)
@@ -585,7 +569,7 @@ func findVtxosSpentInPayment(vtxos []domain.Vtxo, vtxo domain.Vtxo) []domain.Vtx
 func findVtxosResultedFromSpentBy(vtxos []domain.Vtxo, spentByTxid string) []domain.Vtxo {
 	var result []domain.Vtxo
 	for _, v := range vtxos {
-		if !v.IsPending() && v.CommitmentTxid == spentByTxid {
+		if !v.IsPreconfirmed() && v.CommitmentTxid == spentByTxid {
 			result = append(result, v)
 			break
 		}
@@ -603,50 +587,4 @@ func getVtxo(usedVtxos []domain.Vtxo, spentByVtxos []domain.Vtxo) domain.Vtxo {
 		return spentByVtxos[0]
 	}
 	return domain.Vtxo{}
-}
-
-type vtxoKeyWithCreatedAt struct {
-	domain.VtxoKey
-	CreatedAt int64
-}
-
-func getMaxDepth(chainMap map[vtxoKeyWithCreatedAt]ChainWithExpiry) int32 {
-	memo := make(map[string]int32)
-
-	// Create a lookup from txid to ChainWithExpiry
-	txidToChain := make(map[string]ChainWithExpiry)
-	for _, chain := range chainMap {
-		txidToChain[chain.Txid] = chain
-	}
-
-	// DFS function to get depth from a given txid
-	var dfs func(string) int32
-	dfs = func(txid string) int32 {
-		if val, ok := memo[txid]; ok {
-			return val
-		}
-		chain := txidToChain[txid]
-		if len(chain.Txs) == 1 && chain.Txs[0].Type == "commitment" {
-			memo[txid] = 1
-			return 1
-		}
-		maxDepth := int32(0)
-		for _, child := range chain.Txs {
-			depth := dfs(child.Txid)
-			maxDepth = max(depth, maxDepth)
-		}
-		memo[txid] = maxDepth + 1
-		return memo[txid]
-	}
-
-	// Compute max depth starting from all root txids in the map
-	max := int32(0)
-	for _, chain := range chainMap {
-		depth := dfs(chain.Txid)
-		if depth > max {
-			max = depth
-		}
-	}
-
-	return max
 }

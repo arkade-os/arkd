@@ -285,13 +285,7 @@ message IndexerVtxo {
 
 message IndexerChain {
   string txid = 1;
-  repeated IndexerChainedTx spends = 2;
-  int64 expires_at = 3;
-}
-
-message IndexerChainedTx {
-  string txid = 1;
-  IndexerChainedTxType type = 2;
+  int64 expires_at = 2;
 }
 
 message IndexerTxHistoryRecord {
@@ -310,12 +304,6 @@ enum IndexerTxType {
   INDEXER_TX_TYPE_UNSPECIFIED = 0;
   INDEXER_TX_TYPE_RECEIVED = 1;
   INDEXER_TX_TYPE_SENT = 2;
-}
-
-enum IndexerChainedTxType {
-  INDEXER_CHAINED_TX_TYPE_UNSPECIFIED = 0;
-  INDEXER_CHAINED_TX_TYPE_VIRTUAL = 1;
-  INDEXER_CHAINED_TX_TYPE_COMMITMENT = 2;
 }
 
 message IndexerPageRequest {

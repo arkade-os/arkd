@@ -189,10 +189,7 @@ type SweptCommitmentTxResp struct {
 	SweptBy []string
 }
 
-type Outpoint struct {
-	Txid string
-	Vout uint32
-}
+type Outpoint = domain.Outpoint
 
 type TxType int
 
@@ -228,13 +225,7 @@ type PageResp struct {
 	Total   int32
 }
 
-type ChainTx struct {
-	Txid string
-	Type string
-}
-
 type ChainWithExpiry struct {
 	Txid      string
-	Txs       []ChainTx
 	ExpiresAt int64
 }

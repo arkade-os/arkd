@@ -38,7 +38,7 @@ type OffchainTx struct {
 	EndingTimestamp    int64
 	VirtualTxid        string
 	VirtualTx          string
-	CheckpointTxs      map[string]string //tx/hex
+	CheckpointTxs      map[string]string //tx/psbt
 	CommitmentTxids    map[string]string //checkpointTxId/CommitmentTxId
 	RootCommitmentTxId string
 	ExpiryTimestamp    int64
