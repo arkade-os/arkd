@@ -193,8 +193,12 @@ func (s *OffchainTx) IsFailed() bool {
 }
 
 func (s *OffchainTx) CommitmentTxidsList() []string {
-	list := make([]string, 0, len(s.CommitmentTxids))
+	indexedList := make(map[string]struct{})
 	for _, txid := range s.CommitmentTxids {
+		indexedList[txid] = struct{}{}
+	}
+	list := make([]string, 0, len(indexedList))
+	for txid := range indexedList {
 		list = append(list, txid)
 	}
 	return list
