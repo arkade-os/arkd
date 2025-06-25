@@ -7,37 +7,26 @@ import (
 )
 
 func BuildForfeitTx(
-	vtxoInput, connectorInput *wire.OutPoint,
-	vtxoPrevout, connectorPrevout *wire.TxOut,
+	inputs []*wire.OutPoint,
+	sequences []uint32,
+	prevouts []*wire.TxOut,
 	serverScript []byte,
 	txLocktime uint32,
-	vtxoFirst bool,
 ) (*psbt.Packet, error) {
 	version := int32(3)
 
+	sumPrevout := int64(0)
+	for _, prevout := range prevouts {
+		sumPrevout += prevout.Value
+	}
+	sumPrevout -= ANCHOR_VALUE
+
 	outs := []*wire.TxOut{
 		{
-			Value:    vtxoPrevout.Value + connectorPrevout.Value,
+			Value:    sumPrevout,
 			PkScript: serverScript,
 		},
 		AnchorOutput(),
-	}
-
-	vtxoSequence := wire.MaxTxInSequenceNum
-	if txLocktime != 0 {
-		vtxoSequence = wire.MaxTxInSequenceNum - 1
-	}
-
-	connectorInputIndex := 0
-	vtxoInputIndex := 1
-
-	inputs := []*wire.OutPoint{connectorInput, vtxoInput}
-	sequences := []uint32{wire.MaxTxInSequenceNum, vtxoSequence}
-	if vtxoFirst {
-		inputs = []*wire.OutPoint{vtxoInput, connectorInput}
-		sequences = []uint32{vtxoSequence, wire.MaxTxInSequenceNum}
-		connectorInputIndex = 1
-		vtxoInputIndex = 0
 	}
 
 	partialTx, err := psbt.New(
@@ -56,16 +45,11 @@ func BuildForfeitTx(
 		return nil, err
 	}
 
-	if err := updater.AddInWitnessUtxo(connectorPrevout, connectorInputIndex); err != nil {
-		return nil, err
-	}
+	for i, prevout := range prevouts {
+		if err := updater.AddInWitnessUtxo(prevout, i); err != nil {
+			return nil, err
+		}
 
-	if err := updater.AddInWitnessUtxo(vtxoPrevout, vtxoInputIndex); err != nil {
-		return nil, err
-	}
-
-	// add sighash DEFAUlT
-	for i := range inputs {
 		if err := updater.AddInSighashType(txscript.SigHashDefault, i); err != nil {
 			return nil, err
 		}

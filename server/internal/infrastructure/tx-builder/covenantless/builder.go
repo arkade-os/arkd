@@ -440,17 +440,36 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, err
 		}
 
+		vtxoPrevout := &wire.TxOut{
+			Value:    int64(vtxo.Amount),
+			PkScript: vtxoScript,
+		}
+
+		var inputs []*wire.OutPoint
+		var prevouts []*wire.TxOut
+		var sequences []uint32
+
+		vtxoSequence := wire.MaxTxInSequenceNum
+		if locktime != 0 {
+			vtxoSequence = wire.MaxTxInSequenceNum - 1
+		}
+
+		if vtxoFirst {
+			inputs = []*wire.OutPoint{&vtxoInput.PreviousOutPoint, &connectorInput.PreviousOutPoint}
+			sequences = []uint32{vtxoSequence, wire.MaxTxInSequenceNum}
+			prevouts = []*wire.TxOut{vtxoPrevout, connectorOutput}
+		} else {
+			inputs = []*wire.OutPoint{&connectorInput.PreviousOutPoint, &vtxoInput.PreviousOutPoint}
+			sequences = []uint32{wire.MaxTxInSequenceNum, vtxoSequence}
+			prevouts = []*wire.TxOut{connectorOutput, vtxoPrevout}
+		}
+
 		rebuilt, err := tree.BuildForfeitTx(
-			&vtxoInput.PreviousOutPoint,
-			&connectorInput.PreviousOutPoint,
-			&wire.TxOut{
-				Value:    int64(vtxo.Amount),
-				PkScript: vtxoScript,
-			},
-			connectorOutput,
+			inputs,
+			sequences,
+			prevouts,
 			forfeitScript,
 			uint32(locktime),
-			vtxoFirst,
 		)
 		if err != nil {
 			return nil, err

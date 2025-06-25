@@ -2680,18 +2680,23 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 			PkScript: vtxoOutputScript,
 		}
 
-		vtxoInputIndex := 0
+		vtxoSequence := wire.MaxTxInSequenceNum
+		if vtxoLocktime != 0 {
+			vtxoSequence = wire.MaxTxInSequenceNum - 1
+		}
+
 		forfeitTx, err := tree.BuildForfeitTx(
-			vtxoInput, connectorOutpoint,
-			vtxoPrevout, connector,
-			forfeitPkScript, uint32(vtxoLocktime),
-			vtxoInputIndex == 0,
+			[]*wire.OutPoint{vtxoInput, connectorOutpoint},
+			[]uint32{vtxoSequence, wire.MaxTxInSequenceNum},
+			[]*wire.TxOut{vtxoPrevout, connector},
+			forfeitPkScript,
+			uint32(vtxoLocktime),
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		forfeitTx.Inputs[vtxoInputIndex].TaprootLeafScript = []*psbt.TaprootTapLeafScript{&tapscript}
+		forfeitTx.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{&tapscript}
 
 		b64, err := forfeitTx.B64Encode()
 		if err != nil {
