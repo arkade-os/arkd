@@ -928,7 +928,7 @@ func (a sortReceivers) Less(i, j int) bool { return a[i].Amount < a[j].Amount }
 func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
 	for i, v := range gotVtxos {
 		expected := expectedVtxos[i]
-		require.Exactly(t, expected.VtxoKey, v.VtxoKey)
+		require.Exactly(t, expected.Outpoint, v.Outpoint)
 		require.Exactly(t, expected.Amount, v.Amount)
 		require.Exactly(t, expected.CreatedAt, v.CreatedAt)
 		require.Exactly(t, expected.ExpireAt, v.ExpireAt)
