@@ -2686,8 +2686,7 @@ func getVtxoTreeTopic(g *tree.TxGraph) ([]string, error) {
 	return topics, nil
 }
 
-// getConnectorTreeTopic returns the list of topics for connector graph
-// it returns the list of vtxo outpoints associated with the connector
+// getConnectorTreeTopic returns the list of topics (vtxo outpoints) for the given connector subtree
 func getConnectorTreeTopic(connectorsIndex map[string]domain.Outpoint) func(g *tree.TxGraph) ([]string, error) {
 	return func(g *tree.TxGraph) ([]string, error) {
 		leaves := g.Leaves()
