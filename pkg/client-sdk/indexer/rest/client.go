@@ -368,7 +368,7 @@ func (a *restClient) GetTransactionHistory(
 		return nil, err
 	}
 
-	history := make([]indexer.TxHistoryRecord, 0, len(resp.Payload.History))
+	history := make([]types.Transaction, 0, len(resp.Payload.History))
 	for _, record := range resp.Payload.History {
 		amount, err := strconv.ParseUint(record.Amount, 10, 64)
 		if err != nil {
@@ -380,29 +380,27 @@ func (a *restClient) GetTransactionHistory(
 		}
 
 		// Use a zero value for TxType if Type is nil, otherwise use a numeric conversion
-		var txType indexer.TxType
+		var txType types.TxType
 		if record.Type != nil {
 			// Convert the string enum to a numeric value
 			typeStr := string(*record.Type)
 			switch typeStr {
 			case "INDEXER_TX_TYPE_RECEIVED":
-				txType = indexer.TxTypeReceived
+				txType = types.TxReceived
 			case "INDEXER_TX_TYPE_SENT":
-				txType = indexer.TxTypeSent
-			default:
-				// Default to unspecified for unknown types
-				txType = indexer.TxTypeUnspecified
+				txType = types.TxSent
 			}
 		}
 
-		history = append(history, indexer.TxHistoryRecord{
-			CommitmentTxid: record.CommitmentTxid,
-			ArkTxid:        record.VirtualTxid,
-			Type:           txType,
-			Amount:         amount,
-			CreatedAt:      createdAt,
-			IsSettled:      record.IsSettled,
-			SettledBy:      record.SettledBy,
+		history = append(history, types.Transaction{
+			TransactionKey: types.TransactionKey{
+				CommitmentTxid: record.CommitmentTxid,
+				ArkTxid:        record.VirtualTxid,
+			},
+			Type:      txType,
+			Amount:    amount,
+			CreatedAt: time.Unix(createdAt, 0),
+			Settled:   record.IsSettled,
 		})
 	}
 
@@ -712,15 +710,15 @@ func newIndexerVtxo(vtxo *models.V1IndexerVtxo) (*types.Vtxo, error) {
 			Txid: vtxo.Outpoint.Txid,
 			VOut: uint32(vtxo.Outpoint.Vout),
 		},
-		Script:         vtxo.Script,
-		CommitmentTxid: vtxo.CommitmentTxid,
-		Amount:         amount,
-		CreatedAt:      time.Unix(createdAt, 0),
-		ExpiresAt:      time.Unix(expiresAt, 0),
-		Preconfirmed:   vtxo.IsPreconfirmed,
-		Swept:          vtxo.IsSwept,
-		Redeemed:       vtxo.IsRedeemed,
-		Spent:          vtxo.IsSpent,
-		SpentBy:        vtxo.SpentBy,
+		Script:          vtxo.Script,
+		CommitmentTxids: vtxo.CommitmentTxids,
+		Amount:          amount,
+		CreatedAt:       time.Unix(createdAt, 0),
+		ExpiresAt:       time.Unix(expiresAt, 0),
+		Preconfirmed:    vtxo.IsPreconfirmed,
+		Swept:           vtxo.IsSwept,
+		Redeemed:        vtxo.IsRedeemed,
+		Spent:           vtxo.IsSpent,
+		SpentBy:         vtxo.SpentBy,
 	}, nil
 }

@@ -58,7 +58,7 @@ type VtxosResponse struct {
 }
 
 type TxHistoryResponse struct {
-	History []TxHistoryRecord
+	History []types.Transaction
 	Page    *PageResponse
 }
 
@@ -140,25 +140,6 @@ type CommitmentTx struct {
 type Outpoint struct {
 	Txid string
 	VOut uint32
-}
-
-type TxType int
-
-const (
-	TxTypeUnspecified TxType = iota
-	TxTypeReceived
-	TxTypeSent
-	TxTypeSweep
-)
-
-type TxHistoryRecord struct {
-	CommitmentTxid string
-	ArkTxid        string
-	Type           TxType
-	Amount         uint64
-	CreatedAt      int64
-	IsSettled      bool
-	SettledBy      string
 }
 
 type ChainWithExpiry struct {

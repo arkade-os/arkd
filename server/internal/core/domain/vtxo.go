@@ -36,16 +36,17 @@ func (k Outpoint) Hash() string {
 
 type Vtxo struct {
 	Outpoint
-	Amount         uint64
-	PubKey         string
-	CommitmentTxid string
-	SpentBy        string // round txid or redeem txid
-	Spent          bool
-	Redeemed       bool
-	Swept          bool
-	ExpireAt       int64
-	RedeemTx       string // empty if in-round vtxo
-	CreatedAt      int64
+	Amount             uint64
+	PubKey             string
+	CommitmentTxids    []string
+	RootCommitmentTxid string
+	SpentBy            string // round txid or redeem txid
+	Spent              bool
+	Redeemed           bool
+	Swept              bool
+	ExpireAt           int64
+	RedeemTx           string // empty if in-round vtxo
+	CreatedAt          int64
 }
 
 func (v Vtxo) IsPending() bool {
@@ -53,7 +54,7 @@ func (v Vtxo) IsPending() bool {
 }
 
 func (v Vtxo) IsNote() bool {
-	return len(v.CommitmentTxid) <= 0
+	return len(v.CommitmentTxids) <= 0 && v.RootCommitmentTxid == ""
 }
 
 func (v Vtxo) RequiresForfeit() bool {

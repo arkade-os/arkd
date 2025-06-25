@@ -506,7 +506,7 @@ func (a *covenantlessArkClient) SendOffChain(
 			return "", fmt.Errorf("all receiver addresses must be offchain addresses")
 		}
 
-		addr, err := common.DecodeAddress(receiver.To)
+		addr, err := common.DecodeAddressV0(receiver.To)
 		if err != nil {
 			return "", fmt.Errorf("invalid receiver address: %s", err)
 		}
@@ -984,30 +984,7 @@ func (a *covenantlessArkClient) GetTransactionHistory(
 		return history, nil
 	}
 
-	spendableVtxos, spentVtxos, err := a.ListVtxos(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	boardingTxs, commitmentTxsToIgnore, err := a.getBoardingTxs(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	offchainTxs, err := vtxosToTxHistory(
-		spendableVtxos, spentVtxos, commitmentTxsToIgnore, a.indexer,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	history := append(boardingTxs, offchainTxs...)
-	// Sort the slice by age
-	sort.SliceStable(history, func(i, j int) bool {
-		return history[i].CreatedAt.IsZero() || history[i].CreatedAt.After(history[j].CreatedAt)
-	})
-
-	return history, nil
+	return a.fetchTxHistory(ctx)
 }
 
 func (a *covenantlessArkClient) RegisterIntent(
@@ -1093,23 +1070,24 @@ func (a *covenantlessArkClient) listenForArkTxs(ctx context.Context) {
 				continue
 			}
 
-			myPubkeys := make(map[string]struct{})
+			myScripts := make(map[string]struct{})
 			for _, addr := range offchainAddrs {
-				// nolint:all
-				decoded, _ := common.DecodeAddress(addr.Address)
-				pubkey := hex.EncodeToString(decoded.VtxoTapKey.SerializeCompressed()[1:])
-				myPubkeys[pubkey] = struct{}{}
+				// nolint
+				decoded, _ := common.DecodeAddressV0(addr.Address)
+				// nolint
+				script, _ := common.P2TRScript(decoded.VtxoTapKey)
+				myScripts[hex.EncodeToString(script)] = struct{}{}
 			}
 
 			if event.CommitmentTx != nil {
-				if err := a.handleCommitmentTx(ctxBg, myPubkeys, event.CommitmentTx); err != nil {
+				if err := a.handleCommitmentTx(ctxBg, myScripts, event.CommitmentTx); err != nil {
 					log.WithError(err).Error("failed to process commitment tx")
 					continue
 				}
 			}
 
 			if event.ArkTx != nil {
-				if err := a.handleArkTx(ctxBg, myPubkeys, event.ArkTx); err != nil {
+				if err := a.handleArkTx(ctxBg, myScripts, event.ArkTx); err != nil {
 					log.WithError(err).Error("failed to process ark tx")
 					continue
 				}
@@ -1122,25 +1100,16 @@ func (a *covenantlessArkClient) listenForArkTxs(ctx context.Context) {
 
 func (a *covenantlessArkClient) refreshDb(ctx context.Context) error {
 	// fetch new data
+	history, err := a.fetchTxHistory(ctx)
+	if err != nil {
+		return err
+	}
 	spendableVtxos, spentVtxos, err := a.ListVtxos(ctx)
 	if err != nil {
 		return err
 	}
 
-	boardingTxs, commitmentTxsToIgnore, err := a.getBoardingTxs(ctx)
-	if err != nil {
-		return err
-	}
-
-	offchainTxs, err := vtxosToTxHistory(
-		spendableVtxos, spentVtxos, commitmentTxsToIgnore, a.indexer,
-	)
-	if err != nil {
-		return err
-	}
-
-	newTxs := append(offchainTxs, boardingTxs...)
-	if err := a.refreshTxDb(newTxs); err != nil {
+	if err := a.refreshTxDb(history); err != nil {
 		return err
 	}
 
@@ -1658,7 +1627,7 @@ func (a *covenantlessArkClient) sendOffchain(
 
 	// validate receivers and create outputs
 	for _, receiver := range receivers {
-		rcvAddr, err := common.DecodeAddress(receiver.To)
+		rcvAddr, err := common.DecodeAddressV0(receiver.To)
 		if err != nil {
 			return "", fmt.Errorf("invalid receiver address: %s", err)
 		}
@@ -2020,7 +1989,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 	step := start
 	hasOffchainOutput := false
 	for _, receiver := range receivers {
-		if _, err := common.DecodeAddress(receiver.To); err == nil {
+		if _, err := common.DecodeAddressV0(receiver.To); err == nil {
 			hasOffchainOutput = true
 			break
 		}
@@ -2547,7 +2516,7 @@ func (a *covenantlessArkClient) validateOffchainReceiver(
 ) error {
 	found := false
 
-	rcvAddr, err := common.DecodeAddress(receiver.To)
+	rcvAddr, err := common.DecodeAddressV0(receiver.To)
 	if err != nil {
 		return err
 	}
@@ -2754,9 +2723,9 @@ func (a *covenantlessArkClient) getRedeemBranches(
 			continue
 		}
 
-		if _, ok := vtxoTrees[vtxo.CommitmentTxid]; !ok {
+		if _, ok := vtxoTrees[vtxo.CommitmentTxids[0]]; !ok {
 			vtxoTree, err := a.indexer.GetFullVtxoTree(
-				ctx, indexer.Outpoint{Txid: vtxo.CommitmentTxid, VOut: 0},
+				ctx, indexer.Outpoint{Txid: vtxo.CommitmentTxids[0], VOut: 0},
 			)
 			if err != nil {
 				return nil, err
@@ -2767,11 +2736,11 @@ func (a *covenantlessArkClient) getRedeemBranches(
 				return nil, fmt.Errorf("failed to create vtxo graph: %s", err)
 			}
 
-			vtxoTrees[vtxo.CommitmentTxid] = graph
+			vtxoTrees[vtxo.CommitmentTxids[0]] = graph
 		}
 
 		redeemBranch, err := redemption.NewRedeemBranch(
-			a.explorer, vtxoTrees[vtxo.CommitmentTxid], vtxo,
+			a.explorer, vtxoTrees[vtxo.CommitmentTxids[0]], vtxo,
 		)
 		if err != nil {
 			return nil, err
@@ -3069,17 +3038,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 
 	for _, vtxo := range commitmentTx.SpendableVtxos {
 		if _, ok := myPubkeys[vtxo.Script]; ok {
-			vtxosToAdd = append(vtxosToAdd, types.Vtxo{
-				VtxoKey: types.VtxoKey{
-					Txid: vtxo.Txid,
-					VOut: vtxo.VOut,
-				},
-				Script:         vtxo.Script,
-				Amount:         vtxo.Amount,
-				CommitmentTxid: vtxo.CommitmentTxid,
-				ExpiresAt:      vtxo.ExpiresAt,
-				CreatedAt:      time.Now(),
-			})
+			vtxosToAdd = append(vtxosToAdd, vtxo)
 		}
 	}
 
@@ -3371,4 +3330,42 @@ func (a *covenantlessArkClient) handleOptions(
 	}
 
 	return sessions, signerPubKeys, nil
+}
+
+func (a *covenantlessArkClient) fetchTxHistory(ctx context.Context) ([]types.Transaction, error) {
+	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	indexedHistory := make(map[string]types.Transaction)
+	for _, addr := range offchainAddrs {
+		resp, err := a.indexer.GetTransactionHistory(ctx, addr.Address)
+		if err != nil {
+			return nil, err
+		}
+		for _, tx := range resp.History {
+			indexedHistory[tx.String()] = tx
+		}
+	}
+
+	boardingTxs, commitmentTxsToIgnore, err := a.getBoardingTxs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for txid := range commitmentTxsToIgnore {
+		delete(indexedHistory, txid)
+	}
+
+	allHistory := append([]types.Transaction{}, boardingTxs...)
+	for _, tx := range indexedHistory {
+		allHistory = append(allHistory, tx)
+	}
+
+	sort.SliceStable(allHistory, func(i, j int) bool {
+		return allHistory[i].CreatedAt.IsZero() || allHistory[i].CreatedAt.After(allHistory[j].CreatedAt)
+	})
+
+	return allHistory, nil
 }

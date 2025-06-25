@@ -51,7 +51,7 @@ func (w *bitcoinWallet) GetAddresses(
 		return nil, nil, nil, nil, err
 	}
 
-	encodedOffchainAddr, err := offchainAddr.Address.Encode()
+	encodedOffchainAddr, err := offchainAddr.Address.EncodeV0()
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -106,7 +106,7 @@ func (w *bitcoinWallet) NewAddress(
 		return "", nil, nil, err
 	}
 
-	encodedOffchainAddr, err := offchainAddr.Address.Encode()
+	encodedOffchainAddr, err := offchainAddr.Address.EncodeV0()
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -133,7 +133,7 @@ func (w *bitcoinWallet) NewAddresses(
 	offchainAddrs := make([]wallet.TapscriptsAddress, 0, num)
 	boardingAddrs := make([]wallet.TapscriptsAddress, 0, num)
 	for i := 0; i < num; i++ {
-		encodedOffchainAddr, err := offchainAddr.Address.Encode()
+		encodedOffchainAddr, err := offchainAddr.Address.EncodeV0()
 		if err != nil {
 			return nil, nil, nil, err
 		}

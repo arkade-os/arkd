@@ -1,6 +1,7 @@
 package pgdb
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -93,4 +94,16 @@ func isConflictError(err error) bool {
 		strings.Contains(errMsg, "foreign key constraint failed") ||
 		strings.Contains(errMsg, "busy") ||
 		strings.Contains(errMsg, "locked")
+}
+
+func parseCommitments(commitments, separator []byte) []string {
+	if len(commitments) == 0 {
+		return nil
+	}
+	parts := bytes.Split(commitments, separator)
+	commitmentsStr := make([]string, 0, len(parts))
+	for _, p := range parts {
+		commitmentsStr = append(commitmentsStr, string(p))
+	}
+	return commitmentsStr
 }

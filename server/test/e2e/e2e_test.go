@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -225,13 +226,13 @@ func TestSettleInSameRound(t *testing.T) {
 
 	var aliceNewVtxo, bobNewVtxo types.Vtxo
 	for _, vtxo := range aliceVtxosAfter {
-		if vtxo.CommitmentTxid == aliceSecondRoundID {
+		if slices.Contains(vtxo.CommitmentTxids, aliceSecondRoundID) {
 			aliceNewVtxo = vtxo
 			break
 		}
 	}
 	for _, vtxo := range bobVtxosAfter {
-		if vtxo.CommitmentTxid == bobSecondRoundID {
+		if slices.Contains(vtxo.CommitmentTxids, bobSecondRoundID) {
 			bobNewVtxo = vtxo
 			break
 		}
@@ -239,7 +240,7 @@ func TestSettleInSameRound(t *testing.T) {
 
 	require.NotEmpty(t, aliceNewVtxo)
 	require.NotEmpty(t, bobNewVtxo)
-	require.Equal(t, aliceNewVtxo.CommitmentTxid, bobNewVtxo.CommitmentTxid)
+	require.Equal(t, aliceNewVtxo.CommitmentTxids, bobNewVtxo.CommitmentTxids)
 }
 
 func TestUnilateralExit(t *testing.T) {
@@ -383,14 +384,14 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 
 	var vtxo types.Vtxo
 	for _, v := range spentVtxos {
-		if v.CommitmentTxid == roundId && !v.Preconfirmed {
+		if !v.Preconfirmed && v.CommitmentTxids[0] == roundId {
 			vtxo = v
 			break
 		}
 	}
 
 	vtxoTree, err := indexerSvc.GetFullVtxoTree(ctx, indexer.Outpoint{
-		Txid: vtxo.CommitmentTxid,
+		Txid: vtxo.CommitmentTxids[0],
 		VOut: 0,
 	})
 	require.NoError(t, err)
@@ -495,7 +496,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 
 		var vtxo types.Vtxo
 		for _, v := range spentVtxos {
-			if v.CommitmentTxid == roundId && !v.Preconfirmed {
+			if !v.Preconfirmed && v.CommitmentTxids[0] == roundId {
 				vtxo = v
 				break
 			}
@@ -503,7 +504,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NotEmpty(t, vtxo)
 
 		vtxoTree, err := indexerSvc.GetFullVtxoTree(ctx, indexer.Outpoint{
-			Txid: vtxo.CommitmentTxid,
+			Txid: vtxo.CommitmentTxids[0],
 			VOut: 0,
 		})
 		require.NoError(t, err)
@@ -568,7 +569,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
 		require.NoError(t, err)
 
-		aliceAddr, err := common.DecodeAddress(offchainAddr)
+		aliceAddr, err := common.DecodeAddressV0(offchainAddr)
 		require.NoError(t, err)
 
 		_, err = utils.RunCommand("nigiri", "faucet", boardingAddress)
@@ -642,7 +643,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			RevealedScript: merkleProof.Script,
 		}
 
-		bobAddrStr, err := bobAddr.Encode()
+		bobAddrStr, err := bobAddr.EncodeV0()
 		require.NoError(t, err)
 
 		wg.Add(1)
@@ -804,7 +805,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.True(t, found)
 
 		vtxoTree, err := indexerSvc.GetFullVtxoTree(ctx, indexer.Outpoint{
-			Txid: initialTreeVtxo.CommitmentTxid,
+			Txid: initialTreeVtxo.CommitmentTxids[0],
 			VOut: 0,
 		})
 		require.NoError(t, err)
@@ -1192,7 +1193,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	aliceAddr, err := common.DecodeAddress(offchainAddr)
+	aliceAddr, err := common.DecodeAddressV0(offchainAddr)
 	require.NoError(t, err)
 
 	_, err = utils.RunCommand("nigiri", "faucet", boardingAddress)
@@ -1255,7 +1256,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		RevealedScript: merkleProof.Script,
 	}
 
-	bobAddrStr, err := bobAddr.Encode()
+	bobAddrStr, err := bobAddr.EncodeV0()
 	require.NoError(t, err)
 
 	wg.Add(1)
@@ -1430,7 +1431,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	aliceAddr, err := common.DecodeAddress(offchainAddr)
+	aliceAddr, err := common.DecodeAddressV0(offchainAddr)
 	require.NoError(t, err)
 
 	_, err = utils.RunCommand("nigiri", "faucet", boardingAddress)
@@ -1504,7 +1505,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		RevealedScript: merkleProof.Script,
 	}
 
-	bobAddrStr, err := bobAddr.Encode()
+	bobAddrStr, err := bobAddr.EncodeV0()
 	require.NoError(t, err)
 
 	wg.Add(1)

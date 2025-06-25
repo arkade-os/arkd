@@ -192,6 +192,18 @@ func (s *OffchainTx) IsFailed() bool {
 	return s.Stage.Failed
 }
 
+func (s *OffchainTx) CommitmentTxidsList() []string {
+	indexedList := make(map[string]struct{})
+	for _, txid := range s.CommitmentTxids {
+		indexedList[txid] = struct{}{}
+	}
+	list := make([]string, 0, len(indexedList))
+	for txid := range indexedList {
+		list = append(list, txid)
+	}
+	return list
+}
+
 func (s *OffchainTx) on(event Event, replayed bool) {
 	switch e := event.(type) {
 	case OffchainTxRequested:

@@ -45,7 +45,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					Vout:           int32(vtxo.VOut),
 					Pubkey:         vtxo.PubKey,
 					Amount:         int64(vtxo.Amount),
-					CommitmentTxid: vtxo.CommitmentTxid,
+					CommitmentTxid: vtxo.RootCommitmentTxid,
 					SpentBy:        vtxo.SpentBy,
 					Spent:          vtxo.Spent,
 					Redeemed:       vtxo.Redeemed,
@@ -55,6 +55,16 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 				},
 			); err != nil {
 				return err
+			}
+
+			for _, txid := range vtxo.CommitmentTxids {
+				if err := querierWithTx.InsertVtxoCommitmentTxid(ctx, queries.InsertVtxoCommitmentTxidParams{
+					VtxoTxid:       vtxo.Txid,
+					VtxoVout:       int32(vtxo.VOut),
+					CommitmentTxid: txid,
+				}); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -377,16 +387,17 @@ func rowToVtxo(row queries.VtxoVirtualTxVw) domain.Vtxo {
 			Txid: row.Txid,
 			VOut: uint32(row.Vout),
 		},
-		Amount:         uint64(row.Amount),
-		PubKey:         row.Pubkey,
-		CommitmentTxid: row.CommitmentTxid,
-		SpentBy:        row.SpentBy,
-		Spent:          row.Spent,
-		Redeemed:       row.Redeemed,
-		Swept:          row.Swept,
-		ExpireAt:       row.ExpireAt,
-		RedeemTx:       redeemTx,
-		CreatedAt:      row.CreatedAt,
+		Amount:             uint64(row.Amount),
+		PubKey:             row.Pubkey,
+		RootCommitmentTxid: row.CommitmentTxid,
+		CommitmentTxids:    parseCommitments(row.Commitments, []byte(",")),
+		SpentBy:            row.SpentBy,
+		Spent:              row.Spent,
+		Redeemed:           row.Redeemed,
+		Swept:              row.Swept,
+		ExpireAt:           row.ExpireAt,
+		RedeemTx:           redeemTx,
+		CreatedAt:          row.CreatedAt,
 	}
 }
 

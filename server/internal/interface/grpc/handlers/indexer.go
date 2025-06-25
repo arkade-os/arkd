@@ -12,6 +12,7 @@ import (
 	"github.com/ark-network/ark/server/internal/core/application"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -253,9 +254,9 @@ func (e *indexerService) GetVtxos(ctx context.Context, request *arkv1.GetVtxosRe
 		return nil, status.Errorf(codes.Internal, "failed to get vtxos: %v", err)
 	}
 
-	vtxos := make([]*arkv1.IndexerVtxo, len(resp.Vtxos))
-	for i, vtxo := range resp.Vtxos {
-		vtxos[i] = newIndexerVtxo(vtxo)
+	vtxos := make([]*arkv1.IndexerVtxo, 0, len(resp.Vtxos))
+	for _, vtxo := range resp.Vtxos {
+		vtxos = append(vtxos, newIndexerVtxo(vtxo))
 	}
 
 	return &arkv1.GetVtxosResponse{
@@ -493,10 +494,12 @@ func (h *indexerService) listenToTxEvents() {
 		allSpentVtxos := make(map[string][]*arkv1.IndexerVtxo)
 
 		for _, vtxo := range event.SpendableVtxos {
-			allSpendableVtxos[vtxo.PubKey] = append(allSpendableVtxos[vtxo.PubKey], newIndexerVtxo(vtxo))
+			vtxoScript := toP2TR(vtxo.PubKey)
+			allSpendableVtxos[vtxoScript] = append(allSpendableVtxos[vtxoScript], newIndexerVtxo(vtxo))
 		}
 		for _, vtxo := range event.SpentVtxos {
-			allSpentVtxos[vtxo.PubKey] = append(allSpentVtxos[vtxo.PubKey], newIndexerVtxo(vtxo))
+			vtxoScript := toP2TR(vtxo.PubKey)
+			allSpentVtxos[vtxoScript] = append(allSpentVtxos[vtxoScript], newIndexerVtxo(vtxo))
 		}
 
 		for _, l := range h.scriptSubsHandler.listeners {
@@ -644,28 +647,28 @@ func parseScripts(scripts []string) ([]string, error) {
 	}
 
 	for _, script := range scripts {
-		if _, err := parsePubkey(script); err != nil {
+		if _, err := parseScript(script); err != nil {
 			return nil, err
 		}
 	}
 	return scripts, nil
 }
 
-func parsePubkey(pubkey string) (string, error) {
-	if len(pubkey) <= 0 {
-		return "", fmt.Errorf("missing pubkey")
+func parseScript(script string) (string, error) {
+	if len(script) <= 0 {
+		return "", fmt.Errorf("missing script")
 	}
-	buf, err := hex.DecodeString(pubkey)
+	buf, err := hex.DecodeString(script)
 	if err != nil {
-		return "", fmt.Errorf("invalid pubkey format: %s", err)
+		return "", fmt.Errorf("invalid script format, must be hex")
 	}
-	if len(buf) != 32 {
-		return "", fmt.Errorf("invalid pubkey length: got %d, expeted 32", len(buf))
+	if !txscript.IsPayToTaproot(buf) {
+		return "", fmt.Errorf("invalid script, must be P2TR")
 	}
-	if _, err := schnorr.ParsePubKey(buf); err != nil {
-		return "", fmt.Errorf("invalid schnorr pubkey: %s", err)
+	if _, err := schnorr.ParsePubKey(buf[2:]); err != nil {
+		return "", fmt.Errorf("invalid script, failed to extract tapkey: %s", err)
 	}
-	return pubkey, nil
+	return script, nil
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
@@ -674,15 +677,15 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 			Txid: vtxo.Txid,
 			Vout: vtxo.VOut,
 		},
-		CreatedAt:      vtxo.CreatedAt,
-		ExpiresAt:      vtxo.ExpireAt,
-		Amount:         vtxo.Amount,
-		Script:         vtxo.PubKey,
-		IsPreconfirmed: vtxo.RedeemTx != "",
-		IsSwept:        vtxo.Swept,
-		IsRedeemed:     vtxo.Redeemed,
-		IsSpent:        vtxo.Spent,
-		SpentBy:        vtxo.SpentBy,
-		CommitmentTxid: vtxo.CommitmentTxid,
+		CreatedAt:       vtxo.CreatedAt,
+		ExpiresAt:       vtxo.ExpireAt,
+		Amount:          vtxo.Amount,
+		Script:          toP2TR(vtxo.PubKey),
+		IsPreconfirmed:  vtxo.RedeemTx != "",
+		IsSwept:         vtxo.Swept,
+		IsRedeemed:      vtxo.Redeemed,
+		IsSpent:         vtxo.Spent,
+		SpentBy:         vtxo.SpentBy,
+		CommitmentTxids: vtxo.CommitmentTxids,
 	}
 }

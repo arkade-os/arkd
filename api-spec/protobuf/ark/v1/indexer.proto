@@ -280,7 +280,7 @@ message IndexerVtxo {
   bool is_redeemed = 8;
   bool is_spent = 9;
   string spent_by = 10;
-  string commitment_txid = 11;
+  repeated string commitment_txids = 11;
 }
 
 message IndexerChain {

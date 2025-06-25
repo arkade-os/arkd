@@ -18,7 +18,7 @@ func parseAddress(addr string) (*common.Address, error) {
 	if len(addr) <= 0 {
 		return nil, fmt.Errorf("missing address")
 	}
-	return common.DecodeAddress(addr)
+	return common.DecodeAddressV0(addr)
 }
 
 func parseArkAddress(addr string) (string, error) {
@@ -44,16 +44,16 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 				Txid: vv.Txid,
 				Vout: vv.VOut,
 			},
-			Amount:         vv.Amount,
-			CommitmentTxid: vv.CommitmentTxid,
-			Spent:          vv.Spent,
-			ExpiresAt:      vv.ExpireAt,
-			SpentBy:        vv.SpentBy,
-			Swept:          vv.Swept,
-			Preconfirmed:   len(vv.RedeemTx) > 0,
-			Redeemed:       vv.Redeemed,
-			Script:         vv.PubKey,
-			CreatedAt:      vv.CreatedAt,
+			Amount:          vv.Amount,
+			CommitmentTxids: vv.CommitmentTxids,
+			Spent:           vv.Spent,
+			ExpiresAt:       vv.ExpireAt,
+			SpentBy:         vv.SpentBy,
+			Swept:           vv.Swept,
+			Preconfirmed:    len(vv.RedeemTx) > 0,
+			Redeemed:        vv.Redeemed,
+			Script:          toP2TR(vv.PubKey),
+			CreatedAt:       vv.CreatedAt,
 		})
 	}
 
@@ -118,4 +118,14 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 func convertSatsToBTCStr(sats uint64) string {
 	btc := float64(sats) * 1e-8
 	return fmt.Sprintf("%.8f", btc)
+}
+
+func toP2TR(pubkey string) string {
+	// nolint
+	buf, _ := hex.DecodeString(pubkey)
+	// nolint
+	key, _ := schnorr.ParsePubKey(buf)
+	// nolint
+	script, _ := common.P2TRScript(key)
+	return hex.EncodeToString(script)
 }
