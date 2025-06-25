@@ -338,6 +338,7 @@ func (e *indexerService) GetVtxoChain(ctx context.Context, request *arkv1.GetVtx
 		chain = append(chain, &arkv1.IndexerChain{
 			Txid:      c.Txid,
 			ExpiresAt: c.ExpiresAt,
+			Type:      arkv1.IndexerChainedTxType(c.Type),
 		})
 	}
 

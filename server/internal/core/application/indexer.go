@@ -289,6 +289,7 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 				chain = append(chain, ChainWithExpiry{
 					Txid:      vtxo.Txid,
 					ExpiresAt: vtxo.ExpireAt,
+					Type:      IndexerChainedTxTypeArk,
 				})
 
 				// add the checkpoints txs
@@ -301,6 +302,7 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 					chain = append(chain, ChainWithExpiry{
 						Txid:      ptx.UnsignedTx.TxID(),
 						ExpiresAt: vtxo.ExpireAt,
+						Type:      IndexerChainedTxTypeCheckpoint,
 					})
 
 					// populate newNextVtxos with checkpoints inputs
@@ -345,6 +347,7 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 				fromVtxoToRoot = append(fromVtxoToRoot, ChainWithExpiry{
 					Txid:      fromRootToVtxo[i],
 					ExpiresAt: vtxo.ExpireAt,
+					Type:      IndexerChainedTxTypeTree,
 				})
 			}
 

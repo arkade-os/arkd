@@ -932,8 +932,21 @@
         "expiresAt": {
           "type": "string",
           "format": "int64"
+        },
+        "type": {
+          "$ref": "#/definitions/v1IndexerChainedTxType"
         }
       }
+    },
+    "v1IndexerChainedTxType": {
+      "type": "string",
+      "enum": [
+        "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED",
+        "INDEXER_CHAINED_TX_TYPE_ARK",
+        "INDEXER_CHAINED_TX_TYPE_TREE",
+        "INDEXER_CHAINED_TX_TYPE_CHECKPOINT"
+      ],
+      "default": "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED"
     },
     "v1IndexerNode": {
       "type": "object",

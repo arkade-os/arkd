@@ -225,7 +225,17 @@ type PageResp struct {
 	Total   int32
 }
 
+type IndexerChainedTxType int
+
+const (
+	IndexerChainedTxTypeUnspecified IndexerChainedTxType = iota
+	IndexerChainedTxTypeArk
+	IndexerChainedTxTypeTree
+	IndexerChainedTxTypeCheckpoint
+)
+
 type ChainWithExpiry struct {
 	Txid      string
 	ExpiresAt int64
+	Type      IndexerChainedTxType
 }
