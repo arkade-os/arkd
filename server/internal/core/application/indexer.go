@@ -185,9 +185,9 @@ func (i *indexerService) GetVtxos(
 func (i *indexerService) GetVtxosByOutpoint(
 	ctx context.Context, outpoints []Outpoint, page *Page,
 ) (*GetVtxosResp, error) {
-	keys := make([]domain.VtxoKey, 0, len(outpoints))
+	keys := make([]domain.Outpoint, 0, len(outpoints))
 	for _, outpoint := range outpoints {
-		keys = append(keys, domain.VtxoKey{
+		keys = append(keys, domain.Outpoint{
 			Txid: outpoint.Txid,
 			VOut: outpoint.Vout,
 		})
@@ -267,11 +267,11 @@ func filterByDate(txs []TxHistoryRecord, start, end int64) []TxHistoryRecord {
 func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error) {
 	chainMap := make(map[vtxoKeyWithCreatedAt]ChainWithExpiry)
 
-	outpoint := domain.VtxoKey{
+	outpoint := domain.Outpoint{
 		Txid: vtxoKey.Txid,
 		VOut: vtxoKey.Vout,
 	}
-	vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{outpoint})
+	vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{outpoint})
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +315,7 @@ func (i *indexerService) buildChain(
 	chain map[vtxoKeyWithCreatedAt]ChainWithExpiry,
 ) error {
 	key := vtxoKeyWithCreatedAt{
-		VtxoKey:   vtxo.VtxoKey,
+		Outpoint:  vtxo.Outpoint,
 		CreatedAt: vtxo.CreatedAt,
 	}
 	if _, ok := chain[key]; !ok {
@@ -359,11 +359,11 @@ func (i *indexerService) buildChain(
 			Txs:       txs,
 			ExpiresAt: chain[key].ExpiresAt,
 		}
-		parentOutpoint := domain.VtxoKey{
+		parentOutpoint := domain.Outpoint{
 			Txid: in.PreviousOutPoint.Hash.String(),
 			VOut: in.PreviousOutPoint.Index,
 		}
-		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{parentOutpoint})
+		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{parentOutpoint})
 		if err != nil {
 			return err
 		}
@@ -516,7 +516,7 @@ func (i *indexerService) vtxosToTxs(
 		vtxo := getVtxo(resultedVtxos, vtxosBySpentBy[sb])
 		if resultedAmount == 0 {
 			// send all: fetch the created vtxo to source creation and expiration timestamps
-			vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{{Txid: sb, VOut: 0}})
+			vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{{Txid: sb, VOut: 0}})
 			if err != nil {
 				return nil, err
 			}
@@ -606,7 +606,7 @@ func getVtxo(usedVtxos []domain.Vtxo, spentByVtxos []domain.Vtxo) domain.Vtxo {
 }
 
 type vtxoKeyWithCreatedAt struct {
-	domain.VtxoKey
+	domain.Outpoint
 	CreatedAt int64
 }
 

@@ -27,7 +27,7 @@ func newListener[T any](id string, topics []string) *listener[T] {
 	}
 }
 
-func (l *listener[T]) hasTopic(topics []string) bool {
+func (l *listener[T]) includesAny(topics []string) bool {
 	if len(topics) == 0 {
 		return true
 	}

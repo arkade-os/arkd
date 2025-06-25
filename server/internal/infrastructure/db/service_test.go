@@ -429,7 +429,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 						Id: uuid.New().String(),
 						Inputs: []domain.Vtxo{
 							{
-								VtxoKey: domain.VtxoKey{
+								Outpoint: domain.Outpoint{
 									Txid: randomString(32),
 									VOut: 0,
 								},
@@ -448,7 +448,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 						Inputs: []domain.Vtxo{
 
 							{
-								VtxoKey: domain.VtxoKey{
+								Outpoint: domain.Outpoint{
 									Txid: randomString(32),
 									VOut: 0,
 								},
@@ -541,7 +541,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		userVtxos := []domain.Vtxo{
 			{
-				VtxoKey: domain.VtxoKey{
+				Outpoint: domain.Outpoint{
 					Txid: randomString(32),
 					VOut: 0,
 				},
@@ -549,7 +549,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				Amount: 1000,
 			},
 			{
-				VtxoKey: domain.VtxoKey{
+				Outpoint: domain.Outpoint{
 					Txid: randomString(32),
 					VOut: 1,
 				},
@@ -558,7 +558,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			},
 		}
 		newVtxos := append(userVtxos, domain.Vtxo{
-			VtxoKey: domain.VtxoKey{
+			Outpoint: domain.Outpoint{
 				Txid: randomString(32),
 				VOut: 1,
 			},
@@ -566,9 +566,9 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			Amount: 2000,
 		})
 
-		vtxoKeys := make([]domain.VtxoKey, 0, len(userVtxos))
+		vtxoKeys := make([]domain.Outpoint, 0, len(userVtxos))
 		for _, v := range userVtxos {
-			vtxoKeys = append(vtxoKeys, v.VtxoKey)
+			vtxoKeys = append(vtxoKeys, v.Outpoint)
 		}
 
 		vtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoKeys)

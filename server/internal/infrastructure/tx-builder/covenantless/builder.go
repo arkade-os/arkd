@@ -290,15 +290,15 @@ func (b *txBuilder) BuildSweepTx(inputs []ports.SweepInput) (txid, signedSweepTx
 
 func (b *txBuilder) VerifyForfeitTxs(
 	vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, forfeitTxs []string,
-) (map[domain.VtxoKey]ports.ValidForfeitTx, error) {
+) (map[domain.Outpoint]ports.ValidForfeitTx, error) {
 	connectorsLeaves := tree.TxGraphChunkList(connectors).Leaves()
 	if len(connectorsLeaves) == 0 {
 		return nil, fmt.Errorf("invalid connectors tree")
 	}
 
-	indexedVtxos := map[domain.VtxoKey]domain.Vtxo{}
+	indexedVtxos := map[domain.Outpoint]domain.Vtxo{}
 	for _, vtxo := range vtxos {
-		indexedVtxos[vtxo.VtxoKey] = vtxo
+		indexedVtxos[vtxo.Outpoint] = vtxo
 	}
 
 	forfeitScript, err := b.getForfeitScript()
@@ -316,7 +316,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 		return nil, err
 	}
 
-	validForfeitTxs := make(map[domain.VtxoKey]ports.ValidForfeitTx)
+	validForfeitTxs := make(map[domain.Outpoint]ports.ValidForfeitTx)
 
 	for _, forfeitTx := range forfeitTxs {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(forfeitTx), true)
@@ -375,7 +375,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, fmt.Errorf("missing connector in forfeit tx %s", forfeitTx)
 		}
 
-		vtxoKey := domain.VtxoKey{
+		vtxoKey := domain.Outpoint{
 			Txid: vtxoInput.PreviousOutPoint.Hash.String(),
 			VOut: vtxoInput.PreviousOutPoint.Index,
 		}
@@ -1127,10 +1127,13 @@ func (b *txBuilder) onchainNetwork() *chaincfg.Params {
 	}
 }
 
-func castToOutpoints(inputs []ports.TxInput) []ports.TxOutpoint {
-	outpoints := make([]ports.TxOutpoint, 0, len(inputs))
+func castToOutpoints(inputs []ports.TxInput) []domain.Outpoint {
+	outpoints := make([]domain.Outpoint, 0, len(inputs))
 	for _, input := range inputs {
-		outpoints = append(outpoints, input)
+		outpoints = append(outpoints, domain.Outpoint{
+			Txid: input.GetTxid(),
+			VOut: input.GetIndex(),
+		})
 	}
 	return outpoints
 }

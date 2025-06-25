@@ -12,7 +12,6 @@ import (
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
-	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -46,7 +45,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 
 	// if the round is found, it means the vtxo has been settled
 	// react by broadcasting the associated forfeit tx
-	if err := s.broadcastForfeitTx(ctx, round, vtxo.VtxoKey); err != nil {
+	if err := s.broadcastForfeitTx(ctx, round, vtxo.Outpoint); err != nil {
 		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)
 	}
 
@@ -55,7 +54,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 
 func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo domain.Vtxo) error {
 	// retrieve the first vtxo created by the spending tx
-	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{
+	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{
 		{Txid: vtxo.SpentBy, VOut: 0},
 	})
 	if err != nil || len(vtxos) <= 0 {
@@ -121,7 +120,7 @@ func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo do
 	return nil
 }
 
-func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *domain.Round, vtxo domain.VtxoKey) error {
+func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *domain.Round, vtxo domain.Outpoint) error {
 	if len(round.Connectors) <= 0 {
 		return fmt.Errorf("no connectors found for round %s, cannot broadcast forfeit tx", round.Txid)
 	}
@@ -144,7 +143,7 @@ func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *dom
 		return fmt.Errorf("failed to broadcast connector branch: %s", err)
 	}
 
-	if err := s.wallet.LockConnectorUtxos(ctx, []ports.TxOutpoint{connectorOutpoint}); err != nil {
+	if err := s.wallet.LockConnectorUtxos(ctx, []domain.Outpoint{connectorOutpoint}); err != nil {
 		return fmt.Errorf("failed to lock connector utxos: %s", err)
 	}
 
@@ -371,7 +370,7 @@ func (s *covenantlessService) waitForConfirmation(ctx context.Context, txid stri
 
 // returns the forfeit tx spending the given vtxo + its connector outpoint
 func findForfeitTx(
-	forfeits []domain.ForfeitTx, vtxo domain.VtxoKey,
+	forfeits []domain.ForfeitTx, vtxo domain.Outpoint,
 ) (*psbt.Packet, domain.Outpoint, error) {
 	for _, forfeit := range forfeits {
 		forfeitTx, err := psbt.NewFromRawBytes(strings.NewReader(forfeit.Tx), true)

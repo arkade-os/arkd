@@ -121,7 +121,7 @@ func (v *vtxoRepository) GetAllNonRedeemedVtxos(ctx context.Context, pubkey stri
 	return unspentVtxos, spentVtxos, nil
 }
 
-func (v *vtxoRepository) GetVtxos(ctx context.Context, outpoints []domain.VtxoKey) ([]domain.Vtxo, error) {
+func (v *vtxoRepository) GetVtxos(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0, len(outpoints))
 	for _, o := range outpoints {
 		res, err := v.querier.SelectVtxoByOutpoint(
@@ -198,7 +198,7 @@ func (v *vtxoRepository) GetSpendableVtxosWithPubKey(ctx context.Context, pubkey
 	vtxos := make([]domain.Vtxo, 0, len(rows))
 	for _, row := range rows {
 		vtxos = append(vtxos, domain.Vtxo{
-			VtxoKey: domain.VtxoKey{
+			Outpoint: domain.Outpoint{
 				Txid: row.Txid,
 				VOut: uint32(row.Vout),
 			},
@@ -218,7 +218,7 @@ func (v *vtxoRepository) GetSpendableVtxosWithPubKey(ctx context.Context, pubkey
 	return vtxos, nil
 }
 
-func (v *vtxoRepository) RedeemVtxos(ctx context.Context, vtxos []domain.VtxoKey) error {
+func (v *vtxoRepository) RedeemVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.MarkVtxoAsRedeemed(
@@ -238,7 +238,7 @@ func (v *vtxoRepository) RedeemVtxos(ctx context.Context, vtxos []domain.VtxoKey
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) SpendVtxos(ctx context.Context, vtxos []domain.VtxoKey, txid string) error {
+func (v *vtxoRepository) SpendVtxos(ctx context.Context, vtxos []domain.Outpoint, txid string) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.MarkVtxoAsSpent(
@@ -259,7 +259,7 @@ func (v *vtxoRepository) SpendVtxos(ctx context.Context, vtxos []domain.VtxoKey,
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.VtxoKey) error {
+func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.MarkVtxoAsSwept(
@@ -279,7 +279,7 @@ func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.VtxoKey)
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) UpdateExpireAt(ctx context.Context, vtxos []domain.VtxoKey, expireAt int64) error {
+func (v *vtxoRepository) UpdateExpireAt(ctx context.Context, vtxos []domain.Outpoint, expireAt int64) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.UpdateVtxoExpireAt(
@@ -385,7 +385,7 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 
 func rowToVtxo(row queries.Vtxo) domain.Vtxo {
 	return domain.Vtxo{
-		VtxoKey: domain.VtxoKey{
+		Outpoint: domain.Outpoint{
 			Txid: row.Txid,
 			VOut: uint32(row.Vout),
 		},

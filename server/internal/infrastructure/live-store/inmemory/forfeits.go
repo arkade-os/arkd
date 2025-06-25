@@ -12,7 +12,7 @@ import (
 type forfeitTxsStore struct {
 	lock            sync.RWMutex
 	builder         ports.TxBuilder
-	forfeitTxs      map[domain.VtxoKey]ports.ValidForfeitTx
+	forfeitTxs      map[domain.Outpoint]ports.ValidForfeitTx
 	connectors      []tree.TxGraphChunk
 	connectorsIndex map[string]domain.Outpoint
 	vtxos           []domain.Vtxo
@@ -21,7 +21,7 @@ type forfeitTxsStore struct {
 func NewForfeitTxsStore(txBuilder ports.TxBuilder) ports.ForfeitTxsStore {
 	return &forfeitTxsStore{
 		builder:    txBuilder,
-		forfeitTxs: make(map[domain.VtxoKey]ports.ValidForfeitTx),
+		forfeitTxs: make(map[domain.Outpoint]ports.ValidForfeitTx),
 	}
 }
 
@@ -45,11 +45,11 @@ func (m *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 
 	// init the forfeit txs map
 	for _, vtxo := range vtxosToSign {
-		m.forfeitTxs[vtxo.VtxoKey] = ports.ValidForfeitTx{}
+		m.forfeitTxs[vtxo.Outpoint] = ports.ValidForfeitTx{}
 	}
 
 	// create the connectors index
-	connectorsIndex := make(map[string]domain.VtxoKey)
+	connectorsIndex := make(map[string]domain.Outpoint)
 
 	if len(vtxosToSign) > 0 {
 		connectorsOutpoints := make([]domain.Outpoint, 0)
@@ -71,7 +71,7 @@ func (m *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 		}
 
 		for i, connectorOutpoint := range connectorsOutpoints {
-			connectorsIndex[connectorOutpoint.String()] = vtxosToSign[i].VtxoKey
+			connectorsIndex[connectorOutpoint.String()] = vtxosToSign[i].Outpoint
 		}
 	}
 
@@ -111,7 +111,7 @@ func (m *forfeitTxsStore) Reset() {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	m.forfeitTxs = make(map[domain.VtxoKey]ports.ValidForfeitTx)
+	m.forfeitTxs = make(map[domain.Outpoint]ports.ValidForfeitTx)
 	m.connectors = nil
 	m.connectorsIndex = nil
 	m.vtxos = nil

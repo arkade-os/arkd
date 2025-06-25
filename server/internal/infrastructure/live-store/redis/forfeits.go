@@ -47,7 +47,7 @@ func (s *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 		forfeitTxs[vtxo.String()] = ""
 	}
 
-	connIndex := make(map[string]domain.VtxoKey)
+	connIndex := make(map[string]domain.Outpoint)
 	if len(vtxosToSign) > 0 {
 		connectorsOutpoints := make([]domain.Outpoint, 0)
 		leaves := tree.TxGraphChunkList(connectors).Leaves()
@@ -61,7 +61,7 @@ func (s *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 			return fmt.Errorf("more vtxos to sign than outpoints, %d > %d", len(vtxosToSign), len(connectorsOutpoints))
 		}
 		for i, connectorOutpoint := range connectorsOutpoints {
-			connIndex[connectorOutpoint.String()] = vtxosToSign[i].VtxoKey
+			connIndex[connectorOutpoint.String()] = vtxosToSign[i].Outpoint
 		}
 	}
 	// Store in Redis atomically
@@ -104,7 +104,7 @@ func (s *forfeitTxsStore) Sign(txs []string) error {
 	if err != nil {
 		return err
 	}
-	connIndex := make(map[string]domain.VtxoKey)
+	connIndex := make(map[string]domain.Outpoint)
 	if err := json.Unmarshal(idxBytes, &connIndex); err != nil {
 		return err
 	}

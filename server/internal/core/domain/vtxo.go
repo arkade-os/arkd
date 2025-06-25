@@ -10,28 +10,16 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 )
 
-type VtxoKey struct {
+type Outpoint struct {
 	Txid string
 	VOut uint32
 }
 
-// implements ports.TxOutpoint interface
-func (k VtxoKey) GetTxid() string {
-	return k.Txid
-}
-
-// implements ports.TxOutpoint interface
-func (k VtxoKey) GetIndex() uint32 {
-	return k.VOut
-}
-
-type Outpoint = VtxoKey
-
-func (k VtxoKey) String() string {
+func (k Outpoint) String() string {
 	return fmt.Sprintf("%s:%d", k.Txid, k.VOut)
 }
 
-func (k VtxoKey) Hash() string {
+func (k Outpoint) Hash() string {
 	calcHash := func(buf []byte, hasher hash.Hash) []byte {
 		_, _ = hasher.Write(buf)
 		return hasher.Sum(nil)
@@ -47,7 +35,7 @@ func (k VtxoKey) Hash() string {
 }
 
 type Vtxo struct {
-	VtxoKey
+	Outpoint
 	Amount         uint64
 	PubKey         string
 	CommitmentTxid string

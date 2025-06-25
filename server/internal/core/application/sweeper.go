@@ -148,7 +148,7 @@ func (s *sweeper) createTask(
 		log.Tracef("sweeper: %s", rootTxid)
 
 		sweepInputs := make([]ports.SweepInput, 0)
-		vtxoKeys := make([]domain.VtxoKey, 0) // vtxos associated to the sweep inputs
+		vtxoKeys := make([]domain.Outpoint, 0) // vtxos associated to the sweep inputs
 
 		// inspect the vtxo tree to find onchain shared outputs
 		sharedOutputs, err := findSweepableOutputs(ctx, s.wallet, s.builder, s.scheduler.Unit(), vtxoTree)
@@ -178,12 +178,12 @@ func (s *sweeper) createTask(
 			// iterate over the expired shared outputs
 			for _, input := range inputs {
 				// sweepableVtxos related to the sweep input
-				sweepableVtxos := make([]domain.VtxoKey, 0)
+				sweepableVtxos := make([]domain.Outpoint, 0)
 
 				// check if input is the vtxo itself
 				vtxos, _ := s.repoManager.Vtxos().GetVtxos(
 					ctx,
-					[]domain.VtxoKey{
+					[]domain.Outpoint{
 						{
 							Txid: input.GetHash().String(),
 							VOut: input.GetIndex(),
@@ -192,7 +192,7 @@ func (s *sweeper) createTask(
 				)
 				if len(vtxos) > 0 {
 					if !vtxos[0].Swept && !vtxos[0].Redeemed {
-						sweepableVtxos = append(sweepableVtxos, vtxos[0].VtxoKey)
+						sweepableVtxos = append(sweepableVtxos, vtxos[0].Outpoint)
 					}
 				} else {
 					// if it's not a vtxo, find all the vtxos leaves reachable from that input
@@ -203,7 +203,7 @@ func (s *sweeper) createTask(
 					}
 
 					for _, leaf := range vtxosLeaves {
-						vtxo := domain.VtxoKey{
+						vtxo := domain.Outpoint{
 							Txid: leaf.UnsignedTx.TxID(),
 							VOut: 0,
 						}
@@ -321,7 +321,7 @@ func (s *sweeper) updateVtxoExpirationTime(
 	expirationTime int64,
 ) error {
 	leaves := tree.Leaves()
-	vtxos := make([]domain.VtxoKey, 0)
+	vtxos := make([]domain.Outpoint, 0)
 
 	for _, leaf := range leaves {
 		vtxo, err := extractVtxoOutpoint(leaf)
@@ -427,14 +427,14 @@ func findLeaves(graph *tree.TxGraph, fromtxid string, vout uint32) ([]*psbt.Pack
 	return foundParent.Leaves(), nil
 }
 
-func extractVtxoOutpoint(leaf *psbt.Packet) (*domain.VtxoKey, error) {
+func extractVtxoOutpoint(leaf *psbt.Packet) (*domain.Outpoint, error) {
 	// Find the first non-anchor output
 	for i, out := range leaf.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
 			continue
 		}
 
-		return &domain.VtxoKey{
+		return &domain.Outpoint{
 			Txid: leaf.UnsignedTx.TxID(),
 			VOut: uint32(i),
 		}, nil

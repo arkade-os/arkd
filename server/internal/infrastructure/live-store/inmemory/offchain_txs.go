@@ -59,7 +59,7 @@ func (m *offChainTxStore) Get(virtualTxid string) (domain.OffchainTx, bool) {
 	return offchainTx, ok
 }
 
-func (m *offChainTxStore) Includes(outpoint domain.VtxoKey) bool {
+func (m *offChainTxStore) Includes(outpoint domain.Outpoint) bool {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 	_, exists := m.inputs[outpoint.String()]

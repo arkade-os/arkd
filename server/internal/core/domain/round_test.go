@@ -15,7 +15,7 @@ var (
 			Id: "0",
 			Inputs: []domain.Vtxo{
 				{
-					VtxoKey: domain.VtxoKey{
+					Outpoint: domain.Outpoint{
 						Txid: txid,
 						VOut: 0,
 					},
@@ -43,7 +43,7 @@ var (
 			Id: "1",
 			Inputs: []domain.Vtxo{
 				{
-					VtxoKey: domain.VtxoKey{
+					Outpoint: domain.Outpoint{
 						Txid: txid,
 						VOut: 0,
 					},
@@ -52,7 +52,7 @@ var (
 					CommitmentTxid: txid,
 				},
 				{
-					VtxoKey: domain.VtxoKey{
+					Outpoint: domain.Outpoint{
 						Txid: txid,
 						VOut: 0,
 					},

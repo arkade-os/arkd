@@ -82,7 +82,7 @@ func (s *offChainTxStore) Get(virtualTxid string) (domain.OffchainTx, bool) {
 	return offchainTx, true
 }
 
-func (s *offChainTxStore) Includes(outpoint domain.VtxoKey) bool {
+func (s *offChainTxStore) Includes(outpoint domain.Outpoint) bool {
 	ctx := context.Background()
 	exists, _ := s.rdb.SIsMember(ctx, offChainInputsSetKey, outpoint.String()).Result()
 	return exists

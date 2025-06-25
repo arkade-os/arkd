@@ -501,14 +501,14 @@ func (h *handler) listenToEvents() {
 			logrus.Debugf("forwarding event to %d listeners", len(h.eventsListenerHandler.listeners))
 			for _, l := range h.eventsListenerHandler.listeners {
 				go func(l *listener[*arkv1.GetEventStreamResponse]) {
-					sentToListeners := 0
+					sentEventsCount := 0
 					for _, ev := range evs {
-						if l.hasTopic(ev.topics) {
+						if l.includesAny(ev.topics) {
 							l.ch <- ev.event
-							sentToListeners++
+							sentEventsCount++
 						}
 					}
-					logrus.Debugf("forwarded %d events to listener %s", sentToListeners, l.id)
+					logrus.Debugf("forwarded %d events to listener %s", sentEventsCount, l.id)
 				}(l)
 			}
 		}
@@ -550,8 +550,4 @@ func (h *handler) listenToTxEvents() {
 type eventWithTopics struct {
 	topics []string
 	event  *arkv1.GetEventStreamResponse
-}
-
-func (e *eventWithTopics) GetTopics() []string {
-	return e.topics
 }

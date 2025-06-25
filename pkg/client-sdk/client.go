@@ -2490,7 +2490,7 @@ func (a *covenantlessArkClient) validateVtxoTree(
 
 		connectorsLeaves := connectorsGraph.Leaves()
 		if len(connectorsLeaves) != len(vtxosInput) {
-			return fmt.Errorf("number of connectors leaves (%d) does not match number of vtxo inputs (%d)", len(connectorsLeaves), len(vtxosInput))
+			return fmt.Errorf("unexpected num of connectors received: expected %d, got %d", len(vtxosInput), len(connectorsLeaves))
 		}
 	}
 
