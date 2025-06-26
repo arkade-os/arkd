@@ -1477,13 +1477,13 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Server},
 				},
 			},
-			&tree.CSVMultisigClosure{
-				MultisigClosure: tree.MultisigClosure{
-					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Server},
-				},
+			&tree.MultisigClosure{
+				PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Server},
 			},
 		},
 	}
+
+	require.Len(t, vtxoScript.ForfeitClosures(), 2)
 
 	vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
 	require.NoError(t, err)
