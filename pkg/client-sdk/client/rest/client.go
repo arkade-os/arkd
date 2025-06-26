@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ark-network/ark/common/tree"
@@ -224,11 +225,20 @@ func (a *restClient) SubmitSignedForfeitTxs(
 	return err
 }
 
-func (c *restClient) GetEventStream(ctx context.Context) (<-chan client.BatchEventChannel, func(), error) {
+func (c *restClient) GetEventStream(ctx context.Context, topics []string) (<-chan client.BatchEventChannel, func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
 	eventsCh := make(chan client.BatchEventChannel)
 	chunkCh := make(chan chunk)
+
+	// Construct the URL with proper multi-format topics parameter
 	url := fmt.Sprintf("%s/v1/batch/events", c.serverURL)
+	if len(topics) > 0 {
+		queryParams := make([]string, 0, len(topics))
+		for _, topic := range topics {
+			queryParams = append(queryParams, fmt.Sprintf("topics=%s", topic))
+		}
+		url += "?" + strings.Join(queryParams, "&")
+	}
 
 	go listenToStream(url, chunkCh)
 
@@ -295,9 +305,8 @@ func (c *restClient) GetEventStream(ctx context.Context) (<-chan client.BatchEve
 					e := resp.Result.BatchFinalization
 
 					event = client.BatchFinalizationEvent{
-						Id:              e.ID,
-						Tx:              e.CommitmentTx,
-						ConnectorsIndex: connectorsIndexFromProto{e.ConnectorsIndex}.parse(),
+						Id: e.ID,
+						Tx: e.CommitmentTx,
 					}
 				case resp.Result.BatchFinalized != nil:
 					e := resp.Result.BatchFinalized
@@ -494,22 +503,6 @@ func newRestArkClient(
 	transport := httptransport.New(cfg.Host, cfg.BasePath, cfg.Schemes)
 	svc := arkservice.New(transport, strfmt.Default)
 	return svc.ArkService, nil
-}
-
-// connectorsIndexFromProto is a wrapper type for map[string]models.V1Outpoint
-type connectorsIndexFromProto struct {
-	connectorsIndex map[string]models.V1Outpoint
-}
-
-func (c connectorsIndexFromProto) parse() map[string]types.VtxoKey {
-	connectorsIndex := make(map[string]types.VtxoKey)
-	for vtxoOutpointStr, connectorOutpoint := range c.connectorsIndex {
-		connectorsIndex[vtxoOutpointStr] = types.VtxoKey{
-			Txid: connectorOutpoint.Txid,
-			VOut: uint32(connectorOutpoint.Vout),
-		}
-	}
-	return connectorsIndex
 }
 
 func vtxosFromRest(restVtxos []*models.V1Vtxo) []types.Vtxo {

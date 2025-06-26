@@ -12,7 +12,6 @@ import (
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
-	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -46,7 +45,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 
 	// if the round is found, it means the vtxo has been settled
 	// react by broadcasting the associated forfeit tx
-	if err := s.broadcastForfeitTx(ctx, round, vtxo.VtxoKey); err != nil {
+	if err := s.broadcastForfeitTx(ctx, round, vtxo.Outpoint); err != nil {
 		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)
 	}
 
@@ -55,7 +54,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 
 func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo domain.Vtxo) error {
 	// retrieve the first vtxo created by the spending tx
-	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{
+	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{
 		{Txid: vtxo.SpentBy, VOut: 0},
 	})
 	if err != nil || len(vtxos) <= 0 {
@@ -121,20 +120,18 @@ func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo do
 	return nil
 }
 
-func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *domain.Round, vtxo domain.VtxoKey) error {
-	forfeitTx, err := findForfeitTx(round.ForfeitTxs, vtxo)
+func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *domain.Round, vtxo domain.Outpoint) error {
+	if len(round.Connectors) <= 0 {
+		return fmt.Errorf("no connectors found for round %s, cannot broadcast forfeit tx", round.Txid)
+	}
+
+	forfeitTx, connectorOutpoint, err := findForfeitTx(round.ForfeitTxs, vtxo)
 	if err != nil {
 		return fmt.Errorf("failed to find forfeit tx: %s", err)
 	}
 
 	if len(forfeitTx.UnsignedTx.TxIn) <= 0 {
 		return fmt.Errorf("invalid forfeit tx: %s", forfeitTx.UnsignedTx.TxID())
-	}
-
-	connector := forfeitTx.UnsignedTx.TxIn[0]
-	connectorOutpoint := txOutpoint{
-		connector.PreviousOutPoint.Hash.String(),
-		connector.PreviousOutPoint.Index,
 	}
 
 	connectors, err := tree.NewTxGraph(round.Connectors)
@@ -146,7 +143,7 @@ func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *dom
 		return fmt.Errorf("failed to broadcast connector branch: %s", err)
 	}
 
-	if err := s.wallet.LockConnectorUtxos(ctx, []ports.TxOutpoint{connectorOutpoint}); err != nil {
+	if err := s.wallet.LockConnectorUtxos(ctx, []domain.Outpoint{connectorOutpoint}); err != nil {
 		return fmt.Errorf("failed to lock connector utxos: %s", err)
 	}
 
@@ -183,11 +180,17 @@ func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *dom
 	return nil
 }
 
-func (s *covenantlessService) broadcastConnectorBranch(ctx context.Context, connectorGraph *tree.TxGraph, connectorOutpoint txOutpoint) error {
+func (s *covenantlessService) broadcastConnectorBranch(ctx context.Context, connectorGraph *tree.TxGraph, connectorOutpoint domain.Outpoint) error {
 	// compute, sign and broadcast the branch txs until the connector outpoint is created
-	branch, err := connectorGraph.SubGraph([]string{connectorOutpoint.txid})
+	branch, err := connectorGraph.SubGraph([]string{connectorOutpoint.Txid})
 	if err != nil {
 		return fmt.Errorf("failed to get branch of connector: %s", err)
+	}
+
+	// If branch is nil, it means there's no path from root to the connector outpoint
+	// This could happen if the connector outpoint is not part of the connector graph
+	if branch == nil {
+		return fmt.Errorf("no path found to connector outpoint %s in connector graph", connectorOutpoint.Txid)
 	}
 
 	return branch.Apply(func(g *tree.TxGraph) (bool, error) {
@@ -365,24 +368,35 @@ func (s *covenantlessService) waitForConfirmation(ctx context.Context, txid stri
 	}
 }
 
+// returns the forfeit tx spending the given vtxo + its connector outpoint
 func findForfeitTx(
-	forfeits []domain.ForfeitTx, vtxo domain.VtxoKey,
-) (*psbt.Packet, error) {
+	forfeits []domain.ForfeitTx, vtxo domain.Outpoint,
+) (*psbt.Packet, domain.Outpoint, error) {
 	for _, forfeit := range forfeits {
 		forfeitTx, err := psbt.NewFromRawBytes(strings.NewReader(forfeit.Tx), true)
 		if err != nil {
-			return nil, err
+			return nil, domain.Outpoint{}, err
 		}
 
-		vtxoInput := forfeitTx.UnsignedTx.TxIn[1]
+		for i, input := range forfeitTx.UnsignedTx.TxIn {
+			if input.PreviousOutPoint.Hash.String() == vtxo.Txid &&
+				input.PreviousOutPoint.Index == vtxo.VOut {
+				connectorInputIndex := uint32(0)
+				if i == 0 {
+					connectorInputIndex = 1
+				}
 
-		if vtxoInput.PreviousOutPoint.Hash.String() == vtxo.Txid &&
-			vtxoInput.PreviousOutPoint.Index == vtxo.VOut {
-			return forfeitTx, nil
+				connectorOutpoint := forfeitTx.UnsignedTx.TxIn[connectorInputIndex].PreviousOutPoint
+
+				return forfeitTx, domain.Outpoint{
+					Txid: connectorOutpoint.Hash.String(),
+					VOut: connectorOutpoint.Index,
+				}, nil
+			}
 		}
 	}
 
-	return nil, fmt.Errorf("forfeit tx not found")
+	return nil, domain.Outpoint{}, fmt.Errorf("forfeit tx not found")
 }
 
 func computeVSize(tx *wire.MsgTx) lntypes.VByte {

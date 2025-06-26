@@ -90,7 +90,25 @@ func NewTxGraph(chunks []TxGraphChunk) (*TxGraph, error) {
 		return nil, fmt.Errorf("multiple root chunks found: %v", rootTxids)
 	}
 
-	return buildGraph(rootTxids[0], chunksByTxid)
+	graph := buildGraph(rootTxids[0], chunksByTxid)
+	if graph == nil {
+		return nil, fmt.Errorf("chunk not found for root txid: %s", rootTxids[0])
+	}
+
+	// verify that the number of chunks is equal to the number node in the graph
+	if graph.nbOfNodes() != len(chunks) {
+		return nil, fmt.Errorf("number of chunks (%d) is not equal to the number of nodes in the graph (%d)", len(chunks), graph.nbOfNodes())
+	}
+
+	return graph, nil
+}
+
+func (g *TxGraph) nbOfNodes() int {
+	nb := 1
+	for _, child := range g.Children {
+		nb += child.nbOfNodes()
+	}
+	return nb
 }
 
 // Serialize serializes the graph to a list of TxGraphChunk
@@ -109,9 +127,23 @@ func (g *TxGraph) Serialize() ([]TxGraphChunk, error) {
 		chunks = append(chunks, childChunks...)
 	}
 
-	serializedTx, err := g.Root.B64Encode()
+	rootChunk, err := g.RootChunk()
 	if err != nil {
 		return nil, err
+	}
+
+	chunks = append(chunks, rootChunk)
+	return chunks, nil
+}
+
+func (g *TxGraph) RootChunk() (TxGraphChunk, error) {
+	if g == nil {
+		return TxGraphChunk{}, fmt.Errorf("unexpected nil graph")
+	}
+
+	serializedTx, err := g.Root.B64Encode()
+	if err != nil {
+		return TxGraphChunk{}, err
 	}
 
 	// create a map of child txids
@@ -120,12 +152,11 @@ func (g *TxGraph) Serialize() ([]TxGraphChunk, error) {
 		childTxids[outputIndex] = child.Root.UnsignedTx.TxID()
 	}
 
-	chunks = append(chunks, TxGraphChunk{
+	return TxGraphChunk{
 		Txid:     g.Root.UnsignedTx.TxID(),
 		Tx:       serializedTx,
 		Children: childTxids,
-	})
-	return chunks, nil
+	}, nil
 }
 
 // Validate checks if the graph is coherent
@@ -290,10 +321,10 @@ func (g *TxGraph) buildSubGraph(targetTxids map[string]bool) (*TxGraph, error) {
 }
 
 // buildGraph recursively builds the TxGraph starting from the given txid
-func buildGraph(rootTxid string, chunksByTxid map[string]decodedTxGraphChunk) (*TxGraph, error) {
+func buildGraph(rootTxid string, chunksByTxid map[string]decodedTxGraphChunk) *TxGraph {
 	chunk, exists := chunksByTxid[rootTxid]
 	if !exists {
-		return nil, fmt.Errorf("chunk not found for txid: %s", rootTxid)
+		return nil
 	}
 
 	graph := &TxGraph{
@@ -303,14 +334,13 @@ func buildGraph(rootTxid string, chunksByTxid map[string]decodedTxGraphChunk) (*
 
 	// recursively build children graphs
 	for outputIndex, childTxid := range chunk.Children {
-		childGraph, err := buildGraph(childTxid, chunksByTxid)
-		if err != nil {
-			return nil, err
+		childGraph := buildGraph(childTxid, chunksByTxid)
+		if childGraph != nil {
+			graph.Children[outputIndex] = childGraph
 		}
-		graph.Children[outputIndex] = childGraph
 	}
 
-	return graph, nil
+	return graph
 }
 
 // internal type to build the graph

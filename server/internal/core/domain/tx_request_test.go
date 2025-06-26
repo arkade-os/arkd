@@ -12,7 +12,7 @@ const pubkey = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967
 
 var inputs = []domain.Vtxo{
 	{
-		VtxoKey: domain.VtxoKey{
+		Outpoint: domain.Outpoint{
 			Txid: "0000000000000000000000000000000000000000000000000000000000000000",
 			VOut: 0,
 		},

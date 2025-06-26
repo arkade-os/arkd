@@ -1944,7 +1944,15 @@ func (a *covenantlessArkClient) handleBatchEvents(
 	receivers []types.Receiver, signerSessions []tree.SignerSession,
 	replayEventsCh chan<- any, cancelCh <-chan struct{},
 ) (string, error) {
-	eventsCh, close, err := a.client.GetEventStream(ctx)
+	topics := make([]string, 0)
+	for _, vtxo := range vtxos {
+		topics = append(topics, vtxo.VtxoKey.String())
+	}
+	for _, signer := range signerSessions {
+		topics = append(topics, signer.GetPublicKey())
+	}
+
+	eventsCh, close, err := a.client.GetEventStream(ctx, topics)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			close()
@@ -2075,7 +2083,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 				}
 				vtxoGraph, err = tree.NewTxGraph(vtxoGraphChunks)
 				if err != nil {
-					return "", err
+					return "", fmt.Errorf("failed to create branch of vtxo tree: %s", err)
 				}
 
 				log.Info("tree signing session started, sending nonces...")
@@ -2117,7 +2125,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 				if len(connectorsGraphChunks) > 0 {
 					connectorsGraph, err = tree.NewTxGraph(connectorsGraphChunks)
 					if err != nil {
-						return "", err
+						return "", fmt.Errorf("failed to create branch of connector tree: %s", err)
 					}
 				}
 
@@ -2319,7 +2327,6 @@ func (a *covenantlessArkClient) handleBatchFinalization(
 		signedForfeits, err := a.createAndSignForfeits(
 			ctx,
 			vtxos, connectorsGraph.Leaves(),
-			event.ConnectorsIndex,
 		)
 		if err != nil {
 			return nil, "", err
@@ -2441,14 +2448,9 @@ func (a *covenantlessArkClient) validateVtxoTree(
 			return err
 		}
 
-		if len(event.ConnectorsIndex) == 0 {
-			return fmt.Errorf("empty connectors index")
-		}
-
-		for _, vtxo := range vtxosInput {
-			if _, ok := event.ConnectorsIndex[vtxo.String()]; !ok {
-				return fmt.Errorf("missing connector index for vtxo %s", vtxo.String())
-			}
+		connectorsLeaves := connectorsGraph.Leaves()
+		if len(connectorsLeaves) != len(vtxosInput) {
+			return fmt.Errorf("unexpected num of connectors received: expected %d, got %d", len(vtxosInput), len(connectorsLeaves))
 		}
 	}
 
@@ -2542,8 +2544,9 @@ func (a *covenantlessArkClient) validateOffchainReceiver(
 }
 
 func (a *covenantlessArkClient) createAndSignForfeits(
-	ctx context.Context, vtxosToSign []client.TapscriptsVtxo,
-	connectorsTxs []*psbt.Packet, connectorsIndex map[string]types.VtxoKey,
+	ctx context.Context,
+	vtxosToSign []client.TapscriptsVtxo,
+	connectorsLeaves []*psbt.Packet,
 ) ([]string, error) {
 	parsedForfeitAddr, err := btcutil.DecodeAddress(a.ForfeitAddress, nil)
 	if err != nil {
@@ -2556,24 +2559,22 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 	}
 
 	signedForfeitTxs := make([]string, 0, len(vtxosToSign))
-	for _, vtxo := range vtxosToSign {
-		connectorOutpoint := connectorsIndex[vtxo.String()]
+	for i, vtxo := range vtxosToSign {
+		connectorTx := connectorsLeaves[i]
 
 		var connector *wire.TxOut
-		for _, connectorTx := range connectorsTxs {
-			if connectorTx.UnsignedTx.TxID() == connectorOutpoint.Txid {
-				if connectorOutpoint.VOut >= uint32(len(connectorTx.UnsignedTx.TxOut)) {
-					return nil, fmt.Errorf("connector index out of bounds: %d >= %d", connectorOutpoint.VOut, len(connectorTx.UnsignedTx.TxOut))
-				}
-				if connectorOutpoint.VOut >= uint32(len(connectorTx.UnsignedTx.TxOut)) {
-					return nil, fmt.Errorf(
-						"connector index out of range: %d >= %d",
-						connectorOutpoint.VOut, len(connectorTx.UnsignedTx.TxOut),
-					)
-				}
-				connector = connectorTx.UnsignedTx.TxOut[connectorOutpoint.VOut]
-				break
+		var connectorOutpoint *wire.OutPoint
+		for outIndex, output := range connectorTx.UnsignedTx.TxOut {
+			if bytes.Equal(tree.ANCHOR_PKSCRIPT, output.PkScript) {
+				continue
 			}
+
+			connector = output
+			connectorOutpoint = &wire.OutPoint{
+				Hash:  connectorTx.UnsignedTx.TxHash(),
+				Index: uint32(outIndex),
+			}
+			break
 		}
 
 		if connector == nil {
@@ -2634,24 +2635,28 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 			vtxoLocktime = cltv.Locktime
 		}
 
-		connectorOutpointHash, err := chainhash.NewHashFromStr(connectorOutpoint.Txid)
-		if err != nil {
-			return nil, err
+		vtxoPrevout := &wire.TxOut{
+			Value:    int64(vtxo.Amount),
+			PkScript: vtxoOutputScript,
 		}
-		connectorInput := &wire.OutPoint{
-			Hash:  *connectorOutpointHash,
-			Index: connectorOutpoint.VOut,
+
+		vtxoSequence := wire.MaxTxInSequenceNum
+		if vtxoLocktime != 0 {
+			vtxoSequence = wire.MaxTxInSequenceNum - 1
 		}
 
 		forfeitTx, err := tree.BuildForfeitTx(
-			vtxoInput, connectorInput, vtxo.Amount, uint64(connector.Value),
-			vtxoOutputScript, connector.PkScript, forfeitPkScript, uint32(vtxoLocktime),
+			[]*wire.OutPoint{vtxoInput, connectorOutpoint},
+			[]uint32{vtxoSequence, wire.MaxTxInSequenceNum},
+			[]*wire.TxOut{vtxoPrevout, connector},
+			forfeitPkScript,
+			uint32(vtxoLocktime),
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		forfeitTx.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{&tapscript}
+		forfeitTx.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{&tapscript}
 
 		b64, err := forfeitTx.B64Encode()
 		if err != nil {

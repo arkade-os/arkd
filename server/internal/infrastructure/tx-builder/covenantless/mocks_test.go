@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/stretchr/testify/mock"
@@ -248,7 +249,7 @@ func (m *mockedWallet) ListConnectorUtxos(ctx context.Context, addr string) ([]p
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) LockConnectorUtxos(ctx context.Context, utxos []ports.TxOutpoint) error {
+func (m *mockedWallet) LockConnectorUtxos(ctx context.Context, utxos []domain.Outpoint) error {
 	args := m.Called(ctx, utxos)
 	return args.Error(0)
 }

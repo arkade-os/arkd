@@ -298,7 +298,7 @@ func (s *txRequestsStore) DeleteVtxos() {
 	s.rdb.Del(ctx, txReqStoreVtxosToRemoveKey)
 }
 
-func (s *txRequestsStore) IncludesAny(outpoints []domain.VtxoKey) (bool, string) {
+func (s *txRequestsStore) IncludesAny(outpoints []domain.Outpoint) (bool, string) {
 	ctx := context.Background()
 	for _, out := range outpoints {
 		exists, err := s.rdb.SIsMember(ctx, txReqStoreVtxosKey, out.String()).Result()

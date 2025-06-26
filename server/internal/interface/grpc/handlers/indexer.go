@@ -452,17 +452,8 @@ func (h *indexerService) SubscribeForScripts(ctx context.Context, req *arkv1.Sub
 	if len(subscriptionId) == 0 {
 		// create new listener
 		subscriptionId = uuid.NewString()
-		indexedScripts := make(map[string]struct{})
-		for _, script := range scripts {
-			indexedScripts[script] = struct{}{}
-		}
 
-		listener := &listener[*arkv1.GetSubscriptionResponse]{
-			id:            subscriptionId,
-			ch:            make(chan *arkv1.GetSubscriptionResponse),
-			topics:        indexedScripts,
-			stopTimeoutCh: make(chan struct{}),
-		}
+		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, scripts)
 
 		h.scriptSubsHandler.pushListener(listener)
 		h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)

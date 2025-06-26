@@ -8,10 +8,8 @@ package models
 import (
 	"context"
 
-	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
-	"github.com/go-openapi/validate"
 )
 
 // V1BatchFinalizationEvent v1 batch finalization event
@@ -22,79 +20,17 @@ type V1BatchFinalizationEvent struct {
 	// commitment tx
 	CommitmentTx string `json:"commitmentTx,omitempty"`
 
-	// vtxo outpoint encoded as string -> connector outpoint
-	ConnectorsIndex map[string]V1Outpoint `json:"connectorsIndex,omitempty"`
-
 	// id
 	ID string `json:"id,omitempty"`
 }
 
 // Validate validates this v1 batch finalization event
 func (m *V1BatchFinalizationEvent) Validate(formats strfmt.Registry) error {
-	var res []error
-
-	if err := m.validateConnectorsIndex(formats); err != nil {
-		res = append(res, err)
-	}
-
-	if len(res) > 0 {
-		return errors.CompositeValidationError(res...)
-	}
 	return nil
 }
 
-func (m *V1BatchFinalizationEvent) validateConnectorsIndex(formats strfmt.Registry) error {
-	if swag.IsZero(m.ConnectorsIndex) { // not required
-		return nil
-	}
-
-	for k := range m.ConnectorsIndex {
-
-		if err := validate.Required("connectorsIndex"+"."+k, "body", m.ConnectorsIndex[k]); err != nil {
-			return err
-		}
-		if val, ok := m.ConnectorsIndex[k]; ok {
-			if err := val.Validate(formats); err != nil {
-				if ve, ok := err.(*errors.Validation); ok {
-					return ve.ValidateName("connectorsIndex" + "." + k)
-				} else if ce, ok := err.(*errors.CompositeError); ok {
-					return ce.ValidateName("connectorsIndex" + "." + k)
-				}
-				return err
-			}
-		}
-
-	}
-
-	return nil
-}
-
-// ContextValidate validate this v1 batch finalization event based on the context it is used
+// ContextValidate validates this v1 batch finalization event based on context it is used
 func (m *V1BatchFinalizationEvent) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
-	var res []error
-
-	if err := m.contextValidateConnectorsIndex(ctx, formats); err != nil {
-		res = append(res, err)
-	}
-
-	if len(res) > 0 {
-		return errors.CompositeValidationError(res...)
-	}
-	return nil
-}
-
-func (m *V1BatchFinalizationEvent) contextValidateConnectorsIndex(ctx context.Context, formats strfmt.Registry) error {
-
-	for k := range m.ConnectorsIndex {
-
-		if val, ok := m.ConnectorsIndex[k]; ok {
-			if err := val.ContextValidate(ctx, formats); err != nil {
-				return err
-			}
-		}
-
-	}
-
 	return nil
 }
 

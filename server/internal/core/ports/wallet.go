@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
@@ -39,7 +40,7 @@ type WalletService interface {
 	ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]TxInput, error)
 	MainAccountBalance(ctx context.Context) (uint64, uint64, error)
 	ConnectorsAccountBalance(ctx context.Context) (uint64, uint64, error)
-	LockConnectorUtxos(ctx context.Context, utxos []TxOutpoint) error
+	LockConnectorUtxos(ctx context.Context, utxos []domain.Outpoint) error
 	GetDustAmount(ctx context.Context) (uint64, error)
 	GetTransaction(ctx context.Context, txid string) (string, error)
 	GetCurrentBlockTime(ctx context.Context) (*BlockTimestamp, error)
@@ -58,11 +59,6 @@ type TxInput interface {
 	GetIndex() uint32
 	GetScript() string
 	GetValue() uint64
-}
-
-type TxOutpoint interface {
-	GetTxid() string
-	GetIndex() uint32
 }
 
 type BlockTimestamp struct {

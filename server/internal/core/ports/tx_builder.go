@@ -18,13 +18,18 @@ type SweepInput interface {
 }
 
 type Input struct {
-	domain.VtxoKey
+	domain.Outpoint
 	Tapscripts []string
 }
 
 type BoardingInput struct {
 	Input
 	Amount uint64
+}
+
+type ValidForfeitTx struct {
+	Tx        string
+	Connector domain.Outpoint
 }
 
 type TxBuilder interface {
@@ -48,8 +53,7 @@ type TxBuilder interface {
 	// connectors.
 	VerifyForfeitTxs(
 		vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, txs []string,
-		connectorIndex map[string]domain.Outpoint,
-	) (valid map[domain.VtxoKey]string, err error)
+	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []SweepInput) (txid string, signedSweepTx string, err error)
 	GetSweepInput(graph *tree.TxGraph) (vtxoTreeExpiry *common.RelativeLocktime, sweepInput SweepInput, err error)
 	FinalizeAndExtract(tx string) (txhex string, err error)

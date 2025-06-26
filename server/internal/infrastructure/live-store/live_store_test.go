@@ -49,11 +49,11 @@ var (
 	s1 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"74df3c018f86c004e9ecc6bbfe58a958753579f5a5feb3a8ed8dc5c9d4dba5c2","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"2cf641ff3a26702fc0a01bc9fb500b6ca9e79bfd88a31f0569c4767203a75707"}`
 	s2 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"c1d480aff75d86460a6f8864782222d05d39b83e4c413c76280e52a09922fe15","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"89c6cbcab945d54f345513338278734c66f94d38016dc1c9842c8a7a2e32d829"}`
 
-	validTx = map[domain.VtxoKey]string{
-		{Txid: "79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab", VOut: 0}: "tx1",
-		{Txid: "c4ae17ae1d95ec2a6adf07166e8daddee3b0f345fb1981f4af5a866517e2d198", VOut: 1}: "tx2",
-		{Txid: "79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab", VOut: 1}: "tx2",
-		{Txid: "c4ae17ae1d95ec2a6adf07166e8daddee3b0f345fb1981f4af5a866517e2d198", VOut: 0}: "tx2",
+	validTx = map[domain.Outpoint]ports.ValidForfeitTx{
+		{Txid: "79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab", VOut: 0}: {Tx: "tx1", Connector: domain.Outpoint{Txid: "conn1", VOut: 0}},
+		{Txid: "c4ae17ae1d95ec2a6adf07166e8daddee3b0f345fb1981f4af5a866517e2d198", VOut: 1}: {Tx: "tx2", Connector: domain.Outpoint{Txid: "conn2", VOut: 0}},
+		{Txid: "79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab", VOut: 1}: {Tx: "tx3", Connector: domain.Outpoint{Txid: "conn2", VOut: 1}},
+		{Txid: "c4ae17ae1d95ec2a6adf07166e8daddee3b0f345fb1981f4af5a866517e2d198", VOut: 0}: {Tx: "tx4", Connector: domain.Outpoint{Txid: "conn3", VOut: 0}},
 	}
 )
 
@@ -63,7 +63,7 @@ func TestLiveStoreImplementations(t *testing.T) {
 	rdb := redis.NewClient(redisOpts)
 
 	txBuilder := new(mockedTxBuilder)
-	txBuilder.On("VerifyForfeitTxs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(validTx, nil)
+	txBuilder.On("VerifyForfeitTxs", mock.Anything, mock.Anything, mock.Anything).Return(validTx, nil)
 
 	stores := []struct {
 		name  string
@@ -118,10 +118,10 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		}
 
 		// IncludesAny
-		found, _ := store.TxRequests().IncludesAny([]domain.VtxoKey{})
+		found, _ := store.TxRequests().IncludesAny([]domain.Outpoint{})
 		require.False(t, found)
 
-		found, _ = store.TxRequests().IncludesAny([]domain.VtxoKey{{Txid: "24de502601c21cf7b227c0667ffe1175841cdd4f6e5b20d3063387333d0b10da", VOut: 0}})
+		found, _ = store.TxRequests().IncludesAny([]domain.Outpoint{{Txid: "24de502601c21cf7b227c0667ffe1175841cdd4f6e5b20d3063387333d0b10da", VOut: 0}})
 		require.True(t, found)
 
 		// Len
@@ -202,7 +202,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 		// Includes
 		outpointJSON := `{"Txid":"fefcc1d90510aa15a77b3bac88a745f7cc58a02a1d4ebe631901bff7f327c51a","VOut":0}`
-		var outpoint domain.VtxoKey
+		var outpoint domain.Outpoint
 		err = json.Unmarshal([]byte(outpointJSON), &outpoint)
 		require.NoError(t, err)
 		exists = store.OffchainTxs().Includes(outpoint)
@@ -380,9 +380,9 @@ type mockedTxBuilder struct {
 	mock.Mock
 }
 
-func (m *mockedTxBuilder) VerifyForfeitTxs(vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, txs []string, connectorIndex map[string]domain.Outpoint) (valid map[domain.VtxoKey]string, err error) {
-	args := m.Called(vtxos, connectors, txs, connectorIndex)
-	return args.Get(0).(map[domain.VtxoKey]string), args.Error(1)
+func (m *mockedTxBuilder) VerifyForfeitTxs(vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, txs []string) (valid map[domain.Outpoint]ports.ValidForfeitTx, err error) {
+	args := m.Called(vtxos, connectors, txs)
+	return args.Get(0).(map[domain.Outpoint]ports.ValidForfeitTx), args.Error(1)
 }
 
 func (m *mockedTxBuilder) BuildRoundTx(serverPubkey *secp256k1.PublicKey, txRequests domain.TxRequests, boardingInputs []ports.BoardingInput, connectorAddresses []string, cosignerPubkeys [][]string) (roundTx string, vtxoTree *tree.TxGraph, connectorAddress string, connectors *tree.TxGraph, err error) {

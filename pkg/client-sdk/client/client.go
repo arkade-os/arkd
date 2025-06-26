@@ -25,7 +25,7 @@ type TransportClient interface {
 	SubmitTreeNonces(ctx context.Context, batchId, cosignerPubkey string, nonces tree.TreeNonces) error
 	SubmitTreeSignatures(ctx context.Context, batchId, cosignerPubkey string, signatures tree.TreePartialSigs) error
 	SubmitSignedForfeitTxs(ctx context.Context, signedForfeitTxs []string, signedCommitmentTx string) error
-	GetEventStream(ctx context.Context) (<-chan BatchEventChannel, func(), error)
+	GetEventStream(ctx context.Context, topics []string) (<-chan BatchEventChannel, func(), error)
 	SubmitTx(ctx context.Context, signedArkTx string, checkpointTxs []string) (
 		arkTxid, finalArkTx string, signedCheckpointTxs []string, err error,
 	)
@@ -70,9 +70,8 @@ type TapscriptsVtxo struct {
 }
 
 type BatchFinalizationEvent struct {
-	Id              string
-	Tx              string
-	ConnectorsIndex map[string]types.VtxoKey // <txid:vout> -> outpoint
+	Id string
+	Tx string
 }
 
 type BatchFinalizedEvent struct {

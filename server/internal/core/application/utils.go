@@ -83,24 +83,24 @@ func findSweepableOutputs(
 	return sweepableOutputs, nil
 }
 
-func getSpentVtxos(requests map[string]domain.TxRequest) []domain.VtxoKey {
-	vtxos := make([]domain.VtxoKey, 0)
+func getSpentVtxos(requests map[string]domain.TxRequest) []domain.Outpoint {
+	vtxos := make([]domain.Outpoint, 0)
 	for _, request := range requests {
 		for _, vtxo := range request.Inputs {
-			vtxos = append(vtxos, vtxo.VtxoKey)
+			vtxos = append(vtxos, vtxo.Outpoint)
 		}
 	}
 	return vtxos
 }
 
-func decodeTx(offchainTx domain.OffchainTx) (string, []domain.VtxoKey, []domain.Vtxo, error) {
-	ins := make([]domain.VtxoKey, 0, len(offchainTx.CheckpointTxs))
+func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain.Vtxo, error) {
+	ins := make([]domain.Outpoint, 0, len(offchainTx.CheckpointTxs))
 	for _, checkpointTx := range offchainTx.CheckpointTxs {
 		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTx), true)
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("failed to parse checkpoint tx: %s", err)
 		}
-		ins = append(ins, domain.VtxoKey{
+		ins = append(ins, domain.Outpoint{
 			Txid: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String(),
 			VOut: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index,
 		})
@@ -118,7 +118,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.VtxoKey, []domain.
 			continue
 		}
 		outs = append(outs, domain.Vtxo{
-			VtxoKey: domain.VtxoKey{
+			Outpoint: domain.Outpoint{
 				Txid: txid,
 				VOut: uint32(outIndex),
 			},
@@ -255,7 +255,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
 			vtxos = append(vtxos, domain.Vtxo{
-				VtxoKey:            domain.VtxoKey{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
+				Outpoint:           domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
 				PubKey:             vtxoPubkey,
 				Amount:             uint64(out.Value),
 				CommitmentTxids:    []string{round.Txid},

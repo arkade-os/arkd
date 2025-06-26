@@ -215,7 +215,7 @@ func (a *adminService) CreateNotes(ctx context.Context, value uint32, quantity i
 		}
 
 		vtxo := domain.Vtxo{
-			VtxoKey: domain.VtxoKey{
+			Outpoint: domain.Outpoint{
 				Txid: bip322Input.OutPoint.Hash.String(),
 				VOut: bip322Input.OutPoint.Index,
 			},

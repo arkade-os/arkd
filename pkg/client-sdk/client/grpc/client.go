@@ -170,10 +170,10 @@ func (a *grpcClient) SubmitSignedForfeitTxs(
 	return err
 }
 
-func (a *grpcClient) GetEventStream(ctx context.Context) (<-chan client.BatchEventChannel, func(), error) {
+func (a *grpcClient) GetEventStream(ctx context.Context, topics []string) (<-chan client.BatchEventChannel, func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	stream, err := a.svc.GetEventStream(ctx, &arkv1.GetEventStreamRequest{})
+	stream, err := a.svc.GetEventStream(ctx, &arkv1.GetEventStreamRequest{Topics: topics})
 	if err != nil {
 		cancel()
 		return nil, nil, err

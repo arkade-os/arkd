@@ -67,8 +67,6 @@ message BatchStartedEvent {
 message BatchFinalizationEvent {
   string id = 1;
   string commitment_tx = 2;
-  // vtxo outpoint encoded as string -> connector outpoint
-  map<string, Outpoint> connectors_index = 3;
 }
 
 message BatchFinalizedEvent {

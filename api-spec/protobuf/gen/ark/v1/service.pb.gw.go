@@ -218,6 +218,8 @@ func local_request_ArkService_SubmitSignedForfeitTxs_0(ctx context.Context, mars
 	return msg, metadata, err
 }
 
+var filter_ArkService_GetEventStream_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
+
 func request_ArkService_GetEventStream_0(ctx context.Context, marshaler runtime.Marshaler, client ArkServiceClient, req *http.Request, pathParams map[string]string) (ArkService_GetEventStreamClient, runtime.ServerMetadata, error) {
 	var (
 		protoReq GetEventStreamRequest
@@ -225,6 +227,12 @@ func request_ArkService_GetEventStream_0(ctx context.Context, marshaler runtime.
 	)
 	if req.Body != nil {
 		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_ArkService_GetEventStream_0); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	stream, err := client.GetEventStream(ctx, &protoReq)
 	if err != nil {

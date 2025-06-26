@@ -60,19 +60,6 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 	return list
 }
 
-type connectorsIndex map[string]domain.Outpoint
-
-func (c connectorsIndex) toProto() map[string]*arkv1.Outpoint {
-	proto := make(map[string]*arkv1.Outpoint)
-	for vtxo, outpoint := range c {
-		proto[vtxo] = &arkv1.Outpoint{
-			Txid: outpoint.Txid,
-			Vout: outpoint.VOut,
-		}
-	}
-	return proto
-}
-
 type txEvent application.TransactionEvent
 
 func (t txEvent) toProto() *arkv1.TxNotification {

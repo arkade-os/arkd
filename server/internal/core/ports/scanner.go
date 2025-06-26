@@ -6,7 +6,7 @@ import (
 )
 
 type VtxoWithValue struct {
-	domain.VtxoKey
+	domain.Outpoint
 	Value uint64
 }
 

@@ -365,7 +365,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 	switch {
 	case offchainTx.IsAccepted():
-		spentVtxos := make([]domain.VtxoKey, 0)
+		spentVtxos := make([]domain.Outpoint, 0)
 
 		for _, tx := range offchainTx.CheckpointTxs {
 			_, ins, _, err := s.txDecoder.DecodeTx(tx)
@@ -402,7 +402,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			isDust := common.IsSubDustScript(out.PkScript)
 
 			newVtxos = append(newVtxos, domain.Vtxo{
-				VtxoKey: domain.VtxoKey{
+				Outpoint: domain.Outpoint{
 					Txid: txid,
 					VOut: uint32(outIndex),
 				},
@@ -428,11 +428,11 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	}
 }
 
-func getSpentVtxoKeysFromRound(requests map[string]domain.TxRequest) []domain.VtxoKey {
-	vtxos := make([]domain.VtxoKey, 0)
+func getSpentVtxoKeysFromRound(requests map[string]domain.TxRequest) []domain.Outpoint {
+	vtxos := make([]domain.Outpoint, 0)
 	for _, request := range requests {
 		for _, vtxo := range request.Inputs {
-			vtxos = append(vtxos, vtxo.VtxoKey)
+			vtxos = append(vtxos, vtxo.Outpoint)
 		}
 	}
 	return vtxos
@@ -464,7 +464,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
 			vtxos = append(vtxos, domain.Vtxo{
-				VtxoKey:            domain.VtxoKey{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
+				Outpoint:           domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
 				PubKey:             vtxoPubkey,
 				Amount:             uint64(out.Value),
 				CommitmentTxids:    []string{round.Txid},

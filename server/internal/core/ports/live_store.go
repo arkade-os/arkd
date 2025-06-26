@@ -29,7 +29,7 @@ type TxRequestsStore interface {
 	DeleteVtxos()
 	ViewAll(ids []string) ([]TimedTxRequest, error)
 	View(id string) (*domain.TxRequest, bool)
-	IncludesAny(outpoints []domain.VtxoKey) (bool, string)
+	IncludesAny(outpoints []domain.Outpoint) (bool, string)
 }
 
 type ForfeitTxsStore interface {
@@ -46,7 +46,7 @@ type OffChainTxStore interface {
 	Add(offchainTx domain.OffchainTx)
 	Remove(virtualTxid string)
 	Get(virtualTxid string) (domain.OffchainTx, bool)
-	Includes(outpoint domain.VtxoKey) bool
+	Includes(outpoint domain.Outpoint) bool
 }
 
 type CurrentRoundStore interface {

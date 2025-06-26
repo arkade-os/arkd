@@ -430,7 +430,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 						Id: uuid.New().String(),
 						Inputs: []domain.Vtxo{
 							{
-								VtxoKey: domain.VtxoKey{
+								Outpoint: domain.Outpoint{
 									Txid: randomString(32),
 									VOut: 0,
 								},
@@ -449,7 +449,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 						Inputs: []domain.Vtxo{
 
 							{
-								VtxoKey: domain.VtxoKey{
+								Outpoint: domain.Outpoint{
 									Txid: randomString(32),
 									VOut: 0,
 								},
@@ -542,7 +542,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		userVtxos := []domain.Vtxo{
 			{
-				VtxoKey: domain.VtxoKey{
+				Outpoint: domain.Outpoint{
 					Txid: randomString(32),
 					VOut: 0,
 				},
@@ -552,7 +552,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				CommitmentTxids:    []string{"root", "cmt1", "cmt2"},
 			},
 			{
-				VtxoKey: domain.VtxoKey{
+				Outpoint: domain.Outpoint{
 					Txid: randomString(32),
 					VOut: 1,
 				},
@@ -563,7 +563,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			},
 		}
 		newVtxos := append(userVtxos, domain.Vtxo{
-			VtxoKey: domain.VtxoKey{
+			Outpoint: domain.Outpoint{
 				Txid: randomString(32),
 				VOut: 1,
 			},
@@ -573,9 +573,9 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			CommitmentTxids:    []string{"root"},
 		})
 
-		vtxoKeys := make([]domain.VtxoKey, 0, len(userVtxos))
+		vtxoKeys := make([]domain.Outpoint, 0, len(userVtxos))
 		for _, v := range userVtxos {
-			vtxoKeys = append(vtxoKeys, v.VtxoKey)
+			vtxoKeys = append(vtxoKeys, v.Outpoint)
 		}
 
 		vtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoKeys)
@@ -928,7 +928,7 @@ func (a sortReceivers) Less(i, j int) bool { return a[i].Amount < a[j].Amount }
 func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
 	for i, v := range gotVtxos {
 		expected := expectedVtxos[i]
-		require.Exactly(t, expected.VtxoKey, v.VtxoKey)
+		require.Exactly(t, expected.Outpoint, v.Outpoint)
 		require.Exactly(t, expected.Amount, v.Amount)
 		require.Exactly(t, expected.CreatedAt, v.CreatedAt)
 		require.Exactly(t, expected.ExpireAt, v.ExpireAt)

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -11,6 +12,33 @@ type listener[T any] struct {
 	topics        map[string]struct{}
 	ch            chan T
 	stopTimeoutCh chan struct{}
+}
+
+func newListener[T any](id string, topics []string) *listener[T] {
+	topicsMap := make(map[string]struct{})
+	for _, topic := range topics {
+		topicsMap[formatTopic(topic)] = struct{}{}
+	}
+	return &listener[T]{
+		id:            id,
+		topics:        topicsMap,
+		ch:            make(chan T, 1000),
+		stopTimeoutCh: make(chan struct{}),
+	}
+}
+
+func (l *listener[T]) includesAny(topics []string) bool {
+	if len(topics) == 0 {
+		return true
+	}
+
+	for _, topic := range topics {
+		formattedTopic := formatTopic(topic)
+		if _, ok := l.topics[formattedTopic]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // broker is a simple utility struct to manage subscriptions.
@@ -85,7 +113,7 @@ func (h *broker[T]) addTopics(id string, topics []string) error {
 	}
 
 	for _, topic := range topics {
-		h.listeners[id].topics[topic] = struct{}{}
+		h.listeners[id].topics[formatTopic(topic)] = struct{}{}
 	}
 	return nil
 }
@@ -99,7 +127,7 @@ func (h *broker[T]) removeTopics(id string, topics []string) error {
 	}
 
 	for _, topic := range topics {
-		delete(h.listeners[id].topics, topic)
+		delete(h.listeners[id].topics, formatTopic(topic))
 	}
 	return nil
 }
@@ -147,4 +175,8 @@ func (h *broker[T]) stopTimeout(id string) {
 	h.listeners[id].stopTimeoutCh <- struct{}{}
 	close(h.listeners[id].stopTimeoutCh)
 	h.listeners[id].stopTimeoutCh = nil
+}
+
+func formatTopic(topic string) string {
+	return strings.Trim(strings.ToLower(topic), " ")
 }

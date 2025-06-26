@@ -60,7 +60,7 @@ func (r *vtxoRepository) AddVtxos(
 }
 
 func (r *vtxoRepository) SpendVtxos(
-	ctx context.Context, vtxoKeys []domain.VtxoKey, spentBy string,
+	ctx context.Context, vtxoKeys []domain.Outpoint, spentBy string,
 ) error {
 	for _, vtxoKey := range vtxoKeys {
 		if err := r.spendVtxo(ctx, vtxoKey, spentBy); err != nil {
@@ -71,7 +71,7 @@ func (r *vtxoRepository) SpendVtxos(
 }
 
 func (r *vtxoRepository) RedeemVtxos(
-	ctx context.Context, vtxoKeys []domain.VtxoKey,
+	ctx context.Context, vtxoKeys []domain.Outpoint,
 ) error {
 	for _, vtxoKey := range vtxoKeys {
 		_, err := r.redeemVtxo(ctx, vtxoKey)
@@ -83,7 +83,7 @@ func (r *vtxoRepository) RedeemVtxos(
 }
 
 func (r *vtxoRepository) GetVtxos(
-	ctx context.Context, vtxoKeys []domain.VtxoKey,
+	ctx context.Context, vtxoKeys []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0, len(vtxoKeys))
 	for _, vtxoKey := range vtxoKeys {
@@ -144,7 +144,7 @@ func (r *vtxoRepository) GetAll(ctx context.Context) ([]domain.Vtxo, error) {
 }
 
 func (r *vtxoRepository) SweepVtxos(
-	ctx context.Context, vtxoKeys []domain.VtxoKey,
+	ctx context.Context, vtxoKeys []domain.Outpoint,
 ) error {
 	for _, vtxoKey := range vtxoKeys {
 		if err := r.sweepVtxo(ctx, vtxoKey); err != nil {
@@ -154,7 +154,7 @@ func (r *vtxoRepository) SweepVtxos(
 	return nil
 }
 
-func (r *vtxoRepository) UpdateExpireAt(ctx context.Context, vtxos []domain.VtxoKey, expireAt int64) error {
+func (r *vtxoRepository) UpdateExpireAt(ctx context.Context, vtxos []domain.Outpoint, expireAt int64) error {
 	var err error
 
 	for range maxRetries {
@@ -291,7 +291,7 @@ func (r *vtxoRepository) addVtxos(
 }
 
 func (r *vtxoRepository) getVtxo(
-	ctx context.Context, vtxoKey domain.VtxoKey,
+	ctx context.Context, vtxoKey domain.Outpoint,
 ) (*domain.Vtxo, error) {
 	var vtxo domain.Vtxo
 	var err error
@@ -308,7 +308,7 @@ func (r *vtxoRepository) getVtxo(
 	return &vtxo, nil
 }
 
-func (r *vtxoRepository) spendVtxo(ctx context.Context, vtxoKey domain.VtxoKey, spendBy string) error {
+func (r *vtxoRepository) spendVtxo(ctx context.Context, vtxoKey domain.Outpoint, spendBy string) error {
 	vtxo, err := r.getVtxo(ctx, vtxoKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -326,7 +326,7 @@ func (r *vtxoRepository) spendVtxo(ctx context.Context, vtxoKey domain.VtxoKey, 
 	return r.updateVtxo(ctx, vtxo)
 }
 
-func (r *vtxoRepository) redeemVtxo(ctx context.Context, vtxoKey domain.VtxoKey) (*domain.Vtxo, error) {
+func (r *vtxoRepository) redeemVtxo(ctx context.Context, vtxoKey domain.Outpoint) (*domain.Vtxo, error) {
 	vtxo, err := r.getVtxo(ctx, vtxoKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -360,7 +360,7 @@ func (r *vtxoRepository) findVtxos(ctx context.Context, query *badgerhold.Query)
 	return vtxos, err
 }
 
-func (r *vtxoRepository) sweepVtxo(ctx context.Context, vtxoKey domain.VtxoKey) error {
+func (r *vtxoRepository) sweepVtxo(ctx context.Context, vtxoKey domain.Outpoint) error {
 	vtxo, err := r.getVtxo(ctx, vtxoKey)
 	if err != nil {
 		return err

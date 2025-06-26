@@ -261,12 +261,10 @@ func (h *handler) SubmitSignedForfeitTxs(
 }
 
 func (h *handler) GetEventStream(
-	_ *arkv1.GetEventStreamRequest, stream arkv1.ArkService_GetEventStreamServer,
+	req *arkv1.GetEventStreamRequest, stream arkv1.ArkService_GetEventStreamServer,
 ) error {
-	listener := &listener[*arkv1.GetEventStreamResponse]{
-		id: uuid.NewString(),
-		ch: make(chan *arkv1.GetEventStreamResponse),
-	}
+	topics := req.GetTopics()
+	listener := newListener[*arkv1.GetEventStreamResponse](uuid.NewString(), topics)
 
 	h.eventsListenerHandler.pushListener(listener)
 	defer h.eventsListenerHandler.removeListener(listener.id)
@@ -331,10 +329,7 @@ func (h *handler) GetTransactionsStream(
 	_ *arkv1.GetTransactionsStreamRequest,
 	stream arkv1.ArkService_GetTransactionsStreamServer,
 ) error {
-	listener := &listener[*arkv1.GetTransactionsStreamResponse]{
-		id: uuid.NewString(),
-		ch: make(chan *arkv1.GetTransactionsStreamResponse),
-	}
+	listener := newListener[*arkv1.GetTransactionsStreamResponse](uuid.NewString(), []string{})
 
 	h.transactionsListenerHandler.pushListener(listener)
 
@@ -361,37 +356,53 @@ func (h *handler) GetTransactionsStream(
 func (h *handler) listenToEvents() {
 	channel := h.svc.GetEventsChannel(context.Background())
 	for events := range channel {
-		evs := make([]*arkv1.GetEventStreamResponse, 0, len(events))
+		evs := make([]eventWithTopics, 0, len(events))
 
 		for _, event := range events {
 			switch e := event.(type) {
 			case domain.RoundFinalizationStarted:
-				evs = append(evs, &arkv1.GetEventStreamResponse{
+
+				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFinalization{
 						BatchFinalization: &arkv1.BatchFinalizationEvent{
-							Id:              e.Id,
-							CommitmentTx:    e.RoundTx,
-							ConnectorsIndex: connectorsIndex(e.ConnectorsIndex).toProto(),
+							Id:           e.Id,
+							CommitmentTx: e.RoundTx,
 						},
 					},
+				}
+
+				evs = append(evs, eventWithTopics{
+					topics: nil,
+					event:  ev,
 				})
+
 			case application.RoundFinalized:
-				evs = append(evs, &arkv1.GetEventStreamResponse{
+				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFinalized{
 						BatchFinalized: &arkv1.BatchFinalizedEvent{
 							Id:             e.Id,
 							CommitmentTxid: e.Txid,
 						},
 					},
+				}
+
+				evs = append(evs, eventWithTopics{
+					topics: nil,
+					event:  ev,
 				})
 			case domain.RoundFailed:
-				evs = append(evs, &arkv1.GetEventStreamResponse{
+				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFailed{
 						BatchFailed: &arkv1.BatchFailed{
 							Id:     e.Id,
 							Reason: e.Err,
 						},
 					},
+				}
+
+				evs = append(evs, eventWithTopics{
+					topics: nil,
+					event:  ev,
 				})
 			case application.BatchStarted:
 				hashes := make([]string, 0, len(e.IntentIdsHashes))
@@ -399,7 +410,7 @@ func (h *handler) listenToEvents() {
 					hashes = append(hashes, hex.EncodeToString(hash[:]))
 				}
 
-				evs = append(evs, &arkv1.GetEventStreamResponse{
+				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchStarted{
 						BatchStarted: &arkv1.BatchStartedEvent{
 							Id:             e.Id,
@@ -407,9 +418,14 @@ func (h *handler) listenToEvents() {
 							BatchExpiry:    int64(e.BatchExpiry),
 						},
 					},
+				}
+
+				evs = append(evs, eventWithTopics{
+					topics: nil,
+					event:  ev,
 				})
 			case application.RoundSigningStarted:
-				evs = append(evs, &arkv1.GetEventStreamResponse{
+				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeSigningStarted{
 						TreeSigningStarted: &arkv1.TreeSigningStartedEvent{
 							Id:                   e.Id,
@@ -417,6 +433,11 @@ func (h *handler) listenToEvents() {
 							CosignersPubkeys:     e.CosignersPubkeys,
 						},
 					},
+				}
+
+				evs = append(evs, eventWithTopics{
+					topics: nil,
+					event:  ev,
 				})
 			case application.RoundSigningNoncesGenerated:
 				serialized, err := json.Marshal(e.Nonces)
@@ -425,16 +446,21 @@ func (h *handler) listenToEvents() {
 					continue
 				}
 
-				evs = append(evs, &arkv1.GetEventStreamResponse{
+				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeNoncesAggregated{
 						TreeNoncesAggregated: &arkv1.TreeNoncesAggregatedEvent{
 							Id:         e.Id,
 							TreeNonces: string(serialized),
 						},
 					},
+				}
+
+				evs = append(evs, eventWithTopics{
+					topics: nil,
+					event:  ev,
 				})
 			case application.BatchTree:
-				evs = append(evs, &arkv1.GetEventStreamResponse{
+				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeTx{
 						TreeTx: &arkv1.TreeTxEvent{
 							Id:         e.Id,
@@ -444,9 +470,14 @@ func (h *handler) listenToEvents() {
 							Children:   e.Chunk.Children,
 						},
 					},
+				}
+
+				evs = append(evs, eventWithTopics{
+					topics: e.Topic,
+					event:  ev,
 				})
 			case application.BatchTreeSignature:
-				evs = append(evs, &arkv1.GetEventStreamResponse{
+				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeSignature{
 						TreeSignature: &arkv1.TreeSignatureEvent{
 							Id:         e.Id,
@@ -456,6 +487,11 @@ func (h *handler) listenToEvents() {
 							Signature:  e.Signature,
 						},
 					},
+				}
+
+				evs = append(evs, eventWithTopics{
+					topics: e.Topic,
+					event:  ev,
 				})
 			}
 		}
@@ -465,9 +501,14 @@ func (h *handler) listenToEvents() {
 			logrus.Debugf("forwarding event to %d listeners", len(h.eventsListenerHandler.listeners))
 			for _, l := range h.eventsListenerHandler.listeners {
 				go func(l *listener[*arkv1.GetEventStreamResponse]) {
+					sentEventsCount := 0
 					for _, ev := range evs {
-						l.ch <- ev
+						if l.includesAny(ev.topics) {
+							l.ch <- ev.event
+							sentEventsCount++
+						}
 					}
+					logrus.Debugf("forwarded %d events to listener %s", sentEventsCount, l.id)
 				}(l)
 			}
 		}
@@ -504,4 +545,9 @@ func (h *handler) listenToTxEvents() {
 			}
 		}
 	}
+}
+
+type eventWithTopics struct {
+	topics []string
+	event  *arkv1.GetEventStreamResponse
 }

@@ -587,7 +587,7 @@ func combinedRowToVtxo(row queries.RequestVtxoVw) domain.Vtxo {
 		commitmentTxids = strings.Split(commitments, ",")
 	}
 	return domain.Vtxo{
-		VtxoKey: domain.VtxoKey{
+		Outpoint: domain.Outpoint{
 			Txid: row.Txid.String,
 			VOut: uint32(row.Vout.Int64),
 		},

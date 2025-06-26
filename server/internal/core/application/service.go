@@ -349,8 +349,8 @@ func (s *covenantlessService) SubmitOffchainTx(
 
 	checkpointTxs := make(map[string]string)
 	checkpointPsbts := make(map[string]*psbt.Packet) // txid -> psbt
-	spentVtxoKeys := make([]domain.VtxoKey, 0)
-	checkpointTxsByVtxoKey := make(map[domain.VtxoKey]string)
+	spentVtxoKeys := make([]domain.Outpoint, 0)
+	checkpointTxsByVtxoKey := make(map[domain.Outpoint]string)
 	for _, tx := range unsignedCheckpoints {
 		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 		if err != nil {
@@ -361,7 +361,7 @@ func (s *covenantlessService) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("invalid checkpoint tx %s", checkpointPtx.UnsignedTx.TxID())
 		}
 
-		vtxoKey := domain.VtxoKey{
+		vtxoKey := domain.Outpoint{
 			Txid: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String(),
 			VOut: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index,
 		}
@@ -391,13 +391,13 @@ func (s *covenantlessService) SubmitOffchainTx(
 		return nil, "", "", fmt.Errorf("vtxo %s is already registered for next round", vtxo)
 	}
 
-	indexedSpentVtxos := make(map[domain.VtxoKey]domain.Vtxo)
+	indexedSpentVtxos := make(map[domain.Outpoint]domain.Vtxo)
 	commitmentTxsByCheckpointTxid := make(map[string]string)
 	expiration := int64(math.MaxInt64)
 	rootCommitmentTxid := ""
 	for _, vtxo := range spentVtxos {
-		indexedSpentVtxos[vtxo.VtxoKey] = vtxo
-		commitmentTxsByCheckpointTxid[checkpointTxsByVtxoKey[vtxo.VtxoKey]] = vtxo.RootCommitmentTxid
+		indexedSpentVtxos[vtxo.Outpoint] = vtxo
+		commitmentTxsByCheckpointTxid[checkpointTxsByVtxoKey[vtxo.Outpoint]] = vtxo.RootCommitmentTxid
 		if vtxo.ExpireAt < expiration {
 			rootCommitmentTxid = vtxo.RootCommitmentTxid
 			expiration = vtxo.ExpireAt
@@ -429,7 +429,7 @@ func (s *covenantlessService) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("no matching tapscript found")
 		}
 
-		outpoint := domain.VtxoKey{
+		outpoint := domain.Outpoint{
 			Txid: checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String(),
 			VOut: checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint.Index,
 		}
@@ -818,7 +818,7 @@ func (s *covenantlessService) RegisterIntent(ctx context.Context, bip322signatur
 			return "", fmt.Errorf("failed to decode taptree: %s", err)
 		}
 
-		vtxoKey := domain.VtxoKey{
+		vtxoKey := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
 			VOut: outpoint.Index,
 		}
@@ -830,7 +830,7 @@ func (s *covenantlessService) RegisterIntent(ctx context.Context, bip322signatur
 		now := time.Now()
 		locktime, disabled := common.BIP68DecodeSequence(bip322signature.TxIn[i+1].Sequence)
 
-		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{vtxoKey})
+		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoKey})
 		if err != nil || len(vtxosResult) == 0 {
 			// vtxo not found in db, check if it exists on-chain
 			if _, ok := boardingTxs[vtxoKey.Txid]; !ok {
@@ -845,7 +845,7 @@ func (s *covenantlessService) RegisterIntent(ctx context.Context, bip322signatur
 			tx := boardingTxs[vtxoKey.Txid]
 			prevouts[outpoint] = tx.TxOut[vtxoKey.VOut]
 			input := ports.Input{
-				VtxoKey:    vtxoKey,
+				Outpoint:   vtxoKey,
 				Tapscripts: tapscripts,
 			}
 			boardingInput, err := newBoardingInput(tx, input, s.pubkey, s.boardingExitDelay, s.allowCSVBlockType)
@@ -1006,11 +1006,11 @@ func (s *covenantlessService) SpendVtxos(ctx context.Context, inputs []ports.Inp
 	boardingTxs := make(map[string]wire.MsgTx, 0) // txid -> txhex
 
 	for _, input := range inputs {
-		if s.liveStore.OffchainTxs().Includes(input.VtxoKey) {
+		if s.liveStore.OffchainTxs().Includes(input.Outpoint) {
 			return "", fmt.Errorf("vtxo %s is currently being spent", input.String())
 		}
 
-		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{input.VtxoKey})
+		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{input.Outpoint})
 		if err != nil || len(vtxosResult) == 0 {
 			// vtxo not found in db, check if it exists on-chain
 			if _, ok := boardingTxs[input.Txid]; !ok {
@@ -1418,12 +1418,12 @@ func (s *covenantlessService) DeleteTxRequestsByProof(
 	boardingTxs := make(map[string]wire.MsgTx)
 	prevouts := make(map[wire.OutPoint]*wire.TxOut)
 	for _, outpoint := range outpoints {
-		vtxoKey := domain.VtxoKey{
+		vtxoKey := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
 			VOut: outpoint.Index,
 		}
 
-		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{vtxoKey})
+		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoKey})
 		if err != nil || len(vtxosResult) == 0 {
 			if _, ok := boardingTxs[vtxoKey.Txid]; !ok {
 				txhex, err := s.wallet.GetTransaction(ctx, outpoint.Hash.String())
@@ -1860,14 +1860,7 @@ func (s *covenantlessService) startFinalization(roundTiming roundTiming, request
 			listOfCosignersPubkeys = append(listOfCosignersPubkeys, pubkey)
 		}
 
-		vtxoTreeChunks, err = vtxoTree.Serialize()
-		if err != nil {
-			s.liveStore.CurrentRound().Fail(fmt.Errorf("failed to serialize vtxo tree: %s", err))
-			log.WithError(err).Warn("failed to serialize vtxo tree")
-			return
-		}
-
-		s.propagateRoundSigningStartedEvent(vtxoTreeChunks, listOfCosignersPubkeys)
+		s.propagateRoundSigningStartedEvent(vtxoTree, listOfCosignersPubkeys)
 
 		select {
 		case <-time.After(thirdOfRemainingDuration):
@@ -1958,8 +1951,7 @@ func (s *covenantlessService) startFinalization(roundTiming roundTiming, request
 
 	round := s.liveStore.CurrentRound().Get()
 	_, err = round.StartFinalization(
-		connectorAddress, connectorsChunks, vtxoTreeChunks, round.Txid, round.CommitmentTx,
-		s.liveStore.ForfeitTxs().GetConnectorsIndexes(), s.vtxoTreeExpiry.Seconds(),
+		connectorAddress, connectorsChunks, vtxoTreeChunks, round.Txid, round.CommitmentTx, s.vtxoTreeExpiry.Seconds(),
 	)
 	if err != nil {
 		s.liveStore.CurrentRound().Fail(fmt.Errorf("failed to start finalization: %s", err))
@@ -2131,7 +2123,7 @@ func (s *covenantlessService) listenToScannerNotifications() {
 
 			for _, keys := range vtxoKeys {
 				for _, v := range keys {
-					vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{v.VtxoKey})
+					vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{v.Outpoint})
 					if err != nil {
 						log.WithError(err).Warn("failed to retrieve vtxos, skipping...")
 						return
@@ -2182,19 +2174,31 @@ func (s *covenantlessService) propagateEvents(round *domain.Round) {
 	// because it contains the vtxoTree and connectorsTree
 	// and we need to propagate them in specific BatchTree events
 	case domain.RoundFinalizationStarted:
-		graph, err := tree.NewTxGraph(ev.VtxoTree)
+		vtxoGraph, err := tree.NewTxGraph(ev.VtxoTree)
 		if err != nil {
 			log.WithError(err).Warn("failed to create vtxo tree")
 			return
 		}
+
 		events = append(
 			events,
-			batchTreeSignatureEvents(graph, 0, round.Id)...,
+			batchTreeSignatureEvents(vtxoGraph, 0, round.Id)...,
 		)
-		events = append(
-			events,
-			batchTreeEvents(ev.Connectors, 1, round.Id)...,
-		)
+
+		if len(ev.Connectors) > 0 {
+			connectorsGraph, err := tree.NewTxGraph(ev.Connectors)
+			if err != nil {
+				log.WithError(err).Warn("failed to create connectors tree")
+				return
+			}
+
+			connectorsIndex := s.liveStore.ForfeitTxs().GetConnectorsIndexes()
+
+			events = append(
+				events,
+				batchTreeEvents(connectorsGraph, 1, round.Id, getConnectorTreeTopic(connectorsIndex))...,
+			)
+		}
 	case domain.RoundFinalized:
 		lastEvent = RoundFinalized{lastEvent.(domain.RoundFinalized), round.Txid}
 	}
@@ -2223,10 +2227,11 @@ func (s *covenantlessService) propagateBatchStartedEvent(requests []ports.TimedT
 	s.eventsCh <- []domain.Event{ev}
 }
 
-func (s *covenantlessService) propagateRoundSigningStartedEvent(unsignedVtxoTreeChunks []tree.TxGraphChunk, cosignersPubkeys []string) {
+func (s *covenantlessService) propagateRoundSigningStartedEvent(unsignedVtxoGraph *tree.TxGraph, cosignersPubkeys []string) {
 	round := s.liveStore.CurrentRound().Get()
+
 	events := append(
-		batchTreeEvents(unsignedVtxoTreeChunks, 0, round.Id),
+		batchTreeEvents(unsignedVtxoGraph, 0, round.Id, getVtxoTreeTopic),
 		RoundSigningStarted{
 			RoundEvent: domain.RoundEvent{
 				Id:   round.Id,
@@ -2427,7 +2432,7 @@ func (s *covenantlessService) chainParams() *chaincfg.Params {
 }
 
 func (s *covenantlessService) markAsRedeemed(ctx context.Context, vtxo domain.Vtxo) error {
-	if err := s.repoManager.Vtxos().RedeemVtxos(ctx, []domain.VtxoKey{vtxo.VtxoKey}); err != nil {
+	if err := s.repoManager.Vtxos().RedeemVtxos(ctx, []domain.Outpoint{vtxo.Outpoint}); err != nil {
 		return err
 	}
 
@@ -2436,7 +2441,7 @@ func (s *covenantlessService) markAsRedeemed(ctx context.Context, vtxo domain.Vt
 }
 
 func (s *covenantlessService) validateBoardingInput(
-	ctx context.Context, vtxoKey domain.VtxoKey, tapscripts tree.TapTree,
+	ctx context.Context, vtxoKey domain.Outpoint, tapscripts tree.TapTree,
 	now time.Time, locktime *common.RelativeLocktime, disabled bool,
 ) (*wire.MsgTx, error) {
 	// check if the tx exists and is confirmed
@@ -2602,19 +2607,37 @@ func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {
 	return
 }
 
-func batchTreeEvents(chunks []tree.TxGraphChunk, batchIndex int32, roundId string) []domain.Event {
+func batchTreeEvents(
+	graph *tree.TxGraph,
+	batchIndex int32,
+	roundId string,
+	getTopic func(g *tree.TxGraph) ([]string, error),
+) []domain.Event {
 	events := make([]domain.Event, 0)
 
-	for _, chunk := range chunks {
+	if err := graph.Apply(func(g *tree.TxGraph) (bool, error) {
+		chunk, err := g.RootChunk()
+		if err != nil {
+			return false, err
+		}
+
+		topic, err := getTopic(g)
+		if err != nil {
+			return false, err
+		}
+
 		events = append(events, BatchTree{
 			RoundEvent: domain.RoundEvent{
 				Id:   roundId,
 				Type: domain.EventTypeUndefined,
 			},
 			BatchIndex: batchIndex,
-			Topic:      []string{}, // TODO
+			Topic:      topic,
 			Chunk:      chunk,
 		})
+		return true, nil
+	}); err != nil {
+		log.WithError(err).Error("failed to send batchTree events")
 	}
 
 	return events
@@ -2626,12 +2649,17 @@ func batchTreeSignatureEvents(graph *tree.TxGraph, batchIndex int32, roundId str
 	_ = graph.Apply(func(g *tree.TxGraph) (bool, error) {
 		sig := g.Root.Inputs[0].TaprootKeySpendSig
 
+		topic, err := getVtxoTreeTopic(g)
+		if err != nil {
+			return false, err
+		}
+
 		events = append(events, BatchTreeSignature{
 			RoundEvent: domain.RoundEvent{
 				Id:   roundId,
 				Type: domain.EventTypeUndefined,
 			},
-			Topic:      []string{},
+			Topic:      topic,
 			BatchIndex: batchIndex,
 			Signature:  hex.EncodeToString(sig),
 			Txid:       g.Root.UnsignedTx.TxID(),
@@ -2641,4 +2669,45 @@ func batchTreeSignatureEvents(graph *tree.TxGraph, batchIndex int32, roundId str
 	})
 
 	return events
+}
+
+// getVtxoTreeTopic returns the list of topics (cosigner keys) for the given vtxo subtree
+func getVtxoTreeTopic(g *tree.TxGraph) ([]string, error) {
+	cosignerKeys, err := tree.GetCosignerKeys(g.Root.Inputs[0])
+	if err != nil {
+		return nil, err
+	}
+
+	topics := make([]string, 0, len(cosignerKeys))
+	for _, key := range cosignerKeys {
+		topics = append(topics, hex.EncodeToString(key.SerializeCompressed()))
+	}
+
+	return topics, nil
+}
+
+// getConnectorTreeTopic returns the list of topics (vtxo outpoints) for the given connector subtree
+func getConnectorTreeTopic(connectorsIndex map[string]domain.Outpoint) func(g *tree.TxGraph) ([]string, error) {
+	return func(g *tree.TxGraph) ([]string, error) {
+		leaves := g.Leaves()
+		topics := make([]string, 0, len(leaves))
+
+		for _, leaf := range leaves {
+			leafTxid := leaf.UnsignedTx.TxID()
+			for outIndex, output := range leaf.UnsignedTx.TxOut {
+				if bytes.Equal(output.PkScript, tree.ANCHOR_PKSCRIPT) {
+					continue
+				}
+
+				outpoint := domain.Outpoint{
+					Txid: leafTxid,
+					VOut: uint32(outIndex),
+				}
+
+				topics = append(topics, connectorsIndex[outpoint.String()].String())
+			}
+		}
+
+		return topics, nil
+	}
 }

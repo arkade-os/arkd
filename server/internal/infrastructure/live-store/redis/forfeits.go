@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
@@ -58,12 +57,11 @@ func (s *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 		for _, leaf := range leaves {
 			connectorsOutpoints = append(connectorsOutpoints, domain.Outpoint{Txid: leaf.Txid, VOut: 0})
 		}
-		sort.Slice(vtxosToSign, func(i, j int) bool { return vtxosToSign[i].String() < vtxosToSign[j].String() })
 		if len(vtxosToSign) > len(connectorsOutpoints) {
 			return fmt.Errorf("more vtxos to sign than outpoints, %d > %d", len(vtxosToSign), len(connectorsOutpoints))
 		}
-		for i, vtxo := range vtxosToSign {
-			connIndex[vtxo.String()] = connectorsOutpoints[i]
+		for i, connectorOutpoint := range connectorsOutpoints {
+			connIndex[connectorOutpoint.String()] = vtxosToSign[i].Outpoint
 		}
 	}
 	// Store in Redis atomically
@@ -113,14 +111,18 @@ func (s *forfeitTxsStore) Sign(txs []string) error {
 	if s.builder == nil {
 		return fmt.Errorf("forfeitTxsStore builder not set")
 	}
-	validTxs, err := s.builder.VerifyForfeitTxs(vtxos, connectors, txs, connIndex)
+	validTxs, err := s.builder.VerifyForfeitTxs(vtxos, connectors, txs)
 	if err != nil {
 		return err
 	}
 
 	pipe := s.rdb.TxPipeline()
-	for vtxoKey, tx := range validTxs {
-		pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxoKey.String(), tx)
+	for vtxoKey, validTx := range validTxs {
+		txBytes, err := json.Marshal(validTx)
+		if err != nil {
+			return err
+		}
+		pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxoKey.String(), string(txBytes))
 	}
 	_, err = pipe.Exec(ctx)
 
@@ -144,11 +146,21 @@ func (s *forfeitTxsStore) Pop() ([]string, error) {
 		return nil, err
 	}
 	result := make([]string, 0, len(hash))
-	for vtxo, forfeit := range hash {
-		if len(forfeit) == 0 {
+
+	usedConnectors := make(map[domain.Outpoint]struct{})
+	for vtxo, forfeitJSON := range hash {
+		if len(forfeitJSON) == 0 {
 			return nil, fmt.Errorf("missing forfeit tx for vtxo %s", vtxo)
 		}
-		result = append(result, forfeit)
+		var validTx ports.ValidForfeitTx
+		if err := json.Unmarshal([]byte(forfeitJSON), &validTx); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal forfeit tx for vtxo %s: %w", vtxo, err)
+		}
+		if _, used := usedConnectors[validTx.Connector]; used {
+			return nil, fmt.Errorf("connector %s for vtxo %s is used more than once", validTx.Connector, vtxo)
+		}
+		usedConnectors[validTx.Connector] = struct{}{}
+		result = append(result, validTx.Tx)
 	}
 	s.Reset()
 	return result, nil
@@ -160,8 +172,15 @@ func (s *forfeitTxsStore) AllSigned() bool {
 	if err != nil {
 		return false
 	}
-	for _, tx := range hash {
-		if len(tx) == 0 {
+	for _, forfeitJSON := range hash {
+		if len(forfeitJSON) == 0 {
+			return false
+		}
+		var validTx ports.ValidForfeitTx
+		if err := json.Unmarshal([]byte(forfeitJSON), &validTx); err != nil {
+			return false
+		}
+		if len(validTx.Tx) == 0 {
 			return false
 		}
 	}

@@ -26,7 +26,6 @@ type RoundFinalizationStarted struct {
 	ConnectorAddress   string
 	Txid               string
 	RoundTx            string
-	ConnectorsIndex    map[string]Outpoint
 	VtxoTreeExpiration int64
 }
 

@@ -583,7 +583,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 
 func combinedRowToVtxo(row queries.RequestVtxoVw) domain.Vtxo {
 	return domain.Vtxo{
-		VtxoKey: domain.VtxoKey{
+		Outpoint: domain.Outpoint{
 			Txid: row.Txid.String,
 			VOut: uint32(row.Vout.Int32),
 		},

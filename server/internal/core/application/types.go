@@ -82,19 +82,6 @@ type WalletStatus struct {
 	IsSynced      bool
 }
 
-type txOutpoint struct {
-	txid string
-	vout uint32
-}
-
-func (outpoint txOutpoint) GetTxid() string {
-	return outpoint.txid
-}
-
-func (outpoint txOutpoint) GetIndex() uint32 {
-	return outpoint.vout
-}
-
 const (
 	CommitmentTxType TransactionEventType = "commitment_tx"
 	ArkTxType        TransactionEventType = "ark_tx"

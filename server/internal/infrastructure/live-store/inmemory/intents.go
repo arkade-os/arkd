@@ -227,7 +227,7 @@ func (m *txRequestStore) View(id string) (*domain.TxRequest, bool) {
 	}, true
 }
 
-func (m *txRequestStore) IncludesAny(outpoints []domain.VtxoKey) (bool, string) {
+func (m *txRequestStore) IncludesAny(outpoints []domain.Outpoint) (bool, string) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 

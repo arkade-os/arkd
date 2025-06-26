@@ -289,17 +289,16 @@ func (b *txBuilder) BuildSweepTx(inputs []ports.SweepInput) (txid, signedSweepTx
 }
 
 func (b *txBuilder) VerifyForfeitTxs(
-	vtxos []domain.Vtxo, connectors []tree.TxGraphChunk,
-	forfeitTxs []string, connectorIndex map[string]domain.Outpoint,
-) (map[domain.VtxoKey]string, error) {
+	vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, forfeitTxs []string,
+) (map[domain.Outpoint]ports.ValidForfeitTx, error) {
 	connectorsLeaves := tree.TxGraphChunkList(connectors).Leaves()
 	if len(connectorsLeaves) == 0 {
 		return nil, fmt.Errorf("invalid connectors tree")
 	}
 
-	indexedVtxos := map[domain.VtxoKey]domain.Vtxo{}
+	indexedVtxos := map[domain.Outpoint]domain.Vtxo{}
 	for _, vtxo := range vtxos {
-		indexedVtxos[vtxo.VtxoKey] = vtxo
+		indexedVtxos[vtxo.Outpoint] = vtxo
 	}
 
 	forfeitScript, err := b.getForfeitScript()
@@ -317,7 +316,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 		return nil, err
 	}
 
-	validForfeitTxs := make(map[domain.VtxoKey]string)
+	validForfeitTxs := make(map[domain.Outpoint]ports.ValidForfeitTx)
 
 	for _, forfeitTx := range forfeitTxs {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(forfeitTx), true)
@@ -329,28 +328,59 @@ func (b *txBuilder) VerifyForfeitTxs(
 			continue
 		}
 
-		connectorInput := tx.UnsignedTx.TxIn[0]
-		vtxoInput := tx.UnsignedTx.TxIn[1]
+		var vtxoInput, connectorInput *wire.TxIn
+		var vtxoTapscript *psbt.TaprootTapLeafScript
+		var connectorOutput *wire.TxOut
+		var vtxoFirst bool
 
-		vtxoKey := domain.VtxoKey{
+		// search for the connector output and the vtxo input in the tx
+		for i, input := range tx.UnsignedTx.TxIn {
+			for _, connector := range connectorsLeaves {
+				if connector.Txid == input.PreviousOutPoint.Hash.String() {
+					connectorTx, err := psbt.NewFromRawBytes(strings.NewReader(connector.Tx), true)
+					if err != nil {
+						return nil, err
+					}
+
+					if len(connectorTx.UnsignedTx.TxOut) <= int(input.PreviousOutPoint.Index) {
+						return nil, fmt.Errorf("connector vout %d out of range [0, %d]", input.PreviousOutPoint.Index, len(connectorTx.UnsignedTx.TxOut)-1)
+					}
+
+					connectorOutput = connectorTx.UnsignedTx.TxOut[input.PreviousOutPoint.Index]
+
+					// the vtxo input is the other input in the tx
+					vtxoInputIndex := 0
+					if i == 0 {
+						vtxoInputIndex = 1
+					}
+					vtxoFirst = vtxoInputIndex == 0
+					vtxoInput = tx.UnsignedTx.TxIn[vtxoInputIndex]
+					connectorInput = tx.UnsignedTx.TxIn[i]
+
+					if len(tx.Inputs[vtxoInputIndex].TaprootLeafScript) <= 0 {
+						return nil, fmt.Errorf("missing taproot leaf script for vtxo input, invalid forfeit tx")
+					}
+
+					vtxoTapscript = tx.Inputs[vtxoInputIndex].TaprootLeafScript[0]
+					break
+				}
+			}
+
+			if connectorOutput != nil {
+				break
+			}
+		}
+
+		if connectorOutput == nil {
+			return nil, fmt.Errorf("missing connector in forfeit tx %s", forfeitTx)
+		}
+
+		vtxoKey := domain.Outpoint{
 			Txid: vtxoInput.PreviousOutPoint.Hash.String(),
 			VOut: vtxoInput.PreviousOutPoint.Index,
 		}
 
-		expectedConnectorOutpoint, ok := connectorIndex[vtxoKey.String()]
-		if !ok {
-			return nil, fmt.Errorf("invalid connector outpoint for vtxo %s", vtxoKey)
-		}
-
-		if connectorInput.PreviousOutPoint.Hash.String() != expectedConnectorOutpoint.Txid ||
-			connectorInput.PreviousOutPoint.Index != expectedConnectorOutpoint.VOut {
-			return nil, fmt.Errorf(
-				"invalid connector outpoint for vtxo %s, wrong outpoint, expected %s",
-				vtxoKey,
-				domain.VtxoKey(expectedConnectorOutpoint),
-			)
-		}
-
+		// skip if we already have a valid forfeit for this vtxo
 		if _, ok := validForfeitTxs[vtxoKey]; ok {
 			continue
 		}
@@ -366,34 +396,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 			outputAmount += uint64(output.Value)
 		}
 
-		var connectorOutput *wire.TxOut
-		for _, connector := range connectorsLeaves {
-			if connector.Txid == connectorInput.PreviousOutPoint.Hash.String() {
-				connectorTx, err := psbt.NewFromRawBytes(strings.NewReader(connector.Tx), true)
-				if err != nil {
-					return nil, err
-				}
-
-				if len(connectorTx.UnsignedTx.TxOut) <= int(connectorInput.PreviousOutPoint.Index) {
-					return nil, fmt.Errorf("invalid connector tx")
-				}
-
-				connectorOutput = connectorTx.UnsignedTx.TxOut[connectorInput.PreviousOutPoint.Index]
-				break
-			}
-		}
-
-		if connectorOutput == nil {
-			return nil, fmt.Errorf("missing connector output")
-		}
-
 		inputAmount := vtxo.Amount + uint64(connectorOutput.Value)
-
-		if len(tx.Inputs[1].TaprootLeafScript) <= 0 {
-			return nil, fmt.Errorf("missing taproot leaf script for vtxo input, invalid forfeit tx")
-		}
-
-		vtxoTapscript := tx.Inputs[1].TaprootLeafScript[0]
 
 		// verify the forfeit closure script
 		closure, err := tree.DecodeClosure(vtxoTapscript.Script)
@@ -437,19 +440,34 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, err
 		}
 
+		vtxoPrevout := &wire.TxOut{
+			Value:    int64(vtxo.Amount),
+			PkScript: vtxoScript,
+		}
+
+		var inputs []*wire.OutPoint
+		var prevouts []*wire.TxOut
+		var sequences []uint32
+
+		vtxoSequence := wire.MaxTxInSequenceNum
+		if locktime != 0 {
+			vtxoSequence = wire.MaxTxInSequenceNum - 1
+		}
+
+		if vtxoFirst {
+			inputs = []*wire.OutPoint{&vtxoInput.PreviousOutPoint, &connectorInput.PreviousOutPoint}
+			sequences = []uint32{vtxoSequence, wire.MaxTxInSequenceNum}
+			prevouts = []*wire.TxOut{vtxoPrevout, connectorOutput}
+		} else {
+			inputs = []*wire.OutPoint{&connectorInput.PreviousOutPoint, &vtxoInput.PreviousOutPoint}
+			sequences = []uint32{wire.MaxTxInSequenceNum, vtxoSequence}
+			prevouts = []*wire.TxOut{connectorOutput, vtxoPrevout}
+		}
+
 		rebuilt, err := tree.BuildForfeitTx(
-			&wire.OutPoint{
-				Hash:  vtxoInput.PreviousOutPoint.Hash,
-				Index: vtxoInput.PreviousOutPoint.Index,
-			},
-			&wire.OutPoint{
-				Hash:  connectorInput.PreviousOutPoint.Hash,
-				Index: connectorInput.PreviousOutPoint.Index,
-			},
-			vtxo.Amount,
-			uint64(connectorOutput.Value),
-			vtxoScript,
-			connectorOutput.PkScript,
+			inputs,
+			sequences,
+			prevouts,
 			forfeitScript,
 			uint32(locktime),
 		)
@@ -461,7 +479,13 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, fmt.Errorf("invalid forfeit tx")
 		}
 
-		validForfeitTxs[vtxoKey] = forfeitTx
+		validForfeitTxs[vtxoKey] = ports.ValidForfeitTx{
+			Tx: forfeitTx,
+			Connector: domain.Outpoint{
+				Txid: connectorInput.PreviousOutPoint.Hash.String(),
+				VOut: connectorInput.PreviousOutPoint.Index,
+			},
+		}
 	}
 
 	return validForfeitTxs, nil
@@ -1103,10 +1127,13 @@ func (b *txBuilder) onchainNetwork() *chaincfg.Params {
 	}
 }
 
-func castToOutpoints(inputs []ports.TxInput) []ports.TxOutpoint {
-	outpoints := make([]ports.TxOutpoint, 0, len(inputs))
+func castToOutpoints(inputs []ports.TxInput) []domain.Outpoint {
+	outpoints := make([]domain.Outpoint, 0, len(inputs))
 	for _, input := range inputs {
-		outpoints = append(outpoints, input)
+		outpoints = append(outpoints, domain.Outpoint{
+			Txid: input.GetTxid(),
+			VOut: input.GetIndex(),
+		})
 	}
 	return outpoints
 }

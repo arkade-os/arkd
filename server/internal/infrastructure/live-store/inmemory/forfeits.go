@@ -2,7 +2,6 @@ package inmemorylivestore
 
 import (
 	"fmt"
-	"sort"
 	"sync"
 
 	"github.com/ark-network/ark/common/tree"
@@ -13,7 +12,7 @@ import (
 type forfeitTxsStore struct {
 	lock            sync.RWMutex
 	builder         ports.TxBuilder
-	forfeitTxs      map[domain.VtxoKey]string
+	forfeitTxs      map[domain.Outpoint]ports.ValidForfeitTx
 	connectors      []tree.TxGraphChunk
 	connectorsIndex map[string]domain.Outpoint
 	vtxos           []domain.Vtxo
@@ -22,7 +21,7 @@ type forfeitTxsStore struct {
 func NewForfeitTxsStore(txBuilder ports.TxBuilder) ports.ForfeitTxsStore {
 	return &forfeitTxsStore{
 		builder:    txBuilder,
-		forfeitTxs: make(map[domain.VtxoKey]string),
+		forfeitTxs: make(map[domain.Outpoint]ports.ValidForfeitTx),
 	}
 }
 
@@ -46,7 +45,7 @@ func (m *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 
 	// init the forfeit txs map
 	for _, vtxo := range vtxosToSign {
-		m.forfeitTxs[vtxo.VtxoKey] = ""
+		m.forfeitTxs[vtxo.Outpoint] = ports.ValidForfeitTx{}
 	}
 
 	// create the connectors index
@@ -67,17 +66,12 @@ func (m *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 			})
 		}
 
-		// sort lexicographically
-		sort.Slice(vtxosToSign, func(i, j int) bool {
-			return vtxosToSign[i].String() < vtxosToSign[j].String()
-		})
-
 		if len(vtxosToSign) > len(connectorsOutpoints) {
 			return fmt.Errorf("more vtxos to sign than outpoints, %d > %d", len(vtxosToSign), len(connectorsOutpoints))
 		}
 
-		for i, vtxo := range vtxosToSign {
-			connectorsIndex[vtxo.String()] = connectorsOutpoints[i]
+		for i, connectorOutpoint := range connectorsOutpoints {
+			connectorsIndex[connectorOutpoint.String()] = vtxosToSign[i].Outpoint
 		}
 	}
 
@@ -99,7 +93,7 @@ func (m *forfeitTxsStore) Sign(txs []string) error {
 	}
 
 	// verify the txs are valid
-	validTxs, err := m.builder.VerifyForfeitTxs(m.vtxos, m.connectors, txs, m.connectorsIndex)
+	validTxs, err := m.builder.VerifyForfeitTxs(m.vtxos, m.connectors, txs)
 	if err != nil {
 		return err
 	}
@@ -117,7 +111,7 @@ func (m *forfeitTxsStore) Reset() {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	m.forfeitTxs = make(map[domain.VtxoKey]string)
+	m.forfeitTxs = make(map[domain.Outpoint]ports.ValidForfeitTx)
 	m.connectors = nil
 	m.connectorsIndex = nil
 	m.vtxos = nil
@@ -130,18 +124,24 @@ func (m *forfeitTxsStore) Pop() ([]string, error) {
 	}()
 
 	txs := make([]string, 0)
+	usedConnectors := make(map[domain.Outpoint]struct{})
+
 	for vtxo, forfeit := range m.forfeitTxs {
-		if len(forfeit) == 0 {
+		if len(forfeit.Tx) == 0 {
 			return nil, fmt.Errorf("missing forfeit tx for vtxo %s", vtxo)
 		}
-		txs = append(txs, forfeit)
+		if _, used := usedConnectors[forfeit.Connector]; used {
+			return nil, fmt.Errorf("connector %s for vtxo %s is used more than once", forfeit.Connector, vtxo)
+		}
+		usedConnectors[forfeit.Connector] = struct{}{}
+		txs = append(txs, forfeit.Tx)
 	}
 
 	return txs, nil
 }
 func (m *forfeitTxsStore) AllSigned() bool {
-	for _, txs := range m.forfeitTxs {
-		if len(txs) == 0 {
+	for _, forfeit := range m.forfeitTxs {
+		if len(forfeit.Tx) == 0 {
 			return false
 		}
 	}

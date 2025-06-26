@@ -127,7 +127,7 @@ func (w *walletDaemonClient) GetNotificationChannel(ctx context.Context) <-chan 
 				vtxos := make([]ports.VtxoWithValue, 0, len(entry.Vtxos))
 				for _, v := range entry.Vtxos {
 					vtxos = append(vtxos, ports.VtxoWithValue{
-						VtxoKey: domain.VtxoKey{
+						Outpoint: domain.Outpoint{
 							Txid: v.Txid,
 							VOut: v.Vout,
 						},
@@ -344,12 +344,12 @@ func (w *walletDaemonClient) ConnectorsAccountBalance(ctx context.Context) (uint
 	return resp.GetConfirmed(), resp.GetUnconfirmed(), nil
 }
 
-func (w *walletDaemonClient) LockConnectorUtxos(ctx context.Context, utxos []ports.TxOutpoint) error {
+func (w *walletDaemonClient) LockConnectorUtxos(ctx context.Context, utxos []domain.Outpoint) error {
 	protoUtxos := make([]*arkwalletv1.TxOutpoint, len(utxos))
 	for i, u := range utxos {
 		protoUtxos[i] = &arkwalletv1.TxOutpoint{
-			Txid:  u.GetTxid(),
-			Index: u.GetIndex(),
+			Txid:  u.Txid,
+			Index: u.VOut,
 		}
 	}
 	_, err := w.client.LockConnectorUtxos(ctx, &arkwalletv1.LockConnectorUtxosRequest{Utxos: protoUtxos})

@@ -260,7 +260,7 @@ func filterByDate(txs []TxHistoryRecord, start, end int64) []TxHistoryRecord {
 
 func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error) {
 	chain := make([]ChainWithExpiry, 0)
-	nextVtxos := []domain.VtxoKey{vtxoKey}
+	nextVtxos := []domain.Outpoint{vtxoKey}
 
 	for len(nextVtxos) > 0 {
 		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
@@ -272,7 +272,7 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 			return nil, fmt.Errorf("vtxo not found for outpoint: %s", nextVtxos)
 		}
 
-		newNextVtxos := make([]domain.VtxoKey, 0)
+		newNextVtxos := make([]domain.Outpoint, 0)
 
 		for _, vtxo := range vtxos {
 			// if the vtxo is preconfirmed, it means it has been created by an offchain tx
@@ -307,7 +307,7 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 
 					// populate newNextVtxos with checkpoints inputs
 					for _, in := range ptx.UnsignedTx.TxIn {
-						newNextVtxos = append(newNextVtxos, domain.VtxoKey{Txid: in.PreviousOutPoint.Hash.String(), VOut: in.PreviousOutPoint.Index})
+						newNextVtxos = append(newNextVtxos, domain.Outpoint{Txid: in.PreviousOutPoint.Hash.String(), VOut: in.PreviousOutPoint.Index})
 					}
 				}
 
@@ -503,7 +503,7 @@ func (i *indexerService) vtxosToTxs(
 		vtxo := getVtxo(resultedVtxos, vtxosBySpentBy[sb])
 		if resultedAmount == 0 {
 			// send all: fetch the created vtxo to source creation and expiration timestamps
-			vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.VtxoKey{{Txid: sb, VOut: 0}})
+			vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{{Txid: sb, VOut: 0}})
 			if err != nil {
 				return nil, err
 			}
