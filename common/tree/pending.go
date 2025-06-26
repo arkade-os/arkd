@@ -159,7 +159,12 @@ func buildVirtualTx(
 // the server unroll script + the owner's collaborative closure.
 func buildCheckpointTx(vtxo common.VtxoInput, serverUnrollScript *CSVMultisigClosure) (*psbt.Packet, common.VtxoInput, error) {
 	// create the checkpoint vtxo script from collaborative closure
-	collaborativeClosure, err := DecodeClosure(vtxo.Tapscript.RevealedScript)
+	checkpointCollaborativeTapscript := vtxo.Tapscript
+	if vtxo.CheckpointTapscript != nil {
+		checkpointCollaborativeTapscript = vtxo.CheckpointTapscript
+	}
+
+	collaborativeClosure, err := DecodeClosure(checkpointCollaborativeTapscript.RevealedScript)
 	if err != nil {
 		return nil, common.VtxoInput{}, err
 	}
@@ -188,7 +193,8 @@ func buildCheckpointTx(vtxo common.VtxoInput, serverUnrollScript *CSVMultisigClo
 	}
 
 	// now that we have the checkpoint tx, we need to return the corresponding output that will be used as input for the virtual tx
-	collaborativeLeafProof, err := tapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(vtxo.Tapscript.RevealedScript).TapHash())
+	tapLeafHash := txscript.NewBaseTapLeaf(checkpointCollaborativeTapscript.RevealedScript).TapHash()
+	collaborativeLeafProof, err := tapTree.GetTaprootMerkleProof(tapLeafHash)
 	if err != nil {
 		return nil, common.VtxoInput{}, err
 	}

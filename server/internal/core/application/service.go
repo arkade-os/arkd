@@ -321,11 +321,11 @@ func (s *covenantlessService) Stop() {
 func (s *covenantlessService) SubmitOffchainTx(
 	ctx context.Context, unsignedCheckpoints []string, virtualTx string,
 ) (signedCheckpoints []string, finalVirtualTx string, virtualTxid string, err error) {
-	ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTx), true)
+	virtualPtx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTx), true)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to parse redeem tx: %s", err)
 	}
-	virtualTxid = ptx.UnsignedTx.TxID()
+	virtualTxid = virtualPtx.UnsignedTx.TxID()
 
 	offchainTx := domain.NewOffchainTx()
 	var changes []domain.Event
@@ -549,20 +549,52 @@ func (s *covenantlessService) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("failed to parse control block: %s", err)
 		}
 
+		var checkpointTapscript *waddrmgr.Tapscript
+
+		checkpointTxid := checkpointPsbt.UnsignedTx.TxID()
+		checkpointVout := uint32(0) // always 1 output in the checkpoint tx
+
+		// search for the checkpoint input in the virtual tx
+		for inputIndex, input := range virtualPtx.UnsignedTx.TxIn {
+			if input.PreviousOutPoint.Hash.String() == checkpointTxid && input.PreviousOutPoint.Index == checkpointVout {
+				if len(virtualPtx.Inputs[inputIndex].TaprootLeafScript) == 0 {
+					return nil, "", "", fmt.Errorf("missing tapscript leaf in virtual tx input #%d", inputIndex)
+				}
+
+				tapleafScript := virtualPtx.Inputs[inputIndex].TaprootLeafScript[0]
+
+				ctrlBlock, err := txscript.ParseControlBlock(tapleafScript.ControlBlock)
+				if err != nil {
+					return nil, "", "", fmt.Errorf("failed to parse control block: %s", err)
+				}
+
+				checkpointTapscript = &waddrmgr.Tapscript{
+					ControlBlock:   ctrlBlock,
+					RevealedScript: tapleafScript.Script,
+				}
+				break
+			}
+		}
+
+		if checkpointTapscript == nil {
+			return nil, "", "", fmt.Errorf("checkpoint tapscript not found")
+		}
+
 		ins = append(ins, common.VtxoInput{
 			Outpoint: &checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint,
 			Tapscript: &waddrmgr.Tapscript{
 				ControlBlock:   ctrlBlock,
 				RevealedScript: spendingTapscript.Script,
 			},
-			RevealedTapscripts: tapscripts,
-			Amount:             int64(vtxo.Amount),
+			CheckpointTapscript: checkpointTapscript,
+			RevealedTapscripts:  tapscripts,
+			Amount:              int64(vtxo.Amount),
 		})
 	}
 
 	// iterate over the redeem tx inputs and verify that the user signed a collaborative path
 	serverXOnlyPubkey := schnorr.SerializePubKey(s.pubkey)
-	for _, input := range ptx.Inputs {
+	for _, input := range virtualPtx.Inputs {
 		if len(input.TaprootScriptSpendSig) == 0 {
 			return nil, "", "", fmt.Errorf("missing tapscript spend sig")
 		}
@@ -591,7 +623,7 @@ func (s *covenantlessService) SubmitOffchainTx(
 
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
-	for outIndex, out := range ptx.UnsignedTx.TxOut {
+	for outIndex, out := range virtualPtx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
 				return nil, "", "", fmt.Errorf("invalid tx, multiple anchor outputs")
