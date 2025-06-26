@@ -333,20 +333,20 @@ func (e *indexerService) GetVtxoChain(ctx context.Context, request *arkv1.GetVtx
 		return nil, status.Errorf(codes.Internal, "failed to get vtxo chain: %v", err)
 	}
 
-	var txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_UNSPECIFIED
-	switch resp.Chain[0].Type {
-	case application.IndexerChainedTxTypeCommitment:
-		txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_COMMITMENT
-	case application.IndexerChainedTxTypeArk:
-		txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_ARK
-	case application.IndexerChainedTxTypeTree:
-		txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_TREE
-	case application.IndexerChainedTxTypeCheckpoint:
-		txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_CHECKPOINT
-	}
-
 	chain := make([]*arkv1.IndexerChain, 0)
 	for _, c := range resp.Chain {
+		var txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_UNSPECIFIED
+		switch c.Type {
+		case application.IndexerChainedTxTypeCommitment:
+			txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_COMMITMENT
+		case application.IndexerChainedTxTypeArk:
+			txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_ARK
+		case application.IndexerChainedTxTypeTree:
+			txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_TREE
+		case application.IndexerChainedTxTypeCheckpoint:
+			txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_CHECKPOINT
+		}
+
 		chain = append(chain, &arkv1.IndexerChain{
 			Txid:      c.Txid,
 			ExpiresAt: c.ExpiresAt,
