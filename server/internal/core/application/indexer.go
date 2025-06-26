@@ -285,31 +285,37 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 					return nil, fmt.Errorf("failed to retrieve offchain tx: %s", err)
 				}
 
-				// add the virtual tx
-				chain = append(chain, ChainWithExpiry{
+				virtualTx := ChainWithExpiry{
 					Txid:      vtxo.Txid,
 					ExpiresAt: vtxo.ExpireAt,
 					Type:      IndexerChainedTxTypeArk,
-				})
+				}
 
-				// add the checkpoints txs
+				checkpointsTxs := make([]ChainWithExpiry, 0, len(offchainTx.CheckpointTxs))
 				for _, b64 := range offchainTx.CheckpointTxs {
 					ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 					if err != nil {
 						return nil, fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
 					}
 
-					chain = append(chain, ChainWithExpiry{
-						Txid:      ptx.UnsignedTx.TxID(),
+					txid := ptx.UnsignedTx.TxID()
+					checkpointsTxs = append(checkpointsTxs, ChainWithExpiry{
+						Txid:      txid,
 						ExpiresAt: vtxo.ExpireAt,
 						Type:      IndexerChainedTxTypeCheckpoint,
+						Spends:    []string{ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String()},
 					})
+
+					virtualTx.Spends = append(virtualTx.Spends, txid)
 
 					// populate newNextVtxos with checkpoints inputs
 					for _, in := range ptx.UnsignedTx.TxIn {
 						newNextVtxos = append(newNextVtxos, domain.Outpoint{Txid: in.PreviousOutPoint.Hash.String(), VOut: in.PreviousOutPoint.Index})
 					}
 				}
+
+				chain = append(chain, virtualTx)
+				chain = append(chain, checkpointsTxs...)
 
 				continue
 			}
@@ -349,6 +355,16 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 					ExpiresAt: vtxo.ExpireAt,
 					Type:      IndexerChainedTxTypeTree,
 				})
+			}
+
+			for i := 0; i < len(fromVtxoToRoot); i++ {
+				if i == len(fromVtxoToRoot)-1 {
+					// the last tx is the root of the branch, always spend the commitment tx
+					fromVtxoToRoot[i].Spends = []string{vtxo.RootCommitmentTxid}
+				} else {
+					// the other txs spend the next one
+					fromVtxoToRoot[i].Spends = []string{fromVtxoToRoot[i+1].Txid}
+				}
 			}
 
 			chain = append(chain, fromVtxoToRoot...)

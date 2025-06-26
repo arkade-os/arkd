@@ -444,6 +444,7 @@ func (a *grpcClient) GetVtxoChain(
 			Txid:      c.GetTxid(),
 			Type:      txType,
 			ExpiresAt: c.GetExpiresAt(),
+			Spends:    c.GetSpends(),
 		})
 	}
 

@@ -928,6 +928,13 @@
         },
         "type": {
           "$ref": "#/definitions/v1IndexerChainedTxType"
+        },
+        "spends": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "txids of the transactions in the chain used as input of the current tx"
         }
       }
     },

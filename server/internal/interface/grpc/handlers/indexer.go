@@ -351,6 +351,7 @@ func (e *indexerService) GetVtxoChain(ctx context.Context, request *arkv1.GetVtx
 			Txid:      c.Txid,
 			ExpiresAt: c.ExpiresAt,
 			Type:      txType,
+			Spends:    c.Spends,
 		})
 	}
 

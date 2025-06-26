@@ -451,6 +451,7 @@ func (a *restClient) GetVtxoChain(
 			Txid:      v.Txid,
 			ExpiresAt: expiresAt,
 			Type:      txType,
+			Spends:    v.Spends,
 		})
 	}
 

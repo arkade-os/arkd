@@ -224,4 +224,5 @@ type ChainWithExpiry struct {
 	Txid      string
 	ExpiresAt int64
 	Type      IndexerChainedTxType
+	Spends    []string
 }

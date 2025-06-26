@@ -21,6 +21,9 @@ type V1IndexerChain struct {
 	// expires at
 	ExpiresAt string `json:"expiresAt,omitempty"`
 
+	// txids of the transactions in the chain used as input of the current tx
+	Spends []string `json:"spends"`
+
 	// txid
 	Txid string `json:"txid,omitempty"`
 
