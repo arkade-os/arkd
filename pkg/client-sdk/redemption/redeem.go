@@ -44,7 +44,8 @@ func NewRedeemBranch(ctx context.Context, explorer explorer.Explorer, indexerSvc
 // confirmed so we'll broadcast only the first tx of every branch
 func (r *CovenantlessRedeemBranch) NextRedeemTx() (string, error) {
 	nextTxToBroadcast := ""
-	for _, tx := range r.branch {
+	for i := len(r.branch) - 1; i >= 0; i-- {
+		tx := r.branch[i]
 		// commitment txs are always onchain, so we can skip them
 		switch tx.Type {
 		case indexer.IndexerChainedTxTypeCommitment, indexer.IndexerChainedTxTypeUnspecified:
