@@ -43,16 +43,32 @@ func NewRedeemBranch(ctx context.Context, explorer explorer.Explorer, indexerSvc
 // due to current P2A relay policy, we can't broadcast the branch tx until its parent tx is
 // confirmed so we'll broadcast only the first tx of every branch
 func (r *CovenantlessRedeemBranch) NextRedeemTx() (string, error) {
-	offchainPath, err := r.OffchainPath()
-	if err != nil {
-		return "", err
+	nextTxToBroadcast := ""
+	for _, tx := range r.branch {
+		// commitment txs are always onchain, so we can skip them
+		switch tx.Type {
+		case indexer.IndexerChainedTxTypeCommitment, indexer.IndexerChainedTxTypeUnspecified:
+			continue
+		}
+
+		confirmed, _, err := r.explorer.GetTxBlockTime(tx.Txid)
+
+		// if the tx is not found, it's offchain, let's break
+		if err != nil {
+			nextTxToBroadcast = tx.Txid
+			break
+		}
+
+		// if found but not confirmed, it means the tx is in the mempool
+		// an unilateral exit is running, we must wait for it to be confirmed
+		if !confirmed {
+			return "", ErrPendingConfirmation{Txid: tx.Txid}
+		}
 	}
 
-	if len(offchainPath) == 0 {
+	if nextTxToBroadcast == "" {
 		return "", fmt.Errorf("no offchain txs found, the vtxo is already redeemed")
 	}
-
-	nextTxToBroadcast := offchainPath[len(offchainPath)-1].Txid
 
 	txs, err := r.indexer.GetVirtualTxs(context.Background(), []string{nextTxToBroadcast})
 	if err != nil {
@@ -157,43 +173,6 @@ func (r *CovenantlessRedeemBranch) ExpiresAt() (*time.Time, error) {
 
 	t := time.Unix(lastKnownBlocktime, 0)
 	return &t, nil
-}
-
-// OffchainPath checks for transactions of the branch onchain and returns only the offchain part
-func (r *CovenantlessRedeemBranch) OffchainPath() ([]indexer.ChainWithExpiry, error) {
-	offchainPath := append([]indexer.ChainWithExpiry{}, r.branch...)
-
-	// the branch starts from the vtxo and goes to commitment txs
-	for i := 0; i < len(r.branch); i++ {
-		// commitment txs are always onchain, so we can skip them
-		if r.branch[i].Type == indexer.IndexerChainedTxTypeCommitment {
-			continue
-		}
-
-		confirmed, _, err := r.explorer.GetTxBlockTime(r.branch[i].Txid)
-
-		// if the tx is not found, it's offchain, let's continue
-		if err != nil {
-			continue
-		}
-
-		// if found but not confirmed, it means the tx is in the mempool
-		// an unilateral exit is running, we must wait for it to be confirmed
-		if !confirmed {
-			return nil, ErrPendingConfirmation{Txid: r.branch[i].Txid}
-		}
-
-		// if no error, the tx exists onchain, so we can remove it (+ the parents) from the branch
-		if i == len(r.branch)-1 {
-			offchainPath = []indexer.ChainWithExpiry{}
-		} else {
-			offchainPath = r.branch[:i]
-		}
-
-		break
-	}
-
-	return offchainPath, nil
 }
 
 // ErrPendingConfirmation is returned when computing the offchain path of a redeem branch. Due to P2A relay policy, only 1C1P packages are accepted.

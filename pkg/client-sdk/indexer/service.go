@@ -140,14 +140,14 @@ type Outpoint struct {
 	VOut uint32
 }
 
-type IndexerChainedTxType int
+type IndexerChainedTxType string
 
 const (
-	IndexerChainedTxTypeUnspecified IndexerChainedTxType = iota
-	IndexerChainedTxTypeCommitment
-	IndexerChainedTxTypeArk
-	IndexerChainedTxTypeTree
-	IndexerChainedTxTypeCheckpoint
+	IndexerChainedTxTypeUnspecified IndexerChainedTxType = "unspecified"
+	IndexerChainedTxTypeCommitment  IndexerChainedTxType = "commitment"
+	IndexerChainedTxTypeArk         IndexerChainedTxType = "ark"
+	IndexerChainedTxTypeTree        IndexerChainedTxType = "tree"
+	IndexerChainedTxTypeCheckpoint  IndexerChainedTxType = "checkpoint"
 )
 
 type ChainWithExpiry struct {

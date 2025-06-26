@@ -426,9 +426,23 @@ func (a *grpcClient) GetVtxoChain(
 
 	chain := make([]indexer.ChainWithExpiry, 0, len(resp.GetChain()))
 	for _, c := range resp.GetChain() {
+		var txType indexer.IndexerChainedTxType
+		switch c.GetType() {
+		case arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_COMMITMENT:
+			txType = indexer.IndexerChainedTxTypeCommitment
+		case arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_ARK:
+			txType = indexer.IndexerChainedTxTypeArk
+		case arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_TREE:
+			txType = indexer.IndexerChainedTxTypeTree
+		case arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_CHECKPOINT:
+			txType = indexer.IndexerChainedTxTypeCheckpoint
+		default:
+			txType = indexer.IndexerChainedTxTypeUnspecified
+		}
+
 		chain = append(chain, indexer.ChainWithExpiry{
-			Txid:      c.Txid,
-			Type:      indexer.IndexerChainedTxType(c.Type),
+			Txid:      c.GetTxid(),
+			Type:      txType,
 			ExpiresAt: c.GetExpiresAt(),
 		})
 	}
