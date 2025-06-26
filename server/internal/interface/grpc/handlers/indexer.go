@@ -333,7 +333,7 @@ func (e *indexerService) GetVtxoChain(ctx context.Context, request *arkv1.GetVtx
 		return nil, status.Errorf(codes.Internal, "failed to get vtxo chain: %v", err)
 	}
 
-	var txType arkv1.IndexerChainedTxType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_UNSPECIFIED
+	var txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_UNSPECIFIED
 	switch resp.Chain[0].Type {
 	case application.IndexerChainedTxTypeCommitment:
 		txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_COMMITMENT

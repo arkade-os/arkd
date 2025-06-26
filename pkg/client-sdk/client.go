@@ -1946,7 +1946,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 ) (string, error) {
 	topics := make([]string, 0)
 	for _, vtxo := range vtxos {
-		topics = append(topics, vtxo.VtxoKey.String())
+		topics = append(topics, vtxo.String())
 	}
 	for _, signer := range signerSessions {
 		topics = append(topics, signer.GetPublicKey())
