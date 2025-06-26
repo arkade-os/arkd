@@ -352,6 +352,11 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 			}
 
 			chain = append(chain, fromVtxoToRoot...)
+			chain = append(chain, ChainWithExpiry{
+				Txid:      vtxo.RootCommitmentTxid,
+				ExpiresAt: vtxo.ExpireAt,
+				Type:      IndexerChainedTxTypeCommitment,
+			})
 		}
 
 		nextVtxos = newNextVtxos
@@ -360,10 +365,8 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 	pagedChainSlice, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
 
 	return &VtxoChainResp{
-		Chain:              pagedChainSlice,
-		Page:               pageResp,
-		RootCommitmentTxid: chain[len(chain)-1].Txid,
-		Depth:              int32(len(chain)),
+		Chain: pagedChainSlice,
+		Page:  pageResp,
 	}, nil
 }
 

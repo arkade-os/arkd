@@ -63,10 +63,8 @@ type TxHistoryResponse struct {
 }
 
 type VtxoChainResponse struct {
-	Chain              []ChainWithExpiry
-	Depth              int32
-	RootCommitmentTxid string
-	Page               *PageResponse
+	Chain []ChainWithExpiry
+	Page  *PageResponse
 }
 
 type VirtualTxsResponse struct {
@@ -142,7 +140,18 @@ type Outpoint struct {
 	VOut uint32
 }
 
+type IndexerChainedTxType int
+
+const (
+	IndexerChainedTxTypeUnspecified IndexerChainedTxType = iota
+	IndexerChainedTxTypeCommitment
+	IndexerChainedTxTypeArk
+	IndexerChainedTxTypeTree
+	IndexerChainedTxTypeCheckpoint
+)
+
 type ChainWithExpiry struct {
 	Txid      string
 	ExpiresAt int64
+	Type      IndexerChainedTxType
 }

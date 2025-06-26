@@ -343,10 +343,8 @@ func (e *indexerService) GetVtxoChain(ctx context.Context, request *arkv1.GetVtx
 	}
 
 	return &arkv1.GetVtxoChainResponse{
-		Chain:              chain,
-		RootCommitmentTxid: resp.RootCommitmentTxid,
-		Depth:              resp.Depth,
-		Page:               protoPage(resp.Page),
+		Chain: chain,
+		Page:  protoPage(resp.Page),
 	}, nil
 }
 

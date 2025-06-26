@@ -428,15 +428,14 @@ func (a *grpcClient) GetVtxoChain(
 	for _, c := range resp.GetChain() {
 		chain = append(chain, indexer.ChainWithExpiry{
 			Txid:      c.Txid,
+			Type:      indexer.IndexerChainedTxType(c.Type),
 			ExpiresAt: c.GetExpiresAt(),
 		})
 	}
 
 	return &indexer.VtxoChainResponse{
-		Chain:              chain,
-		Depth:              resp.GetDepth(),
-		RootCommitmentTxid: resp.GetRootCommitmentTxid(),
-		Page:               parsePage(resp.GetPage()),
+		Chain: chain,
+		Page:  parsePage(resp.GetPage()),
 	}, nil
 }
 

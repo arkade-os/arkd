@@ -165,6 +165,11 @@ func (r *CovenantlessRedeemBranch) OffchainPath() ([]indexer.ChainWithExpiry, er
 
 	// the branch starts from the vtxo and goes to commitment txs
 	for i := 0; i < len(r.branch); i++ {
+		// commitment txs are always onchain, so we can skip them
+		if r.branch[i].Type == indexer.IndexerChainedTxTypeCommitment {
+			continue
+		}
+
 		confirmed, _, err := r.explorer.GetTxBlockTime(r.branch[i].Txid)
 
 		// if the tx is not found, it's offchain, let's continue

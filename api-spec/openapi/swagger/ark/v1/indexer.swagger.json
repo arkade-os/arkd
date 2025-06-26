@@ -846,13 +846,6 @@
             "$ref": "#/definitions/v1IndexerChain"
           }
         },
-        "depth": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "rootCommitmentTxid": {
-          "type": "string"
-        },
         "page": {
           "$ref": "#/definitions/v1IndexerPageResponse"
         }
@@ -942,6 +935,7 @@
       "type": "string",
       "enum": [
         "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED",
+        "INDEXER_CHAINED_TX_TYPE_COMMITMENT",
         "INDEXER_CHAINED_TX_TYPE_ARK",
         "INDEXER_CHAINED_TX_TYPE_TREE",
         "INDEXER_CHAINED_TX_TYPE_CHECKPOINT"

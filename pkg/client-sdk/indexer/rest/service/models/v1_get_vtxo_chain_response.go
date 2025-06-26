@@ -22,14 +22,8 @@ type V1GetVtxoChainResponse struct {
 	// chain
 	Chain []*V1IndexerChain `json:"chain"`
 
-	// depth
-	Depth int32 `json:"depth,omitempty"`
-
 	// page
 	Page *V1IndexerPageResponse `json:"page,omitempty"`
-
-	// root commitment txid
-	RootCommitmentTxid string `json:"rootCommitmentTxid,omitempty"`
 }
 
 // Validate validates this v1 get vtxo chain response

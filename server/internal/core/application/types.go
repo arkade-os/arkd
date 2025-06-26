@@ -110,10 +110,8 @@ type TxRequestInfo struct {
 }
 
 type VtxoChainResp struct {
-	Chain              []ChainWithExpiry
-	Page               PageResp
-	Depth              int32
-	RootCommitmentTxid string
+	Chain []ChainWithExpiry
+	Page  PageResp
 }
 
 type VOut int
@@ -216,6 +214,7 @@ type IndexerChainedTxType int
 
 const (
 	IndexerChainedTxTypeUnspecified IndexerChainedTxType = iota
+	IndexerChainedTxTypeCommitment
 	IndexerChainedTxTypeArk
 	IndexerChainedTxTypeTree
 	IndexerChainedTxTypeCheckpoint

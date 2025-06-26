@@ -231,9 +231,7 @@ message GetVtxoChainRequest {
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
-  int32 depth = 2;
-  string root_commitment_txid = 3;
-  IndexerPageResponse page = 4;
+  IndexerPageResponse page = 2;
 }
 
 message GetVirtualTxsRequest {
@@ -309,9 +307,10 @@ enum IndexerTxType {
 
 enum IndexerChainedTxType {
   INDEXER_CHAINED_TX_TYPE_UNSPECIFIED = 0;
-  INDEXER_CHAINED_TX_TYPE_ARK = 1;
-  INDEXER_CHAINED_TX_TYPE_TREE = 2;
-  INDEXER_CHAINED_TX_TYPE_CHECKPOINT = 3;
+  INDEXER_CHAINED_TX_TYPE_COMMITMENT = 1;
+  INDEXER_CHAINED_TX_TYPE_ARK = 2;
+  INDEXER_CHAINED_TX_TYPE_TREE = 3;
+  INDEXER_CHAINED_TX_TYPE_CHECKPOINT = 4;
 }
 
 message IndexerPageRequest {
