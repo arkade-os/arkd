@@ -1084,6 +1084,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "settledBy": {
+          "type": "string"
         }
       }
     },

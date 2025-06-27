@@ -897,6 +897,9 @@
         },
         "spentBy": {
           "type": "string"
+        },
+        "settledBy": {
+          "type": "string"
         }
       }
     }

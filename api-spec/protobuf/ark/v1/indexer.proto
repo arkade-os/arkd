@@ -279,6 +279,7 @@ message IndexerVtxo {
   bool is_spent = 9;
   string spent_by = 10;
   repeated string commitment_txids = 11;
+  string settled_by = 12;
 }
 
 message IndexerChain {

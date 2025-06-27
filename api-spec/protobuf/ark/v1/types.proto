@@ -31,6 +31,7 @@ message Vtxo {
   bool redeemed = 9;
   bool spent = 10;
   string spent_by = 11;
+  string settled_by = 12;
 }
 
 message TxNotification {
