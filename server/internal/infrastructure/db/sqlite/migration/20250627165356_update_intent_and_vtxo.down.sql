@@ -1,9 +1,11 @@
 DROP VIEW IF EXISTS round_request_vw;
 DROP VIEW IF EXISTS request_receiver_vw;
 DROP VIEW IF EXISTS request_vtxo_vw;
+DROP VIEW IF EXISTS vtxo_vw;
 
-ALTER TABLE tx_request DROP COLUMN;
-ALTER TABLE tx_request DROP COLUMN;
+ALTER TABLE tx_request DROP COLUMN proof;
+ALTER TABLE tx_request DROP COLUMN message;
+ALTER TABLE vtxo DROP COLUMN settled_by;
 
 CREATE VIEW IF NOT EXISTS round_request_vw AS
 SELECT tx_request.*
@@ -16,6 +18,13 @@ SELECT receiver.*
 FROM tx_request
 LEFT OUTER JOIN receiver
 ON tx_request.id=receiver.request_id;
+
+CREATE VIEW IF NOT EXISTS vtxo_vw AS
+SELECT v.*, COALESCE(group_concat(vc.commitment_txid), '') AS commitments
+FROM vtxo v
+LEFT JOIN vtxo_commitment_txid vc
+ON v.txid = vc.vtxo_txid AND v.vout = vc.vtxo_vout
+GROUP BY v.txid, v.vout;
 
 CREATE VIEW IF NOT EXISTS request_vtxo_vw AS
 SELECT vtxo_vw.*

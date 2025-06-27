@@ -578,8 +578,10 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		})
 
 		vtxoKeys := make([]domain.Outpoint, 0, len(userVtxos))
+		spentByMap := make(map[string]string)
 		for _, v := range userVtxos {
 			vtxoKeys = append(vtxoKeys, v.Outpoint)
+			spentByMap[v.Outpoint.String()] = randomString(32)
 		}
 
 		vtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoKeys)
@@ -623,7 +625,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Len(t, append(spendableVtxos, spentVtxos...), numberOfVtxos+len(newVtxos))
 
-		err = svc.Vtxos().SpendVtxos(ctx, vtxoKeys[:1], randomString(32))
+		settledBy := randomString(32)
+		err = svc.Vtxos().SpendVtxos(ctx, vtxoKeys[:1], spentByMap, settledBy)
 		require.NoError(t, err)
 
 		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys[:1])
@@ -631,12 +634,30 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Len(t, spentVtxos, len(vtxoKeys[:1]))
 		for _, v := range spentVtxos {
 			require.True(t, v.Spent)
+			require.Equal(t, spentByMap[v.Outpoint.String()], v.SpentBy)
+			require.Equal(t, settledBy, v.SettledBy)
 		}
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, pubkey)
 		require.NoError(t, err)
 		checkVtxos(t, vtxos[1:], spendableVtxos)
 		require.Len(t, spentVtxos, len(vtxoKeys[:1]))
+
+		// Make also sure that it's possible to spend without settling
+		spentByMap = map[string]string{
+			newVtxos[0].Outpoint.String(): randomString(32),
+		}
+		err = svc.Vtxos().SpendVtxos(ctx, vtxoKeys[1:2], spentByMap, "")
+		require.NoError(t, err)
+
+		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys[1:2])
+		require.NoError(t, err)
+		require.Len(t, spentVtxos, len(vtxoKeys[1:2]))
+		for _, v := range spentVtxos {
+			require.True(t, v.Spent)
+			require.Equal(t, spentByMap[v.Outpoint.String()], v.SpentBy)
+			require.Empty(t, v.SettledBy)
+		}
 	})
 }
 

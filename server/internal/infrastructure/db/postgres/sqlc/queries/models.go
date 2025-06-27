@@ -58,6 +58,7 @@ type RequestVtxoVw struct {
 	ExpireAt       sql.NullInt64
 	CreatedAt      sql.NullInt64
 	RequestID      sql.NullString
+	SettledBy      sql.NullString
 	Commitments    []byte
 	ID             sql.NullString
 	RoundID        sql.NullString
@@ -167,6 +168,7 @@ type Vtxo struct {
 	ExpireAt       int64
 	CreatedAt      int64
 	RequestID      sql.NullString
+	SettledBy      sql.NullString
 }
 
 type VtxoCommitmentTxid struct {
@@ -188,6 +190,7 @@ type VtxoVirtualTxVw struct {
 	ExpireAt       int64
 	CreatedAt      int64
 	RequestID      sql.NullString
+	SettledBy      sql.NullString
 	Commitments    []byte
 	RedeemTx       sql.NullString
 }
@@ -205,5 +208,6 @@ type VtxoVw struct {
 	ExpireAt       int64
 	CreatedAt      int64
 	RequestID      sql.NullString
+	SettledBy      sql.NullString
 	Commitments    []byte
 }

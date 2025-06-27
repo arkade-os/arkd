@@ -52,6 +52,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					Swept:          vtxo.Swept,
 					ExpireAt:       vtxo.ExpireAt,
 					CreatedAt:      vtxo.CreatedAt,
+					SettledBy:      sql.NullString{String: vtxo.SettledBy, Valid: true},
 				},
 			); err != nil {
 				return err
@@ -232,15 +233,18 @@ func (v *vtxoRepository) RedeemVtxos(ctx context.Context, vtxos []domain.Outpoin
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) SpendVtxos(ctx context.Context, vtxos []domain.Outpoint, txid string) error {
+func (v *vtxoRepository) SpendVtxos(
+	ctx context.Context, vtxos []domain.Outpoint, spentByMap map[string]string, settledBy string,
+) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.MarkVtxoAsSpent(
 				ctx,
 				queries.MarkVtxoAsSpentParams{
-					SpentBy: txid,
-					Txid:    vtxo.Txid,
-					Vout:    int32(vtxo.VOut),
+					SpentBy:   spentByMap[vtxo.String()],
+					SettledBy: sql.NullString{String: settledBy, Valid: true},
+					Txid:      vtxo.Txid,
+					Vout:      int32(vtxo.VOut),
 				},
 			); err != nil {
 				return err
@@ -391,6 +395,7 @@ func rowToVtxo(row queries.VtxoVirtualTxVw) domain.Vtxo {
 		PubKey:             row.Pubkey,
 		RootCommitmentTxid: row.CommitmentTxid,
 		CommitmentTxids:    parseCommitments(row.Commitments, []byte(",")),
+		SettledBy:          row.SettledBy.String,
 		SpentBy:            row.SpentBy,
 		Spent:              row.Spent,
 		Redeemed:           row.Redeemed,

@@ -326,12 +326,12 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	repo := s.vtxoStore
 
-	spentVtxos := getSpentVtxoKeysFromRound(round.TxRequests)
+	spentVtxos, spentByMap := getSpentVtxoKeysFromRound(*round, s.txDecoder)
 	newVtxos := getNewVtxosFromRound(round)
 
 	if len(spentVtxos) > 0 {
 		for {
-			if err := repo.SpendVtxos(ctx, spentVtxos, round.Txid); err != nil {
+			if err := repo.SpendVtxos(ctx, spentVtxos, spentByMap, round.Txid); err != nil {
 				log.WithError(err).Warn("failed to add new vtxos, retrying...")
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -366,6 +366,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	switch {
 	case offchainTx.IsAccepted():
 		spentVtxos := make([]domain.Outpoint, 0)
+		spentByMap := make(map[string]string)
 
 		for _, tx := range offchainTx.CheckpointTxs {
 			_, ins, _, err := s.txDecoder.DecodeTx(tx)
@@ -374,11 +375,14 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				continue
 			}
 			spentVtxos = append(spentVtxos, ins...)
+			for _, in := range ins {
+				spentByMap[in.String()] = offchainTx.VirtualTxid
+			}
 		}
 
 		// as soon as the checkpoint txs are signed by the server,
 		// we must mark the vtxos as spent to prevent double spending.
-		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.VirtualTxid); err != nil {
+		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, spentByMap, ""); err != nil {
 			log.WithError(err).Warn("failed to spend vtxos")
 			return
 		}
@@ -428,14 +432,30 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	}
 }
 
-func getSpentVtxoKeysFromRound(requests map[string]domain.TxRequest) []domain.Outpoint {
+func getSpentVtxoKeysFromRound(
+	round domain.Round, txDecoder ports.TxDecoder,
+) ([]domain.Outpoint, map[string]string) {
 	vtxos := make([]domain.Outpoint, 0)
-	for _, request := range requests {
+	spentByMap := make(map[string]string)
+	forfeitTxs := make([]domain.ForfeitTx, len(round.ForfeitTxs))
+	copy(forfeitTxs, round.ForfeitTxs)
+	for _, request := range round.TxRequests {
 		for _, vtxo := range request.Inputs {
 			vtxos = append(vtxos, vtxo.Outpoint)
+			for i, forfeitTx := range forfeitTxs {
+				// nolint
+				_, ins, _, _ := txDecoder.DecodeTx(forfeitTx.Tx)
+				for _, in := range ins {
+					if in.String() == vtxo.Outpoint.String() {
+						spentByMap[vtxo.Outpoint.String()] = forfeitTx.Txid
+						forfeitTxs = append(forfeitTxs[:i], forfeitTxs[i+1:]...)
+						break
+					}
+				}
+			}
 		}
 	}
-	return vtxos
+	return vtxos, spentByMap
 }
 
 func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {

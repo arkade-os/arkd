@@ -54,6 +54,7 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 			Redeemed:        vv.Redeemed,
 			Script:          toP2TR(vv.PubKey),
 			CreatedAt:       vv.CreatedAt,
+			SettledBy:       vv.SettledBy,
 		})
 	}
 

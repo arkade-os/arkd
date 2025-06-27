@@ -57,6 +57,7 @@ type RequestVtxoVw struct {
 	CreatedAt   sql.NullInt64
 	RequestID   sql.NullString
 	RedeemTx    sql.NullString
+	SettledBy   sql.NullString
 	Commitments interface{}
 	ID          sql.NullString
 	RoundID     sql.NullString
@@ -149,6 +150,7 @@ type Vtxo struct {
 	CreatedAt int64
 	RequestID sql.NullString
 	RedeemTx  sql.NullString
+	SettledBy sql.NullString
 }
 
 type VtxoCommitmentTxid struct {
@@ -171,5 +173,6 @@ type VtxoVw struct {
 	CreatedAt   int64
 	RequestID   sql.NullString
 	RedeemTx    sql.NullString
+	SettledBy   sql.NullString
 	Commitments interface{}
 }

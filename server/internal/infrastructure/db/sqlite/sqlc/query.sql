@@ -165,11 +165,12 @@ SELECT id FROM round WHERE starting_timestamp > ? AND starting_timestamp < ?;
 SELECT id FROM round;
 
 -- name: UpsertVtxo :exec
-INSERT INTO vtxo (txid, vout, pubkey, amount, round_tx, spent_by, spent, redeemed, swept, expire_at, created_at, redeem_tx)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE SET
+INSERT INTO vtxo (txid, vout, pubkey, amount, round_tx, settled_by, spent_by, spent, redeemed, swept, expire_at, created_at, redeem_tx)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
     round_tx = EXCLUDED.round_tx,
+    settled_by = EXCLUDED.settled_by,
     spent_by = EXCLUDED.spent_by,
     spent = EXCLUDED.spent,
     redeemed = EXCLUDED.redeemed,
@@ -211,7 +212,7 @@ UPDATE vtxo SET redeemed = true WHERE txid = ? AND vout = ?;
 UPDATE vtxo SET swept = true WHERE txid = ? AND vout = ?;
 
 -- name: MarkVtxoAsSpent :exec
-UPDATE vtxo SET spent = true, spent_by = ? WHERE txid = ? AND vout = ?;
+UPDATE vtxo SET spent = true, spent_by = ?, settled_by = ? WHERE txid = ? AND vout = ?;
 
 -- name: UpdateVtxoExpireAt :exec
 UPDATE vtxo SET expire_at = ? WHERE txid = ? AND vout = ?;

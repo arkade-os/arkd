@@ -60,10 +60,11 @@ func (r *vtxoRepository) AddVtxos(
 }
 
 func (r *vtxoRepository) SpendVtxos(
-	ctx context.Context, vtxoKeys []domain.Outpoint, spentBy string,
+	ctx context.Context, vtxoKeys []domain.Outpoint, spentByMap map[string]string, settledBy string,
 ) error {
 	for _, vtxoKey := range vtxoKeys {
-		if err := r.spendVtxo(ctx, vtxoKey, spentBy); err != nil {
+		spentBy := spentByMap[vtxoKey.String()]
+		if err := r.spendVtxo(ctx, vtxoKey, spentBy, settledBy); err != nil {
 			return err
 		}
 	}
@@ -308,7 +309,7 @@ func (r *vtxoRepository) getVtxo(
 	return &vtxo, nil
 }
 
-func (r *vtxoRepository) spendVtxo(ctx context.Context, vtxoKey domain.Outpoint, spendBy string) error {
+func (r *vtxoRepository) spendVtxo(ctx context.Context, vtxoKey domain.Outpoint, spentBy, settledBy string) error {
 	vtxo, err := r.getVtxo(ctx, vtxoKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
@@ -321,7 +322,8 @@ func (r *vtxoRepository) spendVtxo(ctx context.Context, vtxoKey domain.Outpoint,
 	}
 
 	vtxo.Spent = true
-	vtxo.SpentBy = spendBy
+	vtxo.SpentBy = spentBy
+	vtxo.SettledBy = settledBy
 
 	return r.updateVtxo(ctx, vtxo)
 }

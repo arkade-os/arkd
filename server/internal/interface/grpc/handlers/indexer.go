@@ -682,5 +682,6 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		IsSpent:         vtxo.Spent,
 		SpentBy:         vtxo.SpentBy,
 		CommitmentTxids: vtxo.CommitmentTxids,
+		SettledBy:       vtxo.SettledBy,
 	}
 }

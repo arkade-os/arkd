@@ -40,7 +40,8 @@ type Vtxo struct {
 	PubKey             string
 	CommitmentTxids    []string
 	RootCommitmentTxid string
-	SpentBy            string // round txid or redeem txid
+	SpentBy            string // forfeit txid or ark txid
+	SettledBy          string // commitment txid
 	Spent              bool
 	Redeemed           bool
 	Swept              bool
