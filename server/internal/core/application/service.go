@@ -2206,16 +2206,18 @@ func (s *covenantlessService) propagateEvents(round *domain.Round) {
 	// because it contains the vtxoTree and connectorsTree
 	// and we need to propagate them in specific BatchTree events
 	case domain.RoundFinalizationStarted:
-		vtxoGraph, err := tree.NewTxGraph(ev.VtxoTree)
-		if err != nil {
-			log.WithError(err).Warn("failed to create vtxo tree")
-			return
-		}
+		if len(ev.VtxoTree) <= 0 {
+			vtxoGraph, err := tree.NewTxGraph(ev.VtxoTree)
+			if err != nil {
+				log.WithError(err).Warn("failed to create vtxo tree")
+				return
+			}
 
-		events = append(
-			events,
-			batchTreeSignatureEvents(vtxoGraph, 0, round.Id)...,
-		)
+			events = append(
+				events,
+				batchTreeSignatureEvents(vtxoGraph, 0, round.Id)...,
+			)
+		}
 
 		if len(ev.Connectors) > 0 {
 			connectorsGraph, err := tree.NewTxGraph(ev.Connectors)
@@ -2292,6 +2294,11 @@ func (s *covenantlessService) propagateRoundSigningNoncesGeneratedEvent(combined
 func (s *covenantlessService) scheduleSweepVtxosForRound(round *domain.Round) {
 	// Schedule the sweeping procedure only for completed round.
 	if !round.IsEnded() {
+		return
+	}
+
+	// if the round doesn't have a batch vtxo output, we do not need to sweep it
+	if len(round.VtxoTree) <= 0 {
 		return
 	}
 

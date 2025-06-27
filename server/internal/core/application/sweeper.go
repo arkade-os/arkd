@@ -70,6 +70,10 @@ func (s *sweeper) start() error {
 				return err
 			}
 
+			if len(graphChunks) <= 0 {
+				continue
+			}
+
 			graph, err := tree.NewTxGraph(graphChunks)
 			if err != nil {
 				return err
