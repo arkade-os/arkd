@@ -2206,7 +2206,7 @@ func (s *covenantlessService) propagateEvents(round *domain.Round) {
 	// because it contains the vtxoTree and connectorsTree
 	// and we need to propagate them in specific BatchTree events
 	case domain.RoundFinalizationStarted:
-		if len(ev.VtxoTree) <= 0 {
+		if len(ev.VtxoTree) > 0 {
 			vtxoGraph, err := tree.NewTxGraph(ev.VtxoTree)
 			if err != nil {
 				log.WithError(err).Warn("failed to create vtxo tree")
