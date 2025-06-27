@@ -10,12 +10,16 @@ type TxRequest struct {
 	Id        string
 	Inputs    []Vtxo
 	Receivers []Receiver
+	Proof     string
+	Message   string
 }
 
-func NewTxRequest(inputs []Vtxo) (*TxRequest, error) {
+func NewTxRequest(proof, message string, inputs []Vtxo) (*TxRequest, error) {
 	request := &TxRequest{
-		Id:     uuid.New().String(),
-		Inputs: inputs,
+		Id:      uuid.New().String(),
+		Inputs:  inputs,
+		Proof:   proof,
+		Message: message,
 	}
 	if err := request.validate(true); err != nil {
 		return nil, err
@@ -56,6 +60,12 @@ func (r TxRequest) TotalOutputAmount() uint64 {
 func (r TxRequest) validate(ignoreOuts bool) error {
 	if len(r.Id) <= 0 {
 		return fmt.Errorf("missing id")
+	}
+	if len(r.Proof) <= 0 {
+		return fmt.Errorf("missing proof")
+	}
+	if len(r.Message) <= 0 {
+		return fmt.Errorf("missing message")
 	}
 	if ignoreOuts {
 		return nil

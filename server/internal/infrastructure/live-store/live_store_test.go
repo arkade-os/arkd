@@ -150,14 +150,6 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 	t.Run("ForfeitTxsStore", func(t *testing.T) {
 		connectorsChunks, requests, err := parseForfeitTxsFixture(connectorsJSON, requestsJSON)
-		fmt.Println("REQUESTS")
-		for _, r := range requests {
-			for _, v := range r.Inputs {
-				fmt.Println(v.RequiresForfeit())
-			}
-			b, _ := json.Marshal(r)
-			fmt.Println("SHAMALAYA", string(b))
-		}
 		require.NoError(t, err)
 
 		// Init

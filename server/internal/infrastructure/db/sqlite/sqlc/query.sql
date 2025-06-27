@@ -49,8 +49,11 @@ FROM vtxo
 WHERE vtxo.txid IN (sqlc.slice('ids2')) AND vtxo.redeem_tx IS NOT '';
 
 -- name: UpsertTxRequest :exec
-INSERT INTO tx_request (id, round_id) VALUES (?, ?)
-ON CONFLICT(id) DO UPDATE SET round_id = EXCLUDED.round_id;
+INSERT INTO tx_request (id, round_id, proof, message) VALUES (?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    round_id = EXCLUDED.round_id,
+    proof = EXCLUDED.proof,
+    message = EXCLUDED.message;
 
 -- name: UpsertReceiver :exec
 INSERT INTO receiver (request_id, pubkey, onchain_address, amount) VALUES (?, ?, ?, ?)

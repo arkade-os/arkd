@@ -416,7 +416,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		roundById, err := svc.Rounds().GetRoundWithId(ctx, roundId)
 		require.NoError(t, err)
 		require.NotNil(t, roundById)
-		require.Condition(t, roundsMatch(*round, *roundById))
+		roundsMatch(t, *round, *roundById)
 
 		roundTxid := randomString(32)
 		newEvents := []domain.Event{
@@ -427,7 +427,9 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 				},
 				TxRequests: []domain.TxRequest{
 					{
-						Id: uuid.New().String(),
+						Id:      uuid.New().String(),
+						Proof:   "proof",
+						Message: "message",
 						Inputs: []domain.Vtxo{
 							{
 								Outpoint: domain.Outpoint{
@@ -445,7 +447,9 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 						}},
 					},
 					{
-						Id: uuid.New().String(),
+						Id:      uuid.New().String(),
+						Proof:   "proof",
+						Message: "message",
 						Inputs: []domain.Vtxo{
 
 							{
@@ -495,7 +499,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		roundById, err = svc.Rounds().GetRoundWithId(ctx, updatedRound.Id)
 		require.NoError(t, err)
 		require.NotNil(t, roundById)
-		require.Condition(t, roundsMatch(*updatedRound, *roundById))
+		roundsMatch(t, *updatedRound, *roundById)
 
 		newEvents = []domain.Event{
 			domain.RoundFinalized{
@@ -517,7 +521,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		roundById, err = svc.Rounds().GetRoundWithId(ctx, roundId)
 		require.NoError(t, err)
 		require.NotNil(t, roundById)
-		require.Condition(t, roundsMatch(*finalizedRound, *roundById))
+		roundsMatch(t, *finalizedRound, *roundById)
 
 		resultTree, err := svc.Rounds().GetVtxoTreeWithTxid(ctx, roundTxid)
 		require.NoError(t, err)
@@ -527,7 +531,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		roundByTxid, err := svc.Rounds().GetRoundWithTxid(ctx, roundTxid)
 		require.NoError(t, err)
 		require.NotNil(t, roundByTxid)
-		require.Condition(t, roundsMatch(*finalizedRound, *roundByTxid))
+		roundsMatch(t, *finalizedRound, *roundByTxid)
 
 		txs, err := svc.Rounds().GetTxsWithTxids(ctx, []string{txida, txidb})
 		require.NoError(t, err)
@@ -760,77 +764,50 @@ func assertMarketHourEqual(t *testing.T, expected, actual domain.MarketHour) {
 	assert.True(t, expected.EndTime.Equal(actual.EndTime), "EndTime not equal")
 }
 
-func roundsMatch(expected, got domain.Round) assert.Comparison {
-	return func() bool {
-		if expected.Id != got.Id {
-			return false
-		}
-		if expected.StartingTimestamp != got.StartingTimestamp {
-			return false
-		}
-		if expected.EndingTimestamp != got.EndingTimestamp {
-			return false
-		}
-		if expected.Stage != got.Stage {
-			return false
-		}
+func roundsMatch(t *testing.T, expected, got domain.Round) {
+	require.Equal(t, expected.Id, got.Id)
+	require.Equal(t, expected.StartingTimestamp, got.StartingTimestamp)
+	require.Equal(t, expected.EndingTimestamp, got.EndingTimestamp)
+	require.Equal(t, expected.Stage, got.Stage)
+	require.Equal(t, expected.Txid, got.Txid)
+	require.Equal(t, expected.CommitmentTx, got.CommitmentTx)
+	require.Exactly(t, expected.VtxoTree, got.VtxoTree)
 
-		for k, v := range expected.TxRequests {
-			gotValue, ok := got.TxRequests[k]
-			if !ok {
-				return false
-			}
+	for k, v := range expected.TxRequests {
+		gotValue, ok := got.TxRequests[k]
+		require.True(t, ok)
 
-			expectedVtxos := sortVtxos(v.Inputs)
-			gotVtxos := sortVtxos(gotValue.Inputs)
+		expectedVtxos := sortVtxos(v.Inputs)
+		gotVtxos := sortVtxos(gotValue.Inputs)
 
-			sort.Sort(expectedVtxos)
-			sort.Sort(gotVtxos)
+		sort.Sort(expectedVtxos)
+		sort.Sort(gotVtxos)
 
-			expectedReceivers := sortReceivers(v.Receivers)
-			gotReceivers := sortReceivers(gotValue.Receivers)
+		expectedReceivers := sortReceivers(v.Receivers)
+		gotReceivers := sortReceivers(gotValue.Receivers)
 
-			sort.Sort(expectedReceivers)
-			sort.Sort(gotReceivers)
+		sort.Sort(expectedReceivers)
+		sort.Sort(gotReceivers)
 
-			if !reflect.DeepEqual(expectedReceivers, gotReceivers) {
-				return false
-			}
-			if !reflect.DeepEqual(expectedVtxos, gotVtxos) {
-				return false
-			}
-		}
+		require.Exactly(t, expectedReceivers, gotReceivers)
+		require.Exactly(t, expectedVtxos, gotVtxos)
+		require.Equal(t, v.Proof, gotValue.Proof)
+		require.Equal(t, v.Message, gotValue.Message)
+	}
 
-		if expected.Txid != got.Txid {
-			return false
-		}
-		if expected.CommitmentTx != got.CommitmentTx {
-			return false
-		}
+	if len(expected.ForfeitTxs) > 0 {
+		sort.SliceStable(expected.ForfeitTxs, func(i, j int) bool {
+			return expected.ForfeitTxs[i].Txid < expected.ForfeitTxs[j].Txid
+		})
+		sort.SliceStable(got.ForfeitTxs, func(i, j int) bool {
+			return got.ForfeitTxs[i].Txid < got.ForfeitTxs[j].Txid
+		})
 
-		if len(expected.ForfeitTxs) > 0 {
-			sort.SliceStable(expected.ForfeitTxs, func(i, j int) bool {
-				return expected.ForfeitTxs[i].Txid < expected.ForfeitTxs[j].Txid
-			})
-			sort.SliceStable(got.ForfeitTxs, func(i, j int) bool {
-				return got.ForfeitTxs[i].Txid < got.ForfeitTxs[j].Txid
-			})
+		require.Exactly(t, expected.ForfeitTxs, got.ForfeitTxs)
+	}
 
-			if !reflect.DeepEqual(expected.ForfeitTxs, got.ForfeitTxs) {
-				return false
-			}
-		}
-
-		if !reflect.DeepEqual(expected.VtxoTree, got.VtxoTree) {
-			return false
-		}
-
-		if len(expected.Connectors) > 0 {
-			if !reflect.DeepEqual(expected.Connectors, got.Connectors) {
-				return false
-			}
-		}
-		return true
+	if len(expected.Connectors) > 0 {
+		require.Exactly(t, expected.Connectors, got.Connectors)
 	}
 }
 

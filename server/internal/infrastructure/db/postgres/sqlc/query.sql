@@ -42,8 +42,12 @@ FROM tx
 WHERE tx.txid = ANY($1::varchar[]);
 
 -- name: UpsertTxRequest :exec
-INSERT INTO tx_request (id, round_id) VALUES (@id, @round_id)
-    ON CONFLICT(id) DO UPDATE SET round_id = EXCLUDED.round_id;
+INSERT INTO tx_request (id, round_id, proof, message)
+VALUES (@id, @round_id, @proof, @message)
+    ON CONFLICT(id) DO UPDATE SET
+    round_id = EXCLUDED.round_id,
+    proof = EXCLUDED.proof,
+    message = EXCLUDED.message;
 
 -- name: UpsertReceiver :exec
 INSERT INTO receiver (request_id, pubkey, onchain_address, amount) VALUES (@request_id, @pubkey, @onchain_address, @amount)

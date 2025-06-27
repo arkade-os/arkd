@@ -12,7 +12,9 @@ import (
 var (
 	requests = []domain.TxRequest{
 		{
-			Id: "0",
+			Id:      "0",
+			Proof:   "proof",
+			Message: "message",
 			Inputs: []domain.Vtxo{
 				{
 					Outpoint: domain.Outpoint{
@@ -41,7 +43,9 @@ var (
 			},
 		},
 		{
-			Id: "1",
+			Id:      "1",
+			Proof:   "proof",
+			Message: "message",
 			Inputs: []domain.Vtxo{
 				{
 					Outpoint: domain.Outpoint{

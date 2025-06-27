@@ -39,6 +39,10 @@ type RequestReceiverVw struct {
 	Pubkey         sql.NullString
 	OnchainAddress sql.NullString
 	Amount         sql.NullInt64
+	ID             sql.NullString
+	RoundID        sql.NullString
+	Proof          sql.NullString
+	Message        sql.NullString
 }
 
 type RequestVtxoVw struct {
@@ -55,6 +59,10 @@ type RequestVtxoVw struct {
 	CreatedAt      sql.NullInt64
 	RequestID      sql.NullString
 	Commitments    []byte
+	ID             sql.NullString
+	RoundID        sql.NullString
+	Proof          sql.NullString
+	Message        sql.NullString
 }
 
 type Round struct {
@@ -92,6 +100,8 @@ type RoundCommitmentTxVw struct {
 type RoundRequestVw struct {
 	ID      sql.NullString
 	RoundID sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
 }
 
 type RoundTxVw struct {
@@ -113,8 +123,10 @@ type Tx struct {
 }
 
 type TxRequest struct {
-	ID      string
-	RoundID string
+	ID      sql.NullString
+	RoundID sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
 }
 
 type VirtualTx struct {

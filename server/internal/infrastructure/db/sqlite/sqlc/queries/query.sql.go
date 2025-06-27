@@ -682,10 +682,10 @@ func (q *Queries) SelectRoundIdsInRange(ctx context.Context, arg SelectRoundIdsI
 
 const selectRoundWithRoundId = `-- name: SelectRoundWithRoundId :many
 SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.txid, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration,
-       round_request_vw.id, round_request_vw.round_id,
+       round_request_vw.id, round_request_vw.round_id, round_request_vw.proof, round_request_vw.message,
        round_tx_vw.txid, round_tx_vw.tx, round_tx_vw.round_id, round_tx_vw.type, round_tx_vw.position, round_tx_vw.children,
-       request_receiver_vw.request_id, request_receiver_vw.pubkey, request_receiver_vw.onchain_address, request_receiver_vw.amount,
-       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent_by, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.redeem_tx, request_vtxo_vw.commitments
+       request_receiver_vw.request_id, request_receiver_vw.pubkey, request_receiver_vw.onchain_address, request_receiver_vw.amount, request_receiver_vw.id, request_receiver_vw.round_id, request_receiver_vw.proof, request_receiver_vw.message,
+       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent_by, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.redeem_tx, request_vtxo_vw.commitments, request_vtxo_vw.id, request_vtxo_vw.round_id, request_vtxo_vw.proof, request_vtxo_vw.message
 FROM round
          LEFT OUTER JOIN round_request_vw ON round.id=round_request_vw.round_id
          LEFT OUTER JOIN round_tx_vw ON round.id=round_tx_vw.round_id
@@ -725,6 +725,8 @@ func (q *Queries) SelectRoundWithRoundId(ctx context.Context, id string) ([]Sele
 			&i.Round.VtxoTreeExpiration,
 			&i.RoundRequestVw.ID,
 			&i.RoundRequestVw.RoundID,
+			&i.RoundRequestVw.Proof,
+			&i.RoundRequestVw.Message,
 			&i.RoundTxVw.Txid,
 			&i.RoundTxVw.Tx,
 			&i.RoundTxVw.RoundID,
@@ -735,6 +737,10 @@ func (q *Queries) SelectRoundWithRoundId(ctx context.Context, id string) ([]Sele
 			&i.RequestReceiverVw.Pubkey,
 			&i.RequestReceiverVw.OnchainAddress,
 			&i.RequestReceiverVw.Amount,
+			&i.RequestReceiverVw.ID,
+			&i.RequestReceiverVw.RoundID,
+			&i.RequestReceiverVw.Proof,
+			&i.RequestReceiverVw.Message,
 			&i.RequestVtxoVw.Txid,
 			&i.RequestVtxoVw.Vout,
 			&i.RequestVtxoVw.Pubkey,
@@ -749,6 +755,10 @@ func (q *Queries) SelectRoundWithRoundId(ctx context.Context, id string) ([]Sele
 			&i.RequestVtxoVw.RequestID,
 			&i.RequestVtxoVw.RedeemTx,
 			&i.RequestVtxoVw.Commitments,
+			&i.RequestVtxoVw.ID,
+			&i.RequestVtxoVw.RoundID,
+			&i.RequestVtxoVw.Proof,
+			&i.RequestVtxoVw.Message,
 		); err != nil {
 			return nil, err
 		}
@@ -765,10 +775,10 @@ func (q *Queries) SelectRoundWithRoundId(ctx context.Context, id string) ([]Sele
 
 const selectRoundWithRoundTxId = `-- name: SelectRoundWithRoundTxId :many
 SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.txid, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration,
-       round_request_vw.id, round_request_vw.round_id,
+       round_request_vw.id, round_request_vw.round_id, round_request_vw.proof, round_request_vw.message,
        round_tx_vw.txid, round_tx_vw.tx, round_tx_vw.round_id, round_tx_vw.type, round_tx_vw.position, round_tx_vw.children,
-       request_receiver_vw.request_id, request_receiver_vw.pubkey, request_receiver_vw.onchain_address, request_receiver_vw.amount,
-       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent_by, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.redeem_tx, request_vtxo_vw.commitments
+       request_receiver_vw.request_id, request_receiver_vw.pubkey, request_receiver_vw.onchain_address, request_receiver_vw.amount, request_receiver_vw.id, request_receiver_vw.round_id, request_receiver_vw.proof, request_receiver_vw.message,
+       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent_by, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.redeem_tx, request_vtxo_vw.commitments, request_vtxo_vw.id, request_vtxo_vw.round_id, request_vtxo_vw.proof, request_vtxo_vw.message
 FROM round
          LEFT OUTER JOIN round_request_vw ON round.id=round_request_vw.round_id
          LEFT OUTER JOIN round_tx_vw ON round.id=round_tx_vw.round_id
@@ -808,6 +818,8 @@ func (q *Queries) SelectRoundWithRoundTxId(ctx context.Context, txid string) ([]
 			&i.Round.VtxoTreeExpiration,
 			&i.RoundRequestVw.ID,
 			&i.RoundRequestVw.RoundID,
+			&i.RoundRequestVw.Proof,
+			&i.RoundRequestVw.Message,
 			&i.RoundTxVw.Txid,
 			&i.RoundTxVw.Tx,
 			&i.RoundTxVw.RoundID,
@@ -818,6 +830,10 @@ func (q *Queries) SelectRoundWithRoundTxId(ctx context.Context, txid string) ([]
 			&i.RequestReceiverVw.Pubkey,
 			&i.RequestReceiverVw.OnchainAddress,
 			&i.RequestReceiverVw.Amount,
+			&i.RequestReceiverVw.ID,
+			&i.RequestReceiverVw.RoundID,
+			&i.RequestReceiverVw.Proof,
+			&i.RequestReceiverVw.Message,
 			&i.RequestVtxoVw.Txid,
 			&i.RequestVtxoVw.Vout,
 			&i.RequestVtxoVw.Pubkey,
@@ -832,6 +848,10 @@ func (q *Queries) SelectRoundWithRoundTxId(ctx context.Context, txid string) ([]
 			&i.RequestVtxoVw.RequestID,
 			&i.RequestVtxoVw.RedeemTx,
 			&i.RequestVtxoVw.Commitments,
+			&i.RequestVtxoVw.ID,
+			&i.RequestVtxoVw.RoundID,
+			&i.RequestVtxoVw.Proof,
+			&i.RequestVtxoVw.Message,
 		); err != nil {
 			return nil, err
 		}
@@ -1386,17 +1406,27 @@ func (q *Queries) UpsertTransaction(ctx context.Context, arg UpsertTransactionPa
 }
 
 const upsertTxRequest = `-- name: UpsertTxRequest :exec
-INSERT INTO tx_request (id, round_id) VALUES (?, ?)
-ON CONFLICT(id) DO UPDATE SET round_id = EXCLUDED.round_id
+INSERT INTO tx_request (id, round_id, proof, message) VALUES (?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+    round_id = EXCLUDED.round_id,
+    proof = EXCLUDED.proof,
+    message = EXCLUDED.message
 `
 
 type UpsertTxRequestParams struct {
-	ID      string
-	RoundID string
+	ID      sql.NullString
+	RoundID sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
 }
 
 func (q *Queries) UpsertTxRequest(ctx context.Context, arg UpsertTxRequestParams) error {
-	_, err := q.db.ExecContext(ctx, upsertTxRequest, arg.ID, arg.RoundID)
+	_, err := q.db.ExecContext(ctx, upsertTxRequest,
+		arg.ID,
+		arg.RoundID,
+		arg.Proof,
+		arg.Message,
+	)
 	return err
 }
 

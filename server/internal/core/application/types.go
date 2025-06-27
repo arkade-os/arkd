@@ -15,7 +15,6 @@ type Service interface {
 	Start() error
 	Stop()
 	RegisterIntent(ctx context.Context, bip322signature bip322.Signature, message tree.IntentMessage) (string, error)
-	SpendVtxos(ctx context.Context, inputs []ports.Input) (string, error)
 	ConfirmRegistration(ctx context.Context, intentId string) error
 	ClaimVtxos(ctx context.Context, creds string, receivers []domain.Receiver, cosignersPublicKeys []string) error
 	SignVtxos(ctx context.Context, forfeitTxs []string) error

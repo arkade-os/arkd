@@ -141,8 +141,10 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				if err := querierWithTx.UpsertTxRequest(
 					ctx,
 					queries.UpsertTxRequestParams{
-						ID:      request.Id,
-						RoundID: round.Id,
+						ID:      sql.NullString{String: request.Id, Valid: true},
+						RoundID: sql.NullString{String: round.Id, Valid: true},
+						Proof:   sql.NullString{String: request.Proof, Valid: true},
+						Message: sql.NullString{String: request.Message, Valid: true},
 					},
 				); err != nil {
 					return fmt.Errorf("failed to upsert tx request: %w", err)
@@ -465,6 +467,8 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 			if !ok {
 				request = domain.TxRequest{
 					Id:        v.request.ID.String,
+					Proof:     v.request.Proof.String,
+					Message:   v.request.Message.String,
 					Inputs:    make([]domain.Vtxo, 0),
 					Receivers: make([]domain.Receiver, 0),
 				}
@@ -476,6 +480,8 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				if !ok {
 					request = domain.TxRequest{
 						Id:        v.vtxo.RequestID.String,
+						Proof:     v.vtxo.Proof.String,
+						Message:   v.vtxo.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
 						Receivers: make([]domain.Receiver, 0),
 					}
@@ -501,6 +507,8 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				if !ok {
 					request = domain.TxRequest{
 						Id:        v.receiver.RequestID.String,
+						Proof:     v.receiver.Proof.String,
+						Message:   v.receiver.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
 						Receivers: make([]domain.Receiver, 0),
 					}
