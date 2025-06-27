@@ -50,7 +50,7 @@ jobs:
           go-version: '>=1.23.1'
       - uses: actions/checkout@v3
       - name: check linting
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.6
           working-directory: ./server
@@ -84,7 +84,7 @@ jobs:
           go-version: '>=1.23.1'
       - uses: actions/checkout@v3
       - name: check linting
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.6
           working-directory: ./pkg/client-sdk
@@ -110,7 +110,7 @@ jobs:
           go-version: '>=1.23.1'
       - uses: actions/checkout@v3
       - name: check linting
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.6
           working-directory: ./common
