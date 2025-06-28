@@ -531,7 +531,7 @@ func vtxosFromRest(restVtxos []*models.V1Vtxo) []types.Vtxo {
 		}
 
 		vtxos[i] = types.Vtxo{
-			VtxoKey: types.VtxoKey{
+			Outpoint: types.Outpoint{
 				Txid: v.Outpoint.Txid,
 				VOut: uint32(v.Outpoint.Vout),
 			},

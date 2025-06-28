@@ -72,7 +72,7 @@ func (s *txRequestsStore) Push(request domain.TxRequest, boardingInputs []ports.
 				if input.IsNote() {
 					continue
 				}
-				key := input.String()
+				key := input.Outpoint.String()
 				exists, err := tx.SIsMember(ctx, txReqStoreVtxosKey, key).Result()
 				if err != nil {
 					return err
@@ -101,7 +101,7 @@ func (s *txRequestsStore) Push(request domain.TxRequest, boardingInputs []ports.
 					if vtxo.IsNote() {
 						continue
 					}
-					pipe.SAdd(ctx, txReqStoreVtxosKey, vtxo.String())
+					pipe.SAdd(ctx, txReqStoreVtxosKey, vtxo.Outpoint.String())
 				}
 
 				return nil
@@ -149,7 +149,7 @@ func (s *txRequestsStore) Pop(num int64) []ports.TimedTxRequest {
 	for _, req := range requestsByTime[:num] {
 		result = append(result, req)
 		for _, vtxo := range req.Inputs {
-			vtxosToRemove = append(vtxosToRemove, vtxo.String())
+			vtxosToRemove = append(vtxosToRemove, vtxo.Outpoint.String())
 		}
 
 		if err := s.requests.Delete(ctx, req.Id); err != nil {
@@ -255,7 +255,7 @@ func (s *txRequestsStore) Delete(ids []string) error {
 		}
 
 		for _, vtxo := range req.Inputs {
-			s.rdb.SRem(ctx, txReqStoreVtxosKey, vtxo.String())
+			s.rdb.SRem(ctx, txReqStoreVtxosKey, vtxo.Outpoint.String())
 		}
 
 		if err := s.requests.Delete(ctx, id); err != nil {

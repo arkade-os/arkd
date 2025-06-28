@@ -79,7 +79,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []types.Vtxo) (int,
 }
 
 func (v *vtxoRepository) SpendVtxos(
-	ctx context.Context, outpoints []types.VtxoKey, spentByMap map[string]string, settledBy string,
+	ctx context.Context, outpoints []types.Outpoint, spentByMap map[string]string, settledBy string,
 ) (int, error) {
 	vtxos, err := v.GetVtxos(ctx, outpoints)
 	if err != nil {
@@ -93,7 +93,7 @@ func (v *vtxoRepository) SpendVtxos(
 				continue
 			}
 			vtxo.Spent = true
-			vtxo.SpentBy = spentByMap[vtxo.VtxoKey.String()]
+			vtxo.SpentBy = spentByMap[vtxo.Outpoint.String()]
 			vtxo.SettledBy = settledBy
 			if err := querierWithTx.UpdateVtxo(ctx, queries.UpdateVtxoParams{
 				SpentBy:   sql.NullString{String: vtxo.SpentBy, Valid: true},
@@ -166,7 +166,7 @@ func (v *vtxoRepository) GetAllVtxos(
 }
 
 func (v *vtxoRepository) GetVtxos(
-	ctx context.Context, keys []types.VtxoKey,
+	ctx context.Context, keys []types.Outpoint,
 ) ([]types.Vtxo, error) {
 	vtxos := make([]types.Vtxo, 0, len(keys))
 	for _, key := range keys {
@@ -225,7 +225,7 @@ func rowToVtxo(row queries.Vtxo) types.Vtxo {
 		createdAt = time.Unix(row.CreatedAt, 0)
 	}
 	return types.Vtxo{
-		VtxoKey: types.VtxoKey{
+		Outpoint: types.Outpoint{
 			Txid: row.Txid,
 			VOut: uint32(row.Vout),
 		},

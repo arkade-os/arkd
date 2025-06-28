@@ -94,7 +94,7 @@ func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo do
 	}
 
 	if len(checkpointPsbt) == 0 {
-		return fmt.Errorf("checkpoint tx not found for vtxo %s", vtxo.String())
+		return fmt.Errorf("checkpoint tx not found for vtxo %s", vtxo.Outpoint.String())
 	}
 
 	parent, err := s.builder.FinalizeAndExtract(checkpointPsbt)

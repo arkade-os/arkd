@@ -60,7 +60,7 @@ type BatchEventChannel struct {
 }
 
 type Input struct {
-	types.VtxoKey
+	types.Outpoint
 	Tapscripts []string
 }
 

@@ -455,7 +455,7 @@ func (s *covenantlessService) SubmitOffchainTx(
 		}
 
 		if vtxo.IsNote() {
-			return nil, "", "", fmt.Errorf("vtxo '%s' is a note, can't be spent in ark transaction", vtxo.String())
+			return nil, "", "", fmt.Errorf("vtxo '%s' is a note, can't be spent in ark transaction", vtxo.Outpoint.String())
 		}
 
 		vtxoScript, err := tree.ParseVtxoScript(tapscripts)

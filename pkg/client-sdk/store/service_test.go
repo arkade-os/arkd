@@ -33,7 +33,7 @@ var (
 
 	testVtxos = []types.Vtxo{
 		{
-			VtxoKey: types.VtxoKey{
+			Outpoint: types.Outpoint{
 				Txid: "0000000000000000000000000000000000000000000000000000000000000000",
 				VOut: 0,
 			},
@@ -45,7 +45,7 @@ var (
 			Preconfirmed:    true,
 		},
 		{
-			VtxoKey: types.VtxoKey{
+			Outpoint: types.Outpoint{
 				Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				VOut: 0,
 			},
@@ -56,7 +56,7 @@ var (
 			CreatedAt:       time.Unix(1746143068, 0),
 		},
 	}
-	testVtxoKeys = []types.VtxoKey{
+	testVtxoKeys = []types.Outpoint{
 		{
 			Txid: "0000000000000000000000000000000000000000000000000000000000000000",
 			VOut: 0,
@@ -274,7 +274,7 @@ func testVtxoStore(t *testing.T, storeSvc types.VtxoStore, storeType string) {
 		require.Equal(t, 1, len(spendable))
 		for _, v := range spent {
 			require.True(t, v.Spent)
-			require.Equal(t, spentByMap[v.VtxoKey.String()], v.SpentBy)
+			require.Equal(t, spentByMap[v.Outpoint.String()], v.SpentBy)
 			require.Empty(t, v.SettledBy)
 		}
 
@@ -284,8 +284,8 @@ func testVtxoStore(t *testing.T, storeSvc types.VtxoStore, storeType string) {
 		require.Equal(t, len(testSpendAndSettleVtxoKeys), count)
 		for _, v := range spent {
 			require.True(t, v.Spent)
-			require.Equal(t, spentByMap[v.VtxoKey.String()], v.SpentBy)
-			require.Equal(t, spentByMap2[v.VtxoKey.String()], v.SettledBy)
+			require.Equal(t, spentByMap[v.Outpoint.String()], v.SpentBy)
+			require.Equal(t, spentByMap2[v.Outpoint.String()], v.SettledBy)
 		}
 	})
 }

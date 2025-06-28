@@ -595,7 +595,7 @@ func newIndexerVtxos(vtxos []*arkv1.IndexerVtxo) []types.Vtxo {
 
 func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) types.Vtxo {
 	return types.Vtxo{
-		VtxoKey: types.VtxoKey{
+		Outpoint: types.Outpoint{
 			Txid: vtxo.GetOutpoint().GetTxid(),
 			VOut: vtxo.GetOutpoint().GetVout(),
 		},

@@ -3,6 +3,7 @@ package domain
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash"
 
@@ -48,6 +49,12 @@ type Vtxo struct {
 	ExpireAt           int64
 	RedeemTx           string // empty if in-round vtxo
 	CreatedAt          int64
+}
+
+func (v Vtxo) String() string {
+	// nolint
+	b, _ := json.MarshalIndent(v, "", "  ")
+	return string(b)
 }
 
 func (v Vtxo) IsPreconfirmed() bool {

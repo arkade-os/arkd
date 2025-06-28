@@ -708,7 +708,7 @@ func newIndexerVtxo(vtxo *models.V1IndexerVtxo) (*types.Vtxo, error) {
 		return nil, err
 	}
 	return &types.Vtxo{
-		VtxoKey: types.VtxoKey{
+		Outpoint: types.Outpoint{
 			Txid: vtxo.Outpoint.Txid,
 			VOut: uint32(vtxo.Outpoint.Vout),
 		},

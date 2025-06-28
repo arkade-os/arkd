@@ -109,7 +109,7 @@ type vtxo struct {
 
 func (v vtxo) toVtxo() types.Vtxo {
 	return types.Vtxo{
-		VtxoKey: types.VtxoKey{
+		Outpoint: types.Outpoint{
 			Txid: v.GetOutpoint().GetTxid(),
 			VOut: v.GetOutpoint().GetVout(),
 		},
