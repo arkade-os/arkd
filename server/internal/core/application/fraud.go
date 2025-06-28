@@ -32,7 +32,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 	mutx.Lock()
 	defer mutx.Unlock()
 
-	if vtxo.IsPreconfirmed() {
+	if vtxo.SettledBy == "" {
 		// if spentBy is not a round, it means the utxo is spent by an offchain tx
 		// react by broadcasting the next checkpoint tx
 		if err := s.broadcastCheckpointTx(ctx, vtxo); err != nil {
