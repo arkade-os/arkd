@@ -123,6 +123,7 @@ func (v vtxo) toVtxo() types.Vtxo {
 		Redeemed:        v.GetRedeemed(),
 		Spent:           v.GetSpent(),
 		SpentBy:         v.GetSpentBy(),
+		SettledBy:       v.GetSettledBy(),
 	}
 }
 

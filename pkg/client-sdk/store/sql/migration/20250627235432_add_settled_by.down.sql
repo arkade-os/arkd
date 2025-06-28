@@ -1,0 +1,2 @@
+ALTER TABLE vtxo DROP COLUMN settled_by;
+ALTER TABLE tx DROP COLUMN settled_by;

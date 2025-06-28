@@ -54,6 +54,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []types.Vtxo) (int,
 					Redeemed:        vtxo.Redeemed,
 					Spent:           vtxo.Spent,
 					SpentBy:         sql.NullString{String: vtxo.SpentBy, Valid: true},
+					SettledBy:       sql.NullString{String: vtxo.SettledBy, Valid: true},
 				},
 			); err != nil {
 				if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -77,7 +78,9 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []types.Vtxo) (int,
 	return len(addedVtxos), nil
 }
 
-func (v *vtxoRepository) SpendVtxos(ctx context.Context, outpoints []types.VtxoKey, spentBy string) (int, error) {
+func (v *vtxoRepository) SpendVtxos(
+	ctx context.Context, outpoints []types.VtxoKey, spentByMap map[string]string, settledBy string,
+) (int, error) {
 	vtxos, err := v.GetVtxos(ctx, outpoints)
 	if err != nil {
 		return -1, err
@@ -90,11 +93,13 @@ func (v *vtxoRepository) SpendVtxos(ctx context.Context, outpoints []types.VtxoK
 				continue
 			}
 			vtxo.Spent = true
-			vtxo.SpentBy = spentBy
+			vtxo.SpentBy = spentByMap[vtxo.VtxoKey.String()]
+			vtxo.SettledBy = settledBy
 			if err := querierWithTx.UpdateVtxo(ctx, queries.UpdateVtxoParams{
-				SpentBy: sql.NullString{String: vtxo.SpentBy, Valid: true},
-				Txid:    vtxo.Txid,
-				Vout:    int64(vtxo.VOut),
+				SpentBy:   sql.NullString{String: vtxo.SpentBy, Valid: true},
+				SettledBy: sql.NullString{String: vtxo.SettledBy, Valid: true},
+				Txid:      vtxo.Txid,
+				Vout:      int64(vtxo.VOut),
 			}); err != nil {
 				return err
 			}
@@ -118,9 +123,10 @@ func (v *vtxoRepository) UpdateVtxos(ctx context.Context, vtxos []types.Vtxo) (i
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.UpdateVtxo(ctx, queries.UpdateVtxoParams{
-				SpentBy: sql.NullString{String: vtxo.SpentBy, Valid: true},
-				Txid:    vtxo.Txid,
-				Vout:    int64(vtxo.VOut),
+				SpentBy:   sql.NullString{String: vtxo.SpentBy, Valid: true},
+				SettledBy: sql.NullString{String: vtxo.SettledBy, Valid: true},
+				Txid:      vtxo.Txid,
+				Vout:      int64(vtxo.VOut),
 			}); err != nil {
 				return err
 			}
@@ -233,5 +239,6 @@ func rowToVtxo(row queries.Vtxo) types.Vtxo {
 		Redeemed:        row.Redeemed,
 		Spent:           row.Spent,
 		SpentBy:         row.SpentBy.String,
+		SettledBy:       row.SettledBy.String,
 	}
 }

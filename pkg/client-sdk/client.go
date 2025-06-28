@@ -3009,11 +3009,13 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 
 	// Check if any of the spent vtxos is ours.
 	spentVtxos := make([]types.VtxoKey, 0, len(commitmentTx.SpentVtxos))
+	indexedSpentVtxos := make(map[string]types.Vtxo)
 	for _, vtxo := range commitmentTx.SpentVtxos {
 		spentVtxos = append(spentVtxos, types.VtxoKey{
 			Txid: vtxo.Txid,
 			VOut: vtxo.VOut,
 		})
+		indexedSpentVtxos[vtxo.VtxoKey.String()] = vtxo
 	}
 	myVtxos, err := a.store.VtxoStore().GetVtxos(ctx, spentVtxos)
 	if err != nil {
@@ -3047,8 +3049,10 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 
 	// Add also our preconfirmed txs the list of those to settle, and also add the related
 	// vtxos to the list of those to mark as spent.
+	spentByMap := make(map[string]string)
 	for _, vtxo := range myVtxos {
 		vtxosToSpend = append(vtxosToSpend, vtxo.VtxoKey)
+		spentByMap[vtxo.VtxoKey.String()] = indexedSpentVtxos[vtxo.VtxoKey.String()].SpentBy
 		if !vtxo.Preconfirmed {
 			continue
 		}
@@ -3129,7 +3133,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	}
 
 	if len(txsToSettle) > 0 {
-		count, err := a.store.TransactionStore().SettleTransactions(ctx, txsToSettle)
+		count, err := a.store.TransactionStore().SettleTransactions(ctx, txsToSettle, commitmentTx.Txid)
 		if err != nil {
 			return err
 		}
@@ -3145,7 +3149,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	}
 
 	if len(vtxosToSpend) > 0 {
-		count, err := a.store.VtxoStore().SpendVtxos(ctx, vtxosToSpend, commitmentTx.Txid)
+		count, err := a.store.VtxoStore().SpendVtxos(ctx, vtxosToSpend, spentByMap, commitmentTx.Txid)
 		if err != nil {
 			return err
 		}
@@ -3180,8 +3184,12 @@ func (a *covenantlessArkClient) handleArkTx(
 	if err != nil {
 		return err
 	}
+	spentByMap := make(map[string]string)
+	txsToSettle := make([]string, 0, len(vtxosToSpend))
 	for _, vtxo := range myVtxos {
 		vtxosToSpend = append(vtxosToSpend, vtxo.VtxoKey)
+		spentByMap[vtxo.VtxoKey.String()] = arkTx.Txid
+		txsToSettle = append(txsToSettle, vtxo.Txid)
 	}
 
 	// If not spent vtxos, add a new received tx to the history.
@@ -3239,18 +3247,13 @@ func (a *covenantlessArkClient) handleArkTx(
 	}
 
 	if len(vtxosToSpend) > 0 {
-		count, err := a.store.VtxoStore().SpendVtxos(ctx, vtxosToSpend, arkTx.Txid)
+		count, err := a.store.VtxoStore().SpendVtxos(ctx, vtxosToSpend, spentByMap, "")
 		if err != nil {
 			return err
 		}
 		log.Debugf("spent %d vtxo(s)", count)
 
-		txids := make([]string, 0, len(vtxosToSpend))
-		for _, v := range vtxosToSpend {
-			txids = append(txids, v.Txid)
-		}
-
-		count, err = a.store.TransactionStore().SettleTransactions(ctx, txids)
+		count, err = a.store.TransactionStore().SettleTransactions(ctx, txsToSettle, "")
 		if err != nil {
 			return err
 		}

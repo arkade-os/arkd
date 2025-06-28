@@ -1,0 +1,2 @@
+ALTER TABLE vtxo ADD COLUMN settled_by TEXT;
+ALTER TABLE tx ADD COLUMN settled_by TEXT;

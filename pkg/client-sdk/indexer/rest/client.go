@@ -722,5 +722,6 @@ func newIndexerVtxo(vtxo *models.V1IndexerVtxo) (*types.Vtxo, error) {
 		Redeemed:        vtxo.IsRedeemed,
 		Spent:           vtxo.IsSpent,
 		SpentBy:         vtxo.SpentBy,
+		SettledBy:       vtxo.SettledBy,
 	}, nil
 }

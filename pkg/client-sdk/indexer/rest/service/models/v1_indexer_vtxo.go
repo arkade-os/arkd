@@ -48,6 +48,9 @@ type V1IndexerVtxo struct {
 	// script
 	Script string `json:"script,omitempty"`
 
+	// settled by
+	SettledBy string `json:"settledBy,omitempty"`
+
 	// spent by
 	SpentBy string `json:"spentBy,omitempty"`
 }

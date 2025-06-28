@@ -42,6 +42,9 @@ type V1Vtxo struct {
 	// script
 	Script string `json:"script,omitempty"`
 
+	// settled by
+	SettledBy string `json:"settledBy,omitempty"`
+
 	// spent
 	Spent bool `json:"spent,omitempty"`
 

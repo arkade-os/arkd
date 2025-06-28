@@ -545,6 +545,7 @@ func vtxosFromRest(restVtxos []*models.V1Vtxo) []types.Vtxo {
 			Redeemed:        v.Redeemed,
 			Spent:           v.Spent,
 			SpentBy:         v.SpentBy,
+			SettledBy:       v.SettledBy,
 		}
 	}
 	return vtxos

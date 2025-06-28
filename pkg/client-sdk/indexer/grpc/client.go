@@ -609,5 +609,6 @@ func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) types.Vtxo {
 		Spent:           vtxo.GetIsSpent(),
 		Redeemed:        vtxo.GetIsRedeemed(),
 		SpentBy:         vtxo.GetSpentBy(),
+		SettledBy:       vtxo.GetSettledBy(),
 	}
 }

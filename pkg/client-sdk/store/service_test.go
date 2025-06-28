@@ -15,6 +15,105 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	key, _         = btcec.NewPrivateKey()
+	testConfigData = types.Config{
+		ServerUrl:           "localhost:7070",
+		ServerPubKey:        key.PubKey(),
+		WalletType:          wallet.SingleKeyWallet,
+		ClientType:          client.GrpcClient,
+		Network:             common.BitcoinRegTest,
+		VtxoTreeExpiry:      common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 512},
+		RoundInterval:       10,
+		UnilateralExitDelay: common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 512},
+		Dust:                1000,
+		BoardingExitDelay:   common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 512},
+		ForfeitAddress:      "bcrt1qzvqj",
+	}
+
+	testVtxos = []types.Vtxo{
+		{
+			VtxoKey: types.VtxoKey{
+				Txid: "0000000000000000000000000000000000000000000000000000000000000000",
+				VOut: 0,
+			},
+			Script:          "0000000000000000000000000000000000000000000000000000000000000001",
+			Amount:          1000,
+			CommitmentTxids: []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+			ExpiresAt:       time.Unix(1748143068, 0),
+			CreatedAt:       time.Unix(1746143068, 0),
+			Preconfirmed:    true,
+		},
+		{
+			VtxoKey: types.VtxoKey{
+				Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				VOut: 0,
+			},
+			Script:          "0000000000000000000000000000000000000000000000000000000000000001",
+			Amount:          2000,
+			CommitmentTxids: []string{"0000000000000000000000000000000000000000000000000000000000000000"},
+			ExpiresAt:       time.Unix(1748143068, 0),
+			CreatedAt:       time.Unix(1746143068, 0),
+		},
+	}
+	testVtxoKeys = []types.VtxoKey{
+		{
+			Txid: "0000000000000000000000000000000000000000000000000000000000000000",
+			VOut: 0,
+		},
+		{
+			Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			VOut: 0,
+		},
+	}
+	testSpendVtxoKeys          = testVtxoKeys[:1]
+	testSpendAndSettleVtxoKeys = testVtxoKeys[1:]
+	spentByMap                 = map[string]string{
+		testSpendVtxoKeys[0].String(): "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	spentByMap2 = map[string]string{
+		testSpendAndSettleVtxoKeys[0].String(): "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	}
+
+	testTxs = []types.Transaction{
+		{
+			TransactionKey: types.TransactionKey{
+				BoardingTxid: "0000000000000000000000000000000000000000000000000000000000000000",
+			},
+			Amount:  5000,
+			Type:    types.TxReceived,
+			Settled: false,
+		},
+		{
+			TransactionKey: types.TransactionKey{
+				ArkTxid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			},
+			Amount:  12000,
+			Type:    types.TxReceived,
+			Settled: false,
+		},
+	}
+
+	testTxids = []string{
+		"0000000000000000000000000000000000000000000000000000000000000000",
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+
+	testReplacedTxs = map[string]types.Transaction{
+		"0000000000000000000000000000000000000000000000000000000000000000": {
+			TransactionKey: types.TransactionKey{
+				BoardingTxid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			},
+			Amount: 5000,
+			Type:   types.TxReceived,
+		},
+	}
+	testReplacedTxids  = []string{"0000000000000000000000000000000000000000000000000000000000000000"}
+	testConfirmedTxids = []string{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+	testSettledTxids   = []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	settledBy          = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+)
+
 func TestService(t *testing.T) {
 	t.Run("config store", func(t *testing.T) {
 		dbDir := t.TempDir()
@@ -81,23 +180,6 @@ func TestService(t *testing.T) {
 	})
 }
 
-var (
-	key, _         = btcec.NewPrivateKey()
-	testConfigData = types.Config{
-		ServerUrl:           "localhost:7070",
-		ServerPubKey:        key.PubKey(),
-		WalletType:          wallet.SingleKeyWallet,
-		ClientType:          client.GrpcClient,
-		Network:             common.BitcoinRegTest,
-		VtxoTreeExpiry:      common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 512},
-		RoundInterval:       10,
-		UnilateralExitDelay: common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 512},
-		Dust:                1000,
-		BoardingExitDelay:   common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 512},
-		ForfeitAddress:      "bcrt1qzvqj",
-	}
-)
-
 func testConfigStore(t *testing.T, storeSvc types.ConfigStore) {
 	ctx := context.Background()
 
@@ -132,50 +214,6 @@ func testConfigStore(t *testing.T, storeSvc types.ConfigStore) {
 	err = storeSvc.AddData(ctx, testConfigData)
 	require.NoError(t, err)
 }
-
-var (
-	testVtxos = []types.Vtxo{
-		{
-			VtxoKey: types.VtxoKey{
-				Txid: "0000000000000000000000000000000000000000000000000000000000000000",
-				VOut: 0,
-			},
-			Script:          "0000000000000000000000000000000000000000000000000000000000000001",
-			Amount:          1000,
-			CommitmentTxids: []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-			ExpiresAt:       time.Unix(1748143068, 0),
-			CreatedAt:       time.Unix(1746143068, 0),
-			Preconfirmed:    true,
-		},
-		{
-			VtxoKey: types.VtxoKey{
-				Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-				VOut: 0,
-			},
-			Script:          "0000000000000000000000000000000000000000000000000000000000000001",
-			Amount:          2000,
-			CommitmentTxids: []string{"0000000000000000000000000000000000000000000000000000000000000000"},
-			ExpiresAt:       time.Unix(1748143068, 0),
-			CreatedAt:       time.Unix(1746143068, 0),
-		},
-	}
-	testVtxoKeys = []types.VtxoKey{
-		{
-			Txid: "0000000000000000000000000000000000000000000000000000000000000000",
-			VOut: 0,
-		},
-		{
-			Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			VOut: 0,
-		},
-	}
-	testSpendVtxoKeys = []types.VtxoKey{
-		{
-			Txid: "0000000000000000000000000000000000000000000000000000000000000000",
-			VOut: 0,
-		},
-	}
-)
 
 func testVtxoStore(t *testing.T, storeSvc types.VtxoStore, storeType string) {
 	ctx := context.Background()
@@ -222,11 +260,11 @@ func testVtxoStore(t *testing.T, storeSvc types.VtxoStore, storeType string) {
 	})
 
 	t.Run("spend vtxos", func(t *testing.T) {
-		count, err := storeSvc.SpendVtxos(ctx, testSpendVtxoKeys, "test")
+		count, err := storeSvc.SpendVtxos(ctx, testSpendVtxoKeys, spentByMap, "")
 		require.NoError(t, err)
 		require.Equal(t, len(testSpendVtxoKeys), count)
 
-		count, err = storeSvc.SpendVtxos(ctx, testSpendVtxoKeys, "test")
+		count, err = storeSvc.SpendVtxos(ctx, testSpendVtxoKeys, spentByMap, "")
 		require.NoError(t, err)
 		require.Zero(t, count)
 
@@ -234,52 +272,23 @@ func testVtxoStore(t *testing.T, storeSvc types.VtxoStore, storeType string) {
 		require.NoError(t, err)
 		require.Equal(t, 1, len(spent))
 		require.Equal(t, 1, len(spendable))
-
 		for _, v := range spent {
 			require.True(t, v.Spent)
-			require.Equal(t, "test", v.SpentBy)
+			require.Equal(t, spentByMap[v.VtxoKey.String()], v.SpentBy)
+			require.Empty(t, v.SettledBy)
+		}
+
+		// Make sure spent and settle also works
+		count, err = storeSvc.SpendVtxos(ctx, testSpendAndSettleVtxoKeys, spentByMap2, "test")
+		require.NoError(t, err)
+		require.Equal(t, len(testSpendAndSettleVtxoKeys), count)
+		for _, v := range spent {
+			require.True(t, v.Spent)
+			require.Equal(t, spentByMap[v.VtxoKey.String()], v.SpentBy)
+			require.Equal(t, spentByMap2[v.VtxoKey.String()], v.SettledBy)
 		}
 	})
 }
-
-var (
-	testTxs = []types.Transaction{
-		{
-			TransactionKey: types.TransactionKey{
-				BoardingTxid: "0000000000000000000000000000000000000000000000000000000000000000",
-			},
-			Amount:  5000,
-			Type:    types.TxReceived,
-			Settled: false,
-		},
-		{
-			TransactionKey: types.TransactionKey{
-				ArkTxid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			},
-			Amount:  12000,
-			Type:    types.TxReceived,
-			Settled: false,
-		},
-	}
-
-	testTxids = []string{
-		"0000000000000000000000000000000000000000000000000000000000000000",
-		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-	}
-
-	testReplacedTxs = map[string]types.Transaction{
-		"0000000000000000000000000000000000000000000000000000000000000000": {
-			TransactionKey: types.TransactionKey{
-				BoardingTxid: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-			},
-			Amount: 5000,
-			Type:   types.TxReceived,
-		},
-	}
-	testReplacedTxids  = []string{"0000000000000000000000000000000000000000000000000000000000000000"}
-	testConfirmedTxids = []string{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
-	testSettledTxids   = []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-)
 
 func testTxStore(t *testing.T, storeSvc types.TransactionStore, storeType string) {
 	ctx := context.Background()
@@ -365,11 +374,11 @@ func testTxStore(t *testing.T, storeSvc types.TransactionStore, storeType string
 	})
 
 	t.Run("settle txs", func(t *testing.T) {
-		count, err := storeSvc.SettleTransactions(ctx, testSettledTxids)
+		count, err := storeSvc.SettleTransactions(ctx, testSettledTxids, settledBy)
 		require.NoError(t, err)
 		require.Equal(t, len(testSettledTxids), count)
 
-		count, err = storeSvc.SettleTransactions(ctx, testSettledTxids)
+		count, err = storeSvc.SettleTransactions(ctx, testSettledTxids, settledBy)
 		require.NoError(t, err)
 		require.Zero(t, count)
 

@@ -66,6 +66,7 @@ type Vtxo struct {
 	Redeemed        bool
 	Spent           bool
 	SpentBy         string
+	SettledBy       string
 }
 
 func (v Vtxo) IsRecoverable() bool {
@@ -137,6 +138,7 @@ type Transaction struct {
 	Settled   bool
 	CreatedAt time.Time
 	Hex       string
+	SettledBy string
 }
 
 func (t Transaction) String() string {

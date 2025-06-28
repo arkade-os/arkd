@@ -58,7 +58,9 @@ func (s *vtxoStore) AddVtxos(_ context.Context, vtxos []types.Vtxo) (int, error)
 	return len(addedVtxos), nil
 }
 
-func (s *vtxoStore) SpendVtxos(ctx context.Context, outpoints []types.VtxoKey, spentBy string) (int, error) {
+func (s *vtxoStore) SpendVtxos(
+	ctx context.Context, outpoints []types.VtxoKey, spentByMap map[string]string, settledBy string,
+) (int, error) {
 	vtxos, err := s.GetVtxos(ctx, outpoints)
 	if err != nil {
 		return -1, err
@@ -70,7 +72,9 @@ func (s *vtxoStore) SpendVtxos(ctx context.Context, outpoints []types.VtxoKey, s
 			continue
 		}
 		vtxo.Spent = true
-		vtxo.SpentBy = spentBy
+		vtxo.SpentBy = spentByMap[vtxo.VtxoKey.String()]
+		vtxo.SettledBy = settledBy
+
 		if err := s.db.Update(vtxo.String(), &vtxo); err != nil {
 			return -1, err
 		}
