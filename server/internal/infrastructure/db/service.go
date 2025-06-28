@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -445,12 +446,10 @@ func getSpentVtxoKeysFromRound(
 			for i, forfeitTx := range forfeitTxs {
 				// nolint
 				_, ins, _, _ := txDecoder.DecodeTx(forfeitTx.Tx)
-				for _, in := range ins {
-					if in.String() == vtxo.Outpoint.String() {
-						spentByMap[vtxo.Outpoint.String()] = forfeitTx.Txid
-						forfeitTxs = append(forfeitTxs[:i], forfeitTxs[i+1:]...)
-						break
-					}
+				if slices.Contains(ins, vtxo.Outpoint) {
+					spentByMap[vtxo.Outpoint.String()] = forfeitTx.Txid
+					forfeitTxs = append(forfeitTxs[:i], forfeitTxs[i+1:]...)
+					break
 				}
 			}
 		}
