@@ -32,8 +32,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 	mutx.Lock()
 	defer mutx.Unlock()
 
-	round, err := s.repoManager.Rounds().GetRoundWithTxid(ctx, vtxo.SpentBy)
-	if err != nil {
+	if vtxo.IsPreconfirmed() {
 		// if spentBy is not a round, it means the utxo is spent by an offchain tx
 		// react by broadcasting the next checkpoint tx
 		if err := s.broadcastCheckpointTx(ctx, vtxo); err != nil {
@@ -45,7 +44,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 
 	// if the round is found, it means the vtxo has been settled
 	// react by broadcasting the associated forfeit tx
-	if err := s.broadcastForfeitTx(ctx, round, vtxo.Outpoint); err != nil {
+	if err := s.broadcastForfeitTx(ctx, vtxo); err != nil {
 		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)
 	}
 
@@ -120,12 +119,17 @@ func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo do
 	return nil
 }
 
-func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *domain.Round, vtxo domain.Outpoint) error {
+func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) error {
+	round, err := s.repoManager.Rounds().GetRoundWithTxid(ctx, vtxo.SettledBy)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve round: %s", err)
+	}
+
 	if len(round.Connectors) <= 0 {
 		return fmt.Errorf("no connectors found for round %s, cannot broadcast forfeit tx", round.Txid)
 	}
 
-	forfeitTx, connectorOutpoint, err := findForfeitTx(round.ForfeitTxs, vtxo)
+	forfeitTx, connectorOutpoint, err := findForfeitTx(round.ForfeitTxs, vtxo.Outpoint)
 	if err != nil {
 		return fmt.Errorf("failed to find forfeit tx: %s", err)
 	}
