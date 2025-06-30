@@ -48,7 +48,7 @@ func TestAddressEncoding(t *testing.T) {
 			require.Equal(t, f.ExpectedVersion, addr.Version)
 			require.Equal(t, f.ExpectedPrefix, addr.HRP)
 			require.Equal(t, f.ExpectedUserKey, hex.EncodeToString(addr.VtxoTapKey.SerializeCompressed()))
-			require.Equal(t, f.ExpectedServerKey, hex.EncodeToString(addr.Server.SerializeCompressed()))
+			require.Equal(t, f.ExpectedServerKey, hex.EncodeToString(addr.Signer.SerializeCompressed()))
 
 			encoded, err := addr.EncodeV0()
 			require.NoError(t, err)

@@ -593,7 +593,7 @@ func (s *covenantlessService) SubmitOffchainTx(
 	}
 
 	// iterate over the redeem tx inputs and verify that the user signed a collaborative path
-	serverXOnlyPubkey := schnorr.SerializePubKey(s.pubkey)
+	signerXOnlyPubkey := schnorr.SerializePubKey(s.pubkey)
 	for _, input := range virtualPtx.Inputs {
 		if len(input.TaprootScriptSpendSig) == 0 {
 			return nil, "", "", fmt.Errorf("missing tapscript spend sig")
@@ -602,9 +602,9 @@ func (s *covenantlessService) SubmitOffchainTx(
 		hasSig := false
 
 		for _, sig := range input.TaprootScriptSpendSig {
-			if !bytes.Equal(sig.XOnlyPubKey, serverXOnlyPubkey) {
+			if !bytes.Equal(sig.XOnlyPubKey, signerXOnlyPubkey) {
 				if _, err := schnorr.ParsePubKey(sig.XOnlyPubKey); err != nil {
-					return nil, "", "", fmt.Errorf("failed to parse pubkey: %s", err)
+					return nil, "", "", fmt.Errorf("failed to parse signer pubkey: %s", err)
 				}
 				hasSig = true
 				break
@@ -1271,8 +1271,8 @@ func (s *covenantlessService) ListVtxos(ctx context.Context, address string) ([]
 		return nil, nil, fmt.Errorf("failed to decode address: %s", err)
 	}
 
-	if !bytes.Equal(schnorr.SerializePubKey(decodedAddress.Server), schnorr.SerializePubKey(s.pubkey)) {
-		return nil, nil, fmt.Errorf("address does not match server pubkey")
+	if !bytes.Equal(schnorr.SerializePubKey(decodedAddress.Signer), schnorr.SerializePubKey(s.pubkey)) {
+		return nil, nil, fmt.Errorf("address does not match signer pubkey")
 	}
 
 	pubkey := hex.EncodeToString(schnorr.SerializePubKey(decodedAddress.VtxoTapKey))
@@ -1394,7 +1394,7 @@ func (s *covenantlessService) GetTxRequestQueue(
 
 			address := common.Address{
 				HRP:        s.network.Addr,
-				Server:     s.pubkey,
+				Signer:     s.pubkey,
 				VtxoTapKey: vtxoTapKey,
 			}
 

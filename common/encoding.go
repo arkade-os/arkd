@@ -8,17 +8,17 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
-// Address represents an Ark address with Vvrsion, prefix, server public key, and VTXO taproot key.
+// Address represents an Ark address with Version, prefix, signer public key, and VTXO taproot key.
 type Address struct {
 	Version    uint8
 	HRP        string
-	Server     *secp256k1.PublicKey
+	Signer     *secp256k1.PublicKey
 	VtxoTapKey *secp256k1.PublicKey
 }
 
 // EncodeV0 converts the address to its bech32m string representation.
 func (a *Address) EncodeV0() (string, error) {
-	if a.Server == nil {
+	if a.Signer == nil {
 		return "", fmt.Errorf("missing server public key")
 	}
 	if a.VtxoTapKey == nil {
@@ -26,7 +26,7 @@ func (a *Address) EncodeV0() (string, error) {
 	}
 
 	combinedKey := append(
-		[]byte{byte(a.Version)}, append(schnorr.SerializePubKey(a.Server), schnorr.SerializePubKey(a.VtxoTapKey)...)...,
+		[]byte{byte(a.Version)}, append(schnorr.SerializePubKey(a.Signer), schnorr.SerializePubKey(a.VtxoTapKey)...)...,
 	)
 	grp, err := bech32.ConvertBits(combinedKey, 8, 5, true)
 	if err != nil {
@@ -76,7 +76,7 @@ func DecodeAddressV0(addr string) (*Address, error) {
 	return &Address{
 		Version:    version,
 		HRP:        prefix,
-		Server:     serverKey,
+		Signer:     serverKey,
 		VtxoTapKey: vtxoKey,
 	}, nil
 }
