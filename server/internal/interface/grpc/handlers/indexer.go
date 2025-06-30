@@ -632,18 +632,6 @@ func protoPage(page application.PageResp) *arkv1.IndexerPageResponse {
 	}
 }
 
-func parseArkAddresses(addresses []string) ([]string, error) {
-	pubkeys := make([]string, 0, len(addresses))
-	for _, address := range addresses {
-		pubkey, err := parseArkAddress(address)
-		if err != nil {
-			return nil, err
-		}
-		pubkeys = append(pubkeys, pubkey)
-	}
-	return pubkeys, nil
-}
-
 func parseScripts(scripts []string) ([]string, error) {
 	if len(scripts) <= 0 {
 		return nil, fmt.Errorf("missing scripts")
