@@ -32,9 +32,8 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 	mutx.Lock()
 	defer mutx.Unlock()
 
+	// If the vtxo wasn't settled we must broadcast a checkpoint tx.
 	if vtxo.SettledBy == "" {
-		// if spentBy is not a round, it means the utxo is spent by an offchain tx
-		// react by broadcasting the next checkpoint tx
 		if err := s.broadcastCheckpointTx(ctx, vtxo); err != nil {
 			return fmt.Errorf("failed to broadcast checkpoint tx: %s", err)
 		}
@@ -42,8 +41,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 		return nil
 	}
 
-	// if the round is found, it means the vtxo has been settled
-	// react by broadcasting the associated forfeit tx
+	// Otherwise, we must broadcast a forfeit tx.
 	if err := s.broadcastForfeitTx(ctx, vtxo); err != nil {
 		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)
 	}
