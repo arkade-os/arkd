@@ -106,7 +106,7 @@ func (d storeData) decode() types.Config {
 func (d storeData) asMap() map[string]string {
 	return map[string]string{
 		"server_url":                 d.ServerUrl,
-		"server_pubkey":              d.SignerPubKey,
+		"signer_pubkey":              d.SignerPubKey,
 		"wallet_type":                d.WalletType,
 		"client_type":                d.ClientType,
 		"network":                    d.Network,
