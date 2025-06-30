@@ -276,11 +276,22 @@ func testVtxoStore(t *testing.T, storeSvc types.VtxoStore, storeType string) {
 			require.Equal(t, testSpendVtxoKeys[v.Outpoint], v.SpentBy)
 			require.Equal(t, arkTxid, v.ArkTxid)
 		}
+	})
+
+	t.Run("settle vtxos", func(t *testing.T) {
+		count, err := storeSvc.SettleVtxos(ctx, testSettleVtxoKeys, settledBy)
+		require.NoError(t, err)
+		require.Equal(t, len(testSettleVtxoKeys), count)
 
 		count, err = storeSvc.SettleVtxos(ctx, testSettleVtxoKeys, settledBy)
 		require.NoError(t, err)
-		require.Equal(t, len(testSettleVtxoKeys), count)
-		for _, v := range spent {
+		require.Zero(t, count)
+
+		spendable, spent, err := storeSvc.GetAllVtxos(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 2, len(spent))
+		require.Empty(t, spendable)
+		for _, v := range spent[1:] {
 			require.True(t, v.Spent)
 			require.Equal(t, testSettleVtxoKeys[v.Outpoint], v.SpentBy)
 			require.Equal(t, settledBy, v.SettledBy)

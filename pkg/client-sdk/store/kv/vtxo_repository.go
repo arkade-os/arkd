@@ -52,7 +52,7 @@ func (s *vtxoStore) AddVtxos(_ context.Context, vtxos []types.Vtxo) (int, error)
 	}
 
 	if len(addedVtxos) > 0 {
-		go s.sendEvent(types.VtxoEvent{Type: types.VtxosAdded, Vtxos: vtxos})
+		go s.sendEvent(types.VtxoEvent{Type: types.VtxosAdded, Vtxos: addedVtxos})
 	}
 
 	return len(addedVtxos), nil
@@ -86,7 +86,7 @@ func (s *vtxoStore) SpendVtxos(
 	}
 
 	if len(spentVtxos) > 0 {
-		go s.sendEvent(types.VtxoEvent{Type: types.VtxosSpent, Vtxos: vtxos})
+		go s.sendEvent(types.VtxoEvent{Type: types.VtxosSpent, Vtxos: spentVtxos})
 	}
 
 	return len(spentVtxos), nil
@@ -120,7 +120,7 @@ func (s *vtxoStore) SettleVtxos(
 	}
 
 	if len(spentVtxos) > 0 {
-		go s.sendEvent(types.VtxoEvent{Type: types.VtxosSpent, Vtxos: vtxos})
+		go s.sendEvent(types.VtxoEvent{Type: types.VtxosSpent, Vtxos: spentVtxos})
 	}
 
 	return len(spentVtxos), nil

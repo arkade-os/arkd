@@ -101,10 +101,10 @@ func (v *vtxoRepository) SpendVtxos(
 			vtxo.SpentBy = spentVtxosMap[vtxo.Outpoint]
 			vtxo.ArkTxid = arkTxid
 			if err := querierWithTx.UpdateVtxo(ctx, queries.UpdateVtxoParams{
-				SpentBy:   sql.NullString{String: vtxo.SpentBy, Valid: true},
-				SettledBy: sql.NullString{String: vtxo.SettledBy, Valid: true},
-				Txid:      vtxo.Txid,
-				Vout:      int64(vtxo.VOut),
+				SpentBy: sql.NullString{String: vtxo.SpentBy, Valid: true},
+				ArkTxid: sql.NullString{String: vtxo.ArkTxid, Valid: true},
+				Txid:    vtxo.Txid,
+				Vout:    int64(vtxo.VOut),
 			}); err != nil {
 				return err
 			}
@@ -290,5 +290,6 @@ func rowToVtxo(row queries.Vtxo) types.Vtxo {
 		Spent:           row.Spent,
 		SpentBy:         row.SpentBy.String,
 		SettledBy:       row.SettledBy.String,
+		ArkTxid:         row.ArkTxid.String,
 	}
 }
