@@ -522,10 +522,10 @@ func (i *indexerService) vtxosToTxs(
 			continue
 		}
 
-		if _, ok := vtxosBySpentBy[v.SpentBy]; !ok {
-			vtxosBySpentBy[v.SpentBy] = make([]domain.Vtxo, 0)
+		if _, ok := vtxosBySpentBy[v.ArkTxid]; !ok {
+			vtxosBySpentBy[v.ArkTxid] = make([]domain.Vtxo, 0)
 		}
-		vtxosBySpentBy[v.SpentBy] = append(vtxosBySpentBy[v.SpentBy], v)
+		vtxosBySpentBy[v.ArkTxid] = append(vtxosBySpentBy[v.ArkTxid], v)
 	}
 
 	for sb := range vtxosBySpentBy {
@@ -596,7 +596,7 @@ func findVtxosSpent(vtxos []domain.Vtxo, id string) []domain.Vtxo {
 	var result []domain.Vtxo
 	leftVtxos := make([]domain.Vtxo, 0)
 	for _, v := range vtxos {
-		if v.SpentBy == id {
+		if v.ArkTxid == id {
 			result = append(result, v)
 		} else {
 			leftVtxos = append(leftVtxos, v)
