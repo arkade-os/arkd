@@ -63,7 +63,7 @@ type Vtxo struct {
 	CreatedAt       time.Time
 	Preconfirmed    bool
 	Swept           bool
-	Redeemed        bool
+	Unrolled        bool
 	Spent           bool
 	SpentBy         string
 	SettledBy       string

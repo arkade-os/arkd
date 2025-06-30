@@ -542,7 +542,7 @@ func vtxosFromRest(restVtxos []*models.V1Vtxo) []types.Vtxo {
 			CreatedAt:       createdAt,
 			Preconfirmed:    v.Preconfirmed,
 			Swept:           v.Swept,
-			Redeemed:        v.Redeemed,
+			Unrolled:        v.Redeemed,
 			Spent:           v.Spent,
 			SpentBy:         v.SpentBy,
 			SettledBy:       v.SettledBy,

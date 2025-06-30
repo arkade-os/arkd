@@ -1070,7 +1070,7 @@
         "isSwept": {
           "type": "boolean"
         },
-        "isRedeemed": {
+        "isUnrolled": {
           "type": "boolean"
         },
         "isSpent": {

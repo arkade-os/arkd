@@ -62,7 +62,7 @@ func (q *Queries) InsertTx(ctx context.Context, arg InsertTxParams) error {
 
 const insertVtxo = `-- name: InsertVtxo :exec
 INSERT INTO vtxo (
-    txid, vout, script, amount, commitment_txids, spent_by, spent, preconfirmed, expires_at, created_at, swept, redeemed, settled_by
+    txid, vout, script, amount, commitment_txids, spent_by, spent, preconfirmed, expires_at, created_at, swept, unrolled, settled_by
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
@@ -78,7 +78,7 @@ type InsertVtxoParams struct {
 	ExpiresAt       int64
 	CreatedAt       int64
 	Swept           bool
-	Redeemed        bool
+	Unrolled        bool
 	SettledBy       sql.NullString
 }
 
@@ -95,7 +95,7 @@ func (q *Queries) InsertVtxo(ctx context.Context, arg InsertVtxoParams) error {
 		arg.ExpiresAt,
 		arg.CreatedAt,
 		arg.Swept,
-		arg.Redeemed,
+		arg.Unrolled,
 		arg.SettledBy,
 	)
 	return err
@@ -178,7 +178,7 @@ func (q *Queries) SelectAllTxs(ctx context.Context) ([]Tx, error) {
 }
 
 const selectAllVtxos = `-- name: SelectAllVtxos :many
-SELECT txid, vout, script, amount, commitment_txids, spent_by, spent, expires_at, created_at, preconfirmed, swept, redeemed, settled_by from vtxo
+SELECT txid, vout, script, amount, commitment_txids, spent_by, spent, expires_at, created_at, preconfirmed, swept, settled_by, unrolled from vtxo
 `
 
 func (q *Queries) SelectAllVtxos(ctx context.Context) ([]Vtxo, error) {
@@ -202,8 +202,8 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]Vtxo, error) {
 			&i.CreatedAt,
 			&i.Preconfirmed,
 			&i.Swept,
-			&i.Redeemed,
 			&i.SettledBy,
+			&i.Unrolled,
 		); err != nil {
 			return nil, err
 		}
@@ -266,7 +266,7 @@ func (q *Queries) SelectTxs(ctx context.Context, txids []string) ([]Tx, error) {
 }
 
 const selectVtxo = `-- name: SelectVtxo :one
-SELECT txid, vout, script, amount, commitment_txids, spent_by, spent, expires_at, created_at, preconfirmed, swept, redeemed, settled_by
+SELECT txid, vout, script, amount, commitment_txids, spent_by, spent, expires_at, created_at, preconfirmed, swept, settled_by, unrolled
 FROM vtxo
 WHERE txid = ?1 AND vout = ?2
 `
@@ -291,8 +291,8 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (Vtxo, e
 		&i.CreatedAt,
 		&i.Preconfirmed,
 		&i.Swept,
-		&i.Redeemed,
 		&i.SettledBy,
+		&i.Unrolled,
 	)
 	return i, err
 }

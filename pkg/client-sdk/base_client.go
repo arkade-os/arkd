@@ -181,7 +181,7 @@ func (a *arkClient) ListVtxos(ctx context.Context) (
 	}
 
 	for _, vtxo := range resp.Vtxos {
-		if vtxo.Spent || vtxo.Swept || vtxo.Redeemed {
+		if vtxo.Spent || vtxo.Swept || vtxo.Unrolled {
 			spentVtxos = append(spentVtxos, vtxo)
 			continue
 		}

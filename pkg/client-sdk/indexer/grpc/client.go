@@ -607,7 +607,7 @@ func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) types.Vtxo {
 		Preconfirmed:    vtxo.GetIsPreconfirmed(),
 		Swept:           vtxo.GetIsSwept(),
 		Spent:           vtxo.GetIsSpent(),
-		Redeemed:        vtxo.GetIsRedeemed(),
+		Unrolled:        vtxo.GetIsUnrolled(),
 		SpentBy:         vtxo.GetSpentBy(),
 		SettledBy:       vtxo.GetSettledBy(),
 	}

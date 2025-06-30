@@ -719,7 +719,7 @@ func newIndexerVtxo(vtxo *models.V1IndexerVtxo) (*types.Vtxo, error) {
 		ExpiresAt:       time.Unix(expiresAt, 0),
 		Preconfirmed:    vtxo.IsPreconfirmed,
 		Swept:           vtxo.IsSwept,
-		Redeemed:        vtxo.IsRedeemed,
+		Unrolled:        vtxo.IsRedeemed,
 		Spent:           vtxo.IsSpent,
 		SpentBy:         vtxo.SpentBy,
 		SettledBy:       vtxo.SettledBy,

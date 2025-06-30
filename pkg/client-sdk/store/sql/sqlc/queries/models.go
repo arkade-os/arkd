@@ -31,6 +31,6 @@ type Vtxo struct {
 	CreatedAt       int64
 	Preconfirmed    bool
 	Swept           bool
-	Redeemed        bool
 	SettledBy       sql.NullString
+	Unrolled        bool
 }

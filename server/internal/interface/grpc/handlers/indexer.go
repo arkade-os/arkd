@@ -678,7 +678,7 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		Script:          toP2TR(vtxo.PubKey),
 		IsPreconfirmed:  vtxo.Preconfirmed,
 		IsSwept:         vtxo.Swept,
-		IsRedeemed:      vtxo.Redeemed,
+		IsUnrolled:      vtxo.Redeemed,
 		IsSpent:         vtxo.Spent,
 		SpentBy:         vtxo.SpentBy,
 		CommitmentTxids: vtxo.CommitmentTxids,

@@ -883,16 +883,16 @@
             "type": "string"
           }
         },
-        "preconfirmed": {
+        "isPreconfirmed": {
           "type": "boolean"
         },
-        "swept": {
+        "isSwept": {
           "type": "boolean"
         },
-        "redeemed": {
+        "isUnrolled": {
           "type": "boolean"
         },
-        "spent": {
+        "isSpent": {
           "type": "boolean"
         },
         "spentBy": {

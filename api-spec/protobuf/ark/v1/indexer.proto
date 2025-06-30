@@ -275,7 +275,7 @@ message IndexerVtxo {
   string script = 5;
   bool is_preconfirmed = 6;
   bool is_swept = 7;
-  bool is_redeemed = 8;
+  bool is_unrolled = 8;
   bool is_spent = 9;
   string spent_by = 10;
   repeated string commitment_txids = 11;
