@@ -438,6 +438,10 @@ func getSpentVtxoKeysFromRound(
 	copy(forfeitTxs, round.ForfeitTxs)
 	for _, request := range round.TxRequests {
 		for _, vtxo := range request.Inputs {
+			if !vtxo.RequiresForfeit() {
+				spentVtxos[vtxo.Outpoint] = ""
+				continue
+			}
 			for i, forfeitTx := range forfeitTxs {
 				// nolint
 				_, ins, _, _ := txDecoder.DecodeTx(forfeitTx.Tx)

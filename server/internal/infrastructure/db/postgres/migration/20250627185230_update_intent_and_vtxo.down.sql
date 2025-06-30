@@ -3,6 +3,8 @@ ALTER TABLE tx_request DROP COLUMN message;
 ALTER TABLE vtxo DROP COLUMN settled_by;
 ALTER TABLE vtxo DROP COLUMN ark_txid;
 ALTER TABLE vtxo DROP COLUMN preconfirmed;
+ALTER TABLE vtxo DROP COLUMN spent_by;
+ALTER TABLE vtxo ADD COLUMN spent_by VARCHAR NOT NULL;
 
 CREATE OR REPLACE VIEW round_request_vw AS
 SELECT tx_request.*

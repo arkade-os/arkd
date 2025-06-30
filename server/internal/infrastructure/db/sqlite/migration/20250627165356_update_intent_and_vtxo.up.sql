@@ -9,6 +9,8 @@ ALTER TABLE vtxo ADD COLUMN settled_by TEXT;
 ALTER TABLE vtxo DROP COLUMN redeem_tx;
 ALTER TABLE vtxo ADD COLUMN preconfirmed BOOLEAN NOT NULL;
 ALTER TABLE vtxo ADD COLUMN ark_txid TEXT;
+ALTER TABLE vtxo DROP COLUMN spent_by;
+ALTER TABLE vtxo ADD COLUMN spent_by TEXT;
 
 CREATE VIEW IF NOT EXISTS round_request_vw AS
 SELECT tx_request.*

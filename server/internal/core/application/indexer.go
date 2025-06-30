@@ -492,7 +492,7 @@ func (i *indexerService) vtxosToTxs(
 		if vtxo.Preconfirmed {
 			virtualTxid = vtxo.Txid
 			commitmentTxid = ""
-			settled = vtxo.SpentBy != ""
+			settled = vtxo.Spent
 			settledBy = vtxo.SettledBy
 		}
 
