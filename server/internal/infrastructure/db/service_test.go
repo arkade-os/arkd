@@ -71,8 +71,8 @@ var (
 			Txid: randomString(32),
 			Tx:   randomTx(),
 			Children: map[uint32]string{
-				0: txidb,
-				1: txida,
+				0: randomString(32),
+				1: randomString(32),
 			},
 		},
 	}
@@ -533,10 +533,14 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, roundByTxid)
 		roundsMatch(t, *finalizedRound, *roundByTxid)
 
-		txs, err := svc.Rounds().GetTxsWithTxids(ctx, []string{txida, txidb})
+		txs, err := svc.Rounds().GetTxsWithTxids(ctx, []string{
+			txida,                  // forfeit tx
+			vtxoTree[1].Txid,       // tree tx
+			connectorsTree[2].Txid, // connector tx
+		})
 		require.NoError(t, err)
 		require.NotNil(t, txs)
-		require.Equal(t, 2, len(txs))
+		require.Equal(t, 3, len(txs))
 	})
 }
 

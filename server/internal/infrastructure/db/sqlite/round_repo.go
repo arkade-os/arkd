@@ -393,8 +393,12 @@ func (r *roundRepository) GetTxsWithTxids(ctx context.Context, txids []string) (
 	rows, err := r.querier.GetTxsByTxid(ctx, queries.GetTxsByTxidParams{
 		Ids1: txids,
 		Ids2: txids,
+		Ids3: txids,
 	})
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 

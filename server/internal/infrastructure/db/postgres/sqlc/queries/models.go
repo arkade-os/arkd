@@ -181,26 +181,6 @@ type VtxoCommitmentTxid struct {
 	CommitmentTxid string
 }
 
-type VtxoVirtualTxVw struct {
-	Txid           string
-	Vout           int32
-	Pubkey         string
-	Amount         int64
-	CommitmentTxid string
-	SpentBy        string
-	Spent          bool
-	Redeemed       bool
-	Swept          bool
-	ExpireAt       int64
-	CreatedAt      int64
-	RequestID      sql.NullString
-	SettledBy      sql.NullString
-	ArkTxid        sql.NullString
-	Preconfirmed   bool
-	Commitments    []byte
-	RedeemTx       sql.NullString
-}
-
 type VtxoVw struct {
 	Txid           string
 	Vout           int32

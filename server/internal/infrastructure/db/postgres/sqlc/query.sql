@@ -39,7 +39,19 @@ SELECT
     tx.txid,
     tx.tx AS data
 FROM tx
-WHERE tx.txid = ANY($1::varchar[]);
+WHERE tx.txid = ANY($1::varchar[])
+UNION
+SELECT
+    virtual_tx.txid,
+    virtual_tx.tx AS data
+FROM virtual_tx
+WHERE virtual_tx.txid = ANY($1::varchar[])
+UNION
+SELECT
+    checkpoint_tx.txid,
+    checkpoint_tx.tx AS data
+FROM checkpoint_tx
+WHERE checkpoint_tx.txid = ANY($1::varchar[]);
 
 -- name: UpsertTxRequest :exec
 INSERT INTO tx_request (id, round_id, proof, message)
@@ -153,7 +165,7 @@ WHERE t.round_id IN (SELECT rctv.round_id FROM round_commitment_tx_vw rctv WHERE
 
 
 -- name: GetSpendableVtxosWithPubKey :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw)FROM vtxo_virtual_tx_vw
+SELECT sqlc.embed(vtxo_vw)FROM vtxo_vw
 WHERE pubkey = @pubkey AND spent = false AND swept = false;
 
 -- name: SelectSweptRoundsConnectorAddress :many
@@ -193,26 +205,26 @@ INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
 VALUES (@vtxo_txid, @vtxo_vout, @commitment_txid);
 
 -- name: SelectSweepableVtxos :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE redeemed = false AND swept = false;
 
 -- name: SelectNotRedeemedVtxos :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE redeemed = false;
 
 -- name: SelectNotRedeemedVtxosWithPubkey :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE redeemed = false AND pubkey = @pubkey;
 
 -- name: SelectVtxoByOutpoint :one
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectAllVtxos :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw;
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
 -- name: SelectVtxosByRoundTxid :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE commitment_txid = @commitment_txid;
 
 -- name: MarkVtxoAsRedeemed :exec
@@ -262,14 +274,14 @@ SELECT * FROM tx
 WHERE round_id IN (SELECT rctv.round_id FROM round_commitment_tx_vw rctv WHERE rctv.txid = @txid) AND type = 'tree';
 
 -- name: SelectVtxosWithPubkey :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw WHERE pubkey = @pubkey;
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey = @pubkey;
 
 -- name: GetExistingRounds :many
 SELECT * FROM round_commitment_tx_vw r
 WHERE r.txid = ANY($1::varchar[]);
 
 -- name: SelectLeafVtxosByRoundTxid :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE commitment_txid = @commitment_txid AND (redeem_tx IS NULL or redeem_tx = '');
 
 -- name: UpsertVirtualTx :exec

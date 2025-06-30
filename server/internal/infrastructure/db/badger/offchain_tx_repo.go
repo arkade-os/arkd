@@ -49,13 +49,43 @@ func NewOffchainTxRepository(config ...interface{}) (domain.OffchainTxRepository
 func (r *offchainTxRepository) AddOrUpdateOffchainTx(
 	ctx context.Context, offchainTx *domain.OffchainTx,
 ) error {
-	return r.addOrUpdateOffchainTx(ctx, *offchainTx)
+	if err := r.addOrUpdateOffchainTx(ctx, *offchainTx); err != nil {
+		return err
+	}
+	return r.addCheckpointTxs(ctx, *offchainTx)
 }
 
 func (r *offchainTxRepository) GetOffchainTx(
 	ctx context.Context, txid string,
 ) (*domain.OffchainTx, error) {
 	return r.getOffchainTx(ctx, txid)
+}
+
+// TODO: support returning checkpoint txs
+func (r *offchainTxRepository) GetOffchainTxs(
+	ctx context.Context, txids []string,
+) ([]string, error) {
+	txs := make([]string, 0, len(txids))
+	txsLeftToFetch := make([]string, 0, len(txids))
+	for _, txid := range txids {
+		tx, err := r.getOffchainTx(ctx, txid)
+		if err != nil {
+			return nil, err
+		}
+		if tx != nil {
+			txs = append(txs, tx.VirtualTx)
+			continue
+		}
+		txsLeftToFetch = append(txsLeftToFetch, txid)
+	}
+	if len(txsLeftToFetch) > 0 {
+		checkpointTxs, err := r.findCheckpointTxs(ctx, txsLeftToFetch)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, checkpointTxs...)
+	}
+	return txs, nil
 }
 
 func (r *offchainTxRepository) Close() {
@@ -110,4 +140,61 @@ func (r *offchainTxRepository) getOffchainTx(
 	}
 
 	return &offchainTx, nil
+}
+
+func (r *offchainTxRepository) addCheckpointTxs(
+	ctx context.Context, offchainTx domain.OffchainTx,
+) error {
+	txs := make(map[string]Tx)
+	for txid, tx := range offchainTx.CheckpointTxs {
+		txs[txid] = Tx{
+			Txid: txid,
+			Tx:   tx,
+		}
+	}
+
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		for k, v := range txs {
+			if err := r.store.TxUpsert(tx, k, v); err != nil {
+				return err
+			}
+		}
+	} else {
+		for k, v := range txs {
+			if err := r.store.Upsert(k, v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (r *offchainTxRepository) findCheckpointTxs(
+	ctx context.Context, txids []string,
+) ([]string, error) {
+	resp := make([]string, 0)
+	txs := make([]Tx, 0)
+
+	var ids []interface{}
+	for _, s := range txids {
+		ids = append(ids, s)
+	}
+	query := badgerhold.Where(badgerhold.Key).In(ids...)
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		if err := r.store.TxFind(tx, &txs, query); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := r.store.Find(&txs, query); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, tx := range txs {
+		resp = append(resp, tx.Tx)
+	}
+
+	return resp, nil
 }

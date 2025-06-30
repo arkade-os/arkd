@@ -286,11 +286,18 @@ SELECT
     virtual_tx.tx AS data
 FROM virtual_tx
 WHERE virtual_tx.txid IN (/*SLICE:ids2*/?)
+UNION
+SELECT
+    checkpoint_tx.txid,
+    checkpoint_tx.tx AS data
+FROM checkpoint_tx
+WHERE checkpoint_tx.txid IN (/*SLICE:ids3*/?)
 `
 
 type GetTxsByTxidParams struct {
 	Ids1 []string
 	Ids2 []string
+	Ids3 []string
 }
 
 type GetTxsByTxidRow struct {
@@ -316,6 +323,14 @@ func (q *Queries) GetTxsByTxid(ctx context.Context, arg GetTxsByTxidParams) ([]G
 		query = strings.Replace(query, "/*SLICE:ids2*/?", strings.Repeat(",?", len(arg.Ids2))[1:], 1)
 	} else {
 		query = strings.Replace(query, "/*SLICE:ids2*/?", "NULL", 1)
+	}
+	if len(arg.Ids3) > 0 {
+		for _, v := range arg.Ids3 {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids3*/?", strings.Repeat(",?", len(arg.Ids3))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids3*/?", "NULL", 1)
 	}
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {

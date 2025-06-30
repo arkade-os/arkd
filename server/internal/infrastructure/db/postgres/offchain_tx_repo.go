@@ -73,7 +73,7 @@ func (v *offchainTxRepository) GetOffchainTx(ctx context.Context, txid string) (
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return nil, sql.ErrNoRows
+		return nil, fmt.Errorf("offchain tx %s not found", txid)
 	}
 	vt := rows[0].VirtualTxCheckpointTxVw
 	checkpointTxs := make(map[string]string)
@@ -101,6 +101,10 @@ func (v *offchainTxRepository) GetOffchainTx(ctx context.Context, txid string) (
 		CommitmentTxids:    commitmentTxids,
 		RootCommitmentTxId: rootCommitmentTxId,
 	}, nil
+}
+
+func (v *offchainTxRepository) GetOffchainTxs(ctx context.Context, txids []string) ([]string, error) {
+	return nil, nil
 }
 
 func (v *offchainTxRepository) Close() {

@@ -34,11 +34,3 @@ SELECT vtxo_vw.*, tx_request.*
 FROM tx_request
 LEFT OUTER JOIN vtxo_vw
 ON tx_request.id = vtxo_vw.request_id;
-
-CREATE OR REPLACE VIEW vtxo_virtual_tx_vw AS
-SELECT
-    vtxo_vw.*,
-    virtual_tx.tx AS redeem_tx
-FROM vtxo_vw
-LEFT JOIN virtual_tx
-ON vtxo_vw.txid = virtual_tx.txid;

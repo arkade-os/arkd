@@ -46,7 +46,13 @@ SELECT
     virtual_tx.txid,
     virtual_tx.tx AS data
 FROM virtual_tx
-WHERE virtual_tx.txid IN (sqlc.slice('ids2'));
+WHERE virtual_tx.txid IN (sqlc.slice('ids2'))
+UNION
+SELECT
+    checkpoint_tx.txid,
+    checkpoint_tx.tx AS data
+FROM checkpoint_tx
+WHERE checkpoint_tx.txid IN (sqlc.slice('ids3'));
 
 -- name: UpsertTxRequest :exec
 INSERT INTO tx_request (id, round_id, proof, message) VALUES (?, ?, ?, ?)

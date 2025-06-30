@@ -399,6 +399,14 @@ func (i *indexerService) GetVirtualTxs(ctx context.Context, txids []string, page
 		return nil, err
 	}
 
+	if len(txs) != len(txids) {
+		list, err := i.repoManager.OffchainTxs().GetOffchainTxs(ctx, txids)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, list...)
+	}
+
 	virtualTxs, reps := paginate(txs, page, maxPageSizeVirtualTxs)
 
 	return &VirtualTxsResp{
