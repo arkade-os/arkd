@@ -126,7 +126,7 @@ service ArkService {
 
 message GetInfoRequest {}
 message GetInfoResponse {
-  string pubkey = 1;
+  string signer_pubkey = 1;
   int64 vtxo_tree_expiry = 2;
   int64 unilateral_exit_delay = 3;
   int64 round_interval = 4;
@@ -161,9 +161,7 @@ message DeleteIntentResponse {}
 message ConfirmRegistrationRequest {
   string intent_id = 1;
 }
-message ConfirmRegistrationResponse {
-  string blinded_creds = 1;
-}
+message ConfirmRegistrationResponse {}
 
 message SubmitTreeNoncesRequest {
   string batch_id = 1;

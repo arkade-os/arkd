@@ -95,19 +95,19 @@ service IndexerService {
     };
   }
 
-  // GetSweptCommitmentTx returns the list of transaction (txid) that swept each batch output
-  // of the specified commitment transaction.
-  // In most cases the list contains only one txid per batch, that means the funds locked in the
-  // batch output have been claimed back.
-  // If any of the leaves of the tree (vtxo) have been unrolled onchain before the expiration, the
-  // list will contain many txids.
+  // GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
+  // output.
+  // In most cases the list contains only one txid, meaning that all the amount locked for a
+  // vtxo tree has been claimed back.
+  // If any of the leaves of the tree have been unrolled onchain before the expiration, the
+  // list will contain many txids instead.
   // In a binary tree with 4 or more leaves, 1 unroll causes the server to broadcast 3 txs to sweep
-  // the whole tree for example.
-  // If a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is be
-  //empty.
-  rpc GetSweptCommitmentTx(GetSweptCommitmentTxRequest) returns (GetSweptCommitmentTxResponse) {
+  // the whole rest of tree for example.
+  // If a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is
+  // empty.
+  rpc GetBatchSweepTransactions(GetBatchSweepTransactionsRequest) returns (GetBatchSweepTransactionsResponse) {
     option (google.api.http) = {
-      get: "/v1/commitmentTx/{txid}/swept"
+      get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs"
     };
   }
 
@@ -199,15 +199,18 @@ message GetVtxoTreeLeavesResponse {
 }
 
 message GetVtxosRequest {
-  // Either specify a list of addresses to list the vtxos for
-  repeated string addresses = 1;
-  // Or specify a list of outpoints. The 2 filters are mutually exclusive
+  // Either specify a list of vtxo scripts.
+  repeated string scripts = 1;
+  // Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.
   repeated string outpoints = 2;
   // Retrieve only spendable vtxos
   bool spendable_only = 3;
-  // Retrieve only spendable vtxos. The 2 filters are mutually exclusive
+  // Retrieve only spendable vtxos.
   bool spent_only = 4;
-  IndexerPageRequest page = 5;
+  // Retrieve only recoverable vtxos (notes, subdust or swept vtxos).
+  // The 3 filters are mutually exclusive,
+  bool recoverable_only = 5;
+  IndexerPageRequest page = 6;
 }
 message GetVtxosResponse {
   repeated IndexerVtxo vtxos = 1;
@@ -243,10 +246,11 @@ message GetVirtualTxsResponse {
   IndexerPageResponse page = 2;
 }
 
-message GetSweptCommitmentTxRequest {
-  string txid = 1;
+message GetBatchSweepTransactionsRequest {
+  IndexerOutpoint batch_outpoint = 1;
+
 }
-message GetSweptCommitmentTxResponse {
+message GetBatchSweepTransactionsResponse {
   repeated string swept_by = 1;
 }
 

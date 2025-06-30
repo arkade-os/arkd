@@ -16,6 +16,44 @@
     "application/json"
   ],
   "paths": {
+    "/v1/batch/{batchOutpoint.txid}/{batchOutpoint.vout}/sweepTxs": {
+      "get": {
+        "summary": "GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch\noutput.\nIn most cases the list contains only one txid, meaning that all the amount locked for a\nvtxo tree has been claimed back.\nIf any of the leaves of the tree have been unrolled onchain before the expiration, the\nlist will contain many txids instead.\nIn a binary tree with 4 or more leaves, 1 unroll causes the server to broadcast 3 txs to sweep\nthe whole rest of tree for example.\nIf a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is\nempty.",
+        "operationId": "IndexerService_GetBatchSweepTransactions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetBatchSweepTransactionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "batchOutpoint.txid",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "batchOutpoint.vout",
+            "in": "path",
+            "required": true,
+            "type": "integer",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "IndexerService"
+        ]
+      }
+    },
     "/v1/batch/{batchOutpoint.txid}/{batchOutpoint.vout}/tree": {
       "get": {
         "summary": "GetVtxoTree returns the vtxo tree for the provided batch outpoint.\nThe response includes a list of txs with details on the tree posistion and may\ninclude pagination information if the results span multiple pages.",
@@ -279,37 +317,6 @@
             "required": false,
             "type": "integer",
             "format": "int32"
-          }
-        ],
-        "tags": [
-          "IndexerService"
-        ]
-      }
-    },
-    "/v1/commitmentTx/{txid}/swept": {
-      "get": {
-        "summary": "GetSweptCommitmentTx returns the list of transaction (txid) that swept each batch output\nof the specified commitment transaction.\nIn most cases the list contains only one txid per batch, that means the funds locked in the\nbatch output have been claimed back.\nIf any of the leaves of the tree (vtxo) have been unrolled onchain before the expiration, the\nlist will contain many txids.\nIn a binary tree with 4 or more leaves, 1 unroll causes the server to broadcast 3 txs to sweep\nthe whole tree for example.\nIf a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is be\nempty.",
-        "operationId": "IndexerService_GetSweptCommitmentTx",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetSweptCommitmentTxResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "txid",
-            "in": "path",
-            "required": true,
-            "type": "string"
           }
         ],
         "tags": [
@@ -604,8 +611,8 @@
         },
         "parameters": [
           {
-            "name": "addresses",
-            "description": "Either specify a list of addresses to list the vtxos for",
+            "name": "scripts",
+            "description": "Either specify a list of vtxo scripts.",
             "in": "query",
             "required": false,
             "type": "array",
@@ -616,7 +623,7 @@
           },
           {
             "name": "outpoints",
-            "description": "Or specify a list of outpoints. The 2 filters are mutually exclusive",
+            "description": "Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.",
             "in": "query",
             "required": false,
             "type": "array",
@@ -634,7 +641,14 @@
           },
           {
             "name": "spentOnly",
-            "description": "Retrieve only spendable vtxos. The 2 filters are mutually exclusive",
+            "description": "Retrieve only spendable vtxos.",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "recoverableOnly",
+            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).\nThe 3 filters are mutually exclusive,",
             "in": "query",
             "required": false,
             "type": "boolean"
@@ -685,6 +699,17 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1GetBatchSweepTransactionsResponse": {
+      "type": "object",
+      "properties": {
+        "sweptBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
           }
         }
       }
@@ -792,17 +817,6 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1IndexerVtxo"
-          }
-        }
-      }
-    },
-    "v1GetSweptCommitmentTxResponse": {
-      "type": "object",
-      "properties": {
-        "sweptBy": {
-          "type": "array",
-          "items": {
-            "type": "string"
           }
         }
       }

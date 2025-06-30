@@ -480,12 +480,7 @@
       }
     },
     "v1ConfirmRegistrationResponse": {
-      "type": "object",
-      "properties": {
-        "blindedCreds": {
-          "type": "string"
-        }
-      }
+      "type": "object"
     },
     "v1DeleteIntentRequest": {
       "type": "object",
@@ -548,7 +543,7 @@
     "v1GetInfoResponse": {
       "type": "object",
       "properties": {
-        "pubkey": {
+        "signerPubkey": {
           "type": "string"
         },
         "vtxoTreeExpiry": {

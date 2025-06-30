@@ -56,17 +56,17 @@ type IndexerServiceClient interface {
 	// GetVirtualTxs returns the virtual transactions in hex format for the specified txids.
 	// The response may be paginated if the results span multiple pages.
 	GetVirtualTxs(ctx context.Context, in *GetVirtualTxsRequest, opts ...grpc.CallOption) (*GetVirtualTxsResponse, error)
-	// GetSweptCommitmentTx returns the list of transaction (txid) that swept each batch output
-	// of the specified commitment transaction.
-	// In most cases the list contains only one txid per batch, that means the funds locked in the
-	// batch output have been claimed back.
-	// If any of the leaves of the tree (vtxo) have been unrolled onchain before the expiration, the
-	// list will contain many txids.
+	// GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
+	// output.
+	// In most cases the list contains only one txid, meaning that all the amount locked for a
+	// vtxo tree has been claimed back.
+	// If any of the leaves of the tree have been unrolled onchain before the expiration, the
+	// list will contain many txids instead.
 	// In a binary tree with 4 or more leaves, 1 unroll causes the server to broadcast 3 txs to sweep
-	// the whole tree for example.
-	// If a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is be
+	// the whole rest of tree for example.
+	// If a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is
 	// empty.
-	GetSweptCommitmentTx(ctx context.Context, in *GetSweptCommitmentTxRequest, opts ...grpc.CallOption) (*GetSweptCommitmentTxResponse, error)
+	GetBatchSweepTransactions(ctx context.Context, in *GetBatchSweepTransactionsRequest, opts ...grpc.CallOption) (*GetBatchSweepTransactionsResponse, error)
 	// SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo
 	// scripts. It can also be used to update an existing subscribtion by adding new scripts to it.
 	SubscribeForScripts(ctx context.Context, in *SubscribeForScriptsRequest, opts ...grpc.CallOption) (*SubscribeForScriptsResponse, error)
@@ -177,9 +177,9 @@ func (c *indexerServiceClient) GetVirtualTxs(ctx context.Context, in *GetVirtual
 	return out, nil
 }
 
-func (c *indexerServiceClient) GetSweptCommitmentTx(ctx context.Context, in *GetSweptCommitmentTxRequest, opts ...grpc.CallOption) (*GetSweptCommitmentTxResponse, error) {
-	out := new(GetSweptCommitmentTxResponse)
-	err := c.cc.Invoke(ctx, "/ark.v1.IndexerService/GetSweptCommitmentTx", in, out, opts...)
+func (c *indexerServiceClient) GetBatchSweepTransactions(ctx context.Context, in *GetBatchSweepTransactionsRequest, opts ...grpc.CallOption) (*GetBatchSweepTransactionsResponse, error) {
+	out := new(GetBatchSweepTransactionsResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.IndexerService/GetBatchSweepTransactions", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -278,17 +278,17 @@ type IndexerServiceServer interface {
 	// GetVirtualTxs returns the virtual transactions in hex format for the specified txids.
 	// The response may be paginated if the results span multiple pages.
 	GetVirtualTxs(context.Context, *GetVirtualTxsRequest) (*GetVirtualTxsResponse, error)
-	// GetSweptCommitmentTx returns the list of transaction (txid) that swept each batch output
-	// of the specified commitment transaction.
-	// In most cases the list contains only one txid per batch, that means the funds locked in the
-	// batch output have been claimed back.
-	// If any of the leaves of the tree (vtxo) have been unrolled onchain before the expiration, the
-	// list will contain many txids.
+	// GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
+	// output.
+	// In most cases the list contains only one txid, meaning that all the amount locked for a
+	// vtxo tree has been claimed back.
+	// If any of the leaves of the tree have been unrolled onchain before the expiration, the
+	// list will contain many txids instead.
 	// In a binary tree with 4 or more leaves, 1 unroll causes the server to broadcast 3 txs to sweep
-	// the whole tree for example.
-	// If a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is be
+	// the whole rest of tree for example.
+	// If a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is
 	// empty.
-	GetSweptCommitmentTx(context.Context, *GetSweptCommitmentTxRequest) (*GetSweptCommitmentTxResponse, error)
+	GetBatchSweepTransactions(context.Context, *GetBatchSweepTransactionsRequest) (*GetBatchSweepTransactionsResponse, error)
 	// SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo
 	// scripts. It can also be used to update an existing subscribtion by adding new scripts to it.
 	SubscribeForScripts(context.Context, *SubscribeForScriptsRequest) (*SubscribeForScriptsResponse, error)
@@ -335,8 +335,8 @@ func (UnimplementedIndexerServiceServer) GetVtxoChain(context.Context, *GetVtxoC
 func (UnimplementedIndexerServiceServer) GetVirtualTxs(context.Context, *GetVirtualTxsRequest) (*GetVirtualTxsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVirtualTxs not implemented")
 }
-func (UnimplementedIndexerServiceServer) GetSweptCommitmentTx(context.Context, *GetSweptCommitmentTxRequest) (*GetSweptCommitmentTxResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetSweptCommitmentTx not implemented")
+func (UnimplementedIndexerServiceServer) GetBatchSweepTransactions(context.Context, *GetBatchSweepTransactionsRequest) (*GetBatchSweepTransactionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBatchSweepTransactions not implemented")
 }
 func (UnimplementedIndexerServiceServer) SubscribeForScripts(context.Context, *SubscribeForScriptsRequest) (*SubscribeForScriptsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubscribeForScripts not implemented")
@@ -539,20 +539,20 @@ func _IndexerService_GetVirtualTxs_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _IndexerService_GetSweptCommitmentTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetSweptCommitmentTxRequest)
+func _IndexerService_GetBatchSweepTransactions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBatchSweepTransactionsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(IndexerServiceServer).GetSweptCommitmentTx(ctx, in)
+		return srv.(IndexerServiceServer).GetBatchSweepTransactions(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ark.v1.IndexerService/GetSweptCommitmentTx",
+		FullMethod: "/ark.v1.IndexerService/GetBatchSweepTransactions",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexerServiceServer).GetSweptCommitmentTx(ctx, req.(*GetSweptCommitmentTxRequest))
+		return srv.(IndexerServiceServer).GetBatchSweepTransactions(ctx, req.(*GetBatchSweepTransactionsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -662,8 +662,8 @@ var IndexerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _IndexerService_GetVirtualTxs_Handler,
 		},
 		{
-			MethodName: "GetSweptCommitmentTx",
-			Handler:    _IndexerService_GetSweptCommitmentTx_Handler,
+			MethodName: "GetBatchSweepTransactions",
+			Handler:    _IndexerService_GetBatchSweepTransactions_Handler,
 		},
 		{
 			MethodName: "SubscribeForScripts",
