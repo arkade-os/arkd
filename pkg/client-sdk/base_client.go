@@ -166,12 +166,20 @@ func (a *arkClient) ListVtxos(ctx context.Context) (
 		return
 	}
 
-	addresses := make([]string, 0, len(offchainAddrs))
+	scripts := make([]string, 0, len(offchainAddrs))
 	for _, addr := range offchainAddrs {
-		addresses = append(addresses, addr.Address)
+		decoded, err := common.DecodeAddressV0(addr.Address)
+		if err != nil {
+			return nil, nil, err
+		}
+		script, err := common.P2TRScript(decoded.VtxoTapKey)
+		if err != nil {
+			return nil, nil, err
+		}
+		scripts = append(scripts, hex.EncodeToString(script))
 	}
 	opt := indexer.GetVtxosRequestOption{}
-	if err = opt.WithAddresses(addresses); err != nil {
+	if err = opt.WithScripts(scripts); err != nil {
 		return
 	}
 
@@ -262,11 +270,11 @@ func (a *arkClient) initWithWallet(
 
 	network := utils.NetworkFromString(info.Network)
 
-	buf, err := hex.DecodeString(info.PubKey)
+	buf, err := hex.DecodeString(info.SignerPubKey)
 	if err != nil {
-		return fmt.Errorf("failed to parse server pubkey: %s", err)
+		return fmt.Errorf("failed to parse signer pubkey: %s", err)
 	}
-	serverPubkey, err := secp256k1.ParsePubKey(buf)
+	signerPubkey, err := secp256k1.ParsePubKey(buf)
 	if err != nil {
 		return fmt.Errorf("failed to parse server pubkey: %s", err)
 	}
@@ -288,7 +296,7 @@ func (a *arkClient) initWithWallet(
 
 	storeData := types.Config{
 		ServerUrl:    args.ServerUrl,
-		ServerPubKey: serverPubkey,
+		SignerPubKey: signerPubkey,
 		WalletType:   args.Wallet.GetType(),
 		ClientType:   args.ClientType,
 		Network:      network,
@@ -365,11 +373,11 @@ func (a *arkClient) init(
 
 	network := utils.NetworkFromString(info.Network)
 
-	buf, err := hex.DecodeString(info.PubKey)
+	buf, err := hex.DecodeString(info.SignerPubKey)
 	if err != nil {
-		return fmt.Errorf("failed to parse server pubkey: %s", err)
+		return fmt.Errorf("failed to parse signer pubkey: %s", err)
 	}
-	serverPubkey, err := secp256k1.ParsePubKey(buf)
+	signerPubkey, err := secp256k1.ParsePubKey(buf)
 	if err != nil {
 		return fmt.Errorf("failed to parse server pubkey: %s", err)
 	}
@@ -391,7 +399,7 @@ func (a *arkClient) init(
 
 	cfgData := types.Config{
 		ServerUrl:    args.ServerUrl,
-		ServerPubKey: serverPubkey,
+		SignerPubKey: signerPubkey,
 		WalletType:   args.WalletType,
 		ClientType:   args.ClientType,
 		Network:      network,

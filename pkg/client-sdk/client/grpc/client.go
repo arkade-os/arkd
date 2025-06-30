@@ -59,7 +59,7 @@ func (a *grpcClient) GetInfo(ctx context.Context) (*client.Info, error) {
 		return nil, err
 	}
 	return &client.Info{
-		PubKey:                  resp.GetPubkey(),
+		SignerPubKey:            resp.GetSignerPubkey(),
 		VtxoTreeExpiry:          resp.GetVtxoTreeExpiry(),
 		UnilateralExitDelay:     resp.GetUnilateralExitDelay(),
 		RoundInterval:           resp.GetRoundInterval(),

@@ -19,7 +19,7 @@ type Indexer interface {
 	GetTransactionHistory(ctx context.Context, address string, opts ...GetTxHistoryRequestOption) (*TxHistoryResponse, error)
 	GetVtxoChain(ctx context.Context, outpoint Outpoint, opts ...RequestOption) (*VtxoChainResponse, error)
 	GetVirtualTxs(ctx context.Context, txids []string, opts ...RequestOption) (*VirtualTxsResponse, error)
-	GetSweptCommitmentTx(ctx context.Context, txid string) ([]string, error)
+	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 	SubscribeForScripts(ctx context.Context, subscriptionId string, scripts []string) (string, error)
 	UnsubscribeForScripts(ctx context.Context, subscriptionId string, scripts []string) error
 	GetSubscription(ctx context.Context, subscriptionId string) (<-chan *ScriptEvent, func(), error)

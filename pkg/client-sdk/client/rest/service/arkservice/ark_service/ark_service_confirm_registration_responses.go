@@ -53,7 +53,7 @@ ArkServiceConfirmRegistrationOK describes a response with status code 200, with 
 A successful response.
 */
 type ArkServiceConfirmRegistrationOK struct {
-	Payload *models.V1ConfirmRegistrationResponse
+	Payload models.V1ConfirmRegistrationResponse
 }
 
 // IsSuccess returns true when this ark service confirm registration o k response has a 2xx status code
@@ -96,16 +96,14 @@ func (o *ArkServiceConfirmRegistrationOK) String() string {
 	return fmt.Sprintf("[POST /v1/batch/ack][%d] arkServiceConfirmRegistrationOK %s", 200, payload)
 }
 
-func (o *ArkServiceConfirmRegistrationOK) GetPayload() *models.V1ConfirmRegistrationResponse {
+func (o *ArkServiceConfirmRegistrationOK) GetPayload() models.V1ConfirmRegistrationResponse {
 	return o.Payload
 }
 
 func (o *ArkServiceConfirmRegistrationOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
-	o.Payload = new(models.V1ConfirmRegistrationResponse)
-
 	// response payload
-	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
 		return err
 	}
 

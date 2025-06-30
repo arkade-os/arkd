@@ -19,32 +19,32 @@ func (o *RequestOption) GetPage() *PageRequest {
 
 type GetVtxosRequestOption struct {
 	RequestOption
-	addresses     []string
+	scripts       []string
 	outpoints     []Outpoint
 	spentOnly     bool
 	spendableOnly bool
 }
 
-func (o *GetVtxosRequestOption) WithAddresses(addresses []string) error {
-	if o.addresses != nil {
-		return fmt.Errorf("addresses already set")
+func (o *GetVtxosRequestOption) WithScripts(scripts []string) error {
+	if o.scripts != nil {
+		return fmt.Errorf("scripts already set")
 	}
 	if o.outpoints != nil {
 		return fmt.Errorf("outpoints already set")
 	}
-	o.addresses = addresses
+	o.scripts = scripts
 	return nil
 }
 
-func (o *GetVtxosRequestOption) GetAddresses() []string {
-	return o.addresses
+func (o *GetVtxosRequestOption) GetScripts() []string {
+	return o.scripts
 }
 
 func (o *GetVtxosRequestOption) WithOutpoints(outpoints []Outpoint) error {
 	if o.outpoints != nil {
 		return fmt.Errorf("outpoints already set")
 	}
-	if o.addresses != nil {
+	if o.scripts != nil {
 		return fmt.Errorf("addresses already set")
 	}
 	o.outpoints = outpoints

@@ -265,7 +265,7 @@ func config(ctx *cli.Context) error {
 
 	cfg := map[string]interface{}{
 		"server_url":            cfgData.ServerUrl,
-		"server_pubkey":         hex.EncodeToString(cfgData.ServerPubKey.SerializeCompressed()),
+		"signer_pubkey":         hex.EncodeToString(cfgData.SignerPubKey.SerializeCompressed()),
 		"wallet_type":           cfgData.WalletType,
 		"client_type":           cfgData.ClientType,
 		"network":               cfgData.Network.Name,

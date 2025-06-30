@@ -54,6 +54,8 @@ type ClientOption func(*runtime.ClientOperation)
 
 // ClientService is the interface for Client methods
 type ClientService interface {
+	IndexerServiceGetBatchSweepTransactions(params *IndexerServiceGetBatchSweepTransactionsParams, opts ...ClientOption) (*IndexerServiceGetBatchSweepTransactionsOK, error)
+
 	IndexerServiceGetCommitmentTx(params *IndexerServiceGetCommitmentTxParams, opts ...ClientOption) (*IndexerServiceGetCommitmentTxOK, error)
 
 	IndexerServiceGetCommitmentTxLeaves(params *IndexerServiceGetCommitmentTxLeavesParams, opts ...ClientOption) (*IndexerServiceGetCommitmentTxLeavesOK, error)
@@ -63,8 +65,6 @@ type ClientService interface {
 	IndexerServiceGetForfeitTxs(params *IndexerServiceGetForfeitTxsParams, opts ...ClientOption) (*IndexerServiceGetForfeitTxsOK, error)
 
 	IndexerServiceGetSubscription(params *IndexerServiceGetSubscriptionParams, opts ...ClientOption) (*IndexerServiceGetSubscriptionOK, error)
-
-	IndexerServiceGetSweptCommitmentTx(params *IndexerServiceGetSweptCommitmentTxParams, opts ...ClientOption) (*IndexerServiceGetSweptCommitmentTxOK, error)
 
 	IndexerServiceGetTransactionHistory(params *IndexerServiceGetTransactionHistoryParams, opts ...ClientOption) (*IndexerServiceGetTransactionHistoryOK, error)
 
@@ -83,6 +83,43 @@ type ClientService interface {
 	IndexerServiceUnsubscribeForScripts(params *IndexerServiceUnsubscribeForScriptsParams, opts ...ClientOption) (*IndexerServiceUnsubscribeForScriptsOK, error)
 
 	SetTransport(transport runtime.ClientTransport)
+}
+
+/*
+IndexerServiceGetBatchSweepTransactions gets batch sweep transactions returns the list of transaction txid that swept a given batch output in most cases the list contains only one txid meaning that all the amount locked for a vtxo tree has been claimed back if any of the leaves of the tree have been unrolled onchain before the expiration the list will contain many txids instead in a binary tree with 4 or more leaves 1 unroll causes the server to broadcast 3 txs to sweep the whole rest of tree for example if a whole vtxo tree has been unrolled onchain the list of txids for that batch output is empty
+*/
+func (a *Client) IndexerServiceGetBatchSweepTransactions(params *IndexerServiceGetBatchSweepTransactionsParams, opts ...ClientOption) (*IndexerServiceGetBatchSweepTransactionsOK, error) {
+	// TODO: Validate the params before sending
+	if params == nil {
+		params = NewIndexerServiceGetBatchSweepTransactionsParams()
+	}
+	op := &runtime.ClientOperation{
+		ID:                 "IndexerService_GetBatchSweepTransactions",
+		Method:             "GET",
+		PathPattern:        "/v1/batch/{batchOutpoint.txid}/{batchOutpoint.vout}/sweepTxs",
+		ProducesMediaTypes: []string{"application/json"},
+		ConsumesMediaTypes: []string{"application/json"},
+		Schemes:            []string{"http"},
+		Params:             params,
+		Reader:             &IndexerServiceGetBatchSweepTransactionsReader{formats: a.formats},
+		Context:            params.Context,
+		Client:             params.HTTPClient,
+	}
+	for _, opt := range opts {
+		opt(op)
+	}
+
+	result, err := a.transport.Submit(op)
+	if err != nil {
+		return nil, err
+	}
+	success, ok := result.(*IndexerServiceGetBatchSweepTransactionsOK)
+	if ok {
+		return success, nil
+	}
+	// unexpected success response
+	unexpectedSuccess := result.(*IndexerServiceGetBatchSweepTransactionsDefault)
+	return nil, runtime.NewAPIError("unexpected success response: content available as default response in error", unexpectedSuccess, unexpectedSuccess.Code())
 }
 
 /*
@@ -267,43 +304,6 @@ func (a *Client) IndexerServiceGetSubscription(params *IndexerServiceGetSubscrip
 	}
 	// unexpected success response
 	unexpectedSuccess := result.(*IndexerServiceGetSubscriptionDefault)
-	return nil, runtime.NewAPIError("unexpected success response: content available as default response in error", unexpectedSuccess, unexpectedSuccess.Code())
-}
-
-/*
-IndexerServiceGetSweptCommitmentTx gets swept commitment tx returns the list of transaction txid that swept each batch output of the specified commitment transaction in most cases the list contains only one txid per batch that means the funds locked in the batch output have been claimed back if any of the leaves of the tree vtxo have been unrolled onchain before the expiration the list will contain many txids in a binary tree with 4 or more leaves 1 unroll causes the server to broadcast 3 txs to sweep the whole tree for example if a whole vtxo tree has been unrolled onchain the list of txids for that batch output is be empty
-*/
-func (a *Client) IndexerServiceGetSweptCommitmentTx(params *IndexerServiceGetSweptCommitmentTxParams, opts ...ClientOption) (*IndexerServiceGetSweptCommitmentTxOK, error) {
-	// TODO: Validate the params before sending
-	if params == nil {
-		params = NewIndexerServiceGetSweptCommitmentTxParams()
-	}
-	op := &runtime.ClientOperation{
-		ID:                 "IndexerService_GetSweptCommitmentTx",
-		Method:             "GET",
-		PathPattern:        "/v1/commitmentTx/{txid}/swept",
-		ProducesMediaTypes: []string{"application/json"},
-		ConsumesMediaTypes: []string{"application/json"},
-		Schemes:            []string{"http"},
-		Params:             params,
-		Reader:             &IndexerServiceGetSweptCommitmentTxReader{formats: a.formats},
-		Context:            params.Context,
-		Client:             params.HTTPClient,
-	}
-	for _, opt := range opts {
-		opt(op)
-	}
-
-	result, err := a.transport.Submit(op)
-	if err != nil {
-		return nil, err
-	}
-	success, ok := result.(*IndexerServiceGetSweptCommitmentTxOK)
-	if ok {
-		return success, nil
-	}
-	// unexpected success response
-	unexpectedSuccess := result.(*IndexerServiceGetSweptCommitmentTxDefault)
 	return nil, runtime.NewAPIError("unexpected success response: content available as default response in error", unexpectedSuccess, unexpectedSuccess.Code())
 }
 

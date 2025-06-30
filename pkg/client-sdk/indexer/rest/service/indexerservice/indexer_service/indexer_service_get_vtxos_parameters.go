@@ -62,15 +62,9 @@ IndexerServiceGetVtxosParams contains all the parameters to send to the API endp
 */
 type IndexerServiceGetVtxosParams struct {
 
-	/* Addresses.
-
-	   Either specify a list of addresses to list the vtxos for
-	*/
-	Addresses []string
-
 	/* Outpoints.
 
-	   Or specify a list of outpoints. The 2 filters are mutually exclusive
+	   Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.
 	*/
 	Outpoints []string
 
@@ -84,6 +78,19 @@ type IndexerServiceGetVtxosParams struct {
 	// Format: int32
 	PageSize *int32
 
+	/* RecoverableOnly.
+
+	     Retrieve only recoverable vtxos (notes, subdust or swept vtxos).
+	The 3 filters are mutually exclusive,
+	*/
+	RecoverableOnly *bool
+
+	/* Scripts.
+
+	   Either specify a list of vtxo scripts.
+	*/
+	Scripts []string
+
 	/* SpendableOnly.
 
 	   Retrieve only spendable vtxos
@@ -92,7 +99,7 @@ type IndexerServiceGetVtxosParams struct {
 
 	/* SpentOnly.
 
-	   Retrieve only spendable vtxos. The 2 filters are mutually exclusive
+	   Retrieve only spendable vtxos.
 	*/
 	SpentOnly *bool
 
@@ -149,17 +156,6 @@ func (o *IndexerServiceGetVtxosParams) SetHTTPClient(client *http.Client) {
 	o.HTTPClient = client
 }
 
-// WithAddresses adds the addresses to the indexer service get vtxos params
-func (o *IndexerServiceGetVtxosParams) WithAddresses(addresses []string) *IndexerServiceGetVtxosParams {
-	o.SetAddresses(addresses)
-	return o
-}
-
-// SetAddresses adds the addresses to the indexer service get vtxos params
-func (o *IndexerServiceGetVtxosParams) SetAddresses(addresses []string) {
-	o.Addresses = addresses
-}
-
 // WithOutpoints adds the outpoints to the indexer service get vtxos params
 func (o *IndexerServiceGetVtxosParams) WithOutpoints(outpoints []string) *IndexerServiceGetVtxosParams {
 	o.SetOutpoints(outpoints)
@@ -193,6 +189,28 @@ func (o *IndexerServiceGetVtxosParams) SetPageSize(pageSize *int32) {
 	o.PageSize = pageSize
 }
 
+// WithRecoverableOnly adds the recoverableOnly to the indexer service get vtxos params
+func (o *IndexerServiceGetVtxosParams) WithRecoverableOnly(recoverableOnly *bool) *IndexerServiceGetVtxosParams {
+	o.SetRecoverableOnly(recoverableOnly)
+	return o
+}
+
+// SetRecoverableOnly adds the recoverableOnly to the indexer service get vtxos params
+func (o *IndexerServiceGetVtxosParams) SetRecoverableOnly(recoverableOnly *bool) {
+	o.RecoverableOnly = recoverableOnly
+}
+
+// WithScripts adds the scripts to the indexer service get vtxos params
+func (o *IndexerServiceGetVtxosParams) WithScripts(scripts []string) *IndexerServiceGetVtxosParams {
+	o.SetScripts(scripts)
+	return o
+}
+
+// SetScripts adds the scripts to the indexer service get vtxos params
+func (o *IndexerServiceGetVtxosParams) SetScripts(scripts []string) {
+	o.Scripts = scripts
+}
+
 // WithSpendableOnly adds the spendableOnly to the indexer service get vtxos params
 func (o *IndexerServiceGetVtxosParams) WithSpendableOnly(spendableOnly *bool) *IndexerServiceGetVtxosParams {
 	o.SetSpendableOnly(spendableOnly)
@@ -222,17 +240,6 @@ func (o *IndexerServiceGetVtxosParams) WriteToRequest(r runtime.ClientRequest, r
 		return err
 	}
 	var res []error
-
-	if o.Addresses != nil {
-
-		// binding items for addresses
-		joinedAddresses := o.bindParamAddresses(reg)
-
-		// query array param addresses
-		if err := r.SetQueryParam("addresses", joinedAddresses...); err != nil {
-			return err
-		}
-	}
 
 	if o.Outpoints != nil {
 
@@ -279,6 +286,34 @@ func (o *IndexerServiceGetVtxosParams) WriteToRequest(r runtime.ClientRequest, r
 		}
 	}
 
+	if o.RecoverableOnly != nil {
+
+		// query param recoverableOnly
+		var qrRecoverableOnly bool
+
+		if o.RecoverableOnly != nil {
+			qrRecoverableOnly = *o.RecoverableOnly
+		}
+		qRecoverableOnly := swag.FormatBool(qrRecoverableOnly)
+		if qRecoverableOnly != "" {
+
+			if err := r.SetQueryParam("recoverableOnly", qRecoverableOnly); err != nil {
+				return err
+			}
+		}
+	}
+
+	if o.Scripts != nil {
+
+		// binding items for scripts
+		joinedScripts := o.bindParamScripts(reg)
+
+		// query array param scripts
+		if err := r.SetQueryParam("scripts", joinedScripts...); err != nil {
+			return err
+		}
+	}
+
 	if o.SpendableOnly != nil {
 
 		// query param spendableOnly
@@ -319,23 +354,6 @@ func (o *IndexerServiceGetVtxosParams) WriteToRequest(r runtime.ClientRequest, r
 	return nil
 }
 
-// bindParamIndexerServiceGetVtxos binds the parameter addresses
-func (o *IndexerServiceGetVtxosParams) bindParamAddresses(formats strfmt.Registry) []string {
-	addressesIR := o.Addresses
-
-	var addressesIC []string
-	for _, addressesIIR := range addressesIR { // explode []string
-
-		addressesIIV := addressesIIR // string as string
-		addressesIC = append(addressesIC, addressesIIV)
-	}
-
-	// items.CollectionFormat: "multi"
-	addressesIS := swag.JoinByFormat(addressesIC, "multi")
-
-	return addressesIS
-}
-
 // bindParamIndexerServiceGetVtxos binds the parameter outpoints
 func (o *IndexerServiceGetVtxosParams) bindParamOutpoints(formats strfmt.Registry) []string {
 	outpointsIR := o.Outpoints
@@ -351,4 +369,21 @@ func (o *IndexerServiceGetVtxosParams) bindParamOutpoints(formats strfmt.Registr
 	outpointsIS := swag.JoinByFormat(outpointsIC, "multi")
 
 	return outpointsIS
+}
+
+// bindParamIndexerServiceGetVtxos binds the parameter scripts
+func (o *IndexerServiceGetVtxosParams) bindParamScripts(formats strfmt.Registry) []string {
+	scriptsIR := o.Scripts
+
+	var scriptsIC []string
+	for _, scriptsIIR := range scriptsIR { // explode []string
+
+		scriptsIIV := scriptsIIR // string as string
+		scriptsIC = append(scriptsIC, scriptsIIV)
+	}
+
+	// items.CollectionFormat: "multi"
+	scriptsIS := swag.JoinByFormat(scriptsIC, "multi")
+
+	return scriptsIS
 }

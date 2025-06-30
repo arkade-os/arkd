@@ -33,11 +33,11 @@ type V1GetInfoResponse struct {
 	// network
 	Network string `json:"network,omitempty"`
 
-	// pubkey
-	Pubkey string `json:"pubkey,omitempty"`
-
 	// round interval
 	RoundInterval string `json:"roundInterval,omitempty"`
+
+	// signer pubkey
+	SignerPubkey string `json:"signerPubkey,omitempty"`
 
 	// unilateral exit delay
 	UnilateralExitDelay string `json:"unilateralExitDelay,omitempty"`

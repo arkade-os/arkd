@@ -23,7 +23,7 @@ const (
 
 type Config struct {
 	ServerUrl               string
-	ServerPubKey            *secp256k1.PublicKey
+	SignerPubKey            *secp256k1.PublicKey
 	WalletType              string
 	ClientType              string
 	Network                 common.Network
@@ -86,7 +86,7 @@ func (v Vtxo) Address(server *secp256k1.PublicKey, net common.Network) (string, 
 
 	a := &common.Address{
 		HRP:        net.Addr,
-		Server:     server,
+		Signer:     server,
 		VtxoTapKey: pubkey,
 	}
 

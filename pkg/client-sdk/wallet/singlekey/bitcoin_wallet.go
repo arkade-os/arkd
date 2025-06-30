@@ -493,7 +493,7 @@ func (w *bitcoinWallet) getArkAddresses(
 
 	defaultVtxoScript := tree.NewDefaultVtxoScript(
 		w.walletData.PubKey,
-		data.ServerPubKey,
+		data.SignerPubKey,
 		data.UnilateralExitDelay,
 	)
 
@@ -504,13 +504,13 @@ func (w *bitcoinWallet) getArkAddresses(
 
 	offchainAddress := &common.Address{
 		HRP:        data.Network.Addr,
-		Server:     data.ServerPubKey,
+		Signer:     data.SignerPubKey,
 		VtxoTapKey: vtxoTapKey,
 	}
 
 	boardingVtxoScript := tree.NewDefaultVtxoScript(
 		w.walletData.PubKey,
-		data.ServerPubKey,
+		data.SignerPubKey,
 		data.BoardingExitDelay,
 	)
 

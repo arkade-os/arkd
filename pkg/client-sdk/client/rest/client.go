@@ -108,7 +108,7 @@ func (a *restClient) GetInfo(
 	}
 
 	return &client.Info{
-		PubKey:                  resp.Payload.Pubkey,
+		SignerPubKey:            resp.Payload.SignerPubkey,
 		VtxoTreeExpiry:          int64(vtxoTreeExpiry),
 		UnilateralExitDelay:     int64(unilateralExitDelay),
 		RoundInterval:           int64(roundInterval),

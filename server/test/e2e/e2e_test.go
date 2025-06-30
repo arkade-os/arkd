@@ -636,7 +636,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 				&tree.CLTVMultisigClosure{
 					Locktime: cltvLocktime,
 					MultisigClosure: tree.MultisigClosure{
-						PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Server},
+						PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
 					},
 				},
 			},
@@ -650,7 +650,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		bobAddr := common.Address{
 			HRP:        "tark",
 			VtxoTapKey: vtxoTapKey,
-			Server:     aliceAddr.Server,
+			Signer:     aliceAddr.Signer,
 		}
 
 		script, err := closure.Script()
@@ -760,7 +760,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 					Value: uint32(infos.UnilateralExitDelay),
 				},
 				MultisigClosure: tree.MultisigClosure{
-					PubKeys: []*secp256k1.PublicKey{aliceAddr.Server},
+					PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
 				},
 			},
 		)
@@ -842,8 +842,11 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		// make sure the vtxo of bob is not redeemed
 		// the checkpoint is not the bob's virtual tx
 		opt := &indexer.GetVtxosRequestOption{}
+		bobScript, err := common.P2TRScript(bobAddr.VtxoTapKey)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobScript)
 		// nolint
-		opt.WithAddresses([]string{bobAddrStr})
+		opt.WithScripts([]string{hex.EncodeToString(bobScript)})
 		// nolint
 		opt.WithSpentOnly()
 
@@ -1237,7 +1240,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 			&tree.CLTVMultisigClosure{
 				Locktime: common.AbsoluteLocktime(currentHeight + cltvBlocks),
 				MultisigClosure: tree.MultisigClosure{
-					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Server},
+					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
 				},
 			},
 		},
@@ -1251,7 +1254,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	bobAddr := common.Address{
 		HRP:        "tark",
 		VtxoTapKey: vtxoTapKey,
-		Server:     aliceAddr.Server,
+		Signer:     aliceAddr.Signer,
 	}
 
 	script, err := closure.Script()
@@ -1359,7 +1362,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 				Value: uint32(infos.UnilateralExitDelay),
 			},
 			MultisigClosure: tree.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{aliceAddr.Server},
+				PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
 			},
 		},
 	)
@@ -1486,11 +1489,11 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 			&tree.ConditionMultisigClosure{
 				Condition: conditionScript,
 				MultisigClosure: tree.MultisigClosure{
-					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Server},
+					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
 				},
 			},
 			&tree.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Server},
+				PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
 			},
 		},
 	}
@@ -1506,7 +1509,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	bobAddr := common.Address{
 		HRP:        "tark",
 		VtxoTapKey: vtxoTapKey,
-		Server:     aliceAddr.Server,
+		Signer:     aliceAddr.Signer,
 	}
 
 	script, err := closure.Script()
@@ -1630,7 +1633,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 				Value: uint32(infos.UnilateralExitDelay),
 			},
 			MultisigClosure: tree.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{aliceAddr.Server},
+				PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
 			},
 		},
 	)

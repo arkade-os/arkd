@@ -497,7 +497,7 @@ func (a *covenantlessArkClient) SendOffChain(
 		return "", err
 	}
 
-	expectedServerPubkey := schnorr.SerializePubKey(a.ServerPubKey)
+	expectedSignerPubkey := schnorr.SerializePubKey(a.SignerPubKey)
 	sumOfReceivers := uint64(0)
 
 	for _, receiver := range receivers {
@@ -510,11 +510,11 @@ func (a *covenantlessArkClient) SendOffChain(
 			return "", fmt.Errorf("invalid receiver address: %s", err)
 		}
 
-		rcvServerPubkey := schnorr.SerializePubKey(addr.Server)
-		if !bytes.Equal(expectedServerPubkey, rcvServerPubkey) {
+		rcvSignerPubkey := schnorr.SerializePubKey(addr.Signer)
+		if !bytes.Equal(expectedSignerPubkey, rcvSignerPubkey) {
 			return "", fmt.Errorf(
-				"invalid receiver address '%s': expected server %x, got %x",
-				receiver.To, expectedServerPubkey, rcvServerPubkey,
+				"invalid receiver address '%s': expected signer pubkey %x, got %x",
+				receiver.To, expectedSignerPubkey, rcvSignerPubkey,
 			)
 		}
 
@@ -532,7 +532,7 @@ func (a *covenantlessArkClient) SendOffChain(
 
 	for _, offchainAddr := range offchainAddrs {
 		for _, v := range spendableVtxos {
-			vtxoAddr, err := v.Address(a.ServerPubKey, a.Network)
+			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
 			if err != nil {
 				return "", err
 			}
@@ -586,7 +586,7 @@ func (a *covenantlessArkClient) SendOffChain(
 	checkpointExitScript := &tree.CSVMultisigClosure{
 		Locktime: a.UnilateralExitDelay,
 		MultisigClosure: tree.MultisigClosure{
-			PubKeys: []*secp256k1.PublicKey{a.ServerPubKey},
+			PubKeys: []*secp256k1.PublicKey{a.SignerPubKey},
 		},
 	}
 
@@ -1555,7 +1555,7 @@ func (a *covenantlessArkClient) selectFunds(
 
 	for _, offchainAddr := range offchainAddrs {
 		for _, v := range spendableVtxos {
-			vtxoAddr, err := v.Address(a.ServerPubKey, a.Network)
+			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
 			if err != nil {
 				return nil, nil, 0, err
 			}
@@ -1612,7 +1612,7 @@ func (a *covenantlessArkClient) sendOffchain(
 		return "", fmt.Errorf("wallet is locked")
 	}
 
-	expectedServerPubkey := schnorr.SerializePubKey(a.ServerPubKey)
+	expectedSignerPubkey := schnorr.SerializePubKey(a.SignerPubKey)
 	outputs := make([]types.Receiver, 0)
 	sumOfReceivers := uint64(0)
 
@@ -1623,12 +1623,12 @@ func (a *covenantlessArkClient) sendOffchain(
 			return "", fmt.Errorf("invalid receiver address: %s", err)
 		}
 
-		rcvServerPubkey := schnorr.SerializePubKey(rcvAddr.Server)
+		rcvSignerPubkey := schnorr.SerializePubKey(rcvAddr.Signer)
 
-		if !bytes.Equal(expectedServerPubkey, rcvServerPubkey) {
+		if !bytes.Equal(expectedSignerPubkey, rcvSignerPubkey) {
 			return "", fmt.Errorf(
-				"invalid receiver address '%s': expected server %x, got %x",
-				receiver.To, expectedServerPubkey, rcvServerPubkey,
+				"invalid receiver address '%s': expected signer pubkey %x, got %x",
+				receiver.To, expectedSignerPubkey, rcvSignerPubkey,
 			)
 		}
 
@@ -1862,7 +1862,7 @@ func (a *covenantlessArkClient) populateVtxosWithTapscripts(
 	for _, v := range vtxos {
 		found := false
 		for _, offchainAddr := range offchainAddrs {
-			vtxoAddr, err := v.Address(a.ServerPubKey, a.Network)
+			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
 			if err != nil {
 				return nil, err
 			}
@@ -2203,7 +2203,7 @@ func (a *covenantlessArkClient) handleTreeSigningStarted(
 	}
 
 	sweepClosure := tree.CSVMultisigClosure{
-		MultisigClosure: tree.MultisigClosure{PubKeys: []*secp256k1.PublicKey{a.ServerPubKey}},
+		MultisigClosure: tree.MultisigClosure{PubKeys: []*secp256k1.PublicKey{a.SignerPubKey}},
 		Locktime:        a.VtxoTreeExpiry,
 	}
 
@@ -2419,7 +2419,7 @@ func (a *covenantlessArkClient) validateVtxoTree(
 	// validate the vtxo tree is well formed
 	if !utils.IsOnchainOnly(receivers) {
 		if err := tree.ValidateVtxoTxGraph(
-			vtxoGraph, commitmentPtx, a.ServerPubKey, a.VtxoTreeExpiry,
+			vtxoGraph, commitmentPtx, a.SignerPubKey, a.VtxoTreeExpiry,
 		); err != nil {
 			return err
 		}
