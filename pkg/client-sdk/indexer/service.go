@@ -72,12 +72,19 @@ type VirtualTxsResponse struct {
 	Page *PageResponse
 }
 
+type TxData struct {
+	Txid string
+	Tx   string
+}
+
 type ScriptEvent struct {
-	Txid       string
-	Scripts    []string
-	NewVtxos   []types.Vtxo
-	SpentVtxos []types.Vtxo
-	Err        error
+	Txid          string
+	Tx            string
+	Scripts       []string
+	NewVtxos      []types.Vtxo
+	SpentVtxos    []types.Vtxo
+	CheckpointTxs map[string]TxData
+	Err           error
 }
 
 type PageRequest struct {

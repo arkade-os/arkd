@@ -496,7 +496,16 @@ func (h *indexerService) listenToTxEvents() {
 			vtxoScript := toP2TR(vtxo.PubKey)
 			allSpentVtxos[vtxoScript] = append(allSpentVtxos[vtxoScript], newIndexerVtxo(vtxo))
 		}
-
+		var checkpointTxs map[string]*arkv1.IndexerTxData
+		if len(event.CheckpointTxs) > 0 {
+			checkpointTxs = make(map[string]*arkv1.IndexerTxData)
+			for k, v := range event.CheckpointTxs {
+				checkpointTxs[k] = &arkv1.IndexerTxData{
+					Txid: v.Txid,
+					Tx:   v.Tx,
+				}
+			}
+		}
 		for _, l := range h.scriptSubsHandler.listeners {
 			spendableVtxos := make([]*arkv1.IndexerVtxo, 0)
 			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
@@ -515,10 +524,12 @@ func (h *indexerService) listenToTxEvents() {
 			if len(spendableVtxos) > 0 || len(spentVtxos) > 0 {
 				go func() {
 					l.ch <- &arkv1.GetSubscriptionResponse{
-						Txid:       event.Txid,
-						Scripts:    involvedScripts,
-						NewVtxos:   spendableVtxos,
-						SpentVtxos: spentVtxos,
+						Txid:          event.Txid,
+						Scripts:       involvedScripts,
+						NewVtxos:      spendableVtxos,
+						SpentVtxos:    spentVtxos,
+						Tx:            event.Tx,
+						CheckpointTxs: checkpointTxs,
 					}
 				}()
 			}

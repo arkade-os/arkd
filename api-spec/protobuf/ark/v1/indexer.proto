@@ -355,4 +355,11 @@ message GetSubscriptionResponse {
   repeated string scripts = 2;
   repeated IndexerVtxo new_vtxos = 3;
   repeated IndexerVtxo spent_vtxos = 4;
+  string tx = 5;
+  map<string, IndexerTxData> checkpoint_txs = 6;
+}
+
+message IndexerTxData {
+  string txid = 1;
+  string tx = 2;
 }

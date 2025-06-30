@@ -793,6 +793,15 @@
             "type": "object",
             "$ref": "#/definitions/v1IndexerVtxo"
           }
+        },
+        "tx": {
+          "type": "string"
+        },
+        "checkpointTxs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1IndexerTxData"
+          }
         }
       }
     },
@@ -1003,6 +1012,17 @@
         "total": {
           "type": "integer",
           "format": "int32"
+        }
+      }
+    },
+    "v1IndexerTxData": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        },
+        "tx": {
+          "type": "string"
         }
       }
     },

@@ -555,6 +555,17 @@ func (a *restClient) GetSubscription(ctx context.Context, subscriptionId string)
 					return
 				}
 
+				var checkpointTxs map[string]indexer.TxData
+				if len(resp.Result.CheckpointTxs) > 0 {
+					checkpointTxs = make(map[string]indexer.TxData)
+					for k, v := range resp.Result.CheckpointTxs {
+						checkpointTxs[k] = indexer.TxData{
+							Txid: v.Txid,
+							Tx:   v.Tx,
+						}
+					}
+				}
+
 				eventsCh <- &indexer.ScriptEvent{
 					Txid:       resp.Result.Txid,
 					Scripts:    resp.Result.Scripts,
