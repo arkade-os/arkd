@@ -6,6 +6,9 @@ DROP VIEW IF EXISTS vtxo_vw;
 ALTER TABLE tx_request DROP COLUMN proof;
 ALTER TABLE tx_request DROP COLUMN message;
 ALTER TABLE vtxo DROP COLUMN settled_by;
+ALTER TABLE vtxo DROP COLUMN preconfirmed;
+ALTER TABLE vtxo DROP COLUMN ark_txid;
+ALTER TABLE vtxo ADD COLUMN redeem_tx TEXT;
 
 CREATE VIEW IF NOT EXISTS round_request_vw AS
 SELECT tx_request.*
