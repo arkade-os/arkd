@@ -328,21 +328,78 @@ func (x *Vtxo) GetArkTxid() string {
 	return ""
 }
 
+type TxData struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Txid string `protobuf:"bytes,1,opt,name=txid,proto3" json:"txid,omitempty"`
+	Tx   string `protobuf:"bytes,2,opt,name=tx,proto3" json:"tx,omitempty"`
+}
+
+func (x *TxData) Reset() {
+	*x = TxData{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ark_v1_types_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *TxData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TxData) ProtoMessage() {}
+
+func (x *TxData) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_types_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TxData.ProtoReflect.Descriptor instead.
+func (*TxData) Descriptor() ([]byte, []int) {
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *TxData) GetTxid() string {
+	if x != nil {
+		return x.Txid
+	}
+	return ""
+}
+
+func (x *TxData) GetTx() string {
+	if x != nil {
+		return x.Tx
+	}
+	return ""
+}
+
 type TxNotification struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
 	Txid           string  `protobuf:"bytes,1,opt,name=txid,proto3" json:"txid,omitempty"`
-	SpentVtxos     []*Vtxo `protobuf:"bytes,2,rep,name=spent_vtxos,json=spentVtxos,proto3" json:"spent_vtxos,omitempty"`
-	SpendableVtxos []*Vtxo `protobuf:"bytes,3,rep,name=spendable_vtxos,json=spendableVtxos,proto3" json:"spendable_vtxos,omitempty"`
-	Hex            string  `protobuf:"bytes,5,opt,name=hex,proto3" json:"hex,omitempty"`
+	Tx             string  `protobuf:"bytes,2,opt,name=tx,proto3" json:"tx,omitempty"`
+	SpentVtxos     []*Vtxo `protobuf:"bytes,3,rep,name=spent_vtxos,json=spentVtxos,proto3" json:"spent_vtxos,omitempty"`
+	SpendableVtxos []*Vtxo `protobuf:"bytes,4,rep,name=spendable_vtxos,json=spendableVtxos,proto3" json:"spendable_vtxos,omitempty"`
+	// This field is set only in case of offchain tx.
+	CheckpointTxs map[string]*TxData `protobuf:"bytes,5,rep,name=checkpoint_txs,json=checkpointTxs,proto3" json:"checkpoint_txs,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"` // key: outpoint, value: checkpoint txid
 }
 
 func (x *TxNotification) Reset() {
 	*x = TxNotification{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[4]
+		mi := &file_ark_v1_types_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -355,7 +412,7 @@ func (x *TxNotification) String() string {
 func (*TxNotification) ProtoMessage() {}
 
 func (x *TxNotification) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[4]
+	mi := &file_ark_v1_types_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -368,12 +425,19 @@ func (x *TxNotification) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxNotification.ProtoReflect.Descriptor instead.
 func (*TxNotification) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{4}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TxNotification) GetTxid() string {
 	if x != nil {
 		return x.Txid
+	}
+	return ""
+}
+
+func (x *TxNotification) GetTx() string {
+	if x != nil {
+		return x.Tx
 	}
 	return ""
 }
@@ -392,11 +456,11 @@ func (x *TxNotification) GetSpendableVtxos() []*Vtxo {
 	return nil
 }
 
-func (x *TxNotification) GetHex() string {
+func (x *TxNotification) GetCheckpointTxs() map[string]*TxData {
 	if x != nil {
-		return x.Hex
+		return x.CheckpointTxs
 	}
-	return ""
+	return nil
 }
 
 type Tapscripts struct {
@@ -410,7 +474,7 @@ type Tapscripts struct {
 func (x *Tapscripts) Reset() {
 	*x = Tapscripts{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[5]
+		mi := &file_ark_v1_types_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -423,7 +487,7 @@ func (x *Tapscripts) String() string {
 func (*Tapscripts) ProtoMessage() {}
 
 func (x *Tapscripts) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[5]
+	mi := &file_ark_v1_types_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +500,7 @@ func (x *Tapscripts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Tapscripts.ProtoReflect.Descriptor instead.
 func (*Tapscripts) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{5}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Tapscripts) GetScripts() []string {
@@ -458,7 +522,7 @@ type Bip322Signature struct {
 func (x *Bip322Signature) Reset() {
 	*x = Bip322Signature{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[6]
+		mi := &file_ark_v1_types_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -471,7 +535,7 @@ func (x *Bip322Signature) String() string {
 func (*Bip322Signature) ProtoMessage() {}
 
 func (x *Bip322Signature) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[6]
+	mi := &file_ark_v1_types_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -484,7 +548,7 @@ func (x *Bip322Signature) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Bip322Signature.ProtoReflect.Descriptor instead.
 func (*Bip322Signature) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{6}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Bip322Signature) GetSignature() string {
@@ -515,7 +579,7 @@ type MarketHour struct {
 func (x *MarketHour) Reset() {
 	*x = MarketHour{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[7]
+		mi := &file_ark_v1_types_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -528,7 +592,7 @@ func (x *MarketHour) String() string {
 func (*MarketHour) ProtoMessage() {}
 
 func (x *MarketHour) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[7]
+	mi := &file_ark_v1_types_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -541,7 +605,7 @@ func (x *MarketHour) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarketHour.ProtoReflect.Descriptor instead.
 func (*MarketHour) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{7}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MarketHour) GetNextStartTime() int64 {
@@ -585,7 +649,7 @@ type BatchStartedEvent struct {
 func (x *BatchStartedEvent) Reset() {
 	*x = BatchStartedEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[8]
+		mi := &file_ark_v1_types_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -598,7 +662,7 @@ func (x *BatchStartedEvent) String() string {
 func (*BatchStartedEvent) ProtoMessage() {}
 
 func (x *BatchStartedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[8]
+	mi := &file_ark_v1_types_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -611,7 +675,7 @@ func (x *BatchStartedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchStartedEvent.ProtoReflect.Descriptor instead.
 func (*BatchStartedEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{8}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *BatchStartedEvent) GetId() string {
@@ -647,7 +711,7 @@ type BatchFinalizationEvent struct {
 func (x *BatchFinalizationEvent) Reset() {
 	*x = BatchFinalizationEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[9]
+		mi := &file_ark_v1_types_proto_msgTypes[10]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -660,7 +724,7 @@ func (x *BatchFinalizationEvent) String() string {
 func (*BatchFinalizationEvent) ProtoMessage() {}
 
 func (x *BatchFinalizationEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[9]
+	mi := &file_ark_v1_types_proto_msgTypes[10]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -673,7 +737,7 @@ func (x *BatchFinalizationEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchFinalizationEvent.ProtoReflect.Descriptor instead.
 func (*BatchFinalizationEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{9}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *BatchFinalizationEvent) GetId() string {
@@ -702,7 +766,7 @@ type BatchFinalizedEvent struct {
 func (x *BatchFinalizedEvent) Reset() {
 	*x = BatchFinalizedEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[10]
+		mi := &file_ark_v1_types_proto_msgTypes[11]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -715,7 +779,7 @@ func (x *BatchFinalizedEvent) String() string {
 func (*BatchFinalizedEvent) ProtoMessage() {}
 
 func (x *BatchFinalizedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[10]
+	mi := &file_ark_v1_types_proto_msgTypes[11]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -728,7 +792,7 @@ func (x *BatchFinalizedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchFinalizedEvent.ProtoReflect.Descriptor instead.
 func (*BatchFinalizedEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{10}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *BatchFinalizedEvent) GetId() string {
@@ -757,7 +821,7 @@ type BatchFailed struct {
 func (x *BatchFailed) Reset() {
 	*x = BatchFailed{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[11]
+		mi := &file_ark_v1_types_proto_msgTypes[12]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -770,7 +834,7 @@ func (x *BatchFailed) String() string {
 func (*BatchFailed) ProtoMessage() {}
 
 func (x *BatchFailed) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[11]
+	mi := &file_ark_v1_types_proto_msgTypes[12]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -783,7 +847,7 @@ func (x *BatchFailed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchFailed.ProtoReflect.Descriptor instead.
 func (*BatchFailed) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{11}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *BatchFailed) GetId() string {
@@ -813,7 +877,7 @@ type TreeSigningStartedEvent struct {
 func (x *TreeSigningStartedEvent) Reset() {
 	*x = TreeSigningStartedEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[12]
+		mi := &file_ark_v1_types_proto_msgTypes[13]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -826,7 +890,7 @@ func (x *TreeSigningStartedEvent) String() string {
 func (*TreeSigningStartedEvent) ProtoMessage() {}
 
 func (x *TreeSigningStartedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[12]
+	mi := &file_ark_v1_types_proto_msgTypes[13]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -839,7 +903,7 @@ func (x *TreeSigningStartedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeSigningStartedEvent.ProtoReflect.Descriptor instead.
 func (*TreeSigningStartedEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{12}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TreeSigningStartedEvent) GetId() string {
@@ -875,7 +939,7 @@ type TreeNoncesAggregatedEvent struct {
 func (x *TreeNoncesAggregatedEvent) Reset() {
 	*x = TreeNoncesAggregatedEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[13]
+		mi := &file_ark_v1_types_proto_msgTypes[14]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -888,7 +952,7 @@ func (x *TreeNoncesAggregatedEvent) String() string {
 func (*TreeNoncesAggregatedEvent) ProtoMessage() {}
 
 func (x *TreeNoncesAggregatedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[13]
+	mi := &file_ark_v1_types_proto_msgTypes[14]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -901,7 +965,7 @@ func (x *TreeNoncesAggregatedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeNoncesAggregatedEvent.ProtoReflect.Descriptor instead.
 func (*TreeNoncesAggregatedEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{13}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TreeNoncesAggregatedEvent) GetId() string {
@@ -934,7 +998,7 @@ type TreeTxEvent struct {
 func (x *TreeTxEvent) Reset() {
 	*x = TreeTxEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[14]
+		mi := &file_ark_v1_types_proto_msgTypes[15]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -947,7 +1011,7 @@ func (x *TreeTxEvent) String() string {
 func (*TreeTxEvent) ProtoMessage() {}
 
 func (x *TreeTxEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[14]
+	mi := &file_ark_v1_types_proto_msgTypes[15]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -960,7 +1024,7 @@ func (x *TreeTxEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeTxEvent.ProtoReflect.Descriptor instead.
 func (*TreeTxEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{14}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TreeTxEvent) GetId() string {
@@ -1020,7 +1084,7 @@ type TreeSignatureEvent struct {
 func (x *TreeSignatureEvent) Reset() {
 	*x = TreeSignatureEvent{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ark_v1_types_proto_msgTypes[15]
+		mi := &file_ark_v1_types_proto_msgTypes[16]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1033,7 +1097,7 @@ func (x *TreeSignatureEvent) String() string {
 func (*TreeSignatureEvent) ProtoMessage() {}
 
 func (x *TreeSignatureEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[15]
+	mi := &file_ark_v1_types_proto_msgTypes[16]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1046,7 +1110,7 @@ func (x *TreeSignatureEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeSignatureEvent.ProtoReflect.Descriptor instead.
 func (*TreeSignatureEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{15}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TreeSignatureEvent) GetId() string {
@@ -1129,16 +1193,29 @@ var file_ark_v1_types_proto_rawDesc = []byte{
 	0x5f, 0x62, 0x79, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x73, 0x65, 0x74, 0x74, 0x6c,
 	0x65, 0x64, 0x42, 0x79, 0x12, 0x19, 0x0a, 0x08, 0x61, 0x72, 0x6b, 0x5f, 0x74, 0x78, 0x69, 0x64,
 	0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x61, 0x72, 0x6b, 0x54, 0x78, 0x69, 0x64, 0x22,
-	0x9c, 0x01, 0x0a, 0x0e, 0x54, 0x78, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69,
-	0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x74, 0x78, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x04, 0x74, 0x78, 0x69, 0x64, 0x12, 0x2d, 0x0a, 0x0b, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x5f,
-	0x76, 0x74, 0x78, 0x6f, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x61, 0x72,
-	0x6b, 0x2e, 0x76, 0x31, 0x2e, 0x56, 0x74, 0x78, 0x6f, 0x52, 0x0a, 0x73, 0x70, 0x65, 0x6e, 0x74,
-	0x56, 0x74, 0x78, 0x6f, 0x73, 0x12, 0x35, 0x0a, 0x0f, 0x73, 0x70, 0x65, 0x6e, 0x64, 0x61, 0x62,
-	0x6c, 0x65, 0x5f, 0x76, 0x74, 0x78, 0x6f, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0c,
-	0x2e, 0x61, 0x72, 0x6b, 0x2e, 0x76, 0x31, 0x2e, 0x56, 0x74, 0x78, 0x6f, 0x52, 0x0e, 0x73, 0x70,
-	0x65, 0x6e, 0x64, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x74, 0x78, 0x6f, 0x73, 0x12, 0x10, 0x0a, 0x03,
-	0x68, 0x65, 0x78, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x68, 0x65, 0x78, 0x22, 0x26,
+	0x2c, 0x0a, 0x06, 0x54, 0x78, 0x44, 0x61, 0x74, 0x61, 0x12, 0x12, 0x0a, 0x04, 0x74, 0x78, 0x69,
+	0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x74, 0x78, 0x69, 0x64, 0x12, 0x0e, 0x0a,
+	0x02, 0x74, 0x78, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x74, 0x78, 0x22, 0xbe, 0x02,
+	0x0a, 0x0e, 0x54, 0x78, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+	0x12, 0x12, 0x0a, 0x04, 0x74, 0x78, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04,
+	0x74, 0x78, 0x69, 0x64, 0x12, 0x0e, 0x0a, 0x02, 0x74, 0x78, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x02, 0x74, 0x78, 0x12, 0x2d, 0x0a, 0x0b, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x5f, 0x76, 0x74,
+	0x78, 0x6f, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x61, 0x72, 0x6b, 0x2e,
+	0x76, 0x31, 0x2e, 0x56, 0x74, 0x78, 0x6f, 0x52, 0x0a, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x56, 0x74,
+	0x78, 0x6f, 0x73, 0x12, 0x35, 0x0a, 0x0f, 0x73, 0x70, 0x65, 0x6e, 0x64, 0x61, 0x62, 0x6c, 0x65,
+	0x5f, 0x76, 0x74, 0x78, 0x6f, 0x73, 0x18, 0x04, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x61,
+	0x72, 0x6b, 0x2e, 0x76, 0x31, 0x2e, 0x56, 0x74, 0x78, 0x6f, 0x52, 0x0e, 0x73, 0x70, 0x65, 0x6e,
+	0x64, 0x61, 0x62, 0x6c, 0x65, 0x56, 0x74, 0x78, 0x6f, 0x73, 0x12, 0x50, 0x0a, 0x0e, 0x63, 0x68,
+	0x65, 0x63, 0x6b, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x5f, 0x74, 0x78, 0x73, 0x18, 0x05, 0x20, 0x03,
+	0x28, 0x0b, 0x32, 0x29, 0x2e, 0x61, 0x72, 0x6b, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x78, 0x4e, 0x6f,
+	0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x43, 0x68, 0x65, 0x63, 0x6b,
+	0x70, 0x6f, 0x69, 0x6e, 0x74, 0x54, 0x78, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x0d, 0x63,
+	0x68, 0x65, 0x63, 0x6b, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x54, 0x78, 0x73, 0x1a, 0x50, 0x0a, 0x12,
+	0x43, 0x68, 0x65, 0x63, 0x6b, 0x70, 0x6f, 0x69, 0x6e, 0x74, 0x54, 0x78, 0x73, 0x45, 0x6e, 0x74,
+	0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x03, 0x6b, 0x65, 0x79, 0x12, 0x24, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x0e, 0x2e, 0x61, 0x72, 0x6b, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x78, 0x44,
+	0x61, 0x74, 0x61, 0x52, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0x26,
 	0x0a, 0x0a, 0x54, 0x61, 0x70, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x73, 0x12, 0x18, 0x0a, 0x07,
 	0x73, 0x63, 0x72, 0x69, 0x70, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x07, 0x73,
 	0x63, 0x72, 0x69, 0x70, 0x74, 0x73, 0x22, 0x49, 0x0a, 0x0f, 0x42, 0x69, 0x70, 0x33, 0x32, 0x32,
@@ -1239,38 +1316,42 @@ func file_ark_v1_types_proto_rawDescGZIP() []byte {
 	return file_ark_v1_types_proto_rawDescData
 }
 
-var file_ark_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_ark_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_ark_v1_types_proto_goTypes = []interface{}{
 	(*Outpoint)(nil),                  // 0: ark.v1.Outpoint
 	(*Input)(nil),                     // 1: ark.v1.Input
 	(*Output)(nil),                    // 2: ark.v1.Output
 	(*Vtxo)(nil),                      // 3: ark.v1.Vtxo
-	(*TxNotification)(nil),            // 4: ark.v1.TxNotification
-	(*Tapscripts)(nil),                // 5: ark.v1.Tapscripts
-	(*Bip322Signature)(nil),           // 6: ark.v1.Bip322Signature
-	(*MarketHour)(nil),                // 7: ark.v1.MarketHour
-	(*BatchStartedEvent)(nil),         // 8: ark.v1.BatchStartedEvent
-	(*BatchFinalizationEvent)(nil),    // 9: ark.v1.BatchFinalizationEvent
-	(*BatchFinalizedEvent)(nil),       // 10: ark.v1.BatchFinalizedEvent
-	(*BatchFailed)(nil),               // 11: ark.v1.BatchFailed
-	(*TreeSigningStartedEvent)(nil),   // 12: ark.v1.TreeSigningStartedEvent
-	(*TreeNoncesAggregatedEvent)(nil), // 13: ark.v1.TreeNoncesAggregatedEvent
-	(*TreeTxEvent)(nil),               // 14: ark.v1.TreeTxEvent
-	(*TreeSignatureEvent)(nil),        // 15: ark.v1.TreeSignatureEvent
-	nil,                               // 16: ark.v1.TreeTxEvent.ChildrenEntry
+	(*TxData)(nil),                    // 4: ark.v1.TxData
+	(*TxNotification)(nil),            // 5: ark.v1.TxNotification
+	(*Tapscripts)(nil),                // 6: ark.v1.Tapscripts
+	(*Bip322Signature)(nil),           // 7: ark.v1.Bip322Signature
+	(*MarketHour)(nil),                // 8: ark.v1.MarketHour
+	(*BatchStartedEvent)(nil),         // 9: ark.v1.BatchStartedEvent
+	(*BatchFinalizationEvent)(nil),    // 10: ark.v1.BatchFinalizationEvent
+	(*BatchFinalizedEvent)(nil),       // 11: ark.v1.BatchFinalizedEvent
+	(*BatchFailed)(nil),               // 12: ark.v1.BatchFailed
+	(*TreeSigningStartedEvent)(nil),   // 13: ark.v1.TreeSigningStartedEvent
+	(*TreeNoncesAggregatedEvent)(nil), // 14: ark.v1.TreeNoncesAggregatedEvent
+	(*TreeTxEvent)(nil),               // 15: ark.v1.TreeTxEvent
+	(*TreeSignatureEvent)(nil),        // 16: ark.v1.TreeSignatureEvent
+	nil,                               // 17: ark.v1.TxNotification.CheckpointTxsEntry
+	nil,                               // 18: ark.v1.TreeTxEvent.ChildrenEntry
 }
 var file_ark_v1_types_proto_depIdxs = []int32{
 	0,  // 0: ark.v1.Input.outpoint:type_name -> ark.v1.Outpoint
-	5,  // 1: ark.v1.Input.taproot_tree:type_name -> ark.v1.Tapscripts
+	6,  // 1: ark.v1.Input.taproot_tree:type_name -> ark.v1.Tapscripts
 	0,  // 2: ark.v1.Vtxo.outpoint:type_name -> ark.v1.Outpoint
 	3,  // 3: ark.v1.TxNotification.spent_vtxos:type_name -> ark.v1.Vtxo
 	3,  // 4: ark.v1.TxNotification.spendable_vtxos:type_name -> ark.v1.Vtxo
-	16, // 5: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
-	6,  // [6:6] is the sub-list for method output_type
-	6,  // [6:6] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	17, // 5: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
+	18, // 6: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
+	4,  // 7: ark.v1.TxNotification.CheckpointTxsEntry.value:type_name -> ark.v1.TxData
+	8,  // [8:8] is the sub-list for method output_type
+	8,  // [8:8] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_types_proto_init() }
@@ -1328,7 +1409,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TxNotification); i {
+			switch v := v.(*TxData); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1340,7 +1421,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Tapscripts); i {
+			switch v := v.(*TxNotification); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1352,7 +1433,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*Bip322Signature); i {
+			switch v := v.(*Tapscripts); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1364,7 +1445,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*MarketHour); i {
+			switch v := v.(*Bip322Signature); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1376,7 +1457,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*BatchStartedEvent); i {
+			switch v := v.(*MarketHour); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1388,7 +1469,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*BatchFinalizationEvent); i {
+			switch v := v.(*BatchStartedEvent); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1400,7 +1481,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*BatchFinalizedEvent); i {
+			switch v := v.(*BatchFinalizationEvent); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1412,7 +1493,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*BatchFailed); i {
+			switch v := v.(*BatchFinalizedEvent); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1424,7 +1505,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TreeSigningStartedEvent); i {
+			switch v := v.(*BatchFailed); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1436,7 +1517,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TreeNoncesAggregatedEvent); i {
+			switch v := v.(*TreeSigningStartedEvent); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1448,7 +1529,7 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TreeTxEvent); i {
+			switch v := v.(*TreeNoncesAggregatedEvent); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1460,6 +1541,18 @@ func file_ark_v1_types_proto_init() {
 			}
 		}
 		file_ark_v1_types_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TreeTxEvent); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ark_v1_types_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*TreeSignatureEvent); i {
 			case 0:
 				return &v.state
@@ -1478,7 +1571,7 @@ func file_ark_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_ark_v1_types_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

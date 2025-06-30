@@ -176,20 +176,18 @@ func NewService(
 
 			go func() {
 				svc.transactionEventsCh <- TransactionEvent{
+					TxData:         TxData{Tx: round.CommitmentTx, Txid: round.Txid},
 					Type:           CommitmentTxType,
-					Txid:           round.Txid,
 					SpentVtxos:     spentVtxos,
 					SpendableVtxos: newVtxos,
-					TxHex:          round.CommitmentTx,
 				}
 			}()
 			go func() {
 				svc.indexerTxEventsCh <- TransactionEvent{
+					TxData:         TxData{Tx: round.CommitmentTx, Txid: round.Txid},
 					Type:           CommitmentTxType,
-					Txid:           round.Txid,
 					SpentVtxos:     spentVtxos,
 					SpendableVtxos: newVtxos,
-					TxHex:          round.CommitmentTx,
 				}
 			}()
 
@@ -236,6 +234,15 @@ func NewService(
 				return
 			}
 
+			checkpointTxsByOutpoint := make(map[string]TxData)
+			for txid, tx := range offchainTx.CheckpointTxs {
+				// nolint
+				ptx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+				checkpointTxsByOutpoint[ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String()] = TxData{
+					Tx: tx, Txid: txid,
+				}
+			}
+
 			go func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -244,11 +251,11 @@ func NewService(
 				}()
 
 				svc.transactionEventsCh <- TransactionEvent{
+					TxData:         TxData{Txid: txid, Tx: offchainTx.VirtualTx},
 					Type:           ArkTxType,
-					Txid:           txid,
 					SpentVtxos:     spentVtxos,
 					SpendableVtxos: newVtxos,
-					TxHex:          offchainTx.VirtualTx,
+					CheckpointTxs:  checkpointTxsByOutpoint,
 				}
 			}()
 			go func() {
@@ -259,11 +266,11 @@ func NewService(
 				}()
 
 				svc.indexerTxEventsCh <- TransactionEvent{
+					TxData:         TxData{Txid: txid, Tx: offchainTx.VirtualTx},
 					Type:           ArkTxType,
-					Txid:           txid,
 					SpentVtxos:     spentVtxos,
 					SpendableVtxos: newVtxos,
-					TxHex:          offchainTx.VirtualTx,
+					CheckpointTxs:  checkpointTxsByOutpoint,
 				}
 			}()
 

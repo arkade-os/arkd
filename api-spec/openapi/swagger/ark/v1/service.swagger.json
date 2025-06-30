@@ -831,10 +831,24 @@
         }
       }
     },
+    "v1TxData": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        },
+        "tx": {
+          "type": "string"
+        }
+      }
+    },
     "v1TxNotification": {
       "type": "object",
       "properties": {
         "txid": {
+          "type": "string"
+        },
+        "tx": {
           "type": "string"
         },
         "spentVtxos": {
@@ -851,8 +865,12 @@
             "$ref": "#/definitions/v1Vtxo"
           }
         },
-        "hex": {
-          "type": "string"
+        "checkpointTxs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1TxData"
+          },
+          "description": "This field is set only in case of offchain tx.\n\nkey: outpoint, value: checkpoint txid"
         }
       }
     },

@@ -35,11 +35,18 @@ message Vtxo {
   string ark_txid = 13;
 }
 
+message TxData {
+  string txid = 1;
+  string tx = 2;
+}
+
 message TxNotification {
   string txid = 1;
-  repeated Vtxo spent_vtxos = 2;
-  repeated Vtxo spendable_vtxos = 3;
-  string hex = 5;
+  string tx = 2;
+  repeated Vtxo spent_vtxos = 3;
+  repeated Vtxo spendable_vtxos = 4;
+  // This field is set only in case of offchain tx.
+  map<string, TxData> checkpoint_txs = 5; // key: outpoint, value: checkpoint txid
 }
 
 message Tapscripts {

@@ -88,12 +88,17 @@ const (
 
 type TransactionEventType string
 
+type TxData struct {
+	Tx   string
+	Txid string
+}
+
 type TransactionEvent struct {
+	TxData
 	Type           TransactionEventType
 	SpentVtxos     []domain.Vtxo
 	SpendableVtxos []domain.Vtxo
-	Txid           string
-	TxHex          string
+	CheckpointTxs  map[string]TxData
 }
 
 type TxRequestInfo struct {
