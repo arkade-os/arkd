@@ -1087,6 +1087,9 @@
         },
         "settledBy": {
           "type": "string"
+        },
+        "arkTxid": {
+          "type": "string"
         }
       }
     },
