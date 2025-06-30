@@ -50,57 +50,20 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 }
 
 func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo domain.Vtxo) error {
-	// retrieve the first vtxo created by the spending tx
-	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{
-		{Txid: vtxo.SpentBy, VOut: 0},
-	})
-	if err != nil || len(vtxos) <= 0 {
-		return fmt.Errorf("failed to retrieve round: %s", err)
+	// retrieve the checkpoint tx that spent the vtxo
+	txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.SpentBy})
+	if err != nil || len(txs) <= 0 {
+		return fmt.Errorf("failed to retrieve checkpoint tx: %s", err)
 	}
 
-	storedVtxo := vtxos[0]
-	if storedVtxo.Redeemed {
-		// virtual tx is already onchain
-		// no need to broadcast the checkpoint tx
-		return nil
-	}
-
-	log.Debugf("vtxo %s:%d has been spent by out of round transaction", vtxo.Txid, vtxo.VOut)
-
-	offchainTxid := storedVtxo.Txid
-
-	offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, offchainTxid)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve offchain tx: %s", err)
-	}
-
-	checkpointPsbt := ""
-
-	for _, b64 := range offchainTx.CheckpointTxs {
-		ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
-		if err != nil {
-			return fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
-		}
-
-		vtxoInput := ptx.UnsignedTx.TxIn[0]
-		if vtxoInput.PreviousOutPoint.Hash.String() == vtxo.Txid &&
-			vtxoInput.PreviousOutPoint.Index == vtxo.VOut {
-			checkpointPsbt = b64
-			break
-		}
-	}
-
-	if len(checkpointPsbt) == 0 {
-		return fmt.Errorf("checkpoint tx not found for vtxo %s", vtxo.Outpoint.String())
-	}
-
-	parent, err := s.builder.FinalizeAndExtract(checkpointPsbt)
+	checkpointPsbt := txs[0]
+	ptx, err := s.builder.FinalizeAndExtract(checkpointPsbt)
 	if err != nil {
 		return fmt.Errorf("failed to finalize checkpoint tx: %s", err)
 	}
 
 	var checkpointTx wire.MsgTx
-	if err := checkpointTx.Deserialize(hex.NewDecoder(strings.NewReader(parent))); err != nil {
+	if err := checkpointTx.Deserialize(hex.NewDecoder(strings.NewReader(ptx))); err != nil {
 		return fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
 	}
 
@@ -109,7 +72,7 @@ func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo do
 		return fmt.Errorf("failed to bump checkpoint tx: %s", err)
 	}
 
-	if _, err := s.wallet.BroadcastTransaction(ctx, parent, child); err != nil {
+	if _, err := s.wallet.BroadcastTransaction(ctx, ptx, child); err != nil {
 		return fmt.Errorf("failed to broadcast checkpoint package: %s", err)
 	}
 
