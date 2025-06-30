@@ -55,6 +55,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []types.Vtxo) (int,
 					Spent:           vtxo.Spent,
 					SpentBy:         sql.NullString{String: vtxo.SpentBy, Valid: true},
 					SettledBy:       sql.NullString{String: vtxo.SettledBy, Valid: true},
+					ArkTxid:         sql.NullString{String: vtxo.ArkTxid, Valid: true},
 				},
 			); err != nil {
 				if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -79,8 +80,12 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []types.Vtxo) (int,
 }
 
 func (v *vtxoRepository) SpendVtxos(
-	ctx context.Context, outpoints []types.Outpoint, spentByMap map[string]string, settledBy string,
+	ctx context.Context, spentVtxosMap map[types.Outpoint]string, arkTxid string,
 ) (int, error) {
+	outpoints := make([]types.Outpoint, 0, len(spentVtxosMap))
+	for outpoint := range spentVtxosMap {
+		outpoints = append(outpoints, outpoint)
+	}
 	vtxos, err := v.GetVtxos(ctx, outpoints)
 	if err != nil {
 		return -1, err
@@ -93,7 +98,51 @@ func (v *vtxoRepository) SpendVtxos(
 				continue
 			}
 			vtxo.Spent = true
-			vtxo.SpentBy = spentByMap[vtxo.Outpoint.String()]
+			vtxo.SpentBy = spentVtxosMap[vtxo.Outpoint]
+			vtxo.ArkTxid = arkTxid
+			if err := querierWithTx.UpdateVtxo(ctx, queries.UpdateVtxoParams{
+				SpentBy:   sql.NullString{String: vtxo.SpentBy, Valid: true},
+				SettledBy: sql.NullString{String: vtxo.SettledBy, Valid: true},
+				Txid:      vtxo.Txid,
+				Vout:      int64(vtxo.VOut),
+			}); err != nil {
+				return err
+			}
+			spentVtxos = append(spentVtxos, vtxo)
+		}
+		return nil
+	}
+	if err := execTx(ctx, v.db, txBody); err != nil {
+		return -1, err
+	}
+
+	if len(spentVtxos) > 0 {
+		go v.sendEvent(types.VtxoEvent{Type: types.VtxosSpent, Vtxos: spentVtxos})
+	}
+
+	return len(spentVtxos), nil
+}
+
+func (v *vtxoRepository) SettleVtxos(
+	ctx context.Context, spentVtxosMap map[types.Outpoint]string, settledBy string,
+) (int, error) {
+	outpoints := make([]types.Outpoint, 0, len(spentVtxosMap))
+	for outpoint := range spentVtxosMap {
+		outpoints = append(outpoints, outpoint)
+	}
+	vtxos, err := v.GetVtxos(ctx, outpoints)
+	if err != nil {
+		return -1, err
+	}
+
+	spentVtxos := make([]types.Vtxo, 0, len(vtxos))
+	txBody := func(querierWithTx *queries.Queries) error {
+		for _, vtxo := range vtxos {
+			if vtxo.Spent {
+				continue
+			}
+			vtxo.Spent = true
+			vtxo.SpentBy = spentVtxosMap[vtxo.Outpoint]
 			vtxo.SettledBy = settledBy
 			if err := querierWithTx.UpdateVtxo(ctx, queries.UpdateVtxoParams{
 				SpentBy:   sql.NullString{String: vtxo.SpentBy, Valid: true},
@@ -125,6 +174,7 @@ func (v *vtxoRepository) UpdateVtxos(ctx context.Context, vtxos []types.Vtxo) (i
 			if err := querierWithTx.UpdateVtxo(ctx, queries.UpdateVtxoParams{
 				SpentBy:   sql.NullString{String: vtxo.SpentBy, Valid: true},
 				SettledBy: sql.NullString{String: vtxo.SettledBy, Valid: true},
+				ArkTxid:   sql.NullString{String: vtxo.ArkTxid, Valid: true},
 				Txid:      vtxo.Txid,
 				Vout:      int64(vtxo.VOut),
 			}); err != nil {

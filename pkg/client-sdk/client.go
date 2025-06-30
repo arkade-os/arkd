@@ -2997,7 +2997,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	myPubkeys map[string]struct{}, commitmentTx *client.TxNotification,
 ) error {
 	vtxosToAdd := make([]types.Vtxo, 0)
-	vtxosToSpend := make([]types.Outpoint, 0)
+	vtxosToSpend := make(map[types.Outpoint]string, 0)
 	txsToAdd := make([]types.Transaction, 0)
 	txsToSettle := make([]string, 0)
 
@@ -3009,13 +3009,13 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 
 	// Check if any of the spent vtxos is ours.
 	spentVtxos := make([]types.Outpoint, 0, len(commitmentTx.SpentVtxos))
-	indexedSpentVtxos := make(map[string]types.Vtxo)
+	indexedSpentVtxos := make(map[types.Outpoint]types.Vtxo)
 	for _, vtxo := range commitmentTx.SpentVtxos {
 		spentVtxos = append(spentVtxos, types.Outpoint{
 			Txid: vtxo.Txid,
 			VOut: vtxo.VOut,
 		})
-		indexedSpentVtxos[vtxo.Outpoint.String()] = vtxo
+		indexedSpentVtxos[vtxo.Outpoint] = vtxo
 	}
 	myVtxos, err := a.store.VtxoStore().GetVtxos(ctx, spentVtxos)
 	if err != nil {
@@ -3023,7 +3023,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	}
 
 	rawTx := &wire.MsgTx{}
-	reader := hex.NewDecoder(strings.NewReader(commitmentTx.TxHex))
+	reader := hex.NewDecoder(strings.NewReader(commitmentTx.Tx))
 	if err := rawTx.Deserialize(reader); err != nil {
 		return err
 	}
@@ -3049,10 +3049,8 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 
 	// Add also our preconfirmed txs the list of those to settle, and also add the related
 	// vtxos to the list of those to mark as spent.
-	spentByMap := make(map[string]string)
 	for _, vtxo := range myVtxos {
-		vtxosToSpend = append(vtxosToSpend, vtxo.Outpoint)
-		spentByMap[vtxo.Outpoint.String()] = indexedSpentVtxos[vtxo.Outpoint.String()].SpentBy
+		vtxosToSpend[vtxo.Outpoint] = indexedSpentVtxos[vtxo.Outpoint].SpentBy
 		if !vtxo.Preconfirmed {
 			continue
 		}
@@ -3074,7 +3072,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 				Type:      types.TxReceived,
 				Settled:   true,
 				CreatedAt: time.Now(),
-				Hex:       commitmentTx.TxHex,
+				Hex:       commitmentTx.Tx,
 			})
 		} else {
 			vtxosToAddAmount := uint64(0)
@@ -3094,7 +3092,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 					Type:      types.TxSent,
 					Settled:   true,
 					CreatedAt: time.Now(),
-					Hex:       commitmentTx.TxHex,
+					Hex:       commitmentTx.Tx,
 				})
 			}
 		}
@@ -3117,7 +3115,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 					Type:      types.TxSent,
 					Settled:   true,
 					CreatedAt: time.Now(),
-					Hex:       commitmentTx.TxHex,
+					Hex:       commitmentTx.Tx,
 				})
 			}
 
@@ -3149,7 +3147,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	}
 
 	if len(vtxosToSpend) > 0 {
-		count, err := a.store.VtxoStore().SpendVtxos(ctx, vtxosToSpend, spentByMap, commitmentTx.Txid)
+		count, err := a.store.VtxoStore().SettleVtxos(ctx, vtxosToSpend, commitmentTx.Txid)
 		if err != nil {
 			return err
 		}
@@ -3163,7 +3161,7 @@ func (a *covenantlessArkClient) handleArkTx(
 	ctx context.Context, myScripts map[string]struct{}, arkTx *client.TxNotification,
 ) error {
 	vtxosToAdd := make([]types.Vtxo, 0)
-	vtxosToSpend := make([]types.Outpoint, 0)
+	vtxosToSpend := make(map[types.Outpoint]string)
 	txsToAdd := make([]types.Transaction, 0)
 
 	for _, vtxo := range arkTx.SpendableVtxos {
@@ -3184,11 +3182,9 @@ func (a *covenantlessArkClient) handleArkTx(
 	if err != nil {
 		return err
 	}
-	spentByMap := make(map[string]string)
 	txsToSettle := make([]string, 0, len(vtxosToSpend))
 	for _, vtxo := range myVtxos {
-		vtxosToSpend = append(vtxosToSpend, vtxo.Outpoint)
-		spentByMap[vtxo.Outpoint.String()] = arkTx.Txid
+		vtxosToSpend[vtxo.Outpoint] = arkTx.CheckpointTxs[vtxo.Outpoint].Txid
 		txsToSettle = append(txsToSettle, vtxo.Txid)
 	}
 
@@ -3206,7 +3202,7 @@ func (a *covenantlessArkClient) handleArkTx(
 				Amount:    amount,
 				Type:      types.TxReceived,
 				CreatedAt: time.Now(),
-				Hex:       arkTx.TxHex,
+				Hex:       arkTx.Tx,
 			})
 		}
 	} else {
@@ -3247,7 +3243,7 @@ func (a *covenantlessArkClient) handleArkTx(
 	}
 
 	if len(vtxosToSpend) > 0 {
-		count, err := a.store.VtxoStore().SpendVtxos(ctx, vtxosToSpend, spentByMap, "")
+		count, err := a.store.VtxoStore().SpendVtxos(ctx, vtxosToSpend, arkTx.Txid)
 		if err != nil {
 			return err
 		}

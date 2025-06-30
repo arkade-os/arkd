@@ -66,13 +66,11 @@ var (
 			VOut: 0,
 		},
 	}
-	testSpendVtxoKeys          = testVtxoKeys[:1]
-	testSpendAndSettleVtxoKeys = testVtxoKeys[1:]
-	spentByMap                 = map[string]string{
-		testSpendVtxoKeys[0].String(): "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	testSpendVtxoKeys = map[types.Outpoint]string{
+		testVtxoKeys[0]: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	}
-	spentByMap2 = map[string]string{
-		testSpendAndSettleVtxoKeys[0].String(): "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+	testSettleVtxoKeys = map[types.Outpoint]string{
+		testVtxoKeys[1]: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	}
 
 	testTxs = []types.Transaction{
@@ -112,6 +110,7 @@ var (
 	testConfirmedTxids = []string{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
 	testSettledTxids   = []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
 	settledBy          = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	arkTxid            = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 )
 
 func TestService(t *testing.T) {
@@ -260,11 +259,11 @@ func testVtxoStore(t *testing.T, storeSvc types.VtxoStore, storeType string) {
 	})
 
 	t.Run("spend vtxos", func(t *testing.T) {
-		count, err := storeSvc.SpendVtxos(ctx, testSpendVtxoKeys, spentByMap, "")
+		count, err := storeSvc.SpendVtxos(ctx, testSpendVtxoKeys, arkTxid)
 		require.NoError(t, err)
 		require.Equal(t, len(testSpendVtxoKeys), count)
 
-		count, err = storeSvc.SpendVtxos(ctx, testSpendVtxoKeys, spentByMap, "")
+		count, err = storeSvc.SpendVtxos(ctx, testSpendVtxoKeys, arkTxid)
 		require.NoError(t, err)
 		require.Zero(t, count)
 
@@ -274,18 +273,17 @@ func testVtxoStore(t *testing.T, storeSvc types.VtxoStore, storeType string) {
 		require.Equal(t, 1, len(spendable))
 		for _, v := range spent {
 			require.True(t, v.Spent)
-			require.Equal(t, spentByMap[v.Outpoint.String()], v.SpentBy)
-			require.Empty(t, v.SettledBy)
+			require.Equal(t, testSpendVtxoKeys[v.Outpoint], v.SpentBy)
+			require.Equal(t, arkTxid, v.ArkTxid)
 		}
 
-		// Make sure spent and settle also works
-		count, err = storeSvc.SpendVtxos(ctx, testSpendAndSettleVtxoKeys, spentByMap2, "test")
+		count, err = storeSvc.SettleVtxos(ctx, testSettleVtxoKeys, settledBy)
 		require.NoError(t, err)
-		require.Equal(t, len(testSpendAndSettleVtxoKeys), count)
+		require.Equal(t, len(testSettleVtxoKeys), count)
 		for _, v := range spent {
 			require.True(t, v.Spent)
-			require.Equal(t, spentByMap[v.Outpoint.String()], v.SpentBy)
-			require.Equal(t, spentByMap2[v.Outpoint.String()], v.SettledBy)
+			require.Equal(t, testSettleVtxoKeys[v.Outpoint], v.SpentBy)
+			require.Equal(t, settledBy, v.SettledBy)
 		}
 	})
 }

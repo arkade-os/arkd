@@ -124,6 +124,7 @@ func (v vtxo) toVtxo() types.Vtxo {
 		Spent:           v.GetIsSpent(),
 		SpentBy:         v.GetSpentBy(),
 		SettledBy:       v.GetSettledBy(),
+		ArkTxid:         v.GetArkTxid(),
 	}
 }
 

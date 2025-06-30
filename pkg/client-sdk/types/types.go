@@ -67,6 +67,7 @@ type Vtxo struct {
 	Spent           bool
 	SpentBy         string
 	SettledBy       string
+	ArkTxid         string
 }
 
 func (v Vtxo) String() string {

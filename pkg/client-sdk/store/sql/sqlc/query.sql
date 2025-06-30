@@ -1,14 +1,15 @@
 -- name: InsertVtxo :exec
 INSERT INTO vtxo (
-    txid, vout, script, amount, commitment_txids, spent_by, spent, preconfirmed, expires_at, created_at, swept, unrolled, settled_by
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    txid, vout, script, amount, commitment_txids, spent_by, spent, preconfirmed, expires_at, created_at, swept, unrolled, settled_by, ark_txid
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateVtxo :exec
 UPDATE vtxo
 SET
     spent = true,
     spent_by = :spent_by,
-    settled_by = :settled_by
+    settled_by = :settled_by,
+    ark_txid = :ark_txid
 WHERE txid = :txid AND vout = :vout;
 
 -- name: SelectAllVtxos :many

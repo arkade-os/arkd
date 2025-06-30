@@ -38,7 +38,10 @@ type TransactionStore interface {
 type VtxoStore interface {
 	AddVtxos(ctx context.Context, vtxos []Vtxo) (int, error)
 	SpendVtxos(
-		ctx context.Context, vtxos []Outpoint, spentByMap map[string]string, settledBy string,
+		ctx context.Context, spentVtxos map[Outpoint]string, arkTxid string,
+	) (int, error)
+	SettleVtxos(
+		ctx context.Context, spentVtxos map[Outpoint]string, settledBy string,
 	) (int, error)
 	UpdateVtxos(ctx context.Context, vtxos []Vtxo) (int, error)
 	GetAllVtxos(ctx context.Context) (spendable []Vtxo, spent []Vtxo, err error)

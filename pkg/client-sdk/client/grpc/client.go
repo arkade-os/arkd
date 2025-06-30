@@ -10,6 +10,8 @@ import (
 	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/pkg/client-sdk/client"
+	"github.com/ark-network/ark/pkg/client-sdk/types"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -280,19 +282,36 @@ func (c *grpcClient) GetTransactionsStream(
 			case *arkv1.GetTransactionsStreamResponse_CommitmentTx:
 				eventsCh <- client.TransactionEvent{
 					CommitmentTx: &client.TxNotification{
-						Txid:           tx.CommitmentTx.Txid,
+						TxData: client.TxData{
+							Txid: tx.CommitmentTx.GetTxid(),
+							Tx:   tx.CommitmentTx.GetTx(),
+						},
 						SpentVtxos:     vtxos(tx.CommitmentTx.SpentVtxos).toVtxos(),
 						SpendableVtxos: vtxos(tx.CommitmentTx.SpendableVtxos).toVtxos(),
-						TxHex:          tx.CommitmentTx.GetHex(),
 					},
 				}
 			case *arkv1.GetTransactionsStreamResponse_ArkTx:
+				checkpointTxs := make(map[types.Outpoint]client.TxData)
+				for k, v := range tx.ArkTx.CheckpointTxs {
+					// nolint
+					out, _ := wire.NewOutPointFromString(k)
+					checkpointTxs[types.Outpoint{
+						Txid: out.Hash.String(),
+						VOut: out.Index,
+					}] = client.TxData{
+						Txid: v.GetTxid(),
+						Tx:   v.GetTx(),
+					}
+				}
 				eventsCh <- client.TransactionEvent{
 					ArkTx: &client.TxNotification{
-						Txid:           tx.ArkTx.Txid,
+						TxData: client.TxData{
+							Txid: tx.ArkTx.GetTxid(),
+							Tx:   tx.ArkTx.GetTx(),
+						},
 						SpentVtxos:     vtxos(tx.ArkTx.SpentVtxos).toVtxos(),
 						SpendableVtxos: vtxos(tx.ArkTx.SpendableVtxos).toVtxos(),
-						TxHex:          tx.ArkTx.GetHex(),
+						CheckpointTxs:  checkpointTxs,
 					},
 				}
 			}

@@ -33,4 +33,5 @@ type Vtxo struct {
 	Swept           bool
 	SettledBy       sql.NullString
 	Unrolled        bool
+	ArkTxid         sql.NullString
 }
