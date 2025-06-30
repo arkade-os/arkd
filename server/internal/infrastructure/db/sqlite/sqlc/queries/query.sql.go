@@ -164,7 +164,7 @@ SELECT
     (
         SELECT COALESCE(SUM(amount), 0)
         FROM (
-            SELECT DISTINCT v2.txid, v2.vout, v2.pubkey, v2.amount, v2.round_tx, v2.spent_by, v2.spent, v2.redeemed, v2.swept, v2.expire_at, v2.created_at, v2.request_id, v2.redeem_tx, v2.settled_by
+            SELECT DISTINCT v2.txid, v2.vout, v2.pubkey, v2.amount, v2.round_tx, v2.spent_by, v2.spent, v2.redeemed, v2.swept, v2.expire_at, v2.created_at, v2.request_id, v2.settled_by, v2.preconfirmed, v2.ark_txid
             FROM vtxo v2
                     JOIN tx_request req2 ON req2.id = v2.request_id
             WHERE req2.round_id = r.id
@@ -230,7 +230,7 @@ func (q *Queries) GetRoundStats(ctx context.Context, txid string) (GetRoundStats
 }
 
 const getSpendableVtxosWithPubKey = `-- name: GetSpendableVtxosWithPubKey :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw
 WHERE vtxo_vw.pubkey = ? AND vtxo_vw.spent = false AND vtxo_vw.swept = false
 `
 
@@ -256,8 +256,9 @@ func (q *Queries) GetSpendableVtxosWithPubKey(ctx context.Context, pubkey string
 			&i.ExpireAt,
 			&i.CreatedAt,
 			&i.RequestID,
-			&i.RedeemTx,
 			&i.SettledBy,
+			&i.Preconfirmed,
+			&i.ArkTxid,
 			&i.Commitments,
 		); err != nil {
 			return nil, err
@@ -281,10 +282,10 @@ FROM tx
 WHERE tx.txid IN (/*SLICE:ids1*/?)
 UNION
 SELECT
-    vtxo.txid,
-    vtxo.redeem_tx AS data
-FROM vtxo
-WHERE vtxo.txid IN (/*SLICE:ids2*/?) AND vtxo.redeem_tx IS NOT ''
+    virtual_tx.txid,
+    virtual_tx.tx AS data
+FROM virtual_tx
+WHERE virtual_tx.txid IN (/*SLICE:ids2*/?)
 `
 
 type GetTxsByTxidParams struct {
@@ -406,21 +407,42 @@ func (q *Queries) MarkVtxoAsRedeemed(ctx context.Context, arg MarkVtxoAsRedeemed
 	return err
 }
 
-const markVtxoAsSpent = `-- name: MarkVtxoAsSpent :exec
+const markVtxoAsSettled = `-- name: MarkVtxoAsSettled :exec
 UPDATE vtxo SET spent = true, spent_by = ?, settled_by = ? WHERE txid = ? AND vout = ?
 `
 
-type MarkVtxoAsSpentParams struct {
+type MarkVtxoAsSettledParams struct {
 	SpentBy   string
 	SettledBy sql.NullString
 	Txid      string
 	Vout      int64
 }
 
+func (q *Queries) MarkVtxoAsSettled(ctx context.Context, arg MarkVtxoAsSettledParams) error {
+	_, err := q.db.ExecContext(ctx, markVtxoAsSettled,
+		arg.SpentBy,
+		arg.SettledBy,
+		arg.Txid,
+		arg.Vout,
+	)
+	return err
+}
+
+const markVtxoAsSpent = `-- name: MarkVtxoAsSpent :exec
+UPDATE vtxo SET spent = true, spent_by = ?, ark_txid = ? WHERE txid = ? AND vout = ?
+`
+
+type MarkVtxoAsSpentParams struct {
+	SpentBy string
+	ArkTxid sql.NullString
+	Txid    string
+	Vout    int64
+}
+
 func (q *Queries) MarkVtxoAsSpent(ctx context.Context, arg MarkVtxoAsSpentParams) error {
 	_, err := q.db.ExecContext(ctx, markVtxoAsSpent,
 		arg.SpentBy,
-		arg.SettledBy,
+		arg.ArkTxid,
 		arg.Txid,
 		arg.Vout,
 	)
@@ -442,7 +464,7 @@ func (q *Queries) MarkVtxoAsSwept(ctx context.Context, arg MarkVtxoAsSweptParams
 }
 
 const selectAllVtxos = `-- name: SelectAllVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw
 `
 
 type SelectAllVtxosRow struct {
@@ -471,8 +493,9 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 			&i.VtxoVw.ExpireAt,
 			&i.VtxoVw.CreatedAt,
 			&i.VtxoVw.RequestID,
-			&i.VtxoVw.RedeemTx,
 			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -489,7 +512,7 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 }
 
 const selectLeafVtxosByRoundTxid = `-- name: SelectLeafVtxosByRoundTxid :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw
 WHERE round_tx = ? AND (redeem_tx IS NULL or redeem_tx = '')
 `
 
@@ -519,8 +542,9 @@ func (q *Queries) SelectLeafVtxosByRoundTxid(ctx context.Context, roundTx string
 			&i.VtxoVw.ExpireAt,
 			&i.VtxoVw.CreatedAt,
 			&i.VtxoVw.RequestID,
-			&i.VtxoVw.RedeemTx,
 			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -537,7 +561,7 @@ func (q *Queries) SelectLeafVtxosByRoundTxid(ctx context.Context, roundTx string
 }
 
 const selectNotRedeemedVtxos = `-- name: SelectNotRedeemedVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw
 WHERE redeemed = false
 `
 
@@ -567,8 +591,9 @@ func (q *Queries) SelectNotRedeemedVtxos(ctx context.Context) ([]SelectNotRedeem
 			&i.VtxoVw.ExpireAt,
 			&i.VtxoVw.CreatedAt,
 			&i.VtxoVw.RequestID,
-			&i.VtxoVw.RedeemTx,
 			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -585,7 +610,7 @@ func (q *Queries) SelectNotRedeemedVtxos(ctx context.Context) ([]SelectNotRedeem
 }
 
 const selectNotRedeemedVtxosWithPubkey = `-- name: SelectNotRedeemedVtxosWithPubkey :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw
 WHERE redeemed = false AND pubkey = ?
 `
 
@@ -615,8 +640,9 @@ func (q *Queries) SelectNotRedeemedVtxosWithPubkey(ctx context.Context, pubkey s
 			&i.VtxoVw.ExpireAt,
 			&i.VtxoVw.CreatedAt,
 			&i.VtxoVw.RequestID,
-			&i.VtxoVw.RedeemTx,
 			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -696,7 +722,7 @@ SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, 
        round_request_vw.id, round_request_vw.round_id, round_request_vw.proof, round_request_vw.message,
        round_tx_vw.txid, round_tx_vw.tx, round_tx_vw.round_id, round_tx_vw.type, round_tx_vw.position, round_tx_vw.children,
        request_receiver_vw.request_id, request_receiver_vw.pubkey, request_receiver_vw.onchain_address, request_receiver_vw.amount, request_receiver_vw.id, request_receiver_vw.round_id, request_receiver_vw.proof, request_receiver_vw.message,
-       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent_by, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.redeem_tx, request_vtxo_vw.settled_by, request_vtxo_vw.commitments, request_vtxo_vw.id, request_vtxo_vw.round_id, request_vtxo_vw.proof, request_vtxo_vw.message
+       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent_by, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.settled_by, request_vtxo_vw.preconfirmed, request_vtxo_vw.ark_txid, request_vtxo_vw.commitments, request_vtxo_vw.id, request_vtxo_vw.round_id, request_vtxo_vw.proof, request_vtxo_vw.message
 FROM round
          LEFT OUTER JOIN round_request_vw ON round.id=round_request_vw.round_id
          LEFT OUTER JOIN round_tx_vw ON round.id=round_tx_vw.round_id
@@ -764,8 +790,9 @@ func (q *Queries) SelectRoundWithRoundId(ctx context.Context, id string) ([]Sele
 			&i.RequestVtxoVw.ExpireAt,
 			&i.RequestVtxoVw.CreatedAt,
 			&i.RequestVtxoVw.RequestID,
-			&i.RequestVtxoVw.RedeemTx,
 			&i.RequestVtxoVw.SettledBy,
+			&i.RequestVtxoVw.Preconfirmed,
+			&i.RequestVtxoVw.ArkTxid,
 			&i.RequestVtxoVw.Commitments,
 			&i.RequestVtxoVw.ID,
 			&i.RequestVtxoVw.RoundID,
@@ -790,7 +817,7 @@ SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, 
        round_request_vw.id, round_request_vw.round_id, round_request_vw.proof, round_request_vw.message,
        round_tx_vw.txid, round_tx_vw.tx, round_tx_vw.round_id, round_tx_vw.type, round_tx_vw.position, round_tx_vw.children,
        request_receiver_vw.request_id, request_receiver_vw.pubkey, request_receiver_vw.onchain_address, request_receiver_vw.amount, request_receiver_vw.id, request_receiver_vw.round_id, request_receiver_vw.proof, request_receiver_vw.message,
-       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent_by, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.redeem_tx, request_vtxo_vw.settled_by, request_vtxo_vw.commitments, request_vtxo_vw.id, request_vtxo_vw.round_id, request_vtxo_vw.proof, request_vtxo_vw.message
+       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent_by, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.settled_by, request_vtxo_vw.preconfirmed, request_vtxo_vw.ark_txid, request_vtxo_vw.commitments, request_vtxo_vw.id, request_vtxo_vw.round_id, request_vtxo_vw.proof, request_vtxo_vw.message
 FROM round
          LEFT OUTER JOIN round_request_vw ON round.id=round_request_vw.round_id
          LEFT OUTER JOIN round_tx_vw ON round.id=round_tx_vw.round_id
@@ -858,8 +885,9 @@ func (q *Queries) SelectRoundWithRoundTxId(ctx context.Context, txid string) ([]
 			&i.RequestVtxoVw.ExpireAt,
 			&i.RequestVtxoVw.CreatedAt,
 			&i.RequestVtxoVw.RequestID,
-			&i.RequestVtxoVw.RedeemTx,
 			&i.RequestVtxoVw.SettledBy,
+			&i.RequestVtxoVw.Preconfirmed,
+			&i.RequestVtxoVw.ArkTxid,
 			&i.RequestVtxoVw.Commitments,
 			&i.RequestVtxoVw.ID,
 			&i.RequestVtxoVw.RoundID,
@@ -880,7 +908,7 @@ func (q *Queries) SelectRoundWithRoundTxId(ctx context.Context, txid string) ([]
 }
 
 const selectSweepableVtxos = `-- name: SelectSweepableVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw
 WHERE redeemed = false AND swept = false
 `
 
@@ -910,8 +938,9 @@ func (q *Queries) SelectSweepableVtxos(ctx context.Context) ([]SelectSweepableVt
 			&i.VtxoVw.ExpireAt,
 			&i.VtxoVw.CreatedAt,
 			&i.VtxoVw.RequestID,
-			&i.VtxoVw.RedeemTx,
 			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -1074,7 +1103,7 @@ func (q *Queries) SelectVirtualTxWithTxId(ctx context.Context, txid string) ([]S
 }
 
 const selectVtxoByOutpoint = `-- name: SelectVtxoByOutpoint :one
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw
 WHERE txid = ? AND vout = ?
 `
 
@@ -1103,15 +1132,16 @@ func (q *Queries) SelectVtxoByOutpoint(ctx context.Context, arg SelectVtxoByOutp
 		&i.VtxoVw.ExpireAt,
 		&i.VtxoVw.CreatedAt,
 		&i.VtxoVw.RequestID,
-		&i.VtxoVw.RedeemTx,
 		&i.VtxoVw.SettledBy,
+		&i.VtxoVw.Preconfirmed,
+		&i.VtxoVw.ArkTxid,
 		&i.VtxoVw.Commitments,
 	)
 	return i, err
 }
 
 const selectVtxosByRoundTxid = `-- name: SelectVtxosByRoundTxid :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw
 WHERE round_tx = ?
 `
 
@@ -1141,8 +1171,9 @@ func (q *Queries) SelectVtxosByRoundTxid(ctx context.Context, roundTx string) ([
 			&i.VtxoVw.ExpireAt,
 			&i.VtxoVw.CreatedAt,
 			&i.VtxoVw.RequestID,
-			&i.VtxoVw.RedeemTx,
 			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -1159,7 +1190,7 @@ func (q *Queries) SelectVtxosByRoundTxid(ctx context.Context, roundTx string) ([
 }
 
 const selectVtxosWithPubkey = `-- name: SelectVtxosWithPubkey :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.settled_by, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey = ?
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey = ?
 `
 
 type SelectVtxosWithPubkeyRow struct {
@@ -1188,8 +1219,9 @@ func (q *Queries) SelectVtxosWithPubkey(ctx context.Context, pubkey string) ([]S
 			&i.VtxoVw.ExpireAt,
 			&i.VtxoVw.CreatedAt,
 			&i.VtxoVw.RequestID,
-			&i.VtxoVw.RedeemTx,
 			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -1484,8 +1516,8 @@ func (q *Queries) UpsertVirtualTx(ctx context.Context, arg UpsertVirtualTxParams
 }
 
 const upsertVtxo = `-- name: UpsertVtxo :exec
-INSERT INTO vtxo (txid, vout, pubkey, amount, round_tx, settled_by, spent_by, spent, redeemed, swept, expire_at, created_at, redeem_tx)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE SET
+INSERT INTO vtxo (txid, vout, pubkey, amount, round_tx, settled_by, spent_by, spent, redeemed, swept, expire_at, created_at, preconfirmed, ark_txid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
     round_tx = EXCLUDED.round_tx,
@@ -1496,23 +1528,25 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE
     swept = EXCLUDED.swept,
     expire_at = EXCLUDED.expire_at,
     created_at = EXCLUDED.created_at,
-    redeem_tx = EXCLUDED.redeem_tx
+    ark_txid = EXCLUDED.ark_txid,
+    preconfirmed = EXCLUDED.preconfirmed
 `
 
 type UpsertVtxoParams struct {
-	Txid      string
-	Vout      int64
-	Pubkey    string
-	Amount    int64
-	RoundTx   string
-	SettledBy sql.NullString
-	SpentBy   string
-	Spent     bool
-	Redeemed  bool
-	Swept     bool
-	ExpireAt  int64
-	CreatedAt int64
-	RedeemTx  sql.NullString
+	Txid         string
+	Vout         int64
+	Pubkey       string
+	Amount       int64
+	RoundTx      string
+	SettledBy    sql.NullString
+	SpentBy      string
+	Spent        bool
+	Redeemed     bool
+	Swept        bool
+	ExpireAt     int64
+	CreatedAt    int64
+	Preconfirmed bool
+	ArkTxid      sql.NullString
 }
 
 func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
@@ -1529,7 +1563,8 @@ func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
 		arg.Swept,
 		arg.ExpireAt,
 		arg.CreatedAt,
-		arg.RedeemTx,
+		arg.Preconfirmed,
+		arg.ArkTxid,
 	)
 	return err
 }

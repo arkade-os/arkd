@@ -44,25 +44,26 @@ type RequestReceiverVw struct {
 }
 
 type RequestVtxoVw struct {
-	Txid        sql.NullString
-	Vout        sql.NullInt64
-	Pubkey      sql.NullString
-	Amount      sql.NullInt64
-	RoundTx     sql.NullString
-	SpentBy     sql.NullString
-	Spent       sql.NullBool
-	Redeemed    sql.NullBool
-	Swept       sql.NullBool
-	ExpireAt    sql.NullInt64
-	CreatedAt   sql.NullInt64
-	RequestID   sql.NullString
-	RedeemTx    sql.NullString
-	SettledBy   sql.NullString
-	Commitments interface{}
-	ID          sql.NullString
-	RoundID     sql.NullString
-	Proof       sql.NullString
-	Message     sql.NullString
+	Txid         sql.NullString
+	Vout         sql.NullInt64
+	Pubkey       sql.NullString
+	Amount       sql.NullInt64
+	RoundTx      sql.NullString
+	SpentBy      sql.NullString
+	Spent        sql.NullBool
+	Redeemed     sql.NullBool
+	Swept        sql.NullBool
+	ExpireAt     sql.NullInt64
+	CreatedAt    sql.NullInt64
+	RequestID    sql.NullString
+	SettledBy    sql.NullString
+	Preconfirmed sql.NullBool
+	ArkTxid      sql.NullString
+	Commitments  interface{}
+	ID           sql.NullString
+	RoundID      sql.NullString
+	Proof        sql.NullString
+	Message      sql.NullString
 }
 
 type Round struct {
@@ -137,20 +138,21 @@ type VirtualTxCheckpointTxVw struct {
 }
 
 type Vtxo struct {
-	Txid      string
-	Vout      int64
-	Pubkey    string
-	Amount    int64
-	RoundTx   string
-	SpentBy   string
-	Spent     bool
-	Redeemed  bool
-	Swept     bool
-	ExpireAt  int64
-	CreatedAt int64
-	RequestID sql.NullString
-	RedeemTx  sql.NullString
-	SettledBy sql.NullString
+	Txid         string
+	Vout         int64
+	Pubkey       string
+	Amount       int64
+	RoundTx      string
+	SpentBy      string
+	Spent        bool
+	Redeemed     bool
+	Swept        bool
+	ExpireAt     int64
+	CreatedAt    int64
+	RequestID    sql.NullString
+	SettledBy    sql.NullString
+	Preconfirmed bool
+	ArkTxid      sql.NullString
 }
 
 type VtxoCommitmentTxid struct {
@@ -160,19 +162,20 @@ type VtxoCommitmentTxid struct {
 }
 
 type VtxoVw struct {
-	Txid        string
-	Vout        int64
-	Pubkey      string
-	Amount      int64
-	RoundTx     string
-	SpentBy     string
-	Spent       bool
-	Redeemed    bool
-	Swept       bool
-	ExpireAt    int64
-	CreatedAt   int64
-	RequestID   sql.NullString
-	RedeemTx    sql.NullString
-	SettledBy   sql.NullString
-	Commitments interface{}
+	Txid         string
+	Vout         int64
+	Pubkey       string
+	Amount       int64
+	RoundTx      string
+	SpentBy      string
+	Spent        bool
+	Redeemed     bool
+	Swept        bool
+	ExpireAt     int64
+	CreatedAt    int64
+	RequestID    sql.NullString
+	SettledBy    sql.NullString
+	Preconfirmed bool
+	ArkTxid      sql.NullString
+	Commitments  interface{}
 }

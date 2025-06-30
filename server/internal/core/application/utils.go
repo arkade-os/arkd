@@ -127,7 +127,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			ExpireAt:           offchainTx.ExpiryTimestamp,
 			CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 			RootCommitmentTxid: offchainTx.RootCommitmentTxId,
-			RedeemTx:           offchainTx.VirtualTx,
+			Preconfirmed:       true,
 			CreatedAt:          offchainTx.EndingTimestamp,
 		})
 	}

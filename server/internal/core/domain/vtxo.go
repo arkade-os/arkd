@@ -41,13 +41,14 @@ type Vtxo struct {
 	PubKey             string
 	CommitmentTxids    []string
 	RootCommitmentTxid string
-	SpentBy            string // forfeit txid or ark txid
 	SettledBy          string // commitment txid
+	SpentBy            string // forfeit txid or checkpoint txid
+	ArkTxid            string // the link to the ark txid that spent the vtxos
 	Spent              bool
 	Redeemed           bool
 	Swept              bool
+	Preconfirmed       bool
 	ExpireAt           int64
-	RedeemTx           string // empty if in-round vtxo
 	CreatedAt          int64
 }
 
@@ -55,10 +56,6 @@ func (v Vtxo) String() string {
 	// nolint
 	b, _ := json.MarshalIndent(v, "", "  ")
 	return string(b)
-}
-
-func (v Vtxo) IsPreconfirmed() bool {
-	return len(v.RedeemTx) > 0
 }
 
 func (v Vtxo) IsNote() bool {

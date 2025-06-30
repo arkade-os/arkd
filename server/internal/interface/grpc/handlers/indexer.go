@@ -676,12 +676,13 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		ExpiresAt:       vtxo.ExpireAt,
 		Amount:          vtxo.Amount,
 		Script:          toP2TR(vtxo.PubKey),
-		IsPreconfirmed:  vtxo.RedeemTx != "",
+		IsPreconfirmed:  vtxo.Preconfirmed,
 		IsSwept:         vtxo.Swept,
 		IsRedeemed:      vtxo.Redeemed,
 		IsSpent:         vtxo.Spent,
 		SpentBy:         vtxo.SpentBy,
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
+		ArkTxid:         vtxo.ArkTxid,
 	}
 }

@@ -286,7 +286,7 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 			// we need to add the virtual tx + the associated checkpoints txs
 			// also, we have to populate the newNextVtxos with the checkpoints inputs
 			// in order to continue the chain in the next iteration
-			if vtxo.IsPreconfirmed() {
+			if vtxo.Preconfirmed {
 				offchainTx, err := i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
 				if err != nil {
 					return nil, fmt.Errorf("failed to retrieve offchain tx: %s", err)
@@ -479,9 +479,9 @@ func (i *indexerService) vtxosToTxs(
 
 		commitmentTxid := vtxo.RootCommitmentTxid
 		virtualTxid := ""
-		settled := !vtxo.IsPreconfirmed()
+		settled := !vtxo.Preconfirmed
 		settledBy := ""
-		if vtxo.IsPreconfirmed() {
+		if vtxo.Preconfirmed {
 			virtualTxid = vtxo.Txid
 			commitmentTxid = ""
 			settled = vtxo.SpentBy != ""
@@ -539,7 +539,7 @@ func (i *indexerService) vtxosToTxs(
 
 		commitmentTxid := vtxo.RootCommitmentTxid
 		virtualTxid := ""
-		if vtxo.IsPreconfirmed() {
+		if vtxo.Preconfirmed {
 			virtualTxid = vtxo.Txid
 			commitmentTxid = ""
 		}
@@ -563,7 +563,7 @@ func (i *indexerService) vtxosToTxs(
 }
 
 func findVtxosSpentInSettlement(vtxos []domain.Vtxo, vtxo domain.Vtxo) []domain.Vtxo {
-	if vtxo.IsPreconfirmed() {
+	if vtxo.Preconfirmed {
 		return nil
 	}
 	return findVtxosSettled(vtxos, vtxo.RootCommitmentTxid)

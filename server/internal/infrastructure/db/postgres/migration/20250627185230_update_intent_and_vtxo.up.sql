@@ -7,6 +7,8 @@ DROP VIEW round_request_vw;
 ALTER TABLE tx_request ADD COLUMN proof TEXT NOT NULL;
 ALTER TABLE tx_request ADD COLUMN message TEXT NOT NULL;
 ALTER TABLE vtxo ADD COLUMN settled_by TEXT;
+ALTER TABLE vtxo ADD COLUMN ark_txid TEXT;
+ALTER TABLE vtxo ADD COLUMN preconfirmed BOOLEAN NOT NULL;
 
 CREATE OR REPLACE VIEW round_request_vw AS
 SELECT tx_request.*

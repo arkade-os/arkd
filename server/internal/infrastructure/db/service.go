@@ -327,13 +327,13 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	repo := s.vtxoStore
 
-	spentVtxos, spentByMap := getSpentVtxoKeysFromRound(*round, s.txDecoder)
+	spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
 	newVtxos := getNewVtxosFromRound(round)
 
 	if len(spentVtxos) > 0 {
 		for {
-			if err := repo.SpendVtxos(ctx, spentVtxos, spentByMap, round.Txid); err != nil {
-				log.WithError(err).Warn("failed to add new vtxos, retrying...")
+			if err := repo.SettleVtxos(ctx, spentVtxos, round.Txid); err != nil {
+				log.WithError(err).Warn("failed to spend vtxos, retrying...")
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
@@ -366,24 +366,21 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 	switch {
 	case offchainTx.IsAccepted():
-		spentVtxos := make([]domain.Outpoint, 0)
-		spentByMap := make(map[string]string)
-
+		spentVtxos := make(map[domain.Outpoint]string)
 		for _, tx := range offchainTx.CheckpointTxs {
-			_, ins, _, err := s.txDecoder.DecodeTx(tx)
+			txid, ins, _, err := s.txDecoder.DecodeTx(tx)
 			if err != nil {
 				log.WithError(err).Warn("failed to decode checkpoint tx")
 				continue
 			}
-			spentVtxos = append(spentVtxos, ins...)
 			for _, in := range ins {
-				spentByMap[in.String()] = offchainTx.VirtualTxid
+				spentVtxos[in] = txid
 			}
 		}
 
 		// as soon as the checkpoint txs are signed by the server,
 		// we must mark the vtxos as spent to prevent double spending.
-		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, spentByMap, ""); err != nil {
+		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.VirtualTxid); err != nil {
 			log.WithError(err).Warn("failed to spend vtxos")
 			return
 		}
@@ -416,7 +413,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				ExpireAt:           offchainTx.ExpiryTimestamp,
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 				RootCommitmentTxid: offchainTx.RootCommitmentTxId,
-				RedeemTx:           offchainTx.VirtualTx,
+				Preconfirmed:       true,
 				CreatedAt:          offchainTx.EndingTimestamp,
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
@@ -435,26 +432,24 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 func getSpentVtxoKeysFromRound(
 	round domain.Round, txDecoder ports.TxDecoder,
-) ([]domain.Outpoint, map[string]string) {
-	vtxos := make([]domain.Outpoint, 0)
-	spentByMap := make(map[string]string)
+) map[domain.Outpoint]string {
+	spentVtxos := make(map[domain.Outpoint]string)
 	forfeitTxs := make([]domain.ForfeitTx, len(round.ForfeitTxs))
 	copy(forfeitTxs, round.ForfeitTxs)
 	for _, request := range round.TxRequests {
 		for _, vtxo := range request.Inputs {
-			vtxos = append(vtxos, vtxo.Outpoint)
 			for i, forfeitTx := range forfeitTxs {
 				// nolint
 				_, ins, _, _ := txDecoder.DecodeTx(forfeitTx.Tx)
 				if slices.Contains(ins, vtxo.Outpoint) {
-					spentByMap[vtxo.Outpoint.String()] = forfeitTx.Txid
+					spentVtxos[vtxo.Outpoint] = forfeitTx.Txid
 					forfeitTxs = append(forfeitTxs[:i], forfeitTxs[i+1:]...)
 					break
 				}
 			}
 		}
 	}
-	return vtxos, spentByMap
+	return spentVtxos
 }
 
 func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {

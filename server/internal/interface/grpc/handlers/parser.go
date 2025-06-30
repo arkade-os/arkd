@@ -50,11 +50,12 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 			ExpiresAt:       vv.ExpireAt,
 			SpentBy:         vv.SpentBy,
 			Swept:           vv.Swept,
-			Preconfirmed:    len(vv.RedeemTx) > 0,
+			Preconfirmed:    vv.Preconfirmed,
 			Redeemed:        vv.Redeemed,
 			Script:          toP2TR(vv.PubKey),
 			CreatedAt:       vv.CreatedAt,
 			SettledBy:       vv.SettledBy,
+			ArkTxid:         vv.ArkTxid,
 		})
 	}
 

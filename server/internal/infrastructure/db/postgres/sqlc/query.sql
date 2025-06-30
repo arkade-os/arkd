@@ -168,21 +168,23 @@ SELECT id FROM round;
 
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
-    txid, vout, pubkey, amount, commitment_txid, settled_by,
-    spent_by, spent, redeemed, swept, expire_at, created_at
+    txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
+    spent_by, spent, redeemed, swept, preconfirmed, expire_at, created_at
 )
 VALUES (
-    @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by,
-    @spent_by, @spent, @redeemed, @swept, @expire_at, @created_at
+    @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
+    @spent_by, @spent, @redeemed, @swept, @preconfirmed, @expire_at, @created_at
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
     commitment_txid = EXCLUDED.commitment_txid,
     settled_by = EXCLUDED.settled_by,
+    ark_txid = EXCLUDED.ark_txid,
     spent_by = EXCLUDED.spent_by,
     spent = EXCLUDED.spent,
     redeemed = EXCLUDED.redeemed,
     swept = EXCLUDED.swept,
+    preconfirmed = EXCLUDED.preconfirmed,
     expire_at = EXCLUDED.expire_at,
     created_at = EXCLUDED.created_at;
 
@@ -219,8 +221,11 @@ UPDATE vtxo SET redeemed = true WHERE txid = @txid AND vout = @vout;
 -- name: MarkVtxoAsSwept :exec
 UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout;
 
--- name: MarkVtxoAsSpent :exec
+-- name: MarkVtxoAsSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by WHERE txid = @txid AND vout = @vout;
+
+-- name: MarkVtxoAsSpent :exec
+UPDATE vtxo SET spent = true, spent_by = @spent_by, ark_txid = @ark_txid WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoExpireAt :exec
 UPDATE vtxo SET expire_at = @expire_at WHERE txid = @txid AND vout = @vout;

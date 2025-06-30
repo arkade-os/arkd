@@ -59,6 +59,8 @@ type RequestVtxoVw struct {
 	CreatedAt      sql.NullInt64
 	RequestID      sql.NullString
 	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	Preconfirmed   sql.NullBool
 	Commitments    []byte
 	ID             sql.NullString
 	RoundID        sql.NullString
@@ -169,6 +171,8 @@ type Vtxo struct {
 	CreatedAt      int64
 	RequestID      sql.NullString
 	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	Preconfirmed   bool
 }
 
 type VtxoCommitmentTxid struct {
@@ -191,6 +195,8 @@ type VtxoVirtualTxVw struct {
 	CreatedAt      int64
 	RequestID      sql.NullString
 	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	Preconfirmed   bool
 	Commitments    []byte
 	RedeemTx       sql.NullString
 }
@@ -209,5 +215,7 @@ type VtxoVw struct {
 	CreatedAt      int64
 	RequestID      sql.NullString
 	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	Preconfirmed   bool
 	Commitments    []byte
 }

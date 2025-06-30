@@ -43,10 +43,10 @@ FROM tx
 WHERE tx.txid IN (sqlc.slice('ids1'))
 UNION
 SELECT
-    vtxo.txid,
-    vtxo.redeem_tx AS data
-FROM vtxo
-WHERE vtxo.txid IN (sqlc.slice('ids2')) AND vtxo.redeem_tx IS NOT '';
+    virtual_tx.txid,
+    virtual_tx.tx AS data
+FROM virtual_tx
+WHERE virtual_tx.txid IN (sqlc.slice('ids2'));
 
 -- name: UpsertTxRequest :exec
 INSERT INTO tx_request (id, round_id, proof, message) VALUES (?, ?, ?, ?)
@@ -165,8 +165,8 @@ SELECT id FROM round WHERE starting_timestamp > ? AND starting_timestamp < ?;
 SELECT id FROM round;
 
 -- name: UpsertVtxo :exec
-INSERT INTO vtxo (txid, vout, pubkey, amount, round_tx, settled_by, spent_by, spent, redeemed, swept, expire_at, created_at, redeem_tx)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE SET
+INSERT INTO vtxo (txid, vout, pubkey, amount, round_tx, settled_by, spent_by, spent, redeemed, swept, expire_at, created_at, preconfirmed, ark_txid)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
     round_tx = EXCLUDED.round_tx,
@@ -177,7 +177,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE
     swept = EXCLUDED.swept,
     expire_at = EXCLUDED.expire_at,
     created_at = EXCLUDED.created_at,
-    redeem_tx = EXCLUDED.redeem_tx;
+    ark_txid = EXCLUDED.ark_txid,
+    preconfirmed = EXCLUDED.preconfirmed;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid(vtxo_txid, vtxo_vout, commitment_txid) VALUES (?, ?, ?);
@@ -211,8 +212,11 @@ UPDATE vtxo SET redeemed = true WHERE txid = ? AND vout = ?;
 -- name: MarkVtxoAsSwept :exec
 UPDATE vtxo SET swept = true WHERE txid = ? AND vout = ?;
 
--- name: MarkVtxoAsSpent :exec
+-- name: MarkVtxoAsSettled :exec
 UPDATE vtxo SET spent = true, spent_by = ?, settled_by = ? WHERE txid = ? AND vout = ?;
+
+-- name: MarkVtxoAsSpent :exec
+UPDATE vtxo SET spent = true, spent_by = ?, ark_txid = ? WHERE txid = ? AND vout = ?;
 
 -- name: UpdateVtxoExpireAt :exec
 UPDATE vtxo SET expire_at = ? WHERE txid = ? AND vout = ?;

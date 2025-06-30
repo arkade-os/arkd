@@ -554,6 +554,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				Amount:             1000,
 				RootCommitmentTxid: "root",
 				CommitmentTxids:    []string{"root", "cmt1", "cmt2"},
+				Preconfirmed:       true,
 			},
 			{
 				Outpoint: domain.Outpoint{
@@ -576,12 +577,14 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			RootCommitmentTxid: "root",
 			CommitmentTxids:    []string{"root"},
 		})
+		arkTxid := randomString(32)
+		commitmentTxid := randomString(32)
 
 		vtxoKeys := make([]domain.Outpoint, 0, len(userVtxos))
-		spentByMap := make(map[string]string)
+		spentVtxoMap := make(map[domain.Outpoint]string)
 		for _, v := range userVtxos {
 			vtxoKeys = append(vtxoKeys, v.Outpoint)
-			spentByMap[v.Outpoint.String()] = randomString(32)
+			spentVtxoMap[v.Outpoint] = randomString(32)
 		}
 
 		vtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoKeys)
@@ -625,8 +628,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Len(t, append(spendableVtxos, spentVtxos...), numberOfVtxos+len(newVtxos))
 
-		settledBy := randomString(32)
-		err = svc.Vtxos().SpendVtxos(ctx, vtxoKeys[:1], spentByMap, settledBy)
+		err = svc.Vtxos().SpendVtxos(ctx, spentVtxoMap, arkTxid)
 		require.NoError(t, err)
 
 		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys[:1])
@@ -634,29 +636,29 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Len(t, spentVtxos, len(vtxoKeys[:1]))
 		for _, v := range spentVtxos {
 			require.True(t, v.Spent)
-			require.Equal(t, spentByMap[v.Outpoint.String()], v.SpentBy)
-			require.Equal(t, settledBy, v.SettledBy)
+			require.Equal(t, spentVtxoMap[v.Outpoint], v.SpentBy)
+			require.Equal(t, arkTxid, v.ArkTxid)
 		}
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, pubkey)
 		require.NoError(t, err)
 		checkVtxos(t, vtxos[1:], spendableVtxos)
-		require.Len(t, spentVtxos, len(vtxoKeys[:1]))
+		require.Len(t, spentVtxos, len(userVtxos))
 
-		// Make also sure that it's possible to spend without settling
-		spentByMap = map[string]string{
-			newVtxos[0].Outpoint.String(): randomString(32),
+		spentVtxoMap = map[domain.Outpoint]string{
+			newVtxos[len(newVtxos)-1].Outpoint: randomString(32),
 		}
-		err = svc.Vtxos().SpendVtxos(ctx, vtxoKeys[1:2], spentByMap, "")
+		vtxoKeys = []domain.Outpoint{newVtxos[len(newVtxos)-1].Outpoint}
+		err = svc.Vtxos().SettleVtxos(ctx, spentVtxoMap, commitmentTxid)
 		require.NoError(t, err)
 
-		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys[1:2])
+		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.NoError(t, err)
-		require.Len(t, spentVtxos, len(vtxoKeys[1:2]))
+		require.Len(t, spentVtxos, len(vtxoKeys))
 		for _, v := range spentVtxos {
 			require.True(t, v.Spent)
-			require.Equal(t, spentByMap[v.Outpoint.String()], v.SpentBy)
-			require.Empty(t, v.SettledBy)
+			require.Equal(t, spentVtxoMap[v.Outpoint], v.SpentBy)
+			require.Equal(t, commitmentTxid, v.SettledBy)
 		}
 	})
 }
@@ -931,7 +933,7 @@ func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
 		require.Exactly(t, expected.CreatedAt, v.CreatedAt)
 		require.Exactly(t, expected.ExpireAt, v.ExpireAt)
 		require.Exactly(t, expected.PubKey, v.PubKey)
-		require.Exactly(t, expected.RedeemTx, v.RedeemTx)
+		require.Exactly(t, expected.Preconfirmed, v.Preconfirmed)
 		require.Exactly(t, expected.Redeemed, v.Redeemed)
 		require.Exactly(t, expected.RootCommitmentTxid, v.RootCommitmentTxid)
 		require.Exactly(t, expected.Spent, v.Spent)
