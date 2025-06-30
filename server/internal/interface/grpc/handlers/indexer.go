@@ -225,7 +225,7 @@ func (e *indexerService) GetVtxos(ctx context.Context, request *arkv1.GetVtxosRe
 	if request.GetSpendableOnly() && request.GetSpentOnly() {
 		return nil, status.Error(codes.InvalidArgument, "spendable and spent filters are mutually exclusive")
 	}
-	pubkeys, err := parseArkAddresses(request.GetAddresses())
+	pubkeys, err := parseScripts(request.GetScripts())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -240,11 +240,19 @@ func (e *indexerService) GetVtxos(ctx context.Context, request *arkv1.GetVtxosRe
 	if len(outpoints) > 0 && len(pubkeys) > 0 {
 		return nil, status.Error(codes.InvalidArgument, "outpoints and addresses filters are mutually exclusive")
 	}
+	spendableOnly := request.GetSpendableOnly()
+	spentOnly := request.GetSpentOnly()
+	recoverableOnly := request.GetRecoverableOnly()
+	if len(pubkeys) > 0 {
+		if (spendableOnly && spentOnly) || (spendableOnly && recoverableOnly) || (spentOnly && recoverableOnly) {
+			return nil, status.Error(codes.InvalidArgument, "spendable, spent and recoverable filters are mutually exclusive")
+		}
+	}
 
 	var resp *application.GetVtxosResp
 	if len(pubkeys) > 0 {
 		resp, err = e.indexerSvc.GetVtxos(
-			ctx, pubkeys, request.GetSpendableOnly(), request.GetSpentOnly(), page,
+			ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly, page,
 		)
 	}
 	if len(outpoints) > 0 {
@@ -382,18 +390,18 @@ func (e *indexerService) GetVirtualTxs(ctx context.Context, request *arkv1.GetVi
 	}, nil
 }
 
-func (e *indexerService) GetSweptCommitmentTx(ctx context.Context, request *arkv1.GetSweptCommitmentTxRequest) (*arkv1.GetSweptCommitmentTxResponse, error) {
-	txid, err := parseTxid(request.GetTxid())
+func (e *indexerService) GetBatchSweepTransactions(ctx context.Context, request *arkv1.GetBatchSweepTransactionsRequest) (*arkv1.GetBatchSweepTransactionsResponse, error) {
+	outpoint, err := parseOutpoint(request.GetBatchOutpoint())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resp, err := e.indexerSvc.GetSweptCommitmentTx(ctx, txid)
+	resp, err := e.indexerSvc.GetBatchSweepTxs(ctx, *outpoint)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get swept commitment tx: %v", err)
 	}
 
-	return &arkv1.GetSweptCommitmentTxResponse{
+	return &arkv1.GetBatchSweepTransactionsResponse{
 		SweptBy: resp.SweptBy,
 	}, nil
 }

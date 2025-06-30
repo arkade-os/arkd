@@ -322,10 +322,10 @@ func (v *vtxoRepository) GetAllVtxosWithPubKey(
 }
 
 func (v *vtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string, spendableOnly, spentOnly bool,
+	ctx context.Context, pubkeys []string, spendableOnly, spentOnly, recoverableOnly bool,
 ) ([]domain.Vtxo, error) {
-	if spendableOnly && spendableOnly == spentOnly {
-		return nil, fmt.Errorf("spendable and spent only can't be true at the same time")
+	if (spendableOnly && spentOnly) || (spendableOnly && recoverableOnly) || (spentOnly && recoverableOnly) {
+		return nil, fmt.Errorf("spendable, spent and recoverable filters are mutually exclusive")
 	}
 
 	allVtxos := make([]domain.Vtxo, 0)
@@ -365,6 +365,15 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 				}
 			}
 			vtxos = spentVtxos
+		}
+		if recoverableOnly {
+			recoverableVtxos := make([]domain.Vtxo, 0, len(vtxos))
+			for _, vtxo := range vtxos {
+				if !vtxo.RequiresForfeit() {
+					recoverableVtxos = append(recoverableVtxos, vtxo)
+				}
+			}
+			vtxos = recoverableVtxos
 		}
 
 		allVtxos = append(allVtxos, vtxos...)

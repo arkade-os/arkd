@@ -32,12 +32,12 @@ type IndexerService interface {
 	GetVtxoTreeLeaves(ctx context.Context, batchOutpoint Outpoint, page *Page) (*VtxoTreeLeavesResp, error)
 	GetForfeitTxs(ctx context.Context, txid string, page *Page) (*ForfeitTxsResp, error)
 	GetConnectors(ctx context.Context, txid string, page *Page) (*ConnectorResp, error)
-	GetVtxos(ctx context.Context, pubkeys []string, spendableOnly, spendOnly bool, page *Page) (*GetVtxosResp, error)
+	GetVtxos(ctx context.Context, pubkeys []string, spendableOnly, spendOnly, recoverableOnly bool, page *Page) (*GetVtxosResp, error)
 	GetVtxosByOutpoint(ctx context.Context, outpoints []Outpoint, page *Page) (*GetVtxosResp, error)
 	GetTransactionHistory(ctx context.Context, pubkey string, start, end int64, page *Page) (*TxHistoryResp, error)
 	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error)
 	GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error)
-	GetSweptCommitmentTx(ctx context.Context, txid string) (*SweptCommitmentTxResp, error)
+	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) (*SweptCommitmentTxResp, error)
 }
 
 type indexerService struct {
@@ -162,14 +162,14 @@ func (i *indexerService) GetConnectors(ctx context.Context, txid string, page *P
 }
 
 func (i *indexerService) GetVtxos(
-	ctx context.Context, pubkeys []string, spendableOnly, spentOnly bool, page *Page,
+	ctx context.Context, pubkeys []string, spendableOnly, spentOnly, recoverableOnly bool, page *Page,
 ) (*GetVtxosResp, error) {
-	if spendableOnly && spentOnly {
-		return nil, fmt.Errorf("spendable and spent only can't be true at the same time")
+	if (spendableOnly && spentOnly) || (spendableOnly && recoverableOnly) || (spentOnly && recoverableOnly) {
+		return nil, fmt.Errorf("spendable, spent and recoverable filters are mutually esclusive")
 	}
 
 	vtxos, err := i.repoManager.Vtxos().GetAllVtxosWithPubKeys(
-		ctx, pubkeys, spendableOnly, spentOnly,
+		ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly,
 	)
 	if err != nil {
 		return nil, err
@@ -400,7 +400,7 @@ func (i *indexerService) GetVirtualTxs(ctx context.Context, txids []string, page
 	}, nil
 }
 
-func (i *indexerService) GetSweptCommitmentTx(ctx context.Context, txid string) (*SweptCommitmentTxResp, error) {
+func (i *indexerService) GetBatchSweepTxs(ctx context.Context, outpoint Outpoint) (*SweptCommitmentTxResp, error) {
 	// TODO currently not possible to find swept commitment tx, we need either to scan explorer which would be inefficient
 	// or to store sweep txs it in the database
 

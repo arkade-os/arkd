@@ -14,7 +14,9 @@ type VtxoRepository interface {
 	GetSpendableVtxosWithPubKey(ctx context.Context, pubkey string) ([]Vtxo, error)
 	GetAll(ctx context.Context) ([]Vtxo, error)
 	GetAllVtxosWithPubKey(ctx context.Context, pubkey string) ([]Vtxo, []Vtxo, error)
-	GetAllVtxosWithPubKeys(ctx context.Context, pubkeys []string, spendableOnly, spentOnly bool) ([]Vtxo, error)
+	GetAllVtxosWithPubKeys(
+		ctx context.Context, pubkeys []string, spendableOnly, spentOnly, recoverableOnly bool,
+	) ([]Vtxo, error)
 	UpdateExpireAt(ctx context.Context, vtxos []Outpoint, expireAt int64) error
 	GetLeafVtxosForRound(ctx context.Context, txid string) ([]Vtxo, error)
 	Close()
