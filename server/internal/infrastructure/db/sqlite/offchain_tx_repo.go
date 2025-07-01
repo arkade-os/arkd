@@ -103,10 +103,6 @@ func (v *offchainTxRepository) GetOffchainTx(ctx context.Context, txid string) (
 	}, nil
 }
 
-func (v *offchainTxRepository) GetOffchainTxs(ctx context.Context, txids []string) ([]string, error) {
-	return nil, nil
-}
-
 func (v *offchainTxRepository) Close() {
 	_ = v.db.Close()
 }

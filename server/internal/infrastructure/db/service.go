@@ -35,13 +35,15 @@ var migrations embed.FS
 //go:embed postgres/migration/*
 var pgMigration embed.FS
 
+var arkRepo badgerdb.ArkRepository
+
 var (
 	eventStoreTypes = map[string]func(...interface{}) (domain.EventRepository, error){
 		"badger":   badgerdb.NewEventRepository,
 		"postgres": pgdb.NewEventRepository,
 	}
 	roundStoreTypes = map[string]func(...interface{}) (domain.RoundRepository, error){
-		"badger":   badgerdb.NewRoundRepository,
+		"badger":   newBadgerRoundRepository,
 		"sqlite":   sqlitedb.NewRoundRepository,
 		"postgres": pgdb.NewRoundRepository,
 	}
@@ -56,7 +58,7 @@ var (
 		"postgres": pgdb.NewMarketHourRepository,
 	}
 	offchainTxStoreTypes = map[string]func(...interface{}) (domain.OffchainTxRepository, error){
-		"badger":   badgerdb.NewOffchainTxRepository,
+		"badger":   newBadgerOffchainTxRepository,
 		"sqlite":   sqlitedb.NewOffchainTxRepository,
 		"postgres": pgdb.NewOffchainTxRepository,
 	}
@@ -493,4 +495,23 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 		}
 	}
 	return vtxos
+}
+
+func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {
+	if arkRepo == nil {
+		repo, err := badgerdb.NewArkRepository(args...)
+		if err != nil {
+			return nil, err
+		}
+		arkRepo = repo
+	}
+	return arkRepo, nil
+}
+
+func newBadgerRoundRepository(args ...interface{}) (domain.RoundRepository, error) {
+	return initBadgerArkRepository(args...)
+}
+
+func newBadgerOffchainTxRepository(args ...interface{}) (domain.OffchainTxRepository, error) {
+	return initBadgerArkRepository(args...)
 }

@@ -54,8 +54,8 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					Preconfirmed: vtxo.Preconfirmed,
 					ExpireAt:     vtxo.ExpireAt,
 					CreatedAt:    vtxo.CreatedAt,
-					ArkTxid:      sql.NullString{String: vtxo.ArkTxid, Valid: true},
-					SettledBy:    sql.NullString{String: vtxo.SettledBy, Valid: true},
+					ArkTxid:      sql.NullString{String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0},
+					SettledBy:    sql.NullString{String: vtxo.SettledBy, Valid: len(vtxo.SettledBy) > 0},
 				},
 			); err != nil {
 				return err
