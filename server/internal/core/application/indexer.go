@@ -37,7 +37,7 @@ type IndexerService interface {
 	GetTransactionHistory(ctx context.Context, pubkey string, start, end int64, page *Page) (*TxHistoryResp, error)
 	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error)
 	GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error)
-	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) (*SweptCommitmentTxResp, error)
+	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 }
 
 type indexerService struct {
@@ -400,11 +400,18 @@ func (i *indexerService) GetVirtualTxs(ctx context.Context, txids []string, page
 	}, nil
 }
 
-func (i *indexerService) GetBatchSweepTxs(ctx context.Context, outpoint Outpoint) (*SweptCommitmentTxResp, error) {
-	// TODO currently not possible to find swept commitment tx, we need either to scan explorer which would be inefficient
-	// or to store sweep txs it in the database
+func (i *indexerService) GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error) {
+	round, err := i.repoManager.Rounds().GetRoundWithId(ctx, batchOutpoint.Txid) //TODO repo methods needs to be updated with multiple batches in future
+	if err != nil {
+		return nil, err
+	}
 
-	return &SweptCommitmentTxResp{}, nil
+	txids := make([]string, 0, len(round.SweepTxs))
+	for txid := range round.SweepTxs {
+		txids = append(txids, txid)
+	}
+
+	return txids, nil
 }
 
 func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {

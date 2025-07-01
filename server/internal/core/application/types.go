@@ -170,10 +170,6 @@ type VirtualTxsResp struct {
 	Page         PageResp
 }
 
-type SweptCommitmentTxResp struct {
-	SweptBy []string
-}
-
 type Outpoint = domain.Outpoint
 
 type TxType int

@@ -400,13 +400,13 @@ func (e *indexerService) GetBatchSweepTransactions(ctx context.Context, request 
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resp, err := e.indexerSvc.GetBatchSweepTxs(ctx, *outpoint)
+	sweepTxs, err := e.indexerSvc.GetBatchSweepTxs(ctx, *outpoint)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get swept commitment tx: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to get sweep txs for batch %s: %v", outpoint, err)
 	}
 
 	return &arkv1.GetBatchSweepTransactionsResponse{
-		SweptBy: resp.SweptBy,
+		SweptBy: sweepTxs,
 	}, nil
 }
 
