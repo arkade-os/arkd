@@ -19,10 +19,11 @@ func (o *RequestOption) GetPage() *PageRequest {
 
 type GetVtxosRequestOption struct {
 	RequestOption
-	scripts       []string
-	outpoints     []Outpoint
-	spentOnly     bool
-	spendableOnly bool
+	scripts         []string
+	outpoints       []Outpoint
+	spentOnly       bool
+	spendableOnly   bool
+	recoverableOnly bool
 }
 
 func (o *GetVtxosRequestOption) WithScripts(scripts []string) error {
@@ -73,6 +74,14 @@ func (o *GetVtxosRequestOption) WithSpendableOnly() {
 
 func (o *GetVtxosRequestOption) GetSpendableOnly() bool {
 	return o.spendableOnly
+}
+
+func (o *GetVtxosRequestOption) WithRecoverableOnly() {
+	o.recoverableOnly = true
+}
+
+func (o *GetVtxosRequestOption) GetRecoverableOnly() bool {
+	return o.recoverableOnly
 }
 
 type GetTxHistoryRequestOption struct {

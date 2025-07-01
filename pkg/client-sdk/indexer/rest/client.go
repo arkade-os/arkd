@@ -312,10 +312,12 @@ func (a *restClient) GetVtxos(
 	opt := opts[0]
 	spentOnly := opt.GetSpentOnly()
 	spendableOnly := opt.GetSpendableOnly()
+	recoverableOnly := opt.GetRecoverableOnly()
 
 	params := indexer_service.NewIndexerServiceGetVtxosParams().
 		WithScripts(opt.GetScripts()).WithOutpoints(opt.GetOutpoints()).
-		WithSpentOnly(&spentOnly).WithSpendableOnly(&spendableOnly)
+		WithSpentOnly(&spentOnly).WithSpendableOnly(&spendableOnly).
+		WithRecoverableOnly(&recoverableOnly)
 
 	if page := opt.GetPage(); page != nil {
 		params.WithPageSize(&page.Size).WithPageIndex(&page.Index)

@@ -307,11 +307,12 @@ func (a *grpcClient) GetVtxos(
 	}
 
 	req := &arkv1.GetVtxosRequest{
-		Scripts:       opt.GetScripts(),
-		Outpoints:     opt.GetOutpoints(),
-		SpendableOnly: opt.GetSpendableOnly(),
-		SpentOnly:     opt.GetSpentOnly(),
-		Page:          page,
+		Scripts:         opt.GetScripts(),
+		Outpoints:       opt.GetOutpoints(),
+		SpendableOnly:   opt.GetSpendableOnly(),
+		SpentOnly:       opt.GetSpentOnly(),
+		RecoverableOnly: opt.GetRecoverableOnly(),
+		Page:            page,
 	}
 
 	resp, err := a.svc.GetVtxos(ctx, req)
