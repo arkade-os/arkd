@@ -211,7 +211,7 @@ func (i *indexerService) GetTransactionHistory(
 	if len(spent) > 0 {
 		indexedTxids := make(map[string]struct{})
 		for _, vtxo := range spent {
-			if vtxo.SettledBy != "" {
+			if vtxo.IsSettled() {
 				indexedTxids[vtxo.SettledBy] = struct{}{}
 			}
 		}
@@ -510,7 +510,7 @@ func (i *indexerService) vtxosToTxs(
 		if len(v.SpentBy) <= 0 {
 			continue
 		}
-		if v.SettledBy != "" {
+		if v.IsSettled() {
 			continue
 		}
 

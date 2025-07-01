@@ -66,6 +66,10 @@ func (v Vtxo) RequiresForfeit() bool {
 	return !v.Swept && !v.IsNote()
 }
 
+func (v Vtxo) IsSettled() bool {
+	return v.SettledBy != ""
+}
+
 func (v Vtxo) TapKey() (*btcec.PublicKey, error) {
 	pubkeyBytes, err := hex.DecodeString(v.PubKey)
 	if err != nil {

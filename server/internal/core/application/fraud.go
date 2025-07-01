@@ -33,7 +33,7 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 	defer mutx.Unlock()
 
 	// If the vtxo wasn't settled we must broadcast a checkpoint tx.
-	if vtxo.SettledBy == "" {
+	if !vtxo.IsSettled() {
 		if err := s.broadcastCheckpointTx(ctx, vtxo); err != nil {
 			return fmt.Errorf("failed to broadcast checkpoint tx: %s", err)
 		}
