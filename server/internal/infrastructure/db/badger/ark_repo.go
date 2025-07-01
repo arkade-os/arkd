@@ -26,7 +26,6 @@ type ArkRepository interface {
 
 func NewArkRepository(config ...interface{}) (ArkRepository, error) {
 	if len(config) != 2 {
-		fmt.Println("PORCOOOOO", len(config), config)
 		return nil, fmt.Errorf("invalid config")
 	}
 	baseDir, ok := config[0].(string)

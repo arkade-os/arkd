@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -436,22 +435,27 @@ func getSpentVtxoKeysFromRound(
 	round domain.Round, txDecoder ports.TxDecoder,
 ) map[domain.Outpoint]string {
 	spentVtxos := make(map[domain.Outpoint]string)
-	forfeitTxs := make([]domain.ForfeitTx, len(round.ForfeitTxs))
-	copy(forfeitTxs, round.ForfeitTxs)
+
+	// Build a map of forfeit tx inputs for O(1) lookup
+	forfeitInputs := make(map[domain.Outpoint]string)
+	for _, forfeitTx := range round.ForfeitTxs {
+		_, ins, _, err := txDecoder.DecodeTx(forfeitTx.Tx)
+		if err != nil {
+			log.WithError(err).Warnf("failed to decode forfeit tx %s", forfeitTx.Txid)
+			continue
+		}
+		for _, in := range ins {
+			forfeitInputs[in] = forfeitTx.Txid
+		}
+	}
+
+	// Match vtxos with forfeit transactions
 	for _, request := range round.TxRequests {
 		for _, vtxo := range request.Inputs {
 			if !vtxo.RequiresForfeit() {
 				spentVtxos[vtxo.Outpoint] = ""
-				continue
-			}
-			for i, forfeitTx := range forfeitTxs {
-				// nolint
-				_, ins, _, _ := txDecoder.DecodeTx(forfeitTx.Tx)
-				if slices.Contains(ins, vtxo.Outpoint) {
-					spentVtxos[vtxo.Outpoint] = forfeitTx.Txid
-					forfeitTxs = append(forfeitTxs[:i], forfeitTxs[i+1:]...)
-					break
-				}
+			} else if txid, found := forfeitInputs[vtxo.Outpoint]; found {
+				spentVtxos[vtxo.Outpoint] = txid
 			}
 		}
 	}
