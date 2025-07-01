@@ -326,6 +326,19 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	repo := s.vtxoStore
 
+	lastEvent := events[len(events)-1]
+	if lastEvent.GetType() == domain.EventTypeBatchSwept {
+		event := lastEvent.(domain.BatchSwept)
+		if err := repo.SweepVtxos(ctx, event.Vtxos); err != nil {
+			log.WithError(err).Warn("failed to sweep vtxos")
+		}
+		if event.FullySwept {
+			log.Debugf("round %s fully swept", round.Id)
+		}
+		log.Debugf("swept %d vtxos", len(event.Vtxos))
+		return
+	}
+
 	spentVtxos := getSpentVtxoKeysFromRound(round.TxRequests)
 	newVtxos := getNewVtxosFromRound(round)
 

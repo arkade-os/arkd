@@ -227,6 +227,7 @@ func (r *roundRepository) addOrUpdateRound(
 		Version:            round.Version,
 		Swept:              round.Swept,
 		VtxoTreeExpiration: round.VtxoTreeExpiration,
+		SweepTxs:           round.SweepTxs,
 	}
 	var upsertFn func() error
 	if ctx.Value("tx") != nil {
@@ -262,7 +263,7 @@ func (r *roundRepository) addTxs(
 	ctx context.Context, round domain.Round,
 ) (err error) {
 	txs := make(map[string]Tx)
-	if len(round.ForfeitTxs) > 0 || len(round.Connectors) > 0 || len(round.VtxoTree) > 0 {
+	if len(round.ForfeitTxs) > 0 || len(round.Connectors) > 0 || len(round.VtxoTree) > 0 || len(round.SweepTxs) > 0 {
 		for _, tx := range round.ForfeitTxs {
 			txs[tx.Txid] = Tx{
 				Txid: tx.Txid,
@@ -281,6 +282,13 @@ func (r *roundRepository) addTxs(
 			txs[chunk.Txid] = Tx{
 				Txid: chunk.Txid,
 				Tx:   chunk.Tx,
+			}
+		}
+
+		for txid, tx := range round.SweepTxs {
+			txs[txid] = Tx{
+				Txid: txid,
+				Tx:   tx,
 			}
 		}
 	}

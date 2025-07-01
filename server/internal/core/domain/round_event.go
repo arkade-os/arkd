@@ -46,3 +46,11 @@ type TxRequestsRegistered struct {
 	RoundEvent
 	TxRequests []TxRequest
 }
+
+type BatchSwept struct {
+	RoundEvent
+	Vtxos      []Outpoint
+	Txid       string
+	Tx         string
+	FullySwept bool
+}

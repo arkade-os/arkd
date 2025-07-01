@@ -96,12 +96,12 @@ var (
 		{
 			Txid:     txid,
 			Tx:       emptyPtx,
-			Children: map[uint32]string{},
+			Children: nil,
 		},
 		{
 			Txid:     txid,
 			Tx:       emptyPtx,
-			Children: map[uint32]string{},
+			Children: nil,
 		},
 	}
 	connectors = []tree.TxGraphChunk{
@@ -122,7 +122,7 @@ var (
 		{
 			Txid:     txid,
 			Tx:       emptyPtx,
-			Children: map[uint32]string{},
+			Children: nil,
 		},
 	}
 	forfeitTxs = []domain.ForfeitTx{
@@ -142,6 +142,8 @@ func TestRound(t *testing.T) {
 	testStartFinalization(t)
 
 	testEndFinalization(t)
+
+	testSweep(t)
 
 	testFail(t)
 }
@@ -539,6 +541,48 @@ func testEndFinalization(t *testing.T) {
 	})
 }
 
+func testSweep(t *testing.T) {
+	t.Run("sweep", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			round := domain.NewRound()
+			events, err := round.StartRegistration()
+			require.NoError(t, err)
+			require.NotEmpty(t, events)
+
+			events, err = round.RegisterTxRequests(requests)
+			require.NoError(t, err)
+			require.NotEmpty(t, events)
+
+			events, err = round.StartFinalization("", connectors, vtxoTree, "txid", roundTx, expiration)
+			require.NoError(t, err)
+			require.NotEmpty(t, events)
+
+			events, err = round.EndFinalization(forfeitTxs, finalRoundTx)
+			require.NoError(t, err)
+			require.Len(t, events, 1)
+			require.False(t, round.IsStarted())
+			require.True(t, round.IsEnded())
+			require.False(t, round.IsFailed())
+
+			vtxos := leavesToVtxos(tree.TxGraphChunkList(vtxoTree).Leaves())
+			events, err = round.Sweep(vtxos, "sweepTxid", emptyPtx)
+			require.NoError(t, err)
+			require.NotEmpty(t, events)
+
+			event, ok := events[0].(domain.BatchSwept)
+			require.True(t, ok)
+			require.Equal(t, domain.EventTypeBatchSwept, event.Type)
+			require.Equal(t, round.Id, event.Id)
+			require.Exactly(t, vtxos, event.Vtxos)
+			require.Equal(t, "sweepTxid", event.Txid)
+			require.Equal(t, emptyPtx, event.Tx)
+			require.True(t, event.FullySwept)
+			require.True(t, round.Swept)
+			require.Equal(t, round.SweepTxs["sweepTxid"], emptyPtx)
+		})
+	})
+}
+
 func testFail(t *testing.T) {
 	t.Run("fail", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
@@ -569,4 +613,15 @@ func testFail(t *testing.T) {
 			require.Empty(t, events)
 		})
 	})
+}
+
+func leavesToVtxos(leaves []tree.TxGraphChunk) []domain.Outpoint {
+	var vtxos []domain.Outpoint
+	for _, leaf := range leaves {
+		vtxos = append(vtxos, domain.Outpoint{
+			Txid: leaf.Txid,
+			VOut: 0,
+		})
+	}
+	return vtxos
 }

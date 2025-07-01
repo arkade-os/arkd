@@ -13,6 +13,7 @@ const (
 	EventTypeRoundFinalizationStarted
 	EventTypeRoundFinalized
 	EventTypeRoundFailed
+	EventTypeBatchSwept
 )
 
 const (

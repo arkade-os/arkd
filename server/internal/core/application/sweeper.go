@@ -147,6 +147,11 @@ func (s *sweeper) createTask(
 	return func() {
 		ctx := context.Background()
 		rootTxid := vtxoTree.Root.UnsignedTx.TxID()
+		round, err := s.repoManager.Rounds().GetRoundWithTxid(ctx, roundTxid)
+		if err != nil {
+			log.WithError(err).Error("failed to get round")
+			return
+		}
 
 		s.removeTask(rootTxid)
 		log.Tracef("sweeper: %s", rootTxid)
@@ -185,6 +190,8 @@ func (s *sweeper) createTask(
 				sweepableVtxos := make([]domain.Outpoint, 0)
 
 				// check if input is the vtxo itself
+				// TODO: we never arrive to sweep directly the leaf tx, we sweep the parent one in
+				// worst case, so this check can be dropped.
 				vtxos, _ := s.repoManager.Vtxos().GetVtxos(
 					ctx,
 					[]domain.Outpoint{
@@ -240,7 +247,6 @@ func (s *sweeper) createTask(
 			}
 		}
 
-		vtxosRepository := s.repoManager.Vtxos()
 		if len(sweepInputs) > 0 {
 			// build the sweep transaction with all the expired non-swept shared outputs
 			sweepTxId, sweepTx, err := s.builder.BuildSweepTx(sweepInputs)
@@ -276,45 +282,17 @@ func (s *sweeper) createTask(
 			if len(txid) > 0 {
 				log.Debugln("sweep tx broadcasted:", txid)
 
-				// mark the vtxos as swept
-				if err := vtxosRepository.SweepVtxos(ctx, vtxoKeys); err != nil {
-					log.Error(fmt.Errorf("error while deleting vtxos: %w", err))
+				events, err := round.Sweep(vtxoKeys, txid, sweepTx)
+				if err != nil {
+					log.WithError(err).Error("error while sweeping batch")
 					return
 				}
-
-				log.Debugf("%d vtxos swept", len(vtxoKeys))
-			}
-		}
-
-		roundVtxos, err := vtxosRepository.GetVtxosForRound(ctx, roundTxid)
-		if err != nil {
-			log.WithError(err).Error("error while getting vtxos for round")
-			return
-		}
-
-		allSwept := true
-		for _, vtxo := range roundVtxos {
-			allSwept = allSwept && (vtxo.Swept || vtxo.Redeemed)
-			if !allSwept {
-				break
-			}
-		}
-
-		if allSwept {
-			// update the round
-			roundRepo := s.repoManager.Rounds()
-			round, err := roundRepo.GetRoundWithTxid(ctx, roundTxid)
-			if err != nil {
-				log.WithError(err).Error("error while getting round")
-				return
-			}
-
-			log.Debugf("round %s fully swept", roundTxid)
-			round.Sweep()
-
-			if err := roundRepo.AddOrUpdateRound(ctx, *round); err != nil {
-				log.WithError(err).Error("error while marking round as swept")
-				return
+				if len(events) > 0 {
+					if err := s.repoManager.Events().Save(ctx, domain.RoundTopic, round.Id, events); err != nil {
+						log.WithError(err).Errorf("failed to save sweep events for round %s", roundTxid)
+						return
+					}
+				}
 			}
 		}
 	}

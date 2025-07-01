@@ -53,6 +53,7 @@ type Round struct {
 	Version            uint
 	Swept              bool // true if all the vtxos are vtxo.Swept or vtxo.Redeemed
 	VtxoTreeExpiration int64
+	SweepTxs           map[string]string
 	Changes            []Event
 }
 
@@ -200,6 +201,34 @@ func (r *Round) EndFinalization(forfeitTxs []ForfeitTx, finalCommitmentTx string
 	return []Event{event}, nil
 }
 
+func (r *Round) Sweep(vtxos []Outpoint, txid, tx string) ([]Event, error) {
+	if !r.IsEnded() {
+		return nil, fmt.Errorf("not in a valid stage to sweep")
+	}
+	if r.Swept {
+		return nil, nil
+	}
+
+	sweptVtxosCount := countSweptVtxos(r.Changes)
+	leavesCount := len(tree.TxGraphChunkList(r.VtxoTree).Leaves())
+	fullySwept := len(vtxos)+sweptVtxosCount == leavesCount
+
+	event := BatchSwept{
+		RoundEvent: RoundEvent{
+			Id:   r.Id,
+			Type: EventTypeBatchSwept,
+		},
+		Vtxos:      vtxos,
+		Txid:       txid,
+		Tx:         tx,
+		FullySwept: fullySwept,
+	}
+
+	r.raise(event)
+
+	return []Event{event}, nil
+}
+
 func (r *Round) Fail(err error) []Event {
 	if r.Stage.Failed {
 		return nil
@@ -228,10 +257,6 @@ func (r *Round) IsEnded() bool {
 
 func (r *Round) IsFailed() bool {
 	return r.Stage.Failed
-}
-
-func (r *Round) Sweep() {
-	r.Swept = true
 }
 
 func (r *Round) ExpiryTimestamp() int64 {
@@ -270,6 +295,12 @@ func (r *Round) on(event Event, replayed bool) {
 		for _, p := range e.TxRequests {
 			r.TxRequests[p.Id] = p
 		}
+	case BatchSwept:
+		if r.SweepTxs == nil {
+			r.SweepTxs = make(map[string]string)
+		}
+		r.Swept = e.FullySwept
+		r.SweepTxs[e.Txid] = e.Tx
 	default:
 		return
 	}
@@ -285,4 +316,14 @@ func (r *Round) raise(event Event) {
 	}
 	r.Changes = append(r.Changes, event)
 	r.on(event, false)
+}
+
+func countSweptVtxos(events []Event) int {
+	count := 0
+	for _, event := range events {
+		if e, ok := event.(BatchSwept); ok {
+			count += len(e.Vtxos)
+		}
+	}
+	return count
 }

@@ -101,7 +101,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 			}
 		}
 
-		if len(round.ForfeitTxs) > 0 || len(round.Connectors) > 0 || len(round.VtxoTree) > 0 {
+		if len(round.ForfeitTxs) > 0 || len(round.Connectors) > 0 || len(round.VtxoTree) > 0 || len(round.SweepTxs) > 0 {
 			for pos, tx := range round.ForfeitTxs {
 				if err := querierWithTx.UpsertTransaction(
 					ctx,
@@ -132,6 +132,20 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 					createUpsertTransactionParams(chunk, round.Id, "tree", int64(i)),
 				); err != nil {
 					return fmt.Errorf("failed to upsert tree transaction: %w", err)
+				}
+			}
+
+			for txid, tx := range round.SweepTxs {
+				if err := querierWithTx.UpsertTransaction(
+					ctx,
+					queries.UpsertTransactionParams{
+						Txid:    txid,
+						Tx:      tx,
+						RoundID: round.Id,
+						Type:    "sweep",
+					},
+				); err != nil {
+					return fmt.Errorf("failed to upsert sweep transaction: %w", err)
 				}
 			}
 		}
@@ -566,6 +580,11 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 					Tx:       v.tx.Tx.String,
 					Children: children,
 				}
+			case "sweep":
+				if len(round.SweepTxs) <= 0 {
+					round.SweepTxs = make(map[string]string)
+				}
+				round.SweepTxs[v.tx.Txid.String] = v.tx.Tx.String
 			}
 		}
 

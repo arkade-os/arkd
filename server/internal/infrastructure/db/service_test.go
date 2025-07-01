@@ -35,6 +35,8 @@ const (
 	txida       = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	txidb       = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	virtualTxid = txida
+	sweepTxid   = "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+	sweepTx     = "cHNidP8BADwBAAAAAauqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
 )
 
 var (
@@ -42,7 +44,7 @@ var (
 		{
 			Txid:     randomString(32),
 			Tx:       randomTx(),
-			Children: map[uint32]string{},
+			Children: nil,
 		},
 		{
 			Txid: randomString(32),
@@ -533,6 +535,27 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.NotNil(t, txs)
 		require.Equal(t, 2, len(txs))
+
+		newEvents = []domain.Event{
+			domain.BatchSwept{
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalized,
+				},
+				Txid:       sweepTxid,
+				Tx:         sweepTx,
+				FullySwept: true,
+			},
+		}
+		events = append(events, newEvents...)
+		sweptRound := domain.NewRoundFromEvents(events)
+		err = svc.Rounds().AddOrUpdateRound(ctx, *sweptRound)
+		require.NoError(t, err)
+
+		roundById, err = svc.Rounds().GetRoundWithId(ctx, roundId)
+		require.NoError(t, err)
+		require.NotNil(t, roundById)
+		require.Condition(t, roundsMatch(*sweptRound, *roundById))
 	})
 }
 
@@ -827,6 +850,19 @@ func roundsMatch(expected, got domain.Round) assert.Comparison {
 
 		if len(expected.Connectors) > 0 {
 			if !reflect.DeepEqual(expected.Connectors, got.Connectors) {
+				return false
+			}
+		}
+
+		if expected.Swept != got.Swept {
+			return false
+		}
+		for k, v := range expected.SweepTxs {
+			gotValue, ok := got.SweepTxs[k]
+			if !ok {
+				return false
+			}
+			if v != gotValue {
 				return false
 			}
 		}
