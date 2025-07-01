@@ -225,9 +225,13 @@ func (e *indexerService) GetVtxos(ctx context.Context, request *arkv1.GetVtxosRe
 	if request.GetSpendableOnly() && request.GetSpentOnly() {
 		return nil, status.Error(codes.InvalidArgument, "spendable and spent filters are mutually exclusive")
 	}
-	pubkeys, err := parseScripts(request.GetScripts())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	pubkeys := make([]string, 0, len(request.GetScripts()))
+	for _, script := range request.GetScripts() {
+		script, err := parseScript(script)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		pubkeys = append(pubkeys, script[4:])
 	}
 	outpoints, err := parseOutpoints(request.GetOutpoints())
 	if err != nil {
@@ -238,7 +242,7 @@ func (e *indexerService) GetVtxos(ctx context.Context, request *arkv1.GetVtxosRe
 		return nil, status.Error(codes.InvalidArgument, "missing outpoints or addresses filter")
 	}
 	if len(outpoints) > 0 && len(pubkeys) > 0 {
-		return nil, status.Error(codes.InvalidArgument, "outpoints and addresses filters are mutually exclusive")
+		return nil, status.Error(codes.InvalidArgument, "outpoints and scripts filters are mutually exclusive")
 	}
 	spendableOnly := request.GetSpendableOnly()
 	spentOnly := request.GetSpentOnly()
