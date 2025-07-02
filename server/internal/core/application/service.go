@@ -51,6 +51,10 @@ type covenantlessService struct {
 	redeemTxInputs *outpointMap
 	roundInputs    *outpointMap
 
+	stop func()
+	ctx  context.Context
+	wg   *sync.WaitGroup
+
 	eventsCh            chan domain.RoundEvent
 	transactionEventsCh chan TransactionEvent
 	// TODO remove this in v7
@@ -132,6 +136,8 @@ func NewService(
 		utxoMinAmount = int64(dustAmount)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	svc := &covenantlessService{
 		network:                   network,
 		pubkey:                    pubkey,
@@ -162,6 +168,9 @@ func NewService(
 		vtxoMaxAmount:             vtxoMaxAmount,
 		vtxoMinAmount:             vtxoMinAmount,
 		indexerTxEventsCh:         make(chan TransactionEvent),
+		wg:                        &sync.WaitGroup{},
+		stop:                      cancel,
+		ctx:                       ctx,
 	}
 
 	repoManager.RegisterEventsHandler(
@@ -204,11 +213,14 @@ func (s *covenantlessService) Start() error {
 	}
 
 	log.Debug("starting app service...")
+	s.wg.Add(1)
 	go s.start()
 	return nil
 }
 
 func (s *covenantlessService) Stop() {
+	s.stop()
+	s.wg.Wait()
 	s.sweeper.stop()
 	// nolint
 	vtxos, _ := s.repoManager.Vtxos().GetAllSweepableVtxos(context.Background())
@@ -1572,6 +1584,13 @@ func (s *covenantlessService) start() {
 }
 
 func (s *covenantlessService) startRound() {
+	defer s.wg.Done()
+
+	select {
+	case <-s.ctx.Done():
+		return
+	default:
+	}
 	// reset the forfeit txs map to avoid polluting the next batch of forfeits transactions
 	s.forfeitTxs.reset()
 
@@ -1588,19 +1607,26 @@ func (s *covenantlessService) startRound() {
 	close(s.forfeitsBoardingSigsChan)
 	s.forfeitsBoardingSigsChan = make(chan struct{}, 1)
 
-	defer func() {
-		roundEndTime := time.Now().Add(time.Duration(s.roundInterval) * time.Second)
-		sleepingTime := s.roundInterval / 6
-		if sleepingTime < 1 {
-			sleepingTime = 1
-		}
-		time.Sleep(time.Duration(sleepingTime) * time.Second)
-		s.startFinalization(roundEndTime)
-	}()
-
 	log.Debugf("started registration stage for new round: %s", round.Id)
+
+	roundEndTime := time.Now().Add(time.Duration(s.roundInterval) * time.Second)
+	sleepingTime := s.roundInterval / 6
+	if sleepingTime < 1 {
+		sleepingTime = 1
+	}
+	time.Sleep(time.Duration(sleepingTime) * time.Second)
+	s.wg.Add(1)
+	go s.startFinalization(roundEndTime)
 }
 func (s *covenantlessService) startFinalization(roundEndTime time.Time) {
+	defer s.wg.Done()
+
+	select {
+	case <-s.ctx.Done():
+		return
+	default:
+	}
+
 	log.Debugf("started finalization stage for round: %s", s.currentRound.Id)
 	ctx := context.Background()
 	round := s.currentRound
@@ -1613,11 +1639,14 @@ func (s *covenantlessService) startFinalization(roundEndTime time.Time) {
 	var roundAborted bool
 	var vtxoKeys []domain.VtxoKey
 	defer func() {
-		delete(s.treeSigningSessions, round.Id)
+		s.wg.Add(1)
+
 		if roundAborted {
-			s.startRound()
+			go s.startRound()
 			return
 		}
+
+		delete(s.treeSigningSessions, round.Id)
 
 		if err := s.saveEvents(ctx, round.Id, round.Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
@@ -1625,11 +1654,11 @@ func (s *covenantlessService) startFinalization(roundEndTime time.Time) {
 
 		if round.IsFailed() {
 			s.roundInputs.remove(vtxoKeys)
-			s.startRound()
+			go s.startRound()
 			return
 		}
 
-		s.finalizeRound(notes, recoveredVtxos, roundEndTime)
+		go s.finalizeRound(notes, recoveredVtxos, roundEndTime)
 	}()
 
 	if round.IsFailed() {
@@ -1890,7 +1919,16 @@ func (s *covenantlessService) propagateRoundSigningNoncesGeneratedEvent(combined
 }
 
 func (s *covenantlessService) finalizeRound(notes []note.Note, recoveredVtxos []domain.Vtxo, roundEndTime time.Time) {
-	defer s.startRound()
+	defer s.wg.Done()
+
+	var stopped bool
+
+	defer func() {
+		if !stopped {
+			s.wg.Add(1)
+			go s.startRound()
+		}
+	}()
 
 	ctx := context.Background()
 	s.currentRoundLock.Lock()
@@ -1906,6 +1944,13 @@ func (s *covenantlessService) finalizeRound(notes []note.Note, recoveredVtxos []
 		}
 		s.roundInputs.remove(vtxoKeys)
 	}()
+
+	select {
+	case <-s.ctx.Done():
+		stopped = true
+		return
+	default:
+	}
 
 	if round.IsFailed() {
 		return
