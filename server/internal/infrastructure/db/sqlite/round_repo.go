@@ -630,7 +630,11 @@ func combinedRowToVtxo(row queries.RequestVtxoVw) domain.Vtxo {
 		Spent:              row.Spent.Bool,
 		Redeemed:           row.Redeemed.Bool,
 		Swept:              row.Swept.Bool,
+		Preconfirmed:       row.Preconfirmed.Bool,
 		ExpireAt:           row.ExpireAt.Int64,
+		CreatedAt:          row.CreatedAt.Int64,
+		ArkTxid:            row.ArkTxid.String,
+		SettledBy:          row.SettledBy.String,
 	}
 }
 
