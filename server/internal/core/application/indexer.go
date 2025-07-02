@@ -165,7 +165,7 @@ func (i *indexerService) GetVtxos(
 	ctx context.Context, pubkeys []string, spendableOnly, spentOnly, recoverableOnly bool, page *Page,
 ) (*GetVtxosResp, error) {
 	if (spendableOnly && spentOnly) || (spendableOnly && recoverableOnly) || (spentOnly && recoverableOnly) {
-		return nil, fmt.Errorf("spendable, spent and recoverable filters are mutually esclusive")
+		return nil, fmt.Errorf("spendable, spent and recoverable filters are mutually exclusive")
 	}
 
 	vtxos, err := i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys)

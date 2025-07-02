@@ -828,7 +828,7 @@ type GetVtxosRequest struct {
 	Outpoints []string `protobuf:"bytes,2,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
 	// Retrieve only spendable vtxos
 	SpendableOnly bool `protobuf:"varint,3,opt,name=spendable_only,json=spendableOnly,proto3" json:"spendable_only,omitempty"`
-	// Retrieve only spendable vtxos.
+	// Retrieve only spent vtxos.
 	SpentOnly bool `protobuf:"varint,4,opt,name=spent_only,json=spentOnly,proto3" json:"spent_only,omitempty"`
 	// Retrieve only recoverable vtxos (notes, subdust or swept vtxos).
 	// The 3 filters are mutually exclusive,

@@ -46,7 +46,7 @@ func (o *GetVtxosRequestOption) WithOutpoints(outpoints []Outpoint) error {
 		return fmt.Errorf("outpoints already set")
 	}
 	if o.scripts != nil {
-		return fmt.Errorf("addresses already set")
+		return fmt.Errorf("scripts already set")
 	}
 	o.outpoints = outpoints
 	return nil

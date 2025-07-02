@@ -641,7 +641,7 @@
           },
           {
             "name": "spentOnly",
-            "description": "Retrieve only spendable vtxos.",
+            "description": "Retrieve only spent vtxos.",
             "in": "query",
             "required": false,
             "type": "boolean"

@@ -205,7 +205,7 @@ message GetVtxosRequest {
   repeated string outpoints = 2;
   // Retrieve only spendable vtxos
   bool spendable_only = 3;
-  // Retrieve only spendable vtxos.
+  // Retrieve only spent vtxos.
   bool spent_only = 4;
   // Retrieve only recoverable vtxos (notes, subdust or swept vtxos).
   // The 3 filters are mutually exclusive,

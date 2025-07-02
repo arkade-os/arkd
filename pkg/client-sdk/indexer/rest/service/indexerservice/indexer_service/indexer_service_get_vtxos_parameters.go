@@ -99,7 +99,7 @@ type IndexerServiceGetVtxosParams struct {
 
 	/* SpentOnly.
 
-	   Retrieve only spendable vtxos.
+	   Retrieve only spent vtxos.
 	*/
 	SpentOnly *bool
 
