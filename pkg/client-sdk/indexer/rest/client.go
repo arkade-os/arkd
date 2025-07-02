@@ -567,10 +567,11 @@ func (a *restClient) GetSubscription(ctx context.Context, subscriptionId string)
 				}
 
 				eventsCh <- &indexer.ScriptEvent{
-					Txid:       resp.Result.Txid,
-					Scripts:    resp.Result.Scripts,
-					NewVtxos:   newVtxos,
-					SpentVtxos: spentVtxos,
+					Txid:          resp.Result.Txid,
+					Scripts:       resp.Result.Scripts,
+					NewVtxos:      newVtxos,
+					SpentVtxos:    spentVtxos,
+					CheckpointTxs: checkpointTxs,
 				}
 			}
 		}

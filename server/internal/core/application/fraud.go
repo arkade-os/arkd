@@ -52,8 +52,11 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo domain.Vtxo) error {
 	// retrieve the checkpoint tx that spent the vtxo
 	txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.SpentBy})
-	if err != nil || len(txs) <= 0 {
+	if err != nil {
 		return fmt.Errorf("failed to retrieve checkpoint tx: %s", err)
+	}
+	if len(txs) <= 0 {
+		return fmt.Errorf("checkpoint tx %s not found", vtxo.SpentBy)
 	}
 
 	checkpointPsbt := txs[0]
