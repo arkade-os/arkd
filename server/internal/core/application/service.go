@@ -654,7 +654,7 @@ func (s *covenantlessService) SubmitOffchainTx(
 		}
 
 		// verify we don't have multiple OP_RETURN outputs
-		if bytes.Contains(out.PkScript, []byte{txscript.OP_RETURN}) {
+		if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
 			if foundOpReturn {
 				return nil, "", "", fmt.Errorf("invalid tx, multiple op return outputs")
 			}
