@@ -1507,7 +1507,7 @@ func (s *covenantlessService) startRound() {
 	log.Debugf("started registration stage for new round: %s", round.Id)
 
 	roundTiming := newRoundTiming(s.roundInterval)
-	<-time.After(0 * time.Millisecond) //roundTiming.registrationDuration())
+	<-time.After(roundTiming.registrationDuration())
 	s.wg.Add(1)
 	go s.startConfirmation(roundTiming)
 }
