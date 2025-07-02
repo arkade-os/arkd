@@ -642,6 +642,8 @@ func (s *covenantlessService) SubmitOffchainTx(
 
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
+	foundOpReturn := false
+
 	for outIndex, out := range virtualPtx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
@@ -649,6 +651,14 @@ func (s *covenantlessService) SubmitOffchainTx(
 			}
 			foundAnchor = true
 			continue
+		}
+
+		// verify we don't have multiple OP_RETURN outputs
+		if bytes.Contains(out.PkScript, []byte{txscript.OP_RETURN}) {
+			if foundOpReturn {
+				return nil, "", "", fmt.Errorf("invalid tx, multiple op return outputs")
+			}
+			foundOpReturn = true
 		}
 
 		if s.vtxoMaxAmount >= 0 {
