@@ -33,7 +33,7 @@ func (v *offchainTxRepository) AddOrUpdateOffchainTx(
 	ctx context.Context, offchainTx *domain.OffchainTx,
 ) error {
 	txBody := func(querierWithTx *queries.Queries) error {
-		if err := querierWithTx.UpsertVirtualTx(ctx, queries.UpsertVirtualTxParams{
+		if err := querierWithTx.UpsertOffchainTx(ctx, queries.UpsertOffchainTxParams{
 			Txid:              offchainTx.VirtualTxid,
 			Tx:                offchainTx.VirtualTx,
 			StartingTimestamp: offchainTx.StartingTimestamp,
@@ -52,11 +52,11 @@ func (v *offchainTxRepository) AddOrUpdateOffchainTx(
 			}
 			isRoot := commitmentTxid == offchainTx.RootCommitmentTxId
 			err := querierWithTx.UpsertCheckpointTx(ctx, queries.UpsertCheckpointTxParams{
-				Txid:               checkpointTxid,
-				Tx:                 checkpointTx,
-				CommitmentTxid:     commitmentTxid,
-				IsRootCommitmentTx: isRoot,
-				VirtualTxid:        offchainTx.VirtualTxid,
+				Txid:                 checkpointTxid,
+				Tx:                   checkpointTx,
+				CommitmentTxid:       commitmentTxid,
+				IsRootCommitmentTxid: isRoot,
+				OffchainTxid:         offchainTx.VirtualTxid,
 			})
 			if err != nil {
 				return err
@@ -68,23 +68,23 @@ func (v *offchainTxRepository) AddOrUpdateOffchainTx(
 }
 
 func (v *offchainTxRepository) GetOffchainTx(ctx context.Context, txid string) (*domain.OffchainTx, error) {
-	rows, err := v.querier.SelectVirtualTxWithTxId(ctx, txid)
+	rows, err := v.querier.SelectOffchainTx(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("offchain tx %s not found", txid)
 	}
-	vt := rows[0].VirtualTxCheckpointTxVw
+	vt := rows[0].OffchainTxVw
 	checkpointTxs := make(map[string]string)
 	commitmentTxids := make(map[string]string)
 	rootCommitmentTxId := ""
 	for _, row := range rows {
-		vw := row.VirtualTxCheckpointTxVw
+		vw := row.OffchainTxVw
 		if vw.CheckpointTxid != "" && vw.CheckpointTx != "" {
 			checkpointTxs[vw.CheckpointTxid] = vw.CheckpointTx
 			commitmentTxids[vw.CheckpointTxid] = vw.CommitmentTxid
-			if vw.IsRootCommitmentTx {
+			if vw.IsRootCommitmentTxid {
 				rootCommitmentTxId = vw.CommitmentTxid
 			}
 		}

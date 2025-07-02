@@ -32,7 +32,7 @@ func NewMarketHourRepository(config ...interface{}) (domain.MarketHourRepo, erro
 }
 
 func (r *marketHourRepository) Get(ctx context.Context) (*domain.MarketHour, error) {
-	marketHour, err := r.querier.GetLatestMarketHour(ctx)
+	marketHour, err := r.querier.SelectLatestMarketHour(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

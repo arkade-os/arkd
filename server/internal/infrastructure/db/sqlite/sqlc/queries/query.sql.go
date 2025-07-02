@@ -11,12 +11,698 @@ import (
 	"strings"
 )
 
-const getExistingRounds = `-- name: GetExistingRounds :many
-SELECT txid FROM round WHERE txid IN (/*SLICE:txids*/?)
+const insertVtxoCommitmentTxid = `-- name: InsertVtxoCommitmentTxid :exec
+INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
+VALUES (?1, ?2, ?3)
 `
 
-func (q *Queries) GetExistingRounds(ctx context.Context, txids []string) ([]string, error) {
-	query := getExistingRounds
+type InsertVtxoCommitmentTxidParams struct {
+	VtxoTxid       string
+	VtxoVout       int64
+	CommitmentTxid string
+}
+
+func (q *Queries) InsertVtxoCommitmentTxid(ctx context.Context, arg InsertVtxoCommitmentTxidParams) error {
+	_, err := q.db.ExecContext(ctx, insertVtxoCommitmentTxid, arg.VtxoTxid, arg.VtxoVout, arg.CommitmentTxid)
+	return err
+}
+
+const selectAllRoundIds = `-- name: SelectAllRoundIds :many
+SELECT id FROM round
+`
+
+func (q *Queries) SelectAllRoundIds(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectAllRoundIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectAllVtxos = `-- name: SelectAllVtxos :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw
+`
+
+type SelectAllVtxosRow struct {
+	VtxoVw VtxoVw
+}
+
+func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectAllVtxos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectAllVtxosRow
+	for rows.Next() {
+		var i SelectAllVtxosRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectLatestMarketHour = `-- name: SelectLatestMarketHour :one
+SELECT id, start_time, end_time, period, round_interval, updated_at FROM market_hour ORDER BY updated_at DESC LIMIT 1
+`
+
+func (q *Queries) SelectLatestMarketHour(ctx context.Context) (MarketHour, error) {
+	row := q.db.QueryRowContext(ctx, selectLatestMarketHour)
+	var i MarketHour
+	err := row.Scan(
+		&i.ID,
+		&i.StartTime,
+		&i.EndTime,
+		&i.Period,
+		&i.RoundInterval,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const selectNotUnrolledVtxos = `-- name: SelectNotUnrolledVtxos :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = false
+`
+
+type SelectNotUnrolledVtxosRow struct {
+	VtxoVw VtxoVw
+}
+
+func (q *Queries) SelectNotUnrolledVtxos(ctx context.Context) ([]SelectNotUnrolledVtxosRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectNotUnrolledVtxos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectNotUnrolledVtxosRow
+	for rows.Next() {
+		var i SelectNotUnrolledVtxosRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectNotUnrolledVtxosWithPubkey = `-- name: SelectNotUnrolledVtxosWithPubkey :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = false AND pubkey = ?1
+`
+
+type SelectNotUnrolledVtxosWithPubkeyRow struct {
+	VtxoVw VtxoVw
+}
+
+func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey string) ([]SelectNotUnrolledVtxosWithPubkeyRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectNotUnrolledVtxosWithPubkey, pubkey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectNotUnrolledVtxosWithPubkeyRow
+	for rows.Next() {
+		var i SelectNotUnrolledVtxosWithPubkeyRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectOffchainTx = `-- name: SelectOffchainTx :many
+SELECT  offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = ?1
+`
+
+type SelectOffchainTxRow struct {
+	OffchainTxVw OffchainTxVw
+}
+
+func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOffchainTxRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectOffchainTx, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectOffchainTxRow
+	for rows.Next() {
+		var i SelectOffchainTxRow
+		if err := rows.Scan(
+			&i.OffchainTxVw.Txid,
+			&i.OffchainTxVw.Tx,
+			&i.OffchainTxVw.StartingTimestamp,
+			&i.OffchainTxVw.EndingTimestamp,
+			&i.OffchainTxVw.ExpiryTimestamp,
+			&i.OffchainTxVw.FailReason,
+			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.CheckpointTxid,
+			&i.OffchainTxVw.CheckpointTx,
+			&i.OffchainTxVw.CommitmentTxid,
+			&i.OffchainTxVw.IsRootCommitmentTxid,
+			&i.OffchainTxVw.OffchainTxid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundConnectors = `-- name: SelectRoundConnectors :many
+SELECT t.txid, t.tx, t.round_id, t.type, t.position, t.children FROM tx t WHERE t.round_id = (
+    SELECT tx.round_id FROM tx WHERE tx.txid = ?1 AND type = 'commitment'
+) AND t.type = 'connector'
+`
+
+func (q *Queries) SelectRoundConnectors(ctx context.Context, txid string) ([]Tx, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundConnectors, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Tx
+	for rows.Next() {
+		var i Tx
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Tx,
+			&i.RoundID,
+			&i.Type,
+			&i.Position,
+			&i.Children,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundForfeitTxs = `-- name: SelectRoundForfeitTxs :many
+SELECT t.txid, t.tx, t.round_id, t.type, t.position, t.children FROM tx t WHERE t.round_id IN (
+    SELECT tx.round_id FROM tx WHERE tx.txid = ?1 AND type = 'commitment'
+) AND t.type = 'forfeit'
+`
+
+func (q *Queries) SelectRoundForfeitTxs(ctx context.Context, txid string) ([]Tx, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundForfeitTxs, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Tx
+	for rows.Next() {
+		var i Tx
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Tx,
+			&i.RoundID,
+			&i.Type,
+			&i.Position,
+			&i.Children,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundIdsInTimeRange = `-- name: SelectRoundIdsInTimeRange :many
+SELECT id FROM round WHERE starting_timestamp > ?1 AND starting_timestamp < ?2
+`
+
+type SelectRoundIdsInTimeRangeParams struct {
+	StartTs int64
+	EndTs   int64
+}
+
+func (q *Queries) SelectRoundIdsInTimeRange(ctx context.Context, arg SelectRoundIdsInTimeRangeParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundIdsInTimeRange, arg.StartTs, arg.EndTs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundStats = `-- name: SelectRoundStats :one
+SELECT
+    r.swept,
+    r.starting_timestamp,
+    r.ending_timestamp,
+    (
+        SELECT COALESCE(SUM(amount), 0) FROM (
+            SELECT DISTINCT v2.txid, v2.vout, v2.pubkey, v2.amount, v2.expires_at, v2.created_at, v2.commitment_txid, v2.spent_by, v2.spent, v2.unrolled, v2.swept, v2.preconfirmed, v2.settled_by, v2.ark_txid, v2.intent_id FROM vtxo v2 JOIN intent i2 ON i2.id = v2.intent_id WHERE i2.round_id = r.id
+        ) as intent_inputs_amount
+    ) AS total_forfeit_amount,
+    (
+        SELECT COALESCE(COUNT(v3.txid), 0) FROM vtxo v3 JOIN intent i3 ON i3.id = v3.intent_id WHERE i3.round_id = r.id
+    ) AS total_input_vtxos,
+    (
+        SELECT COALESCE(SUM(amount), 0) FROM (
+            SELECT DISTINCT rr.intent_id, rr.pubkey, rr.onchain_address, rr.amount FROM receiver rr
+            JOIN intent i4 ON i4.id = rr.intent_id
+            WHERE i4.round_id = r.id AND COALESCE(rr.onchain_address, '') = ''
+        ) AS intent_outputs_amount
+    ) AS total_batch_amount,
+    (
+        SELECT COUNT(*) FROM tx t WHERE t.round_id = r.id AND t.type = 'tree' AND TRIM(COALESCE(t.children, '')) = ''
+    ) AS total_output_vtxos,
+    (
+        SELECT MAX(v.expires_at) FROM vtxo_vw v WHERE v.commitment_txid = r.txid
+    ) AS expires_at
+FROM round_with_commitment_tx_vw r
+WHERE r.txid = ?1
+`
+
+type SelectRoundStatsRow struct {
+	Swept              bool
+	StartingTimestamp  int64
+	EndingTimestamp    int64
+	TotalForfeitAmount interface{}
+	TotalInputVtxos    interface{}
+	TotalBatchAmount   interface{}
+	TotalOutputVtxos   int64
+	ExpiresAt          interface{}
+}
+
+func (q *Queries) SelectRoundStats(ctx context.Context, txid string) (SelectRoundStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, selectRoundStats, txid)
+	var i SelectRoundStatsRow
+	err := row.Scan(
+		&i.Swept,
+		&i.StartingTimestamp,
+		&i.EndingTimestamp,
+		&i.TotalForfeitAmount,
+		&i.TotalInputVtxos,
+		&i.TotalBatchAmount,
+		&i.TotalOutputVtxos,
+		&i.ExpiresAt,
+	)
+	return i, err
+}
+
+const selectRoundVtxoTree = `-- name: SelectRoundVtxoTree :many
+SELECT txid, tx, round_id, type, position, children FROM tx WHERE round_id = (
+    SELECT tx.round_id FROM tx WHERE tx.txid = ?1 AND type = 'commitment'
+) AND type = 'tree'
+`
+
+func (q *Queries) SelectRoundVtxoTree(ctx context.Context, txid string) ([]Tx, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundVtxoTree, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Tx
+	for rows.Next() {
+		var i Tx
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Tx,
+			&i.RoundID,
+			&i.Type,
+			&i.Position,
+			&i.Children,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundVtxoTreeLeaves = `-- name: SelectRoundVtxoTreeLeaves :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE commitment_txid = ?1 AND preconfirmed = false
+`
+
+type SelectRoundVtxoTreeLeavesRow struct {
+	VtxoVw VtxoVw
+}
+
+func (q *Queries) SelectRoundVtxoTreeLeaves(ctx context.Context, commitmentTxid string) ([]SelectRoundVtxoTreeLeavesRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundVtxoTreeLeaves, commitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectRoundVtxoTreeLeavesRow
+	for rows.Next() {
+		var i SelectRoundVtxoTreeLeavesRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundWithId = `-- name: SelectRoundWithId :many
+SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason,
+    round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message,
+    round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
+    intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message,
+    intent_inputs_vw.txid, intent_inputs_vw.vout, intent_inputs_vw.pubkey, intent_inputs_vw.amount, intent_inputs_vw.expires_at, intent_inputs_vw.created_at, intent_inputs_vw.commitment_txid, intent_inputs_vw.spent_by, intent_inputs_vw.spent, intent_inputs_vw.unrolled, intent_inputs_vw.swept, intent_inputs_vw.preconfirmed, intent_inputs_vw.settled_by, intent_inputs_vw.ark_txid, intent_inputs_vw.intent_id, intent_inputs_vw.commitments, intent_inputs_vw.id, intent_inputs_vw.round_id, intent_inputs_vw.proof, intent_inputs_vw.message
+FROM round
+LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
+LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
+LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
+LEFT OUTER JOIN intent_inputs_vw ON round_intents_vw.id=intent_inputs_vw.intent_id
+WHERE round.id = ?1
+`
+
+type SelectRoundWithIdRow struct {
+	Round                 Round
+	RoundIntentsVw        RoundIntentsVw
+	RoundTxsVw            RoundTxsVw
+	IntentWithReceiversVw IntentWithReceiversVw
+	IntentInputsVw        IntentInputsVw
+}
+
+func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRoundWithIdRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundWithId, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectRoundWithIdRow
+	for rows.Next() {
+		var i SelectRoundWithIdRow
+		if err := rows.Scan(
+			&i.Round.ID,
+			&i.Round.StartingTimestamp,
+			&i.Round.EndingTimestamp,
+			&i.Round.Ended,
+			&i.Round.Failed,
+			&i.Round.StageCode,
+			&i.Round.ConnectorAddress,
+			&i.Round.Version,
+			&i.Round.Swept,
+			&i.Round.VtxoTreeExpiration,
+			&i.Round.FailReason,
+			&i.RoundIntentsVw.ID,
+			&i.RoundIntentsVw.RoundID,
+			&i.RoundIntentsVw.Proof,
+			&i.RoundIntentsVw.Message,
+			&i.RoundTxsVw.Txid,
+			&i.RoundTxsVw.Tx,
+			&i.RoundTxsVw.RoundID,
+			&i.RoundTxsVw.Type,
+			&i.RoundTxsVw.Position,
+			&i.RoundTxsVw.Children,
+			&i.IntentWithReceiversVw.IntentID,
+			&i.IntentWithReceiversVw.Pubkey,
+			&i.IntentWithReceiversVw.OnchainAddress,
+			&i.IntentWithReceiversVw.Amount,
+			&i.IntentWithReceiversVw.ID,
+			&i.IntentWithReceiversVw.RoundID,
+			&i.IntentWithReceiversVw.Proof,
+			&i.IntentWithReceiversVw.Message,
+			&i.IntentInputsVw.Txid,
+			&i.IntentInputsVw.Vout,
+			&i.IntentInputsVw.Pubkey,
+			&i.IntentInputsVw.Amount,
+			&i.IntentInputsVw.ExpiresAt,
+			&i.IntentInputsVw.CreatedAt,
+			&i.IntentInputsVw.CommitmentTxid,
+			&i.IntentInputsVw.SpentBy,
+			&i.IntentInputsVw.Spent,
+			&i.IntentInputsVw.Unrolled,
+			&i.IntentInputsVw.Swept,
+			&i.IntentInputsVw.Preconfirmed,
+			&i.IntentInputsVw.SettledBy,
+			&i.IntentInputsVw.ArkTxid,
+			&i.IntentInputsVw.IntentID,
+			&i.IntentInputsVw.Commitments,
+			&i.IntentInputsVw.ID,
+			&i.IntentInputsVw.RoundID,
+			&i.IntentInputsVw.Proof,
+			&i.IntentInputsVw.Message,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundWithTxid = `-- name: SelectRoundWithTxid :many
+SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason,
+    round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message,
+    round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
+    intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message,
+    intent_inputs_vw.txid, intent_inputs_vw.vout, intent_inputs_vw.pubkey, intent_inputs_vw.amount, intent_inputs_vw.expires_at, intent_inputs_vw.created_at, intent_inputs_vw.commitment_txid, intent_inputs_vw.spent_by, intent_inputs_vw.spent, intent_inputs_vw.unrolled, intent_inputs_vw.swept, intent_inputs_vw.preconfirmed, intent_inputs_vw.settled_by, intent_inputs_vw.ark_txid, intent_inputs_vw.intent_id, intent_inputs_vw.commitments, intent_inputs_vw.id, intent_inputs_vw.round_id, intent_inputs_vw.proof, intent_inputs_vw.message
+FROM round
+LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
+LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
+LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
+LEFT OUTER JOIN intent_inputs_vw ON round_intents_vw.id=intent_inputs_vw.intent_id
+WHERE round.id = (
+    SELECT tx.round_id FROM tx WHERE tx.txid = ?1 AND type = 'commitment'
+)
+`
+
+type SelectRoundWithTxidRow struct {
+	Round                 Round
+	RoundIntentsVw        RoundIntentsVw
+	RoundTxsVw            RoundTxsVw
+	IntentWithReceiversVw IntentWithReceiversVw
+	IntentInputsVw        IntentInputsVw
+}
+
+func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]SelectRoundWithTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundWithTxid, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectRoundWithTxidRow
+	for rows.Next() {
+		var i SelectRoundWithTxidRow
+		if err := rows.Scan(
+			&i.Round.ID,
+			&i.Round.StartingTimestamp,
+			&i.Round.EndingTimestamp,
+			&i.Round.Ended,
+			&i.Round.Failed,
+			&i.Round.StageCode,
+			&i.Round.ConnectorAddress,
+			&i.Round.Version,
+			&i.Round.Swept,
+			&i.Round.VtxoTreeExpiration,
+			&i.Round.FailReason,
+			&i.RoundIntentsVw.ID,
+			&i.RoundIntentsVw.RoundID,
+			&i.RoundIntentsVw.Proof,
+			&i.RoundIntentsVw.Message,
+			&i.RoundTxsVw.Txid,
+			&i.RoundTxsVw.Tx,
+			&i.RoundTxsVw.RoundID,
+			&i.RoundTxsVw.Type,
+			&i.RoundTxsVw.Position,
+			&i.RoundTxsVw.Children,
+			&i.IntentWithReceiversVw.IntentID,
+			&i.IntentWithReceiversVw.Pubkey,
+			&i.IntentWithReceiversVw.OnchainAddress,
+			&i.IntentWithReceiversVw.Amount,
+			&i.IntentWithReceiversVw.ID,
+			&i.IntentWithReceiversVw.RoundID,
+			&i.IntentWithReceiversVw.Proof,
+			&i.IntentWithReceiversVw.Message,
+			&i.IntentInputsVw.Txid,
+			&i.IntentInputsVw.Vout,
+			&i.IntentInputsVw.Pubkey,
+			&i.IntentInputsVw.Amount,
+			&i.IntentInputsVw.ExpiresAt,
+			&i.IntentInputsVw.CreatedAt,
+			&i.IntentInputsVw.CommitmentTxid,
+			&i.IntentInputsVw.SpentBy,
+			&i.IntentInputsVw.Spent,
+			&i.IntentInputsVw.Unrolled,
+			&i.IntentInputsVw.Swept,
+			&i.IntentInputsVw.Preconfirmed,
+			&i.IntentInputsVw.SettledBy,
+			&i.IntentInputsVw.ArkTxid,
+			&i.IntentInputsVw.IntentID,
+			&i.IntentInputsVw.Commitments,
+			&i.IntentInputsVw.ID,
+			&i.IntentInputsVw.RoundID,
+			&i.IntentInputsVw.Proof,
+			&i.IntentInputsVw.Message,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundsWithTxids = `-- name: SelectRoundsWithTxids :many
+SELECT txid FROM tx WHERE type = 'commitment' AND tx.txid IN (/*SLICE:txids*/?)
+`
+
+func (q *Queries) SelectRoundsWithTxids(ctx context.Context, txids []string) ([]string, error) {
+	query := selectRoundsWithTxids
 	var queryParams []interface{}
 	if len(txids) > 0 {
 		for _, v := range txids {
@@ -48,870 +734,23 @@ func (q *Queries) GetExistingRounds(ctx context.Context, txids []string) ([]stri
 	return items, nil
 }
 
-const getLatestMarketHour = `-- name: GetLatestMarketHour :one
-SELECT id, start_time, end_time, period, round_interval, updated_at FROM market_hour ORDER BY updated_at DESC LIMIT 1
+const selectSweepableRounds = `-- name: SelectSweepableRounds :many
+SELECT txid FROM round_with_commitment_tx_vw r WHERE r.swept = false AND r.ended = true AND r.failed = false
 `
 
-func (q *Queries) GetLatestMarketHour(ctx context.Context) (MarketHour, error) {
-	row := q.db.QueryRowContext(ctx, getLatestMarketHour)
-	var i MarketHour
-	err := row.Scan(
-		&i.ID,
-		&i.StartTime,
-		&i.EndTime,
-		&i.Period,
-		&i.RoundInterval,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getRoundConnectorTreeTxs = `-- name: GetRoundConnectorTreeTxs :many
-SELECT tx.txid, tx.tx, tx.round_id, tx.type, tx.position, tx.children FROM round
-LEFT OUTER JOIN tx ON round.id=tx.round_id
-WHERE round.txid = ? AND tx.type = 'connector'
-`
-
-type GetRoundConnectorTreeTxsRow struct {
-	Txid     sql.NullString
-	Tx       sql.NullString
-	RoundID  sql.NullString
-	Type     sql.NullString
-	Position sql.NullInt64
-	Children sql.NullString
-}
-
-func (q *Queries) GetRoundConnectorTreeTxs(ctx context.Context, txid string) ([]GetRoundConnectorTreeTxsRow, error) {
-	rows, err := q.db.QueryContext(ctx, getRoundConnectorTreeTxs, txid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetRoundConnectorTreeTxsRow
-	for rows.Next() {
-		var i GetRoundConnectorTreeTxsRow
-		if err := rows.Scan(
-			&i.Txid,
-			&i.Tx,
-			&i.RoundID,
-			&i.Type,
-			&i.Position,
-			&i.Children,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getRoundForfeitTxs = `-- name: GetRoundForfeitTxs :many
-SELECT tx.txid, tx.tx, tx.round_id, tx.type, tx.position, tx.children FROM round
-LEFT OUTER JOIN tx ON round.id=tx.round_id
-WHERE round.txid = ? AND tx.type = 'forfeit'
-`
-
-type GetRoundForfeitTxsRow struct {
-	Txid     sql.NullString
-	Tx       sql.NullString
-	RoundID  sql.NullString
-	Type     sql.NullString
-	Position sql.NullInt64
-	Children sql.NullString
-}
-
-func (q *Queries) GetRoundForfeitTxs(ctx context.Context, txid string) ([]GetRoundForfeitTxsRow, error) {
-	rows, err := q.db.QueryContext(ctx, getRoundForfeitTxs, txid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetRoundForfeitTxsRow
-	for rows.Next() {
-		var i GetRoundForfeitTxsRow
-		if err := rows.Scan(
-			&i.Txid,
-			&i.Tx,
-			&i.RoundID,
-			&i.Type,
-			&i.Position,
-			&i.Children,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getRoundStats = `-- name: GetRoundStats :one
-SELECT
-    r.swept,
-    r.starting_timestamp,
-    r.ending_timestamp,
-    (
-        SELECT COALESCE(SUM(amount), 0)
-        FROM (
-            SELECT DISTINCT v2.txid, v2.vout, v2.pubkey, v2.amount, v2.round_tx, v2.spent, v2.redeemed, v2.swept, v2.expire_at, v2.created_at, v2.request_id, v2.settled_by, v2.preconfirmed, v2.ark_txid, v2.spent_by
-            FROM vtxo v2
-                    JOIN tx_request req2 ON req2.id = v2.request_id
-            WHERE req2.round_id = r.id
-        ) as tx_req_inputs_amount
-    ) AS total_forfeit_amount,
-    (
-        SELECT COALESCE(COUNT(v3.txid), 0)
-        FROM vtxo v3
-                 JOIN tx_request req3 ON req3.id = v3.request_id
-        WHERE req3.round_id = r.id
-    ) AS total_input_vtxos,
-    (
-        SELECT COALESCE(SUM(amount), 0)
-        FROM (
-            SELECT DISTINCT rr.request_id, rr.pubkey, rr.onchain_address, rr.amount
-            FROM receiver rr
-                JOIN tx_request req4 ON req4.id = rr.request_id
-            WHERE req4.round_id = r.id
-            AND (rr.onchain_address = '' OR rr.onchain_address IS NULL)
-        ) AS tx_req_outputs_amount
-    ) AS total_batch_amount,
-    (
-        SELECT COUNT(*)
-        FROM tx t
-        WHERE t.round_id = r.id
-          AND t.type = 'tree'
-          AND TRIM(COALESCE(t.children, '')) = ''
-    ) AS total_output_vtxos,
-    (
-        SELECT MAX(v.expire_at)
-        FROM vtxo_vw v
-        WHERE v.round_tx = r.txid
-    ) AS expires_at
-FROM round r
-WHERE r.txid = ?
-`
-
-type GetRoundStatsRow struct {
-	Swept              bool
-	StartingTimestamp  int64
-	EndingTimestamp    int64
-	TotalForfeitAmount interface{}
-	TotalInputVtxos    interface{}
-	TotalBatchAmount   interface{}
-	TotalOutputVtxos   int64
-	ExpiresAt          interface{}
-}
-
-func (q *Queries) GetRoundStats(ctx context.Context, txid string) (GetRoundStatsRow, error) {
-	row := q.db.QueryRowContext(ctx, getRoundStats, txid)
-	var i GetRoundStatsRow
-	err := row.Scan(
-		&i.Swept,
-		&i.StartingTimestamp,
-		&i.EndingTimestamp,
-		&i.TotalForfeitAmount,
-		&i.TotalInputVtxos,
-		&i.TotalBatchAmount,
-		&i.TotalOutputVtxos,
-		&i.ExpiresAt,
-	)
-	return i, err
-}
-
-const getSpendableVtxosWithPubKey = `-- name: GetSpendableVtxosWithPubKey :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw
-WHERE vtxo_vw.pubkey = ? AND vtxo_vw.spent = false AND vtxo_vw.swept = false
-`
-
-func (q *Queries) GetSpendableVtxosWithPubKey(ctx context.Context, pubkey string) ([]VtxoVw, error) {
-	rows, err := q.db.QueryContext(ctx, getSpendableVtxosWithPubKey, pubkey)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []VtxoVw
-	for rows.Next() {
-		var i VtxoVw
-		if err := rows.Scan(
-			&i.Txid,
-			&i.Vout,
-			&i.Pubkey,
-			&i.Amount,
-			&i.RoundTx,
-			&i.Spent,
-			&i.Redeemed,
-			&i.Swept,
-			&i.ExpireAt,
-			&i.CreatedAt,
-			&i.RequestID,
-			&i.SettledBy,
-			&i.Preconfirmed,
-			&i.ArkTxid,
-			&i.SpentBy,
-			&i.Commitments,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getTxsByTxid = `-- name: GetTxsByTxid :many
-SELECT
-    tx.txid,
-    tx.tx AS data
-FROM tx
-WHERE tx.txid IN (/*SLICE:ids1*/?)
-UNION
-SELECT
-    virtual_tx.txid,
-    virtual_tx.tx AS data
-FROM virtual_tx
-WHERE virtual_tx.txid IN (/*SLICE:ids2*/?)
-UNION
-SELECT
-    checkpoint_tx.txid,
-    checkpoint_tx.tx AS data
-FROM checkpoint_tx
-WHERE checkpoint_tx.txid IN (/*SLICE:ids3*/?)
-`
-
-type GetTxsByTxidParams struct {
-	Ids1 []string
-	Ids2 []string
-	Ids3 []string
-}
-
-type GetTxsByTxidRow struct {
-	Txid string
-	Data string
-}
-
-func (q *Queries) GetTxsByTxid(ctx context.Context, arg GetTxsByTxidParams) ([]GetTxsByTxidRow, error) {
-	query := getTxsByTxid
-	var queryParams []interface{}
-	if len(arg.Ids1) > 0 {
-		for _, v := range arg.Ids1 {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:ids1*/?", strings.Repeat(",?", len(arg.Ids1))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:ids1*/?", "NULL", 1)
-	}
-	if len(arg.Ids2) > 0 {
-		for _, v := range arg.Ids2 {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:ids2*/?", strings.Repeat(",?", len(arg.Ids2))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:ids2*/?", "NULL", 1)
-	}
-	if len(arg.Ids3) > 0 {
-		for _, v := range arg.Ids3 {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:ids3*/?", strings.Repeat(",?", len(arg.Ids3))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:ids3*/?", "NULL", 1)
-	}
-	rows, err := q.db.QueryContext(ctx, query, queryParams...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetTxsByTxidRow
-	for rows.Next() {
-		var i GetTxsByTxidRow
-		if err := rows.Scan(&i.Txid, &i.Data); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const insertMarketHour = `-- name: InsertMarketHour :one
-INSERT INTO market_hour (
-    start_time,
-    end_time,
-    period,
-    round_interval,
-    updated_at
-) VALUES (?, ?, ?, ?, ?)
-RETURNING id, start_time, end_time, period, round_interval, updated_at
-`
-
-type InsertMarketHourParams struct {
-	StartTime     int64
-	EndTime       int64
-	Period        int64
-	RoundInterval int64
-	UpdatedAt     int64
-}
-
-func (q *Queries) InsertMarketHour(ctx context.Context, arg InsertMarketHourParams) (MarketHour, error) {
-	row := q.db.QueryRowContext(ctx, insertMarketHour,
-		arg.StartTime,
-		arg.EndTime,
-		arg.Period,
-		arg.RoundInterval,
-		arg.UpdatedAt,
-	)
-	var i MarketHour
-	err := row.Scan(
-		&i.ID,
-		&i.StartTime,
-		&i.EndTime,
-		&i.Period,
-		&i.RoundInterval,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const insertVtxoCommitmentTxid = `-- name: InsertVtxoCommitmentTxid :exec
-INSERT INTO vtxo_commitment_txid(vtxo_txid, vtxo_vout, commitment_txid) VALUES (?, ?, ?)
-`
-
-type InsertVtxoCommitmentTxidParams struct {
-	VtxoTxid       string
-	VtxoVout       int64
-	CommitmentTxid string
-}
-
-func (q *Queries) InsertVtxoCommitmentTxid(ctx context.Context, arg InsertVtxoCommitmentTxidParams) error {
-	_, err := q.db.ExecContext(ctx, insertVtxoCommitmentTxid, arg.VtxoTxid, arg.VtxoVout, arg.CommitmentTxid)
-	return err
-}
-
-const markVtxoAsRedeemed = `-- name: MarkVtxoAsRedeemed :exec
-UPDATE vtxo SET redeemed = true WHERE txid = ? AND vout = ?
-`
-
-type MarkVtxoAsRedeemedParams struct {
-	Txid string
-	Vout int64
-}
-
-func (q *Queries) MarkVtxoAsRedeemed(ctx context.Context, arg MarkVtxoAsRedeemedParams) error {
-	_, err := q.db.ExecContext(ctx, markVtxoAsRedeemed, arg.Txid, arg.Vout)
-	return err
-}
-
-const markVtxoAsSettled = `-- name: MarkVtxoAsSettled :exec
-UPDATE vtxo SET spent = true, spent_by = ?, settled_by = ? WHERE txid = ? AND vout = ?
-`
-
-type MarkVtxoAsSettledParams struct {
-	SpentBy   sql.NullString
-	SettledBy sql.NullString
-	Txid      string
-	Vout      int64
-}
-
-func (q *Queries) MarkVtxoAsSettled(ctx context.Context, arg MarkVtxoAsSettledParams) error {
-	_, err := q.db.ExecContext(ctx, markVtxoAsSettled,
-		arg.SpentBy,
-		arg.SettledBy,
-		arg.Txid,
-		arg.Vout,
-	)
-	return err
-}
-
-const markVtxoAsSpent = `-- name: MarkVtxoAsSpent :exec
-UPDATE vtxo SET spent = true, spent_by = ?, ark_txid = ? WHERE txid = ? AND vout = ?
-`
-
-type MarkVtxoAsSpentParams struct {
-	SpentBy sql.NullString
-	ArkTxid sql.NullString
-	Txid    string
-	Vout    int64
-}
-
-func (q *Queries) MarkVtxoAsSpent(ctx context.Context, arg MarkVtxoAsSpentParams) error {
-	_, err := q.db.ExecContext(ctx, markVtxoAsSpent,
-		arg.SpentBy,
-		arg.ArkTxid,
-		arg.Txid,
-		arg.Vout,
-	)
-	return err
-}
-
-const markVtxoAsSwept = `-- name: MarkVtxoAsSwept :exec
-UPDATE vtxo SET swept = true WHERE txid = ? AND vout = ?
-`
-
-type MarkVtxoAsSweptParams struct {
-	Txid string
-	Vout int64
-}
-
-func (q *Queries) MarkVtxoAsSwept(ctx context.Context, arg MarkVtxoAsSweptParams) error {
-	_, err := q.db.ExecContext(ctx, markVtxoAsSwept, arg.Txid, arg.Vout)
-	return err
-}
-
-const selectAllVtxos = `-- name: SelectAllVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw
-`
-
-type SelectAllVtxosRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectAllVtxos)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectAllVtxosRow
-	for rows.Next() {
-		var i SelectAllVtxosRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.RoundTx,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Redeemed,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.ExpireAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.RequestID,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Commitments,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectLeafVtxosByRoundTxid = `-- name: SelectLeafVtxosByRoundTxid :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw
-WHERE round_tx = ? AND (redeem_tx IS NULL or redeem_tx = '')
-`
-
-type SelectLeafVtxosByRoundTxidRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectLeafVtxosByRoundTxid(ctx context.Context, roundTx string) ([]SelectLeafVtxosByRoundTxidRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectLeafVtxosByRoundTxid, roundTx)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectLeafVtxosByRoundTxidRow
-	for rows.Next() {
-		var i SelectLeafVtxosByRoundTxidRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.RoundTx,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Redeemed,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.ExpireAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.RequestID,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Commitments,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectNotRedeemedVtxos = `-- name: SelectNotRedeemedVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw
-WHERE redeemed = false
-`
-
-type SelectNotRedeemedVtxosRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectNotRedeemedVtxos(ctx context.Context) ([]SelectNotRedeemedVtxosRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectNotRedeemedVtxos)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectNotRedeemedVtxosRow
-	for rows.Next() {
-		var i SelectNotRedeemedVtxosRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.RoundTx,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Redeemed,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.ExpireAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.RequestID,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Commitments,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectNotRedeemedVtxosWithPubkey = `-- name: SelectNotRedeemedVtxosWithPubkey :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw
-WHERE redeemed = false AND pubkey = ?
-`
-
-type SelectNotRedeemedVtxosWithPubkeyRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectNotRedeemedVtxosWithPubkey(ctx context.Context, pubkey string) ([]SelectNotRedeemedVtxosWithPubkeyRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectNotRedeemedVtxosWithPubkey, pubkey)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectNotRedeemedVtxosWithPubkeyRow
-	for rows.Next() {
-		var i SelectNotRedeemedVtxosWithPubkeyRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.RoundTx,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Redeemed,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.ExpireAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.RequestID,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Commitments,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectRoundIds = `-- name: SelectRoundIds :many
-SELECT id FROM round
-`
-
-func (q *Queries) SelectRoundIds(ctx context.Context) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundIds)
+func (q *Queries) SelectSweepableRounds(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectSweepableRounds)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var items []string
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var txid string
+		if err := rows.Scan(&txid); err != nil {
 			return nil, err
 		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectRoundIdsInRange = `-- name: SelectRoundIdsInRange :many
-SELECT id FROM round WHERE starting_timestamp > ? AND starting_timestamp < ?
-`
-
-type SelectRoundIdsInRangeParams struct {
-	StartingTimestamp   int64
-	StartingTimestamp_2 int64
-}
-
-func (q *Queries) SelectRoundIdsInRange(ctx context.Context, arg SelectRoundIdsInRangeParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundIdsInRange, arg.StartingTimestamp, arg.StartingTimestamp_2)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectRoundWithRoundId = `-- name: SelectRoundWithRoundId :many
-SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.txid, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration,
-       round_request_vw.id, round_request_vw.round_id, round_request_vw.proof, round_request_vw.message,
-       round_tx_vw.txid, round_tx_vw.tx, round_tx_vw.round_id, round_tx_vw.type, round_tx_vw.position, round_tx_vw.children,
-       request_receiver_vw.request_id, request_receiver_vw.pubkey, request_receiver_vw.onchain_address, request_receiver_vw.amount, request_receiver_vw.id, request_receiver_vw.round_id, request_receiver_vw.proof, request_receiver_vw.message,
-       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.settled_by, request_vtxo_vw.preconfirmed, request_vtxo_vw.ark_txid, request_vtxo_vw.spent_by, request_vtxo_vw.commitments, request_vtxo_vw.id, request_vtxo_vw.round_id, request_vtxo_vw.proof, request_vtxo_vw.message
-FROM round
-         LEFT OUTER JOIN round_request_vw ON round.id=round_request_vw.round_id
-         LEFT OUTER JOIN round_tx_vw ON round.id=round_tx_vw.round_id
-         LEFT OUTER JOIN request_receiver_vw ON round_request_vw.id=request_receiver_vw.request_id
-         LEFT OUTER JOIN request_vtxo_vw ON round_request_vw.id=request_vtxo_vw.request_id
-WHERE round.id = ?
-`
-
-type SelectRoundWithRoundIdRow struct {
-	Round             Round
-	RoundRequestVw    RoundRequestVw
-	RoundTxVw         RoundTxVw
-	RequestReceiverVw RequestReceiverVw
-	RequestVtxoVw     RequestVtxoVw
-}
-
-func (q *Queries) SelectRoundWithRoundId(ctx context.Context, id string) ([]SelectRoundWithRoundIdRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundWithRoundId, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectRoundWithRoundIdRow
-	for rows.Next() {
-		var i SelectRoundWithRoundIdRow
-		if err := rows.Scan(
-			&i.Round.ID,
-			&i.Round.StartingTimestamp,
-			&i.Round.EndingTimestamp,
-			&i.Round.Ended,
-			&i.Round.Failed,
-			&i.Round.StageCode,
-			&i.Round.Txid,
-			&i.Round.ConnectorAddress,
-			&i.Round.Version,
-			&i.Round.Swept,
-			&i.Round.VtxoTreeExpiration,
-			&i.RoundRequestVw.ID,
-			&i.RoundRequestVw.RoundID,
-			&i.RoundRequestVw.Proof,
-			&i.RoundRequestVw.Message,
-			&i.RoundTxVw.Txid,
-			&i.RoundTxVw.Tx,
-			&i.RoundTxVw.RoundID,
-			&i.RoundTxVw.Type,
-			&i.RoundTxVw.Position,
-			&i.RoundTxVw.Children,
-			&i.RequestReceiverVw.RequestID,
-			&i.RequestReceiverVw.Pubkey,
-			&i.RequestReceiverVw.OnchainAddress,
-			&i.RequestReceiverVw.Amount,
-			&i.RequestReceiverVw.ID,
-			&i.RequestReceiverVw.RoundID,
-			&i.RequestReceiverVw.Proof,
-			&i.RequestReceiverVw.Message,
-			&i.RequestVtxoVw.Txid,
-			&i.RequestVtxoVw.Vout,
-			&i.RequestVtxoVw.Pubkey,
-			&i.RequestVtxoVw.Amount,
-			&i.RequestVtxoVw.RoundTx,
-			&i.RequestVtxoVw.Spent,
-			&i.RequestVtxoVw.Redeemed,
-			&i.RequestVtxoVw.Swept,
-			&i.RequestVtxoVw.ExpireAt,
-			&i.RequestVtxoVw.CreatedAt,
-			&i.RequestVtxoVw.RequestID,
-			&i.RequestVtxoVw.SettledBy,
-			&i.RequestVtxoVw.Preconfirmed,
-			&i.RequestVtxoVw.ArkTxid,
-			&i.RequestVtxoVw.SpentBy,
-			&i.RequestVtxoVw.Commitments,
-			&i.RequestVtxoVw.ID,
-			&i.RequestVtxoVw.RoundID,
-			&i.RequestVtxoVw.Proof,
-			&i.RequestVtxoVw.Message,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectRoundWithRoundTxId = `-- name: SelectRoundWithRoundTxId :many
-SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.txid, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration,
-       round_request_vw.id, round_request_vw.round_id, round_request_vw.proof, round_request_vw.message,
-       round_tx_vw.txid, round_tx_vw.tx, round_tx_vw.round_id, round_tx_vw.type, round_tx_vw.position, round_tx_vw.children,
-       request_receiver_vw.request_id, request_receiver_vw.pubkey, request_receiver_vw.onchain_address, request_receiver_vw.amount, request_receiver_vw.id, request_receiver_vw.round_id, request_receiver_vw.proof, request_receiver_vw.message,
-       request_vtxo_vw.txid, request_vtxo_vw.vout, request_vtxo_vw.pubkey, request_vtxo_vw.amount, request_vtxo_vw.round_tx, request_vtxo_vw.spent, request_vtxo_vw.redeemed, request_vtxo_vw.swept, request_vtxo_vw.expire_at, request_vtxo_vw.created_at, request_vtxo_vw.request_id, request_vtxo_vw.settled_by, request_vtxo_vw.preconfirmed, request_vtxo_vw.ark_txid, request_vtxo_vw.spent_by, request_vtxo_vw.commitments, request_vtxo_vw.id, request_vtxo_vw.round_id, request_vtxo_vw.proof, request_vtxo_vw.message
-FROM round
-         LEFT OUTER JOIN round_request_vw ON round.id=round_request_vw.round_id
-         LEFT OUTER JOIN round_tx_vw ON round.id=round_tx_vw.round_id
-         LEFT OUTER JOIN request_receiver_vw ON round_request_vw.id=request_receiver_vw.request_id
-         LEFT OUTER JOIN request_vtxo_vw ON round_request_vw.id=request_vtxo_vw.request_id
-WHERE round.txid = ?
-`
-
-type SelectRoundWithRoundTxIdRow struct {
-	Round             Round
-	RoundRequestVw    RoundRequestVw
-	RoundTxVw         RoundTxVw
-	RequestReceiverVw RequestReceiverVw
-	RequestVtxoVw     RequestVtxoVw
-}
-
-func (q *Queries) SelectRoundWithRoundTxId(ctx context.Context, txid string) ([]SelectRoundWithRoundTxIdRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundWithRoundTxId, txid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectRoundWithRoundTxIdRow
-	for rows.Next() {
-		var i SelectRoundWithRoundTxIdRow
-		if err := rows.Scan(
-			&i.Round.ID,
-			&i.Round.StartingTimestamp,
-			&i.Round.EndingTimestamp,
-			&i.Round.Ended,
-			&i.Round.Failed,
-			&i.Round.StageCode,
-			&i.Round.Txid,
-			&i.Round.ConnectorAddress,
-			&i.Round.Version,
-			&i.Round.Swept,
-			&i.Round.VtxoTreeExpiration,
-			&i.RoundRequestVw.ID,
-			&i.RoundRequestVw.RoundID,
-			&i.RoundRequestVw.Proof,
-			&i.RoundRequestVw.Message,
-			&i.RoundTxVw.Txid,
-			&i.RoundTxVw.Tx,
-			&i.RoundTxVw.RoundID,
-			&i.RoundTxVw.Type,
-			&i.RoundTxVw.Position,
-			&i.RoundTxVw.Children,
-			&i.RequestReceiverVw.RequestID,
-			&i.RequestReceiverVw.Pubkey,
-			&i.RequestReceiverVw.OnchainAddress,
-			&i.RequestReceiverVw.Amount,
-			&i.RequestReceiverVw.ID,
-			&i.RequestReceiverVw.RoundID,
-			&i.RequestReceiverVw.Proof,
-			&i.RequestReceiverVw.Message,
-			&i.RequestVtxoVw.Txid,
-			&i.RequestVtxoVw.Vout,
-			&i.RequestVtxoVw.Pubkey,
-			&i.RequestVtxoVw.Amount,
-			&i.RequestVtxoVw.RoundTx,
-			&i.RequestVtxoVw.Spent,
-			&i.RequestVtxoVw.Redeemed,
-			&i.RequestVtxoVw.Swept,
-			&i.RequestVtxoVw.ExpireAt,
-			&i.RequestVtxoVw.CreatedAt,
-			&i.RequestVtxoVw.RequestID,
-			&i.RequestVtxoVw.SettledBy,
-			&i.RequestVtxoVw.Preconfirmed,
-			&i.RequestVtxoVw.ArkTxid,
-			&i.RequestVtxoVw.SpentBy,
-			&i.RequestVtxoVw.Commitments,
-			&i.RequestVtxoVw.ID,
-			&i.RequestVtxoVw.RoundID,
-			&i.RequestVtxoVw.Proof,
-			&i.RequestVtxoVw.Message,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
+		items = append(items, txid)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -923,8 +762,7 @@ func (q *Queries) SelectRoundWithRoundTxId(ctx context.Context, txid string) ([]
 }
 
 const selectSweepableVtxos = `-- name: SelectSweepableVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw
-WHERE redeemed = false AND swept = false
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = false AND swept = false
 `
 
 type SelectSweepableVtxosRow struct {
@@ -945,17 +783,17 @@ func (q *Queries) SelectSweepableVtxos(ctx context.Context) ([]SelectSweepableVt
 			&i.VtxoVw.Vout,
 			&i.VtxoVw.Pubkey,
 			&i.VtxoVw.Amount,
-			&i.VtxoVw.RoundTx,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Redeemed,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.ExpireAt,
+			&i.VtxoVw.ExpiresAt,
 			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.RequestID,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.CommitmentTxid,
 			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -999,38 +837,61 @@ func (q *Queries) SelectSweptRoundsConnectorAddress(ctx context.Context) ([]stri
 	return items, nil
 }
 
-const selectTreeTxsWithRoundTxid = `-- name: SelectTreeTxsWithRoundTxid :many
-SELECT tx.txid, tx.tx, tx.round_id, tx.type, tx.position, tx.children FROM round
-LEFT OUTER JOIN tx ON round.id=tx.round_id
-WHERE round.txid = ? AND tx.type = 'tree'
+const selectTxs = `-- name: SelectTxs :many
+SELECT tx.txid, tx.tx AS data FROM tx WHERE tx.txid IN (/*SLICE:ids1*/?)
+UNION
+SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_tx.txid IN (/*SLICE:ids2*/?)
+UNION
+SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid IN (/*SLICE:ids3*/?)
 `
 
-type SelectTreeTxsWithRoundTxidRow struct {
-	Txid     sql.NullString
-	Tx       sql.NullString
-	RoundID  sql.NullString
-	Type     sql.NullString
-	Position sql.NullInt64
-	Children sql.NullString
+type SelectTxsParams struct {
+	Ids1 []string
+	Ids2 []string
+	Ids3 []string
 }
 
-func (q *Queries) SelectTreeTxsWithRoundTxid(ctx context.Context, txid string) ([]SelectTreeTxsWithRoundTxidRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectTreeTxsWithRoundTxid, txid)
+type SelectTxsRow struct {
+	Txid string
+	Data string
+}
+
+func (q *Queries) SelectTxs(ctx context.Context, arg SelectTxsParams) ([]SelectTxsRow, error) {
+	query := selectTxs
+	var queryParams []interface{}
+	if len(arg.Ids1) > 0 {
+		for _, v := range arg.Ids1 {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids1*/?", strings.Repeat(",?", len(arg.Ids1))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids1*/?", "NULL", 1)
+	}
+	if len(arg.Ids2) > 0 {
+		for _, v := range arg.Ids2 {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids2*/?", strings.Repeat(",?", len(arg.Ids2))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids2*/?", "NULL", 1)
+	}
+	if len(arg.Ids3) > 0 {
+		for _, v := range arg.Ids3 {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids3*/?", strings.Repeat(",?", len(arg.Ids3))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids3*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectTreeTxsWithRoundTxidRow
+	var items []SelectTxsRow
 	for rows.Next() {
-		var i SelectTreeTxsWithRoundTxidRow
-		if err := rows.Scan(
-			&i.Txid,
-			&i.Tx,
-			&i.RoundID,
-			&i.Type,
-			&i.Position,
-			&i.Children,
-		); err != nil {
+		var i SelectTxsRow
+		if err := rows.Scan(&i.Txid, &i.Data); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1044,151 +905,76 @@ func (q *Queries) SelectTreeTxsWithRoundTxid(ctx context.Context, txid string) (
 	return items, nil
 }
 
-const selectUnsweptRoundsTxid = `-- name: SelectUnsweptRoundsTxid :many
-SELECT round.txid FROM round
-WHERE round.swept = false AND round.ended = true AND round.failed = false
+const selectVtxo = `-- name: SelectVtxo :one
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE txid = ?1 AND vout = ?2
 `
 
-func (q *Queries) SelectUnsweptRoundsTxid(ctx context.Context) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectUnsweptRoundsTxid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var txid string
-		if err := rows.Scan(&txid); err != nil {
-			return nil, err
-		}
-		items = append(items, txid)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectVirtualTxWithTxId = `-- name: SelectVirtualTxWithTxId :many
-SELECT  virtual_tx_checkpoint_tx_vw.txid, virtual_tx_checkpoint_tx_vw.tx, virtual_tx_checkpoint_tx_vw.starting_timestamp, virtual_tx_checkpoint_tx_vw.ending_timestamp, virtual_tx_checkpoint_tx_vw.expiry_timestamp, virtual_tx_checkpoint_tx_vw.fail_reason, virtual_tx_checkpoint_tx_vw.stage_code, virtual_tx_checkpoint_tx_vw.checkpoint_txid, virtual_tx_checkpoint_tx_vw.checkpoint_tx, virtual_tx_checkpoint_tx_vw.commitment_txid, virtual_tx_checkpoint_tx_vw.is_root_commitment_tx, virtual_tx_checkpoint_tx_vw.virtual_txid
-FROM virtual_tx_checkpoint_tx_vw WHERE txid = ?1
-`
-
-type SelectVirtualTxWithTxIdRow struct {
-	VirtualTxCheckpointTxVw VirtualTxCheckpointTxVw
-}
-
-func (q *Queries) SelectVirtualTxWithTxId(ctx context.Context, txid string) ([]SelectVirtualTxWithTxIdRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVirtualTxWithTxId, txid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectVirtualTxWithTxIdRow
-	for rows.Next() {
-		var i SelectVirtualTxWithTxIdRow
-		if err := rows.Scan(
-			&i.VirtualTxCheckpointTxVw.Txid,
-			&i.VirtualTxCheckpointTxVw.Tx,
-			&i.VirtualTxCheckpointTxVw.StartingTimestamp,
-			&i.VirtualTxCheckpointTxVw.EndingTimestamp,
-			&i.VirtualTxCheckpointTxVw.ExpiryTimestamp,
-			&i.VirtualTxCheckpointTxVw.FailReason,
-			&i.VirtualTxCheckpointTxVw.StageCode,
-			&i.VirtualTxCheckpointTxVw.CheckpointTxid,
-			&i.VirtualTxCheckpointTxVw.CheckpointTx,
-			&i.VirtualTxCheckpointTxVw.CommitmentTxid,
-			&i.VirtualTxCheckpointTxVw.IsRootCommitmentTx,
-			&i.VirtualTxCheckpointTxVw.VirtualTxid,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectVtxoByOutpoint = `-- name: SelectVtxoByOutpoint :one
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw
-WHERE txid = ? AND vout = ?
-`
-
-type SelectVtxoByOutpointParams struct {
+type SelectVtxoParams struct {
 	Txid string
 	Vout int64
 }
 
-type SelectVtxoByOutpointRow struct {
+type SelectVtxoRow struct {
 	VtxoVw VtxoVw
 }
 
-func (q *Queries) SelectVtxoByOutpoint(ctx context.Context, arg SelectVtxoByOutpointParams) (SelectVtxoByOutpointRow, error) {
-	row := q.db.QueryRowContext(ctx, selectVtxoByOutpoint, arg.Txid, arg.Vout)
-	var i SelectVtxoByOutpointRow
+func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectVtxoRow, error) {
+	row := q.db.QueryRowContext(ctx, selectVtxo, arg.Txid, arg.Vout)
+	var i SelectVtxoRow
 	err := row.Scan(
 		&i.VtxoVw.Txid,
 		&i.VtxoVw.Vout,
 		&i.VtxoVw.Pubkey,
 		&i.VtxoVw.Amount,
-		&i.VtxoVw.RoundTx,
-		&i.VtxoVw.Spent,
-		&i.VtxoVw.Redeemed,
-		&i.VtxoVw.Swept,
-		&i.VtxoVw.ExpireAt,
+		&i.VtxoVw.ExpiresAt,
 		&i.VtxoVw.CreatedAt,
-		&i.VtxoVw.RequestID,
-		&i.VtxoVw.SettledBy,
-		&i.VtxoVw.Preconfirmed,
-		&i.VtxoVw.ArkTxid,
+		&i.VtxoVw.CommitmentTxid,
 		&i.VtxoVw.SpentBy,
+		&i.VtxoVw.Spent,
+		&i.VtxoVw.Unrolled,
+		&i.VtxoVw.Swept,
+		&i.VtxoVw.Preconfirmed,
+		&i.VtxoVw.SettledBy,
+		&i.VtxoVw.ArkTxid,
+		&i.VtxoVw.IntentID,
 		&i.VtxoVw.Commitments,
 	)
 	return i, err
 }
 
-const selectVtxosByRoundTxid = `-- name: SelectVtxosByRoundTxid :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw
-WHERE round_tx = ?
+const selectVtxosWithCommitmentTxid = `-- name: SelectVtxosWithCommitmentTxid :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE commitment_txid = ?1
 `
 
-type SelectVtxosByRoundTxidRow struct {
+type SelectVtxosWithCommitmentTxidRow struct {
 	VtxoVw VtxoVw
 }
 
-func (q *Queries) SelectVtxosByRoundTxid(ctx context.Context, roundTx string) ([]SelectVtxosByRoundTxidRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosByRoundTxid, roundTx)
+func (q *Queries) SelectVtxosWithCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectVtxosWithCommitmentTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosWithCommitmentTxid, commitmentTxid)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectVtxosByRoundTxidRow
+	var items []SelectVtxosWithCommitmentTxidRow
 	for rows.Next() {
-		var i SelectVtxosByRoundTxidRow
+		var i SelectVtxosWithCommitmentTxidRow
 		if err := rows.Scan(
 			&i.VtxoVw.Txid,
 			&i.VtxoVw.Vout,
 			&i.VtxoVw.Pubkey,
 			&i.VtxoVw.Amount,
-			&i.VtxoVw.RoundTx,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Redeemed,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.ExpireAt,
+			&i.VtxoVw.ExpiresAt,
 			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.RequestID,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.CommitmentTxid,
 			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -1205,7 +991,7 @@ func (q *Queries) SelectVtxosByRoundTxid(ctx context.Context, roundTx string) ([
 }
 
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.settled_by, vtxo_vw.preconfirmed, vtxo_vw.ark_txid, vtxo_vw.spent_by, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkey*/?)
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkey*/?)
 `
 
 type SelectVtxosWithPubkeysRow struct {
@@ -1236,17 +1022,17 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkey []string) (
 			&i.VtxoVw.Vout,
 			&i.VtxoVw.Pubkey,
 			&i.VtxoVw.Amount,
-			&i.VtxoVw.RoundTx,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Redeemed,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.ExpireAt,
+			&i.VtxoVw.ExpiresAt,
 			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.RequestID,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.CommitmentTxid,
 			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -1262,94 +1048,124 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkey []string) (
 	return items, nil
 }
 
-const updateMarketHour = `-- name: UpdateMarketHour :one
-UPDATE market_hour
-SET start_time = ?,
-    end_time = ?,
-    period = ?,
-    round_interval = ?,
-    updated_at = ?
-WHERE id = ?
-RETURNING id, start_time, end_time, period, round_interval, updated_at
+const updateVtxoExpiration = `-- name: UpdateVtxoExpiration :exec
+UPDATE vtxo SET expires_at = ?1 WHERE txid = ?2 AND vout = ?3
 `
 
-type UpdateMarketHourParams struct {
-	StartTime     int64
-	EndTime       int64
-	Period        int64
-	RoundInterval int64
-	UpdatedAt     int64
-	ID            int64
-}
-
-func (q *Queries) UpdateMarketHour(ctx context.Context, arg UpdateMarketHourParams) (MarketHour, error) {
-	row := q.db.QueryRowContext(ctx, updateMarketHour,
-		arg.StartTime,
-		arg.EndTime,
-		arg.Period,
-		arg.RoundInterval,
-		arg.UpdatedAt,
-		arg.ID,
-	)
-	var i MarketHour
-	err := row.Scan(
-		&i.ID,
-		&i.StartTime,
-		&i.EndTime,
-		&i.Period,
-		&i.RoundInterval,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateVtxoExpireAt = `-- name: UpdateVtxoExpireAt :exec
-UPDATE vtxo SET expire_at = ? WHERE txid = ? AND vout = ?
-`
-
-type UpdateVtxoExpireAtParams struct {
-	ExpireAt int64
-	Txid     string
-	Vout     int64
-}
-
-func (q *Queries) UpdateVtxoExpireAt(ctx context.Context, arg UpdateVtxoExpireAtParams) error {
-	_, err := q.db.ExecContext(ctx, updateVtxoExpireAt, arg.ExpireAt, arg.Txid, arg.Vout)
-	return err
-}
-
-const updateVtxoRequestId = `-- name: UpdateVtxoRequestId :exec
-UPDATE vtxo SET request_id = ? WHERE txid = ? AND vout = ?
-`
-
-type UpdateVtxoRequestIdParams struct {
-	RequestID sql.NullString
+type UpdateVtxoExpirationParams struct {
+	ExpiresAt int64
 	Txid      string
 	Vout      int64
 }
 
-func (q *Queries) UpdateVtxoRequestId(ctx context.Context, arg UpdateVtxoRequestIdParams) error {
-	_, err := q.db.ExecContext(ctx, updateVtxoRequestId, arg.RequestID, arg.Txid, arg.Vout)
+func (q *Queries) UpdateVtxoExpiration(ctx context.Context, arg UpdateVtxoExpirationParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoExpiration, arg.ExpiresAt, arg.Txid, arg.Vout)
+	return err
+}
+
+const updateVtxoIntentId = `-- name: UpdateVtxoIntentId :exec
+UPDATE vtxo SET intent_id = ?1 WHERE txid = ?2 AND vout = ?3
+`
+
+type UpdateVtxoIntentIdParams struct {
+	IntentID sql.NullString
+	Txid     string
+	Vout     int64
+}
+
+func (q *Queries) UpdateVtxoIntentId(ctx context.Context, arg UpdateVtxoIntentIdParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoIntentId, arg.IntentID, arg.Txid, arg.Vout)
+	return err
+}
+
+const updateVtxoSettled = `-- name: UpdateVtxoSettled :exec
+UPDATE vtxo SET spent = true, spent_by = ?1, settled_by = ?2
+WHERE txid = ?3 AND vout = ?4
+`
+
+type UpdateVtxoSettledParams struct {
+	SpentBy   sql.NullString
+	SettledBy sql.NullString
+	Txid      string
+	Vout      int64
+}
+
+func (q *Queries) UpdateVtxoSettled(ctx context.Context, arg UpdateVtxoSettledParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoSettled,
+		arg.SpentBy,
+		arg.SettledBy,
+		arg.Txid,
+		arg.Vout,
+	)
+	return err
+}
+
+const updateVtxoSpent = `-- name: UpdateVtxoSpent :exec
+UPDATE vtxo SET spent = true, spent_by = ?1, ark_txid = ?2
+WHERE txid = ?3 AND vout = ?4
+`
+
+type UpdateVtxoSpentParams struct {
+	SpentBy sql.NullString
+	ArkTxid sql.NullString
+	Txid    string
+	Vout    int64
+}
+
+func (q *Queries) UpdateVtxoSpent(ctx context.Context, arg UpdateVtxoSpentParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoSpent,
+		arg.SpentBy,
+		arg.ArkTxid,
+		arg.Txid,
+		arg.Vout,
+	)
+	return err
+}
+
+const updateVtxoSwept = `-- name: UpdateVtxoSwept :exec
+UPDATE vtxo SET swept = true WHERE txid = ?1 AND vout = ?2
+`
+
+type UpdateVtxoSweptParams struct {
+	Txid string
+	Vout int64
+}
+
+func (q *Queries) UpdateVtxoSwept(ctx context.Context, arg UpdateVtxoSweptParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoSwept, arg.Txid, arg.Vout)
+	return err
+}
+
+const updateVtxoUnrolled = `-- name: UpdateVtxoUnrolled :exec
+UPDATE vtxo SET unrolled = true WHERE txid = ?1 AND vout = ?2
+`
+
+type UpdateVtxoUnrolledParams struct {
+	Txid string
+	Vout int64
+}
+
+func (q *Queries) UpdateVtxoUnrolled(ctx context.Context, arg UpdateVtxoUnrolledParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoUnrolled, arg.Txid, arg.Vout)
 	return err
 }
 
 const upsertCheckpointTx = `-- name: UpsertCheckpointTx :exec
-INSERT INTO checkpoint_tx (
-    txid, tx, commitment_txid, is_root_commitment_tx, virtual_txid
-) VALUES (?1, ?2, ?3, ?4, ?5)
-    ON CONFLICT(txid) DO UPDATE SET
+INSERT INTO checkpoint_tx (txid, tx, commitment_txid, is_root_commitment_txid, offchain_txid)
+VALUES (?1, ?2, ?3, ?4, ?5)
+ON CONFLICT(txid) DO UPDATE SET
     tx = EXCLUDED.tx,
     commitment_txid = EXCLUDED.commitment_txid,
-    is_root_commitment_tx = EXCLUDED.is_root_commitment_tx,
-    virtual_txid = EXCLUDED.virtual_txid
+    is_root_commitment_txid = EXCLUDED.is_root_commitment_txid,
+    offchain_txid = EXCLUDED.offchain_txid
 `
 
 type UpsertCheckpointTxParams struct {
-	Txid               string
-	Tx                 string
-	CommitmentTxid     string
-	IsRootCommitmentTx bool
-	VirtualTxid        string
+	Txid                 string
+	Tx                   string
+	CommitmentTxid       string
+	IsRootCommitmentTxid bool
+	OffchainTxid         string
 }
 
 func (q *Queries) UpsertCheckpointTx(ctx context.Context, arg UpsertCheckpointTxParams) error {
@@ -1357,22 +1173,115 @@ func (q *Queries) UpsertCheckpointTx(ctx context.Context, arg UpsertCheckpointTx
 		arg.Txid,
 		arg.Tx,
 		arg.CommitmentTxid,
-		arg.IsRootCommitmentTx,
-		arg.VirtualTxid,
+		arg.IsRootCommitmentTxid,
+		arg.OffchainTxid,
+	)
+	return err
+}
+
+const upsertIntent = `-- name: UpsertIntent :exec
+INSERT INTO intent (id, round_id, proof, message) VALUES (?1, ?2, ?3, ?4)
+ON CONFLICT(id) DO UPDATE SET
+    round_id = EXCLUDED.round_id,
+    proof = EXCLUDED.proof,
+    message = EXCLUDED.message
+`
+
+type UpsertIntentParams struct {
+	ID      sql.NullString
+	RoundID sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
+}
+
+func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) error {
+	_, err := q.db.ExecContext(ctx, upsertIntent,
+		arg.ID,
+		arg.RoundID,
+		arg.Proof,
+		arg.Message,
+	)
+	return err
+}
+
+const upsertMarketHour = `-- name: UpsertMarketHour :exec
+INSERT INTO market_hour (id, start_time, end_time, period, round_interval, updated_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+ON CONFLICT (id) DO UPDATE SET
+    start_time = EXCLUDED.start_time,
+    end_time = EXCLUDED.end_time,
+    period = EXCLUDED.period,
+    round_interval = EXCLUDED.round_interval,
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertMarketHourParams struct {
+	ID            int64
+	StartTime     int64
+	EndTime       int64
+	Period        int64
+	RoundInterval int64
+	UpdatedAt     int64
+}
+
+func (q *Queries) UpsertMarketHour(ctx context.Context, arg UpsertMarketHourParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMarketHour,
+		arg.ID,
+		arg.StartTime,
+		arg.EndTime,
+		arg.Period,
+		arg.RoundInterval,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
+const upsertOffchainTx = `-- name: UpsertOffchainTx :exec
+INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+ON CONFLICT(txid) DO UPDATE SET
+    tx = EXCLUDED.tx,
+    starting_timestamp = EXCLUDED.starting_timestamp,
+    ending_timestamp = EXCLUDED.ending_timestamp,
+    expiry_timestamp = EXCLUDED.expiry_timestamp,
+    fail_reason = EXCLUDED.fail_reason,
+    stage_code = EXCLUDED.stage_code
+`
+
+type UpsertOffchainTxParams struct {
+	Txid              string
+	Tx                string
+	StartingTimestamp int64
+	EndingTimestamp   int64
+	ExpiryTimestamp   int64
+	FailReason        sql.NullString
+	StageCode         int64
+}
+
+func (q *Queries) UpsertOffchainTx(ctx context.Context, arg UpsertOffchainTxParams) error {
+	_, err := q.db.ExecContext(ctx, upsertOffchainTx,
+		arg.Txid,
+		arg.Tx,
+		arg.StartingTimestamp,
+		arg.EndingTimestamp,
+		arg.ExpiryTimestamp,
+		arg.FailReason,
+		arg.StageCode,
 	)
 	return err
 }
 
 const upsertReceiver = `-- name: UpsertReceiver :exec
-INSERT INTO receiver (request_id, pubkey, onchain_address, amount) VALUES (?, ?, ?, ?)
-ON CONFLICT(request_id, pubkey, onchain_address) DO UPDATE SET
+INSERT INTO receiver (intent_id, pubkey, onchain_address, amount)
+VALUES (?1, ?2, ?3, ?4)
+ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
     amount = EXCLUDED.amount,
     pubkey = EXCLUDED.pubkey,
     onchain_address = EXCLUDED.onchain_address
 `
 
 type UpsertReceiverParams struct {
-	RequestID      string
+	IntentID       string
 	Pubkey         sql.NullString
 	OnchainAddress sql.NullString
 	Amount         int64
@@ -1380,7 +1289,7 @@ type UpsertReceiverParams struct {
 
 func (q *Queries) UpsertReceiver(ctx context.Context, arg UpsertReceiverParams) error {
 	_, err := q.db.ExecContext(ctx, upsertReceiver,
-		arg.RequestID,
+		arg.IntentID,
 		arg.Pubkey,
 		arg.OnchainAddress,
 		arg.Amount,
@@ -1390,24 +1299,19 @@ func (q *Queries) UpsertReceiver(ctx context.Context, arg UpsertReceiverParams) 
 
 const upsertRound = `-- name: UpsertRound :exec
 INSERT INTO round (
-    id,
-    starting_timestamp,
-    ending_timestamp,
-    ended, failed,
-    stage_code,
-    txid,
-    connector_address,
-    version,
-    swept,
-    vtxo_tree_expiration
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
+    stage_code, connector_address, version, swept, vtxo_tree_expiration
+) VALUES (
+    ?1, ?2, ?3, ?4, ?5, ?6,
+    ?7, ?8, ?9, ?10, ?11
+)
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
     ending_timestamp = EXCLUDED.ending_timestamp,
     ended = EXCLUDED.ended,
     failed = EXCLUDED.failed,
+    fail_reason = EXCLUDED.fail_reason,
     stage_code = EXCLUDED.stage_code,
-    txid = EXCLUDED.txid,
     connector_address = EXCLUDED.connector_address,
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
@@ -1420,8 +1324,8 @@ type UpsertRoundParams struct {
 	EndingTimestamp    int64
 	Ended              bool
 	Failed             bool
+	FailReason         sql.NullString
 	StageCode          int64
-	Txid               string
 	ConnectorAddress   string
 	Version            int64
 	Swept              bool
@@ -1435,8 +1339,8 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 		arg.EndingTimestamp,
 		arg.Ended,
 		arg.Failed,
+		arg.FailReason,
 		arg.StageCode,
-		arg.Txid,
 		arg.ConnectorAddress,
 		arg.Version,
 		arg.Swept,
@@ -1445,10 +1349,9 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 	return err
 }
 
-const upsertTransaction = `-- name: UpsertTransaction :exec
-INSERT INTO tx (
-    tx, round_id, type, position, txid, children
-) VALUES (?, ?, ?, ?, ?, ?)
+const upsertTx = `-- name: UpsertTx :exec
+INSERT INTO tx (tx, round_id, type, position, txid, children)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
 ON CONFLICT(txid) DO UPDATE SET
     tx = EXCLUDED.tx,
     round_id = EXCLUDED.round_id,
@@ -1458,7 +1361,7 @@ ON CONFLICT(txid) DO UPDATE SET
     children = EXCLUDED.children
 `
 
-type UpsertTransactionParams struct {
+type UpsertTxParams struct {
 	Tx       string
 	RoundID  string
 	Type     string
@@ -1467,8 +1370,8 @@ type UpsertTransactionParams struct {
 	Children sql.NullString
 }
 
-func (q *Queries) UpsertTransaction(ctx context.Context, arg UpsertTransactionParams) error {
-	_, err := q.db.ExecContext(ctx, upsertTransaction,
+func (q *Queries) UpsertTx(ctx context.Context, arg UpsertTxParams) error {
+	_, err := q.db.ExecContext(ctx, upsertTx,
 		arg.Tx,
 		arg.RoundID,
 		arg.Type,
@@ -1479,99 +1382,44 @@ func (q *Queries) UpsertTransaction(ctx context.Context, arg UpsertTransactionPa
 	return err
 }
 
-const upsertTxRequest = `-- name: UpsertTxRequest :exec
-INSERT INTO tx_request (id, round_id, proof, message) VALUES (?, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET
-    round_id = EXCLUDED.round_id,
-    proof = EXCLUDED.proof,
-    message = EXCLUDED.message
-`
-
-type UpsertTxRequestParams struct {
-	ID      sql.NullString
-	RoundID sql.NullString
-	Proof   sql.NullString
-	Message sql.NullString
-}
-
-func (q *Queries) UpsertTxRequest(ctx context.Context, arg UpsertTxRequestParams) error {
-	_, err := q.db.ExecContext(ctx, upsertTxRequest,
-		arg.ID,
-		arg.RoundID,
-		arg.Proof,
-		arg.Message,
-	)
-	return err
-}
-
-const upsertVirtualTx = `-- name: UpsertVirtualTx :exec
-INSERT INTO virtual_tx (
-    txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code
-) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-    ON CONFLICT(txid) DO UPDATE SET
-    tx = EXCLUDED.tx,
-    starting_timestamp = EXCLUDED.starting_timestamp,
-    ending_timestamp = EXCLUDED.ending_timestamp,
-    expiry_timestamp = EXCLUDED.expiry_timestamp,
-    fail_reason = EXCLUDED.fail_reason,
-    stage_code = EXCLUDED.stage_code
-`
-
-type UpsertVirtualTxParams struct {
-	Txid              string
-	Tx                string
-	StartingTimestamp int64
-	EndingTimestamp   int64
-	ExpiryTimestamp   int64
-	FailReason        sql.NullString
-	StageCode         int64
-}
-
-func (q *Queries) UpsertVirtualTx(ctx context.Context, arg UpsertVirtualTxParams) error {
-	_, err := q.db.ExecContext(ctx, upsertVirtualTx,
-		arg.Txid,
-		arg.Tx,
-		arg.StartingTimestamp,
-		arg.EndingTimestamp,
-		arg.ExpiryTimestamp,
-		arg.FailReason,
-		arg.StageCode,
-	)
-	return err
-}
-
 const upsertVtxo = `-- name: UpsertVtxo :exec
-INSERT INTO vtxo (txid, vout, pubkey, amount, round_tx, settled_by, spent_by, spent, redeemed, swept, expire_at, created_at, preconfirmed, ark_txid)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(txid, vout) DO UPDATE SET
+INSERT INTO vtxo (
+    txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
+    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at
+)
+VALUES (
+    ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+    ?8, ?9, ?10, ?11, ?12, ?13, ?14
+) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
-    round_tx = EXCLUDED.round_tx,
+    commitment_txid = EXCLUDED.commitment_txid,
     settled_by = EXCLUDED.settled_by,
+    ark_txid = EXCLUDED.ark_txid,
     spent_by = EXCLUDED.spent_by,
     spent = EXCLUDED.spent,
-    redeemed = EXCLUDED.redeemed,
+    unrolled = EXCLUDED.unrolled,
     swept = EXCLUDED.swept,
-    expire_at = EXCLUDED.expire_at,
-    created_at = EXCLUDED.created_at,
-    ark_txid = EXCLUDED.ark_txid,
-    preconfirmed = EXCLUDED.preconfirmed
+    preconfirmed = EXCLUDED.preconfirmed,
+    expires_at = EXCLUDED.expires_at,
+    created_at = EXCLUDED.created_at
 `
 
 type UpsertVtxoParams struct {
-	Txid         string
-	Vout         int64
-	Pubkey       string
-	Amount       int64
-	RoundTx      string
-	SettledBy    sql.NullString
-	SpentBy      sql.NullString
-	Spent        bool
-	Redeemed     bool
-	Swept        bool
-	ExpireAt     int64
-	CreatedAt    int64
-	Preconfirmed bool
-	ArkTxid      sql.NullString
+	Txid           string
+	Vout           int64
+	Pubkey         string
+	Amount         int64
+	CommitmentTxid string
+	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	SpentBy        sql.NullString
+	Spent          bool
+	Unrolled       bool
+	Swept          bool
+	Preconfirmed   bool
+	ExpiresAt      int64
+	CreatedAt      int64
 }
 
 func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
@@ -1580,16 +1428,16 @@ func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
 		arg.Vout,
 		arg.Pubkey,
 		arg.Amount,
-		arg.RoundTx,
+		arg.CommitmentTxid,
 		arg.SettledBy,
+		arg.ArkTxid,
 		arg.SpentBy,
 		arg.Spent,
-		arg.Redeemed,
+		arg.Unrolled,
 		arg.Swept,
-		arg.ExpireAt,
-		arg.CreatedAt,
 		arg.Preconfirmed,
-		arg.ArkTxid,
+		arg.ExpiresAt,
+		arg.CreatedAt,
 	)
 	return err
 }

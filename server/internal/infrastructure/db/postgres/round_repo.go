@@ -42,16 +42,16 @@ func (r *roundRepository) GetRoundsIds(
 ) ([]string, error) {
 	var roundIDs []string
 	if startedAfter == 0 && startedBefore == 0 {
-		ids, err := r.querier.SelectRoundIds(ctx)
+		ids, err := r.querier.SelectAllRoundIds(ctx)
 		if err != nil {
 			return nil, err
 		}
 
 		roundIDs = ids
 	} else {
-		ids, err := r.querier.SelectRoundIdsInRange(
+		ids, err := r.querier.SelectRoundIdsInTimeRange(
 			ctx,
-			queries.SelectRoundIdsInRangeParams{
+			queries.SelectRoundIdsInTimeRangeParams{
 				StartTs: startedAfter,
 				EndTs:   startedBefore,
 			},
@@ -81,15 +81,16 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				ConnectorAddress:   round.ConnectorAddress,
 				Version:            int32(round.Version),
 				Swept:              round.Swept,
+				FailReason:         sql.NullString{String: round.FailReason, Valid: len(round.FailReason) > 0},
 			},
 		); err != nil {
 			return fmt.Errorf("failed to upsert round: %w", err)
 		}
 
-		if round.CommitmentTx != "" && round.Txid != "" {
-			if err := querierWithTx.UpsertTransaction(
+		if len(round.CommitmentTx) > 0 && len(round.Txid) > 0 {
+			if err := querierWithTx.UpsertTx(
 				ctx,
-				queries.UpsertTransactionParams{
+				queries.UpsertTxParams{
 					Tx:      round.CommitmentTx,
 					Txid:    round.Txid,
 					RoundID: round.Id,
@@ -102,9 +103,9 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 
 		if len(round.ForfeitTxs) > 0 || len(round.Connectors) > 0 || len(round.VtxoTree) > 0 || len(round.SweepTxs) > 0 {
 			for pos, tx := range round.ForfeitTxs {
-				if err := querierWithTx.UpsertTransaction(
+				if err := querierWithTx.UpsertTx(
 					ctx,
-					queries.UpsertTransactionParams{
+					queries.UpsertTxParams{
 						Txid:     tx.Txid,
 						Tx:       tx.Tx,
 						RoundID:  round.Id,
@@ -117,7 +118,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 			}
 
 			for position, chunk := range round.Connectors {
-				if err := querierWithTx.UpsertTransaction(
+				if err := querierWithTx.UpsertTx(
 					ctx,
 					createUpsertTransactionParams(chunk, round.Id, "connector", int64(position)),
 				); err != nil {
@@ -126,7 +127,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 			}
 
 			for position, chunk := range round.VtxoTree {
-				if err := querierWithTx.UpsertTransaction(
+				if err := querierWithTx.UpsertTx(
 					ctx,
 					createUpsertTransactionParams(chunk, round.Id, "tree", int64(position)),
 				); err != nil {
@@ -135,9 +136,9 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 			}
 
 			for txid, tx := range round.SweepTxs {
-				if err := querierWithTx.UpsertTransaction(
+				if err := querierWithTx.UpsertTx(
 					ctx,
-					queries.UpsertTransactionParams{
+					queries.UpsertTxParams{
 						Txid:    txid,
 						Tx:      tx,
 						RoundID: round.Id,
@@ -151,9 +152,9 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 
 		if len(round.TxRequests) > 0 {
 			for _, request := range round.TxRequests {
-				if err := querierWithTx.UpsertTxRequest(
+				if err := querierWithTx.UpsertIntent(
 					ctx,
-					queries.UpsertTxRequestParams{
+					queries.UpsertIntentParams{
 						ID:      sql.NullString{String: request.Id, Valid: true},
 						RoundID: sql.NullString{String: round.Id, Valid: true},
 						Proof:   sql.NullString{String: request.Proof, Valid: true},
@@ -167,7 +168,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 					if err := querierWithTx.UpsertReceiver(
 						ctx,
 						queries.UpsertReceiverParams{
-							RequestID:      request.Id,
+							IntentID:       request.Id,
 							Amount:         int64(receiver.Amount),
 							Pubkey:         receiver.PubKey,
 							OnchainAddress: receiver.OnchainAddress,
@@ -178,15 +179,12 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				}
 
 				for _, input := range request.Inputs {
-					if err := querierWithTx.UpdateVtxoRequestId(
+					if err := querierWithTx.UpdateVtxoIntentId(
 						ctx,
-						queries.UpdateVtxoRequestIdParams{
-							RequestID: sql.NullString{
-								String: request.Id,
-								Valid:  true,
-							},
-							Txid: input.Txid,
-							Vout: int32(input.VOut),
+						queries.UpdateVtxoIntentIdParams{
+							IntentID: sql.NullString{String: request.Id, Valid: true},
+							Txid:     input.Txid,
+							Vout:     int32(input.VOut),
 						},
 					); err != nil {
 						return fmt.Errorf("failed to update vtxo request id: %w", err)
@@ -202,7 +200,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 }
 
 func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domain.Round, error) {
-	rows, err := r.querier.SelectRoundWithRoundId(ctx, id)
+	rows, err := r.querier.SelectRoundWithId(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -211,10 +209,10 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 	for _, row := range rows {
 		rvs = append(rvs, combinedRow{
 			round:    row.Round,
-			request:  row.RoundRequestVw,
-			tx:       row.RoundTxVw,
-			receiver: row.RequestReceiverVw,
-			vtxo:     row.RequestVtxoVw,
+			intent:   row.RoundIntentsVw,
+			tx:       row.RoundTxsVw,
+			receiver: row.IntentWithReceiversVw,
+			vtxo:     row.IntentInputsVw,
 		})
 	}
 
@@ -231,11 +229,7 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 }
 
 func (r *roundRepository) GetRoundWithTxid(ctx context.Context, txid string) (*domain.Round, error) {
-	txidNullString := sql.NullString{
-		String: txid,
-		Valid:  true,
-	}
-	rows, err := r.querier.SelectRoundWithRoundTxId(ctx, txidNullString)
+	rows, err := r.querier.SelectRoundWithTxid(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
@@ -244,10 +238,10 @@ func (r *roundRepository) GetRoundWithTxid(ctx context.Context, txid string) (*d
 	for _, row := range rows {
 		rvs = append(rvs, combinedRow{
 			round:    row.Round,
-			request:  row.RoundRequestVw,
-			tx:       row.RoundTxVw,
-			receiver: row.RequestReceiverVw,
-			vtxo:     row.RequestVtxoVw,
+			intent:   row.RoundIntentsVw,
+			tx:       row.RoundTxsVw,
+			receiver: row.IntentWithReceiversVw,
+			vtxo:     row.IntentInputsVw,
 		})
 	}
 
@@ -264,7 +258,7 @@ func (r *roundRepository) GetRoundWithTxid(ctx context.Context, txid string) (*d
 }
 
 func (r *roundRepository) GetRoundStats(ctx context.Context, id string) (*domain.RoundStats, error) {
-	rs, err := r.querier.GetRoundStats(ctx, id)
+	rs, err := r.querier.SelectRoundStats(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -322,11 +316,11 @@ func (r *roundRepository) GetRoundStats(ctx context.Context, id string) (*domain
 }
 
 func (r *roundRepository) GetUnsweptRoundsTxid(ctx context.Context) ([]string, error) {
-	return r.querier.SelectUnsweptRoundsTxid(ctx)
+	return r.querier.SelectSweepableRounds(ctx)
 }
 
 func (r *roundRepository) GetRoundForfeitTxs(ctx context.Context, roundTxid string) ([]domain.ForfeitTx, error) {
-	rows, err := r.querier.GetRoundForfeitTxs(ctx, roundTxid)
+	rows, err := r.querier.SelectRoundForfeitTxs(ctx, roundTxid)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +337,7 @@ func (r *roundRepository) GetRoundForfeitTxs(ctx context.Context, roundTxid stri
 }
 
 func (r *roundRepository) GetRoundConnectorTree(ctx context.Context, roundTxid string) ([]tree.TxGraphChunk, error) {
-	rows, err := r.querier.GetRoundConnectorTreeTxs(ctx, roundTxid)
+	rows, err := r.querier.SelectRoundConnectors(ctx, roundTxid)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +354,6 @@ func (r *roundRepository) GetRoundConnectorTree(ctx context.Context, roundTxid s
 				return nil, fmt.Errorf("failed to unmarshal children: %w", err)
 			}
 		}
-
 		chunks[pos] = tree.TxGraphChunk{
 			Txid:     tx.Txid,
 			Tx:       tx.Tx,
@@ -371,16 +364,12 @@ func (r *roundRepository) GetRoundConnectorTree(ctx context.Context, roundTxid s
 	return chunks, nil
 }
 
-func (r *roundRepository) GetExpiredRoundsTxid(ctx context.Context) ([]string, error) {
-	return r.querier.SelectExpiredRoundsTxid(ctx)
-}
-
 func (r *roundRepository) GetSweptRoundsConnectorAddress(ctx context.Context) ([]string, error) {
 	return r.querier.SelectSweptRoundsConnectorAddress(ctx)
 }
 
 func (r *roundRepository) GetVtxoTreeWithTxid(ctx context.Context, txid string) ([]tree.TxGraphChunk, error) {
-	rows, err := r.querier.SelectTreeTxsWithRoundTxid(ctx, txid)
+	rows, err := r.querier.SelectRoundVtxoTree(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +398,7 @@ func (r *roundRepository) GetVtxoTreeWithTxid(ctx context.Context, txid string) 
 }
 
 func (r *roundRepository) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
-	rows, err := r.querier.GetTxsByTxid(ctx, txids)
+	rows, err := r.querier.SelectTxs(ctx, txids)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -426,19 +415,19 @@ func (r *roundRepository) GetTxsWithTxids(ctx context.Context, txids []string) (
 }
 
 func (r *roundRepository) GetExistingRounds(ctx context.Context, txids []string) (map[string]any, error) {
-	rows, err := r.querier.GetExistingRounds(ctx, txids)
+	txids, err := r.querier.SelectRoundsWithTxids(ctx, txids)
 	if err != nil {
 		return nil, err
 	}
 
 	resp := make(map[string]any)
-	for _, row := range rows {
-		resp[row.Txid] = nil
+	for _, txid := range txids {
+		resp[txid] = nil
 	}
 	return resp, nil
 }
 
-func rowToReceiver(row queries.RequestReceiverVw) domain.Receiver {
+func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),
 		PubKey:         row.Pubkey.String,
@@ -448,10 +437,10 @@ func rowToReceiver(row queries.RequestReceiverVw) domain.Receiver {
 
 type combinedRow struct {
 	round    queries.Round
-	request  queries.RoundRequestVw
-	tx       queries.RoundTxVw
-	receiver queries.RequestReceiverVw
-	vtxo     queries.RequestVtxoVw
+	intent   queries.RoundIntentsVw
+	tx       queries.RoundTxsVw
+	receiver queries.IntentWithReceiversVw
+	vtxo     queries.IntentInputsVw
 }
 
 func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
@@ -477,27 +466,28 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				Swept:              v.round.Swept,
 				TxRequests:         make(map[string]domain.TxRequest),
 				VtxoTreeExpiration: v.round.VtxoTreeExpiration,
+				FailReason:         v.round.FailReason.String,
 			}
 		}
 
-		if v.request.ID.Valid {
-			request, ok := round.TxRequests[v.request.ID.String]
+		if v.intent.ID.Valid {
+			intent, ok := round.TxRequests[v.intent.ID.String]
 			if !ok {
-				request = domain.TxRequest{
-					Id:        v.request.ID.String,
-					Proof:     v.request.Proof.String,
-					Message:   v.request.Message.String,
+				intent = domain.TxRequest{
+					Id:        v.intent.ID.String,
+					Proof:     v.intent.Proof.String,
+					Message:   v.intent.Message.String,
 					Inputs:    make([]domain.Vtxo, 0),
 					Receivers: make([]domain.Receiver, 0),
 				}
-				round.TxRequests[v.request.ID.String] = request
+				round.TxRequests[v.intent.ID.String] = intent
 			}
 
-			if v.vtxo.RequestID.Valid {
-				request, ok = round.TxRequests[v.vtxo.RequestID.String]
+			if v.vtxo.IntentID.Valid {
+				intent, ok = round.TxRequests[v.vtxo.IntentID.String]
 				if !ok {
-					request = domain.TxRequest{
-						Id:        v.vtxo.RequestID.String,
+					intent = domain.TxRequest{
+						Id:        v.vtxo.IntentID.String,
 						Proof:     v.vtxo.Proof.String,
 						Message:   v.vtxo.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
@@ -507,7 +497,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 
 				vtxo := combinedRowToVtxo(v.vtxo)
 				found := false
-				for _, v := range request.Inputs {
+				for _, v := range intent.Inputs {
 					if vtxo.Txid == v.Txid && vtxo.VOut == v.VOut {
 						found = true
 						break
@@ -515,16 +505,16 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				}
 
 				if !found {
-					request.Inputs = append(request.Inputs, combinedRowToVtxo(v.vtxo))
-					round.TxRequests[v.vtxo.RequestID.String] = request
+					intent.Inputs = append(intent.Inputs, combinedRowToVtxo(v.vtxo))
+					round.TxRequests[v.vtxo.IntentID.String] = intent
 				}
 			}
 
-			if v.receiver.RequestID.Valid {
-				request, ok = round.TxRequests[v.receiver.RequestID.String]
+			if v.receiver.IntentID.Valid {
+				intent, ok = round.TxRequests[v.receiver.IntentID.String]
 				if !ok {
-					request = domain.TxRequest{
-						Id:        v.receiver.RequestID.String,
+					intent = domain.TxRequest{
+						Id:        v.receiver.IntentID.String,
 						Proof:     v.receiver.Proof.String,
 						Message:   v.receiver.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
@@ -535,17 +525,19 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				rcv := rowToReceiver(v.receiver)
 
 				found := false
-				for _, rcv := range request.Receivers {
+				for _, rcv := range intent.Receivers {
 					if (v.receiver.Pubkey.Valid || v.receiver.OnchainAddress.Valid) && v.receiver.Amount.Valid {
-						if rcv.PubKey == v.receiver.Pubkey.String && rcv.OnchainAddress == v.receiver.OnchainAddress.String && int64(rcv.Amount) == v.receiver.Amount.Int64 {
+						if rcv.PubKey == v.receiver.Pubkey.String &&
+							rcv.OnchainAddress == v.receiver.OnchainAddress.String &&
+							int64(rcv.Amount) == v.receiver.Amount.Int64 {
 							found = true
 							break
 						}
 					}
 				}
 				if !found {
-					request.Receivers = append(request.Receivers, rcv)
-					round.TxRequests[v.receiver.RequestID.String] = request
+					intent.Receivers = append(intent.Receivers, rcv)
+					round.TxRequests[v.receiver.IntentID.String] = intent
 				}
 			}
 		}
@@ -611,7 +603,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 	return result, nil
 }
 
-func combinedRowToVtxo(row queries.RequestVtxoVw) domain.Vtxo {
+func combinedRowToVtxo(row queries.IntentInputsVw) domain.Vtxo {
 	return domain.Vtxo{
 		Outpoint: domain.Outpoint{
 			Txid: row.Txid.String,
@@ -623,18 +615,20 @@ func combinedRowToVtxo(row queries.RequestVtxoVw) domain.Vtxo {
 		CommitmentTxids:    parseCommitments(row.Commitments, []byte(",")),
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent.Bool,
-		Redeemed:           row.Redeemed.Bool,
+		Redeemed:           row.Unrolled.Bool,
 		Swept:              row.Swept.Bool,
 		Preconfirmed:       row.Preconfirmed.Bool,
-		ExpireAt:           row.ExpireAt.Int64,
+		ExpireAt:           row.ExpiresAt.Int64,
 		CreatedAt:          row.CreatedAt.Int64,
 		ArkTxid:            row.ArkTxid.String,
 		SettledBy:          row.SettledBy.String,
 	}
 }
 
-func createUpsertTransactionParams(chunk tree.TxGraphChunk, roundID string, txType string, position int64) queries.UpsertTransactionParams {
-	params := queries.UpsertTransactionParams{
+func createUpsertTransactionParams(
+	chunk tree.TxGraphChunk, roundID string, txType string, position int64,
+) queries.UpsertTxParams {
+	params := queries.UpsertTxParams{
 		Tx:       chunk.Tx,
 		RoundID:  roundID,
 		Type:     txType,
@@ -645,7 +639,7 @@ func createUpsertTransactionParams(chunk tree.TxGraphChunk, roundID string, txTy
 		params.Txid = chunk.Txid
 		children, err := json.Marshal(chunk.Children)
 		if err != nil {
-			return queries.UpsertTransactionParams{}
+			return queries.UpsertTxParams{}
 		}
 		params.Children = pqtype.NullRawMessage{
 			RawMessage: children,

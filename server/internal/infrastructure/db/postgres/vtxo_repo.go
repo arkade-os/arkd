@@ -48,10 +48,10 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					CommitmentTxid: vtxo.RootCommitmentTxid,
 					SpentBy:        sql.NullString{String: vtxo.SpentBy, Valid: len(vtxo.SpentBy) > 0},
 					Spent:          vtxo.Spent,
-					Redeemed:       vtxo.Redeemed,
+					Unrolled:       vtxo.Redeemed,
 					Swept:          vtxo.Swept,
 					Preconfirmed:   vtxo.Preconfirmed,
-					ExpireAt:       vtxo.ExpireAt,
+					ExpiresAt:      vtxo.ExpireAt,
 					CreatedAt:      vtxo.CreatedAt,
 					SettledBy:      sql.NullString{String: vtxo.SettledBy, Valid: len(vtxo.SettledBy) > 0},
 					ArkTxid:        sql.NullString{String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0},
@@ -95,7 +95,7 @@ func (v *vtxoRepository) GetAllNonRedeemedVtxos(ctx context.Context, pubkey stri
 
 	var rows []queries.VtxoVw
 	if withPubkey {
-		res, err := v.querier.SelectNotRedeemedVtxosWithPubkey(ctx, pubkey)
+		res, err := v.querier.SelectNotUnrolledVtxosWithPubkey(ctx, pubkey)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -104,7 +104,7 @@ func (v *vtxoRepository) GetAllNonRedeemedVtxos(ctx context.Context, pubkey stri
 			rows = append(rows, row.VtxoVw)
 		}
 	} else {
-		res, err := v.querier.SelectNotRedeemedVtxos(ctx)
+		res, err := v.querier.SelectNotUnrolledVtxos(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -136,12 +136,8 @@ func (v *vtxoRepository) GetAllNonRedeemedVtxos(ctx context.Context, pubkey stri
 func (v *vtxoRepository) GetVtxos(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0, len(outpoints))
 	for _, o := range outpoints {
-		res, err := v.querier.SelectVtxoByOutpoint(
-			ctx,
-			queries.SelectVtxoByOutpointParams{
-				Txid: o.Txid,
-				Vout: int32(o.VOut),
-			},
+		res, err := v.querier.SelectVtxo(
+			ctx, queries.SelectVtxoParams{Txid: o.Txid, Vout: int32(o.VOut)},
 		)
 		if err != nil {
 			return nil, err
@@ -176,7 +172,7 @@ func (v *vtxoRepository) GetAll(ctx context.Context) ([]domain.Vtxo, error) {
 }
 
 func (v *vtxoRepository) GetVtxosForRound(ctx context.Context, txid string) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosByRoundTxid(ctx, txid)
+	res, err := v.querier.SelectVtxosWithCommitmentTxid(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
@@ -189,24 +185,10 @@ func (v *vtxoRepository) GetVtxosForRound(ctx context.Context, txid string) ([]d
 }
 
 func (v *vtxoRepository) GetLeafVtxosForRound(ctx context.Context, txid string) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectLeafVtxosByRoundTxid(ctx, txid)
+	res, err := v.querier.SelectRoundVtxoTreeLeaves(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
-	rows := make([]queries.VtxoVw, 0, len(res))
-	for _, row := range res {
-		rows = append(rows, row.VtxoVw)
-	}
-
-	return readRows(rows)
-}
-
-func (v *vtxoRepository) GetSpendableVtxosWithPubKey(ctx context.Context, pubkey string) ([]domain.Vtxo, error) {
-	res, err := v.querier.GetSpendableVtxosWithPubKey(ctx, pubkey)
-	if err != nil {
-		return nil, err
-	}
-
 	rows := make([]queries.VtxoVw, 0, len(res))
 	for _, row := range res {
 		rows = append(rows, row.VtxoVw)
@@ -218,12 +200,8 @@ func (v *vtxoRepository) GetSpendableVtxosWithPubKey(ctx context.Context, pubkey
 func (v *vtxoRepository) RedeemVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
-			if err := querierWithTx.MarkVtxoAsRedeemed(
-				ctx,
-				queries.MarkVtxoAsRedeemedParams{
-					Txid: vtxo.Txid,
-					Vout: int32(vtxo.VOut),
-				},
+			if err := querierWithTx.UpdateVtxoUnrolled(
+				ctx, queries.UpdateVtxoUnrolledParams{Txid: vtxo.Txid, Vout: int32(vtxo.VOut)},
 			); err != nil {
 				return err
 			}
@@ -240,9 +218,9 @@ func (v *vtxoRepository) SettleVtxos(
 ) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for vtxo, spentBy := range spentVtxos {
-			if err := querierWithTx.MarkVtxoAsSettled(
+			if err := querierWithTx.UpdateVtxoSettled(
 				ctx,
-				queries.MarkVtxoAsSettledParams{
+				queries.UpdateVtxoSettledParams{
 					SpentBy:   sql.NullString{String: spentBy, Valid: len(spentBy) > 0},
 					SettledBy: sql.NullString{String: settledBy, Valid: true},
 					Txid:      vtxo.Txid,
@@ -264,9 +242,9 @@ func (v *vtxoRepository) SpendVtxos(
 ) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for vtxo, spentBy := range spentVtxos {
-			if err := querierWithTx.MarkVtxoAsSpent(
+			if err := querierWithTx.UpdateVtxoSpent(
 				ctx,
-				queries.MarkVtxoAsSpentParams{
+				queries.UpdateVtxoSpentParams{
 					SpentBy: sql.NullString{String: spentBy, Valid: len(spentBy) > 0},
 					ArkTxid: sql.NullString{String: arkTxid, Valid: true},
 					Txid:    vtxo.Txid,
@@ -286,12 +264,8 @@ func (v *vtxoRepository) SpendVtxos(
 func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
-			if err := querierWithTx.MarkVtxoAsSwept(
-				ctx,
-				queries.MarkVtxoAsSweptParams{
-					Txid: vtxo.Txid,
-					Vout: int32(vtxo.VOut),
-				},
+			if err := querierWithTx.UpdateVtxoSwept(
+				ctx, queries.UpdateVtxoSweptParams{Txid: vtxo.Txid, Vout: int32(vtxo.VOut)},
 			); err != nil {
 				return err
 			}
@@ -306,12 +280,12 @@ func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint
 func (v *vtxoRepository) UpdateExpireAt(ctx context.Context, vtxos []domain.Outpoint, expireAt int64) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
-			if err := querierWithTx.UpdateVtxoExpireAt(
+			if err := querierWithTx.UpdateVtxoExpiration(
 				ctx,
-				queries.UpdateVtxoExpireAtParams{
-					ExpireAt: expireAt,
-					Txid:     vtxo.Txid,
-					Vout:     int32(vtxo.VOut),
+				queries.UpdateVtxoExpirationParams{
+					ExpiresAt: expireAt,
+					Txid:      vtxo.Txid,
+					Vout:      int32(vtxo.VOut),
 				},
 			); err != nil {
 				return err
@@ -361,10 +335,10 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		ArkTxid:            row.ArkTxid.String,
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent,
-		Redeemed:           row.Redeemed,
+		Redeemed:           row.Unrolled,
 		Swept:              row.Swept,
 		Preconfirmed:       row.Preconfirmed,
-		ExpireAt:           row.ExpireAt,
+		ExpireAt:           row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
 	}
 }

@@ -402,7 +402,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	case offchainTx.IsFinalized():
 		txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.VirtualTx)
 		if err != nil {
-			log.WithError(err).Warn("failed to decode virtual tx")
+			log.WithError(err).Warn("failed to decode ark tx")
 			return
 		}
 

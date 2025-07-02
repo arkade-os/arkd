@@ -25,18 +25,18 @@ import (
 )
 
 const (
-	f1          = "cHNidP8BADwBAAAAAauqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
-	f2          = "cHNidP8BADwBAAAAAayqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
-	f3          = "cHNidP8BADwBAAAAAa2qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
-	f4          = "cHNidP8BADwBAAAAAa6qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
-	emptyTx     = "0200000000000000000000"
-	pubkey      = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
-	pubkey2     = "33ffb3dee353b1a9ebe4ced64b946238d0a4ac364f275d771da6ad2445d07ae0"
-	txida       = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	txidb       = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	virtualTxid = txida
-	sweepTxid   = "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
-	sweepTx     = "cHNidP8BADwBAAAAAauqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
+	f1        = "cHNidP8BADwBAAAAAauqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
+	f2        = "cHNidP8BADwBAAAAAayqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
+	f3        = "cHNidP8BADwBAAAAAa2qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
+	f4        = "cHNidP8BADwBAAAAAa6qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
+	emptyTx   = "0200000000000000000000"
+	pubkey    = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
+	pubkey2   = "33ffb3dee353b1a9ebe4ced64b946238d0a4ac364f275d771da6ad2445d07ae0"
+	txida     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	txidb     = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	arkTxid   = txida
+	sweepTxid = "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
+	sweepTx   = "cHNidP8BADwBAAAAAauqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
 )
 
 var (
@@ -301,19 +301,19 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			{
 				topic: domain.OffchainTxTopic,
-				id:    "virtualTxid",
+				id:    "arkTxid",
 				events: []domain.Event{
 					domain.OffchainTxAccepted{
 						OffchainTxEvent: domain.OffchainTxEvent{
-							Id:   "virtualTxid",
+							Id:   "arkTxid",
 							Type: domain.EventTypeOffchainTxAccepted,
 						},
-						Id: "virtualTxid",
+						Id: "arkTxid",
 						CommitmentTxids: map[string]string{
 							"0": randomString(32),
 							"1": randomString(32),
 						},
-						FinalVirtualTx: "fully signed virtual tx",
+						FinalVirtualTx: "fully signed ark tx",
 						SignedCheckpointTxs: map[string]string{
 							"0": "list of server-signed txs",
 							"1": "indexed by txid",
@@ -330,19 +330,19 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			{
 				topic: domain.OffchainTxTopic,
-				id:    "virtualTxid 2",
+				id:    "arkTxid 2",
 				events: []domain.Event{
 					domain.OffchainTxAccepted{
 						OffchainTxEvent: domain.OffchainTxEvent{
-							Id:   "virtualTxid 2",
+							Id:   "arkTxid 2",
 							Type: domain.EventTypeOffchainTxAccepted,
 						},
-						Id: "virtualTxid 2",
+						Id: "arkTxid 2",
 						CommitmentTxids: map[string]string{
 							"0": randomString(32),
 							"1": randomString(32),
 						},
-						FinalVirtualTx: "fully signed virtual tx",
+						FinalVirtualTx: "fully signed ark tx",
 						SignedCheckpointTxs: map[string]string{
 							"0": "list of server-signed txs",
 							"1": "indexed by txid",
@@ -350,7 +350,7 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 					},
 					domain.OffchainTxFinalized{
 						OffchainTxEvent: domain.OffchainTxEvent{
-							Id:   "virtualTxid 2",
+							Id:   "arkTxid 2",
 							Type: domain.EventTypeOffchainTxFinalized,
 						},
 						FinalCheckpointTxs: map[string]string{
@@ -734,7 +734,7 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 		repo := svc.OffchainTxs()
 
-		offchainTx, err := repo.GetOffchainTx(ctx, virtualTxid)
+		offchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
 		require.Error(t, err)
 		require.Nil(t, offchainTx)
 
@@ -747,7 +747,7 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		events := []domain.Event{
 			domain.OffchainTxRequested{
 				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   virtualTxid,
+					Id:   arkTxid,
 					Type: domain.EventTypeOffchainTxRequested,
 				},
 				VirtualTx:             "",
@@ -756,10 +756,10 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			domain.OffchainTxAccepted{
 				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   virtualTxid,
+					Id:   arkTxid,
 					Type: domain.EventTypeOffchainTxAccepted,
 				},
-				Id: virtualTxid,
+				Id: arkTxid,
 				CommitmentTxids: map[string]string{
 					checkpointTxid1: rootCommitmentTxid,
 					checkpointTxid2: commitmentTxid,
@@ -776,7 +776,7 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
 		require.NoError(t, err)
 
-		gotOffchainTx, err := repo.GetOffchainTx(ctx, virtualTxid)
+		gotOffchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
 		require.NoError(t, err)
 		require.NotNil(t, offchainTx)
 		require.True(t, gotOffchainTx.IsAccepted())
@@ -786,7 +786,7 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		newEvents := []domain.Event{
 			domain.OffchainTxFinalized{
 				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   virtualTxid,
+					Id:   arkTxid,
 					Type: domain.EventTypeOffchainTxFinalized,
 				},
 				FinalCheckpointTxs: nil,
@@ -798,7 +798,7 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
 		require.NoError(t, err)
 
-		gotOffchainTx, err = repo.GetOffchainTx(ctx, virtualTxid)
+		gotOffchainTx, err = repo.GetOffchainTx(ctx, arkTxid)
 		require.NoError(t, err)
 		require.NotNil(t, offchainTx)
 		require.True(t, gotOffchainTx.IsFinalized())

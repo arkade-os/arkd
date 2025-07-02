@@ -9,11 +9,52 @@ import (
 )
 
 type CheckpointTx struct {
-	Txid               string
-	Tx                 string
-	CommitmentTxid     string
-	IsRootCommitmentTx bool
-	VirtualTxid        string
+	Txid                 string
+	Tx                   string
+	CommitmentTxid       string
+	IsRootCommitmentTxid bool
+	OffchainTxid         string
+}
+
+type Intent struct {
+	ID      sql.NullString
+	RoundID sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
+}
+
+type IntentInputsVw struct {
+	Txid           sql.NullString
+	Vout           sql.NullInt64
+	Pubkey         sql.NullString
+	Amount         sql.NullInt64
+	ExpiresAt      sql.NullInt64
+	CreatedAt      sql.NullInt64
+	CommitmentTxid sql.NullString
+	SpentBy        sql.NullString
+	Spent          sql.NullBool
+	Unrolled       sql.NullBool
+	Swept          sql.NullBool
+	Preconfirmed   sql.NullBool
+	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	IntentID       sql.NullString
+	Commitments    interface{}
+	ID             sql.NullString
+	RoundID        sql.NullString
+	Proof          sql.NullString
+	Message        sql.NullString
+}
+
+type IntentWithReceiversVw struct {
+	IntentID       sql.NullString
+	Pubkey         sql.NullString
+	OnchainAddress sql.NullString
+	Amount         sql.NullInt64
+	ID             sql.NullString
+	RoundID        sql.NullString
+	Proof          sql.NullString
+	Message        sql.NullString
 }
 
 type MarketHour struct {
@@ -25,45 +66,36 @@ type MarketHour struct {
 	UpdatedAt     int64
 }
 
+type OffchainTx struct {
+	Txid              string
+	Tx                string
+	StartingTimestamp int64
+	EndingTimestamp   int64
+	ExpiryTimestamp   int64
+	FailReason        sql.NullString
+	StageCode         int64
+}
+
+type OffchainTxVw struct {
+	Txid                 string
+	Tx                   string
+	StartingTimestamp    int64
+	EndingTimestamp      int64
+	ExpiryTimestamp      int64
+	FailReason           sql.NullString
+	StageCode            int64
+	CheckpointTxid       string
+	CheckpointTx         string
+	CommitmentTxid       string
+	IsRootCommitmentTxid bool
+	OffchainTxid         string
+}
+
 type Receiver struct {
-	RequestID      string
+	IntentID       string
 	Pubkey         sql.NullString
 	OnchainAddress sql.NullString
 	Amount         int64
-}
-
-type RequestReceiverVw struct {
-	RequestID      sql.NullString
-	Pubkey         sql.NullString
-	OnchainAddress sql.NullString
-	Amount         sql.NullInt64
-	ID             sql.NullString
-	RoundID        sql.NullString
-	Proof          sql.NullString
-	Message        sql.NullString
-}
-
-type RequestVtxoVw struct {
-	Txid         sql.NullString
-	Vout         sql.NullInt64
-	Pubkey       sql.NullString
-	Amount       sql.NullInt64
-	RoundTx      sql.NullString
-	Spent        sql.NullBool
-	Redeemed     sql.NullBool
-	Swept        sql.NullBool
-	ExpireAt     sql.NullInt64
-	CreatedAt    sql.NullInt64
-	RequestID    sql.NullString
-	SettledBy    sql.NullString
-	Preconfirmed sql.NullBool
-	ArkTxid      sql.NullString
-	SpentBy      sql.NullString
-	Commitments  interface{}
-	ID           sql.NullString
-	RoundID      sql.NullString
-	Proof        sql.NullString
-	Message      sql.NullString
 }
 
 type Round struct {
@@ -73,27 +105,47 @@ type Round struct {
 	Ended              bool
 	Failed             bool
 	StageCode          int64
-	Txid               string
 	ConnectorAddress   string
 	Version            int64
 	Swept              bool
 	VtxoTreeExpiration int64
+	FailReason         sql.NullString
 }
 
-type RoundRequestVw struct {
+type RoundIntentsVw struct {
 	ID      sql.NullString
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
 }
 
-type RoundTxVw struct {
+type RoundTxsVw struct {
 	Txid     sql.NullString
 	Tx       sql.NullString
 	RoundID  sql.NullString
 	Type     sql.NullString
 	Position sql.NullInt64
 	Children sql.NullString
+}
+
+type RoundWithCommitmentTxVw struct {
+	ID                 string
+	StartingTimestamp  int64
+	EndingTimestamp    int64
+	Ended              bool
+	Failed             bool
+	StageCode          int64
+	ConnectorAddress   string
+	Version            int64
+	Swept              bool
+	VtxoTreeExpiration int64
+	FailReason         sql.NullString
+	Txid               string
+	Tx                 string
+	RoundID            string
+	Type               string
+	Position           int64
+	Children           sql.NullString
 }
 
 type Tx struct {
@@ -105,54 +157,22 @@ type Tx struct {
 	Children sql.NullString
 }
 
-type TxRequest struct {
-	ID      sql.NullString
-	RoundID sql.NullString
-	Proof   sql.NullString
-	Message sql.NullString
-}
-
-type VirtualTx struct {
-	Txid              string
-	Tx                string
-	StartingTimestamp int64
-	EndingTimestamp   int64
-	ExpiryTimestamp   int64
-	FailReason        sql.NullString
-	StageCode         int64
-}
-
-type VirtualTxCheckpointTxVw struct {
-	Txid               string
-	Tx                 string
-	StartingTimestamp  int64
-	EndingTimestamp    int64
-	ExpiryTimestamp    int64
-	FailReason         sql.NullString
-	StageCode          int64
-	CheckpointTxid     string
-	CheckpointTx       string
-	CommitmentTxid     string
-	IsRootCommitmentTx bool
-	VirtualTxid        string
-}
-
 type Vtxo struct {
-	Txid         string
-	Vout         int64
-	Pubkey       string
-	Amount       int64
-	RoundTx      string
-	Spent        bool
-	Redeemed     bool
-	Swept        bool
-	ExpireAt     int64
-	CreatedAt    int64
-	RequestID    sql.NullString
-	SettledBy    sql.NullString
-	Preconfirmed bool
-	ArkTxid      sql.NullString
-	SpentBy      sql.NullString
+	Txid           string
+	Vout           int64
+	Pubkey         string
+	Amount         int64
+	ExpiresAt      int64
+	CreatedAt      int64
+	CommitmentTxid string
+	SpentBy        sql.NullString
+	Spent          bool
+	Unrolled       bool
+	Swept          bool
+	Preconfirmed   bool
+	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	IntentID       sql.NullString
 }
 
 type VtxoCommitmentTxid struct {
@@ -162,20 +182,20 @@ type VtxoCommitmentTxid struct {
 }
 
 type VtxoVw struct {
-	Txid         string
-	Vout         int64
-	Pubkey       string
-	Amount       int64
-	RoundTx      string
-	Spent        bool
-	Redeemed     bool
-	Swept        bool
-	ExpireAt     int64
-	CreatedAt    int64
-	RequestID    sql.NullString
-	SettledBy    sql.NullString
-	Preconfirmed bool
-	ArkTxid      sql.NullString
-	SpentBy      sql.NullString
-	Commitments  interface{}
+	Txid           string
+	Vout           int64
+	Pubkey         string
+	Amount         int64
+	ExpiresAt      int64
+	CreatedAt      int64
+	CommitmentTxid string
+	SpentBy        sql.NullString
+	Spent          bool
+	Unrolled       bool
+	Swept          bool
+	Preconfirmed   bool
+	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	IntentID       sql.NullString
+	Commitments    interface{}
 }

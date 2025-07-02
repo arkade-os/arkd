@@ -395,7 +395,7 @@ func (h *handler) listenToEvents() {
 					Event: &arkv1.GetEventStreamResponse_BatchFailed{
 						BatchFailed: &arkv1.BatchFailed{
 							Id:     e.Id,
-							Reason: e.Err,
+							Reason: e.Reason,
 						},
 					},
 				}

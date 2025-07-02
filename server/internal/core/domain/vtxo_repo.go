@@ -12,7 +12,6 @@ type VtxoRepository interface {
 	SweepVtxos(ctx context.Context, vtxos []Outpoint) error
 	GetAllNonRedeemedVtxos(ctx context.Context, pubkey string) ([]Vtxo, []Vtxo, error)
 	GetAllSweepableVtxos(ctx context.Context) ([]Vtxo, error)
-	GetSpendableVtxosWithPubKey(ctx context.Context, pubkey string) ([]Vtxo, error)
 	GetAll(ctx context.Context) ([]Vtxo, error)
 	GetAllVtxosWithPubKeys(ctx context.Context, pubkeys []string) ([]Vtxo, error)
 	UpdateExpireAt(ctx context.Context, vtxos []Outpoint, expireAt int64) error

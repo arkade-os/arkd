@@ -38,7 +38,7 @@ type RoundFinalized struct {
 
 type RoundFailed struct {
 	RoundEvent
-	Err       string
+	Reason    string
 	Timestamp int64
 }
 

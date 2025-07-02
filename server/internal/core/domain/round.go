@@ -54,6 +54,7 @@ type Round struct {
 	Swept              bool // true if all the vtxos are vtxo.Swept or vtxo.Redeemed
 	VtxoTreeExpiration int64
 	SweepTxs           map[string]string
+	FailReason         string
 	Changes            []Event
 }
 
@@ -238,7 +239,7 @@ func (r *Round) Fail(err error) []Event {
 			Id:   r.Id,
 			Type: EventTypeRoundFailed,
 		},
-		Err:       err.Error(),
+		Reason:    err.Error(),
 		Timestamp: time.Now().Unix(),
 	}
 	r.raise(event)
@@ -287,6 +288,7 @@ func (r *Round) on(event Event, replayed bool) {
 		r.CommitmentTx = e.FinalCommitmentTx
 	case RoundFailed:
 		r.Stage.Failed = true
+		r.FailReason = e.Reason
 		r.EndingTimestamp = e.Timestamp
 	case TxRequestsRegistered:
 		if r.TxRequests == nil {

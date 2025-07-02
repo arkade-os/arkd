@@ -85,7 +85,7 @@ func (r *vtxoRepository) RedeemVtxos(
 	ctx context.Context, vtxoKeys []domain.Outpoint,
 ) error {
 	for _, vtxoKey := range vtxoKeys {
-		_, err := r.redeemVtxo(ctx, vtxoKey)
+		_, err := r.unrollVtxo(ctx, vtxoKey)
 		if err != nil {
 			return err
 		}
@@ -314,7 +314,7 @@ func (r *vtxoRepository) spendVtxo(ctx context.Context, vtxoKey domain.Outpoint,
 	return r.updateVtxo(ctx, vtxo)
 }
 
-func (r *vtxoRepository) redeemVtxo(ctx context.Context, vtxoKey domain.Outpoint) (*domain.Vtxo, error) {
+func (r *vtxoRepository) unrollVtxo(ctx context.Context, vtxoKey domain.Outpoint) (*domain.Vtxo, error) {
 	vtxo, err := r.getVtxo(ctx, vtxoKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
