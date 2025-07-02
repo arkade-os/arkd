@@ -42,7 +42,7 @@ func NewVtxoStore(dir string, logger badger.Logger) (types.VtxoStore, error) {
 func (s *vtxoStore) AddVtxos(_ context.Context, vtxos []types.Vtxo) (int, error) {
 	addedVtxos := make([]types.Vtxo, 0, len(vtxos))
 	for _, vtxo := range vtxos {
-		if err := s.db.Insert(vtxo.String(), &vtxo); err != nil {
+		if err := s.db.Insert(vtxo.Outpoint.String(), &vtxo); err != nil {
 			if errors.Is(err, badgerhold.ErrKeyExists) {
 				continue
 			}
@@ -52,13 +52,19 @@ func (s *vtxoStore) AddVtxos(_ context.Context, vtxos []types.Vtxo) (int, error)
 	}
 
 	if len(addedVtxos) > 0 {
-		go s.sendEvent(types.VtxoEvent{Type: types.VtxosAdded, Vtxos: vtxos})
+		go s.sendEvent(types.VtxoEvent{Type: types.VtxosAdded, Vtxos: addedVtxos})
 	}
 
 	return len(addedVtxos), nil
 }
 
-func (s *vtxoStore) SpendVtxos(ctx context.Context, outpoints []types.VtxoKey, spentBy string) (int, error) {
+func (s *vtxoStore) SpendVtxos(
+	ctx context.Context, spentVtxoMap map[types.Outpoint]string, arkTxid string,
+) (int, error) {
+	outpoints := make([]types.Outpoint, 0, len(spentVtxoMap))
+	for outpoint := range spentVtxoMap {
+		outpoints = append(outpoints, outpoint)
+	}
 	vtxos, err := s.GetVtxos(ctx, outpoints)
 	if err != nil {
 		return -1, err
@@ -70,15 +76,51 @@ func (s *vtxoStore) SpendVtxos(ctx context.Context, outpoints []types.VtxoKey, s
 			continue
 		}
 		vtxo.Spent = true
-		vtxo.SpentBy = spentBy
-		if err := s.db.Update(vtxo.String(), &vtxo); err != nil {
+		vtxo.SpentBy = spentVtxoMap[vtxo.Outpoint]
+		vtxo.ArkTxid = arkTxid
+
+		if err := s.db.Update(vtxo.Outpoint.String(), &vtxo); err != nil {
 			return -1, err
 		}
 		spentVtxos = append(spentVtxos, vtxo)
 	}
 
 	if len(spentVtxos) > 0 {
-		go s.sendEvent(types.VtxoEvent{Type: types.VtxosSpent, Vtxos: vtxos})
+		go s.sendEvent(types.VtxoEvent{Type: types.VtxosSpent, Vtxos: spentVtxos})
+	}
+
+	return len(spentVtxos), nil
+}
+
+func (s *vtxoStore) SettleVtxos(
+	ctx context.Context, spentVtxoMap map[types.Outpoint]string, settledBy string,
+) (int, error) {
+	outpoints := make([]types.Outpoint, 0, len(spentVtxoMap))
+	for outpoint := range spentVtxoMap {
+		outpoints = append(outpoints, outpoint)
+	}
+	vtxos, err := s.GetVtxos(ctx, outpoints)
+	if err != nil {
+		return -1, err
+	}
+
+	spentVtxos := make([]types.Vtxo, 0, len(vtxos))
+	for _, vtxo := range vtxos {
+		if vtxo.Spent {
+			continue
+		}
+		vtxo.Spent = true
+		vtxo.SpentBy = spentVtxoMap[vtxo.Outpoint]
+		vtxo.SettledBy = settledBy
+
+		if err := s.db.Update(vtxo.Outpoint.String(), &vtxo); err != nil {
+			return -1, err
+		}
+		spentVtxos = append(spentVtxos, vtxo)
+	}
+
+	if len(spentVtxos) > 0 {
+		go s.sendEvent(types.VtxoEvent{Type: types.VtxosSpent, Vtxos: spentVtxos})
 	}
 
 	return len(spentVtxos), nil
@@ -86,7 +128,7 @@ func (s *vtxoStore) SpendVtxos(ctx context.Context, outpoints []types.VtxoKey, s
 
 func (s *vtxoStore) UpdateVtxos(ctx context.Context, vtxos []types.Vtxo) (int, error) {
 	for _, vtxo := range vtxos {
-		if err := s.db.Upsert(vtxo.String(), &vtxo); err != nil {
+		if err := s.db.Upsert(vtxo.Outpoint.String(), &vtxo); err != nil {
 			return -1, err
 		}
 	}
@@ -117,7 +159,7 @@ func (s *vtxoStore) GetAllVtxos(
 }
 
 func (s *vtxoStore) GetVtxos(
-	_ context.Context, keys []types.VtxoKey,
+	_ context.Context, keys []types.Outpoint,
 ) ([]types.Vtxo, error) {
 	var vtxos []types.Vtxo
 	for _, key := range keys {

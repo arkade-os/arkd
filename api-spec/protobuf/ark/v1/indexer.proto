@@ -279,10 +279,12 @@ message IndexerVtxo {
   string script = 5;
   bool is_preconfirmed = 6;
   bool is_swept = 7;
-  bool is_redeemed = 8;
+  bool is_unrolled = 8;
   bool is_spent = 9;
   string spent_by = 10;
   repeated string commitment_txids = 11;
+  string settled_by = 12;
+  string ark_txid = 13;
 }
 
 message IndexerChain {
@@ -357,4 +359,11 @@ message GetSubscriptionResponse {
   repeated string scripts = 2;
   repeated IndexerVtxo new_vtxos = 3;
   repeated IndexerVtxo spent_vtxos = 4;
+  string tx = 5;
+  map<string, IndexerTxData> checkpoint_txs = 6;
+}
+
+message IndexerTxData {
+  string txid = 1;
+  string tx = 2;
 }

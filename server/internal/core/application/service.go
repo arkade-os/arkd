@@ -176,20 +176,18 @@ func NewService(
 
 			go func() {
 				svc.transactionEventsCh <- TransactionEvent{
+					TxData:         TxData{Tx: round.CommitmentTx, Txid: round.Txid},
 					Type:           CommitmentTxType,
-					Txid:           round.Txid,
 					SpentVtxos:     spentVtxos,
 					SpendableVtxos: newVtxos,
-					TxHex:          round.CommitmentTx,
 				}
 			}()
 			go func() {
 				svc.indexerTxEventsCh <- TransactionEvent{
+					TxData:         TxData{Tx: round.CommitmentTx, Txid: round.Txid},
 					Type:           CommitmentTxType,
-					Txid:           round.Txid,
 					SpentVtxos:     spentVtxos,
 					SpendableVtxos: newVtxos,
-					TxHex:          round.CommitmentTx,
 				}
 			}()
 
@@ -236,6 +234,15 @@ func NewService(
 				return
 			}
 
+			checkpointTxsByOutpoint := make(map[string]TxData)
+			for txid, tx := range offchainTx.CheckpointTxs {
+				// nolint
+				ptx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+				checkpointTxsByOutpoint[ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String()] = TxData{
+					Tx: tx, Txid: txid,
+				}
+			}
+
 			go func() {
 				defer func() {
 					if r := recover(); r != nil {
@@ -244,11 +251,11 @@ func NewService(
 				}()
 
 				svc.transactionEventsCh <- TransactionEvent{
+					TxData:         TxData{Txid: txid, Tx: offchainTx.VirtualTx},
 					Type:           ArkTxType,
-					Txid:           txid,
 					SpentVtxos:     spentVtxos,
 					SpendableVtxos: newVtxos,
-					TxHex:          offchainTx.VirtualTx,
+					CheckpointTxs:  checkpointTxsByOutpoint,
 				}
 			}()
 			go func() {
@@ -259,11 +266,11 @@ func NewService(
 				}()
 
 				svc.indexerTxEventsCh <- TransactionEvent{
+					TxData:         TxData{Txid: txid, Tx: offchainTx.VirtualTx},
 					Type:           ArkTxType,
-					Txid:           txid,
 					SpentVtxos:     spentVtxos,
 					SpendableVtxos: newVtxos,
-					TxHex:          offchainTx.VirtualTx,
+					CheckpointTxs:  checkpointTxsByOutpoint,
 				}
 			}()
 
@@ -455,7 +462,7 @@ func (s *covenantlessService) SubmitOffchainTx(
 		}
 
 		if vtxo.IsNote() {
-			return nil, "", "", fmt.Errorf("vtxo '%s' is a note, can't be spent in ark transaction", vtxo.String())
+			return nil, "", "", fmt.Errorf("vtxo '%s' is a note, can't be spent in ark transaction", vtxo.Outpoint.String())
 		}
 
 		vtxoScript, err := tree.ParseVtxoScript(tapscripts)
@@ -938,12 +945,16 @@ func (s *covenantlessService) RegisterIntent(ctx context.Context, bip322signatur
 	if err != nil {
 		return "", fmt.Errorf("failed to encode message: %s", err)
 	}
+	encodedProof, err := bip322signature.Encode()
+	if err != nil {
+		return "", fmt.Errorf("failed to encode proof: %s", err)
+	}
 
 	if err := bip322signature.Verify(encodedMessage, prevoutFetcher); err != nil {
 		return "", fmt.Errorf("invalid BIP0322 proof of funds: %s", err)
 	}
 
-	request, err := domain.NewTxRequest(vtxosInputs)
+	request, err := domain.NewTxRequest(encodedProof, encodedMessage, vtxosInputs)
 	if err != nil {
 		return "", err
 	}
@@ -1023,140 +1034,6 @@ func (s *covenantlessService) RegisterIntent(ctx context.Context, bip322signatur
 	}
 
 	if err := s.liveStore.TxRequests().Push(*request, boardingInputs, message.CosignersPublicKeys); err != nil {
-		return "", err
-	}
-
-	return request.Id, nil
-}
-
-func (s *covenantlessService) SpendVtxos(ctx context.Context, inputs []ports.Input) (string, error) {
-	vtxosInputs := make([]domain.Vtxo, 0)
-	boardingInputs := make([]ports.BoardingInput, 0)
-
-	now := time.Now().Unix()
-
-	boardingTxs := make(map[string]wire.MsgTx, 0) // txid -> txhex
-
-	for _, input := range inputs {
-		if s.liveStore.OffchainTxs().Includes(input.Outpoint) {
-			return "", fmt.Errorf("vtxo %s is currently being spent", input.String())
-		}
-
-		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{input.Outpoint})
-		if err != nil || len(vtxosResult) == 0 {
-			// vtxo not found in db, check if it exists on-chain
-			if _, ok := boardingTxs[input.Txid]; !ok {
-				// check if the tx exists and is confirmed
-				txhex, err := s.wallet.GetTransaction(ctx, input.Txid)
-				if err != nil {
-					return "", fmt.Errorf("failed to get tx %s: %s", input.Txid, err)
-				}
-
-				var tx wire.MsgTx
-				if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
-					return "", fmt.Errorf("failed to deserialize tx %s: %s", input.Txid, err)
-				}
-
-				confirmed, _, blocktime, err := s.wallet.IsTransactionConfirmed(ctx, input.Txid)
-				if err != nil {
-					return "", fmt.Errorf("failed to check tx %s: %s", input.Txid, err)
-				}
-
-				if !confirmed {
-					return "", fmt.Errorf("tx %s not confirmed", input.Txid)
-				}
-
-				vtxoScript, err := tree.ParseVtxoScript(input.Tapscripts)
-				if err != nil {
-					return "", fmt.Errorf("failed to parse boarding utxo taproot tree: %s", err)
-				}
-
-				// validate the vtxo script
-				if err := vtxoScript.Validate(s.pubkey, s.boardingExitDelay, s.allowCSVBlockType); err != nil {
-					return "", fmt.Errorf("invalid vtxo script: %s", err)
-				}
-
-				exitDelay, err := vtxoScript.SmallestExitDelay()
-				if err != nil {
-					return "", fmt.Errorf("failed to get exit delay: %s", err)
-				}
-
-				// if the exit path is available, forbid registering the boarding utxo
-				if blocktime+exitDelay.Seconds() < now {
-					return "", fmt.Errorf("tx %s expired", input.Txid)
-				}
-
-				if s.utxoMaxAmount >= 0 {
-					if tx.TxOut[input.VOut].Value > s.utxoMaxAmount {
-						return "", fmt.Errorf("boarding input amount is higher than max utxo amount:%d", s.utxoMaxAmount)
-					}
-				}
-				if tx.TxOut[input.VOut].Value < s.utxoMinAmount {
-					return "", fmt.Errorf("boarding input amount is lower than min utxo amount:%d", s.utxoMinAmount)
-				}
-
-				boardingTxs[input.Txid] = tx
-			}
-
-			tx := boardingTxs[input.Txid]
-			boardingInput, err := newBoardingInput(tx, input, s.pubkey, s.boardingExitDelay, s.allowCSVBlockType)
-			if err != nil {
-				return "", err
-			}
-
-			boardingInputs = append(boardingInputs, *boardingInput)
-			continue
-		}
-
-		vtxo := vtxosResult[0]
-		if vtxo.Spent {
-			return "", fmt.Errorf("input %s:%d already spent", vtxo.Txid, vtxo.VOut)
-		}
-
-		if vtxo.Redeemed {
-			return "", fmt.Errorf("input %s:%d already redeemed", vtxo.Txid, vtxo.VOut)
-		}
-
-		if vtxo.Swept {
-			return "", fmt.Errorf("input %s:%d already swept", vtxo.Txid, vtxo.VOut)
-		}
-
-		vtxoScript, err := tree.ParseVtxoScript(input.Tapscripts)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
-		}
-
-		// validate the vtxo script
-		if err := vtxoScript.Validate(s.pubkey, s.unilateralExitDelay, s.allowCSVBlockType); err != nil {
-			return "", fmt.Errorf("invalid vtxo script: %s", err)
-		}
-
-		tapKey, _, err := vtxoScript.TapTree()
-		if err != nil {
-			return "", fmt.Errorf("failed to get taproot key: %s", err)
-		}
-
-		expectedTapKey, err := vtxo.TapKey()
-		if err != nil {
-			return "", fmt.Errorf("failed to get taproot key: %s", err)
-		}
-
-		if !bytes.Equal(schnorr.SerializePubKey(tapKey), schnorr.SerializePubKey(expectedTapKey)) {
-			return "", fmt.Errorf(
-				"invalid vtxo taproot key: got %x expected %x",
-				schnorr.SerializePubKey(tapKey), schnorr.SerializePubKey(expectedTapKey),
-			)
-		}
-
-		vtxosInputs = append(vtxosInputs, vtxo)
-	}
-
-	request, err := domain.NewTxRequest(vtxosInputs)
-	if err != nil {
-		return "", err
-	}
-
-	if err := s.liveStore.TxRequests().Push(*request, boardingInputs, nil); err != nil {
 		return "", err
 	}
 

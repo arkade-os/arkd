@@ -45,17 +45,17 @@ type Config struct {
 	VtxoMaxAmount           int64
 }
 
-type VtxoKey struct {
+type Outpoint struct {
 	Txid string
 	VOut uint32
 }
 
-func (v VtxoKey) String() string {
+func (v Outpoint) String() string {
 	return fmt.Sprintf("%s:%d", v.Txid, v.VOut)
 }
 
 type Vtxo struct {
-	VtxoKey
+	Outpoint
 	Script          string
 	Amount          uint64
 	CommitmentTxids []string
@@ -63,9 +63,17 @@ type Vtxo struct {
 	CreatedAt       time.Time
 	Preconfirmed    bool
 	Swept           bool
-	Redeemed        bool
+	Unrolled        bool
 	Spent           bool
 	SpentBy         string
+	SettledBy       string
+	ArkTxid         string
+}
+
+func (v Vtxo) String() string {
+	// nolint
+	b, _ := json.MarshalIndent(v, "", "  ")
+	return string(b)
 }
 
 func (v Vtxo) IsRecoverable() bool {
@@ -137,6 +145,7 @@ type Transaction struct {
 	Settled   bool
 	CreatedAt time.Time
 	Hex       string
+	SettledBy string
 }
 
 func (t Transaction) String() string {

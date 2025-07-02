@@ -140,14 +140,14 @@ func buildOffchainTx(
 	return arkTx, checkpointTxs, nil
 }
 
-func inputsToDerivationPath(inputs []types.VtxoKey, notesInputs []string) string {
+func inputsToDerivationPath(inputs []types.Outpoint, notesInputs []string) string {
 	// sort arknotes
 	slices.SortStableFunc(notesInputs, func(i, j string) int {
 		return strings.Compare(i, j)
 	})
 
 	// sort outpoints
-	slices.SortStableFunc(inputs, func(i, j types.VtxoKey) int {
+	slices.SortStableFunc(inputs, func(i, j types.Outpoint) int {
 		txidCmp := strings.Compare(i.Txid, j.Txid)
 		if txidCmp != 0 {
 			return txidCmp

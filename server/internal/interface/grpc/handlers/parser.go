@@ -46,14 +46,16 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 			},
 			Amount:          vv.Amount,
 			CommitmentTxids: vv.CommitmentTxids,
-			Spent:           vv.Spent,
+			IsSpent:         vv.Spent,
 			ExpiresAt:       vv.ExpireAt,
 			SpentBy:         vv.SpentBy,
-			Swept:           vv.Swept,
-			Preconfirmed:    len(vv.RedeemTx) > 0,
-			Redeemed:        vv.Redeemed,
+			IsSwept:         vv.Swept,
+			IsPreconfirmed:  vv.Preconfirmed,
+			IsUnrolled:      vv.Redeemed,
 			Script:          toP2TR(vv.PubKey),
 			CreatedAt:       vv.CreatedAt,
+			SettledBy:       vv.SettledBy,
+			ArkTxid:         vv.ArkTxid,
 		})
 	}
 
@@ -63,11 +65,22 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 type txEvent application.TransactionEvent
 
 func (t txEvent) toProto() *arkv1.TxNotification {
+	var checkpointTxs map[string]*arkv1.TxData
+	if len(t.CheckpointTxs) > 0 {
+		checkpointTxs = make(map[string]*arkv1.TxData)
+		for k, v := range t.CheckpointTxs {
+			checkpointTxs[k] = &arkv1.TxData{
+				Txid: v.Txid,
+				Tx:   v.Tx,
+			}
+		}
+	}
 	return &arkv1.TxNotification{
 		Txid:           t.Txid,
+		Tx:             t.Tx,
+		CheckpointTxs:  checkpointTxs,
 		SpentVtxos:     vtxoList(t.SpentVtxos).toProto(),
 		SpendableVtxos: vtxoList(t.SpendableVtxos).toProto(),
-		Hex:            t.TxHex,
 	}
 }
 

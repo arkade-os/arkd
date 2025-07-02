@@ -19,6 +19,7 @@ import (
 	"github.com/ark-network/ark/pkg/client-sdk/client/rest/service/arkservice/ark_service"
 	"github.com/ark-network/ark/pkg/client-sdk/client/rest/service/models"
 	"github.com/ark-network/ark/pkg/client-sdk/types"
+	"github.com/btcsuite/btcd/wire"
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
 )
@@ -453,17 +454,36 @@ func (c *restClient) GetTransactionsStream(ctx context.Context) (<-chan client.T
 				if resp.Result.CommitmentTx != nil {
 					event = client.TransactionEvent{
 						CommitmentTx: &client.TxNotification{
-							Txid:           resp.Result.CommitmentTx.Txid,
+							TxData: client.TxData{
+								Txid: resp.Result.CommitmentTx.Txid,
+								Tx:   resp.Result.CommitmentTx.Tx,
+							},
 							SpentVtxos:     vtxosFromRest(resp.Result.CommitmentTx.SpentVtxos),
 							SpendableVtxos: vtxosFromRest(resp.Result.CommitmentTx.SpendableVtxos),
 						},
 					}
 				} else if resp.Result.ArkTx != nil {
+					checkpointTxs := make(map[types.Outpoint]client.TxData)
+					for k, v := range resp.Result.ArkTx.CheckpointTxs {
+						// nolint
+						out, _ := wire.NewOutPointFromString(k)
+						checkpointTxs[types.Outpoint{
+							Txid: out.Hash.String(),
+							VOut: out.Index,
+						}] = client.TxData{
+							Txid: v.Txid,
+							Tx:   v.Tx,
+						}
+					}
 					event = client.TransactionEvent{
 						ArkTx: &client.TxNotification{
-							Txid:           resp.Result.ArkTx.Txid,
+							TxData: client.TxData{
+								Txid: resp.Result.ArkTx.Txid,
+								Tx:   resp.Result.ArkTx.Tx,
+							},
 							SpentVtxos:     vtxosFromRest(resp.Result.ArkTx.SpentVtxos),
 							SpendableVtxos: vtxosFromRest(resp.Result.ArkTx.SpendableVtxos),
+							CheckpointTxs:  checkpointTxs,
 						},
 					}
 				}
@@ -531,7 +551,7 @@ func vtxosFromRest(restVtxos []*models.V1Vtxo) []types.Vtxo {
 		}
 
 		vtxos[i] = types.Vtxo{
-			VtxoKey: types.VtxoKey{
+			Outpoint: types.Outpoint{
 				Txid: v.Outpoint.Txid,
 				VOut: uint32(v.Outpoint.Vout),
 			},
@@ -540,11 +560,13 @@ func vtxosFromRest(restVtxos []*models.V1Vtxo) []types.Vtxo {
 			CommitmentTxids: v.CommitmentTxids,
 			ExpiresAt:       expiresAt,
 			CreatedAt:       createdAt,
-			Preconfirmed:    v.Preconfirmed,
-			Swept:           v.Swept,
-			Redeemed:        v.Redeemed,
-			Spent:           v.Spent,
+			Preconfirmed:    v.IsPreconfirmed,
+			Swept:           v.IsSwept,
+			Unrolled:        v.IsUnrolled,
+			Spent:           v.IsSpent,
 			SpentBy:         v.SpentBy,
+			SettledBy:       v.SettledBy,
+			ArkTxid:         v.ArkTxid,
 		}
 	}
 	return vtxos

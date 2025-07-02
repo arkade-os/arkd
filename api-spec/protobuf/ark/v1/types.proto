@@ -26,18 +26,27 @@ message Vtxo {
   int64 created_at = 4;
   int64 expires_at = 5;
   repeated string commitment_txids = 6;
-  bool preconfirmed = 7;
-  bool swept = 8;
-  bool redeemed = 9;
-  bool spent = 10;
+  bool is_preconfirmed = 7;
+  bool is_swept = 8;
+  bool is_unrolled = 9;
+  bool is_spent = 10;
   string spent_by = 11;
+  string settled_by = 12;
+  string ark_txid = 13;
+}
+
+message TxData {
+  string txid = 1;
+  string tx = 2;
 }
 
 message TxNotification {
   string txid = 1;
-  repeated Vtxo spent_vtxos = 2;
-  repeated Vtxo spendable_vtxos = 3;
-  string hex = 5;
+  string tx = 2;
+  repeated Vtxo spent_vtxos = 3;
+  repeated Vtxo spendable_vtxos = 4;
+  // This field is set only in case of offchain tx.
+  map<string, TxData> checkpoint_txs = 5; // key: outpoint, value: checkpoint txid
 }
 
 message Tapscripts {

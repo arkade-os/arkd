@@ -1,13 +1,15 @@
 -- name: InsertVtxo :exec
 INSERT INTO vtxo (
-    txid, vout, script, amount, commitment_txids, spent_by, spent, preconfirmed, expires_at, created_at, swept, redeemed
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    txid, vout, script, amount, commitment_txids, spent_by, spent, preconfirmed, expires_at, created_at, swept, unrolled, settled_by, ark_txid
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateVtxo :exec
 UPDATE vtxo
 SET
     spent = true,
-    spent_by = :spent_by
+    spent_by = :spent_by,
+    settled_by = :settled_by,
+    ark_txid = :ark_txid
 WHERE txid = :txid AND vout = :vout;
 
 -- name: SelectAllVtxos :many
@@ -23,14 +25,15 @@ DELETE FROM vtxo;
 
 -- name: InsertTx :exec
 INSERT INTO tx (
-    txid, txid_type, amount, type, settled, created_at, hex
-) VALUES (?, ?, ?, ?, ?, ?, ?);
+    txid, txid_type, amount, type, settled, created_at, hex, settled_by
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: UpdateTx :exec
 UPDATE tx
 SET
     created_at     = COALESCE(sqlc.narg(created_at),     created_at),
-    settled    = COALESCE(sqlc.narg(settled),    settled)
+    settled    = COALESCE(sqlc.narg(settled),    settled),
+    settled_by    = COALESCE(sqlc.narg(settled_by),    settled_by)
 WHERE txid = :txid; 
 
 -- name: ReplaceTx :exec
@@ -40,6 +43,7 @@ SET    txid       = :new_txid,
        amount     = :amount,
        type       = :type,
        settled    = :settled,
+       settled_by    = :settled_by,
        created_at = :created_at,
        hex        = :hex
 WHERE  txid = :old_txid;

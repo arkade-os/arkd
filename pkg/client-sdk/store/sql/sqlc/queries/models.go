@@ -16,6 +16,7 @@ type Tx struct {
 	Settled   bool
 	CreatedAt int64
 	Hex       sql.NullString
+	SettledBy sql.NullString
 }
 
 type Vtxo struct {
@@ -30,5 +31,7 @@ type Vtxo struct {
 	CreatedAt       int64
 	Preconfirmed    bool
 	Swept           bool
-	Redeemed        bool
+	SettledBy       sql.NullString
+	Unrolled        bool
+	ArkTxid         sql.NullString
 }

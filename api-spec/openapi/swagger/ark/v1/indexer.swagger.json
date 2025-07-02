@@ -818,6 +818,15 @@
             "type": "object",
             "$ref": "#/definitions/v1IndexerVtxo"
           }
+        },
+        "tx": {
+          "type": "string"
+        },
+        "checkpointTxs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/v1IndexerTxData"
+          }
         }
       }
     },
@@ -1020,6 +1029,17 @@
         }
       }
     },
+    "v1IndexerTxData": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        },
+        "tx": {
+          "type": "string"
+        }
+      }
+    },
     "v1IndexerTxHistoryRecord": {
       "type": "object",
       "properties": {
@@ -1084,7 +1104,7 @@
         "isSwept": {
           "type": "boolean"
         },
-        "isRedeemed": {
+        "isUnrolled": {
           "type": "boolean"
         },
         "isSpent": {
@@ -1098,6 +1118,12 @@
           "items": {
             "type": "string"
           }
+        },
+        "settledBy": {
+          "type": "string"
+        },
+        "arkTxid": {
+          "type": "string"
         }
       }
     },

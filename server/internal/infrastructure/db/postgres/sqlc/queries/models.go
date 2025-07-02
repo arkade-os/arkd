@@ -39,6 +39,10 @@ type RequestReceiverVw struct {
 	Pubkey         sql.NullString
 	OnchainAddress sql.NullString
 	Amount         sql.NullInt64
+	ID             sql.NullString
+	RoundID        sql.NullString
+	Proof          sql.NullString
+	Message        sql.NullString
 }
 
 type RequestVtxoVw struct {
@@ -47,14 +51,21 @@ type RequestVtxoVw struct {
 	Pubkey         sql.NullString
 	Amount         sql.NullInt64
 	CommitmentTxid sql.NullString
-	SpentBy        sql.NullString
 	Spent          sql.NullBool
 	Redeemed       sql.NullBool
 	Swept          sql.NullBool
 	ExpireAt       sql.NullInt64
 	CreatedAt      sql.NullInt64
 	RequestID      sql.NullString
+	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	Preconfirmed   sql.NullBool
+	SpentBy        sql.NullString
 	Commitments    []byte
+	ID             sql.NullString
+	RoundID        sql.NullString
+	Proof          sql.NullString
+	Message        sql.NullString
 }
 
 type Round struct {
@@ -92,6 +103,8 @@ type RoundCommitmentTxVw struct {
 type RoundRequestVw struct {
 	ID      sql.NullString
 	RoundID sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
 }
 
 type RoundTxVw struct {
@@ -113,8 +126,10 @@ type Tx struct {
 }
 
 type TxRequest struct {
-	ID      string
-	RoundID string
+	ID      sql.NullString
+	RoundID sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
 }
 
 type VirtualTx struct {
@@ -148,13 +163,16 @@ type Vtxo struct {
 	Pubkey         string
 	Amount         int64
 	CommitmentTxid string
-	SpentBy        string
 	Spent          bool
 	Redeemed       bool
 	Swept          bool
 	ExpireAt       int64
 	CreatedAt      int64
 	RequestID      sql.NullString
+	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	Preconfirmed   bool
+	SpentBy        sql.NullString
 }
 
 type VtxoCommitmentTxid struct {
@@ -163,35 +181,21 @@ type VtxoCommitmentTxid struct {
 	CommitmentTxid string
 }
 
-type VtxoVirtualTxVw struct {
-	Txid           string
-	Vout           int32
-	Pubkey         string
-	Amount         int64
-	CommitmentTxid string
-	SpentBy        string
-	Spent          bool
-	Redeemed       bool
-	Swept          bool
-	ExpireAt       int64
-	CreatedAt      int64
-	RequestID      sql.NullString
-	Commitments    []byte
-	RedeemTx       sql.NullString
-}
-
 type VtxoVw struct {
 	Txid           string
 	Vout           int32
 	Pubkey         string
 	Amount         int64
 	CommitmentTxid string
-	SpentBy        string
 	Spent          bool
 	Redeemed       bool
 	Swept          bool
 	ExpireAt       int64
 	CreatedAt      int64
 	RequestID      sql.NullString
+	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	Preconfirmed   bool
+	SpentBy        sql.NullString
 	Commitments    []byte
 }

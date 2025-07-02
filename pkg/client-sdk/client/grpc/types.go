@@ -109,7 +109,7 @@ type vtxo struct {
 
 func (v vtxo) toVtxo() types.Vtxo {
 	return types.Vtxo{
-		VtxoKey: types.VtxoKey{
+		Outpoint: types.Outpoint{
 			Txid: v.GetOutpoint().GetTxid(),
 			VOut: v.GetOutpoint().GetVout(),
 		},
@@ -118,11 +118,13 @@ func (v vtxo) toVtxo() types.Vtxo {
 		CommitmentTxids: v.GetCommitmentTxids(),
 		CreatedAt:       time.Unix(v.GetCreatedAt(), 0),
 		ExpiresAt:       time.Unix(v.GetExpiresAt(), 0),
-		Preconfirmed:    v.GetPreconfirmed(),
-		Swept:           v.GetSwept(),
-		Redeemed:        v.GetRedeemed(),
-		Spent:           v.GetSpent(),
+		Preconfirmed:    v.GetIsPreconfirmed(),
+		Swept:           v.GetIsSwept(),
+		Unrolled:        v.GetIsUnrolled(),
+		Spent:           v.GetIsSpent(),
 		SpentBy:         v.GetSpentBy(),
+		SettledBy:       v.GetSettledBy(),
+		ArkTxid:         v.GetArkTxid(),
 	}
 }
 

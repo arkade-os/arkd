@@ -15,7 +15,6 @@ type Service interface {
 	Start() error
 	Stop()
 	RegisterIntent(ctx context.Context, bip322signature bip322.Signature, message tree.IntentMessage) (string, error)
-	SpendVtxos(ctx context.Context, inputs []ports.Input) (string, error)
 	ConfirmRegistration(ctx context.Context, intentId string) error
 	ClaimVtxos(ctx context.Context, creds string, receivers []domain.Receiver, cosignersPublicKeys []string) error
 	SignVtxos(ctx context.Context, forfeitTxs []string) error
@@ -89,12 +88,17 @@ const (
 
 type TransactionEventType string
 
+type TxData struct {
+	Tx   string
+	Txid string
+}
+
 type TransactionEvent struct {
+	TxData
 	Type           TransactionEventType
 	SpentVtxos     []domain.Vtxo
 	SpendableVtxos []domain.Vtxo
-	Txid           string
-	TxHex          string
+	CheckpointTxs  map[string]TxData
 }
 
 type TxRequestInfo struct {

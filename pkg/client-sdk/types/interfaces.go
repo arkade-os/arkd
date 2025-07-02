@@ -24,7 +24,7 @@ type ConfigStore interface {
 
 type TransactionStore interface {
 	AddTransactions(ctx context.Context, txs []Transaction) (int, error)
-	SettleTransactions(ctx context.Context, txids []string) (int, error)
+	SettleTransactions(ctx context.Context, txids []string, settledBy string) (int, error)
 	ConfirmTransactions(ctx context.Context, txids []string, timestamp time.Time) (int, error)
 	RbfTransactions(ctx context.Context, rbfTxs map[string]Transaction) (int, error)
 	GetAllTransactions(ctx context.Context) ([]Transaction, error)
@@ -37,10 +37,15 @@ type TransactionStore interface {
 
 type VtxoStore interface {
 	AddVtxos(ctx context.Context, vtxos []Vtxo) (int, error)
-	SpendVtxos(ctx context.Context, vtxos []VtxoKey, spentBy string) (int, error)
+	SpendVtxos(
+		ctx context.Context, spentVtxos map[Outpoint]string, arkTxid string,
+	) (int, error)
+	SettleVtxos(
+		ctx context.Context, spentVtxos map[Outpoint]string, settledBy string,
+	) (int, error)
 	UpdateVtxos(ctx context.Context, vtxos []Vtxo) (int, error)
 	GetAllVtxos(ctx context.Context) (spendable []Vtxo, spent []Vtxo, err error)
-	GetVtxos(ctx context.Context, keys []VtxoKey) ([]Vtxo, error)
+	GetVtxos(ctx context.Context, keys []Outpoint) ([]Vtxo, error)
 	Clean(ctx context.Context) error
 	GetEventChannel() chan VtxoEvent
 	Close()

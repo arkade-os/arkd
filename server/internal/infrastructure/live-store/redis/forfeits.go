@@ -44,7 +44,7 @@ func (s *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 
 	forfeitTxs := make(map[string]string)
 	for _, vtxo := range vtxosToSign {
-		forfeitTxs[vtxo.String()] = ""
+		forfeitTxs[vtxo.Outpoint.String()] = ""
 	}
 
 	connIndex := make(map[string]domain.Outpoint)

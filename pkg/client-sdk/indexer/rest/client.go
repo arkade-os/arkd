@@ -558,11 +558,23 @@ func (a *restClient) GetSubscription(ctx context.Context, subscriptionId string)
 					return
 				}
 
+				var checkpointTxs map[string]indexer.TxData
+				if len(resp.Result.CheckpointTxs) > 0 {
+					checkpointTxs = make(map[string]indexer.TxData)
+					for k, v := range resp.Result.CheckpointTxs {
+						checkpointTxs[k] = indexer.TxData{
+							Txid: v.Txid,
+							Tx:   v.Tx,
+						}
+					}
+				}
+
 				eventsCh <- &indexer.ScriptEvent{
-					Txid:       resp.Result.Txid,
-					Scripts:    resp.Result.Scripts,
-					NewVtxos:   newVtxos,
-					SpentVtxos: spentVtxos,
+					Txid:          resp.Result.Txid,
+					Scripts:       resp.Result.Scripts,
+					NewVtxos:      newVtxos,
+					SpentVtxos:    spentVtxos,
+					CheckpointTxs: checkpointTxs,
 				}
 			}
 		}
@@ -711,7 +723,7 @@ func newIndexerVtxo(vtxo *models.V1IndexerVtxo) (*types.Vtxo, error) {
 		return nil, err
 	}
 	return &types.Vtxo{
-		VtxoKey: types.VtxoKey{
+		Outpoint: types.Outpoint{
 			Txid: vtxo.Outpoint.Txid,
 			VOut: uint32(vtxo.Outpoint.Vout),
 		},
@@ -722,8 +734,10 @@ func newIndexerVtxo(vtxo *models.V1IndexerVtxo) (*types.Vtxo, error) {
 		ExpiresAt:       time.Unix(expiresAt, 0),
 		Preconfirmed:    vtxo.IsPreconfirmed,
 		Swept:           vtxo.IsSwept,
-		Redeemed:        vtxo.IsRedeemed,
+		Unrolled:        vtxo.IsUnrolled,
 		Spent:           vtxo.IsSpent,
 		SpentBy:         vtxo.SpentBy,
+		SettledBy:       vtxo.SettledBy,
+		ArkTxid:         vtxo.ArkTxid,
 	}, nil
 }

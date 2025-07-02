@@ -129,7 +129,7 @@ type CoinSelectOptions struct {
 	// If true, coin selector will select coins closest to expiry first.
 	WithExpirySorting bool
 	// If specified, coin selector will select only coins in the list.
-	OutpointsFilter []types.VtxoKey
+	OutpointsFilter []types.Outpoint
 	// If true, coin selector will select recoverable (swept but unspent) vtxos first.
 	SelectRecoverableVtxos bool
 }

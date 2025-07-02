@@ -4,7 +4,8 @@ import "context"
 
 type VtxoRepository interface {
 	AddVtxos(ctx context.Context, vtxos []Vtxo) error
-	SpendVtxos(ctx context.Context, vtxos []Outpoint, txid string) error
+	SettleVtxos(ctx context.Context, spentVtxos map[Outpoint]string, commitmentTxid string) error
+	SpendVtxos(ctx context.Context, spentVtxos map[Outpoint]string, arkTxid string) error
 	RedeemVtxos(ctx context.Context, vtxos []Outpoint) error
 	GetVtxos(ctx context.Context, vtxos []Outpoint) ([]Vtxo, error)
 	GetVtxosForRound(ctx context.Context, txid string) ([]Vtxo, error)

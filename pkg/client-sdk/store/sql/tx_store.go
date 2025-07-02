@@ -52,6 +52,7 @@ func (v *txStore) AddTransactions(ctx context.Context, txs []types.Transaction) 
 					Settled:   tx.Settled,
 					CreatedAt: createdAt,
 					Hex:       sql.NullString{String: tx.Hex, Valid: true},
+					SettledBy: sql.NullString{String: tx.SettledBy, Valid: true},
 				},
 			); err != nil {
 				if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -75,7 +76,7 @@ func (v *txStore) AddTransactions(ctx context.Context, txs []types.Transaction) 
 	return len(addedTxs), nil
 }
 
-func (v *txStore) SettleTransactions(ctx context.Context, txids []string) (int, error) {
+func (v *txStore) SettleTransactions(ctx context.Context, txids []string, settledBy string) (int, error) {
 	txs, err := v.GetTransactions(ctx, txids)
 	if err != nil {
 		return -1, err
@@ -87,9 +88,12 @@ func (v *txStore) SettleTransactions(ctx context.Context, txids []string) (int, 
 			if tx.Settled {
 				continue
 			}
+			tx.Settled = true
+			tx.SettledBy = settledBy
 			if err := querierWithTx.UpdateTx(ctx, queries.UpdateTxParams{
-				Txid:    tx.TransactionKey.String(),
-				Settled: sql.NullBool{Bool: true, Valid: true},
+				Txid:      tx.TransactionKey.String(),
+				Settled:   sql.NullBool{Bool: true, Valid: true},
+				SettledBy: sql.NullString{String: settledBy, Valid: true},
 			}); err != nil {
 				return err
 			}
@@ -179,6 +183,7 @@ func (v *txStore) RbfTransactions(ctx context.Context, rbfTxs map[string]types.T
 				CreatedAt: createdAt,
 				Hex:       sql.NullString{String: replacedBy.Hex, Valid: true},
 				OldTxid:   tx.TransactionKey.String(),
+				SettledBy: sql.NullString{String: replacedBy.SettledBy, Valid: true},
 			}); err != nil {
 				return err
 			}
@@ -299,6 +304,7 @@ func rowToTx(row queries.Tx) types.Transaction {
 		Amount:    uint64(row.Amount),
 		Type:      types.TxType(row.Type),
 		Settled:   row.Settled,
+		SettledBy: row.SettledBy.String,
 		CreatedAt: createdAt,
 		Hex:       row.Hex.String,
 	}

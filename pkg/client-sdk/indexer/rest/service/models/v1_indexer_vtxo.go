@@ -21,6 +21,9 @@ type V1IndexerVtxo struct {
 	// amount
 	Amount string `json:"amount,omitempty"`
 
+	// ark txid
+	ArkTxid string `json:"arkTxid,omitempty"`
+
 	// commitment txids
 	CommitmentTxids []string `json:"commitmentTxids"`
 
@@ -33,20 +36,23 @@ type V1IndexerVtxo struct {
 	// is preconfirmed
 	IsPreconfirmed bool `json:"isPreconfirmed,omitempty"`
 
-	// is redeemed
-	IsRedeemed bool `json:"isRedeemed,omitempty"`
-
 	// is spent
 	IsSpent bool `json:"isSpent,omitempty"`
 
 	// is swept
 	IsSwept bool `json:"isSwept,omitempty"`
 
+	// is unrolled
+	IsUnrolled bool `json:"isUnrolled,omitempty"`
+
 	// outpoint
 	Outpoint *V1IndexerOutpoint `json:"outpoint,omitempty"`
 
 	// script
 	Script string `json:"script,omitempty"`
+
+	// settled by
+	SettledBy string `json:"settledBy,omitempty"`
 
 	// spent by
 	SpentBy string `json:"spentBy,omitempty"`

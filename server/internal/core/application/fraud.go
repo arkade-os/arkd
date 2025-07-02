@@ -32,10 +32,8 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 	mutx.Lock()
 	defer mutx.Unlock()
 
-	round, err := s.repoManager.Rounds().GetRoundWithTxid(ctx, vtxo.SpentBy)
-	if err != nil {
-		// if spentBy is not a round, it means the utxo is spent by an offchain tx
-		// react by broadcasting the next checkpoint tx
+	// If the vtxo wasn't settled we must broadcast a checkpoint tx.
+	if !vtxo.IsSettled() {
 		if err := s.broadcastCheckpointTx(ctx, vtxo); err != nil {
 			return fmt.Errorf("failed to broadcast checkpoint tx: %s", err)
 		}
@@ -43,9 +41,8 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 		return nil
 	}
 
-	// if the round is found, it means the vtxo has been settled
-	// react by broadcasting the associated forfeit tx
-	if err := s.broadcastForfeitTx(ctx, round, vtxo.Outpoint); err != nil {
+	// Otherwise, we must broadcast a forfeit tx.
+	if err := s.broadcastForfeitTx(ctx, vtxo); err != nil {
 		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)
 	}
 
@@ -53,57 +50,23 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 }
 
 func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo domain.Vtxo) error {
-	// retrieve the first vtxo created by the spending tx
-	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{
-		{Txid: vtxo.SpentBy, VOut: 0},
-	})
-	if err != nil || len(vtxos) <= 0 {
-		return fmt.Errorf("failed to retrieve round: %s", err)
-	}
-
-	storedVtxo := vtxos[0]
-	if storedVtxo.Redeemed {
-		// virtual tx is already onchain
-		// no need to broadcast the checkpoint tx
-		return nil
-	}
-
-	log.Debugf("vtxo %s:%d has been spent by out of round transaction", vtxo.Txid, vtxo.VOut)
-
-	offchainTxid := storedVtxo.Txid
-
-	offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, offchainTxid)
+	// retrieve the checkpoint tx that spent the vtxo
+	txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.SpentBy})
 	if err != nil {
-		return fmt.Errorf("failed to retrieve offchain tx: %s", err)
+		return fmt.Errorf("failed to retrieve checkpoint tx: %s", err)
+	}
+	if len(txs) <= 0 {
+		return fmt.Errorf("checkpoint tx %s not found", vtxo.SpentBy)
 	}
 
-	checkpointPsbt := ""
-
-	for _, b64 := range offchainTx.CheckpointTxs {
-		ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
-		if err != nil {
-			return fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
-		}
-
-		vtxoInput := ptx.UnsignedTx.TxIn[0]
-		if vtxoInput.PreviousOutPoint.Hash.String() == vtxo.Txid &&
-			vtxoInput.PreviousOutPoint.Index == vtxo.VOut {
-			checkpointPsbt = b64
-			break
-		}
-	}
-
-	if len(checkpointPsbt) == 0 {
-		return fmt.Errorf("checkpoint tx not found for vtxo %s", vtxo.String())
-	}
-
-	parent, err := s.builder.FinalizeAndExtract(checkpointPsbt)
+	checkpointPsbt := txs[0]
+	ptx, err := s.builder.FinalizeAndExtract(checkpointPsbt)
 	if err != nil {
 		return fmt.Errorf("failed to finalize checkpoint tx: %s", err)
 	}
 
 	var checkpointTx wire.MsgTx
-	if err := checkpointTx.Deserialize(hex.NewDecoder(strings.NewReader(parent))); err != nil {
+	if err := checkpointTx.Deserialize(hex.NewDecoder(strings.NewReader(ptx))); err != nil {
 		return fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
 	}
 
@@ -112,7 +75,7 @@ func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo do
 		return fmt.Errorf("failed to bump checkpoint tx: %s", err)
 	}
 
-	if _, err := s.wallet.BroadcastTransaction(ctx, parent, child); err != nil {
+	if _, err := s.wallet.BroadcastTransaction(ctx, ptx, child); err != nil {
 		return fmt.Errorf("failed to broadcast checkpoint package: %s", err)
 	}
 
@@ -120,12 +83,17 @@ func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo do
 	return nil
 }
 
-func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, round *domain.Round, vtxo domain.Outpoint) error {
+func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) error {
+	round, err := s.repoManager.Rounds().GetRoundWithTxid(ctx, vtxo.SettledBy)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve round: %s", err)
+	}
+
 	if len(round.Connectors) <= 0 {
 		return fmt.Errorf("no connectors found for round %s, cannot broadcast forfeit tx", round.Txid)
 	}
 
-	forfeitTx, connectorOutpoint, err := findForfeitTx(round.ForfeitTxs, vtxo)
+	forfeitTx, connectorOutpoint, err := findForfeitTx(round.ForfeitTxs, vtxo.Outpoint)
 	if err != nil {
 		return fmt.Errorf("failed to find forfeit tx: %s", err)
 	}

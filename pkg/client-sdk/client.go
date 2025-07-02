@@ -1165,21 +1165,21 @@ func (a *covenantlessArkClient) refreshVtxoDb(spendableVtxos, spentVtxos []types
 		return err
 	}
 
-	oldSpendableVtxoMap := make(map[types.VtxoKey]types.Vtxo, 0)
+	oldSpendableVtxoMap := make(map[types.Outpoint]types.Vtxo, 0)
 	for _, v := range oldSpendableVtxos {
-		oldSpendableVtxoMap[v.VtxoKey] = v
+		oldSpendableVtxoMap[v.Outpoint] = v
 	}
 
 	vtxosToAdd := make([]types.Vtxo, 0, len(spendableVtxos))
 	for _, vtxo := range spendableVtxos {
-		if _, ok := oldSpendableVtxoMap[vtxo.VtxoKey]; !ok {
+		if _, ok := oldSpendableVtxoMap[vtxo.Outpoint]; !ok {
 			vtxosToAdd = append(vtxosToAdd, vtxo)
 		}
 	}
 
 	vtxosToReplace := make([]types.Vtxo, 0, len(spentVtxos))
 	for _, vtxo := range spentVtxos {
-		if _, ok := oldSpendableVtxoMap[vtxo.VtxoKey]; ok {
+		if _, ok := oldSpendableVtxoMap[vtxo.Outpoint]; ok {
 			vtxosToReplace = append(vtxosToReplace, vtxo)
 		}
 	}
@@ -1946,7 +1946,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 ) (string, error) {
 	topics := make([]string, 0)
 	for _, vtxo := range vtxos {
-		topics = append(topics, vtxo.String())
+		topics = append(topics, vtxo.Outpoint.String())
 	}
 	for _, signer := range signerSessions {
 		topics = append(topics, signer.GetPublicKey())
@@ -2578,7 +2578,7 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 		}
 
 		if connector == nil {
-			return nil, fmt.Errorf("connector not found for vtxo %s", vtxo.String())
+			return nil, fmt.Errorf("connector not found for vtxo %s", vtxo.Outpoint.String())
 		}
 
 		vtxoScript, err := tree.ParseVtxoScript(vtxo.Tapscripts)
@@ -2822,7 +2822,7 @@ func (a *covenantlessArkClient) getClaimableBoardingUtxos(
 
 		for _, utxo := range boardingUtxos {
 			if opts != nil && len(opts.OutpointsFilter) > 0 {
-				utxoOutpoint := types.VtxoKey{
+				utxoOutpoint := types.Outpoint{
 					Txid: utxo.Txid,
 					VOut: utxo.Vout,
 				}
@@ -2880,7 +2880,7 @@ func (a *covenantlessArkClient) getExpiredBoardingUtxos(
 
 		for _, utxo := range boardingUtxos {
 			if opts != nil && len(opts.OutpointsFilter) > 0 {
-				utxoOutpoint := types.VtxoKey{
+				utxoOutpoint := types.Outpoint{
 					Txid: utxo.Txid,
 					VOut: utxo.Vout,
 				}
@@ -2997,7 +2997,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	myPubkeys map[string]struct{}, commitmentTx *client.TxNotification,
 ) error {
 	vtxosToAdd := make([]types.Vtxo, 0)
-	vtxosToSpend := make([]types.VtxoKey, 0)
+	vtxosToSpend := make(map[types.Outpoint]string, 0)
 	txsToAdd := make([]types.Transaction, 0)
 	txsToSettle := make([]string, 0)
 
@@ -3008,12 +3008,14 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	}
 
 	// Check if any of the spent vtxos is ours.
-	spentVtxos := make([]types.VtxoKey, 0, len(commitmentTx.SpentVtxos))
+	spentVtxos := make([]types.Outpoint, 0, len(commitmentTx.SpentVtxos))
+	indexedSpentVtxos := make(map[types.Outpoint]types.Vtxo)
 	for _, vtxo := range commitmentTx.SpentVtxos {
-		spentVtxos = append(spentVtxos, types.VtxoKey{
+		spentVtxos = append(spentVtxos, types.Outpoint{
 			Txid: vtxo.Txid,
 			VOut: vtxo.VOut,
 		})
+		indexedSpentVtxos[vtxo.Outpoint] = vtxo
 	}
 	myVtxos, err := a.store.VtxoStore().GetVtxos(ctx, spentVtxos)
 	if err != nil {
@@ -3021,7 +3023,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	}
 
 	rawTx := &wire.MsgTx{}
-	reader := hex.NewDecoder(strings.NewReader(commitmentTx.TxHex))
+	reader := hex.NewDecoder(strings.NewReader(commitmentTx.Tx))
 	if err := rawTx.Deserialize(reader); err != nil {
 		return err
 	}
@@ -3048,7 +3050,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	// Add also our preconfirmed txs the list of those to settle, and also add the related
 	// vtxos to the list of those to mark as spent.
 	for _, vtxo := range myVtxos {
-		vtxosToSpend = append(vtxosToSpend, vtxo.VtxoKey)
+		vtxosToSpend[vtxo.Outpoint] = indexedSpentVtxos[vtxo.Outpoint].SpentBy
 		if !vtxo.Preconfirmed {
 			continue
 		}
@@ -3070,7 +3072,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 				Type:      types.TxReceived,
 				Settled:   true,
 				CreatedAt: time.Now(),
-				Hex:       commitmentTx.TxHex,
+				Hex:       commitmentTx.Tx,
 			})
 		} else {
 			vtxosToAddAmount := uint64(0)
@@ -3090,7 +3092,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 					Type:      types.TxSent,
 					Settled:   true,
 					CreatedAt: time.Now(),
-					Hex:       commitmentTx.TxHex,
+					Hex:       commitmentTx.Tx,
 				})
 			}
 		}
@@ -3113,7 +3115,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 					Type:      types.TxSent,
 					Settled:   true,
 					CreatedAt: time.Now(),
-					Hex:       commitmentTx.TxHex,
+					Hex:       commitmentTx.Tx,
 				})
 			}
 
@@ -3129,7 +3131,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	}
 
 	if len(txsToSettle) > 0 {
-		count, err := a.store.TransactionStore().SettleTransactions(ctx, txsToSettle)
+		count, err := a.store.TransactionStore().SettleTransactions(ctx, txsToSettle, commitmentTx.Txid)
 		if err != nil {
 			return err
 		}
@@ -3145,7 +3147,7 @@ func (a *covenantlessArkClient) handleCommitmentTx(
 	}
 
 	if len(vtxosToSpend) > 0 {
-		count, err := a.store.VtxoStore().SpendVtxos(ctx, vtxosToSpend, commitmentTx.Txid)
+		count, err := a.store.VtxoStore().SettleVtxos(ctx, vtxosToSpend, commitmentTx.Txid)
 		if err != nil {
 			return err
 		}
@@ -3159,7 +3161,7 @@ func (a *covenantlessArkClient) handleArkTx(
 	ctx context.Context, myScripts map[string]struct{}, arkTx *client.TxNotification,
 ) error {
 	vtxosToAdd := make([]types.Vtxo, 0)
-	vtxosToSpend := make([]types.VtxoKey, 0)
+	vtxosToSpend := make(map[types.Outpoint]string)
 	txsToAdd := make([]types.Transaction, 0)
 
 	for _, vtxo := range arkTx.SpendableVtxos {
@@ -3169,9 +3171,9 @@ func (a *covenantlessArkClient) handleArkTx(
 	}
 
 	// Check if any of the spent vtxos are ours.
-	spentVtxos := make([]types.VtxoKey, 0, len(arkTx.SpentVtxos))
+	spentVtxos := make([]types.Outpoint, 0, len(arkTx.SpentVtxos))
 	for _, vtxo := range arkTx.SpentVtxos {
-		spentVtxos = append(spentVtxos, types.VtxoKey{
+		spentVtxos = append(spentVtxos, types.Outpoint{
 			Txid: vtxo.Txid,
 			VOut: vtxo.VOut,
 		})
@@ -3180,8 +3182,10 @@ func (a *covenantlessArkClient) handleArkTx(
 	if err != nil {
 		return err
 	}
+	txsToSettle := make([]string, 0, len(vtxosToSpend))
 	for _, vtxo := range myVtxos {
-		vtxosToSpend = append(vtxosToSpend, vtxo.VtxoKey)
+		vtxosToSpend[vtxo.Outpoint] = arkTx.CheckpointTxs[vtxo.Outpoint].Txid
+		txsToSettle = append(txsToSettle, vtxo.Txid)
 	}
 
 	// If not spent vtxos, add a new received tx to the history.
@@ -3198,7 +3202,7 @@ func (a *covenantlessArkClient) handleArkTx(
 				Amount:    amount,
 				Type:      types.TxReceived,
 				CreatedAt: time.Now(),
-				Hex:       arkTx.TxHex,
+				Hex:       arkTx.Tx,
 			})
 		}
 	} else {
@@ -3245,12 +3249,7 @@ func (a *covenantlessArkClient) handleArkTx(
 		}
 		log.Debugf("spent %d vtxo(s)", count)
 
-		txids := make([]string, 0, len(vtxosToSpend))
-		for _, v := range vtxosToSpend {
-			txids = append(txids, v.Txid)
-		}
-
-		count, err = a.store.TransactionStore().SettleTransactions(ctx, txids)
+		count, err = a.store.TransactionStore().SettleTransactions(ctx, txsToSettle, "")
 		if err != nil {
 			return err
 		}
@@ -3267,9 +3266,9 @@ func (a *covenantlessArkClient) handleOptions(
 	sessions = append(sessions, options.ExtraSignerSessions...)
 
 	if !options.WalletSignerDisabled {
-		outpoints := make([]types.VtxoKey, 0, len(inputs))
+		outpoints := make([]types.Outpoint, 0, len(inputs))
 		for _, input := range inputs {
-			outpoints = append(outpoints, types.VtxoKey{
+			outpoints = append(outpoints, types.Outpoint{
 				Txid: input.OutPoint.Hash.String(),
 				VOut: uint32(input.OutPoint.Index),
 			})

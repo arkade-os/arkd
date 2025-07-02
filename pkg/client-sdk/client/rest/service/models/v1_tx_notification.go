@@ -12,6 +12,7 @@ import (
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
 // V1TxNotification v1 tx notification
@@ -19,14 +20,19 @@ import (
 // swagger:model v1TxNotification
 type V1TxNotification struct {
 
-	// hex
-	Hex string `json:"hex,omitempty"`
+	// This field is set only in case of offchain tx.
+	//
+	// key: outpoint, value: checkpoint txid
+	CheckpointTxs map[string]V1TxData `json:"checkpointTxs,omitempty"`
 
 	// spendable vtxos
 	SpendableVtxos []*V1Vtxo `json:"spendableVtxos"`
 
 	// spent vtxos
 	SpentVtxos []*V1Vtxo `json:"spentVtxos"`
+
+	// tx
+	Tx string `json:"tx,omitempty"`
 
 	// txid
 	Txid string `json:"txid,omitempty"`
@@ -35,6 +41,10 @@ type V1TxNotification struct {
 // Validate validates this v1 tx notification
 func (m *V1TxNotification) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateCheckpointTxs(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validateSpendableVtxos(formats); err != nil {
 		res = append(res, err)
@@ -47,6 +57,32 @@ func (m *V1TxNotification) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *V1TxNotification) validateCheckpointTxs(formats strfmt.Registry) error {
+	if swag.IsZero(m.CheckpointTxs) { // not required
+		return nil
+	}
+
+	for k := range m.CheckpointTxs {
+
+		if err := validate.Required("checkpointTxs"+"."+k, "body", m.CheckpointTxs[k]); err != nil {
+			return err
+		}
+		if val, ok := m.CheckpointTxs[k]; ok {
+			if err := val.Validate(formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("checkpointTxs" + "." + k)
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("checkpointTxs" + "." + k)
+				}
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 
@@ -106,6 +142,10 @@ func (m *V1TxNotification) validateSpentVtxos(formats strfmt.Registry) error {
 func (m *V1TxNotification) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateCheckpointTxs(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateSpendableVtxos(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -117,6 +157,21 @@ func (m *V1TxNotification) ContextValidate(ctx context.Context, formats strfmt.R
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *V1TxNotification) contextValidateCheckpointTxs(ctx context.Context, formats strfmt.Registry) error {
+
+	for k := range m.CheckpointTxs {
+
+		if val, ok := m.CheckpointTxs[k]; ok {
+			if err := val.ContextValidate(ctx, formats); err != nil {
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 

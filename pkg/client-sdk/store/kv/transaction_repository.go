@@ -64,7 +64,7 @@ func (s *txStore) AddTransactions(
 }
 
 func (s *txStore) SettleTransactions(
-	ctx context.Context, txids []string,
+	ctx context.Context, txids []string, settledBy string,
 ) (int, error) {
 	txs, err := s.GetTransactions(ctx, txids)
 	if err != nil {
@@ -77,6 +77,7 @@ func (s *txStore) SettleTransactions(
 			continue
 		}
 		tx.Settled = true
+		tx.SettledBy = settledBy
 		if err := s.db.Upsert(tx.TransactionKey.String(), &tx); err != nil {
 			return -1, err
 		}

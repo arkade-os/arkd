@@ -34,13 +34,15 @@ var migrations embed.FS
 //go:embed postgres/migration/*
 var pgMigration embed.FS
 
+var arkRepo badgerdb.ArkRepository
+
 var (
 	eventStoreTypes = map[string]func(...interface{}) (domain.EventRepository, error){
 		"badger":   badgerdb.NewEventRepository,
 		"postgres": pgdb.NewEventRepository,
 	}
 	roundStoreTypes = map[string]func(...interface{}) (domain.RoundRepository, error){
-		"badger":   badgerdb.NewRoundRepository,
+		"badger":   newBadgerRoundRepository,
 		"sqlite":   sqlitedb.NewRoundRepository,
 		"postgres": pgdb.NewRoundRepository,
 	}
@@ -55,7 +57,7 @@ var (
 		"postgres": pgdb.NewMarketHourRepository,
 	}
 	offchainTxStoreTypes = map[string]func(...interface{}) (domain.OffchainTxRepository, error){
-		"badger":   badgerdb.NewOffchainTxRepository,
+		"badger":   newBadgerOffchainTxRepository,
 		"sqlite":   sqlitedb.NewOffchainTxRepository,
 		"postgres": pgdb.NewOffchainTxRepository,
 	}
@@ -339,13 +341,13 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		return
 	}
 
-	spentVtxos := getSpentVtxoKeysFromRound(round.TxRequests)
+	spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
 	newVtxos := getNewVtxosFromRound(round)
 
 	if len(spentVtxos) > 0 {
 		for {
-			if err := repo.SpendVtxos(ctx, spentVtxos, round.Txid); err != nil {
-				log.WithError(err).Warn("failed to add new vtxos, retrying...")
+			if err := repo.SettleVtxos(ctx, spentVtxos, round.Txid); err != nil {
+				log.WithError(err).Warn("failed to spend vtxos, retrying...")
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
@@ -378,15 +380,16 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 	switch {
 	case offchainTx.IsAccepted():
-		spentVtxos := make([]domain.Outpoint, 0)
-
+		spentVtxos := make(map[domain.Outpoint]string)
 		for _, tx := range offchainTx.CheckpointTxs {
-			_, ins, _, err := s.txDecoder.DecodeTx(tx)
+			txid, ins, _, err := s.txDecoder.DecodeTx(tx)
 			if err != nil {
 				log.WithError(err).Warn("failed to decode checkpoint tx")
 				continue
 			}
-			spentVtxos = append(spentVtxos, ins...)
+			for _, in := range ins {
+				spentVtxos[in] = txid
+			}
 		}
 
 		// as soon as the checkpoint txs are signed by the server,
@@ -424,7 +427,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				ExpireAt:           offchainTx.ExpiryTimestamp,
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 				RootCommitmentTxid: offchainTx.RootCommitmentTxId,
-				RedeemTx:           offchainTx.VirtualTx,
+				Preconfirmed:       true,
 				CreatedAt:          offchainTx.EndingTimestamp,
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
@@ -441,14 +444,35 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	}
 }
 
-func getSpentVtxoKeysFromRound(requests map[string]domain.TxRequest) []domain.Outpoint {
-	vtxos := make([]domain.Outpoint, 0)
-	for _, request := range requests {
-		for _, vtxo := range request.Inputs {
-			vtxos = append(vtxos, vtxo.Outpoint)
+func getSpentVtxoKeysFromRound(
+	round domain.Round, txDecoder ports.TxDecoder,
+) map[domain.Outpoint]string {
+	spentVtxos := make(map[domain.Outpoint]string)
+
+	// Build a map of forfeit tx inputs for O(1) lookup
+	forfeitInputs := make(map[domain.Outpoint]string)
+	for _, forfeitTx := range round.ForfeitTxs {
+		_, ins, _, err := txDecoder.DecodeTx(forfeitTx.Tx)
+		if err != nil {
+			log.WithError(err).Warnf("failed to decode forfeit tx %s", forfeitTx.Txid)
+			continue
+		}
+		for _, in := range ins {
+			forfeitInputs[in] = forfeitTx.Txid
 		}
 	}
-	return vtxos
+
+	// Match vtxos with forfeit transactions
+	for _, request := range round.TxRequests {
+		for _, vtxo := range request.Inputs {
+			if !vtxo.RequiresForfeit() {
+				spentVtxos[vtxo.Outpoint] = ""
+			} else if txid, found := forfeitInputs[vtxo.Outpoint]; found {
+				spentVtxos[vtxo.Outpoint] = txid
+			}
+		}
+	}
+	return spentVtxos
 }
 
 func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
@@ -488,4 +512,23 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 		}
 	}
 	return vtxos
+}
+
+func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {
+	if arkRepo == nil {
+		repo, err := badgerdb.NewArkRepository(args...)
+		if err != nil {
+			return nil, err
+		}
+		arkRepo = repo
+	}
+	return arkRepo, nil
+}
+
+func newBadgerRoundRepository(args ...interface{}) (domain.RoundRepository, error) {
+	return initBadgerArkRepository(args...)
+}
+
+func newBadgerOffchainTxRepository(args ...interface{}) (domain.OffchainTxRepository, error) {
+	return initBadgerArkRepository(args...)
 }

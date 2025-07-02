@@ -13,13 +13,18 @@ import (
 	"github.com/timshannon/badgerhold/v4"
 )
 
-const roundStoreDir = "rounds"
+const arkStoreDir = "ark"
 
-type roundRepository struct {
+type arkRepository struct {
 	store *badgerhold.Store
 }
 
-func NewRoundRepository(config ...interface{}) (domain.RoundRepository, error) {
+type ArkRepository interface {
+	domain.RoundRepository
+	domain.OffchainTxRepository
+}
+
+func NewArkRepository(config ...interface{}) (ArkRepository, error) {
 	if len(config) != 2 {
 		return nil, fmt.Errorf("invalid config")
 	}
@@ -37,17 +42,17 @@ func NewRoundRepository(config ...interface{}) (domain.RoundRepository, error) {
 
 	var dir string
 	if len(baseDir) > 0 {
-		dir = filepath.Join(baseDir, roundStoreDir)
+		dir = filepath.Join(baseDir, arkStoreDir)
 	}
 	store, err := createDB(dir, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open round events store: %s", err)
 	}
 
-	return &roundRepository{store}, nil
+	return &arkRepository{store}, nil
 }
 
-func (r *roundRepository) AddOrUpdateRound(
+func (r *arkRepository) AddOrUpdateRound(
 	ctx context.Context, round domain.Round,
 ) error {
 	if err := r.addOrUpdateRound(ctx, round); err != nil {
@@ -57,7 +62,7 @@ func (r *roundRepository) AddOrUpdateRound(
 	return r.addTxs(ctx, round)
 }
 
-func (r *roundRepository) GetRoundWithId(
+func (r *arkRepository) GetRoundWithId(
 	ctx context.Context, id string,
 ) (*domain.Round, error) {
 	query := badgerhold.Where("Id").Eq(id)
@@ -72,7 +77,7 @@ func (r *roundRepository) GetRoundWithId(
 	return round, nil
 }
 
-func (r *roundRepository) GetRoundWithTxid(
+func (r *arkRepository) GetRoundWithTxid(
 	ctx context.Context, txid string,
 ) (*domain.Round, error) {
 	query := badgerhold.Where("Txid").Eq(txid)
@@ -87,7 +92,7 @@ func (r *roundRepository) GetRoundWithTxid(
 	return round, nil
 }
 
-func (r *roundRepository) GetUnsweptRoundsTxid(
+func (r *arkRepository) GetUnsweptRoundsTxid(
 	ctx context.Context,
 ) ([]string, error) {
 	query := badgerhold.Where("Stage.Code").Eq(domain.RoundFinalizationStage).
@@ -104,22 +109,22 @@ func (r *roundRepository) GetUnsweptRoundsTxid(
 	return txids, nil
 }
 
-func (r *roundRepository) GetRoundStats(ctx context.Context, roundTxid string) (*domain.RoundStats, error) {
+func (r *arkRepository) GetRoundStats(ctx context.Context, roundTxid string) (*domain.RoundStats, error) {
 	// TODO implement
 	return nil, nil
 }
 
-func (r *roundRepository) GetRoundForfeitTxs(ctx context.Context, roundTxid string) ([]domain.ForfeitTx, error) {
+func (r *arkRepository) GetRoundForfeitTxs(ctx context.Context, roundTxid string) ([]domain.ForfeitTx, error) {
 	// TODO implement
 	return nil, nil
 }
 
-func (r *roundRepository) GetRoundConnectorTree(ctx context.Context, roundTxid string) ([]tree.TxGraphChunk, error) {
+func (r *arkRepository) GetRoundConnectorTree(ctx context.Context, roundTxid string) ([]tree.TxGraphChunk, error) {
 	// TODO implement
 	return nil, nil
 }
 
-func (r *roundRepository) GetSweptRoundsConnectorAddress(
+func (r *arkRepository) GetSweptRoundsConnectorAddress(
 	ctx context.Context,
 ) ([]string, error) {
 	query := badgerhold.Where("Stage.Code").Eq(domain.RoundFinalizationStage).
@@ -136,7 +141,7 @@ func (r *roundRepository) GetSweptRoundsConnectorAddress(
 	return txids, nil
 }
 
-func (r *roundRepository) GetRoundsIds(ctx context.Context, startedAfter int64, startedBefore int64) ([]string, error) {
+func (r *arkRepository) GetRoundsIds(ctx context.Context, startedAfter int64, startedBefore int64) ([]string, error) {
 	query := badgerhold.Where("Stage.Ended").Eq(true)
 
 	if startedAfter > 0 {
@@ -160,7 +165,7 @@ func (r *roundRepository) GetRoundsIds(ctx context.Context, startedAfter int64, 
 	return ids, nil
 }
 
-func (r *roundRepository) GetVtxoTreeWithTxid(
+func (r *arkRepository) GetVtxoTreeWithTxid(
 	ctx context.Context, txid string,
 ) ([]tree.TxGraphChunk, error) {
 	round, err := r.GetRoundWithTxid(ctx, txid)
@@ -170,16 +175,11 @@ func (r *roundRepository) GetVtxoTreeWithTxid(
 	return round.VtxoTree, nil
 }
 
-func (r *roundRepository) Close() {
-	// nolint:all
-	r.store.Close()
-}
-
-func (r *roundRepository) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
+func (r *arkRepository) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
 	return r.findTxs(ctx, txids)
 }
 
-func (r *roundRepository) GetExistingRounds(ctx context.Context, txids []string) (map[string]any, error) {
+func (r *arkRepository) GetExistingRounds(ctx context.Context, txids []string) (map[string]any, error) {
 	query := badgerhold.Where("Txid").In(txids)
 	rounds, err := r.findRound(ctx, query)
 	if err != nil {
@@ -193,7 +193,27 @@ func (r *roundRepository) GetExistingRounds(ctx context.Context, txids []string)
 	return resp, nil
 }
 
-func (r *roundRepository) findRound(
+func (r *arkRepository) AddOrUpdateOffchainTx(
+	ctx context.Context, offchainTx *domain.OffchainTx,
+) error {
+	if err := r.addOrUpdateOffchainTx(ctx, *offchainTx); err != nil {
+		return err
+	}
+	return r.addCheckpointTxs(ctx, *offchainTx)
+}
+
+func (r *arkRepository) GetOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	return r.getOffchainTx(ctx, txid)
+}
+
+func (r *arkRepository) Close() {
+	// nolint
+	r.store.Close()
+}
+
+func (r *arkRepository) findRound(
 	ctx context.Context, query *badgerhold.Query,
 ) ([]domain.Round, error) {
 	var rounds []domain.Round
@@ -209,7 +229,7 @@ func (r *roundRepository) findRound(
 	return rounds, err
 }
 
-func (r *roundRepository) addOrUpdateRound(
+func (r *arkRepository) addOrUpdateRound(
 	ctx context.Context, round domain.Round,
 ) error {
 	rnd := domain.Round{
@@ -254,12 +274,118 @@ func (r *roundRepository) addOrUpdateRound(
 	return nil
 }
 
+func (r *arkRepository) addOrUpdateOffchainTx(
+	ctx context.Context, offchainTx domain.OffchainTx,
+) error {
+	var upsertFn func() error
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		upsertFn = func() error {
+			return r.store.TxUpsert(tx, offchainTx.VirtualTxid, offchainTx)
+		}
+	} else {
+		upsertFn = func() error {
+			return r.store.Upsert(offchainTx.VirtualTxid, offchainTx)
+		}
+	}
+	if err := upsertFn(); err != nil {
+		if errors.Is(err, badger.ErrConflict) {
+			attempts := 1
+			for errors.Is(err, badger.ErrConflict) && attempts <= maxRetries {
+				time.Sleep(100 * time.Millisecond)
+				err = upsertFn()
+				attempts++
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *arkRepository) getOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	var offchainTx domain.OffchainTx
+	var err error
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		err = r.store.TxGet(tx, txid, &offchainTx)
+	} else {
+		err = r.store.Get(txid, &offchainTx)
+	}
+	if err != nil && err == badgerhold.ErrNotFound {
+		return nil, fmt.Errorf("offchain tx %s not found", txid)
+	}
+	if offchainTx.Stage.Code == int(domain.OffchainTxUndefinedStage) {
+		return nil, fmt.Errorf("offchain tx %s not found", txid)
+	}
+
+	return &offchainTx, nil
+}
+
+func (r *arkRepository) addCheckpointTxs(
+	ctx context.Context, offchainTx domain.OffchainTx,
+) error {
+	txs := make(map[string]Tx)
+	for txid, tx := range offchainTx.CheckpointTxs {
+		txs[txid] = Tx{
+			Txid: txid,
+			Tx:   tx,
+		}
+	}
+
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		for k, v := range txs {
+			if err := r.store.TxUpsert(tx, k, v); err != nil {
+				return err
+			}
+		}
+	} else {
+		for k, v := range txs {
+			if err := r.store.Upsert(k, v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (r *arkRepository) findCheckpointTxs(
+	ctx context.Context, txids []string,
+) ([]string, error) {
+	resp := make([]string, 0)
+	txs := make([]Tx, 0)
+
+	var ids []interface{}
+	for _, s := range txids {
+		ids = append(ids, s)
+	}
+	query := badgerhold.Where(badgerhold.Key).In(ids...)
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		if err := r.store.TxFind(tx, &txs, query); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := r.store.Find(&txs, query); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, tx := range txs {
+		resp = append(resp, tx.Tx)
+	}
+
+	return resp, nil
+}
+
 type Tx struct {
 	Txid string
 	Tx   string
 }
 
-func (r *roundRepository) addTxs(
+func (r *arkRepository) addTxs(
 	ctx context.Context, round domain.Round,
 ) (err error) {
 	txs := make(map[string]Tx)
@@ -310,7 +436,24 @@ func (r *roundRepository) addTxs(
 	return
 }
 
-func (r *roundRepository) findTxs(
+func (r *arkRepository) findTxs(
+	ctx context.Context, txids []string,
+) ([]string, error) {
+	txs, err := r.findRoundTxs(ctx, txids)
+	if err != nil {
+		return nil, err
+	}
+	if len(txs) != len(txids) {
+		offchainTxs, err := r.findOffchainTxs(ctx, txids)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, offchainTxs...)
+	}
+	return txs, nil
+}
+
+func (r *arkRepository) findRoundTxs(
 	ctx context.Context, txids []string,
 ) ([]string, error) {
 	resp := make([]string, 0)
@@ -337,4 +480,28 @@ func (r *roundRepository) findTxs(
 	}
 
 	return resp, nil
+}
+
+func (r arkRepository) findOffchainTxs(ctx context.Context, txids []string) ([]string, error) {
+	txs := make([]string, 0, len(txids))
+	txsLeftToFetch := make([]string, 0, len(txids))
+	for _, txid := range txids {
+		tx, err := r.getOffchainTx(ctx, txid)
+		if err != nil {
+			return nil, err
+		}
+		if tx != nil {
+			txs = append(txs, tx.VirtualTx)
+			continue
+		}
+		txsLeftToFetch = append(txsLeftToFetch, txid)
+	}
+	if len(txsLeftToFetch) > 0 {
+		checkpointTxs, err := r.findCheckpointTxs(ctx, txsLeftToFetch)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, checkpointTxs...)
+	}
+	return txs, nil
 }

@@ -189,7 +189,7 @@ func (a *arkClient) ListVtxos(ctx context.Context) (
 	}
 
 	for _, vtxo := range resp.Vtxos {
-		if vtxo.Spent || vtxo.Swept || vtxo.Redeemed {
+		if vtxo.Spent || vtxo.Swept || vtxo.Unrolled {
 			spentVtxos = append(spentVtxos, vtxo)
 			continue
 		}
@@ -522,11 +522,11 @@ func getWalletStore(storeType, datadir string) (walletstore.WalletStore, error) 
 	}
 }
 
-func filterByOutpoints(vtxos []types.Vtxo, outpoints []types.VtxoKey) []types.Vtxo {
+func filterByOutpoints(vtxos []types.Vtxo, outpoints []types.Outpoint) []types.Vtxo {
 	filtered := make([]types.Vtxo, 0, len(vtxos))
 	for _, vtxo := range vtxos {
 		for _, outpoint := range outpoints {
-			if vtxo.VtxoKey == outpoint {
+			if vtxo.Outpoint == outpoint {
 				filtered = append(filtered, vtxo)
 			}
 		}

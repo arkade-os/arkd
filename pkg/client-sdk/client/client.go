@@ -60,7 +60,7 @@ type BatchEventChannel struct {
 }
 
 type Input struct {
-	types.VtxoKey
+	types.Outpoint
 	Tapscripts []string
 }
 
@@ -122,9 +122,14 @@ type TransactionEvent struct {
 	Err          error
 }
 
+type TxData struct {
+	Txid string
+	Tx   string
+}
+
 type TxNotification struct {
-	Txid           string
-	TxHex          string
+	TxData
 	SpentVtxos     []types.Vtxo
 	SpendableVtxos []types.Vtxo
+	CheckpointTxs  map[types.Outpoint]TxData
 }

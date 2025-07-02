@@ -12,12 +12,16 @@ import (
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
 // V1GetSubscriptionResponse v1 get subscription response
 //
 // swagger:model v1GetSubscriptionResponse
 type V1GetSubscriptionResponse struct {
+
+	// checkpoint txs
+	CheckpointTxs map[string]V1IndexerTxData `json:"checkpointTxs,omitempty"`
 
 	// new vtxos
 	NewVtxos []*V1IndexerVtxo `json:"newVtxos"`
@@ -28,6 +32,9 @@ type V1GetSubscriptionResponse struct {
 	// spent vtxos
 	SpentVtxos []*V1IndexerVtxo `json:"spentVtxos"`
 
+	// tx
+	Tx string `json:"tx,omitempty"`
+
 	// txid
 	Txid string `json:"txid,omitempty"`
 }
@@ -35,6 +42,10 @@ type V1GetSubscriptionResponse struct {
 // Validate validates this v1 get subscription response
 func (m *V1GetSubscriptionResponse) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateCheckpointTxs(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validateNewVtxos(formats); err != nil {
 		res = append(res, err)
@@ -47,6 +58,32 @@ func (m *V1GetSubscriptionResponse) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *V1GetSubscriptionResponse) validateCheckpointTxs(formats strfmt.Registry) error {
+	if swag.IsZero(m.CheckpointTxs) { // not required
+		return nil
+	}
+
+	for k := range m.CheckpointTxs {
+
+		if err := validate.Required("checkpointTxs"+"."+k, "body", m.CheckpointTxs[k]); err != nil {
+			return err
+		}
+		if val, ok := m.CheckpointTxs[k]; ok {
+			if err := val.Validate(formats); err != nil {
+				if ve, ok := err.(*errors.Validation); ok {
+					return ve.ValidateName("checkpointTxs" + "." + k)
+				} else if ce, ok := err.(*errors.CompositeError); ok {
+					return ce.ValidateName("checkpointTxs" + "." + k)
+				}
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 
@@ -106,6 +143,10 @@ func (m *V1GetSubscriptionResponse) validateSpentVtxos(formats strfmt.Registry) 
 func (m *V1GetSubscriptionResponse) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateCheckpointTxs(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateNewVtxos(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -117,6 +158,21 @@ func (m *V1GetSubscriptionResponse) ContextValidate(ctx context.Context, formats
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *V1GetSubscriptionResponse) contextValidateCheckpointTxs(ctx context.Context, formats strfmt.Registry) error {
+
+	for k := range m.CheckpointTxs {
+
+		if val, ok := m.CheckpointTxs[k]; ok {
+			if err := val.ContextValidate(ctx, formats); err != nil {
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 

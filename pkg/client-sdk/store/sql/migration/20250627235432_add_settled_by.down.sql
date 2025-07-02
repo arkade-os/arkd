@@ -1,0 +1,4 @@
+ALTER TABLE vtxo DROP COLUMN settled_by;
+ALTER TABLE vtxo DROP COLUMN unrolled;
+ALTER TABLE vtxo ADD COLUMN redeemed BOOLEAN NOT NULL;
+ALTER TABLE tx DROP COLUMN settled_by;

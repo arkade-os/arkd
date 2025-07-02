@@ -53,7 +53,7 @@ func (m *txRequestStore) Push(request domain.TxRequest, boardingInputs []ports.B
 		for _, pay := range m.requests {
 			for _, pInput := range pay.Inputs {
 				if input.Txid == pInput.Txid && input.VOut == pInput.VOut {
-					return fmt.Errorf("duplicated input, %s already registered by another request", input.String())
+					return fmt.Errorf("duplicated input, %s already registered by another request", input.Outpoint.String())
 				}
 			}
 		}
@@ -80,7 +80,7 @@ func (m *txRequestStore) Push(request domain.TxRequest, boardingInputs []ports.B
 		if vtxo.IsNote() {
 			continue
 		}
-		m.vtxos[vtxo.String()] = struct{}{}
+		m.vtxos[vtxo.Outpoint.String()] = struct{}{}
 	}
 	return nil
 }
@@ -111,7 +111,7 @@ func (m *txRequestStore) Pop(num int64) []ports.TimedTxRequest {
 	for _, p := range requestsByTime[:num] {
 		result = append(result, p)
 		for _, vtxo := range m.requests[p.Id].Inputs {
-			m.vtxosToRemove = append(m.vtxosToRemove, vtxo.String())
+			m.vtxosToRemove = append(m.vtxosToRemove, vtxo.Outpoint.String())
 		}
 		delete(m.requests, p.Id)
 	}
@@ -166,7 +166,7 @@ func (m *txRequestStore) Delete(ids []string) error {
 			continue
 		}
 		for _, vtxo := range req.Inputs {
-			delete(m.vtxos, vtxo.String())
+			delete(m.vtxos, vtxo.Outpoint.String())
 		}
 		delete(m.requests, id)
 	}

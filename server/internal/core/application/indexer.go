@@ -245,10 +245,17 @@ func (i *indexerService) GetTransactionHistory(
 
 	var roundTxids map[string]any
 	if len(spent) > 0 {
-		txids := make([]string, 0, len(spent))
+		indexedTxids := make(map[string]struct{})
 		for _, vtxo := range spent {
-			txids = append(txids, vtxo.SpentBy)
+			if vtxo.IsSettled() {
+				indexedTxids[vtxo.SettledBy] = struct{}{}
+			}
 		}
+		txids := make([]string, 0, len(spent))
+		for txid := range indexedTxids {
+			txids = append(txids, txid)
+		}
+
 		roundTxids, err = i.repoManager.Rounds().GetExistingRounds(ctx, txids)
 		if err != nil {
 			return nil, err
@@ -315,7 +322,7 @@ func (i *indexerService) GetVtxoChain(ctx context.Context, vtxoKey Outpoint, pag
 			// we need to add the virtual tx + the associated checkpoints txs
 			// also, we have to populate the newNextVtxos with the checkpoints inputs
 			// in order to continue the chain in the next iteration
-			if vtxo.IsPreconfirmed() {
+			if vtxo.Preconfirmed {
 				offchainTx, err := i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
 				if err != nil {
 					return nil, fmt.Errorf("failed to retrieve offchain tx: %s", err)
@@ -504,26 +511,24 @@ func (i *indexerService) vtxosToTxs(
 		settleVtxos := findVtxosSpentInSettlement(vtxosLeftToCheck, vtxo)
 		settleAmount := reduceVtxosAmount(settleVtxos)
 		if vtxo.Amount <= settleAmount {
-			continue // settlement or change, ignore
+			continue // settlement, ignore
 		}
 
 		spentVtxos := findVtxosSpentInPayment(vtxosLeftToCheck, vtxo)
 		spentAmount := reduceVtxosAmount(spentVtxos)
 		if vtxo.Amount <= spentAmount {
-			continue // settlement or change, ignore
+			continue // change, ignore
 		}
 
 		commitmentTxid := vtxo.RootCommitmentTxid
 		virtualTxid := ""
-		settled := !vtxo.IsPreconfirmed()
+		settled := !vtxo.Preconfirmed
 		settledBy := ""
-		if vtxo.IsPreconfirmed() {
+		if vtxo.Preconfirmed {
 			virtualTxid = vtxo.Txid
 			commitmentTxid = ""
-			settled = vtxo.SpentBy != ""
-			if _, ok := roundTxids[vtxo.SpentBy]; settled && ok {
-				settledBy = vtxo.SpentBy
-			}
+			settled = vtxo.Spent
+			settledBy = vtxo.SettledBy
 		}
 
 		txs = append(txs, TxHistoryRecord{
@@ -548,11 +553,14 @@ func (i *indexerService) vtxosToTxs(
 		if len(v.SpentBy) <= 0 {
 			continue
 		}
-
-		if _, ok := vtxosBySpentBy[v.SpentBy]; !ok {
-			vtxosBySpentBy[v.SpentBy] = make([]domain.Vtxo, 0)
+		if v.IsSettled() {
+			continue
 		}
-		vtxosBySpentBy[v.SpentBy] = append(vtxosBySpentBy[v.SpentBy], v)
+
+		if _, ok := vtxosBySpentBy[v.ArkTxid]; !ok {
+			vtxosBySpentBy[v.ArkTxid] = make([]domain.Vtxo, 0)
+		}
+		vtxosBySpentBy[v.ArkTxid] = append(vtxosBySpentBy[v.ArkTxid], v)
 	}
 
 	for sb := range vtxosBySpentBy {
@@ -574,7 +582,7 @@ func (i *indexerService) vtxosToTxs(
 
 		commitmentTxid := vtxo.RootCommitmentTxid
 		virtualTxid := ""
-		if vtxo.IsPreconfirmed() {
+		if vtxo.Preconfirmed {
 			virtualTxid = vtxo.Txid
 			commitmentTxid = ""
 		}
@@ -598,17 +606,32 @@ func (i *indexerService) vtxosToTxs(
 }
 
 func findVtxosSpentInSettlement(vtxos []domain.Vtxo, vtxo domain.Vtxo) []domain.Vtxo {
-	if vtxo.IsPreconfirmed() {
+	if vtxo.Preconfirmed {
 		return nil
 	}
-	return findVtxosSpent(vtxos, vtxo.RootCommitmentTxid)
+	return findVtxosSettled(vtxos, vtxo.RootCommitmentTxid)
+}
+
+func findVtxosSettled(vtxos []domain.Vtxo, id string) []domain.Vtxo {
+	var result []domain.Vtxo
+	leftVtxos := make([]domain.Vtxo, 0)
+	for _, v := range vtxos {
+		if v.SettledBy == id {
+			result = append(result, v)
+		} else {
+			leftVtxos = append(leftVtxos, v)
+		}
+	}
+	// Update the given list with only the left vtxos.
+	copy(vtxos, leftVtxos)
+	return result
 }
 
 func findVtxosSpent(vtxos []domain.Vtxo, id string) []domain.Vtxo {
 	var result []domain.Vtxo
 	leftVtxos := make([]domain.Vtxo, 0)
 	for _, v := range vtxos {
-		if v.SpentBy == id {
+		if v.ArkTxid == id {
 			result = append(result, v)
 		} else {
 			leftVtxos = append(leftVtxos, v)
@@ -634,10 +657,6 @@ func findVtxosSpentInPayment(vtxos []domain.Vtxo, vtxo domain.Vtxo) []domain.Vtx
 func findVtxosResultedFromSpentBy(vtxos []domain.Vtxo, spentByTxid string) []domain.Vtxo {
 	var result []domain.Vtxo
 	for _, v := range vtxos {
-		if !v.IsPreconfirmed() && v.RootCommitmentTxid == spentByTxid {
-			result = append(result, v)
-			break
-		}
 		if v.Txid == spentByTxid {
 			result = append(result, v)
 		}

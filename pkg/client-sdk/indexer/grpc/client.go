@@ -529,11 +529,24 @@ func (a *grpcClient) GetSubscription(ctx context.Context, subscriptionId string)
 				return
 			}
 
+			var checkpointTxs map[string]indexer.TxData
+			if len(resp.GetCheckpointTxs()) > 0 {
+				checkpointTxs = make(map[string]indexer.TxData)
+				for k, v := range resp.GetCheckpointTxs() {
+					checkpointTxs[k] = indexer.TxData{
+						Txid: v.GetTxid(),
+						Tx:   v.GetTx(),
+					}
+				}
+			}
+
 			eventsCh <- &indexer.ScriptEvent{
-				Txid:       resp.GetTxid(),
-				Scripts:    resp.GetScripts(),
-				NewVtxos:   newIndexerVtxos(resp.GetNewVtxos()),
-				SpentVtxos: newIndexerVtxos(resp.GetSpentVtxos()),
+				Txid:          resp.GetTxid(),
+				Tx:            resp.GetTx(),
+				Scripts:       resp.GetScripts(),
+				NewVtxos:      newIndexerVtxos(resp.GetNewVtxos()),
+				SpentVtxos:    newIndexerVtxos(resp.GetSpentVtxos()),
+				CheckpointTxs: checkpointTxs,
 			}
 		}
 	}()
@@ -599,7 +612,7 @@ func newIndexerVtxos(vtxos []*arkv1.IndexerVtxo) []types.Vtxo {
 
 func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) types.Vtxo {
 	return types.Vtxo{
-		VtxoKey: types.VtxoKey{
+		Outpoint: types.Outpoint{
 			Txid: vtxo.GetOutpoint().GetTxid(),
 			VOut: vtxo.GetOutpoint().GetVout(),
 		},
@@ -611,7 +624,9 @@ func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) types.Vtxo {
 		Preconfirmed:    vtxo.GetIsPreconfirmed(),
 		Swept:           vtxo.GetIsSwept(),
 		Spent:           vtxo.GetIsSpent(),
-		Redeemed:        vtxo.GetIsRedeemed(),
+		Unrolled:        vtxo.GetIsUnrolled(),
 		SpentBy:         vtxo.GetSpentBy(),
+		SettledBy:       vtxo.GetSettledBy(),
+		ArkTxid:         vtxo.GetArkTxid(),
 	}
 }

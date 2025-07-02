@@ -21,6 +21,9 @@ type V1Vtxo struct {
 	// amount
 	Amount string `json:"amount,omitempty"`
 
+	// ark txid
+	ArkTxid string `json:"arkTxid,omitempty"`
+
 	// commitment txids
 	CommitmentTxids []string `json:"commitmentTxids"`
 
@@ -30,26 +33,29 @@ type V1Vtxo struct {
 	// expires at
 	ExpiresAt string `json:"expiresAt,omitempty"`
 
+	// is preconfirmed
+	IsPreconfirmed bool `json:"isPreconfirmed,omitempty"`
+
+	// is spent
+	IsSpent bool `json:"isSpent,omitempty"`
+
+	// is swept
+	IsSwept bool `json:"isSwept,omitempty"`
+
+	// is unrolled
+	IsUnrolled bool `json:"isUnrolled,omitempty"`
+
 	// outpoint
 	Outpoint *V1Outpoint `json:"outpoint,omitempty"`
-
-	// preconfirmed
-	Preconfirmed bool `json:"preconfirmed,omitempty"`
-
-	// redeemed
-	Redeemed bool `json:"redeemed,omitempty"`
 
 	// script
 	Script string `json:"script,omitempty"`
 
-	// spent
-	Spent bool `json:"spent,omitempty"`
+	// settled by
+	SettledBy string `json:"settledBy,omitempty"`
 
 	// spent by
 	SpentBy string `json:"spentBy,omitempty"`
-
-	// swept
-	Swept bool `json:"swept,omitempty"`
 }
 
 // Validate validates this v1 vtxo
