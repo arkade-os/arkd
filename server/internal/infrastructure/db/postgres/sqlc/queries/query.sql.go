@@ -1106,23 +1106,23 @@ func (q *Queries) SelectVtxosByRoundTxid(ctx context.Context, commitmentTxid str
 	return items, nil
 }
 
-const selectVtxosWithPubkey = `-- name: SelectVtxosWithPubkey :many
-SELECT vtxo_virtual_tx_vw.txid, vtxo_virtual_tx_vw.vout, vtxo_virtual_tx_vw.pubkey, vtxo_virtual_tx_vw.amount, vtxo_virtual_tx_vw.commitment_txid, vtxo_virtual_tx_vw.spent_by, vtxo_virtual_tx_vw.spent, vtxo_virtual_tx_vw.redeemed, vtxo_virtual_tx_vw.swept, vtxo_virtual_tx_vw.expire_at, vtxo_virtual_tx_vw.created_at, vtxo_virtual_tx_vw.request_id, vtxo_virtual_tx_vw.commitments, vtxo_virtual_tx_vw.redeem_tx FROM vtxo_virtual_tx_vw WHERE pubkey = $1
+const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
+SELECT vtxo_virtual_tx_vw.txid, vtxo_virtual_tx_vw.vout, vtxo_virtual_tx_vw.pubkey, vtxo_virtual_tx_vw.amount, vtxo_virtual_tx_vw.commitment_txid, vtxo_virtual_tx_vw.spent_by, vtxo_virtual_tx_vw.spent, vtxo_virtual_tx_vw.redeemed, vtxo_virtual_tx_vw.swept, vtxo_virtual_tx_vw.expire_at, vtxo_virtual_tx_vw.created_at, vtxo_virtual_tx_vw.request_id, vtxo_virtual_tx_vw.commitments, vtxo_virtual_tx_vw.redeem_tx FROM vtxo_virtual_tx_vw WHERE pubkey = ANY($1::varchar[])
 `
 
-type SelectVtxosWithPubkeyRow struct {
+type SelectVtxosWithPubkeysRow struct {
 	VtxoVirtualTxVw VtxoVirtualTxVw
 }
 
-func (q *Queries) SelectVtxosWithPubkey(ctx context.Context, pubkey string) ([]SelectVtxosWithPubkeyRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosWithPubkey, pubkey)
+func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, dollar_1 []string) ([]SelectVtxosWithPubkeysRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosWithPubkeys, pq.Array(dollar_1))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectVtxosWithPubkeyRow
+	var items []SelectVtxosWithPubkeysRow
 	for rows.Next() {
-		var i SelectVtxosWithPubkeyRow
+		var i SelectVtxosWithPubkeysRow
 		if err := rows.Scan(
 			&i.VtxoVirtualTxVw.Txid,
 			&i.VtxoVirtualTxVw.Vout,

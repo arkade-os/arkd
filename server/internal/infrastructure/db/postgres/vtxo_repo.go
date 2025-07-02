@@ -294,12 +294,12 @@ func (v *vtxoRepository) UpdateExpireAt(ctx context.Context, vtxos []domain.Outp
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) GetAllVtxosWithPubKey(
-	ctx context.Context, pubkey string,
-) ([]domain.Vtxo, []domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosWithPubkey(ctx, pubkey)
+func (v *vtxoRepository) GetAllVtxosWithPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Vtxo, error) {
+	res, err := v.querier.SelectVtxosWithPubkeys(ctx, pubkeys)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	rows := make([]queries.VtxoVirtualTxVw, 0, len(res))
 	for _, row := range res {
@@ -308,82 +308,13 @@ func (v *vtxoRepository) GetAllVtxosWithPubKey(
 
 	vtxos, err := readRows(rows)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+	})
 
-	unspentVtxos := make([]domain.Vtxo, 0)
-	spentVtxos := make([]domain.Vtxo, 0)
-
-	for _, vtxo := range vtxos {
-		if vtxo.Spent || vtxo.Swept {
-			spentVtxos = append(spentVtxos, vtxo)
-		} else {
-			unspentVtxos = append(unspentVtxos, vtxo)
-		}
-	}
-
-	return unspentVtxos, spentVtxos, nil
-}
-
-func (v *vtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string, spendableOnly, spentOnly, recoverableOnly bool,
-) ([]domain.Vtxo, error) {
-	if (spendableOnly && spentOnly) || (spendableOnly && recoverableOnly) || (spentOnly && recoverableOnly) {
-		return nil, fmt.Errorf("spendable, spent and recoverable filters are mutually exclusive")
-	}
-
-	allVtxos := make([]domain.Vtxo, 0)
-	// TODO: make this a proper sql query
-	for _, pubkey := range pubkeys {
-		res, err := v.querier.SelectVtxosWithPubkey(ctx, pubkey)
-		if err != nil {
-			return nil, err
-		}
-		rows := make([]queries.VtxoVirtualTxVw, 0, len(res))
-		for _, row := range res {
-			rows = append(rows, row.VtxoVirtualTxVw)
-		}
-
-		vtxos, err := readRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		sort.SliceStable(vtxos, func(i, j int) bool {
-			return vtxos[i].CreatedAt > vtxos[j].CreatedAt
-		})
-
-		if spendableOnly {
-			spendableVtxos := make([]domain.Vtxo, 0, len(vtxos))
-			for _, vtxo := range vtxos {
-				if !vtxo.Spent && !vtxo.Swept && !vtxo.Redeemed {
-					spendableVtxos = append(spendableVtxos, vtxo)
-				}
-			}
-			vtxos = spendableVtxos
-		}
-		if spentOnly {
-			spentVtxos := make([]domain.Vtxo, 0, len(vtxos))
-			for _, vtxo := range vtxos {
-				if vtxo.Spent || vtxo.Swept || vtxo.Redeemed {
-					spentVtxos = append(spentVtxos, vtxo)
-				}
-			}
-			vtxos = spentVtxos
-		}
-		if recoverableOnly {
-			recoverableVtxos := make([]domain.Vtxo, 0, len(vtxos))
-			for _, vtxo := range vtxos {
-				if !vtxo.RequiresForfeit() {
-					recoverableVtxos = append(recoverableVtxos, vtxo)
-				}
-			}
-			vtxos = recoverableVtxos
-		}
-
-		allVtxos = append(allVtxos, vtxos...)
-	}
-
-	return allVtxos, nil
+	return vtxos, nil
 }
 
 func rowToVtxo(row queries.VtxoVirtualTxVw) domain.Vtxo {

@@ -1122,23 +1122,33 @@ func (q *Queries) SelectVtxosByRoundTxid(ctx context.Context, roundTx string) ([
 	return items, nil
 }
 
-const selectVtxosWithPubkey = `-- name: SelectVtxosWithPubkey :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey = ?
+const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.round_tx, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.redeemed, vtxo_vw.swept, vtxo_vw.expire_at, vtxo_vw.created_at, vtxo_vw.request_id, vtxo_vw.redeem_tx, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkey*/?)
 `
 
-type SelectVtxosWithPubkeyRow struct {
+type SelectVtxosWithPubkeysRow struct {
 	VtxoVw VtxoVw
 }
 
-func (q *Queries) SelectVtxosWithPubkey(ctx context.Context, pubkey string) ([]SelectVtxosWithPubkeyRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosWithPubkey, pubkey)
+func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkey []string) ([]SelectVtxosWithPubkeysRow, error) {
+	query := selectVtxosWithPubkeys
+	var queryParams []interface{}
+	if len(pubkey) > 0 {
+		for _, v := range pubkey {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:pubkey*/?", strings.Repeat(",?", len(pubkey))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:pubkey*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectVtxosWithPubkeyRow
+	var items []SelectVtxosWithPubkeysRow
 	for rows.Next() {
-		var i SelectVtxosWithPubkeyRow
+		var i SelectVtxosWithPubkeysRow
 		if err := rows.Scan(
 			&i.VtxoVw.Txid,
 			&i.VtxoVw.Vout,

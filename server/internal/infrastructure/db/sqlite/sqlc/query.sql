@@ -241,8 +241,8 @@ SELECT tx.* FROM round
 LEFT OUTER JOIN tx ON round.id=tx.round_id
 WHERE round.txid = ? AND tx.type = 'tree';
 
--- name: SelectVtxosWithPubkey :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey = ?;
+-- name: SelectVtxosWithPubkeys :many
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkey'));
 
 -- name: GetExistingRounds :many
 SELECT txid FROM round WHERE txid IN (sqlc.slice('txids'));

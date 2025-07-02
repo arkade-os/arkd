@@ -168,11 +168,37 @@ func (i *indexerService) GetVtxos(
 		return nil, fmt.Errorf("spendable, spent and recoverable filters are mutually esclusive")
 	}
 
-	vtxos, err := i.repoManager.Vtxos().GetAllVtxosWithPubKeys(
-		ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly,
-	)
+	vtxos, err := i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys)
 	if err != nil {
 		return nil, err
+	}
+
+	if spendableOnly {
+		spendableVtxos := make([]domain.Vtxo, 0, len(vtxos))
+		for _, vtxo := range vtxos {
+			if !vtxo.Spent && !vtxo.Swept && !vtxo.Redeemed {
+				spendableVtxos = append(spendableVtxos, vtxo)
+			}
+		}
+		vtxos = spendableVtxos
+	}
+	if spentOnly {
+		spentVtxos := make([]domain.Vtxo, 0, len(vtxos))
+		for _, vtxo := range vtxos {
+			if vtxo.Spent || vtxo.Swept || vtxo.Redeemed {
+				spentVtxos = append(spentVtxos, vtxo)
+			}
+		}
+		vtxos = spentVtxos
+	}
+	if recoverableOnly {
+		recoverableVtxos := make([]domain.Vtxo, 0, len(vtxos))
+		for _, vtxo := range vtxos {
+			if !vtxo.RequiresForfeit() {
+				recoverableVtxos = append(recoverableVtxos, vtxo)
+			}
+		}
+		vtxos = recoverableVtxos
 	}
 
 	pagedVtxos, pageResp := paginate(vtxos, page, maxPageSizeSpendableVtxos)
@@ -202,9 +228,19 @@ func (i *indexerService) GetVtxosByOutpoint(
 func (i *indexerService) GetTransactionHistory(
 	ctx context.Context, pubkey string, start, end int64, page *Page,
 ) (*TxHistoryResp, error) {
-	spendable, spent, err := i.repoManager.Vtxos().GetAllVtxosWithPubKey(ctx, pubkey)
+	vtxos, err := i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, []string{pubkey})
 	if err != nil {
 		return nil, err
+	}
+
+	spendable := make([]domain.Vtxo, 0, len(vtxos))
+	spent := make([]domain.Vtxo, 0, len(vtxos))
+	for _, vtxo := range vtxos {
+		if vtxo.Spent || vtxo.Swept || vtxo.Redeemed {
+			spent = append(spent, vtxo)
+		} else {
+			spendable = append(spendable, vtxo)
+		}
 	}
 
 	var roundTxids map[string]any

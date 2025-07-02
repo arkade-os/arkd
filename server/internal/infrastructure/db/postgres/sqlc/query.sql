@@ -245,8 +245,8 @@ SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
 SELECT * FROM tx
 WHERE round_id IN (SELECT rctv.round_id FROM round_commitment_tx_vw rctv WHERE rctv.txid = @txid) AND type = 'tree';
 
--- name: SelectVtxosWithPubkey :many
-SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw WHERE pubkey = @pubkey;
+-- name: SelectVtxosWithPubkeys :many
+SELECT sqlc.embed(vtxo_virtual_tx_vw) FROM vtxo_virtual_tx_vw WHERE pubkey = ANY($1::varchar[]);
 
 -- name: GetExistingRounds :many
 SELECT * FROM round_commitment_tx_vw r
