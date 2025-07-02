@@ -65,8 +65,12 @@ type covenantlessService struct {
 	eventsCh                 chan []domain.Event
 	transactionEventsCh      chan TransactionEvent
 	forfeitsBoardingSigsChan chan struct{}
-	// TODO remove this in v7
-	indexerTxEventsCh chan TransactionEvent
+	indexerTxEventsCh        chan TransactionEvent
+
+	// stop and go routine handlers
+	stop func()
+	ctx  context.Context
+	wg   *sync.WaitGroup
 }
 
 func NewService(
@@ -124,6 +128,8 @@ func NewService(
 		utxoMinAmount = int64(dustAmount)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	svc := &covenantlessService{
 		network:                   network,
 		pubkey:                    pubkey,
@@ -151,6 +157,9 @@ func NewService(
 		vtxoMinSettlementAmount:   vtxoMinSettlementAmount,
 		vtxoMinOffchainTxAmount:   vtxoMinOffchainTxAmount,
 		indexerTxEventsCh:         make(chan TransactionEvent),
+		stop:                      cancel,
+		ctx:                       ctx,
+		wg:                        &sync.WaitGroup{},
 	}
 
 	repoManager.Events().RegisterEventsHandler(
@@ -301,6 +310,7 @@ func (s *covenantlessService) Start() error {
 	}
 
 	log.Debug("starting app service...")
+	s.wg.Add(1)
 	go s.start()
 	return nil
 }
@@ -308,6 +318,8 @@ func (s *covenantlessService) Start() error {
 func (s *covenantlessService) Stop() {
 	ctx := context.Background()
 
+	s.stop()
+	s.wg.Wait()
 	s.sweeper.stop()
 	// nolint
 	vtxos, _ := s.repoManager.Vtxos().GetAllSweepableVtxos(ctx)
@@ -1470,6 +1482,14 @@ func (s *covenantlessService) start() {
 }
 
 func (s *covenantlessService) startRound() {
+	defer s.wg.Done()
+
+	select {
+	case <-s.ctx.Done():
+		return
+	default:
+	}
+
 	// reset the forfeit txs map to avoid polluting the next batch of forfeits transactions
 	s.liveStore.ForfeitTxs().Reset()
 
@@ -1484,16 +1504,23 @@ func (s *covenantlessService) startRound() {
 	close(s.forfeitsBoardingSigsChan)
 	s.forfeitsBoardingSigsChan = make(chan struct{}, 1)
 
-	defer func() {
-		roundTiming := newRoundTiming(s.roundInterval)
-		<-time.After(roundTiming.registrationDuration())
-		s.startConfirmation(roundTiming)
-	}()
-
 	log.Debugf("started registration stage for new round: %s", round.Id)
+
+	roundTiming := newRoundTiming(s.roundInterval)
+	<-time.After(0 * time.Millisecond) //roundTiming.registrationDuration())
+	s.wg.Add(1)
+	go s.startConfirmation(roundTiming)
 }
 
 func (s *covenantlessService) startConfirmation(roundTiming roundTiming) {
+	defer s.wg.Done()
+
+	select {
+	case <-s.ctx.Done():
+		return
+	default:
+	}
+
 	log.Debugf("started confirmation stage for round: %s", s.liveStore.CurrentRound().Get().Id)
 
 	ctx := context.Background()
@@ -1502,12 +1529,14 @@ func (s *covenantlessService) startConfirmation(roundTiming roundTiming) {
 	roundAborted := false
 
 	defer func() {
-		s.liveStore.ConfirmationSessions().Reset()
+		s.wg.Add(1)
 
 		if roundAborted {
-			s.startRound()
+			go s.startRound()
 			return
 		}
+
+		s.liveStore.ConfirmationSessions().Reset()
 
 		if err := s.saveEvents(ctx, s.liveStore.CurrentRound().Get().Id, s.liveStore.CurrentRound().Get().Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
@@ -1515,11 +1544,11 @@ func (s *covenantlessService) startConfirmation(roundTiming roundTiming) {
 
 		if s.liveStore.CurrentRound().Get().IsFailed() {
 			s.liveStore.TxRequests().DeleteVtxos()
-			s.startRound()
+			go s.startRound()
 			return
 		}
 
-		s.startFinalization(roundTiming, registeredRequests)
+		go s.startFinalization(roundTiming, registeredRequests)
 	}()
 
 	// TODO: understand how many tx requests must be popped from the queue and actually registered for the round
@@ -1626,6 +1655,14 @@ func (s *covenantlessService) startConfirmation(roundTiming roundTiming) {
 }
 
 func (s *covenantlessService) startFinalization(roundTiming roundTiming, requests []ports.TimedTxRequest) {
+	defer s.wg.Done()
+
+	select {
+	case <-s.ctx.Done():
+		return
+	default:
+	}
+
 	roundId := s.liveStore.CurrentRound().Get().Id
 	log.Debugf("started finalization stage for round: %s", roundId)
 	ctx := context.Background()
@@ -1633,6 +1670,8 @@ func (s *covenantlessService) startFinalization(roundTiming roundTiming, request
 	thirdOfRemainingDuration := roundTiming.finalizationDuration()
 
 	defer func() {
+		s.wg.Add(1)
+
 		s.liveStore.TreeSigingSessions().Delete(roundId)
 
 		if err := s.saveEvents(ctx, roundId, s.liveStore.CurrentRound().Get().Events()); err != nil {
@@ -1641,11 +1680,11 @@ func (s *covenantlessService) startFinalization(roundTiming roundTiming, request
 
 		if s.liveStore.CurrentRound().Get().IsFailed() {
 			s.liveStore.TxRequests().DeleteVtxos()
-			s.startRound()
+			go s.startRound()
 			return
 		}
 
-		s.finalizeRound(roundTiming)
+		go s.finalizeRound(roundTiming)
 	}()
 
 	if s.liveStore.CurrentRound().Get().IsFailed() {
@@ -1874,10 +1913,26 @@ func (s *covenantlessService) startFinalization(roundTiming roundTiming, request
 }
 
 func (s *covenantlessService) finalizeRound(roundTiming roundTiming) {
-	defer s.startRound()
+	defer s.wg.Done()
+
+	var stopped bool
+
+	defer func() {
+		if !stopped {
+			s.wg.Add(1)
+			go s.startRound()
+		}
+	}()
 
 	ctx := context.Background()
 	defer s.liveStore.TxRequests().DeleteVtxos()
+
+	select {
+	case <-s.ctx.Done():
+		stopped = true
+		return
+	default:
+	}
 
 	if s.liveStore.CurrentRound().Get().IsFailed() {
 		return
