@@ -22,7 +22,9 @@ func NewMarketHourRepository(config ...interface{}) (domain.MarketHourRepo, erro
 	}
 	db, ok := config[0].(*sql.DB)
 	if !ok {
-		return nil, fmt.Errorf("cannot open market hour repository: invalid config, expected db at 0")
+		return nil, fmt.Errorf(
+			"cannot open market hour repository: invalid config, expected db at 0",
+		)
 	}
 
 	return &marketHourRepository{

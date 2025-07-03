@@ -20,9 +20,7 @@ import (
 	"time"
 )
 
-func generateOperatorTLSKeyCert(
-	datadir string, extraIPs, extraDomains []string,
-) error {
+func generateOperatorTLSKeyCert(datadir string, extraIPs, extraDomains []string) error {
 	if err := makeDirectoryIfNotExists(datadir); err != nil {
 		return err
 	}

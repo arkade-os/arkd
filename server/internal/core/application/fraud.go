@@ -28,7 +28,16 @@ var (
 	mainnetTickerInterval = time.Minute
 )
 
-func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync.Mutex) error {
+// reactToFraud handles the case where a user spent or renewed a vtxo in the past and now tries to
+// redeem it onchain. This function is called by the app service when it detects such fraud.
+//
+// If the vtxo wasn't settled, we broadcast the checkpoint tx signed by both parties when the vtxo
+// was spent offchain. Otherwise, the forfeit tx created and signed during the batch execution is
+// broadcasted.
+//
+// The function takes a mutex to ensure that only one goroutine can react to a fraud at the same
+// time.
+func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync.Mutex) error {
 	mutx.Lock()
 	defer mutx.Unlock()
 
@@ -49,8 +58,13 @@ func (s *covenantlessService) reactToFraud(ctx context.Context, vtxo domain.Vtxo
 	return nil
 }
 
-func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo domain.Vtxo) error {
-	// retrieve the checkpoint tx that spent the vtxo
+// broadcastCheckpointTx broadcasts a checkpoint transaction for a given vtxo spent offchain.
+//
+// This can happen if a user spent a vtxo offchain, and then started the unrolling process to
+// redeem it onchain.
+// To react to this attack, the relative offchain tx is fetched from db, then the fully signed
+// checkpoint tx is finalized and broadcasted as soon as the vtxo hit the blockchain.
+func (s *service) broadcastCheckpointTx(ctx context.Context, vtxo domain.Vtxo) error {
 	txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.SpentBy})
 	if err != nil {
 		return fmt.Errorf("failed to retrieve checkpoint tx: %s", err)
@@ -83,14 +97,19 @@ func (s *covenantlessService) broadcastCheckpointTx(ctx context.Context, vtxo do
 	return nil
 }
 
-func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) error {
-	round, err := s.repoManager.Rounds().GetRoundWithTxid(ctx, vtxo.SettledBy)
+// broadcastForfeitTx broadcasts a forfeit transaction for a given vtxo.
+//
+// Given a vtxo, it finds the commitment tx it was settled in, and then finds the corresponding
+// forfeit transaction. It then broadcasts the connector branch leading up to the forfeit tx, then
+// it is signed, finalized and broadcasted.
+func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) error {
+	round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, vtxo.SettledBy)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve round: %s", err)
 	}
 
 	if len(round.Connectors) <= 0 {
-		return fmt.Errorf("no connectors found for round %s, cannot broadcast forfeit tx", round.Txid)
+		return fmt.Errorf("no connectors found for round %s, cannot broadcast forfeit tx", round.CommitmentTxid)
 	}
 
 	forfeitTx, connectorOutpoint, err := findForfeitTx(round.ForfeitTxs, vtxo.Outpoint)
@@ -148,7 +167,16 @@ func (s *covenantlessService) broadcastForfeitTx(ctx context.Context, vtxo domai
 	return nil
 }
 
-func (s *covenantlessService) broadcastConnectorBranch(ctx context.Context, connectorGraph *tree.TxGraph, connectorOutpoint domain.Outpoint) error {
+// broadcastConnectorBranch broadcasts the connector branch of txs until the target connector
+// outpoint hits the blockchain.
+// It takes a connector tree and a connector outpoint and returns an error if the branch can't be
+// broadcasted.
+// If the connector outpoint is not part of the connector tree, it will return an error.
+// If any of the txs in the branch are offchain, it will sign and broadcast them.
+// If any of the txs in the branch are not confirmed, it will wait for them to be confirmed before returning.
+func (s *service) broadcastConnectorBranch(
+	ctx context.Context, connectorGraph *tree.TxGraph, connectorOutpoint domain.Outpoint,
+) error {
 	// compute, sign and broadcast the branch txs until the connector outpoint is created
 	branch, err := connectorGraph.SubGraph([]string{connectorOutpoint.Txid})
 	if err != nil {
@@ -204,18 +232,21 @@ func (s *covenantlessService) broadcastConnectorBranch(ctx context.Context, conn
 	})
 }
 
-// bumpAnchorTx is crafting and signing a transaction bumping the fees for a given tx with P2A output
-func (s *covenantlessService) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string, error) {
+// bumpAnchorTx builds and signs a transaction bumping the fees for a given tx with P2A output.
+// Makes use of the onchain P2TR account to select UTXOs to pay fees for parent.
+func (s *service) bumpAnchorTx(
+	ctx context.Context, parent *wire.MsgTx,
+) (string, error) {
 	anchor, err := tree.FindAnchorOutpoint(parent)
 	if err != nil {
 		return "", err
 	}
 
-	// estimate for the size of the bump transaction
+	// Estimate for the size of the bump transaction.
 	weightEstimator := input.TxWeightEstimator{}
 
-	// WeightEstimator doesn't support P2A size, using P2WSH will lead to a small overestimation
-	// TODO use the exact P2A size
+	// TODO: weightEstimator doesn't support P2A size, using P2WSH will lead to a small
+	// over-estimation. Use the exact P2A size once supported.
 	weightEstimator.AddNestedP2WSHInput(lntypes.VByte(3).ToWU())
 
 	// We assume only one UTXO will be selected to have a correct estimation
@@ -232,7 +263,9 @@ func (s *covenantlessService) bumpAnchorTx(ctx context.Context, parent *wire.Msg
 
 	fees := chainfee.SatPerKVByte(feeRate).FeeForVSize(packageSize)
 
-	selectedCoins, changeAmount, err := s.wallet.SelectUtxos(ctx, "", uint64(fees.ToUnit(btcutil.AmountSatoshi)), true)
+	selectedCoins, changeAmount, err := s.wallet.SelectUtxos(
+		ctx, "", uint64(fees.ToUnit(btcutil.AmountSatoshi)), true,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -269,18 +302,13 @@ func (s *covenantlessService) bumpAnchorTx(ctx context.Context, parent *wire.Msg
 		sequences = append(sequences, wire.MaxTxInSequenceNum)
 	}
 
-	ptx, err := psbt.New(
-		inputs,
-		[]*wire.TxOut{
-			{
-				Value:    int64(changeAmount),
-				PkScript: pkScript,
-			},
+	outputs := []*wire.TxOut{
+		{
+			Value:    int64(changeAmount),
+			PkScript: pkScript,
 		},
-		3,
-		0,
-		sequences,
-	)
+	}
+	ptx, err := psbt.New(inputs, outputs, 3, 0, sequences)
 	if err != nil {
 		return "", err
 	}
@@ -321,7 +349,11 @@ func (s *covenantlessService) bumpAnchorTx(ctx context.Context, parent *wire.Msg
 	return hex.EncodeToString(serializedTx.Bytes()), nil
 }
 
-func (s *covenantlessService) waitForConfirmation(ctx context.Context, txid string) {
+// waitForConfirmation waits for the given tx to be confirmed onchain.
+// It uses a ticker with an interval depending on the network
+// (1 second for regtest or 1 minute otherwise).
+// The function is blocking and returns once the tx is confirmed.
+func (s *service) waitForConfirmation(ctx context.Context, txid string) {
 	tickerInterval := mainnetTickerInterval
 	if s.network.Name == common.BitcoinRegTest.Name {
 		tickerInterval = regtestTickerInterval
@@ -336,7 +368,15 @@ func (s *covenantlessService) waitForConfirmation(ctx context.Context, txid stri
 	}
 }
 
-// returns the forfeit tx spending the given vtxo + its connector outpoint
+// findForfeitTx finds the correct forfeit tx and connector outpoint for the given vtxo from the
+// list of forfeit txs.
+//
+// It works by iterating over all the inputs of all the forfeit txs and checking if the input
+// matches the given vtxo outpoint. If successfull, it returns the forfeit tx and the connector
+// outpoint. If it can't find the forfeit tx, it returns an error.
+//
+// If the input spending the vtxo is at index 0, the connector outpoint is at index 1
+// and vice versa.
 func findForfeitTx(
 	forfeits []domain.ForfeitTx, vtxo domain.Outpoint,
 ) (*psbt.Packet, domain.Outpoint, error) {
@@ -367,9 +407,13 @@ func findForfeitTx(
 	return nil, domain.Outpoint{}, fmt.Errorf("forfeit tx not found")
 }
 
+// computeVSize calculates the virtual size (vsize) of a Bitcoin transaction
+// in virtual bytes (vbytes). It takes into account both the stripped size
+// (base size without witness data) and the total size (including witness data),
+// and computes the vsize using the weight unit method.
 func computeVSize(tx *wire.MsgTx) lntypes.VByte {
 	baseSize := tx.SerializeSizeStripped()
-	totalSize := tx.SerializeSize() // including witness
+	totalSize := tx.SerializeSize()
 	weight := totalSize + baseSize*3
 	return lntypes.WeightUnit(uint64(weight)).ToVB()
 }

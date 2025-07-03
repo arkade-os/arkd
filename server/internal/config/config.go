@@ -603,11 +603,12 @@ func (c *Config) schedulerService() error {
 
 func (c *Config) appService() error {
 	svc, err := application.NewService(
-		*c.network, c.RoundInterval, c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay,
-		c.wallet, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore, c.NoteUriPrefix,
+		c.wallet, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore,
+		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay,
+		c.RoundInterval, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
+		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		c.MarketHourStartTime, c.MarketHourEndTime, c.MarketHourPeriod, c.MarketHourRoundInterval,
-		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
-		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount, c.AllowCSVBlockType,
 	)
 	if err != nil {
 		return err
@@ -623,7 +624,7 @@ func (c *Config) adminService() error {
 		unit = ports.BlockHeight
 	}
 
-	c.adminSvc = application.NewAdminService(c.wallet, c.repo, c.txBuilder, unit)
+	c.adminSvc = application.NewAdminService(c.wallet, c.repo, c.txBuilder, c.liveStore, unit)
 	return nil
 }
 

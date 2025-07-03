@@ -165,7 +165,9 @@ func (s *service) stop(withAppSvc bool) {
 
 func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	if s.appConfig.OtelCollectorEndpoint != "" {
-		otelShutdown, err := initOtelSDK(context.Background(), s.appConfig.OtelCollectorEndpoint, s.appConfig.OtelPushInterval)
+		otelShutdown, err := initOtelSDK(
+			context.Background(), s.appConfig.OtelCollectorEndpoint, s.appConfig.OtelPushInterval,
+		)
 		if err != nil {
 			return err
 		}
@@ -208,7 +210,9 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		}
 		eventsCh := appSvc.GetIndexerTxChannel(context.Background())
 		subscriptionTimeoutDuration := time.Minute // TODO let to be set via config
-		indexerHandler := handlers.NewIndexerService(indexerSvc, eventsCh, subscriptionTimeoutDuration)
+		indexerHandler := handlers.NewIndexerService(
+			indexerSvc, eventsCh, subscriptionTimeoutDuration,
+		)
 		arkv1.RegisterArkServiceServer(grpcServer, appHandler)
 		arkv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
 		onInit = nil
@@ -216,7 +220,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		onReady = nil
 	}
 
-	adminHandler := handlers.NewAdminHandler(s.appConfig.AdminService(), appSvc, s.appConfig.NoteUriPrefix)
+	adminHandler := handlers.NewAdminHandler(s.appConfig.AdminService(), s.appConfig.NoteUriPrefix)
 	arkv1.RegisterAdminServiceServer(grpcServer, adminHandler)
 
 	walletHandler := handlers.NewWalletHandler(s.appConfig.WalletService())

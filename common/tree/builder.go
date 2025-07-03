@@ -17,9 +17,9 @@ const (
 	connectorsTreeRadix = 4
 )
 
-// CraftSharedOutput returns the taproot script and the amount of the root shared output of a vtxo tree
+// BuildBatchOutput returns the taproot script and the amount of the root shared output of a vtxo tree
 // radix is hardcoded to 2
-func CraftSharedOutput(
+func BuildBatchOutput(
 	receivers []Leaf,
 	sweepTapTreeRoot []byte,
 ) ([]byte, int64, error) {

@@ -10,10 +10,8 @@ import (
 
 func unaryPanicRecoveryInterceptor() grpc.UnaryServerInterceptor {
 	return func(
-		ctx context.Context,
-		req interface{},
-		info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
+		ctx context.Context, req interface{},
+		info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (interface{}, error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -28,10 +26,8 @@ func unaryPanicRecoveryInterceptor() grpc.UnaryServerInterceptor {
 
 func streamPanicRecoveryInterceptor() grpc.StreamServerInterceptor {
 	return func(
-		srv interface{},
-		stream grpc.ServerStream,
-		info *grpc.StreamServerInfo,
-		handler grpc.StreamHandler,
+		srv interface{}, stream grpc.ServerStream,
+		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
 		defer func() {
 			if r := recover(); r != nil {

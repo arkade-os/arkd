@@ -56,12 +56,12 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestBuildRoundTx(t *testing.T) {
+func TestBuildCommitmentTx(t *testing.T) {
 	builder := txbuilder.NewTxBuilder(
 		wallet, common.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
 	)
 
-	fixtures, err := parseRoundTxFixtures()
+	fixtures, err := parseCommitmentTxFixtures()
 	require.NoError(t, err)
 	require.NotEmpty(t, fixtures)
 
@@ -70,7 +70,7 @@ func TestBuildRoundTx(t *testing.T) {
 			for _, f := range fixtures.Valid {
 				cosignersPublicKeys := make([][]string, 0)
 
-				for range f.Requests {
+				for range f.Intents {
 					randKey, err := secp256k1.GeneratePrivateKey()
 					require.NoError(t, err)
 
@@ -79,16 +79,16 @@ func TestBuildRoundTx(t *testing.T) {
 					})
 				}
 
-				roundTx, vtxoTree, connAddr, _, err := builder.BuildRoundTx(
-					pubkey, f.Requests, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
+				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
+					pubkey, f.Intents, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
 				)
 				require.NoError(t, err)
-				require.NotEmpty(t, roundTx)
+				require.NotEmpty(t, commitmentTx)
 				require.NotEmpty(t, vtxoTree)
 				require.Equal(t, connectorAddress, connAddr)
 				require.Len(t, vtxoTree.Leaves(), f.ExpectedNumOfLeaves)
 
-				roundPtx, err := psbt.NewFromRawBytes(strings.NewReader(roundTx), true)
+				roundPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
 				require.NoError(t, err)
 
 				err = tree.ValidateVtxoTxGraph(
@@ -104,17 +104,17 @@ func TestBuildRoundTx(t *testing.T) {
 			for _, f := range fixtures.Invalid {
 				cosignersPublicKeys := make([][]string, 0)
 
-				for range f.Requests {
+				for range f.Intents {
 					cosignersPublicKeys = append(cosignersPublicKeys, []string{
 						hex.EncodeToString(pubkey.SerializeCompressed()),
 					})
 				}
 
-				roundTx, vtxoTree, connAddr, _, err := builder.BuildRoundTx(
-					pubkey, f.Requests, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
+				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
+					pubkey, f.Intents, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
 				)
 				require.EqualError(t, err, f.ExpectedErr)
-				require.Empty(t, roundTx)
+				require.Empty(t, commitmentTx)
 				require.Empty(t, connAddr)
 				require.Empty(t, vtxoTree)
 			}
@@ -141,18 +141,18 @@ func randomHex(len int) string {
 	return hex.EncodeToString(buf)
 }
 
-type roundTxFixtures struct {
+type commitmentTxFixtures struct {
 	Valid []struct {
-		Requests            []domain.TxRequest
+		Intents             []domain.Intent
 		ExpectedNumOfLeaves int
 	}
 	Invalid []struct {
-		Requests    []domain.TxRequest
+		Intents     []domain.Intent
 		ExpectedErr string
 	}
 }
 
-func parseRoundTxFixtures() (*roundTxFixtures, error) {
+func parseCommitmentTxFixtures() (*commitmentTxFixtures, error) {
 	file, err := os.ReadFile("testdata/fixtures.json")
 	if err != nil {
 		return nil, err
@@ -162,9 +162,9 @@ func parseRoundTxFixtures() (*roundTxFixtures, error) {
 		return nil, err
 	}
 
-	vv := v["buildRoundTx"].(map[string]interface{})
+	vv := v["buildCommitmentTx"].(map[string]interface{})
 	file, _ = json.Marshal(vv)
-	var fixtures roundTxFixtures
+	var fixtures commitmentTxFixtures
 	if err := json.Unmarshal(file, &fixtures); err != nil {
 		return nil, err
 	}

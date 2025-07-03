@@ -23,20 +23,19 @@ import (
 
 type txBuilder struct {
 	wallet            ports.WalletService
-	net               common.Network
+	network           common.Network
 	vtxoTreeExpiry    common.RelativeLocktime
 	boardingExitDelay common.RelativeLocktime
 }
 
 func NewTxBuilder(
-	wallet ports.WalletService,
-	net common.Network,
+	wallet ports.WalletService, network common.Network,
 	vtxoTreeExpiry, boardingExitDelay common.RelativeLocktime,
 ) ports.TxBuilder {
-	return &txBuilder{wallet, net, vtxoTreeExpiry, boardingExitDelay}
+	return &txBuilder{wallet, network, vtxoTreeExpiry, boardingExitDelay}
 }
 
-func (b *txBuilder) GetTxID(tx string) (string, error) {
+func (b *txBuilder) GetTxid(tx string) (string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return "", err
@@ -199,7 +198,9 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 			args := make(map[string][]byte)
 			if len(conditionWitness) > 0 {
 				var conditionWitnessBytes bytes.Buffer
-				if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
+				if err := psbt.WriteTxWitness(
+					&conditionWitnessBytes, conditionWitness,
+				); err != nil {
 					return "", err
 				}
 				args[tree.ConditionWitnessKey] = conditionWitnessBytes.Bytes()
@@ -243,7 +244,9 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 	return hex.EncodeToString(serialized.Bytes()), nil
 }
 
-func (b *txBuilder) BuildSweepTx(inputs []ports.SweepInput) (txid, signedSweepTx string, err error) {
+func (b *txBuilder) BuildSweepTx(
+	inputs []ports.SweepableBatchOutput,
+) (txid, signedSweepTx string, err error) {
 	sweepPsbt, err := sweepTransaction(
 		b.wallet,
 		inputs,
@@ -343,7 +346,10 @@ func (b *txBuilder) VerifyForfeitTxs(
 					}
 
 					if len(connectorTx.UnsignedTx.TxOut) <= int(input.PreviousOutPoint.Index) {
-						return nil, fmt.Errorf("connector vout %d out of range [0, %d]", input.PreviousOutPoint.Index, len(connectorTx.UnsignedTx.TxOut)-1)
+						return nil, fmt.Errorf(
+							"connector vout %d out of range [0, %d]",
+							input.PreviousOutPoint.Index, len(connectorTx.UnsignedTx.TxOut)-1,
+						)
 					}
 
 					connectorOutput = connectorTx.UnsignedTx.TxOut[input.PreviousOutPoint.Index]
@@ -358,7 +364,9 @@ func (b *txBuilder) VerifyForfeitTxs(
 					connectorInput = tx.UnsignedTx.TxIn[i]
 
 					if len(tx.Inputs[vtxoInputIndex].TaprootLeafScript) <= 0 {
-						return nil, fmt.Errorf("missing taproot leaf script for vtxo input, invalid forfeit tx")
+						return nil, fmt.Errorf(
+							"missing taproot leaf script for vtxo input, invalid forfeit tx",
+						)
 					}
 
 					vtxoTapscript = tx.Inputs[vtxoInputIndex].TaprootLeafScript[0]
@@ -417,17 +425,25 @@ func (b *txBuilder) VerifyForfeitTxs(
 		if locktime != 0 {
 			if !locktime.IsSeconds() {
 				if locktime > common.AbsoluteLocktime(blocktimestamp.Height) {
-					return nil, fmt.Errorf("forfeit closure is CLTV locked, %d > %d (block height)", locktime, blocktimestamp.Height)
+					return nil, fmt.Errorf(
+						"forfeit closure is CLTV locked, %d > %d (block height)",
+						locktime, blocktimestamp.Height,
+					)
 				}
 			} else {
 				if locktime > common.AbsoluteLocktime(blocktimestamp.Time) {
-					return nil, fmt.Errorf("forfeit closure is CLTV locked, %d > %d (block time)", locktime, blocktimestamp.Time)
+					return nil, fmt.Errorf(
+						"forfeit closure is CLTV locked, %d > %d (block time)",
+						locktime, blocktimestamp.Time,
+					)
 				}
 			}
 		}
 
 		if inputAmount < dustAmount {
-			return nil, fmt.Errorf("forfeit tx output amount is dust, %d < %d", inputAmount, dustAmount)
+			return nil, fmt.Errorf(
+				"forfeit tx output amount is dust, %d < %d", inputAmount, dustAmount,
+			)
 		}
 
 		vtxoTapKey, err := vtxo.TapKey()
@@ -455,11 +471,15 @@ func (b *txBuilder) VerifyForfeitTxs(
 		}
 
 		if vtxoFirst {
-			inputs = []*wire.OutPoint{&vtxoInput.PreviousOutPoint, &connectorInput.PreviousOutPoint}
+			inputs = []*wire.OutPoint{
+				&vtxoInput.PreviousOutPoint, &connectorInput.PreviousOutPoint,
+			}
 			sequences = []uint32{vtxoSequence, wire.MaxTxInSequenceNum}
 			prevouts = []*wire.TxOut{vtxoPrevout, connectorOutput}
 		} else {
-			inputs = []*wire.OutPoint{&connectorInput.PreviousOutPoint, &vtxoInput.PreviousOutPoint}
+			inputs = []*wire.OutPoint{
+				&connectorInput.PreviousOutPoint, &vtxoInput.PreviousOutPoint,
+			}
 			sequences = []uint32{wire.MaxTxInSequenceNum, vtxoSequence}
 			prevouts = []*wire.TxOut{connectorOutput, vtxoPrevout}
 		}
@@ -491,24 +511,22 @@ func (b *txBuilder) VerifyForfeitTxs(
 	return validForfeitTxs, nil
 }
 
-func (b *txBuilder) BuildRoundTx(
-	serverPubkey *secp256k1.PublicKey,
-	requests domain.TxRequests,
-	boardingInputs []ports.BoardingInput,
-	connectorAddresses []string,
+func (b *txBuilder) BuildCommitmentTx(
+	signerPubkey *secp256k1.PublicKey, intents domain.Intents,
+	boardingInputs []ports.BoardingInput, connectorAddresses []string,
 	cosignersPublicKeys [][]string,
 ) (string, *tree.TxGraph, string, *tree.TxGraph, error) {
-	var sharedOutputScript []byte
-	var sharedOutputAmount int64
+	var batchOutputScript []byte
+	var batchOutputAmount int64
 
-	receivers, err := getOutputVtxosLeaves(requests, cosignersPublicKeys)
+	receivers, err := getOutputVtxosLeaves(intents, cosignersPublicKeys)
 	if err != nil {
 		return "", nil, "", nil, err
 	}
 
 	sweepScript, err := (&tree.CSVMultisigClosure{
 		MultisigClosure: tree.MultisigClosure{
-			PubKeys: []*secp256k1.PublicKey{serverPubkey},
+			PubKeys: []*secp256k1.PublicKey{signerPubkey},
 		},
 		Locktime: b.vtxoTreeExpiry,
 	}).Script()
@@ -518,8 +536,8 @@ func (b *txBuilder) BuildRoundTx(
 
 	sweepTapscriptRoot := txscript.NewBaseTapLeaf(sweepScript).TapHash()
 
-	if !requests.HaveOnlyOnchainOutput() {
-		sharedOutputScript, sharedOutputAmount, err = tree.CraftSharedOutput(
+	if !intents.HaveOnlyOnchainOutput() {
+		batchOutputScript, batchOutputAmount, err = tree.BuildBatchOutput(
 			receivers, sweepTapscriptRoot[:],
 		)
 		if err != nil {
@@ -527,7 +545,7 @@ func (b *txBuilder) BuildRoundTx(
 		}
 	}
 
-	nbOfConnectors := requests.CountSpentVtxos()
+	nbOfConnectors := intents.CountSpentVtxos()
 
 	dustAmount, err := b.wallet.GetDustAmount(context.Background())
 	if err != nil {
@@ -559,7 +577,10 @@ func (b *txBuilder) BuildRoundTx(
 		// we need taproot to properly create the connectors tree
 		connectorScriptClass := txscript.GetScriptClass(connectorPkScript)
 		if connectorScriptClass != txscript.WitnessV1TaprootTy {
-			return "", nil, "", nil, fmt.Errorf("invalid connector script class, expected taproot (%s), got %s", txscript.WitnessV1TaprootTy, connectorScriptClass)
+			return "", nil, "", nil, fmt.Errorf(
+				"invalid connector script class, expected taproot (%s), got %s",
+				txscript.WitnessV1TaprootTy, connectorScriptClass,
+			)
 		}
 
 		taprootKey, err := schnorr.ParsePubKey(connectorPkScript[2:])
@@ -585,24 +606,22 @@ func (b *txBuilder) BuildRoundTx(
 		}
 	}
 
-	ptx, err := b.createRoundTx(
-		sharedOutputAmount, sharedOutputScript,
-		connectorsTreeAmount, connectorsTreePkScript,
-		requests, boardingInputs,
-		connectorAddresses,
+	ptx, err := b.createCommitmentTx(
+		batchOutputAmount, batchOutputScript, connectorsTreeAmount, connectorsTreePkScript,
+		intents, boardingInputs, connectorAddresses,
 	)
 	if err != nil {
 		return "", nil, "", nil, err
 	}
 
-	roundTx, err := ptx.B64Encode()
+	commitmentTx, err := ptx.B64Encode()
 	if err != nil {
 		return "", nil, "", nil, err
 	}
 
 	var vtxoTree *tree.TxGraph
 
-	if !requests.HaveOnlyOnchainOutput() {
+	if !intents.HaveOnlyOnchainOutput() {
 		initialOutpoint := &wire.OutPoint{
 			Hash:  ptx.UnsignedTx.TxHash(),
 			Index: 0,
@@ -617,7 +636,7 @@ func (b *txBuilder) BuildRoundTx(
 	}
 
 	if nbOfConnectors <= 0 {
-		return roundTx, vtxoTree, nextConnectorAddress, nil, nil
+		return commitmentTx, vtxoTree, nextConnectorAddress, nil, nil
 	}
 
 	rootConnectorsOutpoint := &wire.OutPoint{
@@ -633,19 +652,23 @@ func (b *txBuilder) BuildRoundTx(
 		return "", nil, "", nil, err
 	}
 
-	return roundTx, vtxoTree, nextConnectorAddress, connectors, nil
+	return commitmentTx, vtxoTree, nextConnectorAddress, connectors, nil
 }
 
-func (b *txBuilder) GetSweepInput(graph *tree.TxGraph) (vtxoTreeExpiry *common.RelativeLocktime, sweepInput ports.SweepInput, err error) {
-	if len(graph.Root.UnsignedTx.TxIn) != 1 {
-		return nil, nil, fmt.Errorf("invalid node psbt, expect 1 input, got %d", len(graph.Root.UnsignedTx.TxIn))
+func (b *txBuilder) GetSweepableBacthOutputs(
+	vtxoTree *tree.TxGraph,
+) (vtxoTreeExpiry *common.RelativeLocktime, sweepInput ports.SweepableBatchOutput, err error) {
+	if len(vtxoTree.Root.UnsignedTx.TxIn) != 1 {
+		return nil, nil, fmt.Errorf(
+			"invalid node psbt, expect 1 input, got %d", len(vtxoTree.Root.UnsignedTx.TxIn),
+		)
 	}
 
-	input := graph.Root.UnsignedTx.TxIn[0]
+	input := vtxoTree.Root.UnsignedTx.TxIn[0]
 	txid := input.PreviousOutPoint.Hash
 	index := input.PreviousOutPoint.Index
 
-	sweepLeaf, internalKey, vtxoTreeExpiry, err := b.extractSweepLeaf(graph.Root.Inputs[0])
+	sweepLeaf, internalKey, vtxoTreeExpiry, err := b.extractSweepLeaf(vtxoTree.Root.Inputs[0])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -673,14 +696,10 @@ func (b *txBuilder) GetSweepInput(graph *tree.TxGraph) (vtxoTreeExpiry *common.R
 	return vtxoTreeExpiry, sweepInput, nil
 }
 
-func (b *txBuilder) createRoundTx(
-	sharedOutputAmount int64,
-	sharedOutputScript []byte,
-	connectorOutputAmount int64,
-	connectorOutputScript []byte,
-	requests []domain.TxRequest,
-	boardingInputs []ports.BoardingInput,
-	connectorAddresses []string,
+func (b *txBuilder) createCommitmentTx(
+	batchOutputAmount int64, batchOutputScript []byte,
+	connectorOutputAmount int64, connectorOutputScript []byte,
+	intents []domain.Intent, boardingInputs []ports.BoardingInput, connectorAddresses []string,
 ) (*psbt.Packet, error) {
 	dustLimit, err := b.wallet.GetDustAmount(context.Background())
 	if err != nil {
@@ -691,12 +710,12 @@ func (b *txBuilder) createRoundTx(
 
 	outputs := make([]*wire.TxOut, 0)
 
-	if sharedOutputScript != nil && sharedOutputAmount > 0 {
-		targetAmount += uint64(sharedOutputAmount)
+	if batchOutputScript != nil && batchOutputAmount > 0 {
+		targetAmount += uint64(batchOutputAmount)
 
 		outputs = append(outputs, &wire.TxOut{
-			Value:    sharedOutputAmount,
-			PkScript: sharedOutputScript,
+			Value:    batchOutputAmount,
+			PkScript: batchOutputScript,
 		})
 	}
 
@@ -709,7 +728,7 @@ func (b *txBuilder) createRoundTx(
 		})
 	}
 
-	onchainOutputs, err := getOnchainOutputs(requests, b.onchainNetwork())
+	onchainOutputs, err := getOnchainOutputs(intents, b.onchainNetwork())
 	if err != nil {
 		return nil, err
 	}
@@ -987,7 +1006,7 @@ func (b *txBuilder) CountSignedTaprootInputs(tx string) (int, error) {
 }
 
 func (b *txBuilder) VerifyAndCombinePartialTx(dest string, src string) (string, error) {
-	roundTx, err := psbt.NewFromRawBytes(strings.NewReader(dest), true)
+	commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(dest), true)
 	if err != nil {
 		return "", err
 	}
@@ -997,7 +1016,7 @@ func (b *txBuilder) VerifyAndCombinePartialTx(dest string, src string) (string, 
 		return "", err
 	}
 
-	if sourceTx.UnsignedTx.TxID() != roundTx.UnsignedTx.TxID() {
+	if sourceTx.UnsignedTx.TxID() != commitmentTx.UnsignedTx.TxID() {
 		return "", fmt.Errorf("txids do not match")
 	}
 
@@ -1010,7 +1029,9 @@ func (b *txBuilder) VerifyAndCombinePartialTx(dest string, src string) (string, 
 			}
 
 			partialSig := sourceInput.TaprootScriptSpendSig[0]
-			preimage, err := b.getTaprootPreimage(sourceTx, i, sourceInput.TaprootLeafScript[0].Script)
+			preimage, err := b.getTaprootPreimage(
+				sourceTx, i, sourceInput.TaprootLeafScript[0].Script,
+			)
 			if err != nil {
 				return "", err
 			}
@@ -1033,12 +1054,12 @@ func (b *txBuilder) VerifyAndCombinePartialTx(dest string, src string) (string, 
 				)
 			}
 
-			roundTx.Inputs[i].TaprootScriptSpendSig = sourceInput.TaprootScriptSpendSig
-			roundTx.Inputs[i].TaprootLeafScript = sourceInput.TaprootLeafScript
+			commitmentTx.Inputs[i].TaprootScriptSpendSig = sourceInput.TaprootScriptSpendSig
+			commitmentTx.Inputs[i].TaprootLeafScript = sourceInput.TaprootLeafScript
 		}
 	}
 
-	return roundTx.B64Encode()
+	return commitmentTx.B64Encode()
 }
 
 func (b *txBuilder) selectUtxos(
@@ -1067,7 +1088,9 @@ func (b *txBuilder) selectUtxos(
 	}
 
 	if len(selectedConnectorsUtxos) > 0 {
-		if err := b.wallet.LockConnectorUtxos(ctx, castToOutpoints(selectedConnectorsUtxos)); err != nil {
+		if err := b.wallet.LockConnectorUtxos(
+			ctx, castToOutpoints(selectedConnectorsUtxos),
+		); err != nil {
 			return nil, 0, err
 		}
 	}
@@ -1084,24 +1107,26 @@ func (b *txBuilder) selectUtxos(
 	return append(selectedConnectorsUtxos, utxos...), change, nil
 }
 
-func (b *txBuilder) getTaprootPreimage(partial *psbt.Packet, inputIndex int, leafScript []byte) ([]byte, error) {
+func (b *txBuilder) getTaprootPreimage(
+	tx *psbt.Packet, inputIndex int, leafScript []byte,
+) ([]byte, error) {
 	prevouts := make(map[wire.OutPoint]*wire.TxOut)
 
-	for i, input := range partial.Inputs {
+	for i, input := range tx.Inputs {
 		if input.WitnessUtxo == nil {
 			return nil, fmt.Errorf("missing witness utxo on input #%d", i)
 		}
 
-		outpoint := partial.UnsignedTx.TxIn[i].PreviousOutPoint
+		outpoint := tx.UnsignedTx.TxIn[i].PreviousOutPoint
 		prevouts[outpoint] = input.WitnessUtxo
 	}
 
 	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
 
 	return txscript.CalcTapscriptSignaturehash(
-		txscript.NewTxSigHashes(partial.UnsignedTx, prevoutFetcher),
+		txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),
 		txscript.SigHashDefault,
-		partial.UnsignedTx,
+		tx.UnsignedTx,
 		inputIndex,
 		prevoutFetcher,
 		txscript.NewBaseTapLeaf(leafScript),
@@ -1109,7 +1134,7 @@ func (b *txBuilder) getTaprootPreimage(partial *psbt.Packet, inputIndex int, lea
 }
 
 func (b *txBuilder) onchainNetwork() *chaincfg.Params {
-	switch b.net.Name {
+	switch b.network.Name {
 	case common.Bitcoin.Name:
 		return &chaincfg.MainNetParams
 	//case common.BitcoinTestNet4.Name: //TODO uncomment once supported
@@ -1138,7 +1163,10 @@ func castToOutpoints(inputs []ports.TxInput) []domain.Outpoint {
 	return outpoints
 }
 
-func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (sweepLeaf *psbt.TaprootTapLeafScript, internalKey *secp256k1.PublicKey, vtxoTreeExpiry *common.RelativeLocktime, err error) {
+func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
+	sweepLeaf *psbt.TaprootTapLeafScript, internalKey *secp256k1.PublicKey,
+	vtxoTreeExpiry *common.RelativeLocktime, err error,
+) {
 	// this if case is here to handle previous version of the tree
 	if len(input.TaprootLeafScript) > 0 {
 		for _, leaf := range input.TaprootLeafScript {

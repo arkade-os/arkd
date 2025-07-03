@@ -3,11 +3,12 @@ package redislivestore
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
-	"strconv"
 )
 
 const (
@@ -126,8 +127,8 @@ func (s *currentRoundStore) Get() *domain.Round {
 				return nil
 			}
 			evt = e
-		case domain.EventTypeTxRequestsRegistered:
-			var e domain.TxRequestsRegistered
+		case domain.EventTypeIntentsRegistered:
+			var e domain.IntentsRegistered
 			if err := json.Unmarshal(raw, &e); err != nil {
 				log.Warnf("failed to unmarshal round started: %s", err)
 				return nil

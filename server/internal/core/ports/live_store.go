@@ -10,7 +10,7 @@ import (
 )
 
 type LiveStore interface {
-	TxRequests() TxRequestsStore
+	Intents() IntentStore
 	ForfeitTxs() ForfeitTxsStore
 	OffchainTxs() OffChainTxStore
 	CurrentRound() CurrentRoundStore
@@ -19,21 +19,21 @@ type LiveStore interface {
 	BoardingInputs() BoardingInputsStore
 }
 
-type TxRequestsStore interface {
+type IntentStore interface {
 	Len() int64
-	Push(request domain.TxRequest, boardingInputs []BoardingInput, cosignersPublicKeys []string) error
-	Pop(num int64) []TimedTxRequest
-	Update(request domain.TxRequest, cosignersPublicKeys []string) error
+	Push(intent domain.Intent, boardingInputs []BoardingInput, cosignersPublicKeys []string) error
+	Pop(num int64) []TimedIntent
+	Update(intent domain.Intent, cosignersPublicKeys []string) error
 	Delete(ids []string) error
 	DeleteAll() error
 	DeleteVtxos()
-	ViewAll(ids []string) ([]TimedTxRequest, error)
-	View(id string) (*domain.TxRequest, bool)
+	ViewAll(ids []string) ([]TimedIntent, error)
+	View(id string) (*domain.Intent, bool)
 	IncludesAny(outpoints []domain.Outpoint) (bool, string)
 }
 
 type ForfeitTxsStore interface {
-	Init(connectors []tree.TxGraphChunk, requests []domain.TxRequest) error
+	Init(connectors []tree.TxGraphChunk, intents []domain.Intent) error
 	Sign(txs []string) error
 	Reset()
 	Pop() ([]string, error)
@@ -44,8 +44,8 @@ type ForfeitTxsStore interface {
 
 type OffChainTxStore interface {
 	Add(offchainTx domain.OffchainTx)
-	Remove(virtualTxid string)
-	Get(virtualTxid string) (domain.OffchainTx, bool)
+	Remove(arkTxid string)
+	Get(arkTxid string) (domain.OffchainTx, bool)
 	Includes(outpoint domain.Outpoint) bool
 }
 
@@ -79,14 +79,14 @@ type BoardingInputsStore interface {
 	Get() int
 }
 
-type TimedTxRequest struct {
-	domain.TxRequest
+type TimedIntent struct {
+	domain.Intent
 	BoardingInputs      []BoardingInput
 	Timestamp           time.Time
 	CosignersPublicKeys []string
 }
 
-func (t TimedTxRequest) HashID() [32]byte {
+func (t TimedIntent) HashID() [32]byte {
 	return sha256.Sum256([]byte(t.Id))
 }
 

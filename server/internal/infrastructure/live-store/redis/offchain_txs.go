@@ -35,7 +35,7 @@ func (s *offChainTxStore) Add(offchainTx domain.OffchainTx) {
 	}
 	val, _ := json.Marshal(offchainTx)
 	_, _ = s.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.HSet(ctx, offChainTxsHashKey, offchainTx.VirtualTxid, val)
+		pipe.HSet(ctx, offChainTxsHashKey, offchainTx.ArkTxid, val)
 		if len(inputs) > 0 {
 			pipe.SAdd(ctx, offChainInputsSetKey, inputs)
 		}
@@ -43,9 +43,9 @@ func (s *offChainTxStore) Add(offchainTx domain.OffchainTx) {
 	})
 }
 
-func (s *offChainTxStore) Remove(virtualTxid string) {
+func (s *offChainTxStore) Remove(arkTxid string) {
 	ctx := context.Background()
-	txStr, err := s.rdb.HGet(ctx, offChainTxsHashKey, virtualTxid).Result()
+	txStr, err := s.rdb.HGet(ctx, offChainTxsHashKey, arkTxid).Result()
 	if err != nil {
 		return
 	}
@@ -61,7 +61,7 @@ func (s *offChainTxStore) Remove(virtualTxid string) {
 		}
 	}
 	_, _ = s.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.HDel(ctx, offChainTxsHashKey, virtualTxid)
+		pipe.HDel(ctx, offChainTxsHashKey, arkTxid)
 		if len(inputs) > 0 {
 			pipe.SRem(ctx, offChainInputsSetKey, inputs)
 		}
@@ -69,9 +69,9 @@ func (s *offChainTxStore) Remove(virtualTxid string) {
 	})
 }
 
-func (s *offChainTxStore) Get(virtualTxid string) (domain.OffchainTx, bool) {
+func (s *offChainTxStore) Get(arkTxid string) (domain.OffchainTx, bool) {
 	ctx := context.Background()
-	txStr, err := s.rdb.HGet(ctx, offChainTxsHashKey, virtualTxid).Result()
+	txStr, err := s.rdb.HGet(ctx, offChainTxsHashKey, arkTxid).Result()
 	if err != nil {
 		return domain.OffchainTx{}, false
 	}

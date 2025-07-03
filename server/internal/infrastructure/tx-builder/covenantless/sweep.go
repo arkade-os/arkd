@@ -15,13 +15,12 @@ import (
 )
 
 func sweepTransaction(
-	wallet ports.WalletService,
-	sweepInputs []ports.SweepInput,
+	wallet ports.WalletService, batchOutputs []ports.SweepableBatchOutput,
 ) (*psbt.Packet, error) {
 	ins := make([]*wire.OutPoint, 0)
 	sequences := make([]uint32, 0)
 
-	for _, input := range sweepInputs {
+	for _, input := range batchOutputs {
 		ins = append(ins, &wire.OutPoint{
 			Hash:  input.GetHash(),
 			Index: input.GetIndex(),
@@ -63,7 +62,7 @@ func sweepTransaction(
 
 	amount := int64(0)
 
-	for i, sweepInput := range sweepInputs {
+	for i, sweepInput := range batchOutputs {
 		sweepPartialTx.Inputs[i].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
 			{
 				ControlBlock: sweepInput.GetControlBlock(),
@@ -72,7 +71,9 @@ func sweepTransaction(
 			},
 		}
 
-		sweepPartialTx.Inputs[i].TaprootInternalKey = schnorr.SerializePubKey(sweepInput.GetInternalKey())
+		sweepPartialTx.Inputs[i].TaprootInternalKey = schnorr.SerializePubKey(
+			sweepInput.GetInternalKey(),
+		)
 
 		amount += int64(sweepInput.GetAmount())
 
@@ -138,7 +139,9 @@ func sweepTransaction(
 	}
 
 	if amount < int64(fees) {
-		return nil, fmt.Errorf("insufficient funds (%d) to cover fees (%d) for sweep transaction", amount, fees)
+		return nil, fmt.Errorf(
+			"insufficient funds (%d) to cover fees (%d) for sweep transaction", amount, fees,
+		)
 	}
 
 	sweepPartialTx.UnsignedTx.TxOut[0].Value = amount - int64(fees)

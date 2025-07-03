@@ -72,7 +72,9 @@ func (n *nostrNotifier) Notify(ctx context.Context, to any, message string) erro
 
 	encryptedMsg, err := nip04.Encrypt(message, sharedSecret)
 	if err != nil {
-		return fmt.Errorf("failed to encrypt message for recipient %s: %w", recipient.PublicKey, err)
+		return fmt.Errorf(
+			"failed to encrypt message for recipient %s: %w", recipient.PublicKey, err,
+		)
 	}
 
 	// create NIP-04 event

@@ -2,14 +2,18 @@ package handlers
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 
 	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/bip322"
+	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/application"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 // From interface type to app type
@@ -32,6 +36,105 @@ func parseArkAddress(addr string) (string, error) {
 	return hex.EncodeToString(schnorr.SerializePubKey(a.VtxoTapKey)), nil
 }
 
+func parseIntent(intent *arkv1.Bip322Signature) (*bip322.Signature, *tree.IntentMessage, error) {
+	if intent == nil {
+		return nil, nil, fmt.Errorf("missing intent")
+	}
+	if len(intent.GetSignature()) <= 0 {
+		return nil, nil, fmt.Errorf("missing intent proof")
+	}
+	proof, err := bip322.DecodeSignature(intent.GetSignature())
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid intent proof: %s", err)
+	}
+
+	if len(intent.GetMessage()) <= 0 {
+		return nil, nil, fmt.Errorf("missing message")
+	}
+	var message tree.IntentMessage
+	if err := message.Decode(intent.GetMessage()); err != nil {
+		return nil, nil, fmt.Errorf("invalid intent message")
+	}
+	return proof, &message, nil
+}
+
+func parseDeleteIntent(
+	intent *arkv1.Bip322Signature,
+) (*bip322.Signature, *tree.DeleteIntentMessage, error) {
+	if intent == nil {
+		return nil, nil, fmt.Errorf("missing intent")
+	}
+	if len(intent.GetSignature()) <= 0 {
+		return nil, nil, fmt.Errorf("missing intent proof")
+	}
+	proof, err := bip322.DecodeSignature(intent.GetSignature())
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid intent proof: %s", err)
+	}
+
+	if len(intent.GetMessage()) <= 0 {
+		return nil, nil, fmt.Errorf("missing message")
+	}
+	var message tree.DeleteIntentMessage
+	if err := message.Decode(intent.GetMessage()); err != nil {
+		return nil, nil, fmt.Errorf("invalid delete intent message")
+	}
+	return proof, &message, nil
+}
+
+func parseIntentId(id string) (string, error) {
+	if len(id) <= 0 {
+		return "", fmt.Errorf("missing intent id")
+	}
+	return id, nil
+}
+
+func parseBatchId(id string) (string, error) {
+	if len(id) <= 0 {
+		return "", fmt.Errorf("missing batch id")
+	}
+	return id, nil
+}
+
+func parseECPubkey(pubkey string) (string, error) {
+	if len(pubkey) <= 0 {
+		return "", fmt.Errorf("missing EC public key")
+	}
+	pubkeyBytes, err := hex.DecodeString(pubkey)
+	if err != nil {
+		return "", fmt.Errorf("invalid format, expected hex")
+	}
+	if len(pubkeyBytes) != 33 {
+		return "", fmt.Errorf("invalid length, expected 33 bytes")
+	}
+	if _, err := secp256k1.ParsePubKey(pubkeyBytes); err != nil {
+		return "", fmt.Errorf("invalid cosigner public key %s", err)
+	}
+	return pubkey, nil
+}
+
+func parseNonces(serializedNonces string) (tree.TreeNonces, error) {
+	if len(serializedNonces) <= 0 {
+		return nil, fmt.Errorf("missing tree nonces")
+	}
+	var nonces tree.TreeNonces
+	if err := json.Unmarshal([]byte(serializedNonces), &nonces); err != nil {
+		return nil, fmt.Errorf("invalid tree nonces: %s", err)
+	}
+	return nonces, nil
+}
+
+func parseSignatures(serializedSignatures string) (tree.TreePartialSigs, error) {
+	if len(serializedSignatures) <= 0 {
+		return nil, fmt.Errorf("missing tree signatures")
+	}
+	signatures := make(tree.TreePartialSigs)
+	if err := json.Unmarshal([]byte(serializedSignatures), &signatures); err != nil {
+		return nil, fmt.Errorf("invalid tree signatures %s", err)
+	}
+	return signatures, nil
+}
+
 // From app type to interface type
 
 type vtxoList []domain.Vtxo
@@ -47,11 +150,11 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 			Amount:          vv.Amount,
 			CommitmentTxids: vv.CommitmentTxids,
 			IsSpent:         vv.Spent,
-			ExpiresAt:       vv.ExpireAt,
+			ExpiresAt:       vv.ExpiresAt,
 			SpentBy:         vv.SpentBy,
 			IsSwept:         vv.Swept,
 			IsPreconfirmed:  vv.Preconfirmed,
-			IsUnrolled:      vv.Redeemed,
+			IsUnrolled:      vv.Unrolled,
 			Script:          toP2TR(vv.PubKey),
 			CreatedAt:       vv.CreatedAt,
 			SettledBy:       vv.SettledBy,
@@ -84,21 +187,31 @@ func (t txEvent) toProto() *arkv1.TxNotification {
 	}
 }
 
-type intentsInfo []application.TxRequestInfo
+type intentsInfo []application.IntentInfo
 
 func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 	list := make([]*arkv1.IntentInfo, 0, len(i))
-	for _, req := range i {
-		receivers := make([]*arkv1.Output, 0, len(req.Receivers))
-		for _, receiver := range req.Receivers {
-			receivers = append(receivers, &arkv1.Output{
-				Address: receiver.Address,
-				Amount:  receiver.Amount,
-			})
+	for _, intent := range i {
+		receivers := make([]*arkv1.Output, 0, len(intent.Receivers))
+
+		for _, receiver := range intent.Receivers {
+			out := &arkv1.Output{
+				Amount: receiver.Amount,
+			}
+			if receiver.OnchainAddress != "" {
+				out.Destination = &arkv1.Output_OnchainAddress{
+					OnchainAddress: receiver.OnchainAddress,
+				}
+			} else {
+				out.Destination = &arkv1.Output_VtxoScript{
+					VtxoScript: receiver.VtxoScript,
+				}
+			}
+			receivers = append(receivers, out)
 		}
 
-		inputs := make([]*arkv1.IntentInput, 0, len(req.Inputs))
-		for _, input := range req.Inputs {
+		inputs := make([]*arkv1.IntentInput, 0, len(intent.Inputs))
+		for _, input := range intent.Inputs {
 			inputs = append(inputs, &arkv1.IntentInput{
 				Txid:   input.Txid,
 				Vout:   input.VOut,
@@ -106,8 +219,8 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 			})
 		}
 
-		boardingInputs := make([]*arkv1.IntentInput, 0, len(req.BoardingInputs))
-		for _, input := range req.BoardingInputs {
+		boardingInputs := make([]*arkv1.IntentInput, 0, len(intent.BoardingInputs))
+		for _, input := range intent.BoardingInputs {
 			boardingInputs = append(boardingInputs, &arkv1.IntentInput{
 				Txid:   input.Txid,
 				Vout:   input.VOut,
@@ -116,12 +229,12 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 		}
 
 		list = append(list, &arkv1.IntentInfo{
-			Id:                  req.Id,
-			CreatedAt:           req.CreatedAt.Unix(),
+			Id:                  intent.Id,
+			CreatedAt:           intent.CreatedAt.Unix(),
 			Receivers:           receivers,
 			Inputs:              inputs,
 			BoardingInputs:      boardingInputs,
-			CosignersPublicKeys: req.Cosigners,
+			CosignersPublicKeys: intent.Cosigners,
 		})
 	}
 	return list

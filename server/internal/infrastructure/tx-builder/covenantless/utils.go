@@ -16,11 +16,11 @@ import (
 )
 
 func getOnchainOutputs(
-	requests []domain.TxRequest, network *chaincfg.Params,
+	intents []domain.Intent, network *chaincfg.Params,
 ) ([]*wire.TxOut, error) {
 	outputs := make([]*wire.TxOut, 0)
-	for _, request := range requests {
-		for _, receiver := range request.Receivers {
+	for _, intent := range intents {
+		for _, receiver := range intent.Receivers {
 			if receiver.IsOnchain() {
 				receiverAddr, err := btcutil.DecodeAddress(receiver.OnchainAddress, network)
 				if err != nil {
@@ -43,16 +43,18 @@ func getOnchainOutputs(
 }
 
 func getOutputVtxosLeaves(
-	requests []domain.TxRequest,
-	cosignersPublicKeys [][]string,
+	intents []domain.Intent, cosignersPublicKeys [][]string,
 ) ([]tree.Leaf, error) {
-	if len(cosignersPublicKeys) != len(requests) {
-		return nil, fmt.Errorf("cosigners public keys length %d does not match requests length %d", len(cosignersPublicKeys), len(requests))
+	if len(cosignersPublicKeys) != len(intents) {
+		return nil, fmt.Errorf(
+			"cosigners public keys length %d does not match intents length %d",
+			len(cosignersPublicKeys), len(intents),
+		)
 	}
 
 	leaves := make([]tree.Leaf, 0)
-	for i, request := range requests {
-		for _, receiver := range request.Receivers {
+	for i, intent := range intents {
+		for _, receiver := range intent.Receivers {
 			if !receiver.IsOnchain() {
 				pubkeyBytes, err := hex.DecodeString(receiver.PubKey)
 				if err != nil {
@@ -81,5 +83,6 @@ func getOutputVtxosLeaves(
 }
 
 func taprootOutputScript(taprootKey *secp256k1.PublicKey) ([]byte, error) {
-	return txscript.NewScriptBuilder().AddOp(txscript.OP_1).AddData(schnorr.SerializePubKey(taprootKey)).Script()
+	return txscript.NewScriptBuilder().AddOp(txscript.OP_1).
+		AddData(schnorr.SerializePubKey(taprootKey)).Script()
 }

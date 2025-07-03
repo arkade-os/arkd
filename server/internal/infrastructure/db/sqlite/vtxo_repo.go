@@ -49,10 +49,10 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					CommitmentTxid: vtxo.RootCommitmentTxid,
 					SpentBy:        sql.NullString{String: vtxo.SpentBy, Valid: len(vtxo.SpentBy) > 0},
 					Spent:          vtxo.Spent,
-					Unrolled:       vtxo.Redeemed,
+					Unrolled:       vtxo.Unrolled,
 					Swept:          vtxo.Swept,
 					Preconfirmed:   vtxo.Preconfirmed,
-					ExpiresAt:      vtxo.ExpireAt,
+					ExpiresAt:      vtxo.ExpiresAt,
 					CreatedAt:      vtxo.CreatedAt,
 					ArkTxid:        sql.NullString{String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0},
 					SettledBy:      sql.NullString{String: vtxo.SettledBy, Valid: len(vtxo.SettledBy) > 0},
@@ -90,7 +90,7 @@ func (v *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtx
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) GetAllNonRedeemedVtxos(ctx context.Context, pubkey string) ([]domain.Vtxo, []domain.Vtxo, error) {
+func (v *vtxoRepository) GetAllNonUnrolledVtxos(ctx context.Context, pubkey string) ([]domain.Vtxo, []domain.Vtxo, error) {
 	withPubkey := len(pubkey) > 0
 
 	var rows []queries.VtxoVw
@@ -162,7 +162,7 @@ func (v *vtxoRepository) GetVtxos(ctx context.Context, outpoints []domain.Outpoi
 	return vtxos, nil
 }
 
-func (v *vtxoRepository) GetAll(ctx context.Context) ([]domain.Vtxo, error) {
+func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	res, err := v.querier.SelectAllVtxos(ctx)
 	if err != nil {
 		return nil, err
@@ -188,7 +188,7 @@ func (v *vtxoRepository) GetVtxosForRound(ctx context.Context, txid string) ([]d
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) GetLeafVtxosForRound(ctx context.Context, txid string) ([]domain.Vtxo, error) {
+func (v *vtxoRepository) GetLeafVtxosForBatch(ctx context.Context, txid string) ([]domain.Vtxo, error) {
 	res, err := v.querier.SelectRoundVtxoTreeLeaves(ctx, txid)
 	if err != nil {
 		return nil, err
@@ -201,7 +201,7 @@ func (v *vtxoRepository) GetLeafVtxosForRound(ctx context.Context, txid string) 
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) RedeemVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
+func (v *vtxoRepository) UnrollVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.UpdateVtxoUnrolled(
@@ -281,13 +281,15 @@ func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) UpdateExpireAt(ctx context.Context, vtxos []domain.Outpoint, expireAt int64) error {
+func (v *vtxoRepository) UpdateVtxosExpiration(
+	ctx context.Context, vtxos []domain.Outpoint, expiresAt int64,
+) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.UpdateVtxoExpiration(
 				ctx,
 				queries.UpdateVtxoExpirationParams{
-					ExpiresAt: expireAt,
+					ExpiresAt: expiresAt,
 					Txid:      vtxo.Txid,
 					Vout:      int64(vtxo.VOut),
 				},
@@ -343,10 +345,10 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		ArkTxid:            row.ArkTxid.String,
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent,
-		Redeemed:           row.Unrolled,
+		Unrolled:           row.Unrolled,
 		Swept:              row.Swept,
 		Preconfirmed:       row.Preconfirmed,
-		ExpireAt:           row.ExpiresAt,
+		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
 	}
 }

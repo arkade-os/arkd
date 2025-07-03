@@ -22,17 +22,16 @@ import (
 // onchainOutputs iterates over all the nodes' outputs in the vtxo tree and checks their onchain state
 // returns the sweepable outputs as ports.SweepInput mapped by their expiration time
 func findSweepableOutputs(
-	ctx context.Context,
-	walletSvc ports.WalletService,
-	txbuilder ports.TxBuilder,
-	schedulerUnit ports.TimeUnit,
-	graph *tree.TxGraph,
-) (map[int64][]ports.SweepInput, error) {
-	sweepableOutputs := make(map[int64][]ports.SweepInput)
+	ctx context.Context, walletSvc ports.WalletService, txbuilder ports.TxBuilder,
+	schedulerUnit ports.TimeUnit, vtxoTree *tree.TxGraph,
+) (map[int64][]ports.SweepableBatchOutput, error) {
+	sweepableBatchOutputs := make(map[int64][]ports.SweepableBatchOutput)
 	blocktimeCache := make(map[string]int64) // txid -> blocktime / blockheight
 
-	if err := graph.Apply(func(g *tree.TxGraph) (bool, error) {
-		isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(ctx, g.Root.UnsignedTx.TxID())
+	if err := vtxoTree.Apply(func(g *tree.TxGraph) (bool, error) {
+		isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(
+			ctx, g.Root.UnsignedTx.TxID(),
+		)
 		if err != nil {
 			return false, err
 		}
@@ -41,7 +40,9 @@ func findSweepableOutputs(
 			parentTxid := g.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
 
 			if _, ok := blocktimeCache[parentTxid]; !ok {
-				isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(ctx, parentTxid)
+				isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(
+					ctx, parentTxid,
+				)
 				if !isConfirmed || err != nil {
 					return false, fmt.Errorf("tx %s not found", parentTxid)
 				}
@@ -53,16 +54,18 @@ func findSweepableOutputs(
 				}
 			}
 
-			vtxoTreeExpiry, sweepInput, err := txbuilder.GetSweepInput(g)
+			vtxoTreeExpiry, sweepInput, err := txbuilder.GetSweepableBacthOutputs(g)
 			if err != nil {
 				return false, err
 			}
 
 			expirationTime := blocktimeCache[parentTxid] + int64(vtxoTreeExpiry.Value)
-			if _, ok := sweepableOutputs[expirationTime]; !ok {
-				sweepableOutputs[expirationTime] = make([]ports.SweepInput, 0)
+			if _, ok := sweepableBatchOutputs[expirationTime]; !ok {
+				sweepableBatchOutputs[expirationTime] = make([]ports.SweepableBatchOutput, 0)
 			}
-			sweepableOutputs[expirationTime] = append(sweepableOutputs[expirationTime], sweepInput)
+			sweepableBatchOutputs[expirationTime] = append(
+				sweepableBatchOutputs[expirationTime], sweepInput,
+			)
 			// we don't need to check the children, we already found a sweepable output
 			return false, nil
 		}
@@ -80,13 +83,13 @@ func findSweepableOutputs(
 		return nil, err
 	}
 
-	return sweepableOutputs, nil
+	return sweepableBatchOutputs, nil
 }
 
-func getSpentVtxos(requests map[string]domain.TxRequest) []domain.Outpoint {
+func getSpentVtxos(intents map[string]domain.Intent) []domain.Outpoint {
 	vtxos := make([]domain.Outpoint, 0)
-	for _, request := range requests {
-		for _, vtxo := range request.Inputs {
+	for _, intent := range intents {
+		for _, vtxo := range intent.Inputs {
 			vtxos = append(vtxos, vtxo.Outpoint)
 		}
 	}
@@ -106,7 +109,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		})
 	}
 
-	ptx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.VirtualTx), true)
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to parse partial tx: %s", err)
 	}
@@ -124,7 +127,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			},
 			PubKey:             hex.EncodeToString(out.PkScript[2:]),
 			Amount:             uint64(out.Value),
-			ExpireAt:           offchainTx.ExpiryTimestamp,
+			ExpiresAt:          offchainTx.ExpiryTimestamp,
 			CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 			RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 			Preconfirmed:       true,
@@ -136,14 +139,11 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 }
 
 func newBoardingInput(
-	tx wire.MsgTx,
-	input ports.Input,
-	serverPubKey *secp256k1.PublicKey,
-	boardingExitDelay common.RelativeLocktime,
-	blockTypeCSVAllowed bool,
+	tx wire.MsgTx, input ports.Input, signerPubkey *secp256k1.PublicKey,
+	boardingExitDelay common.RelativeLocktime, blockTypeCSVAllowed bool,
 ) (*ports.BoardingInput, error) {
 	if len(tx.TxOut) <= int(input.VOut) {
-		return nil, fmt.Errorf("output not found")
+		return nil, fmt.Errorf("output index out of range [0, %d]", len(tx.TxOut)-1)
 	}
 
 	output := tx.TxOut[input.VOut]
@@ -170,7 +170,9 @@ func newBoardingInput(
 		)
 	}
 
-	if err := boardingScript.Validate(serverPubKey, boardingExitDelay, blockTypeCSVAllowed); err != nil {
+	if err := boardingScript.Validate(
+		signerPubkey, boardingExitDelay, blockTypeCSVAllowed,
+	); err != nil {
 		return nil, err
 	}
 
@@ -180,13 +182,18 @@ func newBoardingInput(
 	}, nil
 }
 
-func calcNextMarketHour(marketHourStartTime, marketHourEndTime time.Time, period, marketHourDelta time.Duration, now time.Time) (time.Time, time.Time, error) {
+func calcNextMarketHour(
+	marketHourStartTime, marketHourEndTime time.Time,
+	period, marketHourDelta time.Duration, now time.Time,
+) (time.Time, time.Time, error) {
 	// Validate input parameters
 	if period <= 0 {
 		return time.Time{}, time.Time{}, fmt.Errorf("period must be greater than 0")
 	}
 	if !marketHourEndTime.After(marketHourStartTime) {
-		return time.Time{}, time.Time{}, fmt.Errorf("market hour end time must be after start time")
+		return time.Time{}, time.Time{}, fmt.Errorf(
+			"market hour end time must be after start time",
+		)
 	}
 
 	// Calculate the duration of the market hour
@@ -214,7 +221,8 @@ func calcNextMarketHour(marketHourStartTime, marketHourEndTime time.Time, period
 
 	timeUntilEnd := currentEndTime.Sub(now)
 
-	if !now.Before(currentStartTime) && now.Before(currentEndTime) && timeUntilEnd >= marketHourDelta {
+	if !now.Before(currentStartTime) && now.Before(currentEndTime) &&
+		timeUntilEnd >= marketHourDelta {
 		// Return the current market hour
 		return currentStartTime, currentEndTime, nil
 	} else {
@@ -258,12 +266,128 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				Outpoint:           domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
 				PubKey:             vtxoPubkey,
 				Amount:             uint64(out.Value),
-				CommitmentTxids:    []string{round.Txid},
-				RootCommitmentTxid: round.Txid,
+				CommitmentTxids:    []string{round.CommitmentTxid},
+				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          createdAt,
-				ExpireAt:           expireAt,
+				ExpiresAt:          expireAt,
 			})
 		}
 	}
 	return vtxos
+}
+
+func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {
+	if unit == ports.UnixTime {
+		fancyTime = time.Unix(timestamp, 0).Format("2006-01-02 15:04:05")
+	} else {
+		fancyTime = fmt.Sprintf("block %d", timestamp)
+	}
+	return
+}
+
+func treeTxEvents(
+	graph *tree.TxGraph, batchIndex int32, roundId string,
+	getTopic func(g *tree.TxGraph) ([]string, error),
+) []domain.Event {
+	events := make([]domain.Event, 0)
+
+	if err := graph.Apply(func(g *tree.TxGraph) (bool, error) {
+		chunk, err := g.RootChunk()
+		if err != nil {
+			return false, err
+		}
+
+		topic, err := getTopic(g)
+		if err != nil {
+			return false, err
+		}
+
+		events = append(events, TreeTxMessage{
+			RoundEvent: domain.RoundEvent{
+				Id:   roundId,
+				Type: domain.EventTypeUndefined,
+			},
+			BatchIndex: batchIndex,
+			Topic:      topic,
+			Chunk:      chunk,
+		})
+		return true, nil
+	}); err != nil {
+		log.WithError(err).Error("failed to send batchTree events")
+	}
+
+	return events
+}
+
+func treeSignatureEvents(
+	graph *tree.TxGraph, batchIndex int32, roundId string,
+) []domain.Event {
+	events := make([]domain.Event, 0)
+
+	_ = graph.Apply(func(g *tree.TxGraph) (bool, error) {
+		sig := g.Root.Inputs[0].TaprootKeySpendSig
+
+		topic, err := getVtxoTreeTopic(g)
+		if err != nil {
+			return false, err
+		}
+
+		events = append(events, TreeSignatuteMessage{
+			RoundEvent: domain.RoundEvent{
+				Id:   roundId,
+				Type: domain.EventTypeUndefined,
+			},
+			Topic:      topic,
+			BatchIndex: batchIndex,
+			Signature:  hex.EncodeToString(sig),
+			Txid:       g.Root.UnsignedTx.TxID(),
+		})
+
+		return true, nil
+	})
+
+	return events
+}
+
+// getVtxoTreeTopic returns the list of topics (cosigner keys) for the given vtxo subtree
+func getVtxoTreeTopic(g *tree.TxGraph) ([]string, error) {
+	cosignerKeys, err := tree.GetCosignerKeys(g.Root.Inputs[0])
+	if err != nil {
+		return nil, err
+	}
+
+	topics := make([]string, 0, len(cosignerKeys))
+	for _, key := range cosignerKeys {
+		topics = append(topics, hex.EncodeToString(key.SerializeCompressed()))
+	}
+
+	return topics, nil
+}
+
+// getConnectorTreeTopic returns the list of topics (vtxo outpoints) for the given connector subtree
+func getConnectorTreeTopic(
+	connectorsIndex map[string]domain.Outpoint,
+) func(g *tree.TxGraph) ([]string, error) {
+	return func(g *tree.TxGraph) ([]string, error) {
+		leaves := g.Leaves()
+		topics := make([]string, 0, len(leaves))
+
+		for _, leaf := range leaves {
+			leafTxid := leaf.UnsignedTx.TxID()
+			for outIndex, output := range leaf.UnsignedTx.TxOut {
+				if bytes.Equal(output.PkScript, tree.ANCHOR_PKSCRIPT) {
+					continue
+				}
+
+				outpoint := domain.Outpoint{
+					Txid: leafTxid,
+					VOut: uint32(outIndex),
+				}
+
+				topics = append(topics, connectorsIndex[outpoint.String()].String())
+			}
+		}
+
+		return topics, nil
+	}
 }

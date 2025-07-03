@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type TxRequest struct {
+type Intent struct {
 	Id        string
 	Inputs    []Vtxo
 	Receivers []Receiver
@@ -14,67 +14,67 @@ type TxRequest struct {
 	Message   string
 }
 
-func NewTxRequest(proof, message string, inputs []Vtxo) (*TxRequest, error) {
-	request := &TxRequest{
+func NewIntent(proof, message string, inputs []Vtxo) (*Intent, error) {
+	intent := &Intent{
 		Id:      uuid.New().String(),
 		Inputs:  inputs,
 		Proof:   proof,
 		Message: message,
 	}
-	if err := request.validate(true); err != nil {
+	if err := intent.validate(true); err != nil {
 		return nil, err
 	}
-	return request, nil
+	return intent, nil
 }
 
-func (r *TxRequest) AddReceivers(receivers []Receiver) (err error) {
-	if r.Receivers == nil {
-		r.Receivers = make([]Receiver, 0)
+func (i *Intent) AddReceivers(receivers []Receiver) (err error) {
+	if i.Receivers == nil {
+		i.Receivers = make([]Receiver, 0)
 	}
-	r.Receivers = append(r.Receivers, receivers...)
+	i.Receivers = append(i.Receivers, receivers...)
 	defer func() {
 		if err != nil {
-			r.Receivers = r.Receivers[:len(r.Receivers)-len(receivers)]
+			i.Receivers = i.Receivers[:len(i.Receivers)-len(receivers)]
 		}
 	}()
-	err = r.validate(false)
+	err = i.validate(false)
 	return
 }
 
-func (r TxRequest) TotalInputAmount() uint64 {
+func (i Intent) TotalInputAmount() uint64 {
 	tot := uint64(0)
-	for _, in := range r.Inputs {
+	for _, in := range i.Inputs {
 		tot += in.Amount
 	}
 	return tot
 }
 
-func (r TxRequest) TotalOutputAmount() uint64 {
+func (i Intent) TotalOutputAmount() uint64 {
 	tot := uint64(0)
-	for _, r := range r.Receivers {
+	for _, r := range i.Receivers {
 		tot += r.Amount
 	}
 	return tot
 }
 
-func (r TxRequest) validate(ignoreOuts bool) error {
-	if len(r.Id) <= 0 {
+func (i Intent) validate(ignoreOuts bool) error {
+	if len(i.Id) <= 0 {
 		return fmt.Errorf("missing id")
 	}
-	if len(r.Proof) <= 0 {
+	if len(i.Proof) <= 0 {
 		return fmt.Errorf("missing proof")
 	}
-	if len(r.Message) <= 0 {
+	if len(i.Message) <= 0 {
 		return fmt.Errorf("missing message")
 	}
 	if ignoreOuts {
 		return nil
 	}
 
-	if len(r.Receivers) <= 0 {
+	if len(i.Receivers) <= 0 {
 		return fmt.Errorf("missing outputs")
 	}
-	for _, r := range r.Receivers {
+	for _, r := range i.Receivers {
 		if len(r.OnchainAddress) <= 0 && len(r.PubKey) <= 0 {
 			return fmt.Errorf("missing receiver destination")
 		}
@@ -95,12 +95,12 @@ func (r Receiver) IsOnchain() bool {
 	return len(r.OnchainAddress) > 0
 }
 
-type TxRequests []TxRequest
+type Intents []Intent
 
-func (t TxRequests) CountSpentVtxos() int {
+func (t Intents) CountSpentVtxos() int {
 	count := 0
-	for _, request := range t {
-		for _, in := range request.Inputs {
+	for _, intent := range t {
+		for _, in := range intent.Inputs {
 			// Notes and swept vtxos are excluded from this count.
 			if !in.RequiresForfeit() {
 				continue
@@ -111,9 +111,9 @@ func (t TxRequests) CountSpentVtxos() int {
 	return count
 }
 
-func (t TxRequests) HaveOnlyOnchainOutput() bool {
-	for _, request := range t {
-		for _, r := range request.Receivers {
+func (t Intents) HaveOnlyOnchainOutput() bool {
+	for _, intent := range t {
+		for _, r := range intent.Receivers {
 			if !r.IsOnchain() {
 				return false
 			}

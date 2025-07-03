@@ -9,14 +9,10 @@ import (
 	"google.golang.org/grpc"
 )
 
-func unaryMacaroonAuthHandler(
-	macaroonSvc *macaroons.Service,
-) grpc.UnaryServerInterceptor {
+func unaryMacaroonAuthHandler(macaroonSvc *macaroons.Service) grpc.UnaryServerInterceptor {
 	return func(
-		ctx context.Context,
-		req interface{},
-		info *grpc.UnaryServerInfo,
-		handler grpc.UnaryHandler,
+		ctx context.Context, req interface{},
+		info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (interface{}, error) {
 		if err := checkMacaroon(ctx, info.FullMethod, macaroonSvc); err != nil {
 			return nil, err
@@ -26,14 +22,10 @@ func unaryMacaroonAuthHandler(
 	}
 }
 
-func streamMacaroonAuthHandler(
-	macaroonSvc *macaroons.Service,
-) grpc.StreamServerInterceptor {
+func streamMacaroonAuthHandler(macaroonSvc *macaroons.Service) grpc.StreamServerInterceptor {
 	return func(
-		srv interface{},
-		ss grpc.ServerStream,
-		info *grpc.StreamServerInfo,
-		handler grpc.StreamHandler,
+		srv interface{}, ss grpc.ServerStream,
+		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
 		if err := checkMacaroon(ss.Context(), info.FullMethod, macaroonSvc); err != nil {
 			return err
@@ -43,9 +35,7 @@ func streamMacaroonAuthHandler(
 	}
 }
 
-func checkMacaroon(
-	ctx context.Context, fullMethod string, svc *macaroons.Service,
-) error {
+func checkMacaroon(ctx context.Context, fullMethod string, svc *macaroons.Service) error {
 	if svc == nil {
 		return nil
 	}

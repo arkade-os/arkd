@@ -3,10 +3,9 @@ package permissions
 import (
 	"fmt"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
-
 	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
+	"gopkg.in/macaroon-bakery.v2/bakery"
 )
 
 const (

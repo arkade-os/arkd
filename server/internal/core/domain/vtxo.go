@@ -1,11 +1,9 @@
 package domain
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -20,21 +18,6 @@ func (k Outpoint) String() string {
 	return fmt.Sprintf("%s:%d", k.Txid, k.VOut)
 }
 
-func (k Outpoint) Hash() string {
-	calcHash := func(buf []byte, hasher hash.Hash) []byte {
-		_, _ = hasher.Write(buf)
-		return hasher.Sum(nil)
-	}
-
-	hash160 := func(buf []byte) []byte {
-		return calcHash(calcHash(buf, sha256.New()), sha256.New())
-	}
-
-	buf, _ := hex.DecodeString(k.Txid)
-	buf = append(buf, byte(k.VOut))
-	return hex.EncodeToString(hash160(buf))
-}
-
 type Vtxo struct {
 	Outpoint
 	Amount             uint64
@@ -45,10 +28,10 @@ type Vtxo struct {
 	SpentBy            string // forfeit txid or checkpoint txid
 	ArkTxid            string // the link to the ark txid that spent the vtxos
 	Spent              bool
-	Redeemed           bool
+	Unrolled           bool
 	Swept              bool
 	Preconfirmed       bool
-	ExpireAt           int64
+	ExpiresAt          int64
 	CreatedAt          int64
 }
 

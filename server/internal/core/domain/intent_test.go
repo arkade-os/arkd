@@ -25,15 +25,15 @@ var (
 	}
 )
 
-func TestTxRequest(t *testing.T) {
-	t.Run("new_tx_request", func(t *testing.T) {
+func TestIntent(t *testing.T) {
+	t.Run("new_intent", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			request, err := domain.NewTxRequest(proof, message, inputs)
+			intent, err := domain.NewIntent(proof, message, inputs)
 			require.NoError(t, err)
-			require.NotNil(t, request)
-			require.NotEmpty(t, request.Id)
-			require.Exactly(t, inputs, request.Inputs)
-			require.Empty(t, request.Receivers)
+			require.NotNil(t, intent)
+			require.NotEmpty(t, intent.Id)
+			require.Exactly(t, inputs, intent.Inputs)
+			require.Empty(t, intent.Receivers)
 		})
 		t.Run("invalid", func(t *testing.T) {
 			fixtures := []struct {
@@ -57,7 +57,7 @@ func TestTxRequest(t *testing.T) {
 			}
 			for _, f := range fixtures {
 				t.Run(f.expectedErr, func(t *testing.T) {
-					intent, err := domain.NewTxRequest(f.proof, f.message, f.inputs)
+					intent, err := domain.NewIntent(f.proof, f.message, f.inputs)
 					require.Nil(t, intent)
 					require.Error(t, err)
 					require.Contains(t, err.Error(), f.expectedErr)
@@ -68,11 +68,11 @@ func TestTxRequest(t *testing.T) {
 
 	t.Run("add_receivers", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			request, err := domain.NewTxRequest(proof, message, inputs)
+			intent, err := domain.NewIntent(proof, message, inputs)
 			require.NoError(t, err)
-			require.NotNil(t, request)
+			require.NotNil(t, intent)
 
-			err = request.AddReceivers([]domain.Receiver{
+			err = intent.AddReceivers([]domain.Receiver{
 				{
 					PubKey: pubkey,
 					Amount: 450,
@@ -96,12 +96,12 @@ func TestTxRequest(t *testing.T) {
 				},
 			}
 
-			request, err := domain.NewTxRequest(proof, message, inputs)
+			intent, err := domain.NewIntent(proof, message, inputs)
 			require.NoError(t, err)
-			require.NotNil(t, request)
+			require.NotNil(t, intent)
 
 			for _, f := range fixtures {
-				err := request.AddReceivers(f.receivers)
+				err := intent.AddReceivers(f.receivers)
 				require.EqualError(t, err, f.expectedErr)
 			}
 		})

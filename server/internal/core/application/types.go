@@ -7,53 +7,35 @@ import (
 	"github.com/ark-network/ark/common/bip322"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
-	"github.com/ark-network/ark/server/internal/core/ports"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 type Service interface {
 	Start() error
 	Stop()
-	RegisterIntent(ctx context.Context, bip322signature bip322.Signature, message tree.IntentMessage) (string, error)
+	RegisterIntent(
+		ctx context.Context, proof bip322.Signature, message tree.IntentMessage,
+	) (string, error)
 	ConfirmRegistration(ctx context.Context, intentId string) error
-	ClaimVtxos(ctx context.Context, creds string, receivers []domain.Receiver, cosignersPublicKeys []string) error
-	SignVtxos(ctx context.Context, forfeitTxs []string) error
-	SignRoundTx(ctx context.Context, roundTx string) error
-	GetRoundByTxid(ctx context.Context, roundTxid string) (*domain.Round, error)
-	GetRoundById(ctx context.Context, id string) (*domain.Round, error)
-	GetCurrentRound(ctx context.Context) (*domain.Round, error)
+	SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) error
+	SignCommitmentTx(ctx context.Context, commitmentTx string) error
 	GetEventsChannel(ctx context.Context) <-chan []domain.Event
-	ListVtxos(
-		ctx context.Context, address string,
-	) (spendableVtxos, spentVtxos []domain.Vtxo, err error)
 	GetInfo(ctx context.Context) (*ServiceInfo, error)
-	SubmitOffchainTx(ctx context.Context, checkpointTxs []string, signedRedeemTx string) (
-		signedCheckpoints []string,
-		finalRedeemTx string, redeemTxid string,
-		err error,
-	)
-	FinalizeOffchainTx(
-		ctx context.Context, txid string, finalCheckpoints []string,
-	) error
-	GetBoardingAddress(
-		ctx context.Context, userPubkey *secp256k1.PublicKey,
-	) (address string, scripts []string, err error)
+	SubmitOffchainTx(
+		ctx context.Context, checkpointTxs []string, signedArkTx string,
+	) (signedCheckpoints []string, finalArkTx string, arkTxid string, err error)
+	FinalizeOffchainTx(ctx context.Context, txid string, finalCheckpoints []string) error
 	// Tree signing methods
 	RegisterCosignerNonces(ctx context.Context, roundId, pubkey string, nonces tree.TreeNonces) error
 	RegisterCosignerSignatures(ctx context.Context, roundId, pubkey string, signatures tree.TreePartialSigs) error
-	GetTransactionEventsChannel(ctx context.Context) <-chan TransactionEvent
-	GetMarketHourConfig(ctx context.Context) (*domain.MarketHour, error)
-	UpdateMarketHourConfig(ctx context.Context, marketHourStartTime, marketHourEndTime time.Time, period, roundInterval time.Duration) error
-	GetTxRequestQueue(ctx context.Context, requestIds ...string) ([]TxRequestInfo, error)
-	DeleteTxRequests(ctx context.Context, requestIds ...string) error
-	DeleteTxRequestsByProof(ctx context.Context, bip322signature bip322.Signature, message tree.DeleteIntentMessage) error
+	GetTxEventsChannel(ctx context.Context) <-chan TransactionEvent
+	DeleteIntentsByProof(ctx context.Context, bip322signature bip322.Signature, message tree.DeleteIntentMessage) error
 
-	// TODO remove this in v7
+	// TODO: remove when detaching the indexer svc.
 	GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent
 }
 
 type ServiceInfo struct {
-	PubKey              string
+	SignerPubKey        string
 	VtxoTreeExpiry      int64
 	UnilateralExitDelay int64
 	BoardingExitDelay   int64
@@ -101,26 +83,14 @@ type TransactionEvent struct {
 	CheckpointTxs  map[string]TxData
 }
 
-type TxRequestInfo struct {
-	Id        string
-	CreatedAt time.Time
-	Receivers []struct {
-		Address string
-		Amount  uint64
-	}
-	Inputs         []domain.Vtxo
-	BoardingInputs []ports.BoardingInput
-	Cosigners      []string
-}
-
 type VtxoChainResp struct {
-	Chain []ChainWithExpiry
+	Chain []ChainTx
 	Page  PageResp
 }
 
 type VOut int
 
-type CommitmentTxResp struct {
+type CommitmentTxInfo struct {
 	StartedAt         int64
 	EndAt             int64
 	Batches           map[VOut]Batch
@@ -142,9 +112,9 @@ type Batch struct {
 	Swept             bool
 }
 
-type VtxoTreeResp struct {
-	Nodes []Node
-	Page  PageResp
+type TreeTxResp struct {
+	Txs  []TreeTx
+	Page PageResp
 }
 
 type VtxoTreeLeavesResp struct {
@@ -152,16 +122,11 @@ type VtxoTreeLeavesResp struct {
 	Page   PageResp
 }
 
-type Node = tree.TxGraphChunk
+type TreeTx = tree.TxGraphChunk
 
 type ForfeitTxsResp struct {
 	Txs  []string
 	Page PageResp
-}
-
-type ConnectorResp struct {
-	Connectors []Node
-	Page       PageResp
 }
 
 type GetVtxosResp struct {
@@ -170,8 +135,8 @@ type GetVtxosResp struct {
 }
 
 type VirtualTxsResp struct {
-	Transactions []string
-	Page         PageResp
+	Txs  []string
+	Page PageResp
 }
 
 type Outpoint = domain.Outpoint
@@ -191,7 +156,7 @@ type TxHistoryResp struct {
 
 type TxHistoryRecord struct {
 	CommitmentTxid string
-	VirtualTxid    string
+	ArkTxid        string
 	Type           TxType
 	Amount         uint64
 	CreatedAt      time.Time
@@ -210,19 +175,19 @@ type PageResp struct {
 	Total   int32
 }
 
-type IndexerChainedTxType string
+type ChainTxType string
 
 const (
-	IndexerChainedTxTypeUnspecified IndexerChainedTxType = "unspecified"
-	IndexerChainedTxTypeCommitment  IndexerChainedTxType = "commitment"
-	IndexerChainedTxTypeArk         IndexerChainedTxType = "ark"
-	IndexerChainedTxTypeTree        IndexerChainedTxType = "tree"
-	IndexerChainedTxTypeCheckpoint  IndexerChainedTxType = "checkpoint"
+	IndexerChainedTxTypeUnspecified ChainTxType = "unspecified"
+	IndexerChainedTxTypeCommitment  ChainTxType = "commitment"
+	IndexerChainedTxTypeArk         ChainTxType = "ark"
+	IndexerChainedTxTypeTree        ChainTxType = "tree"
+	IndexerChainedTxTypeCheckpoint  ChainTxType = "checkpoint"
 )
 
-type ChainWithExpiry struct {
+type ChainTx struct {
 	Txid      string
 	ExpiresAt int64
-	Type      IndexerChainedTxType
+	Type      ChainTxType
 	Spends    []string
 }

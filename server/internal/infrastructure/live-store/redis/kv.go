@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/redis/go-redis/v9"
 )
@@ -11,16 +12,16 @@ import (
 // KVStore is a generic key-value store for storing JSON-encoded structs in Redis.
 type KVStore[T any] struct {
 	rdb    *redis.Client
-	prefix string // e.g., "txreq:"
+	prefix string // e.g., "intent:"
 }
 
 func NewRedisKVStore[T any](rdb *redis.Client, prefix string) *KVStore[T] {
 	return &KVStore[T]{rdb: rdb, prefix: prefix}
 }
 
-// NewTxRequestsKVStore returns a KVStore for TimedTxRequest with the proper prefix.
-func NewTxRequestsKVStore(rdb *redis.Client) *KVStore[ports.TimedTxRequest] {
-	return &KVStore[ports.TimedTxRequest]{rdb: rdb, prefix: "txreq:"}
+// NewIntentKVStore returns a KVStore for TimedIntent with the proper prefix.
+func NewIntentKVStore(rdb *redis.Client) *KVStore[ports.TimedIntent] {
+	return &KVStore[ports.TimedIntent]{rdb: rdb, prefix: "intent:"}
 }
 
 func (s *KVStore[T]) key(id string) string {
@@ -85,7 +86,9 @@ func (s *KVStore[T]) GetMulti(ctx context.Context, ids []string) ([]*T, error) {
 }
 
 // SetPipe is a helper to use KVStore Set with a pipeliner.
-func (s *KVStore[T]) SetPipe(ctx context.Context, pipe redis.Pipeliner, key string, value *T) error {
+func (s *KVStore[T]) SetPipe(
+	ctx context.Context, pipe redis.Pipeliner, key string, value *T,
+) error {
 	b, err := json.Marshal(value)
 	if err != nil {
 		return err

@@ -18,7 +18,7 @@ func TestGraphSerialization(t *testing.T) {
 
 	for _, v := range testVectors {
 		t.Run(v.name, func(t *testing.T) {
-			sharedOutScript, sharedOutAmount, err := tree.CraftSharedOutput(
+			sharedOutScript, sharedOutAmount, err := tree.BuildBatchOutput(
 				v.receivers, sweepRoot[:],
 			)
 			require.NoError(t, err)
@@ -84,7 +84,7 @@ func TestTxGraphSubGraph(t *testing.T) {
 
 	for _, v := range testVectors {
 		t.Run(v.name, func(t *testing.T) {
-			sharedOutScript, sharedOutAmount, err := tree.CraftSharedOutput(
+			sharedOutScript, sharedOutAmount, err := tree.BuildBatchOutput(
 				v.receivers, sweepRoot[:],
 			)
 			require.NoError(t, err)

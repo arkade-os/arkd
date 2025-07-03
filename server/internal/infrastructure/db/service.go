@@ -346,7 +346,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	if len(spentVtxos) > 0 {
 		for {
-			if err := repo.SettleVtxos(ctx, spentVtxos, round.Txid); err != nil {
+			if err := repo.SettleVtxos(ctx, spentVtxos, round.CommitmentTxid); err != nil {
 				log.WithError(err).Warn("failed to spend vtxos, retrying...")
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -374,9 +374,9 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	offchainTx := domain.NewOffchainTxFromEvents(events)
 
 	if err := s.offchainTxStore.AddOrUpdateOffchainTx(ctx, offchainTx); err != nil {
-		log.WithError(err).Fatalf("failed to add or update offchain tx %s", offchainTx.VirtualTxid)
+		log.WithError(err).Fatalf("failed to add or update offchain tx %s", offchainTx.ArkTxid)
 	}
-	log.Debugf("added or updated offchain tx %s", offchainTx.VirtualTxid)
+	log.Debugf("added or updated offchain tx %s", offchainTx.ArkTxid)
 
 	switch {
 	case offchainTx.IsAccepted():
@@ -394,13 +394,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 		// as soon as the checkpoint txs are signed by the server,
 		// we must mark the vtxos as spent to prevent double spending.
-		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.VirtualTxid); err != nil {
+		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.ArkTxid); err != nil {
 			log.WithError(err).Warn("failed to spend vtxos")
 			return
 		}
 		log.Debugf("spent %d vtxos", len(spentVtxos))
 	case offchainTx.IsFinalized():
-		txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.VirtualTx)
+		txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
 		if err != nil {
 			log.WithError(err).Warn("failed to decode ark tx")
 			return
@@ -424,7 +424,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				},
 				PubKey:             hex.EncodeToString(out.PkScript[2:]),
 				Amount:             uint64(out.Amount),
-				ExpireAt:           offchainTx.ExpiryTimestamp,
+				ExpiresAt:          offchainTx.ExpiryTimestamp,
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 				RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 				Preconfirmed:       true,
@@ -463,8 +463,8 @@ func getSpentVtxoKeysFromRound(
 	}
 
 	// Match vtxos with forfeit transactions
-	for _, request := range round.TxRequests {
-		for _, vtxo := range request.Inputs {
+	for _, intent := range round.Intents {
+		for _, vtxo := range intent.Inputs {
 			if !vtxo.RequiresForfeit() {
 				spentVtxos[vtxo.Outpoint] = ""
 			} else if txid, found := forfeitInputs[vtxo.Outpoint]; found {
@@ -504,10 +504,10 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				Outpoint:           domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
 				PubKey:             vtxoPubkey,
 				Amount:             uint64(out.Value),
-				CommitmentTxids:    []string{round.Txid},
-				RootCommitmentTxid: round.Txid,
+				CommitmentTxids:    []string{round.CommitmentTxid},
+				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          round.EndingTimestamp,
-				ExpireAt:           round.ExpiryTimestamp(),
+				ExpiresAt:          round.ExpiryTimestamp(),
 			})
 		}
 	}

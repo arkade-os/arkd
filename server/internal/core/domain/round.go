@@ -43,15 +43,15 @@ type Round struct {
 	StartingTimestamp  int64
 	EndingTimestamp    int64
 	Stage              Stage
-	TxRequests         map[string]TxRequest
-	Txid               string
+	Intents            map[string]Intent
+	CommitmentTxid     string
 	CommitmentTx       string
 	ForfeitTxs         []ForfeitTx
 	VtxoTree           []tree.TxGraphChunk
 	Connectors         []tree.TxGraphChunk
 	ConnectorAddress   string
 	Version            uint
-	Swept              bool // true if all the vtxos are vtxo.Swept or vtxo.Redeemed
+	Swept              bool
 	VtxoTreeExpiration int64
 	SweepTxs           map[string]string
 	FailReason         string
@@ -60,9 +60,9 @@ type Round struct {
 
 func NewRound() *Round {
 	return &Round{
-		Id:         uuid.New().String(),
-		TxRequests: make(map[string]TxRequest),
-		Changes:    make([]Event, 0),
+		Id:      uuid.New().String(),
+		Intents: make(map[string]Intent),
+		Changes: make([]Event, 0),
 	}
 }
 
@@ -85,7 +85,7 @@ func (r *Round) Events() []Event {
 func (r *Round) StartRegistration() ([]Event, error) {
 	empty := Stage{}
 	if r.Stage != empty {
-		return nil, fmt.Errorf("not in a valid stage to start tx requests registration")
+		return nil, fmt.Errorf("not in a valid stage to start intents registration")
 	}
 
 	event := RoundStarted{
@@ -100,25 +100,25 @@ func (r *Round) StartRegistration() ([]Event, error) {
 	return []Event{event}, nil
 }
 
-func (r *Round) RegisterTxRequests(txRequests []TxRequest) ([]Event, error) {
+func (r *Round) RegisterIntents(intents []Intent) ([]Event, error) {
 	if r.Stage.Code != int(RoundRegistrationStage) || r.IsFailed() {
-		return nil, fmt.Errorf("not in a valid stage to register tx requests")
+		return nil, fmt.Errorf("not in a valid stage to register intents")
 	}
-	if len(txRequests) <= 0 {
-		return nil, fmt.Errorf("missing tx requests to register")
+	if len(intents) <= 0 {
+		return nil, fmt.Errorf("missing intents to register")
 	}
-	for _, request := range txRequests {
-		if err := request.validate(false); err != nil {
+	for _, intent := range intents {
+		if err := intent.validate(false); err != nil {
 			return nil, err
 		}
 	}
 
-	event := TxRequestsRegistered{
+	event := IntentsRegistered{
 		RoundEvent: RoundEvent{
 			Id:   r.Id,
-			Type: EventTypeTxRequestsRegistered,
+			Type: EventTypeIntentsRegistered,
 		},
-		TxRequests: txRequests,
+		Intents: intents,
 	}
 	r.raise(event)
 
@@ -126,15 +126,11 @@ func (r *Round) RegisterTxRequests(txRequests []TxRequest) ([]Event, error) {
 }
 
 func (r *Round) StartFinalization(
-	connectorAddress string,
-	connectors []tree.TxGraphChunk,
-	vtxoTree []tree.TxGraphChunk,
-	txid string,
-	roundTx string,
-	vtxoTreeExpiration int64,
+	connectorAddress string, connectors []tree.TxGraphChunk, vtxoTree []tree.TxGraphChunk,
+	commitmentTxid, commitmentTx string, vtxoTreeExpiration int64,
 ) ([]Event, error) {
-	if len(roundTx) <= 0 {
-		return nil, fmt.Errorf("missing unsigned round tx")
+	if len(commitmentTx) <= 0 {
+		return nil, fmt.Errorf("missing unsigned commitment tx")
 	}
 	if vtxoTreeExpiration <= 0 {
 		return nil, fmt.Errorf("missing vtxo tree expiration")
@@ -142,10 +138,10 @@ func (r *Round) StartFinalization(
 	if r.Stage.Code != int(RoundRegistrationStage) || r.IsFailed() {
 		return nil, fmt.Errorf("not in a valid stage to start finalization")
 	}
-	if len(r.TxRequests) <= 0 {
-		return nil, fmt.Errorf("no tx requests registered")
+	if len(r.Intents) <= 0 {
+		return nil, fmt.Errorf("no intents registered")
 	}
-	if txid == "" {
+	if commitmentTxid == "" {
 		return nil, fmt.Errorf("missing txid")
 	}
 
@@ -157,8 +153,8 @@ func (r *Round) StartFinalization(
 		VtxoTree:           vtxoTree,
 		Connectors:         connectors,
 		ConnectorAddress:   connectorAddress,
-		Txid:               txid,
-		RoundTx:            roundTx,
+		CommitmentTxid:     commitmentTxid,
+		CommitmentTx:       commitmentTx,
 		VtxoTreeExpiration: vtxoTreeExpiration,
 	}
 	r.raise(event)
@@ -168,8 +164,8 @@ func (r *Round) StartFinalization(
 
 func (r *Round) EndFinalization(forfeitTxs []ForfeitTx, finalCommitmentTx string) ([]Event, error) {
 	if len(forfeitTxs) <= 0 {
-		for _, request := range r.TxRequests {
-			for _, in := range request.Inputs {
+		for _, intent := range r.Intents {
+			for _, in := range intent.Inputs {
 				// The list of signed forfeit txs is required only if there is at least
 				// one input that is not either a note or swept..
 				if in.RequiresForfeit() {
@@ -278,8 +274,8 @@ func (r *Round) on(event Event, replayed bool) {
 		r.VtxoTree = e.VtxoTree
 		r.Connectors = e.Connectors
 		r.ConnectorAddress = e.ConnectorAddress
-		r.Txid = e.Txid
-		r.CommitmentTx = e.RoundTx
+		r.CommitmentTxid = e.CommitmentTxid
+		r.CommitmentTx = e.CommitmentTx
 		r.VtxoTreeExpiration = e.VtxoTreeExpiration
 	case RoundFinalized:
 		r.Stage.Ended = true
@@ -290,12 +286,12 @@ func (r *Round) on(event Event, replayed bool) {
 		r.Stage.Failed = true
 		r.FailReason = e.Reason
 		r.EndingTimestamp = e.Timestamp
-	case TxRequestsRegistered:
-		if r.TxRequests == nil {
-			r.TxRequests = make(map[string]TxRequest)
+	case IntentsRegistered:
+		if r.Intents == nil {
+			r.Intents = make(map[string]Intent)
 		}
-		for _, p := range e.TxRequests {
-			r.TxRequests[p.Id] = p
+		for _, p := range e.Intents {
+			r.Intents[p.Id] = p
 		}
 	case BatchSwept:
 		if r.SweepTxs == nil {

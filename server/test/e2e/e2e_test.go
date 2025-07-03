@@ -768,14 +768,10 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 
 		explorer := explorer.NewExplorer("http://localhost:3000", common.BitcoinRegTest)
 
-		encodedVirtualTx, err := ptx.B64Encode()
+		encodedArkTx, err := ptx.B64Encode()
 		require.NoError(t, err)
 
-		signedTx, err := bobWallet.SignTransaction(
-			ctx,
-			explorer,
-			encodedVirtualTx,
-		)
+		signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedArkTx)
 		require.NoError(t, err)
 
 		checkpoints := make([]string, 0, len(checkpointsPtx))

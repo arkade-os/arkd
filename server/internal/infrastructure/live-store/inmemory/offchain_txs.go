@@ -25,7 +25,7 @@ func NewOffChainTxStore() ports.OffChainTxStore {
 func (m *offChainTxStore) Add(offchainTx domain.OffchainTx) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
-	m.offchainTxs[offchainTx.VirtualTxid] = offchainTx
+	m.offchainTxs[offchainTx.ArkTxid] = offchainTx
 	for _, tx := range offchainTx.CheckpointTxs {
 		ptx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 		for _, in := range ptx.UnsignedTx.TxIn {
@@ -34,11 +34,11 @@ func (m *offChainTxStore) Add(offchainTx domain.OffchainTx) {
 	}
 }
 
-func (m *offChainTxStore) Remove(virtualTxid string) {
+func (m *offChainTxStore) Remove(arkTxid string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	offchainTx, ok := m.offchainTxs[virtualTxid]
+	offchainTx, ok := m.offchainTxs[arkTxid]
 	if !ok {
 		return
 	}
@@ -49,13 +49,13 @@ func (m *offChainTxStore) Remove(virtualTxid string) {
 			delete(m.inputs, in.PreviousOutPoint.String())
 		}
 	}
-	delete(m.offchainTxs, virtualTxid)
+	delete(m.offchainTxs, arkTxid)
 }
 
-func (m *offChainTxStore) Get(virtualTxid string) (domain.OffchainTx, bool) {
+func (m *offChainTxStore) Get(arkTxid string) (domain.OffchainTx, bool) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	offchainTx, ok := m.offchainTxs[virtualTxid]
+	offchainTx, ok := m.offchainTxs[arkTxid]
 	return offchainTx, ok
 }
 

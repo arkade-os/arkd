@@ -25,10 +25,10 @@ func NewForfeitTxsStore(txBuilder ports.TxBuilder) ports.ForfeitTxsStore {
 	}
 }
 
-func (m *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain.TxRequest) error {
+func (m *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, intents []domain.Intent) error {
 	vtxosToSign := make([]domain.Vtxo, 0)
-	for _, request := range requests {
-		for _, vtxo := range request.Inputs {
+	for _, intent := range intents {
+		for _, vtxo := range intent.Inputs {
 			// If the vtxo is swept or is a note, it doens't require to be forfeited so we skip it
 			if !vtxo.RequiresForfeit() {
 				continue
@@ -67,7 +67,10 @@ func (m *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 		}
 
 		if len(vtxosToSign) > len(connectorsOutpoints) {
-			return fmt.Errorf("more vtxos to sign than outpoints, %d > %d", len(vtxosToSign), len(connectorsOutpoints))
+			return fmt.Errorf(
+				"more vtxos to sign than outpoints, %d > %d",
+				len(vtxosToSign), len(connectorsOutpoints),
+			)
 		}
 
 		for i, connectorOutpoint := range connectorsOutpoints {
@@ -131,7 +134,9 @@ func (m *forfeitTxsStore) Pop() ([]string, error) {
 			return nil, fmt.Errorf("missing forfeit tx for vtxo %s", vtxo)
 		}
 		if _, used := usedConnectors[forfeit.Connector]; used {
-			return nil, fmt.Errorf("connector %s for vtxo %s is used more than once", forfeit.Connector, vtxo)
+			return nil, fmt.Errorf(
+				"connector %s for vtxo %s is used more than once", forfeit.Connector, vtxo,
+			)
 		}
 		usedConnectors[forfeit.Connector] = struct{}{}
 		txs = append(txs, forfeit.Tx)

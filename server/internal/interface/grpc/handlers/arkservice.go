@@ -7,11 +7,8 @@ import (
 	"fmt"
 
 	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
-	"github.com/ark-network/ark/common/bip322"
-	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/application"
 	"github.com/ark-network/ark/server/internal/core/domain"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -46,7 +43,7 @@ func NewHandler(version string, service application.Service) service {
 }
 
 func (h *handler) GetInfo(
-	ctx context.Context, req *arkv1.GetInfoRequest,
+	ctx context.Context, _ *arkv1.GetInfoRequest,
 ) (*arkv1.GetInfoResponse, error) {
 	info, err := h.svc.GetInfo(ctx)
 	if err != nil {
@@ -54,7 +51,7 @@ func (h *handler) GetInfo(
 	}
 
 	return &arkv1.GetInfoResponse{
-		SignerPubkey:        info.PubKey,
+		SignerPubkey:        info.SignerPubKey,
 		VtxoTreeExpiry:      info.VtxoTreeExpiry,
 		UnilateralExitDelay: info.UnilateralExitDelay,
 		BoardingExitDelay:   info.BoardingExitDelay,
@@ -79,31 +76,14 @@ func (h *handler) GetInfo(
 func (h *handler) RegisterIntent(
 	ctx context.Context, req *arkv1.RegisterIntentRequest,
 ) (*arkv1.RegisterIntentResponse, error) {
-	bip322Signature := req.GetIntent()
-
-	if bip322Signature == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing intent")
-	}
-
-	signature, err := bip322.DecodeSignature(bip322Signature.GetSignature())
+	proof, message, err := parseIntent(req.GetIntent())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid BIP0322 signature")
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	intentMessage := bip322Signature.GetMessage()
-
-	if len(intentMessage) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing message")
-	}
-
-	var message tree.IntentMessage
-	if err := message.Decode(intentMessage); err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid BIP0322 message")
-	}
-
-	intentId, err := h.svc.RegisterIntent(ctx, *signature, message)
+	intentId, err := h.svc.RegisterIntent(ctx, *proof, *message)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.RegisterIntentResponse{IntentId: intentId}, nil
@@ -112,29 +92,13 @@ func (h *handler) RegisterIntent(
 func (h *handler) DeleteIntent(
 	ctx context.Context, req *arkv1.DeleteIntentRequest,
 ) (*arkv1.DeleteIntentResponse, error) {
-	proof := req.GetProof()
-
-	if proof == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing request id or bip322 signature")
-	}
-
-	signature, err := bip322.DecodeSignature(proof.GetSignature())
+	proof, message, err := parseDeleteIntent(req.GetProof())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid BIP0322 signature")
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	intentMessage := proof.GetMessage()
-	if len(intentMessage) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing BIP0322 message")
-	}
-
-	var message tree.DeleteIntentMessage
-	if err := message.Decode(intentMessage); err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid BIP0322 message")
-	}
-
-	if err := h.svc.DeleteTxRequestsByProof(ctx, *signature, message); err != nil {
-		return nil, err
+	if err := h.svc.DeleteIntentsByProof(ctx, *proof, *message); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.DeleteIntentResponse{}, nil
@@ -143,13 +107,13 @@ func (h *handler) DeleteIntent(
 func (h *handler) ConfirmRegistration(
 	ctx context.Context, req *arkv1.ConfirmRegistrationRequest,
 ) (*arkv1.ConfirmRegistrationResponse, error) {
-	intentId := req.GetIntentId()
-	if len(intentId) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing intent id")
+	intentId, err := parseIntentId(req.GetIntentId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if err := h.svc.ConfirmRegistration(ctx, intentId); err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.ConfirmRegistrationResponse{}, nil
@@ -158,40 +122,25 @@ func (h *handler) ConfirmRegistration(
 func (h *handler) SubmitTreeNonces(
 	ctx context.Context, req *arkv1.SubmitTreeNoncesRequest,
 ) (*arkv1.SubmitTreeNoncesResponse, error) {
-	pubkey := req.GetPubkey()
-	encodedNonces := req.GetTreeNonces()
-	batchId := req.GetBatchId()
-
-	if len(pubkey) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing cosigner public key")
-	}
-
-	if len(encodedNonces) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing tree nonces")
-	}
-
-	if len(batchId) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing batch id")
-	}
-
-	pubkeyBytes, err := hex.DecodeString(pubkey)
+	batchId, err := parseBatchId(req.GetBatchId())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid cosigner public key format, expected hex")
-	}
-	if len(pubkeyBytes) != 33 {
-		return nil, status.Error(codes.InvalidArgument, "invalid cosigner public key length, expected 33 bytes")
-	}
-	if _, err := secp256k1.ParsePubKey(pubkeyBytes); err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("invalid cosigner public key %s", err))
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	nonces := make(tree.TreeNonces)
-	if err := json.Unmarshal([]byte(encodedNonces), &nonces); err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("invalid tree nonces %s", err))
+	nonces, err := parseNonces(req.GetTreeNonces())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	pubkey, err := parseECPubkey(req.GetPubkey())
+	if err != nil {
+		return nil, status.Error(
+			codes.InvalidArgument, fmt.Sprintf("invalid cosigner pubkey %s", err),
+		)
 	}
 
 	if err := h.svc.RegisterCosignerNonces(ctx, batchId, pubkey, nonces); err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.SubmitTreeNoncesResponse{}, nil
@@ -200,40 +149,23 @@ func (h *handler) SubmitTreeNonces(
 func (h *handler) SubmitTreeSignatures(
 	ctx context.Context, req *arkv1.SubmitTreeSignaturesRequest,
 ) (*arkv1.SubmitTreeSignaturesResponse, error) {
-	batchId := req.GetBatchId()
-	pubkey := req.GetPubkey()
-	encodedSignatures := req.GetTreeSignatures()
-
-	if len(pubkey) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing cosigner public key")
-	}
-
-	if len(encodedSignatures) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing tree signatures")
-	}
-
-	if len(batchId) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing round id")
-	}
-
-	pubkeyBytes, err := hex.DecodeString(pubkey)
+	batchId, err := parseBatchId(req.GetBatchId())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid cosigner public key format, expected hex")
-	}
-	if len(pubkeyBytes) != 33 {
-		return nil, status.Error(codes.InvalidArgument, "invalid cosigner public key length, expected 33 bytes")
-	}
-	if _, err := secp256k1.ParsePubKey(pubkeyBytes); err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid cosigner public key length, expected 33 bytes")
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	signatures := make(tree.TreePartialSigs)
-	if err := json.Unmarshal([]byte(encodedSignatures), &signatures); err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("invalid tree signatures %s", err))
+	pubkey, err := parseECPubkey(req.GetPubkey())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	signatures, err := parseSignatures(req.GetTreeSignatures())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if err := h.svc.RegisterCosignerSignatures(ctx, batchId, pubkey, signatures); err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.SubmitTreeSignaturesResponse{}, nil
@@ -244,16 +176,21 @@ func (h *handler) SubmitSignedForfeitTxs(
 ) (*arkv1.SubmitSignedForfeitTxsResponse, error) {
 	forfeitTxs := req.GetSignedForfeitTxs()
 	commitmentTx := req.GetSignedCommitmentTx()
+	if len(forfeitTxs) <= 0 && len(commitmentTx) <= 0 {
+		return nil, status.Error(
+			codes.InvalidArgument, "either forfeit txs or commitment tx must be set",
+		)
+	}
 
 	if len(forfeitTxs) > 0 {
-		if err := h.svc.SignVtxos(ctx, forfeitTxs); err != nil {
-			return nil, err
+		if err := h.svc.SubmitForfeitTxs(ctx, forfeitTxs); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
 
 	if len(commitmentTx) > 0 {
-		if err := h.svc.SignRoundTx(ctx, commitmentTx); err != nil {
-			return nil, err
+		if err := h.svc.SignCommitmentTx(ctx, commitmentTx); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
 
@@ -285,7 +222,7 @@ func (h *handler) GetEventStream(
 func (h *handler) SubmitTx(
 	ctx context.Context, req *arkv1.SubmitTxRequest,
 ) (*arkv1.SubmitTxResponse, error) {
-	if req.GetSignedArkTx() == "" {
+	if len(req.GetSignedArkTx()) <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing signed ark tx")
 	}
 
@@ -293,16 +230,16 @@ func (h *handler) SubmitTx(
 		return nil, status.Error(codes.InvalidArgument, "missing checkpoint txs")
 	}
 
-	signedCheckpoints, signedVirtualTx, virtualTxid, err := h.svc.SubmitOffchainTx(
+	signedCheckpoints, finalArkTx, arkTxid, err := h.svc.SubmitOffchainTx(
 		ctx, req.GetCheckpointTxs(), req.GetSignedArkTx(),
 	)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.SubmitTxResponse{
-		FinalArkTx:          signedVirtualTx,
-		ArkTxid:             virtualTxid,
+		FinalArkTx:          finalArkTx,
+		ArkTxid:             arkTxid,
 		SignedCheckpointTxs: signedCheckpoints,
 	}, nil
 }
@@ -318,8 +255,10 @@ func (h *handler) FinalizeTx(
 		return nil, status.Error(codes.InvalidArgument, "missing final checkpoint txs")
 	}
 
-	if err := h.svc.FinalizeOffchainTx(ctx, req.GetArkTxid(), req.GetFinalCheckpointTxs()); err != nil {
-		return nil, err
+	if err := h.svc.FinalizeOffchainTx(
+		ctx, req.GetArkTxid(), req.GetFinalCheckpointTxs(),
+	); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.FinalizeTxResponse{}, nil
@@ -340,8 +279,6 @@ func (h *handler) GetTransactionsStream(
 
 	for {
 		select {
-		// case <-h.stopTransactionEventsCh:
-		// 	return nil
 		case <-stream.Context().Done():
 			return nil
 		case ev := <-listener.ch:
@@ -366,15 +303,12 @@ func (h *handler) listenToEvents() {
 					Event: &arkv1.GetEventStreamResponse_BatchFinalization{
 						BatchFinalization: &arkv1.BatchFinalizationEvent{
 							Id:           e.Id,
-							CommitmentTx: e.RoundTx,
+							CommitmentTx: e.CommitmentTx,
 						},
 					},
 				}
 
-				evs = append(evs, eventWithTopics{
-					topics: nil,
-					event:  ev,
-				})
+				evs = append(evs, eventWithTopics{event: ev})
 
 			case application.RoundFinalized:
 				ev := &arkv1.GetEventStreamResponse{
@@ -386,10 +320,7 @@ func (h *handler) listenToEvents() {
 					},
 				}
 
-				evs = append(evs, eventWithTopics{
-					topics: nil,
-					event:  ev,
-				})
+				evs = append(evs, eventWithTopics{event: ev})
 			case domain.RoundFailed:
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFailed{
@@ -400,10 +331,7 @@ func (h *handler) listenToEvents() {
 					},
 				}
 
-				evs = append(evs, eventWithTopics{
-					topics: nil,
-					event:  ev,
-				})
+				evs = append(evs, eventWithTopics{event: ev})
 			case application.BatchStarted:
 				hashes := make([]string, 0, len(e.IntentIdsHashes))
 				for _, hash := range e.IntentIdsHashes {
@@ -420,26 +348,20 @@ func (h *handler) listenToEvents() {
 					},
 				}
 
-				evs = append(evs, eventWithTopics{
-					topics: nil,
-					event:  ev,
-				})
+				evs = append(evs, eventWithTopics{event: ev})
 			case application.RoundSigningStarted:
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeSigningStarted{
 						TreeSigningStarted: &arkv1.TreeSigningStartedEvent{
 							Id:                   e.Id,
-							UnsignedCommitmentTx: e.UnsignedRoundTx,
+							UnsignedCommitmentTx: e.UnsignedCommitmentTx,
 							CosignersPubkeys:     e.CosignersPubkeys,
 						},
 					},
 				}
 
-				evs = append(evs, eventWithTopics{
-					topics: nil,
-					event:  ev,
-				})
-			case application.RoundSigningNoncesGenerated:
+				evs = append(evs, eventWithTopics{event: ev})
+			case application.TreeNoncesAggregated:
 				serialized, err := json.Marshal(e.Nonces)
 				if err != nil {
 					logrus.WithError(err).Error("failed to serialize nonces")
@@ -455,11 +377,8 @@ func (h *handler) listenToEvents() {
 					},
 				}
 
-				evs = append(evs, eventWithTopics{
-					topics: nil,
-					event:  ev,
-				})
-			case application.BatchTree:
+				evs = append(evs, eventWithTopics{event: ev})
+			case application.TreeTxMessage:
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeTx{
 						TreeTx: &arkv1.TreeTxEvent{
@@ -472,11 +391,8 @@ func (h *handler) listenToEvents() {
 					},
 				}
 
-				evs = append(evs, eventWithTopics{
-					topics: e.Topic,
-					event:  ev,
-				})
-			case application.BatchTreeSignature:
+				evs = append(evs, eventWithTopics{topics: e.Topic, event: ev})
+			case application.TreeSignatuteMessage:
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeSignature{
 						TreeSignature: &arkv1.TreeSignatureEvent{
@@ -489,26 +405,22 @@ func (h *handler) listenToEvents() {
 					},
 				}
 
-				evs = append(evs, eventWithTopics{
-					topics: e.Topic,
-					event:  ev,
-				})
+				evs = append(evs, eventWithTopics{topics: e.Topic, event: ev})
 			}
 		}
 
 		// forward all events in the same routine in order to preserve the ordering
 		if len(evs) > 0 {
-			logrus.Debugf("forwarding event to %d listeners", len(h.eventsListenerHandler.listeners))
 			for _, l := range h.eventsListenerHandler.listeners {
 				go func(l *listener[*arkv1.GetEventStreamResponse]) {
-					sentEventsCount := 0
+					count := 0
 					for _, ev := range evs {
 						if l.includesAny(ev.topics) {
 							l.ch <- ev.event
-							sentEventsCount++
+							count++
 						}
 					}
-					logrus.Debugf("forwarded %d events to listener %s", sentEventsCount, l.id)
+					logrus.Debugf("forwarded event to %d listeners", count)
 				}(l)
 			}
 		}
@@ -517,7 +429,7 @@ func (h *handler) listenToEvents() {
 }
 
 func (h *handler) listenToTxEvents() {
-	eventsCh := h.svc.GetTransactionEventsChannel(context.Background())
+	eventsCh := h.svc.GetTxEventsChannel(context.Background())
 	for event := range eventsCh {
 		var msg *arkv1.GetTransactionsStreamResponse
 
@@ -537,12 +449,14 @@ func (h *handler) listenToTxEvents() {
 		}
 
 		if msg != nil {
-			logrus.Debugf("forwarding event to %d listeners", len(h.transactionsListenerHandler.listeners))
 			for _, l := range h.transactionsListenerHandler.listeners {
 				go func(l *listener[*arkv1.GetTransactionsStreamResponse]) {
 					l.ch <- msg
 				}(l)
 			}
+			logrus.Debugf(
+				"forwarded tx event to %d listeners", len(h.transactionsListenerHandler.listeners),
+			)
 		}
 	}
 }

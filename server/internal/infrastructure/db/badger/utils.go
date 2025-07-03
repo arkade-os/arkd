@@ -112,8 +112,8 @@ func deserializeEvent(buf []byte) (domain.Event, error) {
 		if err := json.Unmarshal(buf, &event); err == nil {
 			return event, nil
 		}
-	case domain.EventTypeTxRequestsRegistered:
-		var event = domain.TxRequestsRegistered{}
+	case domain.EventTypeIntentsRegistered:
+		var event = domain.IntentsRegistered{}
 		if err := json.Unmarshal(buf, &event); err == nil {
 			return event, nil
 		}

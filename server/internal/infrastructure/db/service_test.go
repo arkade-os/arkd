@@ -242,10 +242,10 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 							Id:   "1ea610ff-bf3e-4068-9bfd-b6c3f553467e",
 							Type: domain.EventTypeRoundFinalizationStarted,
 						},
-						VtxoTree:   vtxoTree,
-						Connectors: connectorsTree,
-						Txid:       "txid",
-						RoundTx:    emptyTx,
+						VtxoTree:       vtxoTree,
+						Connectors:     connectorsTree,
+						CommitmentTxid: "txid",
+						CommitmentTx:   emptyTx,
 					},
 				},
 				handlers: []func(events []domain.Event){
@@ -272,10 +272,10 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 							Id:   "7578231e-428d-45ae-aaa4-e62c77ad5cec",
 							Type: domain.EventTypeRoundFinalizationStarted,
 						},
-						VtxoTree:   vtxoTree,
-						Connectors: connectorsTree,
-						Txid:       "txid",
-						RoundTx:    emptyTx,
+						VtxoTree:       vtxoTree,
+						Connectors:     connectorsTree,
+						CommitmentTxid: "txid",
+						CommitmentTx:   emptyTx,
 					},
 					domain.RoundFinalized{
 						RoundEvent: domain.RoundEvent{
@@ -295,7 +295,7 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 						require.False(t, round.IsStarted())
 						require.False(t, round.IsFailed())
 						require.True(t, round.IsEnded())
-						require.NotEmpty(t, round.Txid)
+						require.NotEmpty(t, round.CommitmentTxid)
 					},
 				},
 			},
@@ -313,7 +313,7 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 							"0": randomString(32),
 							"1": randomString(32),
 						},
-						FinalVirtualTx: "fully signed ark tx",
+						FinalArkTx: "fully signed ark tx",
 						SignedCheckpointTxs: map[string]string{
 							"0": "list of server-signed txs",
 							"1": "indexed by txid",
@@ -342,7 +342,7 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 							"0": randomString(32),
 							"1": randomString(32),
 						},
-						FinalVirtualTx: "fully signed ark tx",
+						FinalArkTx: "fully signed ark tx",
 						SignedCheckpointTxs: map[string]string{
 							"0": "list of server-signed txs",
 							"1": "indexed by txid",
@@ -420,14 +420,14 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, roundById)
 		roundsMatch(t, *round, *roundById)
 
-		roundTxid := randomString(32)
+		commitmentTxid := randomString(32)
 		newEvents := []domain.Event{
-			domain.TxRequestsRegistered{
+			domain.IntentsRegistered{
 				RoundEvent: domain.RoundEvent{
 					Id:   roundId,
-					Type: domain.EventTypeTxRequestsRegistered,
+					Type: domain.EventTypeIntentsRegistered,
 				},
-				TxRequests: []domain.TxRequest{
+				Intents: []domain.Intent{
 					{
 						Id:      uuid.New().String(),
 						Proof:   "proof",
@@ -438,9 +438,9 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 									Txid: randomString(32),
 									VOut: 0,
 								},
-								ExpireAt: 7980322,
-								PubKey:   randomString(32),
-								Amount:   300,
+								ExpiresAt: 7980322,
+								PubKey:    randomString(32),
+								Amount:    300,
 							},
 						},
 						Receivers: []domain.Receiver{{
@@ -459,9 +459,9 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 									Txid: randomString(32),
 									VOut: 0,
 								},
-								ExpireAt: 7980322,
-								PubKey:   randomString(32),
-								Amount:   600,
+								ExpiresAt: 7980322,
+								PubKey:    randomString(32),
+								Amount:    600,
 							},
 						},
 						Receivers: []domain.Receiver{
@@ -482,16 +482,16 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 					Id:   roundId,
 					Type: domain.EventTypeRoundFinalizationStarted,
 				},
-				VtxoTree:   vtxoTree,
-				Connectors: connectorsTree,
-				Txid:       roundTxid,
-				RoundTx:    emptyTx,
+				VtxoTree:       vtxoTree,
+				Connectors:     connectorsTree,
+				CommitmentTxid: commitmentTxid,
+				CommitmentTx:   emptyTx,
 			},
 		}
 		events = append(events, newEvents...)
 		updatedRound := domain.NewRoundFromEvents(events)
-		for _, request := range updatedRound.TxRequests {
-			err = svc.Vtxos().AddVtxos(ctx, request.Inputs)
+		for _, intent := range updatedRound.Intents {
+			err = svc.Vtxos().AddVtxos(ctx, intent.Inputs)
 			require.NoError(t, err)
 		}
 
@@ -525,12 +525,12 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, roundById)
 		roundsMatch(t, *finalizedRound, *roundById)
 
-		resultTree, err := svc.Rounds().GetVtxoTreeWithTxid(ctx, roundTxid)
+		resultTree, err := svc.Rounds().GetRoundVtxoTree(ctx, commitmentTxid)
 		require.NoError(t, err)
 		require.NotNil(t, resultTree)
 		require.Equal(t, finalizedRound.VtxoTree, resultTree)
 
-		roundByTxid, err := svc.Rounds().GetRoundWithTxid(ctx, roundTxid)
+		roundByTxid, err := svc.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
 		require.NoError(t, err)
 		require.NotNil(t, roundByTxid)
 		roundsMatch(t, *finalizedRound, *roundByTxid)
@@ -618,12 +618,12 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Error(t, err)
 		require.Empty(t, vtxos)
 
-		spendableVtxos, spentVtxos, err := svc.Vtxos().GetAllNonRedeemedVtxos(ctx, pubkey)
+		spendableVtxos, spentVtxos, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
 		require.Empty(t, spendableVtxos)
 		require.Empty(t, spentVtxos)
 
-		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, "")
+		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, "")
 		require.NoError(t, err)
 
 		numberOfVtxos := len(spendableVtxos) + len(spentVtxos)
@@ -631,7 +631,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		err = svc.Vtxos().AddVtxos(ctx, newVtxos)
 		require.NoError(t, err)
 
-		vtxos, err = svc.Vtxos().GetAll(ctx)
+		vtxos, err = svc.Vtxos().GetAllVtxos(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 5, len(vtxos))
 
@@ -639,7 +639,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		checkVtxos(t, userVtxos, vtxos)
 
-		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, pubkey)
+		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
 
 		sortedVtxos := sortVtxos(userVtxos)
@@ -651,7 +651,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		checkVtxos(t, sortedSpendableVtxos, sortedVtxos)
 		require.Empty(t, spentVtxos)
 
-		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, "")
+		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, "")
 		require.NoError(t, err)
 		require.Len(t, append(spendableVtxos, spentVtxos...), numberOfVtxos+len(newVtxos))
 
@@ -667,7 +667,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, arkTxid, v.ArkTxid)
 		}
 
-		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonRedeemedVtxos(ctx, pubkey)
+		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
 		checkVtxos(t, vtxos[1:], spendableVtxos)
 		require.Len(t, spentVtxos, len(userVtxos))
@@ -750,7 +750,7 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 					Id:   arkTxid,
 					Type: domain.EventTypeOffchainTxRequested,
 				},
-				VirtualTx:             "",
+				ArkTx:                 "",
 				UnsignedCheckpointTxs: nil,
 				StartingTimestamp:     now.Unix(),
 			},
@@ -764,7 +764,7 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 					checkpointTxid1: rootCommitmentTxid,
 					checkpointTxid2: commitmentTxid,
 				},
-				FinalVirtualTx: "",
+				FinalArkTx: "",
 				SignedCheckpointTxs: map[string]string{
 					checkpointTxid1: signedCheckpointPtx1,
 					checkpointTxid2: signedCheckpointPtx2,
@@ -819,12 +819,12 @@ func roundsMatch(t *testing.T, expected, got domain.Round) {
 	require.Equal(t, expected.StartingTimestamp, got.StartingTimestamp)
 	require.Equal(t, expected.EndingTimestamp, got.EndingTimestamp)
 	require.Equal(t, expected.Stage, got.Stage)
-	require.Equal(t, expected.Txid, got.Txid)
+	require.Equal(t, expected.CommitmentTxid, got.CommitmentTxid)
 	require.Equal(t, expected.CommitmentTx, got.CommitmentTx)
 	require.Exactly(t, expected.VtxoTree, got.VtxoTree)
 
-	for k, v := range expected.TxRequests {
-		gotValue, ok := got.TxRequests[k]
+	for k, v := range expected.Intents {
+		gotValue, ok := got.Intents[k]
 		require.True(t, ok)
 
 		expectedVtxos := sortVtxos(v.Inputs)
@@ -883,10 +883,10 @@ func offchainTxMatch(expected, got domain.OffchainTx) assert.Comparison {
 		if expected.EndingTimestamp != got.EndingTimestamp {
 			return false
 		}
-		if expected.VirtualTxid != got.VirtualTxid {
+		if expected.ArkTxid != got.ArkTxid {
 			return false
 		}
-		if expected.VirtualTx != got.VirtualTx {
+		if expected.ArkTx != got.ArkTx {
 			return false
 		}
 		for k, v := range expected.CheckpointTxs {
@@ -969,10 +969,10 @@ func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
 		require.Exactly(t, expected.Outpoint, v.Outpoint)
 		require.Exactly(t, expected.Amount, v.Amount)
 		require.Exactly(t, expected.CreatedAt, v.CreatedAt)
-		require.Exactly(t, expected.ExpireAt, v.ExpireAt)
+		require.Exactly(t, expected.ExpiresAt, v.ExpiresAt)
 		require.Exactly(t, expected.PubKey, v.PubKey)
 		require.Exactly(t, expected.Preconfirmed, v.Preconfirmed)
-		require.Exactly(t, expected.Redeemed, v.Redeemed)
+		require.Exactly(t, expected.Unrolled, v.Unrolled)
 		require.Exactly(t, expected.RootCommitmentTxid, v.RootCommitmentTxid)
 		require.Exactly(t, expected.Spent, v.Spent)
 		require.Exactly(t, expected.SpentBy, v.SpentBy)

@@ -10,30 +10,30 @@ import (
 	"github.com/ark-network/ark/server/internal/core/ports"
 )
 
-type txRequestStore struct {
+type intentStore struct {
 	lock          sync.RWMutex
-	requests      map[string]*ports.TimedTxRequest
+	intents       map[string]*ports.TimedIntent
 	vtxos         map[string]struct{}
 	vtxosToRemove []string
 }
 
-func NewTxRequestsStore() ports.TxRequestsStore {
-	requestsById := make(map[string]*ports.TimedTxRequest)
+func NewIntentStore() ports.IntentStore {
+	intentsById := make(map[string]*ports.TimedIntent)
 	vtxos := make(map[string]struct{})
 	vtxosToRemove := make([]string, 0)
-	return &txRequestStore{
-		requests:      requestsById,
+	return &intentStore{
+		intents:       intentsById,
 		vtxos:         vtxos,
 		vtxosToRemove: vtxosToRemove,
 	}
 }
 
-func (m *txRequestStore) Len() int64 {
+func (m *intentStore) Len() int64 {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
 	count := int64(0)
-	for _, p := range m.requests {
+	for _, p := range m.intents {
 		if len(p.Receivers) > 0 {
 			count++
 		}
@@ -41,42 +41,50 @@ func (m *txRequestStore) Len() int64 {
 	return count
 }
 
-func (m *txRequestStore) Push(request domain.TxRequest, boardingInputs []ports.BoardingInput, cosignersPubkeys []string) error {
+func (m *intentStore) Push(
+	intent domain.Intent, boardingInputs []ports.BoardingInput, cosignersPubkeys []string,
+) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	if _, ok := m.requests[request.Id]; ok {
-		return fmt.Errorf("duplicated tx request %s", request.Id)
+	if _, ok := m.intents[intent.Id]; ok {
+		return fmt.Errorf("duplicated intent %s", intent.Id)
 	}
 
-	for _, input := range request.Inputs {
-		for _, pay := range m.requests {
+	for _, input := range intent.Inputs {
+		for _, pay := range m.intents {
 			for _, pInput := range pay.Inputs {
 				if input.Txid == pInput.Txid && input.VOut == pInput.VOut {
-					return fmt.Errorf("duplicated input, %s already registered by another request", input.Outpoint.String())
+					return fmt.Errorf(
+						"duplicated input, %s already registered by another intent",
+						input.Outpoint.String(),
+					)
 				}
 			}
 		}
 	}
 
 	for _, input := range boardingInputs {
-		for _, request := range m.requests {
-			for _, pBoardingInput := range request.BoardingInputs {
+		for _, intent := range m.intents {
+			for _, pBoardingInput := range intent.BoardingInputs {
 				if input.Txid == pBoardingInput.Txid && input.VOut == pBoardingInput.VOut {
-					return fmt.Errorf("duplicated input, %s already registered by another request", input.String())
+					return fmt.Errorf(
+						"duplicated input, %s already registered by another intent",
+						input.String(),
+					)
 				}
 			}
 		}
 	}
 
 	now := time.Now()
-	m.requests[request.Id] = &ports.TimedTxRequest{
-		TxRequest:           request,
+	m.intents[intent.Id] = &ports.TimedIntent{
+		Intent:              intent,
 		BoardingInputs:      boardingInputs,
 		Timestamp:           now,
 		CosignersPublicKeys: cosignersPubkeys,
 	}
-	for _, vtxo := range request.Inputs {
+	for _, vtxo := range intent.Inputs {
 		if vtxo.IsNote() {
 			continue
 		}
@@ -85,52 +93,52 @@ func (m *txRequestStore) Push(request domain.TxRequest, boardingInputs []ports.B
 	return nil
 }
 
-func (m *txRequestStore) Pop(num int64) []ports.TimedTxRequest {
+func (m *intentStore) Pop(num int64) []ports.TimedIntent {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	requestsByTime := make([]ports.TimedTxRequest, 0, len(m.requests))
-	for _, p := range m.requests {
-		// Skip tx requests without registered receivers.
+	intentsByTime := make([]ports.TimedIntent, 0, len(m.intents))
+	for _, p := range m.intents {
+		// Skip intents without registered receivers.
 		if len(p.Receivers) <= 0 {
 			continue
 		}
 
-		requestsByTime = append(requestsByTime, *p)
+		intentsByTime = append(intentsByTime, *p)
 	}
-	sort.SliceStable(requestsByTime, func(i, j int) bool {
-		return requestsByTime[i].Timestamp.Before(requestsByTime[j].Timestamp)
+	sort.SliceStable(intentsByTime, func(i, j int) bool {
+		return intentsByTime[i].Timestamp.Before(intentsByTime[j].Timestamp)
 	})
 
-	if num < 0 || num > int64(len(requestsByTime)) {
-		num = int64(len(requestsByTime))
+	if num < 0 || num > int64(len(intentsByTime)) {
+		num = int64(len(intentsByTime))
 	}
 
-	result := make([]ports.TimedTxRequest, 0, num)
+	result := make([]ports.TimedIntent, 0, num)
 
-	for _, p := range requestsByTime[:num] {
+	for _, p := range intentsByTime[:num] {
 		result = append(result, p)
-		for _, vtxo := range m.requests[p.Id].Inputs {
+		for _, vtxo := range m.intents[p.Id].Inputs {
 			m.vtxosToRemove = append(m.vtxosToRemove, vtxo.Outpoint.String())
 		}
-		delete(m.requests, p.Id)
+		delete(m.intents, p.Id)
 	}
 
 	return result
 }
 
-func (m *txRequestStore) Update(request domain.TxRequest, cosignersPubkeys []string) error {
+func (m *intentStore) Update(intent domain.Intent, cosignersPubkeys []string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	r, ok := m.requests[request.Id]
+	r, ok := m.intents[intent.Id]
 	if !ok {
-		return fmt.Errorf("tx request %s not found", request.Id)
+		return fmt.Errorf("intent %s not found", intent.Id)
 	}
 
 	// sum inputs = vtxos + boarding utxos + notes + recovered vtxos
 	sumOfInputs := uint64(0)
-	for _, input := range request.Inputs {
+	for _, input := range intent.Inputs {
 		sumOfInputs += input.Amount
 	}
 
@@ -140,15 +148,17 @@ func (m *txRequestStore) Update(request domain.TxRequest, cosignersPubkeys []str
 
 	// sum outputs = receivers VTXOs
 	sumOfOutputs := uint64(0)
-	for _, receiver := range request.Receivers {
+	for _, receiver := range intent.Receivers {
 		sumOfOutputs += receiver.Amount
 	}
 
 	if sumOfInputs != sumOfOutputs {
-		return fmt.Errorf("sum of inputs %d does not match sum of outputs %d", sumOfInputs, sumOfOutputs)
+		return fmt.Errorf(
+			"sum of inputs %d does not match sum of outputs %d", sumOfInputs, sumOfOutputs,
+		)
 	}
 
-	r.TxRequest = request
+	r.Intent = intent
 
 	if len(cosignersPubkeys) > 0 {
 		r.CosignersPublicKeys = cosignersPubkeys
@@ -156,33 +166,33 @@ func (m *txRequestStore) Update(request domain.TxRequest, cosignersPubkeys []str
 	return nil
 }
 
-func (m *txRequestStore) Delete(ids []string) error {
+func (m *intentStore) Delete(ids []string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
 	for _, id := range ids {
-		req, ok := m.requests[id]
+		intent, ok := m.intents[id]
 		if !ok {
 			continue
 		}
-		for _, vtxo := range req.Inputs {
+		for _, vtxo := range intent.Inputs {
 			delete(m.vtxos, vtxo.Outpoint.String())
 		}
-		delete(m.requests, id)
+		delete(m.intents, id)
 	}
 	return nil
 }
 
-func (m *txRequestStore) DeleteAll() error {
+func (m *intentStore) DeleteAll() error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	m.requests = make(map[string]*ports.TimedTxRequest)
+	m.intents = make(map[string]*ports.TimedIntent)
 	m.vtxos = make(map[string]struct{})
 	return nil
 }
 
-func (m *txRequestStore) DeleteVtxos() {
+func (m *intentStore) DeleteVtxos() {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	for _, vtxo := range m.vtxosToRemove {
@@ -191,43 +201,43 @@ func (m *txRequestStore) DeleteVtxos() {
 	m.vtxosToRemove = make([]string, 0)
 }
 
-func (m *txRequestStore) ViewAll(ids []string) ([]ports.TimedTxRequest, error) {
+func (m *intentStore) ViewAll(ids []string) ([]ports.TimedIntent, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	requests := make([]ports.TimedTxRequest, 0, len(m.requests))
-	for _, request := range m.requests {
+	intents := make([]ports.TimedIntent, 0, len(m.intents))
+	for _, intent := range m.intents {
 		if len(ids) > 0 {
 			for _, id := range ids {
-				if request.Id == id {
-					requests = append(requests, *request)
+				if intent.Id == id {
+					intents = append(intents, *intent)
 					break
 				}
 			}
 			continue
 		}
-		requests = append(requests, *request)
+		intents = append(intents, *intent)
 	}
-	return requests, nil
+	return intents, nil
 }
 
-func (m *txRequestStore) View(id string) (*domain.TxRequest, bool) {
+func (m *intentStore) View(id string) (*domain.Intent, bool) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	request, ok := m.requests[id]
+	intent, ok := m.intents[id]
 	if !ok {
 		return nil, false
 	}
 
-	return &domain.TxRequest{
-		Id:        request.Id,
-		Inputs:    request.Inputs,
-		Receivers: request.Receivers,
+	return &domain.Intent{
+		Id:        intent.Id,
+		Inputs:    intent.Inputs,
+		Receivers: intent.Receivers,
 	}, true
 }
 
-func (m *txRequestStore) IncludesAny(outpoints []domain.Outpoint) (bool, string) {
+func (m *intentStore) IncludesAny(outpoints []domain.Outpoint) (bool, string) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 

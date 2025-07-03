@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/ark-network/ark/server/internal/core/domain"
-
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ark-network/ark/server/internal/core/domain"
 )
 
 type subscriber struct {
@@ -54,7 +53,9 @@ func (e *eventRepository) Close() {
 	e.publisher.Close()
 }
 
-func (e *eventRepository) RegisterEventsHandler(topic string, handler func(events []domain.Event)) {
+func (e *eventRepository) RegisterEventsHandler(
+	topic string, handler func(events []domain.Event),
+) {
 	e.subscriberLock.Lock()
 	defer e.subscriberLock.Unlock()
 
@@ -68,7 +69,9 @@ func (e *eventRepository) RegisterEventsHandler(topic string, handler func(event
 	})
 }
 
-func (e *eventRepository) Save(ctx context.Context, topic string, id string, events []domain.Event) error {
+func (e *eventRepository) Save(
+	ctx context.Context, topic string, id string, events []domain.Event,
+) error {
 	err := e.publish(topic, events)
 	if err != nil {
 		return err

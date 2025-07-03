@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 
 	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
 	"github.com/ark-network/ark/server/internal/core/ports"
@@ -28,27 +27,29 @@ func NewWalletInitializerHandler(
 	return &svc
 }
 
-func (a *walletInitHandler) GenSeed(ctx context.Context, _ *arkv1.GenSeedRequest) (*arkv1.GenSeedResponse, error) {
+func (a *walletInitHandler) GenSeed(
+	ctx context.Context, _ *arkv1.GenSeedRequest,
+) (*arkv1.GenSeedResponse, error) {
 	seed, err := a.walletService.GenSeed(ctx)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.GenSeedResponse{Seed: seed}, nil
 }
 
-func (a *walletInitHandler) Create(ctx context.Context, req *arkv1.CreateRequest) (*arkv1.CreateResponse, error) {
+func (a *walletInitHandler) Create(
+	ctx context.Context, req *arkv1.CreateRequest,
+) (*arkv1.CreateResponse, error) {
 	if len(req.GetSeed()) <= 0 {
-		return nil, fmt.Errorf("missing wallet seed")
+		return nil, status.Error(codes.InvalidArgument, "missing wallet seed")
 	}
 	if len(req.GetPassword()) <= 0 {
-		return nil, fmt.Errorf("missing wallet password")
+		return nil, status.Error(codes.InvalidArgument, "missing wallet password")
 	}
 
-	if err := a.walletService.Create(
-		ctx, req.GetSeed(), req.GetPassword(),
-	); err != nil {
-		return nil, err
+	if err := a.walletService.Create(ctx, req.GetSeed(), req.GetPassword()); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	go a.onInit(req.GetPassword())
@@ -56,18 +57,18 @@ func (a *walletInitHandler) Create(ctx context.Context, req *arkv1.CreateRequest
 	return &arkv1.CreateResponse{}, nil
 }
 
-func (a *walletInitHandler) Restore(ctx context.Context, req *arkv1.RestoreRequest) (*arkv1.RestoreResponse, error) {
+func (a *walletInitHandler) Restore(
+	ctx context.Context, req *arkv1.RestoreRequest,
+) (*arkv1.RestoreResponse, error) {
 	if len(req.GetSeed()) <= 0 {
-		return nil, fmt.Errorf("missing wallet seed")
+		return nil, status.Error(codes.InvalidArgument, "missing wallet seed")
 	}
 	if len(req.GetPassword()) <= 0 {
-		return nil, fmt.Errorf("missing wallet password")
+		return nil, status.Error(codes.InvalidArgument, "missing wallet password")
 	}
 
-	if err := a.walletService.Restore(
-		ctx, req.GetSeed(), req.GetPassword(),
-	); err != nil {
-		return nil, err
+	if err := a.walletService.Restore(ctx, req.GetSeed(), req.GetPassword()); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	go a.onInit(req.GetPassword())
@@ -75,12 +76,14 @@ func (a *walletInitHandler) Restore(ctx context.Context, req *arkv1.RestoreReque
 	return &arkv1.RestoreResponse{}, nil
 }
 
-func (a *walletInitHandler) Unlock(ctx context.Context, req *arkv1.UnlockRequest) (*arkv1.UnlockResponse, error) {
+func (a *walletInitHandler) Unlock(
+	ctx context.Context, req *arkv1.UnlockRequest,
+) (*arkv1.UnlockResponse, error) {
 	if len(req.GetPassword()) <= 0 {
-		return nil, fmt.Errorf("missing wallet password")
+		return nil, status.Error(codes.InvalidArgument, "missing wallet password")
 	}
 	if err := a.walletService.Unlock(ctx, req.GetPassword()); err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	go a.onUnlock(req.GetPassword())
@@ -88,16 +91,18 @@ func (a *walletInitHandler) Unlock(ctx context.Context, req *arkv1.UnlockRequest
 	return &arkv1.UnlockResponse{}, nil
 }
 
-func (a *walletInitHandler) GetStatus(ctx context.Context, _ *arkv1.GetStatusRequest) (*arkv1.GetStatusResponse, error) {
-	status, err := a.walletService.Status(ctx)
+func (a *walletInitHandler) GetStatus(
+	ctx context.Context, _ *arkv1.GetStatusRequest,
+) (*arkv1.GetStatusResponse, error) {
+	walletStatus, err := a.walletService.Status(ctx)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.GetStatusResponse{
-		Initialized: status.IsInitialized(),
-		Unlocked:    status.IsUnlocked(),
-		Synced:      status.IsSynced(),
+		Initialized: walletStatus.IsInitialized(),
+		Unlocked:    walletStatus.IsUnlocked(),
+		Synced:      walletStatus.IsSynced(),
 	}, nil
 }
 
@@ -125,31 +130,37 @@ func NewWalletHandler(walletService ports.WalletService) arkv1.WalletServiceServ
 	return &walletHandler{walletService}
 }
 
-func (a *walletHandler) Lock(ctx context.Context, req *arkv1.LockRequest) (*arkv1.LockResponse, error) {
+func (a *walletHandler) Lock(
+	ctx context.Context, _ *arkv1.LockRequest,
+) (*arkv1.LockResponse, error) {
 	if err := a.walletService.Lock(ctx); err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.LockResponse{}, nil
 }
 
-func (a *walletHandler) DeriveAddress(ctx context.Context, _ *arkv1.DeriveAddressRequest) (*arkv1.DeriveAddressResponse, error) {
+func (a *walletHandler) DeriveAddress(
+	ctx context.Context, _ *arkv1.DeriveAddressRequest,
+) (*arkv1.DeriveAddressResponse, error) {
 	addr, err := a.walletService.DeriveAddresses(ctx, 1)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.DeriveAddressResponse{Address: addr[0]}, nil
 }
 
-func (a *walletHandler) GetBalance(ctx context.Context, _ *arkv1.GetBalanceRequest) (*arkv1.GetBalanceResponse, error) {
+func (a *walletHandler) GetBalance(
+	ctx context.Context, _ *arkv1.GetBalanceRequest,
+) (*arkv1.GetBalanceResponse, error) {
 	availableMainBalance, lockedMainBalance, err := a.walletService.MainAccountBalance(ctx)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
-	availableConnectorsBalance, lockedConnectorsBalance, err := a.walletService.ConnectorsAccountBalance(ctx)
+	availableConnBalance, lockedConnBalance, err := a.walletService.ConnectorsAccountBalance(ctx)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.GetBalanceResponse{
@@ -158,13 +169,15 @@ func (a *walletHandler) GetBalance(ctx context.Context, _ *arkv1.GetBalanceReque
 			Available: convertSatsToBTCStr(availableMainBalance),
 		},
 		ConnectorsAccount: &arkv1.Balance{
-			Locked:    convertSatsToBTCStr(lockedConnectorsBalance),
-			Available: convertSatsToBTCStr(availableConnectorsBalance),
+			Locked:    convertSatsToBTCStr(lockedConnBalance),
+			Available: convertSatsToBTCStr(availableConnBalance),
 		},
 	}, nil
 }
 
-func (a *walletHandler) Withdraw(ctx context.Context, req *arkv1.WithdrawRequest) (*arkv1.WithdrawResponse, error) {
+func (a *walletHandler) Withdraw(
+	ctx context.Context, req *arkv1.WithdrawRequest,
+) (*arkv1.WithdrawResponse, error) {
 	if req.GetAmount() <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "amount must be greater than 0")
 	}
@@ -175,7 +188,7 @@ func (a *walletHandler) Withdraw(ctx context.Context, req *arkv1.WithdrawRequest
 
 	txid, err := a.walletService.Withdraw(ctx, req.GetAddress(), req.GetAmount())
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &arkv1.WithdrawResponse{Txid: txid}, nil
 }

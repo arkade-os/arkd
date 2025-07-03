@@ -24,10 +24,9 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/redis/go-redis/v9"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -43,7 +42,9 @@ type confirmationSessionsStore struct {
 	numOfRetries      int
 }
 
-func NewConfirmationSessionsStore(rdb *redis.Client, numOfRetries int) ports.ConfirmationSessionsStore {
+func NewConfirmationSessionsStore(
+	rdb *redis.Client, numOfRetries int,
+) ports.ConfirmationSessionsStore {
 	store := &confirmationSessionsStore{
 		rdb:               rdb,
 		sessionCompleteCh: make(chan struct{}),

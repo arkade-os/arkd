@@ -2,6 +2,11 @@ package grpcservice
 
 import (
 	"context"
+	"runtime/metrics"
+	"strings"
+	"sync"
+	"time"
+
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -12,10 +17,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
-	"runtime/metrics"
-	"strings"
-	"sync"
-	"time"
 )
 
 var arkRuntimeMetrics = []string{
@@ -39,7 +40,9 @@ var arkRuntimeMetrics = []string{
 	"/gc/heap/frees:bytes",
 }
 
-func initOtelSDK(ctx context.Context, otelCollectorUrl string, pushInterval time.Duration) (func(context.Context) error, error) {
+func initOtelSDK(
+	ctx context.Context, otelCollectorUrl string, pushInterval time.Duration,
+) (func(context.Context) error, error) {
 	otelCollectorUrl = strings.TrimSuffix(otelCollectorUrl, "/")
 	traceExp, err := traceExport.New(
 		ctx,

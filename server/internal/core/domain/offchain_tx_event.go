@@ -12,7 +12,7 @@ func (s OffchainTxEvent) GetType() EventType { return s.Type }
 
 type OffchainTxRequested struct {
 	OffchainTxEvent
-	VirtualTx             string
+	ArkTx                 string
 	UnsignedCheckpointTxs map[string]string
 	StartingTimestamp     int64
 }
@@ -22,7 +22,7 @@ type OffchainTxAccepted struct {
 	Id                  string
 	CommitmentTxids     map[string]string
 	RootCommitmentTxid  string
-	FinalVirtualTx      string
+	FinalArkTx          string
 	SignedCheckpointTxs map[string]string
 	ExpiryTimestamp     int64
 }

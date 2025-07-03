@@ -8,7 +8,7 @@ const (
 	EventTypeUndefined EventType = iota
 
 	// Round
-	EventTypeTxRequestsRegistered
+	EventTypeIntentsRegistered
 	EventTypeRoundStarted
 	EventTypeRoundFinalizationStarted
 	EventTypeRoundFinalized

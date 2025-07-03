@@ -28,11 +28,13 @@ type WalletService interface {
 	GetForfeitAddress(ctx context.Context) (string, error)
 	DeriveConnectorAddress(ctx context.Context) (string, error)
 	DeriveAddresses(ctx context.Context, num int) ([]string, error)
-	SignTransaction(
-		ctx context.Context, partialTx string, extractRawTx bool,
+	SignTransaction(ctx context.Context, partialTx string, extractRawTx bool) (string, error)
+	SignTransactionTapscript(
+		ctx context.Context, partialTx string, inputIndexes []int, // inputIndexes == nil means sign all inputs
 	) (string, error)
-	SignTransactionTapscript(ctx context.Context, partialTx string, inputIndexes []int) (string, error) // inputIndexes == nil means sign all inputs
-	SelectUtxos(ctx context.Context, asset string, amount uint64, confirmedOnly bool) ([]TxInput, uint64, error)
+	SelectUtxos(
+		ctx context.Context, asset string, amount uint64, confirmedOnly bool,
+	) ([]TxInput, uint64, error)
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
 	WaitForSync(ctx context.Context, txid string) error
 	EstimateFees(ctx context.Context, psbt string) (uint64, error)

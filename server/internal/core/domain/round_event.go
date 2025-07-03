@@ -24,8 +24,8 @@ type RoundFinalizationStarted struct {
 	VtxoTree           []tree.TxGraphChunk
 	Connectors         []tree.TxGraphChunk
 	ConnectorAddress   string
-	Txid               string
-	RoundTx            string
+	CommitmentTxid     string
+	CommitmentTx       string
 	VtxoTreeExpiration int64
 }
 
@@ -42,9 +42,9 @@ type RoundFailed struct {
 	Timestamp int64
 }
 
-type TxRequestsRegistered struct {
+type IntentsRegistered struct {
 	RoundEvent
-	TxRequests []TxRequest
+	Intents []Intent
 }
 
 type BatchSwept struct {

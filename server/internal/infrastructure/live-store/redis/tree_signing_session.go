@@ -10,11 +10,10 @@ import (
 	"fmt"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/redis/go-redis/v9"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -37,7 +36,9 @@ func NewTreeSigningSessionsStore(rdb *redis.Client) ports.TreeSigningSessionsSto
 	}
 }
 
-func (s *treeSigningSessionsStore) New(roundId string, uniqueSignersPubKeys map[string]struct{}) *ports.MusigSigningSession {
+func (s *treeSigningSessionsStore) New(
+	roundId string, uniqueSignersPubKeys map[string]struct{},
+) *ports.MusigSigningSession {
 	ctx := context.Background()
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	cosignersBytes, _ := json.Marshal(uniqueSignersPubKeys)
@@ -127,7 +128,9 @@ func (s *treeSigningSessionsStore) Delete(roundId string) {
 	}
 }
 
-func (s *treeSigningSessionsStore) AddNonces(ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces) error {
+func (s *treeSigningSessionsStore) AddNonces(
+	ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces,
+) error {
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
 	val, _ := json.Marshal(nonces)
 	if err := s.rdb.HSet(ctx, noncesKey, pubkey, val).Err(); err != nil {
@@ -136,7 +139,9 @@ func (s *treeSigningSessionsStore) AddNonces(ctx context.Context, roundId string
 	return nil
 }
 
-func (s *treeSigningSessionsStore) AddSignatures(ctx context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs) error {
+func (s *treeSigningSessionsStore) AddSignatures(
+	ctx context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs,
+) error {
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
 	val, _ := json.Marshal(sigs)
 	if err := s.rdb.HSet(ctx, sigsKey, pubkey, val).Err(); err != nil {

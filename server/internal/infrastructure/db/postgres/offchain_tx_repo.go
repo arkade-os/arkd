@@ -34,13 +34,15 @@ func (v *offchainTxRepository) AddOrUpdateOffchainTx(
 ) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		if err := querierWithTx.UpsertOffchainTx(ctx, queries.UpsertOffchainTxParams{
-			Txid:              offchainTx.VirtualTxid,
-			Tx:                offchainTx.VirtualTx,
+			Txid:              offchainTx.ArkTxid,
+			Tx:                offchainTx.ArkTx,
 			StartingTimestamp: offchainTx.StartingTimestamp,
 			EndingTimestamp:   offchainTx.EndingTimestamp,
 			ExpiryTimestamp:   offchainTx.ExpiryTimestamp,
-			FailReason:        sql.NullString{String: offchainTx.FailReason, Valid: offchainTx.FailReason != ""},
 			StageCode:         int32(offchainTx.Stage.Code),
+			FailReason: sql.NullString{
+				String: offchainTx.FailReason, Valid: offchainTx.FailReason != "",
+			},
 		}); err != nil {
 			return err
 		}
@@ -56,7 +58,7 @@ func (v *offchainTxRepository) AddOrUpdateOffchainTx(
 				Tx:                   checkpointTx,
 				CommitmentTxid:       commitmentTxid,
 				IsRootCommitmentTxid: isRoot,
-				OffchainTxid:         offchainTx.VirtualTxid,
+				OffchainTxid:         offchainTx.ArkTxid,
 			})
 			if err != nil {
 				return err
@@ -67,7 +69,9 @@ func (v *offchainTxRepository) AddOrUpdateOffchainTx(
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *offchainTxRepository) GetOffchainTx(ctx context.Context, txid string) (*domain.OffchainTx, error) {
+func (v *offchainTxRepository) GetOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
 	rows, err := v.querier.SelectOffchainTx(ctx, txid)
 	if err != nil {
 		return nil, err
@@ -90,8 +94,8 @@ func (v *offchainTxRepository) GetOffchainTx(ctx context.Context, txid string) (
 		}
 	}
 	return &domain.OffchainTx{
-		VirtualTxid:        vt.Txid,
-		VirtualTx:          vt.Tx,
+		ArkTxid:            vt.Txid,
+		ArkTx:              vt.Tx,
 		StartingTimestamp:  vt.StartingTimestamp,
 		EndingTimestamp:    vt.EndingTimestamp,
 		ExpiryTimestamp:    vt.ExpiryTimestamp,

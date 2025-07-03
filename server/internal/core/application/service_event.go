@@ -20,13 +20,13 @@ type BatchStarted struct {
 // signer should react to this event by generating a musig2 nonce for each transaction in the tree
 type RoundSigningStarted struct {
 	domain.RoundEvent
-	UnsignedRoundTx  string
-	CosignersPubkeys []string
+	UnsignedCommitmentTx string
+	CosignersPubkeys     []string
 }
 
 // signer should react to this event by partially signing the vtxo tree transactions
 // then, delete its ephemeral key
-type RoundSigningNoncesGenerated struct {
+type TreeNoncesAggregated struct {
 	domain.RoundEvent
 	Nonces tree.TreeNonces // aggregated nonces
 }
@@ -36,14 +36,14 @@ type RoundFinalized struct {
 	Txid string
 }
 
-type BatchTree struct {
+type TreeTxMessage struct {
 	domain.RoundEvent
 	Topic      []string
 	BatchIndex int32
 	Chunk      tree.TxGraphChunk
 }
 
-type BatchTreeSignature struct {
+type TreeSignatuteMessage struct {
 	domain.RoundEvent
 	Topic      []string
 	BatchIndex int32
@@ -52,7 +52,7 @@ type BatchTreeSignature struct {
 }
 
 // implement domain.RoundEvent interface
-func (r RoundSigningStarted) GetTopic() string         { return domain.RoundTopic }
-func (r RoundSigningNoncesGenerated) GetTopic() string { return domain.RoundTopic }
-func (r BatchTree) GetTopic() string                   { return domain.RoundTopic }
-func (r BatchTreeSignature) GetTopic() string          { return domain.RoundTopic }
+func (r RoundSigningStarted) GetTopic() string  { return domain.RoundTopic }
+func (r TreeNoncesAggregated) GetTopic() string { return domain.RoundTopic }
+func (r TreeTxMessage) GetTopic() string        { return domain.RoundTopic }
+func (r TreeSignatuteMessage) GetTopic() string { return domain.RoundTopic }

@@ -30,11 +30,11 @@ func NewForfeitTxsStore(rdb *redis.Client, builder ports.TxBuilder) ports.Forfei
 	}
 }
 
-func (s *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain.TxRequest) error {
+func (s *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, intents []domain.Intent) error {
 	ctx := context.Background()
 	vtxosToSign := make([]domain.Vtxo, 0)
-	for _, request := range requests {
-		for _, vtxo := range request.Inputs {
+	for _, intent := range intents {
+		for _, vtxo := range intent.Inputs {
 			if !vtxo.RequiresForfeit() {
 				continue
 			}
@@ -55,10 +55,15 @@ func (s *forfeitTxsStore) Init(connectors []tree.TxGraphChunk, requests []domain
 			return fmt.Errorf("no connectors found")
 		}
 		for _, leaf := range leaves {
-			connectorsOutpoints = append(connectorsOutpoints, domain.Outpoint{Txid: leaf.Txid, VOut: 0})
+			connectorsOutpoints = append(
+				connectorsOutpoints, domain.Outpoint{Txid: leaf.Txid, VOut: 0},
+			)
 		}
 		if len(vtxosToSign) > len(connectorsOutpoints) {
-			return fmt.Errorf("more vtxos to sign than outpoints, %d > %d", len(vtxosToSign), len(connectorsOutpoints))
+			return fmt.Errorf(
+				"more vtxos to sign than outpoints, %d > %d",
+				len(vtxosToSign), len(connectorsOutpoints),
+			)
 		}
 		for i, connectorOutpoint := range connectorsOutpoints {
 			connIndex[connectorOutpoint.String()] = vtxosToSign[i].Outpoint
@@ -157,7 +162,9 @@ func (s *forfeitTxsStore) Pop() ([]string, error) {
 			return nil, fmt.Errorf("failed to unmarshal forfeit tx for vtxo %s: %w", vtxo, err)
 		}
 		if _, used := usedConnectors[validTx.Connector]; used {
-			return nil, fmt.Errorf("connector %s for vtxo %s is used more than once", validTx.Connector, vtxo)
+			return nil, fmt.Errorf(
+				"connector %s for vtxo %s is used more than once", validTx.Connector, vtxo,
+			)
 		}
 		usedConnectors[validTx.Connector] = struct{}{}
 		result = append(result, validTx.Tx)

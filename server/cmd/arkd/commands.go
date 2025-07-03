@@ -1,65 +1,13 @@
 package main
 
 import (
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/urfave/cli/v2"
-	"gopkg.in/macaroon.v2"
-)
-
-// flags
-var (
-	passwordFlag = &cli.StringFlag{
-		Name:     flagPassword,
-		Usage:    "wallet password",
-		Required: true,
-	}
-	mnemonicFlag = &cli.StringFlag{
-		Name:  flagMnemonic,
-		Usage: "mnemonic from which restore the wallet",
-	}
-	gapLimitFlag = &cli.Uint64Flag{
-		Name:  flagGapLimit,
-		Usage: "address gap limit for wallet restoration",
-		Value: 100,
-	}
-	amountFlag = &cli.UintFlag{
-		Name:     flagAmount,
-		Usage:    "amount of the note in satoshis",
-		Required: true,
-	}
-	quantityFlag = &cli.UintFlag{
-		Name:  flagQuantity,
-		Usage: "quantity of notes to create",
-		Value: 1,
-	}
-	requestIdsFlag = func(required bool) *cli.StringSliceFlag {
-		return &cli.StringSliceFlag{
-			Name:     flagRequestIds,
-			Usage:    "request ids to delete",
-			Required: required,
-		}
-	}
-	withdrawAmountFlag = &cli.UintFlag{
-		Name:     flagWithdrawAmount,
-		Usage:    "amount of the withdraw in satoshis",
-		Required: true,
-	}
-	withdrawAddressFlag = &cli.StringFlag{
-		Name:     flagWithdrawAddress,
-		Usage:    "address to withdraw to",
-		Required: true,
-	}
 )
 
 // commands
@@ -67,8 +15,7 @@ var (
 	walletCmd = &cli.Command{
 		Name:  "wallet",
 		Usage: "Manage the Ark Server wallet",
-		Subcommands: append(
-			cli.Commands{},
+		Subcommands: cli.Commands{
 			walletStatusCmd,
 			walletCreateOrRestoreCmd,
 			walletUnlockCmd,
@@ -76,7 +23,12 @@ var (
 			walletBalanceCmd,
 			createNoteCmd,
 			walletWithdrawCmd,
-		),
+			scheduledSweepCmd,
+			roundInfoCmd,
+			roundsInTimeRangeCmd,
+			getMarketHourCmd,
+			updateMarketHourCmd,
+		},
 	}
 	walletStatusCmd = &cli.Command{
 		Name:   "status",
@@ -105,51 +57,73 @@ var (
 		Usage:  "Get the wallet balance",
 		Action: walletBalanceAction,
 	}
-	createNoteCmd = &cli.Command{
-		Name:   "note",
-		Usage:  "Create a credit note",
-		Action: createNoteAction,
-		Flags:  []cli.Flag{amountFlag, quantityFlag},
-	}
-	queueCmd = &cli.Command{
-		Name:  "queue",
-		Usage: "Manage the tx request queue",
-		Subcommands: append(
-			cli.Commands{},
-			deleteTxRequestsCmd,
-			viewTxRequestsCmd,
-			clearTxRequestQueueCmd,
-		),
-	}
-	viewTxRequestsCmd = &cli.Command{
-		Name:   "view",
-		Usage:  "Inspect tx requests in tx request queue",
-		Flags:  []cli.Flag{requestIdsFlag(false)},
-		Action: viewTxRequestsAction,
-	}
-	deleteTxRequestsCmd = &cli.Command{
-		Name:   "delete",
-		Usage:  "Delete tx requests in tx request queue",
-		Flags:  []cli.Flag{requestIdsFlag(true)},
-		Action: deleteTxRequestsAction,
-	}
-	clearTxRequestQueueCmd = &cli.Command{
-		Name:   "clear",
-		Usage:  "Remove all tx requests from tx request queue",
-		Action: clearTxRequestQueueAction,
-	}
 	walletWithdrawCmd = &cli.Command{
 		Name:   "withdraw",
 		Usage:  "Withdraw funds from the wallet",
 		Action: walletWithdrawAction,
 		Flags:  []cli.Flag{withdrawAmountFlag, withdrawAddressFlag},
 	}
+	createNoteCmd = &cli.Command{
+		Name:   "note",
+		Usage:  "Create a credit note",
+		Action: createNoteAction,
+		Flags:  []cli.Flag{amountFlag, quantityFlag},
+	}
+	intents = &cli.Command{
+		Name:        "intents",
+		Usage:       "List or manage the queue of registered intents",
+		Subcommands: cli.Commands{deleteIntentsCmd, clearIntentsCmd},
+		Action:      listIntentsAction,
+	}
+	deleteIntentsCmd = &cli.Command{
+		Name:   "delete",
+		Usage:  "Delete registered intents from the queue",
+		Flags:  []cli.Flag{intentIdsFlag(true)},
+		Action: deleteIntentsAction,
+	}
+	clearIntentsCmd = &cli.Command{
+		Name:   "clear",
+		Usage:  "Remove all registered intents from the queue",
+		Action: clearIntentsAction,
+	}
+	scheduledSweepCmd = &cli.Command{
+		Name:   "scheduled-sweeps",
+		Usage:  "List all scheduled batches sweepings",
+		Action: scheduledSweepAction,
+	}
+	roundInfoCmd = &cli.Command{
+		Name:   "round-info",
+		Usage:  "Get round info",
+		Flags:  []cli.Flag{roundIdFlag},
+		Action: roundInfoAction,
+	}
+	roundsInTimeRangeCmd = &cli.Command{
+		Name:   "rounds",
+		Usage:  "Get ids of rounds in the given time range",
+		Flags:  []cli.Flag{beforeDateFlag, afterDateFlag},
+		Action: roundsInTimeRangeAction,
+	}
+	getMarketHourCmd = &cli.Command{
+		Name:        "market-hour",
+		Usage:       "Get or update the market hour configuration",
+		Subcommands: cli.Commands{updateMarketHourCmd},
+		Action:      getMarketHourAction,
+	}
+	updateMarketHourCmd = &cli.Command{
+		Name:  "update",
+		Usage: "Update the market hour configuration",
+		Flags: []cli.Flag{
+			marketHourStartDateFlag, marketHourEndDateFlag,
+			marketHourRoundIntervalFlag, marketHourPeriodFlag,
+		},
+		Action: updateMarketHourAction,
+	}
 )
 
 var timeout = time.Minute
 
 func walletStatusAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
+	baseURL := ctx.String(urlFlagName)
 	_, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
@@ -166,15 +140,15 @@ func walletStatusAction(ctx *cli.Context) error {
 }
 
 func walletCreateOrRestoreAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
+	baseURL := ctx.String(urlFlagName)
 	_, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
 	}
 
-	password := ctx.String(flagPassword)
-	mnemonic := ctx.String(flagMnemonic)
-	gapLimit := ctx.Uint64(flagGapLimit)
+	password := ctx.String(passwordFlagName)
+	mnemonic := ctx.String(mnemonicFlagName)
+	gapLimit := ctx.Uint64(gapLimitFlagName)
 
 	if len(mnemonic) > 0 {
 		url := fmt.Sprintf("%s/v1/admin/wallet/restore", baseURL)
@@ -209,13 +183,13 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 }
 
 func walletUnlockAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
+	baseURL := ctx.String(urlFlagName)
 	_, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
 	}
 
-	password := ctx.String(flagPassword)
+	password := ctx.String(passwordFlagName)
 	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", baseURL)
 	body := fmt.Sprintf(`{"password": "%s"}`, password)
 
@@ -228,7 +202,7 @@ func walletUnlockAction(ctx *cli.Context) error {
 }
 
 func walletAddressAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
+	baseURL := ctx.String(urlFlagName)
 	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
@@ -245,7 +219,7 @@ func walletAddressAction(ctx *cli.Context) error {
 }
 
 func walletBalanceAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
+	baseURL := ctx.String(urlFlagName)
 	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
@@ -261,10 +235,32 @@ func walletBalanceAction(ctx *cli.Context) error {
 	return nil
 }
 
+func walletWithdrawAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	amount := ctx.Uint(amountFlagName)
+	address := ctx.String(addressFlagName)
+	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/withdraw", baseURL)
+	body := fmt.Sprintf(`{"address": "%s", "amount": %d}`, address, amount)
+
+	txid, err := post[string](url, body, "txid", macaroon, tlsCertPath)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("transaction successfully broadcasted:")
+	fmt.Println(txid)
+	return nil
+}
+
 func createNoteAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
-	amount := ctx.Uint(flagAmount)
-	quantity := ctx.Uint(flagQuantity)
+	baseURL := ctx.String(urlFlagName)
+	amount := ctx.Uint(amountFlagName)
+	quantity := ctx.Uint(quantityFlagName)
 	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
@@ -285,356 +281,260 @@ func createNoteAction(ctx *cli.Context) error {
 	return nil
 }
 
-func walletWithdrawAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
-	amount := ctx.Uint(flagWithdrawAmount)
-	address := ctx.String(flagWithdrawAddress)
+func listIntentsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
 	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/withdraw", baseURL)
-	body := fmt.Sprintf(`{"address": "%s", "amount": %d}`, address, amount)
-
-	txid, err := post[string](url, body, "txid", macaroon, tlsCertPath)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("transaction successfully broadcasted:")
-	fmt.Println(txid)
-	return nil
-}
-
-func getCredentialPaths(ctx *cli.Context) (macaroon string, tlsCertPath string, err error) {
-	datadir := ctx.String(flagDatadir)
-
-	macaroonPath := filepath.Join(datadir, macaroonDir, macaroonFile)
-	if _, err := os.Stat(macaroonPath); err == nil {
-		macaroon, err = getMacaroon(macaroonPath)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to read macaroon: %w", err)
-		}
-	}
-
-	tlsCertPath = filepath.Join(datadir, tlsDir, tlsCertFile)
-	if strings.Contains(ctx.String(flagURL), "http://") {
-		tlsCertPath = ""
-	}
-
-	return macaroon, tlsCertPath, nil
-}
-
-func post[T any](url, body, key, macaroon, tlsCert string) (result T, err error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return
-	}
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Add("Content-Type", "application/json")
-	if len(macaroon) > 0 {
-		req.Header.Add("X-Macaroon", macaroon)
-	}
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return
-	}
-	// nolint:all
-	defer resp.Body.Close()
-
-	buf, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("failed to post: %s", string(buf))
-		return
-	}
-	if key == "" {
-		return
-	}
-	res := make(map[string]T)
-	if err = json.Unmarshal(buf, &res); err != nil {
-		return
-	}
-
-	result = res[key]
-	return
-}
-
-func get[T any](url, key, macaroon, tlsCert string) (result T, err error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return
-	}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return
-	}
-	req.Header.Add("Content-Type", "application/json")
-	if len(macaroon) > 0 {
-		req.Header.Add("X-Macaroon", macaroon)
-	}
-
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return
-	}
-	// nolint:all
-	defer resp.Body.Close()
-
-	buf, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return
-	}
-	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("failed to get: %s", string(buf))
-		return
-	}
-
-	res := make(map[string]T)
-	if err = json.Unmarshal(buf, &res); err != nil {
-		return
-	}
-
-	result = res[key]
-	return
-}
-
-type accountBalance struct {
-	Available string `json:"available"`
-	Locked    string `json:"locked"`
-}
-
-func (b accountBalance) String() string {
-	return fmt.Sprintf("   available: %s\n   locked: %s", b.Available, b.Locked)
-}
-
-type balance struct {
-	MainAccount       accountBalance `json:"mainAccount"`
-	ConnectorsAccount accountBalance `json:"connectorsAccount"`
-}
-
-func (b balance) String() string {
-	return fmt.Sprintf(
-		"main account\n%s\nconnectors account\n%s",
-		b.MainAccount, b.ConnectorsAccount,
-	)
-}
-
-func getBalance(url, macaroon, tlsCert string) (*balance, error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Add("Content-Type", "application/json")
-	if len(macaroon) > 0 {
-		req.Header.Add("X-Macaroon", macaroon)
-	}
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	// nolint:all
-	defer resp.Body.Close()
-
-	buf, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("%s", buf)
-		return nil, err
-	}
-
-	result := &balance{}
-	if err := json.Unmarshal(buf, result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-type status struct {
-	Initialized bool `json:"initialized"`
-	Unlocked    bool `json:"unlocked"`
-	Synced      bool `json:"synced"`
-}
-
-func (s status) String() string {
-	return fmt.Sprintf(
-		"initialized: %t\nunlocked: %t\nsynced: %t",
-		s.Initialized, s.Unlocked, s.Synced,
-	)
-}
-
-func getStatus(url, tlsCert string) (*status, error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Add("Content-Type", "application/json")
-
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	// nolint:all
-	defer resp.Body.Close()
-
-	buf, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("failed to get status: %s", string(buf))
-		return nil, err
-	}
-
-	result := &status{}
-	if err := json.Unmarshal(buf, result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func getMacaroon(path string) (string, error) {
-	macBytes, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to read macaroon %s: %s", path, err)
-	}
-	mac := &macaroon.Macaroon{}
-	if err := mac.UnmarshalBinary(macBytes); err != nil {
-		return "", fmt.Errorf("failed to parse macaroon %s: %s", path, err)
-	}
-
-	return hex.EncodeToString(macBytes), nil
-}
-
-func getTLSConfig(path string) (*tls.Config, error) {
-	if len(path) <= 0 {
-		return nil, nil
-	}
-	var buf []byte
-	buf, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	caCertPool := x509.NewCertPool()
-	if ok := caCertPool.AppendCertsFromPEM(buf); !ok {
-		return nil, fmt.Errorf("failed to parse tls cert")
-	}
-
-	return &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		RootCAs:    caCertPool,
-	}, nil
-}
-
-func viewTxRequestsAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
-	if err != nil {
-		return err
-	}
-
-	url := fmt.Sprintf("%s/v1/admin/queue", baseURL)
-	requestIds := ctx.StringSlice(flagRequestIds)
+	url := fmt.Sprintf("%s/v1/admin/intents", baseURL)
+	requestIds := ctx.StringSlice(intentIdsFlagName)
 	if len(requestIds) > 0 {
-		url = fmt.Sprintf("%s?request_ids=%s", url, strings.Join(requestIds, ","))
+		url = fmt.Sprintf("%s?intent_ids=%s", url, strings.Join(requestIds, ","))
 	}
-	response, err := get[[]map[string]interface{}](url, "requests", macaroon, tlsCertPath)
+	response, err := get[[]map[string]any](url, "intents", macaroon, tlsCertPath)
 	if err != nil {
 		return err
 	}
 
-	if len(response) == 0 {
-		fmt.Println("No tx requests in queue")
-		return nil
+	respJson, err := json.MarshalIndent(response, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func deleteIntentsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	if err != nil {
+		return err
 	}
 
-	for _, request := range response {
-		jsonBytes, err := json.MarshalIndent(request, "", "  ")
+	intentIds := strings.Join(ctx.StringSlice(intentIdsFlagName), ",")
+	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)
+	body := fmt.Sprintf(`{"intent_ids": ["%s"]}`, intentIds)
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully deleted intents: %s\n", intentIds)
+	return nil
+}
+
+func clearIntentsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)
+	body := `{"intent_ids": []}`
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+		return err
+	}
+
+	fmt.Println("Successfully deleted all intents")
+	return nil
+}
+
+func scheduledSweepAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/sweeps", baseURL)
+
+	resp, err := get[map[string]any](url, "sweeps", macaroon, tlsCertPath)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func roundInfoAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	roundId := ctx.String(roundIdFlagName)
+	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/round/%s", baseURL, roundId)
+
+	resp, err := getRoundInfo(url, macaroon, tlsCertPath)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func roundsInTimeRangeAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	beforeDate := ctx.String(beforeDateFlagName)
+	afterDate := ctx.String(afterDateFlagName)
+	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/rounds", baseURL)
+	if afterDate != "" {
+		afterTs, err := time.Parse(dateFormat, afterDate)
 		if err != nil {
-			return err
+			return fmt.Errorf("invalid --after-date format, must be %s", dateFormat)
 		}
-		fmt.Println(string(jsonBytes))
+		url = fmt.Sprintf("%s?after=%d", url, afterTs.Unix())
 	}
+	if beforeDate != "" {
+		beforeTs, err := time.Parse(dateFormat, beforeDate)
+		if err != nil {
+			return fmt.Errorf("invalid --before-date format, must be %s", dateFormat)
+		}
+		if afterDate != "" {
+			url = fmt.Sprintf("%s&before=%d", url, beforeTs.Unix())
+		} else {
+			url = fmt.Sprintf("%s?before=%d", url, beforeTs.Unix())
+		}
+	}
+
+	roundIds, err := get[map[string]string](url, "rounds", macaroon, tlsCertPath)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(roundIds, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode round ids: %s", err)
+	}
+	fmt.Println(string(respJson))
 	return nil
 }
 
-func deleteTxRequestsAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
+func getMarketHourAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
 	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
 	}
 
-	requestIds := ctx.StringSlice(flagRequestIds)
-	url := fmt.Sprintf("%s/v1/admin/queue/delete", baseURL)
-	body := fmt.Sprintf(`{"request_ids": ["%s"]}`, strings.Join(requestIds, `","`))
+	url := fmt.Sprintf("%s/v1/admin/marketHour", baseURL)
 
-	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+	resp, err := get[map[string]string](url, "config", macaroon, tlsCertPath)
+	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Successfully deleted tx requests: %s\n", strings.Join(requestIds, ", "))
+	if resp["startTime"] != "" {
+		startTime, err := strconv.Atoi(resp["startTime"])
+		if err != nil {
+			return fmt.Errorf("failed to parse market hour start time: %s", err)
+		}
+		startDate := time.Unix(int64(startTime), 0)
+		resp["startTime"] = startDate.Format(time.RFC3339)
+	}
+	if resp["endTime"] != "" {
+		endTime, err := strconv.Atoi(resp["endTime"])
+		if err != nil {
+			return fmt.Errorf("failed to parse market hour end time: %s", err)
+		}
+		endDate := time.Unix(int64(endTime), 0)
+		resp["endTime"] = endDate.Format(time.RFC3339)
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode round ids: %s", err)
+	}
+	fmt.Println(string(respJson))
 	return nil
 }
 
-func clearTxRequestQueueAction(ctx *cli.Context) error {
-	baseURL := ctx.String(flagURL)
+func updateMarketHourAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	startDate := ctx.String(marketHourStartDateFlagName)
+	endDate := ctx.String(marketHourEndDateFlagName)
+	roundInterval := ctx.Uint(marketHourRoundIntervalFlagName)
+	period := ctx.Uint(marketHourPeriodFlagName)
+
+	if ctx.IsSet(marketHourStartDateFlagName) != ctx.IsSet(marketHourEndDateFlagName) {
+		return fmt.Errorf("--start-date and --end-date must be set together")
+	}
+
 	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/queue/delete", baseURL)
-	body := `{"request_ids": []}`
-
-	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+	url := fmt.Sprintf("%s/v1/admin/marketHour", baseURL)
+	bodyMap := map[string]string{}
+	if startDate != "" {
+		startTime, err := time.Parse(marketHourDateFormat, startDate)
+		if err != nil {
+			return fmt.Errorf("invalid --start-date format, must be %s", marketHourDateFormat)
+		}
+		endTime, err := time.Parse(marketHourDateFormat, endDate)
+		if err != nil {
+			return fmt.Errorf("invalid --end-date format, must be %s", marketHourDateFormat)
+		}
+		bodyMap["startTime"] = strconv.Itoa(int(startTime.Unix()))
+		bodyMap["endTime"] = strconv.Itoa(int(endTime.Unix()))
+	}
+	if roundInterval > 0 {
+		bodyMap["roundInterval"] = strconv.Itoa(int(roundInterval))
+	}
+	if period > 0 {
+		bodyMap["period"] = strconv.Itoa(int(period))
+	}
+	body, err := json.Marshal(bodyMap)
+	if err != nil {
+		return fmt.Errorf("failed to encode request body: %s", err)
+	}
+	resp, err := post[map[string]string](url, string(body), "", macaroon, tlsCertPath)
+	if err != nil {
 		return err
 	}
 
-	fmt.Println("Successfully cleared tx request queue")
+	if resp["startTime"] != "" {
+		startTime, err := strconv.Atoi(resp["startTime"])
+		if err != nil {
+			return fmt.Errorf("failed to parse market hour start time: %s", err)
+		}
+		startDate := time.Unix(int64(startTime), 0)
+		resp["startTime"] = startDate.Format(time.RFC3339)
+	}
+	if resp["endTime"] != "" {
+		endTime, err := strconv.Atoi(resp["endTime"])
+		if err != nil {
+			return fmt.Errorf("failed to parse market hour end time: %s", err)
+		}
+		endDate := time.Unix(int64(endTime), 0)
+		resp["endTime"] = endDate.Format(time.RFC3339)
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode round ids: %s", err)
+	}
+	fmt.Println(string(respJson))
 	return nil
 }

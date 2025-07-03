@@ -1,8 +1,8 @@
 {
-  "buildRoundTx": {
+  "buildCommitmentTx": {
     "valid": [
       {
-        "requests": [
+        "intents": [
           {
             "id": "0",
             "inputs": [
@@ -27,7 +27,7 @@
         "expectedNumOfLeaves": 1
       },
       {
-        "requests": [
+        "intents": [
           {
             "id": "0",
             "inputs": [
@@ -56,7 +56,7 @@
         "expectedNumOfLeaves": 2
       },
       {
-        "requests": [
+        "intents": [
           {
             "id": "0",
             "inputs": [
@@ -131,7 +131,7 @@
         "expectedNumOfLeaves": 6
       },
       {
-        "requests": [
+        "intents": [
           {
             "id": "a242cdd8-f3d5-46c0-ae98-94135a2bee3f",
             "inputs": [
@@ -209,7 +209,7 @@
   "buildForfeitTxs": {
     "valid": [
       {
-        "requests": [
+        "intents": [
           {
             "id": "a242cdd8-f3d5-46c0-ae98-94135a2bee3f",
             "inputs": [
@@ -278,8 +278,8 @@
             ]
           }
         ],
-        "roundTx": "cHNidP8BALICAAAAAnonOnsJBkHUUaKf/7fdS0/sVyBCgDPusYzGSZZiXPbtAAAAAAD/////VLtr81ZII3QJnXgrIwgcnbsq3aa4L3qdHOAn2evlFtEAAAAAAP////8CohIAAAAAAAAiUSBZarBUuSIHnlkuIoel9MmvexqTGK8jCZaRjt8L+Pb3s+gDAAAAAAAAIlEgI95L4kHEn2fAA+vysD+RIR4eD3AIQwc+FyCInJ8HivYAAAAAAAEBIOgDAAAAAAAAF6kU6p9IboLvs92Dpp/Zbj8BE3V9oDyHAAEBIOgDAAAAAAAAF6kU6p9IboLvs92Dpp/Zbj8BE3V9oDyHAAAA",
-        "roundTxid": "7c0c10756cdb9ab8e605f1c82e25989761308cf4c60e6a6f42b72d46144c4ce0",
+        "commitmentTx": "cHNidP8BALICAAAAAnonOnsJBkHUUaKf/7fdS0/sVyBCgDPusYzGSZZiXPbtAAAAAAD/////VLtr81ZII3QJnXgrIwgcnbsq3aa4L3qdHOAn2evlFtEAAAAAAP////8CohIAAAAAAAAiUSBZarBUuSIHnlkuIoel9MmvexqTGK8jCZaRjt8L+Pb3s+gDAAAAAAAAIlEgI95L4kHEn2fAA+vysD+RIR4eD3AIQwc+FyCInJ8HivYAAAAAAAEBIOgDAAAAAAAAF6kU6p9IboLvs92Dpp/Zbj8BE3V9oDyHAAEBIOgDAAAAAAAAF6kU6p9IboLvs92Dpp/Zbj8BE3V9oDyHAAAA",
+        "commitmentTxid": "7c0c10756cdb9ab8e605f1c82e25989761308cf4c60e6a6f42b72d46144c4ce0",
         "expectedNumOfForfeitTxs": 25,
         "expectedNumOfConnectors": 4
       }

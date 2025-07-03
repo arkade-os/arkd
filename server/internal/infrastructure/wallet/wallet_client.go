@@ -101,7 +101,9 @@ func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([
 	return resp.GetSignature(), nil
 }
 
-func (w *walletDaemonClient) GetNotificationChannel(ctx context.Context) <-chan map[string][]ports.VtxoWithValue {
+func (w *walletDaemonClient) GetNotificationChannel(
+	ctx context.Context,
+) <-chan map[string][]ports.VtxoWithValue {
 	ch := make(chan map[string][]ports.VtxoWithValue)
 	stream, err := w.client.NotificationStream(ctx, &arkwalletv1.NotificationStreamRequest{})
 	if err != nil {
@@ -142,8 +144,12 @@ func (w *walletDaemonClient) GetNotificationChannel(ctx context.Context) <-chan 
 	return ch
 }
 
-func (w *walletDaemonClient) IsTransactionConfirmed(ctx context.Context, txid string) (bool, int64, int64, error) {
-	resp, err := w.client.IsTransactionConfirmed(ctx, &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid})
+func (w *walletDaemonClient) IsTransactionConfirmed(
+	ctx context.Context, txid string,
+) (bool, int64, int64, error) {
+	resp, err := w.client.IsTransactionConfirmed(
+		ctx, &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
+	)
 	if err != nil {
 		return false, 0, 0, err
 	}
@@ -234,34 +240,46 @@ func (w *walletDaemonClient) DeriveConnectorAddress(ctx context.Context) (string
 }
 
 func (w *walletDaemonClient) DeriveAddresses(ctx context.Context, num int) ([]string, error) {
-	resp, err := w.client.DeriveAddresses(ctx, &arkwalletv1.DeriveAddressesRequest{Num: int32(num)})
+	resp, err := w.client.DeriveAddresses(
+		ctx, &arkwalletv1.DeriveAddressesRequest{Num: int32(num)},
+	)
 	if err != nil {
 		return nil, err
 	}
 	return resp.GetAddresses(), nil
 }
 
-func (w *walletDaemonClient) SignTransaction(ctx context.Context, partialTx string, extractRawTx bool) (string, error) {
-	resp, err := w.client.SignTransaction(ctx, &arkwalletv1.SignTransactionRequest{PartialTx: partialTx, ExtractRawTx: extractRawTx})
+func (w *walletDaemonClient) SignTransaction(
+	ctx context.Context, partialTx string, extractRawTx bool,
+) (string, error) {
+	resp, err := w.client.SignTransaction(
+		ctx, &arkwalletv1.SignTransactionRequest{PartialTx: partialTx, ExtractRawTx: extractRawTx},
+	)
 	if err != nil {
 		return "", err
 	}
 	return resp.GetSignedTx(), nil
 }
 
-func (w *walletDaemonClient) SignTransactionTapscript(ctx context.Context, partialTx string, inputIndexes []int) (string, error) {
+func (w *walletDaemonClient) SignTransactionTapscript(
+	ctx context.Context, partialTx string, inputIndexes []int,
+) (string, error) {
 	indexes := make([]int32, len(inputIndexes))
 	for i, v := range inputIndexes {
 		indexes[i] = int32(v)
 	}
-	resp, err := w.client.SignTransactionTapscript(ctx, &arkwalletv1.SignTransactionTapscriptRequest{PartialTx: partialTx, InputIndexes: indexes})
+	resp, err := w.client.SignTransactionTapscript(
+		ctx, &arkwalletv1.SignTransactionTapscriptRequest{PartialTx: partialTx, InputIndexes: indexes},
+	)
 	if err != nil {
 		return "", err
 	}
 	return resp.GetSignedTx(), nil
 }
 
-func (w *walletDaemonClient) SelectUtxos(ctx context.Context, asset string, amount uint64, confirmedOnly bool) ([]ports.TxInput, uint64, error) {
+func (w *walletDaemonClient) SelectUtxos(
+	ctx context.Context, asset string, amount uint64, confirmedOnly bool,
+) ([]ports.TxInput, uint64, error) {
 	resp, err := w.client.SelectUtxos(ctx, &arkwalletv1.SelectUtxosRequest{
 		Asset:         asset,
 		Amount:        amount,
@@ -282,8 +300,12 @@ func (w *walletDaemonClient) SelectUtxos(ctx context.Context, asset string, amou
 	return inputs, resp.GetTotalAmount(), nil
 }
 
-func (w *walletDaemonClient) BroadcastTransaction(ctx context.Context, txs ...string) (string, error) {
-	resp, err := w.client.BroadcastTransaction(ctx, &arkwalletv1.BroadcastTransactionRequest{Txs: txs})
+func (w *walletDaemonClient) BroadcastTransaction(
+	ctx context.Context, txs ...string,
+) (string, error) {
+	resp, err := w.client.BroadcastTransaction(
+		ctx, &arkwalletv1.BroadcastTransactionRequest{Txs: txs},
+	)
 	if err != nil {
 		return "", err
 	}
@@ -311,8 +333,12 @@ func (w *walletDaemonClient) FeeRate(ctx context.Context) (uint64, error) {
 	return resp.GetSatPerKvbyte(), nil
 }
 
-func (w *walletDaemonClient) ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]ports.TxInput, error) {
-	resp, err := w.client.ListConnectorUtxos(ctx, &arkwalletv1.ListConnectorUtxosRequest{ConnectorAddress: connectorAddress})
+func (w *walletDaemonClient) ListConnectorUtxos(
+	ctx context.Context, connectorAddress string,
+) ([]ports.TxInput, error) {
+	resp, err := w.client.ListConnectorUtxos(
+		ctx, &arkwalletv1.ListConnectorUtxosRequest{ConnectorAddress: connectorAddress},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -336,15 +362,21 @@ func (w *walletDaemonClient) MainAccountBalance(ctx context.Context) (uint64, ui
 	return resp.GetConfirmed(), resp.GetUnconfirmed(), nil
 }
 
-func (w *walletDaemonClient) ConnectorsAccountBalance(ctx context.Context) (uint64, uint64, error) {
-	resp, err := w.client.ConnectorsAccountBalance(ctx, &arkwalletv1.ConnectorsAccountBalanceRequest{})
+func (w *walletDaemonClient) ConnectorsAccountBalance(
+	ctx context.Context,
+) (uint64, uint64, error) {
+	resp, err := w.client.ConnectorsAccountBalance(
+		ctx, &arkwalletv1.ConnectorsAccountBalanceRequest{},
+	)
 	if err != nil {
 		return 0, 0, err
 	}
 	return resp.GetConfirmed(), resp.GetUnconfirmed(), nil
 }
 
-func (w *walletDaemonClient) LockConnectorUtxos(ctx context.Context, utxos []domain.Outpoint) error {
+func (w *walletDaemonClient) LockConnectorUtxos(
+	ctx context.Context, utxos []domain.Outpoint,
+) error {
 	protoUtxos := make([]*arkwalletv1.TxOutpoint, len(utxos))
 	for i, u := range utxos {
 		protoUtxos[i] = &arkwalletv1.TxOutpoint{
@@ -352,7 +384,9 @@ func (w *walletDaemonClient) LockConnectorUtxos(ctx context.Context, utxos []dom
 			Index: u.VOut,
 		}
 	}
-	_, err := w.client.LockConnectorUtxos(ctx, &arkwalletv1.LockConnectorUtxosRequest{Utxos: protoUtxos})
+	_, err := w.client.LockConnectorUtxos(
+		ctx, &arkwalletv1.LockConnectorUtxosRequest{Utxos: protoUtxos},
+	)
 	return err
 }
 
@@ -364,7 +398,9 @@ func (w *walletDaemonClient) GetDustAmount(ctx context.Context) (uint64, error) 
 	return resp.GetDustAmount(), nil
 }
 
-func (w *walletDaemonClient) VerifyMessageSignature(ctx context.Context, message, signature []byte) (bool, error) {
+func (w *walletDaemonClient) VerifyMessageSignature(
+	ctx context.Context, message, signature []byte,
+) (bool, error) {
 	resp, err := w.client.VerifyMessageSignature(
 		ctx,
 		&arkwalletv1.VerifyMessageSignatureRequest{Message: message, Signature: signature},
@@ -375,7 +411,9 @@ func (w *walletDaemonClient) VerifyMessageSignature(ctx context.Context, message
 	return resp.GetValid(), nil
 }
 
-func (w *walletDaemonClient) GetCurrentBlockTime(ctx context.Context) (*ports.BlockTimestamp, error) {
+func (w *walletDaemonClient) GetCurrentBlockTime(
+	ctx context.Context,
+) (*ports.BlockTimestamp, error) {
 	resp, err := w.client.GetCurrentBlockTime(ctx, &arkwalletv1.GetCurrentBlockTimeRequest{})
 	if err != nil {
 		return nil, err
@@ -383,11 +421,17 @@ func (w *walletDaemonClient) GetCurrentBlockTime(ctx context.Context) (*ports.Bl
 	if resp.Timestamp == nil {
 		return nil, fmt.Errorf("missing timestamp in response")
 	}
-	return &ports.BlockTimestamp{Height: resp.GetTimestamp().GetHeight(), Time: resp.GetTimestamp().GetTime()}, nil
+	return &ports.BlockTimestamp{
+		Height: resp.GetTimestamp().GetHeight(), Time: resp.GetTimestamp().GetTime(),
+	}, nil
 }
 
-func (w *walletDaemonClient) Withdraw(ctx context.Context, address string, amount uint64) (string, error) {
-	resp, err := w.client.Withdraw(ctx, &arkwalletv1.WithdrawRequest{Address: address, Amount: amount})
+func (w *walletDaemonClient) Withdraw(
+	ctx context.Context, address string, amount uint64,
+) (string, error) {
+	resp, err := w.client.Withdraw(ctx, &arkwalletv1.WithdrawRequest{
+		Address: address, Amount: amount},
+	)
 	if err != nil {
 		return "", err
 	}

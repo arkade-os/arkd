@@ -36,8 +36,8 @@ type OffchainTx struct {
 	Stage              Stage
 	StartingTimestamp  int64
 	EndingTimestamp    int64
-	VirtualTxid        string
-	VirtualTx          string
+	ArkTxid            string
+	ArkTx              string
 	CheckpointTxs      map[string]string
 	CommitmentTxids    map[string]string
 	RootCommitmentTxId string
@@ -66,16 +66,16 @@ func NewOffchainTxFromEvents(events []Event) *OffchainTx {
 }
 
 func (s *OffchainTx) Request(
-	virtualTxid, virtualTx string, unsignedCheckpointTxs map[string]string,
+	arkTxid, arkTx string, unsignedCheckpointTxs map[string]string,
 ) (Event, error) {
 	if s.IsFailed() || s.Stage.Code != int(OffchainTxUndefinedStage) {
 		return nil, fmt.Errorf("not in a valid stage to request offchain tx")
 	}
-	if virtualTxid == "" {
-		return nil, fmt.Errorf("missing virtual txid")
+	if arkTxid == "" {
+		return nil, fmt.Errorf("missing ark txid")
 	}
-	if virtualTx == "" {
-		return nil, fmt.Errorf("missing virtual tx")
+	if arkTx == "" {
+		return nil, fmt.Errorf("missing ark tx")
 	}
 	if len(unsignedCheckpointTxs) == 0 {
 		return nil, fmt.Errorf("missing unsigned checkpoint txs")
@@ -83,10 +83,10 @@ func (s *OffchainTx) Request(
 
 	event := OffchainTxRequested{
 		OffchainTxEvent: OffchainTxEvent{
-			Id:   virtualTxid,
+			Id:   arkTxid,
 			Type: EventTypeOffchainTxRequested,
 		},
-		VirtualTx:             virtualTx,
+		ArkTx:                 arkTx,
 		UnsignedCheckpointTxs: unsignedCheckpointTxs,
 		StartingTimestamp:     time.Now().Unix(),
 	}
@@ -95,17 +95,20 @@ func (s *OffchainTx) Request(
 }
 
 func (s *OffchainTx) Accept(
-	finalVirtualTx string, signedCheckpointTxs map[string]string,
+	finalArkTx string, signedCheckpointTxs map[string]string,
 	commitmentTxsByCheckpointTxid map[string]string, rootCommitmentTx string, expiryTimestamp int64,
 ) (Event, error) {
-	if finalVirtualTx == "" {
-		return nil, fmt.Errorf("missing final virtual tx")
+	if finalArkTx == "" {
+		return nil, fmt.Errorf("missing final ark tx")
 	}
 	if len(signedCheckpointTxs) == 0 {
 		return nil, fmt.Errorf("missing signed checkpoint txs")
 	}
 	if len(signedCheckpointTxs) != len(s.CheckpointTxs) {
-		return nil, fmt.Errorf("invalid number of signed checkpoint txs, expected %d, got %d", len(s.CheckpointTxs), len(signedCheckpointTxs))
+		return nil, fmt.Errorf(
+			"invalid number of signed checkpoint txs, expected %d, got %d",
+			len(s.CheckpointTxs), len(signedCheckpointTxs),
+		)
 	}
 	if len(commitmentTxsByCheckpointTxid) == 0 {
 		return nil, fmt.Errorf("missing commitment txids")
@@ -121,10 +124,10 @@ func (s *OffchainTx) Accept(
 	}
 	event := OffchainTxAccepted{
 		OffchainTxEvent: OffchainTxEvent{
-			Id:   s.VirtualTxid,
+			Id:   s.ArkTxid,
 			Type: EventTypeOffchainTxAccepted,
 		},
-		FinalVirtualTx:      finalVirtualTx,
+		FinalArkTx:          finalArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
 		CommitmentTxids:     commitmentTxsByCheckpointTxid,
 		RootCommitmentTxid:  rootCommitmentTx,
@@ -134,14 +137,15 @@ func (s *OffchainTx) Accept(
 	return event, nil
 }
 
-func (s *OffchainTx) Finalize(
-	finalCheckpointTxs map[string]string,
-) (Event, error) {
+func (s *OffchainTx) Finalize(finalCheckpointTxs map[string]string) (Event, error) {
 	if len(finalCheckpointTxs) == 0 {
 		return nil, fmt.Errorf("missing final checkpoint txs")
 	}
 	if len(finalCheckpointTxs) != len(s.CheckpointTxs) {
-		return nil, fmt.Errorf("invalid number of final checkpoint txs, expected %d, got %d", len(s.CheckpointTxs), len(finalCheckpointTxs))
+		return nil, fmt.Errorf(
+			"invalid number of final checkpoint txs, expected %d, got %d",
+			len(s.CheckpointTxs), len(finalCheckpointTxs),
+		)
 	}
 	if !s.IsAccepted() {
 		return nil, fmt.Errorf("not in a valid stage to finalize offchain tx")
@@ -149,7 +153,7 @@ func (s *OffchainTx) Finalize(
 
 	event := OffchainTxFinalized{
 		OffchainTxEvent: OffchainTxEvent{
-			Id:   s.VirtualTxid,
+			Id:   s.ArkTxid,
 			Type: EventTypeOffchainTxFinalized,
 		},
 		FinalCheckpointTxs: finalCheckpointTxs,
@@ -162,7 +166,7 @@ func (s *OffchainTx) Finalize(
 func (s *OffchainTx) Fail(err error) Event {
 	event := OffchainTxFailed{
 		OffchainTxEvent: OffchainTxEvent{
-			Id:   s.VirtualTxid,
+			Id:   s.ArkTxid,
 			Type: EventTypeOffchainTxFailed,
 		},
 		Reason:    err.Error(),
@@ -208,13 +212,13 @@ func (s *OffchainTx) on(event Event, replayed bool) {
 	switch e := event.(type) {
 	case OffchainTxRequested:
 		s.Stage.Code = int(OffchainTxRequestedStage)
-		s.VirtualTxid = e.Id
-		s.VirtualTx = e.VirtualTx
+		s.ArkTxid = e.Id
+		s.ArkTx = e.ArkTx
 		s.CheckpointTxs = e.UnsignedCheckpointTxs
 		s.StartingTimestamp = e.StartingTimestamp
 	case OffchainTxAccepted:
 		s.Stage.Code = int(OffchainTxAcceptedStage)
-		s.VirtualTx = e.FinalVirtualTx
+		s.ArkTx = e.FinalArkTx
 		s.CheckpointTxs = e.SignedCheckpointTxs
 		s.CommitmentTxids = e.CommitmentTxids
 		s.RootCommitmentTxId = e.RootCommitmentTxid

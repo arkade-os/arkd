@@ -6,7 +6,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/server/internal/config"
 	grpcservice "github.com/ark-network/ark/server/internal/interface/grpc"
 	log "github.com/sirupsen/logrus"
@@ -21,31 +20,6 @@ const (
 	macaroonFile = "admin.macaroon"
 	tlsDir       = "tls"
 	tlsCertFile  = "cert.pem"
-
-	flagURL             = "url"
-	flagDatadir         = "datadir"
-	flagPassword        = "password"
-	flagMnemonic        = "mnemonic"
-	flagGapLimit        = "addr-gap-limit"
-	flagAmount          = "amount"
-	flagQuantity        = "quantity"
-	flagWithdrawAmount  = "amount"
-	flagWithdrawAddress = "address"
-	flagRequestIds      = "ids"
-)
-
-// flags
-var (
-	urlFlag = &cli.StringFlag{
-		Name:  flagURL,
-		Usage: "the url where to reach ark server",
-		Value: fmt.Sprintf("http://localhost:%d", config.DefaultPort),
-	}
-	datadirFlag = &cli.StringFlag{
-		Name:  flagDatadir,
-		Usage: "data directory of the ark server to source TLS cert and macaroon from if needed",
-		Value: common.AppDataDir("arkd", false),
-	}
 )
 
 func mainAction(_ *cli.Context) error {
@@ -94,7 +68,7 @@ func main() {
 	app.Version = Version
 	app.Name = "Arkd CLI"
 	app.Usage = "arkd command line interface"
-	app.Commands = append(app.Commands, walletCmd, queueCmd)
+	app.Commands = append(app.Commands, walletCmd, intents)
 	app.Action = mainAction
 	app.Flags = append(app.Flags, urlFlag, datadirFlag)
 
