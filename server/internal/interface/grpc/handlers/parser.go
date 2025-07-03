@@ -8,6 +8,7 @@ import (
 	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/bip322"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/application"
 	"github.com/ark-network/ark/server/internal/core/domain"
@@ -36,7 +37,7 @@ func parseArkAddress(addr string) (string, error) {
 	return hex.EncodeToString(schnorr.SerializePubKey(a.VtxoTapKey)), nil
 }
 
-func parseIntent(intent *arkv1.Bip322Signature) (*bip322.Signature, *tree.IntentMessage, error) {
+func parseIntent(intent *arkv1.Bip322Signature) (*bip322.Signature, *bip322.IntentMessage, error) {
 	if intent == nil {
 		return nil, nil, fmt.Errorf("missing intent")
 	}
@@ -51,7 +52,7 @@ func parseIntent(intent *arkv1.Bip322Signature) (*bip322.Signature, *tree.Intent
 	if len(intent.GetMessage()) <= 0 {
 		return nil, nil, fmt.Errorf("missing message")
 	}
-	var message tree.IntentMessage
+	var message bip322.IntentMessage
 	if err := message.Decode(intent.GetMessage()); err != nil {
 		return nil, nil, fmt.Errorf("invalid intent message")
 	}
@@ -60,7 +61,7 @@ func parseIntent(intent *arkv1.Bip322Signature) (*bip322.Signature, *tree.Intent
 
 func parseDeleteIntent(
 	intent *arkv1.Bip322Signature,
-) (*bip322.Signature, *tree.DeleteIntentMessage, error) {
+) (*bip322.Signature, *bip322.DeleteIntentMessage, error) {
 	if intent == nil {
 		return nil, nil, fmt.Errorf("missing intent")
 	}
@@ -75,7 +76,7 @@ func parseDeleteIntent(
 	if len(intent.GetMessage()) <= 0 {
 		return nil, nil, fmt.Errorf("missing message")
 	}
-	var message tree.DeleteIntentMessage
+	var message bip322.DeleteIntentMessage
 	if err := message.Decode(intent.GetMessage()); err != nil {
 		return nil, nil, fmt.Errorf("invalid delete intent message")
 	}
@@ -252,6 +253,6 @@ func toP2TR(pubkey string) string {
 	// nolint
 	key, _ := schnorr.ParsePubKey(buf)
 	// nolint
-	script, _ := common.P2TRScript(key)
-	return hex.EncodeToString(script)
+	outScript, _ := script.P2TRScript(key)
+	return hex.EncodeToString(outScript)
 }

@@ -9,57 +9,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNew(t *testing.T) {
+func TestNewNote(t *testing.T) {
 	tests := []struct {
-		name    string
-		value   uint32
-		wantErr bool
+		name  string
+		value uint32
 	}{
 		{
-			name:    "Valid value",
-			value:   100,
-			wantErr: false,
+			name:  "zero value",
+			value: 0,
 		},
 		{
-			name:    "Zero value",
-			value:   0,
-			wantErr: false,
+			name:  "valid value",
+			value: 100,
 		},
 		{
-			name:    "Maximum uint32 value",
-			value:   math.MaxUint32,
-			wantErr: false,
+			name:  "max value",
+			value: math.MaxUint32,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := note.New(tt.value)
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.NotNil(t, got)
-				require.Equal(t, tt.value, got.Value)
-				require.NotNil(t, got.Preimage)
-				require.Len(t, got.Preimage, 32)
-			}
+			got, err := note.NewNote(tt.value)
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			require.Equal(t, tt.value, got.Value)
+			require.NotNil(t, got.Preimage)
+			require.Len(t, got.Preimage, 32)
 		})
 	}
-
-	// Test for uniqueness of IDs
-	t.Run("Unique preimage", func(t *testing.T) {
-		preimageSet := make(map[string]bool)
-		for i := 0; i < 1_000_000; i++ {
-			data, err := note.New(100)
-			require.NoError(t, err)
-			require.False(t, preimageSet[hex.EncodeToString(data.Preimage[:])], "Generated duplicate preimage: %x", data.Preimage)
-			preimageSet[hex.EncodeToString(data.Preimage[:])] = true
-		}
-	})
 }
 
-func TestNewFromString(t *testing.T) {
+func TestNotePreimageUniqueness(t *testing.T) {
+	preimageSet := make(map[string]struct{})
+	for i := 0; i < 1_000_000; i++ {
+		data, err := note.NewNote(100)
+		require.NoError(t, err)
+		require.Empty(
+			t, preimageSet[hex.EncodeToString(data.Preimage[:])],
+			"duplicated preimage: %x", data.Preimage,
+		)
+		preimageSet[hex.EncodeToString(data.Preimage[:])] = struct{}{}
+	}
+}
+
+func TestNewNoteFromString(t *testing.T) {
 	tests := []struct {
 		str              string
 		expectedPreimage string
@@ -78,25 +72,23 @@ func TestNewFromString(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.str, func(t *testing.T) {
-			preimage, err := hex.DecodeString(tt.expectedPreimage)
-			require.NoError(t, err)
-			var preimageArray [32]byte
-			copy(preimageArray[:], preimage)
+		preimage, err := hex.DecodeString(tt.expectedPreimage)
+		require.NoError(t, err)
+		var preimageArray [32]byte
+		copy(preimageArray[:], preimage)
 
-			n := &note.Note{
-				Preimage: preimageArray,
-				Value:    tt.expectedValue,
-			}
+		n := &note.Note{
+			Preimage: preimageArray,
+			Value:    tt.expectedValue,
+		}
 
-			str := n.String()
-			require.Equal(t, str, tt.str)
+		str := n.String()
+		require.Equal(t, str, tt.str)
 
-			note, err := note.NewFromString(tt.str)
-			require.NoError(t, err)
-			require.NotNil(t, note)
-			require.Equal(t, preimageArray, note.Preimage)
-			require.Equal(t, tt.expectedValue, note.Value)
-		})
+		note, err := note.NewNoteFromString(tt.str)
+		require.NoError(t, err)
+		require.NotNil(t, note)
+		require.Equal(t, preimageArray, note.Preimage)
+		require.Equal(t, tt.expectedValue, note.Value)
 	}
 }

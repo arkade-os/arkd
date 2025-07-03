@@ -342,7 +342,7 @@ func (i *indexerService) GetVtxoChain(
 				return nil, err
 			}
 
-			graph, err := tree.NewTxGraph(vtxoTree.Txs)
+			graph, err := tree.NewTxTree(vtxoTree.Txs)
 			if err != nil {
 				return nil, err
 			}
@@ -352,7 +352,7 @@ func (i *indexerService) GetVtxoChain(
 			}
 
 			fromRootToVtxo := make([]string, 0)
-			if err := branch.Apply(func(tx *tree.TxGraph) (bool, error) {
+			if err := branch.Apply(func(tx *tree.TxTree) (bool, error) {
 				fromRootToVtxo = append(fromRootToVtxo, tx.Root.UnsignedTx.TxID())
 				return true, nil
 			}); err != nil {

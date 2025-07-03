@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/pkg/client-sdk/explorer"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -170,7 +170,7 @@ func BumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	)
 	require.NoError(t, err)
 
-	anchor, err := tree.FindAnchorOutpoint(parent)
+	anchor, err := txutils.FindAnchorOutpoint(parent)
 	require.NoError(t, err)
 
 	fees := uint64(10000)
@@ -218,7 +218,7 @@ func BumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	)
 	require.NoError(t, err)
 
-	ptx.Inputs[0].WitnessUtxo = tree.AnchorOutput()
+	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
 	ptx.Inputs[1].WitnessUtxo = &wire.TxOut{
 		Value:    int64(selectedCoins[0].Amount),
 		PkScript: pkScript,
@@ -228,7 +228,7 @@ func BumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	require.NoError(t, err)
 
 	prevoutFetcher := txscript.NewMultiPrevOutFetcher(map[wire.OutPoint]*wire.TxOut{
-		*anchor: tree.AnchorOutput(),
+		*anchor: txutils.AnchorOutput(),
 		{
 			Hash:  *coinTxHash,
 			Index: selectedCoins[0].Vout,
@@ -259,7 +259,7 @@ func BumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 		require.NoError(t, err)
 	}
 
-	childTx, err := tree.ExtractWithAnchors(ptx)
+	childTx, err := txutils.ExtractWithAnchors(ptx)
 	require.NoError(t, err)
 
 	var serializedTx bytes.Buffer

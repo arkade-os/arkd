@@ -353,13 +353,13 @@ func (r *roundRepository) GetRoundForfeitTxs(
 
 func (r *roundRepository) GetRoundConnectorTree(
 	ctx context.Context, commitmentTxid string,
-) ([]tree.TxGraphChunk, error) {
+) ([]tree.TxTreeNode, error) {
 	rows, err := r.querier.SelectRoundConnectors(ctx, commitmentTxid)
 	if err != nil {
 		return nil, err
 	}
 
-	chunks := make([]tree.TxGraphChunk, 0, len(rows))
+	chunks := make([]tree.TxTreeNode, 0, len(rows))
 
 	for _, row := range rows {
 		pos := int(row.Position)
@@ -370,7 +370,7 @@ func (r *roundRepository) GetRoundConnectorTree(
 				return nil, fmt.Errorf("failed to unmarshal children: %w", err)
 			}
 		}
-		chunks[pos] = tree.TxGraphChunk{
+		chunks[pos] = tree.TxTreeNode{
 			Txid:     row.Txid,
 			Tx:       row.Tx,
 			Children: children,
@@ -386,13 +386,13 @@ func (r *roundRepository) GetSweptRoundsConnectorAddress(ctx context.Context) ([
 
 func (r *roundRepository) GetRoundVtxoTree(
 	ctx context.Context, txid string,
-) ([]tree.TxGraphChunk, error) {
+) ([]tree.TxTreeNode, error) {
 	rows, err := r.querier.SelectRoundVtxoTree(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
 
-	chunks := make([]tree.TxGraphChunk, 0)
+	chunks := make([]tree.TxTreeNode, 0)
 
 	for _, row := range rows {
 		pos := int(row.Position)
@@ -403,7 +403,7 @@ func (r *roundRepository) GetRoundVtxoTree(
 				return nil, err
 			}
 		}
-		chunks[pos] = tree.TxGraphChunk{
+		chunks[pos] = tree.TxTreeNode{
 			Txid:     row.Txid,
 			Tx:       row.Tx,
 			Children: children,
@@ -588,7 +588,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 					}
 				}
 
-				round.Connectors[pos] = tree.TxGraphChunk{
+				round.Connectors[pos] = tree.TxTreeNode{
 					Txid:     v.tx.Txid.String,
 					Tx:       v.tx.Tx.String,
 					Children: children,
@@ -603,7 +603,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 					}
 				}
 
-				round.VtxoTree[pos] = tree.TxGraphChunk{
+				round.VtxoTree[pos] = tree.TxTreeNode{
 					Txid:     v.tx.Txid.String,
 					Tx:       v.tx.Tx.String,
 					Children: children,
@@ -655,7 +655,7 @@ func combinedRowToVtxo(row queries.IntentInputsVw) domain.Vtxo {
 }
 
 func createUpsertTransactionParams(
-	treeTx tree.TxGraphChunk, roundID string, txType string, position int64,
+	treeTx tree.TxTreeNode, roundID string, txType string, position int64,
 ) queries.UpsertTxParams {
 	params := queries.UpsertTxParams{
 		Tx:       treeTx.Tx,

@@ -348,7 +348,7 @@ func (c *restClient) GetEventStream(ctx context.Context, topics []string) (<-cha
 						Id:         e.ID,
 						Topic:      e.Topic,
 						BatchIndex: e.BatchIndex,
-						TxGraphChunk: tree.TxGraphChunk{
+						TxGraphChunk: tree.TxTreeNode{
 							Txid:     e.Txid,
 							Tx:       e.Tx,
 							Children: children,

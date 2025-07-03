@@ -11,6 +11,7 @@ import (
 
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -124,7 +125,7 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 		return fmt.Errorf("invalid forfeit tx: %s", forfeitTx.UnsignedTx.TxID())
 	}
 
-	connectors, err := tree.NewTxGraph(round.Connectors)
+	connectors, err := tree.NewTxTree(round.Connectors)
 	if err != nil {
 		return fmt.Errorf("failed to create connector graph: %s", err)
 	}
@@ -178,7 +179,7 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 // If any of the txs in the branch are offchain, it will sign and broadcast them.
 // If any of the txs in the branch are not confirmed, it will wait for them to be confirmed before returning.
 func (s *service) broadcastConnectorBranch(
-	ctx context.Context, connectorGraph *tree.TxGraph, connectorOutpoint domain.Outpoint,
+	ctx context.Context, connectorGraph *tree.TxTree, connectorOutpoint domain.Outpoint,
 ) error {
 	// compute, sign and broadcast the branch txs until the connector outpoint is created
 	branch, err := connectorGraph.SubGraph([]string{connectorOutpoint.Txid})
@@ -195,7 +196,7 @@ func (s *service) broadcastConnectorBranch(
 		)
 	}
 
-	return branch.Apply(func(g *tree.TxGraph) (bool, error) {
+	return branch.Apply(func(g *tree.TxTree) (bool, error) {
 		txid := g.Root.UnsignedTx.TxID()
 		_, err := s.wallet.GetTransaction(ctx, txid)
 		// if err, it means the tx is offchain, must be broadcasted
@@ -243,7 +244,7 @@ func (s *service) broadcastConnectorBranch(
 func (s *service) bumpAnchorTx(
 	ctx context.Context, parent *wire.MsgTx,
 ) (string, error) {
-	anchor, err := tree.FindAnchorOutpoint(parent)
+	anchor, err := txutils.FindAnchorOutpoint(parent)
 	if err != nil {
 		return "", err
 	}
@@ -319,7 +320,7 @@ func (s *service) bumpAnchorTx(
 		return "", err
 	}
 
-	ptx.Inputs[0].WitnessUtxo = tree.AnchorOutput()
+	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
 
 	b64, err := ptx.B64Encode()
 	if err != nil {
@@ -342,7 +343,7 @@ func (s *service) bumpAnchorTx(
 		}
 	}
 
-	childTx, err := tree.ExtractWithAnchors(signedPtx)
+	childTx, err := txutils.ExtractWithAnchors(signedPtx)
 	if err != nil {
 		return "", err
 	}

@@ -156,7 +156,7 @@ func (a *grpcClient) GetVtxoTree(
 
 func (a *grpcClient) GetFullVtxoTree(
 	ctx context.Context, batchOutpoint indexer.Outpoint, opts ...indexer.RequestOption,
-) ([]tree.TxGraphChunk, error) {
+) ([]tree.TxTreeNode, error) {
 	resp, err := a.GetVtxoTree(ctx, batchOutpoint, opts...)
 	if err != nil {
 		return nil, err

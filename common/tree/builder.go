@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -17,25 +19,22 @@ const (
 	connectorsTreeRadix = 4
 )
 
-// BuildBatchOutput returns the taproot script and the amount of the root shared output of a vtxo tree
-// radix is hardcoded to 2
-func BuildBatchOutput(
-	receivers []Leaf,
-	sweepTapTreeRoot []byte,
-) ([]byte, int64, error) {
+// BuildBatchOutput returns the taproot script and amount of a batch output of the commiment tx.
+// The radix of the vtxo tree is hardcoded to 2.
+func BuildBatchOutput(receivers []Leaf, sweepTapTreeRoot []byte) ([]byte, int64, error) {
 	root, err := createTxTree(receivers, sweepTapTreeRoot, vtxoTreeRadix)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	amount := root.getAmount() + ANCHOR_VALUE
+	amount := root.getAmount() + txutils.ANCHOR_VALUE
 
 	aggregatedKey, err := AggregateKeys(root.getCosigners(), sweepTapTreeRoot)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to aggregate keys: %w", err)
 	}
 
-	scriptPubkey, err := common.P2TRScript(aggregatedKey.FinalKey)
+	scriptPubkey, err := script.P2TRScript(aggregatedKey.FinalKey)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create script pubkey: %w", err)
 	}
@@ -43,14 +42,13 @@ func BuildBatchOutput(
 	return scriptPubkey, amount, nil
 }
 
-// BuildVtxoTree creates all the tree's transactions and returns the vtxo tree
-// radix is hardcoded to 2
+// BuildVtxoTree creates the vtxo tree, ie. the tree of transactions from the one spending the
+// batch output to those creating the vtxos (the leaves of the tree).
+// The radix of the tree is hardcoded to 2.
 func BuildVtxoTree(
-	rootInput *wire.OutPoint,
-	receivers []Leaf,
-	sweepTapTreeRoot []byte,
-	vtxoTreeExpiry common.RelativeLocktime,
-) (*TxGraph, error) {
+	rootInput *wire.OutPoint, receivers []Leaf,
+	sweepTapTreeRoot []byte, vtxoTreeExpiry common.RelativeLocktime,
+) (*TxTree, error) {
 	root, err := createTxTree(receivers, sweepTapTreeRoot, vtxoTreeRadix)
 	if err != nil {
 		return nil, err
@@ -59,24 +57,23 @@ func BuildVtxoTree(
 	return root.graph(rootInput, &vtxoTreeExpiry)
 }
 
-// CraftConnectorsOutput returns the taproot script and the amount of the root shared output of a connectors tree
-// radix is hardcoded to 4
-func CraftConnectorsOutput(
-	receivers []Leaf,
-) ([]byte, int64, error) {
+// BuildConnectorOutput returns the taproot script and amount of a connector output of the
+// commitment tx.
+// The radix of the connector tree is hardcoded to 4.
+func BuildConnectorOutput(receivers []Leaf) ([]byte, int64, error) {
 	root, err := createTxTree(receivers, nil, connectorsTreeRadix)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	amount := root.getAmount() + ANCHOR_VALUE
+	amount := root.getAmount() + txutils.ANCHOR_VALUE
 
 	aggregatedKey, err := AggregateKeys(root.getCosigners(), nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to aggregate keys: %w", err)
 	}
 
-	scriptPubkey, err := common.P2TRScript(aggregatedKey.FinalKey)
+	scriptPubkey, err := script.P2TRScript(aggregatedKey.FinalKey)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to create script pubkey: %w", err)
 	}
@@ -84,12 +81,10 @@ func CraftConnectorsOutput(
 	return scriptPubkey, amount, nil
 }
 
-// BuildConnectorsTree creates all the tree's transactions and returns the vtxo tree
-// radix is hardcoded to 4
-func BuildConnectorsTree(
-	rootInput *wire.OutPoint,
-	receivers []Leaf,
-) (*TxGraph, error) {
+// BuildConnectorTree creates the connector tree, ie the tree of transactions from the one spending
+// the connector output to those creating the connectors used to forfeit vtxos in the batch process.
+// The radix of the tree is hardcoded to 4.
+func BuildConnectorTree(rootInput *wire.OutPoint, receivers []Leaf) (*TxTree, error) {
 	root, err := createTxTree(receivers, nil, connectorsTreeRadix)
 	if err != nil {
 		return nil, err
@@ -104,7 +99,7 @@ type node interface {
 	getChildren() []node
 	getCosigners() []*secp256k1.PublicKey
 	getInputScript() []byte
-	graph(input *wire.OutPoint, expiry *common.RelativeLocktime) (*TxGraph, error)
+	graph(input *wire.OutPoint, expiry *common.RelativeLocktime) (*TxTree, error)
 }
 
 type leaf struct {
@@ -130,21 +125,18 @@ func (l *leaf) getAmount() int64 {
 }
 
 func (l *leaf) getOutputs() ([]*wire.TxOut, error) {
-	return []*wire.TxOut{
-		l.output,
-		AnchorOutput(),
-	}, nil
+	return []*wire.TxOut{l.output, txutils.AnchorOutput()}, nil
 }
 
-func (l *leaf) graph(initialInput *wire.OutPoint, expiry *common.RelativeLocktime) (*TxGraph, error) {
+func (l *leaf) graph(
+	initialInput *wire.OutPoint, expiry *common.RelativeLocktime,
+) (*TxTree, error) {
 	tx, err := getTx(l, initialInput, expiry)
 	if err != nil {
 		return nil, err
 	}
 
-	return &TxGraph{
-		Root: tx,
-	}, nil
+	return &TxTree{Root: tx}, nil
 }
 
 type branch struct {
@@ -169,7 +161,7 @@ func (b *branch) getAmount() int64 {
 	amount := int64(0)
 	for _, child := range b.children {
 		amount += child.getAmount()
-		amount += ANCHOR_VALUE
+		amount += txutils.ANCHOR_VALUE
 	}
 
 	return amount
@@ -185,18 +177,20 @@ func (b *branch) getOutputs() ([]*wire.TxOut, error) {
 		})
 	}
 
-	return append(outputs, AnchorOutput()), nil
+	return append(outputs, txutils.AnchorOutput()), nil
 }
 
-func (b *branch) graph(initialInput *wire.OutPoint, expiry *common.RelativeLocktime) (*TxGraph, error) {
+func (b *branch) graph(
+	initialInput *wire.OutPoint, expiry *common.RelativeLocktime,
+) (*TxTree, error) {
 	tx, err := getTx(b, initialInput, expiry)
 	if err != nil {
 		return nil, err
 	}
 
-	graph := &TxGraph{
+	graph := &TxTree{
 		Root:     tx,
-		Children: make(map[uint32]*TxGraph),
+		Children: make(map[uint32]*TxTree),
 	}
 
 	children := b.getChildren()
@@ -215,11 +209,7 @@ func (b *branch) graph(initialInput *wire.OutPoint, expiry *common.RelativeLockt
 	return graph, nil
 }
 
-func getTx(
-	n node,
-	input *wire.OutPoint,
-	expiry *common.RelativeLocktime,
-) (*psbt.Packet, error) {
+func getTx(n node, input *wire.OutPoint, expiry *common.RelativeLocktime) (*psbt.Packet, error) {
 	outputs, err := n.getOutputs()
 	if err != nil {
 		return nil, err
@@ -240,13 +230,13 @@ func getTx(
 	}
 
 	for _, cosigner := range n.getCosigners() {
-		if err := AddCosignerKey(0, tx, cosigner); err != nil {
+		if err := txutils.AddCosignerKey(0, tx, cosigner); err != nil {
 			return nil, err
 		}
 	}
 
 	if expiry != nil {
-		if err := AddVtxoTreeExpiry(0, tx, *expiry); err != nil {
+		if err := txutils.AddVtxoTreeExpiry(0, tx, *expiry); err != nil {
 			return nil, err
 		}
 	}
@@ -254,13 +244,9 @@ func getTx(
 	return tx, nil
 }
 
-// createTxTree is a recursive function that creates a tree of transactions
-// from the leaves to the root.
-func createTxTree(
-	receivers []Leaf,
-	tapTreeRoot []byte,
-	radix int,
-) (root node, err error) {
+// createTxTree is a recursive function that creates a tree of transactions from the leaves up to
+// the root.
+func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, err error) {
 	if len(receivers) == 0 {
 		return nil, fmt.Errorf("no receivers provided")
 	}
@@ -298,7 +284,7 @@ func createTxTree(
 			return nil, fmt.Errorf("failed to aggregate keys: %w", err)
 		}
 
-		inputScript, err := common.P2TRScript(aggregatedKey.FinalKey)
+		inputScript, err := script.P2TRScript(aggregatedKey.FinalKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create script pubkey: %w", err)
 		}
@@ -357,7 +343,7 @@ func createUpperLevel(nodes []node, tapTreeRoot []byte, radix int) ([]node, erro
 			return nil, err
 		}
 
-		inputPkScript, err := common.P2TRScript(aggregatedKey.FinalKey)
+		inputPkScript, err := script.P2TRScript(aggregatedKey.FinalKey)
 		if err != nil {
 			return nil, err
 		}

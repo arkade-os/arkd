@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/ark-network/ark/common"
-	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/offchain"
+	"github.com/ark-network/ark/common/script"
+	"github.com/ark-network/ark/common/txutils"
 	arksdk "github.com/ark-network/ark/pkg/client-sdk"
 	"github.com/ark-network/ark/pkg/client-sdk/client"
 	grpcclient "github.com/ark-network/ark/pkg/client-sdk/client/grpc"
@@ -643,11 +645,11 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		cltvLocktime := common.AbsoluteLocktime(currentHeight + cltvBlocks)
-		vtxoScript := tree.TapscriptsVtxoScript{
-			Closures: []tree.Closure{
-				&tree.CLTVMultisigClosure{
+		vtxoScript := script.TapscriptsVtxoScript{
+			Closures: []script.Closure{
+				&script.CLTVMultisigClosure{
 					Locktime: cltvLocktime,
-					MultisigClosure: tree.MultisigClosure{
+					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
 					},
 				},
@@ -665,11 +667,11 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			Signer:     aliceAddr.Signer,
 		}
 
-		script, err := closure.Script()
+		scriptBytes, err := closure.Script()
 		require.NoError(t, err)
 
 		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
-			txscript.NewBaseTapLeaf(script).TapHash(),
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
 		)
 		require.NoError(t, err)
 
@@ -733,7 +735,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		}
 		require.NotNil(t, bobOutput)
 
-		alicePkScript, err := common.P2TRScript(aliceAddr.VtxoTapKey)
+		alicePkScript, err := script.P2TRScript(aliceAddr.VtxoTapKey)
 		require.NoError(t, err)
 
 		tapscripts := make([]string, 0, len(vtxoScript.Closures))
@@ -752,8 +754,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			unilateralExitDelayType = common.LocktimeTypeBlock
 		}
 
-		ptx, checkpointsPtx, err := tree.BuildOffchainTx(
-			[]common.VtxoInput{
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
 				{
 					Outpoint: &wire.OutPoint{
 						Hash:  virtualPtx.UnsignedTx.TxHash(),
@@ -770,12 +772,12 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 					PkScript: alicePkScript,
 				},
 			},
-			&tree.CSVMultisigClosure{
+			&script.CSVMultisigClosure{
 				Locktime: common.RelativeLocktime{
 					Type:  unilateralExitDelayType,
 					Value: uint32(infos.UnilateralExitDelay),
 				},
-				MultisigClosure: tree.MultisigClosure{
+				MultisigClosure: script.MultisigClosure{
 					PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
 				},
 			},
@@ -856,7 +858,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		// make sure the vtxo of bob is not redeemed
 		// the checkpoint is not the bob's virtual tx
 		opt := &indexer.GetVtxosRequestOption{}
-		bobScript, err := common.P2TRScript(bobAddr.VtxoTapKey)
+		bobScript, err := script.P2TRScript(bobAddr.VtxoTapKey)
 		require.NoError(t, err)
 		require.NotEmpty(t, bobScript)
 		// nolint
@@ -1258,11 +1260,11 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	currentHeight, err := utils.GetBlockHeight()
 	require.NoError(t, err)
 
-	vtxoScript := tree.TapscriptsVtxoScript{
-		Closures: []tree.Closure{
-			&tree.CLTVMultisigClosure{
+	vtxoScript := script.TapscriptsVtxoScript{
+		Closures: []script.Closure{
+			&script.CLTVMultisigClosure{
 				Locktime: common.AbsoluteLocktime(currentHeight + cltvBlocks),
-				MultisigClosure: tree.MultisigClosure{
+				MultisigClosure: script.MultisigClosure{
 					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
 				},
 			},
@@ -1280,10 +1282,10 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		Signer:     aliceAddr.Signer,
 	}
 
-	script, err := closure.Script()
+	scriptBytes, err := closure.Script()
 	require.NoError(t, err)
 
-	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(script).TapHash())
+	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(scriptBytes).TapHash())
 	require.NoError(t, err)
 
 	ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
@@ -1344,7 +1346,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	}
 	require.NotNil(t, bobOutput)
 
-	alicePkScript, err := common.P2TRScript(aliceAddr.VtxoTapKey)
+	alicePkScript, err := script.P2TRScript(aliceAddr.VtxoTapKey)
 	require.NoError(t, err)
 
 	tapscripts := make([]string, 0, len(vtxoScript.Closures))
@@ -1363,8 +1365,8 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		unilateralExitDelayType = common.LocktimeTypeBlock
 	}
 
-	ptx, checkpointsPtx, err := tree.BuildOffchainTx(
-		[]common.VtxoInput{
+	ptx, checkpointsPtx, err := offchain.BuildTxs(
+		[]offchain.VtxoInput{
 			{
 				Outpoint: &wire.OutPoint{
 					Hash:  virtualPtx.UnsignedTx.TxHash(),
@@ -1381,12 +1383,12 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
-		&tree.CSVMultisigClosure{
+		&script.CSVMultisigClosure{
 			Locktime: common.RelativeLocktime{
 				Type:  unilateralExitDelayType,
 				Value: uint32(infos.UnilateralExitDelay),
 			},
-			MultisigClosure: tree.MultisigClosure{
+			MultisigClosure: script.MultisigClosure{
 				PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
 			},
 		},
@@ -1509,15 +1511,15 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		Script()
 	require.NoError(t, err)
 
-	vtxoScript := tree.TapscriptsVtxoScript{
-		Closures: []tree.Closure{
-			&tree.ConditionMultisigClosure{
+	vtxoScript := script.TapscriptsVtxoScript{
+		Closures: []script.Closure{
+			&script.ConditionMultisigClosure{
 				Condition: conditionScript,
-				MultisigClosure: tree.MultisigClosure{
+				MultisigClosure: script.MultisigClosure{
 					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
 				},
 			},
-			&tree.MultisigClosure{
+			&script.MultisigClosure{
 				PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
 			},
 		},
@@ -1537,13 +1539,13 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		Signer:     aliceAddr.Signer,
 	}
 
-	script, err := closure.Script()
+	scriptBytes, err := closure.Script()
 	require.NoError(t, err)
 
 	checkpointScript, err := checkpointClosure.Script()
 	require.NoError(t, err)
 
-	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(script).TapHash())
+	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(scriptBytes).TapHash())
 	require.NoError(t, err)
 
 	ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
@@ -1618,7 +1620,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	}
 	require.NotNil(t, bobOutput)
 
-	alicePkScript, err := common.P2TRScript(aliceAddr.VtxoTapKey)
+	alicePkScript, err := script.P2TRScript(aliceAddr.VtxoTapKey)
 	require.NoError(t, err)
 
 	tapscripts := make([]string, 0, len(vtxoScript.Closures))
@@ -1637,8 +1639,8 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		unilateralExitDelayType = common.LocktimeTypeBlock
 	}
 
-	ptx, checkpointsPtx, err := tree.BuildOffchainTx(
-		[]common.VtxoInput{
+	ptx, checkpointsPtx, err := offchain.BuildTxs(
+		[]offchain.VtxoInput{
 			{
 				Outpoint: &wire.OutPoint{
 					Hash:  virtualPtx.UnsignedTx.TxHash(),
@@ -1656,12 +1658,12 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
-		&tree.CSVMultisigClosure{
+		&script.CSVMultisigClosure{
 			Locktime: common.RelativeLocktime{
 				Type:  unilateralExitDelayType,
 				Value: uint32(infos.UnilateralExitDelay),
 			},
-			MultisigClosure: tree.MultisigClosure{
+			MultisigClosure: script.MultisigClosure{
 				PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
 			},
 		},
@@ -1695,7 +1697,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
 		require.NoError(t, err)
 
-		err = tree.AddConditionWitness(0, ptx, wire.TxWitness{preimage[:]})
+		err = txutils.AddConditionWitness(0, ptx, wire.TxWitness{preimage[:]})
 		require.NoError(t, err)
 
 		encoded, err := ptx.B64Encode()

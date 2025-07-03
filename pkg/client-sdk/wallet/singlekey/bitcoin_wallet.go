@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/pkg/client-sdk/explorer"
 	"github.com/ark-network/ark/pkg/client-sdk/internal/utils"
@@ -216,7 +217,7 @@ func (s *bitcoinWallet) SignTransaction(
 
 	txsighashes := txscript.NewTxSigHashes(updater.Upsbt.UnsignedTx, prevoutFetcher)
 
-	onchainPkScript, err := common.P2TRScript(txscript.ComputeTaprootKeyNoScript(s.walletData.PubKey))
+	onchainPkScript, err := script.P2TRScript(txscript.ComputeTaprootKeyNoScript(s.walletData.PubKey))
 	if err != nil {
 		return "", err
 	}
@@ -260,7 +261,7 @@ func (w *bitcoinWallet) signTapscriptSpend(
 	myPubkey := schnorr.SerializePubKey(w.walletData.PubKey)
 
 	for _, leaf := range input.TaprootLeafScript {
-		closure, err := tree.DecodeClosure(leaf.Script)
+		closure, err := script.DecodeClosure(leaf.Script)
 		if err != nil {
 			// skip unknown leaf
 			continue
@@ -269,28 +270,28 @@ func (w *bitcoinWallet) signTapscriptSpend(
 		sign := false
 
 		switch c := closure.(type) {
-		case *tree.CSVMultisigClosure:
+		case *script.CSVMultisigClosure:
 			for _, key := range c.PubKeys {
 				if bytes.Equal(schnorr.SerializePubKey(key), myPubkey) {
 					sign = true
 					break
 				}
 			}
-		case *tree.MultisigClosure:
+		case *script.MultisigClosure:
 			for _, key := range c.PubKeys {
 				if bytes.Equal(schnorr.SerializePubKey(key), myPubkey) {
 					sign = true
 					break
 				}
 			}
-		case *tree.CLTVMultisigClosure:
+		case *script.CLTVMultisigClosure:
 			for _, key := range c.PubKeys {
 				if bytes.Equal(schnorr.SerializePubKey(key), myPubkey) {
 					sign = true
 					break
 				}
 			}
-		case *tree.ConditionMultisigClosure:
+		case *script.ConditionMultisigClosure:
 			for _, key := range c.PubKeys {
 				if bytes.Equal(schnorr.SerializePubKey(key), myPubkey) {
 					sign = true
@@ -491,7 +492,7 @@ func (w *bitcoinWallet) getArkAddresses(
 
 	netParams := utils.ToBitcoinNetwork(data.Network)
 
-	defaultVtxoScript := tree.NewDefaultVtxoScript(
+	defaultVtxoScript := script.NewDefaultVtxoScript(
 		w.walletData.PubKey,
 		data.SignerPubKey,
 		data.UnilateralExitDelay,
@@ -508,7 +509,7 @@ func (w *bitcoinWallet) getArkAddresses(
 		VtxoTapKey: vtxoTapKey,
 	}
 
-	boardingVtxoScript := tree.NewDefaultVtxoScript(
+	boardingVtxoScript := script.NewDefaultVtxoScript(
 		w.walletData.PubKey,
 		data.SignerPubKey,
 		data.BoardingExitDelay,

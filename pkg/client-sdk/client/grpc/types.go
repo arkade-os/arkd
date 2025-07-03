@@ -82,7 +82,7 @@ func (e event) toBatchEvent() (any, error) {
 			Id:         ee.GetId(),
 			Topic:      ee.GetTopic(),
 			BatchIndex: ee.GetBatchIndex(),
-			TxGraphChunk: tree.TxGraphChunk{
+			TxGraphChunk: tree.TxTreeNode{
 				Txid:     ee.GetTxid(),
 				Tx:       ee.GetTx(),
 				Children: ee.GetChildren(),

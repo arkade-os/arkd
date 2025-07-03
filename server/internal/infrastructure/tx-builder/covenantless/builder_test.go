@@ -91,7 +91,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				roundPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
 				require.NoError(t, err)
 
-				err = tree.ValidateVtxoTxGraph(
+				err = tree.ValidateVtxoTree(
 					vtxoTree, roundPtx, pubkey, vtxoTreeExpiry,
 				)
 				require.NoError(t, err)

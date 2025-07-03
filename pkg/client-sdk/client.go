@@ -17,7 +17,9 @@ import (
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/bip322"
 	"github.com/ark-network/ark/common/note"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/pkg/client-sdk/client"
 	"github.com/ark-network/ark/pkg/client-sdk/explorer"
 	"github.com/ark-network/ark/pkg/client-sdk/internal/utils"
@@ -563,7 +565,7 @@ func (a *covenantlessArkClient) SendOffChain(
 	inputs := make([]arkTxInput, 0, len(selectedCoins))
 
 	for _, coin := range selectedCoins {
-		vtxoScript, err := tree.ParseVtxoScript(coin.Tapscripts)
+		vtxoScript, err := script.ParseVtxoScript(coin.Tapscripts)
 		if err != nil {
 			return "", err
 		}
@@ -583,9 +585,9 @@ func (a *covenantlessArkClient) SendOffChain(
 		})
 	}
 
-	checkpointExitScript := &tree.CSVMultisigClosure{
+	checkpointExitScript := &script.CSVMultisigClosure{
 		Locktime: a.UnilateralExitDelay,
-		MultisigClosure: tree.MultisigClosure{
+		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*secp256k1.PublicKey{a.SignerPubKey},
 		},
 	}
@@ -640,7 +642,7 @@ func (a *covenantlessArkClient) RedeemNotes(
 	}
 
 	for _, vStr := range notes {
-		v, err := note.NewFromString(vStr)
+		v, err := note.NewNoteFromString(vStr)
 		if err != nil {
 			return "", err
 		}
@@ -746,7 +748,7 @@ func (a *covenantlessArkClient) StartUnilateralExit(ctx context.Context) error {
 func (a *covenantlessArkClient) bumpAnchorTx(
 	ctx context.Context, parent *wire.MsgTx,
 ) (string, error) {
-	anchor, err := tree.FindAnchorOutpoint(parent)
+	anchor, err := txutils.FindAnchorOutpoint(parent)
 	if err != nil {
 		return "", err
 	}
@@ -779,7 +781,7 @@ func (a *covenantlessArkClient) bumpAnchorTx(
 
 	selectedCoins := make([]explorer.Utxo, 0)
 	selectedAmount := uint64(0)
-	amountToSelect := int64(fees) - tree.ANCHOR_VALUE
+	amountToSelect := int64(fees) - txutils.ANCHOR_VALUE
 	for _, addr := range addresses {
 		utxos, err := a.explorer.GetUtxos(addr)
 		if err != nil {
@@ -845,7 +847,7 @@ func (a *covenantlessArkClient) bumpAnchorTx(
 		return "", err
 	}
 
-	ptx.Inputs[0].WitnessUtxo = tree.AnchorOutput()
+	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
 
 	b64, err := ptx.B64Encode()
 	if err != nil {
@@ -868,7 +870,7 @@ func (a *covenantlessArkClient) bumpAnchorTx(
 		}
 	}
 
-	childTx, err := tree.ExtractWithAnchors(signedPtx)
+	childTx, err := txutils.ExtractWithAnchors(signedPtx)
 	if err != nil {
 		return "", err
 	}
@@ -1066,8 +1068,8 @@ func (a *covenantlessArkClient) listenForArkTxs(ctx context.Context) {
 				// nolint
 				decoded, _ := common.DecodeAddressV0(addr.Address)
 				// nolint
-				script, _ := common.P2TRScript(decoded.VtxoTapKey)
-				myScripts[hex.EncodeToString(script)] = struct{}{}
+				vtxoScript, _ := script.P2TRScript(decoded.VtxoTapKey)
+				myScripts[hex.EncodeToString(vtxoScript)] = struct{}{}
 			}
 
 			if event.CommitmentTx != nil {
@@ -1702,9 +1704,9 @@ func (a *covenantlessArkClient) makeRegisterIntentBIP322Signature(
 func (a *covenantlessArkClient) makeDeleteIntentBIP322Signature(
 	inputs []bip322.Input, leafProofs []*common.TaprootMerkleProof, notesWitnesses map[int][]byte,
 ) (string, string, error) {
-	message, err := tree.DeleteIntentMessage{
-		BaseIntentMessage: tree.BaseIntentMessage{
-			Type: tree.IntentMessageTypeDelete,
+	message, err := bip322.DeleteIntentMessage{
+		BaseIntentMessage: bip322.BaseIntentMessage{
+			Type: bip322.IntentMessageTypeDelete,
 		},
 		ExpireAt: time.Now().Add(2 * time.Minute).Unix(),
 	}.Encode()
@@ -1785,7 +1787,7 @@ func (a *covenantlessArkClient) addInputs(
 		return err
 	}
 
-	vtxoScript, err := tree.ParseVtxoScript(offchain.Tapscripts)
+	vtxoScript, err := script.ParseVtxoScript(offchain.Tapscripts)
 	if err != nil {
 		return err
 	}
@@ -1988,10 +1990,10 @@ func (a *covenantlessArkClient) handleBatchEvents(
 
 	// the graph chunks are received one after the other via BatchTreeEvent
 	// we collect them and then build the graphs when necessary
-	vtxoGraphChunks := make([]tree.TxGraphChunk, 0)
-	connectorsGraphChunks := make([]tree.TxGraphChunk, 0)
+	vtxoGraphChunks := make([]tree.TxTreeNode, 0)
+	connectorsGraphChunks := make([]tree.TxTreeNode, 0)
 
-	var vtxoGraph, connectorsGraph *tree.TxGraph
+	var vtxoGraph, connectorsGraph *tree.TxTree
 
 	if !hasOffchainOutput {
 		// if none of the outputs are offchain, we should skip the vtxo tree signing steps
@@ -2081,7 +2083,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 				if step != batchStarted {
 					continue
 				}
-				vtxoGraph, err = tree.NewTxGraph(vtxoGraphChunks)
+				vtxoGraph, err = tree.NewTxTree(vtxoGraphChunks)
 				if err != nil {
 					return "", fmt.Errorf("failed to create branch of vtxo tree: %s", err)
 				}
@@ -2123,7 +2125,7 @@ func (a *covenantlessArkClient) handleBatchEvents(
 				}
 
 				if len(connectorsGraphChunks) > 0 {
-					connectorsGraph, err = tree.NewTxGraph(connectorsGraphChunks)
+					connectorsGraph, err = tree.NewTxTree(connectorsGraphChunks)
 					if err != nil {
 						return "", fmt.Errorf("failed to create branch of connector tree: %s", err)
 					}
@@ -2181,7 +2183,7 @@ func (a *covenantlessArkClient) handleBatchStarted(
 
 func (a *covenantlessArkClient) handleTreeSigningStarted(
 	ctx context.Context, signerSessions []tree.SignerSession,
-	event client.TreeSigningStartedEvent, vtxoGraph *tree.TxGraph,
+	event client.TreeSigningStartedEvent, vtxoGraph *tree.TxTree,
 ) (bool, error) {
 	foundPubkeys := make([]string, 0, len(signerSessions))
 	for _, session := range signerSessions {
@@ -2202,8 +2204,8 @@ func (a *covenantlessArkClient) handleTreeSigningStarted(
 		return false, fmt.Errorf("not all signers found in cosigner list")
 	}
 
-	sweepClosure := tree.CSVMultisigClosure{
-		MultisigClosure: tree.MultisigClosure{PubKeys: []*secp256k1.PublicKey{a.SignerPubKey}},
+	sweepClosure := script.CSVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{PubKeys: []*secp256k1.PublicKey{a.SignerPubKey}},
 		Locktime:        a.VtxoTreeExpiry,
 	}
 
@@ -2315,7 +2317,7 @@ func (a *covenantlessArkClient) handleTreeNoncesAggregated(
 func (a *covenantlessArkClient) handleBatchFinalization(
 	ctx context.Context,
 	event client.BatchFinalizationEvent, vtxos []client.TapscriptsVtxo, boardingUtxos []types.Utxo,
-	receivers []types.Receiver, vtxoGraph, connectorsGraph *tree.TxGraph,
+	receivers []types.Receiver, vtxoGraph, connectorsGraph *tree.TxTree,
 ) ([]string, string, error) {
 	if err := a.validateVtxoTree(event, vtxoGraph, connectorsGraph, receivers, vtxos); err != nil {
 		return nil, "", fmt.Errorf("failed to verify vtxo tree: %s", err)
@@ -2346,7 +2348,7 @@ func (a *covenantlessArkClient) handleBatchFinalization(
 	}
 
 	for _, boardingUtxo := range boardingUtxos {
-		boardingVtxoScript, err := tree.ParseVtxoScript(boardingUtxo.Tapscripts)
+		boardingVtxoScript, err := script.ParseVtxoScript(boardingUtxo.Tapscripts)
 		if err != nil {
 			return nil, "", err
 		}
@@ -2407,7 +2409,7 @@ func (a *covenantlessArkClient) handleBatchFinalization(
 
 func (a *covenantlessArkClient) validateVtxoTree(
 	event client.BatchFinalizationEvent,
-	vtxoGraph, connectorsGraph *tree.TxGraph,
+	vtxoGraph, connectorsGraph *tree.TxTree,
 	receivers []types.Receiver, vtxosInput []client.TapscriptsVtxo,
 ) error {
 	commitmentTx := event.Tx
@@ -2418,7 +2420,7 @@ func (a *covenantlessArkClient) validateVtxoTree(
 
 	// validate the vtxo tree is well formed
 	if !utils.IsOnchainOnly(receivers) {
-		if err := tree.ValidateVtxoTxGraph(
+		if err := tree.ValidateVtxoTree(
 			vtxoGraph, commitmentPtx, a.SignerPubKey, a.VtxoTreeExpiry,
 		); err != nil {
 			return err
@@ -2458,7 +2460,7 @@ func (a *covenantlessArkClient) validateVtxoTree(
 }
 
 func (a *covenantlessArkClient) validateReceivers(
-	ptx *psbt.Packet, receivers []types.Receiver, vtxoGraph *tree.TxGraph,
+	ptx *psbt.Packet, receivers []types.Receiver, vtxoGraph *tree.TxTree,
 ) error {
 	netParams := utils.ToBitcoinNetwork(a.Network)
 	for _, receiver := range receivers {
@@ -2503,7 +2505,7 @@ func (a *covenantlessArkClient) validateOnchainReceiver(
 }
 
 func (a *covenantlessArkClient) validateOffchainReceiver(
-	vtxoGraph *tree.TxGraph, receiver types.Receiver,
+	vtxoGraph *tree.TxTree, receiver types.Receiver,
 ) error {
 	found := false
 
@@ -2565,7 +2567,7 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 		var connector *wire.TxOut
 		var connectorOutpoint *wire.OutPoint
 		for outIndex, output := range connectorTx.UnsignedTx.TxOut {
-			if bytes.Equal(tree.ANCHOR_PKSCRIPT, output.PkScript) {
+			if bytes.Equal(txutils.ANCHOR_PKSCRIPT, output.PkScript) {
 				continue
 			}
 
@@ -2581,7 +2583,7 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 			return nil, fmt.Errorf("connector not found for vtxo %s", vtxo.Outpoint.String())
 		}
 
-		vtxoScript, err := tree.ParseVtxoScript(vtxo.Tapscripts)
+		vtxoScript, err := script.ParseVtxoScript(vtxo.Tapscripts)
 		if err != nil {
 			return nil, err
 		}
@@ -2591,7 +2593,7 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 			return nil, err
 		}
 
-		vtxoOutputScript, err := common.P2TRScript(vtxoTapKey)
+		vtxoOutputScript, err := script.P2TRScript(vtxoTapKey)
 		if err != nil {
 			return nil, err
 		}
@@ -2631,7 +2633,7 @@ func (a *covenantlessArkClient) createAndSignForfeits(
 		}
 
 		vtxoLocktime := common.AbsoluteLocktime(0)
-		if cltv, ok := forfeitClosure.(*tree.CLTVMultisigClosure); ok {
+		if cltv, ok := forfeitClosure.(*script.CLTVMultisigClosure); ok {
 			vtxoLocktime = cltv.Locktime
 		}
 
@@ -2803,7 +2805,7 @@ func (a *covenantlessArkClient) getClaimableBoardingUtxos(
 ) ([]types.Utxo, error) {
 	claimable := make([]types.Utxo, 0)
 	for _, addr := range boardingAddrs {
-		boardingScript, err := tree.ParseVtxoScript(addr.Tapscripts)
+		boardingScript, err := script.ParseVtxoScript(addr.Tapscripts)
 		if err != nil {
 			return nil, err
 		}
@@ -2861,7 +2863,7 @@ func (a *covenantlessArkClient) getExpiredBoardingUtxos(
 
 	expired := make([]types.Utxo, 0)
 	for _, addr := range boardingAddrs {
-		boardingScript, err := tree.ParseVtxoScript(addr.Tapscripts)
+		boardingScript, err := script.ParseVtxoScript(addr.Tapscripts)
 		if err != nil {
 			return nil, err
 		}

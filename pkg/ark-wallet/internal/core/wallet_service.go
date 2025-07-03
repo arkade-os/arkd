@@ -10,7 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/script"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -479,12 +480,12 @@ func (s *service) SignTransaction(_ context.Context, partialTx string, extractRa
 		for i, in := range ptx.Inputs {
 			isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
 			if isTaproot && len(in.TaprootLeafScript) > 0 {
-				closure, err := tree.DecodeClosure(in.TaprootLeafScript[0].Script)
+				closure, err := script.DecodeClosure(in.TaprootLeafScript[0].Script)
 				if err != nil {
 					return "", err
 				}
 
-				conditionWitness, err := tree.GetConditionWitness(in)
+				conditionWitness, err := txutils.GetConditionWitness(in)
 				if err != nil {
 					return "", err
 				}
@@ -495,7 +496,7 @@ func (s *service) SignTransaction(_ context.Context, partialTx string, extractRa
 					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
 						return "", err
 					}
-					args[tree.ConditionWitnessKey] = conditionWitnessBytes.Bytes()
+					args[string(txutils.CONDITION_WITNESS_KEY_PREFIX)] = conditionWitnessBytes.Bytes()
 				}
 
 				for _, sig := range in.TaprootScriptSpendSig {

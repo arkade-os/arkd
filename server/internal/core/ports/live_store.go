@@ -33,7 +33,7 @@ type IntentStore interface {
 }
 
 type ForfeitTxsStore interface {
-	Init(connectors []tree.TxGraphChunk, intents []domain.Intent) error
+	Init(connectors []tree.TxTreeNode, intents []domain.Intent) error
 	Sign(txs []string) error
 	Reset()
 	Pop() ([]string, error)

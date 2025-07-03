@@ -1,4 +1,4 @@
-package tree
+package txutils
 
 import (
 	"bytes"
@@ -7,13 +7,14 @@ import (
 
 	"github.com/ark-network/ark/common"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 var (
 	COSIGNER_PSBT_KEY_PREFIX     = []byte("cosigner")
-	CONDITION_WITNESS_KEY_PREFIX = []byte(ConditionWitnessKey)
+	CONDITION_WITNESS_KEY_PREFIX = []byte("condition")
 	VTXO_TREE_EXPIRY_PSBT_KEY    = []byte("expiry")
 	VTXO_TAPROOT_TREE_KEY        = []byte("taptree")
 )
@@ -73,7 +74,9 @@ func GetConditionWitness(in psbt.PInput) (wire.TxWitness, error) {
 	return wire.TxWitness{}, nil
 }
 
-func AddVtxoTreeExpiry(inIndex int, ptx *psbt.Packet, vtxoTreeExpiry common.RelativeLocktime) error {
+func AddVtxoTreeExpiry(
+	inIndex int, ptx *psbt.Packet, vtxoTreeExpiry common.RelativeLocktime,
+) error {
 	sequence, err := common.BIP68Sequence(vtxoTreeExpiry)
 	if err != nil {
 		return err
@@ -145,6 +148,27 @@ func GetCosignerKeys(in psbt.PInput) ([]*secp256k1.PublicKey, error) {
 	}
 
 	return keys, nil
+}
+
+func ReadTxWitness(witnessSerialized []byte) (wire.TxWitness, error) {
+	r := bytes.NewReader(witnessSerialized)
+
+	// first we extract the number of witness elements
+	witCount, err := wire.ReadVarInt(r, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// read each witness item
+	witness := make(wire.TxWitness, witCount)
+	for i := uint64(0); i < witCount; i++ {
+		witness[i], err = wire.ReadVarBytes(r, 0, txscript.MaxScriptSize, "witness")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return witness, nil
 }
 
 func cosignerPrefixedKey(index int) []byte {

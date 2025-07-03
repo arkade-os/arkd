@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/pkg/client-sdk/client"
 	"github.com/ark-network/ark/pkg/client-sdk/explorer"
 	"github.com/ark-network/ark/pkg/client-sdk/indexer"
@@ -172,11 +173,11 @@ func (a *arkClient) ListVtxos(ctx context.Context) (
 		if err != nil {
 			return nil, nil, err
 		}
-		script, err := common.P2TRScript(decoded.VtxoTapKey)
+		vtxoScript, err := script.P2TRScript(decoded.VtxoTapKey)
 		if err != nil {
 			return nil, nil, err
 		}
-		scripts = append(scripts, hex.EncodeToString(script))
+		scripts = append(scripts, hex.EncodeToString(vtxoScript))
 	}
 	opt := indexer.GetVtxosRequestOption{}
 	if err = opt.WithScripts(scripts); err != nil {
@@ -210,12 +211,12 @@ func (a *arkClient) NotifyIncomingFunds(
 	if err != nil {
 		return nil, err
 	}
-	script, err := common.P2TRScript(decoded.VtxoTapKey)
+	vtxoScript, err := script.P2TRScript(decoded.VtxoTapKey)
 	if err != nil {
 		return nil, err
 	}
 
-	scripts := []string{hex.EncodeToString(script)}
+	scripts := []string{hex.EncodeToString(vtxoScript)}
 	subId, err := a.indexer.SubscribeForScripts(ctx, "", scripts)
 	if err != nil {
 		return nil, err

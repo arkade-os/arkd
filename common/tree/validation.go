@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -13,74 +15,61 @@ import (
 )
 
 var (
-	ErrInvalidRoundTx             = fmt.Errorf("invalid round transaction")
-	ErrInvalidRoundTxOutputs      = fmt.Errorf("invalid number of outputs in round transaction")
+	ErrInvalidBatchOutputsNum     = fmt.Errorf("invalid number of batch outputs in commitment transaction")
 	ErrEmptyTree                  = fmt.Errorf("empty vtxo tree")
 	ErrNoLeaves                   = fmt.Errorf("no leaves in the tree")
 	ErrInvalidTaprootScript       = fmt.Errorf("invalid taproot script")
 	ErrMissingCosignersPublicKeys = fmt.Errorf("missing cosigners public keys")
 	ErrInvalidAmount              = fmt.Errorf("children amount is different from parent amount")
-	ErrWrongRoundTxid             = fmt.Errorf("the input of the tree root is not the round tx's shared output")
+	ErrBatchOutputMismatch        = fmt.Errorf("invalid vtxo tree root, tx input does not match batch outpoint")
 )
 
-// 0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0
-var unspendablePoint = []byte{
-	0x02, 0x50, 0x92, 0x9b, 0x74, 0xc1, 0xa0, 0x49, 0x54, 0xb7, 0x8b, 0x4b, 0x60, 0x35, 0xe9, 0x7a,
-	0x5e, 0x07, 0x8a, 0x5a, 0x0f, 0x28, 0xec, 0x96, 0xd5, 0x47, 0xbf, 0xee, 0x9a, 0xce, 0x80, 0x3a, 0xc0,
-}
+const batchOutputIndex = 0
 
-const (
-	sharedOutputIndex = 0
-)
-
-func UnspendableKey() *secp256k1.PublicKey {
-	key, _ := secp256k1.ParsePubKey(unspendablePoint)
-	return key
-}
-
-// ValidateVtxoTxGraph checks if the given vtxo tree is valid
-// roundTxid & roundTxIndex & roundTxAmount are used to validate the root input outpoint
-// serverPubkey & vtxoTreeExpiry are used to validate the sweep tapscript leaves
-// besides that, the function validates:
+// ValidateVtxoTree checks if the given vtxo tree is valid
+// vtxoTree tx & commitmentTx are used to validate that the tree spends from the batch outpoint.
+// signerPubkey & vtxoTreeExpiry are used to validate the sweep tapscript leaves.
+// Along with that, the function validates:
 // - the number of nodes
 // - the number of leaves
-// - children coherence with parent
+// - children spend from parent
 // - every control block and taproot output scripts
-// - input and output amounts
-func ValidateVtxoTxGraph(
-	graph *TxGraph, roundTransaction *psbt.Packet, serverPubkey *secp256k1.PublicKey, vtxoTreeExpiry common.RelativeLocktime,
+// - each tx matches input and output amounts
+func ValidateVtxoTree(
+	vtxoTree *TxTree, commitmentTx *psbt.Packet,
+	signerPubkey *secp256k1.PublicKey, vtxoTreeExpiry common.RelativeLocktime,
 ) error {
-	if len(roundTransaction.Outputs) < sharedOutputIndex+1 {
-		return ErrInvalidRoundTxOutputs
+	if len(commitmentTx.Outputs) < batchOutputIndex+1 {
+		return ErrInvalidBatchOutputsNum
 	}
 
-	roundTxAmount := roundTransaction.UnsignedTx.TxOut[sharedOutputIndex].Value
+	batchOutputAmount := commitmentTx.UnsignedTx.TxOut[batchOutputIndex].Value
 
-	if graph.Root == nil {
+	if vtxoTree.Root == nil {
 		return ErrEmptyTree
 	}
 
-	rootInput := graph.Root.UnsignedTx.TxIn[0]
-	if chainhash.Hash(rootInput.PreviousOutPoint.Hash).String() != roundTransaction.UnsignedTx.TxID() ||
-		rootInput.PreviousOutPoint.Index != sharedOutputIndex {
-		return ErrWrongRoundTxid
+	rootInput := vtxoTree.Root.UnsignedTx.TxIn[0]
+	if chainhash.Hash(rootInput.PreviousOutPoint.Hash).String() != commitmentTx.UnsignedTx.TxID() ||
+		rootInput.PreviousOutPoint.Index != batchOutputIndex {
+		return ErrBatchOutputMismatch
 	}
 
 	sumRootValue := int64(0)
-	for _, output := range graph.Root.UnsignedTx.TxOut {
+	for _, output := range vtxoTree.Root.UnsignedTx.TxOut {
 		sumRootValue += output.Value
 	}
 
-	if sumRootValue != roundTxAmount {
+	if sumRootValue != batchOutputAmount {
 		return ErrInvalidAmount
 	}
 
-	if len(graph.Leaves()) == 0 {
+	if len(vtxoTree.Leaves()) == 0 {
 		return ErrNoLeaves
 	}
 
-	sweepClosure := &CSVMultisigClosure{
-		MultisigClosure: MultisigClosure{PubKeys: []*secp256k1.PublicKey{serverPubkey}},
+	sweepClosure := &script.CSVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{PubKeys: []*secp256k1.PublicKey{signerPubkey}},
 		Locktime:        vtxoTreeExpiry,
 	}
 
@@ -93,21 +82,21 @@ func ValidateVtxoTxGraph(
 	tapTree := txscript.AssembleTaprootScriptTree(sweepLeaf)
 	tapTreeRoot := tapTree.RootNode.TapHash()
 
-	// validate the graph structure
-	if err := graph.Validate(); err != nil {
+	// Validate the vtxo tree.
+	if err := vtxoTree.Validate(); err != nil {
 		return err
 	}
 
-	// iterates over all the nodes of the graph to verify that cosigners public keys are corresponding to the parent output
-	if err := graph.Apply(func(g *TxGraph) (bool, error) {
-		for childIndex, child := range g.Children {
-			parentOutput := g.Root.UnsignedTx.TxOut[childIndex]
+	// Verify that all nodes' cosigners public keys match the parent output.
+	if err := vtxoTree.Apply(func(node *TxTree) (bool, error) {
+		for childIndex, child := range node.Children {
+			parentOutput := node.Root.UnsignedTx.TxOut[childIndex]
 			previousScriptKey := parentOutput.PkScript[2:]
 			if len(previousScriptKey) != 32 {
 				return false, ErrInvalidTaprootScript
 			}
 
-			cosigners, err := GetCosignerKeys(child.Root.Inputs[0])
+			cosigners, err := txutils.GetCosignerKeys(child.Root.Inputs[0])
 			if err != nil {
 				return false, fmt.Errorf("unable to get cosigners keys: %w", err)
 			}

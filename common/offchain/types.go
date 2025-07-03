@@ -1,4 +1,4 @@
-package common
+package offchain
 
 import (
 	"github.com/btcsuite/btcd/wire"

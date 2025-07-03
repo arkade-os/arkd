@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
@@ -223,7 +224,7 @@ func (o Receiver) ToTxOut() (*wire.TxOut, bool, error) {
 
 		isOnchain = true
 	} else {
-		pkScript, err = common.P2TRScript(arkAddress.VtxoTapKey)
+		pkScript, err = script.P2TRScript(arkAddress.VtxoTapKey)
 		if err != nil {
 			return nil, false, err
 		}

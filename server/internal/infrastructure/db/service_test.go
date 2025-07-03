@@ -40,7 +40,7 @@ const (
 )
 
 var (
-	vtxoTree = []tree.TxGraphChunk{
+	vtxoTree = []tree.TxTreeNode{
 		{
 			Txid:     randomString(32),
 			Tx:       randomTx(),
@@ -78,7 +78,7 @@ var (
 			},
 		},
 	}
-	connectorsTree = []tree.TxGraphChunk{
+	connectorsTree = []tree.TxTreeNode{
 		{
 			Txid: randomString(32),
 			Tx:   randomTx(),

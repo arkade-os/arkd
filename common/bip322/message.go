@@ -1,4 +1,4 @@
-package tree
+package bip322
 
 import (
 	"encoding/json"

@@ -11,7 +11,7 @@ type Indexer interface {
 	GetCommitmentTx(ctx context.Context, txid string) (*CommitmentTx, error)
 	GetCommitmentTxLeaves(ctx context.Context, txid string, opts ...RequestOption) (*CommitmentTxLeavesResponse, error)
 	GetVtxoTree(ctx context.Context, batchOutpoint Outpoint, opts ...RequestOption) (*VtxoTreeResponse, error)
-	GetFullVtxoTree(ctx context.Context, batchOutpoint Outpoint, opts ...RequestOption) ([]tree.TxGraphChunk, error)
+	GetFullVtxoTree(ctx context.Context, batchOutpoint Outpoint, opts ...RequestOption) ([]tree.TxTreeNode, error)
 	GetVtxoTreeLeaves(ctx context.Context, batchOutpoint Outpoint, opts ...RequestOption) (*VtxoTreeLeavesResponse, error)
 	GetForfeitTxs(ctx context.Context, txid string, opts ...RequestOption) (*ForfeitTxsResponse, error)
 	GetConnectors(ctx context.Context, txid string, opts ...RequestOption) (*ConnectorsResponse, error)
@@ -100,10 +100,10 @@ type PageResponse struct {
 
 type TxNodes []TxNode
 
-func (t TxNodes) ToTree(txMap map[string]string) []tree.TxGraphChunk {
-	vtxoTree := make([]tree.TxGraphChunk, 0)
+func (t TxNodes) ToTree(txMap map[string]string) []tree.TxTreeNode {
+	vtxoTree := make([]tree.TxTreeNode, 0)
 	for _, node := range t {
-		vtxoTree = append(vtxoTree, tree.TxGraphChunk{
+		vtxoTree = append(vtxoTree, tree.TxTreeNode{
 			Txid:     node.Txid,
 			Tx:       txMap[node.Txid],
 			Children: node.Children,

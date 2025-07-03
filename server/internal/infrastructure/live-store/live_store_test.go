@@ -392,8 +392,8 @@ func parseIntentFixtures(fixtureJSON string) (*intentPushFixture, error) {
 
 func parseForfeitTxsFixture(
 	connectorsJSON, intentsJSON string,
-) ([]tree.TxGraphChunk, []domain.Intent, error) {
-	connectorsChunks := make([]tree.TxGraphChunk, 0)
+) ([]tree.TxTreeNode, []domain.Intent, error) {
+	connectorsChunks := make([]tree.TxTreeNode, 0)
 	if err := json.Unmarshal([]byte(connectorsJSON), &connectorsChunks); err != nil {
 		return nil, nil, err
 	}
@@ -420,7 +420,7 @@ type mockedTxBuilder struct {
 }
 
 func (m *mockedTxBuilder) VerifyForfeitTxs(
-	vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, txs []string,
+	vtxos []domain.Vtxo, connectors []tree.TxTreeNode, txs []string,
 ) (valid map[domain.Outpoint]ports.ValidForfeitTx, err error) {
 	args := m.Called(vtxos, connectors, txs)
 	res0 := args.Get(0).(map[domain.Outpoint]ports.ValidForfeitTx)
@@ -431,14 +431,14 @@ func (m *mockedTxBuilder) BuildCommitmentTx(
 	signerPubkey *secp256k1.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput, connectorAddresses []string, cosignerPubkeys [][]string,
 ) (
-	commitmentTx string, vtxoTree *tree.TxGraph,
-	connectorAddress string, connectors *tree.TxGraph, err error,
+	commitmentTx string, vtxoTree *tree.TxTree,
+	connectorAddress string, connectors *tree.TxTree, err error,
 ) {
 	args := m.Called(signerPubkey, intents, boardingInputs, connectorAddresses, cosignerPubkeys)
 	res0 := args.Get(0).(string)
-	res1 := args.Get(1).(*tree.TxGraph)
+	res1 := args.Get(1).(*tree.TxTree)
 	res2 := args.Get(2).(string)
-	res3 := args.Get(3).(*tree.TxGraph)
+	res3 := args.Get(3).(*tree.TxTree)
 	return res0, res1, res2, res3, args.Error(4)
 }
 
@@ -452,7 +452,7 @@ func (m *mockedTxBuilder) BuildSweepTx(
 }
 
 func (m *mockedTxBuilder) GetSweepableBacthOutputs(
-	vtxoTree *tree.TxGraph,
+	vtxoTree *tree.TxTree,
 ) (vtxoTreeExpiry *common.RelativeLocktime, sweepInput ports.SweepableBatchOutput, err error) {
 	args := m.Called(vtxoTree)
 	res0 := args.Get(0).(*common.RelativeLocktime)

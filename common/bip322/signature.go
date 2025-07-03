@@ -3,9 +3,18 @@ package bip322
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+)
+
+var (
+	ErrInvalidTxNumberOfInputs   = fmt.Errorf("invalid tx, expected at least 2 inputs")
+	ErrInvalidTxNumberOfOutputs  = fmt.Errorf("invalid tx, expected at least 1 output")
+	ErrInvalidTxWrongTxHash      = fmt.Errorf("invalid tx, wrong tx hash in first input")
+	ErrInvalidTxWrongOutputIndex = fmt.Errorf("invalid tx, wrong output index in first input")
+	ErrPrevoutNotFound           = fmt.Errorf("prevout not found")
 )
 
 // Signature is the signed and extracted toSign transaction
@@ -37,8 +46,8 @@ func (s Signature) Encode() (string, error) {
 	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil
 }
 
-// Verify validates the BIP0322 full proof of funds
-// our version does not check the input sequences in order to be compatible with offchain transactions
+// Verify validates the BIP-0322 full proof of funds
+// Our version does not check the input sequences to be compatible with offchain txs.
 func (s Signature) Verify(message string, prevoutFetcher txscript.PrevOutputFetcher) error {
 	if len(s.TxIn) < 2 {
 		return ErrInvalidTxNumberOfInputs
@@ -56,7 +65,7 @@ func (s Signature) Verify(message string, prevoutFetcher txscript.PrevOutputFetc
 	}
 
 	// craft the toSpend tx
-	toSpend := craftToSpendTx(message, secondInputPrevout.PkScript)
+	toSpend := buildToSpendTx(message, secondInputPrevout.PkScript)
 	toSpendHash := toSpend.TxHash()
 
 	// overwrite the prevoutFetcher to include the toSpend tx
@@ -85,14 +94,8 @@ func (s Signature) Verify(message string, prevoutFetcher txscript.PrevOutputFetc
 		}
 
 		engine, err := txscript.NewEngine(
-			prevout.PkScript,
-			&tx,
-			i,
-			txscript.StandardVerifyFlags,
-			sigCache,
-			txSigHashes,
-			prevout.Value,
-			prevoutFetcher,
+			prevout.PkScript, &tx, i, txscript.StandardVerifyFlags,
+			sigCache, txSigHashes, prevout.Value, prevoutFetcher,
 		)
 		if err != nil {
 			return err

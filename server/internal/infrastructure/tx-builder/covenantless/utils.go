@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -66,13 +66,13 @@ func getOutputVtxosLeaves(
 					return nil, fmt.Errorf("failed to parse pubkey: %s", err)
 				}
 
-				script, err := common.P2TRScript(pubkey)
+				vtxoScript, err := script.P2TRScript(pubkey)
 				if err != nil {
 					return nil, fmt.Errorf("failed to create script: %s", err)
 				}
 
 				leaves = append(leaves, tree.Leaf{
-					Script:              hex.EncodeToString(script),
+					Script:              hex.EncodeToString(vtxoScript),
 					Amount:              receiver.Amount,
 					CosignersPublicKeys: cosignersPublicKeys[i],
 				})

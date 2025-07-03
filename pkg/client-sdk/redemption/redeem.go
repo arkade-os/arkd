@@ -8,7 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/script"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/pkg/client-sdk/explorer"
 	"github.com/ark-network/ark/pkg/client-sdk/indexer"
 	"github.com/ark-network/ark/pkg/client-sdk/types"
@@ -102,12 +103,12 @@ func (r *CovenantlessRedeemBranch) NextRedeemTx() (string, error) {
 			// we need to extract the leaf script
 			leaf := input.TaprootLeafScript[0]
 
-			closure, err := tree.DecodeClosure(leaf.Script)
+			closure, err := script.DecodeClosure(leaf.Script)
 			if err != nil {
 				return "", err
 			}
 
-			conditionWitness, err := tree.GetConditionWitness(input)
+			conditionWitness, err := txutils.GetConditionWitness(input)
 			if err != nil {
 				return "", err
 			}
@@ -118,7 +119,7 @@ func (r *CovenantlessRedeemBranch) NextRedeemTx() (string, error) {
 				if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
 					return "", err
 				}
-				args[tree.ConditionWitnessKey] = conditionWitnessBytes.Bytes()
+				args[string(txutils.CONDITION_WITNESS_KEY_PREFIX)] = conditionWitnessBytes.Bytes()
 			}
 
 			for _, sig := range input.TaprootScriptSpendSig {

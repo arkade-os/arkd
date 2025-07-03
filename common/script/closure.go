@@ -1,4 +1,4 @@
-package tree
+package script
 
 import (
 	"bytes"
@@ -8,39 +8,12 @@ import (
 	"strings"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
-
-const (
-	OP_INSPECTOUTPUTSCRIPTPUBKEY = 0xd1
-	OP_INSPECTOUTPUTVALUE        = 0xcf
-	OP_PUSHCURRENTINPUTINDEX     = 0xcd
-	OP_INSPECTINPUTVALUE         = 0xc9
-	OP_SUB64                     = 0xd8
-)
-
-type MultisigType int
-
-const (
-	MultisigTypeChecksig MultisigType = iota
-	MultisigTypeChecksigAdd
-)
-
-const ConditionWitnessKey = "condition"
-
-// forbiddenOpcodes are opcodes that are not allowed in a condition script
-var forbiddenOpcodes = []byte{
-	txscript.OP_CHECKMULTISIG,
-	txscript.OP_CHECKSIG,
-	txscript.OP_CHECKSIGVERIFY,
-	txscript.OP_CHECKSIGADD,
-	txscript.OP_CHECKMULTISIGVERIFY,
-	txscript.OP_CHECKLOCKTIMEVERIFY,
-	txscript.OP_CHECKSEQUENCEVERIFY,
-}
 
 type Closure interface {
 	Script() ([]byte, error)
@@ -54,38 +27,6 @@ type Closure interface {
 type MultisigClosure struct {
 	PubKeys []*secp256k1.PublicKey
 	Type    MultisigType
-}
-
-// CSVMultisigClosure is a closure that contains a list of public keys and a
-// CHECKSEQUENCEVERIFY. The witness size is 64 bytes per key, admitting
-// the sighash type is SIGHASH_DEFAULT.
-type CSVMultisigClosure struct {
-	MultisigClosure
-	Locktime common.RelativeLocktime
-}
-
-// CLTVMultisigClosure is a closure that contains a list of public keys and a
-// CHECKLOCKTIMEVERIFY. The witness size is 64 bytes per key, admitting
-// the sighash type is SIGHASH_DEFAULT.
-type CLTVMultisigClosure struct {
-	MultisigClosure
-	Locktime common.AbsoluteLocktime
-}
-
-// ConditionMultisigClosure is a closure that contains a condition and a
-// multisig closure. The condition is a boolean script that is executed with the
-// multisig witness.
-type ConditionMultisigClosure struct {
-	MultisigClosure
-	Condition []byte
-}
-
-// ConditionCSVMultisigClosure is a closure that contains a condition and a
-// CSV multisig closure. The condition is a boolean script that is executed with the
-// multisig witness.
-type ConditionCSVMultisigClosure struct {
-	CSVMultisigClosure
-	Condition []byte
 }
 
 func DecodeClosure(script []byte) (Closure, error) {
@@ -216,7 +157,8 @@ func (f *MultisigClosure) decodeChecksigAdd(script []byte) (bool, error) {
 			return false, nil
 		}
 
-		if tokenizer.Opcode() == txscript.OP_CHECKSIGADD || tokenizer.Opcode() == txscript.OP_CHECKSIG {
+		if tokenizer.Opcode() == txscript.OP_CHECKSIGADD ||
+			tokenizer.Opcode() == txscript.OP_CHECKSIG {
 			continue
 		} else {
 			return false, nil
@@ -313,16 +255,19 @@ func (f *MultisigClosure) decodeChecksig(script []byte) (bool, error) {
 	return true, nil
 }
 
-func (f *MultisigClosure) Witness(controlBlock []byte, signatures map[string][]byte) (wire.TxWitness, error) {
+func (f *MultisigClosure) Witness(
+	controlBlock []byte, signatures map[string][]byte,
+) (wire.TxWitness, error) {
 	// Create witness stack with capacity for all signatures plus script and control block
 	witness := make(wire.TxWitness, 0, len(f.PubKeys)+2)
 
 	// Add signatures in the reverse order as public keys
 	for i := len(f.PubKeys) - 1; i >= 0; i-- {
 		pubkey := f.PubKeys[i]
-		sig, ok := signatures[hex.EncodeToString(schnorr.SerializePubKey(pubkey))]
+		xOnlyPubkey := schnorr.SerializePubKey(pubkey)
+		sig, ok := signatures[hex.EncodeToString(xOnlyPubkey)]
 		if !ok {
-			return nil, fmt.Errorf("missing signature for public key %x", schnorr.SerializePubKey(pubkey))
+			return nil, fmt.Errorf("missing signature for pubkey %x", xOnlyPubkey)
 		}
 		witness = append(witness, sig)
 	}
@@ -340,7 +285,17 @@ func (f *MultisigClosure) Witness(controlBlock []byte, signatures map[string][]b
 	return witness, nil
 }
 
-func (f *CSVMultisigClosure) Witness(controlBlock []byte, signatures map[string][]byte) (wire.TxWitness, error) {
+// CSVMultisigClosure is a closure that contains a list of public keys and a
+// CHECKSEQUENCEVERIFY. The witness size is 64 bytes per key, admitting
+// the sighash type is SIGHASH_DEFAULT.
+type CSVMultisigClosure struct {
+	MultisigClosure
+	Locktime common.RelativeLocktime
+}
+
+func (f *CSVMultisigClosure) Witness(
+	controlBlock []byte, signatures map[string][]byte,
+) (wire.TxWitness, error) {
 	multisigWitness, err := f.MultisigClosure.Witness(controlBlock, signatures)
 	if err != nil {
 		return nil, err
@@ -433,7 +388,17 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 	return valid, nil
 }
 
-func (f *CLTVMultisigClosure) Witness(controlBlock []byte, signatures map[string][]byte) (wire.TxWitness, error) {
+// CLTVMultisigClosure is a closure that contains a list of public keys and a
+// CHECKLOCKTIMEVERIFY. The witness size is 64 bytes per key, admitting
+// the sighash type is SIGHASH_DEFAULT.
+type CLTVMultisigClosure struct {
+	MultisigClosure
+	Locktime common.AbsoluteLocktime
+}
+
+func (f *CLTVMultisigClosure) Witness(
+	controlBlock []byte, signatures map[string][]byte,
+) (wire.TxWitness, error) {
 	multisigWitness, err := f.MultisigClosure.Witness(controlBlock, signatures)
 	if err != nil {
 		return nil, err
@@ -507,7 +472,9 @@ func (d *CLTVMultisigClosure) Decode(script []byte) (bool, error) {
 	} else if len(locktime) == 1 {
 		locktimeValue = uint32(locktime[0])
 	} else {
-		return false, fmt.Errorf("invalid locktime length: expected 1, 2 or 4 bytes, got %d", len(locktime))
+		return false, fmt.Errorf(
+			"invalid locktime length: expected 1, 2 or 4 bytes, got %d", len(locktime),
+		)
 	}
 
 	multisigClosure := &MultisigClosure{}
@@ -527,83 +494,12 @@ func (d *CLTVMultisigClosure) Decode(script []byte) (bool, error) {
 	return valid, nil
 }
 
-// ExecuteBoolScript run the script with the provided witness as argument
-// the result must be a boolean value accepted by OP_IF / OP_NOTIF opcodes
-func ExecuteBoolScript(script []byte, witness wire.TxWitness) (bool, error) {
-	// make sure the script doesn't contain any introspections opcodes (sig or locktime)
-	tokenizer := txscript.MakeScriptTokenizer(0, script)
-	for tokenizer.Next() {
-		for _, opcode := range forbiddenOpcodes {
-			if tokenizer.OpcodePosition() != -1 && tokenizer.Opcode() == opcode {
-				return false, fmt.Errorf("forbidden opcode %x", opcode)
-			}
-		}
-	}
-
-	// Create a fake transaction with minimal required fields
-	// this is needed to instantiate the script engine without a tx
-	// as we don't validate any tx data, we just need to have a valid tx structure
-	fakeTx := &wire.MsgTx{
-		Version: 2,
-		TxIn:    []*wire.TxIn{{Sequence: 0xffffffff}}, // At least one input required
-		TxOut:   []*wire.TxOut{{Value: 0}},            // At least one output required
-	}
-
-	// Create a new script engine with the fake tx
-	vm, err := txscript.NewEngine(
-		script,
-		fakeTx,
-		0, // Input index
-		txscript.ScriptVerifyTaproot,
-		nil,
-		nil,
-		0,
-		nil,
-	)
-	if err != nil {
-		return false, fmt.Errorf("failed to create script engine: %w", err)
-	}
-
-	vm.SetStack(witness)
-
-	// Execute the script with the provided witness
-	if err := vm.Execute(); err != nil {
-		if scriptError, ok := err.(txscript.Error); ok {
-			if scriptError.ErrorCode == txscript.ErrEvalFalse {
-				return false, nil
-			}
-		}
-		return false, err
-	}
-
-	finalStack := vm.GetStack()
-
-	if len(finalStack) != 0 {
-		return false, fmt.Errorf("script must return zero value on the stack, got %d", len(finalStack))
-	}
-
-	return true, nil
-}
-
-func ReadTxWitness(witnessSerialized []byte) (wire.TxWitness, error) {
-	r := bytes.NewReader(witnessSerialized)
-
-	// first we extract the number of witness elements
-	witCount, err := wire.ReadVarInt(r, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	// read each witness item
-	witness := make(wire.TxWitness, witCount)
-	for i := uint64(0); i < witCount; i++ {
-		witness[i], err = wire.ReadVarBytes(r, 0, txscript.MaxScriptSize, "witness")
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return witness, nil
+// ConditionMultisigClosure is a closure that contains a condition and a
+// multisig closure. The condition is a boolean script that is executed with the
+// multisig witness.
+type ConditionMultisigClosure struct {
+	MultisigClosure
+	Condition []byte
 }
 
 func (f *ConditionMultisigClosure) Script() ([]byte, error) {
@@ -659,19 +555,21 @@ func (f *ConditionMultisigClosure) Decode(script []byte) (bool, error) {
 	return bytes.Equal(rebuilt, script), nil
 }
 
-func (f *ConditionMultisigClosure) Witness(controlBlock []byte, args map[string][]byte) (wire.TxWitness, error) {
+func (f *ConditionMultisigClosure) Witness(
+	controlBlock []byte, args map[string][]byte,
+) (wire.TxWitness, error) {
 	script, err := f.Script()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate script: %w", err)
 	}
 
 	// Read and execute condition witness
-	condWitness, err := ReadTxWitness(args[ConditionWitnessKey])
+	condWitness, err := txutils.ReadTxWitness(args[ConditionWitnessKey])
 	if err != nil {
 		return nil, fmt.Errorf("failed to read condition witness: %w", err)
 	}
 
-	returnValue, err := ExecuteBoolScript(f.Condition, condWitness)
+	returnValue, err := EvaluateScriptToBool(f.Condition, condWitness)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute condition: %w", err)
 	}
@@ -692,6 +590,14 @@ func (f *ConditionMultisigClosure) Witness(controlBlock []byte, args map[string]
 	witness = append(witness, controlBlock)
 
 	return witness, nil
+}
+
+// ConditionCSVMultisigClosure is a closure that contains a condition and a
+// CSV multisig closure. The condition is a boolean script that is executed with the
+// multisig witness.
+type ConditionCSVMultisigClosure struct {
+	CSVMultisigClosure
+	Condition []byte
 }
 
 func (f *ConditionCSVMultisigClosure) Script() ([]byte, error) {
@@ -747,19 +653,21 @@ func (f *ConditionCSVMultisigClosure) Decode(script []byte) (bool, error) {
 	return bytes.Equal(rebuilt, script), nil
 }
 
-func (f *ConditionCSVMultisigClosure) Witness(controlBlock []byte, args map[string][]byte) (wire.TxWitness, error) {
+func (f *ConditionCSVMultisigClosure) Witness(
+	controlBlock []byte, args map[string][]byte,
+) (wire.TxWitness, error) {
 	script, err := f.Script()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate script: %w", err)
 	}
 
 	// Read and execute condition witness
-	condWitness, err := ReadTxWitness(args[ConditionWitnessKey])
+	condWitness, err := txutils.ReadTxWitness(args[ConditionWitnessKey])
 	if err != nil {
 		return nil, fmt.Errorf("failed to read condition witness: %w", err)
 	}
 
-	returnValue, err := ExecuteBoolScript(f.Condition, condWitness)
+	returnValue, err := EvaluateScriptToBool(f.Condition, condWitness)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute condition: %w", err)
 	}

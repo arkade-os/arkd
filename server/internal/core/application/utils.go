@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -23,12 +25,12 @@ import (
 // returns the sweepable outputs as ports.SweepInput mapped by their expiration time
 func findSweepableOutputs(
 	ctx context.Context, walletSvc ports.WalletService, txbuilder ports.TxBuilder,
-	schedulerUnit ports.TimeUnit, vtxoTree *tree.TxGraph,
+	schedulerUnit ports.TimeUnit, vtxoTree *tree.TxTree,
 ) (map[int64][]ports.SweepableBatchOutput, error) {
 	sweepableBatchOutputs := make(map[int64][]ports.SweepableBatchOutput)
 	blocktimeCache := make(map[string]int64) // txid -> blocktime / blockheight
 
-	if err := vtxoTree.Apply(func(g *tree.TxGraph) (bool, error) {
+	if err := vtxoTree.Apply(func(g *tree.TxTree) (bool, error) {
 		isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(
 			ctx, g.Root.UnsignedTx.TxID(),
 		)
@@ -117,7 +119,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
-		if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
+		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			continue
 		}
 		outs = append(outs, domain.Vtxo{
@@ -148,7 +150,7 @@ func newBoardingInput(
 
 	output := tx.TxOut[input.VOut]
 
-	boardingScript, err := tree.ParseVtxoScript(input.Tapscripts)
+	boardingScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse boarding utxo taproot tree: %s", err)
 	}
@@ -158,7 +160,7 @@ func newBoardingInput(
 		return nil, fmt.Errorf("failed to get taproot key: %s", err)
 	}
 
-	expectedScriptPubkey, err := common.P2TRScript(tapKey)
+	expectedScriptPubkey, err := script.P2TRScript(tapKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get script pubkey: %s", err)
 	}
@@ -244,14 +246,14 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 	expireAt := round.ExpiryTimestamp()
 
 	vtxos := make([]domain.Vtxo, 0)
-	for _, chunk := range tree.TxGraphChunkList(round.VtxoTree).Leaves() {
+	for _, chunk := range tree.FlatVtxoTree(round.VtxoTree).Leaves() {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(chunk.Tx), true)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
 		}
 		for i, out := range tx.UnsignedTx.TxOut {
-			if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
 
@@ -286,12 +288,12 @@ func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {
 }
 
 func treeTxEvents(
-	graph *tree.TxGraph, batchIndex int32, roundId string,
-	getTopic func(g *tree.TxGraph) ([]string, error),
+	graph *tree.TxTree, batchIndex int32, roundId string,
+	getTopic func(g *tree.TxTree) ([]string, error),
 ) []domain.Event {
 	events := make([]domain.Event, 0)
 
-	if err := graph.Apply(func(g *tree.TxGraph) (bool, error) {
+	if err := graph.Apply(func(g *tree.TxTree) (bool, error) {
 		chunk, err := g.RootChunk()
 		if err != nil {
 			return false, err
@@ -320,11 +322,11 @@ func treeTxEvents(
 }
 
 func treeSignatureEvents(
-	graph *tree.TxGraph, batchIndex int32, roundId string,
+	graph *tree.TxTree, batchIndex int32, roundId string,
 ) []domain.Event {
 	events := make([]domain.Event, 0)
 
-	_ = graph.Apply(func(g *tree.TxGraph) (bool, error) {
+	_ = graph.Apply(func(g *tree.TxTree) (bool, error) {
 		sig := g.Root.Inputs[0].TaprootKeySpendSig
 
 		topic, err := getVtxoTreeTopic(g)
@@ -350,8 +352,8 @@ func treeSignatureEvents(
 }
 
 // getVtxoTreeTopic returns the list of topics (cosigner keys) for the given vtxo subtree
-func getVtxoTreeTopic(g *tree.TxGraph) ([]string, error) {
-	cosignerKeys, err := tree.GetCosignerKeys(g.Root.Inputs[0])
+func getVtxoTreeTopic(g *tree.TxTree) ([]string, error) {
+	cosignerKeys, err := txutils.GetCosignerKeys(g.Root.Inputs[0])
 	if err != nil {
 		return nil, err
 	}
@@ -367,15 +369,15 @@ func getVtxoTreeTopic(g *tree.TxGraph) ([]string, error) {
 // getConnectorTreeTopic returns the list of topics (vtxo outpoints) for the given connector subtree
 func getConnectorTreeTopic(
 	connectorsIndex map[string]domain.Outpoint,
-) func(g *tree.TxGraph) ([]string, error) {
-	return func(g *tree.TxGraph) ([]string, error) {
+) func(g *tree.TxTree) ([]string, error) {
+	return func(g *tree.TxTree) ([]string, error) {
 		leaves := g.Leaves()
 		topics := make([]string, 0, len(leaves))
 
 		for _, leaf := range leaves {
 			leafTxid := leaf.UnsignedTx.TxID()
 			for outIndex, output := range leaf.UnsignedTx.TxOut {
-				if bytes.Equal(output.PkScript, tree.ANCHOR_PKSCRIPT) {
+				if bytes.Equal(output.PkScript, txutils.ANCHOR_PKSCRIPT) {
 					continue
 				}
 

@@ -42,16 +42,16 @@ type TxBuilder interface {
 		boardingInputs []BoardingInput, connectorAddresses []string,
 		cosigners [][]string,
 	) (
-		commitmentTx string, vtxoTree *tree.TxGraph,
-		connectorAddress string, connectors *tree.TxGraph, err error,
+		commitmentTx string, vtxoTree *tree.TxTree,
+		connectorAddress string, connectors *tree.TxTree, err error,
 	)
 	// VerifyForfeitTxs verifies a list of forfeit txs against a set of VTXOs and
 	// connectors.
 	VerifyForfeitTxs(
-		vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, txs []string,
+		vtxos []domain.Vtxo, connectors []tree.TxTreeNode, txs []string,
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []SweepableBatchOutput) (txid string, signedSweepTx string, err error)
-	GetSweepableBacthOutputs(vtxoTree *tree.TxGraph) (
+	GetSweepableBacthOutputs(vtxoTree *tree.TxTree) (
 		vtxoTreeExpiry *common.RelativeLocktime, bacthOutputs SweepableBatchOutput, err error,
 	)
 	FinalizeAndExtract(tx string) (txhex string, err error)

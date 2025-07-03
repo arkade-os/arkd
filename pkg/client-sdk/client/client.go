@@ -99,7 +99,7 @@ type TreeTxEvent struct {
 	Id           string
 	Topic        []string
 	BatchIndex   int32
-	TxGraphChunk tree.TxGraphChunk
+	TxGraphChunk tree.TxTreeNode
 }
 
 type TreeSignatureEvent struct {

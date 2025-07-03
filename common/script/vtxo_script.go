@@ -1,4 +1,4 @@
-package tree
+package script
 
 import (
 	"bytes"
@@ -14,7 +14,25 @@ import (
 
 var ErrNoExitLeaf = fmt.Errorf("no exit leaf")
 
-type VtxoScript common.VtxoScript[bitcoinTapTree, Closure]
+type VtxoScript common.VtxoScript[taprootTree, Closure]
+
+// NewDefaultVtxoScript returns the common VTXO script: A + S | A after T with:
+// - A: the owner of the VTXO.
+// - S: the pubkey of the signer who provided the liquidity for the VTXO.
+// - T: exit delay that must be waited by alice to spend the VTXO once unrolled onchain.
+func NewDefaultVtxoScript(
+	owner, signer *secp256k1.PublicKey, exitDelay common.RelativeLocktime,
+) *TapscriptsVtxoScript {
+	return &TapscriptsVtxoScript{
+		[]Closure{
+			&CSVMultisigClosure{
+				MultisigClosure: MultisigClosure{PubKeys: []*secp256k1.PublicKey{owner}},
+				Locktime:        exitDelay,
+			},
+			&MultisigClosure{PubKeys: []*secp256k1.PublicKey{owner, signer}},
+		},
+	}
+}
 
 func ParseVtxoScript(scripts []string) (VtxoScript, error) {
 	if len(scripts) == 0 {
@@ -173,24 +191,12 @@ func (v *TapscriptsVtxoScript) ExitClosures() []Closure {
 	return exits
 }
 
-func NewDefaultVtxoScript(owner, server *secp256k1.PublicKey, exitDelay common.RelativeLocktime) *TapscriptsVtxoScript {
-	return &TapscriptsVtxoScript{
-		[]Closure{
-			&CSVMultisigClosure{
-				MultisigClosure: MultisigClosure{PubKeys: []*secp256k1.PublicKey{owner}},
-				Locktime:        exitDelay,
-			},
-			&MultisigClosure{PubKeys: []*secp256k1.PublicKey{owner, server}},
-		},
-	}
-}
-
-func (v *TapscriptsVtxoScript) TapTree() (*secp256k1.PublicKey, bitcoinTapTree, error) {
+func (v *TapscriptsVtxoScript) TapTree() (*secp256k1.PublicKey, taprootTree, error) {
 	leaves := make([]txscript.TapLeaf, len(v.Closures))
 	for i, closure := range v.Closures {
 		script, err := closure.Script()
 		if err != nil {
-			return nil, bitcoinTapTree{}, fmt.Errorf("failed to get script for closure %d: %w", i, err)
+			return nil, taprootTree{}, fmt.Errorf("failed to get script for closure %d: %w", i, err)
 		}
 		leaves[i] = txscript.NewBaseTapLeaf(script)
 	}
@@ -202,19 +208,19 @@ func (v *TapscriptsVtxoScript) TapTree() (*secp256k1.PublicKey, bitcoinTapTree, 
 		root[:],
 	)
 
-	return taprootKey, bitcoinTapTree{tapTree}, nil
+	return taprootKey, taprootTree{tapTree}, nil
 }
 
-// bitcoinTapTree is a wrapper around txscript.IndexedTapScriptTree to implement the common.TaprootTree interface
-type bitcoinTapTree struct {
+// taprootTree is a wrapper around txscript.IndexedTapScriptTree to implement the common.TaprootTree interface
+type taprootTree struct {
 	*txscript.IndexedTapScriptTree
 }
 
-func (b bitcoinTapTree) GetRoot() chainhash.Hash {
+func (b taprootTree) GetRoot() chainhash.Hash {
 	return b.RootNode.TapHash()
 }
 
-func (b bitcoinTapTree) GetTaprootMerkleProof(leafhash chainhash.Hash) (*common.TaprootMerkleProof, error) {
+func (b taprootTree) GetTaprootMerkleProof(leafhash chainhash.Hash) (*common.TaprootMerkleProof, error) {
 	index, ok := b.LeafProofIndex[leafhash]
 	if !ok {
 		return nil, fmt.Errorf("leaf %s not found in tree", leafhash.String())
@@ -233,7 +239,7 @@ func (b bitcoinTapTree) GetTaprootMerkleProof(leafhash chainhash.Hash) (*common.
 	}, nil
 }
 
-func (b bitcoinTapTree) GetLeaves() []chainhash.Hash {
+func (b taprootTree) GetLeaves() []chainhash.Hash {
 	leafHashes := make([]chainhash.Hash, 0)
 	for hash := range b.LeafProofIndex {
 		leafHashes = append(leafHashes, hash)

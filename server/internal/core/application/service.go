@@ -15,7 +15,10 @@ import (
 
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/bip322"
+	"github.com/ark-network/ark/common/offchain"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -361,7 +364,7 @@ func (s *service) SubmitOffchainTx(
 
 	vtxoRepo := s.repoManager.Vtxos()
 
-	ins := make([]common.VtxoInput, 0)
+	ins := make([]offchain.VtxoInput, 0)
 	checkpointTxs := make(map[string]string)
 	checkpointPsbts := make(map[string]*psbt.Packet) // txid -> psbt
 	spentVtxoKeys := make([]domain.Outpoint, 0)
@@ -435,7 +438,7 @@ func (s *service) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("expected exactly one taproot leaf script")
 		}
 
-		tapscripts, err := tree.GetTaprootTree(input)
+		tapscripts, err := txutils.GetTaprootTree(input)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("missing tapscripts: %s", err)
 		}
@@ -477,7 +480,7 @@ func (s *service) SubmitOffchainTx(
 			)
 		}
 
-		vtxoScript, err := tree.ParseVtxoScript(tapscripts)
+		vtxoScript, err := script.ParseVtxoScript(tapscripts)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("failed to parse vtxo script: %s", err)
 		}
@@ -500,7 +503,7 @@ func (s *service) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("vtxo pubkey mismatch")
 		}
 
-		pkScriptFromTapscripts, err := common.P2TRScript(tapKeyFromTapscripts)
+		pkScriptFromTapscripts, err := script.P2TRScript(tapKeyFromTapscripts)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("failed to get pkscript from taproot key: %s", err)
 		}
@@ -520,7 +523,7 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		// verify witness utxo
-		pkscript, err := common.P2TRScript(vtxoPubkey)
+		pkscript, err := script.P2TRScript(vtxoPubkey)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("failed to get pkscript: %s", err)
 		}
@@ -534,16 +537,16 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		// verify forfeit closure script
-		closure, err := tree.DecodeClosure(spendingTapscript.Script)
+		closure, err := script.DecodeClosure(spendingTapscript.Script)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("failed to decode forfeit closure: %s", err)
 		}
 
 		var locktime *common.AbsoluteLocktime
 		switch c := closure.(type) {
-		case *tree.CLTVMultisigClosure:
+		case *script.CLTVMultisigClosure:
 			locktime = &c.Locktime
-		case *tree.MultisigClosure, *tree.ConditionMultisigClosure:
+		case *script.MultisigClosure, *script.ConditionMultisigClosure:
 		default:
 			return nil, "", "", fmt.Errorf(
 				"invalid input forfeit closure script %x", spendingTapscript.Script,
@@ -610,7 +613,7 @@ func (s *service) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("checkpoint tapscript not found")
 		}
 
-		ins = append(ins, common.VtxoInput{
+		ins = append(ins, offchain.VtxoInput{
 			Outpoint: &checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint,
 			Tapscript: &waddrmgr.Tapscript{
 				ControlBlock:   ctrlBlock,
@@ -654,7 +657,7 @@ func (s *service) SubmitOffchainTx(
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
-		if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
+		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
 				return nil, "", "", fmt.Errorf("invalid ark tx: multiple anchor outputs")
 			}
@@ -679,7 +682,7 @@ func (s *service) SubmitOffchainTx(
 
 		if out.Value < int64(dust) {
 			// if the output is below dust limit, it must be using OP_RETURN-style vtxo pkscript
-			if !common.IsSubDustScript(out.PkScript) {
+			if !script.IsSubDustScript(out.PkScript) {
 				return nil, "", "", fmt.Errorf(
 					"output #%d amount is below dust but is not using OP_RETURN output script",
 					outIndex,
@@ -695,11 +698,11 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// recompute all txs (checkpoint txs + ark tx)
-	rebuiltArkTx, rebuiltCheckpointTxs, err := tree.BuildOffchainTx(
+	rebuiltArkTx, rebuiltCheckpointTxs, err := offchain.BuildTxs(
 		ins, outputs,
-		&tree.CSVMultisigClosure{
+		&script.CSVMultisigClosure{
 			Locktime: s.unilateralExitDelay,
-			MultisigClosure: tree.MultisigClosure{
+			MultisigClosure: script.MultisigClosure{
 				PubKeys: []*secp256k1.PublicKey{s.signerPubkey},
 			},
 		},
@@ -828,7 +831,7 @@ func (s *service) FinalizeOffchainTx(
 }
 
 func (s *service) RegisterIntent(
-	ctx context.Context, proof bip322.Signature, message tree.IntentMessage,
+	ctx context.Context, proof bip322.Signature, message bip322.IntentMessage,
 ) (string, error) {
 	// the vtxo to swap for new ones, require forfeit transactions
 	vtxoInputs := make([]domain.Vtxo, 0)
@@ -864,7 +867,7 @@ func (s *service) RegisterIntent(
 			return "", fmt.Errorf("failed to decode taptree: %s", err)
 		}
 
-		tapscripts, err := tree.DecodeTapTree(tapTreeBytes)
+		tapscripts, err := txutils.DecodeTapTree(tapTreeBytes)
 		if err != nil {
 			return "", fmt.Errorf("failed to decode taptree: %s", err)
 		}
@@ -931,7 +934,7 @@ func (s *service) RegisterIntent(
 			return "", fmt.Errorf("failed to parse pubkey: %s", err)
 		}
 
-		pkScript, err := common.P2TRScript(pubkey)
+		pkScript, err := script.P2TRScript(pubkey)
 		if err != nil {
 			return "", fmt.Errorf("failed to create p2tr script: %s", err)
 		}
@@ -1186,7 +1189,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 
 // DeleteIntentsByProof deletes transaction intents matching the BIP322 proof.
 func (s *service) DeleteIntentsByProof(
-	ctx context.Context, sig bip322.Signature, message tree.DeleteIntentMessage,
+	ctx context.Context, sig bip322.Signature, message bip322.DeleteIntentMessage,
 ) error {
 	if message.ExpireAt > 0 {
 		expireAt := time.Unix(message.ExpireAt, 0)
@@ -1240,7 +1243,7 @@ func (s *service) DeleteIntentsByProof(
 			return fmt.Errorf("failed to parse pubkey: %s", err)
 		}
 
-		pkScript, err := common.P2TRScript(pubkey)
+		pkScript, err := script.P2TRScript(pubkey)
 		if err != nil {
 			return fmt.Errorf("failed to create p2tr script: %s", err)
 		}
@@ -1603,10 +1606,10 @@ func (s *service) startFinalization(
 		return
 	}
 
-	flatVtxoTree := make([]tree.TxGraphChunk, 0)
+	flatVtxoTree := make([]tree.TxTreeNode, 0)
 	if vtxoTree != nil {
-		sweepClosure := tree.CSVMultisigClosure{
-			MultisigClosure: tree.MultisigClosure{PubKeys: []*secp256k1.PublicKey{s.signerPubkey}},
+		sweepClosure := script.CSVMultisigClosure{
+			MultisigClosure: script.MultisigClosure{PubKeys: []*secp256k1.PublicKey{s.signerPubkey}},
 			Locktime:        s.vtxoTreeExpiry,
 		}
 
@@ -2009,7 +2012,7 @@ func (s *service) propagateEvents(round *domain.Round) {
 	// and we need to propagate them in specific BatchTree events
 	case domain.RoundFinalizationStarted:
 		if len(ev.VtxoTree) > 0 {
-			vtxoTree, err := tree.NewTxGraph(ev.VtxoTree)
+			vtxoTree, err := tree.NewTxTree(ev.VtxoTree)
 			if err != nil {
 				log.WithError(err).Warn("failed to create vtxo tree")
 				return
@@ -2019,7 +2022,7 @@ func (s *service) propagateEvents(round *domain.Round) {
 		}
 
 		if len(ev.Connectors) > 0 {
-			connectorTree, err := tree.NewTxGraph(ev.Connectors)
+			connectorTree, err := tree.NewTxTree(ev.Connectors)
 			if err != nil {
 				log.WithError(err).Warn("failed to create connector tree")
 				return
@@ -2060,7 +2063,7 @@ func (s *service) propagateBatchStartedEvent(intents []ports.TimedIntent) {
 }
 
 func (s *service) propagateRoundSigningStartedEvent(
-	vtxoTree *tree.TxGraph, cosignersPubkeys []string,
+	vtxoTree *tree.TxTree, cosignersPubkeys []string,
 ) {
 	round := s.cache.CurrentRound().Get()
 
@@ -2111,7 +2114,7 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 		fancyTime(expirationTimestamp, s.sweeper.scheduler.Unit()),
 	)
 
-	vtxoTree, err := tree.NewTxGraph(round.VtxoTree)
+	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
 	if err != nil {
 		log.WithError(err).Warn("failed to create vtxo tree")
 		return
@@ -2232,19 +2235,19 @@ func (s *service) extractVtxosScripts(vtxos []domain.Vtxo) ([]string, error) {
 			return nil, err
 		}
 
-		var script []byte
+		var outScript []byte
 
 		if vtxo.Amount < dustLimit {
-			script, err = common.SubDustScript(vtxoTapKey)
+			outScript, err = script.SubDustScript(vtxoTapKey)
 		} else {
-			script, err = common.P2TRScript(vtxoTapKey)
+			outScript, err = script.P2TRScript(vtxoTapKey)
 		}
 
 		if err != nil {
 			return nil, err
 		}
 
-		indexedScripts[hex.EncodeToString(script)] = struct{}{}
+		indexedScripts[hex.EncodeToString(outScript)] = struct{}{}
 	}
 	scripts := make([]string, 0, len(indexedScripts))
 	for script := range indexedScripts {
@@ -2276,7 +2279,7 @@ func (s *service) chainParams() *chaincfg.Params {
 }
 
 func (s *service) validateBoardingInput(
-	ctx context.Context, vtxoKey domain.Outpoint, tapscripts tree.TapTree,
+	ctx context.Context, vtxoKey domain.Outpoint, tapscripts txutils.TapTree,
 	now time.Time, locktime *common.RelativeLocktime, disabled bool,
 ) (*wire.MsgTx, error) {
 	// check if the tx exists and is confirmed
@@ -2299,7 +2302,7 @@ func (s *service) validateBoardingInput(
 		return nil, fmt.Errorf("tx %s not confirmed", vtxoKey.Txid)
 	}
 
-	vtxoScript, err := tree.ParseVtxoScript(tapscripts)
+	vtxoScript, err := script.ParseVtxoScript(tapscripts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
 	}
@@ -2351,10 +2354,10 @@ func (s *service) validateBoardingInput(
 }
 
 func (s *service) validateVtxoInput(
-	tapscripts tree.TapTree, expectedTapKey *btcec.PublicKey,
+	tapscripts txutils.TapTree, expectedTapKey *btcec.PublicKey,
 	vtxoCreatedAt int64, now time.Time, locktime *common.RelativeLocktime, disabled bool,
 ) error {
-	vtxoScript, err := tree.ParseVtxoScript(tapscripts)
+	vtxoScript, err := script.ParseVtxoScript(tapscripts)
 	if err != nil {
 		return fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
 	}

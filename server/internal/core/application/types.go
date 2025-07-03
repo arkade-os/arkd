@@ -13,7 +13,7 @@ type Service interface {
 	Start() error
 	Stop()
 	RegisterIntent(
-		ctx context.Context, proof bip322.Signature, message tree.IntentMessage,
+		ctx context.Context, proof bip322.Signature, message bip322.IntentMessage,
 	) (string, error)
 	ConfirmRegistration(ctx context.Context, intentId string) error
 	SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) error
@@ -33,7 +33,7 @@ type Service interface {
 	) error
 	GetTxEventsChannel(ctx context.Context) <-chan TransactionEvent
 	DeleteIntentsByProof(
-		ctx context.Context, bip322signature bip322.Signature, message tree.DeleteIntentMessage,
+		ctx context.Context, bip322signature bip322.Signature, message bip322.DeleteIntentMessage,
 	) error
 
 	// TODO: remove when detaching the indexer svc.
@@ -128,7 +128,7 @@ type VtxoTreeLeavesResp struct {
 	Page   PageResp
 }
 
-type TreeTx = tree.TxGraphChunk
+type TreeTx = tree.TxTreeNode
 
 type ForfeitTxsResp struct {
 	Txs  []string

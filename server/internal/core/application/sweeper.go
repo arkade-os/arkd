@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -66,7 +67,7 @@ func (s *sweeper) start() error {
 				continue
 			}
 
-			vtxoTree, err := tree.NewTxGraph(flatVtxoTree)
+			vtxoTree, err := tree.NewTxTree(flatVtxoTree)
 			if err != nil {
 				return err
 			}
@@ -101,7 +102,7 @@ func (s *sweeper) removeTask(treeRootTxid string) {
 
 // schedule set up a task to be executed once at the given timestamp
 func (s *sweeper) schedule(
-	expirationTimestamp int64, commitmentTxid string, vtxoTree *tree.TxGraph,
+	expirationTimestamp int64, commitmentTxid string, vtxoTree *tree.TxTree,
 ) error {
 	if vtxoTree == nil { // skip
 		log.Debugf("skip shceduling sweep for batch %s:0, empty vtxo tree", commitmentTxid)
@@ -135,7 +136,7 @@ func (s *sweeper) schedule(
 // it tries to craft a sweep tx containing the onchain outputs of the given vtxo tree
 // if some parts of the tree have been broadcasted in the meantine, it will schedule the next taskes for the remaining parts of the tree
 func (s *sweeper) createTask(
-	commitmentTxid string, vtxoTree *tree.TxGraph,
+	commitmentTxid string, vtxoTree *tree.TxTree,
 ) func() {
 	return func() {
 		ctx := context.Background()
@@ -298,7 +299,7 @@ func (s *sweeper) createTask(
 }
 
 func (s *sweeper) updateVtxoExpirationTime(
-	tree *tree.TxGraph, expirationTime int64,
+	tree *tree.TxTree, expirationTime int64,
 ) error {
 	leaves := tree.Leaves()
 	vtxos := make([]domain.Outpoint, 0)
@@ -316,9 +317,9 @@ func (s *sweeper) updateVtxoExpirationTime(
 }
 
 func computeSubTrees(
-	vtxoTree *tree.TxGraph, inputs []ports.SweepableBatchOutput,
-) ([]*tree.TxGraph, error) {
-	subTrees := make(map[string]*tree.TxGraph, 0)
+	vtxoTree *tree.TxTree, inputs []ports.SweepableBatchOutput,
+) ([]*tree.TxTree, error) {
+	subTrees := make(map[string]*tree.TxTree, 0)
 
 	// for each sweepable input, create a sub vtxo tree
 	// it allows to skip the part of the tree that has been broadcasted in the next task
@@ -336,7 +337,7 @@ func computeSubTrees(
 	}
 
 	// filter out the sub trees, remove the ones that are included in others
-	filteredSubTrees := make([]*tree.TxGraph, 0)
+	filteredSubTrees := make([]*tree.TxTree, 0)
 	for i, subTree := range subTrees {
 		notIncludedInOtherTrees := true
 
@@ -364,7 +365,7 @@ func computeSubTrees(
 	return filteredSubTrees, nil
 }
 
-func computeSubTree(vtxoTree *tree.TxGraph, newRoot string) (*tree.TxGraph, error) {
+func computeSubTree(vtxoTree *tree.TxTree, newRoot string) (*tree.TxTree, error) {
 	// Find the subgraph starting from the newRoot
 	foundGraph := vtxoTree.Find(newRoot)
 	if foundGraph != nil {
@@ -375,7 +376,7 @@ func computeSubTree(vtxoTree *tree.TxGraph, newRoot string) (*tree.TxGraph, erro
 	return nil, nil
 }
 
-func containsTree(tr0 *tree.TxGraph, tr1 *tree.TxGraph) (bool, error) {
+func containsTree(tr0 *tree.TxTree, tr1 *tree.TxTree) (bool, error) {
 	if tr0 == nil || tr1 == nil {
 		return false, nil
 	}
@@ -387,10 +388,10 @@ func containsTree(tr0 *tree.TxGraph, tr1 *tree.TxGraph) (bool, error) {
 	return found != nil, nil
 }
 
-func findLeaves(graph *tree.TxGraph, fromtxid string, vout uint32) ([]*psbt.Packet, error) {
-	var foundParent *tree.TxGraph
+func findLeaves(graph *tree.TxTree, fromtxid string, vout uint32) ([]*psbt.Packet, error) {
+	var foundParent *tree.TxTree
 
-	if err := graph.Apply(func(g *tree.TxGraph) (bool, error) {
+	if err := graph.Apply(func(g *tree.TxTree) (bool, error) {
 		parent := g.Root.UnsignedTx.TxIn[0].PreviousOutPoint
 		if parent.Hash.String() == fromtxid && parent.Index == vout {
 			foundParent = g
@@ -412,7 +413,7 @@ func findLeaves(graph *tree.TxGraph, fromtxid string, vout uint32) ([]*psbt.Pack
 func extractVtxoOutpoint(leaf *psbt.Packet) (*domain.Outpoint, error) {
 	// Find the first non-anchor output
 	for i, out := range leaf.UnsignedTx.TxOut {
-		if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
+		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			continue
 		}
 

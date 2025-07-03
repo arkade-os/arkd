@@ -20,9 +20,8 @@ func TestVerify(t *testing.T) {
 				"value": 100000000
 			}
 		},
-  	"signature": "AgAAAAABAh8mbzuD/Z52wTKqGBPiThVoi2HuEdCpSyhDvFHSGk7ZAAAAAAACAEAApETOe4nX9VuL6AIQkdQac+zYUIIeP5G0sm0joHt8su0AAAAAAAIAQAABAAAAAAAAAAABagNAd1BP/DqssDI+BNAdvsv1PfVANZfXaKlc0yVVbaaivk1CywDSKbiy5O2Zw4TOGAxlS2XzqjfEDz4Vf2CrpZ1s2CgDAgBAsnUgDzuoHwRfz7nqkil58m5eba5hP/kZXvm3zk31fhmt8UisQcBQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wJbUO5tqHN7/0ox/o+uJZaceuwU1uQwWx06r8nf/NYX4A0DVUISUOFZ5QdZf238FptJxE5OYR/NVgEf0g0A5sbVLy92/q21ia/twp88FvUvbicqcOHGgaAmbKluBgmwDtLECKAMCAECydSAPO6gfBF/PueqSKXnybl5trmE/+Rle+bfOTfV+Ga3xSKxBwFCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAltQ7m2oc3v/SjH+j64llpx67BTW5DBbHTqvyd/81hfgAAAAA"
-	}
-	`
+		"signature": "AgAAAAABAh8mbzuD/Z52wTKqGBPiThVoi2HuEdCpSyhDvFHSGk7ZAAAAAAACAEAApETOe4nX9VuL6AIQkdQac+zYUIIeP5G0sm0joHt8su0AAAAAAAIAQAABAAAAAAAAAAABagNAd1BP/DqssDI+BNAdvsv1PfVANZfXaKlc0yVVbaaivk1CywDSKbiy5O2Zw4TOGAxlS2XzqjfEDz4Vf2CrpZ1s2CgDAgBAsnUgDzuoHwRfz7nqkil58m5eba5hP/kZXvm3zk31fhmt8UisQcBQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wJbUO5tqHN7/0ox/o+uJZaceuwU1uQwWx06r8nf/NYX4A0DVUISUOFZ5QdZf238FptJxE5OYR/NVgEf0g0A5sbVLy92/q21ia/twp88FvUvbicqcOHGgaAmbKluBgmwDtLECKAMCAECydSAPO6gfBF/PueqSKXnybl5trmE/+Rle+bfOTfV+Ga3xSKxBwFCSm3TBoElUt4tLYDXpel4HiloPKOyW1Ue/7prOgDrAltQ7m2oc3v/SjH+j64llpx67BTW5DBbHTqvyd/81hfgAAAAA"
+	}`
 
 	var fixtureMap map[string]interface{}
 	err := json.Unmarshal([]byte(fixture), &fixtureMap)

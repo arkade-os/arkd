@@ -1,17 +1,15 @@
 package tree
 
 import (
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
 
 func BuildForfeitTx(
-	inputs []*wire.OutPoint,
-	sequences []uint32,
-	prevouts []*wire.TxOut,
-	serverScript []byte,
-	txLocktime uint32,
+	inputs []*wire.OutPoint, sequences []uint32, prevouts []*wire.TxOut,
+	signerScript []byte, txLocktime uint32,
 ) (*psbt.Packet, error) {
 	version := int32(3)
 
@@ -19,15 +17,10 @@ func BuildForfeitTx(
 	for _, prevout := range prevouts {
 		sumPrevout += prevout.Value
 	}
-	sumPrevout -= ANCHOR_VALUE
+	sumPrevout -= txutils.ANCHOR_VALUE
 
-	outs := []*wire.TxOut{
-		{
-			Value:    sumPrevout,
-			PkScript: serverScript,
-		},
-		AnchorOutput(),
-	}
+	forfeitOut := wire.NewTxOut(sumPrevout, signerScript)
+	outs := []*wire.TxOut{forfeitOut, txutils.AnchorOutput()}
 
 	partialTx, err := psbt.New(
 		inputs,

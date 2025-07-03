@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/txscript"
@@ -18,8 +19,8 @@ var (
 	vtxoTreeExpiry   = common.RelativeLocktime{Type: common.LocktimeTypeBlock, Value: 144}
 	rootInput, _     = wire.NewOutPointFromString("49f8664acc899be91902f8ade781b7eeb9cbe22bdd9efbc36e56195de21bcd12:0")
 	serverPrivKey, _ = btcec.NewPrivateKey()
-	sweepScript, _   = (&tree.CSVMultisigClosure{
-		MultisigClosure: tree.MultisigClosure{PubKeys: []*btcec.PublicKey{serverPrivKey.PubKey()}},
+	sweepScript, _   = (&script.CSVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{serverPrivKey.PubKey()}},
 		Locktime:        vtxoTreeExpiry,
 	}).Script()
 	sweepRoot      = txscript.NewBaseTapLeaf(sweepScript).TapHash()
@@ -35,12 +36,10 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 
 	for _, v := range testVectors {
 		t.Run(v.name, func(t *testing.T) {
-			sharedOutScript, sharedOutAmount, err := tree.BuildBatchOutput(
-				v.receivers, sweepRoot[:],
-			)
+			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(v.receivers, sweepRoot[:])
 			require.NoError(t, err)
-			require.NotNil(t, sharedOutScript)
-			require.NotZero(t, sharedOutAmount)
+			require.NotNil(t, batchOutScript)
+			require.NotZero(t, batchOutAmount)
 
 			vtxoTree, err := tree.BuildVtxoTree(
 				rootInput, v.receivers, sweepRoot[:], vtxoTreeExpiry,
@@ -49,12 +48,12 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 			require.NotNil(t, vtxoTree)
 
 			coordinator, err := tree.NewTreeCoordinatorSession(
-				sharedOutAmount, vtxoTree, sweepRoot[:],
+				batchOutAmount, vtxoTree, sweepRoot[:],
 			)
 			require.NoError(t, err)
 			require.NotNil(t, coordinator)
 
-			signers, err := makeCosigners(v.privKeys, sharedOutAmount, vtxoTree)
+			signers, err := makeCosigners(v.privKeys, batchOutAmount, vtxoTree)
 			require.NoError(t, err)
 			require.NotNil(t, signers)
 
@@ -66,7 +65,7 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 			require.NotNil(t, signedTree)
 
 			// validate signatures
-			err = tree.ValidateTreeSigs(sweepRoot[:], sharedOutAmount, signedTree)
+			err = tree.ValidateTreeSigs(sweepRoot[:], batchOutAmount, signedTree)
 			require.NoError(t, err)
 		})
 	}
@@ -117,7 +116,7 @@ func checkSigsRoundtrip(t *testing.T) func(sigs tree.TreePartialSigs) {
 }
 
 func makeCosigners(
-	keys []*btcec.PrivateKey, sharedOutAmount int64, vtxoTree *tree.TxGraph,
+	keys []*btcec.PrivateKey, sharedOutAmount int64, vtxoTree *tree.TxTree,
 ) (map[string]tree.SignerSession, error) {
 	signers := make(map[string]tree.SignerSession)
 	for _, prvkey := range keys {
@@ -175,7 +174,7 @@ func makeAggregatedNonces(
 func makeAggregatedSignatures(
 	signers map[string]tree.SignerSession, coordinator tree.CoordinatorSession,
 	checkSigsRoundtrip func(tree.TreePartialSigs),
-) (*tree.TxGraph, error) {
+) (*tree.TxTree, error) {
 	for pk, session := range signers {
 		buf, err := hex.DecodeString(pk)
 		if err != nil {

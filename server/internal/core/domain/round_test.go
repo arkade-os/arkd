@@ -81,7 +81,7 @@ var (
 		Txid: txid,
 		Tx:   emptyPtx,
 	}
-	vtxoTree = []tree.TxGraphChunk{
+	vtxoTree = []tree.TxTreeNode{
 		{
 			Txid: txid,
 			Tx:   emptyPtx,
@@ -108,7 +108,7 @@ var (
 			Children: nil,
 		},
 	}
-	connectors = []tree.TxGraphChunk{
+	connectors = []tree.TxTreeNode{
 		{
 			Txid: txid,
 			Tx:   emptyPtx,
@@ -342,8 +342,8 @@ func testStartFinalization(t *testing.T) {
 			}
 			fixtures := []struct {
 				round        *domain.Round
-				connectors   []tree.TxGraphChunk
-				tree         []tree.TxGraphChunk
+				connectors   []tree.TxTreeNode
+				tree         []tree.TxTreeNode
 				txid         string
 				commitmentTx string
 				expiration   int64
@@ -596,7 +596,7 @@ func testSweep(t *testing.T) {
 			require.True(t, round.IsEnded())
 			require.False(t, round.IsFailed())
 
-			vtxos := leavesToVtxos(tree.TxGraphChunkList(vtxoTree).Leaves())
+			vtxos := leavesToVtxos(tree.FlatVtxoTree(vtxoTree).Leaves())
 			events, err = round.Sweep(vtxos, "sweepTxid", emptyPtx)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
@@ -647,7 +647,7 @@ func testFail(t *testing.T) {
 	})
 }
 
-func leavesToVtxos(leaves []tree.TxGraphChunk) []domain.Outpoint {
+func leavesToVtxos(leaves []tree.TxTreeNode) []domain.Outpoint {
 	var vtxos []domain.Outpoint
 	for _, leaf := range leaves {
 		vtxos = append(vtxos, domain.Outpoint{

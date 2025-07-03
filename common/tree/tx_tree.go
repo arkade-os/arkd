@@ -7,17 +7,16 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
-// TxGraph is the reprensation of a directed graph of psbt packets
-// it is used to represent the batch tree
-type TxGraph struct {
+// TxTree is the reprensation of a directed graph of psbt packets
+// It is used to represent the vtxo and connector trees.
+type TxTree struct {
 	Root     *psbt.Packet
-	Children map[uint32]*TxGraph // output index -> child graph
+	Children map[uint32]*TxTree // output index -> child graph
 }
 
-// TxGraphChunk is a chunk of TxGraph
-// it is used to serialize and deserialize the graph because TxGraph is recursive
-// a list of TxGraphChunk can be used to reconstruct the TxGraph
-type TxGraphChunk struct {
+// TxTreeNode is a node of tree of tx.
+// The purpose of this struct is to facilitate the persistance of the tree of txs in storage.
+type TxTreeNode struct {
 	Txid string
 	// Tx is the base64 encoded root PSBT
 	Tx string
@@ -25,10 +24,19 @@ type TxGraphChunk struct {
 	Children map[uint32]string
 }
 
-type TxGraphChunkList []TxGraphChunk
+// Leaf represents the output of a leaf transaction.
+type Leaf struct {
+	Script              string
+	Amount              uint64
+	CosignersPublicKeys []string
+}
 
-func (c TxGraphChunkList) Leaves() []TxGraphChunk {
-	leaves := make([]TxGraphChunk, 0)
+// FlatVtxoTree can be used to persist a tree in storage.
+// It has methods to serialize to and deserialize from the recursive representation.
+type FlatVtxoTree []TxTreeNode
+
+func (c FlatVtxoTree) Leaves() []TxTreeNode {
+	leaves := make([]TxTreeNode, 0)
 	for _, child := range c {
 		if len(child.Children) == 0 {
 			leaves = append(leaves, child)
@@ -37,45 +45,43 @@ func (c TxGraphChunkList) Leaves() []TxGraphChunk {
 	return leaves
 }
 
-// NewTxGraph creates a new TxGraph from a list of TxGraphChunk
-func NewTxGraph(chunks []TxGraphChunk) (*TxGraph, error) {
-	if len(chunks) == 0 {
+// NewTxTree creates a new TxGraph from a list of nodes.
+func NewTxTree(flatTxTree FlatVtxoTree) (*TxTree, error) {
+	if len(flatTxTree) == 0 {
 		return nil, fmt.Errorf("empty chunks")
 	}
 
 	// Create a map to store all chunks by their txid for easy lookup
-	chunksByTxid := make(map[string]decodedTxGraphChunk)
-
-	for _, chunk := range chunks {
-		packet, err := psbt.NewFromRawBytes(strings.NewReader(chunk.Tx), true)
+	nodesByTxid := make(map[string]decodedTxTreeNode)
+	for _, node := range flatTxTree {
+		packet, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode PSBT: %w", err)
 		}
 		txid := packet.UnsignedTx.TxID()
-		chunksByTxid[txid] = decodedTxGraphChunk{
+		nodesByTxid[txid] = decodedTxTreeNode{
 			Tx:       packet,
-			Children: chunk.Children,
+			Children: node.Children,
 		}
 	}
 
-	// Find the root chunks (the ones that aren't referenced as a child)
+	// Find the root of the tree.
 	rootTxids := make([]string, 0)
-	for txid := range chunksByTxid {
+	for txid := range nodesByTxid {
 		isChild := false
-		for otherTxid, otherChunk := range chunksByTxid {
+		for otherTxid, otherChunk := range nodesByTxid {
 			if otherTxid == txid {
-				// skip self
+				// Skip self
 				continue
 			}
 
-			// check if the current chunk is a child of the other chunk
+			// Check if the current node is a child of another one.
 			isChild = otherChunk.hasChild(txid)
 			if isChild {
 				break
 			}
 		}
 
-		// if the chunk is not a child of any other chunk, it is a root
 		if !isChild {
 			rootTxids = append(rootTxids, txid)
 			continue
@@ -83,77 +89,79 @@ func NewTxGraph(chunks []TxGraphChunk) (*TxGraph, error) {
 	}
 
 	if len(rootTxids) == 0 {
-		return nil, fmt.Errorf("no root chunk found")
+		return nil, fmt.Errorf("no root found")
 	}
 
 	if len(rootTxids) > 1 {
-		return nil, fmt.Errorf("multiple root chunks found: %v", rootTxids)
+		return nil, fmt.Errorf("multiple roots found %d: %v", len(rootTxids), rootTxids)
 	}
 
-	graph := buildGraph(rootTxids[0], chunksByTxid)
-	if graph == nil {
-		return nil, fmt.Errorf("chunk not found for root txid: %s", rootTxids[0])
+	txTree := buildGraph(rootTxids[0], nodesByTxid)
+	if txTree == nil {
+		return nil, fmt.Errorf("subtree not found for root %s", rootTxids[0])
 	}
 
 	// verify that the number of chunks is equal to the number node in the graph
-	if graph.nbOfNodes() != len(chunks) {
-		return nil, fmt.Errorf("number of chunks (%d) is not equal to the number of nodes in the graph (%d)", len(chunks), graph.nbOfNodes())
+	if txTree.countNodes() != len(flatTxTree) {
+		return nil, fmt.Errorf(
+			"built tree doesn't match the number of give nodes, expected %d got %d",
+			len(flatTxTree), txTree.countNodes(),
+		)
 	}
 
-	return graph, nil
+	return txTree, nil
 }
 
-func (g *TxGraph) nbOfNodes() int {
+func (t *TxTree) countNodes() int {
 	nb := 1
-	for _, child := range g.Children {
-		nb += child.nbOfNodes()
+	for _, child := range t.Children {
+		nb += child.countNodes()
 	}
 	return nb
 }
 
-// Serialize serializes the graph to a list of TxGraphChunk
-func (g *TxGraph) Serialize() ([]TxGraphChunk, error) {
-	if g == nil {
-		return make([]TxGraphChunk, 0), nil
+// Serialize serializes the tree into a FlatVtxoTree in a recursive way.
+func (t *TxTree) Serialize() (FlatVtxoTree, error) {
+	if t == nil {
+		return make([]TxTreeNode, 0), nil
 	}
-	chunks := make([]TxGraphChunk, 0)
 
-	// recursively serialize the graph
-	for _, child := range g.Children {
-		childChunks, err := child.Serialize()
+	nodes := make([]TxTreeNode, 0)
+	for _, child := range t.Children {
+		childrenNodes, err := child.Serialize()
 		if err != nil {
 			return nil, err
 		}
-		chunks = append(chunks, childChunks...)
+		nodes = append(nodes, childrenNodes...)
 	}
 
-	rootChunk, err := g.RootChunk()
+	rootChunk, err := t.RootChunk()
 	if err != nil {
 		return nil, err
 	}
 
-	chunks = append(chunks, rootChunk)
-	return chunks, nil
+	nodes = append(nodes, rootChunk)
+	return nodes, nil
 }
 
-func (g *TxGraph) RootChunk() (TxGraphChunk, error) {
-	if g == nil {
-		return TxGraphChunk{}, fmt.Errorf("unexpected nil graph")
+func (t *TxTree) RootChunk() (TxTreeNode, error) {
+	if t == nil {
+		return TxTreeNode{}, fmt.Errorf("unexpected nil graph")
 	}
 
-	serializedTx, err := g.Root.B64Encode()
+	serializedTx, err := t.Root.B64Encode()
 	if err != nil {
-		return TxGraphChunk{}, err
+		return TxTreeNode{}, err
 	}
 
 	// create a map of child txids
 	childTxids := make(map[uint32]string)
-	for outputIndex, child := range g.Children {
+	for outputIndex, child := range t.Children {
 		childTxids[outputIndex] = child.Root.UnsignedTx.TxID()
 	}
 
-	return TxGraphChunk{
-		Txid:     g.Root.UnsignedTx.TxID(),
+	return TxTreeNode{
+		Txid:     t.Root.UnsignedTx.TxID(),
 		Tx:       serializedTx,
 		Children: childTxids,
 	}, nil
@@ -166,17 +174,17 @@ func (g *TxGraph) RootChunk() (TxGraphChunk, error) {
 // - the children are valid
 // - the chilren's input is the output of the parent
 // - the sum of the children's outputs is equal to the output of the parent
-func (g *TxGraph) Validate() error {
-	if g.Root == nil {
+func (t *TxTree) Validate() error {
+	if t.Root == nil {
 		return fmt.Errorf("unexpected nil root")
 	}
 
-	if g.Root.UnsignedTx.Version != 3 {
-		return fmt.Errorf("unexpected version: %d, expected 3", g.Root.UnsignedTx.Version)
+	if t.Root.UnsignedTx.Version != 3 {
+		return fmt.Errorf("unexpected version: %d, expected 3", t.Root.UnsignedTx.Version)
 	}
 
-	nbOfOutputs := uint32(len(g.Root.UnsignedTx.TxOut))
-	nbOfInputs := uint32(len(g.Root.UnsignedTx.TxIn))
+	nbOfOutputs := uint32(len(t.Root.UnsignedTx.TxOut))
+	nbOfInputs := uint32(len(t.Root.UnsignedTx.TxIn))
 
 	if nbOfInputs != 1 {
 		return fmt.Errorf("unexpected number of inputs: %d, expected 1", nbOfInputs)
@@ -185,12 +193,12 @@ func (g *TxGraph) Validate() error {
 	// the children map can't be bigger than the number of outputs (excluding the P2A)
 	// a graph can be "partial" and specify only some of the outputs as children,
 	// that's why we allow len(g.Children) to be less than nbOfOutputs-1
-	if len(g.Children) > int(nbOfOutputs-1) {
-		return fmt.Errorf("unexpected number of children: %d, expected maximum %d", len(g.Children), nbOfOutputs-1)
+	if len(t.Children) > int(nbOfOutputs-1) {
+		return fmt.Errorf("unexpected number of children: %d, expected maximum %d", len(t.Children), nbOfOutputs-1)
 	}
 
 	// nbOfOutputs <= len(g.Children)
-	for outputIndex, child := range g.Children {
+	for outputIndex, child := range t.Children {
 		if outputIndex >= nbOfOutputs {
 			return fmt.Errorf("output index %d is out of bounds (nb of outputs: %d)", outputIndex, nbOfOutputs)
 		}
@@ -202,7 +210,7 @@ func (g *TxGraph) Validate() error {
 		childPreviousOutpoint := child.Root.UnsignedTx.TxIn[0].PreviousOutPoint
 
 		// verify the input of the child is the output of the parent
-		if childPreviousOutpoint.Hash.String() != g.Root.UnsignedTx.TxID() || childPreviousOutpoint.Index != outputIndex {
+		if childPreviousOutpoint.Hash.String() != t.Root.UnsignedTx.TxID() || childPreviousOutpoint.Index != outputIndex {
 			return fmt.Errorf("input of child %d is not the output of the parent", outputIndex)
 		}
 
@@ -212,8 +220,8 @@ func (g *TxGraph) Validate() error {
 			childOutputsSum += output.Value
 		}
 
-		if childOutputsSum != g.Root.UnsignedTx.TxOut[outputIndex].Value {
-			return fmt.Errorf("sum of child's outputs is not equal to the output of the parent: %d != %d", childOutputsSum, g.Root.UnsignedTx.TxOut[outputIndex].Value)
+		if childOutputsSum != t.Root.UnsignedTx.TxOut[outputIndex].Value {
+			return fmt.Errorf("sum of child's outputs is not equal to the output of the parent: %d != %d", childOutputsSum, t.Root.UnsignedTx.TxOut[outputIndex].Value)
 		}
 	}
 
@@ -221,14 +229,14 @@ func (g *TxGraph) Validate() error {
 }
 
 // Leaves return all txs of the graph without children
-func (g *TxGraph) Leaves() []*psbt.Packet {
-	if len(g.Children) == 0 {
-		return []*psbt.Packet{g.Root}
+func (t *TxTree) Leaves() []*psbt.Packet {
+	if len(t.Children) == 0 {
+		return []*psbt.Packet{t.Root}
 	}
 
 	leaves := make([]*psbt.Packet, 0)
 
-	for _, child := range g.Children {
+	for _, child := range t.Children {
 		leaves = append(leaves, child.Leaves()...)
 	}
 
@@ -236,12 +244,12 @@ func (g *TxGraph) Leaves() []*psbt.Packet {
 }
 
 // Find returns the tx in the graph that matches the provided txid
-func (g *TxGraph) Find(txid string) *TxGraph {
-	if g.Root.UnsignedTx.TxID() == txid {
-		return g
+func (t *TxTree) Find(txid string) *TxTree {
+	if t.Root.UnsignedTx.TxID() == txid {
+		return t
 	}
 
-	for _, child := range g.Children {
+	for _, child := range t.Children {
 		if f := child.Find(txid); f != nil {
 			return f
 		}
@@ -252,8 +260,8 @@ func (g *TxGraph) Find(txid string) *TxGraph {
 
 // Apply executes the given function to all txs in the graph
 // the function returns a boolean to indicate whether we should continue the Apply on the children
-func (g *TxGraph) Apply(fn func(tx *TxGraph) (bool, error)) error {
-	shouldContinue, err := fn(g)
+func (t *TxTree) Apply(fn func(tx *TxTree) (bool, error)) error {
+	shouldContinue, err := fn(t)
 	if err != nil {
 		return err
 	}
@@ -262,7 +270,7 @@ func (g *TxGraph) Apply(fn func(tx *TxGraph) (bool, error)) error {
 		return nil
 	}
 
-	for _, child := range g.Children {
+	for _, child := range t.Children {
 		if err := child.Apply(fn); err != nil {
 			return err
 		}
@@ -272,7 +280,7 @@ func (g *TxGraph) Apply(fn func(tx *TxGraph) (bool, error)) error {
 }
 
 // SubGraph returns the subgraph starting from the root until the given txids
-func (g *TxGraph) SubGraph(txids []string) (*TxGraph, error) {
+func (t *TxTree) SubGraph(txids []string) (*TxTree, error) {
 	if len(txids) == 0 {
 		return nil, fmt.Errorf("no txids provided")
 	}
@@ -282,17 +290,17 @@ func (g *TxGraph) SubGraph(txids []string) (*TxGraph, error) {
 		txidSet[txid] = true
 	}
 
-	return g.buildSubGraph(txidSet)
+	return t.buildSubGraph(txidSet)
 }
 
 // buildSubGraph recursively builds a subgraph that includes all paths from root to the given txids
-func (g *TxGraph) buildSubGraph(targetTxids map[string]bool) (*TxGraph, error) {
-	subGraph := &TxGraph{
-		Root:     g.Root,
-		Children: make(map[uint32]*TxGraph),
+func (t *TxTree) buildSubGraph(targetTxids map[string]bool) (*TxTree, error) {
+	subGraph := &TxTree{
+		Root:     t.Root,
+		Children: make(map[uint32]*TxTree),
 	}
 
-	currentTxid := g.Root.UnsignedTx.TxID()
+	currentTxid := t.Root.UnsignedTx.TxID()
 
 	// the current node is a target, return just this node
 	if targetTxids[currentTxid] {
@@ -300,7 +308,7 @@ func (g *TxGraph) buildSubGraph(targetTxids map[string]bool) (*TxGraph, error) {
 	}
 
 	// recursively process children
-	for outputIndex, child := range g.Children {
+	for outputIndex, child := range t.Children {
 		childSubGraph, err := child.buildSubGraph(targetTxids)
 		if err != nil {
 			return nil, err
@@ -321,15 +329,15 @@ func (g *TxGraph) buildSubGraph(targetTxids map[string]bool) (*TxGraph, error) {
 }
 
 // buildGraph recursively builds the TxGraph starting from the given txid
-func buildGraph(rootTxid string, chunksByTxid map[string]decodedTxGraphChunk) *TxGraph {
+func buildGraph(rootTxid string, chunksByTxid map[string]decodedTxTreeNode) *TxTree {
 	chunk, exists := chunksByTxid[rootTxid]
 	if !exists {
 		return nil
 	}
 
-	graph := &TxGraph{
+	graph := &TxTree{
 		Root:     chunk.Tx,
-		Children: make(map[uint32]*TxGraph),
+		Children: make(map[uint32]*TxTree),
 	}
 
 	// recursively build children graphs
@@ -344,12 +352,12 @@ func buildGraph(rootTxid string, chunksByTxid map[string]decodedTxGraphChunk) *T
 }
 
 // internal type to build the graph
-type decodedTxGraphChunk struct {
+type decodedTxTreeNode struct {
 	Tx       *psbt.Packet
 	Children map[uint32]string // output index -> child txid
 }
 
-func (c *decodedTxGraphChunk) hasChild(txid string) bool {
+func (c *decodedTxTreeNode) hasChild(txid string) bool {
 	for _, childTxid := range c.Children {
 		if childTxid == txid {
 			return true

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/note"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
@@ -126,7 +126,7 @@ func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep
 			return nil, err
 		}
 
-		vtxoTree, err := tree.NewTxGraph(round.VtxoTree)
+		vtxoTree, err := tree.NewTxTree(round.VtxoTree)
 		if err != nil {
 			return nil, err
 		}
@@ -190,7 +190,7 @@ func (a *adminService) CreateNotes(
 	now := time.Now().Unix()
 
 	for i := 0; i < quantity; i++ {
-		note, err := note.New(value)
+		note, err := note.NewNote(value)
 		if err != nil {
 			return nil, err
 		}
@@ -268,13 +268,13 @@ func (s *adminService) ListIntents(
 				return nil, fmt.Errorf("failed to parse pubkey: %s", err)
 			}
 
-			script, err := common.P2TRScript(vtxoTapKey)
+			outScript, err := script.P2TRScript(vtxoTapKey)
 			if err != nil {
 				return nil, fmt.Errorf("failed to encode vtxo script: %s", err)
 			}
 
 			receivers = append(receivers, Receiver{
-				VtxoScript: hex.EncodeToString(script),
+				VtxoScript: hex.EncodeToString(outScript),
 				Amount:     receiver.Amount,
 			})
 		}

@@ -18,12 +18,10 @@ func TestGraphSerialization(t *testing.T) {
 
 	for _, v := range testVectors {
 		t.Run(v.name, func(t *testing.T) {
-			sharedOutScript, sharedOutAmount, err := tree.BuildBatchOutput(
-				v.receivers, sweepRoot[:],
-			)
+			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(v.receivers, sweepRoot[:])
 			require.NoError(t, err)
-			require.NotNil(t, sharedOutScript)
-			require.NotZero(t, sharedOutAmount)
+			require.NotNil(t, batchOutScript)
+			require.NotZero(t, batchOutAmount)
 
 			vtxoTree, err := tree.BuildVtxoTree(
 				rootInput, v.receivers, sweepRoot[:], vtxoTreeExpiry,
@@ -46,31 +44,31 @@ func TestGraphSerialization(t *testing.T) {
 			}
 
 			// Verify the deserialization roundtrip
-			deserialized, err := tree.NewTxGraph(serialized)
+			deserialized, err := tree.NewTxTree(serialized)
 			require.NoError(t, err)
 			require.NotNil(t, deserialized)
 
 			err = deserialized.Validate()
 			require.NoError(t, err)
 
-			requireGraphEqual(t, vtxoTree, deserialized)
+			checkTxTree(t, vtxoTree, deserialized)
 
 			// shuffle randomly the serialized chunks
-			shuffled := make([]tree.TxGraphChunk, len(serialized))
+			shuffled := make([]tree.TxTreeNode, len(serialized))
 			copy(shuffled, serialized)
 			rand.Shuffle(len(shuffled), func(i, j int) {
 				shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 			})
 
-			deserializedShuffled, err := tree.NewTxGraph(shuffled)
+			deserializedShuffled, err := tree.NewTxTree(shuffled)
 			require.NoError(t, err)
 			require.NotNil(t, deserializedShuffled)
 
 			err = deserializedShuffled.Validate()
 			require.NoError(t, err)
 
-			requireGraphEqual(t, vtxoTree, deserializedShuffled)
-			requireGraphEqual(t, deserialized, deserializedShuffled)
+			checkTxTree(t, vtxoTree, deserializedShuffled)
+			checkTxTree(t, deserialized, deserializedShuffled)
 		})
 	}
 }
@@ -130,7 +128,7 @@ func TestTxGraphSubGraph(t *testing.T) {
 
 				// Verify the subgraph contains the root and the leaf
 				allTxids := make([]string, 0)
-				err = subGraph.Apply(func(tx *tree.TxGraph) (bool, error) {
+				err = subGraph.Apply(func(tx *tree.TxTree) (bool, error) {
 					allTxids = append(allTxids, tx.Root.UnsignedTx.TxID())
 					return true, nil
 				})
@@ -153,9 +151,9 @@ func TestTxGraphSubGraph(t *testing.T) {
 				// Verify serialization roundtrip
 				serialized, err := subGraph.Serialize()
 				require.NoError(t, err)
-				deserialized, err := tree.NewTxGraph(serialized)
+				deserialized, err := tree.NewTxTree(serialized)
 				require.NoError(t, err)
-				requireGraphEqual(t, subGraph, deserialized)
+				checkTxTree(t, subGraph, deserialized)
 			}
 
 			// Test 5: SubGraph with leaf txids should return paths should be equal to root graph
@@ -166,7 +164,7 @@ func TestTxGraphSubGraph(t *testing.T) {
 			subGraph, err = vtxoTree.SubGraph(leavesTxids)
 			require.NoError(t, err)
 			require.NotNil(t, subGraph)
-			requireGraphEqual(t, vtxoTree, subGraph)
+			checkTxTree(t, vtxoTree, subGraph)
 
 			// Test 6: SubGraph with multiple leaf txids should return union of all paths
 			if len(leaves) > 1 {
@@ -183,7 +181,7 @@ func TestTxGraphSubGraph(t *testing.T) {
 
 				// Verify the subgraph contains all target txids
 				allTxids := make([]string, 0)
-				err = subGraph.Apply(func(tx *tree.TxGraph) (bool, error) {
+				err = subGraph.Apply(func(tx *tree.TxTree) (bool, error) {
 					allTxids = append(allTxids, tx.Root.UnsignedTx.TxID())
 					return true, nil
 				})
@@ -205,27 +203,27 @@ func TestTxGraphSubGraph(t *testing.T) {
 	}
 }
 
-func requireGraphEqual(t *testing.T, a, b *tree.TxGraph) {
-	require.Equal(t, a.Root.UnsignedTx.TxID(), b.Root.UnsignedTx.TxID())
+func checkTxTree(t *testing.T, expected, got *tree.TxTree) {
+	require.Equal(t, expected.Root.UnsignedTx.TxID(), got.Root.UnsignedTx.TxID())
 
-	txids := make([]string, 0)
-	err := a.Apply(func(tx *tree.TxGraph) (bool, error) {
-		txids = append(txids, tx.Root.UnsignedTx.TxID())
+	expectedTxids := make([]string, 0)
+	err := expected.Apply(func(tx *tree.TxTree) (bool, error) {
+		expectedTxids = append(expectedTxids, tx.Root.UnsignedTx.TxID())
 		return true, nil
 	})
 	require.NoError(t, err)
 
-	txidsB := make([]string, 0)
-	err = b.Apply(func(tx *tree.TxGraph) (bool, error) {
-		txidsB = append(txidsB, tx.Root.UnsignedTx.TxID())
+	gotTxids := make([]string, 0)
+	err = got.Apply(func(tx *tree.TxTree) (bool, error) {
+		gotTxids = append(gotTxids, tx.Root.UnsignedTx.TxID())
 		return true, nil
 	})
 	require.NoError(t, err)
 
-	sort.Strings(txids)
-	sort.Strings(txidsB)
+	sort.Strings(expectedTxids)
+	sort.Strings(gotTxids)
 
-	require.Equal(t, len(txids), len(txidsB))
+	require.Equal(t, len(expectedTxids), len(gotTxids))
 
-	require.Equal(t, txids, txidsB)
+	require.Equal(t, expectedTxids, gotTxids)
 }

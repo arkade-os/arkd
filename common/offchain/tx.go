@@ -1,9 +1,11 @@
-package tree
+package offchain
 
 import (
 	"fmt"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -15,15 +17,12 @@ const (
 	cltvSequence = wire.MaxTxInSequenceNum - 1
 )
 
-// BuildOffchainTx builds an offchain tx for the given vtxos and outputs.
-// it also builds the checkpoint txs for each input vtxo.
-func BuildOffchainTx(
-	vtxos []common.VtxoInput, outputs []*wire.TxOut,
-	serverUnrollScript *CSVMultisigClosure,
+// BuildTxs builds the ark and checkpoint txs for the given inputs and outputs.
+func BuildTxs(
+	vtxos []VtxoInput, outputs []*wire.TxOut, serverUnrollScript *script.CSVMultisigClosure,
 ) (*psbt.Packet, []*psbt.Packet, error) {
-	checkpointsInputs := make([]common.VtxoInput, 0, len(vtxos))
-	checkpointsTxs := make([]*psbt.Packet, 0, len(vtxos))
-
+	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
+	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 	inputAmount := int64(0)
 
 	for _, vtxo := range vtxos {
@@ -32,8 +31,8 @@ func BuildOffchainTx(
 			return nil, nil, err
 		}
 
-		checkpointsInputs = append(checkpointsInputs, checkpointInput)
-		checkpointsTxs = append(checkpointsTxs, checkpointPtx)
+		checkpointInputs = append(checkpointInputs, *checkpointInput)
+		checkpointTxs = append(checkpointTxs, checkpointPtx)
 		inputAmount += vtxo.Amount
 	}
 
@@ -46,21 +45,18 @@ func BuildOffchainTx(
 		return nil, nil, fmt.Errorf("input amount is not equal to output amount")
 	}
 
-	virtualPtx, err := buildVirtualTx(checkpointsInputs, outputs)
+	arkTx, err := buildArkTx(checkpointInputs, outputs)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return virtualPtx, checkpointsTxs, nil
+	return arkTx, checkpointTxs, nil
 }
 
-// buildVirtualTx builds a virtual tx for the given vtxos and outputs.
-// The virtual tx is spending VTXOs using collaborative taproot path.
+// buildArkTx builds an ark tx for the given vtxos and outputs.
+// The ark tx is spending VTXOs using collaborative taproot path.
 // An anchor output is added to the transaction
-func buildVirtualTx(
-	vtxos []common.VtxoInput,
-	outputs []*wire.TxOut,
-) (*psbt.Packet, error) {
+func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) {
 	if len(vtxos) <= 0 {
 		return nil, fmt.Errorf("missing vtxos")
 	}
@@ -70,7 +66,6 @@ func buildVirtualTx(
 	witnessUtxos := make(map[int]*wire.TxOut)
 	signingTapLeaves := make(map[int]*psbt.TaprootTapLeafScript)
 	tapscripts := make(map[int][]string)
-
 	txLocktime := common.AbsoluteLocktime(0)
 
 	for index, vtxo := range vtxos {
@@ -81,9 +76,9 @@ func buildVirtualTx(
 		tapscripts[index] = vtxo.RevealedTapscripts
 
 		rootHash := vtxo.Tapscript.ControlBlock.RootHash(vtxo.Tapscript.RevealedScript)
-		taprootKey := txscript.ComputeTaprootOutputKey(UnspendableKey(), rootHash)
+		taprootKey := txscript.ComputeTaprootOutputKey(script.UnspendableKey(), rootHash)
 
-		vtxoOutputScript, err := common.P2TRScript(taprootKey)
+		vtxoOutputScript, err := script.P2TRScript(taprootKey)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +99,7 @@ func buildVirtualTx(
 			LeafVersion:  txscript.BaseLeafVersion,
 		}
 
-		closure, err := DecodeClosure(vtxo.Tapscript.RevealedScript)
+		closure, err := script.DecodeClosure(vtxo.Tapscript.RevealedScript)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +107,7 @@ func buildVirtualTx(
 		// check if the closure is a CLTV multisig closure,
 		// if so, update the tx locktime
 		var locktime *common.AbsoluteLocktime
-		if cltv, ok := closure.(*CLTVMultisigClosure); ok {
+		if cltv, ok := closure.(*script.CLTVMultisigClosure); ok {
 			locktime = &cltv.Locktime
 			if locktime.IsSeconds() {
 				if txLocktime != 0 && !txLocktime.IsSeconds() {
@@ -137,79 +132,84 @@ func buildVirtualTx(
 		}
 	}
 
-	virtualPtx, err := psbt.New(
-		ins, append(outputs, AnchorOutput()), 3, uint32(txLocktime), sequences,
+	arkTx, err := psbt.New(
+		ins, append(outputs, txutils.AnchorOutput()), 3, uint32(txLocktime), sequences,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	for i := range virtualPtx.Inputs {
-		virtualPtx.Inputs[i].WitnessUtxo = witnessUtxos[i]
-		virtualPtx.Inputs[i].TaprootLeafScript = []*psbt.TaprootTapLeafScript{signingTapLeaves[i]}
-		if err := AddTaprootTree(i, virtualPtx, tapscripts[i]); err != nil {
+	for i := range arkTx.Inputs {
+		arkTx.Inputs[i].WitnessUtxo = witnessUtxos[i]
+		arkTx.Inputs[i].TaprootLeafScript = []*psbt.TaprootTapLeafScript{signingTapLeaves[i]}
+		if err := txutils.AddTaprootTree(i, arkTx, tapscripts[i]); err != nil {
 			return nil, err
 		}
 	}
 
-	return virtualPtx, nil
+	return arkTx, nil
 }
 
 // buildCheckpointTx creates a virtual tx sending to a "checkpoint" vtxo script composed of
 // the server unroll script + the owner's collaborative closure.
-func buildCheckpointTx(vtxo common.VtxoInput, serverUnrollScript *CSVMultisigClosure) (*psbt.Packet, common.VtxoInput, error) {
+func buildCheckpointTx(
+	vtxo VtxoInput, signerUnrollScript *script.CSVMultisigClosure,
+) (*psbt.Packet, *VtxoInput, error) {
 	// create the checkpoint vtxo script from collaborative closure
 	checkpointCollaborativeTapscript := vtxo.Tapscript
 	if vtxo.CheckpointTapscript != nil {
 		checkpointCollaborativeTapscript = vtxo.CheckpointTapscript
 	}
 
-	collaborativeClosure, err := DecodeClosure(checkpointCollaborativeTapscript.RevealedScript)
+	collaborativeClosure, err := script.DecodeClosure(
+		checkpointCollaborativeTapscript.RevealedScript,
+	)
 	if err != nil {
-		return nil, common.VtxoInput{}, err
+		return nil, nil, err
 	}
 
-	checkpointVtxoScript := TapscriptsVtxoScript{
-		[]Closure{serverUnrollScript, collaborativeClosure},
+	checkpointVtxoScript := script.TapscriptsVtxoScript{
+		Closures: []script.Closure{signerUnrollScript, collaborativeClosure},
 	}
 
 	tapKey, tapTree, err := checkpointVtxoScript.TapTree()
 	if err != nil {
-		return nil, common.VtxoInput{}, err
+		return nil, nil, err
 	}
 
-	checkpointPkScript, err := common.P2TRScript(tapKey)
+	checkpointPkScript, err := script.P2TRScript(tapKey)
 	if err != nil {
-		return nil, common.VtxoInput{}, err
+		return nil, nil, err
 	}
 
 	// build the checkpoint virtual tx
-	checkpointPtx, err := buildVirtualTx(
-		[]common.VtxoInput{vtxo},
+	checkpointPtx, err := buildArkTx(
+		[]VtxoInput{vtxo},
 		[]*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}},
 	)
 	if err != nil {
-		return nil, common.VtxoInput{}, err
+		return nil, nil, err
 	}
 
-	// now that we have the checkpoint tx, we need to return the corresponding output that will be used as input for the virtual tx
+	// Now that we have the checkpoint tx, we need to return the corresponding output that will be
+	// used as input for the ark tx.
 	tapLeafHash := txscript.NewBaseTapLeaf(checkpointCollaborativeTapscript.RevealedScript).TapHash()
 	collaborativeLeafProof, err := tapTree.GetTaprootMerkleProof(tapLeafHash)
 	if err != nil {
-		return nil, common.VtxoInput{}, err
+		return nil, nil, err
 	}
 
 	ctrlBlock, err := txscript.ParseControlBlock(collaborativeLeafProof.ControlBlock)
 	if err != nil {
-		return nil, common.VtxoInput{}, err
+		return nil, nil, err
 	}
 
 	revealedTapscripts, err := checkpointVtxoScript.Encode()
 	if err != nil {
-		return nil, common.VtxoInput{}, err
+		return nil, nil, err
 	}
 
-	checkpointInput := common.VtxoInput{
+	checkpointInput := &VtxoInput{
 		Outpoint: &wire.OutPoint{
 			Hash:  checkpointPtx.UnsignedTx.TxHash(),
 			Index: 0,

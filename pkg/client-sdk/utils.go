@@ -15,7 +15,10 @@ import (
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/bip322"
 	"github.com/ark-network/ark/common/note"
+	"github.com/ark-network/ark/common/offchain"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/pkg/client-sdk/client"
 	"github.com/ark-network/ark/pkg/client-sdk/types"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -34,13 +37,13 @@ type arkTxInput struct {
 
 func buildOffchainTx(
 	vtxos []arkTxInput, receivers []types.Receiver,
-	serverUnrollScript *tree.CSVMultisigClosure, dustLimit uint64,
+	serverUnrollScript *script.CSVMultisigClosure, dustLimit uint64,
 ) (string, []string, error) {
 	if len(vtxos) <= 0 {
 		return "", nil, fmt.Errorf("missing vtxos")
 	}
 
-	ins := make([]common.VtxoInput, 0, len(vtxos))
+	ins := make([]offchain.VtxoInput, 0, len(vtxos))
 	for _, vtxo := range vtxos {
 		if len(vtxo.Tapscripts) <= 0 {
 			return "", nil, fmt.Errorf("missing tapscripts for vtxo %s", vtxo.Txid)
@@ -56,7 +59,7 @@ func buildOffchainTx(
 			Index: vtxo.VOut,
 		}
 
-		vtxoScript, err := tree.ParseVtxoScript(vtxo.Tapscripts)
+		vtxoScript, err := script.ParseVtxoScript(vtxo.Tapscripts)
 		if err != nil {
 			return "", nil, err
 		}
@@ -81,7 +84,7 @@ func buildOffchainTx(
 			ControlBlock:   ctrlBlock,
 		}
 
-		ins = append(ins, common.VtxoInput{
+		ins = append(ins, offchain.VtxoInput{
 			Outpoint:           vtxoOutpoint,
 			Tapscript:          tapscript,
 			Amount:             int64(vtxo.Amount),
@@ -104,9 +107,9 @@ func buildOffchainTx(
 		var newVtxoScript []byte
 
 		if receiver.Amount < dustLimit {
-			newVtxoScript, err = common.SubDustScript(addr.VtxoTapKey)
+			newVtxoScript, err = script.SubDustScript(addr.VtxoTapKey)
 		} else {
-			newVtxoScript, err = common.P2TRScript(addr.VtxoTapKey)
+			newVtxoScript, err = script.P2TRScript(addr.VtxoTapKey)
 		}
 		if err != nil {
 			return "", nil, err
@@ -118,7 +121,7 @@ func buildOffchainTx(
 		})
 	}
 
-	arkPtx, checkpointPtxs, err := tree.BuildOffchainTx(ins, outs, serverUnrollScript)
+	arkPtx, checkpointPtxs, err := offchain.BuildTxs(ins, outs, serverUnrollScript)
 	if err != nil {
 		return "", nil, err
 	}
@@ -184,7 +187,7 @@ func inputsToDerivationPath(inputs []types.Outpoint, notesInputs []string) strin
 }
 
 func extractExitPath(tapscripts []string) ([]byte, *common.TaprootMerkleProof, uint32, error) {
-	vtxoScript, err := tree.ParseVtxoScript(tapscripts)
+	vtxoScript, err := script.ParseVtxoScript(tapscripts)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -194,7 +197,7 @@ func extractExitPath(tapscripts []string) ([]byte, *common.TaprootMerkleProof, u
 		return nil, nil, 0, fmt.Errorf("no exit closures found")
 	}
 
-	exitClosure := exitClosures[0].(*tree.CSVMultisigClosure)
+	exitClosure := exitClosures[0].(*script.CSVMultisigClosure)
 
 	exitScript, err := exitClosure.Script()
 	if err != nil {
@@ -217,7 +220,7 @@ func extractExitPath(tapscripts []string) ([]byte, *common.TaprootMerkleProof, u
 		return nil, nil, 0, err
 	}
 
-	pkScript, err := common.P2TRScript(taprootKey)
+	pkScript, err := script.P2TRScript(taprootKey)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -293,7 +296,7 @@ func toBIP322Inputs(
 	}
 
 	for _, n := range notes {
-		parsedNote, err := note.NewFromString(n)
+		parsedNote, err := note.NewNoteFromString(n)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -435,7 +438,7 @@ func finalizeWithNotes(notesWitnesses map[int][]byte) func(ptx *psbt.Packet) err
 }
 
 func handleBatchTreeSignature(
-	event client.TreeSignatureEvent, graph *tree.TxGraph,
+	event client.TreeSignatureEvent, graph *tree.TxTree,
 ) error {
 	if event.BatchIndex != 0 {
 		return fmt.Errorf("batch index %d is not 0", event.BatchIndex)
@@ -451,7 +454,7 @@ func handleBatchTreeSignature(
 		return fmt.Errorf("failed to parse signature: %s", err)
 	}
 
-	return graph.Apply(func(g *tree.TxGraph) (bool, error) {
+	return graph.Apply(func(g *tree.TxTree) (bool, error) {
 		if g.Root.UnsignedTx.TxID() != event.Txid {
 			return true, nil
 		}
@@ -487,7 +490,7 @@ func registerIntentMessage(
 			return "", nil, fmt.Errorf("no tapscripts found for input %s", outpointStr)
 		}
 
-		encodedTapTree, err := tree.TapTree(tapscripts).Encode()
+		encodedTapTree, err := txutils.TapTree(tapscripts).Encode()
 		if err != nil {
 			return "", nil, err
 		}
@@ -508,9 +511,9 @@ func registerIntentMessage(
 		outputsTxOut = append(outputsTxOut, txOut)
 	}
 
-	message, err := tree.IntentMessage{
-		BaseIntentMessage: tree.BaseIntentMessage{
-			Type: tree.IntentMessageTypeRegister,
+	message, err := bip322.IntentMessage{
+		BaseIntentMessage: bip322.BaseIntentMessage{
+			Type: bip322.IntentMessageTypeRegister,
 		},
 		InputTapTrees:        inputTapTrees,
 		OnchainOutputIndexes: onchainOutputsIndexes,

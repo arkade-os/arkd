@@ -8,9 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/bip322"
-	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/script"
 	"github.com/btcsuite/btcd/btcutil/base58"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -28,8 +27,8 @@ type Note struct {
 	Value    uint32
 }
 
-// New generate a new note data struct with a random preimage and the given value
-func New(value uint32) (*Note, error) {
+// NewNote generate a new note data struct with a random preimage and the given value
+func NewNote(value uint32) (*Note, error) {
 	randomPreimage := make([]byte, preimageSize)
 	_, err := rand.Read(randomPreimage)
 	if err != nil {
@@ -44,8 +43,8 @@ func New(value uint32) (*Note, error) {
 	}, nil
 }
 
-// NewFromString converts a base58 encoded string with HRP to a Note
-func NewFromString(s string) (*Note, error) {
+// NewNoteFromString converts a base58 encoded string with HRP to a Note
+func NewNoteFromString(s string) (*Note, error) {
 	if !strings.HasPrefix(s, noteHRP) {
 		return nil, fmt.Errorf("invalid human-readable part: expected %s prefix (note '%s')", noteHRP, s)
 	}
@@ -93,13 +92,13 @@ func (n Note) PreimageHash() [preimageSize]byte {
 	return sha256.Sum256(n.Preimage[:])
 }
 
-func (n Note) VtxoScript() tree.TapscriptsVtxoScript {
+func (n Note) VtxoScript() script.TapscriptsVtxoScript {
 	// this vtxo script is not valid because it doesn't contain any CHECKSIG
 	// Validate() will always fail
 	// that's not a problem because none of the real vtxos will be locked by that script
 	// it's a way to allow fake "note vtxo" to be standard in the bip322 proof
-	return tree.TapscriptsVtxoScript{
-		Closures: []tree.Closure{&NoteClosure{PreimageHash: n.PreimageHash()}},
+	return script.TapscriptsVtxoScript{
+		Closures: []script.Closure{&NoteClosure{PreimageHash: n.PreimageHash()}},
 	}
 }
 
@@ -110,7 +109,7 @@ func (n Note) BIP322Input() (*bip322.Input, error) {
 		return nil, fmt.Errorf("failed to get taproot key: %w", err)
 	}
 
-	p2trPkScript, err := common.P2TRScript(taprootKey)
+	p2trPkScript, err := script.P2TRScript(taprootKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get p2tr pk script: %w", err)
 	}

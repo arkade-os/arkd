@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	badgerdb "github.com/ark-network/ark/server/internal/infrastructure/db/badger"
@@ -413,11 +414,11 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
 		for outIndex, out := range outs {
 			// ignore anchors
-			if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
 
-			isDust := common.IsSubDustScript(out.PkScript)
+			isDust := script.IsSubDustScript(out.PkScript)
 
 			newVtxos = append(newVtxos, domain.Vtxo{
 				Outpoint: domain.Outpoint{
@@ -483,7 +484,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 	}
 
 	vtxos := make([]domain.Vtxo, 0)
-	for _, chunk := range tree.TxGraphChunkList(round.VtxoTree).Leaves() {
+	for _, chunk := range tree.FlatVtxoTree(round.VtxoTree).Leaves() {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(chunk.Tx), true)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
@@ -491,7 +492,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 		}
 		for i, out := range tx.UnsignedTx.TxOut {
 			// ignore anchors
-			if bytes.Equal(out.PkScript, tree.ANCHOR_PKSCRIPT) {
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
 

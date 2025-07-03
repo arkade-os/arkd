@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -73,7 +75,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 		// verify taproot leaf script
 		tapLeaf := input.TaprootLeafScript[0]
 
-		closure, err := tree.DecodeClosure(tapLeaf.Script)
+		closure, err := script.DecodeClosure(tapLeaf.Script)
 		if err != nil {
 			return false, txid, err
 		}
@@ -81,25 +83,25 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 		keys := make(map[string]bool)
 
 		switch c := closure.(type) {
-		case *tree.MultisigClosure:
+		case *script.MultisigClosure:
 			for _, key := range c.PubKeys {
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
-		case *tree.CSVMultisigClosure:
+		case *script.CSVMultisigClosure:
 			for _, key := range c.PubKeys {
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
-		case *tree.CLTVMultisigClosure:
+		case *script.CLTVMultisigClosure:
 			for _, key := range c.PubKeys {
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
-		case *tree.ConditionMultisigClosure:
-			witness, err := tree.GetConditionWitness(input)
+		case *script.ConditionMultisigClosure:
+			witness, err := txutils.GetConditionWitness(input)
 			if err != nil {
 				return false, txid, err
 			}
 
-			result, err := tree.ExecuteBoolScript(c.Condition, witness)
+			result, err := script.EvaluateScriptToBool(c.Condition, witness)
 			if err != nil {
 				return false, txid, err
 			}
@@ -127,9 +129,9 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 
 		rootHash := controlBlock.RootHash(tapLeaf.Script)
 		tapKeyFromControlBlock := txscript.ComputeTaprootOutputKey(
-			tree.UnspendableKey(), rootHash[:],
+			script.UnspendableKey(), rootHash[:],
 		)
-		pkscript, err := common.P2TRScript(tapKeyFromControlBlock)
+		pkscript, err := script.P2TRScript(tapKeyFromControlBlock)
 		if err != nil {
 			return false, txid, err
 		}
@@ -185,12 +187,12 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 	for i, in := range ptx.Inputs {
 		isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
 		if isTaproot && len(in.TaprootLeafScript) > 0 {
-			closure, err := tree.DecodeClosure(in.TaprootLeafScript[0].Script)
+			closure, err := script.DecodeClosure(in.TaprootLeafScript[0].Script)
 			if err != nil {
 				return "", err
 			}
 
-			conditionWitness, err := tree.GetConditionWitness(in)
+			conditionWitness, err := txutils.GetConditionWitness(in)
 			if err != nil {
 				return "", err
 			}
@@ -203,7 +205,7 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 				); err != nil {
 					return "", err
 				}
-				args[tree.ConditionWitnessKey] = conditionWitnessBytes.Bytes()
+				args[string(txutils.CONDITION_WITNESS_KEY_PREFIX)] = conditionWitnessBytes.Bytes()
 			}
 
 			for _, sig := range in.TaprootScriptSpendSig {
@@ -292,9 +294,9 @@ func (b *txBuilder) BuildSweepTx(
 }
 
 func (b *txBuilder) VerifyForfeitTxs(
-	vtxos []domain.Vtxo, connectors []tree.TxGraphChunk, forfeitTxs []string,
+	vtxos []domain.Vtxo, connectors []tree.TxTreeNode, forfeitTxs []string,
 ) (map[domain.Outpoint]ports.ValidForfeitTx, error) {
-	connectorsLeaves := tree.TxGraphChunkList(connectors).Leaves()
+	connectorsLeaves := tree.FlatVtxoTree(connectors).Leaves()
 	if len(connectorsLeaves) == 0 {
 		return nil, fmt.Errorf("invalid connectors tree")
 	}
@@ -407,7 +409,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 		inputAmount := vtxo.Amount + uint64(connectorOutput.Value)
 
 		// verify the forfeit closure script
-		closure, err := tree.DecodeClosure(vtxoTapscript.Script)
+		closure, err := script.DecodeClosure(vtxoTapscript.Script)
 		if err != nil {
 			return nil, err
 		}
@@ -415,9 +417,9 @@ func (b *txBuilder) VerifyForfeitTxs(
 		locktime := common.AbsoluteLocktime(0)
 
 		switch c := closure.(type) {
-		case *tree.CLTVMultisigClosure:
+		case *script.CLTVMultisigClosure:
 			locktime = c.Locktime
-		case *tree.MultisigClosure, *tree.ConditionMultisigClosure:
+		case *script.MultisigClosure, *script.ConditionMultisigClosure:
 		default:
 			return nil, fmt.Errorf("invalid forfeit closure script")
 		}
@@ -451,7 +453,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, err
 		}
 
-		vtxoScript, err := common.P2TRScript(vtxoTapKey)
+		vtxoScript, err := script.P2TRScript(vtxoTapKey)
 		if err != nil {
 			return nil, err
 		}
@@ -515,7 +517,7 @@ func (b *txBuilder) BuildCommitmentTx(
 	signerPubkey *secp256k1.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput, connectorAddresses []string,
 	cosignersPublicKeys [][]string,
-) (string, *tree.TxGraph, string, *tree.TxGraph, error) {
+) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	var batchOutputScript []byte
 	var batchOutputAmount int64
 
@@ -524,8 +526,8 @@ func (b *txBuilder) BuildCommitmentTx(
 		return "", nil, "", nil, err
 	}
 
-	sweepScript, err := (&tree.CSVMultisigClosure{
-		MultisigClosure: tree.MultisigClosure{
+	sweepScript, err := (&script.CSVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*secp256k1.PublicKey{signerPubkey},
 		},
 		Locktime: b.vtxoTreeExpiry,
@@ -598,7 +600,7 @@ func (b *txBuilder) BuildCommitmentTx(
 			})
 		}
 
-		connectorsTreePkScript, connectorsTreeAmount, err = tree.CraftConnectorsOutput(
+		connectorsTreePkScript, connectorsTreeAmount, err = tree.BuildConnectorOutput(
 			connectorsTreeLeaves,
 		)
 		if err != nil {
@@ -619,7 +621,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		return "", nil, "", nil, err
 	}
 
-	var vtxoTree *tree.TxGraph
+	var vtxoTree *tree.TxTree
 
 	if !intents.HaveOnlyOnchainOutput() {
 		initialOutpoint := &wire.OutPoint{
@@ -644,7 +646,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		Index: 1,
 	}
 
-	connectors, err := tree.BuildConnectorsTree(
+	connectors, err := tree.BuildConnectorTree(
 		rootConnectorsOutpoint,
 		connectorsTreeLeaves,
 	)
@@ -656,7 +658,7 @@ func (b *txBuilder) BuildCommitmentTx(
 }
 
 func (b *txBuilder) GetSweepableBacthOutputs(
-	vtxoTree *tree.TxGraph,
+	vtxoTree *tree.TxTree,
 ) (vtxoTreeExpiry *common.RelativeLocktime, sweepInput ports.SweepableBatchOutput, err error) {
 	if len(vtxoTree.Root.UnsignedTx.TxIn) != 1 {
 		return nil, nil, fmt.Errorf(
@@ -829,7 +831,7 @@ func (b *txBuilder) createCommitmentTx(
 		})
 		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
 
-		boardingVtxoScript, err := tree.ParseVtxoScript(boardingInput.Tapscripts)
+		boardingVtxoScript, err := script.ParseVtxoScript(boardingInput.Tapscripts)
 		if err != nil {
 			return nil, err
 		}
@@ -839,7 +841,7 @@ func (b *txBuilder) createCommitmentTx(
 			return nil, err
 		}
 
-		boardingOutputScript, err := common.P2TRScript(boardingTapKey)
+		boardingOutputScript, err := script.P2TRScript(boardingTapKey)
 		if err != nil {
 			return nil, err
 		}
@@ -1170,7 +1172,7 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 	// this if case is here to handle previous version of the tree
 	if len(input.TaprootLeafScript) > 0 {
 		for _, leaf := range input.TaprootLeafScript {
-			closure := &tree.CSVMultisigClosure{}
+			closure := &script.CSVMultisigClosure{}
 			valid, err := closure.Decode(leaf.Script)
 			if err != nil {
 				return nil, nil, nil, err
@@ -1198,7 +1200,7 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 		return nil, nil, nil, err
 	}
 
-	cosignerPubKeys, err := tree.GetCosignerKeys(input)
+	cosignerPubKeys, err := txutils.GetCosignerKeys(input)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1207,14 +1209,14 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 		return nil, nil, nil, fmt.Errorf("no cosigner pubkeys found")
 	}
 
-	vtxoTreeExpiry, err = tree.GetVtxoTreeExpiry(input)
+	vtxoTreeExpiry, err = txutils.GetVtxoTreeExpiry(input)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	sweepClosure := &tree.CSVMultisigClosure{
+	sweepClosure := &script.CSVMultisigClosure{
 		Locktime: *vtxoTreeExpiry,
-		MultisigClosure: tree.MultisigClosure{
+		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*secp256k1.PublicKey{serverPubKey},
 		},
 	}

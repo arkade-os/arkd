@@ -9,7 +9,8 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/ark-network/ark/common"
+	"github.com/ark-network/ark/common/script"
+	"github.com/ark-network/ark/common/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
@@ -107,7 +108,7 @@ func (s *TreePartialSigs) UnmarshalJSON(data []byte) error {
 }
 
 type SignerSession interface {
-	Init(scriptRoot []byte, rootSharedOutputAmount int64, txGraph *TxGraph) error
+	Init(scriptRoot []byte, rootSharedOutputAmount int64, txGraph *TxTree) error
 	GetPublicKey() string
 	GetNonces() (TreeNonces, error) // generate tree nonces for this session
 	SetAggregatedNonces(TreeNonces) // set the aggregated nonces
@@ -119,7 +120,7 @@ type CoordinatorSession interface {
 	AddSignatures(*btcec.PublicKey, TreePartialSigs)
 	AggregateNonces() (TreeNonces, error)
 	// SignTree combines the signatures and add them to the tree's psbts
-	SignTree() (*TxGraph, error)
+	SignTree() (*TxTree, error)
 }
 
 // AggregateKeys is a wrapper around musig2.AggregateKeys using the given scriptRoot as taproot tweak
@@ -171,7 +172,7 @@ func AggregateKeys(
 func ValidateTreeSigs(
 	scriptRoot []byte,
 	roundSharedOutputAmount int64,
-	graph *TxGraph,
+	graph *TxTree,
 ) error {
 	prevoutFetcherFactory, err := prevOutFetcherFactory(graph, roundSharedOutputAmount, scriptRoot)
 	if err != nil {
@@ -207,7 +208,7 @@ func ValidateTreeSigs(
 			return nil, fmt.Errorf("failed to calculate sighash: %w", err)
 		}
 
-		keys, err := GetCosignerKeys(partialTx.Inputs[0])
+		keys, err := txutils.GetCosignerKeys(partialTx.Inputs[0])
 		if err != nil {
 			return nil, fmt.Errorf("failed to get cosigner keys: %w", err)
 		}
@@ -243,7 +244,7 @@ type treeSignerSession struct {
 	prevoutFetcherFactory func(*psbt.Packet) (txscript.PrevOutputFetcher, error)
 }
 
-func (t *treeSignerSession) Init(scriptRoot []byte, rootSharedOutputAmount int64, txGraph *TxGraph) error {
+func (t *treeSignerSession) Init(scriptRoot []byte, rootSharedOutputAmount int64, txGraph *TxTree) error {
 	prevOutFetcherFactory, err := prevOutFetcherFactory(txGraph, rootSharedOutputAmount, scriptRoot)
 	if err != nil {
 		return err
@@ -351,13 +352,13 @@ type treeCoordinatorSession struct {
 	nonces                map[string]TreeNonces      // xonly pubkey -> nonces
 	sigs                  map[string]TreePartialSigs // xonly pubkey -> sigs
 	prevoutFetcherFactory func(*psbt.Packet) (txscript.PrevOutputFetcher, error)
-	txGraph               *TxGraph
+	txGraph               *TxTree
 	txs                   map[string]*psbt.Packet
 }
 
 func NewTreeCoordinatorSession(
 	roundSharedOutputAmount int64,
-	txGraph *TxGraph,
+	txGraph *TxTree,
 	scriptRoot []byte,
 ) (CoordinatorSession, error) {
 	prevoutFetcherFactory, err := prevOutFetcherFactory(txGraph, roundSharedOutputAmount, scriptRoot)
@@ -391,7 +392,7 @@ func (t *treeCoordinatorSession) AggregateNonces() (TreeNonces, error) {
 
 // SignTree combines the signatures and add them to the tree's psbts
 // it returns the vtxo tree with the signed transactions set as TaprootKeySpendSig
-func (t *treeCoordinatorSession) SignTree() (*TxGraph, error) {
+func (t *treeCoordinatorSession) SignTree() (*TxTree, error) {
 	combineSigsItems := make(map[string]combineSigsParams)
 
 	for txid, tx := range t.txs {
@@ -408,7 +409,7 @@ func (t *treeCoordinatorSession) SignTree() (*TxGraph, error) {
 		return nil, err
 	}
 
-	if err := t.txGraph.Apply(func(g *TxGraph) (bool, error) {
+	if err := t.txGraph.Apply(func(g *TxTree) (bool, error) {
 		sig, ok := combinedSigs[g.Root.UnsignedTx.TxID()]
 		if !ok {
 			return true, nil
@@ -424,7 +425,7 @@ func (t *treeCoordinatorSession) SignTree() (*TxGraph, error) {
 }
 
 func prevOutFetcherFactory(
-	txGraph *TxGraph,
+	txGraph *TxTree,
 	roundSharedOutputAmount int64,
 	scriptRoot []byte,
 ) (
@@ -436,7 +437,7 @@ func prevOutFetcherFactory(
 		parentTxID := parentOutpoint.Hash.String()
 		// root tx case
 		if txGraph.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String() == parentTxID {
-			keys, err := GetCosignerKeys(partial.Inputs[0])
+			keys, err := txutils.GetCosignerKeys(partial.Inputs[0])
 			if err != nil {
 				return nil, err
 			}
@@ -450,7 +451,7 @@ func prevOutFetcherFactory(
 				return nil, err
 			}
 
-			pkscript, err := common.P2TRScript(aggregateKey.FinalKey)
+			pkscript, err := script.P2TRScript(aggregateKey.FinalKey)
 			if err != nil {
 				return nil, err
 			}
@@ -570,7 +571,7 @@ func workPoolMap[T any, R comparable](kvMap map[string]T, processItem func(item 
 
 // getCosignersPublicKeys extract the set of cosigners public keys from the tx and check if the signer's key is in the set
 func getCosignersPublicKeys(signerPubKey []byte, tx *psbt.Packet) (bool, []*secp256k1.PublicKey, error) {
-	keys, err := GetCosignerKeys(tx.Inputs[0])
+	keys, err := txutils.GetCosignerKeys(tx.Inputs[0])
 	if err != nil {
 		return false, nil, err
 	}
@@ -583,7 +584,7 @@ func getCosignersPublicKeys(signerPubKey []byte, tx *psbt.Packet) (bool, []*secp
 	return false, nil, nil
 }
 
-func graphToMap(graph *TxGraph, res map[string]*psbt.Packet) map[string]*psbt.Packet {
+func graphToMap(graph *TxTree, res map[string]*psbt.Packet) map[string]*psbt.Packet {
 	res[graph.Root.UnsignedTx.TxID()] = graph.Root
 
 	for _, child := range graph.Children {
@@ -595,7 +596,7 @@ func graphToMap(graph *TxGraph, res map[string]*psbt.Packet) map[string]*psbt.Pa
 
 func combineNonces(allNonces map[string]TreeNonces) func(tx *psbt.Packet) (*Musig2Nonce, error) {
 	return func(tx *psbt.Packet) (*Musig2Nonce, error) {
-		keys, err := GetCosignerKeys(tx.Inputs[0])
+		keys, err := txutils.GetCosignerKeys(tx.Inputs[0])
 		if err != nil {
 			return nil, fmt.Errorf("failed to get cosigner keys: %w", err)
 		}
@@ -699,7 +700,7 @@ type combineSigsParams struct {
 
 func combineSigs(scriptRoot []byte, allSigs map[string]TreePartialSigs) func(params combineSigsParams) (*schnorr.Signature, error) {
 	return func(params combineSigsParams) (*schnorr.Signature, error) {
-		keys, err := GetCosignerKeys(params.tx.Inputs[0])
+		keys, err := txutils.GetCosignerKeys(params.tx.Inputs[0])
 		if err != nil {
 			return nil, err
 		}

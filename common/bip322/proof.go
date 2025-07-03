@@ -2,6 +2,8 @@
 package bip322
 
 import (
+	"fmt"
+
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -9,13 +11,15 @@ import (
 )
 
 var (
-	tagBIP322 = []byte("BIP0322-signed-message")
-	zeroHash  = chainhash.Hash{
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	}
+	ErrMissingInputs      = fmt.Errorf("missing inputs")
+	ErrMissingData        = fmt.Errorf("missing data")
+	ErrMissingWitnessUtxo = fmt.Errorf("missing witness utxo")
+	ErrIncompletePSBT     = fmt.Errorf("incomplete psbt, missing signatures on inputs")
+)
+
+var (
+	tagBIP322             = []byte("BIP0322-signed-message")
+	zeroHash              = chainhash.Hash(make([]byte, 32))
 	opReturnEmptyPkScript = []byte{txscript.OP_RETURN}
 )
 
@@ -43,8 +47,8 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*FullProof, err
 	}
 
 	firstInput := inputs[0]
-	toSpend := craftToSpendTx(message, firstInput.WitnessUtxo.PkScript)
-	toSign, err := craftToSignTx(toSpend, inputs, outputs)
+	toSpend := buildToSpendTx(message, firstInput.WitnessUtxo.PkScript)
+	toSign, err := buildToSignTx(toSpend, inputs, outputs)
 	if err != nil {
 		return nil, err
 	}
@@ -52,9 +56,9 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*FullProof, err
 	return (*FullProof)(toSign), nil
 }
 
-// Signature extracts the BIP322 signature, fails if the psbt is not fully signed
-// if the inputs contains custom finalization logic, use the finalize function
-// if nil, finalize will use the default finalizer
+// Signature extracts the BIP-0322 signature, fails if the tx is not fully signed.
+// If the inputs contains custom witness, you may want to specify a finalization function,
+// if otherwise the default finalizer is used.
 func (p *FullProof) Signature(finalize ...func(*psbt.Packet) error) (*Signature, error) {
 	if len(finalize) == 0 {
 		finalize = []func(*psbt.Packet) error{psbt.MaybeFinalizeAll}
@@ -96,8 +100,8 @@ func hashMessage(message string) []byte {
 	return tagged[:]
 }
 
-// craftToSpendTx creates the initial transaction that will be spent in the proof
-func craftToSpendTx(message string, pkScript []byte) *wire.MsgTx {
+// buildToSpendTx creates the initial transaction that will be spent in the proof
+func buildToSpendTx(message string, pkScript []byte) *wire.MsgTx {
 	messageHash := hashMessage(message)
 	toSpend := wire.NewMsgTx(0)
 	toSpend.TxIn = []*wire.TxIn{
@@ -111,17 +115,14 @@ func craftToSpendTx(message string, pkScript []byte) *wire.MsgTx {
 			Witness:         wire.TxWitness{},
 		},
 	}
-	toSpend.TxOut = []*wire.TxOut{
-		{
-			Value:    0,
-			PkScript: pkScript,
-		},
-	}
+	toSpend.TxOut = []*wire.TxOut{{Value: 0, PkScript: pkScript}}
 	return toSpend
 }
 
-// craftToSignTx creates the transaction that will be signed for the proof
-func craftToSignTx(toSpend *wire.MsgTx, inputs []Input, outputs []*wire.TxOut) (*psbt.Packet, error) {
+// buildToSignTx creates the transaction that will be signed for the proof
+func buildToSignTx(
+	toSpend *wire.MsgTx, inputs []Input, outputs []*wire.TxOut,
+) (*psbt.Packet, error) {
 	outpoints := make([]*wire.OutPoint, 0, len(inputs)+1)
 	sequences := make([]uint32, 0, len(inputs)+1)
 
@@ -138,20 +139,10 @@ func craftToSignTx(toSpend *wire.MsgTx, inputs []Input, outputs []*wire.TxOut) (
 	}
 
 	if len(outputs) == 0 {
-		outputs = []*wire.TxOut{
-			{
-				Value:    0,
-				PkScript: opReturnEmptyPkScript,
-			},
-		}
+		outputs = []*wire.TxOut{{Value: 0, PkScript: opReturnEmptyPkScript}}
 	}
 
-	toSign, err := psbt.New(
-		outpoints,
-		outputs,
-		2, 0,
-		sequences,
-	)
+	toSign, err := psbt.New(outpoints, outputs, 2, 0, sequences)
 	if err != nil {
 		return nil, err
 	}
