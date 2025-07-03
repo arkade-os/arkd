@@ -279,7 +279,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	// Register handlers that take care of keeping the projection store up-to-date.
 	if txDecoder != nil {
 		eventStore.RegisterEventsHandler(domain.RoundTopic, svc.updateProjectionsAfterRoundEvents)
-		eventStore.RegisterEventsHandler(domain.OffchainTxTopic, svc.updateProjectionsAfterOffchainTxEvents)
+		eventStore.RegisterEventsHandler(
+			domain.OffchainTxTopic, svc.updateProjectionsAfterOffchainTxEvents,
+		)
 	}
 
 	return svc, nil

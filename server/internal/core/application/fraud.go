@@ -109,7 +109,10 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 	}
 
 	if len(round.Connectors) <= 0 {
-		return fmt.Errorf("no connectors found for round %s, cannot broadcast forfeit tx", round.CommitmentTxid)
+		return fmt.Errorf(
+			"no connectors found for round %s, cannot broadcast forfeit tx",
+			round.CommitmentTxid,
+		)
 	}
 
 	forfeitTx, connectorOutpoint, err := findForfeitTx(round.ForfeitTxs, vtxo.Outpoint)
@@ -186,7 +189,10 @@ func (s *service) broadcastConnectorBranch(
 	// If branch is nil, it means there's no path from root to the connector outpoint
 	// This could happen if the connector outpoint is not part of the connector graph
 	if branch == nil {
-		return fmt.Errorf("no path found to connector outpoint %s in connector graph", connectorOutpoint.Txid)
+		return fmt.Errorf(
+			"no path found to connector outpoint %s in connector graph",
+			connectorOutpoint.Txid,
+		)
 	}
 
 	return branch.Apply(func(g *tree.TxGraph) (bool, error) {

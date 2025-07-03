@@ -247,7 +247,8 @@ func testAcceptOffchainTx(t *testing.T) {
 
 			for _, f := range fixtures {
 				event, err := f.offchainTx.Accept(
-					f.finalArkTx, f.signedCheckpointTxs, f.commitmentTxids, rootCommitmentTxid, f.expiryTimestamp,
+					f.finalArkTx, f.signedCheckpointTxs,
+					f.commitmentTxids, rootCommitmentTxid, f.expiryTimestamp,
 				)
 				require.EqualError(t, err, f.expectedErr)
 				require.Nil(t, event)
@@ -265,7 +266,8 @@ func testFinalizeOffchainTx(t *testing.T) {
 			require.NotNil(t, event)
 
 			event, err = offchainTx.Accept(
-				finalArkTx, signedCheckpointTxs, commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
+				finalArkTx, signedCheckpointTxs,
+				commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, event)
@@ -343,7 +345,8 @@ func testFailOffchainTx(t *testing.T) {
 			require.Equal(t, domain.EventTypeOffchainTxRequested, event.GetType())
 
 			event, err = offchainTx.Accept(
-				finalArkTx, signedCheckpointTxs, commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
+				finalArkTx, signedCheckpointTxs,
+				commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, event)

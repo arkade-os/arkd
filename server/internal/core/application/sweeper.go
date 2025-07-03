@@ -315,7 +315,9 @@ func (s *sweeper) updateVtxoExpirationTime(
 	return s.repoManager.Vtxos().UpdateVtxosExpiration(context.Background(), vtxos, expirationTime)
 }
 
-func computeSubTrees(vtxoTree *tree.TxGraph, inputs []ports.SweepableBatchOutput) ([]*tree.TxGraph, error) {
+func computeSubTrees(
+	vtxoTree *tree.TxGraph, inputs []ports.SweepableBatchOutput,
+) ([]*tree.TxGraph, error) {
 	subTrees := make(map[string]*tree.TxGraph, 0)
 
 	// for each sweepable input, create a sub vtxo tree

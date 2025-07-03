@@ -269,7 +269,9 @@ func (w *walletDaemonClient) SignTransactionTapscript(
 		indexes[i] = int32(v)
 	}
 	resp, err := w.client.SignTransactionTapscript(
-		ctx, &arkwalletv1.SignTransactionTapscriptRequest{PartialTx: partialTx, InputIndexes: indexes},
+		ctx, &arkwalletv1.SignTransactionTapscriptRequest{
+			PartialTx: partialTx, InputIndexes: indexes,
+		},
 	)
 	if err != nil {
 		return "", err

@@ -335,32 +335,51 @@ func determineLocktimeType(locktime int64) common.RelativeLocktime {
 
 func (c *Config) Validate() error {
 	if !supportedEventDbs.supports(c.EventDbType) {
-		return fmt.Errorf("event db type not supported, please select one of: %s", supportedEventDbs)
+		return fmt.Errorf(
+			"event db type not supported, please select one of: %s",
+			supportedEventDbs,
+		)
 	}
 	if !supportedDbs.supports(c.DbType) {
 		return fmt.Errorf("db type not supported, please select one of: %s", supportedDbs)
 	}
 	if !supportedSchedulers.supports(c.SchedulerType) {
-		return fmt.Errorf("scheduler type not supported, please select one of: %s", supportedSchedulers)
+		return fmt.Errorf(
+			"scheduler type not supported, please select one of: %s",
+			supportedSchedulers,
+		)
 	}
 	if !supportedTxBuilders.supports(c.TxBuilderType) {
-		return fmt.Errorf("tx builder type not supported, please select one of: %s", supportedTxBuilders)
+		return fmt.Errorf(
+			"tx builder type not supported, please select one of: %s",
+			supportedTxBuilders,
+		)
 	}
 	if len(c.UnlockerType) > 0 && !supportedUnlockers.supports(c.UnlockerType) {
-		return fmt.Errorf("unlocker type not supported, please select one of: %s", supportedUnlockers)
+		return fmt.Errorf(
+			"unlocker type not supported, please select one of: %s",
+			supportedUnlockers,
+		)
 	}
 	if len(c.LiveStoreType) > 0 && !supportedLiveStores.supports(c.LiveStoreType) {
-		return fmt.Errorf("live store type not supported, please select one of: %s", supportedLiveStores)
+		return fmt.Errorf(
+			"live store type not supported, please select one of: %s",
+			supportedLiveStores,
+		)
 	}
 	if c.RoundInterval < 2 {
 		return fmt.Errorf("invalid round interval, must be at least 2 seconds")
 	}
 	if c.VtxoTreeExpiry.Type == common.LocktimeTypeBlock {
 		if c.SchedulerType != "block" {
-			return fmt.Errorf("scheduler type must be block if vtxo tree expiry is expressed in blocks")
+			return fmt.Errorf(
+				"scheduler type must be block if vtxo tree expiry is expressed in blocks",
+			)
 		}
 		if !c.AllowCSVBlockType {
-			return fmt.Errorf("CSV block type must be allowed if vtxo tree expiry is expressed in blocks")
+			return fmt.Errorf(
+				"CSV block type must be allowed if vtxo tree expiry is expressed in blocks",
+			)
 		}
 	} else { // seconds
 		if c.SchedulerType != "gocron" {

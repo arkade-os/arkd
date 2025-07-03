@@ -1,0 +1,18 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 100
+
+# (Optional) control exit code on issues:
+issues:
+  exit-code: 1   

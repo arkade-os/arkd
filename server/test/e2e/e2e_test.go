@@ -57,7 +57,10 @@ func TestMain(m *testing.M) {
 
 	time.Sleep(1 * time.Second)
 
-	_, err := runArkCommand("init", "--server-url", "localhost:7070", "--password", utils.Password, "--network", "regtest", "--explorer", "http://chopsticks:3000")
+	_, err := runArkCommand(
+		"init", "--server-url", "localhost:7070", "--password", utils.Password,
+		"--network", "regtest", "--explorer", "http://chopsticks:3000",
+	)
 	if err != nil {
 		fmt.Printf("error initializing ark config: %s", err)
 		os.Exit(1)
@@ -309,7 +312,9 @@ func TestUnilateralExit(t *testing.T) {
 
 		time.Sleep(3 * time.Second)
 
-		_, err = runArkCommand("send", "--to", receive.Offchain, "--amount", "1000", "--password", utils.Password)
+		_, err = runArkCommand(
+			"send", "--to", receive.Offchain, "--amount", "1000", "--password", utils.Password,
+		)
 		require.NoError(t, err)
 
 		time.Sleep(2 * time.Second)
@@ -369,7 +374,9 @@ func TestCollaborativeExit(t *testing.T) {
 		time.Sleep(3 * time.Second)
 
 		// Redeem 1000 satoshis onchain, keep 9000 satoshis offchain
-		_, err = runArkCommand("redeem", "--amount", "1000", "--address", redeemAddress, "--password", utils.Password)
+		_, err = runArkCommand(
+			"redeem", "--amount", "1000", "--address", redeemAddress, "--password", utils.Password,
+		)
 		require.NoError(t, err)
 	})
 
@@ -392,7 +399,10 @@ func TestCollaborativeExit(t *testing.T) {
 		time.Sleep(3 * time.Second)
 
 		// Redeem 10000 satoshis onchain
-		_, err = runArkCommand("redeem", "--amount", "10000", "--address", redeemAddress, "--password", utils.Password)
+		_, err = runArkCommand(
+			"redeem",
+			"--amount", "10000", "--address", redeemAddress, "--password", utils.Password,
+		)
 		require.NoError(t, err)
 	})
 }
@@ -509,7 +519,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			require.NotNil(t, vtxos)
 		}()
 
-		_, err = sdkClient.SendOffChain(ctx, false, []types.Receiver{{To: offchainAddress, Amount: 1000}})
+		_, err = sdkClient.SendOffChain(
+			ctx, false, []types.Receiver{{To: offchainAddress, Amount: 1000}},
+		)
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -656,7 +668,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		script, err := closure.Script()
 		require.NoError(t, err)
 
-		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(script).TapHash())
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(script).TapHash(),
+		)
 		require.NoError(t, err)
 
 		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
@@ -678,7 +692,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			require.NotNil(t, vtxos)
 		}()
 
-		txid, err := alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}})
+		txid, err := alice.SendOffChain(
+			ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+		)
 		require.NoError(t, err)
 		require.NotEmpty(t, txid)
 
@@ -787,7 +803,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		bobTxid, _, signedCheckpoints, err := grpcTransportClient.SubmitTx(ctx, signedTx, checkpoints)
+		bobTxid, _, signedCheckpoints, err := grpcTransportClient.SubmitTx(
+			ctx, signedTx, checkpoints,
+		)
 		require.NoError(t, err)
 
 		finalCheckpoints := make([]string, 0, len(signedCheckpoints))
@@ -876,7 +894,9 @@ func TestChainOffchainTransactions(t *testing.T) {
 
 	time.Sleep(3 * time.Second)
 
-	_, err = runArkCommand("send", "--amount", "10000", "--to", receive.Offchain, "--password", utils.Password)
+	_, err = runArkCommand(
+		"send", "--amount", "10000", "--to", receive.Offchain, "--password", utils.Password,
+	)
 	require.NoError(t, err)
 
 	time.Sleep(1 * time.Second)
@@ -887,7 +907,9 @@ func TestChainOffchainTransactions(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
 	require.NotZero(t, balance.Offchain.Total)
 
-	_, err = runArkCommand("send", "--amount", "10000", "--to", receive.Offchain, "--password", utils.Password)
+	_, err = runArkCommand(
+		"send", "--amount", "10000", "--to", receive.Offchain, "--password", utils.Password,
+	)
 	require.NoError(t, err)
 
 	time.Sleep(1 * time.Second)
@@ -938,7 +960,10 @@ func TestSubDustVtxoTransaction(t *testing.T) {
 	}()
 
 	// send 1 satoshi
-	_, err = runArkCommand("send", "--amount", fmt.Sprintf("%d", subdustAmount), "--to", bobAddr, "--password", utils.Password)
+	_, err = runArkCommand(
+		"send", "--amount", fmt.Sprintf("%d", subdustAmount),
+		"--to", bobAddr, "--password", utils.Password,
+	)
 	require.NoError(t, err)
 
 	// wait for bob to receive the vtxo
@@ -953,7 +978,9 @@ func TestSubDustVtxoTransaction(t *testing.T) {
 	require.Error(t, err)
 
 	// resend some funds to bob so he can settle
-	_, err = runArkCommand("send", "--amount", "1000", "--to", bobAddr, "--password", utils.Password)
+	_, err = runArkCommand(
+		"send", "--amount", "1000", "--to", bobAddr, "--password", utils.Password,
+	)
 	require.NoError(t, err)
 
 	// now that bob has enough funds (greater than dust), he should be able to settle
@@ -986,7 +1013,7 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 	_, err = utils.RunCommand("nigiri", "faucet", aliceBoardingAddress, "0.00005000")
 	require.NoError(t, err)
 
-	_, err = utils.RunCommand("nigiri", "rpc", "generatetoaddress", "1", "bcrt1qe8eelqalnch946nzhefd5ajhgl2afjw5aegc59")
+	_, err = utils.RunCommand("nigiri", "rpc", "--generate", "1")
 	require.NoError(t, err)
 	time.Sleep(5 * time.Second)
 
@@ -1277,7 +1304,9 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, vtxos)
 	}()
-	txid, err := alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}})
+	txid, err := alice.SendOffChain(
+		ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+	)
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
@@ -1520,7 +1549,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
 	require.NoError(t, err)
 
-	checkpointMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(checkpointScript).TapHash())
+	checkpointMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(checkpointScript).TapHash(),
+	)
 	require.NoError(t, err)
 
 	checkpointCtrlBlock, err := txscript.ParseControlBlock(checkpointMerkleProof.ControlBlock)
@@ -1547,7 +1578,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		require.NotNil(t, vtxos)
 	}()
 
-	txid, err := alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}})
+	txid, err := alice.SendOffChain(
+		ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+	)
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
@@ -1796,7 +1829,9 @@ func setupServerWallet() error {
 		return fmt.Errorf("failed to parse response: %s", err)
 	}
 
-	reqBody := bytes.NewReader([]byte(fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, utils.Password)))
+	reqBody := bytes.NewReader(
+		[]byte(fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, utils.Password)),
+	)
 	req, err = http.NewRequest("POST", "http://localhost:7070/v1/admin/wallet/create", reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to prepare wallet create request: %s", err)

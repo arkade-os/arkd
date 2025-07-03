@@ -127,18 +127,20 @@ func NewService(
 	ctx, cancel := context.WithCancel(ctx)
 
 	svc := &service{
-		network:                   network,
-		signerPubkey:              signerPubkey,
-		vtxoTreeExpiry:            vtxoTreeExpiry,
-		roundInterval:             time.Duration(roundInterval) * time.Second,
-		unilateralExitDelay:       unilateralExitDelay,
-		allowCSVBlockType:         allowCSVBlockType,
-		wallet:                    wallet,
-		repoManager:               repoManager,
-		builder:                   builder,
-		cache:                     cache,
-		scanner:                   scanner,
-		sweeper:                   newSweeper(wallet, repoManager, builder, scheduler, noteUriPrefix),
+		network:             network,
+		signerPubkey:        signerPubkey,
+		vtxoTreeExpiry:      vtxoTreeExpiry,
+		roundInterval:       time.Duration(roundInterval) * time.Second,
+		unilateralExitDelay: unilateralExitDelay,
+		allowCSVBlockType:   allowCSVBlockType,
+		wallet:              wallet,
+		repoManager:         repoManager,
+		builder:             builder,
+		cache:               cache,
+		scanner:             scanner,
+		sweeper: newSweeper(
+			wallet, repoManager, builder, scheduler, noteUriPrefix,
+		),
 		eventsCh:                  make(chan []domain.Event),
 		transactionEventsCh:       make(chan TransactionEvent),
 		boardingExitDelay:         boardingExitDelay,
@@ -371,7 +373,9 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if len(checkpointPtx.UnsignedTx.TxIn) < 1 {
-			return nil, "", "", fmt.Errorf("invalid checkpoint tx %s", checkpointPtx.UnsignedTx.TxID())
+			return nil, "", "", fmt.Errorf(
+				"invalid checkpoint tx %s", checkpointPtx.UnsignedTx.TxID(),
+			)
 		}
 
 		vtxoKey := domain.Outpoint{

@@ -506,7 +506,9 @@ func (i *indexerService) vtxosToTxs(
 		vtxo := getVtxo(resultedVtxos, vtxosBySpentBy[sb])
 		if resultedAmount == 0 {
 			// send all: fetch the created vtxo to source creation and expiration timestamps
-			vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{{Txid: sb, VOut: 0}})
+			vtxos, err := i.repoManager.Vtxos().GetVtxos(
+				ctx, []domain.Outpoint{{Txid: sb, VOut: 0}},
+			)
 			if err != nil {
 				return nil, err
 			}

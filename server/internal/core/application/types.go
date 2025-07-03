@@ -25,10 +25,16 @@ type Service interface {
 	) (signedCheckpoints []string, finalArkTx string, arkTxid string, err error)
 	FinalizeOffchainTx(ctx context.Context, txid string, finalCheckpoints []string) error
 	// Tree signing methods
-	RegisterCosignerNonces(ctx context.Context, roundId, pubkey string, nonces tree.TreeNonces) error
-	RegisterCosignerSignatures(ctx context.Context, roundId, pubkey string, signatures tree.TreePartialSigs) error
+	RegisterCosignerNonces(
+		ctx context.Context, roundId, pubkey string, nonces tree.TreeNonces,
+	) error
+	RegisterCosignerSignatures(
+		ctx context.Context, roundId, pubkey string, signatures tree.TreePartialSigs,
+	) error
 	GetTxEventsChannel(ctx context.Context) <-chan TransactionEvent
-	DeleteIntentsByProof(ctx context.Context, bip322signature bip322.Signature, message tree.DeleteIntentMessage) error
+	DeleteIntentsByProof(
+		ctx context.Context, bip322signature bip322.Signature, message tree.DeleteIntentMessage,
+	) error
 
 	// TODO: remove when detaching the indexer svc.
 	GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent

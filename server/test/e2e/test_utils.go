@@ -51,7 +51,7 @@ type ArkReceive struct {
 }
 
 func GenerateBlock() error {
-	_, err := RunCommand("nigiri", "rpc", "generatetoaddress", "1", "bcrt1qe8eelqalnch946nzhefd5ajhgl2afjw5aegc59")
+	_, err := RunCommand("nigiri", "rpc", "--generate", "1")
 	return err
 }
 
@@ -165,7 +165,9 @@ func BumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	require.NoError(t, err)
 
 	tapKey := txscript.ComputeTaprootKeyNoScript(randomPrivKey.PubKey())
-	addr, err := btcutil.NewAddressTaproot(schnorr.SerializePubKey(tapKey), &chaincfg.RegressionNetParams)
+	addr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(tapKey), &chaincfg.RegressionNetParams,
+	)
 	require.NoError(t, err)
 
 	anchor, err := tree.FindAnchorOutpoint(parent)

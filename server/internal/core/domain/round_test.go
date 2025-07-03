@@ -317,7 +317,9 @@ func testStartFinalization(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
-			events, err = round.StartFinalization("", connectors, vtxoTree, "txid", commitmentTx, expiration)
+			events, err = round.StartFinalization(
+				"", connectors, vtxoTree, "txid", commitmentTx, expiration,
+			)
 			require.NoError(t, err)
 			require.Len(t, events, 1)
 			require.True(t, round.IsStarted())
@@ -457,7 +459,14 @@ func testEndFinalization(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
-			events, err = round.StartFinalization("", connectors, vtxoTree, "txid", commitmentTx, expiration)
+			events, err = round.StartFinalization(
+				"",
+				connectors,
+				vtxoTree,
+				"txid",
+				commitmentTx,
+				expiration,
+			)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
@@ -522,7 +531,12 @@ func testEndFinalization(t *testing.T) {
 							Failed: true,
 						},
 					},
-					forfeitTxs:  []domain.ForfeitTx{emptyForfeitTx, emptyForfeitTx, emptyForfeitTx, emptyForfeitTx},
+					forfeitTxs: []domain.ForfeitTx{
+						emptyForfeitTx,
+						emptyForfeitTx,
+						emptyForfeitTx,
+						emptyForfeitTx,
+					},
 					expectedErr: "not in a valid stage to end finalization",
 				},
 				{
@@ -533,7 +547,12 @@ func testEndFinalization(t *testing.T) {
 							Ended: true,
 						},
 					},
-					forfeitTxs:  []domain.ForfeitTx{emptyForfeitTx, emptyForfeitTx, emptyForfeitTx, emptyForfeitTx},
+					forfeitTxs: []domain.ForfeitTx{
+						emptyForfeitTx,
+						emptyForfeitTx,
+						emptyForfeitTx,
+						emptyForfeitTx,
+					},
 					expectedErr: "round already finalized",
 				},
 			}
@@ -559,7 +578,14 @@ func testSweep(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
-			events, err = round.StartFinalization("", connectors, vtxoTree, "txid", commitmentTx, expiration)
+			events, err = round.StartFinalization(
+				"",
+				connectors,
+				vtxoTree,
+				"txid",
+				commitmentTx,
+				expiration,
+			)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 

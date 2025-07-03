@@ -169,7 +169,9 @@ func (e *indexerService) GetVtxoTreeLeaves(
 	}, nil
 }
 
-func (e *indexerService) GetForfeitTxs(ctx context.Context, request *arkv1.GetForfeitTxsRequest) (*arkv1.GetForfeitTxsResponse, error) {
+func (e *indexerService) GetForfeitTxs(
+	ctx context.Context, request *arkv1.GetForfeitTxsRequest,
+) (*arkv1.GetForfeitTxsResponse, error) {
 	txid, err := parseTxid(request.GetTxid())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -190,7 +192,9 @@ func (e *indexerService) GetForfeitTxs(ctx context.Context, request *arkv1.GetFo
 	}, nil
 }
 
-func (e *indexerService) GetConnectors(ctx context.Context, request *arkv1.GetConnectorsRequest) (*arkv1.GetConnectorsResponse, error) {
+func (e *indexerService) GetConnectors(
+	ctx context.Context, request *arkv1.GetConnectorsRequest,
+) (*arkv1.GetConnectorsResponse, error) {
 	txid, err := parseTxid(request.GetTxid())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -219,7 +223,9 @@ func (e *indexerService) GetConnectors(ctx context.Context, request *arkv1.GetCo
 	}, nil
 }
 
-func (e *indexerService) GetVtxos(ctx context.Context, request *arkv1.GetVtxosRequest) (*arkv1.GetVtxosResponse, error) {
+func (e *indexerService) GetVtxos(
+	ctx context.Context, request *arkv1.GetVtxosRequest,
+) (*arkv1.GetVtxosResponse, error) {
 	page, err := parsePage(request.GetPage())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())

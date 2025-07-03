@@ -258,7 +258,9 @@ func (r *Round) IsFailed() bool {
 
 func (r *Round) ExpiryTimestamp() int64 {
 	if r.IsEnded() {
-		return time.Unix(r.EndingTimestamp, 0).Add(time.Second * time.Duration(r.VtxoTreeExpiration)).Unix()
+		return time.Unix(r.EndingTimestamp, 0).Add(
+			time.Second * time.Duration(r.VtxoTreeExpiration),
+		).Unix()
 	}
 	return -1
 }

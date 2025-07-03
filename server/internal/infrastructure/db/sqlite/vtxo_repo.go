@@ -90,7 +90,9 @@ func (v *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtx
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) GetAllNonUnrolledVtxos(ctx context.Context, pubkey string) ([]domain.Vtxo, []domain.Vtxo, error) {
+func (v *vtxoRepository) GetAllNonUnrolledVtxos(
+	ctx context.Context, pubkey string,
+) ([]domain.Vtxo, []domain.Vtxo, error) {
 	withPubkey := len(pubkey) > 0
 
 	var rows []queries.VtxoVw
@@ -133,7 +135,9 @@ func (v *vtxoRepository) GetAllNonUnrolledVtxos(ctx context.Context, pubkey stri
 	return unspentVtxos, spentVtxos, nil
 }
 
-func (v *vtxoRepository) GetVtxos(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Vtxo, error) {
+func (v *vtxoRepository) GetVtxos(
+	ctx context.Context, outpoints []domain.Outpoint,
+) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0, len(outpoints))
 	for _, o := range outpoints {
 		res, err := v.querier.SelectVtxo(
@@ -188,7 +192,9 @@ func (v *vtxoRepository) GetVtxosForRound(ctx context.Context, txid string) ([]d
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) GetLeafVtxosForBatch(ctx context.Context, txid string) ([]domain.Vtxo, error) {
+func (v *vtxoRepository) GetLeafVtxosForBatch(
+	ctx context.Context, txid string,
+) ([]domain.Vtxo, error) {
 	res, err := v.querier.SelectRoundVtxoTreeLeaves(ctx, txid)
 	if err != nil {
 		return nil, err

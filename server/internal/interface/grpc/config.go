@@ -115,8 +115,10 @@ func (c Config) tlsConfig() (*tls.Config, error) {
 	}
 
 	config := &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		NextProtos:   []string{"http/1.1", http2.NextProtoTLS, "h2-14"}, // h2-14 is just for compatibility. will be eventually removed.
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{
+			"http/1.1", http2.NextProtoTLS, "h2-14",
+		}, // h2-14 is just for compatibility. will be eventually removed.
 		Certificates: []tls.Certificate{certificate},
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,

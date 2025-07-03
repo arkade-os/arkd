@@ -69,7 +69,9 @@ type TreeSigningSessionsStore interface {
 	Get(roundId string) (*MusigSigningSession, bool)
 	Delete(roundId string)
 	AddNonces(ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces) error
-	AddSignatures(ctx context.Context, roundId string, pubkey string, nonces tree.TreePartialSigs) error
+	AddSignatures(
+		ctx context.Context, roundId, pubkey string, nonces tree.TreePartialSigs,
+	) error
 	NoncesCollected(roundId string) <-chan struct{}
 	SignaturesCollected(roundId string) <-chan struct{}
 }

@@ -108,8 +108,10 @@ func (m *mockedWallet) GetNetwork(ctx context.Context) (*common.Network, error) 
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) SignTransaction(ctx context.Context, pset string, extractRawTx bool) (string, error) {
-	args := m.Called(ctx, pset, extractRawTx)
+func (m *mockedWallet) SignTransaction(
+	ctx context.Context, tx string, extractRawTx bool,
+) (string, error) {
+	args := m.Called(ctx, tx, extractRawTx)
 
 	var res string
 	if a := args.Get(0); a != nil {
@@ -128,7 +130,9 @@ func (m *mockedWallet) Status(ctx context.Context) (ports.WalletStatus, error) {
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) SelectUtxos(ctx context.Context, asset string, amount uint64, confirmedOnly bool) ([]ports.TxInput, uint64, error) {
+func (m *mockedWallet) SelectUtxos(
+	ctx context.Context, asset string, amount uint64, confirmedOnly bool,
+) ([]ports.TxInput, uint64, error) {
 	args := m.Called(ctx, asset, amount, confirmedOnly)
 
 	var res0 func() []ports.TxInput
@@ -183,7 +187,9 @@ func (m *mockedWallet) GetDustAmount(ctx context.Context) (uint64, error) {
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) IsTransactionConfirmed(ctx context.Context, txid string) (bool, int64, int64, error) {
+func (m *mockedWallet) IsTransactionConfirmed(
+	ctx context.Context, txid string,
+) (bool, int64, int64, error) {
 	args := m.Called(ctx, txid)
 
 	var res bool
@@ -204,8 +210,10 @@ func (m *mockedWallet) IsTransactionConfirmed(ctx context.Context, txid string) 
 	return res, height, blocktime, args.Error(2)
 }
 
-func (m *mockedWallet) SignTransactionTapscript(ctx context.Context, pset string, inputIndexes []int) (string, error) {
-	args := m.Called(ctx, pset, inputIndexes)
+func (m *mockedWallet) SignTransactionTapscript(
+	ctx context.Context, tx string, inputIndexes []int,
+) (string, error) {
+	args := m.Called(ctx, tx, inputIndexes)
 
 	var res string
 	if a := args.Get(0); a != nil {
@@ -228,7 +236,9 @@ func (m *mockedWallet) UnwatchScripts(
 	return args.Error(0)
 }
 
-func (m *mockedWallet) GetNotificationChannel(ctx context.Context) <-chan map[string][]ports.VtxoWithValue {
+func (m *mockedWallet) GetNotificationChannel(
+	ctx context.Context,
+) <-chan map[string][]ports.VtxoWithValue {
 	args := m.Called(ctx)
 
 	var res <-chan map[string][]ports.VtxoWithValue
@@ -238,7 +248,9 @@ func (m *mockedWallet) GetNotificationChannel(ctx context.Context) <-chan map[st
 	return res
 }
 
-func (m *mockedWallet) ListConnectorUtxos(ctx context.Context, addr string) ([]ports.TxInput, error) {
+func (m *mockedWallet) ListConnectorUtxos(
+	ctx context.Context, addr string,
+) ([]ports.TxInput, error) {
 	args := m.Called(ctx, addr)
 
 	var res []ports.TxInput
@@ -273,7 +285,9 @@ func (m *mockedWallet) SignMessage(ctx context.Context, message []byte) ([]byte,
 	panic("not implemented")
 }
 
-func (m *mockedWallet) VerifyMessageSignature(ctx context.Context, message, signature []byte) (bool, error) {
+func (m *mockedWallet) VerifyMessageSignature(
+	ctx context.Context, message, signature []byte,
+) (bool, error) {
 	panic("not implemented")
 }
 
@@ -289,7 +303,9 @@ func (m *mockedWallet) GetCurrentBlockTime(ctx context.Context) (*ports.BlockTim
 	panic("not implemented")
 }
 
-func (m *mockedWallet) Withdraw(ctx context.Context, address string, amount uint64) (string, error) {
+func (m *mockedWallet) Withdraw(
+	ctx context.Context, address string, amount uint64,
+) (string, error) {
 	panic("not implemented")
 }
 
