@@ -68,7 +68,15 @@ func main() {
 	app.Version = Version
 	app.Name = "Arkd CLI"
 	app.Usage = "arkd command line interface"
-	app.Commands = append(app.Commands, walletCmd, intents)
+	app.Commands = append(
+		app.Commands,
+		walletCmd,
+		intentsCmd,
+		scheduledSweepCmd,
+		roundInfoCmd,
+		roundsInTimeRangeCmd,
+		getMarketHourCmd,
+	)
 	app.Action = mainAction
 	app.Flags = append(app.Flags, urlFlag, datadirFlag)
 

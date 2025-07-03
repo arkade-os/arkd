@@ -9,15 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
-	inmemorylivestore "github.com/ark-network/ark/server/internal/infrastructure/live-store/inmemory"
-	redislivestore "github.com/ark-network/ark/server/internal/infrastructure/live-store/redis"
-
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/server/internal/core/application"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	"github.com/ark-network/ark/server/internal/infrastructure/db"
+	inmemorylivestore "github.com/ark-network/ark/server/internal/infrastructure/live-store/inmemory"
+	redislivestore "github.com/ark-network/ark/server/internal/infrastructure/live-store/redis"
 	blockscheduler "github.com/ark-network/ark/server/internal/infrastructure/scheduler/block"
 	timescheduler "github.com/ark-network/ark/server/internal/infrastructure/scheduler/gocron"
 	txbuilder "github.com/ark-network/ark/server/internal/infrastructure/tx-builder/covenantless"
@@ -25,6 +22,7 @@ import (
 	envunlocker "github.com/ark-network/ark/server/internal/infrastructure/unlocker/env"
 	fileunlocker "github.com/ark-network/ark/server/internal/infrastructure/unlocker/file"
 	walletclient "github.com/ark-network/ark/server/internal/infrastructure/wallet"
+	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -120,7 +118,11 @@ type Config struct {
 }
 
 func (c *Config) String() string {
-	json, err := json.MarshalIndent(c, "", "  ")
+	clone := *c
+	if clone.UnlockerPassword != "" {
+		clone.UnlockerPassword = "••••••"
+	}
+	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
 	}

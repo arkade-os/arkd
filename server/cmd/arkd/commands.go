@@ -23,11 +23,6 @@ var (
 			walletBalanceCmd,
 			createNoteCmd,
 			walletWithdrawCmd,
-			scheduledSweepCmd,
-			roundInfoCmd,
-			roundsInTimeRangeCmd,
-			getMarketHourCmd,
-			updateMarketHourCmd,
 		},
 	}
 	walletStatusCmd = &cli.Command{
@@ -69,7 +64,7 @@ var (
 		Action: createNoteAction,
 		Flags:  []cli.Flag{amountFlag, quantityFlag},
 	}
-	intents = &cli.Command{
+	intentsCmd = &cli.Command{
 		Name:        "intents",
 		Usage:       "List or manage the queue of registered intents",
 		Subcommands: cli.Commands{deleteIntentsCmd, clearIntentsCmd},
