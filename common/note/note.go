@@ -46,7 +46,9 @@ func NewNote(value uint32) (*Note, error) {
 // NewNoteFromString converts a base58 encoded string with HRP to a Note
 func NewNoteFromString(s string) (*Note, error) {
 	if !strings.HasPrefix(s, noteHRP) {
-		return nil, fmt.Errorf("invalid human-readable part: expected %s prefix (note '%s')", noteHRP, s)
+		return nil, fmt.Errorf(
+			"invalid human-readable part: expected %s prefix (note '%s')", noteHRP, s,
+		)
 	}
 
 	encoded := strings.TrimPrefix(s, noteHRP)
@@ -75,7 +77,9 @@ func (n *Note) Serialize() []byte {
 // Deserialize converts a byte slice to Data
 func (n *Note) Deserialize(data []byte) error {
 	if len(data) != preimageSize+4 {
-		return fmt.Errorf("invalid data length: expected %d bytes, got %d", preimageSize+4, len(data))
+		return fmt.Errorf(
+			"invalid data length: expected %d bytes, got %d", preimageSize+4, len(data),
+		)
 	}
 
 	copy(n.Preimage[:], data[:preimageSize])

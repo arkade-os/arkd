@@ -7,12 +7,12 @@ import (
 	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 func getOnchainOutputs(
@@ -82,7 +82,7 @@ func getOutputVtxosLeaves(
 	return leaves, nil
 }
 
-func taprootOutputScript(taprootKey *secp256k1.PublicKey) ([]byte, error) {
+func taprootOutputScript(taprootKey *btcec.PublicKey) ([]byte, error) {
 	return txscript.NewScriptBuilder().AddOp(txscript.OP_1).
 		AddData(schnorr.SerializePubKey(taprootKey)).Script()
 }

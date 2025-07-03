@@ -47,8 +47,8 @@ type Round struct {
 	CommitmentTxid     string
 	CommitmentTx       string
 	ForfeitTxs         []ForfeitTx
-	VtxoTree           []tree.TxTreeNode
-	Connectors         []tree.TxTreeNode
+	VtxoTree           tree.FlatTxTree
+	Connectors         tree.FlatTxTree
 	ConnectorAddress   string
 	Version            uint
 	Swept              bool
@@ -126,7 +126,7 @@ func (r *Round) RegisterIntents(intents []Intent) ([]Event, error) {
 }
 
 func (r *Round) StartFinalization(
-	connectorAddress string, connectors []tree.TxTreeNode, vtxoTree []tree.TxTreeNode,
+	connectorAddress string, connectors tree.FlatTxTree, vtxoTree tree.FlatTxTree,
 	commitmentTxid, commitmentTx string, vtxoTreeExpiration int64,
 ) ([]Event, error) {
 	if len(commitmentTx) <= 0 {
@@ -207,7 +207,7 @@ func (r *Round) Sweep(vtxos []Outpoint, txid, tx string) ([]Event, error) {
 	}
 
 	sweptVtxosCount := countSweptVtxos(r.Changes)
-	leavesCount := len(tree.FlatVtxoTree(r.VtxoTree).Leaves())
+	leavesCount := len(tree.FlatTxTree(r.VtxoTree).Leaves())
 	fullySwept := len(vtxos)+sweptVtxosCount == leavesCount
 
 	event := BatchSwept{

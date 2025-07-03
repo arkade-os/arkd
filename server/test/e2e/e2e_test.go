@@ -33,12 +33,12 @@ import (
 	singlekeywallet "github.com/ark-network/ark/pkg/client-sdk/wallet/singlekey"
 	inmemorystore "github.com/ark-network/ark/pkg/client-sdk/wallet/singlekey/store/inmemory"
 	utils "github.com/ark-network/ark/server/test/e2e"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -580,7 +580,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		defer alice.Stop()
 		defer grpcTransportClient.Close()
 
-		bobPrivKey, err := secp256k1.GeneratePrivateKey()
+		bobPrivKey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 
 		configStore, err := inmemorystoreconfig.NewConfigStore()
@@ -650,7 +650,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 				&script.CLTVMultisigClosure{
 					Locktime: cltvLocktime,
 					MultisigClosure: script.MultisigClosure{
-						PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
+						PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
 					},
 				},
 			},
@@ -778,7 +778,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 					Value: uint32(infos.UnilateralExitDelay),
 				},
 				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
+					PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
 				},
 			},
 		)
@@ -1209,7 +1209,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	defer alice.Stop()
 	defer grpcAlice.Close()
 
-	bobPrivKey, err := secp256k1.GeneratePrivateKey()
+	bobPrivKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	configStore, err := inmemorystoreconfig.NewConfigStore()
@@ -1265,7 +1265,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 			&script.CLTVMultisigClosure{
 				Locktime: common.AbsoluteLocktime(currentHeight + cltvBlocks),
 				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
+					PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
 				},
 			},
 		},
@@ -1389,7 +1389,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 				Value: uint32(infos.UnilateralExitDelay),
 			},
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
+				PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
 			},
 		},
 	)
@@ -1446,7 +1446,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	defer alice.Stop()
 	defer grpcAlice.Close()
 
-	bobPrivKey, err := secp256k1.GeneratePrivateKey()
+	bobPrivKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	configStore, err := inmemorystoreconfig.NewConfigStore()
@@ -1516,11 +1516,11 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 			&script.ConditionMultisigClosure{
 				Condition: conditionScript,
 				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
+					PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
 				},
 			},
 			&script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{bobPubKey, aliceAddr.Signer},
+				PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
 			},
 		},
 	}
@@ -1664,7 +1664,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 				Value: uint32(infos.UnilateralExitDelay),
 			},
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{aliceAddr.Signer},
+				PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
 			},
 		},
 	)

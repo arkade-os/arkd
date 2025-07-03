@@ -13,6 +13,7 @@ import (
 	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -20,7 +21,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 type txBuilder struct {
@@ -58,7 +58,7 @@ func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, string, error) 
 func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, error) {
 	txid := ptx.UnsignedTx.TxID()
 
-	serverPubkey, err := b.wallet.GetPubkey(context.Background())
+	operatorPubkey, err := b.wallet.GetPubkey(context.Background())
 	if err != nil {
 		return false, txid, err
 	}
@@ -115,8 +115,8 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 			}
 		}
 
-		// we don't need to check if server signed
-		keys[hex.EncodeToString(schnorr.SerializePubKey(serverPubkey))] = true
+		// we don't need to check if operator signed
+		keys[hex.EncodeToString(schnorr.SerializePubKey(operatorPubkey))] = true
 
 		if len(tapLeaf.ControlBlock) == 0 {
 			return false, txid, fmt.Errorf("missing control block for input %d", index)
@@ -294,9 +294,9 @@ func (b *txBuilder) BuildSweepTx(
 }
 
 func (b *txBuilder) VerifyForfeitTxs(
-	vtxos []domain.Vtxo, connectors []tree.TxTreeNode, forfeitTxs []string,
+	vtxos []domain.Vtxo, connectors tree.FlatTxTree, forfeitTxs []string,
 ) (map[domain.Outpoint]ports.ValidForfeitTx, error) {
-	connectorsLeaves := tree.FlatVtxoTree(connectors).Leaves()
+	connectorsLeaves := tree.FlatTxTree(connectors).Leaves()
 	if len(connectorsLeaves) == 0 {
 		return nil, fmt.Errorf("invalid connectors tree")
 	}
@@ -514,7 +514,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 }
 
 func (b *txBuilder) BuildCommitmentTx(
-	signerPubkey *secp256k1.PublicKey, intents domain.Intents,
+	signerPubkey *btcec.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput, connectorAddresses []string,
 	cosignersPublicKeys [][]string,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
@@ -528,7 +528,7 @@ func (b *txBuilder) BuildCommitmentTx(
 
 	sweepScript, err := (&script.CSVMultisigClosure{
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*secp256k1.PublicKey{signerPubkey},
+			PubKeys: []*btcec.PublicKey{signerPubkey},
 		},
 		Locktime: b.vtxoTreeExpiry,
 	}).Script()
@@ -1166,7 +1166,7 @@ func castToOutpoints(inputs []ports.TxInput) []domain.Outpoint {
 }
 
 func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
-	sweepLeaf *psbt.TaprootTapLeafScript, internalKey *secp256k1.PublicKey,
+	sweepLeaf *psbt.TaprootTapLeafScript, internalKey *btcec.PublicKey,
 	vtxoTreeExpiry *common.RelativeLocktime, err error,
 ) {
 	// this if case is here to handle previous version of the tree
@@ -1195,7 +1195,7 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 		return sweepLeaf, internalKey, vtxoTreeExpiry, nil
 	}
 
-	serverPubKey, err := b.wallet.GetPubkey(context.Background())
+	signerPubKey, err := b.wallet.GetPubkey(context.Background())
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1217,7 +1217,7 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 	sweepClosure := &script.CSVMultisigClosure{
 		Locktime: *vtxoTreeExpiry,
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*secp256k1.PublicKey{serverPubKey},
+			PubKeys: []*btcec.PublicKey{signerPubKey},
 		},
 	}
 
@@ -1268,7 +1268,7 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 type sweepBitcoinInput struct {
 	inputArgs      wire.OutPoint
 	sweepLeaf      *psbt.TaprootTapLeafScript
-	internalPubkey *secp256k1.PublicKey
+	internalPubkey *btcec.PublicKey
 	amount         int64
 }
 
@@ -1288,7 +1288,7 @@ func (s *sweepBitcoinInput) GetIndex() uint32 {
 	return s.inputArgs.Index
 }
 
-func (s *sweepBitcoinInput) GetInternalKey() *secp256k1.PublicKey {
+func (s *sweepBitcoinInput) GetInternalKey() *btcec.PublicKey {
 	return s.internalPubkey
 }
 

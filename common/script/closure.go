@@ -9,10 +9,10 @@ import (
 
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 type Closure interface {
@@ -25,7 +25,7 @@ type Closure interface {
 // CHECKSIG for each key. The witness size is 64 bytes per key, admitting the
 // sighash type is SIGHASH_DEFAULT.
 type MultisigClosure struct {
-	PubKeys []*secp256k1.PublicKey
+	PubKeys []*btcec.PublicKey
 	Type    MultisigType
 }
 
@@ -130,7 +130,7 @@ func (f *MultisigClosure) Decode(script []byte) (bool, error) {
 func (f *MultisigClosure) decodeChecksigAdd(script []byte) (bool, error) {
 	tokenizer := txscript.MakeScriptTokenizer(0, script)
 
-	pubkeys := make([]*secp256k1.PublicKey, 0)
+	pubkeys := make([]*btcec.PublicKey, 0)
 
 	for tokenizer.Next() {
 		// Stop processing if a small integer opcode is encountered,
@@ -197,7 +197,7 @@ func (f *MultisigClosure) decodeChecksigAdd(script []byte) (bool, error) {
 func (f *MultisigClosure) decodeChecksig(script []byte) (bool, error) {
 	tokenizer := txscript.MakeScriptTokenizer(0, script)
 
-	pubkeys := make([]*secp256k1.PublicKey, 0)
+	pubkeys := make([]*btcec.PublicKey, 0)
 
 	for tokenizer.Next() {
 		// Verify we have a 32-byte data push

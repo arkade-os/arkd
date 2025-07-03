@@ -395,7 +395,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 		}
 
-		// as soon as the checkpoint txs are signed by the server,
+		// as soon as the checkpoint txs are signed by the signer,
 		// we must mark the vtxos as spent to prevent double spending.
 		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.ArkTxid); err != nil {
 			log.WithError(err).Warn("failed to spend vtxos")
@@ -484,8 +484,8 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 	}
 
 	vtxos := make([]domain.Vtxo, 0)
-	for _, chunk := range tree.FlatVtxoTree(round.VtxoTree).Leaves() {
-		tx, err := psbt.NewFromRawBytes(strings.NewReader(chunk.Tx), true)
+	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
+		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue

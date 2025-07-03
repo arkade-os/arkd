@@ -6,7 +6,7 @@ import (
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -88,12 +88,12 @@ func (m *mockedWallet) DeriveConnectorAddress(ctx context.Context) (string, erro
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) GetPubkey(ctx context.Context) (*secp256k1.PublicKey, error) {
+func (m *mockedWallet) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) {
 	args := m.Called(ctx)
 
-	var res *secp256k1.PublicKey
+	var res *btcec.PublicKey
 	if a := args.Get(0); a != nil {
-		res = a.(*secp256k1.PublicKey)
+		res = a.(*btcec.PublicKey)
 	}
 	return res, args.Error(1)
 }

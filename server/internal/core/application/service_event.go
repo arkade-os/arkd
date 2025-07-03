@@ -40,7 +40,7 @@ type TreeTxMessage struct {
 	domain.RoundEvent
 	Topic      []string
 	BatchIndex int32
-	Chunk      tree.TxTreeNode
+	Node       tree.TxTreeNode
 }
 
 type TreeSignatuteMessage struct {

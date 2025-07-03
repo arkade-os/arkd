@@ -33,7 +33,7 @@ func (s *treeSigningSessionsStore) New(
 
 	sess := &ports.MusigSigningSession{
 		Cosigners:   uniqueSignersPubKeys,
-		NbCosigners: len(uniqueSignersPubKeys) + 1, // server included
+		NbCosigners: len(uniqueSignersPubKeys) + 1, // operator included
 		Nonces:      make(map[string]tree.TreeNonces),
 		Signatures:  make(map[string]tree.TreePartialSigs),
 	}

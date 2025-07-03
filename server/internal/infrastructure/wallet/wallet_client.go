@@ -7,11 +7,11 @@ import (
 
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/server/internal/core/domain"
+	"github.com/btcsuite/btcd/btcec/v2"
 	log "github.com/sirupsen/logrus"
 
 	arkwalletv1 "github.com/ark-network/ark/api-spec/protobuf/gen/arkwallet/v1"
 	"github.com/ark-network/ark/server/internal/core/ports"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -27,7 +27,7 @@ type walletDaemonClient struct {
 func New(addr string) (ports.WalletService, *common.Network, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to dial btc-wallet grpc server: %w", err)
+		return nil, nil, fmt.Errorf("failed to connect to wallet: %w", err)
 	}
 	client := arkwalletv1.NewWalletServiceClient(conn)
 
@@ -186,12 +186,12 @@ func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{
 	return ch, nil
 }
 
-func (w *walletDaemonClient) GetPubkey(ctx context.Context) (*secp256k1.PublicKey, error) {
+func (w *walletDaemonClient) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) {
 	resp, err := w.client.GetPubkey(ctx, &arkwalletv1.GetPubkeyRequest{})
 	if err != nil {
 		return nil, err
 	}
-	pubkey, err := secp256k1.ParsePubKey(resp.Pubkey)
+	pubkey, err := btcec.ParsePubKey(resp.Pubkey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse pubkey: %w", err)
 	}

@@ -7,21 +7,25 @@ import (
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 var (
-	ErrInvalidBatchOutputsNum     = fmt.Errorf("invalid number of batch outputs in commitment transaction")
+	ErrInvalidBatchOutputsNum = fmt.Errorf(
+		"invalid number of batch outputs in commitment transaction",
+	)
 	ErrEmptyTree                  = fmt.Errorf("empty vtxo tree")
 	ErrNoLeaves                   = fmt.Errorf("no leaves in the tree")
 	ErrInvalidTaprootScript       = fmt.Errorf("invalid taproot script")
 	ErrMissingCosignersPublicKeys = fmt.Errorf("missing cosigners public keys")
 	ErrInvalidAmount              = fmt.Errorf("children amount is different from parent amount")
-	ErrBatchOutputMismatch        = fmt.Errorf("invalid vtxo tree root, tx input does not match batch outpoint")
+	ErrBatchOutputMismatch        = fmt.Errorf(
+		"invalid vtxo tree root, tx input does not match batch outpoint",
+	)
 )
 
 const batchOutputIndex = 0
@@ -37,7 +41,7 @@ const batchOutputIndex = 0
 // - each tx matches input and output amounts
 func ValidateVtxoTree(
 	vtxoTree *TxTree, commitmentTx *psbt.Packet,
-	signerPubkey *secp256k1.PublicKey, vtxoTreeExpiry common.RelativeLocktime,
+	signerPubkey *btcec.PublicKey, vtxoTreeExpiry common.RelativeLocktime,
 ) error {
 	if len(commitmentTx.Outputs) < batchOutputIndex+1 {
 		return ErrInvalidBatchOutputsNum
@@ -69,7 +73,7 @@ func ValidateVtxoTree(
 	}
 
 	sweepClosure := &script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*secp256k1.PublicKey{signerPubkey}},
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{signerPubkey}},
 		Locktime:        vtxoTreeExpiry,
 	}
 

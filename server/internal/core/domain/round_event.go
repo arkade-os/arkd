@@ -21,8 +21,8 @@ type RoundStarted struct {
 
 type RoundFinalizationStarted struct {
 	RoundEvent
-	VtxoTree           []tree.TxTreeNode
-	Connectors         []tree.TxTreeNode
+	VtxoTree           tree.FlatTxTree
+	Connectors         tree.FlatTxTree
 	ConnectorAddress   string
 	CommitmentTxid     string
 	CommitmentTx       string

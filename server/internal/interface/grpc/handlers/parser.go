@@ -12,9 +12,9 @@ import (
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/application"
 	"github.com/ark-network/ark/server/internal/core/domain"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 // From interface type to app type
@@ -108,7 +108,7 @@ func parseECPubkey(pubkey string) (string, error) {
 	if len(pubkeyBytes) != 33 {
 		return "", fmt.Errorf("invalid length, expected 33 bytes")
 	}
-	if _, err := secp256k1.ParsePubKey(pubkeyBytes); err != nil {
+	if _, err := btcec.ParsePubKey(pubkeyBytes); err != nil {
 		return "", fmt.Errorf("invalid cosigner public key %s", err)
 	}
 	return pubkey, nil

@@ -40,7 +40,7 @@ const (
 )
 
 var (
-	vtxoTree = []tree.TxTreeNode{
+	vtxoTree = tree.FlatTxTree{
 		{
 			Txid:     randomString(32),
 			Tx:       randomTx(),
@@ -78,7 +78,7 @@ var (
 			},
 		},
 	}
-	connectorsTree = []tree.TxTreeNode{
+	connectorsTree = tree.FlatTxTree{
 		{
 			Txid: randomString(32),
 			Tx:   randomTx(),
@@ -315,7 +315,7 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 						},
 						FinalArkTx: "fully signed ark tx",
 						SignedCheckpointTxs: map[string]string{
-							"0": "list of server-signed txs",
+							"0": "list of txs signed by the signer",
 							"1": "indexed by txid",
 						},
 					},
@@ -344,7 +344,7 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 						},
 						FinalArkTx: "fully signed ark tx",
 						SignedCheckpointTxs: map[string]string{
-							"0": "list of server-signed txs",
+							"0": "list of txs signed by the operator",
 							"1": "indexed by txid",
 						},
 					},

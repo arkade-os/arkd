@@ -13,7 +13,7 @@ type forfeitTxsStore struct {
 	lock            sync.RWMutex
 	builder         ports.TxBuilder
 	forfeitTxs      map[domain.Outpoint]ports.ValidForfeitTx
-	connectors      []tree.TxTreeNode
+	connectors      tree.FlatTxTree
 	connectorsIndex map[string]domain.Outpoint
 	vtxos           []domain.Vtxo
 }
@@ -25,7 +25,7 @@ func NewForfeitTxsStore(txBuilder ports.TxBuilder) ports.ForfeitTxsStore {
 	}
 }
 
-func (m *forfeitTxsStore) Init(connectors []tree.TxTreeNode, intents []domain.Intent) error {
+func (m *forfeitTxsStore) Init(connectors tree.FlatTxTree, intents []domain.Intent) error {
 	vtxosToSign := make([]domain.Vtxo, 0)
 	for _, intent := range intents {
 		for _, vtxo := range intent.Inputs {
@@ -54,7 +54,7 @@ func (m *forfeitTxsStore) Init(connectors []tree.TxTreeNode, intents []domain.In
 	if len(vtxosToSign) > 0 {
 		connectorsOutpoints := make([]domain.Outpoint, 0)
 
-		leaves := tree.FlatVtxoTree(connectors).Leaves()
+		leaves := tree.FlatTxTree(connectors).Leaves()
 		if len(leaves) == 0 {
 			return fmt.Errorf("no connectors found")
 		}

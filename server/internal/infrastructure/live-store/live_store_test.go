@@ -12,7 +12,7 @@ import (
 	"github.com/ark-network/ark/common/tree"
 	inmemory "github.com/ark-network/ark/server/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/ark-network/ark/server/internal/infrastructure/live-store/redis"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/stretchr/testify/require"
@@ -392,9 +392,9 @@ func parseIntentFixtures(fixtureJSON string) (*intentPushFixture, error) {
 
 func parseForfeitTxsFixture(
 	connectorsJSON, intentsJSON string,
-) ([]tree.TxTreeNode, []domain.Intent, error) {
-	connectorsChunks := make([]tree.TxTreeNode, 0)
-	if err := json.Unmarshal([]byte(connectorsJSON), &connectorsChunks); err != nil {
+) (tree.FlatTxTree, []domain.Intent, error) {
+	nodes := make(tree.FlatTxTree, 0)
+	if err := json.Unmarshal([]byte(connectorsJSON), &nodes); err != nil {
 		return nil, nil, err
 	}
 
@@ -403,7 +403,7 @@ func parseForfeitTxsFixture(
 		return nil, nil, err
 	}
 
-	return connectorsChunks, intents, nil
+	return nodes, intents, nil
 }
 
 func parseOffchainTxFixture(txJSON string) (domain.OffchainTx, error) {
@@ -420,7 +420,7 @@ type mockedTxBuilder struct {
 }
 
 func (m *mockedTxBuilder) VerifyForfeitTxs(
-	vtxos []domain.Vtxo, connectors []tree.TxTreeNode, txs []string,
+	vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 ) (valid map[domain.Outpoint]ports.ValidForfeitTx, err error) {
 	args := m.Called(vtxos, connectors, txs)
 	res0 := args.Get(0).(map[domain.Outpoint]ports.ValidForfeitTx)
@@ -428,7 +428,7 @@ func (m *mockedTxBuilder) VerifyForfeitTxs(
 }
 
 func (m *mockedTxBuilder) BuildCommitmentTx(
-	signerPubkey *secp256k1.PublicKey, intents domain.Intents,
+	signerPubkey *btcec.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput, connectorAddresses []string, cosignerPubkeys [][]string,
 ) (
 	commitmentTx string, vtxoTree *tree.TxTree,

@@ -3,10 +3,10 @@ package script
 import (
 	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 const (
@@ -89,7 +89,10 @@ func EvaluateScriptToBool(script []byte, witness wire.TxWitness) (bool, error) {
 	finalStack := vm.GetStack()
 
 	if len(finalStack) != 0 {
-		return false, fmt.Errorf("script must return zero value on the stack, got %d", len(finalStack))
+		return false, fmt.Errorf(
+			"script must return zero value on the stack, got %d",
+			len(finalStack),
+		)
 	}
 
 	return true, nil
@@ -101,17 +104,23 @@ var unspendablePoint = []byte{
 	0x5e, 0x07, 0x8a, 0x5a, 0x0f, 0x28, 0xec, 0x96, 0xd5, 0x47, 0xbf, 0xee, 0x9a, 0xce, 0x80, 0x3a, 0xc0,
 }
 
-func UnspendableKey() *secp256k1.PublicKey {
-	key, _ := secp256k1.ParsePubKey(unspendablePoint)
+func UnspendableKey() *btcec.PublicKey {
+	key, _ := btcec.ParsePubKey(unspendablePoint)
 	return key
 }
 
-func P2TRScript(taprootKey *secp256k1.PublicKey) ([]byte, error) {
-	return txscript.NewScriptBuilder().AddOp(txscript.OP_1).AddData(schnorr.SerializePubKey(taprootKey)).Script()
+func P2TRScript(taprootKey *btcec.PublicKey) ([]byte, error) {
+	return txscript.NewScriptBuilder().
+		AddOp(txscript.OP_1).
+		AddData(schnorr.SerializePubKey(taprootKey)).
+		Script()
 }
 
-func SubDustScript(taprootKey *secp256k1.PublicKey) ([]byte, error) {
-	return txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN).AddData(schnorr.SerializePubKey(taprootKey)).Script()
+func SubDustScript(taprootKey *btcec.PublicKey) ([]byte, error) {
+	return txscript.NewScriptBuilder().
+		AddOp(txscript.OP_RETURN).
+		AddData(schnorr.SerializePubKey(taprootKey)).
+		Script()
 }
 
 func IsSubDustScript(script []byte) bool {

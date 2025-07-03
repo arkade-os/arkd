@@ -17,16 +17,28 @@ const (
 	cltvSequence = wire.MaxTxInSequenceNum - 1
 )
 
+type VtxoInput struct {
+	Outpoint *wire.OutPoint
+	Amount   int64
+	// Tapscript is the path used to spend the vtxo
+	Tapscript *waddrmgr.Tapscript
+	// CheckpointTapscript is the path used to craft checkpoint output script
+	// it is combined with the signer's unroll script to creaft a new "checkpoint" output script
+	// it can be nil, defaulting to Tapscript if not set
+	CheckpointTapscript *waddrmgr.Tapscript
+	RevealedTapscripts  []string
+}
+
 // BuildTxs builds the ark and checkpoint txs for the given inputs and outputs.
 func BuildTxs(
-	vtxos []VtxoInput, outputs []*wire.TxOut, serverUnrollScript *script.CSVMultisigClosure,
+	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript *script.CSVMultisigClosure,
 ) (*psbt.Packet, []*psbt.Packet, error) {
 	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
 	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 	inputAmount := int64(0)
 
 	for _, vtxo := range vtxos {
-		checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, serverUnrollScript)
+		checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScript)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -151,7 +163,7 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 }
 
 // buildCheckpointTx creates a virtual tx sending to a "checkpoint" vtxo script composed of
-// the server unroll script + the owner's collaborative closure.
+// the signer unroll script + the owner's collaborative closure.
 func buildCheckpointTx(
 	vtxo VtxoInput, signerUnrollScript *script.CSVMultisigClosure,
 ) (*psbt.Packet, *VtxoInput, error) {
@@ -184,8 +196,7 @@ func buildCheckpointTx(
 
 	// build the checkpoint virtual tx
 	checkpointPtx, err := buildArkTx(
-		[]VtxoInput{vtxo},
-		[]*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}},
+		[]VtxoInput{vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}},
 	)
 	if err != nil {
 		return nil, nil, err
@@ -193,7 +204,9 @@ func buildCheckpointTx(
 
 	// Now that we have the checkpoint tx, we need to return the corresponding output that will be
 	// used as input for the ark tx.
-	tapLeafHash := txscript.NewBaseTapLeaf(checkpointCollaborativeTapscript.RevealedScript).TapHash()
+	tapLeafHash := txscript.NewBaseTapLeaf(
+		checkpointCollaborativeTapscript.RevealedScript,
+	).TapHash()
 	collaborativeLeafProof, err := tapTree.GetTaprootMerkleProof(tapLeafHash)
 	if err != nil {
 		return nil, nil, err

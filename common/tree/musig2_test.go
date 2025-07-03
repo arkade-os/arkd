@@ -16,15 +16,18 @@ import (
 )
 
 var (
-	vtxoTreeExpiry   = common.RelativeLocktime{Type: common.LocktimeTypeBlock, Value: 144}
-	rootInput, _     = wire.NewOutPointFromString("49f8664acc899be91902f8ade781b7eeb9cbe22bdd9efbc36e56195de21bcd12:0")
-	serverPrivKey, _ = btcec.NewPrivateKey()
-	sweepScript, _   = (&script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{serverPrivKey.PubKey()}},
+	vtxoTreeExpiry = common.RelativeLocktime{Type: common.LocktimeTypeBlock, Value: 144}
+	rootInput, _   = wire.NewOutPointFromString(
+		"49f8664acc899be91902f8ade781b7eeb9cbe22bdd9efbc36e56195de21bcd12:0",
+	)
+	signerPrvkey, _ = btcec.NewPrivateKey()
+	sweepScript, _  = (&script.CSVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{signerPrvkey.PubKey()}},
 		Locktime:        vtxoTreeExpiry,
 	}).Script()
-	sweepRoot      = txscript.NewBaseTapLeaf(sweepScript).TapHash()
-	receiverCounts = []int{1, 2, 20, 128}
+	// batchOutSweepClosure mocks the sweep closure of a batch output.
+	batchOutSweepClosure = txscript.NewBaseTapLeaf(sweepScript).TapHash()
+	receiverCounts       = []int{1, 2, 20, 128}
 )
 
 func TestBuildAndSignVtxoTree(t *testing.T) {
@@ -36,19 +39,19 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 
 	for _, v := range testVectors {
 		t.Run(v.name, func(t *testing.T) {
-			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(v.receivers, sweepRoot[:])
+			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(v.receivers, batchOutSweepClosure[:])
 			require.NoError(t, err)
 			require.NotNil(t, batchOutScript)
 			require.NotZero(t, batchOutAmount)
 
 			vtxoTree, err := tree.BuildVtxoTree(
-				rootInput, v.receivers, sweepRoot[:], vtxoTreeExpiry,
+				rootInput, v.receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, vtxoTree)
 
 			coordinator, err := tree.NewTreeCoordinatorSession(
-				batchOutAmount, vtxoTree, sweepRoot[:],
+				batchOutSweepClosure[:], batchOutAmount, vtxoTree,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, coordinator)
@@ -65,7 +68,7 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 			require.NotNil(t, signedTree)
 
 			// validate signatures
-			err = tree.ValidateTreeSigs(sweepRoot[:], batchOutAmount, signedTree)
+			err = tree.ValidateTreeSigs(batchOutSweepClosure[:], batchOutAmount, signedTree)
 			require.NoError(t, err)
 		})
 	}
@@ -116,23 +119,23 @@ func checkSigsRoundtrip(t *testing.T) func(sigs tree.TreePartialSigs) {
 }
 
 func makeCosigners(
-	keys []*btcec.PrivateKey, sharedOutAmount int64, vtxoTree *tree.TxTree,
+	keys []*btcec.PrivateKey, batchOutAmount int64, vtxoTree *tree.TxTree,
 ) (map[string]tree.SignerSession, error) {
 	signers := make(map[string]tree.SignerSession)
 	for _, prvkey := range keys {
 		session := tree.NewTreeSignerSession(prvkey)
-		if err := session.Init(sweepRoot[:], sharedOutAmount, vtxoTree); err != nil {
+		if err := session.Init(batchOutSweepClosure[:], batchOutAmount, vtxoTree); err != nil {
 			return nil, err
 		}
 		signers[keyToStr(prvkey)] = session
 	}
 
-	// create signer session for the server itself
-	serverSession := tree.NewTreeSignerSession(serverPrivKey)
-	if err := serverSession.Init(sweepRoot[:], sharedOutAmount, vtxoTree); err != nil {
+	// create signer session for the operator itself
+	operatorSession := tree.NewTreeSignerSession(signerPrvkey)
+	if err := operatorSession.Init(batchOutSweepClosure[:], batchOutAmount, vtxoTree); err != nil {
 		return nil, err
 	}
-	signers[keyToStr(serverPrivKey)] = serverSession
+	signers[keyToStr(signerPrvkey)] = operatorSession
 	return signers, nil
 }
 
@@ -229,7 +232,7 @@ func generateMockedReceivers(num int) (vtxoTreeTestCase, error) {
 			Amount: uint64((i + 1) * 1000),
 			CosignersPublicKeys: []string{
 				hex.EncodeToString(prvkey.PubKey().SerializeCompressed()),
-				hex.EncodeToString(serverPrivKey.PubKey().SerializeCompressed()),
+				hex.EncodeToString(signerPrvkey.PubKey().SerializeCompressed()),
 			},
 		})
 		privKeys = append(privKeys, prvkey)

@@ -127,7 +127,7 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 
 	connectors, err := tree.NewTxTree(round.Connectors)
 	if err != nil {
-		return fmt.Errorf("failed to create connector graph: %s", err)
+		return fmt.Errorf("failed to create connector tree: %s", err)
 	}
 
 	if err := s.broadcastConnectorBranch(ctx, connectors, connectorOutpoint); err != nil {
@@ -179,20 +179,19 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 // If any of the txs in the branch are offchain, it will sign and broadcast them.
 // If any of the txs in the branch are not confirmed, it will wait for them to be confirmed before returning.
 func (s *service) broadcastConnectorBranch(
-	ctx context.Context, connectorGraph *tree.TxTree, connectorOutpoint domain.Outpoint,
+	ctx context.Context, connectorTree *tree.TxTree, connectorOutpoint domain.Outpoint,
 ) error {
 	// compute, sign and broadcast the branch txs until the connector outpoint is created
-	branch, err := connectorGraph.SubGraph([]string{connectorOutpoint.Txid})
+	branch, err := connectorTree.SubTree([]string{connectorOutpoint.Txid})
 	if err != nil {
 		return fmt.Errorf("failed to get branch of connector: %s", err)
 	}
 
 	// If branch is nil, it means there's no path from root to the connector outpoint
-	// This could happen if the connector outpoint is not part of the connector graph
+	// This could happen if the connector outpoint is not part of the connector tree
 	if branch == nil {
 		return fmt.Errorf(
-			"no path found to connector outpoint %s in connector graph",
-			connectorOutpoint.Txid,
+			"no path found to connector outpoint %s in connector tree", connectorOutpoint.Txid,
 		)
 	}
 

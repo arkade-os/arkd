@@ -11,8 +11,8 @@ import (
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 const (
@@ -52,11 +52,11 @@ type IndexerService interface {
 }
 
 type indexerService struct {
-	pubkey      *secp256k1.PublicKey
+	pubkey      *btcec.PublicKey
 	repoManager ports.RepoManager
 }
 
-func NewIndexerService(pubkey *secp256k1.PublicKey, repoManager ports.RepoManager) IndexerService {
+func NewIndexerService(pubkey *btcec.PublicKey, repoManager ports.RepoManager) IndexerService {
 	return &indexerService{
 		pubkey:      pubkey,
 		repoManager: repoManager,
@@ -335,18 +335,18 @@ func (i *indexerService) GetVtxoChain(
 
 			// if the vtxo is not preconfirmed, it means it's a leaf of a batch tree
 			// add the branch until the commitment tx
-			vtxoTree, err := i.GetVtxoTree(ctx, Outpoint{
+			flatVtxoTree, err := i.GetVtxoTree(ctx, Outpoint{
 				Txid: vtxo.RootCommitmentTxid, VOut: 0,
 			}, nil)
 			if err != nil {
 				return nil, err
 			}
 
-			graph, err := tree.NewTxTree(vtxoTree.Txs)
+			vtxoTree, err := tree.NewTxTree(flatVtxoTree.Txs)
 			if err != nil {
 				return nil, err
 			}
-			branch, err := graph.SubGraph([]string{vtxo.Txid})
+			branch, err := vtxoTree.SubTree([]string{vtxo.Txid})
 			if err != nil {
 				return nil, err
 			}

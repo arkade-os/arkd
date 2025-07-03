@@ -44,7 +44,7 @@ func (s *treeSigningSessionsStore) New(
 	cosignersBytes, _ := json.Marshal(uniqueSignersPubKeys)
 	meta := map[string]interface{}{
 		"Cosigners":   cosignersBytes,
-		"NbCosigners": len(uniqueSignersPubKeys) + 1, // server included
+		"NbCosigners": len(uniqueSignersPubKeys) + 1, // operator included
 	}
 	s.rdb.HSet(ctx, metaKey, meta)
 

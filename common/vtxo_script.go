@@ -1,8 +1,8 @@
 package common
 
 import (
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 type TaprootMerkleProof struct {
@@ -24,8 +24,8 @@ type TaprootTree interface {
 //
 // TODO: gather common and tree package to prevent circular dependency and move C generic
 type VtxoScript[T TaprootTree, C interface{}] interface {
-	Validate(server *secp256k1.PublicKey, minLocktime RelativeLocktime, blockTypeAllowed bool) error
-	TapTree() (taprootKey *secp256k1.PublicKey, taprootScriptTree T, err error)
+	Validate(signer *btcec.PublicKey, minLocktime RelativeLocktime, blockTypeAllowed bool) error
+	TapTree() (taprootKey *btcec.PublicKey, taprootScriptTree T, err error)
 	Encode() ([]string, error)
 	Decode(scripts []string) error
 	SmallestExitDelay() (*RelativeLocktime, error)

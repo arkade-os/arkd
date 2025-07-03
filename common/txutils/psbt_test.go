@@ -5,9 +5,9 @@ import (
 
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -85,9 +85,9 @@ func TestPsbtCustomUnknownFields(t *testing.T) {
 		ptx.Inputs = []psbt.PInput{{}}
 
 		// Create and add 40 cosigner keys
-		var keys []*secp256k1.PublicKey
+		var keys []*btcec.PublicKey
 		for i := 0; i < 40; i++ {
-			key, err := secp256k1.GeneratePrivateKey()
+			key, err := btcec.NewPrivateKey()
 			require.NoError(t, err)
 			keys = append(keys, key.PubKey())
 

@@ -120,19 +120,17 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				}
 			}
 
-			for i, chunk := range round.Connectors {
+			for i, node := range round.Connectors {
 				if err := querierWithTx.UpsertTx(
-					ctx,
-					createUpsertTransactionParams(chunk, round.Id, "connector", int64(i)),
+					ctx, createUpsertTransactionParams(node, round.Id, "connector", int64(i)),
 				); err != nil {
 					return fmt.Errorf("failed to upsert connector transaction: %w", err)
 				}
 			}
 
-			for i, chunk := range round.VtxoTree {
+			for i, node := range round.VtxoTree {
 				if err := querierWithTx.UpsertTx(
-					ctx,
-					createUpsertTransactionParams(chunk, round.Id, "tree", int64(i)),
+					ctx, createUpsertTransactionParams(node, round.Id, "tree", int64(i)),
 				); err != nil {
 					return fmt.Errorf("failed to upsert tree transaction: %w", err)
 				}
@@ -353,31 +351,31 @@ func (r *roundRepository) GetRoundForfeitTxs(
 
 func (r *roundRepository) GetRoundConnectorTree(
 	ctx context.Context, commitmentTxid string,
-) ([]tree.TxTreeNode, error) {
+) (tree.FlatTxTree, error) {
 	rows, err := r.querier.SelectRoundConnectors(ctx, commitmentTxid)
 	if err != nil {
 		return nil, err
 	}
 
-	chunks := make([]tree.TxTreeNode, 0, len(rows))
+	nodes := make(tree.FlatTxTree, 0, len(rows))
 
 	for _, row := range rows {
 		pos := int(row.Position)
-		chunks = extendArray(chunks, pos)
+		nodes = extendArray(nodes, pos)
 		children := make(map[uint32]string)
 		if row.Children.Valid {
 			if err := json.Unmarshal([]byte(row.Children.String), &children); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal children: %w", err)
 			}
 		}
-		chunks[pos] = tree.TxTreeNode{
+		nodes[pos] = tree.TxTreeNode{
 			Txid:     row.Txid,
 			Tx:       row.Tx,
 			Children: children,
 		}
 	}
 
-	return chunks, nil
+	return nodes, nil
 }
 
 func (r *roundRepository) GetSweptRoundsConnectorAddress(ctx context.Context) ([]string, error) {
@@ -386,31 +384,30 @@ func (r *roundRepository) GetSweptRoundsConnectorAddress(ctx context.Context) ([
 
 func (r *roundRepository) GetRoundVtxoTree(
 	ctx context.Context, txid string,
-) ([]tree.TxTreeNode, error) {
+) (tree.FlatTxTree, error) {
 	rows, err := r.querier.SelectRoundVtxoTree(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
 
-	chunks := make([]tree.TxTreeNode, 0)
-
+	nodes := make(tree.FlatTxTree, 0)
 	for _, row := range rows {
 		pos := int(row.Position)
-		chunks = extendArray(chunks, pos)
+		nodes = extendArray(nodes, pos)
 		children := make(map[uint32]string)
 		if row.Children.Valid {
 			if err := json.Unmarshal([]byte(row.Children.String), &children); err != nil {
 				return nil, err
 			}
 		}
-		chunks[pos] = tree.TxTreeNode{
+		nodes[pos] = tree.TxTreeNode{
 			Txid:     row.Txid,
 			Tx:       row.Tx,
 			Children: children,
 		}
 	}
 
-	return chunks, nil
+	return nodes, nil
 }
 
 func (r *roundRepository) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {

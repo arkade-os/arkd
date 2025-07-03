@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"github.com/ark-network/ark/common"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 var (
@@ -116,7 +116,7 @@ func GetVtxoTreeExpiry(in psbt.PInput) (*common.RelativeLocktime, error) {
 	return nil, nil
 }
 
-func AddCosignerKey(inIndex int, ptx *psbt.Packet, key *secp256k1.PublicKey) error {
+func AddCosignerKey(inIndex int, ptx *psbt.Packet, key *btcec.PublicKey) error {
 	currentCosigners, err := GetCosignerKeys(ptx.Inputs[inIndex])
 	if err != nil {
 		return err
@@ -132,14 +132,14 @@ func AddCosignerKey(inIndex int, ptx *psbt.Packet, key *secp256k1.PublicKey) err
 	return nil
 }
 
-func GetCosignerKeys(in psbt.PInput) ([]*secp256k1.PublicKey, error) {
-	var keys []*secp256k1.PublicKey
+func GetCosignerKeys(in psbt.PInput) ([]*btcec.PublicKey, error) {
+	var keys []*btcec.PublicKey
 	for _, u := range in.Unknowns {
 		if !parsePrefixedCosignerKey(u.Key) {
 			continue
 		}
 
-		key, err := secp256k1.ParsePubKey(u.Value)
+		key, err := btcec.ParsePubKey(u.Value)
 		if err != nil {
 			return nil, err
 		}

@@ -385,8 +385,8 @@ func (h *handler) listenToEvents() {
 							Id:         e.Id,
 							Topic:      e.Topic,
 							BatchIndex: e.BatchIndex,
-							Tx:         e.Chunk.Tx,
-							Children:   e.Chunk.Children,
+							Tx:         e.Node.Tx,
+							Children:   e.Node.Children,
 						},
 					},
 				}

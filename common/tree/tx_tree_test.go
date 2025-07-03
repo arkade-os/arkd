@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGraphSerialization(t *testing.T) {
+func TestTxTreeSerialization(t *testing.T) {
 	t.Parallel()
 
 	testVectors, err := makeTestVectors()
@@ -18,13 +18,13 @@ func TestGraphSerialization(t *testing.T) {
 
 	for _, v := range testVectors {
 		t.Run(v.name, func(t *testing.T) {
-			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(v.receivers, sweepRoot[:])
+			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(v.receivers, batchOutSweepClosure[:])
 			require.NoError(t, err)
 			require.NotNil(t, batchOutScript)
 			require.NotZero(t, batchOutAmount)
 
 			vtxoTree, err := tree.BuildVtxoTree(
-				rootInput, v.receivers, sweepRoot[:], vtxoTreeExpiry,
+				rootInput, v.receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, vtxoTree)
@@ -36,11 +36,11 @@ func TestGraphSerialization(t *testing.T) {
 			err = vtxoTree.Validate()
 			require.NoError(t, err)
 
-			// Verify chunk are unique
+			// Verify nodes are unique
 			seen := make(map[string]bool)
-			for _, chunk := range serialized {
-				require.False(t, seen[chunk.Tx])
-				seen[chunk.Tx] = true
+			for _, node := range serialized {
+				require.False(t, seen[node.Tx])
+				seen[node.Tx] = true
 			}
 
 			// Verify the deserialization roundtrip
@@ -53,8 +53,8 @@ func TestGraphSerialization(t *testing.T) {
 
 			checkTxTree(t, vtxoTree, deserialized)
 
-			// shuffle randomly the serialized chunks
-			shuffled := make([]tree.TxTreeNode, len(serialized))
+			// shuffle randomly the serialized tree
+			shuffled := make(tree.FlatTxTree, len(serialized))
 			copy(shuffled, serialized)
 			rand.Shuffle(len(shuffled), func(i, j int) {
 				shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
@@ -73,7 +73,7 @@ func TestGraphSerialization(t *testing.T) {
 	}
 }
 
-func TestTxGraphSubGraph(t *testing.T) {
+func TestTxTreeSubTree(t *testing.T) {
 	t.Parallel()
 
 	testVectors, err := makeTestVectors()
@@ -82,53 +82,53 @@ func TestTxGraphSubGraph(t *testing.T) {
 
 	for _, v := range testVectors {
 		t.Run(v.name, func(t *testing.T) {
-			sharedOutScript, sharedOutAmount, err := tree.BuildBatchOutput(
-				v.receivers, sweepRoot[:],
+			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(
+				v.receivers, batchOutSweepClosure[:],
 			)
 			require.NoError(t, err)
-			require.NotNil(t, sharedOutScript)
-			require.NotZero(t, sharedOutAmount)
+			require.NotNil(t, batchOutScript)
+			require.NotZero(t, batchOutAmount)
 
 			vtxoTree, err := tree.BuildVtxoTree(
-				rootInput, v.receivers, sweepRoot[:], vtxoTreeExpiry,
+				rootInput, v.receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, vtxoTree)
 
 			rootTxid := vtxoTree.Root.UnsignedTx.TxID()
 
-			// Test 1: SubGraph with root txid should return the root only
-			subGraph, err := vtxoTree.SubGraph([]string{rootTxid})
+			// Test 1: SubTree(root) should return 1 node.
+			subTree, err := vtxoTree.SubTree([]string{rootTxid})
 			require.NoError(t, err)
-			require.NotNil(t, subGraph)
-			require.Equal(t, rootTxid, subGraph.Root.UnsignedTx.TxID())
-			require.Empty(t, subGraph.Children)
+			require.NotNil(t, subTree)
+			require.Equal(t, rootTxid, subTree.Root.UnsignedTx.TxID())
+			require.Empty(t, subTree.Children)
 
-			// Test 2: SubGraph with empty txids should return error
-			subGraph, err = vtxoTree.SubGraph([]string{})
+			// Test 2: SubTree(nil) should return error.
+			subTree, err = vtxoTree.SubTree([]string{})
 			require.Error(t, err)
-			require.Nil(t, subGraph)
+			require.Nil(t, subTree)
 			require.Contains(t, err.Error(), "no txids provided")
 
-			// Test 3: SubGraph with non-existent txid should return nil (no path to target)
+			// Test 3: SubTree(nonExistinTxid) should return an empty sub-tree.
 			nonExistentTxid := "0000000000000000000000000000000000000000000000000000000000000000"
-			subGraph, err = vtxoTree.SubGraph([]string{nonExistentTxid})
+			subTree, err = vtxoTree.SubTree([]string{nonExistentTxid})
 			require.NoError(t, err)
-			require.Nil(t, subGraph)
+			require.Nil(t, subTree)
 
-			// Test 4: SubGraph with leaf txids should return paths from root to leaves
+			// Test 4: SubTree(leaf) should return the full branch from root to leaf.
 			leaves := vtxoTree.Leaves()
 			require.NotEmpty(t, leaves)
 
 			for _, leaf := range leaves {
 				leafTxid := leaf.UnsignedTx.TxID()
-				subGraph, err := vtxoTree.SubGraph([]string{leafTxid})
+				subTree, err := vtxoTree.SubTree([]string{leafTxid})
 				require.NoError(t, err)
-				require.NotNil(t, subGraph)
+				require.NotNil(t, subTree)
 
-				// Verify the subgraph contains the root and the leaf
+				// Verify the sub-tree contains the root and the leaf
 				allTxids := make([]string, 0)
-				err = subGraph.Apply(func(tx *tree.TxTree) (bool, error) {
+				err = subTree.Apply(func(tx *tree.TxTree) (bool, error) {
 					allTxids = append(allTxids, tx.Root.UnsignedTx.TxID())
 					return true, nil
 				})
@@ -137,36 +137,36 @@ func TestTxGraphSubGraph(t *testing.T) {
 				require.Contains(t, allTxids, rootTxid)
 				require.Contains(t, allTxids, leafTxid)
 
-				// Verify the subgraph is a valid tree (all paths lead to the target)
-				err = subGraph.Validate()
+				// Verify the sub-tree is a valid tree (all paths lead to the target)
+				err = subTree.Validate()
 				require.NoError(t, err)
 
-				// Verify the subgraph contains exactly the path from root to leaf
-				// Check that the subgraph contains the expected txids
+				// Verify the sub-tree contains exactly the path from root to leaf
+				// Check that the sub-tree contains the expected txids
 				expectedTxids := []string{rootTxid, leafTxid}
 				for _, expectedTxid := range expectedTxids {
 					require.Contains(t, allTxids, expectedTxid)
 				}
 
 				// Verify serialization roundtrip
-				serialized, err := subGraph.Serialize()
+				serialized, err := subTree.Serialize()
 				require.NoError(t, err)
 				deserialized, err := tree.NewTxTree(serialized)
 				require.NoError(t, err)
-				checkTxTree(t, subGraph, deserialized)
+				checkTxTree(t, subTree, deserialized)
 			}
 
-			// Test 5: SubGraph with leaf txids should return paths should be equal to root graph
+			// Test 5: SubTree(allLeaves) whould return the whole tree.
 			leavesTxids := make([]string, 0)
 			for _, leaf := range leaves {
 				leavesTxids = append(leavesTxids, leaf.UnsignedTx.TxID())
 			}
-			subGraph, err = vtxoTree.SubGraph(leavesTxids)
+			subTree, err = vtxoTree.SubTree(leavesTxids)
 			require.NoError(t, err)
-			require.NotNil(t, subGraph)
-			checkTxTree(t, vtxoTree, subGraph)
+			require.NotNil(t, subTree)
+			checkTxTree(t, vtxoTree, subTree)
 
-			// Test 6: SubGraph with multiple leaf txids should return union of all paths
+			// Test 6: SubTree(someLeaves) should return all requested branches under the same root.
 			if len(leaves) > 1 {
 				leafTxids := make([]string, 0)
 				for _, leaf := range leaves {
@@ -175,13 +175,13 @@ func TestTxGraphSubGraph(t *testing.T) {
 
 				// Take first two leaves for testing
 				testLeafTxids := leafTxids[:2]
-				subGraph, err := vtxoTree.SubGraph(testLeafTxids)
+				subTree, err := vtxoTree.SubTree(testLeafTxids)
 				require.NoError(t, err)
-				require.NotNil(t, subGraph)
+				require.NotNil(t, subTree)
 
-				// Verify the subgraph contains all target txids
+				// Verify the sub-tree contains all target txids
 				allTxids := make([]string, 0)
-				err = subGraph.Apply(func(tx *tree.TxTree) (bool, error) {
+				err = subTree.Apply(func(tx *tree.TxTree) (bool, error) {
 					allTxids = append(allTxids, tx.Root.UnsignedTx.TxID())
 					return true, nil
 				})
@@ -191,11 +191,11 @@ func TestTxGraphSubGraph(t *testing.T) {
 					require.Contains(t, allTxids, targetTxid)
 				}
 
-				// Verify the subgraph contains the root
+				// Verify the sub-tree contains the root
 				require.Contains(t, allTxids, rootTxid)
 
-				// Verify the subgraph is a valid tree
-				err = subGraph.Validate()
+				// Verify the sub-tree is a valid tree
+				err = subTree.Validate()
 				require.NoError(t, err)
 			}
 

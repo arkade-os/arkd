@@ -3,30 +3,33 @@ package common
 import (
 	"fmt"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/bech32"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 // Address represents an Ark address with Version, prefix, signer public key, and VTXO taproot key.
 type Address struct {
 	Version    uint8
 	HRP        string
-	Signer     *secp256k1.PublicKey
-	VtxoTapKey *secp256k1.PublicKey
+	Signer     *btcec.PublicKey
+	VtxoTapKey *btcec.PublicKey
 }
 
 // EncodeV0 converts the address to its bech32m string representation.
 func (a *Address) EncodeV0() (string, error) {
 	if a.Signer == nil {
-		return "", fmt.Errorf("missing server public key")
+		return "", fmt.Errorf("missing signer public key")
 	}
 	if a.VtxoTapKey == nil {
 		return "", fmt.Errorf("missing vtxo taproot key")
 	}
 
 	combinedKey := append(
-		[]byte{byte(a.Version)}, append(schnorr.SerializePubKey(a.Signer), schnorr.SerializePubKey(a.VtxoTapKey)...)...,
+		[]byte{
+			byte(a.Version),
+		},
+		append(schnorr.SerializePubKey(a.Signer), schnorr.SerializePubKey(a.VtxoTapKey)...)...,
 	)
 	grp, err := bech32.ConvertBits(combinedKey, 8, 5, true)
 	if err != nil {
@@ -53,7 +56,7 @@ func DecodeAddressV0(addr string) (*Address, error) {
 		return nil, err
 	}
 
-	// [version, serverKey, vtxoKey]
+	// [version, signerKey, vtxoKey]
 	if len(grp) != 1+32+32 {
 		return nil, fmt.Errorf("invalid address bytes length, expected 65 got %d", len(grp))
 	}
@@ -63,9 +66,9 @@ func DecodeAddressV0(addr string) (*Address, error) {
 		return nil, fmt.Errorf("invalid address version, expected 0 got %d", version)
 	}
 
-	serverKey, err := schnorr.ParsePubKey(grp[1:33])
+	signerKey, err := schnorr.ParsePubKey(grp[1:33])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse server public key: %s", err)
+		return nil, fmt.Errorf("failed to parse signer public key: %s", err)
 	}
 
 	vtxoKey, err := schnorr.ParsePubKey(grp[33:])
@@ -76,7 +79,7 @@ func DecodeAddressV0(addr string) (*Address, error) {
 	return &Address{
 		Version:    version,
 		HRP:        prefix,
-		Signer:     serverKey,
+		Signer:     signerKey,
 		VtxoTapKey: vtxoKey,
 	}, nil
 }

@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"github.com/ark-network/ark/common"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 var ErrNoExitLeaf = fmt.Errorf("no exit leaf")
@@ -21,15 +21,15 @@ type VtxoScript common.VtxoScript[taprootTree, Closure]
 // - S: the pubkey of the signer who provided the liquidity for the VTXO.
 // - T: exit delay that must be waited by alice to spend the VTXO once unrolled onchain.
 func NewDefaultVtxoScript(
-	owner, signer *secp256k1.PublicKey, exitDelay common.RelativeLocktime,
+	owner, signer *btcec.PublicKey, exitDelay common.RelativeLocktime,
 ) *TapscriptsVtxoScript {
 	return &TapscriptsVtxoScript{
 		[]Closure{
 			&CSVMultisigClosure{
-				MultisigClosure: MultisigClosure{PubKeys: []*secp256k1.PublicKey{owner}},
+				MultisigClosure: MultisigClosure{PubKeys: []*btcec.PublicKey{owner}},
 				Locktime:        exitDelay,
 			},
-			&MultisigClosure{PubKeys: []*secp256k1.PublicKey{owner, signer}},
+			&MultisigClosure{PubKeys: []*btcec.PublicKey{owner, signer}},
 		},
 	}
 }
@@ -95,11 +95,11 @@ func (v *TapscriptsVtxoScript) Decode(scripts []string) error {
 }
 
 func (v *TapscriptsVtxoScript) Validate(
-	server *secp256k1.PublicKey, minLocktime common.RelativeLocktime, blockTypeAllowed bool,
+	signer *btcec.PublicKey, minLocktime common.RelativeLocktime, blockTypeAllowed bool,
 ) error {
-	serverXonly := schnorr.SerializePubKey(server)
+	xOnlySigner := schnorr.SerializePubKey(signer)
 	for _, forfeit := range v.ForfeitClosures() {
-		keys := make([]*secp256k1.PublicKey, 0)
+		keys := make([]*btcec.PublicKey, 0)
 		switch c := forfeit.(type) {
 		case *MultisigClosure:
 			keys = c.PubKeys
@@ -113,19 +113,21 @@ func (v *TapscriptsVtxoScript) Validate(
 		}
 
 		if len(keys) == 0 {
-			return fmt.Errorf("invalid forfeit closure, expected MultisigClosure, CLTVMultisigClosure or ConditionMultisigClosure")
+			return fmt.Errorf(
+				"invalid forfeit closure, expected MultisigClosure, CLTVMultisigClosure or ConditionMultisigClosure",
+			)
 		}
 
-		// must contain server pubkey
+		// must contain signer pubkey
 		found := false
 		for _, pubkey := range keys {
-			if bytes.Equal(schnorr.SerializePubKey(pubkey), serverXonly) {
+			if bytes.Equal(schnorr.SerializePubKey(pubkey), xOnlySigner) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			return fmt.Errorf("invalid forfeit closure, server pubkey not found")
+			return fmt.Errorf("invalid forfeit closure, signer pubkey not found")
 		}
 	}
 
@@ -191,7 +193,7 @@ func (v *TapscriptsVtxoScript) ExitClosures() []Closure {
 	return exits
 }
 
-func (v *TapscriptsVtxoScript) TapTree() (*secp256k1.PublicKey, taprootTree, error) {
+func (v *TapscriptsVtxoScript) TapTree() (*btcec.PublicKey, taprootTree, error) {
 	leaves := make([]txscript.TapLeaf, len(v.Closures))
 	for i, closure := range v.Closures {
 		script, err := closure.Script()
@@ -220,7 +222,9 @@ func (b taprootTree) GetRoot() chainhash.Hash {
 	return b.RootNode.TapHash()
 }
 
-func (b taprootTree) GetTaprootMerkleProof(leafhash chainhash.Hash) (*common.TaprootMerkleProof, error) {
+func (b taprootTree) GetTaprootMerkleProof(
+	leafhash chainhash.Hash,
+) (*common.TaprootMerkleProof, error) {
 	index, ok := b.LeafProofIndex[leafhash]
 	if !ok {
 		return nil, fmt.Errorf("leaf %s not found in tree", leafhash.String())

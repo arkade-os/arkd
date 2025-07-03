@@ -14,10 +14,10 @@ import (
 	"github.com/ark-network/ark/common/txutils"
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -141,7 +141,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 }
 
 func newBoardingInput(
-	tx wire.MsgTx, input ports.Input, signerPubkey *secp256k1.PublicKey,
+	tx wire.MsgTx, input ports.Input, signerPubkey *btcec.PublicKey,
 	boardingExitDelay common.RelativeLocktime, blockTypeCSVAllowed bool,
 ) (*ports.BoardingInput, error) {
 	if len(tx.TxOut) <= int(input.VOut) {
@@ -246,8 +246,8 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 	expireAt := round.ExpiryTimestamp()
 
 	vtxos := make([]domain.Vtxo, 0)
-	for _, chunk := range tree.FlatVtxoTree(round.VtxoTree).Leaves() {
-		tx, err := psbt.NewFromRawBytes(strings.NewReader(chunk.Tx), true)
+	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
+		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
@@ -288,13 +288,13 @@ func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {
 }
 
 func treeTxEvents(
-	graph *tree.TxTree, batchIndex int32, roundId string,
+	txTree *tree.TxTree, batchIndex int32, roundId string,
 	getTopic func(g *tree.TxTree) ([]string, error),
 ) []domain.Event {
 	events := make([]domain.Event, 0)
 
-	if err := graph.Apply(func(g *tree.TxTree) (bool, error) {
-		chunk, err := g.RootChunk()
+	if err := txTree.Apply(func(g *tree.TxTree) (bool, error) {
+		node, err := g.SerializeNode()
 		if err != nil {
 			return false, err
 		}
@@ -311,7 +311,7 @@ func treeTxEvents(
 			},
 			BatchIndex: batchIndex,
 			Topic:      topic,
-			Chunk:      chunk,
+			Node:       *node,
 		})
 		return true, nil
 	}); err != nil {
@@ -321,12 +321,10 @@ func treeTxEvents(
 	return events
 }
 
-func treeSignatureEvents(
-	graph *tree.TxTree, batchIndex int32, roundId string,
-) []domain.Event {
+func treeSignatureEvents(txTree *tree.TxTree, batchIndex int32, roundId string) []domain.Event {
 	events := make([]domain.Event, 0)
 
-	_ = graph.Apply(func(g *tree.TxTree) (bool, error) {
+	_ = txTree.Apply(func(g *tree.TxTree) (bool, error) {
 		sig := g.Root.Inputs[0].TaprootKeySpendSig
 
 		topic, err := getVtxoTreeTopic(g)

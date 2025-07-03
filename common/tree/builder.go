@@ -7,11 +7,11 @@ import (
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/script"
 	"github.com/ark-network/ark/common/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 const (
@@ -54,7 +54,7 @@ func BuildVtxoTree(
 		return nil, err
 	}
 
-	return root.graph(rootInput, &vtxoTreeExpiry)
+	return root.tree(rootInput, &vtxoTreeExpiry)
 }
 
 // BuildConnectorOutput returns the taproot script and amount of a connector output of the
@@ -90,29 +90,29 @@ func BuildConnectorTree(rootInput *wire.OutPoint, receivers []Leaf) (*TxTree, er
 		return nil, err
 	}
 
-	return root.graph(rootInput, nil)
+	return root.tree(rootInput, nil)
 }
 
 type node interface {
 	getAmount() int64 // returns the input amount of the node = sum of all receivers' amounts
 	getOutputs() ([]*wire.TxOut, error)
 	getChildren() []node
-	getCosigners() []*secp256k1.PublicKey
+	getCosigners() []*btcec.PublicKey
 	getInputScript() []byte
-	graph(input *wire.OutPoint, expiry *common.RelativeLocktime) (*TxTree, error)
+	tree(input *wire.OutPoint, expiry *common.RelativeLocktime) (*TxTree, error)
 }
 
 type leaf struct {
 	output      *wire.TxOut
 	inputScript []byte
-	cosigners   []*secp256k1.PublicKey
+	cosigners   []*btcec.PublicKey
 }
 
 func (l *leaf) getInputScript() []byte {
 	return l.inputScript
 }
 
-func (l *leaf) getCosigners() []*secp256k1.PublicKey {
+func (l *leaf) getCosigners() []*btcec.PublicKey {
 	return l.cosigners
 }
 
@@ -128,7 +128,7 @@ func (l *leaf) getOutputs() ([]*wire.TxOut, error) {
 	return []*wire.TxOut{l.output, txutils.AnchorOutput()}, nil
 }
 
-func (l *leaf) graph(
+func (l *leaf) tree(
 	initialInput *wire.OutPoint, expiry *common.RelativeLocktime,
 ) (*TxTree, error) {
 	tx, err := getTx(l, initialInput, expiry)
@@ -141,7 +141,7 @@ func (l *leaf) graph(
 
 type branch struct {
 	inputScript []byte
-	cosigners   []*secp256k1.PublicKey
+	cosigners   []*btcec.PublicKey
 	children    []node
 }
 
@@ -149,7 +149,7 @@ func (b *branch) getInputScript() []byte {
 	return b.inputScript
 }
 
-func (b *branch) getCosigners() []*secp256k1.PublicKey {
+func (b *branch) getCosigners() []*btcec.PublicKey {
 	return b.cosigners
 }
 
@@ -180,7 +180,7 @@ func (b *branch) getOutputs() ([]*wire.TxOut, error) {
 	return append(outputs, txutils.AnchorOutput()), nil
 }
 
-func (b *branch) graph(
+func (b *branch) tree(
 	initialInput *wire.OutPoint, expiry *common.RelativeLocktime,
 ) (*TxTree, error) {
 	tx, err := getTx(b, initialInput, expiry)
@@ -188,14 +188,14 @@ func (b *branch) graph(
 		return nil, err
 	}
 
-	graph := &TxTree{
+	txTree := &TxTree{
 		Root:     tx,
 		Children: make(map[uint32]*TxTree),
 	}
 
 	children := b.getChildren()
 	for i, child := range children {
-		childGraph, err := child.graph(&wire.OutPoint{
+		subTree, err := child.tree(&wire.OutPoint{
 			Hash:  tx.UnsignedTx.TxHash(),
 			Index: uint32(i),
 		}, expiry)
@@ -203,10 +203,10 @@ func (b *branch) graph(
 			return nil, err
 		}
 
-		graph.Children[uint32(i)] = childGraph
+		txTree.Children[uint32(i)] = subTree
 	}
 
-	return graph, nil
+	return txTree, nil
 }
 
 func getTx(n node, input *wire.OutPoint, expiry *common.RelativeLocktime) (*psbt.Packet, error) {
@@ -258,7 +258,7 @@ func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, e
 			return nil, fmt.Errorf("failed to decode cosigner pubkey: %w", err)
 		}
 
-		cosigners := make([]*secp256k1.PublicKey, 0)
+		cosigners := make([]*btcec.PublicKey, 0)
 
 		for _, cosigner := range r.CosignersPublicKeys {
 			pubkeyBytes, err := hex.DecodeString(cosigner)
@@ -266,7 +266,7 @@ func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, e
 				return nil, fmt.Errorf("failed to decode cosigner pubkey: %w", err)
 			}
 
-			pubkey, err := secp256k1.ParsePubKey(pubkeyBytes)
+			pubkey, err := btcec.ParsePubKey(pubkeyBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse cosigner pubkey: %w", err)
 			}
@@ -332,7 +332,7 @@ func createUpperLevel(nodes []node, tapTreeRoot []byte, radix int) ([]node, erro
 	for i := 0; i < len(nodes); i += radix {
 		children := nodes[i : i+radix]
 
-		var cosigners []*secp256k1.PublicKey
+		var cosigners []*btcec.PublicKey
 		for _, child := range children {
 			cosigners = append(cosigners, child.getCosigners()...)
 		}
@@ -360,9 +360,9 @@ func createUpperLevel(nodes []node, tapTreeRoot []byte, radix int) ([]node, erro
 }
 
 // uniqueCosigners removes duplicate cosigner keys while preserving order
-func uniqueCosigners(cosigners []*secp256k1.PublicKey) []*secp256k1.PublicKey {
+func uniqueCosigners(cosigners []*btcec.PublicKey) []*btcec.PublicKey {
 	seen := make(map[string]struct{})
-	unique := make([]*secp256k1.PublicKey, 0, len(cosigners))
+	unique := make([]*btcec.PublicKey, 0, len(cosigners))
 
 	for _, cosigner := range cosigners {
 		keyStr := hex.EncodeToString(schnorr.SerializePubKey(cosigner))

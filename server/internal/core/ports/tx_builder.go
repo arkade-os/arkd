@@ -4,8 +4,8 @@ import (
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/tree"
 	"github.com/ark-network/ark/server/internal/core/domain"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 type SweepableBatchOutput interface {
@@ -14,7 +14,7 @@ type SweepableBatchOutput interface {
 	GetIndex() uint32
 	GetLeafScript() []byte
 	GetControlBlock() []byte
-	GetInternalKey() *secp256k1.PublicKey
+	GetInternalKey() *btcec.PublicKey
 }
 
 type Input struct {
@@ -38,7 +38,7 @@ type TxBuilder interface {
 	// utxos as inputs of the transaction.
 	// Returns the commitment tx, the vtxo tree, the connector tree and its root address.
 	BuildCommitmentTx(
-		serverPubkey *secp256k1.PublicKey, intents domain.Intents,
+		signerPubkey *btcec.PublicKey, intents domain.Intents,
 		boardingInputs []BoardingInput, connectorAddresses []string,
 		cosigners [][]string,
 	) (
@@ -48,7 +48,7 @@ type TxBuilder interface {
 	// VerifyForfeitTxs verifies a list of forfeit txs against a set of VTXOs and
 	// connectors.
 	VerifyForfeitTxs(
-		vtxos []domain.Vtxo, connectors []tree.TxTreeNode, txs []string,
+		vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []SweepableBatchOutput) (txid string, signedSweepTx string, err error)
 	GetSweepableBacthOutputs(vtxoTree *tree.TxTree) (

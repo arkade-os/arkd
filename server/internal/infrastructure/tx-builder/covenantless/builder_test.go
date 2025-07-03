@@ -13,8 +13,8 @@ import (
 	"github.com/ark-network/ark/server/internal/core/domain"
 	"github.com/ark-network/ark/server/internal/core/ports"
 	txbuilder "github.com/ark-network/ark/server/internal/infrastructure/tx-builder/covenantless"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +29,7 @@ const (
 
 var (
 	wallet *mockedWallet
-	pubkey *secp256k1.PublicKey
+	pubkey *btcec.PublicKey
 
 	vtxoTreeExpiry    = common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 1209344}
 	boardingExitDelay = common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 512}
@@ -51,7 +51,7 @@ func TestMain(m *testing.M) {
 		Return(forfeitAddress, nil)
 
 	pubkeyBytes, _ := hex.DecodeString(testingKey)
-	pubkey, _ = secp256k1.ParsePubKey(pubkeyBytes)
+	pubkey, _ = btcec.ParsePubKey(pubkeyBytes)
 
 	os.Exit(m.Run())
 }
@@ -71,7 +71,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				cosignersPublicKeys := make([][]string, 0)
 
 				for range f.Intents {
-					randKey, err := secp256k1.GeneratePrivateKey()
+					randKey, err := btcec.NewPrivateKey()
 					require.NoError(t, err)
 
 					cosignersPublicKeys = append(cosignersPublicKeys, []string{

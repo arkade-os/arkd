@@ -28,7 +28,6 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -45,7 +44,7 @@ type service struct {
 
 	// config
 	network                   common.Network
-	signerPubkey              *secp256k1.PublicKey
+	signerPubkey              *btcec.PublicKey
 	vtxoTreeExpiry            common.RelativeLocktime
 	roundInterval             time.Duration
 	unilateralExitDelay       common.RelativeLocktime
@@ -59,9 +58,9 @@ type service struct {
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 
-	// TODO: derive this from wallet
-	serverSigningKey    *secp256k1.PrivateKey
-	serverSigningPubKey *secp256k1.PublicKey
+	// TODO: derive the key pair used for the musig2 signing session from wallet.
+	operatorPrvkey *btcec.PrivateKey
+	operatorPubkey *btcec.PublicKey
 
 	// channels
 	eventsCh                 chan []domain.Event
@@ -107,7 +106,7 @@ func NewService(
 		}
 	}
 
-	serverSigningKey, err := secp256k1.GeneratePrivateKey()
+	operatorSigningKey, err := btcec.GeneratePrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ephemeral key: %s", err)
 	}
@@ -147,8 +146,8 @@ func NewService(
 		eventsCh:                  make(chan []domain.Event),
 		transactionEventsCh:       make(chan TransactionEvent),
 		boardingExitDelay:         boardingExitDelay,
-		serverSigningKey:          serverSigningKey,
-		serverSigningPubKey:       serverSigningKey.PubKey(),
+		operatorPrvkey:            operatorSigningKey,
+		operatorPubkey:            operatorSigningKey.PubKey(),
 		forfeitsBoardingSigsChan:  make(chan struct{}, 1),
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
@@ -703,7 +702,7 @@ func (s *service) SubmitOffchainTx(
 		&script.CSVMultisigClosure{
 			Locktime: s.unilateralExitDelay,
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{s.signerPubkey},
+				PubKeys: []*btcec.PublicKey{s.signerPubkey},
 			},
 		},
 	)
@@ -1048,10 +1047,10 @@ func (s *service) RegisterIntent(
 				return "", fmt.Errorf("musig2 data is required for offchain receivers")
 			}
 
-			// check if the server pubkey has been set as cosigner
-			serverPubKeyHex := hex.EncodeToString(s.serverSigningPubKey.SerializeCompressed())
+			// check if the operator pubkey has been set as cosigner
+			operatorPubkeyHex := hex.EncodeToString(s.operatorPubkey.SerializeCompressed())
 			for _, pubkey := range message.CosignersPublicKeys {
-				if pubkey == serverPubKeyHex {
+				if pubkey == operatorPubkeyHex {
 					return "", fmt.Errorf("invalid cosigner pubkeys: %x is used by us", pubkey)
 				}
 			}
@@ -1545,7 +1544,7 @@ func (s *service) startFinalization(
 		return
 	}
 
-	serverPubKeyHex := hex.EncodeToString(s.serverSigningPubKey.SerializeCompressed())
+	operatorPubkeyHex := hex.EncodeToString(s.operatorPubkey.SerializeCompressed())
 
 	intents := make([]domain.Intent, 0, len(registeredIntents))
 	boardingInputs := make([]ports.BoardingInput, 0)
@@ -1560,7 +1559,7 @@ func (s *service) startFinalization(
 		}
 
 		cosignersPublicKeys = append(
-			cosignersPublicKeys, append(intent.CosignersPublicKeys, serverPubKeyHex),
+			cosignersPublicKeys, append(intent.CosignersPublicKeys, operatorPubkeyHex),
 		)
 	}
 
@@ -1606,10 +1605,10 @@ func (s *service) startFinalization(
 		return
 	}
 
-	flatVtxoTree := make([]tree.TxTreeNode, 0)
+	flatVtxoTree := make(tree.FlatTxTree, 0)
 	if vtxoTree != nil {
 		sweepClosure := script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*secp256k1.PublicKey{s.signerPubkey}},
+			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.signerPubkey}},
 			Locktime:        s.vtxoTreeExpiry,
 		}
 
@@ -1625,7 +1624,7 @@ func (s *service) startFinalization(
 		root := sweepTapTree.RootNode.TapHash()
 
 		coordinator, err := tree.NewTreeCoordinatorSession(
-			batchOutputAmount, vtxoTree, root.CloneBytes(),
+			root.CloneBytes(), batchOutputAmount, vtxoTree,
 		)
 		if err != nil {
 			s.cache.CurrentRound().Fail(fmt.Errorf(
@@ -1635,8 +1634,8 @@ func (s *service) startFinalization(
 			return
 		}
 
-		serverSignerSession := tree.NewTreeSignerSession(s.serverSigningKey)
-		if err := serverSignerSession.Init(
+		operatorSignerSession := tree.NewTreeSignerSession(s.operatorPrvkey)
+		if err := operatorSignerSession.Init(
 			root.CloneBytes(), batchOutputAmount, vtxoTree,
 		); err != nil {
 			s.cache.CurrentRound().Fail(fmt.Errorf("failed to create signer session: %s", err))
@@ -1644,14 +1643,14 @@ func (s *service) startFinalization(
 			return
 		}
 
-		nonces, err := serverSignerSession.GetNonces()
+		nonces, err := operatorSignerSession.GetNonces()
 		if err != nil {
 			s.cache.CurrentRound().Fail(fmt.Errorf("failed to get nonces: %s", err))
 			log.WithError(err).Warn("failed to get nonces")
 			return
 		}
 
-		coordinator.AddNonce(s.serverSigningPubKey, nonces)
+		coordinator.AddNonce(s.operatorPubkey, nonces)
 		s.cache.TreeSigingSessions().New(roundId, uniqueSignerPubkeys)
 
 		log.Debugf(
@@ -1699,19 +1698,19 @@ func (s *service) startFinalization(
 
 		log.Debugf("nonces aggregated for round %s", roundId)
 
-		serverSignerSession.SetAggregatedNonces(aggregatedNonces)
+		operatorSignerSession.SetAggregatedNonces(aggregatedNonces)
 
 		// send the combined nonces to the clients
 		s.propagateRoundSigningNoncesGeneratedEvent(aggregatedNonces)
 
-		// sign the tree as server
-		serverTreeSigs, err := serverSignerSession.Sign()
+		// sign the tree as operator
+		operatorSignatures, err := operatorSignerSession.Sign()
 		if err != nil {
 			s.cache.CurrentRound().Fail(fmt.Errorf("failed to sign tree: %s", err))
 			log.WithError(err).Warn("failed to sign tree")
 			return
 		}
-		coordinator.AddSignatures(s.serverSigningPubKey, serverTreeSigs)
+		coordinator.AddSignatures(s.operatorPubkey, operatorSignatures)
 
 		log.Debugf("tree signed by us for round %s", roundId)
 
@@ -1823,7 +1822,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	includesBoardingInputs := false
 	for _, in := range commitmentTx.Inputs {
-		// TODO: this is ok as long as the server doesn't use taproot address too!
+		// TODO: this is ok as long as the signer doesn't use taproot address too!
 		// We need to find a better way to understand if an in input is ours or if
 		// it's a boarding one.
 		scriptType := txscript.GetScriptClass(in.WitnessUtxo.PkScript)

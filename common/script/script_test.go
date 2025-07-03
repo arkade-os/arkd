@@ -11,11 +11,11 @@ import (
 
 	"github.com/ark-network/ark/common"
 	"github.com/ark-network/ark/common/script"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -339,12 +339,12 @@ func TestDecodeClosure(t *testing.T) {
 }
 
 func TestRoundTripCSV(t *testing.T) {
-	seckey, err := secp256k1.GeneratePrivateKey()
+	seckey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	csvSig := &script.CSVMultisigClosure{
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*secp256k1.PublicKey{seckey.PubKey()},
+			PubKeys: []*btcec.PublicKey{seckey.PubKey()},
 		},
 		Locktime: common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 1024},
 	}
@@ -363,17 +363,17 @@ func TestRoundTripCSV(t *testing.T) {
 
 func TestMultisigClosure(t *testing.T) {
 	// Generate some test keys
-	prvkey1, err := secp256k1.GeneratePrivateKey()
+	prvkey1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pubkey1 := prvkey1.PubKey()
 
-	prvkey2, err := secp256k1.GeneratePrivateKey()
+	prvkey2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pubkey2 := prvkey2.PubKey()
 
 	t.Run("valid 2-of-2 multisig", func(t *testing.T) {
 		closure := &script.MultisigClosure{
-			PubKeys: []*secp256k1.PublicKey{pubkey1, pubkey2},
+			PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 		}
 
 		// Generate script
@@ -400,7 +400,7 @@ func TestMultisigClosure(t *testing.T) {
 
 	t.Run("valid single key multisig", func(t *testing.T) {
 		closure := &script.MultisigClosure{
-			PubKeys: []*secp256k1.PublicKey{pubkey1},
+			PubKeys: []*btcec.PublicKey{pubkey1},
 		}
 
 		scriptBytes, err := closure.Script()
@@ -461,9 +461,9 @@ func TestMultisigClosure(t *testing.T) {
 
 	t.Run("valid 12-of-12 multisig", func(t *testing.T) {
 		// Generate 12 keys
-		pubkeys := make([]*secp256k1.PublicKey, 12)
+		pubkeys := make([]*btcec.PublicKey, 12)
 		for i := 0; i < 12; i++ {
-			prvkey, err := secp256k1.GeneratePrivateKey()
+			prvkey, err := btcec.NewPrivateKey()
 			require.NoError(t, err)
 			pubkeys[i] = prvkey.PubKey()
 		}
@@ -495,18 +495,18 @@ func TestMultisigClosure(t *testing.T) {
 
 func TestCSVMultisigClosure(t *testing.T) {
 	// Generate test keys
-	prvkey1, err := secp256k1.GeneratePrivateKey()
+	prvkey1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pubkey1 := prvkey1.PubKey()
 
-	prvkey2, err := secp256k1.GeneratePrivateKey()
+	prvkey2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pubkey2 := prvkey2.PubKey()
 
 	t.Run("valid single key CSV", func(t *testing.T) {
 		csvSig := &script.CSVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1},
+				PubKeys: []*btcec.PublicKey{pubkey1},
 			},
 			Locktime: common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 1024},
 		}
@@ -529,9 +529,12 @@ func TestCSVMultisigClosure(t *testing.T) {
 	t.Run("valid 2-of-2 CSV", func(t *testing.T) {
 		csvSig := &script.CSVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1, pubkey2},
+				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 			},
-			Locktime: common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 512 * 4}, // ~2 weeks
+			Locktime: common.RelativeLocktime{
+				Type:  common.LocktimeTypeSecond,
+				Value: 512 * 4,
+			}, // ~2 weeks
 		}
 
 		scriptBytes, err := csvSig.Script()
@@ -577,9 +580,12 @@ func TestCSVMultisigClosure(t *testing.T) {
 	t.Run("max timelock", func(t *testing.T) {
 		csvSig := &script.CSVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1},
+				PubKeys: []*btcec.PublicKey{pubkey1},
 			},
-			Locktime: common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: common.SECONDS_MAX}, // Maximum allowed value
+			Locktime: common.RelativeLocktime{
+				Type:  common.LocktimeTypeSecond,
+				Value: common.SECONDS_MAX,
+			}, // Maximum allowed value
 		}
 
 		scriptBytes, err := csvSig.Script()
@@ -595,11 +601,11 @@ func TestCSVMultisigClosure(t *testing.T) {
 
 func TestMultisigClosureWitness(t *testing.T) {
 	// Generate test keys
-	priv1, err := secp256k1.GeneratePrivateKey()
+	priv1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pub1 := priv1.PubKey()
 
-	priv2, err := secp256k1.GeneratePrivateKey()
+	priv2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pub2 := priv2.PubKey()
 
@@ -615,7 +621,7 @@ func TestMultisigClosureWitness(t *testing.T) {
 		{
 			name: "single signature success",
 			closure: &script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pub1},
+				PubKeys: []*btcec.PublicKey{pub1},
 			},
 			signatures: map[string][]byte{
 				hex.EncodeToString(schnorr.SerializePubKey(pub1)): []byte("signature1"),
@@ -625,7 +631,7 @@ func TestMultisigClosureWitness(t *testing.T) {
 		{
 			name: "multiple signatures success",
 			closure: &script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pub1, pub2},
+				PubKeys: []*btcec.PublicKey{pub1, pub2},
 			},
 			signatures: map[string][]byte{
 				hex.EncodeToString(schnorr.SerializePubKey(pub1)): []byte("signature1"),
@@ -636,7 +642,7 @@ func TestMultisigClosureWitness(t *testing.T) {
 		{
 			name: "missing signature",
 			closure: &script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pub1, pub2},
+				PubKeys: []*btcec.PublicKey{pub1, pub2},
 			},
 			signatures: map[string][]byte{
 				hex.EncodeToString(schnorr.SerializePubKey(pub1)): []byte("signature1"),
@@ -679,7 +685,7 @@ func TestMultisigClosureWitness(t *testing.T) {
 
 func TestCSVMultisigClosureWitness(t *testing.T) {
 	// Generate test keys
-	priv1, err := secp256k1.GeneratePrivateKey()
+	priv1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pub1 := priv1.PubKey()
 
@@ -693,7 +699,7 @@ func TestCSVMultisigClosureWitness(t *testing.T) {
 
 	closure := &script.CSVMultisigClosure{
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*secp256k1.PublicKey{pub1},
+			PubKeys: []*btcec.PublicKey{pub1},
 		},
 		Locktime: common.RelativeLocktime{Type: common.LocktimeTypeBlock, Value: 144},
 	}
@@ -717,14 +723,14 @@ func TestCSVMultisigClosureWitness(t *testing.T) {
 
 func TestDecodeChecksigAdd(t *testing.T) {
 	// Generate some test public keys
-	pubkey1, err := secp256k1.GeneratePrivateKey()
+	pubkey1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	pubkey2, err := secp256k1.GeneratePrivateKey()
+	pubkey2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	pubkey3, err := secp256k1.GeneratePrivateKey()
+	pubkey3, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	pubkeys := []*secp256k1.PublicKey{pubkey1.PubKey(), pubkey2.PubKey(), pubkey3.PubKey()}
+	pubkeys := []*btcec.PublicKey{pubkey1.PubKey(), pubkey2.PubKey(), pubkey3.PubKey()}
 
 	// Create a script for 3-of-3 multisig using CHECKSIGADD
 	scriptBuilder := txscript.NewScriptBuilder().
@@ -745,24 +751,29 @@ func TestDecodeChecksigAdd(t *testing.T) {
 	valid, err := multisigClosure.Decode(scriptBytes)
 	require.NoError(t, err, "failed to decode script")
 	require.True(t, valid, "script should be valid")
-	require.Equal(t, script.MultisigTypeChecksigAdd, multisigClosure.Type, "expected MultisigTypeChecksigAdd")
+	require.Equal(
+		t,
+		script.MultisigTypeChecksigAdd,
+		multisigClosure.Type,
+		"expected MultisigTypeChecksigAdd",
+	)
 	require.Equal(t, 3, len(multisigClosure.PubKeys), "expected 3 public keys")
 }
 
 func TestCLTVMultisigClosure(t *testing.T) {
 	// Generate test keys
-	privkey1, err := secp256k1.GeneratePrivateKey()
+	privkey1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pubkey1 := privkey1.PubKey()
 
-	privkey2, err := secp256k1.GeneratePrivateKey()
+	privkey2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pubkey2 := privkey2.PubKey()
 
 	t.Run("valid single key with CLTV", func(t *testing.T) {
 		closure := &script.CLTVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1},
+				PubKeys: []*btcec.PublicKey{pubkey1},
 				Type:    script.MultisigTypeChecksig,
 			},
 			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
@@ -777,13 +788,17 @@ func TestCLTVMultisigClosure(t *testing.T) {
 		require.True(t, valid)
 		require.Equal(t, closure.Locktime, decodedClosure.Locktime)
 		require.Equal(t, 1, len(decodedClosure.PubKeys))
-		require.Equal(t, schnorr.SerializePubKey(pubkey1), schnorr.SerializePubKey(decodedClosure.PubKeys[0]))
+		require.Equal(
+			t,
+			schnorr.SerializePubKey(pubkey1),
+			schnorr.SerializePubKey(decodedClosure.PubKeys[0]),
+		)
 	})
 
 	t.Run("valid single key with CLTV height", func(t *testing.T) {
 		closure := &script.CLTVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1},
+				PubKeys: []*btcec.PublicKey{pubkey1},
 				Type:    script.MultisigTypeChecksig,
 			},
 			Locktime: common.AbsoluteLocktime(3000),
@@ -798,13 +813,17 @@ func TestCLTVMultisigClosure(t *testing.T) {
 		require.True(t, valid)
 		require.Equal(t, closure.Locktime, decodedClosure.Locktime)
 		require.Equal(t, 1, len(decodedClosure.PubKeys))
-		require.Equal(t, schnorr.SerializePubKey(pubkey1), schnorr.SerializePubKey(decodedClosure.PubKeys[0]))
+		require.Equal(
+			t,
+			schnorr.SerializePubKey(pubkey1),
+			schnorr.SerializePubKey(decodedClosure.PubKeys[0]),
+		)
 	})
 
 	t.Run("valid two keys with CLTV", func(t *testing.T) {
 		closure := &script.CLTVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1, pubkey2},
+				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 				Type:    script.MultisigTypeChecksig,
 			},
 			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
@@ -824,7 +843,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 	t.Run("valid two keys with CLTV using checksigadd", func(t *testing.T) {
 		closure := &script.CLTVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1, pubkey2},
+				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 				Type:    script.MultisigTypeChecksigAdd,
 			},
 			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
@@ -845,7 +864,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 	t.Run("witness generation", func(t *testing.T) {
 		closure := &script.CLTVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1, pubkey2},
+				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 				Type:    script.MultisigTypeChecksig,
 			},
 			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
@@ -870,7 +889,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 	t.Run("invalid cases", func(t *testing.T) {
 		validClosure := &script.CLTVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1},
+				PubKeys: []*btcec.PublicKey{pubkey1},
 				Type:    script.MultisigTypeChecksig,
 			},
 			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
@@ -890,8 +909,10 @@ func TestCLTVMultisigClosure(t *testing.T) {
 				err:    &emptyScriptErr,
 			},
 			{
-				name:   "invalid CLTV index",
-				script: append([]byte{txscript.OP_CHECKLOCKTIMEVERIFY, txscript.OP_DROP}, scriptBytes...),
+				name: "invalid CLTV index",
+				script: append(
+					[]byte{txscript.OP_CHECKLOCKTIMEVERIFY, txscript.OP_DROP},
+					scriptBytes...),
 			},
 			{
 				name:   "missing CLTV",
@@ -1000,15 +1021,21 @@ func TestExecuteBoolScript(t *testing.T) {
 			expectErr:   true,
 		},
 		{
-			name:        "valid SHA256",
-			script:      append(append([]byte{txscript.OP_SHA256, txscript.OP_DATA_32}, hash1[:]...), txscript.OP_EQUAL),
+			name: "valid SHA256",
+			script: append(
+				append([]byte{txscript.OP_SHA256, txscript.OP_DATA_32}, hash1[:]...),
+				txscript.OP_EQUAL,
+			),
 			witness:     wire.TxWitness{rand1},
 			returnValue: true,
 			expectErr:   false,
 		},
 		{
-			name:        "invalid SHA256",
-			script:      append(append([]byte{txscript.OP_SHA256, txscript.OP_DATA_32}, hash1[:]...), txscript.OP_EQUAL),
+			name: "invalid SHA256",
+			script: append(
+				append([]byte{txscript.OP_SHA256, txscript.OP_DATA_32}, hash1[:]...),
+				txscript.OP_EQUAL,
+			),
 			witness:     wire.TxWitness{rand2},
 			returnValue: false,
 			expectErr:   false,
@@ -1032,11 +1059,11 @@ func TestExecuteBoolScript(t *testing.T) {
 
 func TestConditionMultisigClosure(t *testing.T) {
 	// Generate test keys
-	privkey1, err := secp256k1.GeneratePrivateKey()
+	privkey1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pubkey1 := privkey1.PubKey()
 
-	privkey2, err := secp256k1.GeneratePrivateKey()
+	privkey2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	pubkey2 := privkey2.PubKey()
 
@@ -1046,7 +1073,7 @@ func TestConditionMultisigClosure(t *testing.T) {
 
 		closure := &script.ConditionMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1},
+				PubKeys: []*btcec.PublicKey{pubkey1},
 				Type:    script.MultisigTypeChecksig,
 			},
 			Condition: conditionScript,
@@ -1061,7 +1088,13 @@ func TestConditionMultisigClosure(t *testing.T) {
 		require.True(t, valid)
 		require.Equal(t, 1, len(decodedClosure.PubKeys))
 		require.True(t, bytes.Equal(conditionScript, decodedClosure.Condition))
-		require.True(t, bytes.Equal(schnorr.SerializePubKey(pubkey1), schnorr.SerializePubKey(decodedClosure.PubKeys[0])))
+		require.True(
+			t,
+			bytes.Equal(
+				schnorr.SerializePubKey(pubkey1),
+				schnorr.SerializePubKey(decodedClosure.PubKeys[0]),
+			),
+		)
 	})
 
 	t.Run("valid condition with 2 of 2 multisig", func(t *testing.T) {
@@ -1079,7 +1112,7 @@ func TestConditionMultisigClosure(t *testing.T) {
 
 		closure := &script.ConditionMultisigClosure{
 			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*secp256k1.PublicKey{pubkey1, pubkey2},
+				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 				Type:    script.MultisigTypeChecksig,
 			},
 			Condition: conditionScript,

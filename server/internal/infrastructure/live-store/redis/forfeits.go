@@ -30,7 +30,7 @@ func NewForfeitTxsStore(rdb *redis.Client, builder ports.TxBuilder) ports.Forfei
 	}
 }
 
-func (s *forfeitTxsStore) Init(connectors []tree.TxTreeNode, intents []domain.Intent) error {
+func (s *forfeitTxsStore) Init(connectors tree.FlatTxTree, intents []domain.Intent) error {
 	ctx := context.Background()
 	vtxosToSign := make([]domain.Vtxo, 0)
 	for _, intent := range intents {
@@ -50,7 +50,7 @@ func (s *forfeitTxsStore) Init(connectors []tree.TxTreeNode, intents []domain.In
 	connIndex := make(map[string]domain.Outpoint)
 	if len(vtxosToSign) > 0 {
 		connectorsOutpoints := make([]domain.Outpoint, 0)
-		leaves := tree.FlatVtxoTree(connectors).Leaves()
+		leaves := tree.FlatTxTree(connectors).Leaves()
 		if len(leaves) == 0 {
 			return fmt.Errorf("no connectors found")
 		}
@@ -101,7 +101,7 @@ func (s *forfeitTxsStore) Sign(txs []string) error {
 	if err != nil {
 		return err
 	}
-	var connectors []tree.TxTreeNode
+	var connectors tree.FlatTxTree
 	if err := json.Unmarshal(connBytes, &connectors); err != nil {
 		return err
 	}

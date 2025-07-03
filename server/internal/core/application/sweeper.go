@@ -324,13 +324,7 @@ func computeSubTrees(
 	// for each sweepable input, create a sub vtxo tree
 	// it allows to skip the part of the tree that has been broadcasted in the next task
 	for _, input := range inputs {
-		subTree, err := computeSubTree(vtxoTree, input.GetHash().String())
-		if err != nil {
-			log.WithError(err).Error("error while finding sub tree")
-			continue
-		}
-
-		if subTree != nil {
+		if subTree := vtxoTree.Find(input.GetHash().String()); subTree != nil {
 			rootTxid := subTree.Root.UnsignedTx.TxID()
 			subTrees[rootTxid] = subTree
 		}
@@ -365,17 +359,6 @@ func computeSubTrees(
 	return filteredSubTrees, nil
 }
 
-func computeSubTree(vtxoTree *tree.TxTree, newRoot string) (*tree.TxTree, error) {
-	// Find the subgraph starting from the newRoot
-	foundGraph := vtxoTree.Find(newRoot)
-	if foundGraph != nil {
-		return foundGraph, nil
-	}
-
-	// If not found, return nil (no subtree to create)
-	return nil, nil
-}
-
 func containsTree(tr0 *tree.TxTree, tr1 *tree.TxTree) (bool, error) {
 	if tr0 == nil || tr1 == nil {
 		return false, nil
@@ -388,10 +371,10 @@ func containsTree(tr0 *tree.TxTree, tr1 *tree.TxTree) (bool, error) {
 	return found != nil, nil
 }
 
-func findLeaves(graph *tree.TxTree, fromtxid string, vout uint32) ([]*psbt.Packet, error) {
+func findLeaves(txTree *tree.TxTree, fromtxid string, vout uint32) ([]*psbt.Packet, error) {
 	var foundParent *tree.TxTree
 
-	if err := graph.Apply(func(g *tree.TxTree) (bool, error) {
+	if err := txTree.Apply(func(g *tree.TxTree) (bool, error) {
 		parent := g.Root.UnsignedTx.TxIn[0].PreviousOutPoint
 		if parent.Hash.String() == fromtxid && parent.Index == vout {
 			foundParent = g
@@ -404,7 +387,7 @@ func findLeaves(graph *tree.TxTree, fromtxid string, vout uint32) ([]*psbt.Packe
 	}
 
 	if foundParent == nil {
-		return nil, fmt.Errorf("no tx %s found in the graph", fromtxid)
+		return nil, fmt.Errorf("tx %s not found in the tx tree", fromtxid)
 	}
 
 	return foundParent.Leaves(), nil

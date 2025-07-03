@@ -125,7 +125,7 @@ func (r *arkRepository) GetRoundForfeitTxs(
 
 func (r *arkRepository) GetRoundConnectorTree(
 	ctx context.Context, commitmentTxid string,
-) ([]tree.TxTreeNode, error) {
+) (tree.FlatTxTree, error) {
 	// TODO implement
 	return nil, nil
 }
@@ -175,7 +175,7 @@ func (r *arkRepository) GetRoundIds(
 
 func (r *arkRepository) GetRoundVtxoTree(
 	ctx context.Context, txid string,
-) ([]tree.TxTreeNode, error) {
+) (tree.FlatTxTree, error) {
 	round, err := r.GetRoundWithCommitmentTxid(ctx, txid)
 	if err != nil {
 		return nil, err
@@ -408,17 +408,17 @@ func (r *arkRepository) addTxs(
 			}
 		}
 
-		for _, chunk := range round.Connectors {
-			txs[chunk.Txid] = Tx{
-				Txid: chunk.Txid,
-				Tx:   chunk.Tx,
+		for _, node := range round.Connectors {
+			txs[node.Txid] = Tx{
+				Txid: node.Txid,
+				Tx:   node.Tx,
 			}
 		}
 
-		for _, chunk := range round.VtxoTree {
-			txs[chunk.Txid] = Tx{
-				Txid: chunk.Txid,
-				Tx:   chunk.Tx,
+		for _, node := range round.VtxoTree {
+			txs[node.Txid] = Tx{
+				Txid: node.Txid,
+				Tx:   node.Tx,
 			}
 		}
 
