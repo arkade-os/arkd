@@ -20,8 +20,6 @@ jobs:
       - uses: actions/setup-go@v4
         with:
           go-version: '>=1.23.1'
-      - name: Run go work sync
-        run: go work sync
       
       - name: Run Nigiri
         uses: vulpemventures/nigiri-github-action@v1
