@@ -31,8 +31,6 @@ var (
 )
 
 func TestBuildAndSignVtxoTree(t *testing.T) {
-	t.Parallel()
-
 	testVectors, err := makeTestVectors()
 	require.NoError(t, err)
 	require.NotEmpty(t, testVectors)

@@ -10,8 +10,6 @@ import (
 )
 
 func TestTxTreeSerialization(t *testing.T) {
-	t.Parallel()
-
 	testVectors, err := makeTestVectors()
 	require.NoError(t, err)
 	require.NotEmpty(t, testVectors)
@@ -76,8 +74,6 @@ func TestTxTreeSerialization(t *testing.T) {
 }
 
 func TestTxTreeSubTree(t *testing.T) {
-	t.Parallel()
-
 	testVectors, err := makeTestVectors()
 	require.NoError(t, err)
 	require.NotEmpty(t, testVectors)
