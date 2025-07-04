@@ -39,7 +39,9 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 
 	for _, v := range testVectors {
 		t.Run(v.name, func(t *testing.T) {
-			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(v.receivers, batchOutSweepClosure[:])
+			batchOutScript, batchOutAmount, err := tree.BuildBatchOutput(
+				v.receivers, batchOutSweepClosure[:],
+			)
 			require.NoError(t, err)
 			require.NotNil(t, batchOutScript)
 			require.NotZero(t, batchOutAmount)
