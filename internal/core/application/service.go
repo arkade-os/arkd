@@ -6,9 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"os"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -167,15 +165,7 @@ func NewService(
 		domain.RoundTopic, func(events []domain.Event) {
 			round := domain.NewRoundFromEvents(events)
 
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Errorf("recovered from panic in propagateEvents: %v", r)
-					}
-				}()
-
-				svc.propagateEvents(round)
-			}()
+			go svc.propagateEvents(round)
 
 			if !round.IsEnded() {
 				return
@@ -202,25 +192,12 @@ func NewService(
 			}()
 
 			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Errorf("recovered from panic in StartWatchingVtxos: %v", r)
-					}
-				}()
-
-				// nolint
-				svc.startWatchingVtxos(newVtxos)
+				if err := svc.startWatchingVtxos(newVtxos); err != nil {
+					log.WithError(err).Warn("failed to start watching vtxos")
+				}
 			}()
 
-			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Errorf("recovered from panic in scheduleSweepVtxosForRound: %v", r)
-					}
-				}()
-
-				svc.scheduleSweepBatchOutput(round)
-			}()
+			go svc.scheduleSweepBatchOutput(round)
 		},
 	)
 
@@ -254,12 +231,6 @@ func NewService(
 			}
 
 			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Errorf("recovered from panic in sendTxEvent: %v", r)
-					}
-				}()
-
 				svc.transactionEventsCh <- TransactionEvent{
 					TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
 					Type:           ArkTxType,
@@ -269,12 +240,6 @@ func NewService(
 				}
 			}()
 			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Errorf("recovered from panic in sendTxEvent: %v", r)
-					}
-				}()
-
 				svc.indexerTxEventsCh <- TransactionEvent{
 					TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
 					Type:           ArkTxType,
@@ -285,14 +250,9 @@ func NewService(
 			}()
 
 			go func() {
-				defer func() {
-					if r := recover(); r != nil {
-						log.Errorf("recovered from panic in startWatchingVtxos: %v", r)
-					}
-				}()
-
-				// nolint
-				svc.startWatchingVtxos(newVtxos)
+				if err := svc.startWatchingVtxos(newVtxos); err != nil {
+					log.WithError(err).Warn("failed to start watching vtxos")
+				}
 			}()
 		},
 	)
@@ -1309,18 +1269,6 @@ func (s *service) RegisterCosignerSignatures(
 }
 
 func (s *service) start() {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorf("recovered from panic in start: %v", r)
-			fmt.Fprintf(os.Stderr, "PANIC: %v\n", r)
-			stack := debug.Stack()
-			lines := bytes.Split(stack, []byte("\n"))
-			for _, line := range lines {
-				fmt.Fprintf(os.Stderr, "%s\n", bytes.TrimPrefix(line, []byte("\t")))
-			}
-		}
-	}()
-
 	s.startRound()
 }
 
@@ -1934,24 +1882,12 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 }
 
 func (s *service) listenToScannerNotifications() {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Errorf("recovered from panic in listenToScannerNotifications: %v", r)
-		}
-	}()
-
 	ctx := context.Background()
 	chVtxos := s.scanner.GetNotificationChannel(ctx)
 
 	mutx := &sync.Mutex{}
 	for vtxoKeys := range chVtxos {
 		go func(vtxoKeys map[string][]ports.VtxoWithValue) {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Errorf("recovered from panic in GetVtxos: %v", r)
-				}
-			}()
-
 			for _, keys := range vtxoKeys {
 				for _, v := range keys {
 					vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{v.Outpoint})
@@ -1963,12 +1899,6 @@ func (s *service) listenToScannerNotifications() {
 
 					if !vtxo.Unrolled {
 						go func() {
-							defer func() {
-								if r := recover(); r != nil {
-									log.Errorf("recovered from panic in markAsUnrolled: %v", r)
-								}
-							}()
-
 							if err := s.repoManager.Vtxos().UnrollVtxos(
 								ctx, []domain.Outpoint{vtxo.Outpoint},
 							); err != nil {
@@ -1984,14 +1914,6 @@ func (s *service) listenToScannerNotifications() {
 					if vtxo.Spent {
 						log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
 						go func() {
-							defer func() {
-								if r := recover(); r != nil {
-									log.Errorf("recovered from panic in reactToFraud: %v", r)
-									// log the stack trace
-									log.Errorf("stack trace: %s", string(debug.Stack()))
-								}
-							}()
-
 							if err := s.reactToFraud(ctx, vtxo, mutx); err != nil {
 								log.WithError(err).Warnf(
 									"failed to react to fraud for vtxo %s", vtxo.Outpoint.String(),
