@@ -45,10 +45,6 @@ type IndexerServiceClient interface {
 	// by addresses or by outpoints, and optionally filtered by spendable or spent only.
 	// The response may be paginated if the results span multiple pages.
 	GetVtxos(ctx context.Context, in *GetVtxosRequest, opts ...grpc.CallOption) (*GetVtxosResponse, error)
-	// GetTransactionHistory returns the list of transactions for the provided address.
-	// The tx history can be filtered by defining a start and/or end time.
-	// The response may be paginated if the results span multiple pages.
-	GetTransactionHistory(ctx context.Context, in *GetTransactionHistoryRequest, opts ...grpc.CallOption) (*GetTransactionHistoryResponse, error)
 	// GetVtxoChain returns the the chain of ark txs that starts from spending any vtxo leaf and ends
 	// with the creation of the provided vtxo outpoint.
 	// The response may be paginated if the results span multiple pages.
@@ -144,15 +140,6 @@ func (c *indexerServiceClient) GetVtxoTreeLeaves(ctx context.Context, in *GetVtx
 func (c *indexerServiceClient) GetVtxos(ctx context.Context, in *GetVtxosRequest, opts ...grpc.CallOption) (*GetVtxosResponse, error) {
 	out := new(GetVtxosResponse)
 	err := c.cc.Invoke(ctx, "/ark.v1.IndexerService/GetVtxos", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *indexerServiceClient) GetTransactionHistory(ctx context.Context, in *GetTransactionHistoryRequest, opts ...grpc.CallOption) (*GetTransactionHistoryResponse, error) {
-	out := new(GetTransactionHistoryResponse)
-	err := c.cc.Invoke(ctx, "/ark.v1.IndexerService/GetTransactionHistory", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -267,10 +254,6 @@ type IndexerServiceServer interface {
 	// by addresses or by outpoints, and optionally filtered by spendable or spent only.
 	// The response may be paginated if the results span multiple pages.
 	GetVtxos(context.Context, *GetVtxosRequest) (*GetVtxosResponse, error)
-	// GetTransactionHistory returns the list of transactions for the provided address.
-	// The tx history can be filtered by defining a start and/or end time.
-	// The response may be paginated if the results span multiple pages.
-	GetTransactionHistory(context.Context, *GetTransactionHistoryRequest) (*GetTransactionHistoryResponse, error)
 	// GetVtxoChain returns the the chain of ark txs that starts from spending any vtxo leaf and ends
 	// with the creation of the provided vtxo outpoint.
 	// The response may be paginated if the results span multiple pages.
@@ -325,9 +308,6 @@ func (UnimplementedIndexerServiceServer) GetVtxoTreeLeaves(context.Context, *Get
 }
 func (UnimplementedIndexerServiceServer) GetVtxos(context.Context, *GetVtxosRequest) (*GetVtxosResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVtxos not implemented")
-}
-func (UnimplementedIndexerServiceServer) GetTransactionHistory(context.Context, *GetTransactionHistoryRequest) (*GetTransactionHistoryResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetTransactionHistory not implemented")
 }
 func (UnimplementedIndexerServiceServer) GetVtxoChain(context.Context, *GetVtxoChainRequest) (*GetVtxoChainResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVtxoChain not implemented")
@@ -485,24 +465,6 @@ func _IndexerService_GetVtxos_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _IndexerService_GetTransactionHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTransactionHistoryRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(IndexerServiceServer).GetTransactionHistory(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/ark.v1.IndexerService/GetTransactionHistory",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexerServiceServer).GetTransactionHistory(ctx, req.(*GetTransactionHistoryRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _IndexerService_GetVtxoChain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetVtxoChainRequest)
 	if err := dec(in); err != nil {
@@ -648,10 +610,6 @@ var IndexerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetVtxos",
 			Handler:    _IndexerService_GetVtxos_Handler,
-		},
-		{
-			MethodName: "GetTransactionHistory",
-			Handler:    _IndexerService_GetTransactionHistory_Handler,
 		},
 		{
 			MethodName: "GetVtxoChain",

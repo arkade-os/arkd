@@ -324,65 +324,6 @@
         ]
       }
     },
-    "/v1/history/{address}": {
-      "get": {
-        "summary": "GetTransactionHistory returns the list of transactions for the provided address.\nThe tx history can be filtered by defining a start and/or end time.\nThe response may be paginated if the results span multiple pages.",
-        "operationId": "IndexerService_GetTransactionHistory",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetTransactionHistoryResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "address",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "startTime",
-            "in": "query",
-            "required": false,
-            "type": "string",
-            "format": "int64"
-          },
-          {
-            "name": "endTime",
-            "in": "query",
-            "required": false,
-            "type": "string",
-            "format": "int64"
-          },
-          {
-            "name": "page.size",
-            "in": "query",
-            "required": false,
-            "type": "integer",
-            "format": "int32"
-          },
-          {
-            "name": "page.index",
-            "in": "query",
-            "required": false,
-            "type": "integer",
-            "format": "int32"
-          }
-        ],
-        "tags": [
-          "IndexerService"
-        ]
-      }
-    },
     "/v1/script/subscribe": {
       "post": {
         "summary": "SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo\nscripts. It can also be used to update an existing subscribtion by adding new scripts to it.",
@@ -830,21 +771,6 @@
         }
       }
     },
-    "v1GetTransactionHistoryResponse": {
-      "type": "object",
-      "properties": {
-        "history": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/v1IndexerTxHistoryRecord"
-          }
-        },
-        "page": {
-          "$ref": "#/definitions/v1IndexerPageResponse"
-        }
-      }
-    },
     "v1GetVirtualTxsResponse": {
       "type": "object",
       "properties": {
@@ -1039,43 +965,6 @@
           "type": "string"
         }
       }
-    },
-    "v1IndexerTxHistoryRecord": {
-      "type": "object",
-      "properties": {
-        "commitmentTxid": {
-          "type": "string"
-        },
-        "virtualTxid": {
-          "type": "string"
-        },
-        "type": {
-          "$ref": "#/definitions/v1IndexerTxType"
-        },
-        "amount": {
-          "type": "string",
-          "format": "uint64"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "int64"
-        },
-        "isSettled": {
-          "type": "boolean"
-        },
-        "settledBy": {
-          "type": "string"
-        }
-      }
-    },
-    "v1IndexerTxType": {
-      "type": "string",
-      "enum": [
-        "INDEXER_TX_TYPE_UNSPECIFIED",
-        "INDEXER_TX_TYPE_RECEIVED",
-        "INDEXER_TX_TYPE_SENT"
-      ],
-      "default": "INDEXER_TX_TYPE_UNSPECIFIED"
     },
     "v1IndexerVtxo": {
       "type": "object",

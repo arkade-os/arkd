@@ -67,16 +67,6 @@ service IndexerService {
       get: "/v1/vtxos"
     };
   };
-
-  
-  // GetTransactionHistory returns the list of transactions for the provided address.
-  // The tx history can be filtered by defining a start and/or end time.
-  // The response may be paginated if the results span multiple pages.
-  rpc GetTransactionHistory(GetTransactionHistoryRequest) returns (GetTransactionHistoryResponse) {
-    option (google.api.http) = {
-      get: "/v1/history/{address}"
-    };
-  };
   
   // GetVtxoChain returns the the chain of ark txs that starts from spending any vtxo leaf and ends
   // with the creation of the provided vtxo outpoint.
@@ -214,17 +204,6 @@ message GetVtxosRequest {
 }
 message GetVtxosResponse {
   repeated IndexerVtxo vtxos = 1;
-  IndexerPageResponse page = 2;
-}
-
-message GetTransactionHistoryRequest {
-  string address = 1;
-  int64 start_time = 2;
-  int64 end_time = 3;
-  IndexerPageRequest page = 4;
-}
-message GetTransactionHistoryResponse {
-  repeated IndexerTxHistoryRecord history = 1;
   IndexerPageResponse page = 2;
 }
 

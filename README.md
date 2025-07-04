@@ -59,31 +59,31 @@ The `arkd` server can be configured using environment variables.
 
 | Environment Variable | Description | Default |
 |---------------------|-------------|--------|
-| `ARK_NETWORK` | Bitcoin network (bitcoin, testnet3, regtest, signet, mutinynet) | `bitcoin` |
-| `ARK_DATADIR` | Directory to store data | App data directory |
-| `ARK_PORT` | Port to listen on | `7070` |
-| `ARK_LOG_LEVEL` | Logging level (0-6, where 6 is trace) | `4` (info) |
-| `ARK_ROUND_INTERVAL` | Interval between rounds in seconds | `30` |
-| `ARK_DB_TYPE` | Database type (sqlite, badger) | `sqlite` |
-| `ARK_EVENT_DB_TYPE` | Event database type (badger) | `badger` |
-| `ARK_SCHEDULER_TYPE` | Scheduler type (gocron, block) | `gocron` |
-| `ARK_TX_BUILDER_TYPE` | Transaction builder type (covenantless) | `covenantless` |
-| `ARK_VTXO_TREE_EXPIRY` | VTXO tree expiry in seconds | `604672` (7 days) |
-| `ARK_UNILATERAL_EXIT_DELAY` | Unilateral exit delay in seconds | `86400` (24 hours) |
-| `ARK_BOARDING_EXIT_DELAY` | Boarding exit delay in seconds | `7776000` (3 months) |
-| `ARK_ESPLORA_URL` | Esplora API URL | `https://blockstream.info/api` |
-| `ARK_NEUTRINO_PEER` | Neutrino peer address | - |
-| `ARK_BITCOIND_RPC_USER` | Bitcoin Core RPC username | - |
-| `ARK_BITCOIND_RPC_PASS` | Bitcoin Core RPC password | - |
-| `ARK_BITCOIND_RPC_HOST` | Bitcoin Core RPC host | - |
-| `ARK_BITCOIND_ZMQ_BLOCK` | Bitcoin Core ZMQ block endpoint | - |
-| `ARK_BITCOIND_ZMQ_TX` | Bitcoin Core ZMQ transaction endpoint | - |
-| `ARK_NO_MACAROONS` | Disable macaroon authentication | `false` |
-| `ARK_NO_TLS` | Disable TLS | `true` |
-| `ARK_UNLOCKER_TYPE` | Wallet unlocker type (env, file) to enable auto-unlock | - |
-| `ARK_UNLOCKER_FILE_PATH` | Path to unlocker file | - |
-| `ARK_UNLOCKER_PASSWORD` | Wallet unlocker password | - |
-| `ARK_ROUND_MAX_PARTICIPANTS_COUNT` | Maximum number of participants per round | `128` |
+| `ARKD_NETWORK` | Bitcoin network (bitcoin, testnet3, regtest, signet, mutinynet) | `bitcoin` |
+| `ARKD_DATADIR` | Directory to store data | App data directory |
+| `ARKD_PORT` | Port to listen on | `7070` |
+| `ARKD_LOG_LEVEL` | Logging level (0-6, where 6 is trace) | `4` (info) |
+| `ARKD_ROUND_INTERVAL` | Interval between rounds in seconds | `30` |
+| `ARKD_DB_TYPE` | Database type (sqlite, badger) | `sqlite` |
+| `ARKD_EVENT_DB_TYPE` | Event database type (badger) | `badger` |
+| `ARKD_SCHEDULER_TYPE` | Scheduler type (gocron, block) | `gocron` |
+| `ARKD_TX_BUILDER_TYPE` | Transaction builder type (covenantless) | `covenantless` |
+| `ARKD_VTXO_TREE_EXPIRY` | VTXO tree expiry in seconds | `604672` (7 days) |
+| `ARKD_UNILATERAL_EXIT_DELAY` | Unilateral exit delay in seconds | `86400` (24 hours) |
+| `ARKD_BOARDING_EXIT_DELAY` | Boarding exit delay in seconds | `7776000` (3 months) |
+| `ARKD_ESPLORA_URL` | Esplora API URL | `https://blockstream.info/api` |
+| `ARKD_NEUTRINO_PEER` | Neutrino peer address | - |
+| `ARKD_BITCOIND_RPC_USER` | Bitcoin Core RPC username | - |
+| `ARKD_BITCOIND_RPC_PASS` | Bitcoin Core RPC password | - |
+| `ARKD_BITCOIND_RPC_HOST` | Bitcoin Core RPC host | - |
+| `ARKD_BITCOIND_ZMQ_BLOCK` | Bitcoin Core ZMQ block endpoint | - |
+| `ARKD_BITCOIND_ZMQ_TX` | Bitcoin Core ZMQ transaction endpoint | - |
+| `ARKD_NO_MACAROONS` | Disable macaroon authentication | `false` |
+| `ARKD_NO_TLS` | Disable TLS | `true` |
+| `ARKD_UNLOCKER_TYPE` | Wallet unlocker type (env, file) to enable auto-unlock | - |
+| `ARKD_UNLOCKER_FILE_PATH` | Path to unlocker file | - |
+| `ARKD_UNLOCKER_PASSWORD` | Wallet unlocker password | - |
+| `ARKD_ROUND_MAX_PARTICIPANTS_COUNT` | Maximum number of participants per round | `128` |
 
 
 ## Provisioning
@@ -96,7 +96,7 @@ By default, `arkd` stores all data in the following location:
 - macOS: `~/Library/Application Support/arkd/`
 - Windows: `%APPDATA%\arkd\`
 
-You can specify a custom data directory using the `ARK_DATADIR` environment variable.
+You can specify a custom data directory using the `ARKD_DATADIR` environment variable.
 
 ### Connecting to Bitcoin
 
@@ -105,16 +105,16 @@ You can specify a custom data directory using the `ARK_DATADIR` environment vari
 To connect `arkd` to your own Bitcoin Core node via RPC, use these environment variables:
 
 ```sh
-export ARK_BITCOIND_RPC_USER=admin1
-export ARK_BITCOIND_RPC_PASS=123
-export ARK_BITCOIND_RPC_HOST=localhost:18443
+export ARKD_BITCOIND_RPC_USER=admin1
+export ARKD_BITCOIND_RPC_PASS=123
+export ARKD_BITCOIND_RPC_HOST=localhost:18443
 ```
 
 For ZMQ notifications (recommended for better performance):
 
 ```sh
-export ARK_BITCOIND_ZMQ_BLOCK=tcp://localhost:28332
-export ARK_BITCOIND_ZMQ_TX=tcp://localhost:28333
+export ARKD_BITCOIND_ZMQ_BLOCK=tcp://localhost:28332
+export ARKD_BITCOIND_ZMQ_TX=tcp://localhost:28333
 ```
 
 #### Option 2: Connect via Neutrino
@@ -122,7 +122,7 @@ export ARK_BITCOIND_ZMQ_TX=tcp://localhost:28333
 For a lighter setup using Neutrino (BIP 157/158):
 
 ```sh
-export ARK_NEUTRINO_PEER=yourhost:p2p_port_bitcoin
+export ARKD_NEUTRINO_PEER=yourhost:p2p_port_bitcoin
 ```
 
 ### Wallet Setup
@@ -159,6 +159,11 @@ export ARK_NEUTRINO_PEER=yourhost:p2p_port_bitcoin
    arkd wallet balance
    ```
 
+7. Withdraw funds from your wallet:
+   ```sh
+   arkd wallet withdraw --address <address> --amount <sats>
+   ```
+
 For a complete list of available commands and options:
    ```sh
    arkd help
@@ -166,29 +171,20 @@ For a complete list of available commands and options:
 
 ## Repository Structure
 
-- [`api-spec`](./api-spec/): Ark Protocol Buffer API specification
-- [`server`](./server/): `arkd` Ark server - the always-on daemon
-
-*Note: This repository now focuses only on the server component (`arkd`). The client, common, and pkg directories are currently maintained but not actively developed in this repository.*
+- [`api-spec`](./api-spec/): Ark Protocol Buffer API specification.
+- [`pkg`](./pkg/): collection of reusable packages and services.
+  - [ark-lib][./pkg/ark-lib]: collection of data structures and functions reusable by arkd and sdk.
+  - [arkd-wallet][./pkg/arkd-wallet]: bitcoin wallet service used as liquidity provider and signer.
+  - [ark-cli][./pkg/ark-cli]: ark offchain and onchain wallet as command line interface.
 
 ## Development
-
-For detailed development instructions, including running tests, and contributing to the implementation, please refer to the README file in the `server` directory.
 
 ### Compile binary from source
 
 To compile the `arkd` binary from source, you can use the following Make commands from the root of the repository:
 
-- `make build-server`: Builds the `arkd` binary
-- `make build`: Alias for `make build-server`
-
-For example, to build the server binary, run:
-
-```sh
-make build
-```
-
-This will compile the `arkd` binary for your current architecture. For more detailed build instructions and options, please refer to the README file in the `server` directory.
+- `make build`: Builds the `arkd` binary for your platform.
+- `make build-all`: Builds the `arkd` binary for all platforms.
 
 ### Contributing Guidelines
 
@@ -206,21 +202,54 @@ This will compile the `arkd` binary for your current architecture. For more deta
 
    ```sh
    git clone https://github.com/arkade-os/arkd.git
-   cd ark
+   cd arkd
    ```
 
 4. Install dependencies:
 
    ```sh
-   go work sync
+   go mod download
    ```
 
-5. Build the project:
+5. Lint and format code:
 
    ```sh
-   cd server
-   make build
+   make lint
    ```
+
+6. Run unit tests:
+
+   ```sh
+   make test
+   ```
+
+7. Run integration tests:
+
+   ```sh
+   make docker-run
+   make integrationtest
+   make docker-stop
+   ```
+
+8. Run arkd wallet in dev mode:
+
+   ```sh
+   # with neutrino
+   make run-wallet-neutrino
+   # or with bitcoind
+   make run-wallet-bitcoind
+   ```
+
+9. Run arkd in dev mode:
+
+   ```sh
+   # with sqlite db and inmemory cache
+   make run-light
+   # or with postgres db and redis cache
+   make run
+   ```
+
+In the `envs/` folder you can find the several dev-mode configurations for `arkd` and `arkd-wallet`.
 
 ## Support
 

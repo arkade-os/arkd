@@ -19,31 +19,41 @@ jobs:
     - name: Build binaries
       run: make build-all
 
-    - name: Upload server binaries
+    - name: Upload arkd binaries
       uses: actions/upload-artifact@v4
       with:
-        name: server-binaries
-        path: ./server/build
+        name: arkd-binaries
+        path: ./build
         if-no-files-found: error
         retention-days: 5
         compression-level: 6
         overwrite: true
 
-    - name: Upload SDK binaries
+    - name: Upload arkd wallet binaries
       uses: actions/upload-artifact@v4
       with:
-        name: sdk-binaries
-        path: ./pkg/client-sdk/build
+        name: arkd-wallet--binaries
+        path: ./pkg/arkd-wallet/build
         if-no-files-found: error
         retention-days: 5
         compression-level: 6
         overwrite: true
     
-    - name: Upload client binaries
+    - name: Upload ark lib binaries
       uses: actions/upload-artifact@v4
       with:
-        name: client-binaries
-        path: ./client/build
+        name: ark-lib-binaries
+        path: ./pkg/ark-lib/build
+        if-no-files-found: error
+        retention-days: 5
+        compression-level: 6
+        overwrite: true
+
+    - name: Upload ark cli binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: ark-cli-binaries
+        path: ./pkg/ark-cli/build
         if-no-files-found: error
         retention-days: 5
         compression-level: 6
