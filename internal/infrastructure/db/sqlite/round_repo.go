@@ -662,12 +662,9 @@ func createUpsertTransactionParams(
 		Txid:     treeTx.Txid,
 	}
 
-	if txType == "tree" || txType == "connector" {
+	if (txType == "tree" || txType == "connector") && len(treeTx.Children) > 0 {
 		str, _ := json.Marshal(treeTx.Children)
-		params.Children = sql.NullString{
-			String: string(str),
-			Valid:  true,
-		}
+		params.Children = sql.NullString{String: string(str), Valid: true}
 	}
 
 	return params

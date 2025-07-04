@@ -238,7 +238,7 @@ func (v *vtxoRepository) SettleVtxos(
 				ctx,
 				queries.UpdateVtxoSettledParams{
 					SpentBy:   sql.NullString{String: spentBy, Valid: len(spentBy) > 0},
-					SettledBy: sql.NullString{String: settledBy, Valid: true},
+					SettledBy: sql.NullString{String: settledBy, Valid: len(settledBy) > 0},
 					Txid:      vtxo.Txid,
 					Vout:      int32(vtxo.VOut),
 				},
