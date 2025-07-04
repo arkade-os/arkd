@@ -2,7 +2,7 @@ version: v1
 managed:
   enabled: true
   go_package_prefix:
-    default: github.com/ark-network/ark/api-spec/protobuf/gen
+    default: github.com/arkade-os/api-spec/protobuf/gen
     except:
       - buf.build/googleapis/googleapis
 plugins:

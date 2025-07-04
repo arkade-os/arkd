@@ -508,9 +508,11 @@
     "v1Output": {
       "type": "object",
       "properties": {
-        "address": {
-          "type": "string",
-          "title": "onchain or off-chain"
+        "vtxoScript": {
+          "type": "string"
+        },
+        "onchainAddress": {
+          "type": "string"
         },
         "amount": {
           "type": "string",
