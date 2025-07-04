@@ -2,7 +2,7 @@ services:
   arkd-wallet:
     build:
       context: .
-      dockerfile: pkg/ark-wallet/Dockerfile
+      dockerfile: arkdwallet.Dockerfile
     container_name: arkd-wallet
     ports:
       - "6060:6060"
