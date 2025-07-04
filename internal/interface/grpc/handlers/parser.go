@@ -116,6 +116,22 @@ func parseSignatures(serializedSignatures string) (tree.TreePartialSigs, error) 
 	return signatures, nil
 }
 
+// convert sats to string BTC
+func convertSatsToBTCStr(sats uint64) string {
+	btc := float64(sats) * 1e-8
+	return fmt.Sprintf("%.8f", btc)
+}
+
+func toP2TR(pubkey string) string {
+	// nolint
+	buf, _ := hex.DecodeString(pubkey)
+	// nolint
+	key, _ := schnorr.ParsePubKey(buf)
+	// nolint
+	outScript, _ := script.P2TRScript(key)
+	return hex.EncodeToString(outScript)
+}
+
 // From app type to interface type
 
 type vtxoList []domain.Vtxo
@@ -221,18 +237,18 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 	return list
 }
 
-// convert sats to string BTC
-func convertSatsToBTCStr(sats uint64) string {
-	btc := float64(sats) * 1e-8
-	return fmt.Sprintf("%.8f", btc)
+type marketHour struct {
+	t *application.NextMarketHour
 }
 
-func toP2TR(pubkey string) string {
-	// nolint
-	buf, _ := hex.DecodeString(pubkey)
-	// nolint
-	key, _ := schnorr.ParsePubKey(buf)
-	// nolint
-	outScript, _ := script.P2TRScript(key)
-	return hex.EncodeToString(outScript)
+func (mh marketHour) toProto() *arkv1.MarketHour {
+	if mh.t == nil {
+		return nil
+	}
+	return &arkv1.MarketHour{
+		NextStartTime: mh.t.StartTime.Unix(),
+		NextEndTime:   mh.t.EndTime.Unix(),
+		Period:        int64(mh.t.Period),
+		RoundInterval: int64(mh.t.RoundInterval),
+	}
 }

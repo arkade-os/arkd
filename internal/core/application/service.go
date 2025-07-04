@@ -97,7 +97,8 @@ func NewService(
 		return nil, fmt.Errorf("failed to get market hours from db: %w", err)
 	}
 
-	if marketHour == nil {
+	if marketHour == nil && !marketHourStartTime.IsZero() && !marketHourEndTime.IsZero() &&
+		int(marketHourPeriod) > 0 && marketHourRoundInterval > 0 {
 		marketHour = domain.NewMarketHour(
 			marketHourStartTime, marketHourEndTime, marketHourPeriod, marketHourRoundInterval,
 		)
@@ -1154,12 +1155,21 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 		return nil, err
 	}
 
-	marketHourNextStart, marketHourNextEnd, err := calcNextMarketHour(
-		marketHourConfig.StartTime, marketHourConfig.EndTime,
-		marketHourConfig.Period, marketHourDelta, time.Now(),
-	)
-	if err != nil {
-		return nil, err
+	var nextMarketHour *NextMarketHour
+	if marketHourConfig != nil {
+		marketHourNextStart, marketHourNextEnd, err := calcNextMarketHour(
+			marketHourConfig.StartTime, marketHourConfig.EndTime,
+			marketHourConfig.Period, marketHourDelta, time.Now(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		nextMarketHour = &NextMarketHour{
+			StartTime:     marketHourNextStart,
+			EndTime:       marketHourNextEnd,
+			Period:        time.Duration(marketHourConfig.Period) * time.Minute,
+			RoundInterval: time.Duration(marketHourConfig.RoundInterval) * time.Second,
+		}
 	}
 
 	return &ServiceInfo{
@@ -1171,16 +1181,11 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 		Network:             s.network.Name,
 		Dust:                dust,
 		ForfeitAddress:      forfeitAddr,
-		NextMarketHour: &NextMarketHour{
-			StartTime:     marketHourNextStart,
-			EndTime:       marketHourNextEnd,
-			Period:        marketHourConfig.Period,
-			RoundInterval: marketHourConfig.RoundInterval,
-		},
-		UtxoMinAmount: s.utxoMinAmount,
-		UtxoMaxAmount: s.utxoMaxAmount,
-		VtxoMinAmount: s.vtxoMinSettlementAmount,
-		VtxoMaxAmount: s.vtxoMaxAmount,
+		NextMarketHour:      nextMarketHour,
+		UtxoMinAmount:       s.utxoMinAmount,
+		UtxoMaxAmount:       s.utxoMaxAmount,
+		VtxoMinAmount:       s.vtxoMinSettlementAmount,
+		VtxoMaxAmount:       s.vtxoMaxAmount,
 	}, nil
 }
 

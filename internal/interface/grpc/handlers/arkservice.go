@@ -59,17 +59,12 @@ func (h *handler) GetInfo(
 		Network:             info.Network,
 		Dust:                int64(info.Dust),
 		ForfeitAddress:      info.ForfeitAddress,
-		MarketHour: &arkv1.MarketHour{
-			NextStartTime: info.NextMarketHour.StartTime.Unix(),
-			NextEndTime:   info.NextMarketHour.EndTime.Unix(),
-			Period:        int64(info.NextMarketHour.Period.Seconds()),
-			RoundInterval: int64(info.NextMarketHour.RoundInterval.Seconds()),
-		},
-		Version:       h.version,
-		UtxoMinAmount: info.UtxoMinAmount,
-		UtxoMaxAmount: info.UtxoMaxAmount,
-		VtxoMinAmount: info.VtxoMinAmount,
-		VtxoMaxAmount: info.VtxoMaxAmount,
+		MarketHour:          marketHour{info.NextMarketHour}.toProto(),
+		Version:             h.version,
+		UtxoMinAmount:       info.UtxoMinAmount,
+		UtxoMaxAmount:       info.UtxoMaxAmount,
+		VtxoMinAmount:       info.VtxoMinAmount,
+		VtxoMaxAmount:       info.VtxoMaxAmount,
 	}, nil
 }
 
