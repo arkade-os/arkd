@@ -344,6 +344,7 @@ func (s *service) SubmitOffchainTx(
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to parse ark tx: %s", err)
 	}
+	txid := ptx.UnsignedTx.TxID()
 
 	offchainTx := domain.NewOffchainTx()
 	var changes []domain.Event
@@ -355,7 +356,7 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if err := s.repoManager.Events().Save(
-			ctx, domain.OffchainTxTopic, arkTxid, changes,
+			ctx, domain.OffchainTxTopic, txid, changes,
 		); err != nil {
 			log.WithError(err).Fatal("failed to save offchain tx events")
 		}
@@ -390,7 +391,7 @@ func (s *service) SubmitOffchainTx(
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
 	}
 
-	event, err := offchainTx.Request(arkTxid, signedArkTx, checkpointTxs)
+	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -727,9 +728,9 @@ func (s *service) SubmitOffchainTx(
 
 	// verify the ark tx integrity
 	rebuiltTxid := rebuiltArkTx.UnsignedTx.TxID()
-	if rebuiltTxid != arkTxid {
+	if rebuiltTxid != txid {
 		return nil, "", "", fmt.Errorf(
-			"invalid ark tx: epxected txid %s got %s", rebuiltTxid, arkTxid,
+			"invalid ark tx: epxected txid %s got %s", rebuiltTxid, txid,
 		)
 	}
 
@@ -759,11 +760,8 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	change, err := offchainTx.Accept(
-		fullySignedArkTx,
-		signedCheckpointTxsMap,
-		commitmentTxsByCheckpointTxid,
-		rootCommitmentTxid,
-		expiration,
+		fullySignedArkTx, signedCheckpointTxsMap,
+		commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiration,
 	)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to accept offchain tx: %s", err)
@@ -772,13 +770,13 @@ func (s *service) SubmitOffchainTx(
 	s.cache.OffchainTxs().Add(*offchainTx)
 
 	finalArkTx = fullySignedArkTx
-	signedCheckpointTxs = make([]string, 0)
+	signedCheckpointTxs = make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
 		signedCheckpointTxs = append(signedCheckpointTxs, tx)
 	}
-	arkTxid = ptx.UnsignedTx.TxID()
+	arkTxid = txid
 
-	return signedCheckpointTxs, finalArkTx, arkTxid, nil
+	return
 }
 
 func (s *service) FinalizeOffchainTx(
