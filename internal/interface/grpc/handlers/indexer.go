@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
+	arkv1 "github.com/arkade-os/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -601,13 +601,6 @@ func parseTxids(txids []string) ([]string, error) {
 		}
 	}
 	return txids, nil
-}
-
-func parseTimestamp(timestamp int64) (int64, error) {
-	if timestamp <= 0 {
-		return 0, nil
-	}
-	return timestamp, nil
 }
 
 func protoPage(page application.PageResp) *arkv1.IndexerPageResponse {

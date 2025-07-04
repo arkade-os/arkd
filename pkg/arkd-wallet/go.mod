@@ -6,10 +6,10 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
-replace github.com/ark-network/ark/api-spec => ../../api-spec
+replace github.com/arkade-os/api-spec => ../../api-spec
 
 require (
-	github.com/ark-network/ark/api-spec v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/api-spec v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4

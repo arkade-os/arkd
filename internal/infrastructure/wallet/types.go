@@ -1,6 +1,6 @@
 package walletclient
 
-import arkwalletv1 "github.com/ark-network/ark/api-spec/protobuf/gen/arkwallet/v1"
+import arkwalletv1 "github.com/arkade-os/api-spec/protobuf/gen/arkwallet/v1"
 
 type txInput struct {
 	txId   string

@@ -3,7 +3,7 @@ package handlers
 import (
 	"context"
 
-	arkwalletv1 "github.com/ark-network/ark/api-spec/protobuf/gen/arkwallet/v1"
+	arkwalletv1 "github.com/arkade-os/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core"
 )
 

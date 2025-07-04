@@ -5,37 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 
-	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
+	arkv1 "github.com/arkade-os/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/bip322"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
 )
 
 // From interface type to app type
-
-func parseAddress(addr string) (*arklib.Address, error) {
-	if len(addr) <= 0 {
-		return nil, fmt.Errorf("missing address")
-	}
-	return arklib.DecodeAddressV0(addr)
-}
-
-func parseArkAddress(addr string) (string, error) {
-	a, err := parseAddress(addr)
-	if err != nil {
-		return "", err
-	}
-	if _, err := btcutil.DecodeAddress(addr, nil); err == nil {
-		return "", fmt.Errorf("must be an ark address")
-	}
-	return hex.EncodeToString(schnorr.SerializePubKey(a.VtxoTapKey)), nil
-}
 
 func parseIntent(intent *arkv1.Bip322Signature) (*bip322.Signature, *bip322.IntentMessage, error) {
 	if intent == nil {

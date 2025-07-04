@@ -4,7 +4,7 @@ go 1.23.1
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 
-replace github.com/ark-network/ark/api-spec => ./api-spec
+replace github.com/arkade-os/api-spec => ./api-spec
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ./pkg/ark-lib
 
@@ -16,12 +16,12 @@ replace github.com/arkade-os/arkd/pkg/kvdb => ./pkg/kvdb
 
 require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
-	github.com/ark-network/ark/api-spec v0.0.0-20250408105042-bbed73cb2ecb
-	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-20250704014557-808f9b2a23fc
+	github.com/arkade-os/api-spec v0.0.0-20250408105042-bbed73cb2ecb
+	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-20250704062155-e149f6ce07d8
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-20250606113434-241d3e1ec7cb
-	github.com/arkade-os/go-sdk v0.6.3-0.20250704031925-839e47fa96de
+	github.com/arkade-os/go-sdk v0.6.3-0.20250704064303-2c1214682427
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/dgraph-io/badger/v4 v4.3.0
 	github.com/go-co-op/gocron v1.37.0
@@ -64,7 +64,6 @@ require (
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/aead/siphash v1.0.1 // indirect
-	github.com/ark-network/ark/common v0.0.0-20250704014557-808f9b2a23fc // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.4 // indirect
@@ -154,7 +153,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/miekg/dns v1.1.61 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/sys/user v0.3.0 // indirect
+	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect

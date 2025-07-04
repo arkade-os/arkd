@@ -3,7 +3,7 @@ package permissions
 import (
 	"fmt"
 
-	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
+	arkv1 "github.com/arkade-os/api-spec/protobuf/gen/ark/v1"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )

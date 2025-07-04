@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	arkv1 "github.com/ark-network/ark/api-spec/protobuf/gen/ark/v1"
+	arkv1 "github.com/arkade-os/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/interface/grpc/permissions"
 	"github.com/stretchr/testify/require"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"

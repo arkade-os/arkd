@@ -28,9 +28,9 @@ pushd $PARENT_PATH
 mkdir -p build
 
 # Build the binary with version information
-GO111MODULE=on go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/ark-lib-$GOOS-$GOARCH ./pkg/ark-lib
+GO111MODULE=on go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/ark-$GOOS-$GOARCH main.go
 
-echo "Build complete: build/ark-lib-$GOOS-$GOARCH"
+echo "Build complete: build/ark-$GOOS-$GOARCH"
 
 # Return to the original directory
 popd

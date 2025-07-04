@@ -28,7 +28,7 @@ pushd $PARENT_PATH
 mkdir -p build
 
 # Build the binary with version information
-GO111MODULE=on go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/ard-wallet-$GOOS-$GOARCH ./cmd/arkd-wallet
+GO111MODULE=on go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/arkd-wallet-$GOOS-$GOARCH ./cmd/arkd-wallet
 
 echo "Build complete: build/arkd-wallet-$GOOS-$GOARCH"
 

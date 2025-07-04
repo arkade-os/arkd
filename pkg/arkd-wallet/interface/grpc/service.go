@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	arkwalletv1 "github.com/ark-network/ark/api-spec/protobuf/gen/arkwallet/v1"
+	arkwalletv1 "github.com/arkade-os/api-spec/protobuf/gen/arkwallet/v1"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/config"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/interceptors"

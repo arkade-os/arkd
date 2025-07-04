@@ -12,18 +12,13 @@ build:
 
 ## build-cli: build ark cli for your platforms
 build-cli:
-	@echo "Building ark-cli binary..."
-	@bash ./scripts/build-ark-cli
+	@echo "Building ark cli binary..."
+	@bash ./pkg/ark-cli/scripts/build
 
 ## build-wallet: build arkd wallet for your platforms
 build-wallet:
-	@echo "Building ark-cli binary..."
+	@echo "Building arkd wallet binary..."
 	@bash ./scripts/build-arkd-wallet
-
-## build-lib: build ark library for your platforms
-build-lib:
-	@echo "Building ark-cli binary..."
-	@bash ./scripts/build-ark-lib
 
 # build-all: builds arkd binary for all platforms
 build-all:

@@ -10,7 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	log "github.com/sirupsen/logrus"
 
-	arkwalletv1 "github.com/ark-network/ark/api-spec/protobuf/gen/arkwallet/v1"
+	arkwalletv1 "github.com/arkade-os/api-spec/protobuf/gen/arkwallet/v1"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

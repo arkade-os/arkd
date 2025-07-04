@@ -1,11 +1,11 @@
 # arkd
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/ark-network/ark)](https://github.com/ark-network/ark/releases)
-[![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fark--network%2Fark-blue?logo=docker)](https://github.com/ark-network/ark/pkgs/container/ark)
-[![Integration](https://github.com/ark-network/ark/actions/workflows/ark.integration.yaml/badge.svg)](https://github.com/ark-network/ark/actions/workflows/ark.integration.yaml)
-[![ci_unit](https://github.com/ark-network/ark/actions/workflows/ark.unit.yaml/badge.svg)](https://github.com/ark-network/ark/actions/workflows/ark.unit.yaml)
-[![GitHub](https://img.shields.io/github/license/ark-network/ark)](https://github.com/ark-network/ark/blob/master/LICENSE)
-![Go Reference](https://pkg.go.dev/badge/github.com/ark-network/ark.svg)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/arkade-os/arkd)](https://github.com/arkade-os/arkd/releases)
+[![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Fark--network%2Fark-blue?logo=docker)](https://github.com/arkade-os/arkd/pkgs/container/ark)
+[![Integration](https://github.com/arkade-os/arkd/actions/workflows/ark.integration.yaml/badge.svg)](https://github.com/arkade-os/arkd/actions/workflows/ark.integration.yaml)
+[![ci_unit](https://github.com/arkade-os/arkd/actions/workflows/ark.unit.yaml/badge.svg)](https://github.com/arkade-os/arkd/actions/workflows/ark.unit.yaml)
+[![GitHub](https://img.shields.io/github/license/arkade-os/arkd)](https://github.com/arkade-os/arkd/blob/master/LICENSE)
+![Go Reference](https://pkg.go.dev/badge/github.com/arkade-os/arkd.svg)
 
 > **⚠️ IMPORTANT DISCLAIMER: ALPHA SOFTWARE**
 > `arkd` is currently in alpha stage. This software is experimental and under active development.
@@ -41,7 +41,7 @@ In this documentation, you'll learn how to install and use `arkd`, a Bitcoin ser
 
 ### Installing from GitHub Releases
 
-1. Download the latest `arkd` binary from the [GitHub Releases page](https://github.com/ark-network/ark/releases)
+1. Download the latest `arkd` binary from the [GitHub Releases page](https://github.com/arkade-os/arkd/releases)
 
 2. Make the binary executable:
    ```sh
@@ -253,7 +253,7 @@ In the `envs/` folder you can find the several dev-mode configurations for `arkd
 
 ## Support
 
-If you encounter any issues or have questions, please file an issue on our [GitHub Issues](https://github.com/ark-network/ark/issues) page.
+If you encounter any issues or have questions, please file an issue on our [GitHub Issues](https://github.com/arkade-os/arkd/issues) page.
 
 ## Security
 
