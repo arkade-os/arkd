@@ -106,7 +106,7 @@ func NewService(
 		}
 	}
 
-	operatorSigningKey, err := btcec.GeneratePrivateKey()
+	operatorSigningKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate ephemeral key: %s", err)
 	}

@@ -80,7 +80,7 @@ func (r *arkRepository) GetRoundWithId(
 func (r *arkRepository) GetRoundWithCommitmentTxid(
 	ctx context.Context, txid string,
 ) (*domain.Round, error) {
-	query := badgerhold.Where("Txid").Eq(txid)
+	query := badgerhold.Where("CommitmentTxid").Eq(txid)
 	rounds, err := r.findRound(ctx, query)
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (r *arkRepository) GetTxsWithTxids(ctx context.Context, txids []string) ([]
 func (r *arkRepository) GetRoundsWithCommitmentTxids(
 	ctx context.Context, txids []string,
 ) (map[string]any, error) {
-	query := badgerhold.Where("Txid").In(txids)
+	query := badgerhold.Where("CommitmentTxid").In(txids)
 	rounds, err := r.findRound(ctx, query)
 	if err != nil {
 		return nil, err

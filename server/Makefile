@@ -18,7 +18,8 @@ clean:
 ## cov: generates coverage report
 cov:
 	@echo "Coverage..."
-	@go test -cover ./...
+	@go test -cover ./internal/...
+	@find ./pkg -name go.mod -execdir go test -cover ./... \;
 
 ## help: prints this help message
 help:
@@ -36,10 +37,11 @@ lint:
 	@golangci-lint run --fix
 
 ## run: run arkd in regtest
-run: clean
+run: clean pg redis-up
+	@sleep 1
 	@echo "Running arkd in regtest"
 	$(call setup_env, envs/dev.env)
-	go run ./cmd/arkd
+	@go run ./cmd/arkd
 
 ## run-light: run arkd in light mode
 run-light: clean
@@ -48,10 +50,12 @@ run-light: clean
 	go run ./cmd/arkd
 
 ## test: runs unit and component tests
-test:
+test: pgtest redis-up
+	@sleep 1
 	@echo "Running unit tests..."
 	@go test -v -count=1 -race ./internal/...
 	@find ./pkg -name go.mod -execdir go test -v -count=1 -race ./... \;
+	@$(MAKE) droppgtest && $(MAKE) redis-down
 
 ## vet: code analysis
 vet:
@@ -70,21 +74,25 @@ sqlc:
 #### Postgres database ####
 # pg: starts postgres db inside docker container
 pg:
-	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres 
+	@echo "Starting postgres db..."
+	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 || true
 
 # pgtest: starts postgres db inside docker container
 pgtest:
-	@docker run --name ark-pg-test -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres 
+	@echo "Starting postgres test db..."
+	@docker run --name ark-pg-test -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 
 
 # droppg: stop and remove postgres container
 droppg:
-	@docker stop ark-pg
-	@docker rm ark-pg
+	@echo "Stopping postgres db..."
+	@docker stop ark-pg > /dev/null 2>&1
+	@docker rm ark-pg > /dev/null 2>&1
 
 # droppgtest: stop and remove postgres container
 droppgtest:
-	@docker stop ark-pg-test
-	@docker rm ark-pg-test
+	@echo "Stopping postgres test db..."
+	@docker stop ark-pg-test > /dev/null 2>&1 || true
+	@docker rm ark-pg-test > /dev/null 2>&1 || true
 
 # psql: connects to postgres terminal running inside docker container
 psql:
@@ -102,9 +110,11 @@ pgsqlc:
 #### Redis database ####
 # redis-up: starts redis db inside docker container
 redis-up:
-	@docker run --name ark-redis -d -p 6379:6379 redis:7-alpine
+	@echo "Starting redis..."
+	@docker run --name ark-redis -d -p 6379:6379 redis:7-alpine > /dev/null 2>&1 || true
 
 # redis-down: stop and remove redis container
 redis-down:
-	@docker stop ark-redis || true
-	@docker rm ark-redis || true
+	@echo "Stopping redis..."
+	@docker stop ark-redis > /dev/null 2>&1 || true
+	@docker rm ark-redis > /dev/null 2>&1 || true
