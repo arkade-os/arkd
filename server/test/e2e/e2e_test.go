@@ -1285,7 +1285,9 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	scriptBytes, err := closure.Script()
 	require.NoError(t, err)
 
-	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(scriptBytes).TapHash())
+	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+	)
 	require.NoError(t, err)
 
 	ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
@@ -1545,7 +1547,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	checkpointScript, err := checkpointClosure.Script()
 	require.NoError(t, err)
 
-	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(scriptBytes).TapHash())
+	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+	)
 	require.NoError(t, err)
 
 	ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)

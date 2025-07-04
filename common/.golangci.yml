@@ -12,7 +12,3 @@ formatters:
   settings:
     golines:
       max-len: 100
-
-# (Optional) control exit code on issues:
-issues:
-  exit-code: 1   
