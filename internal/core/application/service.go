@@ -617,6 +617,8 @@ func (s *service) SubmitOffchainTx(
 
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
+	foundOpReturn := false
+
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
@@ -624,6 +626,14 @@ func (s *service) SubmitOffchainTx(
 			}
 			foundAnchor = true
 			continue
+		}
+
+		// verify we don't have multiple OP_RETURN outputs
+		if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
+			if foundOpReturn {
+				return nil, "", "", fmt.Errorf("invalid tx, multiple op return outputs")
+			}
+			foundOpReturn = true
 		}
 
 		if s.vtxoMaxAmount >= 0 {
