@@ -238,7 +238,7 @@ func walletWithdrawAction(ctx *cli.Context) error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/withdraw", baseURL)
+	url := fmt.Sprintf("%s/v1/admin/wallet/withdraw", baseURL)
 	body := fmt.Sprintf(`{"address": "%s", "amount": %d}`, address, amount)
 
 	txid, err := post[string](url, body, "txid", macaroon, tlsCertPath)
