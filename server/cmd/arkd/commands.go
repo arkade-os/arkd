@@ -21,7 +21,6 @@ var (
 			walletUnlockCmd,
 			walletAddressCmd,
 			walletBalanceCmd,
-			createNoteCmd,
 			walletWithdrawCmd,
 		},
 	}
@@ -58,7 +57,7 @@ var (
 		Action: walletWithdrawAction,
 		Flags:  []cli.Flag{withdrawAmountFlag, withdrawAddressFlag},
 	}
-	createNoteCmd = &cli.Command{
+	noteCmd = &cli.Command{
 		Name:   "note",
 		Usage:  "Create a credit note",
 		Action: createNoteAction,
@@ -98,7 +97,7 @@ var (
 		Flags:  []cli.Flag{beforeDateFlag, afterDateFlag},
 		Action: roundsInTimeRangeAction,
 	}
-	getMarketHourCmd = &cli.Command{
+	marketHourCmd = &cli.Command{
 		Name:        "market-hour",
 		Usage:       "Get or update the market hour configuration",
 		Subcommands: cli.Commands{updateMarketHourCmd},

@@ -71,11 +71,12 @@ func main() {
 	app.Commands = append(
 		app.Commands,
 		walletCmd,
+		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
-		getMarketHourCmd,
+		marketHourCmd,
 	)
 	app.Action = mainAction
 	app.Flags = append(app.Flags, urlFlag, datadirFlag)
