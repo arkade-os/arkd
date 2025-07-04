@@ -2144,14 +2144,12 @@ func (a *covenantlessArkClient) handleBatchEvents(
 					return "", err
 				}
 
-				if len(signedForfeitTxs) <= 0 && len(vtxosToSign) > 0 {
-					continue
-				}
-
-				if err := a.client.SubmitSignedForfeitTxs(
-					ctx, signedForfeitTxs, signedCommitmentTx,
-				); err != nil {
-					return "", err
+				if len(signedForfeitTxs) > 0 || len(signedCommitmentTx) > 0 {
+					if err := a.client.SubmitSignedForfeitTxs(
+						ctx, signedForfeitTxs, signedCommitmentTx,
+					); err != nil {
+						return "", err
+					}
 				}
 
 				log.Info("done.")
