@@ -92,15 +92,13 @@ var (
 	beforeDateFlag = &cli.StringFlag{
 		Name: beforeDateFlagName,
 		Usage: fmt.Sprintf(
-			"get ids of rounds before the give date, must be in %s format",
-			dateFormat,
+			"get ids of rounds before the give date, must be in %s format", dateFormat,
 		),
 	}
 	afterDateFlag = &cli.StringFlag{
-		Name: beforeDateFlagName,
+		Name: afterDateFlagName,
 		Usage: fmt.Sprintf(
-			"get ids of rounds after the give date, must be in %s format",
-			dateFormat,
+			"get ids of rounds after the give date, must be in %s format", dateFormat,
 		),
 	}
 	marketHourStartDateFlag = &cli.StringFlag{

@@ -307,9 +307,11 @@ func deleteIntentsAction(ctx *cli.Context) error {
 		return err
 	}
 
-	intentIds := strings.Join(ctx.StringSlice(intentIdsFlagName), ",")
+	intentIds := ctx.StringSlice(intentIdsFlagName)
 	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)
-	body := fmt.Sprintf(`{"intent_ids": ["%s"]}`, intentIds)
+	// nolint
+	intentIdsJSON, _ := json.Marshal(intentIds)
+	body := fmt.Sprintf(`{"intent_ids": %s}`, intentIdsJSON)
 
 	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
 		return err
@@ -346,7 +348,7 @@ func scheduledSweepAction(ctx *cli.Context) error {
 
 	url := fmt.Sprintf("%s/v1/admin/sweeps", baseURL)
 
-	resp, err := get[map[string]any](url, "sweeps", macaroon, tlsCertPath)
+	resp, err := get[[]map[string]any](url, "sweeps", macaroon, tlsCertPath)
 	if err != nil {
 		return err
 	}

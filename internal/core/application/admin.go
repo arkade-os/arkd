@@ -64,36 +64,26 @@ func (a *adminService) GetRoundDetails(
 		return nil, err
 	}
 
-	roundDetails := &RoundDetails{
-		RoundId:          round.Id,
-		TxId:             round.CommitmentTxid,
-		ForfeitedAmount:  0,
-		TotalVtxosAmount: 0,
-		TotalExitAmount:  0,
-		ExitAddresses:    []string{},
-		FeesAmount:       0,
-		InputsVtxos:      []string{},
-		OutputsVtxos:     []string{},
-	}
-
+	var totalForfeitAmount, totalVtxosAmount, totalExitAmount uint64
+	exitAddresses := make([]string, 0)
+	inputVtxos := make([]string, 0)
+	outputVtxos := make([]string, 0)
 	for _, intent := range round.Intents {
 		// TODO: Add fees amount
-		roundDetails.ForfeitedAmount += intent.TotalInputAmount()
+		totalForfeitAmount += intent.TotalInputAmount()
 
 		for _, receiver := range intent.Receivers {
 			if receiver.IsOnchain() {
-				roundDetails.TotalExitAmount += receiver.Amount
-				roundDetails.ExitAddresses = append(
-					roundDetails.ExitAddresses, receiver.OnchainAddress,
-				)
+				totalExitAmount += receiver.Amount
+				exitAddresses = append(exitAddresses, receiver.OnchainAddress)
 				continue
 			}
 
-			roundDetails.TotalVtxosAmount += receiver.Amount
+			totalVtxosAmount += receiver.Amount
 		}
 
 		for _, input := range intent.Inputs {
-			roundDetails.InputsVtxos = append(roundDetails.InputsVtxos, input.Txid)
+			inputVtxos = append(inputVtxos, input.Outpoint.String())
 		}
 	}
 
@@ -103,10 +93,22 @@ func (a *adminService) GetRoundDetails(
 	}
 
 	for _, vtxo := range vtxos {
-		roundDetails.OutputsVtxos = append(roundDetails.OutputsVtxos, vtxo.Txid)
+		outputVtxos = append(outputVtxos, vtxo.Outpoint.String())
 	}
 
-	return roundDetails, nil
+	return &RoundDetails{
+		RoundId:          round.Id,
+		TxId:             round.CommitmentTxid,
+		ForfeitedAmount:  totalForfeitAmount,
+		TotalVtxosAmount: totalVtxosAmount,
+		TotalExitAmount:  totalExitAmount,
+		ExitAddresses:    exitAddresses,
+		FeesAmount:       0,
+		InputVtxos:       inputVtxos,
+		OutputVtxos:      outputVtxos,
+		StartedAt:        round.StartingTimestamp,
+		EndedAt:          round.EndingTimestamp,
+	}, nil
 }
 
 func (a *adminService) GetRounds(ctx context.Context, after, before int64) ([]string, error) {
@@ -330,9 +332,11 @@ type RoundDetails struct {
 	TotalVtxosAmount uint64
 	TotalExitAmount  uint64
 	FeesAmount       uint64
-	InputsVtxos      []string
-	OutputsVtxos     []string
+	InputVtxos       []string
+	OutputVtxos      []string
 	ExitAddresses    []string
+	StartedAt        int64
+	EndedAt          int64
 }
 
 type Receiver struct {

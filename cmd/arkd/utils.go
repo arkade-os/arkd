@@ -144,6 +144,8 @@ type roundInfo struct {
 	InputVtxos       []string `json:"inputsVtxos"`
 	OutputVtxos      []string `json:"outputsVtxos"`
 	ExitAddresses    []string `json:"exitAddresses"`
+	StartedAt        string   `json:"startedAt"`
+	EndedAt          string   `json:"endedAt"`
 }
 
 func getRoundInfo(url, macaroon, tlsCert string) (*roundInfo, error) {

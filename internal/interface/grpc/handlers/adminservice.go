@@ -43,9 +43,11 @@ func (a *adminHandler) GetRoundDetails(
 		TotalVtxosAmount: convertSatsToBTCStr(details.TotalVtxosAmount),
 		TotalExitAmount:  convertSatsToBTCStr(details.TotalExitAmount),
 		TotalFeeAmount:   convertSatsToBTCStr(details.FeesAmount),
-		InputsVtxos:      details.InputsVtxos,
-		OutputsVtxos:     details.OutputsVtxos,
+		InputsVtxos:      details.InputVtxos,
+		OutputsVtxos:     details.OutputVtxos,
 		ExitAddresses:    details.ExitAddresses,
+		StartedAt:        details.StartedAt,
+		EndedAt:          details.EndedAt,
 	}, nil
 }
 
