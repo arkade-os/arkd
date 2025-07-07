@@ -308,9 +308,12 @@ func deleteIntentsAction(ctx *cli.Context) error {
 	}
 
 	intentIds := ctx.StringSlice(intentIdsFlagName)
+	intentIdsJSON, err := json.Marshal(intentIds)
+	if err != nil {
+		return fmt.Errorf("failed to marhal intent ids: %s", err)
+	}
+
 	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)
-	// nolint
-	intentIdsJSON, _ := json.Marshal(intentIds)
 	body := fmt.Sprintf(`{"intent_ids": %s}`, intentIdsJSON)
 
 	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {

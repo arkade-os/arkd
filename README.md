@@ -62,7 +62,7 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_PORT` | Port to listen on | `7070` |
 | `ARKD_LOG_LEVEL` | Logging level (0-6, where 6 is trace) | `4` (info) |
 | `ARKD_ROUND_INTERVAL` | Interval between rounds in seconds | `30` |
-| `ARKD_DB_TYPE` | Database type (posgres, sqlite, badger) | `postgres` |
+| `ARKD_DB_TYPE` | Database type (postgres, sqlite, badger) | `postgres` |
 | `ARKD_DB_URL` | Postgres connection url if `ARKD_DB_TYPE` is set to `postgres` | - |
 | `ARKD_EVENT_DB_TYPE` | Event database type (redis, inmemory) | `redis` |
 | `ARKD_EVENT_DB_URL` | Event database url if `ARKD_DB_TYPE` is set to `postgres` | - |

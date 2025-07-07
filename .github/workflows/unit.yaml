@@ -29,6 +29,7 @@ jobs:
 
       - name: Check for changes
         run: |
+          go mod tidy
           if [[ -n $(git status --porcelain) ]]; then
             echo "Changes detected after running go work sync and go mod tidy"
             git diff

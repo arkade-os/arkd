@@ -18,7 +18,7 @@ if [[ -z $GOARCH ]]; then
   GOARCH=$(go env GOARCH)
 fi
 
-echo "Building for $GOOS $GOARCH"
+echo "Building ark for $GOOS $GOARCH"
 echo "Version: $VERSION"
 
 # Change to the parent directory
