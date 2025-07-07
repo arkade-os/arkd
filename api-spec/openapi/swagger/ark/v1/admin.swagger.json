@@ -197,7 +197,7 @@
       }
     },
     "/v1/admin/rounds": {
-      "post": {
+      "get": {
         "operationId": "AdminService_GetRounds",
         "responses": {
           "200": {
@@ -215,12 +215,18 @@
         },
         "parameters": [
           {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1GetRoundsRequest"
-            }
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -343,6 +349,14 @@
         "roundId": {
           "type": "string"
         },
+        "startedAt": {
+          "type": "string",
+          "format": "int64"
+        },
+        "endedAt": {
+          "type": "string",
+          "format": "int64"
+        },
         "commitmentTxid": {
           "type": "string"
         },
@@ -375,19 +389,6 @@
           "items": {
             "type": "string"
           }
-        }
-      }
-    },
-    "v1GetRoundsRequest": {
-      "type": "object",
-      "properties": {
-        "after": {
-          "type": "string",
-          "format": "int64"
-        },
-        "before": {
-          "type": "string",
-          "format": "int64"
         }
       }
     },

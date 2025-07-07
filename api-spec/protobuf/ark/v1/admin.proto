@@ -18,8 +18,7 @@ service AdminService {
   }
   rpc GetRounds(GetRoundsRequest) returns (GetRoundsResponse) {
     option (google.api.http) = {
-      post: "/v1/admin/rounds"
-      body: "*"
+      get: "/v1/admin/rounds"
     };
   }
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse) {
@@ -62,14 +61,16 @@ message GetRoundDetailsRequest {
 }
 message GetRoundDetailsResponse {
   string round_id = 1;
-  string commitment_txid = 2;
-  string forfeited_amount = 3;
-  string total_vtxos_amount = 4;
-  string total_exit_amount = 5;
-  string total_fee_amount = 6;
-  repeated string inputs_vtxos = 7;
-  repeated string outputs_vtxos = 8;
-  repeated string exit_addresses = 9;
+  int64 started_at = 2;
+  int64 ended_at = 3;
+  string commitment_txid = 4;
+  string forfeited_amount = 5;
+  string total_vtxos_amount = 6;
+  string total_exit_amount = 7;
+  string total_fee_amount = 8;
+  repeated string inputs_vtxos = 9;
+  repeated string outputs_vtxos = 10;
+  repeated string exit_addresses = 11;
 }
 
 message GetRoundsRequest {
