@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -282,12 +283,17 @@ func listIntentsAction(ctx *cli.Context) error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/intents", baseURL)
+	u, err := url.Parse(fmt.Sprintf("%s/v1/admin/intents", baseURL))
+	if err != nil {
+		return fmt.Errorf("failed to parse URL: %w", err)
+	}
 	requestIds := ctx.StringSlice(intentIdsFlagName)
 	if len(requestIds) > 0 {
-		url = fmt.Sprintf("%s?intent_ids=%s", url, strings.Join(requestIds, ","))
+		q := u.Query()
+		q.Set("intent_ids", strings.Join(requestIds, ","))
+		u.RawQuery = q.Encode()
 	}
-	response, err := get[[]map[string]any](url, "intents", macaroon, tlsCertPath)
+	response, err := get[[]map[string]any](u.String(), "intents", macaroon, tlsCertPath)
 	if err != nil {
 		return err
 	}
@@ -310,7 +316,7 @@ func deleteIntentsAction(ctx *cli.Context) error {
 	intentIds := ctx.StringSlice(intentIdsFlagName)
 	intentIdsJSON, err := json.Marshal(intentIds)
 	if err != nil {
-		return fmt.Errorf("failed to marhal intent ids: %s", err)
+		return fmt.Errorf("failed to marshal intent ids: %s", err)
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)

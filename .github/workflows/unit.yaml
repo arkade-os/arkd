@@ -4,17 +4,9 @@ on:
   push:
     branches:
       - master
-    paths:
-      - 'server/**'
-      - 'pkg/client-sdk/**'
-      - 'common/**'
   pull_request:
     branches:
       - '*'
-    paths:
-      - 'server/**'
-      - 'pkg/client-sdk/**'
-      - 'common/**'
 
 jobs:
   check-go-sync:

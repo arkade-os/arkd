@@ -32,7 +32,7 @@ jobs:
     - name: Upload arkd wallet binaries
       uses: actions/upload-artifact@v4
       with:
-        name: arkd-wallet--binaries
+        name: arkd-wallet-binaries
         path: ./pkg/arkd-wallet/build
         if-no-files-found: error
         retention-days: 5

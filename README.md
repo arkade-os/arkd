@@ -4,7 +4,7 @@
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Farkade--os%2Fark-blue?logo=docker)](https://github.com/arkade-os/arkd/pkgs/container/ark)
 [![Integration](https://github.com/arkade-os/arkd/actions/workflows/ark.integration.yaml/badge.svg)](https://github.com/arkade-os/arkd/actions/workflows/ark.integration.yaml)
 [![ci_unit](https://github.com/arkade-os/arkd/actions/workflows/ark.unit.yaml/badge.svg)](https://github.com/arkade-os/arkd/actions/workflows/ark.unit.yaml)
-[![GitHub](https://img.shields.io/github/license/arkade-os/arkd)](https://github.com/arkade-os/arkd/blob/master/LICENSE)
+[![GitHub](https://img.shields.io/github/license/arkade-os/arkd)](https://github.com/arkade-os/arkd/tree/master/LICENSE)
 ![Go Reference](https://pkg.go.dev/badge/github.com/arkade-os/arkd.svg)
 
 > **⚠️ IMPORTANT DISCLAIMER: ALPHA SOFTWARE**
@@ -186,7 +186,7 @@ For a complete list of available commands and options:
   - [`ark-cli`](./pkg/ark-cli): ark offchain and onchain wallet as command line interface.
 - [`internal`](./internal): arkd implementation.
   - [`core`](./internal/core): contains the core business logic of arkd.
-    - [`application`](./internal/core/application/): contains the implementation of the service responsible for the [core operations](https://github.com/arkade-os/arkd/blob/final-refactor/README.md#L19-L22).
+    - [`application`](./internal/core/application/): contains the implementation of the service responsible for the [core operations](https://github.com/arkade-os/arkd/tree/master/README.md#L19-L22).
     - [`domain`](./internal/core/domain/): models and events managed by the application service.
     - [`ports`](./internal/core/ports/): collection of interfaces of the services used by the application one, like for example the wallet, the cache or the database.
   - [`infrastructure`](./internal/infrastructure/): contains implementations of the interfaces defined in `internal/core/ports`. Every folder contains the different implementations of the same interface.
@@ -266,7 +266,7 @@ To compile the `arkd` binary from source, you can use the following Make command
    make test
    ```
 
-3. Run integration tests ([start nigiri](https://github.com/arkade-os/arkd/blob/final-refactor/README.md#L218) if needed first):
+3. Run integration tests ([start nigiri](https://github.com/arkade-os/arkd/tree/master/README.md#L218) if needed first):
 
    ```sh
    make docker-run

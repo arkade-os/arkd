@@ -187,7 +187,7 @@ jobs:
           file: ./arkdwallet.Dockerfile
           push: true
           tags: |
-            ghcr.io/arkade-os/arkd-wallet:{{ github.event.release.tag_name }}
+            ghcr.io/arkade-os/arkd-wallet:${{ github.event.release.tag_name }}
             ghcr.io/arkade-os/arkd-wallet:latest
           platforms: linux/amd64,linux/arm64
           build-args: |
