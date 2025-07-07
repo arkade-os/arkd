@@ -125,12 +125,12 @@ SELECT sqlc.embed(round),
     sqlc.embed(round_intents_vw),
     sqlc.embed(round_txs_vw),
     sqlc.embed(intent_with_receivers_vw),
-    sqlc.embed(intent_inputs_vw)
+    sqlc.embed(intent_with_inputs_vw)
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
 LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
-LEFT OUTER JOIN intent_inputs_vw ON round_intents_vw.id=intent_inputs_vw.intent_id
+LEFT OUTER JOIN intent_with_inputs_vw ON round_intents_vw.id=intent_with_inputs_vw.intent_id
 WHERE round.id = @id;
 
 -- name: SelectRoundWithTxid :many
@@ -138,12 +138,12 @@ SELECT sqlc.embed(round),
     sqlc.embed(round_intents_vw),
     sqlc.embed(round_txs_vw),
     sqlc.embed(intent_with_receivers_vw),
-    sqlc.embed(intent_inputs_vw)
+    sqlc.embed(intent_with_inputs_vw)
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
 LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
-LEFT OUTER JOIN intent_inputs_vw ON round_intents_vw.id=intent_inputs_vw.intent_id
+LEFT OUTER JOIN intent_with_inputs_vw ON round_intents_vw.id=intent_with_inputs_vw.intent_id
 WHERE round.id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = @txid AND type = 'commitment'
 );
@@ -184,22 +184,17 @@ SELECT
     r.starting_timestamp,
     r.ending_timestamp,
     (
-        SELECT COALESCE(SUM(amount), 0) FROM (
-            SELECT DISTINCT v2.* FROM vtxo v2 JOIN intent i2 ON i2.id = v2.intent_id WHERE i2.round_id = r.id
-        ) as intent_inputs_amount
+        SELECT COALESCE(SUM(ii.amount), 0)::bigint FROM intent_with_inputs_vw ii WHERE ii.round_id = r.id
     ) AS total_forfeit_amount,
     (
-        SELECT COALESCE(COUNT(v3.txid), 0) FROM vtxo v3 JOIN intent i3 ON i3.id = v3.intent_id WHERE i3.round_id = r.id
+        SELECT COALESCE(COUNT(ii.txid), 0)::bigint FROM intent_with_inputs_vw ii WHERE ii.round_id = r.id
     ) AS total_input_vtxos,
     (
-        SELECT COALESCE(SUM(amount), 0) FROM (
-            SELECT DISTINCT rr.* FROM receiver rr
-            JOIN intent i4 ON i4.id = rr.intent_id
-            WHERE i4.round_id = r.id AND COALESCE(rr.onchain_address, '') = ''
-        ) AS intent_outputs_amount
+        SELECT COALESCE(SUM(ir.amount), 0)::bigint FROM intent_with_receivers_vw ir
+        WHERE ir.round_id = r.id AND COALESCE(ir.onchain_address, '') = ''
     ) AS total_batch_amount,
     (
-        SELECT COUNT(*) FROM tx t WHERE t.round_id = r.id AND t.type = 'tree' AND COALESCE(t.children, '{}'::jsonb) = '{}'::jsonb
+        SELECT COUNT(*) FROM intent_with_receivers_vw ir WHERE ir.round_id = r.id AND COALESCE(ir.onchain_address, '') = ''
     ) AS total_output_vtxos,
     (
         SELECT MAX(v.expires_at) FROM vtxo_vw v WHERE v.commitment_txid = r.txid

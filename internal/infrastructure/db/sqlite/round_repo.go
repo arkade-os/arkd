@@ -162,7 +162,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 						Message: sql.NullString{String: intent.Message, Valid: true},
 					},
 				); err != nil {
-					return fmt.Errorf("failed to upsert intentt: %w", err)
+					return fmt.Errorf("failed to upsert intent: %w", err)
 				}
 
 				for _, receiver := range intent.Receivers {
@@ -175,10 +175,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 								String: receiver.PubKey,
 								Valid:  len(receiver.PubKey) > 0,
 							},
-							OnchainAddress: sql.NullString{
-								String: receiver.OnchainAddress,
-								Valid:  len(receiver.OnchainAddress) > 0,
-							},
+							OnchainAddress: receiver.OnchainAddress,
 						},
 					); err != nil {
 						return fmt.Errorf("failed to upsert receiver: %w", err)
@@ -219,7 +216,7 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 			intent:   row.RoundIntentsVw,
 			tx:       row.RoundTxsVw,
 			receiver: row.IntentWithReceiversVw,
-			vtxo:     row.IntentInputsVw,
+			vtxo:     row.IntentWithInputsVw,
 		})
 	}
 
@@ -250,7 +247,7 @@ func (r *roundRepository) GetRoundWithCommitmentTxid(
 			intent:   row.RoundIntentsVw,
 			tx:       row.RoundTxsVw,
 			receiver: row.IntentWithReceiversVw,
-			vtxo:     row.IntentInputsVw,
+			vtxo:     row.IntentWithInputsVw,
 		})
 	}
 
@@ -459,7 +456,7 @@ type combinedRow struct {
 	intent   queries.RoundIntentsVw
 	tx       queries.RoundTxsVw
 	receiver queries.IntentWithReceiversVw
-	vtxo     queries.IntentInputsVw
+	vtxo     queries.IntentWithInputsVw
 }
 
 func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
@@ -625,7 +622,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 	return result, nil
 }
 
-func combinedRowToVtxo(row queries.IntentInputsVw) domain.Vtxo {
+func combinedRowToVtxo(row queries.IntentWithInputsVw) domain.Vtxo {
 	var commitmentTxids []string
 	if commitments, ok := row.Commitments.(string); ok && commitments != "" {
 		commitmentTxids = strings.Split(commitments, ",")

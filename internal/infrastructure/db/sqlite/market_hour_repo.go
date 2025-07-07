@@ -18,12 +18,12 @@ type marketHourRepository struct {
 
 func NewMarketHourRepository(config ...interface{}) (domain.MarketHourRepo, error) {
 	if len(config) != 1 {
-		return nil, fmt.Errorf("invalid config")
+		return nil, fmt.Errorf("invalid config: expected 1 argument, got %d", len(config))
 	}
 	db, ok := config[0].(*sql.DB)
 	if !ok {
 		return nil, fmt.Errorf(
-			"cannot open market hour repository: invalid config, expected db at 0",
+			"cannot open market hour repository: expected *sql.DB but got %T", config[0],
 		)
 	}
 

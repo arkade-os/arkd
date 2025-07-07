@@ -25,7 +25,7 @@ type Intent struct {
 	Message sql.NullString
 }
 
-type IntentInputsVw struct {
+type IntentWithInputsVw struct {
 	Txid           sql.NullString
 	Vout           sql.NullInt32
 	Pubkey         sql.NullString

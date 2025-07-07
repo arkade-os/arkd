@@ -372,22 +372,17 @@ SELECT
     r.starting_timestamp,
     r.ending_timestamp,
     (
-        SELECT COALESCE(SUM(amount), 0) FROM (
-            SELECT DISTINCT v2.txid, v2.vout, v2.pubkey, v2.amount, v2.expires_at, v2.created_at, v2.commitment_txid, v2.spent_by, v2.spent, v2.unrolled, v2.swept, v2.preconfirmed, v2.settled_by, v2.ark_txid, v2.intent_id FROM vtxo v2 JOIN intent i2 ON i2.id = v2.intent_id WHERE i2.round_id = r.id
-        ) as intent_inputs_amount
+        SELECT COALESCE(SUM(ii.amount), 0)::bigint FROM intent_with_inputs_vw ii WHERE ii.round_id = r.id
     ) AS total_forfeit_amount,
     (
-        SELECT COALESCE(COUNT(v3.txid), 0) FROM vtxo v3 JOIN intent i3 ON i3.id = v3.intent_id WHERE i3.round_id = r.id
+        SELECT COALESCE(COUNT(ii.txid), 0)::bigint FROM intent_with_inputs_vw ii WHERE ii.round_id = r.id
     ) AS total_input_vtxos,
     (
-        SELECT COALESCE(SUM(amount), 0) FROM (
-            SELECT DISTINCT rr.intent_id, rr.pubkey, rr.onchain_address, rr.amount FROM receiver rr
-            JOIN intent i4 ON i4.id = rr.intent_id
-            WHERE i4.round_id = r.id AND COALESCE(rr.onchain_address, '') = ''
-        ) AS intent_outputs_amount
+        SELECT COALESCE(SUM(ir.amount), 0)::bigint FROM intent_with_receivers_vw ir
+        WHERE ir.round_id = r.id AND COALESCE(ir.onchain_address, '') = ''
     ) AS total_batch_amount,
     (
-        SELECT COUNT(*) FROM tx t WHERE t.round_id = r.id AND t.type = 'tree' AND COALESCE(t.children, '{}'::jsonb) = '{}'::jsonb
+        SELECT COUNT(*) FROM intent_with_receivers_vw ir WHERE ir.round_id = r.id AND COALESCE(ir.onchain_address, '') = ''
     ) AS total_output_vtxos,
     (
         SELECT MAX(v.expires_at) FROM vtxo_vw v WHERE v.commitment_txid = r.txid
@@ -400,9 +395,9 @@ type SelectRoundStatsRow struct {
 	Swept              bool
 	StartingTimestamp  int64
 	EndingTimestamp    int64
-	TotalForfeitAmount interface{}
-	TotalInputVtxos    interface{}
-	TotalBatchAmount   interface{}
+	TotalForfeitAmount int64
+	TotalInputVtxos    int64
+	TotalBatchAmount   int64
 	TotalOutputVtxos   int64
 	ExpiresAt          interface{}
 }
@@ -512,12 +507,12 @@ SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, 
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
     intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message,
-    intent_inputs_vw.txid, intent_inputs_vw.vout, intent_inputs_vw.pubkey, intent_inputs_vw.amount, intent_inputs_vw.expires_at, intent_inputs_vw.created_at, intent_inputs_vw.commitment_txid, intent_inputs_vw.spent_by, intent_inputs_vw.spent, intent_inputs_vw.unrolled, intent_inputs_vw.swept, intent_inputs_vw.preconfirmed, intent_inputs_vw.settled_by, intent_inputs_vw.ark_txid, intent_inputs_vw.intent_id, intent_inputs_vw.commitments, intent_inputs_vw.id, intent_inputs_vw.round_id, intent_inputs_vw.proof, intent_inputs_vw.message
+    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.commitments, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
 LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
-LEFT OUTER JOIN intent_inputs_vw ON round_intents_vw.id=intent_inputs_vw.intent_id
+LEFT OUTER JOIN intent_with_inputs_vw ON round_intents_vw.id=intent_with_inputs_vw.intent_id
 WHERE round.id = $1
 `
 
@@ -526,7 +521,7 @@ type SelectRoundWithIdRow struct {
 	RoundIntentsVw        RoundIntentsVw
 	RoundTxsVw            RoundTxsVw
 	IntentWithReceiversVw IntentWithReceiversVw
-	IntentInputsVw        IntentInputsVw
+	IntentWithInputsVw    IntentWithInputsVw
 }
 
 func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRoundWithIdRow, error) {
@@ -568,26 +563,26 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 			&i.IntentWithReceiversVw.RoundID,
 			&i.IntentWithReceiversVw.Proof,
 			&i.IntentWithReceiversVw.Message,
-			&i.IntentInputsVw.Txid,
-			&i.IntentInputsVw.Vout,
-			&i.IntentInputsVw.Pubkey,
-			&i.IntentInputsVw.Amount,
-			&i.IntentInputsVw.ExpiresAt,
-			&i.IntentInputsVw.CreatedAt,
-			&i.IntentInputsVw.CommitmentTxid,
-			&i.IntentInputsVw.SpentBy,
-			&i.IntentInputsVw.Spent,
-			&i.IntentInputsVw.Unrolled,
-			&i.IntentInputsVw.Swept,
-			&i.IntentInputsVw.Preconfirmed,
-			&i.IntentInputsVw.SettledBy,
-			&i.IntentInputsVw.ArkTxid,
-			&i.IntentInputsVw.IntentID,
-			&i.IntentInputsVw.Commitments,
-			&i.IntentInputsVw.ID,
-			&i.IntentInputsVw.RoundID,
-			&i.IntentInputsVw.Proof,
-			&i.IntentInputsVw.Message,
+			&i.IntentWithInputsVw.Txid,
+			&i.IntentWithInputsVw.Vout,
+			&i.IntentWithInputsVw.Pubkey,
+			&i.IntentWithInputsVw.Amount,
+			&i.IntentWithInputsVw.ExpiresAt,
+			&i.IntentWithInputsVw.CreatedAt,
+			&i.IntentWithInputsVw.CommitmentTxid,
+			&i.IntentWithInputsVw.SpentBy,
+			&i.IntentWithInputsVw.Spent,
+			&i.IntentWithInputsVw.Unrolled,
+			&i.IntentWithInputsVw.Swept,
+			&i.IntentWithInputsVw.Preconfirmed,
+			&i.IntentWithInputsVw.SettledBy,
+			&i.IntentWithInputsVw.ArkTxid,
+			&i.IntentWithInputsVw.IntentID,
+			&i.IntentWithInputsVw.Commitments,
+			&i.IntentWithInputsVw.ID,
+			&i.IntentWithInputsVw.RoundID,
+			&i.IntentWithInputsVw.Proof,
+			&i.IntentWithInputsVw.Message,
 		); err != nil {
 			return nil, err
 		}
@@ -607,12 +602,12 @@ SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, 
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
     intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message,
-    intent_inputs_vw.txid, intent_inputs_vw.vout, intent_inputs_vw.pubkey, intent_inputs_vw.amount, intent_inputs_vw.expires_at, intent_inputs_vw.created_at, intent_inputs_vw.commitment_txid, intent_inputs_vw.spent_by, intent_inputs_vw.spent, intent_inputs_vw.unrolled, intent_inputs_vw.swept, intent_inputs_vw.preconfirmed, intent_inputs_vw.settled_by, intent_inputs_vw.ark_txid, intent_inputs_vw.intent_id, intent_inputs_vw.commitments, intent_inputs_vw.id, intent_inputs_vw.round_id, intent_inputs_vw.proof, intent_inputs_vw.message
+    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.commitments, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
 LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
-LEFT OUTER JOIN intent_inputs_vw ON round_intents_vw.id=intent_inputs_vw.intent_id
+LEFT OUTER JOIN intent_with_inputs_vw ON round_intents_vw.id=intent_with_inputs_vw.intent_id
 WHERE round.id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = $1 AND type = 'commitment'
 )
@@ -623,7 +618,7 @@ type SelectRoundWithTxidRow struct {
 	RoundIntentsVw        RoundIntentsVw
 	RoundTxsVw            RoundTxsVw
 	IntentWithReceiversVw IntentWithReceiversVw
-	IntentInputsVw        IntentInputsVw
+	IntentWithInputsVw    IntentWithInputsVw
 }
 
 func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]SelectRoundWithTxidRow, error) {
@@ -665,26 +660,26 @@ func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]Selec
 			&i.IntentWithReceiversVw.RoundID,
 			&i.IntentWithReceiversVw.Proof,
 			&i.IntentWithReceiversVw.Message,
-			&i.IntentInputsVw.Txid,
-			&i.IntentInputsVw.Vout,
-			&i.IntentInputsVw.Pubkey,
-			&i.IntentInputsVw.Amount,
-			&i.IntentInputsVw.ExpiresAt,
-			&i.IntentInputsVw.CreatedAt,
-			&i.IntentInputsVw.CommitmentTxid,
-			&i.IntentInputsVw.SpentBy,
-			&i.IntentInputsVw.Spent,
-			&i.IntentInputsVw.Unrolled,
-			&i.IntentInputsVw.Swept,
-			&i.IntentInputsVw.Preconfirmed,
-			&i.IntentInputsVw.SettledBy,
-			&i.IntentInputsVw.ArkTxid,
-			&i.IntentInputsVw.IntentID,
-			&i.IntentInputsVw.Commitments,
-			&i.IntentInputsVw.ID,
-			&i.IntentInputsVw.RoundID,
-			&i.IntentInputsVw.Proof,
-			&i.IntentInputsVw.Message,
+			&i.IntentWithInputsVw.Txid,
+			&i.IntentWithInputsVw.Vout,
+			&i.IntentWithInputsVw.Pubkey,
+			&i.IntentWithInputsVw.Amount,
+			&i.IntentWithInputsVw.ExpiresAt,
+			&i.IntentWithInputsVw.CreatedAt,
+			&i.IntentWithInputsVw.CommitmentTxid,
+			&i.IntentWithInputsVw.SpentBy,
+			&i.IntentWithInputsVw.Spent,
+			&i.IntentWithInputsVw.Unrolled,
+			&i.IntentWithInputsVw.Swept,
+			&i.IntentWithInputsVw.Preconfirmed,
+			&i.IntentWithInputsVw.SettledBy,
+			&i.IntentWithInputsVw.ArkTxid,
+			&i.IntentWithInputsVw.IntentID,
+			&i.IntentWithInputsVw.Commitments,
+			&i.IntentWithInputsVw.ID,
+			&i.IntentWithInputsVw.RoundID,
+			&i.IntentWithInputsVw.Proof,
+			&i.IntentWithInputsVw.Message,
 		); err != nil {
 			return nil, err
 		}

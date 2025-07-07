@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS intent (
 CREATE TABLE IF NOT EXISTS receiver (
     intent_id TEXT NOT NULL,
     pubkey TEXT,
-    onchain_address TEXT,
+    onchain_address TEXT NOT NULL DEFAULT '',
     amount INTEGER NOT NULL,
     FOREIGN KEY (intent_id) REFERENCES intent(id),
     PRIMARY KEY (intent_id, pubkey, onchain_address)
@@ -95,6 +95,11 @@ CREATE TABLE IF NOT EXISTS market_hour (
    updated_at INTEGER NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS fk_intent_round_id ON intent(round_id);
+CREATE INDEX IF NOT EXISTS fk_tx_round_id ON tx(round_id);
+CREATE INDEX IF NOT EXISTS fk_receiver_intent_id ON receiver(intent_id);
+CREATE INDEX IF NOT EXISTS fk_vtxo_intent_id ON vtxo(intent_id);
+
 CREATE VIEW vtxo_vw AS
 SELECT v.*, COALESCE(group_concat(vc.commitment_txid), '') AS commitments
 FROM vtxo v
@@ -126,7 +131,7 @@ FROM intent
 LEFT OUTER JOIN receiver
 ON intent.id=receiver.intent_id;
 
-CREATE VIEW intent_inputs_vw AS
+CREATE VIEW intent_with_inputs_vw AS
 SELECT vtxo_vw.*, intent.*
 FROM intent
 LEFT OUTER JOIN vtxo_vw

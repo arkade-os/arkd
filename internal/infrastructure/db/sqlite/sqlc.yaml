@@ -26,13 +26,13 @@ sql:
           - column: "intent_with_receivers_vw.message"
             go_type: "database/sql.NullString"
 
-          - column: "intent_inputs_vw.id"
+          - column: "intent_with_inputs_vw.id"
             go_type: "database/sql.NullString"
-          - column: "intent_inputs_vw.round_id"
+          - column: "intent_with_inputs_vw.round_id"
             go_type: "database/sql.NullString"
-          - column: "intent_inputs_vw.proof"
+          - column: "intent_with_inputs_vw.proof"
             go_type: "database/sql.NullString"
-          - column: "intent_inputs_vw.message"
+          - column: "intent_with_inputs_vw.message"
             go_type: "database/sql.NullString"
 
           - column: "intent.id"

@@ -23,7 +23,7 @@ type Intent struct {
 	Message sql.NullString
 }
 
-type IntentInputsVw struct {
+type IntentWithInputsVw struct {
 	Txid           sql.NullString
 	Vout           sql.NullInt64
 	Pubkey         sql.NullString
@@ -94,7 +94,7 @@ type OffchainTxVw struct {
 type Receiver struct {
 	IntentID       string
 	Pubkey         sql.NullString
-	OnchainAddress sql.NullString
+	OnchainAddress string
 	Amount         int64
 }
 

@@ -215,7 +215,7 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 			intent:   row.RoundIntentsVw,
 			tx:       row.RoundTxsVw,
 			receiver: row.IntentWithReceiversVw,
-			vtxo:     row.IntentInputsVw,
+			vtxo:     row.IntentWithInputsVw,
 		})
 	}
 
@@ -246,7 +246,7 @@ func (r *roundRepository) GetRoundWithCommitmentTxid(
 			intent:   row.RoundIntentsVw,
 			tx:       row.RoundTxsVw,
 			receiver: row.IntentWithReceiversVw,
-			vtxo:     row.IntentInputsVw,
+			vtxo:     row.IntentWithInputsVw,
 		})
 	}
 
@@ -270,36 +270,6 @@ func (r *roundRepository) GetRoundStats(
 		return nil, err
 	}
 
-	var totalForfeitAmount uint64
-	if rs.TotalForfeitAmount != nil {
-		switch v := rs.TotalForfeitAmount.(type) {
-		case int64:
-			totalForfeitAmount = uint64(v)
-		case int:
-			totalForfeitAmount = uint64(v)
-		}
-	}
-
-	var totalInputVtxo int32
-	if rs.TotalInputVtxos != nil {
-		switch v := rs.TotalInputVtxos.(type) {
-		case int64:
-			totalInputVtxo = int32(v)
-		case int:
-			totalInputVtxo = int32(v)
-		}
-	}
-
-	var totalBatchAmount uint64
-	if rs.TotalBatchAmount != nil {
-		switch v := rs.TotalBatchAmount.(type) {
-		case int64:
-			totalBatchAmount = uint64(v)
-		case int:
-			totalBatchAmount = uint64(v)
-		}
-	}
-
 	var expiresAt int64
 	if rs.ExpiresAt != nil {
 		switch v := rs.ExpiresAt.(type) {
@@ -312,9 +282,9 @@ func (r *roundRepository) GetRoundStats(
 
 	return &domain.RoundStats{
 		Swept:              rs.Swept,
-		TotalForfeitAmount: totalForfeitAmount,
-		TotalInputVtxos:    totalInputVtxo,
-		TotalBatchAmount:   totalBatchAmount,
+		TotalForfeitAmount: uint64(rs.TotalForfeitAmount),
+		TotalInputVtxos:    int32(rs.TotalInputVtxos),
+		TotalBatchAmount:   uint64(rs.TotalBatchAmount),
 		TotalOutputVtxos:   int32(rs.TotalOutputVtxos),
 		ExpiresAt:          expiresAt,
 		Started:            rs.StartingTimestamp,
@@ -455,7 +425,7 @@ type combinedRow struct {
 	intent   queries.RoundIntentsVw
 	tx       queries.RoundTxsVw
 	receiver queries.IntentWithReceiversVw
-	vtxo     queries.IntentInputsVw
+	vtxo     queries.IntentWithInputsVw
 }
 
 func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
@@ -619,7 +589,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 	return result, nil
 }
 
-func combinedRowToVtxo(row queries.IntentInputsVw) domain.Vtxo {
+func combinedRowToVtxo(row queries.IntentWithInputsVw) domain.Vtxo {
 	return domain.Vtxo{
 		Outpoint: domain.Outpoint{
 			Txid: row.Txid.String,
@@ -653,13 +623,13 @@ func createUpsertTransactionParams(
 
 	if txType == "connector" || txType == "tree" {
 		params.Txid = node.Txid
-		children, err := json.Marshal(node.Children)
-		if err != nil {
-			return queries.UpsertTxParams{}
-		}
-		params.Children = pqtype.NullRawMessage{
-			RawMessage: children,
-			Valid:      true,
+		if len(node.Children) > 0 {
+			// nolint
+			children, _ := json.Marshal(node.Children)
+			params.Children = pqtype.NullRawMessage{
+				RawMessage: children,
+				Valid:      true,
+			}
 		}
 	}
 
