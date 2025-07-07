@@ -234,7 +234,7 @@ To compile the `arkd` binary from source, you can use the following Make command
    go mod download
    ```
 
-9. Run arkd wallet in dev mode:
+6. Run arkd wallet in dev mode:
 
    ```sh
    # with neutrino
@@ -243,7 +243,7 @@ To compile the `arkd` binary from source, you can use the following Make command
    make run-wallet-bitcoind
    ```
 
-10. Run arkd in dev mode:
+7. Run arkd in dev mode:
 
    ```sh
    # with sqlite db and inmemory cache
