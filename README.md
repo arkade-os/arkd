@@ -169,7 +169,7 @@ If none of the above options are specified, the wallet uses Neutrino by default 
 
 8. Withdraw funds from your wallet:
    ```sh
-   arkd wallet withdraw --address <address> --amount <sats>
+   arkd wallet withdraw --address <address> --amount <amount_in_btc>
    ```
 
 For a complete list of available commands and options:

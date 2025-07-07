@@ -11,6 +11,8 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+const ONE_BTC = float64(1_00_000_000)
+
 // commands
 var (
 	walletCmd = &cli.Command{
@@ -232,7 +234,7 @@ func walletBalanceAction(ctx *cli.Context) error {
 
 func walletWithdrawAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	amount := ctx.Uint(amountFlagName)
+	amount := ctx.Float64(amountFlagName)
 	address := ctx.String(addressFlagName)
 	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
@@ -240,7 +242,8 @@ func walletWithdrawAction(ctx *cli.Context) error {
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/withdraw", baseURL)
-	body := fmt.Sprintf(`{"address": "%s", "amount": %d}`, address, amount)
+	amountInSats := uint64(amount * ONE_BTC)
+	body := fmt.Sprintf(`{"address": "%s", "amount": %d}`, address, amountInSats)
 
 	txid, err := post[string](url, body, "txid", macaroon, tlsCertPath)
 	if err != nil {

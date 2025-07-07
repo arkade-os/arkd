@@ -74,9 +74,9 @@ var (
 			Required: required,
 		}
 	}
-	withdrawAmountFlag = &cli.UintFlag{
+	withdrawAmountFlag = &cli.Float64Flag{
 		Name:     amountFlagName,
-		Usage:    "amount of the withdraw in satoshis",
+		Usage:    "amount to withdraw in BTC",
 		Required: true,
 	}
 	withdrawAddressFlag = &cli.StringFlag{
