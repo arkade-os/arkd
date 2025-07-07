@@ -69,12 +69,12 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_TX_BUILDER_TYPE` | Transaction builder type (covenantless) | `covenantless` |
 | `ARKD_LIVE_STORE_TYPE` | Cache service type (redis, inmemory) | `redis` |
 | `ARKD_REDIS_URL` | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis` | - |
-| `ARKD_REDIS_NUM_OF_RETRIES` | Maximume number of retries for redis write operations in case of conflicts | - |
+| `ARKD_REDIS_NUM_OF_RETRIES` | Maximum number of retries for Redis write operations in case of conflicts | - |
 | `ARKD_VTXO_TREE_EXPIRY` | VTXO tree expiry in seconds | `604672` (7 days) |
 | `ARKD_UNILATERAL_EXIT_DELAY` | Unilateral exit delay in seconds | `86400` (24 hours) |
 | `ARKD_BOARDING_EXIT_DELAY` | Boarding exit delay in seconds | `7776000` (3 months) |
 | `ARKD_ESPLORA_URL` | Esplora API URL | `https://blockstream.info/api` |
-| `ARKD_WALLET_ADDR` |  the arkd wallet address to connect to in the form `host:port` | - |
+| `ARKD_WALLET_ADDR` | The arkd wallet address to connect to in the form `host:port` | - |
 | `ARKD_NO_MACAROONS` | Disable macaroon authentication | `false` |
 | `ARKD_NO_TLS` | Disable TLS | `true` |
 | `ARKD_UNLOCKER_TYPE` | Wallet unlocker type (env, file) to enable auto-unlock | - |
@@ -126,7 +126,7 @@ For a lighter setup using Neutrino (BIP 157/158):
 export ARKD_WALLET_NEUTRINO_PEER=yourhost:p2p_port_bitcoin
 ```
 
-If none of the above option is specified, the wallet uses Neutrino by default with peer discovery.
+If none of the above options are specified, the wallet uses Neutrino by default with peer discovery.
 
 ### Wallet Setup
 
