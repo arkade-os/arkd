@@ -329,16 +329,16 @@ func (r *roundRepository) GetRoundConnectorTree(
 		pos := int(tx.Position)
 		nodes = extendArray(nodes, pos)
 
-		children := make(map[uint32]string)
+		nodes[pos] = tree.TxTreeNode{
+			Txid: tx.Txid,
+			Tx:   tx.Tx,
+		}
 		if tx.Children.Valid {
+			children := make(map[uint32]string)
 			if err := json.Unmarshal(tx.Children.RawMessage, &children); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal children: %w", err)
 			}
-		}
-		nodes[pos] = tree.TxTreeNode{
-			Txid:     tx.Txid,
-			Tx:       tx.Tx,
-			Children: children,
+			nodes[pos].Children = children
 		}
 	}
 
@@ -363,18 +363,18 @@ func (r *roundRepository) GetRoundVtxoTree(
 		pos := int(tx.Position)
 		nodes = extendArray(nodes, pos)
 
-		children := make(map[uint32]string)
+		nodes[pos] = tree.TxTreeNode{
+			Txid: tx.Txid,
+			Tx:   tx.Tx,
+		}
 		if tx.Children.Valid {
+			children := make(map[uint32]string)
 			if err := json.Unmarshal(tx.Children.RawMessage, &children); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal children: %w", err)
 			}
+			nodes[pos].Children = children
 		}
 
-		nodes[pos] = tree.TxTreeNode{
-			Txid:     tx.Txid,
-			Tx:       tx.Tx,
-			Children: children,
-		}
 	}
 
 	return nodes, nil
@@ -543,31 +543,31 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 			case "connector":
 				round.Connectors = extendArray(round.Connectors, int(position.Int32))
 
-				children := make(map[uint32]string)
+				round.Connectors[int(position.Int32)] = tree.TxTreeNode{
+					Txid: v.tx.Txid.String,
+					Tx:   v.tx.Tx.String,
+				}
 				if v.tx.Children.Valid {
+					children := make(map[uint32]string)
 					if err := json.Unmarshal(v.tx.Children.RawMessage, &children); err != nil {
 						return nil, fmt.Errorf("failed to unmarshal children: %w", err)
 					}
+					round.Connectors[int(position.Int32)].Children = children
 				}
 
-				round.Connectors[int(position.Int32)] = tree.TxTreeNode{
-					Txid:     v.tx.Txid.String,
-					Tx:       v.tx.Tx.String,
-					Children: children,
-				}
 			case "tree":
 				round.VtxoTree = extendArray(round.VtxoTree, int(position.Int32))
 
-				children := make(map[uint32]string)
+				round.VtxoTree[int(position.Int32)] = tree.TxTreeNode{
+					Txid: v.tx.Txid.String,
+					Tx:   v.tx.Tx.String,
+				}
 				if v.tx.Children.Valid {
+					children := make(map[uint32]string)
 					if err := json.Unmarshal(v.tx.Children.RawMessage, &children); err != nil {
 						return nil, fmt.Errorf("failed to unmarshal children: %w", err)
 					}
-				}
-				round.VtxoTree[int(position.Int32)] = tree.TxTreeNode{
-					Txid:     v.tx.Txid.String,
-					Tx:       v.tx.Tx.String,
-					Children: children,
+					round.VtxoTree[int(position.Int32)].Children = children
 				}
 			case "sweep":
 				if len(round.SweepTxs) <= 0 {
