@@ -32,7 +32,6 @@ services:
       - ARKD_SCHEDULER_TYPE=block
       - ARKD_UNILATERAL_EXIT_DELAY=1024
       - ARKD_BOARDING_EXIT_DELAY=604672
-      - ARKD_NETWORK=regtest
       - ARKD_DATADIR=./data/regtest
       - ARKD_WALLET_ADDR=arkd-wallet:6060
       - ARKD_ESPLORA_URL=http://chopsticks:3000
