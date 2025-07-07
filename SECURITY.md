@@ -13,6 +13,7 @@ The following keys may be used to communicate sensitive information to developer
 |------|-------------|-------------|
 | Marco Argentieri | [https://github.com/tiero.gpg](https://github.com/tiero.gpg) | 0F6586CE8DA12FB1 |
 | Pietralberto Mazza | [https://github.com/altafan.gpg](https://github.com/altafan.gpg) | 6C7639DEA147673B |
+| Andrew Camilleri | [https://github.com/Kukks.gpg](https://github.com/Kukks.gpg) | 8E5530D9D1C93097 |
 
 You can import a key by running the following command in your terminal and verify the fingerprint matches the one above:
 
