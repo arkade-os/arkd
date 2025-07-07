@@ -31,16 +31,6 @@ service IndexerService {
     };
   };
 
-
-  // GetCommitmentTxLeaves returns the list of leaves (vtxo outpoints) of all batch outputs' trees
-  // included in the provided commitment transaction.
-  // The response may include pagination information if the results span multiple pages.
-  rpc GetCommitmentTxLeaves(GetCommitmentTxLeavesRequest) returns (GetCommitmentTxLeavesResponse) {
-    option (google.api.http) = {
-      get: "/v1/commitmentTx/{txid}/leaves"
-    };
-  };
-
   // GetVtxoTree returns the vtxo tree for the provided batch outpoint.
   // The response includes a list of txs with details on the tree posistion and may
   // include pagination information if the results span multiple pages.
@@ -158,15 +148,6 @@ message GetConnectorsRequest {
 }
 message GetConnectorsResponse {
   repeated IndexerNode connectors = 1;
-  IndexerPageResponse page = 2;
-}
-
-message GetCommitmentTxLeavesRequest {
-  string txid = 1;
-  IndexerPageRequest page = 2;
-}
-message GetCommitmentTxLeavesResponse {
-  repeated IndexerOutpoint leaves = 1;
   IndexerPageResponse page = 2;
 }
 

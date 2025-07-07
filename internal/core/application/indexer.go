@@ -25,9 +25,6 @@ const (
 
 type IndexerService interface {
 	GetCommitmentTxInfo(ctx context.Context, txid string) (*CommitmentTxInfo, error)
-	GetCommitmentTxLeaves(
-		ctx context.Context, txid string, page *Page,
-	) (*CommitmentTxLeavesResp, error)
 	GetVtxoTree(ctx context.Context, batchOutpoint Outpoint, page *Page) (*TreeTxResp, error)
 	GetVtxoTreeLeaves(
 		ctx context.Context, batchOutpoint Outpoint, page *Page,
@@ -83,21 +80,6 @@ func (i *indexerService) GetCommitmentTxInfo(
 		TotalInputtVtxos:  roundStats.TotalInputVtxos,
 		TotalOutputVtxos:  roundStats.TotalOutputVtxos,
 		TotalOutputAmount: roundStats.TotalBatchAmount,
-	}, nil
-}
-
-func (i *indexerService) GetCommitmentTxLeaves(
-	ctx context.Context, txid string, page *Page,
-) (*CommitmentTxLeavesResp, error) {
-	leaves, err := i.repoManager.Vtxos().GetLeafVtxosForBatch(ctx, txid)
-	if err != nil {
-		return nil, err
-	}
-
-	paginatedLeaves, pageResp := paginate(leaves, page, maxPageSizeVtxoTree)
-	return &CommitmentTxLeavesResp{
-		Leaves: paginatedLeaves,
-		Page:   pageResp,
 	}, nil
 }
 

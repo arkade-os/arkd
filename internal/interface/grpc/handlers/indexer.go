@@ -76,37 +76,6 @@ func (e *indexerService) GetCommitmentTx(
 	}, nil
 }
 
-func (e *indexerService) GetCommitmentTxLeaves(
-	ctx context.Context, request *arkv1.GetCommitmentTxLeavesRequest,
-) (*arkv1.GetCommitmentTxLeavesResponse, error) {
-	txid, err := parseTxid(request.GetTxid())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	page, err := parsePage(request.GetPage())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
-	resp, err := e.indexerSvc.GetCommitmentTxLeaves(ctx, txid, page)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	leaves := make([]*arkv1.IndexerOutpoint, 0, len(resp.Leaves))
-	for _, leaf := range resp.Leaves {
-		leaves = append(leaves, &arkv1.IndexerOutpoint{
-			Txid: leaf.Txid,
-			Vout: leaf.VOut,
-		})
-	}
-
-	return &arkv1.GetCommitmentTxLeavesResponse{
-		Leaves: leaves,
-		Page:   protoPage(resp.Page),
-	}, nil
-}
-
 func (e *indexerService) GetVtxoTree(
 	ctx context.Context, request *arkv1.GetVtxoTreeRequest,
 ) (*arkv1.GetVtxoTreeResponse, error) {

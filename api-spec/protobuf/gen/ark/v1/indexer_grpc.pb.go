@@ -29,10 +29,6 @@ type IndexerServiceClient interface {
 	// The response includes a list of connector txs with details on the tree posistion and may
 	// include pagination information if the results span multiple pages.
 	GetConnectors(ctx context.Context, in *GetConnectorsRequest, opts ...grpc.CallOption) (*GetConnectorsResponse, error)
-	// GetCommitmentTxLeaves returns the list of leaves (vtxo outpoints) of all batch outputs' trees
-	// included in the provided commitment transaction.
-	// The response may include pagination information if the results span multiple pages.
-	GetCommitmentTxLeaves(ctx context.Context, in *GetCommitmentTxLeavesRequest, opts ...grpc.CallOption) (*GetCommitmentTxLeavesResponse, error)
 	// GetVtxoTree returns the vtxo tree for the provided batch outpoint.
 	// The response includes a list of txs with details on the tree posistion and may
 	// include pagination information if the results span multiple pages.
@@ -104,15 +100,6 @@ func (c *indexerServiceClient) GetForfeitTxs(ctx context.Context, in *GetForfeit
 func (c *indexerServiceClient) GetConnectors(ctx context.Context, in *GetConnectorsRequest, opts ...grpc.CallOption) (*GetConnectorsResponse, error) {
 	out := new(GetConnectorsResponse)
 	err := c.cc.Invoke(ctx, "/ark.v1.IndexerService/GetConnectors", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *indexerServiceClient) GetCommitmentTxLeaves(ctx context.Context, in *GetCommitmentTxLeavesRequest, opts ...grpc.CallOption) (*GetCommitmentTxLeavesResponse, error) {
-	out := new(GetCommitmentTxLeavesResponse)
-	err := c.cc.Invoke(ctx, "/ark.v1.IndexerService/GetCommitmentTxLeaves", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -238,10 +225,6 @@ type IndexerServiceServer interface {
 	// The response includes a list of connector txs with details on the tree posistion and may
 	// include pagination information if the results span multiple pages.
 	GetConnectors(context.Context, *GetConnectorsRequest) (*GetConnectorsResponse, error)
-	// GetCommitmentTxLeaves returns the list of leaves (vtxo outpoints) of all batch outputs' trees
-	// included in the provided commitment transaction.
-	// The response may include pagination information if the results span multiple pages.
-	GetCommitmentTxLeaves(context.Context, *GetCommitmentTxLeavesRequest) (*GetCommitmentTxLeavesResponse, error)
 	// GetVtxoTree returns the vtxo tree for the provided batch outpoint.
 	// The response includes a list of txs with details on the tree posistion and may
 	// include pagination information if the results span multiple pages.
@@ -296,9 +279,6 @@ func (UnimplementedIndexerServiceServer) GetForfeitTxs(context.Context, *GetForf
 }
 func (UnimplementedIndexerServiceServer) GetConnectors(context.Context, *GetConnectorsRequest) (*GetConnectorsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetConnectors not implemented")
-}
-func (UnimplementedIndexerServiceServer) GetCommitmentTxLeaves(context.Context, *GetCommitmentTxLeavesRequest) (*GetCommitmentTxLeavesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetCommitmentTxLeaves not implemented")
 }
 func (UnimplementedIndexerServiceServer) GetVtxoTree(context.Context, *GetVtxoTreeRequest) (*GetVtxoTreeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVtxoTree not implemented")
@@ -389,24 +369,6 @@ func _IndexerService_GetConnectors_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IndexerServiceServer).GetConnectors(ctx, req.(*GetConnectorsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _IndexerService_GetCommitmentTxLeaves_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetCommitmentTxLeavesRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(IndexerServiceServer).GetCommitmentTxLeaves(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/ark.v1.IndexerService/GetCommitmentTxLeaves",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexerServiceServer).GetCommitmentTxLeaves(ctx, req.(*GetCommitmentTxLeavesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -594,10 +556,6 @@ var IndexerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetConnectors",
 			Handler:    _IndexerService_GetConnectors_Handler,
-		},
-		{
-			MethodName: "GetCommitmentTxLeaves",
-			Handler:    _IndexerService_GetCommitmentTxLeaves_Handler,
 		},
 		{
 			MethodName: "GetVtxoTree",

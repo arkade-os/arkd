@@ -106,11 +106,6 @@ type CommitmentTxInfo struct {
 	TotalOutputVtxos  int32
 }
 
-type CommitmentTxLeavesResp struct {
-	Leaves []domain.Vtxo
-	Page   PageResp
-}
-
 type Batch struct {
 	TotalOutputAmount uint64
 	TotalOutputVtxos  int32

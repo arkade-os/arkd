@@ -279,51 +279,6 @@
         ]
       }
     },
-    "/v1/commitmentTx/{txid}/leaves": {
-      "get": {
-        "summary": "GetCommitmentTxLeaves returns the list of leaves (vtxo outpoints) of all batch outputs' trees\nincluded in the provided commitment transaction.\nThe response may include pagination information if the results span multiple pages.",
-        "operationId": "IndexerService_GetCommitmentTxLeaves",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetCommitmentTxLeavesResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "txid",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "page.size",
-            "in": "query",
-            "required": false,
-            "type": "integer",
-            "format": "int32"
-          },
-          {
-            "name": "page.index",
-            "in": "query",
-            "required": false,
-            "type": "integer",
-            "format": "int32"
-          }
-        ],
-        "tags": [
-          "IndexerService"
-        ]
-      }
-    },
     "/v1/script/subscribe": {
       "post": {
         "summary": "SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo\nscripts. It can also be used to update an existing subscribtion by adding new scripts to it.",
@@ -652,21 +607,6 @@
           "items": {
             "type": "string"
           }
-        }
-      }
-    },
-    "v1GetCommitmentTxLeavesResponse": {
-      "type": "object",
-      "properties": {
-        "leaves": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "$ref": "#/definitions/v1IndexerOutpoint"
-          }
-        },
-        "page": {
-          "$ref": "#/definitions/v1IndexerPageResponse"
         }
       }
     },
