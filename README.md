@@ -65,7 +65,7 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_DB_TYPE` | Database type (postgres, sqlite, badger) | `postgres` |
 | `ARKD_DB_URL` | Postgres connection url if `ARKD_DB_TYPE` is set to `postgres` | - |
 | `ARKD_EVENT_DB_TYPE` | Event database type (redis, inmemory) | `redis` |
-| `ARKD_EVENT_DB_URL` | Event database url if `ARKD_DB_TYPE` is set to `postgres` | - |
+| `ARKD_EVENT_DB_URL` | Event database url if `ARKD_EVENT_DB_TYPE` is set to `postgres` | - |
 | `ARKD_TX_BUILDER_TYPE` | Transaction builder type (covenantless) | `covenantless` |
 | `ARKD_LIVE_STORE_TYPE` | Cache service type (redis, inmemory) | `redis` |
 | `ARKD_REDIS_URL` | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis` | - |
