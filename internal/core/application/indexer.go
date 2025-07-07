@@ -244,7 +244,7 @@ func (i *indexerService) GetVtxoChain(
 		}
 
 		if len(vtxos) == 0 {
-			return nil, fmt.Errorf("vtxo not found for outpoint: %s", nextVtxos)
+			return nil, fmt.Errorf("vtxo not found for outpoint: %v", nextVtxos)
 		}
 
 		newNextVtxos := make([]domain.Outpoint, 0)

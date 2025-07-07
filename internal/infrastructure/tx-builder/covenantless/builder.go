@@ -657,7 +657,7 @@ func (b *txBuilder) BuildCommitmentTx(
 	return commitmentTx, vtxoTree, nextConnectorAddress, connectors, nil
 }
 
-func (b *txBuilder) GetSweepableBacthOutputs(
+func (b *txBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
 ) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput ports.SweepableBatchOutput, err error) {
 	if len(vtxoTree.Root.UnsignedTx.TxIn) != 1 {

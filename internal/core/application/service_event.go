@@ -43,7 +43,7 @@ type TreeTxMessage struct {
 	Node       tree.TxTreeNode
 }
 
-type TreeSignatuteMessage struct {
+type TreeSignatureMessage struct {
 	domain.RoundEvent
 	Topic      []string
 	BatchIndex int32
@@ -55,4 +55,4 @@ type TreeSignatuteMessage struct {
 func (r RoundSigningStarted) GetTopic() string  { return domain.RoundTopic }
 func (r TreeNoncesAggregated) GetTopic() string { return domain.RoundTopic }
 func (r TreeTxMessage) GetTopic() string        { return domain.RoundTopic }
-func (r TreeSignatuteMessage) GetTopic() string { return domain.RoundTopic }
+func (r TreeSignatureMessage) GetTopic() string { return domain.RoundTopic }

@@ -34,7 +34,7 @@ type ValidForfeitTx struct {
 
 type TxBuilder interface {
 	// BuildCommitmentTx builds a commitment tx for the given intents and boarding inputs
-	// It expects an optional list of connector addresses of expired bacthes from which selecting
+	// It expects an optional list of connector addresses of expired batches from which selecting
 	// utxos as inputs of the transaction.
 	// Returns the commitment tx, the vtxo tree, the connector tree and its root address.
 	BuildCommitmentTx(
@@ -51,8 +51,8 @@ type TxBuilder interface {
 		vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []SweepableBatchOutput) (txid string, signedSweepTx string, err error)
-	GetSweepableBacthOutputs(vtxoTree *tree.TxTree) (
-		vtxoTreeExpiry *arklib.RelativeLocktime, bacthOutputs SweepableBatchOutput, err error,
+	GetSweepableBatchOutputs(vtxoTree *tree.TxTree) (
+		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs SweepableBatchOutput, err error,
 	)
 	FinalizeAndExtract(tx string) (txhex string, err error)
 	VerifyTapscriptPartialSigs(tx string) (valid bool, txid string, err error)

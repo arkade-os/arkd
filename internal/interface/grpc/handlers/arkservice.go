@@ -387,7 +387,7 @@ func (h *handler) listenToEvents() {
 				}
 
 				evs = append(evs, eventWithTopics{topics: e.Topic, event: ev})
-			case application.TreeSignatuteMessage:
+			case application.TreeSignatureMessage:
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeSignature{
 						TreeSignature: &arkv1.TreeSignatureEvent{

@@ -451,7 +451,7 @@ func (m *mockedTxBuilder) BuildSweepTx(
 	return res0, res1, args.Error(2)
 }
 
-func (m *mockedTxBuilder) GetSweepableBacthOutputs(
+func (m *mockedTxBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
 ) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput ports.SweepableBatchOutput, err error) {
 	args := m.Called(vtxoTree)

@@ -56,7 +56,7 @@ func findSweepableOutputs(
 				}
 			}
 
-			vtxoTreeExpiry, sweepInput, err := txbuilder.GetSweepableBacthOutputs(g)
+			vtxoTreeExpiry, sweepInput, err := txbuilder.GetSweepableBatchOutputs(g)
 			if err != nil {
 				return false, err
 			}
@@ -332,7 +332,7 @@ func treeSignatureEvents(txTree *tree.TxTree, batchIndex int32, roundId string) 
 			return false, err
 		}
 
-		events = append(events, TreeSignatuteMessage{
+		events = append(events, TreeSignatureMessage{
 			RoundEvent: domain.RoundEvent{
 				Id:   roundId,
 				Type: domain.EventTypeUndefined,
