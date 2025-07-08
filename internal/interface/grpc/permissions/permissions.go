@@ -170,10 +170,6 @@ func Whitelist() map[string][]bakery.Op {
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetCommitmentTxLeaves", arkv1.IndexerService_ServiceDesc.ServiceName): {{
-			Entity: EntityIndexer,
-			Action: "read",
-		}},
 		fmt.Sprintf("/%s/GetVtxoTree", arkv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
