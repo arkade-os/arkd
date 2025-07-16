@@ -6,6 +6,7 @@
 [![ci_unit](https://github.com/arkade-os/arkd/actions/workflows/unit.yaml/badge.svg)](https://github.com/arkade-os/arkd/actions/workflows/unit.yaml)
 [![GitHub](https://img.shields.io/github/license/arkade-os/arkd)](https://github.com/arkade-os/arkd/tree/master/LICENSE)
 ![Go Reference](https://pkg.go.dev/badge/github.com/arkade-os/arkd.svg)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/arkade-os/arkd)
 
 > **⚠️ IMPORTANT DISCLAIMER: ALPHA SOFTWARE**
 > `arkd` is currently in alpha stage. This software is experimental and under active development.
