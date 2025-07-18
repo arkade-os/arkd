@@ -305,7 +305,7 @@ func (s *service) GetPubkey(_ context.Context) (*btcec.PublicKey, error) {
 }
 
 func (s *service) GetNetwork(_ context.Context) string {
-	return s.cfg.chainParams().Name
+	return s.cfg.Network.Name
 }
 
 func (s *service) GetForfeitAddress(_ context.Context) (string, error) {
