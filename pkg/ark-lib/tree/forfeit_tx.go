@@ -3,7 +3,6 @@ package tree
 import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -40,10 +39,6 @@ func BuildForfeitTx(
 
 	for i, prevout := range prevouts {
 		if err := updater.AddInWitnessUtxo(prevout, i); err != nil {
-			return nil, err
-		}
-
-		if err := updater.AddInSighashType(txscript.SigHashDefault, i); err != nil {
 			return nil, err
 		}
 	}
