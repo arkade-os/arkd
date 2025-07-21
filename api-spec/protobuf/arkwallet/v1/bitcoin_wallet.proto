@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package arkwallet.v1;
 
+option go_package = "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1;arkwalletv1";
+
 import "google/api/annotations.proto";
 
 // WalletService exposes wallet operations via gRPC. Methods match the ports.WalletService interface.

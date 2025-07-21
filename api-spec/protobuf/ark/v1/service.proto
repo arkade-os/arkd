@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package ark.v1;
 
+option go_package = "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1;arkv1";
+
 import "google/api/annotations.proto";
 import "ark/v1/types.proto";
 
