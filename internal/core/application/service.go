@@ -698,6 +698,12 @@ func (s *service) SubmitOffchainTx(
 	// verify the ark tx integrity
 	rebuiltTxid := rebuiltArkTx.UnsignedTx.TxID()
 	if rebuiltTxid != txid {
+		fmt.Println("CHECKPOINT TXS:", len(rebuiltCheckpointTxs))
+		for _, tx := range rebuiltCheckpointTxs {
+			fmt.Println(tx.B64Encode())
+		}
+		fmt.Println("ARK TX:")
+		fmt.Println(rebuiltArkTx.B64Encode())
 		return nil, "", "", fmt.Errorf(
 			"invalid ark tx: epxected txid %s got %s", rebuiltTxid, txid,
 		)
