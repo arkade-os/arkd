@@ -2,7 +2,6 @@ package script
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -450,31 +449,27 @@ func (d *CLTVMultisigClosure) Decode(script []byte) (bool, error) {
 	}
 
 	var locktime []byte
-	if txscript.IsSmallInt(tokenizer.Opcode()) {
+	isSmallInt := txscript.IsSmallInt(tokenizer.Opcode())
+	if isSmallInt {
 		locktime = []byte{tokenizer.Opcode()}
 	} else {
 		locktime = tokenizer.Data()
 	}
 
 	for _, opCode := range []byte{txscript.OP_CHECKLOCKTIMEVERIFY, txscript.OP_DROP} {
-
 		if !tokenizer.Next() || tokenizer.Opcode() != opCode {
 			return false, nil
 		}
 	}
 
-	var locktimeValue uint32
-	// read uint32 from bytes
-	if len(locktime) > 3 {
-		locktimeValue = binary.LittleEndian.Uint32(locktime)
-	} else if len(locktime) == 2 {
-		locktimeValue = uint32(binary.LittleEndian.Uint16(locktime))
-	} else if len(locktime) == 1 {
-		locktimeValue = uint32(locktime[0])
-	} else {
-		return false, fmt.Errorf(
-			"invalid locktime length: expected 1, 2 or 4 bytes, got %d", len(locktime),
-		)
+	locktimeValue, err := txscript.MakeScriptNum(locktime, true, 6)
+	if err != nil {
+		return false, err
+	}
+	locktimeNumber := locktimeValue.Int32()
+
+	if !isSmallInt && locktimeNumber > 0 && locktimeNumber <= 16 {
+		return false, fmt.Errorf("expected minimal encoding OP_%d for locktime value %d, got %x", locktimeNumber, locktimeNumber, locktime)
 	}
 
 	multisigClosure := &MultisigClosure{}
@@ -488,7 +483,7 @@ func (d *CLTVMultisigClosure) Decode(script []byte) (bool, error) {
 		return false, nil
 	}
 
-	d.Locktime = common.AbsoluteLocktime(locktimeValue)
+	d.Locktime = common.AbsoluteLocktime(locktimeValue.Int32())
 	d.MultisigClosure = *multisigClosure
 
 	return valid, nil

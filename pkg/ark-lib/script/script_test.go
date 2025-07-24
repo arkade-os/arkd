@@ -92,6 +92,60 @@ func TestDecodeClosure(t *testing.T) {
 					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
 			},
 			{
+				name: "cltv multisig closure 1 byte locktime",
+				script: fmt.Sprintf("%x", txscript.OP_1) +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
+				name: "cltv multisig closure 2 byte locktime",
+				script: "02abcd" +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
+				name: "cltv multisig closure 3 byte locktime",
+				script: "03aabbcc" +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
+				name: "cltv multisig closure 4 byte locktime",
+				script: "04fff6adaa" +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
+				name: "cltv multisig closure 5 byte locktime",
+				script: "05efae91fff6" +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
+				name: "cltv multisig closure 6 byte locktime",
+				script: "06efae91fff6af" +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
 				name: "multisig closure with condition 2 nums that add up to 8",
 				script: fmt.Sprintf("%x", txscript.OP_5) +
 					fmt.Sprintf("%x", txscript.OP_3) +
@@ -233,6 +287,42 @@ func TestDecodeClosure(t *testing.T) {
 			{
 				name: "cltv multisig closure missing OP_CHECKLOCKTIMEVERIFY",
 				script: exampleLocktime +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey2 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
+				name: "cltv multisig closure invalid 1 byte locktime (not minimal)",
+				script: "010f00" +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey2 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
+				name: "cltv multisig closure invalid small int locktime (not minimal)",
+				script: "010f" +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey2 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			},
+			{
+				name: "cltv multisig closure invalid 7 bytes locktime",
+				script: "070001000010101010" +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
 					fmt.Sprintf("%x", txscript.OP_DROP) +
 					fmt.Sprintf("%x", txscript.OP_DATA_32) +
 					exPubKey1 +
