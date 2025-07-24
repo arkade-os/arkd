@@ -17,7 +17,7 @@ import (
 	"github.com/arkade-os/arkd/internal/interface/grpc/interceptors"
 	"github.com/arkade-os/arkd/pkg/kvdb"
 	"github.com/arkade-os/arkd/pkg/macaroons"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/meshapi/grpc-api-gateway/gateway"
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -27,7 +27,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -258,36 +257,26 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		}
 	}
 	// Reverse proxy grpc-gateway.
-	gwmux := runtime.NewServeMux(
-		runtime.WithIncomingHeaderMatcher(customMatcher),
-		runtime.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
-		runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
-			MarshalOptions: protojson.MarshalOptions{
-				Indent:    "  ",
-				Multiline: true,
-			},
-			UnmarshalOptions: protojson.UnmarshalOptions{
-				DiscardUnknown: true,
-			},
-		}),
+	gwmux := gateway.NewServeMux(
+		gateway.WithIncomingHeaderMatcher(customMatcher),
+		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
+		// runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
+		// 	MarshalOptions: protojson.MarshalOptions{
+		// 		Indent:    "  ",
+		// 		Multiline: true,
+		// 	},
+		// 	UnmarshalOptions: protojson.UnmarshalOptions{
+		// 		DiscardUnknown: true,
+		// 	},
+		// }),
 	)
 
-	if err := arkv1.RegisterAdminServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if err := arkv1.RegisterWalletServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if err := arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
+	arkv1.RegisterAdminServiceHandler(ctx, gwmux, conn)
+	arkv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
+	arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn)
 	if withAppSvc {
-		if err := arkv1.RegisterArkServiceHandler(ctx, gwmux, conn); err != nil {
-			return err
-		}
-		if err := arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn); err != nil {
-			return err
-		}
+		arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
+		arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
 	}
 	grpcGateway := http.Handler(gwmux)
 

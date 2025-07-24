@@ -2,13 +2,13 @@ syntax = "proto3";
 
 package ark.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 import "ark/v1/types.proto";
 
 service ArkService {
   // GetInfo returns information and parameters of the server.
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/info"
     };
   }
@@ -18,7 +18,7 @@ service ArkService {
   // The client should provide a BIP-322 message with the intent information, and the server should
   // respond with an intent id.
   rpc RegisterIntent(RegisterIntentRequest) returns (RegisterIntentResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/registerIntent"
       body: "*"
     };
@@ -29,7 +29,7 @@ service ArkService {
   // the registered intent to prove its ownership.
   // The server should delete the intent and return success.
   rpc DeleteIntent(DeleteIntentRequest) returns (DeleteIntentResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/deleteIntent"
       body: "*"
     };
@@ -38,7 +38,7 @@ service ArkService {
   // ConfirmRegistration allows a client that has been selected for the next batch to confirm its
   // participation by revealing the intent id.
   rpc ConfirmRegistration(ConfirmRegistrationRequest) returns (ConfirmRegistrationResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/ack"
       body: "*"
     };
@@ -50,7 +50,7 @@ service ArkService {
   // The server should verify the cosigner public key and the nonces, and store them for later
   // aggregation once nonces from all clients are collected.
   rpc SubmitTreeNonces(SubmitTreeNoncesRequest) returns (SubmitTreeNoncesResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/tree/submitNonces"
       body: "*"
     };
@@ -62,7 +62,7 @@ service ArkService {
   // The server should verify the cosigner public key and the signatures, and store them for later
   // aggregation once signatures from all clients are collected.
   rpc SubmitTreeSignatures(SubmitTreeSignaturesRequest) returns (SubmitTreeSignaturesResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/tree/submitSignatures"
       body: "*"
     };
@@ -72,7 +72,7 @@ service ArkService {
   // commitment transaction (in case of onboarding).
   // The server should verify the signed txs and return success.
   rpc SubmitSignedForfeitTxs(SubmitSignedForfeitTxsRequest) returns (SubmitSignedForfeitTxsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/submitForfeitTxs"
       body: "*"
     };
@@ -85,8 +85,12 @@ service ArkService {
   // The server pushes these events to the client in real-time as soon as its ready to move to the
   // next phase of the batch processing.
   rpc GetEventStream(GetEventStreamRequest) returns (stream GetEventStreamResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/batch/events"
+      stream: {
+        disable_chunked_transfer: true
+        disable_websockets: true
+      }
     };
   };
 
@@ -95,7 +99,7 @@ service ArkService {
   // The server should verify the signed transactions and return the fully signed Ark tx and the
   // signed checkpoint txs.
   rpc SubmitTx(SubmitTxRequest) returns (SubmitTxResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/tx/submit"
       body: "*"
     };
@@ -106,7 +110,7 @@ service ArkService {
   // The server verifies the signed checkpoint transactions and returns success if everything is
   // valid.
   rpc FinalizeTx(FinalizeTxRequest) returns (FinalizeTxResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/tx/finalize"
       body: "*"
     };
@@ -118,8 +122,12 @@ service ArkService {
   // NOTE: the stream doesn't have history support, therefore returns only txs from the moment it's
   // opened until it's closed.
   rpc GetTransactionsStream(GetTransactionsStreamRequest) returns (stream GetTransactionsStreamResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/txs"
+      stream: {
+        disable_chunked_transfer: true
+        disable_websockets: true
+      }
     };
   }
 }
