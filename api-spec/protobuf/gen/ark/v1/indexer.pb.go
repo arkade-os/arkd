@@ -2262,20 +2262,20 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\"INDEXER_CHAINED_TX_TYPE_COMMITMENT\x10\x01\x12\x1f\n" +
 	"\x1bINDEXER_CHAINED_TX_TYPE_ARK\x10\x02\x12 \n" +
 	"\x1cINDEXER_CHAINED_TX_TYPE_TREE\x10\x03\x12&\n" +
-	"\"INDEXER_CHAINED_TX_TYPE_CHECKPOINT\x10\x042\x9b\f\n" +
-	"\x0eIndexerService\x12p\n" +
-	"\x0fGetCommitmentTx\x12\x1e.ark.v1.GetCommitmentTxRequest\x1a\x1f.ark.v1.GetCommitmentTxResponse\"\x1c\xb2J\x19\x12\x17/v1/commitmentTx/{txid}\x12u\n" +
-	"\rGetForfeitTxs\x12\x1c.ark.v1.GetForfeitTxsRequest\x1a\x1d.ark.v1.GetForfeitTxsResponse\"'\xb2J$\x12\"/v1/commitmentTx/{txid}/forfeitTxs\x12u\n" +
-	"\rGetConnectors\x12\x1c.ark.v1.GetConnectorsRequest\x1a\x1d.ark.v1.GetConnectorsResponse\"'\xb2J$\x12\"/v1/commitmentTx/{txid}/connectors\x12\x87\x01\n" +
-	"\vGetVtxoTree\x12\x1a.ark.v1.GetVtxoTreeRequest\x1a\x1b.ark.v1.GetVtxoTreeResponse\"?\xb2J<\x12:/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree\x12\x9b\x01\n" +
-	"\x11GetVtxoTreeLeaves\x12 .ark.v1.GetVtxoTreeLeavesRequest\x1a!.ark.v1.GetVtxoTreeLeavesResponse\"A\xb2J>\x12</v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/leaves\x12M\n" +
-	"\bGetVtxos\x12\x17.ark.v1.GetVtxosRequest\x1a\x18.ark.v1.GetVtxosResponse\"\x0e\xb2J\v\x12\t/v1/vtxos\x12~\n" +
-	"\fGetVtxoChain\x12\x1b.ark.v1.GetVtxoChainRequest\x1a\x1c.ark.v1.GetVtxoChainResponse\"3\xb2J0\x12./v1/vtxo/{outpoint.txid}/{outpoint.vout}/chain\x12h\n" +
-	"\rGetVirtualTxs\x12\x1c.ark.v1.GetVirtualTxsRequest\x1a\x1d.ark.v1.GetVirtualTxsResponse\"\x1a\xb2J\x17\x12\x15/v1/virtualTx/{txids}\x12\xb5\x01\n" +
-	"\x19GetBatchSweepTransactions\x12(.ark.v1.GetBatchSweepTransactionsRequest\x1a).ark.v1.GetBatchSweepTransactionsResponse\"C\xb2J@\x12>/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs\x12|\n" +
-	"\x13SubscribeForScripts\x12\".ark.v1.SubscribeForScriptsRequest\x1a#.ark.v1.SubscribeForScriptsResponse\"\x1c\xb2J\x19B\x01*\"\x14/v1/script/subscribe\x12\x84\x01\n" +
-	"\x15UnsubscribeForScripts\x12$.ark.v1.UnsubscribeForScriptsRequest\x1a%.ark.v1.UnsubscribeForScriptsResponse\"\x1e\xb2J\x1bB\x01*\"\x16/v1/script/unsubscribe\x12\x8a\x01\n" +
-	"\x0fGetSubscription\x12\x1e.ark.v1.GetSubscriptionRequest\x1a\x1f.ark.v1.GetSubscriptionResponse\"4\xb2J1b\x04\b\x01\x18\x01\x12)/v1/script/subscription/{subscription_id}0\x01B{\n" +
+	"\"INDEXER_CHAINED_TX_TYPE_CHECKPOINT\x10\x042\x82\r\n" +
+	"\x0eIndexerService\x12x\n" +
+	"\x0fGetCommitmentTx\x12\x1e.ark.v1.GetCommitmentTxRequest\x1a\x1f.ark.v1.GetCommitmentTxResponse\"$\xb2J!\x12\x1f/v1/indexer/commitmentTx/{txid}\x12}\n" +
+	"\rGetForfeitTxs\x12\x1c.ark.v1.GetForfeitTxsRequest\x1a\x1d.ark.v1.GetForfeitTxsResponse\"/\xb2J,\x12*/v1/indexer/commitmentTx/{txid}/forfeitTxs\x12}\n" +
+	"\rGetConnectors\x12\x1c.ark.v1.GetConnectorsRequest\x1a\x1d.ark.v1.GetConnectorsResponse\"/\xb2J,\x12*/v1/indexer/commitmentTx/{txid}/connectors\x12\x8f\x01\n" +
+	"\vGetVtxoTree\x12\x1a.ark.v1.GetVtxoTreeRequest\x1a\x1b.ark.v1.GetVtxoTreeResponse\"G\xb2JD\x12B/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree\x12\xa8\x01\n" +
+	"\x11GetVtxoTreeLeaves\x12 .ark.v1.GetVtxoTreeLeavesRequest\x1a!.ark.v1.GetVtxoTreeLeavesResponse\"N\xb2JK\x12I/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves\x12U\n" +
+	"\bGetVtxos\x12\x17.ark.v1.GetVtxosRequest\x1a\x18.ark.v1.GetVtxosResponse\"\x16\xb2J\x13\x12\x11/v1/indexer/vtxos\x12\x86\x01\n" +
+	"\fGetVtxoChain\x12\x1b.ark.v1.GetVtxoChainRequest\x1a\x1c.ark.v1.GetVtxoChainResponse\";\xb2J8\x126/v1/indexer/vtxo/{outpoint.txid}/{outpoint.vout}/chain\x12p\n" +
+	"\rGetVirtualTxs\x12\x1c.ark.v1.GetVirtualTxsRequest\x1a\x1d.ark.v1.GetVirtualTxsResponse\"\"\xb2J\x1f\x12\x1d/v1/indexer/virtualTx/{txids}\x12\xbd\x01\n" +
+	"\x19GetBatchSweepTransactions\x12(.ark.v1.GetBatchSweepTransactionsRequest\x1a).ark.v1.GetBatchSweepTransactionsResponse\"K\xb2JH\x12F/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs\x12\x84\x01\n" +
+	"\x13SubscribeForScripts\x12\".ark.v1.SubscribeForScriptsRequest\x1a#.ark.v1.SubscribeForScriptsResponse\"$\xb2J!B\x01*\"\x1c/v1/indexer/script/subscribe\x12\x8c\x01\n" +
+	"\x15UnsubscribeForScripts\x12$.ark.v1.UnsubscribeForScriptsRequest\x1a%.ark.v1.UnsubscribeForScriptsResponse\"&\xb2J#B\x01*\"\x1e/v1/indexer/script/unsubscribe\x12\x92\x01\n" +
+	"\x0fGetSubscription\x12\x1e.ark.v1.GetSubscriptionRequest\x1a\x1f.ark.v1.GetSubscriptionResponse\"<\xb2J9b\x04\b\x01\x18\x01\x121/v1/indexer/script/subscription/{subscription_id}0\x01B{\n" +
 	"\n" +
 	"com.ark.v1B\fIndexerProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 

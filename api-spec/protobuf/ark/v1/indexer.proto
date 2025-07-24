@@ -9,7 +9,7 @@ service IndexerService {
   // provided txid.
   rpc GetCommitmentTx(GetCommitmentTxRequest) returns (GetCommitmentTxResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/commitmentTx/{txid}"
+      get: "/v1/indexer/commitmentTx/{txid}"
     };
   };
 
@@ -18,7 +18,7 @@ service IndexerService {
   // The response may include pagination information if the results span multiple pages.
   rpc GetForfeitTxs(GetForfeitTxsRequest) returns (GetForfeitTxsResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/commitmentTx/{txid}/forfeitTxs"
+      get: "/v1/indexer/commitmentTx/{txid}/forfeitTxs"
     };
   };
   
@@ -27,7 +27,7 @@ service IndexerService {
   // include pagination information if the results span multiple pages.
   rpc GetConnectors(GetConnectorsRequest) returns (GetConnectorsResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/commitmentTx/{txid}/connectors"
+      get: "/v1/indexer/commitmentTx/{txid}/connectors"
     };
   };
 
@@ -36,7 +36,7 @@ service IndexerService {
   // include pagination information if the results span multiple pages.
   rpc GetVtxoTree(GetVtxoTreeRequest) returns (GetVtxoTreeResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree"
+      get: "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree"
     };
   };
 
@@ -45,7 +45,7 @@ service IndexerService {
   // The response may be paginated if the results span multiple pages.
   rpc GetVtxoTreeLeaves(GetVtxoTreeLeavesRequest) returns (GetVtxoTreeLeavesResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/leaves"
+      get: "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves"
     };
   };
 
@@ -54,7 +54,7 @@ service IndexerService {
   // The response may be paginated if the results span multiple pages.
   rpc GetVtxos(GetVtxosRequest) returns (GetVtxosResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/vtxos"
+      get: "/v1/indexer/vtxos"
     };
   };
   
@@ -63,7 +63,7 @@ service IndexerService {
   // The response may be paginated if the results span multiple pages.
   rpc GetVtxoChain(GetVtxoChainRequest) returns (GetVtxoChainResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/vtxo/{outpoint.txid}/{outpoint.vout}/chain"
+      get: "/v1/indexer/vtxo/{outpoint.txid}/{outpoint.vout}/chain"
     };
   }
 
@@ -71,7 +71,7 @@ service IndexerService {
   // The response may be paginated if the results span multiple pages.
   rpc GetVirtualTxs(GetVirtualTxsRequest) returns (GetVirtualTxsResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/virtualTx/{txids}"
+      get: "/v1/indexer/virtualTx/{txids}"
     };
   }
 
@@ -87,7 +87,7 @@ service IndexerService {
   // empty.
   rpc GetBatchSweepTransactions(GetBatchSweepTransactionsRequest) returns (GetBatchSweepTransactionsResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs"
+      get: "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs"
     };
   }
 
@@ -95,7 +95,7 @@ service IndexerService {
   // scripts. It can also be used to update an existing subscribtion by adding new scripts to it.
   rpc SubscribeForScripts(SubscribeForScriptsRequest) returns (SubscribeForScriptsResponse) {
     option (meshapi.gateway.http) = {
-      post: "/v1/script/subscribe"
+      post: "/v1/indexer/script/subscribe"
       body: "*"
     };
   };
@@ -103,7 +103,7 @@ service IndexerService {
   // UnsubscribeForScripts allows to remove scripts from an existing subscription.
   rpc UnsubscribeForScripts(UnsubscribeForScriptsRequest) returns (UnsubscribeForScriptsResponse) {
     option (meshapi.gateway.http) = {
-      post: "/v1/script/unsubscribe"
+      post: "/v1/indexer/script/unsubscribe"
       body: "*"
     };
   };
@@ -115,7 +115,7 @@ service IndexerService {
   // UnsubscribeForScripts RPCs.
   rpc GetSubscription(GetSubscriptionRequest) returns (stream GetSubscriptionResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/script/subscription/{subscription_id}"
+      get: "/v1/indexer/script/subscription/{subscription_id}"
       stream: {
         disable_chunked_transfer: true
         disable_websockets: true
