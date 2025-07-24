@@ -1763,6 +1763,44 @@ func TestDeleteIntent(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestForfeitWithSighashTypeAnyoneCanPayAll(t *testing.T) {
+	ctx := context.Background()
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	// faucet offchain address
+	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	_, err = runCommand("nigiri", "faucet", boardingAddr, "0.0002")
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+	}()
+
+	_, err = alice.Settle(ctx)
+	require.NoError(t, err)
+
+	wg.Wait()
+
+	aliceVtxos, _, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, aliceVtxos)
+
+	_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, nil, nil)
+	require.NoError(t, err)
+
+}
+
 func TestSweep(t *testing.T) {
 	var receive arkReceive
 	receiveStr, err := runArkCommand("receive")
