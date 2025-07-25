@@ -31,12 +31,13 @@ func mainAction(_ *cli.Context) error {
 	log.SetLevel(log.Level(cfg.LogLevel))
 
 	svcConfig := grpcservice.Config{
-		Datadir:         cfg.Datadir,
-		Port:            cfg.Port,
-		NoTLS:           cfg.NoTLS,
-		NoMacaroons:     cfg.NoMacaroons,
-		TLSExtraIPs:     cfg.TLSExtraIPs,
-		TLSExtraDomains: cfg.TLSExtraDomains,
+		Datadir:           cfg.Datadir,
+		Port:              cfg.Port,
+		NoTLS:             cfg.NoTLS,
+		NoMacaroons:       cfg.NoMacaroons,
+		TLSExtraIPs:       cfg.TLSExtraIPs,
+		TLSExtraDomains:   cfg.TLSExtraDomains,
+		HeartbeatInterval: cfg.HeartbeatInterval,
 	}
 
 	svc, err := grpcservice.NewService(Version, svcConfig, cfg)
