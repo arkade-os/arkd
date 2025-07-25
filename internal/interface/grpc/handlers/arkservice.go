@@ -431,13 +431,13 @@ func (h *handler) listenToTxEvents() {
 		switch event.Type {
 		case application.CommitmentTxType:
 			msg = &arkv1.GetTransactionsStreamResponse{
-				Tx: &arkv1.GetTransactionsStreamResponse_CommitmentTx{
+				Data: &arkv1.GetTransactionsStreamResponse_CommitmentTx{
 					CommitmentTx: txEvent(event).toProto(),
 				},
 			}
 		case application.ArkTxType:
 			msg = &arkv1.GetTransactionsStreamResponse{
-				Tx: &arkv1.GetTransactionsStreamResponse_ArkTx{
+				Data: &arkv1.GetTransactionsStreamResponse_ArkTx{
 					ArkTx: txEvent(event).toProto(),
 				},
 			}

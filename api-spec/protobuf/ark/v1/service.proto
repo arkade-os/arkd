@@ -206,6 +206,7 @@ message GetEventStreamResponse {
     TreeNoncesAggregatedEvent tree_nonces_aggregated = 6;
     TreeTxEvent tree_tx = 7;
     TreeSignatureEvent tree_signature = 8;
+    Heartbeat heartbeat = 9;
   }
 }
 
@@ -227,8 +228,9 @@ message FinalizeTxResponse {}
 
 message GetTransactionsStreamRequest {}
 message GetTransactionsStreamResponse {
-  oneof tx {
+  oneof data {
     TxNotification commitment_tx = 1;
     TxNotification ark_tx = 2;
+    Heartbeat heartbeat = 3;
   }
 }

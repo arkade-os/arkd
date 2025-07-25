@@ -110,3 +110,6 @@ message TreeSignatureEvent {
   string txid = 4;
   string signature = 5;
 }
+
+message Heartbeat {
+}

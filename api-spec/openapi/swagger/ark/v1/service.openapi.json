@@ -594,6 +594,9 @@
           "batchStarted": {
             "$ref": "#/components/schemas/BatchStartedEvent"
           },
+          "heartbeat": {
+            "$ref": "#/components/schemas/Heartbeat"
+          },
           "treeNoncesAggregated": {
             "$ref": "#/components/schemas/TreeNoncesAggregatedEvent"
           },
@@ -684,8 +687,15 @@
           },
           "commitmentTx": {
             "$ref": "#/components/schemas/TxNotification"
+          },
+          "heartbeat": {
+            "$ref": "#/components/schemas/Heartbeat"
           }
         }
+      },
+      "Heartbeat": {
+        "title": "Heartbeat",
+        "type": "object"
       },
       "MarketHour": {
         "title": "MarketHour",

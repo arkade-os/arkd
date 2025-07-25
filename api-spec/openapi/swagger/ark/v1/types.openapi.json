@@ -73,6 +73,10 @@
           }
         }
       },
+      "Heartbeat": {
+        "title": "Heartbeat",
+        "type": "object"
+      },
       "Input": {
         "title": "Input",
         "type": "object",

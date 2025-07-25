@@ -1046,6 +1046,42 @@ func (x *TreeSignatureEvent) GetSignature() string {
 	return ""
 }
 
+type Heartbeat struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Heartbeat) Reset() {
+	*x = Heartbeat{}
+	mi := &file_ark_v1_types_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Heartbeat) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Heartbeat) ProtoMessage() {}
+
+func (x *Heartbeat) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_types_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
+func (*Heartbeat) Descriptor() ([]byte, []int) {
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{16}
+}
+
 var File_ark_v1_types_proto protoreflect.FileDescriptor
 
 const file_ark_v1_types_proto_rawDesc = "" +
@@ -1139,7 +1175,8 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\vbatch_index\x18\x03 \x01(\x05R\n" +
 	"batchIndex\x12\x12\n" +
 	"\x04txid\x18\x04 \x01(\tR\x04txid\x12\x1c\n" +
-	"\tsignature\x18\x05 \x01(\tR\tsignatureBy\n" +
+	"\tsignature\x18\x05 \x01(\tR\tsignature\"\v\n" +
+	"\tHeartbeatBy\n" +
 	"\n" +
 	"com.ark.v1B\n" +
 	"TypesProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
@@ -1156,7 +1193,7 @@ func file_ark_v1_types_proto_rawDescGZIP() []byte {
 	return file_ark_v1_types_proto_rawDescData
 }
 
-var file_ark_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_ark_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_ark_v1_types_proto_goTypes = []any{
 	(*Outpoint)(nil),                  // 0: ark.v1.Outpoint
 	(*Input)(nil),                     // 1: ark.v1.Input
@@ -1174,8 +1211,9 @@ var file_ark_v1_types_proto_goTypes = []any{
 	(*TreeNoncesAggregatedEvent)(nil), // 13: ark.v1.TreeNoncesAggregatedEvent
 	(*TreeTxEvent)(nil),               // 14: ark.v1.TreeTxEvent
 	(*TreeSignatureEvent)(nil),        // 15: ark.v1.TreeSignatureEvent
-	nil,                               // 16: ark.v1.TxNotification.CheckpointTxsEntry
-	nil,                               // 17: ark.v1.TreeTxEvent.ChildrenEntry
+	(*Heartbeat)(nil),                 // 16: ark.v1.Heartbeat
+	nil,                               // 17: ark.v1.TxNotification.CheckpointTxsEntry
+	nil,                               // 18: ark.v1.TreeTxEvent.ChildrenEntry
 }
 var file_ark_v1_types_proto_depIdxs = []int32{
 	0,  // 0: ark.v1.Input.outpoint:type_name -> ark.v1.Outpoint
@@ -1183,8 +1221,8 @@ var file_ark_v1_types_proto_depIdxs = []int32{
 	0,  // 2: ark.v1.Vtxo.outpoint:type_name -> ark.v1.Outpoint
 	2,  // 3: ark.v1.TxNotification.spent_vtxos:type_name -> ark.v1.Vtxo
 	2,  // 4: ark.v1.TxNotification.spendable_vtxos:type_name -> ark.v1.Vtxo
-	16, // 5: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
-	17, // 6: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
+	17, // 5: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
+	18, // 6: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
 	3,  // 7: ark.v1.TxNotification.CheckpointTxsEntry.value:type_name -> ark.v1.TxData
 	8,  // [8:8] is the sub-list for method output_type
 	8,  // [8:8] is the sub-list for method input_type
@@ -1204,7 +1242,7 @@ func file_ark_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_types_proto_rawDesc), len(file_ark_v1_types_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

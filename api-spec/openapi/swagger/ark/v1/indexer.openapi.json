@@ -838,35 +838,11 @@
         "title": "GetSubscriptionResponse",
         "type": "object",
         "properties": {
-          "checkpointTxs": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/IndexerTxData"
-            }
+          "event": {
+            "$ref": "#/components/schemas/IndexerSubscriptionEvent"
           },
-          "newVtxos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IndexerVtxo"
-            }
-          },
-          "scripts": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "spentVtxos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IndexerVtxo"
-            }
-          },
-          "tx": {
-            "type": "string"
-          },
-          "txid": {
-            "type": "string"
+          "heartbeat": {
+            "$ref": "#/components/schemas/IndexerHeartbeat"
           }
         }
       },
@@ -1087,6 +1063,10 @@
         "type": "string",
         "default": "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED"
       },
+      "IndexerHeartbeat": {
+        "title": "IndexerHeartbeat",
+        "type": "object"
+      },
       "IndexerNode": {
         "title": "IndexerNode",
         "type": "object",
@@ -1145,6 +1125,42 @@
           "total": {
             "type": "integer",
             "format": "int32"
+          }
+        }
+      },
+      "IndexerSubscriptionEvent": {
+        "title": "IndexerSubscriptionEvent",
+        "type": "object",
+        "properties": {
+          "checkpointTxs": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/IndexerTxData"
+            }
+          },
+          "newVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerVtxo"
+            }
+          },
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spentVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerVtxo"
+            }
+          },
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
           }
         }
       },

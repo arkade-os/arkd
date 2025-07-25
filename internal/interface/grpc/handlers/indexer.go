@@ -480,12 +480,16 @@ func (h *indexerService) listenToTxEvents() {
 			if len(spendableVtxos) > 0 || len(spentVtxos) > 0 {
 				go func() {
 					l.ch <- &arkv1.GetSubscriptionResponse{
-						Txid:          event.Txid,
-						Scripts:       involvedScripts,
-						NewVtxos:      spendableVtxos,
-						SpentVtxos:    spentVtxos,
-						Tx:            event.Tx,
-						CheckpointTxs: checkpointTxs,
+						Data: &arkv1.GetSubscriptionResponse_Event{
+							Event: &arkv1.IndexerSubscriptionEvent{
+								Txid:          event.Txid,
+								Scripts:       involvedScripts,
+								NewVtxos:      spendableVtxos,
+								SpentVtxos:    spentVtxos,
+								Tx:            event.Tx,
+								CheckpointTxs: checkpointTxs,
+							},
+						},
 					}
 				}()
 			}
