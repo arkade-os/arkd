@@ -153,6 +153,9 @@ func (v *vtxoRepository) GetVtxos(
 			ctx, queries.SelectVtxoParams{Txid: o.Txid, Vout: int32(o.VOut)},
 		)
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, nil
+			}
 			return nil, err
 		}
 
