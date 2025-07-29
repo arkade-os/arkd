@@ -3,6 +3,7 @@ package pgdb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -321,6 +322,9 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 ) ([]domain.Vtxo, error) {
 	res, err := v.querier.SelectVtxosWithPubkeys(ctx, pubkeys)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	rows := make([]queries.VtxoVw, 0, len(res))
