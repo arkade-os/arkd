@@ -680,10 +680,6 @@ func (s *service) SubmitOffchainTx(
 		return nil, "", "", fmt.Errorf("failed to rebuild ark and/or checkpoint tx: %s", err)
 	}
 
-	fmt.Println("REBUILT TXS")
-	fmt.Println(rebuiltArkTx)
-	fmt.Println(rebuiltCheckpointTxs)
-
 	// verify the checkpoints txs integrity
 	if len(rebuiltCheckpointTxs) != len(checkpointPsbts) {
 		return nil, "", "", fmt.Errorf(
@@ -702,6 +698,12 @@ func (s *service) SubmitOffchainTx(
 	// verify the ark tx integrity
 	rebuiltTxid := rebuiltArkTx.UnsignedTx.TxID()
 	if rebuiltTxid != txid {
+		fmt.Println("REBUILT ARK TX")
+		fmt.Println(rebuiltArkTx.B64Encode())
+		fmt.Println("REBUILT CP TXS")
+		for _, cp := range rebuiltCheckpointTxs {
+			fmt.Println(cp.B64Encode())
+		}
 		return nil, "", "", fmt.Errorf(
 			"invalid ark tx: epxected txid %s got %s", rebuiltTxid, txid,
 		)
