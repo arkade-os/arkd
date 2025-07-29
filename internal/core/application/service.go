@@ -680,6 +680,10 @@ func (s *service) SubmitOffchainTx(
 		return nil, "", "", fmt.Errorf("failed to rebuild ark and/or checkpoint tx: %s", err)
 	}
 
+	fmt.Println("REBUILT TXS")
+	fmt.Println(rebuiltArkTx)
+	fmt.Println(rebuiltCheckpointTxs)
+
 	// verify the checkpoints txs integrity
 	if len(rebuiltCheckpointTxs) != len(checkpointPsbts) {
 		return nil, "", "", fmt.Errorf(
