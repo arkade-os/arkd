@@ -328,9 +328,6 @@ func (s *service) SubmitOffchainTx(
 	checkpointPsbts := make(map[string]*psbt.Packet) // txid -> psbt
 	spentVtxoKeys := make([]domain.Outpoint, 0)
 	checkpointTxsByVtxoKey := make(map[domain.Outpoint]string)
-	// This slice is used only in the next loop to guarantee that we populate `ins` the same order
-	// used by the client.
-	checkpointTxids := make([]string, 0, len(unsignedCheckpointTxs))
 	for _, tx := range unsignedCheckpointTxs {
 		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 		if err != nil {
@@ -351,7 +348,6 @@ func (s *service) SubmitOffchainTx(
 		checkpointTxs[txid] = tx
 		checkpointPsbts[txid] = checkpointPtx
 		checkpointTxsByVtxoKey[vtxoKey] = txid
-		checkpointTxids = append(checkpointTxids, txid)
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
 	}
 
@@ -388,8 +384,10 @@ func (s *service) SubmitOffchainTx(
 		}
 	}
 
-	for _, checkpointTxid := range checkpointTxids {
-		checkpointPsbt := checkpointPsbts[checkpointTxid]
+	// Loop over the inputs of the given ark tx to ensure the order of inputs is preserved when
+	// rebuilding the txs.
+	for _, in := range ptx.UnsignedTx.TxIn {
+		checkpointPsbt := checkpointPsbts[in.PreviousOutPoint.Hash.String()]
 		input := checkpointPsbt.Inputs[0]
 
 		if input.WitnessUtxo == nil {
