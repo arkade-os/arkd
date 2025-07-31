@@ -136,6 +136,7 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 			}
 		}
 
+		fmt.Println("ADDING IN", vtxo.Outpoint.String())
 		ins = append(ins, vtxo.Outpoint)
 		if locktime != nil {
 			sequences = append(sequences, cltvSequence)
@@ -144,6 +145,10 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 		}
 	}
 
+	fmt.Println("INPUTS")
+	for _, in := range ins {
+		fmt.Println(in.String())
+	}
 	arkTx, err := psbt.New(
 		ins, append(outputs, txutils.AnchorOutput()), 3, uint32(txLocktime), sequences,
 	)
@@ -158,6 +163,8 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 			return nil, err
 		}
 	}
+	fmt.Println("UNSIGNED ARK TX")
+	fmt.Println(arkTx.B64Encode())
 
 	return arkTx, nil
 }
