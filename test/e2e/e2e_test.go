@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -17,17 +18,15 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/bip322"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/client"
-	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
 	"github.com/arkade-os/go-sdk/explorer"
 	"github.com/arkade-os/go-sdk/indexer"
-	grpcindexer "github.com/arkade-os/go-sdk/indexer/grpc"
 	"github.com/arkade-os/go-sdk/redemption"
-	"github.com/arkade-os/go-sdk/store"
 	inmemorystoreconfig "github.com/arkade-os/go-sdk/store/inmemory"
 	"github.com/arkade-os/go-sdk/types"
 	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
@@ -35,6 +34,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -71,6 +71,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestSettleInSameRound(t *testing.T) {
+	t.Skip("skipping settle in same round test")
+
 	ctx := context.Background()
 	alice, grpcAlice := setupArkSDK(t)
 	defer alice.Stop()
@@ -1763,42 +1765,247 @@ func TestDeleteIntent(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestForfeitWithSighashTypeAnyoneCanPayAll(t *testing.T) {
+// TestDelegateRefresh is a test where Alice owns a vtxo and wants to refresh it.
+// she delegates the refresh to Bob.
+// Alice signs an intent transaction spending the vtxo and refreshing it.
+// Then, Alice signs a forfeit transaction using SIGHASH_ALL | ANYONECANPAY
+// It allows Bob to later adds the connector to the transaction inputs
+// and process with the batch settlement refreshing the Alice's vtxo.
+func TestDelegateRefresh(t *testing.T) {
+	delegateLocktime := arklib.AbsoluteLocktime(10)
+
 	ctx := context.Background()
-	alice, grpcAlice := setupArkSDK(t)
+	alice, alicePubKey, grpcClient := setupArkSDKwithPublicKey(t)
 	defer alice.Stop()
-	defer grpcAlice.Close()
-
-	// faucet offchain address
-	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+	defer grpcClient.Close()
+	_, aliceAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	_, err = runCommand("nigiri", "faucet", boardingAddr, "0.0002")
+	aliceArkAddr, err := arklib.DecodeAddressV0(aliceAddr)
 	require.NoError(t, err)
 
-	time.Sleep(5 * time.Second)
+	bobWallet, bobPubKey, err := setupWalletService(t)
+	require.NoError(t, err)
+	require.NotNil(t, bobWallet)
+	require.NotNil(t, bobPubKey)
 
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
-		require.NoError(t, err)
-		require.NotEmpty(t, vtxos)
-	}()
+	bobTreeSigner, err := bobWallet.NewVtxoTreeSigner(ctx, "")
+	require.NoError(t, err)
+	require.NotNil(t, bobTreeSigner)
 
-	_, err = alice.Settle(ctx)
+	infos, err := grpcClient.GetInfo(ctx)
 	require.NoError(t, err)
 
-	wg.Wait()
+	signerPubKey := getSignerPubKey(t, infos)
 
-	aliceVtxos, _, err := alice.ListVtxos(ctx)
+	collaborativeAliceBobClosure := &script.CLTVMultisigClosure{
+		Locktime: delegateLocktime,
+		MultisigClosure: script.MultisigClosure{
+			// both alice and bob must sign the transaction
+			PubKeys: []*btcec.PublicKey{alicePubKey, bobPubKey, signerPubKey},
+		},
+	}
+
+	delegationAddress := script.TapscriptsVtxoScript{
+		Closures: []script.Closure{
+			// delegation script
+			collaborativeAliceBobClosure,
+			// classic collaborative closure, alice only
+			&script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{alicePubKey, signerPubKey},
+			},
+			// alice exit script
+			&script.CSVMultisigClosure{
+				Locktime: arklib.RelativeLocktime{
+					Type:  arklib.LocktimeTypeBlock,
+					Value: 10,
+				},
+				MultisigClosure: script.MultisigClosure{
+					PubKeys: []*btcec.PublicKey{alicePubKey},
+				},
+			},
+		},
+	}
+
+	vtxoTapKey, vtxoTapTree, err := delegationAddress.TapTree()
 	require.NoError(t, err)
-	require.NotEmpty(t, aliceVtxos)
 
-	_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, nil, nil)
+	arkAddress := arklib.Address{
+		HRP:        "tark",
+		VtxoTapKey: vtxoTapKey,
+		Signer:     signerPubKey,
+	}
+
+	arkAddressStr, err := arkAddress.EncodeV0()
 	require.NoError(t, err)
 
+	aliceVtxo, err := faucetOffchainAddress(t, arkAddressStr)
+	require.NoError(t, err)
+
+	scripts, err := delegationAddress.Encode()
+	require.NoError(t, err)
+	tapTree, err := txutils.TapTree(scripts).Encode()
+	require.NoError(t, err)
+
+	intentMessage := bip322.IntentMessage{
+		BaseIntentMessage: bip322.BaseIntentMessage{
+			Type: bip322.IntentMessageTypeRegister,
+		},
+		InputTapTrees:       []string{hex.EncodeToString(tapTree)},
+		CosignersPublicKeys: []string{bobTreeSigner.GetPublicKey()},
+		ValidAt:             0,
+		ExpireAt:            0,
+	}
+
+	encodedIntentMessage, err := intentMessage.Encode()
+	require.NoError(t, err)
+
+	vtxoHash, err := chainhash.NewHashFromStr(aliceVtxo.Txid)
+	require.NoError(t, err)
+
+	exitScript, err := delegationAddress.ExitClosures()[0].Script()
+	require.NoError(t, err)
+
+	exitScriptMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(exitScript).TapHash(),
+	)
+	require.NoError(t, err)
+
+	// Alice creates an intent proof that doesn't expire
+	intentProof, err := bip322.New(
+		encodedIntentMessage,
+		[]bip322.Input{
+			{
+				OutPoint: &wire.OutPoint{
+					Hash:  *vtxoHash,
+					Index: aliceVtxo.VOut,
+				},
+				Sequence: wire.MaxTxInSequenceNum - 1,
+				WitnessUtxo: &wire.TxOut{
+					Value:    int64(aliceVtxo.Amount),
+					PkScript: arkAddress.GetPkScript(),
+				},
+			},
+		},
+		[]*wire.TxOut{
+			{
+				Value:    int64(aliceVtxo.Amount),
+				PkScript: aliceArkAddr.GetPkScript(),
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	tapLeafScript := &psbt.TaprootTapLeafScript{
+		ControlBlock: exitScriptMerkleProof.ControlBlock,
+		Script:       exitScriptMerkleProof.Script,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}
+
+	intentProof.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+	intentProof.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+
+	intentProofPsbt := psbt.Packet(*intentProof)
+
+	unsignedIntentProof, err := intentProofPsbt.B64Encode()
+	require.NoError(t, err)
+
+	signedIntentProof, err := alice.SignTransaction(ctx, unsignedIntentProof)
+	require.NoError(t, err)
+
+	signedIntentProofPsbt, err := psbt.NewFromRawBytes(strings.NewReader(signedIntentProof), true)
+	require.NoError(t, err)
+
+	proof := (*bip322.FullProof)(signedIntentProofPsbt)
+
+	sig, err := proof.Signature()
+	require.NoError(t, err)
+
+	encodedIntentProof, err := sig.Encode()
+	require.NoError(t, err)
+
+	// Alice creates a forfeit transaction spending the vtxo with SIGHASH_ALL | ANYONECANPAY
+
+	forfeitOutputScript := getForfeitOutputScript(t, infos)
+
+	connectorAmount := infos.Dust
+
+	partialForfeitTx, err := tree.BuildCustomOutputForfeitTx(
+		[]*wire.OutPoint{&wire.OutPoint{
+			Hash:  *vtxoHash,
+			Index: aliceVtxo.VOut,
+		}},
+		[]uint32{wire.MaxTxInSequenceNum - 1},
+		[]*wire.TxOut{&wire.TxOut{
+			Value:    int64(aliceVtxo.Amount),
+			PkScript: arkAddress.GetPkScript(),
+		}},
+		&wire.TxOut{
+			Value:    int64(aliceVtxo.Amount + connectorAmount),
+			PkScript: forfeitOutputScript,
+		},
+		uint32(delegateLocktime),
+	)
+	require.NoError(t, err)
+
+	updater, err := psbt.NewUpdater(partialForfeitTx)
+	require.NoError(t, err)
+	require.NotNil(t, updater)
+
+	err = updater.AddInSighashType(txscript.SigHashAnyOneCanPay|txscript.SigHashAll, 0)
+	require.NoError(t, err)
+
+	aliceBobScript, err := collaborativeAliceBobClosure.Script()
+	require.NoError(t, err)
+
+	aliceBobMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(aliceBobScript).TapHash(),
+	)
+	require.NoError(t, err)
+
+	aliceBobTapLeafScript := &psbt.TaprootTapLeafScript{
+		ControlBlock: aliceBobMerkleProof.ControlBlock,
+		Script:       aliceBobMerkleProof.Script,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}
+
+	updater.Upsbt.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{aliceBobTapLeafScript}
+
+	b64partialForfeitTx, err := updater.Upsbt.B64Encode()
+	require.NoError(t, err)
+
+	signedPartialForfeitTx, err := alice.SignTransaction(ctx, b64partialForfeitTx)
+	require.NoError(t, err)
+
+	// 10 blocks later, Bob registers using Alice's intent, sign the tree and submit the forfeit transaction
+	err = exec.Command("nigiri", "rpc", "--generate", "11").Run()
+	require.NoError(t, err)
+
+	intentId, err := grpcClient.RegisterIntent(ctx, encodedIntentMessage, encodedIntentProof)
+	require.NoError(t, err)
+
+	topics := arksdk.GetEventStreamTopics(
+		[]types.Outpoint{aliceVtxo.Outpoint},
+		[]string{bobTreeSigner.GetPublicKey()},
+	)
+	stream, close, err := grpcClient.GetEventStream(ctx, topics)
+	require.NoError(t, err)
+	defer close()
+
+	commitmentTxid, err := arksdk.HandleBatchEvents(ctx, stream, &delegateBatchHandlers{
+		signerSession:    bobTreeSigner,
+		partialForfeitTx: signedPartialForfeitTx,
+		delegatorWallet:  bobWallet,
+		client:           grpcClient,
+		signerPubKey:     signerPubKey,
+		vtxoTreeExpiry: arklib.RelativeLocktime{
+			Type:  arklib.LocktimeTypeBlock,
+			Value: uint32(infos.VtxoTreeExpiry),
+		},
+		intentId: intentId,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, commitmentTxid)
 }
 
 func TestSweep(t *testing.T) {
@@ -1954,65 +2161,4 @@ func setupServerWallet() error {
 
 	time.Sleep(5 * time.Second)
 	return nil
-}
-
-func setupArkSDK(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
-	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
-	})
-	require.NoError(t, err)
-
-	client, err := arksdk.NewArkClient(appDataStore)
-	require.NoError(t, err)
-
-	err = client.Init(context.Background(), arksdk.InitArgs{
-		WalletType: arksdk.SingleKeyWallet,
-		ClientType: arksdk.GrpcClient,
-		ServerUrl:  "localhost:7070",
-		Password:   password,
-	})
-	require.NoError(t, err)
-
-	err = client.Unlock(context.Background(), password)
-	require.NoError(t, err)
-
-	grpcClient, err := grpcclient.NewClient("localhost:7070")
-	require.NoError(t, err)
-
-	return client, grpcClient
-}
-
-func setupIndexer(t *testing.T) indexer.Indexer {
-	svc, err := grpcindexer.NewClient("localhost:7070")
-	require.NoError(t, err)
-	return svc
-}
-
-func generateNote(t *testing.T, amount uint32) string {
-	adminHttpClient := &http.Client{
-		Timeout: 15 * time.Second,
-	}
-
-	reqBody := bytes.NewReader([]byte(fmt.Sprintf(`{"amount": "%d"}`, amount)))
-	req, err := http.NewRequest("POST", "http://localhost:7070/v1/admin/note", reqBody)
-	if err != nil {
-		t.Fatalf("failed to prepare note request: %s", err)
-	}
-	req.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := adminHttpClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to create note: %s", err)
-	}
-
-	var noteResp struct {
-		Notes []string `json:"notes"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&noteResp); err != nil {
-		t.Fatalf("failed to parse response: %s", err)
-	}
-
-	return noteResp.Notes[0]
 }

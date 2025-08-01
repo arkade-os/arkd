@@ -10,7 +10,6 @@ func BuildForfeitTx(
 	inputs []*wire.OutPoint, sequences []uint32, prevouts []*wire.TxOut,
 	signerScript []byte, txLocktime uint32,
 ) (*psbt.Packet, error) {
-	version := int32(3)
 
 	sumPrevout := int64(0)
 	for _, prevout := range prevouts {
@@ -19,7 +18,16 @@ func BuildForfeitTx(
 	sumPrevout -= txutils.ANCHOR_VALUE
 
 	forfeitOut := wire.NewTxOut(sumPrevout, signerScript)
-	outs := []*wire.TxOut{forfeitOut, txutils.AnchorOutput()}
+	return BuildCustomOutputForfeitTx(inputs, sequences, prevouts, forfeitOut, txLocktime)
+}
+
+func BuildCustomOutputForfeitTx(
+	inputs []*wire.OutPoint, sequences []uint32, prevouts []*wire.TxOut,
+	forfeitOutput *wire.TxOut,
+	txLocktime uint32,
+) (*psbt.Packet, error) {
+	version := int32(3)
+	outs := []*wire.TxOut{forfeitOutput, txutils.AnchorOutput()}
 
 	partialTx, err := psbt.New(
 		inputs,

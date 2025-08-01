@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	common "github.com/arkade-os/arkd/pkg/ark-lib"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -14,14 +14,14 @@ import (
 
 var ErrNoExitLeaf = fmt.Errorf("no exit leaf")
 
-type VtxoScript common.VtxoScript[taprootTree, Closure]
+type VtxoScript arklib.VtxoScript[taprootTree, Closure]
 
 // NewDefaultVtxoScript returns the common VTXO script: A + S | A after T with:
 // - A: the owner of the VTXO.
 // - S: the pubkey of the signer who provided the liquidity for the VTXO.
 // - T: exit delay that must be waited by alice to spend the VTXO once unrolled onchain.
 func NewDefaultVtxoScript(
-	owner, signer *btcec.PublicKey, exitDelay common.RelativeLocktime,
+	owner, signer *btcec.PublicKey, exitDelay arklib.RelativeLocktime,
 ) *TapscriptsVtxoScript {
 	return &TapscriptsVtxoScript{
 		[]Closure{
@@ -95,7 +95,7 @@ func (v *TapscriptsVtxoScript) Decode(scripts []string) error {
 }
 
 func (v *TapscriptsVtxoScript) Validate(
-	signer *btcec.PublicKey, minLocktime common.RelativeLocktime, blockTypeAllowed bool,
+	signer *btcec.PublicKey, minLocktime arklib.RelativeLocktime, blockTypeAllowed bool,
 ) error {
 	xOnlySigner := schnorr.SerializePubKey(signer)
 	for _, forfeit := range v.ForfeitClosures() {
@@ -133,7 +133,7 @@ func (v *TapscriptsVtxoScript) Validate(
 
 	for _, closure := range v.ExitClosures() {
 		c := closure.(*CSVMultisigClosure)
-		if !blockTypeAllowed && c.Locktime.Type == common.LocktimeTypeBlock {
+		if !blockTypeAllowed && c.Locktime.Type == arklib.LocktimeTypeBlock {
 			return fmt.Errorf("invalid exit closure, CSV block type not allowed")
 		}
 	}
@@ -153,8 +153,8 @@ func (v *TapscriptsVtxoScript) Validate(
 	return nil
 }
 
-func (v *TapscriptsVtxoScript) SmallestExitDelay() (*common.RelativeLocktime, error) {
-	var smallest *common.RelativeLocktime
+func (v *TapscriptsVtxoScript) SmallestExitDelay() (*arklib.RelativeLocktime, error) {
+	var smallest *arklib.RelativeLocktime
 
 	for _, closure := range v.Closures {
 		if csvClosure, ok := closure.(*CSVMultisigClosure); ok {
@@ -224,7 +224,7 @@ func (b taprootTree) GetRoot() chainhash.Hash {
 
 func (b taprootTree) GetTaprootMerkleProof(
 	leafhash chainhash.Hash,
-) (*common.TaprootMerkleProof, error) {
+) (*arklib.TaprootMerkleProof, error) {
 	index, ok := b.LeafProofIndex[leafhash]
 	if !ok {
 		return nil, fmt.Errorf("leaf %s not found in tree", leafhash.String())
@@ -237,7 +237,7 @@ func (b taprootTree) GetTaprootMerkleProof(
 		return nil, err
 	}
 
-	return &common.TaprootMerkleProof{
+	return &arklib.TaprootMerkleProof{
 		ControlBlock: controlBlockBytes,
 		Script:       proof.Script,
 	}, nil
