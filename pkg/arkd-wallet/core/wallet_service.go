@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -689,29 +690,11 @@ func (s *service) EstimateFees(_ context.Context, partialTx string) (uint64, err
 	}
 
 	for _, output := range partial.UnsignedTx.TxOut {
-		script, err := txscript.ParsePkScript(output.PkScript)
-		if err != nil {
-			return 0, err
-		}
-
-		switch script.Class() {
-		case txscript.PubKeyHashTy:
-			weightEstimator.AddP2PKHOutput()
-		case txscript.WitnessV0PubKeyHashTy:
-			weightEstimator.AddP2WKHOutput()
-		case txscript.ScriptHashTy:
-			weightEstimator.AddP2SHOutput()
-		case txscript.WitnessV0ScriptHashTy:
-			weightEstimator.AddP2WSHOutput()
-		case txscript.WitnessV1TaprootTy:
-			weightEstimator.AddP2TROutput()
-		default:
-			return 0, fmt.Errorf("unsupported script type: %v", script.Class())
-		}
+		weightEstimator.AddOutput(output.PkScript)
 	}
 
 	fee := feeRate.FeeForVByte(lntypes.VByte(weightEstimator.VSize()))
-	return uint64(fee.ToUnit(btcutil.AmountSatoshi)), nil
+	return uint64(math.Ceil(fee.ToUnit(btcutil.AmountSatoshi))), nil
 }
 
 func (s *service) WatchScripts(ctx context.Context, scripts []string) error {
