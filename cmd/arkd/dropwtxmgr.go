@@ -35,6 +35,7 @@ func dropWtxmgr(dbPath string) int {
 		fmt.Println("Failed to open database:", err)
 		return 1
 	}
+	// nolint:errcheck
 	defer db.Close()
 
 	fmt.Println("Dropping btcwallet transaction history")
