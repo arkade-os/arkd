@@ -491,10 +491,8 @@ func (h *indexerService) listenToTxEvents() {
 						Tx:            event.Tx,
 						CheckpointTxs: checkpointTxs,
 					}:
-						// Message sent successfully
 					default:
-						// Channel is full, skip this message to prevent blocking
-						// This prevents the goroutine from hanging indefinitely
+						// channel is full, skip this message to prevent blocking
 					}
 				}(l)
 			}
