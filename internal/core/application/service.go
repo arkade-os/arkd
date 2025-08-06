@@ -1855,6 +1855,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		changes = s.cache.CurrentRound().Fail(
 			fmt.Errorf("failed to broadcast commitment tx: %s", err),
 		)
+		log.WithError(err).Warn("failed to broadcast commitment tx")
 		return
 	}
 
