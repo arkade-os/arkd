@@ -356,7 +356,8 @@ func (h *indexerService) GetSubscription(
 
 	h.scriptSubsHandler.stopTimeout(subscriptionId)
 	defer func() {
-		if len(h.scriptSubsHandler.getTopics(subscriptionId)) > 0 {
+		topics := h.scriptSubsHandler.getTopics(subscriptionId)
+		if len(topics) > 0 {
 			h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
 			return
 		}
@@ -435,7 +436,7 @@ func (h *indexerService) SubscribeForScripts(
 
 func (h *indexerService) listenToTxEvents() {
 	for event := range h.eventsCh {
-		if len(h.scriptSubsHandler.listeners) <= 0 {
+		if !h.scriptSubsHandler.hasListeners() {
 			continue
 		}
 
@@ -462,7 +463,9 @@ func (h *indexerService) listenToTxEvents() {
 				}
 			}
 		}
-		for _, l := range h.scriptSubsHandler.listeners {
+
+		listenersCopy := h.scriptSubsHandler.getListenersCopy()
+		for _, l := range listenersCopy {
 			spendableVtxos := make([]*arkv1.IndexerVtxo, 0)
 			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
 			involvedScripts := make([]string, 0)
@@ -478,16 +481,20 @@ func (h *indexerService) listenToTxEvents() {
 			}
 
 			if len(spendableVtxos) > 0 || len(spentVtxos) > 0 {
-				go func() {
-					l.ch <- &arkv1.GetSubscriptionResponse{
+				go func(listener *listener[*arkv1.GetSubscriptionResponse]) {
+					select {
+					case listener.ch <- &arkv1.GetSubscriptionResponse{
 						Txid:          event.Txid,
 						Scripts:       involvedScripts,
 						NewVtxos:      spendableVtxos,
 						SpentVtxos:    spentVtxos,
 						Tx:            event.Tx,
 						CheckpointTxs: checkpointTxs,
+					}:
+					default:
+						// channel is full, skip this message to prevent blocking
 					}
-				}()
+				}(l)
 			}
 		}
 	}
