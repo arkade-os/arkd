@@ -13,6 +13,7 @@ const (
 	urlFlagName                     = "url"
 	datadirFlagName                 = "datadir"
 	passwordFlagName                = "password"
+	dbPathFlagName                  = "datadir"
 	mnemonicFlagName                = "mnemonic"
 	gapLimitFlagName                = "addr-gap-limit"
 	amountFlagName                  = "amount"
@@ -42,7 +43,11 @@ var (
 		Usage: "arkd datadir from where to source TLS cert and macaroon if needed",
 		Value: arklib.AppDataDir("arkd", false),
 	}
-
+	dbPathFlag = &cli.StringFlag{
+		Name:     dbPathFlagName,
+		Usage:    "path to the wallet database",
+		Required: true,
+	}
 	passwordFlag = &cli.StringFlag{
 		Name:     passwordFlagName,
 		Usage:    "wallet password",
