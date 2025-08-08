@@ -1804,6 +1804,11 @@ func TestDelegateRefresh(t *testing.T) {
 		},
 	}
 
+	exitLocktime := arklib.RelativeLocktime{
+		Type:  arklib.LocktimeTypeBlock,
+		Value: 10,
+	}
+
 	delegationVtxoScript := script.TapscriptsVtxoScript{
 		Closures: []script.Closure{
 			// delegation script
@@ -1814,10 +1819,7 @@ func TestDelegateRefresh(t *testing.T) {
 			},
 			// alice exit script
 			&script.CSVMultisigClosure{
-				Locktime: arklib.RelativeLocktime{
-					Type:  arklib.LocktimeTypeBlock,
-					Value: 10,
-				},
+				Locktime: exitLocktime,
 				MultisigClosure: script.MultisigClosure{
 					PubKeys: []*btcec.PublicKey{alicePubKey},
 				},
@@ -1869,6 +1871,9 @@ func TestDelegateRefresh(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	sequence, err := arklib.BIP68Sequence(exitLocktime)
+	require.NoError(t, err)
+
 	// Alice creates an intent proof that doesn't expire
 	intentProof, err := bip322.New(
 		encodedIntentMessage,
@@ -1878,7 +1883,7 @@ func TestDelegateRefresh(t *testing.T) {
 					Hash:  *vtxoHash,
 					Index: aliceVtxo.VOut,
 				},
-				Sequence: wire.MaxTxInSequenceNum - 1,
+				Sequence: sequence,
 				WitnessUtxo: &wire.TxOut{
 					Value:    int64(aliceVtxo.Amount),
 					PkScript: arkAddress.GetPkScript(),
