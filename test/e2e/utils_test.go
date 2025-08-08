@@ -428,7 +428,29 @@ func faucetOffchainAddress(t *testing.T, address string) (types.Vtxo, error) {
 	require.NotEmpty(t, vtxos)
 	require.Len(t, vtxos, 1)
 
-	return vtxos[0], nil
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	var receivedVtxo types.Vtxo
+
+	go func() {
+		defer wg.Done()
+		vtxos, err = client.NotifyIncomingFunds(ctx, address)
+		require.NoError(t, err)
+		receivedVtxo = vtxos[0]
+	}()
+
+	_, err = client.SendOffChain(ctx, false, []types.Receiver{
+		{
+			To:     address,
+			Amount: vtxos[0].Amount,
+		},
+	})
+	require.NoError(t, err)
+
+	wg.Wait()
+
+	return receivedVtxo, nil
 }
 
 type delegateBatchHandlers struct {

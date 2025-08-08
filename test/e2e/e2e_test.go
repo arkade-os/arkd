@@ -71,8 +71,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestSettleInSameRound(t *testing.T) {
-	t.Skip("skipping settle in same round test")
-
 	ctx := context.Background()
 	alice, grpcAlice := setupArkSDK(t)
 	defer alice.Stop()
@@ -1789,7 +1787,7 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NotNil(t, bobWallet)
 	require.NotNil(t, bobPubKey)
 
-	bobTreeSigner, err := bobWallet.NewVtxoTreeSigner(ctx, "")
+	bobTreeSigner, err := bobWallet.NewVtxoTreeSigner(ctx, "m/0/1")
 	require.NoError(t, err)
 	require.NotNil(t, bobTreeSigner)
 
@@ -1806,7 +1804,7 @@ func TestDelegateRefresh(t *testing.T) {
 		},
 	}
 
-	delegationAddress := script.TapscriptsVtxoScript{
+	delegationVtxoScript := script.TapscriptsVtxoScript{
 		Closures: []script.Closure{
 			// delegation script
 			collaborativeAliceBobClosure,
@@ -1827,7 +1825,7 @@ func TestDelegateRefresh(t *testing.T) {
 		},
 	}
 
-	vtxoTapKey, vtxoTapTree, err := delegationAddress.TapTree()
+	vtxoTapKey, vtxoTapTree, err := delegationVtxoScript.TapTree()
 	require.NoError(t, err)
 
 	arkAddress := arklib.Address{
@@ -1842,7 +1840,7 @@ func TestDelegateRefresh(t *testing.T) {
 	aliceVtxo, err := faucetOffchainAddress(t, arkAddressStr)
 	require.NoError(t, err)
 
-	scripts, err := delegationAddress.Encode()
+	scripts, err := delegationVtxoScript.Encode()
 	require.NoError(t, err)
 	tapTree, err := txutils.TapTree(scripts).Encode()
 	require.NoError(t, err)
@@ -1863,7 +1861,7 @@ func TestDelegateRefresh(t *testing.T) {
 	vtxoHash, err := chainhash.NewHashFromStr(aliceVtxo.Txid)
 	require.NoError(t, err)
 
-	exitScript, err := delegationAddress.ExitClosures()[0].Script()
+	exitScript, err := delegationVtxoScript.ExitClosures()[0].Script()
 	require.NoError(t, err)
 
 	exitScriptMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
@@ -1931,12 +1929,12 @@ func TestDelegateRefresh(t *testing.T) {
 	connectorAmount := infos.Dust
 
 	partialForfeitTx, err := tree.BuildCustomOutputForfeitTx(
-		[]*wire.OutPoint{&wire.OutPoint{
+		[]*wire.OutPoint{{
 			Hash:  *vtxoHash,
 			Index: aliceVtxo.VOut,
 		}},
 		[]uint32{wire.MaxTxInSequenceNum - 1},
-		[]*wire.TxOut{&wire.TxOut{
+		[]*wire.TxOut{{
 			Value:    int64(aliceVtxo.Amount),
 			PkScript: arkAddress.GetPkScript(),
 		}},
@@ -1981,7 +1979,7 @@ func TestDelegateRefresh(t *testing.T) {
 	err = exec.Command("nigiri", "rpc", "--generate", "11").Run()
 	require.NoError(t, err)
 
-	intentId, err := grpcClient.RegisterIntent(ctx, encodedIntentMessage, encodedIntentProof)
+	intentId, err := grpcClient.RegisterIntent(ctx, encodedIntentProof, encodedIntentMessage)
 	require.NoError(t, err)
 
 	topics := arksdk.GetEventStreamTopics(
