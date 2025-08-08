@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	common "github.com/arkade-os/arkd/pkg/ark-lib"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -289,7 +289,7 @@ func (f *MultisigClosure) Witness(
 // the sighash type is SIGHASH_DEFAULT.
 type CSVMultisigClosure struct {
 	MultisigClosure
-	Locktime common.RelativeLocktime
+	Locktime arklib.RelativeLocktime
 }
 
 func (f *CSVMultisigClosure) Witness(
@@ -312,7 +312,7 @@ func (f *CSVMultisigClosure) Witness(
 }
 
 func (d *CSVMultisigClosure) Script() ([]byte, error) {
-	sequence, err := common.BIP68Sequence(d.Locktime)
+	sequence, err := arklib.BIP68Sequence(d.Locktime)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +365,7 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 
 	}
 
-	locktime, err := common.BIP68DecodeSequenceFromBytes(sequence)
+	locktime, err := arklib.BIP68DecodeSequenceFromBytes(sequence)
 	if err != nil {
 		return false, err
 	}
@@ -392,7 +392,7 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 // the sighash type is SIGHASH_DEFAULT.
 type CLTVMultisigClosure struct {
 	MultisigClosure
-	Locktime common.AbsoluteLocktime
+	Locktime arklib.AbsoluteLocktime
 }
 
 func (f *CLTVMultisigClosure) Witness(
@@ -448,28 +448,25 @@ func (d *CLTVMultisigClosure) Decode(script []byte) (bool, error) {
 		return false, nil
 	}
 
-	var locktime []byte
+	var locktime int32
 	isSmallInt := txscript.IsSmallInt(tokenizer.Opcode())
 	if isSmallInt {
-		locktime = []byte{tokenizer.Opcode()}
+		locktime = int32(tokenizer.Opcode() - txscript.OP_1 + 1)
 	} else {
-		locktime = tokenizer.Data()
+		locktimeValue, err := txscript.MakeScriptNum(tokenizer.Data(), true, 6)
+		if err != nil {
+			return false, err
+		}
+		locktime = locktimeValue.Int32()
+		if locktime > 0 && locktime <= 16 {
+			return false, fmt.Errorf("expected minimal encoding OP_%d for locktime value %d", locktime, locktime)
+		}
 	}
 
 	for _, opCode := range []byte{txscript.OP_CHECKLOCKTIMEVERIFY, txscript.OP_DROP} {
 		if !tokenizer.Next() || tokenizer.Opcode() != opCode {
 			return false, nil
 		}
-	}
-
-	locktimeValue, err := txscript.MakeScriptNum(locktime, true, 6)
-	if err != nil {
-		return false, err
-	}
-	locktimeNumber := locktimeValue.Int32()
-
-	if !isSmallInt && locktimeNumber > 0 && locktimeNumber <= 16 {
-		return false, fmt.Errorf("expected minimal encoding OP_%d for locktime value %d, got %x", locktimeNumber, locktimeNumber, locktime)
 	}
 
 	multisigClosure := &MultisigClosure{}
@@ -483,7 +480,7 @@ func (d *CLTVMultisigClosure) Decode(script []byte) (bool, error) {
 		return false, nil
 	}
 
-	d.Locktime = common.AbsoluteLocktime(locktimeValue.Int32())
+	d.Locktime = arklib.AbsoluteLocktime(locktime)
 	d.MultisigClosure = *multisigClosure
 
 	return valid, nil
