@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ var (
 		Subcommands: cli.Commands{
 			walletStatusCmd,
 			walletCreateOrRestoreCmd,
+			walletDropWtxmgrCmd,
 			walletUnlockCmd,
 			walletAddressCmd,
 			walletBalanceCmd,
@@ -37,6 +39,12 @@ var (
 		Usage:  "Create or restore the wallet",
 		Action: walletCreateOrRestoreAction,
 		Flags:  []cli.Flag{passwordFlag, mnemonicFlag, gapLimitFlag},
+	}
+	walletDropWtxmgrCmd = &cli.Command{
+		Name:   "dropwtxmgr",
+		Usage:  "Run the dropwtxmgr tool",
+		Action: walletDropWtxmgrAction,
+		Flags:  []cli.Flag{dbPathFlag},
 	}
 	walletUnlockCmd = &cli.Command{
 		Name:   "unlock",
@@ -176,6 +184,12 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 	}
 
 	fmt.Println(seed)
+	return nil
+}
+
+func walletDropWtxmgrAction(ctx *cli.Context) error {
+	dbPath := ctx.String(dbPathFlagName)
+	os.Exit(dropWtxmgr(dbPath))
 	return nil
 }
 
