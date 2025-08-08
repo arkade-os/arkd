@@ -7,8 +7,8 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
 require (
-	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-20250708155328-721172a83dba
-	github.com/arkade-os/go-sdk v0.6.3-0.20250708222801-e64fe0de9c61
+	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-20250721121631-e1e43e311796
+	github.com/arkade-os/go-sdk v0.6.3-0.20250808093310-b756f98b8ca9
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.30.0
 )
@@ -17,7 +17,6 @@ require (
 	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/aead/siphash v1.0.1 // indirect
-	github.com/arkade-os/arkd/api-spec v0.0.0-20250708141654-6499ecacad72 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
