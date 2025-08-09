@@ -600,6 +600,7 @@ func (h *delegateBatchHandlers) OnBatchFinalization(ctx context.Context, event c
 			Hash:  connector.UnsignedTx.TxHash(),
 			Index: 0,
 		},
+		Sequence: wire.MaxTxInSequenceNum,
 	})
 	updater.Upsbt.Inputs = append(updater.Upsbt.Inputs, psbt.PInput{
 		WitnessUtxo: &wire.TxOut{

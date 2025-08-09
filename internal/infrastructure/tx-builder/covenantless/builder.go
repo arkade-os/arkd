@@ -21,6 +21,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type txBuilder struct {
@@ -150,7 +152,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 		}
 
 		for _, tapScriptSig := range input.TaprootScriptSpendSig {
-			sig, sigHashType, err := script.ParseTaprootSignature(tapScriptSig.Signature)
+			sig, err := schnorr.ParseSignature(tapScriptSig.Signature)
 			if err != nil {
 				return false, txid, err
 			}
@@ -162,7 +164,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 
 			preimage, err := txscript.CalcTapscriptSignaturehash(
 				txSigHashes,
-				sigHashType,
+				tapScriptSig.SigHash,
 				ptx.UnsignedTx,
 				index,
 				prevoutFetcher,
@@ -173,7 +175,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 			}
 
 			if !sig.Verify(preimage, pubkey) {
-				return false, txid, nil
+				return false, txid, fmt.Errorf("invalid signature for input %d, sig: %x, pubkey: %x, sighashtype: %d", index, sig.Serialize(), pubkey.SerializeCompressed(), tapScriptSig.SigHash)
 			}
 
 			keys[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = true
@@ -514,7 +516,18 @@ func (b *txBuilder) VerifyForfeitTxs(
 		}
 
 		if rebuilt.UnsignedTx.TxID() != tx.UnsignedTx.TxID() {
-			return nil, fmt.Errorf("invalid forfeit tx")
+			if log.IsLevelEnabled(log.TraceLevel) {
+				rebuiltB64, _ := rebuilt.B64Encode()
+				txB64, _ := tx.B64Encode()
+				log.WithFields(log.Fields{
+					"expectedTxid": rebuilt.UnsignedTx.TxID(),
+					"expectedB64":  rebuiltB64,
+					"gotTxid":      tx.UnsignedTx.TxID(),
+					"gotB64":       txB64,
+				}).Tracef("invalid forfeit tx")
+			}
+
+			return nil, fmt.Errorf("invalid forfeit tx: expected txid %s, got %s", rebuilt.UnsignedTx.TxID(), tx.UnsignedTx.TxID())
 		}
 
 		validForfeitTxs[vtxoKey] = ports.ValidForfeitTx{
