@@ -314,7 +314,9 @@ func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, e
 	return wallet, privkey.PubKey(), nil
 }
 
-func setupArkSDKwithPublicKey(t *testing.T) (arksdk.ArkClient, *btcec.PublicKey, client.TransportClient) {
+func setupArkSDKwithPublicKey(
+	t *testing.T,
+) (arksdk.ArkClient, *btcec.PublicKey, client.TransportClient) {
 	appDataStore, err := store.NewStore(store.Config{
 		ConfigStoreType:  types.InMemoryStore,
 		AppDataStoreType: types.KVStore,
@@ -465,7 +467,10 @@ type delegateBatchHandlers struct {
 	cacheBatchId string
 }
 
-func (h *delegateBatchHandlers) OnBatchStarted(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+func (h *delegateBatchHandlers) OnBatchStarted(
+	ctx context.Context,
+	event client.BatchStartedEvent,
+) (bool, error) {
 	buf := sha256.Sum256([]byte(h.intentId))
 	hashedIntentId := hex.EncodeToString(buf[:])
 
@@ -482,11 +487,17 @@ func (h *delegateBatchHandlers) OnBatchStarted(ctx context.Context, event client
 	return true, nil
 }
 
-func (h *delegateBatchHandlers) OnBatchFinalized(ctx context.Context, event client.BatchFinalizedEvent) error {
+func (h *delegateBatchHandlers) OnBatchFinalized(
+	ctx context.Context,
+	event client.BatchFinalizedEvent,
+) error {
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnBatchFailed(ctx context.Context, event client.BatchFailedEvent) error {
+func (h *delegateBatchHandlers) OnBatchFailed(
+	ctx context.Context,
+	event client.BatchFailedEvent,
+) error {
 	if event.Id == h.cacheBatchId {
 		return fmt.Errorf("batch failed: %s", event.Reason)
 	}
@@ -497,11 +508,18 @@ func (h *delegateBatchHandlers) OnTreeTxEvent(ctx context.Context, event client.
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnTreeSignatureEvent(ctx context.Context, event client.TreeSignatureEvent) error {
+func (h *delegateBatchHandlers) OnTreeSignatureEvent(
+	ctx context.Context,
+	event client.TreeSignatureEvent,
+) error {
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnTreeSigningStarted(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
+func (h *delegateBatchHandlers) OnTreeSigningStarted(
+	ctx context.Context,
+	event client.TreeSigningStartedEvent,
+	vtxoTree *tree.TxTree,
+) (bool, error) {
 	pubkeyFound := false
 	myPubkey := h.signerSession.GetPublicKey()
 	for _, cosigner := range event.CosignersPubkeys {
@@ -557,7 +575,10 @@ func (h *delegateBatchHandlers) OnTreeSigningStarted(ctx context.Context, event 
 	return false, nil
 }
 
-func (h *delegateBatchHandlers) OnTreeNoncesAggregated(ctx context.Context, event client.TreeNoncesAggregatedEvent) error {
+func (h *delegateBatchHandlers) OnTreeNoncesAggregated(
+	ctx context.Context,
+	event client.TreeNoncesAggregatedEvent,
+) error {
 	sign := func(session tree.SignerSession) error {
 		session.SetAggregatedNonces(event.Nonces)
 
@@ -581,7 +602,12 @@ func (h *delegateBatchHandlers) OnTreeNoncesAggregated(ctx context.Context, even
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnBatchFinalization(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) error {
+func (h *delegateBatchHandlers) OnBatchFinalization(
+	ctx context.Context,
+	event client.BatchFinalizationEvent,
+	vtxoTree *tree.TxTree,
+	connectorTree *tree.TxTree,
+) error {
 	forfeitPtx, err := psbt.NewFromRawBytes(strings.NewReader(h.partialForfeitTx), true)
 	if err != nil {
 		return err
@@ -619,7 +645,11 @@ func (h *delegateBatchHandlers) OnBatchFinalization(ctx context.Context, event c
 	}
 
 	// sign the forfeit tx
-	signedForfeitTx, err := h.delegatorWallet.SignTransaction(context.Background(), nil, encodedForfeitTx)
+	signedForfeitTx, err := h.delegatorWallet.SignTransaction(
+		context.Background(),
+		nil,
+		encodedForfeitTx,
+	)
 	if err != nil {
 		return err
 	}

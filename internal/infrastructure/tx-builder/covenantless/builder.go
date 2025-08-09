@@ -175,7 +175,13 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 			}
 
 			if !sig.Verify(preimage, pubkey) {
-				return false, txid, fmt.Errorf("invalid signature for input %d, sig: %x, pubkey: %x, sighashtype: %d", index, sig.Serialize(), pubkey.SerializeCompressed(), tapScriptSig.SigHash)
+				return false, txid, fmt.Errorf(
+					"invalid signature for input %d, sig: %x, pubkey: %x, sighashtype: %d",
+					index,
+					sig.Serialize(),
+					pubkey.SerializeCompressed(),
+					tapScriptSig.SigHash,
+				)
 			}
 
 			keys[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = true
@@ -227,7 +233,10 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 			}
 
 			for _, sig := range in.TaprootScriptSpendSig {
-				args[hex.EncodeToString(sig.XOnlyPubKey)] = script.EncodeTaprootSignature(sig.Signature, sig.SigHash)
+				args[hex.EncodeToString(sig.XOnlyPubKey)] = script.EncodeTaprootSignature(
+					sig.Signature,
+					sig.SigHash,
+				)
 			}
 
 			witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)
@@ -527,7 +536,11 @@ func (b *txBuilder) VerifyForfeitTxs(
 				}).Tracef("invalid forfeit tx")
 			}
 
-			return nil, fmt.Errorf("invalid forfeit tx: expected txid %s, got %s", rebuilt.UnsignedTx.TxID(), tx.UnsignedTx.TxID())
+			return nil, fmt.Errorf(
+				"invalid forfeit tx: expected txid %s, got %s",
+				rebuilt.UnsignedTx.TxID(),
+				tx.UnsignedTx.TxID(),
+			)
 		}
 
 		validForfeitTxs[vtxoKey] = ports.ValidForfeitTx{
