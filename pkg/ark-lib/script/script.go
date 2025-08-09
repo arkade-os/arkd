@@ -128,3 +128,38 @@ func IsSubDustScript(script []byte) bool {
 		script[0] == txscript.OP_RETURN &&
 		script[1] == 0x20
 }
+
+func EncodeTaprootSignature(sig []byte, sigHashType txscript.SigHashType) []byte {
+	if sigHashType == txscript.SigHashDefault {
+		return sig
+	}
+
+	return append(sig, byte(sigHashType))
+}
+
+func ParseTaprootSignature(rawSig []byte) (*schnorr.Signature, txscript.SigHashType, error) {
+	// If the signature is exactly 64 bytes, then we know we're using the
+	// implicit SIGHASH_DEFAULT sighash type.
+	if len(rawSig) == schnorr.SignatureSize {
+		sig, err := schnorr.ParseSignature(rawSig)
+		if err != nil {
+			return nil, 0, err
+		}
+		return sig, txscript.SigHashDefault, nil
+	}
+
+	// Otherwise, if this is a signature, with a sighash looking byte
+	// appended that isn't all zero, then we'll extract the sighash from
+	// the end of the signature.
+	if len(rawSig) == schnorr.SignatureSize+1 && rawSig[schnorr.SignatureSize] != 0 {
+		sigHashType := txscript.SigHashType(rawSig[schnorr.SignatureSize])
+
+		sig, err := schnorr.ParseSignature(rawSig[:schnorr.SignatureSize])
+		if err != nil {
+			return nil, 0, err
+		}
+		return sig, sigHashType, nil
+	}
+
+	return nil, 0, fmt.Errorf("invalid sig len: %v", len(rawSig))
+}
