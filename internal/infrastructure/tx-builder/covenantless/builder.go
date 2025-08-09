@@ -227,7 +227,7 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 			}
 
 			for _, sig := range in.TaprootScriptSpendSig {
-				args[hex.EncodeToString(sig.XOnlyPubKey)] = sig.Signature
+				args[hex.EncodeToString(sig.XOnlyPubKey)] = script.EncodeTaprootSignature(sig.Signature, sig.SigHash)
 			}
 
 			witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)

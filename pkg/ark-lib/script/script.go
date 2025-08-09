@@ -129,6 +129,14 @@ func IsSubDustScript(script []byte) bool {
 		script[1] == 0x20
 }
 
+func EncodeTaprootSignature(sig []byte, sigHashType txscript.SigHashType) []byte {
+	if sigHashType == txscript.SigHashDefault {
+		return sig
+	}
+
+	return append(sig, byte(sigHashType))
+}
+
 func ParseTaprootSignature(rawSig []byte) (*schnorr.Signature, txscript.SigHashType, error) {
 	// If the signature is exactly 64 bytes, then we know we're using the
 	// implicit SIGHASH_DEFAULT sighash type.
