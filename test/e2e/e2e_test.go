@@ -1878,7 +1878,7 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 		},
 		[]*wire.TxOut{
 			{
-				Value:    bobOutput.Value - 500,
+				Value:    bobOutput.Value,
 				PkScript: alicePkScript,
 			},
 		},
@@ -1901,7 +1901,7 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 		},
 		[]*wire.TxOut{
 			{
-				Value:    bobOutput.Value - 500,
+				Value:    bobOutput.Value,
 				PkScript: []byte{0x6a}, // output 0 is not alice script
 			},
 		},
@@ -1930,7 +1930,7 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 
 	_, _, _, err = grpcAlice.SubmitTx(ctx, signedInvalidTx, encodedInvalidCheckpoints)
 	require.Error(t, err)
-	require.ErrorIs(t, err, fmt.Errorf("arkade script is not valid"))
+	require.ErrorIs(t, err, fmt.Errorf("rpc error: code = Internal desc = invalid ark tx signature(s): arkade script execution failed"))
 
 	encodedValidTx, err := validTx.B64Encode()
 	require.NoError(t, err)

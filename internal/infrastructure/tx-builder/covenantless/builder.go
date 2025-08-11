@@ -142,7 +142,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 				int(index),
 				witness,
 			); err != nil {
-				return false, txid, err
+				return false, txid, fmt.Errorf("arkade script execution failed")
 			}
 
 			arkadeScriptHash := script.ArkadeScriptHash(arkScript)
