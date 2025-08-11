@@ -1,5 +1,5 @@
 version: v1
-name: buf.build/ark-network/ark
+name: buf.build/arkade-os/arkd
 deps:
   - buf.build/googleapis/googleapis
 breaking:

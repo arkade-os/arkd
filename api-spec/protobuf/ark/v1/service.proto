@@ -6,155 +6,172 @@ import "google/api/annotations.proto";
 import "ark/v1/types.proto";
 
 service ArkService {
+  // GetInfo returns information and parameters of the server.
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {
     option (google.api.http) = {
       get: "/v1/info"
     };
   }
-  rpc GetBoardingAddress(GetBoardingAddressRequest) returns (GetBoardingAddressResponse) {
-    option (google.api.http) = {
-      post: "/v1/boarding"
-      body: "*"
-    };
-  };
 
-  /* In-Round Transaction APIs */
-
+  // RegisterIntent allows to register a new intent that will be eventually selected by the server
+  // for a particular batch.
+  // The client should provide a BIP-322 message with the intent information, and the server should
+  // respond with an intent id.
   rpc RegisterIntent(RegisterIntentRequest) returns (RegisterIntentResponse) {
     option (google.api.http) = {
-      post: "/v1/round/registerIntent"
+      post: "/v1/batch/registerIntent"
       body: "*"
     };
   };
-  rpc RegisterInputsForNextRound(RegisterInputsForNextRoundRequest) returns (RegisterInputsForNextRoundResponse) {
+  
+  // DeleteIntent removes a previously registered intent from the server.
+  // The client should provide the BIP-322 signature and message including any of the vtxos used in
+  // the registered intent to prove its ownership.
+  // The server should delete the intent and return success.
+  rpc DeleteIntent(DeleteIntentRequest) returns (DeleteIntentResponse) {
     option (google.api.http) = {
-      post: "/v1/round/registerInputs"
+      post: "/v1/batch/deleteIntent"
       body: "*"
     };
-  };
-  rpc RegisterOutputsForNextRound(RegisterOutputsForNextRoundRequest) returns (RegisterOutputsForNextRoundResponse) {
+  }
+
+  // ConfirmRegistration allows a client that has been selected for the next batch to confirm its
+  // participation by revealing the intent id.
+  rpc ConfirmRegistration(ConfirmRegistrationRequest) returns (ConfirmRegistrationResponse) {
     option (google.api.http) = {
-      post: "/v1/round/registerOutputs"
+      post: "/v1/batch/ack"
       body: "*"
     };
   };
+  
+  // SubmitTreeNonces allows a cosigner to submit the tree nonces for the musig2 session of a given
+  // batch.
+  // The client should provide the batch id, the cosigner public key, and the tree nonces.
+  // The server should verify the cosigner public key and the nonces, and store them for later
+  // aggregation once nonces from all clients are collected.
   rpc SubmitTreeNonces(SubmitTreeNoncesRequest) returns (SubmitTreeNoncesResponse) {
     option (google.api.http) = {
-      post: "/v1/round/tree/submitNonces"
+      post: "/v1/batch/tree/submitNonces"
       body: "*"
     };
   }
+  
+  // SubmitTreeSignatures allows a cosigner to submit the tree signatures for the musig2 session of
+  // a given batch.
+  // The client should provide the batch id, the cosigner public key, and the tree signatures.
+  // The server should verify the cosigner public key and the signatures, and store them for later
+  // aggregation once signatures from all clients are collected.
   rpc SubmitTreeSignatures(SubmitTreeSignaturesRequest) returns (SubmitTreeSignaturesResponse) {
     option (google.api.http) = {
-      post: "/v1/round/tree/submitSignatures"
+      post: "/v1/batch/tree/submitSignatures"
       body: "*"
     };
   }
+  
+  // SubmitSignedForfeitTxs allows a client to submit signed forfeit transactions and/or signed
+  // commitment transaction (in case of onboarding).
+  // The server should verify the signed txs and return success.
   rpc SubmitSignedForfeitTxs(SubmitSignedForfeitTxsRequest) returns (SubmitSignedForfeitTxsResponse) {
     option (google.api.http) = {
-      post: "/v1/round/submitForfeitTxs"
+      post: "/v1/batch/submitForfeitTxs"
       body: "*"
     };
   };
+  
+  // GetEventStream is a server-side streaming RPC that allows clients to receive a stream of
+  // events related to batch processing.
+  // Clients should use this stream as soon as they are ready to join a batch and can listen for
+  // various events such as batch start, batch finalization, and other related activities.
+  // The server pushes these events to the client in real-time as soon as its ready to move to the
+  // next phase of the batch processing.
   rpc GetEventStream(GetEventStreamRequest) returns (stream GetEventStreamResponse) {
     option (google.api.http) = {
-      get: "/v1/events"
-    };
-  };
-  rpc Ping(PingRequest) returns (PingResponse) {
-    option (google.api.http) = {
-      get: "/v1/round/ping/{request_id}"
+      get: "/v1/batch/events"
     };
   };
 
-  /* Out-of-Round Transaction APIs */
-
-  rpc SubmitRedeemTx(SubmitRedeemTxRequest) returns (SubmitRedeemTxResponse) {
+  // SubmitTx is the first leg of the process of spending vtxos offchain and allows a client to
+  // submit a signed Ark transaction and the unsigned checkpoint transactions.
+  // The server should verify the signed transactions and return the fully signed Ark tx and the
+  // signed checkpoint txs.
+  rpc SubmitTx(SubmitTxRequest) returns (SubmitTxResponse) {
     option (google.api.http) = {
-      post: "/v1/redeem-tx"
+      post: "/v1/tx/submit"
       body: "*"
     };
   }
 
+  // FinalizeTx is the last lef of the process of spending vtxos offchain and allows a client to
+  // submit the fully signed checkpoint txs for the provided Ark txid .
+  // The server verifies the signed checkpoint transactions and returns success if everything is
+  // valid.
+  rpc FinalizeTx(FinalizeTxRequest) returns (FinalizeTxResponse) {
+    option (google.api.http) = {
+      post: "/v1/tx/finalize"
+      body: "*"
+    };
+  }
+
+  // GetTransactionsStream is a server-side streaming RPC that allows clients to receive
+  // notifications in real-time about any commitment tx or ark tx processed and finalized by the
+  // server.
+  // NOTE: the stream doesn't have history support, therefore returns only txs from the moment it's
+  // opened until it's closed.
   rpc GetTransactionsStream(GetTransactionsStreamRequest) returns (stream GetTransactionsStreamResponse) {
     option (google.api.http) = {
-      get: "/v1/transactions"
+      get: "/v1/txs"
     };
   }
 }
 
 message GetInfoRequest {}
 message GetInfoResponse {
-  string pubkey = 1;
+  string signer_pubkey = 1;
   int64 vtxo_tree_expiry = 2;
   int64 unilateral_exit_delay = 3;
   int64 round_interval = 4;
   string network = 5;
   int64 dust = 6;
-  string boarding_descriptor_template = 7;
-  repeated string vtxo_descriptor_templates = 8;
-  string forfeit_address = 9;
-  MarketHour market_hour = 10;
-  string version = 11;
-  int64 utxo_min_amount = 12; // -1 means native dust limit (default)
-  int64 utxo_max_amount = 13; // -1 means no limit (default), 0 means boarding not allowed
-  int64 vtxo_min_amount = 14; // -1 means native dust limit (default)
-  int64 vtxo_max_amount = 15; // -1 means no limit (default)
-  int64 boarding_exit_delay = 16;
+  string forfeit_address = 7;
+  MarketHour market_hour = 8;
+  string version = 9;
+  int64 utxo_min_amount = 10;
+  int64 utxo_max_amount = 11; // -1 means no limit (default), 0 means boarding not allowed
+  int64 vtxo_min_amount = 12; 
+  int64 vtxo_max_amount = 13; // -1 means no limit (default)
+  int64 boarding_exit_delay = 14;
 }
-
-message GetBoardingAddressRequest {
-  string pubkey = 1;
-}
-message GetBoardingAddressResponse {
-  string address = 1;
-  oneof taproot_tree {
-    string descriptor = 2;
-    Tapscripts tapscripts = 3;
-  }
-}
-
-/* In-Round Transaction API messages */
 
 message RegisterIntentRequest {
-  // BIP322 signature embeds the outpoints and the proof of funds
-  Bip322Signature bip322_signature = 1;
-  repeated string notes = 2;
+  // BIP322 signature embeds the outpoints to be spent and new ones to be created, as well as the
+  // the proof of funds.
+  Bip322Signature intent = 1;
 }
 message RegisterIntentResponse {
-  string request_id = 1;
+  string intent_id = 1;
 }
 
-message RegisterInputsForNextRoundRequest {
-  repeated Input inputs = 1;
-  repeated string notes = 2;
+message DeleteIntentRequest {
+  // A BIP322 signature that includes any of the inputs of the intent to be deleted to prove the
+  // ownership of that intent.
+  Bip322Signature proof = 1;
 }
-message RegisterInputsForNextRoundResponse {
-  string request_id = 1;
-}
+message DeleteIntentResponse {}
 
-message Musig2 {
-  repeated string cosigners_public_keys = 1;
-  bool signing_all = 2;
+message ConfirmRegistrationRequest {
+  string intent_id = 1;
 }
-
-message RegisterOutputsForNextRoundRequest {
-  string request_id = 1;
-  // List of receivers for to convert to leaves in the next VTXO tree.
-  repeated Output outputs = 2;
-  optional Musig2 musig2 = 3;
-}
-message RegisterOutputsForNextRoundResponse {}
+message ConfirmRegistrationResponse {}
 
 message SubmitTreeNoncesRequest {
-  string round_id = 1;
+  string batch_id = 1;
   string pubkey = 2;
   string tree_nonces = 3;
 }
 message SubmitTreeNoncesResponse {}
 
 message SubmitTreeSignaturesRequest {
-  string round_id = 1;
+  string batch_id = 1;
   string pubkey = 2;
   string tree_signatures = 3;
 }
@@ -163,42 +180,47 @@ message SubmitTreeSignaturesResponse {}
 message SubmitSignedForfeitTxsRequest {
   // Forfeit txs signed by the user.
   repeated string signed_forfeit_txs = 1;
-  // The user has to sign also the round tx if he registerd a boarding UTXO.
-  optional string signed_round_tx = 2;
+  // The user has to sign also the commitment tx if he registered a boarding UTXO.
+  string signed_commitment_tx = 2;
 }
 message SubmitSignedForfeitTxsResponse {}
 
-message GetEventStreamRequest {}
+message GetEventStreamRequest {
+  repeated string topics = 1;
+}
 message GetEventStreamResponse {
   oneof event {
-    RoundFinalizationEvent round_finalization = 1;
-    RoundFinalizedEvent round_finalized = 2;
-    RoundFailed round_failed = 3;
-    RoundSigningEvent round_signing = 4;
-    RoundSigningNoncesGeneratedEvent round_signing_nonces_generated = 5;
+    BatchStartedEvent batch_started = 1;
+    BatchFinalizationEvent batch_finalization = 2;
+    BatchFinalizedEvent batch_finalized = 3;
+    BatchFailedEvent batch_failed = 4;
+    TreeSigningStartedEvent tree_signing_started = 5;
+    TreeNoncesAggregatedEvent tree_nonces_aggregated = 6;
+    TreeTxEvent tree_tx = 7;
+    TreeSignatureEvent tree_signature = 8;
   }
 }
 
-message PingRequest {
-  // The id used to register inputs and ouptuts.
-  string request_id = 1;
+message SubmitTxRequest {
+  string signed_ark_tx = 1;
+  repeated string checkpoint_txs = 2;
 }
-message PingResponse {}
+message SubmitTxResponse {
+  string ark_txid = 1;
+  string final_ark_tx = 2;
+  repeated string signed_checkpoint_txs = 3;
+}
 
-/* Out-of-Round Transaction API messages */
-
-message SubmitRedeemTxRequest {
-  string redeem_tx = 1;
+message FinalizeTxRequest {
+  string ark_txid = 1;
+  repeated string final_checkpoint_txs = 2;
 }
-message SubmitRedeemTxResponse {
-  string signed_redeem_tx = 1;
-  string txid = 2;
-}
+message FinalizeTxResponse {}
 
 message GetTransactionsStreamRequest {}
 message GetTransactionsStreamResponse {
   oneof tx {
-    RoundTransaction round = 1;
-    RedeemTransaction redeem = 2;
+    TxNotification commitment_tx = 1;
+    TxNotification ark_tx = 2;
   }
 }

@@ -1,0 +1,36 @@
+#!/bin/bash
+set -e
+
+# Get the parent directory path
+PARENT_PATH=$(dirname $(
+  cd $(dirname $0)
+  pwd -P
+))
+
+# Set VERSION (you can modify this to get the version from a file or environment variable)
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+
+# Set GOOS and GOARCH if not already set
+if [[ -z $GOOS ]]; then
+  GOOS=$(go env GOOS)
+fi
+if [[ -z $GOARCH ]]; then
+  GOARCH=$(go env GOARCH)
+fi
+
+echo "Building arkd-wallet for $GOOS $GOARCH"
+echo "Version: $VERSION"
+
+# Change to the parent directory
+pushd $PARENT_PATH
+
+# Create build directory if it doesn't exist
+mkdir -p build
+
+# Build the binary with version information
+GO111MODULE=on go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/arkd-wallet-$GOOS-$GOARCH ./cmd/arkd-wallet
+
+echo "Build complete: build/arkd-wallet-$GOOS-$GOARCH"
+
+# Return to the original directory
+popd

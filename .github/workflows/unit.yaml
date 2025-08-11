@@ -1,0 +1,53 @@
+name: ci_unit
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  check-go-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.23.1'
+
+      - name: Check for changes
+        run: |
+          go mod tidy
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Changes detected after running go mod tidy"
+            git diff
+            exit 1
+          fi
+
+  test-server:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.23.1'
+
+      - uses: actions/checkout@v4
+
+      - name: check linting
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.1.6
+          args: --timeout 5m
+
+      - name: check code integrity
+        uses: securego/gosec@master
+        with:
+          args: '-severity high -quiet -exclude=G115 ./...'
+
+      - name: unit testing
+        run: make test

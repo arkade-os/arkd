@@ -1,0 +1,60 @@
+name: Build and Upload Binaries
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: 1.23.1
+
+    - name: Build binaries
+      run: make build-all
+
+    - name: Upload arkd binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: arkd-binaries
+        path: ./build
+        if-no-files-found: error
+        retention-days: 5
+        compression-level: 6
+        overwrite: true
+
+    - name: Upload arkd wallet binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: arkd-wallet-binaries
+        path: ./pkg/arkd-wallet/build
+        if-no-files-found: error
+        retention-days: 5
+        compression-level: 6
+        overwrite: true
+    
+    - name: Upload ark lib binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: ark-lib-binaries
+        path: ./pkg/ark-lib/build
+        if-no-files-found: error
+        retention-days: 5
+        compression-level: 6
+        overwrite: true
+
+    - name: Upload ark cli binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: ark-cli-binaries
+        path: ./pkg/ark-cli/build
+        if-no-files-found: error
+        retention-days: 5
+        compression-level: 6
+        overwrite: true

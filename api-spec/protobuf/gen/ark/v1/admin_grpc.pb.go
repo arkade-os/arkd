@@ -24,9 +24,8 @@ type AdminServiceClient interface {
 	CreateNote(ctx context.Context, in *CreateNoteRequest, opts ...grpc.CallOption) (*CreateNoteResponse, error)
 	GetMarketHourConfig(ctx context.Context, in *GetMarketHourConfigRequest, opts ...grpc.CallOption) (*GetMarketHourConfigResponse, error)
 	UpdateMarketHourConfig(ctx context.Context, in *UpdateMarketHourConfigRequest, opts ...grpc.CallOption) (*UpdateMarketHourConfigResponse, error)
-	GetTxRequestQueue(ctx context.Context, in *GetTxRequestQueueRequest, opts ...grpc.CallOption) (*GetTxRequestQueueResponse, error)
-	DeleteTxRequests(ctx context.Context, in *DeleteTxRequestsRequest, opts ...grpc.CallOption) (*DeleteTxRequestsResponse, error)
-	Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*WithdrawResponse, error)
+	ListIntents(ctx context.Context, in *ListIntentsRequest, opts ...grpc.CallOption) (*ListIntentsResponse, error)
+	DeleteIntents(ctx context.Context, in *DeleteIntentsRequest, opts ...grpc.CallOption) (*DeleteIntentsResponse, error)
 }
 
 type adminServiceClient struct {
@@ -91,27 +90,18 @@ func (c *adminServiceClient) UpdateMarketHourConfig(ctx context.Context, in *Upd
 	return out, nil
 }
 
-func (c *adminServiceClient) GetTxRequestQueue(ctx context.Context, in *GetTxRequestQueueRequest, opts ...grpc.CallOption) (*GetTxRequestQueueResponse, error) {
-	out := new(GetTxRequestQueueResponse)
-	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/GetTxRequestQueue", in, out, opts...)
+func (c *adminServiceClient) ListIntents(ctx context.Context, in *ListIntentsRequest, opts ...grpc.CallOption) (*ListIntentsResponse, error) {
+	out := new(ListIntentsResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/ListIntents", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *adminServiceClient) DeleteTxRequests(ctx context.Context, in *DeleteTxRequestsRequest, opts ...grpc.CallOption) (*DeleteTxRequestsResponse, error) {
-	out := new(DeleteTxRequestsResponse)
-	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/DeleteTxRequests", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *adminServiceClient) Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*WithdrawResponse, error) {
-	out := new(WithdrawResponse)
-	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/Withdraw", in, out, opts...)
+func (c *adminServiceClient) DeleteIntents(ctx context.Context, in *DeleteIntentsRequest, opts ...grpc.CallOption) (*DeleteIntentsResponse, error) {
+	out := new(DeleteIntentsResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/DeleteIntents", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -128,9 +118,8 @@ type AdminServiceServer interface {
 	CreateNote(context.Context, *CreateNoteRequest) (*CreateNoteResponse, error)
 	GetMarketHourConfig(context.Context, *GetMarketHourConfigRequest) (*GetMarketHourConfigResponse, error)
 	UpdateMarketHourConfig(context.Context, *UpdateMarketHourConfigRequest) (*UpdateMarketHourConfigResponse, error)
-	GetTxRequestQueue(context.Context, *GetTxRequestQueueRequest) (*GetTxRequestQueueResponse, error)
-	DeleteTxRequests(context.Context, *DeleteTxRequestsRequest) (*DeleteTxRequestsResponse, error)
-	Withdraw(context.Context, *WithdrawRequest) (*WithdrawResponse, error)
+	ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error)
+	DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have forward compatible implementations.
@@ -155,14 +144,11 @@ func (UnimplementedAdminServiceServer) GetMarketHourConfig(context.Context, *Get
 func (UnimplementedAdminServiceServer) UpdateMarketHourConfig(context.Context, *UpdateMarketHourConfigRequest) (*UpdateMarketHourConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateMarketHourConfig not implemented")
 }
-func (UnimplementedAdminServiceServer) GetTxRequestQueue(context.Context, *GetTxRequestQueueRequest) (*GetTxRequestQueueResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetTxRequestQueue not implemented")
+func (UnimplementedAdminServiceServer) ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListIntents not implemented")
 }
-func (UnimplementedAdminServiceServer) DeleteTxRequests(context.Context, *DeleteTxRequestsRequest) (*DeleteTxRequestsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DeleteTxRequests not implemented")
-}
-func (UnimplementedAdminServiceServer) Withdraw(context.Context, *WithdrawRequest) (*WithdrawResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Withdraw not implemented")
+func (UnimplementedAdminServiceServer) DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteIntents not implemented")
 }
 
 // UnsafeAdminServiceServer may be embedded to opt out of forward compatibility for this service.
@@ -284,56 +270,38 @@ func _AdminService_UpdateMarketHourConfig_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AdminService_GetTxRequestQueue_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTxRequestQueueRequest)
+func _AdminService_ListIntents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListIntentsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AdminServiceServer).GetTxRequestQueue(ctx, in)
+		return srv.(AdminServiceServer).ListIntents(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ark.v1.AdminService/GetTxRequestQueue",
+		FullMethod: "/ark.v1.AdminService/ListIntents",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminServiceServer).GetTxRequestQueue(ctx, req.(*GetTxRequestQueueRequest))
+		return srv.(AdminServiceServer).ListIntents(ctx, req.(*ListIntentsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AdminService_DeleteTxRequests_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteTxRequestsRequest)
+func _AdminService_DeleteIntents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteIntentsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AdminServiceServer).DeleteTxRequests(ctx, in)
+		return srv.(AdminServiceServer).DeleteIntents(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/ark.v1.AdminService/DeleteTxRequests",
+		FullMethod: "/ark.v1.AdminService/DeleteIntents",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminServiceServer).DeleteTxRequests(ctx, req.(*DeleteTxRequestsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _AdminService_Withdraw_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WithdrawRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AdminServiceServer).Withdraw(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/ark.v1.AdminService/Withdraw",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminServiceServer).Withdraw(ctx, req.(*WithdrawRequest))
+		return srv.(AdminServiceServer).DeleteIntents(ctx, req.(*DeleteIntentsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -370,16 +338,12 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_UpdateMarketHourConfig_Handler,
 		},
 		{
-			MethodName: "GetTxRequestQueue",
-			Handler:    _AdminService_GetTxRequestQueue_Handler,
+			MethodName: "ListIntents",
+			Handler:    _AdminService_ListIntents_Handler,
 		},
 		{
-			MethodName: "DeleteTxRequests",
-			Handler:    _AdminService_DeleteTxRequests_Handler,
-		},
-		{
-			MethodName: "Withdraw",
-			Handler:    _AdminService_Withdraw_Handler,
+			MethodName: "DeleteIntents",
+			Handler:    _AdminService_DeleteIntents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

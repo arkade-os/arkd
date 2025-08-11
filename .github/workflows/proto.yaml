@@ -1,0 +1,27 @@
+name: API Spec Changes
+
+on:
+  push:
+    branches: 
+      - master
+    paths:
+      - "api-spec/**"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "api-spec/**"
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - uses: bufbuild/buf-setup-action@v1.50.0
+      
+      - name: Check proto linting
+        run: buf lint

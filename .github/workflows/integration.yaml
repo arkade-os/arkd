@@ -1,0 +1,39 @@
+name: ci_integration
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  test:
+    name: integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '>=1.23.1'
+      
+      - name: Run Nigiri
+        uses: vulpemventures/nigiri-github-action@v1
+
+      - name: Run Arkd and Arkd Wallet
+        run: make docker-run
+
+      - name: integration testing
+        run: make integrationtest
+      
+      - name: Capture arkd logs
+        if: failure()
+        run: |
+          echo "=== Arkd Logs ==="
+          docker logs arkd
+          echo "=== End Arkd Logs ==="
+      
+      - name: Tear down
+        if: always()
+        run: make docker-stop

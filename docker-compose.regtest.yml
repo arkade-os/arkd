@@ -1,24 +1,44 @@
 services:
+  arkd-wallet:
+    build:
+      context: .
+      dockerfile: arkdwallet.Dockerfile
+    container_name: arkd-wallet
+    ports:
+      - "6060:6060"
+    environment:
+      - ARKD_WALLET_ESPLORA_URL=http://chopsticks:3000
+      - ARKD_WALLET_NEUTRINO_PEER=bitcoin:18444
+      - ARKD_WALLET_DATADIR=./data/regtest
+      - ARKD_WALLET_NETWORK=regtest
+    volumes:
+      - type: tmpfs
+        target: /app/data
+
   arkd:
-    container_name: arkd 
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile
+    container_name: arkd
     restart: unless-stopped
-    environment:
-      - ARK_ROUND_INTERVAL=10
-      - ARK_NETWORK=regtest
-      - ARK_LOG_LEVEL=5
-      - ARK_VTXO_TREE_EXPIRY=20
-      - ARK_TX_BUILDER_TYPE=covenantless
-      - ARK_ESPLORA_URL=http://chopsticks:3000
-      - ARK_NEUTRINO_PEER=bitcoin:18444
-      - ARK_SCHEDULER_TYPE=block
-      - ARK_NO_TLS=true
-      - ARK_NO_MACAROONS=true
-      - ARK_DATADIR=/app/data
+    depends_on:
+      - arkd-wallet
     ports:
       - "7070:7070"
+    environment:
+      - ARKD_LOG_LEVEL=5
+      - ARKD_NO_MACAROONS=true
+      - ARKD_VTXO_TREE_EXPIRY=20
+      - ARKD_SCHEDULER_TYPE=block
+      - ARKD_UNILATERAL_EXIT_DELAY=512
+      - ARKD_BOARDING_EXIT_DELAY=1024
+      - ARKD_DATADIR=./data/regtest
+      - ARKD_WALLET_ADDR=arkd-wallet:6060
+      - ARKD_ESPLORA_URL=http://chopsticks:3000
+      - ARKD_VTXO_MIN_AMOUNT=1
+      - ARKD_LIVE_STORE_TYPE=inmemory
+      - ARKD_EVENT_DB_TYPE=badger
+      - ARKD_DB_TYPE=sqlite
     volumes:
       - type: tmpfs
         target: /app/data

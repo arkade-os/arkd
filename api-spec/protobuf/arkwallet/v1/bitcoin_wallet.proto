@@ -1,0 +1,428 @@
+syntax = "proto3";
+
+package arkwallet.v1;
+
+import "google/api/annotations.proto";
+
+// WalletService exposes wallet operations via gRPC. Methods match the ports.WalletService interface.
+service WalletService {
+  rpc GenSeed(GenSeedRequest) returns (GenSeedResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/seed"
+    };
+  }
+  rpc Create(CreateRequest) returns (CreateResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/create"
+      body: "*"
+    };
+  }
+  rpc Restore(RestoreRequest) returns (RestoreResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/restore"
+      body: "*"
+    };
+  }
+  rpc Unlock(UnlockRequest) returns (UnlockResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/unlock"
+      body: "*"
+    };
+  }
+  rpc Lock(LockRequest) returns (LockResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/lock"
+      body: "*"
+    };
+  }
+  rpc Status(StatusRequest) returns (StatusResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/status"
+    };
+  }
+  rpc GetPubkey(GetPubkeyRequest) returns (GetPubkeyResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/pubkey"
+    };
+  }
+  rpc GetNetwork(GetNetworkRequest) returns (GetNetworkResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/network"
+    };
+  }
+  rpc GetForfeitAddress(GetForfeitAddressRequest) returns (GetForfeitAddressResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/forfeit-address"
+    };
+  }
+  rpc DeriveConnectorAddress(DeriveConnectorAddressRequest) returns (DeriveConnectorAddressResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/connector-address"
+    };
+  }
+  rpc DeriveAddresses(DeriveAddressesRequest) returns (DeriveAddressesResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/derive-addresses"
+      body: "*"
+    };
+  }
+  rpc SignTransaction(SignTransactionRequest) returns (SignTransactionResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/sign-transaction"
+      body: "*"
+    };
+  }
+  rpc SignTransactionTapscript(SignTransactionTapscriptRequest) returns (SignTransactionTapscriptResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/sign-transaction-tapscript"
+      body: "*"
+    };
+  }
+  rpc SelectUtxos(SelectUtxosRequest) returns (SelectUtxosResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/select-utxos"
+      body: "*"
+    };
+  }
+  rpc BroadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/broadcast"
+      body: "*"
+    };
+  }
+  rpc WaitForSync(WaitForSyncRequest) returns (WaitForSyncResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/wait-for-sync"
+      body: "*"
+    };
+  }
+
+  rpc GetReadyUpdate(GetReadyUpdateRequest) returns (stream GetReadyUpdateResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/ready-update"
+    };
+  }
+  rpc IsTransactionConfirmed(IsTransactionConfirmedRequest) returns (IsTransactionConfirmedResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/transaction-confirmed"
+    };
+  }
+  rpc EstimateFees(EstimateFeesRequest) returns (EstimateFeesResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/estimate-fees"
+      body: "*"
+    };
+  }
+  rpc FeeRate(FeeRateRequest) returns (FeeRateResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/fee-rate"
+    };
+  }
+  rpc ListConnectorUtxos(ListConnectorUtxosRequest) returns (ListConnectorUtxosResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/connector-utxos"
+    };
+  }
+  rpc MainAccountBalance(MainAccountBalanceRequest) returns (MainAccountBalanceResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/main-account-balance"
+    };
+  }
+  rpc ConnectorsAccountBalance(ConnectorsAccountBalanceRequest) returns (ConnectorsAccountBalanceResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/connectors-account-balance"
+    };
+  }
+  rpc LockConnectorUtxos(LockConnectorUtxosRequest) returns (LockConnectorUtxosResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/lock-connector-utxos"
+      body: "*"
+    };
+  }
+  rpc GetDustAmount(GetDustAmountRequest) returns (GetDustAmountResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/dust"
+    };
+  }
+  rpc GetTransaction(GetTransactionRequest) returns (GetTransactionResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/tx"
+    };
+  }
+  rpc SignMessage(SignMessageRequest) returns (SignMessageResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/sign-message"
+      body: "*"
+    };
+  }
+  rpc VerifyMessageSignature(VerifyMessageSignatureRequest) returns (VerifyMessageSignatureResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/verify-message-signature"
+      body: "*"
+    };
+  }
+  rpc GetCurrentBlockTime(GetCurrentBlockTimeRequest) returns (GetCurrentBlockTimeResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/block-time"
+    };
+  }
+  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/withdraw"
+      body: "*"
+    };
+  }
+  rpc WatchScripts(WatchScriptsRequest) returns (WatchScriptsResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/watch-scripts"
+      body: "*"
+    };
+  }
+  rpc UnwatchScripts(UnwatchScriptsRequest) returns (UnwatchScriptsResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/unwatch-scripts"
+      body: "*"
+    };
+  }
+  rpc NotificationStream(NotificationStreamRequest) returns (stream NotificationStreamResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/notifications"
+    };
+  }
+}
+
+// GetReadyUpdate
+message GetReadyUpdateRequest {}
+message GetReadyUpdateResponse {
+  bool ready = 1;
+}
+
+// IsTransactionConfirmed
+message IsTransactionConfirmedRequest {
+  string txid = 1;
+}
+message IsTransactionConfirmedResponse {
+  bool confirmed = 1;
+  int64 blocknumber = 2;
+  int64 blocktime = 3;
+}
+
+
+message NotificationStreamRequest {
+}
+message NotificationStreamResponse {
+  repeated VtoxsPerScript entries = 1;
+}
+
+message VtoxsPerScript {
+  string script = 1; // hex-encoded script
+  repeated VtxoWithKey vtxos = 2;
+}
+
+message VtxoWithKey {
+  string txid = 1;
+  uint32 vout = 2;
+  uint64 value = 3;
+}
+
+
+
+message GenSeedRequest {}
+message GenSeedResponse {
+  string seed = 1;
+}
+
+message CreateRequest {
+  string seed = 1;
+  string password = 2;
+}
+message CreateResponse {}
+
+message RestoreRequest {
+  string seed = 1;
+  string password = 2;
+}
+message RestoreResponse {}
+
+message UnlockRequest {
+  string password = 1;
+}
+message UnlockResponse {}
+
+message LockRequest {}
+message LockResponse {}
+
+message StatusRequest {}
+message StatusResponse {
+  bool initialized = 1;
+  bool unlocked = 2;
+  bool synced = 3;
+}
+
+message GetPubkeyRequest {}
+message GetPubkeyResponse {
+  bytes pubkey = 1;
+}
+
+message GetNetworkRequest {}
+message GetNetworkResponse {
+  string network = 1;
+}
+
+message GetForfeitAddressRequest {}
+message GetForfeitAddressResponse {
+  string address = 1;
+}
+
+message DeriveConnectorAddressRequest {}
+message DeriveConnectorAddressResponse {
+  string address = 1;
+}
+
+message DeriveAddressesRequest {
+  int32 num = 1;
+}
+message DeriveAddressesResponse {
+  repeated string addresses = 1;
+}
+
+message SignTransactionRequest {
+  string partial_tx = 1;
+  bool extract_raw_tx = 2;
+}
+message SignTransactionResponse {
+  string signed_tx = 1;
+}
+
+message SignTransactionTapscriptRequest {
+  string partial_tx = 1;
+  repeated int32 input_indexes = 2;
+}
+message SignTransactionTapscriptResponse {
+  string signed_tx = 1;
+}
+
+message SelectUtxosRequest {
+  string asset = 1;
+  uint64 amount = 2;
+  bool confirmed_only = 3;
+}
+message SelectUtxosResponse {
+  repeated TxInput utxos = 1;
+  uint64 total_amount = 2;
+}
+
+message BroadcastTransactionRequest {
+  repeated string txs = 1;
+}
+message BroadcastTransactionResponse {
+  string txid = 1;
+}
+
+message WaitForSyncRequest {
+  string txid = 1;
+}
+message WaitForSyncResponse {}
+
+message EstimateFeesRequest {
+  string psbt = 1;
+}
+message EstimateFeesResponse {
+  uint64 fee = 1;
+}
+
+message FeeRateRequest {}
+message FeeRateResponse {
+  uint64 sat_per_kvbyte = 1;
+}
+
+message ListConnectorUtxosRequest {
+  string connector_address = 1;
+}
+message ListConnectorUtxosResponse {
+  repeated TxInput utxos = 1;
+}
+
+message MainAccountBalanceRequest {}
+message MainAccountBalanceResponse {
+  uint64 confirmed = 1;
+  uint64 unconfirmed = 2;
+}
+
+message ConnectorsAccountBalanceRequest {}
+message ConnectorsAccountBalanceResponse {
+  uint64 confirmed = 1;
+  uint64 unconfirmed = 2;
+}
+
+message LockConnectorUtxosRequest {
+  repeated TxOutpoint utxos = 1;
+}
+message LockConnectorUtxosResponse {}
+
+message GetDustAmountRequest {}
+message GetDustAmountResponse {
+  uint64 dust_amount = 1;
+}
+
+message WatchScriptsRequest {
+  repeated string scripts = 1;
+}
+message WatchScriptsResponse {}
+
+message UnwatchScriptsRequest {
+  repeated string scripts = 1;
+}
+message UnwatchScriptsResponse {}
+
+message GetTransactionRequest {
+  string txid = 1;
+}
+message GetTransactionResponse {
+  string tx_hex = 1;
+}
+
+message SignMessageRequest {
+  bytes message = 1;
+}
+message SignMessageResponse {
+  bytes signature = 1;
+}
+
+message VerifyMessageSignatureRequest {
+  bytes message = 1;
+  bytes signature = 2;
+}
+message VerifyMessageSignatureResponse {
+  bool valid = 1;
+}
+
+message GetCurrentBlockTimeRequest {}
+message GetCurrentBlockTimeResponse {
+  BlockTimestamp timestamp = 1;
+}
+
+message WithdrawRequest {
+  string address = 1;
+  uint64 amount = 2;
+}
+message WithdrawResponse {
+  string txid = 1;
+}
+
+message TxInput {
+  string txid = 1;
+  uint32 index = 2;
+  string script = 3;
+  uint64 value = 4;
+}
+
+message TxOutpoint {
+  string txid = 1;
+  uint32 index = 2;
+}
+
+message BlockTimestamp {
+  uint32 height = 1;
+  int64 time = 2;
+}

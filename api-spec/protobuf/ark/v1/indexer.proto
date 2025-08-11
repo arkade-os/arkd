@@ -5,66 +5,119 @@ package ark.v1;
 import "google/api/annotations.proto";
 
 service IndexerService {
+  // GetCommitmentTx returns information about a specific commitment transaction identified by the
+  // provided txid.
   rpc GetCommitmentTx(GetCommitmentTxRequest) returns (GetCommitmentTxResponse) {
     option (google.api.http) = {
       get: "/v1/commitmentTx/{txid}"
     };
   };
+
+  // GetForfeitTxs returns the list of forfeit transactions that were submitted for the provided
+  // commitment transaction.
+  // The response may include pagination information if the results span multiple pages.
   rpc GetForfeitTxs(GetForfeitTxsRequest) returns (GetForfeitTxsResponse) {
     option (google.api.http) = {
       get: "/v1/commitmentTx/{txid}/forfeitTxs"
     };
   };
+  
+  // GetConnectors returns the tree of connectors for the provided commitment transaction.
+  // The response includes a list of connector txs with details on the tree posistion and may
+  // include pagination information if the results span multiple pages.
   rpc GetConnectors(GetConnectorsRequest) returns (GetConnectorsResponse) {
     option (google.api.http) = {
       get: "/v1/commitmentTx/{txid}/connectors"
     };
   };
-  rpc GetCommitmentTxLeaves(GetCommitmentTxLeavesRequest) returns (GetCommitmentTxLeavesResponse) {
-    option (google.api.http) = {
-      get: "/v1/commitmentTx/{txid}/leaves"
-    };
-  };
+
+  // GetVtxoTree returns the vtxo tree for the provided batch outpoint.
+  // The response includes a list of txs with details on the tree posistion and may
+  // include pagination information if the results span multiple pages.
   rpc GetVtxoTree(GetVtxoTreeRequest) returns (GetVtxoTreeResponse) {
     option (google.api.http) = {
       get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree"
     };
   };
+
+  // GetVtxoTreeLeaves returns the list of leaves (vtxo outpoints) of the tree(s) for the
+  // provided batch outpoint.
+  // The response may be paginated if the results span multiple pages.
   rpc GetVtxoTreeLeaves(GetVtxoTreeLeavesRequest) returns (GetVtxoTreeLeavesResponse) {
     option (google.api.http) = {
       get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves"
     };
   };
+
+  // GetVtxos returns the list of vtxos based on the provided filter. Vtxos can be retrieved either
+  // by addresses or by outpoints, and optionally filtered by spendable or spent only.
+  // The response may be paginated if the results span multiple pages.
   rpc GetVtxos(GetVtxosRequest) returns (GetVtxosResponse) {
     option (google.api.http) = {
-      get: "/v1/getVtxos/{addresses}"
+      get: "/v1/vtxos"
     };
   };
-  rpc GetVtxosByOutpoint(GetVtxosByOutpointRequest) returns (GetVtxosByOutpointResponse) {
-    option (google.api.http) = {
-      get: "/v1/getVtxosByOutpoint/{outpoints}"
-    };
-  }
-  rpc GetTransactionHistory(GetTransactionHistoryRequest) returns (GetTransactionHistoryResponse) {
-    option (google.api.http) = {
-      get: "/v1/history/{address}"
-    };
-  };
+  
+  // GetVtxoChain returns the the chain of ark txs that starts from spending any vtxo leaf and ends
+  // with the creation of the provided vtxo outpoint.
+  // The response may be paginated if the results span multiple pages.
   rpc GetVtxoChain(GetVtxoChainRequest) returns (GetVtxoChainResponse) {
     option (google.api.http) = {
       get: "/v1/vtxo/{outpoint.txid}/{outpoint.vout}/chain"
     };
   }
+
+  // GetVirtualTxs returns the virtual transactions in hex format for the specified txids.
+  // The response may be paginated if the results span multiple pages.
   rpc GetVirtualTxs(GetVirtualTxsRequest) returns (GetVirtualTxsResponse) {
     option (google.api.http) = {
       get: "/v1/virtualTx/{txids}"
     };
   }
-  rpc GetSweptCommitmentTx(GetSweptCommitmentTxRequest) returns (GetSweptCommitmentTxResponse) {
+
+  // GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
+  // output.
+  // In most cases the list contains only one txid, meaning that all the amount locked for a
+  // vtxo tree has been claimed back.
+  // If any of the leaves of the tree have been unrolled onchain before the expiration, the
+  // list will contain many txids instead.
+  // In a binary tree with 4 or more leaves, 1 unroll causes the server to broadcast 3 txs to sweep
+  // the whole rest of tree for example.
+  // If a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is
+  // empty.
+  rpc GetBatchSweepTransactions(GetBatchSweepTransactionsRequest) returns (GetBatchSweepTransactionsResponse) {
     option (google.api.http) = {
-      get: "/v1/commitmentTx/{txid}/swept"
+      get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs"
     };
   }
+
+  // SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo
+  // scripts. It can also be used to update an existing subscribtion by adding new scripts to it.
+  rpc SubscribeForScripts(SubscribeForScriptsRequest) returns (SubscribeForScriptsResponse) {
+    option (google.api.http) = {
+      post: "/v1/script/subscribe"
+      body: "*"
+    };
+  };
+
+  // UnsubscribeForScripts allows to remove scripts from an existing subscription.
+  rpc UnsubscribeForScripts(UnsubscribeForScriptsRequest) returns (UnsubscribeForScriptsResponse) {
+    option (google.api.http) = {
+      post: "/v1/script/unsubscribe"
+      body: "*"
+    };
+  };
+
+  
+  // GetSubscription is a server-side streaming RPC which allows clients to receive real-time
+  // notifications on transactions related to the subscribed vtxo scripts.
+  // The subscription can be created or updated by using the SubscribeForScripts and 
+  // UnsubscribeForScripts RPCs.
+  rpc GetSubscription(GetSubscriptionRequest) returns (stream GetSubscriptionResponse) {
+    option (google.api.http) = {
+      get: "/v1/script/subscription/{subscription_id}"
+    };
+  };
 }
 
 message GetCommitmentTxRequest {
@@ -98,15 +151,6 @@ message GetConnectorsResponse {
   IndexerPageResponse page = 2;
 }
 
-message GetCommitmentTxLeavesRequest {
-  string txid = 1;
-  IndexerPageRequest page = 2;
-}
-message GetCommitmentTxLeavesResponse {
-  repeated IndexerOutpoint leaves = 1;
-  IndexerPageResponse page = 2;
-}
-
 message GetVtxoTreeRequest {
   IndexerOutpoint batch_outpoint = 1;
   IndexerPageRequest page = 2;
@@ -126,33 +170,21 @@ message GetVtxoTreeLeavesResponse {
 }
 
 message GetVtxosRequest {
-  repeated string addresses = 1;
-  bool spendable_only = 2;
-  bool spent_only = 3;
-  IndexerPageRequest page = 4;
+  // Either specify a list of vtxo scripts.
+  repeated string scripts = 1;
+  // Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.
+  repeated string outpoints = 2;
+  // Retrieve only spendable vtxos
+  bool spendable_only = 3;
+  // Retrieve only spent vtxos.
+  bool spent_only = 4;
+  // Retrieve only recoverable vtxos (notes, subdust or swept vtxos).
+  // The 3 filters are mutually exclusive,
+  bool recoverable_only = 5;
+  IndexerPageRequest page = 6;
 }
 message GetVtxosResponse {
   repeated IndexerVtxo vtxos = 1;
-  IndexerPageResponse page = 2;
-}
-
-message GetVtxosByOutpointRequest {
-  repeated string outpoints = 1;
-  IndexerPageRequest page = 2;
-}
-message GetVtxosByOutpointResponse {
-  repeated IndexerVtxo vtxos = 1;
-  IndexerPageResponse page = 2;
-}
-
-message GetTransactionHistoryRequest {
-  string address = 1;
-  int64 start_time = 2;
-  int64 end_time = 3;
-  IndexerPageRequest page = 4;
-}
-message GetTransactionHistoryResponse {
-  repeated IndexerTxHistoryRecord history = 1;
   IndexerPageResponse page = 2;
 }
 
@@ -162,9 +194,7 @@ message GetVtxoChainRequest {
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
-  int32 depth = 2;
-  string root_commitment_txid = 3;
-  IndexerPageResponse page = 4;
+  IndexerPageResponse page = 2;
 }
 
 message GetVirtualTxsRequest {
@@ -176,20 +206,12 @@ message GetVirtualTxsResponse {
   IndexerPageResponse page = 2;
 }
 
-message GetSweptCommitmentTxRequest {
-  string txid = 1;
-}
-message GetSweptCommitmentTxResponse {
-  repeated string swept_by = 1;
-}
+message GetBatchSweepTransactionsRequest {
+  IndexerOutpoint batch_outpoint = 1;
 
-message SubscribeForAddressesRequest {
-  repeated string addresses = 1;
 }
-message SubscribeForAddressesResponse {
-  string address = 1;
-  repeated IndexerVtxo new_vtxos = 2;
-  repeated IndexerVtxo spent_vtxos = 3;
+message GetBatchSweepTransactionsResponse {
+  repeated string swept_by = 1;
 }
 
 message IndexerBatch {
@@ -206,9 +228,7 @@ message IndexerOutpoint {
 
 message IndexerNode {
   string txid = 1;
-  string parent_txid = 3;
-  int32 level = 4;
-  int32 level_index = 5;
+  map<uint32, string> children = 2; // vout -> txid
 }
 
 message IndexerVtxo {
@@ -217,22 +237,22 @@ message IndexerVtxo {
   int64 expires_at = 3;
   uint64 amount = 4;
   string script = 5;
-  bool is_leaf = 6;
+  bool is_preconfirmed = 6;
   bool is_swept = 7;
-  bool is_spent = 8;
-  string spent_by = 9;
-  string commitment_txid = 10;
+  bool is_unrolled = 8;
+  bool is_spent = 9;
+  string spent_by = 10;
+  repeated string commitment_txids = 11;
+  string settled_by = 12;
+  string ark_txid = 13;
 }
 
 message IndexerChain {
   string txid = 1;
-  repeated IndexerChainedTx spends = 2;
-  int64 expires_at = 3;
-}
-
-message IndexerChainedTx {
-  string txid = 1;
-  IndexerChainedTxType type = 2;
+  int64 expires_at = 2;
+  IndexerChainedTxType type = 3;
+  // txids of the transactions in the chain used as input of the current tx
+  repeated string spends = 4;
 }
 
 message IndexerTxHistoryRecord {
@@ -255,8 +275,10 @@ enum IndexerTxType {
 
 enum IndexerChainedTxType {
   INDEXER_CHAINED_TX_TYPE_UNSPECIFIED = 0;
-  INDEXER_CHAINED_TX_TYPE_VIRTUAL = 1;
-  INDEXER_CHAINED_TX_TYPE_COMMITMENT = 2;
+  INDEXER_CHAINED_TX_TYPE_COMMITMENT = 1;
+  INDEXER_CHAINED_TX_TYPE_ARK = 2;
+  INDEXER_CHAINED_TX_TYPE_TREE = 3;
+  INDEXER_CHAINED_TX_TYPE_CHECKPOINT = 4;
 }
 
 message IndexerPageRequest {
@@ -268,4 +290,40 @@ message IndexerPageResponse {
   int32 current = 1;
   int32 next = 2;
   int32 total = 3;
+}
+
+message SubscribeForScriptsRequest {
+  repeated string scripts = 1;
+  // If set, update an existing subscription
+  string subscription_id = 2;
+}
+
+message SubscribeForScriptsResponse {
+  string subscription_id = 1;
+}
+
+message UnsubscribeForScriptsRequest {
+  string subscription_id = 1;
+  // If empty, unsubscribe all scripts
+  repeated string scripts = 2; 
+}
+
+message UnsubscribeForScriptsResponse {}
+
+message GetSubscriptionRequest {
+  string subscription_id = 1;
+}
+
+message GetSubscriptionResponse {
+  string txid = 1;
+  repeated string scripts = 2;
+  repeated IndexerVtxo new_vtxos = 3;
+  repeated IndexerVtxo spent_vtxos = 4;
+  string tx = 5;
+  map<string, IndexerTxData> checkpoint_txs = 6;
+}
+
+message IndexerTxData {
+  string txid = 1;
+  string tx = 2;
 }

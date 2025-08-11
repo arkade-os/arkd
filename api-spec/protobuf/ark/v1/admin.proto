@@ -3,8 +3,6 @@ syntax = "proto3";
 package ark.v1;
 
 import "google/api/annotations.proto";
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/duration.proto";
 import "ark/v1/types.proto";
 
 service AdminService {
@@ -20,8 +18,7 @@ service AdminService {
   }
   rpc GetRounds(GetRoundsRequest) returns (GetRoundsResponse) {
     option (google.api.http) = {
-      post: "/v1/admin/rounds"
-      body: "*"
+      get: "/v1/admin/rounds"
     };
   }
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse) {
@@ -32,29 +29,23 @@ service AdminService {
   }
   rpc GetMarketHourConfig(GetMarketHourConfigRequest) returns (GetMarketHourConfigResponse) {
     option (google.api.http) = {
-      get: "/v1/admin/market-hour"
+      get: "/v1/admin/marketHour"
     };
   }
   rpc UpdateMarketHourConfig(UpdateMarketHourConfigRequest) returns (UpdateMarketHourConfigResponse) {
     option (google.api.http) = {
-      post: "/v1/admin/market-hour"
+      post: "/v1/admin/marketHour"
       body: "*"
     };
   }
-  rpc GetTxRequestQueue(GetTxRequestQueueRequest) returns (GetTxRequestQueueResponse) {
+  rpc ListIntents(ListIntentsRequest) returns (ListIntentsResponse) {
     option (google.api.http) = {
-      get: "/v1/admin/queue"
+      get: "/v1/admin/intents"
     };
   }
-  rpc DeleteTxRequests(DeleteTxRequestsRequest) returns (DeleteTxRequestsResponse) {
+  rpc DeleteIntents(DeleteIntentsRequest) returns (DeleteIntentsResponse) {
     option (google.api.http) = {
-      post: "/v1/admin/queue/delete"
-      body: "*"
-    };
-  }
-  rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
-    option (google.api.http) = {
-      post: "/v1/admin/withdraw"
+      post: "/v1/admin/intents/delete"
       body: "*"
     };
   }
@@ -70,14 +61,16 @@ message GetRoundDetailsRequest {
 }
 message GetRoundDetailsResponse {
   string round_id = 1;
-  string txid = 2;
-  string forfeited_amount = 3;
-  string total_vtxos_amount = 4;
-  string total_exit_amount = 5;
-  string fees_amount = 6;
-  repeated string inputs_vtxos = 7;
-  repeated string outputs_vtxos = 8;
-  repeated string exit_addresses = 9;
+  int64 started_at = 2;
+  int64 ended_at = 3;
+  string commitment_txid = 4;
+  string forfeited_amount = 5;
+  string total_vtxos_amount = 6;
+  string total_exit_amount = 7;
+  string total_fee_amount = 8;
+  repeated string inputs_vtxos = 9;
+  repeated string outputs_vtxos = 10;
+  repeated string exit_addresses = 11;
 }
 
 message GetRoundsRequest {
@@ -106,29 +99,57 @@ message UpdateMarketHourConfigRequest {
 }
 message UpdateMarketHourConfigResponse {}
 
-message MarketHourConfig {
-  google.protobuf.Timestamp start_time = 1;
-  google.protobuf.Timestamp end_time = 2;
-  google.protobuf.Duration period = 3;
-  google.protobuf.Duration round_interval = 4;
+message ListIntentsRequest {
+  repeated string intent_ids = 1;
+}
+message ListIntentsResponse {
+  repeated IntentInfo intents = 1;
 }
 
-message GetTxRequestQueueRequest {
-  repeated string request_ids = 1;
+message DeleteIntentsRequest {
+  repeated string intent_ids = 1;
 }
-message GetTxRequestQueueResponse {
-  repeated TxRequestInfo requests = 1;
-}
+message DeleteIntentsResponse {}
 
-message DeleteTxRequestsRequest {
-  repeated string request_ids = 1;
-}
-message DeleteTxRequestsResponse {}
-message WithdrawRequest {
-  string address = 1;
-  uint64 amount = 2;
-}
-
-message WithdrawResponse {
+message SweepableOutput {
   string txid = 1;
+  uint32 vout = 2;
+  string amount = 3;
+  int64 scheduled_at = 4;
+}
+
+message ScheduledSweep {
+  string round_id = 1;
+  repeated SweepableOutput outputs = 2;
+}
+
+message MarketHourConfig {
+  int64 start_time = 1;
+  int64 end_time = 2;
+  int64 period = 3;
+  int64 round_interval = 4;
+}
+
+message IntentInput {
+  string txid = 1;
+  uint32 vout = 2;
+  uint64 amount = 3;
+}
+
+message IntentInfo {
+  string id = 1;
+  int64 created_at = 2;
+  repeated Output receivers = 3;
+  repeated IntentInput inputs = 4;
+  repeated IntentInput boarding_inputs = 5;
+  repeated string cosigners_public_keys = 6;
+  Bip322Signature proof = 7;
+}
+
+message Output {
+  oneof destination {
+    string vtxo_script = 1;
+    string onchain_address = 2;
+  }; // onchain or off-chain
+  uint64 amount = 3; // Amount to send in satoshis.
 }

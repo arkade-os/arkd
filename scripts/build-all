@@ -1,0 +1,65 @@
+#!/bin/bash
+set -e
+
+# Get the parent directory path
+PARENT_PATH=$(dirname $(
+  cd $(dirname $0)
+  pwd -P
+))
+
+# Set VERSION (you can modify this to get the version from a file or environment variable)
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+
+# Define OS and ARCH arrays
+declare -a OS=("darwin" "linux")
+declare -a ARCH=("amd64" "arm64")
+
+# Change to the parent directory
+pushd $PARENT_PATH
+echo ""
+
+# Function to handle errors
+handle_error() {
+    echo "Error occurred in build for $1 $2"
+    echo "Build command: VERSION=$VERSION GOOS=$1 GOARCH=$2 ./scripts/build"
+    echo "Exit code: $3"
+    echo "You may want to run this build manually to see more detailed error messages."
+}
+
+echo "Start building all binaries for version: $VERSION"
+echo ""
+
+# Loop through OS and ARCH combinations
+for os in "${OS[@]}"; do
+    for arch in "${ARCH[@]}"; do
+        if VERSION=$VERSION GOOS=$os GOARCH=$arch ./scripts/build-arkd; then
+            echo "Built arkd successfully for $os $arch"
+            echo ""
+        else
+            handle_error $os $arch $?
+        fi
+
+        if VERSION=$VERSION GOOS=$os GOARCH=$arch ./scripts/build-arkd-wallet; then
+            echo "Built arkd-wallet successfully for $os $arch"
+            echo ""
+        else
+            handle_error $os $arch $?
+        fi
+
+        if VERSION=$VERSION GOOS=$os GOARCH=$arch ./pkg/ark-cli/scripts/build; then
+            echo "Built ark-cli successfully for $os $arch"
+            echo ""
+        else
+            handle_error $os $arch $?
+        fi
+
+        echo "------------------------"
+        echo ""
+    done
+done
+
+# Return to the original directory
+popd
+echo ""
+
+echo "All builds completed for version $VERSION."
