@@ -1939,13 +1939,7 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 
 	_, _, _, err = grpcAlice.SubmitTx(ctx, signedInvalidTx, encodedInvalidCheckpoints)
 	require.Error(t, err)
-	require.ErrorIs(
-		t,
-		err,
-		fmt.Errorf(
-			"rpc error: code = Internal desc = invalid ark tx signature(s): arkade script execution failed",
-		),
-	)
+	require.Contains(t, err.Error(), "invalid ark tx signature(s): arkade script execution failed")
 
 	encodedValidTx, err := validTx.B64Encode()
 	require.NoError(t, err)
