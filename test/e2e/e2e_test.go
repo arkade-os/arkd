@@ -1787,7 +1787,10 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 			&script.MultisigClosure{
 				PubKeys: []*btcec.PublicKey{
 					bobPubKey,
-					script.ComputeArkadeScriptKey(aliceAddr.Signer, script.ArkadeScriptHash(arkadeScript)),
+					script.ComputeArkadeScriptKey(
+						aliceAddr.Signer,
+						script.ArkadeScriptHash(arkadeScript),
+					),
 				},
 			},
 		},
@@ -1807,7 +1810,9 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 	arkadeTapscript, err := closure.Script()
 	require.NoError(t, err)
 
-	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(txscript.NewBaseTapLeaf(arkadeTapscript).TapHash())
+	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(arkadeTapscript).TapHash(),
+	)
 	require.NoError(t, err)
 
 	ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
@@ -1821,7 +1826,11 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 	bobAddrStr, err := bobAddr.EncodeV0()
 	require.NoError(t, err)
 
-	txid, err := alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}})
+	txid, err := alice.SendOffChain(
+		ctx,
+		false,
+		[]types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+	)
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
@@ -1930,7 +1939,13 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 
 	_, _, _, err = grpcAlice.SubmitTx(ctx, signedInvalidTx, encodedInvalidCheckpoints)
 	require.Error(t, err)
-	require.ErrorIs(t, err, fmt.Errorf("rpc error: code = Internal desc = invalid ark tx signature(s): arkade script execution failed"))
+	require.ErrorIs(
+		t,
+		err,
+		fmt.Errorf(
+			"rpc error: code = Internal desc = invalid ark tx signature(s): arkade script execution failed",
+		),
+	)
 
 	encodedValidTx, err := validTx.B64Encode()
 	require.NoError(t, err)

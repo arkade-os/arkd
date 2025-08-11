@@ -126,7 +126,10 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 			prevouts := make(map[wire.OutPoint]*wire.TxOut)
 			for i, input := range ptx.Inputs {
 				if input.WitnessUtxo == nil {
-					return false, txid, fmt.Errorf("missing prevout for input %d, cannot validate ark script", i)
+					return false, txid, fmt.Errorf(
+						"missing prevout for input %d, cannot validate ark script",
+						i,
+					)
 				}
 
 				outpoint := ptx.UnsignedTx.TxIn[i].PreviousOutPoint
