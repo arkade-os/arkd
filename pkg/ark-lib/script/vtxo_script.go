@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -95,14 +96,12 @@ func (v *TapscriptsVtxoScript) Decode(scripts []string) error {
 }
 
 func (v *TapscriptsVtxoScript) Validate(server *btcec.PublicKey, minLocktime common.RelativeLocktime, blockTypeAllowed bool, arkScript []byte) error {
-	mandatoryKey := server
+	xonlySigner := schnorr.SerializePubKey(server)
 
 	if len(arkScript) > 0 {
 		arkScriptHash := ArkadeScriptHash(arkScript)
-		mandatoryKey = ComputeArkadeScriptKey(server, arkScriptHash)
+		xonlySigner = schnorr.SerializePubKey(ComputeArkadeScriptPublicKey(server, arkScriptHash))
 	}
-
-	xonlySigner := schnorr.SerializePubKey(mandatoryKey)
 
 	for _, forfeit := range v.ForfeitClosures() {
 		keys := make([]*btcec.PublicKey, 0)
@@ -133,7 +132,11 @@ func (v *TapscriptsVtxoScript) Validate(server *btcec.PublicKey, minLocktime com
 			}
 		}
 		if !found {
-			return fmt.Errorf("invalid forfeit closure, signer pubkey not found")
+			pubkeysList := make([]string, 0)
+			for _, pubkey := range keys {
+				pubkeysList = append(pubkeysList, hex.EncodeToString(schnorr.SerializePubKey(pubkey)))
+			}
+			return fmt.Errorf("invalid forfeit closure, got signer pubkey not found: %s (expected: %s)", strings.Join(pubkeysList, ", "), hex.EncodeToString(xonlySigner))
 		}
 	}
 

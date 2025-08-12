@@ -21,6 +21,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	log "github.com/sirupsen/logrus"
 )
 
 type txBuilder struct {
@@ -46,16 +47,22 @@ func (b *txBuilder) GetTxid(tx string) (string, error) {
 	return ptx.UnsignedTx.TxID(), nil
 }
 
-func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, string, error) {
+func (b *txBuilder) VerifyTapscriptPartialSigs(
+	tx string,
+	withArkadeScriptInterpreter bool,
+) (bool, string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return false, "", err
 	}
 
-	return b.verifyTapscriptPartialSigs(ptx)
+	return b.verifyTapscriptPartialSigs(ptx, withArkadeScriptInterpreter)
 }
 
-func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, error) {
+func (b *txBuilder) verifyTapscriptPartialSigs(
+	ptx *psbt.Packet,
+	withArkadeScriptInterpreter bool,
+) (bool, string, error) {
 	txid := ptx.UnsignedTx.TxID()
 
 	operatorPubkey, err := b.wallet.GetPubkey(context.Background())
@@ -118,41 +125,42 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 		// execute ark script if present in psbt input
 		arkScript := txutils.GetArkadeScript(input)
 		if len(arkScript) > 0 {
-			witness, err := txutils.GetArkadeScriptWitness(input)
-			if err != nil {
-				return false, txid, err
-			}
-
-			prevouts := make(map[wire.OutPoint]*wire.TxOut)
-			for i, input := range ptx.Inputs {
-				if input.WitnessUtxo == nil {
-					return false, txid, fmt.Errorf(
-						"missing prevout for input %d, cannot validate ark script",
-						i,
-					)
-				}
-
-				outpoint := ptx.UnsignedTx.TxIn[i].PreviousOutPoint
-				prevouts[outpoint] = input.WitnessUtxo
-			}
-
-			prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
-
-			if err := script.ExecuteArkadeScript(
-				arkScript,
-				ptx.UnsignedTx,
-				prevoutFetcher,
-				int(index),
-				witness,
-			); err != nil {
-				return false, txid, fmt.Errorf("arkade script execution failed")
-			}
-
 			arkadeScriptHash := script.ArkadeScriptHash(arkScript)
-			arkadeScriptKey := script.ComputeArkadeScriptKey(operatorPubkey, arkadeScriptHash)
+			arkadeScriptKey := script.ComputeArkadeScriptPublicKey(operatorPubkey, arkadeScriptHash)
 
 			// we don't need to check if server tweaked key signed
 			keys[hex.EncodeToString(schnorr.SerializePubKey(arkadeScriptKey))] = true
+
+			if withArkadeScriptInterpreter {
+				witness, err := txutils.GetArkadeScriptWitness(input)
+				if err != nil {
+					return false, txid, err
+				}
+				prevouts := make(map[wire.OutPoint]*wire.TxOut)
+				for i, input := range ptx.Inputs {
+					if input.WitnessUtxo == nil {
+						return false, txid, fmt.Errorf(
+							"missing prevout for input %d, cannot validate ark script",
+							i,
+						)
+					}
+
+					outpoint := ptx.UnsignedTx.TxIn[i].PreviousOutPoint
+					prevouts[outpoint] = input.WitnessUtxo
+				}
+
+				prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
+
+				if err := script.ExecuteArkadeScript(
+					arkScript,
+					ptx.UnsignedTx,
+					prevoutFetcher,
+					index,
+					witness,
+				); err != nil {
+					return false, txid, fmt.Errorf("arkade script execution failed")
+				}
+			}
 		}
 
 		// we don't need to check if server signed
@@ -197,21 +205,45 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 			}
 
 			if !sig.Verify(preimage, pubkey) {
-				return false, txid, nil
+				if log.IsLevelEnabled(log.TraceLevel) {
+					b64Tx, err := ptx.B64Encode()
+					if err != nil {
+						return false, txid, err
+					}
+
+					log.WithFields(log.Fields{
+						"txid":      txid,
+						"index":     index,
+						"signature": hex.EncodeToString(tapScriptSig.Signature),
+						"pubkey":    hex.EncodeToString(schnorr.SerializePubKey(pubkey)),
+						"preimage":  hex.EncodeToString(preimage),
+						"tx":        b64Tx,
+					}).Trace("invalid signature")
+				}
+
+				return false, txid, fmt.Errorf(
+					"invalid signature for input %d, %s",
+					index,
+					hex.EncodeToString(tapScriptSig.Signature),
+				)
 			}
 
 			keys[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = true
 		}
 
-		missingSigs := 0
+		missingSigs := make([]string, 0)
 		for key := range keys {
 			if !keys[key] {
-				missingSigs++
+				missingSigs = append(missingSigs, key)
 			}
 		}
 
-		if missingSigs > 0 {
-			return false, txid, fmt.Errorf("missing %d signatures", missingSigs)
+		if len(missingSigs) > 0 {
+			return false, txid, fmt.Errorf(
+				"missing %d signatures: %s",
+				len(missingSigs),
+				strings.Join(missingSigs, ", "),
+			)
 		}
 	}
 

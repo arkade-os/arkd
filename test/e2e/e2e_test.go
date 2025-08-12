@@ -1787,7 +1787,7 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 			&script.MultisigClosure{
 				PubKeys: []*btcec.PublicKey{
 					bobPubKey,
-					script.ComputeArkadeScriptKey(
+					script.ComputeArkadeScriptPublicKey(
 						aliceAddr.Signer,
 						script.ArkadeScriptHash(arkadeScript),
 					),
@@ -1894,6 +1894,9 @@ func TestSendToArkadeScriptClosure(t *testing.T) {
 		signerUnrollClosure,
 	)
 	require.NoError(t, err)
+
+	arkadeScriptFromPsbt := txutils.GetArkadeScript(validTx.Inputs[0])
+	require.Equal(t, hex.EncodeToString(arkadeScript), hex.EncodeToString(arkadeScriptFromPsbt))
 
 	invalidTx, invalidCheckpoints, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{

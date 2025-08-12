@@ -444,9 +444,11 @@ func (s *service) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("failed to parse vtxo script: %s", err)
 		}
 
+		arkadeScript := txutils.GetArkadeScript(input)
+
 		// validate the vtxo script
 		if err := vtxoScript.Validate(
-			s.signerPubkey, s.unilateralExitDelay, s.allowCSVBlockType, txutils.GetArkadeScript(input),
+			s.signerPubkey, s.unilateralExitDelay, s.allowCSVBlockType, arkadeScript,
 		); err != nil {
 			return nil, "", "", fmt.Errorf("invalid vtxo script: %s", err)
 		}
@@ -581,6 +583,7 @@ func (s *service) SubmitOffchainTx(
 			CheckpointTapscript: checkpointTapscript,
 			RevealedTapscripts:  tapscripts,
 			Amount:              int64(vtxo.Amount),
+			ArkadeScript:        arkadeScript,
 		})
 	}
 
@@ -704,7 +707,8 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// verify the tapscript signatures
-	if valid, _, err := s.builder.VerifyTapscriptPartialSigs(signedArkTx); err != nil || !valid {
+	if valid, _, err := s.builder.VerifyTapscriptPartialSigs(signedArkTx, true); err != nil ||
+		!valid {
 		return nil, "", "", fmt.Errorf("invalid ark tx signature(s): %s", err)
 	}
 
@@ -778,7 +782,8 @@ func (s *service) FinalizeOffchainTx(
 	finalCheckpointTxsMap := make(map[string]string)
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
-		valid, checkpointTxid, err := s.builder.VerifyTapscriptPartialSigs(checkpoint)
+		// we do not execute the arkade script in checkpoint txs cause we assume the covenant applies to the ark tx
+		valid, checkpointTxid, err := s.builder.VerifyTapscriptPartialSigs(checkpoint, false)
 		if err != nil || !valid {
 			return fmt.Errorf("invalid tx signature: %s", err)
 		}
@@ -2344,7 +2349,7 @@ func (s *service) verifyForfeitTxsSigs(txs []string) error {
 			defer wg.Done()
 
 			for tx := range jobs {
-				valid, txid, err := s.builder.VerifyTapscriptPartialSigs(tx)
+				valid, txid, err := s.builder.VerifyTapscriptPartialSigs(tx, false)
 				if err != nil {
 					errChan <- fmt.Errorf("failed to validate forfeit tx %s: %s", txid, err)
 					return

@@ -775,21 +775,36 @@ func ArkadeScriptHash(script []byte) []byte {
 	return hash[:]
 }
 
-// ComputeArkadeScriptKey calculates a top-level ark script public key given the hash of the arkscript
-func ComputeArkadeScriptKey(pubKey *btcec.PublicKey, scriptHash []byte) *btcec.PublicKey {
-	internalKey, _ := schnorr.ParsePubKey(schnorr.SerializePubKey(pubKey))
+// ComputeArkadeScriptPublicKey calculates a top-level ark script public key given the hash of the arkscript
+func ComputeArkadeScriptPublicKey(pubKey *btcec.PublicKey, scriptHash []byte) *btcec.PublicKey {
+	pubKey, _ = schnorr.ParsePubKey(schnorr.SerializePubKey(pubKey))
 
-	var tweakScalar btcec.ModNScalar
-	tweakScalar.SetBytes((*[32]byte)(scriptHash))
+	var (
+		pubKeyJacobian btcec.JacobianPoint
+		tweakJacobian  btcec.JacobianPoint
+		resultJacobian btcec.JacobianPoint
+	)
+	tweakKey, _ := btcec.PrivKeyFromBytes(scriptHash)
+	btcec.ScalarBaseMultNonConst(&tweakKey.Key, &tweakJacobian)
 
-	var internalPoint btcec.JacobianPoint
-	internalKey.AsJacobian(&internalPoint)
+	pubKey.AsJacobian(&pubKeyJacobian)
+	btcec.AddNonConst(&pubKeyJacobian, &tweakJacobian, &resultJacobian)
 
-	var tPoint, arkScriptKey btcec.JacobianPoint
-	btcec.ScalarBaseMultNonConst(&tweakScalar, &tPoint)
-	btcec.AddNonConst(&internalPoint, &tPoint, &arkScriptKey)
+	resultJacobian.ToAffine()
+	return btcec.NewPublicKey(&resultJacobian.X, &resultJacobian.Y)
+}
 
-	arkScriptKey.ToAffine()
+func ComputeArkadeScriptPrivateKey(privKey *btcec.PrivateKey, scriptHash []byte) *btcec.PrivateKey {
+	privKeyScalar := privKey.Key
+	pubKeyBytes := privKey.PubKey().SerializeCompressed()
+	if pubKeyBytes[0] == 0x03 {
+		privKeyScalar.Negate()
+	}
 
-	return btcec.NewPublicKey(&arkScriptKey.X, &arkScriptKey.Y)
+	tweakScalar := new(btcec.ModNScalar)
+	tweakScalar.SetByteSlice(scriptHash)
+
+	tweakScalar.Add(&privKeyScalar)
+
+	return &btcec.PrivateKey{Key: *tweakScalar}
 }
