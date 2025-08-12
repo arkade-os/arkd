@@ -184,7 +184,7 @@ func (i *indexerService) GetVtxos(
 	if recoverableOnly {
 		recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
 		for _, vtxo := range allVtxos {
-			if !vtxo.RequiresForfeit() {
+			if !vtxo.RequiresForfeit() && !vtxo.Spent {
 				recoverableVtxos = append(recoverableVtxos, vtxo)
 			}
 		}
