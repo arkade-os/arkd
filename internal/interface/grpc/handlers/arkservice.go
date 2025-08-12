@@ -225,6 +225,14 @@ func (h *handler) SubmitTx(
 		return nil, status.Error(codes.InvalidArgument, "missing checkpoint txs")
 	}
 
+	logrus.Debugf("---- SUBMIT TX REQUEST ----")
+	marshaled, err := json.Marshal(req)
+	if err != nil {
+		logrus.WithError(err).Error("failed to marshal request")
+	}
+	logrus.Debugf("%s", string(marshaled))
+	logrus.Debugf("--------------------------------")
+
 	signedCheckpoints, finalArkTx, arkTxid, err := h.svc.SubmitOffchainTx(
 		ctx, req.GetCheckpointTxs(), req.GetSignedArkTx(),
 	)

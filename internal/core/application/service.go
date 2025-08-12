@@ -344,9 +344,10 @@ func (s *service) SubmitOffchainTx(
 			Txid: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String(),
 			VOut: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index,
 		}
-		checkpointTxs[checkpointPtx.UnsignedTx.TxID()] = tx
-		checkpointPsbts[checkpointPtx.UnsignedTx.TxID()] = checkpointPtx
-		checkpointTxsByVtxoKey[vtxoKey] = checkpointPtx.UnsignedTx.TxID()
+		txid := checkpointPtx.UnsignedTx.TxID()
+		checkpointTxs[txid] = tx
+		checkpointPsbts[txid] = checkpointPtx
+		checkpointTxsByVtxoKey[vtxoKey] = txid
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
 	}
 
@@ -383,7 +384,10 @@ func (s *service) SubmitOffchainTx(
 		}
 	}
 
-	for _, checkpointPsbt := range checkpointPsbts {
+	// Loop over the inputs of the given ark tx to ensure the order of inputs is preserved when
+	// rebuilding the txs.
+	for inputIndex, in := range ptx.UnsignedTx.TxIn {
+		checkpointPsbt := checkpointPsbts[in.PreviousOutPoint.Hash.String()]
 		input := checkpointPsbt.Inputs[0]
 
 		if input.WitnessUtxo == nil {
@@ -539,45 +543,25 @@ func (s *service) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("failed to parse control block: %s", err)
 		}
 
-		var checkpointTapscript *waddrmgr.Tapscript
-
-		checkpointTxid := checkpointPsbt.UnsignedTx.TxID()
-		checkpointVout := uint32(0) // always 1 output in the checkpoint tx
-
-		// search for the checkpoint input in the ark tx
-		for inputIndex, input := range ptx.UnsignedTx.TxIn {
-			if input.PreviousOutPoint.Hash.String() == checkpointTxid &&
-				input.PreviousOutPoint.Index == checkpointVout {
-				if len(ptx.Inputs[inputIndex].TaprootLeafScript) == 0 {
-					return nil, "", "", fmt.Errorf(
-						"missing tapscript leaf in ark tx input #%d", inputIndex,
-					)
-				}
-
-				tapleafScript := ptx.Inputs[inputIndex].TaprootLeafScript[0]
-				ctrlBlock, err := txscript.ParseControlBlock(tapleafScript.ControlBlock)
-				if err != nil {
-					return nil, "", "", fmt.Errorf("failed to parse control block: %s", err)
-				}
-
-				checkpointTapscript = &waddrmgr.Tapscript{
-					ControlBlock:   ctrlBlock,
-					RevealedScript: tapleafScript.Script,
-				}
-				break
-			}
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: spendingTapscript.Script,
 		}
 
-		if checkpointTapscript == nil {
-			return nil, "", "", fmt.Errorf("checkpoint tapscript not found")
+		if len(ptx.Inputs[inputIndex].TaprootLeafScript) == 0 {
+			return nil, "", "", fmt.Errorf(
+				"missing tapscript leaf in ark tx input #%d", inputIndex,
+			)
+		}
+
+		tapleafScript := ptx.Inputs[inputIndex].TaprootLeafScript[0]
+		checkpointTapscript := &waddrmgr.Tapscript{
+			RevealedScript: tapleafScript.Script,
 		}
 
 		ins = append(ins, offchain.VtxoInput{
-			Outpoint: &checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint,
-			Tapscript: &waddrmgr.Tapscript{
-				ControlBlock:   ctrlBlock,
-				RevealedScript: spendingTapscript.Script,
-			},
+			Outpoint:            &checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint,
+			Tapscript:           tapscript,
 			CheckpointTapscript: checkpointTapscript,
 			RevealedTapscripts:  tapscripts,
 			Amount:              int64(vtxo.Amount),
@@ -698,8 +682,14 @@ func (s *service) SubmitOffchainTx(
 	// verify the ark tx integrity
 	rebuiltTxid := rebuiltArkTx.UnsignedTx.TxID()
 	if rebuiltTxid != txid {
+		fmt.Println("REBUILT ARK TX")
+		fmt.Println(rebuiltArkTx.B64Encode())
+		fmt.Println("REBUILT CP TXS")
+		for _, cp := range rebuiltCheckpointTxs {
+			fmt.Println(cp.B64Encode())
+		}
 		return nil, "", "", fmt.Errorf(
-			"invalid ark tx: epxected txid %s got %s", rebuiltTxid, txid,
+			"invalid ark tx: expected txid %s got %s", rebuiltTxid, txid,
 		)
 	}
 
