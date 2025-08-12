@@ -9,6 +9,7 @@ replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 replace github.com/arkade-os/arkd/api-spec => ../../api-spec
 
 require (
+	github.com/ark-network/ark/common v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53
@@ -196,7 +197,7 @@ require (
 	lukechampine.com/blake3 v1.3.0 // indirect
 	modernc.org/gc/v3 v3.0.0-20240801135723-a856999a2e4a // indirect
 	modernc.org/libc v1.59.3 // indirect
-	modernc.org/mathutil v1.6.0 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.8.0 // indirect
 	modernc.org/sqlite v1.33.1 // indirect
 	modernc.org/strutil v1.2.0 // indirect

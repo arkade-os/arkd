@@ -26,7 +26,7 @@ services:
     ports:
       - "7070:7070"
     environment:
-      - ARKD_LOG_LEVEL=5
+      - ARKD_LOG_LEVEL=6
       - ARKD_NO_MACAROONS=true
       - ARKD_VTXO_TREE_EXPIRY=20
       - ARKD_SCHEDULER_TYPE=block

@@ -179,10 +179,15 @@ func (n *NoteClosure) Decode(script []byte) (bool, error) {
 }
 
 // Witness returns the witness stack for spending the fake vtxo note
-func (n *NoteClosure) Witness(controlBlock []byte, opts map[string][]byte) (wire.TxWitness, error) {
+func (n *NoteClosure) Witness(controlBlock []byte, opts map[string]any) (wire.TxWitness, error) {
 	preimage, ok := opts["preimage"]
 	if !ok {
 		return nil, fmt.Errorf("missing preimage for hash %x", n.PreimageHash)
+	}
+
+	preimageBytes, ok := preimage.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("invalid preimage type: %T", preimage)
 	}
 
 	script, err := n.Script()
@@ -190,5 +195,5 @@ func (n *NoteClosure) Witness(controlBlock []byte, opts map[string][]byte) (wire
 		return nil, fmt.Errorf("failed to generate script: %w", err)
 	}
 
-	return wire.TxWitness{preimage, script, controlBlock}, nil
+	return wire.TxWitness{preimageBytes, script, controlBlock}, nil
 }

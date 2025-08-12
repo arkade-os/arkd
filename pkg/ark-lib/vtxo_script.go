@@ -24,7 +24,7 @@ type TaprootTree interface {
 //
 // TODO: gather common and tree package to prevent circular dependency and move C generic
 type VtxoScript[T TaprootTree, C interface{}] interface {
-	Validate(signer *btcec.PublicKey, minLocktime RelativeLocktime, blockTypeAllowed bool) error
+	Validate(signer *btcec.PublicKey, minLocktime RelativeLocktime, blockTypeAllowed bool, arkadeScript []byte) error
 	TapTree() (taprootKey *btcec.PublicKey, taprootScriptTree T, err error)
 	Encode() ([]string, error)
 	Decode(scripts []string) error

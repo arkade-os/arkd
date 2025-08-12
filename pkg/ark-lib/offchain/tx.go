@@ -1,6 +1,7 @@
 package offchain
 
 import (
+	"bytes"
 	"fmt"
 
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -27,12 +28,33 @@ type VtxoInput struct {
 	// it can be nil, defaulting to Tapscript if not set
 	CheckpointTapscript *waddrmgr.Tapscript
 	RevealedTapscripts  []string
+
+	ArkadeScript []byte
+}
+
+func (v *VtxoInput) Validate() error {
+	if len(v.ArkadeScript) > 0 && v.CheckpointTapscript != nil {
+		if !bytes.Equal(v.CheckpointTapscript.RevealedScript, v.Tapscript.RevealedScript) {
+			return fmt.Errorf(
+				"invalid input %s, arkade script and checkpoint tapscript cannot be set at the same time",
+				v.Outpoint.String(),
+			)
+		}
+	}
+
+	return nil
 }
 
 // BuildTxs builds the ark and checkpoint txs for the given inputs and outputs.
 func BuildTxs(
 	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript *script.CSVMultisigClosure,
 ) (*psbt.Packet, []*psbt.Packet, error) {
+	for _, vtxo := range vtxos {
+		if err := vtxo.Validate(); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
 	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 	inputAmount := int64(0)
@@ -157,6 +179,10 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 		if err := txutils.AddTaprootTree(i, arkTx, tapscripts[i]); err != nil {
 			return nil, err
 		}
+
+		if len(vtxos[i].ArkadeScript) > 0 {
+			txutils.AddArkScript(i, arkTx, vtxos[i].ArkadeScript)
+		}
 	}
 
 	return arkTx, nil
@@ -233,6 +259,7 @@ func buildCheckpointTx(
 			RevealedScript: collaborativeLeafProof.Script,
 		},
 		RevealedTapscripts: revealedTapscripts,
+		ArkadeScript:       vtxo.ArkadeScript,
 	}
 
 	return checkpointPtx, checkpointInput, nil

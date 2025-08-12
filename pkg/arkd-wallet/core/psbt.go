@@ -6,14 +6,20 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	log "github.com/sirupsen/logrus"
 )
 
+// PsbtKeyTypeInputSignatureTweakSingle is a custom/proprietary PSBT key
+// used by btcwallet to signal for custom private key tweak
+var PsbtKeyTypeInputSignatureTweakSingle = []byte{0x51}
 var ANCHOR_PKSCRIPT = []byte{
 	0x51, 0x02, 0x4e, 0x73,
 }
@@ -115,8 +121,37 @@ func (s *service) signPsbt(packet *psbt.Packet, inputsToSign []int) ([]uint32, e
 		var managedAddress waddrmgr.ManagedPubKeyAddress
 		isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
 
+		signed := false
 		if len(in.TaprootLeafScript) > 0 {
 			managedAddress = s.serverKeyAddr
+
+			// if arkscript is present, the key must be tweaked before signing
+			// so we signal to btcwallet using the unknown PSBT field
+			arkscript := txutils.GetArkadeScript(*in)
+			if len(arkscript) > 0 {
+				privKey, err := managedAddress.PrivKey()
+				if err != nil {
+					return nil, err
+				}
+				tweakedPrivKey := script.ComputeArkadeScriptPrivateKey(privKey, script.ArkadeScriptHash(arkscript))
+				preimage, err := getTaprootPreimage(packet, idx, in.TaprootLeafScript[0].Script)
+				if err != nil {
+					return nil, err
+				}
+				sig, err := schnorr.Sign(tweakedPrivKey, preimage)
+				if err != nil {
+					return nil, err
+				}
+				leafHash := txscript.NewBaseTapLeaf(in.TaprootLeafScript[0].Script).TapHash()
+				packet.Inputs[idx].TaprootScriptSpendSig = append(packet.Inputs[idx].TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
+					Signature:   sig.Serialize(),
+					XOnlyPubKey: schnorr.SerializePubKey(tweakedPrivKey.PubKey()),
+					LeafHash:    leafHash[:],
+					SigHash:     txscript.SigHashDefault,
+				})
+				signedInputs = append(signedInputs, uint32(idx))
+				signed = true
+			}
 		} else {
 			var err error
 			managedAddress, _, _, err = s.wallet.ScriptForOutput(in.WitnessUtxo)
@@ -129,27 +164,27 @@ func (s *service) signPsbt(packet *psbt.Packet, inputsToSign []int) ([]uint32, e
 			}
 		}
 
-		signedInputs = append(signedInputs, uint32(idx))
+		if !signed {
+			bip32Infos := derivationPathForAddress(managedAddress)
+			packet.Inputs[idx].Bip32Derivation = []*psbt.Bip32Derivation{bip32Infos}
 
-		bip32Infos := derivationPathForAddress(managedAddress)
-		packet.Inputs[idx].Bip32Derivation = []*psbt.Bip32Derivation{bip32Infos}
+			if isTaproot {
+				leafHashes := make([][]byte, 0, len(in.TaprootLeafScript))
+				for _, leafScript := range in.TaprootLeafScript {
+					leafHash := txscript.NewBaseTapLeaf(leafScript.Script).TapHash()
+					leafHashes = append(leafHashes, leafHash[:])
+				}
 
-		if isTaproot {
-			leafHashes := make([][]byte, 0, len(in.TaprootLeafScript))
-			for _, leafScript := range in.TaprootLeafScript {
-				leafHash := txscript.NewBaseTapLeaf(leafScript.Script).TapHash()
-				leafHashes = append(leafHashes, leafHash[:])
-			}
+				xonlypubkey := schnorr.SerializePubKey(managedAddress.PubKey())
 
-			xonlypubkey := schnorr.SerializePubKey(managedAddress.PubKey())
-
-			packet.Inputs[idx].TaprootBip32Derivation = []*psbt.TaprootBip32Derivation{
-				{
-					XOnlyPubKey:          xonlypubkey,
-					MasterKeyFingerprint: bip32Infos.MasterKeyFingerprint,
-					Bip32Path:            bip32Infos.Bip32Path,
-					LeafHashes:           leafHashes,
-				},
+				packet.Inputs[idx].TaprootBip32Derivation = []*psbt.TaprootBip32Derivation{
+					{
+						XOnlyPubKey:          xonlypubkey,
+						MasterKeyFingerprint: bip32Infos.MasterKeyFingerprint,
+						Bip32Path:            bip32Infos.Bip32Path,
+						LeafHashes:           leafHashes,
+					},
+				}
 			}
 		}
 	}
@@ -159,13 +194,41 @@ func (s *service) signPsbt(packet *psbt.Packet, inputsToSign []int) ([]uint32, e
 		return nil, err
 	}
 
+	signedInputs = append(signedInputs, ins...)
+
 	// delete derivation paths to avoid duplicate keys error
-	for idx := range signedInputs {
+	for idx := range ins {
 		packet.Inputs[idx].Bip32Derivation = nil
 		packet.Inputs[idx].TaprootBip32Derivation = nil
 	}
 
-	return ins, nil
+	return signedInputs, nil
+}
+
+func getTaprootPreimage(
+	tx *psbt.Packet, inputIndex int, leafScript []byte,
+) ([]byte, error) {
+	prevouts := make(map[wire.OutPoint]*wire.TxOut)
+
+	for i, input := range tx.Inputs {
+		if input.WitnessUtxo == nil {
+			return nil, fmt.Errorf("missing witness utxo on input #%d", i)
+		}
+
+		outpoint := tx.UnsignedTx.TxIn[i].PreviousOutPoint
+		prevouts[outpoint] = input.WitnessUtxo
+	}
+
+	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
+
+	return txscript.CalcTapscriptSignaturehash(
+		txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),
+		txscript.SigHashDefault,
+		tx.UnsignedTx,
+		inputIndex,
+		prevoutFetcher,
+		txscript.NewBaseTapLeaf(leafScript),
+	)
 }
 
 func derivationPathForAddress(addr waddrmgr.ManagedPubKeyAddress) *psbt.Bip32Derivation {
