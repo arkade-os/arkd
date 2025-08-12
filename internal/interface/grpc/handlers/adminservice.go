@@ -33,7 +33,7 @@ func (a *adminHandler) GetRoundDetails(
 
 	details, err := a.adminService.GetRoundDetails(ctx, id)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	return &arkv1.GetRoundDetailsResponse{
@@ -71,7 +71,7 @@ func (a *adminHandler) GetRounds(
 
 	rounds, err := a.adminService.GetRounds(ctx, startAfter, startBefore)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	return &arkv1.GetRoundsResponse{Rounds: rounds}, nil
@@ -82,7 +82,7 @@ func (a *adminHandler) GetScheduledSweep(
 ) (*arkv1.GetScheduledSweepResponse, error) {
 	scheduledSweeps, err := a.adminService.GetScheduledSweeps(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	sweeps := make([]*arkv1.ScheduledSweep, 0)
@@ -122,7 +122,7 @@ func (a *adminHandler) CreateNote(
 
 	notes, err := a.adminService.CreateNotes(ctx, amount, int(quantity))
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	if len(a.noteUriPrefix) <= 0 {

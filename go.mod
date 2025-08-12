@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd
 
-go 1.23.1
+go 1.24.6
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 

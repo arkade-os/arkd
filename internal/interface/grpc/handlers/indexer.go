@@ -52,7 +52,7 @@ func (e *indexerService) GetCommitmentTx(
 
 	resp, err := e.indexerSvc.GetCommitmentTxInfo(ctx, txid)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	batches := make(map[uint32]*arkv1.IndexerBatch)
@@ -90,7 +90,7 @@ func (e *indexerService) GetVtxoTree(
 
 	resp, err := e.indexerSvc.GetVtxoTree(ctx, *batchOutpoint, page)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	nodes := make([]*arkv1.IndexerNode, len(resp.Txs))
@@ -152,7 +152,7 @@ func (e *indexerService) GetForfeitTxs(
 
 	resp, err := e.indexerSvc.GetForfeitTxs(ctx, txid, page)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	return &arkv1.GetForfeitTxsResponse{
@@ -175,7 +175,7 @@ func (e *indexerService) GetConnectors(
 
 	resp, err := e.indexerSvc.GetConnectors(ctx, txid, page)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	connectors := make([]*arkv1.IndexerNode, len(resp.Txs))
@@ -246,7 +246,7 @@ func (e *indexerService) GetVtxos(
 		resp, err = e.indexerSvc.GetVtxosByOutpoint(ctx, outpoints, page)
 	}
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	vtxos := make([]*arkv1.IndexerVtxo, 0, len(resp.Vtxos))
@@ -274,7 +274,7 @@ func (e *indexerService) GetVtxoChain(
 
 	resp, err := e.indexerSvc.GetVtxoChain(ctx, *outpoint, page)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	chain := make([]*arkv1.IndexerChain, 0)
@@ -319,7 +319,7 @@ func (e *indexerService) GetVirtualTxs(
 
 	resp, err := e.indexerSvc.GetVirtualTxs(ctx, txids, page)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	return &arkv1.GetVirtualTxsResponse{
@@ -338,7 +338,7 @@ func (e *indexerService) GetBatchSweepTransactions(
 
 	sweepTxs, err := e.indexerSvc.GetBatchSweepTxs(ctx, *outpoint)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	return &arkv1.GetBatchSweepTransactionsResponse{
