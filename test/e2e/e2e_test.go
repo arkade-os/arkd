@@ -1842,8 +1842,8 @@ func setupServerWalletAndCLI() error {
 	}
 
 	// skip if already setup
-	_, err := http.NewRequest("GET", "http://localhost:7070/v1/info", nil)
-	if err == nil {
+	resp, err := http.NewRequest("GET", "http://localhost:7070/v1/info", nil)
+	if resp.Response != nil && err == nil {
 		return ErrAlreadySetup
 	}
 
