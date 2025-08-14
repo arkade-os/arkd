@@ -968,7 +968,11 @@ func (s *service) RegisterIntent(
 					)
 				}
 
-				_, addrs, _, err := txscript.ExtractPkScriptAddrs(output.PkScript, s.chainParams())
+				chainParams := s.chainParams()
+				if chainParams == nil {
+					return "", fmt.Errorf("unsupported network: %s", s.network.Name)
+				}
+				_, addrs, _, err := txscript.ExtractPkScriptAddrs(output.PkScript, chainParams)
 				if err != nil {
 					return "", fmt.Errorf("failed to extract pkscript addrs: %s", err)
 				}
@@ -2191,10 +2195,16 @@ func (s *service) chainParams() *chaincfg.Params {
 		return &chaincfg.MainNetParams
 	case arklib.BitcoinTestNet.Name:
 		return &chaincfg.TestNet3Params
+	//case arklib.BitcoinTestNet4.Name: //TODO uncomment once supported
+	//	return &chaincfg.TestNet4Params
+	case arklib.BitcoinSigNet.Name:
+		return &chaincfg.SigNetParams
+	case arklib.BitcoinMutinyNet.Name:
+		return &arklib.MutinyNetSigNetParams
 	case arklib.BitcoinRegTest.Name:
 		return &chaincfg.RegressionNetParams
 	default:
-		return nil
+		return &chaincfg.MainNetParams
 	}
 }
 
