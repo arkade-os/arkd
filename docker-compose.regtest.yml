@@ -26,7 +26,7 @@ services:
     ports:
       - "7070:7070"
     environment:
-      - ARKD_LOG_LEVEL=5
+      - ARKD_LOG_LEVEL=6
       - ARKD_NO_MACAROONS=true
       - ARKD_VTXO_TREE_EXPIRY=20
       - ARKD_SCHEDULER_TYPE=block
@@ -39,6 +39,7 @@ services:
       - ARKD_LIVE_STORE_TYPE=inmemory
       - ARKD_EVENT_DB_TYPE=badger
       - ARKD_DB_TYPE=sqlite
+      - ARKD_ROUND_INTERVAL=10
     volumes:
       - type: tmpfs
         target: /app/data
