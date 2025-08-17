@@ -35,14 +35,10 @@ func AddTaprootTree(inIndex int, ptx *psbt.Packet, leaves []string) error {
 }
 
 // GetTaprootTree returns the taproot tree of the given PSBT input.
-func GetTaprootTree(in psbt.PInput) ([]string, error) {
+func GetTaprootTree(in psbt.PInput) (TapTree, error) {
 	for _, u := range in.Unknowns {
 		if bytes.Contains(u.Key, VTXO_TAPROOT_TREE_KEY) {
-			leaves, err := DecodeTapTree(u.Value)
-			if err != nil {
-				return nil, err
-			}
-			return leaves, nil
+			return DecodeTapTree(u.Value)
 		}
 	}
 

@@ -247,7 +247,7 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 }
 
 func (b *txBuilder) BuildSweepTx(
-	inputs []ports.SweepableBatchOutput,
+	inputs []ports.SweepableOutput,
 ) (txid, signedSweepTx string, err error) {
 	sweepPsbt, err := sweepTransaction(
 		b.wallet,
@@ -659,9 +659,9 @@ func (b *txBuilder) BuildCommitmentTx(
 
 func (b *txBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput ports.SweepableBatchOutput, err error) {
+) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput ports.SweepableOutput, err error) {
 	if len(vtxoTree.Root.UnsignedTx.TxIn) != 1 {
-		return nil, nil, fmt.Errorf(
+		return nil, ports.SweepableOutput{}, fmt.Errorf(
 			"invalid node psbt, expect 1 input, got %d", len(vtxoTree.Root.UnsignedTx.TxIn),
 		)
 	}
@@ -672,27 +672,26 @@ func (b *txBuilder) GetSweepableBatchOutputs(
 
 	sweepLeaf, internalKey, vtxoTreeExpiry, err := b.extractSweepLeaf(vtxoTree.Root.Inputs[0])
 	if err != nil {
-		return nil, nil, err
+		return nil, ports.SweepableOutput{}, err
 	}
 
 	txhex, err := b.wallet.GetTransaction(context.Background(), txid.String())
 	if err != nil {
-		return nil, nil, err
+		return nil, ports.SweepableOutput{}, err
 	}
 
 	var tx wire.MsgTx
 	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
-		return nil, nil, err
+		return nil, ports.SweepableOutput{}, err
 	}
 
-	sweepInput = &sweepBitcoinInput{
-		inputArgs: wire.OutPoint{
-			Hash:  txid,
-			Index: index,
-		},
-		internalPubkey: internalKey,
-		sweepLeaf:      sweepLeaf,
-		amount:         tx.TxOut[index].Value,
+	sweepInput = ports.SweepableOutput{
+		Hash:         txid,
+		Index:        index,
+		Script:       sweepLeaf.Script,
+		ControlBlock: sweepLeaf.ControlBlock,
+		InternalKey:  internalKey,
+		Amount:       tx.TxOut[index].Value,
 	}
 
 	return vtxoTreeExpiry, sweepInput, nil
@@ -1263,35 +1262,4 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 	}
 
 	return txscript.PayToAddrScript(addr)
-}
-
-type sweepBitcoinInput struct {
-	inputArgs      wire.OutPoint
-	sweepLeaf      *psbt.TaprootTapLeafScript
-	internalPubkey *btcec.PublicKey
-	amount         int64
-}
-
-func (s *sweepBitcoinInput) GetAmount() uint64 {
-	return uint64(s.amount)
-}
-
-func (s *sweepBitcoinInput) GetControlBlock() []byte {
-	return s.sweepLeaf.ControlBlock
-}
-
-func (s *sweepBitcoinInput) GetHash() chainhash.Hash {
-	return s.inputArgs.Hash
-}
-
-func (s *sweepBitcoinInput) GetIndex() uint32 {
-	return s.inputArgs.Index
-}
-
-func (s *sweepBitcoinInput) GetInternalKey() *btcec.PublicKey {
-	return s.internalPubkey
-}
-
-func (s *sweepBitcoinInput) GetLeafScript() []byte {
-	return s.sweepLeaf.Script
 }

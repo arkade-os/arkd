@@ -4,16 +4,25 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	log "github.com/sirupsen/logrus"
 )
+
+type sweeperTask struct {
+	execute func() error
+	id      string
+	at      int64
+}
 
 // sweeper is an unexported service running while the main application service is started
 // it is responsible for sweeping batch outputs that reached the expiration date.
@@ -28,7 +37,8 @@ type sweeper struct {
 	noteUriPrefix string
 
 	// cache of scheduled tasks, avoid scheduling the same sweep event multiple times
-	locker         *sync.Mutex
+	locker *sync.Mutex
+	// TODO move the scheduled task map to LiveStore port
 	scheduledTasks map[string]struct{}
 }
 
@@ -52,39 +62,98 @@ func (s *sweeper) start() error {
 		return err
 	}
 
-	if len(sweepableBatches) > 0 {
-		log.Infof("sweeper: restoring %d sweepable batches", len(sweepableBatches))
+	wg := sync.WaitGroup{}
+	wg.Add(2)
 
-		progress := 0.0
-		count := 0
-		for _, txid := range sweepableBatches {
-			flatVtxoTree, err := s.repoManager.Rounds().GetRoundVtxoTree(ctx, txid)
-			if err != nil {
-				return err
+	go func() {
+		defer wg.Done()
+
+		if len(sweepableBatches) > 0 {
+			log.Infof("sweeper: restoring %d sweepable batches", len(sweepableBatches))
+
+			progress := 0.0
+			count := 0
+			for _, txid := range sweepableBatches {
+				flatVtxoTree, err := s.repoManager.Rounds().GetRoundVtxoTree(ctx, txid)
+				if err != nil {
+					log.WithError(err).Error("error while getting round vtxo tree")
+					continue
+				}
+
+				if len(flatVtxoTree) <= 0 {
+					continue
+				}
+
+				vtxoTree, err := tree.NewTxTree(flatVtxoTree)
+				if err != nil {
+					log.WithError(err).Error("error while creating vtxo tree")
+					continue
+				}
+
+				task := s.createBatchSweepTask(txid, vtxoTree)
+				if err := task(); err != nil {
+					log.WithError(err).Error("error while executing batch sweep task")
+					continue
+				}
+
+				newProgress := (1.0 / float64(len(sweepableBatches))) + progress
+				if int(newProgress*100) > int(progress*100) {
+					progress = newProgress
+					log.Infof("sweeper: restoring... %d%%", int(progress*100))
+				}
+				count++
 			}
 
-			if len(flatVtxoTree) <= 0 {
+			log.Infof("sweeper: scheduled sweeping for %d batches", count)
+		}
+	}()
+
+	unrolledUnsweptOffchainVtxos, err := s.repoManager.Vtxos().
+		GetAllUnrolledUnsweptOffchainVtxos(ctx)
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer wg.Done()
+
+		for _, vtxo := range unrolledUnsweptOffchainVtxos {
+			checkpointTxid := vtxo.SpentBy
+
+			// if tx is already onchain, skip
+			_, _, _, err := s.wallet.IsTransactionConfirmed(ctx, checkpointTxid)
+			if err == nil {
+				log.Debugf("checkpoint tx %s found, skipping", checkpointTxid)
 				continue
 			}
 
-			vtxoTree, err := tree.NewTxTree(flatVtxoTree)
+			checkpointB64, err := s.repoManager.Rounds().
+				GetTxsWithTxids(ctx, []string{checkpointTxid})
 			if err != nil {
-				return err
+				log.WithError(err).Error("error while getting checkpoint tx")
+				continue
 			}
 
-			task := s.createTask(txid, vtxoTree)
-			task()
-
-			newProgress := (1.0 / float64(len(sweepableBatches))) + progress
-			if int(newProgress*100) > int(progress*100) {
-				progress = newProgress
-				log.Infof("sweeper: restoring... %d%%", int(progress*100))
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointB64[0]), true)
+			if err != nil {
+				log.WithError(err).Error("error while parsing checkpoint tx")
+				continue
 			}
-			count++
+
+			_, blockHeight, blockTime, err := s.wallet.IsTransactionConfirmed(ctx, checkpointTxid)
+			if err != nil {
+				log.WithError(err).Error("error while checking if vtxo tx is confirmed")
+				continue
+			}
+
+			if err := s.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockStamp{blockHeight, blockTime}); err != nil {
+				log.WithError(err).Error("error while scheduling checkpoint sweep")
+				continue
+			}
 		}
+	}()
 
-		log.Infof("sweeper: scheduled sweeping for %d batches", count)
-	}
+	wg.Wait()
 
 	return nil
 }
@@ -94,36 +163,120 @@ func (s *sweeper) stop() {
 }
 
 // removeTask update the cached map of scheduled tasks
-func (s *sweeper) removeTask(treeRootTxid string) {
+func (s *sweeper) removeTask(id string) {
 	s.locker.Lock()
 	defer s.locker.Unlock()
-	delete(s.scheduledTasks, treeRootTxid)
+	delete(s.scheduledTasks, id)
 }
 
-// schedule set up a task to be executed once at the given timestamp
-func (s *sweeper) schedule(
-	expirationTimestamp int64, commitmentTxid string, vtxoTree *tree.TxTree,
+func (s *sweeper) scheduleCheckpointSweep(
+	vtxo domain.Outpoint,
+	ptx *psbt.Packet,
+	confirmedAt blockStamp,
 ) error {
-	if vtxoTree == nil { // skip
-		log.Debugf("skip shceduling sweep for batch %s:0, empty vtxo tree", commitmentTxid)
-		return nil
+	txid := ptx.UnsignedTx.TxID()
+
+	if len(ptx.Outputs) <= 0 {
+		return fmt.Errorf("no outputs found in checkpoint tx")
 	}
 
-	rootTxid := vtxoTree.Root.UnsignedTx.TxID()
-
-	if _, scheduled := s.scheduledTasks[rootTxid]; scheduled {
-		return nil
+	outputTaprootTapTree := ptx.Outputs[0].TaprootTapTree
+	if len(outputTaprootTapTree) <= 0 {
+		return fmt.Errorf("no taproot tap tree found in checkpoint tx")
 	}
 
-	task := s.createTask(commitmentTxid, vtxoTree)
-
-	if err := s.scheduler.ScheduleTaskOnce(expirationTimestamp, task); err != nil {
+	checkpointTapscripts, err := txutils.DecodeTapTree(outputTaprootTapTree)
+	if err != nil {
 		return err
 	}
 
-	s.locker.Lock()
-	s.scheduledTasks[rootTxid] = struct{}{}
-	s.locker.Unlock()
+	checkpointVtxoScript, err := script.ParseVtxoScript(checkpointTapscripts)
+	if err != nil {
+		return err
+	}
+
+	exitPaths := checkpointVtxoScript.ExitClosures()
+	if len(exitPaths) != 1 {
+		return fmt.Errorf(
+			"invalid checkpoint tx: %s, found %d exit paths, expected 1",
+			txid,
+			len(exitPaths),
+		)
+	}
+
+	sweepClosure, ok := exitPaths[0].(*script.CSVMultisigClosure)
+	if !ok {
+		return fmt.Errorf("exit path is not a csv multisig closure")
+	}
+
+	sweepAt := int64(0)
+	if s.scheduler.Unit() == ports.BlockHeight {
+		sweepAt = confirmedAt.blockHeight + int64(sweepClosure.Locktime.Value)
+	} else {
+		sweepAt = confirmedAt.blockTime + sweepClosure.Locktime.Seconds()
+	}
+
+	_, tapTree, err := checkpointVtxoScript.TapTree()
+	if err != nil {
+		return err
+	}
+
+	sweepTapscript, err := sweepClosure.Script()
+	if err != nil {
+		return err
+	}
+
+	sweepMerkleProof, err := tapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(sweepTapscript).TapHash(),
+	)
+	if err != nil {
+		return err
+	}
+
+	execute := s.createCheckpointSweepTask(
+		ports.SweepableOutput{
+			Hash:         ptx.UnsignedTx.TxHash(),
+			Index:        uint32(0),
+			Script:       ptx.UnsignedTx.TxOut[0].PkScript,
+			ControlBlock: sweepMerkleProof.ControlBlock,
+			InternalKey:  script.UnspendableKey(),
+			Amount:       ptx.UnsignedTx.TxOut[0].Value,
+		},
+		vtxo,
+	)
+
+	// if the sweep checkpoint tapscript is availabe, execute the task immediately
+	if !s.scheduler.AfterNow(sweepAt) {
+		return execute()
+	}
+
+	if err := s.scheduleTask(sweeperTask{
+		id:      txid,
+		at:      sweepAt,
+		execute: execute,
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// scheduleBatchSweep set up a task to be executed once at the given timestamp
+func (s *sweeper) scheduleBatchSweep(
+	expirationTimestamp int64, commitmentTxid string, vtxoTree *tree.TxTree,
+) error {
+	if vtxoTree == nil { // skip
+		log.Debugf("skip scheduling sweep for batch %s:0, empty vtxo tree", commitmentTxid)
+		return nil
+	}
+
+	if err := s.scheduleTask(sweeperTask{
+		execute: s.createBatchSweepTask(commitmentTxid, vtxoTree),
+		id:      vtxoTree.Root.UnsignedTx.TxID(),
+		at:      expirationTimestamp,
+	}); err != nil {
+		return err
+	}
 
 	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
 		log.WithError(err).Error("error while updating vtxo expiration time")
@@ -132,25 +285,59 @@ func (s *sweeper) schedule(
 	return nil
 }
 
-// createTask returns a function passed as handler in the scheduler
-// it tries to craft a sweep tx containing the onchain outputs of the given vtxo tree
-// if some parts of the tree have been broadcasted in the meantine, it will schedule the next taskes for the remaining parts of the tree
-func (s *sweeper) createTask(
-	commitmentTxid string, vtxoTree *tree.TxTree,
-) func() {
-	return func() {
-		ctx := context.Background()
-		rootTxid := vtxoTree.Root.UnsignedTx.TxID()
-		round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
-		if err != nil {
-			log.WithError(err).Error("failed to get round")
+// TODO "combine" sweeper tasks execution into a single "sweep" to reduce the number of transactions to broadcast
+func (s *sweeper) scheduleTask(task sweeperTask) error {
+	if task.execute == nil {
+		return nil
+	}
+
+	if time.Now().After(time.Unix(task.at, 0)) {
+		return nil
+	}
+
+	s.locker.Lock()
+	defer s.locker.Unlock()
+
+	if _, scheduled := s.scheduledTasks[task.id]; scheduled {
+		return nil
+	}
+
+	s.scheduledTasks[task.id] = struct{}{}
+
+	return s.scheduler.ScheduleTaskOnce(task.at, func() {
+		log.Tracef("sweeper: %s", task.id)
+
+		// check if the task is still scheduled before executing it
+		s.locker.Lock()
+		if _, scheduled := s.scheduledTasks[task.id]; !scheduled {
+			log.Debugf("sweeper: task %s is not scheduled anymore, cancelling sweep", task.id)
+			s.locker.Unlock()
 			return
 		}
+		s.locker.Unlock()
 
-		s.removeTask(rootTxid)
-		log.Tracef("sweeper: %s", rootTxid)
+		s.removeTask(task.id)
 
-		sweepInputs := make([]ports.SweepableBatchOutput, 0)
+		if err := task.execute(); err != nil {
+			log.WithError(err).Errorf("failed to execute sweeper task %s", task.id)
+		}
+	})
+}
+
+// createBatchSweepTask returns a function passed as handler in the scheduler
+// it tries to craft a sweep tx containing the onchain outputs of the given vtxo tree
+// if some parts of the tree have been broadcasted in the meantine, it will schedule the next taskes for the remaining parts of the tree
+func (s *sweeper) createBatchSweepTask(
+	commitmentTxid string, vtxoTree *tree.TxTree,
+) func() error {
+	return func() error {
+		ctx := context.Background()
+		round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
+		if err != nil {
+			return err
+		}
+
+		sweepInputs := make([]ports.SweepableOutput, 0)
 		vtxoKeys := make([]domain.Outpoint, 0) // vtxos associated to the sweep inputs
 
 		// inspect the vtxo tree to find onchain batch outputs
@@ -158,8 +345,7 @@ func (s *sweeper) createTask(
 			ctx, s.wallet, s.builder, s.scheduler.Unit(), vtxoTree,
 		)
 		if err != nil {
-			log.WithError(err).Error("error while inspecting vtxo tree")
-			return
+			return err
 		}
 
 		for expiredAt, inputs := range batchOutputs {
@@ -172,7 +358,7 @@ func (s *sweeper) createTask(
 				}
 
 				for _, subTree := range subtrees {
-					if err := s.schedule(expiredAt, commitmentTxid, subTree); err != nil {
+					if err := s.scheduleBatchSweep(expiredAt, commitmentTxid, subTree); err != nil {
 						log.WithError(err).Error("error while scheduling sweep task")
 						continue
 					}
@@ -192,8 +378,8 @@ func (s *sweeper) createTask(
 					ctx,
 					[]domain.Outpoint{
 						{
-							Txid: input.GetHash().String(),
-							VOut: input.GetIndex(),
+							Txid: input.Hash.String(),
+							VOut: input.Index,
 						},
 					},
 				)
@@ -203,7 +389,7 @@ func (s *sweeper) createTask(
 					}
 				} else {
 					// if it's not a vtxo, find all the vtxos leaves reachable from that input
-					vtxosLeaves, err := findLeaves(vtxoTree, input.GetHash().String(), input.GetIndex())
+					vtxosLeaves, err := findLeaves(vtxoTree, input.Hash.String(), input.Index)
 					if err != nil {
 						log.WithError(err).Error("error while finding vtxos leaves")
 						continue
@@ -247,8 +433,7 @@ func (s *sweeper) createTask(
 			// build the sweep transaction with all the expired non-swept batch outputs
 			sweepTxId, sweepTx, err := s.builder.BuildSweepTx(sweepInputs)
 			if err != nil {
-				log.WithError(err).Error("error while building sweep tx")
-				return
+				return err
 			}
 
 			// check if the transaction is already onchain
@@ -271,8 +456,7 @@ func (s *sweeper) createTask(
 				txid, err = s.wallet.BroadcastTransaction(ctx, sweepTx)
 			}
 			if err != nil {
-				log.WithError(err).Error("error while broadcasting sweep tx")
-				return
+				return err
 			}
 
 			if len(txid) > 0 {
@@ -280,21 +464,41 @@ func (s *sweeper) createTask(
 
 				events, err := round.Sweep(vtxoKeys, txid, sweepTx)
 				if err != nil {
-					log.WithError(err).Error("failed to sweep batch")
-					return
+					return err
 				}
 				if len(events) > 0 {
 					if err := s.repoManager.Events().Save(
 						ctx, domain.RoundTopic, round.Id, events,
 					); err != nil {
-						log.WithError(err).Errorf(
-							"failed to save sweep events for round %s", commitmentTxid,
-						)
-						return
+						return err
 					}
 				}
 			}
 		}
+
+		return nil
+	}
+}
+
+func (s *sweeper) createCheckpointSweepTask(
+	toSweep ports.SweepableOutput, vtxo domain.Outpoint,
+) func() error {
+	return func() error {
+		_, sweepTx, err := s.builder.BuildSweepTx([]ports.SweepableOutput{toSweep})
+		if err != nil {
+			return err
+		}
+
+		txid, err := s.wallet.BroadcastTransaction(context.Background(), sweepTx)
+		if err != nil {
+			return err
+		}
+
+		if len(txid) > 0 {
+			log.Debugln("sweep tx broadcasted:", txid)
+		}
+
+		return s.repoManager.Vtxos().SweepVtxos(context.Background(), []domain.Outpoint{vtxo})
 	}
 }
 
@@ -317,14 +521,14 @@ func (s *sweeper) updateVtxoExpirationTime(
 }
 
 func computeSubTrees(
-	vtxoTree *tree.TxTree, inputs []ports.SweepableBatchOutput,
+	vtxoTree *tree.TxTree, inputs []ports.SweepableOutput,
 ) ([]*tree.TxTree, error) {
 	subTrees := make(map[string]*tree.TxTree, 0)
 
 	// for each sweepable input, create a sub vtxo tree
 	// it allows to skip the part of the tree that has been broadcasted in the next task
 	for _, input := range inputs {
-		if subTree := vtxoTree.Find(input.GetHash().String()); subTree != nil {
+		if subTree := vtxoTree.Find(input.Hash.String()); subTree != nil {
 			rootTxid := subTree.Root.UnsignedTx.TxID()
 			subTrees[rootTxid] = subTree
 		}

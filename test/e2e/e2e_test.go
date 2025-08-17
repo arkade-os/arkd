@@ -1788,45 +1788,145 @@ func TestDeleteIntent(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSweep(t *testing.T) {
-	var receive arkReceive
-	receiveStr, err := runArkCommand("receive")
+func TestSweepBatchOutput(t *testing.T) {
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	ctx := t.Context()
+
+	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	err = json.Unmarshal([]byte(receiveStr), &receive)
-	require.NoError(t, err)
-
-	_, err = runCommand("nigiri", "faucet", receive.Boarding)
+	_, err = runCommand("nigiri", "faucet", boardingAddr)
 	require.NoError(t, err)
 
 	time.Sleep(5 * time.Second)
 
-	_, err = runArkCommand("settle", "--password", password)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var vtxo types.Vtxo
+	go func() {
+		defer wg.Done()
+		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+		require.Len(t, vtxos, 1)
+		vtxo = vtxos[0]
+	}()
+
+	// settle the boarding utxo to create a new batch output expiring in 20 blocks
+	_, err = alice.Settle(ctx)
 	require.NoError(t, err)
 
-	time.Sleep(3 * time.Second)
+	wg.Wait()
 
-	_, err = runCommand("nigiri", "rpc", "--generate", "30")
+	// generate 21 blocks to expire the batch output
+	_, err = runCommand("nigiri", "rpc", "--generate", "21")
 	require.NoError(t, err)
 
+	// wait for server to process the sweep
 	time.Sleep(20 * time.Second)
 
-	var balance arkBalance
-	balanceStr, err := runArkCommand("balance")
+	spendable, spent, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
-	require.Zero(t, balance.Offchain.Total) // all funds should be swept
+	require.NotEmpty(t, spendable)
+	require.Len(t, spent, 1)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spendable[0].Swept)
+	require.False(t, spendable[0].Spent)
 
-	// redeem the note
-	_, err = runArkCommand("recover", "--password", password)
+	// test fund recovery
+	_, err = alice.Settle(ctx, arksdk.WithRecoverableVtxos)
 	require.NoError(t, err)
 
-	time.Sleep(3 * time.Second)
-
-	balanceStr, err = runArkCommand("balance")
+	spendable, spent, err = alice.ListVtxos(ctx)
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
-	require.NotZero(t, balance.Offchain.Total) // funds should be recovered
+	require.NotEmpty(t, spendable)
+	require.Len(t, spent, 1)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spent[0].Swept)
+	require.True(t, spent[0].Spent)
+}
+
+func TestSweepCheckpointOutput(t *testing.T) {
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	ctx := t.Context()
+
+	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	_, err = runCommand("nigiri", "faucet", boardingAddr)
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var vtxo types.Vtxo
+	go func() {
+		defer wg.Done()
+		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+		require.Len(t, vtxos, 1)
+		vtxo = vtxos[0]
+	}()
+
+	// settle the boarding utxo
+	_, err = alice.Settle(ctx)
+	require.NoError(t, err)
+
+	wg.Wait()
+
+	// self-send the VTXO to create a checkpoint output
+	txid, err := alice.SendOffChain(ctx, false, []types.Receiver{{To: offchainAddr, Amount: vtxo.Amount}})
+	require.NoError(t, err)
+	require.NotEmpty(t, txid)
+
+	// unroll the spent VTXO to put checkpoint onchain
+	expl := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	branch, err := redemption.NewRedeemBranch(ctx, expl, setupIndexer(t), vtxo)
+	require.NoError(t, err)
+
+	for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
+		bumpAndBroadcastTx(t, parentTx, expl)
+	}
+
+	// give some time for the server to process the unroll
+	time.Sleep(5 * time.Second)
+
+	// generate 11 blocks to expire the checkpoint output
+	_, err = runCommand("nigiri", "rpc", "--generate", "11")
+	require.NoError(t, err)
+
+	// give time for the server to process the sweep
+	time.Sleep(20 * time.Second)
+
+	// verify that the checkpoint output has been put onchain
+	// and that the VTXO has been swept
+	spendable, spent, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.Empty(t, spendable)
+	require.NotEmpty(t, spent)
+	require.Len(t, spent, 1)
+	require.True(t, spent[0].Swept)
+	require.True(t, spent[0].Spent)
+
+	// test fund recovery
+	_, err = alice.Settle(ctx, arksdk.WithRecoverableVtxos)
+	require.NoError(t, err)
+
+	spendable, spent, err = alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendable)
+	require.Len(t, spent, 1)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spent[0].Swept)
+	require.True(t, spent[0].Spent)
 }
 
 func runArkCommand(arg ...string) (string, error) {

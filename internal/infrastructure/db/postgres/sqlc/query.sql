@@ -239,3 +239,6 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 
 -- name: SelectLatestMarketHour :one
 SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
+
+-- name: SelectUnrolledUnsweptOffchainVtxos :many
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = true AND swept = false AND (settled_by IS NULL OR settled_by = '');

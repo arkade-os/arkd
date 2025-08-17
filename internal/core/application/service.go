@@ -41,6 +41,7 @@ type service struct {
 	// config
 	network                   arklib.Network
 	signerPubkey              *btcec.PublicKey
+	checkpointTapscript       []byte
 	vtxoTreeExpiry            arklib.RelativeLocktime
 	roundInterval             time.Duration
 	unilateralExitDelay       arklib.RelativeLocktime
@@ -73,7 +74,7 @@ type service struct {
 func NewService(
 	wallet ports.WalletService, repoManager ports.RepoManager, builder ports.TxBuilder,
 	scanner ports.BlockchainScanner, scheduler ports.SchedulerService, cache ports.LiveStore,
-	vtxoTreeExpiry, unilateralExitDelay, boardingExitDelay arklib.RelativeLocktime,
+	vtxoTreeExpiry, unilateralExitDelay, boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
 	roundInterval, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount int64,
 	network arklib.Network, allowCSVBlockType bool, noteUriPrefix string,
@@ -123,6 +124,18 @@ func NewService(
 		utxoMinAmount = int64(dustAmount)
 	}
 
+	checkpointClosure := &script.CSVMultisigClosure{
+		Locktime: checkpointExitDelay,
+		MultisigClosure: script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{signerPubkey},
+		},
+	}
+
+	checkpointTapscript, err := checkpointClosure.Script()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 
 	svc := &service{
@@ -157,6 +170,7 @@ func NewService(
 		stop:                      cancel,
 		ctx:                       ctx,
 		wg:                        &sync.WaitGroup{},
+		checkpointTapscript:       checkpointTapscript,
 	}
 
 	repoManager.Events().RegisterEventsHandler(
@@ -652,13 +666,7 @@ func (s *service) SubmitOffchainTx(
 
 	// recompute all txs (checkpoint txs + ark tx)
 	rebuiltArkTx, rebuiltCheckpointTxs, err := offchain.BuildTxs(
-		ins, outputs,
-		&script.CSVMultisigClosure{
-			Locktime: s.unilateralExitDelay,
-			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{s.signerPubkey},
-			},
-		},
+		ins, outputs, s.checkpointTapscript,
 	)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to rebuild ark and/or checkpoint tx: %s", err)
@@ -765,15 +773,55 @@ func (s *service) FinalizeOffchainTx(
 		}
 	}()
 
-	finalCheckpointTxsMap := make(map[string]string)
+	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
 		valid, checkpointTxid, err := s.builder.VerifyTapscriptPartialSigs(checkpoint)
 		if err != nil || !valid {
-			return fmt.Errorf("invalid tx signature: %s", err)
+			return fmt.Errorf("invalid checkpoint tx signature for tx %s: %s", checkpointTxid, err)
 		}
 
-		finalCheckpointTxsMap[checkpointTxid] = checkpoint
+		decodedCheckpointTxs[checkpointTxid], err = psbt.NewFromRawBytes(
+			strings.NewReader(checkpoint),
+			true,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to parse checkpoint tx: %s", err)
+		}
+	}
+
+	finalCheckpointTxsMap := make(map[string]string)
+
+	arkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
+	if err != nil {
+		return fmt.Errorf("failed to parse ark tx: %s", err)
+	}
+
+	for inIndex, input := range arkTx.Inputs {
+		checkpointTxid := arkTx.UnsignedTx.TxIn[inIndex].PreviousOutPoint.Hash.String()
+		checkpointTx, ok := decodedCheckpointTxs[checkpointTxid]
+		if !ok {
+			return fmt.Errorf("checkpoint tx %s not found", checkpointTxid)
+		}
+
+		taprootTree, err := txutils.GetTaprootTree(input)
+		if err != nil {
+			return fmt.Errorf("failed to get taproot tree: %s", err)
+		}
+
+		tapTree, err := taprootTree.Encode()
+		if err != nil {
+			return fmt.Errorf("failed to encode taproot tree: %s", err)
+		}
+
+		checkpointTx.Outputs[0].TaprootTapTree = tapTree
+
+		b64checkpointTx, err := checkpointTx.B64Encode()
+		if err != nil {
+			return fmt.Errorf("failed to encode checkpoint tx: %s", err)
+		}
+
+		finalCheckpointTxsMap[checkpointTxid] = b64checkpointTx
 	}
 
 	event, err := offchainTx.Finalize(finalCheckpointTxsMap)
@@ -1145,6 +1193,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 		UtxoMaxAmount:       s.utxoMaxAmount,
 		VtxoMinAmount:       s.vtxoMinSettlementAmount,
 		VtxoMaxAmount:       s.vtxoMaxAmount,
+		CheckpointTapscript: hex.EncodeToString(s.checkpointTapscript),
 	}, nil
 }
 
@@ -1897,6 +1946,34 @@ func (s *service) listenToScannerNotifications() {
 					}
 					vtxo := vtxos[0]
 
+					go func() {
+						txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.Txid})
+						if err != nil {
+							log.WithError(err).Warn("failed to retrieve txs, skipping...")
+							return
+						}
+
+						if len(txs) <= 0 {
+							log.Warnf("tx %s not found", vtxo.Txid)
+							return
+						}
+
+						ptx, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
+						if err != nil {
+							log.WithError(err).Warn("failed to parse tx, skipping...")
+							return
+						}
+
+						// remove sweeper task for the associated checkpoint outputs
+						for _, in := range ptx.UnsignedTx.TxIn {
+							s.sweeper.removeTask(in.PreviousOutPoint.Hash.String())
+							log.Debugf(
+								"removed sweeper task for tx %s",
+								in.PreviousOutPoint.Hash.String(),
+							)
+						}
+					}()
+
 					if !vtxo.Unrolled {
 						go func() {
 							if err := s.repoManager.Vtxos().UnrollVtxos(
@@ -2044,7 +2121,7 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 		return
 	}
 
-	if err := s.sweeper.schedule(expirationTimestamp, round.CommitmentTxid, vtxoTree); err != nil {
+	if err := s.sweeper.scheduleBatchSweep(expirationTimestamp, round.CommitmentTxid, vtxoTree); err != nil {
 		log.WithError(err).Warn("failed to schedule sweep tx")
 	}
 }

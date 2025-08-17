@@ -91,6 +91,21 @@ func (v *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtx
 	return readRows(rows)
 }
 
+func (v *vtxoRepository) GetAllUnrolledUnsweptOffchainVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	res, err := v.querier.SelectUnrolledUnsweptOffchainVtxos(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rows := make([]queries.VtxoVw, 0, len(res))
+	for _, row := range res {
+		rows = append(rows, row.VtxoVw)
+	}
+	return readRows(rows)
+}
+
 func (v *vtxoRepository) GetAllNonUnrolledVtxos(
 	ctx context.Context, pubkey string,
 ) ([]domain.Vtxo, []domain.Vtxo, error) {

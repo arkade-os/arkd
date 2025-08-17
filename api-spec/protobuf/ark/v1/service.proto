@@ -140,6 +140,7 @@ message GetInfoResponse {
   int64 vtxo_min_amount = 12; 
   int64 vtxo_max_amount = 13; // -1 means no limit (default)
   int64 boarding_exit_delay = 14;
+  string checkpoint_tapscript = 15;
 }
 
 message RegisterIntentRequest {
