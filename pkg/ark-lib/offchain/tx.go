@@ -37,7 +37,7 @@ func BuildTxs(
 	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 	inputAmount := int64(0)
 
-	var signerUnrollScriptClosure *script.CSVMultisigClosure
+	signerUnrollScriptClosure := &script.CSVMultisigClosure{}
 	valid, err := signerUnrollScriptClosure.Decode(signerUnrollScript)
 	if err != nil {
 		return nil, nil, err

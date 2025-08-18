@@ -369,6 +369,9 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if locktime == nil {
+		return false, fmt.Errorf("failed to decode sequence: locktime is nil")
+	}
 
 	multisigClosure := &MultisigClosure{}
 	subScript := tokenizer.Script()[tokenizer.ByteIndex():]
