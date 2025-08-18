@@ -483,7 +483,18 @@ func (d *CLTVMultisigClosure) Decode(script []byte) (bool, error) {
 	d.Locktime = arklib.AbsoluteLocktime(locktime)
 	d.MultisigClosure = *multisigClosure
 
-	return valid, nil
+	rebuilt, err := d.Script()
+	if err != nil {
+		return false, err
+	}
+
+	if !bytes.Equal(rebuilt, script) {
+		d.Locktime = 0
+		d.MultisigClosure = MultisigClosure{}
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // ConditionMultisigClosure is a closure that contains a condition and a
