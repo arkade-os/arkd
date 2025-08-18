@@ -236,8 +236,8 @@ func (s *sweeper) scheduleCheckpointSweep(
 	execute := s.createCheckpointSweepTask(
 		ports.SweepableOutput{
 			Hash:         ptx.UnsignedTx.TxHash(),
-			Index:        uint32(0),
-			Script:       ptx.UnsignedTx.TxOut[0].PkScript,
+			Index:        uint32(0), // checkpoint output is always the first one
+			Script:       sweepMerkleProof.Script,
 			ControlBlock: sweepMerkleProof.ControlBlock,
 			InternalKey:  script.UnspendableKey(),
 			Amount:       ptx.UnsignedTx.TxOut[0].Value,
@@ -291,8 +291,11 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		return nil
 	}
 
-	if time.Now().After(time.Unix(task.at, 0)) {
-		return nil
+	log.Debugf("scheduling sweeper task %s at %d", task.id, task.at)
+
+	if !s.scheduler.AfterNow(task.at) {
+		log.Debugf("trying to schedule task in the past, executing it immediately")
+		return task.execute()
 	}
 
 	s.locker.Lock()
@@ -331,6 +334,7 @@ func (s *sweeper) createBatchSweepTask(
 	commitmentTxid string, vtxoTree *tree.TxTree,
 ) func() error {
 	return func() error {
+		log.Debugf("start sweeping commitment tx %s", commitmentTxid)
 		ctx := context.Background()
 		round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
 		if err != nil {
@@ -484,6 +488,7 @@ func (s *sweeper) createCheckpointSweepTask(
 	toSweep ports.SweepableOutput, vtxo domain.Outpoint,
 ) func() error {
 	return func() error {
+		log.Debugf("start sweeping checkpoint output %s", toSweep.Hash.String())
 		_, sweepTx, err := s.builder.BuildSweepTx([]ports.SweepableOutput{toSweep})
 		if err != nil {
 			return err

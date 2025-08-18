@@ -72,12 +72,18 @@ type service struct {
 }
 
 func NewService(
-	wallet ports.WalletService, repoManager ports.RepoManager, builder ports.TxBuilder,
-	scanner ports.BlockchainScanner, scheduler ports.SchedulerService, cache ports.LiveStore,
+	wallet ports.WalletService,
+	repoManager ports.RepoManager,
+	builder ports.TxBuilder,
+	scanner ports.BlockchainScanner,
+	scheduler ports.SchedulerService,
+	cache ports.LiveStore,
 	vtxoTreeExpiry, unilateralExitDelay, boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
 	roundInterval, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount int64,
-	network arklib.Network, allowCSVBlockType bool, noteUriPrefix string,
+	network arklib.Network,
+	allowCSVBlockType bool,
+	noteUriPrefix string,
 	marketHourStartTime, marketHourEndTime time.Time,
 	marketHourPeriod, marketHourRoundInterval time.Duration,
 ) (Service, error) {

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	common "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -290,7 +289,7 @@ func (f *MultisigClosure) Witness(
 // the sighash type is SIGHASH_DEFAULT.
 type CSVMultisigClosure struct {
 	MultisigClosure
-	Locktime common.RelativeLocktime
+	Locktime arklib.RelativeLocktime
 }
 
 func (f *CSVMultisigClosure) Witness(
@@ -313,7 +312,7 @@ func (f *CSVMultisigClosure) Witness(
 }
 
 func (d *CSVMultisigClosure) Script() ([]byte, error) {
-	sequence, err := common.BIP68Sequence(d.Locktime)
+	sequence, err := arklib.BIP68Sequence(d.Locktime)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +365,7 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 
 	}
 
-	locktime, err := common.BIP68DecodeSequenceFromBytes(sequence)
+	locktime, err := arklib.BIP68DecodeSequenceFromBytes(sequence)
 	if err != nil {
 		return false, err
 	}
@@ -396,7 +395,7 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 // the sighash type is SIGHASH_DEFAULT.
 type CLTVMultisigClosure struct {
 	MultisigClosure
-	Locktime common.AbsoluteLocktime
+	Locktime arklib.AbsoluteLocktime
 }
 
 func (f *CLTVMultisigClosure) Witness(
