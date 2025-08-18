@@ -22,7 +22,7 @@ func newListener[T any](id string, topics []string) *listener[T] {
 	return &listener[T]{
 		id:            id,
 		topics:        topicsMap,
-		ch:            make(chan T, 1000),
+		ch:            make(chan T, 100),
 		stopTimeoutCh: make(chan struct{}),
 	}
 }
@@ -45,13 +45,13 @@ func (l *listener[T]) includesAny(topics []string) bool {
 // it is used to send events to multiple listeners.
 // it is thread safe and can be used to send events to multiple listeners.
 type broker[T any] struct {
-	lock      *sync.Mutex
+	lock      *sync.RWMutex
 	listeners map[string]*listener[T]
 }
 
 func newBroker[T any]() *broker[T] {
 	return &broker[T]{
-		lock:      &sync.Mutex{},
+		lock:      &sync.RWMutex{},
 		listeners: make(map[string]*listener[T], 0),
 	}
 }
@@ -78,8 +78,8 @@ func (h *broker[T]) removeListener(id string) {
 }
 
 func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
-	h.lock.Lock()
-	defer h.lock.Unlock()
+	h.lock.RLock()
+	defer h.lock.RUnlock()
 
 	listener, ok := h.listeners[id]
 	if !ok {
@@ -89,8 +89,8 @@ func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
 }
 
 func (h *broker[T]) getTopics(id string) []string {
-	h.lock.Lock()
-	defer h.lock.Unlock()
+	h.lock.RLock()
+	defer h.lock.RUnlock()
 
 	listener, ok := h.listeners[id]
 	if !ok {
@@ -146,13 +146,14 @@ func (h *broker[T]) removeAllTopics(id string) error {
 
 func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 	h.lock.Lock()
-	defer h.lock.Unlock()
-
-	if _, ok := h.listeners[id]; !ok {
+	_, ok := h.listeners[id]
+	if !ok {
+		h.lock.Unlock()
 		return
 	}
 
 	h.listeners[id].stopTimeoutCh = make(chan struct{})
+	h.lock.Unlock()
 
 	go func() {
 		select {
@@ -172,9 +173,27 @@ func (h *broker[T]) stopTimeout(id string) {
 		return
 	}
 
-	h.listeners[id].stopTimeoutCh <- struct{}{}
-	close(h.listeners[id].stopTimeoutCh)
-	h.listeners[id].stopTimeoutCh = nil
+	if h.listeners[id].stopTimeoutCh != nil {
+		close(h.listeners[id].stopTimeoutCh)
+		h.listeners[id].stopTimeoutCh = nil
+	}
+}
+
+func (h *broker[T]) getListenersCopy() map[string]*listener[T] {
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+
+	listenersCopy := make(map[string]*listener[T], len(h.listeners))
+	for id, listener := range h.listeners {
+		listenersCopy[id] = listener
+	}
+	return listenersCopy
+}
+
+func (h *broker[T]) hasListeners() bool {
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+	return len(h.listeners) > 0
 }
 
 func formatTopic(topic string) string {

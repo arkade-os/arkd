@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -52,19 +53,11 @@ func TestMain(m *testing.M) {
 		log.Fatalf("error generating block: %s", err)
 	}
 
-	if err := setupServerWallet(); err != nil {
-		log.Fatal(err)
+	err := setupServerWalletAndCLI()
+	if err != nil && !errors.Is(err, ErrAlreadySetup) {
+		log.Fatalf("error setting up server wallet and CLI: %s", err)
 	}
-
 	time.Sleep(1 * time.Second)
-
-	_, err := runArkCommand(
-		"init", "--server-url", "localhost:7070", "--password", password,
-		"--network", "regtest", "--explorer", "http://chopsticks:3000",
-	)
-	if err != nil {
-		log.Fatalf("error initializing ark config: %s", err)
-	}
 
 	code := m.Run()
 	os.Exit(code)
@@ -1200,6 +1193,38 @@ func TestRedeemNotes(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestSendArkTxWithSeveralInputs(t *testing.T) {
+	const numberOfInputs = 5
+	const amountPerInput = 1_000
+
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	ctx := context.Background()
+
+	for i := 0; i < numberOfInputs; i++ {
+		note := generateNote(t, amountPerInput)
+		_, err := alice.RedeemNotes(ctx, []string{note})
+		require.NoError(t, err)
+	}
+
+	aliceVtxos, _, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.Len(t, aliceVtxos, numberOfInputs)
+
+	_, aliceOffchainAddr, _, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	txid, err := alice.SendOffChain(
+		ctx,
+		false,
+		[]types.Receiver{{To: aliceOffchainAddr, Amount: amountPerInput * numberOfInputs}},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, txid)
+}
+
 func TestSendToCLTVMultisigClosure(t *testing.T) {
 	ctx := context.Background()
 	indexerSvc := setupIndexer(t)
@@ -1809,9 +1834,17 @@ func runArkCommand(arg ...string) (string, error) {
 	return runDockerExec("arkd", args...)
 }
 
-func setupServerWallet() error {
+var ErrAlreadySetup = errors.New("already setup")
+
+func setupServerWalletAndCLI() error {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,
+	}
+
+	// skip if already setup
+	resp, err := http.NewRequest("GET", "http://localhost:7070/v1/info", nil)
+	if resp.Response != nil && err == nil {
+		return ErrAlreadySetup
 	}
 
 	req, err := http.NewRequest("GET", "http://localhost:7070/v1/admin/wallet/seed", nil)
@@ -1915,6 +1948,13 @@ func setupServerWallet() error {
 	}
 
 	time.Sleep(5 * time.Second)
+
+	if _, err := runArkCommand(
+		"init", "--server-url", "localhost:7070", "--password", password,
+		"--network", "regtest", "--explorer", "http://chopsticks:3000",
+	); err != nil {
+		return fmt.Errorf("error initializing ark config: %s", err)
+	}
 	return nil
 }
 
