@@ -740,10 +740,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		infos, err := grpcTransportClient.GetInfo(ctx)
 		require.NoError(t, err)
 
-		unilateralExitDelayType := arklib.LocktimeTypeSecond
-		if infos.UnilateralExitDelay < 512 {
-			unilateralExitDelayType = arklib.LocktimeTypeBlock
-		}
+		checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+		require.NoError(t, err)
 
 		ptx, checkpointsPtx, err := offchain.BuildTxs(
 			[]offchain.VtxoInput{
@@ -763,15 +761,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 					PkScript: alicePkScript,
 				},
 			},
-			&script.CSVMultisigClosure{
-				Locktime: arklib.RelativeLocktime{
-					Type:  unilateralExitDelayType,
-					Value: uint32(infos.UnilateralExitDelay),
-				},
-				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-				},
-			},
+			checkpointTapscript,
 		)
 		require.NoError(t, err)
 
@@ -1385,10 +1375,8 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	infos, err := grpcAlice.GetInfo(ctx)
 	require.NoError(t, err)
 
-	unilateralExitDelayType := arklib.LocktimeTypeSecond
-	if infos.UnilateralExitDelay < 512 {
-		unilateralExitDelayType = arklib.LocktimeTypeBlock
-	}
+	checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+	require.NoError(t, err)
 
 	ptx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
@@ -1408,15 +1396,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
-		&script.CSVMultisigClosure{
-			Locktime: arklib.RelativeLocktime{
-				Type:  unilateralExitDelayType,
-				Value: uint32(infos.UnilateralExitDelay),
-			},
-			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-			},
-		},
+		checkpointTapscript,
 	)
 	require.NoError(t, err)
 
@@ -1591,7 +1571,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		RevealedScript: merkleProof.Script,
 	}
 
-	checkpointTapscript := &waddrmgr.Tapscript{
+	customCheckpointTapscript := &waddrmgr.Tapscript{
 		ControlBlock:   checkpointCtrlBlock,
 		RevealedScript: checkpointMerkleProof.Script,
 	}
@@ -1661,10 +1641,8 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	infos, err := grpcAlice.GetInfo(ctx)
 	require.NoError(t, err)
 
-	unilateralExitDelayType := arklib.LocktimeTypeSecond
-	if infos.UnilateralExitDelay < 512 {
-		unilateralExitDelayType = arklib.LocktimeTypeBlock
-	}
+	checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+	require.NoError(t, err)
 
 	ptx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
@@ -1675,7 +1653,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 				},
 				Amount:              bobOutput.Value,
 				Tapscript:           tapscript,
-				CheckpointTapscript: checkpointTapscript,
+				CheckpointTapscript: customCheckpointTapscript,
 				RevealedTapscripts:  tapscripts,
 			},
 		},
@@ -1685,15 +1663,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
-		&script.CSVMultisigClosure{
-			Locktime: arklib.RelativeLocktime{
-				Type:  unilateralExitDelayType,
-				Value: uint32(infos.UnilateralExitDelay),
-			},
-			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-			},
-		},
+		checkpointTapscript,
 	)
 	require.NoError(t, err)
 
