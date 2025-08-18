@@ -1,4 +1,4 @@
-FROM golang:1.24.6-alpine3.20 as builder
+FROM golang:1.24-alpine3.20 as builder
 
 RUN apk add --no-cache git
 RUN wget -qO /usr/local/bin/buf https://github.com/bufbuild/buf/releases/download/v1.55.1/buf-Linux-armv7
