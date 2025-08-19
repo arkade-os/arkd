@@ -1649,7 +1649,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		unilateralExitDelayType = arklib.LocktimeTypeBlock
 	}
 
-	ptx, checkpointsPtx, err := offchain.BuildTxs(
+	arkPtx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
 			{
 				Outpoint: &wire.OutPoint{
@@ -1681,7 +1681,11 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 
 	explorer := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
 
-	encodedVirtualTx, err := ptx.B64Encode()
+	// add condition witness to the ark ptx
+	err = txutils.AddConditionWitness(0, arkPtx, wire.TxWitness{preimage[:]})
+	require.NoError(t, err)
+
+	encodedVirtualTx, err := arkPtx.B64Encode()
 	require.NoError(t, err)
 
 	signedTx, err := bobWallet.SignTransaction(
@@ -1706,6 +1710,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
 		require.NoError(t, err)
 
+		// add condition witness to the checkpoint ptx
 		err = txutils.AddConditionWitness(0, ptx, wire.TxWitness{preimage[:]})
 		require.NoError(t, err)
 
