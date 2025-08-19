@@ -77,7 +77,7 @@ func (i *indexerService) GetCommitmentTxInfo(
 		EndAt:             roundStats.Ended,
 		Batches:           batches,
 		TotalInputAmount:  roundStats.TotalForfeitAmount,
-		TotalInputtVtxos:  roundStats.TotalInputVtxos,
+		TotalInputVtxos:   roundStats.TotalInputVtxos,
 		TotalOutputVtxos:  roundStats.TotalOutputVtxos,
 		TotalOutputAmount: roundStats.TotalBatchAmount,
 	}, nil

@@ -43,6 +43,7 @@ func newSweeper(
 }
 
 func (s *sweeper) start() error {
+	s.scheduledTasks = make(map[string]struct{})
 	s.scheduler.Start()
 
 	ctx := context.Background()
@@ -151,7 +152,7 @@ func (s *sweeper) createTask(
 		log.Tracef("sweeper: %s", rootTxid)
 
 		sweepInputs := make([]ports.SweepableBatchOutput, 0)
-		vtxoKeys := make([]domain.Outpoint, 0) // vtxos associated to the sweep inputs
+		leafVtxoKeys := make([]domain.Outpoint, 0) // vtxos associated to the sweep inputs
 
 		// inspect the vtxo tree to find onchain batch outputs
 		batchOutputs, err := findSweepableOutputs(
@@ -237,7 +238,7 @@ func (s *sweeper) createTask(
 				}
 
 				if len(sweepableVtxos) > 0 {
-					vtxoKeys = append(vtxoKeys, sweepableVtxos...)
+					leafVtxoKeys = append(leafVtxoKeys, sweepableVtxos...)
 					sweepInputs = append(sweepInputs, input)
 				}
 			}
@@ -278,7 +279,25 @@ func (s *sweeper) createTask(
 			if len(txid) > 0 {
 				log.Debugln("sweep tx broadcasted:", txid)
 
-				events, err := round.Sweep(vtxoKeys, txid, sweepTx)
+				vtxoRepo := s.repoManager.Vtxos()
+				// get all vtxos that are children of the swept leaves
+				arkTxVtxos := make([]domain.Outpoint, 0)
+				seen := make(map[string]struct{})
+				for _, leafVtxo := range leafVtxoKeys {
+					children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+					if err != nil {
+						log.WithError(err).Error("error while getting children vtxos")
+						continue
+					}
+					for _, child := range children {
+						if _, ok := seen[child.String()]; !ok {
+							arkTxVtxos = append(arkTxVtxos, child)
+							seen[child.String()] = struct{}{}
+						}
+					}
+				}
+
+				events, err := round.Sweep(leafVtxoKeys, arkTxVtxos, txid, sweepTx)
 				if err != nil {
 					log.WithError(err).Error("failed to sweep batch")
 					return

@@ -708,6 +708,13 @@
           "additionalProperties": {
             "$ref": "#/definitions/v1IndexerTxData"
           }
+        },
+        "sweptVtxos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1IndexerVtxo"
+          }
         }
       }
     },

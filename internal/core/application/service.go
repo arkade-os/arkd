@@ -162,8 +162,30 @@ func NewService(
 	repoManager.Events().RegisterEventsHandler(
 		domain.RoundTopic, func(events []domain.Event) {
 			round := domain.NewRoundFromEvents(events)
-
 			go svc.propagateEvents(round)
+
+			lastEvent := events[len(events)-1]
+			if lastEvent.GetType() == domain.EventTypeBatchSwept {
+				batchSweptEvent := lastEvent.(domain.BatchSwept)
+				sweptVtxosOutpoints := append(
+					batchSweptEvent.TreeVtxos,
+					batchSweptEvent.ArkTxVtxos...)
+				sweptVtxos, err := svc.repoManager.Vtxos().GetVtxos(ctx, sweptVtxosOutpoints)
+				if err != nil {
+					log.WithError(err).Warn("failed to get swept vtxos")
+					return
+				}
+				go svc.stopWatchingVtxos(sweptVtxos)
+
+				// sweep tx event
+				txEvent := TransactionEvent{
+					TxData:     TxData{Tx: batchSweptEvent.Tx, Txid: batchSweptEvent.Txid},
+					Type:       SweepTxType,
+					SweptVtxos: sweptVtxos,
+				}
+				svc.propagateTransactionEvent(txEvent)
+				return
+			}
 
 			if !round.IsEnded() {
 				return
@@ -172,22 +194,15 @@ func NewService(
 			spentVtxos := svc.getSpentVtxos(round.Intents)
 			newVtxos := getNewVtxosFromRound(round)
 
-			go func() {
-				svc.transactionEventsCh <- TransactionEvent{
-					TxData:         TxData{Tx: round.CommitmentTx, Txid: round.CommitmentTxid},
-					Type:           CommitmentTxType,
-					SpentVtxos:     spentVtxos,
-					SpendableVtxos: newVtxos,
-				}
-			}()
-			go func() {
-				svc.indexerTxEventsCh <- TransactionEvent{
-					TxData:         TxData{Tx: round.CommitmentTx, Txid: round.CommitmentTxid},
-					Type:           CommitmentTxType,
-					SpentVtxos:     spentVtxos,
-					SpendableVtxos: newVtxos,
-				}
-			}()
+			// commitment tx event
+			txEvent := TransactionEvent{
+				TxData:         TxData{Tx: round.CommitmentTx, Txid: round.CommitmentTxid},
+				Type:           CommitmentTxType,
+				SpentVtxos:     spentVtxos,
+				SpendableVtxos: newVtxos,
+			}
+
+			svc.propagateTransactionEvent(txEvent)
 
 			go func() {
 				if err := svc.startWatchingVtxos(newVtxos); err != nil {
@@ -228,24 +243,16 @@ func NewService(
 				}
 			}
 
-			go func() {
-				svc.transactionEventsCh <- TransactionEvent{
-					TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
-					Type:           ArkTxType,
-					SpentVtxos:     spentVtxos,
-					SpendableVtxos: newVtxos,
-					CheckpointTxs:  checkpointTxsByOutpoint,
-				}
-			}()
-			go func() {
-				svc.indexerTxEventsCh <- TransactionEvent{
-					TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
-					Type:           ArkTxType,
-					SpentVtxos:     spentVtxos,
-					SpendableVtxos: newVtxos,
-					CheckpointTxs:  checkpointTxsByOutpoint,
-				}
-			}()
+			// ark tx event
+			txEvent := TransactionEvent{
+				TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
+				Type:           ArkTxType,
+				SpentVtxos:     spentVtxos,
+				SpendableVtxos: newVtxos,
+				CheckpointTxs:  checkpointTxsByOutpoint,
+			}
+
+			svc.propagateTransactionEvent(txEvent)
 
 			go func() {
 				if err := svc.startWatchingVtxos(newVtxos); err != nil {
@@ -1088,7 +1095,7 @@ func (s *service) GetTxEventsChannel(ctx context.Context) <-chan TransactionEven
 	return s.transactionEventsCh
 }
 
-// TODO remove this in v7
+// TODO remove this when detaching the indexer service
 func (s *service) GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent {
 	return s.indexerTxEventsCh
 }
@@ -2368,4 +2375,14 @@ func (s *service) verifyForfeitTxsSigs(txs []string) error {
 		close(errChan)
 		return nil
 	}
+}
+
+// propagateTransactionEvent propagates the transaction event to the indexer and the transaction events channels
+func (s *service) propagateTransactionEvent(event TransactionEvent) {
+	go func() {
+		s.indexerTxEventsCh <- event
+	}()
+	go func() {
+		s.transactionEventsCh <- event
+	}()
 }

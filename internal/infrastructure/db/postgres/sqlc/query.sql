@@ -109,8 +109,8 @@ UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 -- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true WHERE txid = @txid AND vout = @vout;
 
--- name: UpdateVtxoSwept :exec
-UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout;
+-- name: UpdateVtxoSweptIfNotSwept :execrows
+UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by
@@ -239,3 +239,21 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 
 -- name: SelectLatestMarketHour :one
 SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
+
+-- name: SelectVtxosByArkTxidRecursive :many
+WITH RECURSIVE vtxo_chain AS (
+    -- Base case: start with the initial vtxo
+    SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.ark_txid, 0 as level
+    FROM vtxo_vw 
+    WHERE vtxo_vw.txid = @initial_txid
+    
+    UNION ALL
+    
+    -- Recursive case: find vtxos where txid matches the ark_txid from previous level
+    SELECT next_vtxo.txid, next_vtxo.vout, next_vtxo.ark_txid, vtxo_chain.level + 1
+    FROM vtxo_vw next_vtxo
+    INNER JOIN vtxo_chain ON next_vtxo.txid = vtxo_chain.ark_txid
+    WHERE vtxo_chain.ark_txid IS NOT NULL
+)
+SELECT DISTINCT vtxo_chain.txid, vtxo_chain.vout
+FROM vtxo_chain;
