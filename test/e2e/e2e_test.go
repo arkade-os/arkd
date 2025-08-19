@@ -1556,7 +1556,6 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	require.NoError(t, err)
 
 	closure := vtxoScript.ForfeitClosures()[0]
-	checkpointClosure := vtxoScript.ForfeitClosures()[1]
 
 	bobAddr := arklib.Address{
 		HRP:        "tark",
@@ -1567,9 +1566,6 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	scriptBytes, err := closure.Script()
 	require.NoError(t, err)
 
-	checkpointScript, err := checkpointClosure.Script()
-	require.NoError(t, err)
-
 	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
 		txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
 	)
@@ -1578,22 +1574,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
 	require.NoError(t, err)
 
-	checkpointMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
-		txscript.NewBaseTapLeaf(checkpointScript).TapHash(),
-	)
-	require.NoError(t, err)
-
-	checkpointCtrlBlock, err := txscript.ParseControlBlock(checkpointMerkleProof.ControlBlock)
-	require.NoError(t, err)
-
 	tapscript := &waddrmgr.Tapscript{
 		ControlBlock:   ctrlBlock,
 		RevealedScript: merkleProof.Script,
-	}
-
-	checkpointTapscript := &waddrmgr.Tapscript{
-		ControlBlock:   checkpointCtrlBlock,
-		RevealedScript: checkpointMerkleProof.Script,
 	}
 
 	bobAddrStr, err := bobAddr.EncodeV0()
@@ -1673,10 +1656,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 					Hash:  virtualPtx.UnsignedTx.TxHash(),
 					Index: bobOutputIndex,
 				},
-				Amount:              bobOutput.Value,
-				Tapscript:           tapscript,
-				CheckpointTapscript: checkpointTapscript,
-				RevealedTapscripts:  tapscripts,
+				Amount:             bobOutput.Value,
+				Tapscript:          tapscript,
+				RevealedTapscripts: tapscripts,
 			},
 		},
 		[]*wire.TxOut{
