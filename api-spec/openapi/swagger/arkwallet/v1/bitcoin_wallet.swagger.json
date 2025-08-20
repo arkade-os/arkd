@@ -151,7 +151,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1CreateResponse"
+              "$ref": "#/definitions/arkwalletv1CreateResponse"
             }
           },
           "default": {
@@ -167,7 +167,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v1CreateRequest"
+              "$ref": "#/definitions/arkwalletv1CreateRequest"
             }
           }
         ],
@@ -313,7 +313,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1LockResponse"
+              "$ref": "#/definitions/arkwalletv1LockResponse"
             }
           },
           "default": {
@@ -329,7 +329,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v1LockRequest"
+              "$ref": "#/definitions/arkwalletv1LockRequest"
             }
           }
         ],
@@ -505,7 +505,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1RestoreResponse"
+              "$ref": "#/definitions/arkwalletv1RestoreResponse"
             }
           },
           "default": {
@@ -521,7 +521,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v1RestoreRequest"
+              "$ref": "#/definitions/arkwalletv1RestoreRequest"
             }
           }
         ],
@@ -537,7 +537,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1GenSeedResponse"
+              "$ref": "#/definitions/arkwalletv1GenSeedResponse"
             }
           },
           "default": {
@@ -769,7 +769,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1UnlockResponse"
+              "$ref": "#/definitions/arkwalletv1UnlockResponse"
             }
           },
           "default": {
@@ -785,7 +785,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v1UnlockRequest"
+              "$ref": "#/definitions/arkwalletv1UnlockRequest"
             }
           }
         ],
@@ -929,7 +929,7 @@
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1WithdrawResponse"
+              "$ref": "#/definitions/arkwalletv1WithdrawResponse"
             }
           },
           "default": {
@@ -945,7 +945,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/v1WithdrawRequest"
+              "$ref": "#/definitions/arkwalletv1WithdrawRequest"
             }
           }
         ],
@@ -956,6 +956,79 @@
     }
   },
   "definitions": {
+    "arkwalletv1CreateRequest": {
+      "type": "object",
+      "properties": {
+        "seed": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      }
+    },
+    "arkwalletv1CreateResponse": {
+      "type": "object"
+    },
+    "arkwalletv1GenSeedResponse": {
+      "type": "object",
+      "properties": {
+        "seed": {
+          "type": "string"
+        }
+      }
+    },
+    "arkwalletv1LockRequest": {
+      "type": "object"
+    },
+    "arkwalletv1LockResponse": {
+      "type": "object"
+    },
+    "arkwalletv1RestoreRequest": {
+      "type": "object",
+      "properties": {
+        "seed": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      }
+    },
+    "arkwalletv1RestoreResponse": {
+      "type": "object"
+    },
+    "arkwalletv1UnlockRequest": {
+      "type": "object",
+      "properties": {
+        "password": {
+          "type": "string"
+        }
+      }
+    },
+    "arkwalletv1UnlockResponse": {
+      "type": "object"
+    },
+    "arkwalletv1WithdrawRequest": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "string",
+          "format": "uint64"
+        }
+      }
+    },
+    "arkwalletv1WithdrawResponse": {
+      "type": "object",
+      "properties": {
+        "txid": {
+          "type": "string"
+        }
+      }
+    },
     "googlerpcStatus": {
       "type": "object",
       "properties": {
@@ -1029,20 +1102,6 @@
         }
       }
     },
-    "v1CreateRequest": {
-      "type": "object",
-      "properties": {
-        "seed": {
-          "type": "string"
-        },
-        "password": {
-          "type": "string"
-        }
-      }
-    },
-    "v1CreateResponse": {
-      "type": "object"
-    },
     "v1DeriveAddressesRequest": {
       "type": "object",
       "properties": {
@@ -1094,14 +1153,6 @@
         "satPerKvbyte": {
           "type": "string",
           "format": "uint64"
-        }
-      }
-    },
-    "v1GenSeedResponse": {
-      "type": "object",
-      "properties": {
-        "seed": {
-          "type": "string"
         }
       }
     },
@@ -1206,12 +1257,6 @@
     "v1LockConnectorUtxosResponse": {
       "type": "object"
     },
-    "v1LockRequest": {
-      "type": "object"
-    },
-    "v1LockResponse": {
-      "type": "object"
-    },
     "v1MainAccountBalanceResponse": {
       "type": "object",
       "properties": {
@@ -1236,20 +1281,6 @@
           }
         }
       }
-    },
-    "v1RestoreRequest": {
-      "type": "object",
-      "properties": {
-        "seed": {
-          "type": "string"
-        },
-        "password": {
-          "type": "string"
-        }
-      }
-    },
-    "v1RestoreResponse": {
-      "type": "object"
     },
     "v1SelectUtxosRequest": {
       "type": "object",
@@ -1387,17 +1418,6 @@
         }
       }
     },
-    "v1UnlockRequest": {
-      "type": "object",
-      "properties": {
-        "password": {
-          "type": "string"
-        }
-      }
-    },
-    "v1UnlockResponse": {
-      "type": "object"
-    },
     "v1UnwatchScriptsRequest": {
       "type": "object",
       "properties": {
@@ -1489,26 +1509,6 @@
     },
     "v1WatchScriptsResponse": {
       "type": "object"
-    },
-    "v1WithdrawRequest": {
-      "type": "object",
-      "properties": {
-        "address": {
-          "type": "string"
-        },
-        "amount": {
-          "type": "string",
-          "format": "uint64"
-        }
-      }
-    },
-    "v1WithdrawResponse": {
-      "type": "object",
-      "properties": {
-        "txid": {
-          "type": "string"
-        }
-      }
     }
   }
 }

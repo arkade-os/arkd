@@ -1,0 +1,20 @@
+version: v2
+modules:
+  - path: api-spec/protobuf
+    name: buf.build/arkade-os/arkd
+deps:
+  - buf.build/googleapis/googleapis
+lint:
+  use:
+    - DEFAULT
+  except:
+    - FIELD_NOT_REQUIRED
+    - PACKAGE_NO_IMPORT_CYCLE
+  disallow_comment_ignores: true
+breaking:
+  use:
+    - FILE
+  except:
+    - EXTENSION_NO_DELETE
+    - FIELD_SAME_DEFAULT
+  ignore_unstable_packages: true

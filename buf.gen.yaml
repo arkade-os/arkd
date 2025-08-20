@@ -1,21 +1,22 @@
-version: v1
+version: v2
+clean: true
 managed:
   enabled: true
-  go_package_prefix:
-    default: github.com/arkade-os/arkd
-    except:
-      - buf.build/googleapis/googleapis
+  disable:
+    - file_option: go_package
+      module: buf.build/googleapis/googleapis
+  override:
+    - file_option: go_package_prefix
+      value: github.com/arkade-os/arkd
 plugins:
-  # Golang
-  - plugin: go
+  - remote: buf.build/protocolbuffers/go:v1.36.7
     out: api-spec/protobuf/gen
     opt: paths=source_relative
-  - plugin: go-grpc
+  - remote: buf.build/grpc/go:v1.5.1
     out: api-spec/protobuf/gen
     opt: paths=source_relative,require_unimplemented_servers=false
-  - plugin: grpc-gateway
+  - remote: buf.build/grpc-ecosystem/gateway:v2.27.1
     out: api-spec/protobuf/gen
     opt: paths=source_relative
-  #OpenApi
-  - plugin: openapiv2
+  - remote: buf.build/grpc-ecosystem/openapiv2:v2.27.1
     out: api-spec/openapi/swagger
