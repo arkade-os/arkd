@@ -782,9 +782,11 @@ func (s *service) FinalizeOffchainTx(
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
-		valid, checkpointTxid, err := s.builder.VerifyTapscriptPartialSigs(checkpoint)
+		var valid bool
+		var checkpointTxid string
+		valid, checkpointTxid, err = s.builder.VerifyTapscriptPartialSigs(checkpoint)
 		if err != nil || !valid {
-			return fmt.Errorf("invalid checkpoint tx signature for tx %s: %s", checkpointTxid, err)
+			return err
 		}
 
 		decodedCheckpointTxs[checkpointTxid], err = psbt.NewFromRawBytes(
@@ -798,7 +800,8 @@ func (s *service) FinalizeOffchainTx(
 
 	finalCheckpointTxsMap := make(map[string]string)
 
-	arkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
+	var arkTx *psbt.Packet
+	arkTx, err = psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
 	if err != nil {
 		return fmt.Errorf("failed to parse ark tx: %s", err)
 	}
@@ -807,33 +810,42 @@ func (s *service) FinalizeOffchainTx(
 		checkpointTxid := arkTx.UnsignedTx.TxIn[inIndex].PreviousOutPoint.Hash.String()
 		checkpointTx, ok := decodedCheckpointTxs[checkpointTxid]
 		if !ok {
-			return fmt.Errorf("checkpoint tx %s not found", checkpointTxid)
+			err = fmt.Errorf("checkpoint tx %s not found", checkpointTxid)
+			return err
 		}
 
-		taprootTree, err := txutils.GetTaprootTree(input)
+		var taprootTree txutils.TapTree
+		taprootTree, err = txutils.GetTaprootTree(input)
 		if err != nil {
 			return fmt.Errorf("failed to get taproot tree: %s", err)
 		}
 
-		tapTree, err := taprootTree.Encode()
+		var encodedTapTree []byte
+		encodedTapTree, err = taprootTree.Encode()
 		if err != nil {
-			return fmt.Errorf("failed to encode taproot tree: %s", err)
+			err = fmt.Errorf("failed to encode taproot tree: %s", err)
+			return err
 		}
 
-		checkpointTx.Outputs[0].TaprootTapTree = tapTree
+		checkpointTx.Outputs[0].TaprootTapTree = encodedTapTree
 
-		b64checkpointTx, err := checkpointTx.B64Encode()
+		var b64checkpointTx string
+		b64checkpointTx, err = checkpointTx.B64Encode()
 		if err != nil {
-			return fmt.Errorf("failed to encode checkpoint tx: %s", err)
+			err = fmt.Errorf("failed to encode checkpoint tx: %s", err)
+			return err
 		}
 
 		finalCheckpointTxsMap[checkpointTxid] = b64checkpointTx
 	}
 
-	event, err := offchainTx.Finalize(finalCheckpointTxsMap)
+	var event domain.Event
+	event, err = offchainTx.Finalize(finalCheckpointTxsMap)
 	if err != nil {
+		err = fmt.Errorf("failed to finalize offchain tx: %s", err)
 		return err
 	}
+
 	changes = []domain.Event{event}
 	s.cache.OffchainTxs().Remove(txid)
 
