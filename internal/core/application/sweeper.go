@@ -120,13 +120,6 @@ func (s *sweeper) start() error {
 		for _, vtxo := range unrolledUnsweptOffchainVtxos {
 			checkpointTxid := vtxo.SpentBy
 
-			// if tx is already onchain, skip
-			_, _, _, err := s.wallet.IsTransactionConfirmed(ctx, checkpointTxid)
-			if err == nil {
-				log.Debugf("checkpoint tx %s found, skipping", checkpointTxid)
-				continue
-			}
-
 			checkpointB64, err := s.repoManager.Rounds().
 				GetTxsWithTxids(ctx, []string{checkpointTxid})
 			if err != nil {
