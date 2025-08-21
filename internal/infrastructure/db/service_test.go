@@ -187,6 +187,7 @@ func TestService(t *testing.T) {
 			testVtxoRepository(t, svc)
 			testOffchainTxRepository(t, svc)
 			testMarketHourRepository(t, svc)
+			testConvictionRepository(t, svc)
 		})
 	}
 }
@@ -615,7 +616,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		}
 
 		vtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoKeys)
-		require.Error(t, err)
+		require.NoError(t, err)
 		require.Empty(t, vtxos)
 
 		spendableVtxos, spentVtxos, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
@@ -806,12 +807,142 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_conviction_repository", func(t *testing.T) {
+		repo := svc.Convictions()
+
+		conviction, err := repo.Get("non-existent-id")
+		require.Error(t, err)
+		require.Nil(t, conviction)
+
+		scriptConviction, err := repo.GetActiveScriptConviction("non-existent-script")
+		require.NoError(t, err)
+		require.Nil(t, scriptConviction)
+
+		convictions, err := repo.GetAll(time.Now().Add(-time.Hour), time.Now())
+		require.NoError(t, err)
+		require.Empty(t, convictions)
+
+		roundConvictions, err := repo.GetByRoundID("non-existent-round")
+		require.NoError(t, err)
+		require.Empty(t, roundConvictions)
+
+		roundID1 := uuid.New().String()
+		roundID2 := uuid.New().String()
+		script1 := randomString(32)
+		script2 := randomString(32)
+		banDuration := time.Duration(1) * time.Hour
+
+		crime1 := domain.Crime{
+			Type:    domain.CrimeTypeMusig2NonceSubmission,
+			RoundID: roundID1,
+			Reason:  "Test crime 1",
+		}
+		crime2 := domain.Crime{
+			Type:    domain.CrimeTypeMusig2SignatureSubmission,
+			RoundID: roundID2,
+			Reason:  "Test crime 2",
+		}
+
+		conviction1 := domain.NewScriptConviction(script1, crime1, &banDuration)
+		conviction2 := domain.NewScriptConviction(script2, crime2, nil) // Permanent ban
+
+		err = repo.Add(conviction1, conviction2)
+		require.NoError(t, err)
+
+		retrievedConviction1, err := repo.Get(conviction1.GetID())
+		require.NoError(t, err)
+		require.NotNil(t, retrievedConviction1)
+		assertConvictionEqual(t, conviction1, retrievedConviction1)
+
+		retrievedConviction2, err := repo.Get(conviction2.GetID())
+		require.NoError(t, err)
+		require.NotNil(t, retrievedConviction2)
+		assertConvictionEqual(t, conviction2, retrievedConviction2)
+
+		activeConviction1, err := repo.GetActiveScriptConviction(script1)
+		require.NoError(t, err)
+		require.NotNil(t, activeConviction1)
+		require.Equal(t, script1, activeConviction1.Script)
+		require.False(t, activeConviction1.IsPardoned())
+
+		activeConviction2, err := repo.GetActiveScriptConviction(script2)
+		require.NoError(t, err)
+		require.NotNil(t, activeConviction2)
+		require.Equal(t, script2, activeConviction2.Script)
+		require.False(t, activeConviction2.IsPardoned())
+
+		round1Convictions, err := repo.GetByRoundID(roundID1)
+		require.NoError(t, err)
+		require.Len(t, round1Convictions, 1)
+		assertConvictionEqual(t, conviction1, round1Convictions[0])
+
+		round2Convictions, err := repo.GetByRoundID(roundID2)
+		require.NoError(t, err)
+		require.Len(t, round2Convictions, 1)
+		assertConvictionEqual(t, conviction2, round2Convictions[0])
+
+		allConvictions, err := repo.GetAll(time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+		require.NoError(t, err)
+		require.Len(t, allConvictions, 2)
+
+		err = repo.Pardon(conviction1.GetID())
+		require.NoError(t, err)
+
+		pardonedConviction, err := repo.Get(conviction1.GetID())
+		require.NoError(t, err)
+		require.NotNil(t, pardonedConviction)
+		require.True(t, pardonedConviction.IsPardoned())
+
+		activeConvictionAfterPardon, err := repo.GetActiveScriptConviction(script1)
+		require.NoError(t, err)
+		require.Nil(t, activeConvictionAfterPardon)
+
+		shortDuration := time.Duration(1) * time.Millisecond
+		crime3 := domain.Crime{
+			Type:    domain.CrimeTypeMusig2InvalidSignature,
+			RoundID: roundID1,
+			Reason:  "Test expired crime",
+		}
+		expiredConviction := domain.NewScriptConviction(script1, crime3, &shortDuration)
+		err = repo.Add(expiredConviction)
+		require.NoError(t, err)
+
+		time.Sleep(10 * time.Millisecond)
+
+		_, err = repo.GetActiveScriptConviction(script1)
+		require.NoError(t, err)
+	})
+}
+
 func assertMarketHourEqual(t *testing.T, expected, actual domain.MarketHour) {
 	assert.True(t, expected.StartTime.Equal(actual.StartTime), "StartTime not equal")
 	assert.Equal(t, expected.Period, actual.Period, "Period not equal")
 	assert.Equal(t, expected.RoundInterval, actual.RoundInterval, "RoundInterval not equal")
 	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
 	assert.True(t, expected.EndTime.Equal(actual.EndTime), "EndTime not equal")
+}
+
+func assertConvictionEqual(t *testing.T, expected, actual domain.Conviction) {
+	require.Equal(t, expected.GetID(), actual.GetID())
+	require.Equal(t, expected.GetType(), actual.GetType())
+	require.Equal(t, expected.GetCrime(), actual.GetCrime())
+	require.Equal(t, expected.IsPardoned(), actual.IsPardoned())
+
+	require.WithinDuration(t, expected.GetCreatedAt(), actual.GetCreatedAt(), time.Second)
+
+	if expected.GetExpiresAt() == nil {
+		require.Nil(t, actual.GetExpiresAt())
+	} else {
+		require.NotNil(t, actual.GetExpiresAt())
+		require.WithinDuration(t, *expected.GetExpiresAt(), *actual.GetExpiresAt(), time.Second)
+	}
+
+	if expectedConv, ok := expected.(domain.ScriptConviction); ok {
+		if actualConv, ok := actual.(domain.ScriptConviction); ok {
+			require.Equal(t, expectedConv.Script, actualConv.Script)
+		}
+	}
 }
 
 func roundsMatch(t *testing.T, expected, got domain.Round) {

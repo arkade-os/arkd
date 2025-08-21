@@ -54,6 +54,8 @@ type service struct {
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 
+	banDuration time.Duration
+
 	// TODO: derive the key pair used for the musig2 signing session from wallet.
 	operatorPrvkey *btcec.PrivateKey
 	operatorPubkey *btcec.PublicKey
@@ -124,12 +126,13 @@ func NewService(
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
+	roundIntervalDuration := time.Duration(roundInterval) * time.Second
 
 	svc := &service{
 		network:             network,
 		signerPubkey:        signerPubkey,
 		vtxoTreeExpiry:      vtxoTreeExpiry,
-		roundInterval:       time.Duration(roundInterval) * time.Second,
+		roundInterval:       roundIntervalDuration,
 		unilateralExitDelay: unilateralExitDelay,
 		allowCSVBlockType:   allowCSVBlockType,
 		wallet:              wallet,
@@ -157,6 +160,7 @@ func NewService(
 		stop:                      cancel,
 		ctx:                       ctx,
 		wg:                        &sync.WaitGroup{},
+		banDuration:               roundIntervalDuration * 10,
 	}
 
 	repoManager.Events().RegisterEventsHandler(
@@ -854,6 +858,17 @@ func (s *service) RegisterIntent(
 				Outpoint:   vtxoOutpoint,
 				Tapscripts: tapscripts,
 			}
+
+			conviction, err := s.getScriptConviction(input)
+			if err != nil {
+				return "", err
+			}
+
+			if conviction != nil {
+				// boarding script is banned
+				return "", fmt.Errorf("%s", conviction)
+			}
+
 			boardingInput, err := newBoardingInput(
 				tx, input, s.signerPubkey, s.boardingExitDelay, s.allowCSVBlockType,
 			)
@@ -866,6 +881,16 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
+		conviction, err := s.getScriptConviction(vtxo)
+		if err != nil {
+			return "", err
+		}
+
+		if conviction != nil {
+			// vtxo is banned
+			return "", fmt.Errorf("%s", conviction)
+		}
+
 		if vtxo.Spent {
 			return "", fmt.Errorf("input %s already spent", vtxo.Outpoint.String())
 		}
@@ -1621,6 +1646,9 @@ func (s *service) startFinalization(
 			)
 			s.cache.CurrentRound().Fail(err)
 			log.Warn(err)
+
+			// ban all the scripts that didn't submitted their nonces
+			s.banNoncesCollectionTimeout(roundId, signingSession, registeredIntents)
 			return
 		case <-s.cache.TreeSigingSessions().NoncesCollected(roundId):
 			signingSession, _ := s.cache.TreeSigingSessions().Get(roundId)
@@ -1654,7 +1682,12 @@ func (s *service) startFinalization(
 			log.WithError(err).Warn("failed to sign tree")
 			return
 		}
-		coordinator.AddSignatures(s.operatorPubkey, operatorSignatures)
+		_, err = coordinator.AddSignatures(s.operatorPubkey, operatorSignatures)
+		if err != nil {
+			s.cache.CurrentRound().Fail(fmt.Errorf("invalid operator tree signature: %s", err))
+			log.WithError(err).Warn("invalid operator tree signature")
+			return
+		}
 
 		log.Debugf("tree signed by us for round %s", roundId)
 
@@ -1670,13 +1703,48 @@ func (s *service) startFinalization(
 			)
 			s.cache.CurrentRound().Fail(err)
 			log.Warn(err)
+
+			// ban all the scripts that didn't submitted their signatures
+			s.banSignaturesCollectionTimeout(roundId, signingSession, registeredIntents)
 			return
 		case <-s.cache.TreeSigingSessions().SignaturesCollected(roundId):
 			signingSession, _ := s.cache.TreeSigingSessions().Get(roundId)
+			cosignersToBan := make(map[string]domain.Crime)
+
 			for pubkey, sig := range signingSession.Signatures {
 				buf, _ := hex.DecodeString(pubkey)
 				pk, _ := btcec.ParsePubKey(buf)
-				coordinator.AddSignatures(pk, sig)
+				shouldBan, err := coordinator.AddSignatures(pk, sig)
+				if err != nil && !shouldBan {
+					// an unexpected error has occurred during the signature validation, round should fail
+					s.cache.CurrentRound().
+						Fail(fmt.Errorf("failed to validate signatures: %s", err))
+					log.WithError(err).Warn("failed to validate signatures")
+					return
+				}
+
+				if shouldBan {
+					reason := fmt.Sprintf("invalid signature for cosigner pubkey %s", pubkey)
+					if err != nil {
+						reason = err.Error()
+					}
+
+					cosignersToBan[pubkey] = domain.Crime{
+						Type:    domain.CrimeTypeMusig2InvalidSignature,
+						RoundID: roundId,
+						Reason:  reason,
+					}
+				}
+			}
+
+			// if some cosigners have to be banned, it means invalid signatures occured
+			// the round fails and those cosigners are banned
+			if len(cosignersToBan) > 0 {
+				err = fmt.Errorf("some musig2 signatures are invalid")
+				s.cache.CurrentRound().Fail(err)
+				log.Warn(err)
+				s.banCosignerInputs(roundId, cosignersToBan, registeredIntents)
+				return
 			}
 		}
 
@@ -1786,10 +1854,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			log.Debug("all forfeit txs and boarding inputs signatures have been sent")
 		case <-time.After(remainingTime):
 			log.Debug("timeout waiting for forfeit txs and boarding inputs signatures")
-			// TODO: should fail here and not continue
 		}
-
-		txToSign = s.cache.CurrentRound().Get().CommitmentTx
 
 		forfeitTxList, err := s.cache.ForfeitTxs().Pop()
 		if err != nil {
@@ -1798,24 +1863,90 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			return
 		}
 
-		if err := s.verifyForfeitTxsSigs(forfeitTxList); err != nil {
+		// some forfeits are not signed, we must ban the associated scripts
+		if !s.cache.ForfeitTxs().AllSigned() {
+			unsignedVtxoKeys := s.cache.ForfeitTxs().UnsignedVtxoKeys()
+			vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, unsignedVtxoKeys)
+			if err != nil {
+				log.WithError(err).Warn("failed to get vtxos")
+				return
+			}
+
+			uniqueScripts := make(map[string]struct{})
+			for _, vtxo := range vtxos {
+				outputScript, err := vtxo.OutputScript()
+				if err != nil {
+					log.WithError(err).
+						Warnf("failed to compute output script for vtxo %s", vtxo.Outpoint)
+					continue
+				}
+				uniqueScripts[hex.EncodeToString(outputScript)] = struct{}{}
+			}
+
+			convictions := make([]domain.Conviction, 0)
+			for script := range uniqueScripts {
+				convictions = append(convictions, domain.NewScriptConviction(script, domain.Crime{
+					Type:    domain.CrimeTypeForfeitSubmission,
+					RoundID: roundId,
+					Reason:  "invalid signature for vtxo",
+				}, nil))
+			}
+
+			if err := s.repoManager.Convictions().Add(convictions...); err != nil {
+				log.WithError(err).Warn("failed to ban vtxos")
+			}
+
+			err = fmt.Errorf("missing forfeit transactions")
 			changes = s.cache.CurrentRound().Fail(err)
-			log.WithError(err).Warn("failed to validate forfeit txs")
+			log.Warn(err)
+			return
+		}
+
+		// verify is forfeit tx signatures are valid, if not we ban the associated scripts
+		if convictions := s.verifyForfeitTxsSigs(roundId, forfeitTxList); len(convictions) > 0 {
+			err = fmt.Errorf("invalid forfeit txs signature")
+			changes = s.cache.CurrentRound().Fail(err)
+			log.Warn(err)
+			if err := s.repoManager.Convictions().Add(convictions...); err != nil {
+				log.WithError(err).Warn("failed to ban vtxos")
+			}
 			return
 		}
 
 		boardingInputsIndexes := make([]int, 0)
+		convictions := make([]domain.Conviction, 0)
 		for i, in := range commitmentTx.Inputs {
 			if len(in.TaprootLeafScript) > 0 {
 				if len(in.TaprootScriptSpendSig) == 0 {
-					err = fmt.Errorf("missing tapscript spend sig for input %d", i)
-					changes = s.cache.CurrentRound().Fail(err)
-					log.WithError(err).Warn("missing boarding sig")
-					return
+					outputScript, err := outputScriptFromTaprootLeafScript(*in.TaprootLeafScript[0])
+					if err != nil {
+						log.WithError(err).Warnf("failed to compute output script for input %d", i)
+						continue
+					}
+
+					convictions = append(
+						convictions,
+						domain.NewScriptConviction(outputScript, domain.Crime{
+							Type:    domain.CrimeTypeBoardingInputSubmission,
+							RoundID: roundId,
+							Reason:  fmt.Sprintf("missing tapscript spend sig for input %d", i),
+						}, nil),
+					)
+					continue
 				}
 
 				boardingInputsIndexes = append(boardingInputsIndexes, i)
 			}
+		}
+
+		if len(convictions) > 0 {
+			err = fmt.Errorf("missing boarding inputs signatures")
+			changes = s.cache.CurrentRound().Fail(err)
+			log.Warn(err)
+			if err := s.repoManager.Convictions().Add(convictions...); err != nil {
+				log.WithError(err).Warn("failed to ban boarding inputs")
+			}
+			return
 		}
 
 		if len(boardingInputsIndexes) > 0 {
@@ -2045,15 +2176,7 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 
 func (s *service) checkForfeitsAndBoardingSigsSent() {
 	tx := s.cache.CurrentRound().Get().CommitmentTx
-	commitmentTx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-	numOfInputsSigned := 0
-	for _, v := range commitmentTx.Inputs {
-		if len(v.TaprootScriptSpendSig) > 0 {
-			if len(v.TaprootScriptSpendSig[0].Signature) > 0 {
-				numOfInputsSigned++
-			}
-		}
-	}
+	numOfInputsSigned := numOfSignedBoardingInputs(tx)
 
 	// Condition: all forfeit txs are signed and
 	// the number of signed boarding inputs matches
@@ -2324,10 +2447,13 @@ func (s *service) validateVtxoInput(
 	return nil
 }
 
-func (s *service) verifyForfeitTxsSigs(txs []string) error {
+func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Conviction {
 	nbWorkers := runtime.NumCPU()
 	jobs := make(chan string, len(txs))
-	errChan := make(chan error, 1)
+
+	mutx := &sync.Mutex{}
+	crimes := make(map[string]domain.Crime) // vtxo script -> crime
+
 	wg := sync.WaitGroup{}
 	wg.Add(nbWorkers)
 
@@ -2337,35 +2463,101 @@ func (s *service) verifyForfeitTxsSigs(txs []string) error {
 
 			for tx := range jobs {
 				valid, txid, err := s.builder.VerifyTapscriptPartialSigs(tx)
-				if err != nil {
-					errChan <- fmt.Errorf("failed to validate forfeit tx %s: %s", txid, err)
-					return
+				if err == nil && !valid {
+					err = fmt.Errorf("invalid signature for forfeit tx %s", txid)
 				}
+				if err != nil {
+					verificationErr := err
+					vtxoOutputScript, extractErr := extractVtxoScriptFromSignedForfeitTx(tx)
+					if extractErr != nil {
+						log.WithError(extractErr).
+							Errorf("failed to extract vtxo script from forfeit tx %s, cannot ban", txid)
+						continue
+					}
 
-				if !valid {
-					errChan <- fmt.Errorf("invalid signature for forfeit tx %s", txid)
-					return
+					crime := domain.Crime{
+						Type:    domain.CrimeTypeForfeitInvalidSignature,
+						RoundID: roundId,
+						Reason:  verificationErr.Error(),
+					}
+
+					mutx.Lock()
+					if _, ok := crimes[vtxoOutputScript]; ok {
+						crime.Reason += fmt.Sprintf(", %s", crimes[vtxoOutputScript].Reason)
+					}
+					crimes[vtxoOutputScript] = crime
+					mutx.Unlock()
 				}
 			}
 		}()
 	}
 
 	for _, tx := range txs {
-		select {
-		case err := <-errChan:
-			return err
-		default:
-			jobs <- tx
-		}
+		jobs <- tx
 	}
 	close(jobs)
 	wg.Wait()
 
-	select {
-	case err := <-errChan:
-		return err
-	default:
-		close(errChan)
-		return nil
+	convictions := make([]domain.Conviction, 0, len(crimes))
+	for outScript, crime := range crimes {
+		convictions = append(convictions, domain.NewScriptConviction(
+			outScript, crime, &s.banDuration,
+		))
 	}
+
+	return convictions
+}
+
+func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse psbt: %s", err)
+	}
+
+	for _, input := range ptx.Inputs {
+		// at this point, the connector is not signed so the vtxo input is the one with Tapscript sigs
+		if len(input.TaprootScriptSpendSig) == 0 {
+			continue
+		}
+
+		if len(input.TaprootLeafScript) == 0 {
+			return "", fmt.Errorf("missing taproot leaf script for vtxo input, invalid forfeit tx")
+		}
+
+		return outputScriptFromTaprootLeafScript(*input.TaprootLeafScript[0])
+	}
+
+	return "", fmt.Errorf("no vtxo script found in forfeit tx")
+}
+
+func outputScriptFromTaprootLeafScript(tapLeaf psbt.TaprootTapLeafScript) (string, error) {
+	controlBlock, err := txscript.ParseControlBlock(tapLeaf.ControlBlock)
+	if err != nil {
+		return "", err
+	}
+
+	rootHash := controlBlock.RootHash(tapLeaf.Script)
+	tapKeyFromControlBlock := txscript.ComputeTaprootOutputKey(
+		script.UnspendableKey(), rootHash[:],
+	)
+
+	pkscript, err := script.P2TRScript(tapKeyFromControlBlock)
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(pkscript), nil
+}
+
+func numOfSignedBoardingInputs(b64 string) int {
+	commitmentTx, _ := psbt.NewFromRawBytes(strings.NewReader(b64), true)
+	numOfInputsSigned := 0
+	for _, v := range commitmentTx.Inputs {
+		if len(v.TaprootScriptSpendSig) > 0 {
+			if len(v.TaprootScriptSpendSig[0].Signature) > 0 {
+				numOfInputsSigned++
+			}
+		}
+	}
+	return numOfInputsSigned
 }

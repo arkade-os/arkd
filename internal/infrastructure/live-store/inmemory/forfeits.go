@@ -154,6 +154,20 @@ func (m *forfeitTxsStore) AllSigned() bool {
 	return true
 }
 
+func (m *forfeitTxsStore) UnsignedVtxoKeys() []domain.Outpoint {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	vtxoKeys := make([]domain.Outpoint, 0)
+
+	for vtxo, forfeit := range m.forfeitTxs {
+		if len(forfeit.Tx) == 0 {
+			vtxoKeys = append(vtxoKeys, vtxo)
+		}
+	}
+
+	return vtxoKeys
+}
 func (m *forfeitTxsStore) Len() int {
 	m.lock.RLock()
 	defer m.lock.RUnlock()

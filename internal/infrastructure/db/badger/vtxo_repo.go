@@ -95,6 +95,9 @@ func (r *vtxoRepository) GetVtxos(
 	for _, outpoint := range outpoints {
 		vtxo, err := r.getVtxo(ctx, outpoint)
 		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				continue
+			}
 			return nil, err
 		}
 		vtxos = append(vtxos, *vtxo)

@@ -365,6 +365,12 @@ func (b *txBuilder) VerifyForfeitTxs(
 					vtxoInput = tx.UnsignedTx.TxIn[vtxoInputIndex]
 					connectorInput = tx.UnsignedTx.TxIn[i]
 
+					if len(tx.Inputs[vtxoInputIndex].TaprootScriptSpendSig) <= 0 {
+						return nil, fmt.Errorf(
+							"missing taproot script spend sig for vtxo input, invalid forfeit tx",
+						)
+					}
+
 					if len(tx.Inputs[vtxoInputIndex].TaprootLeafScript) <= 0 {
 						return nil, fmt.Errorf(
 							"missing taproot leaf script for vtxo input, invalid forfeit tx",
