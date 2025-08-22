@@ -136,13 +136,12 @@ redis-down:
 
 proto: proto-lint
 	@echo "Compiling stubs..."
-	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace buf generate
+	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace bufbuild/buf generate
 
 # proto-lint: lints protos
 proto-lint:
 	@echo "Linting protos..."
-	@docker build -q -t buf -f buf.Dockerfile . &> /dev/null
-	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace buf lint
+	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace bufbuild/buf lint
 
 # docker-run: starts docker test environment
 docker-run:
