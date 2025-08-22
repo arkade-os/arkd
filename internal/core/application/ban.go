@@ -14,16 +14,23 @@ type withOutputScript interface {
 	OutputScript() ([]byte, error)
 }
 
-func (s *service) getScriptConviction(script withOutputScript) (domain.Conviction, error) {
+func (s *service) checkIfBanned(script withOutputScript) error {
 	scriptBytes, err := script.OutputScript()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return s.repoManager.Convictions().GetActiveScriptConviction(hex.EncodeToString(scriptBytes))
+	conviction, err := s.repoManager.Convictions().
+		GetActiveScriptConviction(hex.EncodeToString(scriptBytes))
+	if err != nil {
+		return err
+	}
+	if conviction != nil {
+		return fmt.Errorf("%s", conviction)
+	}
+	return nil
 }
 
 func (s *service) banCosignerInputs(
-	roundId string,
 	toBan map[string]domain.Crime,
 	registeredIntents []ports.TimedIntent,
 ) {
@@ -98,7 +105,7 @@ func (s *service) banNoncesCollectionTimeout(
 		}
 	}
 
-	s.banCosignerInputs(roundId, toBan, registeredIntents)
+	s.banCosignerInputs(toBan, registeredIntents)
 }
 
 func (s *service) banSignaturesCollectionTimeout(
@@ -119,5 +126,5 @@ func (s *service) banSignaturesCollectionTimeout(
 		}
 	}
 
-	s.banCosignerInputs(roundId, toBan, registeredIntents)
+	s.banCosignerInputs(toBan, registeredIntents)
 }

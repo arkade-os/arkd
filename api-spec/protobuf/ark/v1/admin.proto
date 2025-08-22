@@ -49,6 +49,32 @@ service AdminService {
       body: "*"
     };
   }
+  rpc GetConviction(GetConvictionRequest) returns (GetConvictionResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/convictions/{id}"
+    };
+  }
+  rpc GetConvictions(GetConvictionsRequest) returns (GetConvictionsResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/convictions"
+    };
+  }
+  rpc GetConvictionsByRound(GetConvictionsByRoundRequest) returns (GetConvictionsByRoundResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/convictions/round/{round_id}"
+    };
+  }
+  rpc GetActiveScriptConviction(GetActiveScriptConvictionRequest) returns (GetActiveScriptConvictionResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/convictions/script/{script}"
+    };
+  }
+  rpc PardonConviction(PardonConvictionRequest) returns (PardonConvictionResponse) {
+    option (google.api.http) = {
+      post: "/v1/admin/convictions/{id}/pardon"
+      body: "*"
+    };
+  }
 }
 
 message GetScheduledSweepRequest {}
@@ -152,4 +178,74 @@ message Output {
     string onchain_address = 2;
   }; // onchain or off-chain
   uint64 amount = 3; // Amount to send in satoshis.
+}
+
+message GetConvictionRequest {
+  string id = 1;
+}
+
+message GetConvictionResponse {
+  Conviction conviction = 1;
+}
+
+message GetConvictionsRequest {
+  int64 from = 1; // Unix timestamp
+  int64 to = 2;   // Unix timestamp
+}
+
+message GetConvictionsResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetConvictionsByRoundRequest {
+  string round_id = 1;
+}
+
+message GetConvictionsByRoundResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetActiveScriptConvictionRequest {
+  string script = 1;
+}
+
+message GetActiveScriptConvictionResponse {
+  Conviction conviction = 1;
+}
+
+message PardonConvictionRequest {
+  string id = 1;
+}
+
+message PardonConvictionResponse {}
+
+enum CrimeType {
+  CRIME_TYPE_UNSPECIFIED = 0;
+  CRIME_TYPE_MUSIG2_NONCE_SUBMISSION = 1;
+  CRIME_TYPE_MUSIG2_SIGNATURE_SUBMISSION = 2;
+  CRIME_TYPE_MUSIG2_INVALID_SIGNATURE = 3;
+  CRIME_TYPE_FORFEIT_SUBMISSION = 4;
+  CRIME_TYPE_FORFEIT_INVALID_SIGNATURE = 5;
+  CRIME_TYPE_BOARDING_INPUT_SUBMISSION = 6;
+}
+
+enum ConvictionType {
+  CONVICTION_TYPE_UNSPECIFIED = 0;
+  CONVICTION_TYPE_SCRIPT = 1;
+}
+
+message Crime {
+  CrimeType type = 1;
+  string round_id = 2;
+  string reason = 3;
+}
+
+message Conviction {
+  string id = 1;
+  ConvictionType type = 2;
+  int64 created_at = 3;
+  int64 expires_at = 4; // 0 if never expires
+  Crime crime = 5;
+  bool pardoned = 6;
+  string script = 7; // Only set for script convictions
 }

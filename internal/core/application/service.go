@@ -859,14 +859,8 @@ func (s *service) RegisterIntent(
 				Tapscripts: tapscripts,
 			}
 
-			conviction, err := s.getScriptConviction(input)
-			if err != nil {
+			if err := s.checkIfBanned(input); err != nil {
 				return "", err
-			}
-
-			if conviction != nil {
-				// boarding script is banned
-				return "", fmt.Errorf("%s", conviction)
 			}
 
 			boardingInput, err := newBoardingInput(
@@ -881,14 +875,8 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
-		conviction, err := s.getScriptConviction(vtxo)
-		if err != nil {
+		if err := s.checkIfBanned(vtxo); err != nil {
 			return "", err
-		}
-
-		if conviction != nil {
-			// vtxo is banned
-			return "", fmt.Errorf("%s", conviction)
 		}
 
 		if vtxo.Spent {
@@ -1743,7 +1731,7 @@ func (s *service) startFinalization(
 				err = fmt.Errorf("some musig2 signatures are invalid")
 				s.cache.CurrentRound().Fail(err)
 				log.Warn(err)
-				s.banCosignerInputs(roundId, cosignersToBan, registeredIntents)
+				s.banCosignerInputs(cosignersToBan, registeredIntents)
 				return
 			}
 		}
@@ -1821,19 +1809,21 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 	}()
 
-	commitmentTx, err := psbt.NewFromRawBytes(
-		strings.NewReader(s.cache.CurrentRound().Get().CommitmentTx), true,
+	commitmentTx := s.cache.CurrentRound().Get().CommitmentTx
+
+	commitmentPtx, err := psbt.NewFromRawBytes(
+		strings.NewReader(commitmentTx), true,
 	)
 	if err != nil {
-		log.Debugf("failed to parse commitment tx: %s", s.cache.CurrentRound().Get().CommitmentTx)
+		log.Debugf("failed to parse commitment tx: %s", commitmentTx)
 		changes = s.cache.CurrentRound().Fail(fmt.Errorf("failed to parse commitment tx: %s", err))
 		log.WithError(err).Warn("failed to parse commitment tx")
 		return
 	}
-	commitmentTxid := commitmentTx.UnsignedTx.TxID()
+	commitmentTxid := commitmentPtx.UnsignedTx.TxID()
 
 	includesBoardingInputs := false
-	for _, in := range commitmentTx.Inputs {
+	for _, in := range commitmentPtx.Inputs {
 		// TODO: this is ok as long as the signer doesn't use taproot address too!
 		// We need to find a better way to understand if an in input is ours or if
 		// it's a boarding one.
@@ -1844,7 +1834,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 	}
 
-	txToSign := s.cache.CurrentRound().Get().CommitmentTx
 	forfeitTxs := make([]domain.ForfeitTx, 0)
 
 	if s.cache.ForfeitTxs().Len() > 0 || includesBoardingInputs {
@@ -1913,9 +1902,21 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			return
 		}
 
+		commitmentTx = s.cache.CurrentRound().Get().CommitmentTx
+		commitmentPtx, err = psbt.NewFromRawBytes(
+			strings.NewReader(commitmentTx), true,
+		)
+		if err != nil {
+			log.Debugf("failed to parse commitment tx: %s", commitmentTx)
+			changes = s.cache.CurrentRound().
+				Fail(fmt.Errorf("failed to parse commitment tx: %s", err))
+			log.WithError(err).Warn("failed to parse commitment tx")
+			return
+		}
+
 		boardingInputsIndexes := make([]int, 0)
 		convictions := make([]domain.Conviction, 0)
-		for i, in := range commitmentTx.Inputs {
+		for i, in := range commitmentPtx.Inputs {
 			if len(in.TaprootLeafScript) > 0 {
 				if len(in.TaprootScriptSpendSig) == 0 {
 					outputScript, err := outputScriptFromTaprootLeafScript(*in.TaprootLeafScript[0])
@@ -1950,7 +1951,11 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		if len(boardingInputsIndexes) > 0 {
-			txToSign, err = s.wallet.SignTransactionTapscript(ctx, txToSign, boardingInputsIndexes)
+			commitmentTx, err = s.wallet.SignTransactionTapscript(
+				ctx,
+				commitmentTx,
+				boardingInputsIndexes,
+			)
 			if err != nil {
 				changes = s.cache.CurrentRound().Fail(
 					fmt.Errorf("failed to sign commitment tx: %s", err),
@@ -1973,7 +1978,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	log.Debugf("signing commitment transaction for round %s\n", roundId)
 
-	signedCommitmentTx, err := s.wallet.SignTransaction(ctx, txToSign, true)
+	signedCommitmentTx, err := s.wallet.SignTransaction(ctx, commitmentTx, true)
 	if err != nil {
 		changes = s.cache.CurrentRound().Fail(fmt.Errorf("failed to sign commitment tx: %s", err))
 		log.WithError(err).Warn("failed to sign commitment tx")
