@@ -38,6 +38,7 @@ type ForfeitTxsStore interface {
 	Reset()
 	Pop() ([]string, error)
 	AllSigned() bool
+	UnsignedVtxoKeys() []domain.Outpoint
 	Len() int
 	GetConnectorsIndexes() map[string]domain.Outpoint
 }

@@ -29,6 +29,11 @@ type AdminService interface {
 	) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
+	GetConviction(ctx context.Context, id string) (domain.Conviction, error)
+	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
+	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
+	GetActiveScriptConviction(ctx context.Context, script string) (*domain.ScriptConviction, error)
+	PardonConviction(ctx context.Context, id string) error
 }
 
 type adminService struct {
@@ -350,6 +355,36 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 		return s.liveStore.Intents().DeleteAll()
 	}
 	return s.liveStore.Intents().Delete(intentIds)
+}
+
+// Conviction management methods
+func (s *adminService) GetConviction(ctx context.Context, id string) (domain.Conviction, error) {
+	return s.repoManager.Convictions().Get(id)
+}
+
+func (s *adminService) GetConvictions(
+	ctx context.Context,
+	from, to time.Time,
+) ([]domain.Conviction, error) {
+	return s.repoManager.Convictions().GetAll(from, to)
+}
+
+func (s *adminService) GetConvictionsByRound(
+	ctx context.Context,
+	roundID string,
+) ([]domain.Conviction, error) {
+	return s.repoManager.Convictions().GetByRoundID(roundID)
+}
+
+func (s *adminService) GetActiveScriptConviction(
+	ctx context.Context,
+	script string,
+) (*domain.ScriptConviction, error) {
+	return s.repoManager.Convictions().GetActiveScriptConviction(script)
+}
+
+func (s *adminService) PardonConviction(ctx context.Context, id string) error {
+	return s.repoManager.Convictions().Pardon(id)
 }
 
 type Balance struct {
