@@ -1,0 +1,57 @@
+package ports
+
+import (
+	"context"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+)
+
+type BitcoinStatus struct {
+	ChainTipHeight uint32
+	ChainTipTime   int64
+	Synched        bool
+}
+
+type TransactionDetails struct {
+	TxID          string
+	Hex           string
+	Height        uint32
+	Timestamp     int64
+	Confirmations uint32
+}
+
+type Utxo struct {
+	wire.OutPoint
+	Value         uint64
+	Script        string
+	Address       string
+	Confirmations uint32
+}
+
+type ScriptPubKeyDetails struct {
+	KeyPath string
+}
+
+type ScanUtxoSetProgress struct {
+	Progress int
+	Done     bool
+}
+
+type Nbxplorer interface {
+	GetBitcoinStatus(ctx context.Context) (BitcoinStatus, error)
+	GetTransaction(ctx context.Context, txid string) (TransactionDetails, error)
+	ScanUtxoSet(ctx context.Context, derivationScheme string, gapLimit int) <-chan ScanUtxoSetProgress
+	Track(ctx context.Context, derivationScheme string) error
+	GetBalance(ctx context.Context, derivationScheme string) (confirmed, unconfirmed uint64, err error)
+	GetUtxos(ctx context.Context, derivationScheme string) ([]Utxo, error)
+	GetScriptPubKeyDetails(ctx context.Context, derivationScheme string, script string) (ScriptPubKeyDetails, error)
+	GetNewUnusedAddress(ctx context.Context, derivationScheme string, change bool, skip int) (string, error)
+	EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error)
+	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
+
+	CreateGroup(ctx context.Context, groupID string) error
+	AddAddressToGroup(ctx context.Context, groupID string, addresses ...string) error
+	RemoveAddressFromGroup(ctx context.Context, groupID string, addresses ...string) error
+	GetGroupNotifications(ctx context.Context, groupID string) (<-chan []Utxo, error)
+}
