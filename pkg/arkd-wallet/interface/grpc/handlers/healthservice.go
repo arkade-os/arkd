@@ -12,6 +12,16 @@ func NewHealthHandler() grpchealth.HealthServer {
 	return &healthHandler{}
 }
 
+func (h *healthHandler) List(context.Context, *grpchealth.HealthListRequest) (*grpchealth.HealthListResponse, error) {
+	return &grpchealth.HealthListResponse{
+		Statuses: map[string]*grpchealth.HealthCheckResponse{
+			"arkd-wallet": {
+				Status: grpchealth.HealthCheckResponse_SERVING,
+			},
+		},
+	}, nil
+}
+
 func (h *healthHandler) Check(
 	_ context.Context,
 	_ *grpchealth.HealthCheckRequest,

@@ -1,9 +1,28 @@
 services:
+  nbxplorer:
+    container_name: nbxplorer
+    ports: 
+      - 32838:32838
+    build:
+      context: .
+    environment:
+      - NBXPLORER_NETWORK=${NBITCOIN_NETWORK:-regtest}
+      - NBXPLORER_BIND=0.0.0.0:32838
+      - NBXPLORER_NOAUTH=1
+      - NBXPLORER_CHAINS=btc
+      - NBXPLORER_BTCRPCURL=http://bitcoind:43782/
+      - NBXPLORER_BTCNODEENDPOINT=bitcoind:39388
+    volumes:
+      - nbxplorer_datadir:/datadir
+      - bitcoin_datadir:/root/.bitcoin
+  
   arkd-wallet:
     build:
       context: .
-      dockerfile: arkdwallet.Dockerfile
+      dockerfile: arkdwallet.nbxplorer.Dockerfile
     container_name: arkd-wallet
+    depends_on:
+      - nbxplorer
     ports:
       - "6060:6060"
     environment:
