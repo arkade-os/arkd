@@ -24,6 +24,7 @@ type service struct {
 	cfg     *config.Config
 	server  *http.Server
 	grpcSrv *grpc.Server
+	closeFn func()
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -42,6 +43,10 @@ func (s *service) Start() error {
 	walletSvc, scannerSvc, err := s.cfg.Services()
 	if err != nil {
 		return fmt.Errorf("error while creating application services: %w", err)
+	}
+
+	s.closeFn = func() {
+		walletSvc.Close()
 	}
 
 	walletHandler := handlers.NewWalletServiceHandler(walletSvc, scannerSvc)

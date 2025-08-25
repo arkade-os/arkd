@@ -725,6 +725,8 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 }
 
 func (w *wallet) Close() {
+	// nolint:errcheck
+	w.Nbxplorer.Close()
 	w.keyMgr = nil
 	close(w.isReady)
 }
