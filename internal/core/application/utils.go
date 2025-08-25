@@ -26,8 +26,8 @@ import (
 func findSweepableOutputs(
 	ctx context.Context, walletSvc ports.WalletService, txbuilder ports.TxBuilder,
 	schedulerUnit ports.TimeUnit, vtxoTree *tree.TxTree,
-) (map[int64][]ports.SweepableBatchOutput, error) {
-	sweepableBatchOutputs := make(map[int64][]ports.SweepableBatchOutput)
+) (map[int64][]ports.SweepableOutput, error) {
+	sweepableBatchOutputs := make(map[int64][]ports.SweepableOutput)
 	blocktimeCache := make(map[string]int64) // txid -> blocktime / blockheight
 
 	if err := vtxoTree.Apply(func(g *tree.TxTree) (bool, error) {
@@ -63,7 +63,7 @@ func findSweepableOutputs(
 
 			expirationTime := blocktimeCache[parentTxid] + int64(vtxoTreeExpiry.Value)
 			if _, ok := sweepableBatchOutputs[expirationTime]; !ok {
-				sweepableBatchOutputs[expirationTime] = make([]ports.SweepableBatchOutput, 0)
+				sweepableBatchOutputs[expirationTime] = make([]ports.SweepableOutput, 0)
 			}
 			sweepableBatchOutputs[expirationTime] = append(
 				sweepableBatchOutputs[expirationTime], sweepInput,

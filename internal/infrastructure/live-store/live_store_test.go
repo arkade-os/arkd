@@ -443,7 +443,7 @@ func (m *mockedTxBuilder) BuildCommitmentTx(
 }
 
 func (m *mockedTxBuilder) BuildSweepTx(
-	inputs []ports.SweepableBatchOutput,
+	inputs []ports.SweepableOutput,
 ) (txid string, signedSweepTx string, err error) {
 	args := m.Called(inputs)
 	res0 := args.Get(0).(string)
@@ -453,10 +453,10 @@ func (m *mockedTxBuilder) BuildSweepTx(
 
 func (m *mockedTxBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput ports.SweepableBatchOutput, err error) {
+) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput ports.SweepableOutput, err error) {
 	args := m.Called(vtxoTree)
 	res0 := args.Get(0).(*arklib.RelativeLocktime)
-	res1 := args.Get(1).(ports.SweepableBatchOutput)
+	res1 := args.Get(1).(ports.SweepableOutput)
 	return res0, res1, args.Error(2)
 }
 

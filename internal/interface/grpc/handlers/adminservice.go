@@ -91,10 +91,10 @@ func (a *adminHandler) GetScheduledSweep(
 
 		for _, output := range sweep.SweepableOutputs {
 			outputs = append(outputs, &arkv1.SweepableOutput{
-				Txid:        output.TxId,
-				Vout:        output.Vout,
+				Txid:        output.Hash.String(),
+				Vout:        output.Index,
 				ScheduledAt: output.ScheduledAt,
-				Amount:      convertSatsToBTCStr(output.Amount),
+				Amount:      convertSatsToBTCStr(uint64(output.Amount)),
 			})
 		}
 

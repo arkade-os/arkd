@@ -15,19 +15,19 @@ import (
 )
 
 func sweepTransaction(
-	wallet ports.WalletService, batchOutputs []ports.SweepableBatchOutput,
+	wallet ports.WalletService, batchOutputs []ports.SweepableOutput,
 ) (*psbt.Packet, error) {
 	ins := make([]*wire.OutPoint, 0)
 	sequences := make([]uint32, 0)
 
 	for _, input := range batchOutputs {
 		ins = append(ins, &wire.OutPoint{
-			Hash:  input.GetHash(),
-			Index: input.GetIndex(),
+			Hash:  input.Hash,
+			Index: input.Index,
 		})
 
 		sweepClosure := script.CSVMultisigClosure{}
-		valid, err := sweepClosure.Decode(input.GetLeafScript())
+		valid, err := sweepClosure.Decode(input.Script)
 		if err != nil {
 			return nil, err
 		}
@@ -65,27 +65,27 @@ func sweepTransaction(
 	for i, sweepInput := range batchOutputs {
 		sweepPartialTx.Inputs[i].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
 			{
-				ControlBlock: sweepInput.GetControlBlock(),
-				Script:       sweepInput.GetLeafScript(),
+				ControlBlock: sweepInput.ControlBlock,
+				Script:       sweepInput.Script,
 				LeafVersion:  txscript.BaseLeafVersion,
 			},
 		}
 
 		sweepPartialTx.Inputs[i].TaprootInternalKey = schnorr.SerializePubKey(
-			sweepInput.GetInternalKey(),
+			sweepInput.InternalKey,
 		)
 
-		amount += int64(sweepInput.GetAmount())
+		amount += sweepInput.Amount
 
-		ctrlBlock, err := txscript.ParseControlBlock(sweepInput.GetControlBlock())
+		ctrlBlock, err := txscript.ParseControlBlock(sweepInput.ControlBlock)
 		if err != nil {
 			return nil, err
 		}
 
-		root := ctrlBlock.RootHash(sweepInput.GetLeafScript())
+		root := ctrlBlock.RootHash(sweepInput.Script)
 
 		prevoutTaprootKey := txscript.ComputeTaprootOutputKey(
-			sweepInput.GetInternalKey(),
+			sweepInput.InternalKey,
 			root,
 		)
 
@@ -95,7 +95,7 @@ func sweepTransaction(
 		}
 
 		prevout := &wire.TxOut{
-			Value:    int64(sweepInput.GetAmount()),
+			Value:    sweepInput.Amount,
 			PkScript: script,
 		}
 

@@ -140,6 +140,13 @@ func (r *vtxoRepository) GetAllNonUnrolledVtxos(
 	return unspentVtxos, spentVtxos, nil
 }
 
+func (r *vtxoRepository) GetAllUnrolledUnsweptOffchainVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	query := badgerhold.Where("Unrolled").Eq(true).And("Swept").Eq(false).And("SettledBy").Eq("")
+	return r.findVtxos(ctx, query)
+}
+
 func (r *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	query := badgerhold.Where("Unrolled").Eq(false).And("Swept").Eq(false)
 	return r.findVtxos(ctx, query)

@@ -81,6 +81,7 @@ type Config struct {
 	WalletAddr          string
 	VtxoTreeExpiry      arklib.RelativeLocktime
 	UnilateralExitDelay arklib.RelativeLocktime
+	CheckpointExitDelay arklib.RelativeLocktime
 	BoardingExitDelay   arklib.RelativeLocktime
 	NoteUriPrefix       string
 	AllowCSVBlockType   bool
@@ -146,6 +147,7 @@ var (
 	LogLevel                  = "LOG_LEVEL"
 	VtxoTreeExpiry            = "VTXO_TREE_EXPIRY"
 	UnilateralExitDelay       = "UNILATERAL_EXIT_DELAY"
+	CheckpointExitDelay       = "CHECKPOINT_EXIT_DELAY"
 	BoardingExitDelay         = "BOARDING_EXIT_DELAY"
 	EsploraURL                = "ESPLORA_URL"
 	NoMacaroons               = "NO_MACAROONS"
@@ -183,6 +185,7 @@ var (
 	defaultLogLevel            = 4
 	defaultVtxoTreeExpiry      = 604672  // 7 days
 	defaultUnilateralExitDelay = 86400   // 24 hours
+	defaultCheckpointExitDelay = 86400   // 24 hours
 	defaultBoardingExitDelay   = 7776000 // 3 months
 	defaultNoMacaroons         = false
 	defaultNoTLS               = true
@@ -212,6 +215,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(EventDbType, defaultEventDbType)
 	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
 	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
+	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
 	viper.SetDefault(BoardingExitDelay, defaultBoardingExitDelay)
@@ -281,6 +285,7 @@ func LoadConfig() (*Config, error) {
 		LogLevel:                viper.GetInt(LogLevel),
 		VtxoTreeExpiry:          determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
 		UnilateralExitDelay:     determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
+		CheckpointExitDelay:     determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
 		BoardingExitDelay:       determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
 		EsploraURL:              viper.GetString(EsploraURL),
 		NoMacaroons:             viper.GetBool(NoMacaroons),
@@ -400,6 +405,16 @@ func (c *Config) Validate() error {
 		return fmt.Errorf(
 			"invalid boarding exit delay, must at least %d", minAllowedSequence,
 		)
+	}
+
+	if c.CheckpointExitDelay.Type == arklib.LocktimeTypeSecond {
+		if c.CheckpointExitDelay.Value%minAllowedSequence != 0 {
+			c.CheckpointExitDelay.Value -= c.CheckpointExitDelay.Value % minAllowedSequence
+			log.Infof(
+				"checkpoint exit delay must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.CheckpointExitDelay,
+			)
+		}
 	}
 
 	if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
@@ -634,7 +649,7 @@ func (c *Config) appService() error {
 	}
 	svc, err := application.NewService(
 		c.wallet, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore,
-		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay,
+		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.RoundInterval, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,

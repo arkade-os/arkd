@@ -860,6 +860,54 @@ func (q *Queries) SelectTxs(ctx context.Context, dollar_1 []string) ([]SelectTxs
 	return items, nil
 }
 
+const selectUnrolledUnsweptOffchainVtxos = `-- name: SelectUnrolledUnsweptOffchainVtxos :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = true AND swept = false AND (settled_by IS NULL OR settled_by = '')
+`
+
+type SelectUnrolledUnsweptOffchainVtxosRow struct {
+	VtxoVw VtxoVw
+}
+
+func (q *Queries) SelectUnrolledUnsweptOffchainVtxos(ctx context.Context) ([]SelectUnrolledUnsweptOffchainVtxosRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectUnrolledUnsweptOffchainVtxos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectUnrolledUnsweptOffchainVtxosRow
+	for rows.Next() {
+		var i SelectUnrolledUnsweptOffchainVtxosRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxo = `-- name: SelectVtxo :one
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE txid = $1 AND vout = $2
 `
