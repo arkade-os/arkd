@@ -485,19 +485,22 @@ func (s *service) SignTransaction(_ context.Context, partialTx string, extractRa
 				if err != nil {
 					return "", err
 				}
+				args := make(map[string]any)
 
-				conditionWitness, err := txutils.GetConditionWitness(in)
-				if err != nil {
-					return "", err
-				}
-
-				args := make(map[string][]byte)
-				if len(conditionWitness) > 0 {
-					var conditionWitnessBytes bytes.Buffer
-					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
+				switch closure.(type) {
+				case *script.ConditionMultisigClosure:
+					witness, err := txutils.GetConditionWitness(in)
+					if err != nil {
 						return "", err
 					}
-					args[string(txutils.CONDITION_WITNESS_KEY_PREFIX)] = conditionWitnessBytes.Bytes()
+
+					if len(witness) > 0 {
+						var conditionWitnessBytes bytes.Buffer
+						if err := psbt.WriteTxWitness(&conditionWitnessBytes, witness); err != nil {
+							return "", err
+						}
+						args[script.ConditionWitnessKey] = conditionWitnessBytes.Bytes()
+					}
 				}
 
 				for _, sig := range in.TaprootScriptSpendSig {

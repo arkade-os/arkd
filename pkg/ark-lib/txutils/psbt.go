@@ -13,10 +13,12 @@ import (
 )
 
 var (
-	COSIGNER_PSBT_KEY_PREFIX     = []byte("cosigner")
-	CONDITION_WITNESS_KEY_PREFIX = []byte("condition")
-	VTXO_TREE_EXPIRY_PSBT_KEY    = []byte("expiry")
-	VTXO_TAPROOT_TREE_KEY        = []byte("taptree")
+	COSIGNER_PSBT_KEY_PREFIX         = []byte("cosigner")
+	VTXO_TREE_EXPIRY_PSBT_KEY        = []byte("expiry")
+	VTXO_TAPROOT_TREE_KEY            = []byte("taptree")
+	ARKADE_SCRIPT_WITNESS_KEY_PREFIX = []byte("arkade_script_stack")
+	ARKADE_SCRIPT                    = []byte("arkade_script")
+	CONDITION_WITNESS_KEY_PREFIX     = []byte("condition")
 )
 
 // AddTaprootTree adds the whole taproot tree of the VTXO to the given PSBT input.
@@ -180,4 +182,46 @@ func cosignerPrefixedKey(index int) []byte {
 
 func parsePrefixedCosignerKey(key []byte) bool {
 	return bytes.HasPrefix(key, COSIGNER_PSBT_KEY_PREFIX)
+}
+
+func GetArkadeScript(in psbt.PInput) []byte {
+	for _, u := range in.Unknowns {
+		if bytes.Contains(u.Key, ARKADE_SCRIPT) {
+			return u.Value
+		}
+	}
+
+	return nil
+}
+
+func AddArkScript(inIndex int, ptx *psbt.Packet, script []byte) {
+	ptx.Inputs[inIndex].Unknowns = append(ptx.Inputs[inIndex].Unknowns, &psbt.Unknown{
+		Value: script,
+		Key:   ARKADE_SCRIPT,
+	})
+}
+
+func GetArkadeScriptWitness(in psbt.PInput) (wire.TxWitness, error) {
+	for _, u := range in.Unknowns {
+		if bytes.Contains(u.Key, ARKADE_SCRIPT_WITNESS_KEY_PREFIX) {
+			return ReadTxWitness(u.Value)
+		}
+	}
+
+	return wire.TxWitness{}, nil
+}
+
+func AddArkadeScriptWitness(inIndex int, ptx *psbt.Packet, witness wire.TxWitness) error {
+	var witnessBytes bytes.Buffer
+
+	err := psbt.WriteTxWitness(&witnessBytes, witness)
+	if err != nil {
+		return err
+	}
+
+	ptx.Inputs[inIndex].Unknowns = append(ptx.Inputs[inIndex].Unknowns, &psbt.Unknown{
+		Value: witnessBytes.Bytes(),
+		Key:   ARKADE_SCRIPT_WITNESS_KEY_PREFIX,
+	})
+	return nil
 }

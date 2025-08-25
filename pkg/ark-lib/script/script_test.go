@@ -705,7 +705,7 @@ func TestMultisigClosureWitness(t *testing.T) {
 	testCases := []struct {
 		name        string
 		closure     *script.MultisigClosure
-		signatures  map[string][]byte
+		signatures  map[string]any
 		expectError bool
 	}{
 		{
@@ -713,7 +713,7 @@ func TestMultisigClosureWitness(t *testing.T) {
 			closure: &script.MultisigClosure{
 				PubKeys: []*btcec.PublicKey{pub1},
 			},
-			signatures: map[string][]byte{
+			signatures: map[string]any{
 				hex.EncodeToString(schnorr.SerializePubKey(pub1)): []byte("signature1"),
 			},
 			expectError: false,
@@ -723,7 +723,7 @@ func TestMultisigClosureWitness(t *testing.T) {
 			closure: &script.MultisigClosure{
 				PubKeys: []*btcec.PublicKey{pub1, pub2},
 			},
-			signatures: map[string][]byte{
+			signatures: map[string]any{
 				hex.EncodeToString(schnorr.SerializePubKey(pub1)): []byte("signature1"),
 				hex.EncodeToString(schnorr.SerializePubKey(pub2)): []byte("signature2"),
 			},
@@ -734,7 +734,7 @@ func TestMultisigClosureWitness(t *testing.T) {
 			closure: &script.MultisigClosure{
 				PubKeys: []*btcec.PublicKey{pub1, pub2},
 			},
-			signatures: map[string][]byte{
+			signatures: map[string]any{
 				hex.EncodeToString(schnorr.SerializePubKey(pub1)): []byte("signature1"),
 			},
 			expectError: true,
@@ -781,7 +781,7 @@ func TestCSVMultisigClosureWitness(t *testing.T) {
 
 	// Create test signature
 	testSig := []byte("signature1")
-	signatures := map[string][]byte{
+	signatures := map[string]any{
 		hex.EncodeToString(schnorr.SerializePubKey(pub1)): testSig,
 	}
 
@@ -961,7 +961,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 		}
 
 		controlBlock := bytes.Repeat([]byte{0x00}, 32)
-		signatures := map[string][]byte{
+		signatures := map[string]any{
 			hex.EncodeToString(schnorr.SerializePubKey(pubkey1)): bytes.Repeat([]byte{0x01}, 64),
 			hex.EncodeToString(schnorr.SerializePubKey(pubkey2)): bytes.Repeat([]byte{0x01}, 64),
 		}
@@ -1222,7 +1222,7 @@ func TestConditionMultisigClosure(t *testing.T) {
 		var conditionWitnessBytes bytes.Buffer
 		require.NoError(t, psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness))
 
-		signatures := map[string][]byte{
+		signatures := map[string]any{
 			hex.EncodeToString(schnorr.SerializePubKey(pubkey1)): bytes.Repeat([]byte{0x01}, 64),
 			hex.EncodeToString(schnorr.SerializePubKey(pubkey2)): bytes.Repeat([]byte{0x02}, 64),
 			script.ConditionWitnessKey:                           conditionWitnessBytes.Bytes(),

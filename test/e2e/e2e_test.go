@@ -17,7 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ark-network/ark/common"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkade"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -1736,6 +1738,270 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	}
 
 	err = grpcAlice.FinalizeTx(ctx, bobTxid, finalCheckpoints)
+	require.NoError(t, err)
+}
+
+// TestSendToArkadeScriptClosure tests sending funds to an arkade script closure
+// alice onboard funds and send to an arkade script closure using introspection opcodes
+// then 2 offchain transactions are attempted:
+// 1. offchain with the wrong outputs : test if it fails
+// 2. offchain with the correct outputs : test if it succeeds
+func TestSendToArkadeScriptClosure(t *testing.T) {
+	ctx := context.Background()
+	alice, grpcAlice := setupArkSDK(t)
+	defer grpcAlice.Close()
+
+	bobPrivKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	configStore, err := inmemorystoreconfig.NewConfigStore()
+	require.NoError(t, err)
+
+	walletStore, err := inmemorystore.NewWalletStore()
+	require.NoError(t, err)
+
+	bobWallet, err := singlekeywallet.NewBitcoinWallet(
+		configStore,
+		walletStore,
+	)
+	require.NoError(t, err)
+
+	_, err = bobWallet.Create(ctx, password, hex.EncodeToString(bobPrivKey.Serialize()))
+	require.NoError(t, err)
+
+	_, err = bobWallet.Unlock(ctx, password)
+	require.NoError(t, err)
+
+	bobPubKey := bobPrivKey.PubKey()
+
+	// Fund Alice's account
+	_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	aliceAddr, err := arklib.DecodeAddressV0(offchainAddr)
+	require.NoError(t, err)
+
+	_, err = runCommand("nigiri", "faucet", boardingAddress)
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	_, err = alice.Settle(ctx)
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	const sendAmount = 10000
+
+	alicePkScript, err := common.P2TRScript(aliceAddr.VtxoTapKey)
+	require.NoError(t, err)
+
+	// script verifying that the spending tx includes an output going to alice's address
+	arkadeScript, err := txscript.NewScriptBuilder().
+		AddInt64(0).
+		AddOp(arkade.OP_INSPECTOUTPUTSCRIPTPUBKEY).
+		AddOp(arkade.OP_1).
+		AddOp(arkade.OP_EQUALVERIFY).
+		AddData(alicePkScript[2:]). // only witness program is pushed
+		AddOp(arkade.OP_EQUAL).
+		Script()
+	require.NoError(t, err)
+
+	vtxoScript := script.TapscriptsVtxoScript{
+		Closures: []script.Closure{
+			&script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{
+					bobPubKey,
+					script.ComputeArkadeScriptPublicKey(
+						aliceAddr.Signer,
+						script.ArkadeScriptHash(arkadeScript),
+					),
+				},
+			},
+		},
+	}
+
+	vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
+	require.NoError(t, err)
+
+	closure := vtxoScript.ForfeitClosures()[0]
+
+	bobAddr := arklib.Address{
+		HRP:        "tark",
+		VtxoTapKey: vtxoTapKey,
+		Signer:     aliceAddr.Signer,
+	}
+
+	arkadeTapscript, err := closure.Script()
+	require.NoError(t, err)
+
+	merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(arkadeTapscript).TapHash(),
+	)
+	require.NoError(t, err)
+
+	ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+	require.NoError(t, err)
+
+	tapscript := &waddrmgr.Tapscript{
+		ControlBlock:   ctrlBlock,
+		RevealedScript: merkleProof.Script,
+	}
+
+	bobAddrStr, err := bobAddr.EncodeV0()
+	require.NoError(t, err)
+
+	txid, err := alice.SendOffChain(
+		ctx,
+		false,
+		[]types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, txid)
+
+	indexerSvc := setupIndexer(t)
+
+	fundingTx, err := indexerSvc.GetVirtualTxs(ctx, []string{txid})
+	require.NoError(t, err)
+	require.NotEmpty(t, fundingTx)
+	require.Len(t, fundingTx.Txs, 1)
+
+	redeemPtx, err := psbt.NewFromRawBytes(strings.NewReader(fundingTx.Txs[0]), true)
+	require.NoError(t, err)
+
+	var bobOutput *wire.TxOut
+	var bobOutputIndex uint32
+	for i, out := range redeemPtx.UnsignedTx.TxOut {
+		if bytes.Equal(out.PkScript[2:], schnorr.SerializePubKey(bobAddr.VtxoTapKey)) {
+			bobOutput = out
+			bobOutputIndex = uint32(i)
+			break
+		}
+	}
+	require.NotNil(t, bobOutput)
+
+	infos, err := grpcAlice.GetInfo(ctx)
+	require.NoError(t, err)
+	unilateralExitDelayType := arklib.LocktimeTypeSecond
+	if infos.UnilateralExitDelay < 512 {
+		unilateralExitDelayType = arklib.LocktimeTypeBlock
+	}
+
+	signerUnrollClosure := &script.CSVMultisigClosure{
+		Locktime: arklib.RelativeLocktime{
+			Type:  unilateralExitDelayType,
+			Value: uint32(infos.UnilateralExitDelay),
+		},
+		MultisigClosure: script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
+		},
+	}
+
+	validTx, validCheckpoints, err := offchain.BuildTxs(
+		[]offchain.VtxoInput{
+			{
+				Outpoint: &wire.OutPoint{
+					Hash:  redeemPtx.UnsignedTx.TxHash(),
+					Index: bobOutputIndex,
+				},
+				Tapscript:          tapscript,
+				Amount:             bobOutput.Value,
+				RevealedTapscripts: []string{hex.EncodeToString(arkadeTapscript)},
+				ArkadeScript:       arkadeScript,
+			},
+		},
+		[]*wire.TxOut{
+			{
+				Value:    bobOutput.Value,
+				PkScript: alicePkScript,
+			},
+		},
+		signerUnrollClosure,
+	)
+	require.NoError(t, err)
+
+	arkadeScriptFromPsbt := txutils.GetArkadeScript(validTx.Inputs[0])
+	require.Equal(t, hex.EncodeToString(arkadeScript), hex.EncodeToString(arkadeScriptFromPsbt))
+
+	invalidTx, invalidCheckpoints, err := offchain.BuildTxs(
+		[]offchain.VtxoInput{
+			{
+				Outpoint: &wire.OutPoint{
+					Hash:  redeemPtx.UnsignedTx.TxHash(),
+					Index: bobOutputIndex,
+				},
+				Tapscript:          tapscript,
+				Amount:             bobOutput.Value,
+				RevealedTapscripts: []string{hex.EncodeToString(arkadeTapscript)},
+				ArkadeScript:       arkadeScript,
+			},
+		},
+		[]*wire.TxOut{
+			{
+				Value:    bobOutput.Value,
+				PkScript: []byte{0x6a}, // output 0 is not alice script
+			},
+		},
+		signerUnrollClosure,
+	)
+	require.NoError(t, err)
+
+	encodedInvalidTx, err := invalidTx.B64Encode()
+	require.NoError(t, err)
+
+	explorer := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+
+	signedInvalidTx, err := bobWallet.SignTransaction(
+		ctx,
+		explorer,
+		encodedInvalidTx,
+	)
+	require.NoError(t, err)
+
+	encodedInvalidCheckpoints := make([]string, 0, len(invalidCheckpoints))
+	for _, checkpoint := range invalidCheckpoints {
+		encoded, err := checkpoint.B64Encode()
+		require.NoError(t, err)
+		encodedInvalidCheckpoints = append(encodedInvalidCheckpoints, encoded)
+	}
+
+	_, _, _, err = grpcAlice.SubmitTx(ctx, signedInvalidTx, encodedInvalidCheckpoints)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid ark tx signature(s): arkade script execution failed")
+
+	encodedValidTx, err := validTx.B64Encode()
+	require.NoError(t, err)
+
+	signedTx, err := bobWallet.SignTransaction(
+		ctx,
+		explorer,
+		encodedValidTx,
+	)
+	require.NoError(t, err)
+
+	encodedValidCheckpoints := make([]string, 0, len(validCheckpoints))
+	for _, checkpoint := range validCheckpoints {
+		encoded, err := checkpoint.B64Encode()
+		require.NoError(t, err)
+		encodedValidCheckpoints = append(encodedValidCheckpoints, encoded)
+	}
+
+	txid, _, signedCheckpoints, err := grpcAlice.SubmitTx(ctx, signedTx, encodedValidCheckpoints)
+	require.NoError(t, err)
+
+	finalCheckpoints := make([]string, 0, len(signedCheckpoints))
+	for _, checkpoint := range signedCheckpoints {
+		finalCheckpoint, err := bobWallet.SignTransaction(
+			ctx,
+			explorer,
+			checkpoint,
+		)
+		require.NoError(t, err)
+
+		finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
+	}
+
+	err = grpcAlice.FinalizeTx(ctx, txid, finalCheckpoints)
 	require.NoError(t, err)
 }
 

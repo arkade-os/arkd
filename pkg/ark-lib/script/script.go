@@ -9,34 +9,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-const (
-	OP_INSPECTOUTPUTSCRIPTPUBKEY = 0xd1
-	OP_INSPECTOUTPUTVALUE        = 0xcf
-	OP_PUSHCURRENTINPUTINDEX     = 0xcd
-	OP_INSPECTINPUTVALUE         = 0xc9
-	OP_SUB64                     = 0xd8
-)
-
-type MultisigType int
-
-const (
-	MultisigTypeChecksig MultisigType = iota
-	MultisigTypeChecksigAdd
-)
-
-var ConditionWitnessKey = "condition"
-
-// forbiddenOpcodes are opcodes that are not allowed in a condition script
-var forbiddenOpcodes = []byte{
-	txscript.OP_CHECKMULTISIG,
-	txscript.OP_CHECKSIG,
-	txscript.OP_CHECKSIGVERIFY,
-	txscript.OP_CHECKSIGADD,
-	txscript.OP_CHECKMULTISIGVERIFY,
-	txscript.OP_CHECKLOCKTIMEVERIFY,
-	txscript.OP_CHECKSEQUENCEVERIFY,
-}
-
 // EvaluateScriptToBool executes the script with the provided witness as argument and returns a
 // boolean result that can be evaluated by OP_IF / OP_NOIF opcodes.
 func EvaluateScriptToBool(script []byte, witness wire.TxWitness) (bool, error) {

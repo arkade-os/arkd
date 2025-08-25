@@ -7,17 +7,59 @@ import (
 	"strings"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkade"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
 
+var (
+	TagArkScriptHash = []byte("ArkScriptHash")
+)
+
+const (
+	OP_INSPECTOUTPUTSCRIPTPUBKEY = 0xd1
+	OP_INSPECTOUTPUTVALUE        = 0xcf
+	OP_PUSHCURRENTINPUTINDEX     = 0xcd
+	OP_INSPECTINPUTVALUE         = 0xc9
+	OP_SUB64                     = 0xd8
+)
+
+type MultisigType int
+
+const (
+	MultisigTypeChecksig MultisigType = iota
+	MultisigTypeChecksigAdd
+)
+
+const (
+	ConditionWitnessKey = "condition"
+	SpendingTxKey       = "spending_tx"
+	InputIndexKey       = "input_index"
+	PrevoutFetcherKey   = "prevout_fetcher"
+	ArkScriptStackKey   = "arkade_script_stack"
+	ArkScriptKey        = "arkade_script"
+)
+
+// forbiddenOpcodes are opcodes that are not allowed in a condition script
+var forbiddenOpcodes = []byte{
+	txscript.OP_CHECKMULTISIG,
+	txscript.OP_CHECKSIG,
+	txscript.OP_CHECKSIGVERIFY,
+	txscript.OP_CHECKSIGADD,
+	txscript.OP_CHECKMULTISIGVERIFY,
+	txscript.OP_CHECKLOCKTIMEVERIFY,
+	txscript.OP_CHECKSEQUENCEVERIFY,
+}
+
 type Closure interface {
 	Script() ([]byte, error)
 	Decode(script []byte) (bool, error)
-	Witness(controlBlock []byte, opts map[string][]byte) (wire.TxWitness, error)
+	Witness(controlBlock []byte, args map[string]any) (wire.TxWitness, error)
 }
 
 // MultisigClosure is a closure that contains a list of public keys and a
@@ -55,6 +97,8 @@ func DecodeClosure(script []byte) (Closure, error) {
 		}
 		if valid {
 			return t.closure, nil
+		} else {
+			decodeErr = append(decodeErr, fmt.Sprintf("%s: %v", t.name, "invalid"))
 		}
 	}
 
@@ -254,19 +298,16 @@ func (f *MultisigClosure) decodeChecksig(script []byte) (bool, error) {
 	return true, nil
 }
 
-func (f *MultisigClosure) Witness(
-	controlBlock []byte, signatures map[string][]byte,
-) (wire.TxWitness, error) {
+func (f *MultisigClosure) Witness(controlBlock []byte, args map[string]interface{}) (wire.TxWitness, error) {
 	// Create witness stack with capacity for all signatures plus script and control block
 	witness := make(wire.TxWitness, 0, len(f.PubKeys)+2)
 
 	// Add signatures in the reverse order as public keys
 	for i := len(f.PubKeys) - 1; i >= 0; i-- {
 		pubkey := f.PubKeys[i]
-		xOnlyPubkey := schnorr.SerializePubKey(pubkey)
-		sig, ok := signatures[hex.EncodeToString(xOnlyPubkey)]
+		sig, ok := args[hex.EncodeToString(schnorr.SerializePubKey(pubkey))].([]byte)
 		if !ok {
-			return nil, fmt.Errorf("missing signature for pubkey %x", xOnlyPubkey)
+			return nil, fmt.Errorf("missing signature for public key %x", schnorr.SerializePubKey(pubkey))
 		}
 		witness = append(witness, sig)
 	}
@@ -293,7 +334,7 @@ type CSVMultisigClosure struct {
 }
 
 func (f *CSVMultisigClosure) Witness(
-	controlBlock []byte, signatures map[string][]byte,
+	controlBlock []byte, signatures map[string]any,
 ) (wire.TxWitness, error) {
 	multisigWitness, err := f.MultisigClosure.Witness(controlBlock, signatures)
 	if err != nil {
@@ -396,7 +437,7 @@ type CLTVMultisigClosure struct {
 }
 
 func (f *CLTVMultisigClosure) Witness(
-	controlBlock []byte, signatures map[string][]byte,
+	controlBlock []byte, signatures map[string]any,
 ) (wire.TxWitness, error) {
 	multisigWitness, err := f.MultisigClosure.Witness(controlBlock, signatures)
 	if err != nil {
@@ -548,15 +589,20 @@ func (f *ConditionMultisigClosure) Decode(script []byte) (bool, error) {
 }
 
 func (f *ConditionMultisigClosure) Witness(
-	controlBlock []byte, args map[string][]byte,
+	controlBlock []byte, args map[string]any,
 ) (wire.TxWitness, error) {
 	script, err := f.Script()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate script: %w", err)
 	}
 
+	condWitnessBytes, ok := args[ConditionWitnessKey].([]byte)
+	if !ok {
+		return nil, fmt.Errorf("missing or invalid condition witness")
+	}
+
 	// Read and execute condition witness
-	condWitness, err := txutils.ReadTxWitness(args[ConditionWitnessKey])
+	condWitness, err := txutils.ReadTxWitness(condWitnessBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read condition witness: %w", err)
 	}
@@ -646,7 +692,7 @@ func (f *ConditionCSVMultisigClosure) Decode(script []byte) (bool, error) {
 }
 
 func (f *ConditionCSVMultisigClosure) Witness(
-	controlBlock []byte, args map[string][]byte,
+	controlBlock []byte, args map[string]any,
 ) (wire.TxWitness, error) {
 	script, err := f.Script()
 	if err != nil {
@@ -654,7 +700,12 @@ func (f *ConditionCSVMultisigClosure) Witness(
 	}
 
 	// Read and execute condition witness
-	condWitness, err := txutils.ReadTxWitness(args[ConditionWitnessKey])
+	condWitnessBytes, ok := args[ConditionWitnessKey].([]byte)
+	if !ok {
+		return nil, fmt.Errorf("missing or invalid condition witness")
+	}
+
+	condWitness, err := txutils.ReadTxWitness(condWitnessBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read condition witness: %w", err)
 	}
@@ -680,4 +731,77 @@ func (f *ConditionCSVMultisigClosure) Witness(
 	witness = append(witness, controlBlock)
 
 	return witness, nil
+}
+
+func ExecuteArkadeScript(
+	arkScript []byte,
+	spendingTx *wire.MsgTx,
+	prevoutFetcher txscript.PrevOutputFetcher,
+	inputIndex int,
+	arkScriptStack wire.TxWitness,
+) error {
+	engine, err := arkade.NewEngine(
+		arkScript,
+		spendingTx,
+		inputIndex,
+		txscript.StandardVerifyFlags,
+		txscript.NewSigCache(100),
+		txscript.NewTxSigHashes(spendingTx, prevoutFetcher),
+		0, // TODO : add input amount if need CHECKSIG in custom script?
+		prevoutFetcher,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create engine: %w", err)
+	}
+
+	if len(arkScriptStack) > 0 {
+		engine.SetStack(arkScriptStack)
+	}
+
+	if err := engine.Execute(); err != nil {
+		return fmt.Errorf("failed to execute custom script: %w", err)
+	}
+
+	return nil
+}
+
+// ArkadeScriptHash computes the hash of an ark script.
+// scripthash = h_arkScriptHash(script)
+func ArkadeScriptHash(script []byte) []byte {
+	hash := chainhash.TaggedHash(TagArkScriptHash, script)
+	return hash[:]
+}
+
+// ComputeArkadeScriptPublicKey calculates a top-level ark script public key given the hash of the arkscript
+func ComputeArkadeScriptPublicKey(pubKey *btcec.PublicKey, scriptHash []byte) *btcec.PublicKey {
+	pubKey, _ = schnorr.ParsePubKey(schnorr.SerializePubKey(pubKey))
+
+	var (
+		pubKeyJacobian btcec.JacobianPoint
+		tweakJacobian  btcec.JacobianPoint
+		resultJacobian btcec.JacobianPoint
+	)
+	tweakKey, _ := btcec.PrivKeyFromBytes(scriptHash)
+	btcec.ScalarBaseMultNonConst(&tweakKey.Key, &tweakJacobian)
+
+	pubKey.AsJacobian(&pubKeyJacobian)
+	btcec.AddNonConst(&pubKeyJacobian, &tweakJacobian, &resultJacobian)
+
+	resultJacobian.ToAffine()
+	return btcec.NewPublicKey(&resultJacobian.X, &resultJacobian.Y)
+}
+
+func ComputeArkadeScriptPrivateKey(privKey *btcec.PrivateKey, scriptHash []byte) *btcec.PrivateKey {
+	privKeyScalar := privKey.Key
+	pubKeyBytes := privKey.PubKey().SerializeCompressed()
+	if pubKeyBytes[0] == 0x03 {
+		privKeyScalar.Negate()
+	}
+
+	tweakScalar := new(btcec.ModNScalar)
+	tweakScalar.SetByteSlice(scriptHash)
+
+	tweakScalar.Add(&privKeyScalar)
+
+	return &btcec.PrivateKey{Key: *tweakScalar}
 }

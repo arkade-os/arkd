@@ -7,8 +7,8 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
 require (
-	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-20250708155328-721172a83dba
-	github.com/arkade-os/go-sdk v0.6.3-0.20250708222801-e64fe0de9c61
+	github.com/arkade-os/arkd/pkg/ark-lib v0.7.1-0.20250811122941-696108b42f69
+	github.com/arkade-os/go-sdk v0.6.3-0.20250811123942-2481769116c7
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.30.0
 )
@@ -113,7 +113,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/gc/v3 v3.0.0-20240801135723-a856999a2e4a // indirect
 	modernc.org/libc v1.59.3 // indirect
-	modernc.org/mathutil v1.6.0 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.8.0 // indirect
 	modernc.org/sqlite v1.33.1 // indirect
 	modernc.org/strutil v1.2.0 // indirect

@@ -173,7 +173,7 @@ func newBoardingInput(
 	}
 
 	if err := boardingScript.Validate(
-		signerPubkey, boardingExitDelay, blockTypeCSVAllowed,
+		signerPubkey, boardingExitDelay, blockTypeCSVAllowed, nil,
 	); err != nil {
 		return nil, err
 	}
