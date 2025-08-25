@@ -554,17 +554,11 @@ func (s *service) SubmitOffchainTx(
 			)
 		}
 
-		tapleafScript := ptx.Inputs[inputIndex].TaprootLeafScript[0]
-		checkpointTapscript := &waddrmgr.Tapscript{
-			RevealedScript: tapleafScript.Script,
-		}
-
 		ins = append(ins, offchain.VtxoInput{
-			Outpoint:            &checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint,
-			Tapscript:           tapscript,
-			CheckpointTapscript: checkpointTapscript,
-			RevealedTapscripts:  tapscripts,
-			Amount:              int64(vtxo.Amount),
+			Outpoint:           &checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint,
+			Tapscript:          tapscript,
+			RevealedTapscripts: tapscripts,
+			Amount:             int64(vtxo.Amount),
 		})
 	}
 
