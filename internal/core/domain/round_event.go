@@ -49,7 +49,8 @@ type IntentsRegistered struct {
 
 type BatchSwept struct {
 	RoundEvent
-	Vtxos      []Outpoint
+	TreeVtxos  []Outpoint
+	ArkTxVtxos []Outpoint
 	Txid       string
 	Tx         string
 	FullySwept bool

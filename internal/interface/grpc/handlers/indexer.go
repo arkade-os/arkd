@@ -70,7 +70,7 @@ func (e *indexerService) GetCommitmentTx(
 		EndedAt:           resp.EndAt,
 		Batches:           batches,
 		TotalInputAmount:  resp.TotalInputAmount,
-		TotalInputVtxos:   resp.TotalInputtVtxos,
+		TotalInputVtxos:   resp.TotalInputVtxos,
 		TotalOutputAmount: resp.TotalOutputAmount,
 		TotalOutputVtxos:  resp.TotalOutputVtxos,
 	}, nil
@@ -442,6 +442,7 @@ func (h *indexerService) listenToTxEvents() {
 
 		allSpendableVtxos := make(map[string][]*arkv1.IndexerVtxo)
 		allSpentVtxos := make(map[string][]*arkv1.IndexerVtxo)
+		allSweptVtxos := make(map[string][]*arkv1.IndexerVtxo)
 
 		for _, vtxo := range event.SpendableVtxos {
 			vtxoScript := toP2TR(vtxo.PubKey)
@@ -453,6 +454,11 @@ func (h *indexerService) listenToTxEvents() {
 			vtxoScript := toP2TR(vtxo.PubKey)
 			allSpentVtxos[vtxoScript] = append(allSpentVtxos[vtxoScript], newIndexerVtxo(vtxo))
 		}
+		for _, vtxo := range event.SweptVtxos {
+			vtxoScript := toP2TR(vtxo.PubKey)
+			allSweptVtxos[vtxoScript] = append(allSweptVtxos[vtxoScript], newIndexerVtxo(vtxo))
+		}
+
 		var checkpointTxs map[string]*arkv1.IndexerTxData
 		if len(event.CheckpointTxs) > 0 {
 			checkpointTxs = make(map[string]*arkv1.IndexerTxData)
@@ -468,13 +474,16 @@ func (h *indexerService) listenToTxEvents() {
 		for _, l := range listenersCopy {
 			spendableVtxos := make([]*arkv1.IndexerVtxo, 0)
 			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
+			sweptVtxos := make([]*arkv1.IndexerVtxo, 0)
 			involvedScripts := make([]string, 0)
 
 			for vtxoScript := range l.topics {
 				spendableVtxosForScript := allSpendableVtxos[vtxoScript]
 				spentVtxosForScript := allSpentVtxos[vtxoScript]
+				sweptVtxosForScript := allSweptVtxos[vtxoScript]
 				spendableVtxos = append(spendableVtxos, spendableVtxosForScript...)
 				spentVtxos = append(spentVtxos, spentVtxosForScript...)
+				sweptVtxos = append(sweptVtxos, sweptVtxosForScript...)
 				if len(spendableVtxosForScript) > 0 || len(spentVtxosForScript) > 0 {
 					involvedScripts = append(involvedScripts, vtxoScript)
 				}
@@ -488,6 +497,7 @@ func (h *indexerService) listenToTxEvents() {
 						Scripts:       involvedScripts,
 						NewVtxos:      spendableVtxos,
 						SpentVtxos:    spentVtxos,
+						SweptVtxos:    sweptVtxos,
 						Tx:            event.Tx,
 						CheckpointTxs: checkpointTxs,
 					}:
