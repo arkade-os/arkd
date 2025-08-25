@@ -54,4 +54,6 @@ type Nbxplorer interface {
 	AddAddressToGroup(ctx context.Context, groupID string, addresses ...string) error
 	RemoveAddressFromGroup(ctx context.Context, groupID string, addresses ...string) error
 	GetGroupNotifications(ctx context.Context, groupID string) (<-chan []Utxo, error)
+
+	Close() error
 }
