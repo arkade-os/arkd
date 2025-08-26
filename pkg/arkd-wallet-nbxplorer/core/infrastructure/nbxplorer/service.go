@@ -505,7 +505,7 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 		return "", fmt.Errorf("failed to marshal RPC request: %w", err)
 	}
 
-	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("v1/cryptos/%s/rpc", defaultCryptoCode), strings.NewReader(string(jsonBody)))
+	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/v1/cryptos/%s/rpc", defaultCryptoCode), strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return "", fmt.Errorf("failed to call submitpackage RPC: %w", err)
 	}
