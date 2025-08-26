@@ -330,6 +330,8 @@ func TestUnilateralExit(t *testing.T) {
 		err = generateBlocks(5)
 		require.NoError(t, err)
 
+		time.Sleep(2 * time.Second) // give time to process confirmation
+
 		_, err = runArkCommand("redeem", "--force", "--password", password)
 		require.NoError(t, err)
 
