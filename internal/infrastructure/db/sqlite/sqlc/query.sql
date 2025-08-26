@@ -244,3 +244,43 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 
 -- name: SelectLatestMarketHour :one
 SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
+
+-- name: UpsertConviction :exec
+INSERT INTO conviction (
+    id, type, created_at, expires_at, crime_type, crime_round_id, crime_reason, pardoned, script
+) VALUES (
+    @id, @type, @created_at, @expires_at, @crime_type, @crime_round_id, @crime_reason, @pardoned, @script
+)
+ON CONFLICT(id) DO UPDATE SET
+    type = EXCLUDED.type,
+    created_at = EXCLUDED.created_at,
+    expires_at = EXCLUDED.expires_at,
+    crime_type = EXCLUDED.crime_type,
+    crime_round_id = EXCLUDED.crime_round_id,
+    crime_reason = EXCLUDED.crime_reason,
+    pardoned = EXCLUDED.pardoned,
+    script = EXCLUDED.script;
+
+-- name: SelectConviction :one
+SELECT * FROM conviction WHERE id = @id;
+
+-- name: SelectActiveScriptConviction :one
+SELECT * FROM conviction 
+WHERE script = @script 
+AND pardoned = false 
+AND (expires_at IS NULL OR expires_at > @current_time)
+ORDER BY created_at ASC 
+LIMIT 1;
+
+-- name: UpdateConvictionPardoned :exec
+UPDATE conviction SET pardoned = true WHERE id = @id;
+
+-- name: SelectConvictionsInTimeRange :many
+SELECT * FROM conviction 
+WHERE created_at >= @from_time AND created_at <= @to_time
+ORDER BY created_at ASC;
+
+-- name: SelectConvictionsByRoundID :many
+SELECT * FROM conviction 
+WHERE crime_round_id = @round_id
+ORDER BY created_at ASC;

@@ -3,6 +3,7 @@ package ports
 import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -20,6 +21,20 @@ type SweepableBatchOutput interface {
 type Input struct {
 	domain.Outpoint
 	Tapscripts []string
+}
+
+func (i Input) OutputScript() ([]byte, error) {
+	boardingVtxoScript, err := script.ParseVtxoScript(i.Tapscripts)
+	if err != nil {
+		return nil, err
+	}
+
+	tapKey, _, err := boardingVtxoScript.TapTree()
+	if err != nil {
+		return nil, err
+	}
+
+	return script.P2TRScript(tapKey)
 }
 
 type BoardingInput struct {
