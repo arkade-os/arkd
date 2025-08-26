@@ -57,10 +57,8 @@ func (h *WalletServiceHandler) Lock(ctx context.Context, req *arkwalletv1.LockRe
 }
 
 func (h *WalletServiceHandler) Status(ctx context.Context, _ *arkwalletv1.StatusRequest) (*arkwalletv1.StatusResponse, error) {
-	status, err := h.wallet.Status(ctx)
-	if err != nil {
-		return nil, err
-	}
+	status := h.wallet.Status(ctx)
+
 	return &arkwalletv1.StatusResponse{
 		Initialized: status.IsInitialized,
 		Unlocked:    status.IsUnlocked,

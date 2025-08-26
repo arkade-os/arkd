@@ -19,12 +19,12 @@ replace github.com/arkade-os/arkd/pkg/kvdb => ./pkg/kvdb
 require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
 	github.com/arkade-os/arkd/api-spec v0.0.0-20250822193207-98c5ced2c36c
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.0
+	github.com/arkade-os/arkd/pkg/ark-lib v0.7.1-0.20250724164901-72ea52fed011
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.6.3-0.20250708135236-08d1624ee483
+	github.com/arkade-os/go-sdk v0.6.3-0.20250812111344-0f9859c2b4e1
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/btcsuite/btcwallet/walletdb v1.4.2
 	github.com/dgraph-io/badger/v4 v4.8.0
@@ -183,7 +183,6 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
-	github.com/tyler-smith/go-bip32 v1.0.0 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
 	github.com/vulpemventures/go-bip32 v0.0.0-20200624192635-867c159da4d7 // indirect
 	github.com/vulpemventures/go-bip39 v1.0.2 // indirect

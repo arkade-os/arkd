@@ -15,6 +15,10 @@ const (
 	seedKey      = "encrypted_seed"
 )
 
+type encryptedSeedDTO struct {
+	Seed []byte
+}
+
 type seedRepository struct {
 	store *badgerhold.Store
 }
@@ -33,10 +37,20 @@ func NewSeedRepository(baseDir string, logger badger.Logger) (ports.SeedReposito
 	return &seedRepository{store: store}, nil
 }
 
-func (r *seedRepository) GetEncryptedSeed(ctx context.Context) ([]byte, error) {
-	var seed []byte
+func (r *seedRepository) IsInitialized(ctx context.Context) bool {
+	var dto encryptedSeedDTO
+	err := r.store.Get(seedKey, &dto)
+	if err != nil {
+		return false
+	}
 
-	err := r.store.Get(seedKey, &seed)
+	return len(dto.Seed) > 0
+}
+
+func (r *seedRepository) GetEncryptedSeed(ctx context.Context) ([]byte, error) {
+	var dto encryptedSeedDTO
+
+	err := r.store.Get(seedKey, &dto)
 	if err != nil {
 		if err == badgerhold.ErrNotFound {
 			return nil, fmt.Errorf("encrypted seed not found")
@@ -44,11 +58,12 @@ func (r *seedRepository) GetEncryptedSeed(ctx context.Context) ([]byte, error) {
 		return nil, fmt.Errorf("failed to get encrypted seed: %w", err)
 	}
 
-	return seed, nil
+	return dto.Seed, nil
 }
 
 func (r *seedRepository) SetEncryptedSeed(ctx context.Context, seed []byte) error {
-	err := r.store.Upsert(seedKey, seed)
+	dto := encryptedSeedDTO{Seed: seed}
+	err := r.store.Upsert(seedKey, dto)
 	if err != nil {
 		return fmt.Errorf("failed to set encrypted seed: %w", err)
 	}

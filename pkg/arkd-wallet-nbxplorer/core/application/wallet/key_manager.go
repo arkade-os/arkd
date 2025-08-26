@@ -5,58 +5,60 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/btcsuite/btcd/btcutil/hdkeychain"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/tyler-smith/go-bip32"
 )
 
 type keyManager struct {
 	// m/84'/0'/0'
-	mainAccount *bip32.Key
-	// m/84'/0'/1'
-	connectorAccount *bip32.Key
+	mainAccount *hdkeychain.ExtendedKey
+	// m/86'/0'/1'
+	connectorAccount *hdkeychain.ExtendedKey
 	// m/86'/0'/0'
-	arkSignerAccount *bip32.Key
+	arkSignerAccount *hdkeychain.ExtendedKey
 }
 
 // newKeyManager takes the seed key and derives BIP84 and BIP86 keys
-func newKeyManager(seed []byte, isMainnet bool) (*keyManager, error) {
-	masterKey, err := bip32.NewMasterKey(seed)
+func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
+	masterKey, err := hdkeychain.NewMaster(seed, network)
 	if err != nil {
 		return nil, err
 	}
 
-	purposeKeyP2wpkh, err := masterKey.NewChildKey(bip32.FirstHardenedChild + 84)
+	p2wpkhPurposeKey, err := masterKey.Derive(hdkeychain.HardenedKeyStart + 84)
 	if err != nil {
 		return nil, err
 	}
-	purposeKeyP2tr, err := masterKey.NewChildKey(bip32.FirstHardenedChild + 86)
+	taprootPurposeKey, err := masterKey.Derive(hdkeychain.HardenedKeyStart + 86)
 	if err != nil {
 		return nil, err
 	}
+
 	cointypeIndex := uint32(0)
-	if !isMainnet {
+	if network.Name != chaincfg.MainNetParams.Name {
 		cointypeIndex = 1
 	}
-	cointypeHardenedIndex := uint32(bip32.FirstHardenedChild + cointypeIndex)
+	cointypeHardenedIndex := hdkeychain.HardenedKeyStart + cointypeIndex
 
-	bip84MasterKey, err := purposeKeyP2wpkh.NewChildKey(cointypeHardenedIndex)
+	bip84MasterKey, err := p2wpkhPurposeKey.Derive(cointypeHardenedIndex)
 	if err != nil {
 		return nil, err
 	}
-	mainAccount, err := bip84MasterKey.NewChildKey(bip32.FirstHardenedChild)
-	if err != nil {
-		return nil, err
-	}
-	connectorAccount, err := bip84MasterKey.NewChildKey(bip32.FirstHardenedChild + 1)
+	mainAccount, err := bip84MasterKey.Derive(hdkeychain.HardenedKeyStart)
 	if err != nil {
 		return nil, err
 	}
 
-	bip86MasterKey, err := purposeKeyP2tr.NewChildKey(cointypeHardenedIndex)
+	bip86MasterKey, err := taprootPurposeKey.Derive(cointypeHardenedIndex)
 	if err != nil {
 		return nil, err
 	}
-	arkSignerAccount, err := bip86MasterKey.NewChildKey(bip32.FirstHardenedChild)
+	arkSignerAccount, err := bip86MasterKey.Derive(hdkeychain.HardenedKeyStart)
+	if err != nil {
+		return nil, err
+	}
+	connectorAccount, err := bip86MasterKey.Derive(hdkeychain.HardenedKeyStart + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -64,61 +66,82 @@ func newKeyManager(seed []byte, isMainnet bool) (*keyManager, error) {
 	return &keyManager{mainAccount, connectorAccount, arkSignerAccount}, nil
 }
 
-func (k *keyManager) getMainAccountXPub() string {
-	return k.mainAccount.PublicKey().B58Serialize()
+func (k *keyManager) getMainAccountDerivationScheme() string {
+	neutered, err := k.mainAccount.Neuter()
+	if err != nil {
+		return ""
+	}
+	return neutered.String() // no suffix, nbxplorer default to segwit v0
 }
 
-func (k *keyManager) getConnectorAccountXPub() string {
-	return k.connectorAccount.PublicKey().B58Serialize()
-}
-
-func (k *keyManager) getArkSignerAccountXPub() string {
-	return k.arkSignerAccount.PublicKey().B58Serialize()
+func (k *keyManager) getConnectorAccountDerivationScheme() string {
+	neutered, err := k.connectorAccount.Neuter()
+	if err != nil {
+		return ""
+	}
+	return neutered.String() + "-[taproot]"
 }
 
 func (k *keyManager) getForfeitPublicKey() (*secp256k1.PublicKey, error) {
-	key, err := k.arkSignerAccount.NewChildKey(0)
+	key, err := k.arkSignerAccount.Derive(0)
 	if err != nil {
 		return nil, err
 	}
-	key, err = key.NewChildKey(0)
+	key, err = key.Derive(0)
 	if err != nil {
 		return nil, err
 	}
-	return secp256k1.ParsePubKey(key.PublicKey().Key)
+
+	ecPubKey, err := key.ECPubKey()
+	if err != nil {
+		return nil, err
+	}
+
+	return secp256k1.ParsePubKey(ecPubKey.SerializeCompressed())
 }
 
 func (k *keyManager) getArkSignerPublicKey() (*secp256k1.PublicKey, error) {
-	key, err := k.arkSignerAccount.NewChildKey(0)
+	key, err := k.arkSignerAccount.Derive(0)
 	if err != nil {
 		return nil, err
 	}
-	key, err = key.NewChildKey(0)
+	key, err = key.Derive(0)
 	if err != nil {
 		return nil, err
 	}
 
-	return secp256k1.ParsePubKey(key.PublicKey().Key)
+	ecPubKey, err := key.ECPubKey()
+	if err != nil {
+		return nil, err
+	}
+
+	return secp256k1.ParsePubKey(ecPubKey.SerializeCompressed())
 }
 
 func (k *keyManager) getArkSignerPrivateKey() (*secp256k1.PrivateKey, error) {
-	key, err := k.arkSignerAccount.NewChildKey(0)
+	key, err := k.arkSignerAccount.Derive(0)
 	if err != nil {
 		return nil, err
 	}
-	key, err = key.NewChildKey(0)
+	key, err = key.Derive(0)
 	if err != nil {
 		return nil, err
 	}
-	return secp256k1.PrivKeyFromBytes(key.Key), nil
+
+	ecPrivKey, err := key.ECPrivKey()
+	if err != nil {
+		return nil, err
+	}
+
+	return secp256k1.PrivKeyFromBytes(ecPrivKey.Serialize()), nil
 }
 
 func (k *keyManager) getPrivateKey(xpub string, keyPath string) (*secp256k1.PrivateKey, error) {
-	var key *bip32.Key
+	var key *hdkeychain.ExtendedKey
 	switch xpub {
-	case k.getMainAccountXPub():
+	case k.getMainAccountDerivationScheme():
 		key = k.mainAccount
-	case k.getConnectorAccountXPub():
+	case k.getConnectorAccountDerivationScheme():
 		key = k.connectorAccount
 	default:
 		return nil, fmt.Errorf("invalid xpub")
@@ -131,11 +154,16 @@ func (k *keyManager) getPrivateKey(xpub string, keyPath string) (*secp256k1.Priv
 			return nil, fmt.Errorf("invalid path")
 		}
 
-		key, err = key.NewChildKey(uint32(pathIndex))
+		key, err = key.Derive(uint32(pathIndex))
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return secp256k1.PrivKeyFromBytes(key.Key), nil
+	ecPrivKey, err := key.ECPrivKey()
+	if err != nil {
+		return nil, err
+	}
+
+	return secp256k1.PrivKeyFromBytes(ecPrivKey.Serialize()), nil
 }

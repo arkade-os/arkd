@@ -43,17 +43,15 @@ type Nbxplorer interface {
 	GetTransaction(ctx context.Context, txid string) (TransactionDetails, error)
 	ScanUtxoSet(ctx context.Context, derivationScheme string, gapLimit int) <-chan ScanUtxoSetProgress
 	Track(ctx context.Context, derivationScheme string) error
-	GetBalance(ctx context.Context, derivationScheme string) (confirmed, unconfirmed uint64, err error)
 	GetUtxos(ctx context.Context, derivationScheme string) ([]Utxo, error)
 	GetScriptPubKeyDetails(ctx context.Context, derivationScheme string, script string) (ScriptPubKeyDetails, error)
 	GetNewUnusedAddress(ctx context.Context, derivationScheme string, change bool, skip int) (string, error)
 	EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error)
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
 
-	CreateGroup(ctx context.Context, groupID string) error
-	AddAddressToGroup(ctx context.Context, groupID string, addresses ...string) error
-	RemoveAddressFromGroup(ctx context.Context, groupID string, addresses ...string) error
-	GetGroupNotifications(ctx context.Context, groupID string) (<-chan []Utxo, error)
+	WatchAddress(ctx context.Context, addresses ...string) error
+	UnwatchAddress(ctx context.Context, addresses ...string) error
+	GetAddressNotifications(ctx context.Context) (<-chan []Utxo, error)
 
 	Close() error
 }

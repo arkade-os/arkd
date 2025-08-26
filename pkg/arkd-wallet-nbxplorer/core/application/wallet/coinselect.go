@@ -1,6 +1,8 @@
 package wallet
 
 import (
+	"encoding/hex"
+
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/coinset"
@@ -26,7 +28,11 @@ func (u selectable) ValueAge() int64 {
 }
 
 func (u selectable) PkScript() []byte {
-	return []byte(u.utxo.Script)
+	script, err := hex.DecodeString(u.utxo.Script)
+	if err != nil {
+		return nil
+	}
+	return script
 }
 
 func (u selectable) Hash() *chainhash.Hash {

@@ -11,8 +11,6 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 )
 
-const groupID = "arkd-wallet-blockchain-scanner"
-
 type scanner struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -30,6 +28,7 @@ func NewScanner(nbxplorer ports.Nbxplorer, network string) (application.Blockcha
 		cancel:        cancel,
 		nbxplorer:     nbxplorer,
 		notifications: make([]chan map[string][]application.Utxo, 0),
+		chainParams:   application.NetworkToChainParams(network),
 	}
 
 	if err := svc.start(ctx); err != nil {
@@ -40,11 +39,7 @@ func NewScanner(nbxplorer ports.Nbxplorer, network string) (application.Blockcha
 }
 
 func (s *scanner) start(ctx context.Context) error {
-	if err := s.nbxplorer.CreateGroup(ctx, groupID); err != nil {
-		return err
-	}
-
-	groupNotifications, err := s.nbxplorer.GetGroupNotifications(ctx, groupID)
+	groupNotifications, err := s.nbxplorer.GetAddressNotifications(ctx)
 	if err != nil {
 		return err
 	}
@@ -93,7 +88,7 @@ func (s *scanner) WatchScripts(ctx context.Context, scripts []string) error {
 		return err
 	}
 
-	return s.nbxplorer.AddAddressToGroup(ctx, groupID, addresses...)
+	return s.nbxplorer.WatchAddress(ctx, addresses...)
 }
 
 func (s *scanner) UnwatchScripts(ctx context.Context, scripts []string) error {
@@ -102,7 +97,7 @@ func (s *scanner) UnwatchScripts(ctx context.Context, scripts []string) error {
 		return err
 	}
 
-	return s.nbxplorer.RemoveAddressFromGroup(ctx, groupID, addresses...)
+	return s.nbxplorer.UnwatchAddress(ctx, addresses...)
 }
 
 func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan map[string][]application.Utxo {

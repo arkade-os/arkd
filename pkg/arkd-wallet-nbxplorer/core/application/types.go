@@ -21,7 +21,7 @@ type WalletService interface {
 	Restore(ctx context.Context, seed, password string) error
 	Unlock(ctx context.Context, password string) error
 	Lock(ctx context.Context) error
-	Status(ctx context.Context) (WalletStatus, error)
+	Status(ctx context.Context) WalletStatus
 	GetPubkey(ctx context.Context) (*btcec.PublicKey, error)
 	GetNetwork(ctx context.Context) string
 	GetForfeitAddress(ctx context.Context) (string, error)

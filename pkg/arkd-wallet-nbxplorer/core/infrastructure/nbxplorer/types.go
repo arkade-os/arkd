@@ -38,28 +38,6 @@ type transactionResponse struct {
 	} `json:"metadata,omitempty"`
 }
 
-type utxoResponse struct {
-	Feature         string `json:"feature"`
-	Outpoint        string `json:"outpoint"`
-	Index           uint32 `json:"index"`
-	TransactionHash string `json:"transactionHash"`
-	ScriptPubKey    string `json:"scriptPubKey"`
-	Address         string `json:"address"`
-	Value           uint64 `json:"value"`
-	KeyPath         string `json:"keyPath,omitempty"`
-	KeyIndex        string `json:"keyIndex,omitempty"`
-	Timestamp       int64  `json:"timestamp"`
-	Confirmations   uint32 `json:"confirmations"`
-}
-
-type balanceResponse struct {
-	Unconfirmed uint64 `json:"unconfirmed"`
-	Confirmed   uint64 `json:"confirmed"`
-	Available   uint64 `json:"available"`
-	Immature    uint64 `json:"immature"`
-	Total       uint64 `json:"total"`
-}
-
 type scriptPubKeyResponse struct {
 	TrackedSource      string `json:"trackedSource,omitempty"`
 	Feature            string `json:"feature"`
@@ -89,10 +67,6 @@ type feeRateResponse struct {
 	BlockCount uint32  `json:"blockCount"`
 }
 
-type broadcastResponse struct {
-	TransactionId string `json:"transactionId"`
-}
-
 type scanProgressResponse struct {
 	Error    string `json:"error,omitempty"`
 	QueuedAt int64  `json:"queuedAt"`
@@ -118,38 +92,39 @@ type scanProgressResponse struct {
 	} `json:"progress,omitempty"`
 }
 
-// submitPackageResult represents the result of a submitpackage RPC call
+type rpcRequest struct {
+	JSONRPC string      `json:"jsonrpc"`
+	ID      interface{} `json:"id"`
+	Method  string      `json:"method"`
+	Params  []string    `json:"params"`
+}
+
 type submitPackageResult struct {
 	TxResults []submitPackageTxResult `json:"tx_results"`
 }
 
-// submitPackageTxResult represents a single transaction result from submitpackage
 type submitPackageTxResult struct {
 	TxID   string `json:"txid"`
 	Result string `json:"result"`
 }
 
-// rpcResponse represents a generic JSON-RPC response
 type rpcResponse struct {
 	Result interface{} `json:"result"`
 	Error  *rpcError   `json:"error,omitempty"`
 	ID     interface{} `json:"id,omitempty"`
 }
 
-// rpcError represents an error in a JSON-RPC response
 type rpcError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
-// Event represents a WebSocket event from NBXplorer
 type Event struct {
 	EventID int         `json:"eventId"`
 	Type    string      `json:"type"`
 	Data    interface{} `json:"data"`
 }
 
-// NewTransactionEvent represents a new transaction event
 type NewTransactionEvent struct {
 	BlockID            string `json:"blockId,omitempty"`
 	TrackedSource      string `json:"trackedSource"`
@@ -161,4 +136,40 @@ type NewTransactionEvent struct {
 		Height          *int   `json:"height,omitempty"`
 		Timestamp       int64  `json:"timestamp"`
 	} `json:"transactionData"`
+}
+
+type utxoResponse struct {
+	Feature         string `json:"feature"`
+	Outpoint        string `json:"outpoint"`
+	Index           uint32 `json:"index"`
+	TransactionHash string `json:"transactionHash"`
+	ScriptPubKey    string `json:"scriptPubKey"`
+	Address         string `json:"address"`
+	Value           uint64 `json:"value"`
+	KeyPath         string `json:"keyPath,omitempty"`
+	KeyIndex        uint32 `json:"keyIndex,omitempty"`
+	Timestamp       int64  `json:"timestamp"`
+	Confirmations   uint32 `json:"confirmations"`
+}
+
+type utxosResponse struct {
+	TrackedSource      string `json:"trackedSource"`
+	DerivationStrategy string `json:"derivationStrategy"`
+	CurrentHeight      uint32 `json:"currentHeight"`
+	Unconfirmed        struct {
+		UtxOs          []utxoResponse `json:"utxOs"`
+		SpentOutpoints []string       `json:"spentOutpoints"`
+	} `json:"unconfirmed"`
+	SpentUnconfirmed []string `json:"spentUnconfirmed"`
+	Confirmed        struct {
+		UtxOs          []utxoResponse `json:"utxOs"`
+		SpentOutpoints []string       `json:"spentOutpoints"`
+	} `json:"confirmed"`
+}
+
+type BroadcastResult struct {
+	Success        bool   `json:"success"`
+	RPCCode        *int   `json:"rpcCode,omitempty"`
+	RPCCodeMessage string `json:"rpcCodeMessage,omitempty"`
+	RPCMessage     string `json:"rpcMessage,omitempty"`
 }

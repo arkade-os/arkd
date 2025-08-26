@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -55,14 +57,17 @@ type wallet struct {
 	locker  outpointLocker
 	keyMgr  *keyManager
 	isReady chan struct{}
+
+	cacheArkSignerPublicKey *secp256k1.PublicKey
 }
 
 func New(opts WalletOptions) application.WalletService {
 	return &wallet{
 		opts,
-		newInmemoryOutpointLocker(5 * time.Minute),
+		newInmemoryOutpointLocker(10 * time.Minute),
 		nil,
 		make(chan struct{}),
+		nil,
 	}
 }
 
@@ -83,8 +88,6 @@ func (w *wallet) Create(ctx context.Context, mnemonic string, password string) e
 		return err
 	}
 
-	w.isReady <- struct{}{}
-
 	return nil
 }
 
@@ -94,34 +97,26 @@ func (w *wallet) Restore(ctx context.Context, mnemonic string, password string) 
 		return err
 	}
 
-	mainAccountScanProgress := w.Nbxplorer.ScanUtxoSet(ctx, keyMgr.getMainAccountXPub(), 1000)
-	connectorAccountScanProgress := w.Nbxplorer.ScanUtxoSet(ctx, keyMgr.getConnectorAccountXPub(), 1000)
+	mainAccountScanProgress := w.Nbxplorer.ScanUtxoSet(ctx, keyMgr.getMainAccountDerivationScheme(), 1000)
+	connectorAccountScanProgress := w.Nbxplorer.ScanUtxoSet(ctx, keyMgr.getConnectorAccountDerivationScheme(), 1000)
 
 	go func() {
 		mainAccountScanDone := false
 		connectorAccountScanDone := false
-		for {
-			if mainAccountScanDone && connectorAccountScanDone {
-				break
-			}
-
+		for !mainAccountScanDone && !connectorAccountScanDone {
 			select {
 			case <-ctx.Done():
 				return
 			case progress := <-mainAccountScanProgress:
-				fmt.Println("Main account scan progress:", progress.Progress)
 				if progress.Done {
 					mainAccountScanDone = true
 				}
 			case progress := <-connectorAccountScanProgress:
-				fmt.Println("Connector account scan progress:", progress.Progress)
 				if progress.Done {
 					connectorAccountScanDone = true
 				}
 			}
 		}
-
-		w.isReady <- struct{}{}
 	}()
 	return nil
 }
@@ -140,10 +135,18 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 		return err
 	}
 
-	w.keyMgr, err = newKeyManager(seed, w.Network == "bitcoin")
+	w.keyMgr, err = newKeyManager(seed, w.chainParams())
 	if err != nil {
 		return err
 	}
+
+	w.cacheArkSignerPublicKey, err = w.keyMgr.getArkSignerPublicKey()
+	if err != nil {
+		return err
+	}
+
+	w.isReady <- struct{}{}
+	logrus.Infof("wallet unlocked")
 
 	return nil
 }
@@ -157,18 +160,12 @@ func (w *wallet) Lock(ctx context.Context) error {
 	return nil
 }
 
-func (w *wallet) Status(ctx context.Context) (application.WalletStatus, error) {
-	isInitialized := false
-	_, err := w.Repository.GetEncryptedSeed(ctx)
-	if err == nil {
-		isInitialized = true
-	}
-
+func (w *wallet) Status(ctx context.Context) application.WalletStatus {
 	return application.WalletStatus{
-		IsInitialized: isInitialized,
+		IsInitialized: w.Repository.IsInitialized(ctx),
 		IsUnlocked:    w.keyMgr != nil,
 		IsSynced:      true,
-	}, nil
+	}
 }
 
 func (w *wallet) BroadcastTransaction(ctx context.Context, txs ...string) (string, error) {
@@ -180,7 +177,7 @@ func (w *wallet) ConnectorsAccountBalance(ctx context.Context) (uint64, uint64, 
 		return 0, 0, ErrWalletLocked
 	}
 
-	return w.Nbxplorer.GetBalance(ctx, w.keyMgr.getConnectorAccountXPub())
+	return w.getBalance(ctx, w.keyMgr.getConnectorAccountDerivationScheme())
 }
 
 func (w *wallet) MainAccountBalance(ctx context.Context) (uint64, uint64, error) {
@@ -188,7 +185,7 @@ func (w *wallet) MainAccountBalance(ctx context.Context) (uint64, uint64, error)
 		return 0, 0, ErrWalletLocked
 	}
 
-	return w.Nbxplorer.GetBalance(ctx, w.keyMgr.getMainAccountXPub())
+	return w.getBalance(ctx, w.keyMgr.getMainAccountDerivationScheme())
 }
 
 func (w *wallet) GetNetwork(ctx context.Context) string {
@@ -200,7 +197,7 @@ func (w *wallet) DeriveAddresses(ctx context.Context, num int) ([]string, error)
 		return nil, ErrWalletLocked
 	}
 
-	return w.deriveAddresses(ctx, w.keyMgr.getMainAccountXPub(), num)
+	return w.deriveAddresses(ctx, w.keyMgr.getMainAccountDerivationScheme(), num)
 }
 
 func (w *wallet) DeriveConnectorAddress(ctx context.Context) (string, error) {
@@ -208,7 +205,7 @@ func (w *wallet) DeriveConnectorAddress(ctx context.Context) (string, error) {
 		return "", ErrWalletLocked
 	}
 
-	addresses, err := w.deriveAddresses(ctx, w.keyMgr.getConnectorAccountXPub(), 1)
+	addresses, err := w.deriveAddresses(ctx, w.keyMgr.getConnectorAccountDerivationScheme(), 1)
 	if err != nil {
 		return "", err
 	}
@@ -217,11 +214,11 @@ func (w *wallet) DeriveConnectorAddress(ctx context.Context) (string, error) {
 }
 
 func (w *wallet) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) {
-	if w.keyMgr == nil {
+	if w.cacheArkSignerPublicKey == nil {
 		return nil, ErrWalletLocked
 	}
 
-	return w.keyMgr.getArkSignerPublicKey()
+	return w.cacheArkSignerPublicKey, nil
 }
 
 func (w *wallet) EstimateFees(ctx context.Context, rawTx string) (uint64, error) {
@@ -316,7 +313,7 @@ func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string
 		return nil, ErrWalletLocked
 	}
 
-	connectorAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.getConnectorAccountXPub())
+	connectorAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.getConnectorAccountDerivationScheme())
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +365,7 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 		return nil, 0, ErrWalletLocked
 	}
 
-	mainAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.getMainAccountXPub())
+	mainAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.getMainAccountDerivationScheme())
 	if err != nil {
 		return nil, 0, err
 	}
@@ -498,9 +495,15 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 			prevout := tx.TxOut[previousOutPoint.Index]
 			prevouts[previousOutPoint] = prevout
 			ptx.Inputs[inputIndex].WitnessUtxo = prevout
+		} else {
+			prevouts[previousOutPoint] = input.WitnessUtxo
 		}
 
-		prevouts[previousOutPoint] = input.WitnessUtxo
+		if !txscript.IsPayToTaproot(prevouts[previousOutPoint].PkScript) {
+			if ptx.Inputs[inputIndex].SighashType == txscript.SigHashDefault {
+				ptx.Inputs[inputIndex].SighashType = txscript.SigHashAll
+			}
+		}
 	}
 
 	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
@@ -516,38 +519,63 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 			continue
 		}
 
-		// tapscript = ark signer case
-		if len(input.TaprootLeafScript) > 0 {
-			tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
+		isTaproot := txscript.IsPayToTaproot(input.WitnessUtxo.PkScript)
 
-			privateKey, err := w.keyMgr.getArkSignerPrivateKey()
+		if isTaproot {
+			// tapscript = ark signer case
+			if len(input.TaprootLeafScript) > 0 {
+				tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
+
+				privateKey, err := w.keyMgr.getArkSignerPrivateKey()
+				if err != nil {
+					return "", err
+				}
+
+				signature, err := txscript.RawTxInTapscriptSignature(
+					ptx.UnsignedTx, txSigHashes, inputIndex,
+					input.WitnessUtxo.Value, input.WitnessUtxo.PkScript,
+					tapLeaf, input.SighashType, privateKey,
+				)
+				if err != nil {
+					return "", err
+				}
+
+				leafHash := tapLeaf.TapHash()
+
+				ptx.Inputs[inputIndex].TaprootScriptSpendSig = append(ptx.Inputs[inputIndex].TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
+					Signature:   signature,
+					XOnlyPubKey: schnorr.SerializePubKey(privateKey.PubKey()),
+					LeafHash:    leafHash[:],
+					SigHash:     input.SighashType,
+				})
+				continue
+			}
+
+			// if not tapscripts, key-path = connector
+			if len(input.TaprootKeySpendSig) > 0 {
+				continue // skip if already signed
+			}
+
+			privateKey, err := w.getScriptPubKeyPrivateKey(ctx, hex.EncodeToString(input.WitnessUtxo.PkScript))
 			if err != nil {
 				return "", err
 			}
 
-			sighashType := txscript.SigHashDefault
-			if ptx.Inputs[inputIndex].SighashType != txscript.SigHashDefault {
-				sighashType = ptx.Inputs[inputIndex].SighashType
+			if privateKey == nil {
+				return "", fmt.Errorf("private key not found for input %d", inputIndex)
 			}
 
-			signature, err := txscript.RawTxInTapscriptSignature(
+			signature, err := txscript.RawTxInTaprootSignature(
 				ptx.UnsignedTx, txSigHashes, inputIndex,
 				input.WitnessUtxo.Value, input.WitnessUtxo.PkScript,
-				tapLeaf, sighashType, privateKey,
+				input.TaprootMerkleRoot, input.SighashType,
+				privateKey,
 			)
 			if err != nil {
 				return "", err
 			}
 
-			leafHash := tapLeaf.TapHash()
-
-			ptx.Inputs[inputIndex].TaprootScriptSpendSig = append(ptx.Inputs[inputIndex].TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
-				Signature:   signature,
-				XOnlyPubKey: schnorr.SerializePubKey(privateKey.PubKey()),
-				LeafHash:    leafHash[:],
-				SigHash:     sighashType,
-			})
-			continue
+			ptx.Inputs[inputIndex].TaprootKeySpendSig = signature
 		}
 
 		// P2WPKH case (either connector or main account)
@@ -563,16 +591,11 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 			continue
 		}
 
-		sighashType := txscript.SigHashAll
-		if ptx.Inputs[inputIndex].SighashType != txscript.SigHashAll {
-			sighashType = ptx.Inputs[inputIndex].SighashType
-		}
-
 		signature, err := txscript.RawTxInWitnessSignature(
 			ptx.UnsignedTx, txSigHashes, inputIndex,
 			input.WitnessUtxo.Value,
 			input.WitnessUtxo.PkScript,
-			sighashType,
+			input.SighashType,
 			privateKey,
 		)
 		if err != nil {
@@ -586,17 +609,58 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 	}
 
 	if extractRawTx {
-		if err := psbt.MaybeFinalizeAll(ptx); err != nil {
-			return "", err
+		for i, in := range ptx.Inputs {
+			isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
+			if isTaproot && len(in.TaprootLeafScript) > 0 {
+				closure, err := script.DecodeClosure(in.TaprootLeafScript[0].Script)
+				if err != nil {
+					return "", err
+				}
+
+				conditionWitness, err := txutils.GetConditionWitness(in)
+				if err != nil {
+					return "", err
+				}
+
+				args := make(map[string][]byte)
+				if len(conditionWitness) > 0 {
+					var conditionWitnessBytes bytes.Buffer
+					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
+						return "", err
+					}
+					args[string(txutils.CONDITION_WITNESS_KEY_PREFIX)] = conditionWitnessBytes.Bytes()
+				}
+
+				for _, sig := range in.TaprootScriptSpendSig {
+					args[hex.EncodeToString(sig.XOnlyPubKey)] = sig.Signature
+				}
+
+				witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)
+				if err != nil {
+					return "", err
+				}
+
+				var witnessBuf bytes.Buffer
+				if err := psbt.WriteTxWitness(&witnessBuf, witness); err != nil {
+					return "", err
+				}
+
+				ptx.Inputs[i].FinalScriptWitness = witnessBuf.Bytes()
+				continue
+			}
+
+			if err := psbt.Finalize(ptx, i); err != nil {
+				return "", fmt.Errorf("failed to finalize input %d: %w", i, err)
+			}
 		}
 
-		rawTx, err := psbt.Extract(ptx)
+		extracted, err := psbt.Extract(ptx)
 		if err != nil {
 			return "", err
 		}
 
 		var buf bytes.Buffer
-		if err := rawTx.Serialize(&buf); err != nil {
+		if err := extracted.Serialize(&buf); err != nil {
 			return "", err
 		}
 
@@ -682,7 +746,7 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 
 	dustAmount := w.GetDustAmount(ctx)
 	if changeAmount >= dustAmount {
-		changeAddress, err := w.Nbxplorer.GetNewUnusedAddress(ctx, w.keyMgr.getMainAccountXPub(), true, 0)
+		changeAddress, err := w.Nbxplorer.GetNewUnusedAddress(ctx, w.keyMgr.getMainAccountDerivationScheme(), true, 0)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate change address: %w", err)
 		}
@@ -732,6 +796,10 @@ func (w *wallet) Close() {
 }
 
 func (w *wallet) init(ctx context.Context, mnemonic string, password string) (keyMgr *keyManager, err error) {
+	if w.Repository.IsInitialized(ctx) {
+		return nil, fmt.Errorf("wallet already initialized")
+	}
+
 	seedBytes, err := bip39.MnemonicToByteArray(mnemonic)
 	if err != nil {
 		return nil, err
@@ -745,13 +813,18 @@ func (w *wallet) init(ctx context.Context, mnemonic string, password string) (ke
 		return nil, err
 	}
 
-	keyMgr, err = newKeyManager(seedBytes, w.Network == "bitcoin")
+	keyMgr, err = newKeyManager(seedBytes, w.chainParams())
 	if err != nil {
 		return nil, err
 	}
 
-	mainAccountXPub := keyMgr.getMainAccountXPub()
-	connectorAccountXPub := keyMgr.getConnectorAccountXPub()
+	mainAccountXPub := keyMgr.getMainAccountDerivationScheme()
+	connectorAccountXPub := keyMgr.getConnectorAccountDerivationScheme()
+
+	w.cacheArkSignerPublicKey, err = keyMgr.getArkSignerPublicKey()
+	if err != nil {
+		return nil, err
+	}
 
 	if err := w.Nbxplorer.Track(ctx, mainAccountXPub); err != nil {
 		return nil, err
@@ -804,8 +877,8 @@ func (w *wallet) getScriptPubKeyPrivateKey(ctx context.Context, scriptPubKey str
 	}
 
 	xpubs := []string{
-		w.keyMgr.getMainAccountXPub(),
-		w.keyMgr.getConnectorAccountXPub(),
+		w.keyMgr.getMainAccountDerivationScheme(),
+		w.keyMgr.getConnectorAccountDerivationScheme(),
 	}
 
 	for _, xpub := range xpubs {
@@ -818,4 +891,25 @@ func (w *wallet) getScriptPubKeyPrivateKey(ctx context.Context, scriptPubKey str
 	}
 
 	return nil, nil
+}
+
+func (w *wallet) getBalance(ctx context.Context, derivationScheme string) (uint64, uint64, error) {
+	utxos, err := w.Nbxplorer.GetUtxos(ctx, derivationScheme)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	confirmed := uint64(0)
+	unconfirmed := uint64(0)
+
+	for _, u := range utxos {
+		if u.Confirmations == 0 {
+			unconfirmed += u.Value
+			continue
+		}
+
+		confirmed += u.Value
+	}
+
+	return confirmed, unconfirmed, nil
 }

@@ -2,6 +2,7 @@ package nbxplorer
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/gorilla/websocket"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -32,6 +34,9 @@ type nbxplorer struct {
 	wsConn   *websocket.Conn
 	wsMutex  sync.RWMutex
 	wsDialer websocket.Dialer
+
+	// inmemory groupID
+	groupID string
 }
 
 // New creates a new NBXplorer service client with the specified base URL.
@@ -72,20 +77,12 @@ func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, bo
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	if len(bodyBytes) == 0 {
-		return nil, fmt.Errorf("empty response body")
-	}
-
 	return bodyBytes, nil
 }
 
-// validateDerivationScheme validates the derivation scheme format
 func (n *nbxplorer) validateDerivationScheme(derivationScheme string) error {
 	if derivationScheme == "" {
 		return fmt.Errorf("derivation scheme cannot be empty")
-	}
-	if len(derivationScheme) < 10 { // Basic length check for xpub
-		return fmt.Errorf("derivation scheme appears to be too short")
 	}
 	return nil
 }
@@ -243,33 +240,12 @@ func (n *nbxplorer) Track(ctx context.Context, derivationScheme string) error {
 	// Use default crypto code
 	cryptoCode := defaultCryptoCode
 	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s", cryptoCode, url.PathEscape(derivationScheme))
+	logrus.Debugf("Tracking derivation scheme: %s", endpoint)
 	_, err := n.makeRequest(ctx, "POST", endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to track derivation scheme: %w", err)
 	}
 	return nil
-}
-
-// GetBalance retrieves balance from /v1/cryptos/{cryptoCode}/derivations/{scheme}/balance endpoint.
-func (n *nbxplorer) GetBalance(ctx context.Context, derivationScheme string) (confirmed, unconfirmed uint64, err error) {
-	if err := n.validateDerivationScheme(derivationScheme); err != nil {
-		return 0, 0, fmt.Errorf("invalid derivation scheme: %w", err)
-	}
-
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/balance", cryptoCode, url.PathEscape(derivationScheme))
-	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get balance: %w", err)
-	}
-
-	var resp balanceResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return 0, 0, fmt.Errorf("failed to unmarshal balance: %w", err)
-	}
-
-	return resp.Confirmed, resp.Unconfirmed, nil
 }
 
 // GetUtxos retrieves UTXOs from /v1/cryptos/{cryptoCode}/derivations/{scheme}/utxos endpoint.
@@ -278,7 +254,6 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 		return nil, fmt.Errorf("invalid derivation scheme: %w", err)
 	}
 
-	// Use default crypto code
 	cryptoCode := defaultCryptoCode
 	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/utxos", cryptoCode, url.PathEscape(derivationScheme))
 	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
@@ -286,22 +261,18 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 		return nil, fmt.Errorf("failed to get utxos: %w", err)
 	}
 
-	// The API returns UTXOChanges with spentUTXOs and receivedUTXOs
-	var utxoChanges struct {
-		SpentUTXOs    []utxoResponse `json:"spentUTXOs"`
-		ReceivedUTXOs []utxoResponse `json:"receivedUTXOs"`
-	}
-	if err := json.Unmarshal(data, &utxoChanges); err != nil {
+	var resp utxosResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal utxos: %w", err)
 	}
 
-	// Combine both spent and received UTXOs, but only return unspent ones (received - spent)
-	// For simplicity, we'll return received UTXOs as they represent current unspent outputs
-	utxos := make([]ports.Utxo, 0, len(utxoChanges.ReceivedUTXOs))
-	for _, u := range utxoChanges.ReceivedUTXOs {
+	utxos := make([]ports.Utxo, 0, len(resp.Confirmed.UtxOs)+len(resp.Unconfirmed.UtxOs))
+
+	// Add confirmed UTXOs
+	for _, u := range resp.Confirmed.UtxOs {
 		txHash, err := chainhash.NewHashFromStr(u.TransactionHash)
 		if err != nil {
-			// Log error but continue processing other UTXOs
+			logrus.Warnf("failed to parse transaction hash: %s", err)
 			continue
 		}
 
@@ -314,6 +285,25 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 			Script:        u.ScriptPubKey,
 			Address:       u.Address,
 			Confirmations: u.Confirmations,
+		})
+	}
+
+	for _, u := range resp.Unconfirmed.UtxOs {
+		txHash, err := chainhash.NewHashFromStr(u.TransactionHash)
+		if err != nil {
+			logrus.Warnf("failed to parse transaction hash: %s", err)
+			continue
+		}
+
+		utxos = append(utxos, ports.Utxo{
+			OutPoint: wire.OutPoint{
+				Hash:  *txHash,
+				Index: u.Index,
+			},
+			Value:         u.Value,
+			Script:        u.ScriptPubKey,
+			Address:       u.Address,
+			Confirmations: 0, // unconfirmed utxos always have 0 confirmations
 		})
 	}
 
@@ -394,11 +384,8 @@ func (n *nbxplorer) GetNewUnusedAddress(ctx context.Context, derivationScheme st
 
 // EstimateFeeRate retrieves fee rate from /v1/cryptos/{cryptoCode}/fees/{blockCount} endpoint.
 func (n *nbxplorer) EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-	// Use 2 blocks as default for fee estimation
-	blockCount := 2
-	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/fees/%d", cryptoCode, blockCount), nil)
+	blockCount := 1
+	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/fees/%d", defaultCryptoCode, blockCount), nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to estimate fee rate: %w", err)
 	}
@@ -415,14 +402,6 @@ func (n *nbxplorer) EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte,
 	// Convert sat/vB to sat/kvB
 	satPerKvB := chainfee.SatPerKVByte(resp.FeeRate * 1000)
 	return satPerKvB, nil
-}
-
-// RPC request and response types for Bitcoin Core RPC calls
-type rpcRequest struct {
-	JSONRPC string        `json:"jsonrpc"`
-	ID      interface{}   `json:"id"`
-	Method  string        `json:"method"`
-	Params  []interface{} `json:"params"`
 }
 
 // BroadcastTransaction broadcasts transaction(s) via different methods based on count:
@@ -449,31 +428,56 @@ func (n *nbxplorer) broadcastSingleTransaction(ctx context.Context, txHex string
 		return "", fmt.Errorf("transaction hex cannot be empty")
 	}
 
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-
-	// Create request body according to API spec
-	reqBody := map[string]string{"hex": txHex}
-	jsonBody, err := json.Marshal(reqBody)
+	req, err := http.NewRequestWithContext(ctx, "POST", n.url+fmt.Sprintf("/v1/cryptos/%s/transactions", defaultCryptoCode), hex.NewDecoder(strings.NewReader(txHex)))
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request body: %w", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/v1/cryptos/%s/transactions", cryptoCode), strings.NewReader(string(jsonBody)))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := n.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
+		return "", fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var resp broadcastResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return "", fmt.Errorf("failed to unmarshal broadcast response: %w", err)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	if resp.TransactionId == "" {
-		return "", fmt.Errorf("received empty transaction ID from API")
+	var broadcastResult BroadcastResult
+	if err := json.Unmarshal(bodyBytes, &broadcastResult); err != nil {
+		return "", fmt.Errorf("failed to unmarshal broadcast result: %w", err)
 	}
 
-	return resp.TransactionId, nil
+	if !broadcastResult.Success {
+		// Construct error message from RPC details
+		errorMsg := "broadcast failed"
+		if broadcastResult.RPCMessage != "" {
+			errorMsg = broadcastResult.RPCMessage
+		}
+		if broadcastResult.RPCCodeMessage != "" {
+			errorMsg = fmt.Sprintf("%s (code: %s)", errorMsg, broadcastResult.RPCCodeMessage)
+		}
+		if broadcastResult.RPCCode != nil {
+			errorMsg = fmt.Sprintf("%s (RPC code: %d)", errorMsg, *broadcastResult.RPCCode)
+		}
+		return "", fmt.Errorf("%s", errorMsg)
+	}
+
+	// if success, parse the transaction to return the txid
+	var tx wire.MsgTx
+	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txHex))); err != nil {
+		return "", fmt.Errorf("failed to deserialize transaction: %w", err)
+	}
+	return tx.TxHash().String(), nil
 }
 
 // broadcastPackageTransactions broadcasts a package of 2 transactions using Bitcoin Core submitpackage RPC
@@ -482,22 +486,18 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 		return "", fmt.Errorf("expected exactly 2 transactions, got %d", len(txs))
 	}
 
-	// Validate transaction hexes
 	for i, txHex := range txs {
 		if txHex == "" {
 			return "", fmt.Errorf("transaction hex at index %d cannot be empty", i)
 		}
 	}
 
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-
-	// Create RPC request for submitpackage
+	// bitcoin core RPC request for submitpackage
 	rpcReq := rpcRequest{
 		JSONRPC: "1.0",
 		ID:      1,
 		Method:  "submitpackage",
-		Params:  []interface{}{txs},
+		Params:  txs,
 	}
 
 	jsonBody, err := json.Marshal(rpcReq)
@@ -505,8 +505,7 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 		return "", fmt.Errorf("failed to marshal RPC request: %w", err)
 	}
 
-	// Make RPC call via NBXplorer proxy
-	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/cryptos/%s/node/rpc", cryptoCode), strings.NewReader(string(jsonBody)))
+	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("v1/cryptos/%s/rpc", defaultCryptoCode), strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return "", fmt.Errorf("failed to call submitpackage RPC: %w", err)
 	}
@@ -548,24 +547,31 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 	return "", fmt.Errorf("no valid transaction ID found in submitpackage result")
 }
 
-// CreateGroup creates address group via /v1/groups/{groupID} endpoint.
-func (n *nbxplorer) CreateGroup(ctx context.Context, groupID string) error {
-	if groupID == "" {
-		return fmt.Errorf("group ID cannot be empty")
-	}
-
-	endpoint := fmt.Sprintf("/v1/groups/%s", url.PathEscape(groupID))
-	_, err := n.makeRequest(ctx, "POST", endpoint, nil)
+// createEmptyGroup creates address group via /v1/groups endpoint.
+func (n *nbxplorer) createEmptyGroup(ctx context.Context) error {
+	resp, err := n.makeRequest(ctx, "POST", "/v1/groups", nil)
 	if err != nil {
 		return fmt.Errorf("failed to create group: %w", err)
 	}
+
+	// Parse response to get the groupID
+	var groupResponse struct {
+		GroupID string `json:"groupId"`
+	}
+	if err := json.Unmarshal(resp, &groupResponse); err != nil {
+		return fmt.Errorf("failed to decode group response: %w", err)
+	}
+
+	n.groupID = groupResponse.GroupID
 	return nil
 }
 
-// AddAddressToGroup adds addresses to group via /v1/cryptos/{cryptoCode}/groups/{groupID}/addresses endpoint.
-func (n *nbxplorer) AddAddressToGroup(ctx context.Context, groupID string, addresses ...string) error {
-	if groupID == "" {
-		return fmt.Errorf("group ID cannot be empty")
+// WatchAddress adds addresses to group via /v1/cryptos/{cryptoCode}/groups/{groupID}/addresses endpoint.
+func (n *nbxplorer) WatchAddress(ctx context.Context, addresses ...string) error {
+	if len(n.groupID) == 0 {
+		if err := n.createEmptyGroup(ctx); err != nil {
+			return fmt.Errorf("failed to create empty group: %w", err)
+		}
 	}
 
 	if len(addresses) == 0 {
@@ -588,7 +594,7 @@ func (n *nbxplorer) AddAddressToGroup(ctx context.Context, groupID string, addre
 		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/addresses", cryptoCode, url.PathEscape(groupID))
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/addresses", cryptoCode, url.PathEscape(n.groupID))
 	_, err = n.makeRequest(ctx, "POST", endpoint, strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return fmt.Errorf("failed to add addresses to group: %w", err)
@@ -596,10 +602,10 @@ func (n *nbxplorer) AddAddressToGroup(ctx context.Context, groupID string, addre
 	return nil
 }
 
-// RemoveAddressFromGroup removes addresses from group via DELETE /v1/groups/{groupID}/children/delete endpoint.
-func (n *nbxplorer) RemoveAddressFromGroup(ctx context.Context, groupID string, addresses ...string) error {
-	if groupID == "" {
-		return fmt.Errorf("group ID cannot be empty")
+// UnwatchAddress removes addresses from group via DELETE /v1/groups/{groupID}/children/delete endpoint.
+func (n *nbxplorer) UnwatchAddress(ctx context.Context, addresses ...string) error {
+	if len(n.groupID) == 0 {
+		return fmt.Errorf("group ID is not set")
 	}
 
 	if len(addresses) == 0 {
@@ -627,7 +633,7 @@ func (n *nbxplorer) RemoveAddressFromGroup(ctx context.Context, groupID string, 
 		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("/v1/groups/%s/children/delete", url.PathEscape(groupID))
+	endpoint := fmt.Sprintf("/v1/groups/%s/children/delete", url.PathEscape(n.groupID))
 	_, err = n.makeRequest(ctx, "POST", endpoint, strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return fmt.Errorf("failed to remove addresses from group: %w", err)
@@ -662,9 +668,11 @@ func (n *nbxplorer) connectWebSocket(ctx context.Context) error {
 
 // GetGroupNotifications monitors group UTXOs using WebSocket events and triggers UTXO rescanning
 // only when receiving "newtransaction" events. Returns only UTXOs from the specific new transaction.
-func (n *nbxplorer) GetGroupNotifications(ctx context.Context, groupID string) (<-chan []ports.Utxo, error) {
-	if groupID == "" {
-		return nil, fmt.Errorf("group ID cannot be empty")
+func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports.Utxo, error) {
+	if len(n.groupID) == 0 {
+		if err := n.createEmptyGroup(ctx); err != nil {
+			return nil, fmt.Errorf("failed to create empty group: %w", err)
+		}
 	}
 
 	notificationsChan := make(chan []ports.Utxo, 10) // Buffered channel to prevent blocking
@@ -716,7 +724,7 @@ func (n *nbxplorer) GetGroupNotifications(ctx context.Context, groupID string) (
 					if eventDataBytes, err := json.Marshal(event.Data); err == nil {
 						if err := json.Unmarshal(eventDataBytes, &newTxEvent); err == nil {
 							// Trigger UTXO rescanning for the group, filtering by the new transaction hash
-							newUtxos, err := n.searchNewUTXOs(ctx, groupID, newTxEvent.TransactionData.TransactionHash)
+							newUtxos, err := n.searchNewUTXOs(ctx, newTxEvent.TransactionData.TransactionHash)
 							if err != nil {
 								continue
 							}
@@ -739,31 +747,54 @@ func (n *nbxplorer) GetGroupNotifications(ctx context.Context, groupID string) (
 }
 
 // searchNewUTXOs rescans UTXOs for a specific group and returns only UTXOs from the specified transaction hash
-func (n *nbxplorer) searchNewUTXOs(ctx context.Context, groupID string, txHash string) ([]ports.Utxo, error) {
+func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.Utxo, error) {
 	if txHash == "" {
 		return nil, fmt.Errorf("transaction hash is required")
 	}
 
 	cryptoCode := defaultCryptoCode
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/utxos", cryptoCode, url.PathEscape(groupID))
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/utxos", cryptoCode, url.PathEscape(n.groupID))
 
 	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get group UTXOs: %w", err)
 	}
 
-	// Parse UTXOChanges response
-	var utxoChanges struct {
-		SpentUTXOs    []utxoResponse `json:"spentUTXOs"`
-		ReceivedUTXOs []utxoResponse `json:"receivedUTXOs"`
-	}
-	if err := json.Unmarshal(data, &utxoChanges); err != nil {
+	// Parse the NBXplorer API response structure
+	var resp utxosResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal UTXO changes: %w", err)
 	}
 
 	// Convert UTXOs to ports.Utxo format, filtering by transaction hash
 	utxos := make([]ports.Utxo, 0)
-	for _, u := range utxoChanges.ReceivedUTXOs {
+
+	// Check confirmed UTXOs
+	for _, u := range resp.Confirmed.UtxOs {
+		// Only include UTXOs from the specified transaction
+		if u.TransactionHash != txHash {
+			continue
+		}
+
+		hash, err := chainhash.NewHashFromStr(u.TransactionHash)
+		if err != nil {
+			continue
+		}
+
+		utxos = append(utxos, ports.Utxo{
+			OutPoint: wire.OutPoint{
+				Hash:  *hash,
+				Index: u.Index,
+			},
+			Value:         u.Value,
+			Script:        u.ScriptPubKey,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+		})
+	}
+
+	// Check unconfirmed UTXOs
+	for _, u := range resp.Unconfirmed.UtxOs {
 		// Only include UTXOs from the specified transaction
 		if u.TransactionHash != txHash {
 			continue
@@ -797,5 +828,14 @@ func (n *nbxplorer) Close() error {
 	if n.wsConn != nil {
 		return n.wsConn.Close()
 	}
+
+	// delete the groupID
+	if len(n.groupID) > 0 {
+		_, err := n.makeRequest(context.Background(), "DELETE", fmt.Sprintf("/v1/groups/%s", url.PathEscape(n.groupID)), nil)
+		if err != nil {
+			return fmt.Errorf("failed to delete group: %w", err)
+		}
+	}
+
 	return nil
 }
