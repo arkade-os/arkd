@@ -19,11 +19,11 @@ import (
 )
 
 var (
-	Port          = "PORT"
-	Datadir       = "DATADIR"
-	LogLevel      = "LOG_LEVEL"
-	Network       = "NETWORK"
-	NBXPLORER_URL = "NBXPLORER_URL"
+	Port         = "PORT"
+	Datadir      = "DATADIR"
+	LogLevel     = "LOG_LEVEL"
+	Network      = "NETWORK"
+	NbxplorerURL = "NBXPLORER_URL"
 
 	defaultPort     = 6060
 	defaultLogLevel = int(log.InfoLevel)
