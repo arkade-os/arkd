@@ -280,7 +280,17 @@ func (w *wallet) EstimateFees(ctx context.Context, rawTx string) (uint64, error)
 }
 
 func (w *wallet) FeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
-	return w.Nbxplorer.EstimateFeeRate(ctx)
+	rate, err := w.Nbxplorer.EstimateFeeRate(ctx)
+	if err != nil {
+		if w.Network == "regtest" {
+			// in regtest, somtimes the fee estimation fails because there is not enough transactions
+			// fallback to minrelayfee
+			return chainfee.AbsoluteFeePerKwFloor.FeePerKVByte(), nil
+		}
+		return 0, err
+	}
+
+	return rate, nil
 }
 
 func (w *wallet) GetForfeitAddress(ctx context.Context) (string, error) {
