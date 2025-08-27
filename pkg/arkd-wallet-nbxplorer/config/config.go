@@ -59,7 +59,7 @@ func LoadConfig() (*Config, error) {
 		DbDir:        dbPath,
 		LogLevel:     viper.GetInt(LogLevel),
 		Network:      net,
-		NbxplorerURL: viper.GetString(NBXPLORER_URL),
+		NbxplorerURL: viper.GetString(NbxplorerURL),
 	}
 
 	return cfg, nil
