@@ -118,7 +118,10 @@ func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan map[string]
 func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isConfirmed bool, blockHeight int64, blockTime int64, err error) {
 	details, err := s.nbxplorer.GetTransaction(ctx, txid)
 	if err != nil {
-		return false, 0, 0, err
+		return false, -1, -1, err
+	}
+	if details == nil {
+		return false, -1, -1, fmt.Errorf("transaction not found")
 	}
 
 	return details.Confirmations > 0, int64(details.Height), details.Timestamp, nil
