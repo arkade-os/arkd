@@ -71,6 +71,9 @@ type Config struct {
 	LogLevel     int
 	Network      arklib.Network
 	NbxplorerURL string
+
+	WalletSvc  application.WalletService
+	ScannerSvc application.BlockchainScanner
 }
 
 func (c *Config) String() string {
@@ -83,10 +86,10 @@ func (c *Config) String() string {
 	return string(json)
 }
 
-func (c *Config) Services() (application.WalletService, application.BlockchainScanner, error) {
+func (c *Config) InitServices() error {
 	repository, err := db.NewSeedRepository(c.DbDir, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error while creating seed repository: %s", err)
+		return fmt.Errorf("error while creating seed repository: %s", err)
 	}
 
 	cryptoSvc := crypto.New()
@@ -95,7 +98,7 @@ func (c *Config) Services() (application.WalletService, application.BlockchainSc
 
 	network, err := getNetwork()
 	if err != nil {
-		return nil, nil, fmt.Errorf("error while getting network: %s", err)
+		return fmt.Errorf("error while getting network: %s", err)
 	}
 
 	walletSvc := wallet.New(wallet.WalletOptions{
@@ -107,10 +110,12 @@ func (c *Config) Services() (application.WalletService, application.BlockchainSc
 
 	scannerSvc, err := scanner.New(nbxplorerSvc, network.Name)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error while creating scanner: %w", err)
+		return fmt.Errorf("error while creating scanner: %w", err)
 	}
 
-	return walletSvc, scannerSvc, nil
+	c.WalletSvc = walletSvc
+	c.ScannerSvc = scannerSvc
+	return nil
 }
 
 func initDatadir() error {

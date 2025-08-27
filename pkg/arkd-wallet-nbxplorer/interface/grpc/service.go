@@ -40,16 +40,15 @@ func (s *service) Start() error {
 		interceptors.StreamInterceptor(),
 	)
 
-	walletSvc, scannerSvc, err := s.cfg.Services()
-	if err != nil {
+	if err := s.cfg.InitServices(); err != nil {
 		return fmt.Errorf("error while creating application services: %w", err)
 	}
 
 	s.closeFn = func() {
-		walletSvc.Close()
+		s.cfg.WalletSvc.Close()
 	}
 
-	walletHandler := handlers.NewWalletServiceHandler(walletSvc, scannerSvc)
+	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc, s.cfg.ScannerSvc)
 	arkwalletv1.RegisterWalletServiceServer(grpcSrv, walletHandler)
 
 	healthHandler := handlers.NewHealthHandler()
