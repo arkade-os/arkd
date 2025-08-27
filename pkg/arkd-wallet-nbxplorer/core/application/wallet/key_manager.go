@@ -97,15 +97,6 @@ func (k *keyManager) getForfeitPublicKey() (*btcec.PublicKey, error) {
 	return key.ECPubKey()
 }
 
-func (k *keyManager) getArkSignerPublicKey() (*btcec.PublicKey, error) {
-	ecPrivKey, err := k.arkSignerAccount.ECPrivKey()
-	if err != nil {
-		return nil, err
-	}
-
-	return ecPrivKey.PubKey(), nil
-}
-
 func (k *keyManager) getArkSignerPrivateKey() (*btcec.PrivateKey, error) {
 	key, err := k.arkSignerAccount.Derive(0)
 	if err != nil {
@@ -117,6 +108,15 @@ func (k *keyManager) getArkSignerPrivateKey() (*btcec.PrivateKey, error) {
 	}
 
 	return key.ECPrivKey()
+}
+
+func (k *keyManager) getArkSignerPublicKey() (*btcec.PublicKey, error) {
+	ecPrivKey, err := k.getArkSignerPrivateKey()
+	if err != nil {
+		return nil, err
+	}
+
+	return ecPrivKey.PubKey(), nil
 }
 
 func (k *keyManager) getPrivateKey(derivationScheme string, keyPath string) (*btcec.PrivateKey, error) {
