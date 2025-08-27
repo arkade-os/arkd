@@ -84,7 +84,7 @@ func (c *Config) String() string {
 }
 
 func (c *Config) Services() (application.WalletService, application.BlockchainScanner, error) {
-	repository, err := db.NewSeedRepository(c.DbDir, log.New())
+	repository, err := db.NewSeedRepository(c.DbDir, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error while creating seed repository: %s", err)
 	}
