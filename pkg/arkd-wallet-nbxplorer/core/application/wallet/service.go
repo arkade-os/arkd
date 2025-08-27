@@ -25,7 +25,6 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -58,7 +57,7 @@ type wallet struct {
 	keyMgr  *keyManager
 	isReady chan struct{}
 
-	signerPubKey *secp256k1.PublicKey
+	signerPubKey *btcec.PublicKey
 }
 
 // New creates a new WalletService service
@@ -851,7 +850,7 @@ func (w *wallet) estimateWithdrawFee(feeRate chainfee.SatPerKVByte, numInputs, n
 	return uint64(math.Ceil(fee.ToUnit(btcutil.AmountSatoshi)))
 }
 
-func (w *wallet) getPrivateKeyFromScript(ctx context.Context, scriptPubKey string) (*secp256k1.PrivateKey, error) {
+func (w *wallet) getPrivateKeyFromScript(ctx context.Context, scriptPubKey string) (*btcec.PrivateKey, error) {
 	if w.keyMgr == nil {
 		return nil, ErrWalletLocked
 	}
