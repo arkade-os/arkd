@@ -121,7 +121,7 @@ func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isCo
 		return false, -1, -1, err
 	}
 	if details == nil {
-		return false, -1, -1, fmt.Errorf("transaction not found")
+		return false, -1, -1, nil
 	}
 
 	return details.Confirmations > 0, int64(details.Height), details.Timestamp, nil
