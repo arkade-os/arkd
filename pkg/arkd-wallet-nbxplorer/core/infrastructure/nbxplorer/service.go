@@ -73,9 +73,10 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (ports.BitcoinStatus, 
 	// use getblockchaininfo to get the tip timestamp
 	rpcReq := rpcRequest{
 		JSONRPC: "1.0",
-		ID:      rand.Intn(10_0000),
-		Method:  "getblockchaininfo",
-		Params:  []any{},
+		// #nosec G404
+		ID:     rand.Intn(10_0000),
+		Method: "getblockchaininfo",
+		Params: []any{},
 	}
 
 	jsonBody, err := json.Marshal(rpcReq)
