@@ -20,7 +20,8 @@ type scanner struct {
 	notifications []chan map[string][]application.Utxo
 }
 
-func NewScanner(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScanner, error) {
+// New creates a new BlockchainScanner service
+func New(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScanner, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	svc := &scanner{

@@ -345,6 +345,7 @@ message ListConnectorUtxosResponse {
 
 message MainAccountBalanceRequest {}
 message MainAccountBalanceResponse {
+  // TODO rename to available and locked
   uint64 confirmed = 1;
   uint64 unconfirmed = 2;
 }

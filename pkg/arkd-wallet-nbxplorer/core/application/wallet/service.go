@@ -61,10 +61,11 @@ type wallet struct {
 	cacheArkSignerPublicKey *secp256k1.PublicKey
 }
 
+// New creates a new WalletService service
 func New(opts WalletOptions) application.WalletService {
 	return &wallet{
 		opts,
-		newInmemoryOutpointLocker(10 * time.Minute),
+		newInmemoryOutpointLocker(time.Minute),
 		nil,
 		make(chan struct{}),
 		nil,
@@ -100,24 +101,22 @@ func (w *wallet) Restore(ctx context.Context, mnemonic string, password string) 
 	mainAccountScanProgress := w.Nbxplorer.ScanUtxoSet(ctx, keyMgr.getMainAccountDerivationScheme(), 1000)
 	connectorAccountScanProgress := w.Nbxplorer.ScanUtxoSet(ctx, keyMgr.getConnectorAccountDerivationScheme(), 1000)
 
-	go func() {
-		mainAccountScanDone := false
-		connectorAccountScanDone := false
-		for !mainAccountScanDone && !connectorAccountScanDone {
-			select {
-			case <-ctx.Done():
-				return
-			case progress := <-mainAccountScanProgress:
-				if progress.Done {
-					mainAccountScanDone = true
-				}
-			case progress := <-connectorAccountScanProgress:
-				if progress.Done {
-					connectorAccountScanDone = true
-				}
+	mainAccountScanDone := false
+	connectorAccountScanDone := false
+	for !mainAccountScanDone && !connectorAccountScanDone {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case progress := <-mainAccountScanProgress:
+			if progress.Done {
+				mainAccountScanDone = true
+			}
+		case progress := <-connectorAccountScanProgress:
+			if progress.Done {
+				connectorAccountScanDone = true
 			}
 		}
-	}()
+	}
 	return nil
 }
 
@@ -412,12 +411,10 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 		totalValue += value
 	}
 
-	go func() {
-		if err := w.locker.Lock(ctx, toLock...); err != nil {
-			logrus.Error("failed to lock utxos", err)
-			return
-		}
-	}()
+	if err := w.locker.Lock(ctx, toLock...); err != nil {
+		logrus.Error("failed to lock utxos", err)
+		// ignore error
+	}
 
 	change := totalValue - amount
 
@@ -899,17 +896,21 @@ func (w *wallet) getBalance(ctx context.Context, derivationScheme string) (uint6
 		return 0, 0, err
 	}
 
-	confirmed := uint64(0)
-	unconfirmed := uint64(0)
-
-	for _, u := range utxos {
-		if u.Confirmations == 0 {
-			unconfirmed += u.Value
-			continue
-		}
-
-		confirmed += u.Value
+	lockedOutpoints, err := w.locker.Get(ctx)
+	if err != nil {
+		return 0, 0, err
 	}
 
-	return confirmed, unconfirmed, nil
+	available := uint64(0)
+	locked := uint64(0)
+
+	for _, u := range utxos {
+		if _, isLocked := lockedOutpoints[u.OutPoint]; isLocked {
+			locked += u.Value
+		} else {
+			available += u.Value
+		}
+	}
+
+	return available, locked, nil
 }

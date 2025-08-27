@@ -93,19 +93,10 @@ type scanProgressResponse struct {
 }
 
 type rpcRequest struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      interface{} `json:"id"`
-	Method  string      `json:"method"`
-	Params  []string    `json:"params"`
-}
-
-type submitPackageResult struct {
-	TxResults []submitPackageTxResult `json:"tx_results"`
-}
-
-type submitPackageTxResult struct {
-	TxID   string `json:"txid"`
-	Result string `json:"result"`
+	JSONRPC string        `json:"jsonrpc"`
+	ID      interface{}   `json:"id"`
+	Method  string        `json:"method"`
+	Params  []interface{} `json:"params"`
 }
 
 type rpcResponse struct {
@@ -119,13 +110,13 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
-type Event struct {
+type event struct {
 	EventID int         `json:"eventId"`
 	Type    string      `json:"type"`
 	Data    interface{} `json:"data"`
 }
 
-type NewTransactionEvent struct {
+type newTransactionEvent struct {
 	BlockID            string `json:"blockId,omitempty"`
 	TrackedSource      string `json:"trackedSource"`
 	DerivationStrategy string `json:"derivationStrategy"`
@@ -160,16 +151,21 @@ type utxosResponse struct {
 		UtxOs          []utxoResponse `json:"utxOs"`
 		SpentOutpoints []string       `json:"spentOutpoints"`
 	} `json:"unconfirmed"`
-	SpentUnconfirmed []string `json:"spentUnconfirmed"`
+	SpentUnconfirmed []utxoResponse `json:"spentUnconfirmed"`
 	Confirmed        struct {
 		UtxOs          []utxoResponse `json:"utxOs"`
 		SpentOutpoints []string       `json:"spentOutpoints"`
 	} `json:"confirmed"`
 }
 
-type BroadcastResult struct {
+type broadcastResult struct {
 	Success        bool   `json:"success"`
 	RPCCode        *int   `json:"rpcCode,omitempty"`
 	RPCCodeMessage string `json:"rpcCodeMessage,omitempty"`
 	RPCMessage     string `json:"rpcMessage,omitempty"`
+}
+
+type trackedSource struct {
+	TrackedSource string `json:"trackedSource"`
+	CryptoCode    string `json:"cryptoCode"`
 }

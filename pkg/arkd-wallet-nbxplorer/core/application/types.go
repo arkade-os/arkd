@@ -2,16 +2,10 @@ package application
 
 import (
 	"context"
-	"errors"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
-)
-
-var (
-	// ErrNonFinalBIP68 is returned when a transaction spending a CSV-locked output is not final.
-	ErrNonFinalBIP68 = errors.New("non-final BIP68 sequence")
 )
 
 type WalletService interface {

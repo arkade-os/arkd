@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+// outpointLocker defines local utility service letting to lock outpoints for a given duration
 type outpointLocker interface {
 	Lock(ctx context.Context, outpoints ...wire.OutPoint) error
 	Get(ctx context.Context) (map[wire.OutPoint]struct{}, error)

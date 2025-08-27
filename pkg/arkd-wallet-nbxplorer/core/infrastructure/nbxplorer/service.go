@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,76 +25,42 @@ import (
 )
 
 const (
-	// Default cryptocurrency code for Bitcoin
-	defaultCryptoCode = "BTC"
+	// Default cryptocode for Bitcoin
+	btcCryptoCode = "BTC"
 )
+
+var ErrTransactionNotFound = errors.New("transaction not found")
 
 type nbxplorer struct {
 	url        string
 	httpClient *http.Client
 
-	// WebSocket connection for real-time events
+	// WebSocket connection for BlockchainScanner watch events
 	wsConn   *websocket.Conn
 	wsMutex  sync.RWMutex
 	wsDialer websocket.Dialer
 
-	// inmemory groupID
+	// inmemory groupID of the blockchain scanner
+	// all addresses watch by WatchAddress are grouped by this ID
 	groupID string
 }
 
-// New creates a new NBXplorer service client with the specified base URL.
 func New(url string) ports.Nbxplorer {
-	// Remove trailing slash if present
 	url = strings.TrimSuffix(url, "/")
 
 	return &nbxplorer{
 		url:        url,
 		httpClient: &http.Client{},
 		wsDialer:   websocket.Dialer{},
+		wsMutex:    sync.RWMutex{},
+		wsConn:     nil,
+		groupID:    "",
 	}
-}
-
-// makeRequest handles HTTP requests to the NBXplorer API with proper headers and error handling.
-func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, body io.Reader) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, method, n.url+endpoint, body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := n.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	return bodyBytes, nil
-}
-
-func (n *nbxplorer) validateDerivationScheme(derivationScheme string) error {
-	if derivationScheme == "" {
-		return fmt.Errorf("derivation scheme cannot be empty")
-	}
-	return nil
 }
 
 // GetBitcoinStatus retrieves Bitcoin network status from /v1/cryptos/{cryptoCode}/status endpoint.
 func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (ports.BitcoinStatus, error) {
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/status", cryptoCode), nil)
+	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/status", btcCryptoCode), nil)
 	if err != nil {
 		return ports.BitcoinStatus{}, fmt.Errorf("failed to get bitcoin status: %w", err)
 	}
@@ -110,7 +79,6 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (ports.BitcoinStatus, 
 
 // GetTransaction retrieves transaction details from /v1/cryptos/{cryptoCode}/transactions/{txId} endpoint.
 func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (ports.TransactionDetails, error) {
-	// Validate txid format
 	if txid == "" {
 		return ports.TransactionDetails{}, fmt.Errorf("transaction ID cannot be empty")
 	}
@@ -118,10 +86,11 @@ func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (ports.Tran
 		return ports.TransactionDetails{}, fmt.Errorf("invalid txid format: %w", err)
 	}
 
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/transactions/%s", cryptoCode, txid), nil)
+	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/transactions/%s", btcCryptoCode, txid), nil)
 	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			return ports.TransactionDetails{}, ErrTransactionNotFound
+		}
 		return ports.TransactionDetails{}, fmt.Errorf("failed to get transaction: %w", err)
 	}
 
@@ -146,28 +115,23 @@ func (n *nbxplorer) ScanUtxoSet(ctx context.Context, derivationScheme string, ga
 	go func() {
 		defer close(progressChan)
 
-		// Validate input parameters
 		if err := n.validateDerivationScheme(derivationScheme); err != nil {
 			progressChan <- ports.ScanUtxoSetProgress{Progress: 0, Done: true}
 			return
 		}
 
 		if gapLimit <= 0 {
-			gapLimit = 10000 // Default gap limit
+			gapLimit = 10000
 		}
 
-		// Use default crypto code
-		cryptoCode := defaultCryptoCode
-		endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/utxos/scan?gapLimit=%d", cryptoCode, url.PathEscape(derivationScheme), gapLimit)
+		endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/utxos/scan?gapLimit=%d", btcCryptoCode, url.PathEscape(derivationScheme), gapLimit)
 
-		// Start the scan
 		_, err := n.makeRequest(ctx, "POST", endpoint, nil)
 		if err != nil {
 			progressChan <- ports.ScanUtxoSetProgress{Progress: 0, Done: true}
 			return
 		}
 
-		// Poll for progress
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
@@ -177,7 +141,7 @@ func (n *nbxplorer) ScanUtxoSet(ctx context.Context, derivationScheme string, ga
 				progressChan <- ports.ScanUtxoSetProgress{Progress: 0, Done: true}
 				return
 			case <-ticker.C:
-				progressEndpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/utxos/scan/status", cryptoCode, url.PathEscape(derivationScheme))
+				progressEndpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/utxos/scan/status", btcCryptoCode, url.PathEscape(derivationScheme))
 				data, err := n.makeRequest(ctx, "GET", progressEndpoint, nil)
 				if err != nil {
 					progressChan <- ports.ScanUtxoSetProgress{Progress: 0, Done: true}
@@ -190,7 +154,6 @@ func (n *nbxplorer) ScanUtxoSet(ctx context.Context, derivationScheme string, ga
 					return
 				}
 
-				// Map the status to progress with nil pointer protection
 				var progress int
 				var done bool
 				switch resp.Status {
@@ -237,9 +200,7 @@ func (n *nbxplorer) Track(ctx context.Context, derivationScheme string) error {
 		return fmt.Errorf("invalid derivation scheme: %w", err)
 	}
 
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s", cryptoCode, url.PathEscape(derivationScheme))
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s", btcCryptoCode, url.PathEscape(derivationScheme))
 	logrus.Debugf("Tracking derivation scheme: %s", endpoint)
 	_, err := n.makeRequest(ctx, "POST", endpoint, nil)
 	if err != nil {
@@ -254,8 +215,7 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 		return nil, fmt.Errorf("invalid derivation scheme: %w", err)
 	}
 
-	cryptoCode := defaultCryptoCode
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/utxos", cryptoCode, url.PathEscape(derivationScheme))
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/utxos", btcCryptoCode, url.PathEscape(derivationScheme))
 	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get utxos: %w", err)
@@ -266,10 +226,21 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 		return nil, fmt.Errorf("failed to unmarshal utxos: %w", err)
 	}
 
+	spentOutpoints := make(map[string]bool)
+	for _, outpoint := range resp.Confirmed.SpentOutpoints {
+		spentOutpoints[outpoint] = true
+	}
+	for _, outpoint := range resp.Unconfirmed.SpentOutpoints {
+		spentOutpoints[outpoint] = true
+	}
+
 	utxos := make([]ports.Utxo, 0, len(resp.Confirmed.UtxOs)+len(resp.Unconfirmed.UtxOs))
 
-	// Add confirmed UTXOs
 	for _, u := range resp.Confirmed.UtxOs {
+		if spentOutpoints[u.Outpoint] {
+			continue
+		}
+
 		txHash, err := chainhash.NewHashFromStr(u.TransactionHash)
 		if err != nil {
 			logrus.Warnf("failed to parse transaction hash: %s", err)
@@ -289,6 +260,10 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 	}
 
 	for _, u := range resp.Unconfirmed.UtxOs {
+		if spentOutpoints[u.Outpoint] {
+			continue
+		}
+
 		txHash, err := chainhash.NewHashFromStr(u.TransactionHash)
 		if err != nil {
 			logrus.Warnf("failed to parse transaction hash: %s", err)
@@ -320,9 +295,7 @@ func (n *nbxplorer) GetScriptPubKeyDetails(ctx context.Context, derivationScheme
 		return ports.ScriptPubKeyDetails{}, fmt.Errorf("script cannot be empty")
 	}
 
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/scripts/%s", cryptoCode, url.PathEscape(derivationScheme), url.PathEscape(script))
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/scripts/%s", btcCryptoCode, url.PathEscape(derivationScheme), url.PathEscape(script))
 	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return ports.ScriptPubKeyDetails{}, fmt.Errorf("failed to get script pubkey details: %w", err)
@@ -348,8 +321,6 @@ func (n *nbxplorer) GetNewUnusedAddress(ctx context.Context, derivationScheme st
 		skip = 0
 	}
 
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
 	params := url.Values{}
 	if change {
 		params.Set("feature", "Change")
@@ -360,7 +331,7 @@ func (n *nbxplorer) GetNewUnusedAddress(ctx context.Context, derivationScheme st
 		params.Set("skip", strconv.Itoa(skip))
 	}
 
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/addresses/unused", cryptoCode, url.PathEscape(derivationScheme))
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/addresses/unused", btcCryptoCode, url.PathEscape(derivationScheme))
 	if len(params) > 0 {
 		endpoint += "?" + params.Encode()
 	}
@@ -385,7 +356,7 @@ func (n *nbxplorer) GetNewUnusedAddress(ctx context.Context, derivationScheme st
 // EstimateFeeRate retrieves fee rate from /v1/cryptos/{cryptoCode}/fees/{blockCount} endpoint.
 func (n *nbxplorer) EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
 	blockCount := 1
-	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/fees/%d", defaultCryptoCode, blockCount), nil)
+	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/fees/%d", btcCryptoCode, blockCount), nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to estimate fee rate: %w", err)
 	}
@@ -428,7 +399,7 @@ func (n *nbxplorer) broadcastSingleTransaction(ctx context.Context, txHex string
 		return "", fmt.Errorf("transaction hex cannot be empty")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", n.url+fmt.Sprintf("/v1/cryptos/%s/transactions", defaultCryptoCode), hex.NewDecoder(strings.NewReader(txHex)))
+	req, err := http.NewRequestWithContext(ctx, "POST", n.url+fmt.Sprintf("/v1/cryptos/%s/transactions", btcCryptoCode), hex.NewDecoder(strings.NewReader(txHex)))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
@@ -452,7 +423,7 @@ func (n *nbxplorer) broadcastSingleTransaction(ctx context.Context, txHex string
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var broadcastResult BroadcastResult
+	var broadcastResult broadcastResult
 	if err := json.Unmarshal(bodyBytes, &broadcastResult); err != nil {
 		return "", fmt.Errorf("failed to unmarshal broadcast result: %w", err)
 	}
@@ -495,9 +466,9 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 	// bitcoin core RPC request for submitpackage
 	rpcReq := rpcRequest{
 		JSONRPC: "1.0",
-		ID:      1,
+		ID:      rand.Intn(10_0000),
 		Method:  "submitpackage",
-		Params:  txs,
+		Params:  []any{txs},
 	}
 
 	jsonBody, err := json.Marshal(rpcReq)
@@ -505,7 +476,7 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 		return "", fmt.Errorf("failed to marshal RPC request: %w", err)
 	}
 
-	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/v1/cryptos/%s/rpc", defaultCryptoCode), strings.NewReader(string(jsonBody)))
+	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/v1/cryptos/%s/rpc", btcCryptoCode), strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return "", fmt.Errorf("failed to call submitpackage RPC: %w", err)
 	}
@@ -515,55 +486,20 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 		return "", fmt.Errorf("failed to unmarshal RPC response: %w", err)
 	}
 
-	// Check for RPC errors
 	if resp.Error != nil {
 		return "", fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 	}
 
-	// Parse the result
 	if resp.Result == nil {
 		return "", fmt.Errorf("RPC returned nil result")
 	}
 
-	// Convert result to JSON and then to our struct
 	resultBytes, err := json.Marshal(resp.Result)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal RPC result: %w", err)
 	}
 
-	var submitResult submitPackageResult
-	if err := json.Unmarshal(resultBytes, &submitResult); err != nil {
-		return "", fmt.Errorf("failed to unmarshal submitpackage result: %w", err)
-	}
-
-	// Return the first transaction ID from the results
-	// In a package, we typically want to return the child transaction ID
-	for _, txResult := range submitResult.TxResults {
-		if txResult.TxID != "" {
-			return txResult.TxID, nil
-		}
-	}
-
-	return "", fmt.Errorf("no valid transaction ID found in submitpackage result")
-}
-
-// createEmptyGroup creates address group via /v1/groups endpoint.
-func (n *nbxplorer) createEmptyGroup(ctx context.Context) error {
-	resp, err := n.makeRequest(ctx, "POST", "/v1/groups", nil)
-	if err != nil {
-		return fmt.Errorf("failed to create group: %w", err)
-	}
-
-	// Parse response to get the groupID
-	var groupResponse struct {
-		GroupID string `json:"groupId"`
-	}
-	if err := json.Unmarshal(resp, &groupResponse); err != nil {
-		return fmt.Errorf("failed to decode group response: %w", err)
-	}
-
-	n.groupID = groupResponse.GroupID
-	return nil
+	return string(resultBytes), nil
 }
 
 // WatchAddress adds addresses to group via /v1/cryptos/{cryptoCode}/groups/{groupID}/addresses endpoint.
@@ -578,23 +514,18 @@ func (n *nbxplorer) WatchAddress(ctx context.Context, addresses ...string) error
 		return fmt.Errorf("no addresses provided")
 	}
 
-	// Validate addresses
 	for _, addr := range addresses {
 		if addr == "" {
 			return fmt.Errorf("address cannot be empty")
 		}
 	}
 
-	// Use default crypto code
-	cryptoCode := defaultCryptoCode
-
-	// According to API spec, this endpoint expects an array of strings
 	jsonBody, err := json.Marshal(addresses)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/addresses", cryptoCode, url.PathEscape(n.groupID))
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/addresses", btcCryptoCode, url.PathEscape(n.groupID))
 	_, err = n.makeRequest(ctx, "POST", endpoint, strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return fmt.Errorf("failed to add addresses to group: %w", err)
@@ -612,20 +543,16 @@ func (n *nbxplorer) UnwatchAddress(ctx context.Context, addresses ...string) err
 		return fmt.Errorf("no addresses provided")
 	}
 
-	// Validate addresses
-	for _, addr := range addresses {
-		if addr == "" {
-			return fmt.Errorf("address cannot be empty")
-		}
+	if slices.Contains(addresses, "") {
+		return fmt.Errorf("address cannot be empty")
 	}
 
-	// According to API spec, we need to remove children from group
-	// Convert addresses to tracked source format
-	trackedSources := make([]map[string]string, len(addresses))
-	for i, addr := range addresses {
-		trackedSources[i] = map[string]string{
-			"trackedSource": fmt.Sprintf("ADDRESS:%s", addr),
-		}
+	trackedSources := make([]trackedSource, 0, len(addresses))
+	for _, addr := range addresses {
+		trackedSources = append(trackedSources, trackedSource{
+			TrackedSource: fmt.Sprintf("ADDRESS:%s", addr),
+			CryptoCode:    btcCryptoCode,
+		})
 	}
 
 	jsonBody, err := json.Marshal(trackedSources)
@@ -633,36 +560,11 @@ func (n *nbxplorer) UnwatchAddress(ctx context.Context, addresses ...string) err
 		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	endpoint := fmt.Sprintf("/v1/groups/%s/children/delete", url.PathEscape(n.groupID))
-	_, err = n.makeRequest(ctx, "POST", endpoint, strings.NewReader(string(jsonBody)))
+	endpoint := fmt.Sprintf("/v1/groups/%s/children", url.PathEscape(n.groupID))
+	_, err = n.makeRequest(ctx, "DELETE", endpoint, strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return fmt.Errorf("failed to remove addresses from group: %w", err)
 	}
-	return nil
-}
-
-// connectWebSocket establishes a WebSocket connection to NBXplorer for real-time events
-func (n *nbxplorer) connectWebSocket(ctx context.Context) error {
-	n.wsMutex.Lock()
-	defer n.wsMutex.Unlock()
-
-	// Close existing connection if any
-	if n.wsConn != nil {
-		n.wsConn.Close()
-	}
-
-	// Convert HTTP URL to WebSocket URL
-	wsURL := strings.Replace(n.url, "http://", "ws://", 1)
-	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
-	wsURL += "/v1/cryptos/connect"
-
-	// Establish WebSocket connection
-	conn, _, err := n.wsDialer.DialContext(ctx, wsURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to connect to WebSocket: %w", err)
-	}
-
-	n.wsConn = conn
 	return nil
 }
 
@@ -675,14 +577,13 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 		}
 	}
 
-	notificationsChan := make(chan []ports.Utxo, 10) // Buffered channel to prevent blocking
+	// buffered channel to prevent blocking
+	notificationsChan := make(chan []ports.Utxo, 64)
 
 	go func() {
 		defer close(notificationsChan)
 
-		// Establish WebSocket connection
 		if err := n.connectWebSocket(ctx); err != nil {
-			// If WebSocket connection fails, return error
 			select {
 			case notificationsChan <- nil:
 			case <-ctx.Done():
@@ -690,18 +591,15 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 			return
 		}
 
-		// Listen for WebSocket events
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
-				// Read message from WebSocket
 				_, message, err := n.wsConn.ReadMessage()
 				if err != nil {
-					// Reconnect on error
+					// reconnect on error
 					if err := n.connectWebSocket(ctx); err != nil {
-						// If reconnection fails, return error
 						select {
 						case notificationsChan <- nil:
 						case <-ctx.Done():
@@ -711,19 +609,15 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 					continue
 				}
 
-				// Parse event
-				var event Event
+				var event event
 				if err := json.Unmarshal(message, &event); err != nil {
 					continue
 				}
 
-				// Only process "newtransaction" events
 				if event.Type == "newtransaction" {
-					// Parse the new transaction event data to get the transaction hash
-					var newTxEvent NewTransactionEvent
+					var newTxEvent newTransactionEvent
 					if eventDataBytes, err := json.Marshal(event.Data); err == nil {
 						if err := json.Unmarshal(eventDataBytes, &newTxEvent); err == nil {
-							// Trigger UTXO rescanning for the group, filtering by the new transaction hash
 							newUtxos, err := n.searchNewUTXOs(ctx, newTxEvent.TransactionData.TransactionHash)
 							if err != nil {
 								continue
@@ -746,13 +640,107 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 	return notificationsChan, nil
 }
 
+func (n *nbxplorer) Close() error {
+	n.wsMutex.Lock()
+	defer n.wsMutex.Unlock()
+
+	if n.wsConn != nil {
+		return n.wsConn.Close()
+	}
+
+	// delete the groupID
+	if len(n.groupID) > 0 {
+		_, err := n.makeRequest(context.Background(), "DELETE", fmt.Sprintf("/v1/groups/%s", url.PathEscape(n.groupID)), nil)
+		if err != nil {
+			return fmt.Errorf("failed to delete group: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, body io.Reader) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, method, n.url+endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := n.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	return bodyBytes, nil
+}
+
+func (n *nbxplorer) validateDerivationScheme(derivationScheme string) error {
+	if len(derivationScheme) == 0 {
+		return fmt.Errorf("derivation scheme cannot be empty")
+	}
+	return nil
+}
+
+// createEmptyGroup creates address group via /v1/groups endpoint.
+func (n *nbxplorer) createEmptyGroup(ctx context.Context) error {
+	resp, err := n.makeRequest(ctx, "POST", "/v1/groups", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create group: %w", err)
+	}
+
+	var groupResponse struct {
+		GroupID string `json:"groupId"`
+	}
+	if err := json.Unmarshal(resp, &groupResponse); err != nil {
+		return fmt.Errorf("failed to decode group response: %w", err)
+	}
+
+	n.groupID = groupResponse.GroupID
+	return nil
+}
+
+// connectWebSocket establishes a WebSocket connection to NBXplorer for real-time events
+func (n *nbxplorer) connectWebSocket(ctx context.Context) error {
+	n.wsMutex.Lock()
+	defer n.wsMutex.Unlock()
+
+	if n.wsConn != nil {
+		n.wsConn.Close()
+	}
+
+	wsURL := strings.Replace(n.url, "http://", "ws://", 1)
+	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
+	wsURL += "/v1/cryptos/connect"
+
+	conn, _, err := n.wsDialer.DialContext(ctx, wsURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to connect to WebSocket: %w", err)
+	}
+
+	n.wsConn = conn
+	return nil
+}
+
 // searchNewUTXOs rescans UTXOs for a specific group and returns only UTXOs from the specified transaction hash
 func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.Utxo, error) {
 	if txHash == "" {
 		return nil, fmt.Errorf("transaction hash is required")
 	}
 
-	cryptoCode := defaultCryptoCode
+	cryptoCode := btcCryptoCode
 	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/utxos", cryptoCode, url.PathEscape(n.groupID))
 
 	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
@@ -760,18 +748,14 @@ func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.
 		return nil, fmt.Errorf("failed to get group UTXOs: %w", err)
 	}
 
-	// Parse the NBXplorer API response structure
 	var resp utxosResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal UTXO changes: %w", err)
 	}
 
-	// Convert UTXOs to ports.Utxo format, filtering by transaction hash
 	utxos := make([]ports.Utxo, 0)
 
-	// Check confirmed UTXOs
 	for _, u := range resp.Confirmed.UtxOs {
-		// Only include UTXOs from the specified transaction
 		if u.TransactionHash != txHash {
 			continue
 		}
@@ -793,9 +777,7 @@ func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.
 		})
 	}
 
-	// Check unconfirmed UTXOs
 	for _, u := range resp.Unconfirmed.UtxOs {
-		// Only include UTXOs from the specified transaction
 		if u.TransactionHash != txHash {
 			continue
 		}
@@ -818,24 +800,4 @@ func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.
 	}
 
 	return utxos, nil
-}
-
-// Close closes the WebSocket connection and cleans up resources
-func (n *nbxplorer) Close() error {
-	n.wsMutex.Lock()
-	defer n.wsMutex.Unlock()
-
-	if n.wsConn != nil {
-		return n.wsConn.Close()
-	}
-
-	// delete the groupID
-	if len(n.groupID) > 0 {
-		_, err := n.makeRequest(context.Background(), "DELETE", fmt.Sprintf("/v1/groups/%s", url.PathEscape(n.groupID)), nil)
-		if err != nil {
-			return fmt.Errorf("failed to delete group: %w", err)
-		}
-	}
-
-	return nil
 }

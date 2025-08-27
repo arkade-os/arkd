@@ -427,6 +427,7 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	require.NoError(t, err)
 
 	wg.Wait()
+	time.Sleep(4 * time.Second)
 
 	wg.Add(1)
 	go func() {
@@ -518,6 +519,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+
+		time.Sleep(4 * time.Second)
 
 		wg.Add(1)
 		go func() {
@@ -618,6 +621,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+
+		time.Sleep(4 * time.Second)
 
 		spendableVtxos, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)

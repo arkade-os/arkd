@@ -38,6 +38,7 @@ type ScanUtxoSetProgress struct {
 	Done     bool
 }
 
+// Nbxplorer acts as the "backend" for the wallet Service
 type Nbxplorer interface {
 	GetBitcoinStatus(ctx context.Context) (BitcoinStatus, error)
 	GetTransaction(ctx context.Context, txid string) (TransactionDetails, error)

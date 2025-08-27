@@ -105,7 +105,7 @@ func (c *Config) Services() (application.WalletService, application.BlockchainSc
 		Network:    network.Name,
 	})
 
-	scannerSvc, err := scanner.NewScanner(nbxplorerSvc, network.Name)
+	scannerSvc, err := scanner.New(nbxplorerSvc, network.Name)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error while creating scanner: %w", err)
 	}
