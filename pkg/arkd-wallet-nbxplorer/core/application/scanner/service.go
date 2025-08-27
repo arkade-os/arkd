@@ -18,8 +18,8 @@ type scanner struct {
 	nbxplorer   ports.Nbxplorer
 	chainParams *chaincfg.Params
 
-	mu            sync.Mutex
-	notifications []chan map[string][]application.Utxo
+	lock                  sync.RWMutex
+	notificationListeners []chan map[string][]application.Utxo
 }
 
 // New creates a new BlockchainScanner service
@@ -27,12 +27,12 @@ func New(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScann
 	ctx, cancel := context.WithCancel(context.Background())
 
 	svc := &scanner{
-		ctx:           ctx,
-		cancel:        cancel,
-		nbxplorer:     nbxplorer,
-		mu:            sync.Mutex{},
-		notifications: make([]chan map[string][]application.Utxo, 0),
-		chainParams:   application.NetworkToChainParams(network),
+		ctx:                   ctx,
+		cancel:                cancel,
+		nbxplorer:             nbxplorer,
+		lock:                  sync.RWMutex{},
+		notificationListeners: make([]chan map[string][]application.Utxo, 0),
+		chainParams:           application.NetworkToChainParams(network),
 	}
 
 	if err := svc.start(ctx); err != nil {
@@ -54,7 +54,7 @@ func (s *scanner) start(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case utxos := <-notificationCh:
-				if len(s.notifications) == 0 {
+				if len(s.notificationListeners) == 0 {
 					continue
 				}
 
@@ -71,8 +71,8 @@ func (s *scanner) start(ctx context.Context) error {
 					})
 				}
 
-				s.mu.Lock()
-				for _, listener := range s.notifications {
+				s.lock.RLock()
+				for _, listener := range s.notificationListeners {
 					go func(listener chan map[string][]application.Utxo) {
 						select {
 						case <-ctx.Done():
@@ -81,7 +81,7 @@ func (s *scanner) start(ctx context.Context) error {
 						}
 					}(listener)
 				}
-				s.mu.Unlock()
+				s.lock.RUnlock()
 			}
 		}
 	}()
@@ -95,7 +95,7 @@ func (s *scanner) WatchScripts(ctx context.Context, scripts []string) error {
 		return err
 	}
 
-	return s.nbxplorer.WatchAddress(ctx, addresses...)
+	return s.nbxplorer.WatchAddresses(ctx, addresses...)
 }
 
 func (s *scanner) UnwatchScripts(ctx context.Context, scripts []string) error {
@@ -104,18 +104,18 @@ func (s *scanner) UnwatchScripts(ctx context.Context, scripts []string) error {
 		return err
 	}
 
-	return s.nbxplorer.UnwatchAddress(ctx, addresses...)
+	return s.nbxplorer.UnwatchAddresses(ctx, addresses...)
 }
 
 func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan map[string][]application.Utxo {
 	ch := make(chan map[string][]application.Utxo, 128)
-	s.mu.Lock()
-	s.notifications = append(s.notifications, ch)
-	s.mu.Unlock()
+	s.lock.Lock()
+	s.notificationListeners = append(s.notificationListeners, ch)
+	s.lock.Unlock()
 	return ch
 }
 
-func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isConfirmed bool, blocknumber int64, blocktime int64, err error) {
+func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isConfirmed bool, blockHeight int64, blockTime int64, err error) {
 	details, err := s.nbxplorer.GetTransaction(ctx, txid)
 	if err != nil {
 		return false, 0, 0, err

@@ -1,14 +1,15 @@
-package crypto
+package cypher_test
 
 import (
 	"context"
 	"testing"
 
+	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/infrastructure/cypher"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCryptoService_EncryptDecrypt(t *testing.T) {
-	crypto := New()
+	crypto := cypher.New()
 	ctx := context.Background()
 
 	tests := []struct {
@@ -54,7 +55,7 @@ func TestCryptoService_EncryptDecrypt(t *testing.T) {
 }
 
 func TestCryptoService_WrongPassword(t *testing.T) {
-	crypto := New()
+	crypto := cypher.New()
 	ctx := context.Background()
 
 	seed := []byte("test seed data")
@@ -71,7 +72,7 @@ func TestCryptoService_WrongPassword(t *testing.T) {
 }
 
 func TestCryptoService_InvalidEncryptedData(t *testing.T) {
-	crypto := New()
+	crypto := cypher.New()
 	ctx := context.Background()
 
 	// Test with empty encrypted data
@@ -95,7 +96,7 @@ func TestCryptoService_InvalidEncryptedData(t *testing.T) {
 }
 
 func TestCryptoService_EmptyPassword(t *testing.T) {
-	crypto := New()
+	crypto := cypher.New()
 	ctx := context.Background()
 
 	seed := []byte("test seed data")
@@ -111,7 +112,7 @@ func TestCryptoService_EmptyPassword(t *testing.T) {
 }
 
 func TestCryptoService_DeterministicEncryption(t *testing.T) {
-	crypto := New()
+	crypto := cypher.New()
 	ctx := context.Background()
 
 	seed := []byte("test seed data")

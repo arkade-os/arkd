@@ -40,10 +40,6 @@ func (s *service) Start() error {
 		interceptors.StreamInterceptor(),
 	)
 
-	if err := s.cfg.InitServices(); err != nil {
-		return fmt.Errorf("error while creating application services: %w", err)
-	}
-
 	s.closeFn = func() {
 		s.cfg.WalletSvc.Close()
 	}

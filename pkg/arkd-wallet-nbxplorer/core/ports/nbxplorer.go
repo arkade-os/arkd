@@ -40,18 +40,18 @@ type ScanUtxoSetProgress struct {
 
 // Nbxplorer acts as the "backend" for the wallet Service
 type Nbxplorer interface {
-	GetBitcoinStatus(ctx context.Context) (BitcoinStatus, error)
-	GetTransaction(ctx context.Context, txid string) (TransactionDetails, error)
+	GetBitcoinStatus(ctx context.Context) (*BitcoinStatus, error)
+	GetTransaction(ctx context.Context, txid string) (*TransactionDetails, error)
 	ScanUtxoSet(ctx context.Context, derivationScheme string, gapLimit int) <-chan ScanUtxoSetProgress
 	Track(ctx context.Context, derivationScheme string) error
 	GetUtxos(ctx context.Context, derivationScheme string) ([]Utxo, error)
-	GetScriptPubKeyDetails(ctx context.Context, derivationScheme string, script string) (ScriptPubKeyDetails, error)
+	GetScriptPubKeyDetails(ctx context.Context, derivationScheme string, script string) (*ScriptPubKeyDetails, error)
 	GetNewUnusedAddress(ctx context.Context, derivationScheme string, change bool, skip int) (string, error)
 	EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error)
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
 
-	WatchAddress(ctx context.Context, addresses ...string) error
-	UnwatchAddress(ctx context.Context, addresses ...string) error
+	WatchAddresses(ctx context.Context, addresses ...string) error
+	UnwatchAddresses(ctx context.Context, addresses ...string) error
 	GetAddressNotifications(ctx context.Context) (<-chan []Utxo, error)
 
 	Close() error

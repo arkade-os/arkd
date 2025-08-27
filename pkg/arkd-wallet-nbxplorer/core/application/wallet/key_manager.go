@@ -5,21 +5,21 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 type keyManager struct {
 	// m/84'/0'/0'
 	mainAccount *hdkeychain.ExtendedKey
-	// m/86'/0'/1'
-	connectorAccount *hdkeychain.ExtendedKey
 	// m/86'/0'/0'
+	connectorAccount *hdkeychain.ExtendedKey
+	// m/86'/0'/1'
 	arkSignerAccount *hdkeychain.ExtendedKey
 }
 
-// newKeyManager takes the seed key and derives BIP84 and BIP86 keys
+// newKeyManager takes the seed key and derives BIP84 and BIP86 accounts
 func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 	masterKey, err := hdkeychain.NewMaster(seed, network)
 	if err != nil {
@@ -54,11 +54,11 @@ func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	arkSignerAccount, err := bip86MasterKey.Derive(hdkeychain.HardenedKeyStart)
+	connectorAccount, err := bip86MasterKey.Derive(hdkeychain.HardenedKeyStart)
 	if err != nil {
 		return nil, err
 	}
-	connectorAccount, err := bip86MasterKey.Derive(hdkeychain.HardenedKeyStart + 1)
+	arkSignerAccount, err := bip86MasterKey.Derive(hdkeychain.HardenedKeyStart + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -66,6 +66,7 @@ func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 	return &keyManager{mainAccount, connectorAccount, arkSignerAccount}, nil
 }
 
+// https://github.com/dgarage/NBXplorer/blob/master/docs/API.md#derivation-scheme
 func (k *keyManager) getMainAccountDerivationScheme() string {
 	neutered, err := k.mainAccount.Neuter()
 	if err != nil {
@@ -74,6 +75,7 @@ func (k *keyManager) getMainAccountDerivationScheme() string {
 	return neutered.String() // no suffix, nbxplorer default to segwit v0
 }
 
+// https://github.com/dgarage/NBXplorer/blob/master/docs/API.md#derivation-scheme
 func (k *keyManager) getConnectorAccountDerivationScheme() string {
 	neutered, err := k.connectorAccount.Neuter()
 	if err != nil {
@@ -82,7 +84,7 @@ func (k *keyManager) getConnectorAccountDerivationScheme() string {
 	return neutered.String() + "-[taproot]"
 }
 
-func (k *keyManager) getForfeitPublicKey() (*secp256k1.PublicKey, error) {
+func (k *keyManager) getForfeitPublicKey() (*btcec.PublicKey, error) {
 	key, err := k.arkSignerAccount.Derive(0)
 	if err != nil {
 		return nil, err
@@ -92,15 +94,19 @@ func (k *keyManager) getForfeitPublicKey() (*secp256k1.PublicKey, error) {
 		return nil, err
 	}
 
-	ecPubKey, err := key.ECPubKey()
+	return key.ECPubKey()
+}
+
+func (k *keyManager) getArkSignerPublicKey() (*btcec.PublicKey, error) {
+	ecPrivKey, err := k.arkSignerAccount.ECPrivKey()
 	if err != nil {
 		return nil, err
 	}
 
-	return secp256k1.ParsePubKey(ecPubKey.SerializeCompressed())
+	return ecPrivKey.PubKey(), nil
 }
 
-func (k *keyManager) getArkSignerPublicKey() (*secp256k1.PublicKey, error) {
+func (k *keyManager) getArkSignerPrivateKey() (*btcec.PrivateKey, error) {
 	key, err := k.arkSignerAccount.Derive(0)
 	if err != nil {
 		return nil, err
@@ -110,35 +116,12 @@ func (k *keyManager) getArkSignerPublicKey() (*secp256k1.PublicKey, error) {
 		return nil, err
 	}
 
-	ecPubKey, err := key.ECPubKey()
-	if err != nil {
-		return nil, err
-	}
-
-	return secp256k1.ParsePubKey(ecPubKey.SerializeCompressed())
+	return key.ECPrivKey()
 }
 
-func (k *keyManager) getArkSignerPrivateKey() (*secp256k1.PrivateKey, error) {
-	key, err := k.arkSignerAccount.Derive(0)
-	if err != nil {
-		return nil, err
-	}
-	key, err = key.Derive(0)
-	if err != nil {
-		return nil, err
-	}
-
-	ecPrivKey, err := key.ECPrivKey()
-	if err != nil {
-		return nil, err
-	}
-
-	return secp256k1.PrivKeyFromBytes(ecPrivKey.Serialize()), nil
-}
-
-func (k *keyManager) getPrivateKey(xpub string, keyPath string) (*secp256k1.PrivateKey, error) {
+func (k *keyManager) getPrivateKey(derivationScheme string, keyPath string) (*btcec.PrivateKey, error) {
 	var key *hdkeychain.ExtendedKey
-	switch xpub {
+	switch derivationScheme {
 	case k.getMainAccountDerivationScheme():
 		key = k.mainAccount
 	case k.getConnectorAccountDerivationScheme():
@@ -160,10 +143,5 @@ func (k *keyManager) getPrivateKey(xpub string, keyPath string) (*secp256k1.Priv
 		}
 	}
 
-	ecPrivKey, err := key.ECPrivKey()
-	if err != nil {
-		return nil, err
-	}
-
-	return secp256k1.PrivKeyFromBytes(ecPrivKey.Serialize()), nil
+	return key.ECPrivKey()
 }

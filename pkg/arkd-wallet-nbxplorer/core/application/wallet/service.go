@@ -46,7 +46,7 @@ const biggestInputSize = 148 + 182 // = 330 vbytes
 
 type WalletOptions struct {
 	Repository ports.SeedRepository
-	Crypto     ports.Crypto
+	Cypher     ports.Cypher
 	Nbxplorer  ports.Nbxplorer
 	Network    string
 }
@@ -54,7 +54,7 @@ type WalletOptions struct {
 type wallet struct {
 	WalletOptions
 
-	locker  outpointLocker
+	locker  *outpointLocker
 	keyMgr  *keyManager
 	isReady chan struct{}
 
@@ -65,7 +65,7 @@ type wallet struct {
 func New(opts WalletOptions) application.WalletService {
 	return &wallet{
 		opts,
-		newInmemoryOutpointLocker(time.Minute),
+		newOutpointLocker(time.Minute),
 		nil,
 		make(chan struct{}),
 		nil,
@@ -129,7 +129,7 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 	if err != nil {
 		return err
 	}
-	seed, err := w.Crypto.Decrypt(ctx, encryptedSeed, password)
+	seed, err := w.Cypher.Decrypt(ctx, encryptedSeed, password)
 	if err != nil {
 		return err
 	}
@@ -314,7 +314,7 @@ func (w *wallet) LockConnectorUtxos(ctx context.Context, utxos []wire.OutPoint) 
 		return ErrWalletLocked
 	}
 
-	return w.locker.Lock(ctx, utxos...)
+	return w.locker.lock(ctx, utxos...)
 }
 
 func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]application.Utxo, error) {
@@ -327,7 +327,7 @@ func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string
 		return nil, err
 	}
 
-	lockedOutpoints, err := w.locker.Get(ctx)
+	lockedOutpoints, err := w.locker.get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +379,7 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 		return nil, 0, err
 	}
 
-	lockedOutpoints, err := w.locker.Get(ctx)
+	lockedOutpoints, err := w.locker.get(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -393,7 +393,7 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 			continue
 		}
 
-		availableUtxos = append(availableUtxos, selectable{utxo})
+		availableUtxos = append(availableUtxos, coin{utxo})
 	}
 
 	coins, err := coinSelector.CoinSelect(btcutil.Amount(amount), availableUtxos)
@@ -421,7 +421,7 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 		totalValue += value
 	}
 
-	if err := w.locker.Lock(ctx, toLock...); err != nil {
+	if err := w.locker.lock(ctx, toLock...); err != nil {
 		logrus.Error("failed to lock utxos", err)
 		// ignore error
 	}
@@ -812,7 +812,7 @@ func (w *wallet) init(ctx context.Context, mnemonic string, password string) (ke
 	if err != nil {
 		return nil, err
 	}
-	encryptedSeed, err := w.Crypto.Encrypt(ctx, seedBytes, password)
+	encryptedSeed, err := w.Cypher.Encrypt(ctx, seedBytes, password)
 	if err != nil {
 		return nil, err
 	}
@@ -884,18 +884,18 @@ func (w *wallet) getScriptPubKeyPrivateKey(ctx context.Context, scriptPubKey str
 		return nil, ErrWalletLocked
 	}
 
-	xpubs := []string{
+	accountsDerivationSchemes := []string{
 		w.keyMgr.getMainAccountDerivationScheme(),
 		w.keyMgr.getConnectorAccountDerivationScheme(),
 	}
 
-	for _, xpub := range xpubs {
-		scriptPubKeyDetails, err := w.Nbxplorer.GetScriptPubKeyDetails(ctx, xpub, scriptPubKey)
+	for _, derivationScheme := range accountsDerivationSchemes {
+		scriptPubKeyDetails, err := w.Nbxplorer.GetScriptPubKeyDetails(ctx, derivationScheme, scriptPubKey)
 		if err != nil {
 			continue
 		}
 
-		return w.keyMgr.getPrivateKey(xpub, scriptPubKeyDetails.KeyPath)
+		return w.keyMgr.getPrivateKey(derivationScheme, scriptPubKeyDetails.KeyPath)
 	}
 
 	return nil, nil
@@ -907,7 +907,7 @@ func (w *wallet) getBalance(ctx context.Context, derivationScheme string) (uint6
 		return 0, 0, err
 	}
 
-	lockedOutpoints, err := w.locker.Get(ctx)
+	lockedOutpoints, err := w.locker.get(ctx)
 	if err != nil {
 		return 0, 0, err
 	}

@@ -59,15 +59,15 @@ func New(url string) ports.Nbxplorer {
 }
 
 // GetBitcoinStatus retrieves Bitcoin network status from /v1/cryptos/{cryptoCode}/status endpoint.
-func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (ports.BitcoinStatus, error) {
+func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (*ports.BitcoinStatus, error) {
 	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/status", btcCryptoCode), nil)
 	if err != nil {
-		return ports.BitcoinStatus{}, fmt.Errorf("failed to get bitcoin status: %w", err)
+		return nil, fmt.Errorf("failed to get bitcoin status: %w", err)
 	}
 
 	var resp bitcoinStatusResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return ports.BitcoinStatus{}, fmt.Errorf("failed to unmarshal bitcoin status: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal bitcoin status: %w", err)
 	}
 
 	// use getblockchaininfo to get the tip timestamp
@@ -81,30 +81,30 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (ports.BitcoinStatus, 
 
 	jsonBody, err := json.Marshal(rpcReq)
 	if err != nil {
-		return ports.BitcoinStatus{}, fmt.Errorf("failed to marshal RPC request: %w", err)
+		return nil, fmt.Errorf("failed to marshal RPC request: %w", err)
 	}
 
 	rpcData, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/v1/cryptos/%s/rpc", btcCryptoCode), strings.NewReader(string(jsonBody)))
 	if err != nil {
-		return ports.BitcoinStatus{}, fmt.Errorf("failed to call submitpackage RPC: %w", err)
+		return nil, fmt.Errorf("failed to call submitpackage RPC: %w", err)
 	}
 
 	var rpcResp rpcResponse
 	if err := json.Unmarshal(rpcData, &rpcResp); err != nil {
-		return ports.BitcoinStatus{}, fmt.Errorf("failed to unmarshal RPC response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal RPC response: %w", err)
 	}
 
 	blockchainInfoJSON, err := json.Marshal(rpcResp.Result)
 	if err != nil {
-		return ports.BitcoinStatus{}, fmt.Errorf("failed to marshal RPC result: %w", err)
+		return nil, fmt.Errorf("failed to marshal RPC result: %w", err)
 	}
 
 	var blockchainInfo blockchainInfoResponse
 	if err := json.Unmarshal(blockchainInfoJSON, &blockchainInfo); err != nil {
-		return ports.BitcoinStatus{}, fmt.Errorf("failed to unmarshal blockchain info: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal blockchain info: %w", err)
 	}
 
-	return ports.BitcoinStatus{
+	return &ports.BitcoinStatus{
 		ChainTipHeight: resp.BitcoinStatus.Blocks,
 		ChainTipTime:   blockchainInfo.Mediantime,
 		Synched:        resp.BitcoinStatus.IsSynched,
@@ -112,28 +112,28 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (ports.BitcoinStatus, 
 }
 
 // GetTransaction retrieves transaction details from /v1/cryptos/{cryptoCode}/transactions/{txId} endpoint.
-func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (ports.TransactionDetails, error) {
+func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (*ports.TransactionDetails, error) {
 	if txid == "" {
-		return ports.TransactionDetails{}, fmt.Errorf("transaction ID cannot be empty")
+		return nil, fmt.Errorf("transaction ID cannot be empty")
 	}
 	if _, err := chainhash.NewHashFromStr(txid); err != nil {
-		return ports.TransactionDetails{}, fmt.Errorf("invalid txid format: %w", err)
+		return nil, fmt.Errorf("invalid txid format: %w", err)
 	}
 
 	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/transactions/%s", btcCryptoCode, txid), nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
-			return ports.TransactionDetails{}, ErrTransactionNotFound
+			return nil, ErrTransactionNotFound
 		}
-		return ports.TransactionDetails{}, fmt.Errorf("failed to get transaction: %w", err)
+		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
 
 	var resp transactionResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return ports.TransactionDetails{}, fmt.Errorf("failed to unmarshal transaction: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal transaction: %w", err)
 	}
 
-	return ports.TransactionDetails{
+	return &ports.TransactionDetails{
 		TxID:          resp.TransactionId,
 		Hex:           resp.Transaction,
 		Height:        resp.Height,
@@ -320,27 +320,27 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 }
 
 // GetScriptPubKeyDetails retrieves key path from /v1/cryptos/{cryptoCode}/derivations/{scheme}/scripts/{script} endpoint.
-func (n *nbxplorer) GetScriptPubKeyDetails(ctx context.Context, derivationScheme string, script string) (ports.ScriptPubKeyDetails, error) {
+func (n *nbxplorer) GetScriptPubKeyDetails(ctx context.Context, derivationScheme string, script string) (*ports.ScriptPubKeyDetails, error) {
 	if err := n.validateDerivationScheme(derivationScheme); err != nil {
-		return ports.ScriptPubKeyDetails{}, fmt.Errorf("invalid derivation scheme: %w", err)
+		return nil, fmt.Errorf("invalid derivation scheme: %w", err)
 	}
 
 	if script == "" {
-		return ports.ScriptPubKeyDetails{}, fmt.Errorf("script cannot be empty")
+		return nil, fmt.Errorf("script cannot be empty")
 	}
 
 	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s/scripts/%s", btcCryptoCode, url.PathEscape(derivationScheme), url.PathEscape(script))
 	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return ports.ScriptPubKeyDetails{}, fmt.Errorf("failed to get script pubkey details: %w", err)
+		return nil, fmt.Errorf("failed to get script pubkey details: %w", err)
 	}
 
 	var resp scriptPubKeyResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return ports.ScriptPubKeyDetails{}, fmt.Errorf("failed to unmarshal script pubkey details: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal script pubkey details: %w", err)
 	}
 
-	return ports.ScriptPubKeyDetails{
+	return &ports.ScriptPubKeyDetails{
 		KeyPath: resp.KeyPath,
 	}, nil
 }
@@ -537,8 +537,8 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 	return string(resultBytes), nil
 }
 
-// WatchAddress adds addresses to group via /v1/cryptos/{cryptoCode}/groups/{groupID}/addresses endpoint.
-func (n *nbxplorer) WatchAddress(ctx context.Context, addresses ...string) error {
+// WatchAddresses adds addresses to group via /v1/cryptos/{cryptoCode}/groups/{groupID}/addresses endpoint.
+func (n *nbxplorer) WatchAddresses(ctx context.Context, addresses ...string) error {
 	if len(n.groupID) == 0 {
 		if err := n.createEmptyGroup(ctx); err != nil {
 			return fmt.Errorf("failed to create empty group: %w", err)
@@ -568,8 +568,8 @@ func (n *nbxplorer) WatchAddress(ctx context.Context, addresses ...string) error
 	return nil
 }
 
-// UnwatchAddress removes addresses from group via DELETE /v1/groups/{groupID}/children/delete endpoint.
-func (n *nbxplorer) UnwatchAddress(ctx context.Context, addresses ...string) error {
+// UnwatchAddresses removes addresses from group via DELETE /v1/groups/{groupID}/children/delete endpoint.
+func (n *nbxplorer) UnwatchAddresses(ctx context.Context, addresses ...string) error {
 	if len(n.groupID) == 0 {
 		return fmt.Errorf("group ID is not set")
 	}

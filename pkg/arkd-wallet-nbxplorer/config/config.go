@@ -11,7 +11,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/application/scanner"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/application/wallet"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/infrastructure/crypto"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/infrastructure/cypher"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/infrastructure/db"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/infrastructure/nbxplorer"
 	log "github.com/sirupsen/logrus"
@@ -62,6 +62,10 @@ func LoadConfig() (*Config, error) {
 		NbxplorerURL: viper.GetString(NbxplorerURL),
 	}
 
+	if err := cfg.initServices(); err != nil {
+		return nil, fmt.Errorf("error while initializing services: %s", err)
+	}
+
 	return cfg, nil
 }
 
@@ -86,13 +90,13 @@ func (c *Config) String() string {
 	return string(json)
 }
 
-func (c *Config) InitServices() error {
+func (c *Config) initServices() error {
 	repository, err := db.NewSeedRepository(c.DbDir, nil)
 	if err != nil {
 		return fmt.Errorf("error while creating seed repository: %s", err)
 	}
 
-	cryptoSvc := crypto.New()
+	cryptoSvc := cypher.New()
 
 	nbxplorerSvc := nbxplorer.New(c.NbxplorerURL)
 
@@ -103,7 +107,7 @@ func (c *Config) InitServices() error {
 
 	walletSvc := wallet.New(wallet.WalletOptions{
 		Repository: repository,
-		Crypto:     cryptoSvc,
+		Cypher:     cryptoSvc,
 		Nbxplorer:  nbxplorerSvc,
 		Network:    network.Name,
 	})
