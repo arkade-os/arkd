@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"sync"
 
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
@@ -17,6 +18,7 @@ type scanner struct {
 	nbxplorer   ports.Nbxplorer
 	chainParams *chaincfg.Params
 
+	mu            sync.Mutex
 	notifications []chan map[string][]application.Utxo
 }
 
@@ -28,6 +30,7 @@ func New(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScann
 		ctx:           ctx,
 		cancel:        cancel,
 		nbxplorer:     nbxplorer,
+		mu:            sync.Mutex{},
 		notifications: make([]chan map[string][]application.Utxo, 0),
 		chainParams:   application.NetworkToChainParams(network),
 	}
@@ -67,6 +70,8 @@ func (s *scanner) start(ctx context.Context) error {
 						Value:  utxo.Value,
 					})
 				}
+
+				s.mu.Lock()
 				for _, listener := range s.notifications {
 					go func(listener chan map[string][]application.Utxo) {
 						select {
@@ -76,6 +81,7 @@ func (s *scanner) start(ctx context.Context) error {
 						}
 					}(listener)
 				}
+				s.mu.Unlock()
 			}
 		}
 	}()
@@ -103,7 +109,9 @@ func (s *scanner) UnwatchScripts(ctx context.Context, scripts []string) error {
 
 func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan map[string][]application.Utxo {
 	ch := make(chan map[string][]application.Utxo, 128)
+	s.mu.Lock()
 	s.notifications = append(s.notifications, ch)
+	s.mu.Unlock()
 	return ch
 }
 
