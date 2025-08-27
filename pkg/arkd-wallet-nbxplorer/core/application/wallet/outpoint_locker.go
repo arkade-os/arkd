@@ -9,25 +9,25 @@ import (
 )
 
 type outpointLocker struct {
-	lockFor         time.Duration
+	lockExpiry      time.Duration
 	lockedOutpoints map[wire.OutPoint]time.Time
-	mu              sync.Mutex
+	locker          sync.Mutex
 }
 
 func newOutpointLocker(lockFor time.Duration) *outpointLocker {
 	return &outpointLocker{
-		lockFor:         lockFor,
+		lockExpiry:      lockFor,
 		lockedOutpoints: make(map[wire.OutPoint]time.Time),
-		mu:              sync.Mutex{},
+		locker:          sync.Mutex{},
 	}
 }
 
 func (l *outpointLocker) lock(ctx context.Context, outpoints ...wire.OutPoint) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.locker.Lock()
+	defer l.locker.Unlock()
 
 	now := time.Now()
-	lockedUntil := now.Add(l.lockFor)
+	lockedUntil := now.Add(l.lockExpiry)
 
 	for _, outpoint := range outpoints {
 		l.lockedOutpoints[outpoint] = lockedUntil
@@ -37,8 +37,8 @@ func (l *outpointLocker) lock(ctx context.Context, outpoints ...wire.OutPoint) e
 }
 
 func (l *outpointLocker) get(ctx context.Context) (map[wire.OutPoint]struct{}, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.locker.Lock()
+	defer l.locker.Unlock()
 
 	lockedOutpoints := make(map[wire.OutPoint]struct{})
 	for outpoint, lockedUntil := range l.lockedOutpoints {
