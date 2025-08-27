@@ -858,38 +858,6 @@
         ]
       }
     },
-    "/v1/wallet/wait-for-sync": {
-      "post": {
-        "operationId": "WalletService_WaitForSync",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1WaitForSyncResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googlerpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1WaitForSyncRequest"
-            }
-          }
-        ],
-        "tags": [
-          "WalletService"
-        ]
-      }
-    },
     "/v1/wallet/watch-scripts": {
       "post": {
         "operationId": "WalletService_WatchScripts",
@@ -1217,7 +1185,8 @@
       "properties": {
         "confirmed": {
           "type": "string",
-          "format": "uint64"
+          "format": "uint64",
+          "title": "TODO rename to available and locked"
         },
         "unconfirmed": {
           "type": "string",
@@ -1464,17 +1433,6 @@
           "format": "uint64"
         }
       }
-    },
-    "v1WaitForSyncRequest": {
-      "type": "object",
-      "properties": {
-        "txid": {
-          "type": "string"
-        }
-      }
-    },
-    "v1WaitForSyncResponse": {
-      "type": "object"
     },
     "v1WatchScriptsRequest": {
       "type": "object",

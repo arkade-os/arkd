@@ -5,7 +5,7 @@ type bitcoinStatusResponse struct {
 		Blocks               uint32  `json:"blocks"`
 		Headers              uint32  `json:"headers"`
 		VerificationProgress float64 `json:"verificationProgress"`
-		IsSynched            bool    `json:"isSynched"`
+		IsSynced             bool    `json:"isSynched"`
 		IncrementalRelayFee  float64 `json:"incrementalRelayFee"`
 		MinRelayTxFee        float64 `json:"minRelayTxFee"`
 		Capabilities         struct {

@@ -90,12 +90,6 @@ service WalletService {
       body: "*"
     };
   }
-  rpc WaitForSync(WaitForSyncRequest) returns (WaitForSyncResponse) {
-    option (google.api.http) = {
-      post: "/v1/wallet/wait-for-sync"
-      body: "*"
-    };
-  }
 
   rpc GetReadyUpdate(GetReadyUpdateRequest) returns (stream GetReadyUpdateResponse) {
     option (google.api.http) = {

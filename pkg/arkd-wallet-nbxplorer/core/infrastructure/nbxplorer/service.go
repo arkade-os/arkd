@@ -107,7 +107,7 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (*ports.BitcoinStatus,
 	return &ports.BitcoinStatus{
 		ChainTipHeight: resp.BitcoinStatus.Blocks,
 		ChainTipTime:   blockchainInfo.Mediantime,
-		Synched:        resp.BitcoinStatus.IsSynched,
+		Synced:         resp.BitcoinStatus.IsSynced,
 	}, nil
 }
 

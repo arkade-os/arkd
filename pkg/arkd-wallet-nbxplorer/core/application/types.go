@@ -27,7 +27,6 @@ type WalletService interface {
 	) (string, error)
 	SelectUtxos(ctx context.Context, amount uint64, confirmedOnly bool) ([]Utxo, uint64, error)
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
-	WaitForSync(ctx context.Context, txid string) error
 	EstimateFees(ctx context.Context, psbt string) (uint64, error)
 	FeeRate(ctx context.Context) (chainfee.SatPerKVByte, error)
 	ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]Utxo, error)

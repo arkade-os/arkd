@@ -58,7 +58,7 @@ type wallet struct {
 	keyMgr  *keyManager
 	isReady chan struct{}
 
-	cacheArkSignerPublicKey *secp256k1.PublicKey
+	signerPubKey *secp256k1.PublicKey
 }
 
 // New creates a new WalletService service
@@ -134,15 +134,18 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 		return err
 	}
 
-	w.keyMgr, err = newKeyManager(seed, w.chainParams())
+	keyMgr, err := newKeyManager(seed, w.chainParams())
 	if err != nil {
 		return err
 	}
 
-	w.cacheArkSignerPublicKey, err = w.keyMgr.getArkSignerPublicKey()
+	signerPubKey, err := keyMgr.getArkSignerPublicKey()
 	if err != nil {
 		return err
 	}
+
+	w.signerPubKey = signerPubKey
+	w.keyMgr = keyMgr
 
 	w.isReady <- struct{}{}
 	logrus.Infof("wallet unlocked")
@@ -213,11 +216,11 @@ func (w *wallet) DeriveConnectorAddress(ctx context.Context) (string, error) {
 }
 
 func (w *wallet) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) {
-	if w.cacheArkSignerPublicKey == nil {
+	if w.signerPubKey == nil {
 		return nil, ErrWalletLocked
 	}
 
-	return w.cacheArkSignerPublicKey, nil
+	return w.signerPubKey, nil
 }
 
 func (w *wallet) EstimateFees(ctx context.Context, rawTx string) (uint64, error) {
@@ -443,37 +446,6 @@ func (w *wallet) GetTransaction(ctx context.Context, txid string) (string, error
 func (w *wallet) GetDustAmount(ctx context.Context) uint64 {
 	minRelayFee := chainfee.AbsoluteFeePerKwFloor.FeeForVByte(lntypes.VByte(biggestInputSize))
 	return uint64(minRelayFee.ToUnit(btcutil.AmountSatoshi))
-}
-
-// TODO do we really need to wait for sync with nbxplorer ?
-func (w *wallet) WaitForSync(ctx context.Context, txid string) error {
-	bitcoinStatus, err := w.Nbxplorer.GetBitcoinStatus(ctx)
-	if err != nil {
-		return err
-	}
-
-	if bitcoinStatus.Synched {
-		return nil
-	}
-
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			bitcoinStatus, err = w.Nbxplorer.GetBitcoinStatus(ctx)
-			if err != nil {
-				return err
-			}
-
-			if bitcoinStatus.Synched {
-				return nil
-			}
-		}
-	}
 }
 
 func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractRawTx bool, inputIndexes []int) (string, error) {
@@ -703,54 +675,32 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		return "", fmt.Errorf("failed to select UTXOs: %w", err)
 	}
 
-	ptx, err := psbt.New(nil, nil, 0, 0, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create PSBT: %w", err)
-	}
-
 	totalInputValue := uint64(0)
+	inputs := make([]*wire.OutPoint, 0)
+	outputs := make([]*wire.TxOut, 0)
+	nSequences := make([]uint32, 0)
+
 	for _, utxo := range selectedUtxos {
-		scriptBytes, err := hex.DecodeString(utxo.Script)
-		if err != nil {
-			return "", fmt.Errorf("failed to decode script: %w", err)
-		}
-
-		ptx.Inputs = append(ptx.Inputs, psbt.PInput{
-			WitnessUtxo: &wire.TxOut{
-				Value:    int64(utxo.Value),
-				PkScript: scriptBytes,
-			},
-			SighashType: txscript.SigHashAll,
-		})
-
 		hash, err := chainhash.NewHashFromStr(utxo.Txid)
 		if err != nil {
 			return "", fmt.Errorf("failed to parse txid: %w", err)
 		}
-
-		ptx.UnsignedTx.TxIn = append(ptx.UnsignedTx.TxIn, &wire.TxIn{
-			PreviousOutPoint: wire.OutPoint{
-				Hash:  *hash,
-				Index: utxo.Index,
-			},
-		})
-
+		inputs = append(inputs, &wire.OutPoint{Hash: *hash, Index: utxo.Index})
 		totalInputValue += utxo.Value
+		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
 	}
 
 	actualFee := w.estimateWithdrawFee(feeRate, len(selectedUtxos), 2) // 2 outputs: destination + change
-
 	changeAmount := totalInputValue - amount - actualFee
 
 	destPkScript, err := txscript.PayToAddrScript(destinationAddr)
 	if err != nil {
 		return "", fmt.Errorf("failed to create destination script: %w", err)
 	}
-	ptx.UnsignedTx.TxOut = append(ptx.UnsignedTx.TxOut, &wire.TxOut{
+	outputs = append(outputs, &wire.TxOut{
 		Value:    int64(amount),
 		PkScript: destPkScript,
 	})
-	ptx.Outputs = append(ptx.Outputs, psbt.POutput{})
 
 	dustAmount := w.GetDustAmount(ctx)
 	if changeAmount >= dustAmount {
@@ -769,13 +719,40 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 			return "", fmt.Errorf("failed to create change script: %w", err)
 		}
 
-		ptx.UnsignedTx.TxOut = append(ptx.UnsignedTx.TxOut, &wire.TxOut{
+		outputs = append(outputs, &wire.TxOut{
 			Value:    int64(changeAmount),
 			PkScript: changePkScript,
 		})
-		ptx.Outputs = append(ptx.Outputs, psbt.POutput{})
 	} else {
 		actualFee += changeAmount
+	}
+
+	ptx, err := psbt.New(inputs, outputs, 2, 0, nSequences)
+	if err != nil {
+		return "", fmt.Errorf("failed to create PSBT: %w", err)
+	}
+
+	updater, err := psbt.NewUpdater(ptx)
+	if err != nil {
+		return "", fmt.Errorf("failed to create PSBT updater: %w", err)
+	}
+
+	for inputIndex, utxo := range selectedUtxos {
+		scriptBytes, err := hex.DecodeString(utxo.Script)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode script: %w", err)
+		}
+
+		if err := updater.AddInWitnessUtxo(&wire.TxOut{
+			Value:    int64(utxo.Value),
+			PkScript: scriptBytes,
+		}, inputIndex); err != nil {
+			return "", fmt.Errorf("failed to add input witness utxo: %w", err)
+		}
+
+		if err := updater.AddInSighashType(txscript.SigHashAll, inputIndex); err != nil {
+			return "", fmt.Errorf("failed to add input sighash type: %w", err)
+		}
 	}
 
 	psbtB64, err := ptx.B64Encode()
@@ -817,7 +794,7 @@ func (w *wallet) init(ctx context.Context, mnemonic string, password string) (ke
 		return nil, err
 	}
 
-	if err := w.Repository.SetEncryptedSeed(ctx, encryptedSeed); err != nil {
+	if err := w.Repository.AddEncryptedSeed(ctx, encryptedSeed); err != nil {
 		return nil, err
 	}
 
@@ -829,7 +806,7 @@ func (w *wallet) init(ctx context.Context, mnemonic string, password string) (ke
 	mainAccountXPub := keyMgr.getMainAccountDerivationScheme()
 	connectorAccountXPub := keyMgr.getConnectorAccountDerivationScheme()
 
-	w.cacheArkSignerPublicKey, err = keyMgr.getArkSignerPublicKey()
+	w.signerPubKey, err = keyMgr.getArkSignerPublicKey()
 	if err != nil {
 		return nil, err
 	}

@@ -10,7 +10,7 @@ import (
 type BitcoinStatus struct {
 	ChainTipHeight uint32
 	ChainTipTime   int64
-	Synched        bool
+	Synced         bool
 }
 
 type TransactionDetails struct {

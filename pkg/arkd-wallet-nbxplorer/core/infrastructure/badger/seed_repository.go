@@ -61,7 +61,7 @@ func (r *seedRepository) GetEncryptedSeed(ctx context.Context) ([]byte, error) {
 	return dto.Seed, nil
 }
 
-func (r *seedRepository) SetEncryptedSeed(ctx context.Context, seed []byte) error {
+func (r *seedRepository) AddEncryptedSeed(ctx context.Context, seed []byte) error {
 	dto := encryptedSeedDTO{Seed: seed}
 	err := r.store.Upsert(seedKey, dto)
 	if err != nil {
