@@ -14,7 +14,7 @@ services:
     container_name: nbxplorer
     ports: 
       - 32838:32838
-    image: nicolasdorier/nbxplorer:2.5.29
+    image: nicolasdorier/nbxplorer:2.5.30
     environment:
       - NBXPLORER_NETWORK=regtest
       - NBXPLORER_CHAINS=btc
