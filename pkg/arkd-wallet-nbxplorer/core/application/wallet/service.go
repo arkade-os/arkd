@@ -29,7 +29,7 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"github.com/tyler-smith/go-bip39"
 )
 
@@ -148,7 +148,7 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 	w.keyMgr = keyMgr
 
 	w.isReady <- struct{}{}
-	logrus.Infof("wallet unlocked")
+	log.Infof("wallet unlocked")
 
 	return nil
 }
@@ -425,7 +425,7 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 	}
 
 	if err := w.locker.lock(ctx, toLock...); err != nil {
-		logrus.Error("failed to lock utxos", err)
+		log.Error("failed to lock utxos", err)
 		// ignore error
 	}
 

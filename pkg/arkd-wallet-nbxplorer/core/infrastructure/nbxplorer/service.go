@@ -21,7 +21,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/gorilla/websocket"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -235,7 +235,7 @@ func (n *nbxplorer) Track(ctx context.Context, derivationScheme string) error {
 	}
 
 	endpoint := fmt.Sprintf("/v1/cryptos/%s/derivations/%s", btcCryptoCode, url.PathEscape(derivationScheme))
-	logrus.Debugf("Tracking derivation scheme: %s", endpoint)
+	log.Debugf("Tracking derivation scheme: %s", endpoint)
 	_, err := n.makeRequest(ctx, "POST", endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to track derivation scheme: %w", err)
@@ -277,7 +277,7 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 
 		txHash, err := chainhash.NewHashFromStr(u.TransactionHash)
 		if err != nil {
-			logrus.Warnf("failed to parse transaction hash: %s", err)
+			log.Warnf("failed to parse transaction hash: %s", err)
 			continue
 		}
 
@@ -300,7 +300,7 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 
 		txHash, err := chainhash.NewHashFromStr(u.TransactionHash)
 		if err != nil {
-			logrus.Warnf("failed to parse transaction hash: %s", err)
+			log.Warnf("failed to parse transaction hash: %s", err)
 			continue
 		}
 
