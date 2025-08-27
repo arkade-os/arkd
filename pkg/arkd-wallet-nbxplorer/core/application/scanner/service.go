@@ -43,7 +43,7 @@ func New(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScann
 }
 
 func (s *scanner) start(ctx context.Context) error {
-	groupNotifications, err := s.nbxplorer.GetAddressNotifications(ctx)
+	notificationCh, err := s.nbxplorer.GetAddressNotifications(ctx)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (s *scanner) start(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				return
-			case utxos := <-groupNotifications:
+			case utxos := <-notificationCh:
 				if len(s.notifications) == 0 {
 					continue
 				}
