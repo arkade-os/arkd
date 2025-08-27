@@ -1,5 +1,6 @@
 services:
   pgnbxplorer:
+    restart: unless-stopped
     image: postgres:16
     container_name: pgnbxplorer
     ports:

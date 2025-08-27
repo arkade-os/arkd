@@ -45,10 +45,10 @@ var (
 const biggestInputSize = 148 + 182 // = 330 vbytes
 
 type WalletOptions struct {
-	Repository ports.SeedRepository
-	Cypher     ports.Cypher
-	Nbxplorer  ports.Nbxplorer
-	Network    string
+	SeedRepository ports.SeedRepository
+	Cypher         ports.Cypher
+	Nbxplorer      ports.Nbxplorer
+	Network        string
 }
 
 type wallet struct {
@@ -125,7 +125,7 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 		return nil
 	}
 
-	encryptedSeed, err := w.Repository.GetEncryptedSeed(ctx)
+	encryptedSeed, err := w.SeedRepository.GetEncryptedSeed(ctx)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (w *wallet) Lock(ctx context.Context) error {
 
 func (w *wallet) Status(ctx context.Context) application.WalletStatus {
 	return application.WalletStatus{
-		IsInitialized: w.Repository.IsInitialized(ctx),
+		IsInitialized: w.SeedRepository.IsInitialized(ctx),
 		IsUnlocked:    w.keyMgr != nil,
 		IsSynced:      true,
 	}
@@ -535,7 +535,7 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 				continue // skip if already signed
 			}
 
-			privateKey, err := w.getScriptPubKeyPrivateKey(ctx, hex.EncodeToString(input.WitnessUtxo.PkScript))
+			privateKey, err := w.getPrivateKeyFromScript(ctx, hex.EncodeToString(input.WitnessUtxo.PkScript))
 			if err != nil {
 				return "", err
 			}
@@ -559,7 +559,7 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 		}
 
 		// P2WPKH case (either connector or main account)
-		privateKey, err := w.getScriptPubKeyPrivateKey(ctx, hex.EncodeToString(input.WitnessUtxo.PkScript))
+		privateKey, err := w.getPrivateKeyFromScript(ctx, hex.EncodeToString(input.WitnessUtxo.PkScript))
 		if err != nil {
 			return "", err
 		}
@@ -765,12 +765,7 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	txid, err := w.BroadcastTransaction(ctx, signedTx)
-	if err != nil {
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
-	}
-
-	return txid, nil
+	return w.BroadcastTransaction(ctx, signedTx)
 }
 
 func (w *wallet) Close() {
@@ -781,7 +776,7 @@ func (w *wallet) Close() {
 }
 
 func (w *wallet) init(ctx context.Context, mnemonic string, password string) (keyMgr *keyManager, err error) {
-	if w.Repository.IsInitialized(ctx) {
+	if w.SeedRepository.IsInitialized(ctx) {
 		return nil, fmt.Errorf("wallet already initialized")
 	}
 
@@ -794,7 +789,7 @@ func (w *wallet) init(ctx context.Context, mnemonic string, password string) (ke
 		return nil, err
 	}
 
-	if err := w.Repository.AddEncryptedSeed(ctx, encryptedSeed); err != nil {
+	if err := w.SeedRepository.AddEncryptedSeed(ctx, encryptedSeed); err != nil {
 		return nil, err
 	}
 
@@ -856,7 +851,7 @@ func (w *wallet) estimateWithdrawFee(feeRate chainfee.SatPerKVByte, numInputs, n
 	return uint64(math.Ceil(fee.ToUnit(btcutil.AmountSatoshi)))
 }
 
-func (w *wallet) getScriptPubKeyPrivateKey(ctx context.Context, scriptPubKey string) (*secp256k1.PrivateKey, error) {
+func (w *wallet) getPrivateKeyFromScript(ctx context.Context, scriptPubKey string) (*secp256k1.PrivateKey, error) {
 	if w.keyMgr == nil {
 		return nil, ErrWalletLocked
 	}

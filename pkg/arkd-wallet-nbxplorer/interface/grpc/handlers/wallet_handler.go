@@ -162,12 +162,7 @@ func (h *WalletServiceHandler) SelectUtxos(
 	}
 	var respUtxos []*arkwalletv1.TxInput
 	for _, u := range utxos {
-		respUtxos = append(respUtxos, &arkwalletv1.TxInput{
-			Txid:   u.Txid,
-			Index:  u.Index,
-			Script: u.Script,
-			Value:  u.Value,
-		})
+		respUtxos = append(respUtxos, toTxInput(u))
 	}
 	return &arkwalletv1.SelectUtxosResponse{Utxos: respUtxos, TotalAmount: total}, nil
 }
@@ -211,12 +206,7 @@ func (h *WalletServiceHandler) ListConnectorUtxos(
 	}
 	respUtxos := make([]*arkwalletv1.TxInput, 0, len(utxos))
 	for _, u := range utxos {
-		respUtxos = append(respUtxos, &arkwalletv1.TxInput{
-			Txid:   u.Txid,
-			Index:  u.Index,
-			Script: u.Script,
-			Value:  u.Value,
-		})
+		respUtxos = append(respUtxos, toTxInput(u))
 	}
 	return &arkwalletv1.ListConnectorUtxosResponse{Utxos: respUtxos}, nil
 }
@@ -393,4 +383,14 @@ func (h *WalletServiceHandler) Withdraw(
 		return nil, err
 	}
 	return &arkwalletv1.WithdrawResponse{Txid: txid}, nil
+}
+
+// toTxInput converts a UTXO to a TxInput protobuf message
+func toTxInput(u application.Utxo) *arkwalletv1.TxInput {
+	return &arkwalletv1.TxInput{
+		Txid:   u.Txid,
+		Index:  u.Index,
+		Script: u.Script,
+		Value:  u.Value,
+	}
 }

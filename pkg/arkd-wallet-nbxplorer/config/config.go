@@ -106,10 +106,10 @@ func (c *Config) initServices() error {
 	}
 
 	walletSvc := wallet.New(wallet.WalletOptions{
-		Repository: repository,
-		Cypher:     cryptoSvc,
-		Nbxplorer:  nbxplorerSvc,
-		Network:    network.Name,
+		SeedRepository: repository,
+		Cypher:         cryptoSvc,
+		Nbxplorer:      nbxplorerSvc,
+		Network:        network.Name,
 	})
 
 	scannerSvc, err := scanner.New(nbxplorerSvc, network.Name)
