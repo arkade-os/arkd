@@ -103,7 +103,7 @@ func (w *wallet) Restore(ctx context.Context, mnemonic string, password string) 
 
 	mainAccountScanDone := false
 	connectorAccountScanDone := false
-	for !mainAccountScanDone && !connectorAccountScanDone {
+	for !(mainAccountScanDone && connectorAccountScanDone) {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
