@@ -466,9 +466,10 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 	// bitcoin core RPC request for submitpackage
 	rpcReq := rpcRequest{
 		JSONRPC: "1.0",
-		ID:      rand.Intn(10_0000),
-		Method:  "submitpackage",
-		Params:  []any{txs},
+		// #nosec G404
+		ID:     rand.Intn(10_0000),
+		Method: "submitpackage",
+		Params: []any{txs},
 	}
 
 	jsonBody, err := json.Marshal(rpcReq)
