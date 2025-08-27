@@ -583,6 +583,7 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 			}
 
 			ptx.Inputs[inputIndex].TaprootKeySpendSig = signature
+			continue
 		}
 
 		// P2WPKH case (either connector or main account)

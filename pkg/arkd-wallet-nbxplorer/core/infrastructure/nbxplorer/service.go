@@ -70,9 +70,42 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (ports.BitcoinStatus, 
 		return ports.BitcoinStatus{}, fmt.Errorf("failed to unmarshal bitcoin status: %w", err)
 	}
 
+	// use getblockchaininfo to get the tip timestamp
+	rpcReq := rpcRequest{
+		JSONRPC: "1.0",
+		ID:      rand.Intn(10_0000),
+		Method:  "getblockchaininfo",
+		Params:  []any{},
+	}
+
+	jsonBody, err := json.Marshal(rpcReq)
+	if err != nil {
+		return ports.BitcoinStatus{}, fmt.Errorf("failed to marshal RPC request: %w", err)
+	}
+
+	rpcData, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/v1/cryptos/%s/rpc", btcCryptoCode), strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return ports.BitcoinStatus{}, fmt.Errorf("failed to call submitpackage RPC: %w", err)
+	}
+
+	var rpcResp rpcResponse
+	if err := json.Unmarshal(rpcData, &rpcResp); err != nil {
+		return ports.BitcoinStatus{}, fmt.Errorf("failed to unmarshal RPC response: %w", err)
+	}
+
+	blockchainInfoJSON, err := json.Marshal(rpcResp.Result)
+	if err != nil {
+		return ports.BitcoinStatus{}, fmt.Errorf("failed to marshal RPC result: %w", err)
+	}
+
+	var blockchainInfo blockchainInfoResponse
+	if err := json.Unmarshal(blockchainInfoJSON, &blockchainInfo); err != nil {
+		return ports.BitcoinStatus{}, fmt.Errorf("failed to unmarshal blockchain info: %w", err)
+	}
+
 	return ports.BitcoinStatus{
 		ChainTipHeight: resp.BitcoinStatus.Blocks,
-		ChainTipTime:   int64(resp.BitcoinStatus.Headers), // Using headers as approximation
+		ChainTipTime:   blockchainInfo.Mediantime,
 		Synched:        resp.BitcoinStatus.IsSynched,
 	}, nil
 }
