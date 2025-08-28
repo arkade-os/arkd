@@ -53,7 +53,7 @@ func (c *cryptoService) Encrypt(_ context.Context, seed []byte, password string)
 
 func (c *cryptoService) Decrypt(_ context.Context, encryptedSeed []byte, password string) ([]byte, error) {
 	if len(encryptedSeed) == 0 {
-		return nil, fmt.Errorf("missing encrypted mnemonic")
+		return nil, fmt.Errorf("missing encrypted seed")
 	}
 	if len(password) == 0 {
 		return nil, fmt.Errorf("missing decryption password")
