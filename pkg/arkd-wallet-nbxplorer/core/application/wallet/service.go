@@ -261,7 +261,7 @@ func (w *wallet) EstimateFees(ctx context.Context, rawTx string) (uint64, error)
 					ControlBlock:   ctrlBlock,
 				})
 			} else {
-				weightEstimator.AddTaprootKeySpendInput(txscript.SigHashDefault)
+				weightEstimator.AddTaprootKeySpendInput(txscript.SigHashAll)
 			}
 		default:
 			return 0, fmt.Errorf("unsupported script type: %v", script.Class())
@@ -286,8 +286,8 @@ func (w *wallet) FeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
 	if err != nil {
 		if w.Network == "regtest" {
 			// in regtest, sometimes the fee estimation fails because there is not enough transactions
-			// fallback to minrelayfee * 1.2 to ensure we never fail with "min-relay-fee-not-met" error
-			return chainfee.AbsoluteFeePerKwFloor.FeePerKVByte() * 120 / 100, nil
+			// fallback to minrelayfee
+			return chainfee.AbsoluteFeePerKwFloor.FeePerKVByte(), nil
 		}
 		return 0, err
 	}
@@ -812,7 +812,7 @@ func (w *wallet) estimateWithdrawFee(feeRate chainfee.SatPerKVByte, numInputs, n
 	weightEstimator := &input.TxWeightEstimator{}
 
 	for i := 0; i < numInputs; i++ {
-		weightEstimator.AddP2WKHInput()
+		weightEstimator.AddTaprootKeySpendInput(txscript.SigHashAll)
 	}
 
 	for i := 0; i < numOutputs; i++ {
