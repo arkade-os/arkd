@@ -98,7 +98,10 @@ func (c *Config) initServices() error {
 
 	cryptoSvc := cypher.New()
 
-	nbxplorerSvc := nbxplorer.New(c.NbxplorerURL)
+	nbxplorerSvc, err := nbxplorer.New(c.NbxplorerURL)
+	if err != nil {
+		return err
+	}
 
 	network, err := getNetwork()
 	if err != nil {

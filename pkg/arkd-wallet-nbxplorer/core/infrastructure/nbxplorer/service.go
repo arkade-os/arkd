@@ -45,10 +45,10 @@ type nbxplorer struct {
 	groupID string
 }
 
-func New(url string) ports.Nbxplorer {
+func New(url string) (ports.Nbxplorer, error) {
 	url = strings.TrimSuffix(url, "/")
 
-	return &nbxplorer{
+	svc := &nbxplorer{
 		url:        url,
 		httpClient: &http.Client{},
 		wsDialer:   websocket.Dialer{},
@@ -56,6 +56,12 @@ func New(url string) ports.Nbxplorer {
 		wsConn:     nil,
 		groupID:    "",
 	}
+
+	if _, err := svc.GetBitcoinStatus(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to connect to nbxplorer: %s", err)
+	}
+
+	return svc, nil
 }
 
 // GetBitcoinStatus retrieves Bitcoin network status from /v1/cryptos/{cryptoCode}/status endpoint.
