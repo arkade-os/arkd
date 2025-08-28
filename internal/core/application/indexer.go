@@ -184,7 +184,7 @@ func (i *indexerService) GetVtxos(
 	if recoverableOnly {
 		recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
 		for _, vtxo := range allVtxos {
-			if !vtxo.RequiresForfeit() {
+			if !vtxo.RequiresForfeit() && !vtxo.Spent {
 				recoverableVtxos = append(recoverableVtxos, vtxo)
 			}
 		}
@@ -218,19 +218,25 @@ func (i *indexerService) GetVtxoChain(
 ) (*VtxoChainResp, error) {
 	chain := make([]ChainTx, 0)
 	nextVtxos := []domain.Outpoint{vtxoKey}
+	visited := make(map[string]bool)
 
 	for len(nextVtxos) > 0 {
 		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
 		if err != nil {
 			return nil, err
 		}
-
 		if len(vtxos) == 0 {
 			return nil, fmt.Errorf("vtxo not found for outpoint: %v", nextVtxos)
 		}
 
 		newNextVtxos := make([]domain.Outpoint, 0)
 		for _, vtxo := range vtxos {
+			key := vtxo.Outpoint.String()
+			if visited[key] {
+				continue
+			}
+			visited[key] = true
+
 			// if the vtxo is preconfirmed, it means it has been created by an offchain tx
 			// we need to add the virtual tx + the associated checkpoints txs
 			// also, we have to populate the newNextVtxos with the checkpoints inputs
@@ -266,16 +272,17 @@ func (i *indexerService) GetVtxoChain(
 
 					// populate newNextVtxos with checkpoints inputs
 					for _, in := range ptx.UnsignedTx.TxIn {
-						newNextVtxos = append(newNextVtxos, domain.Outpoint{
-							Txid: in.PreviousOutPoint.Hash.String(),
-							VOut: in.PreviousOutPoint.Index,
-						})
+						if !visited[in.PreviousOutPoint.String()] {
+							newNextVtxos = append(newNextVtxos, domain.Outpoint{
+								Txid: in.PreviousOutPoint.Hash.String(),
+								VOut: in.PreviousOutPoint.Index,
+							})
+						}
 					}
 				}
 
 				chain = append(chain, chainTx)
 				chain = append(chain, checkpointTxs...)
-
 				continue
 			}
 
