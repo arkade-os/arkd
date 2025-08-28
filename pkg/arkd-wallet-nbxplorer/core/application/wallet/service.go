@@ -296,6 +296,10 @@ func (w *wallet) FeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
 }
 
 func (w *wallet) GetForfeitAddress(ctx context.Context) (string, error) {
+	if w.keyMgr == nil {
+		return "", ErrWalletLocked
+	}
+
 	forfeitPubKey, err := w.keyMgr.arkSignerExtendedKey.ECPubKey()
 	if err != nil {
 		return "", err
@@ -448,6 +452,9 @@ func (w *wallet) GetDustAmount(ctx context.Context) uint64 {
 }
 
 func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractRawTx bool, inputIndexes []int) (string, error) {
+	if w.keyMgr == nil {
+		return "", ErrWalletLocked
+	}
 	ptx, err := psbt.NewFromRawBytes(
 		strings.NewReader(partialTx),
 		true,
