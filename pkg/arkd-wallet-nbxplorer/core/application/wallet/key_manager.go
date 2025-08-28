@@ -17,7 +17,7 @@ type keyManager struct {
 	connectorAccount *hdkeychain.ExtendedKey
 	// the ark signer account key is the one used in VTXO script as ark signer
 	// m/86'/(cointype)'/2'/0/0
-	arkSignerExtendedKey *hdkeychain.ExtendedKey
+	signerPrvKey *btcec.PrivateKey
 
 	// derivation schemes strings used by nbxplorer tracking system
 	// arkd wallet is taproot account = "xpub-[taproot]"
@@ -83,8 +83,12 @@ func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 	if err != nil {
 		return nil, err
 	}
+	arkSignerPrvKey, err := arkSignerExtendedKey.ECPrivKey()
+	if err != nil {
+		return nil, err
+	}
 
-	return &keyManager{mainAccount, connectorAccount, arkSignerExtendedKey, mainAccountDerivationScheme, connectorAccountDerivationScheme}, nil
+	return &keyManager{mainAccount, connectorAccount, arkSignerPrvKey, mainAccountDerivationScheme, connectorAccountDerivationScheme}, nil
 }
 
 // compute the private key from main or connector account based on the derivation scheme and key path

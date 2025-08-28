@@ -56,8 +56,6 @@ type wallet struct {
 	locker  *outpointLocker
 	keyMgr  *keyManager
 	isReady chan struct{}
-
-	signerPubKey *btcec.PublicKey
 }
 
 // New creates a new WalletService service
@@ -67,7 +65,6 @@ func New(opts WalletOptions) application.WalletService {
 		newOutpointLocker(time.Minute),
 		nil,
 		make(chan struct{}),
-		nil,
 	}
 }
 
@@ -138,12 +135,6 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 		return err
 	}
 
-	signerPubKey, err := keyMgr.arkSignerExtendedKey.ECPubKey()
-	if err != nil {
-		return err
-	}
-
-	w.signerPubKey = signerPubKey
 	w.keyMgr = keyMgr
 
 	w.isReady <- struct{}{}
@@ -215,11 +206,11 @@ func (w *wallet) DeriveConnectorAddress(ctx context.Context) (string, error) {
 }
 
 func (w *wallet) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) {
-	if w.signerPubKey == nil {
+	if w.keyMgr == nil {
 		return nil, ErrWalletLocked
 	}
 
-	return w.signerPubKey, nil
+	return w.keyMgr.signerPrvKey.PubKey(), nil
 }
 
 func (w *wallet) EstimateFees(ctx context.Context, rawTx string) (uint64, error) {
@@ -300,12 +291,8 @@ func (w *wallet) GetForfeitAddress(ctx context.Context) (string, error) {
 		return "", ErrWalletLocked
 	}
 
-	forfeitPubKey, err := w.keyMgr.arkSignerExtendedKey.ECPubKey()
-	if err != nil {
-		return "", err
-	}
-
-	pubkeyHash := btcutil.Hash160(forfeitPubKey.SerializeCompressed())
+	signerPubkey := w.keyMgr.signerPrvKey.PubKey()
+	pubkeyHash := btcutil.Hash160(signerPubkey.SerializeCompressed())
 
 	addr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, w.chainParams())
 	if err != nil {
@@ -509,15 +496,10 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 		if len(input.TaprootLeafScript) > 0 {
 			tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
 
-			privateKey, err := w.keyMgr.arkSignerExtendedKey.ECPrivKey()
-			if err != nil {
-				return "", err
-			}
-
 			signature, err := txscript.RawTxInTapscriptSignature(
 				ptx.UnsignedTx, txSigHashes, inputIndex,
 				input.WitnessUtxo.Value, input.WitnessUtxo.PkScript,
-				tapLeaf, input.SighashType, privateKey,
+				tapLeaf, input.SighashType, w.keyMgr.signerPrvKey,
 			)
 			if err != nil {
 				return "", err
@@ -527,7 +509,7 @@ func (w *wallet) SignTransaction(ctx context.Context, partialTx string, extractR
 
 			ptx.Inputs[inputIndex].TaprootScriptSpendSig = append(ptx.Inputs[inputIndex].TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
 				Signature:   signature,
-				XOnlyPubKey: schnorr.SerializePubKey(privateKey.PubKey()),
+				XOnlyPubKey: schnorr.SerializePubKey(w.keyMgr.signerPrvKey.PubKey()),
 				LeafHash:    leafHash[:],
 				SigHash:     input.SighashType,
 			})
@@ -771,11 +753,6 @@ func (w *wallet) init(ctx context.Context, mnemonic string, password string) (ke
 	}
 
 	keyMgr, err = newKeyManager(seedBytes, w.chainParams())
-	if err != nil {
-		return nil, err
-	}
-
-	w.signerPubKey, err = keyMgr.arkSignerExtendedKey.ECPubKey()
 	if err != nil {
 		return nil, err
 	}
