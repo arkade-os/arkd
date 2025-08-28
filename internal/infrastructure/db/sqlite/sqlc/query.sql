@@ -246,19 +246,33 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
 
 -- name: SelectVtxosByArkTxidRecursive :many
-WITH RECURSIVE vtxo_chain AS (
-    -- Base case: start with the initial vtxo
-    SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.ark_txid, 0 as level
-    FROM vtxo_vw 
-    WHERE vtxo_vw.txid = @initial_txid
-    
+WITH RECURSIVE descendants_chain AS (
+    -- seed
+    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
+           0 AS depth,
+           v.txid||':'||v.vout AS visited
+    FROM vtxo v
+    WHERE v.txid = @txid
+
     UNION ALL
-    
-    -- Recursive case: find vtxos where txid matches the ark_txid from previous level
-    SELECT next_vtxo.txid, next_vtxo.vout, next_vtxo.ark_txid, vtxo_chain.level + 1
-    FROM vtxo_vw next_vtxo
-    INNER JOIN vtxo_chain ON next_vtxo.txid = vtxo_chain.ark_txid
-    WHERE vtxo_chain.ark_txid IS NOT NULL
+
+    -- children: next vtxo(s) are those whose txid == current.ark_txid
+    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
+           w.depth + 1,
+           w.visited || ',' || (c.txid||':'||c.vout)
+    FROM descendants_chain w
+             JOIN vtxo c
+                  ON c.txid = w.ark_txid
+    WHERE w.ark_txid IS NOT NULL
+      AND w.visited NOT LIKE '%' || (c.txid||':'||c.vout) || '%'   -- cycle/visited guard
+),
+-- keep one row per node at its MIN depth (layers)
+nodes AS (
+   SELECT txid, vout, preconfirmed, MIN(depth) as depth
+   FROM descendants_chain
+   GROUP BY txid, vout, preconfirmed
 )
-SELECT DISTINCT vtxo_chain.txid, vtxo_chain.vout
-FROM vtxo_chain;
+
+SELECT *
+FROM nodes
+ORDER BY depth, txid, vout;
