@@ -286,8 +286,8 @@ func (w *wallet) FeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
 	if err != nil {
 		if w.Network == "regtest" {
 			// in regtest, somtimes the fee estimation fails because there is not enough transactions
-			// fallback to minrelayfee
-			return chainfee.AbsoluteFeePerKwFloor.FeePerKVByte(), nil
+			// fallback to minrelayfee * 1.2 to ensure we never fail with "min-relay-fee-not-met" error
+			return chainfee.AbsoluteFeePerKwFloor.FeePerKVByte() * 120 / 100, nil
 		}
 		return 0, err
 	}
