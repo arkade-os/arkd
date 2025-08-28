@@ -91,10 +91,10 @@ func (v *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtx
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) GetAllUnrolledUnsweptOffchainVtxos(
+func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectUnrolledUnsweptOffchainVtxos(ctx)
+	res, err := v.querier.SelectSweepableUnrolledVtxos(ctx)
 	if err != nil {
 		return nil, err
 	}

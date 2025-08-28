@@ -86,10 +86,10 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) GetAllUnrolledUnsweptOffchainVtxos(
+func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectUnrolledUnsweptOffchainVtxos(ctx)
+	res, err := v.querier.SelectSweepableUnrolledVtxos(ctx)
 	if err != nil {
 		return nil, err
 	}

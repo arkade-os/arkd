@@ -5,6 +5,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
@@ -58,7 +59,7 @@ type TxBuilder interface {
 		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs SweepableOutput, err error,
 	)
 	FinalizeAndExtract(tx string) (txhex string, err error)
-	VerifyTapscriptPartialSigs(tx string) (valid bool, txid string, err error)
+	VerifyTapscriptPartialSigs(tx string) (valid bool, ptx *psbt.Packet, err error)
 	VerifyAndCombinePartialTx(dest string, src string) (string, error)
 	CountSignedTaprootInputs(tx string) (int, error)
 }

@@ -109,7 +109,7 @@ func (s *sweeper) start() error {
 	}()
 
 	unrolledUnsweptOffchainVtxos, err := s.repoManager.Vtxos().
-		GetAllUnrolledUnsweptOffchainVtxos(ctx)
+		GetAllSweepableUnrolledVtxos(ctx)
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func (s *sweeper) start() error {
 				continue
 			}
 
-			if err := s.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockStamp{blockHeight, blockTime}); err != nil {
+			if err := s.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockHeight, blockTime); err != nil {
 				log.WithError(err).Error("error while scheduling checkpoint sweep")
 				continue
 			}
@@ -165,7 +165,8 @@ func (s *sweeper) removeTask(id string) {
 func (s *sweeper) scheduleCheckpointSweep(
 	vtxo domain.Outpoint,
 	ptx *psbt.Packet,
-	confirmedAt blockStamp,
+	blockHeight int64,
+	blockTime int64,
 ) error {
 	txid := ptx.UnsignedTx.TxID()
 
@@ -204,9 +205,9 @@ func (s *sweeper) scheduleCheckpointSweep(
 
 	sweepAt := int64(0)
 	if s.scheduler.Unit() == ports.BlockHeight {
-		sweepAt = confirmedAt.blockHeight + int64(sweepClosure.Locktime.Value)
+		sweepAt = blockHeight + int64(sweepClosure.Locktime.Value)
 	} else {
-		sweepAt = confirmedAt.blockTime + sweepClosure.Locktime.Seconds()
+		sweepAt = blockTime + sweepClosure.Locktime.Seconds()
 	}
 
 	_, tapTree, err := checkpointVtxoScript.TapTree()

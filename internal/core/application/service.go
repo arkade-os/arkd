@@ -696,12 +696,6 @@ func (s *service) SubmitOffchainTx(
 	// verify the ark tx integrity
 	rebuiltTxid := rebuiltArkTx.UnsignedTx.TxID()
 	if rebuiltTxid != txid {
-		fmt.Println("REBUILT ARK TX")
-		fmt.Println(rebuiltArkTx.B64Encode())
-		fmt.Println("REBUILT CP TXS")
-		for _, cp := range rebuiltCheckpointTxs {
-			fmt.Println(cp.B64Encode())
-		}
 		return nil, "", "", fmt.Errorf(
 			"invalid ark tx: expected txid %s got %s", rebuiltTxid, txid,
 		)
@@ -781,21 +775,14 @@ func (s *service) FinalizeOffchainTx(
 
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	for _, checkpoint := range finalCheckpointTxs {
-		// verify the tapscript signatures
 		var valid bool
-		var checkpointTxid string
-		valid, checkpointTxid, err = s.builder.VerifyTapscriptPartialSigs(checkpoint)
+		var ptx *psbt.Packet
+		valid, ptx, err = s.builder.VerifyTapscriptPartialSigs(checkpoint)
 		if err != nil || !valid {
 			return err
 		}
 
-		decodedCheckpointTxs[checkpointTxid], err = psbt.NewFromRawBytes(
-			strings.NewReader(checkpoint),
-			true,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to parse checkpoint tx: %s", err)
-		}
+		decodedCheckpointTxs[ptx.UnsignedTx.TxID()] = ptx
 	}
 
 	finalCheckpointTxsMap := make(map[string]string)
@@ -2432,19 +2419,19 @@ func (s *service) verifyForfeitTxsSigs(txs []string) error {
 	wg := sync.WaitGroup{}
 	wg.Add(nbWorkers)
 
-	for i := 0; i < nbWorkers; i++ {
+	for range nbWorkers {
 		go func() {
 			defer wg.Done()
 
 			for tx := range jobs {
-				valid, txid, err := s.builder.VerifyTapscriptPartialSigs(tx)
+				valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(tx)
 				if err != nil {
-					errChan <- fmt.Errorf("failed to validate forfeit tx %s: %s", txid, err)
+					errChan <- fmt.Errorf("failed to validate forfeit tx %s: %s", ptx.UnsignedTx.TxID(), err)
 					return
 				}
 
 				if !valid {
-					errChan <- fmt.Errorf("invalid signature for forfeit tx %s", txid)
+					errChan <- fmt.Errorf("invalid signature for forfeit tx %s", ptx.UnsignedTx.TxID())
 					return
 				}
 			}

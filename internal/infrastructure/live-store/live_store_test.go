@@ -13,6 +13,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/stretchr/testify/require"
@@ -468,10 +469,10 @@ func (m *mockedTxBuilder) FinalizeAndExtract(tx string) (txhex string, err error
 
 func (m *mockedTxBuilder) VerifyTapscriptPartialSigs(
 	tx string,
-) (valid bool, txid string, err error) {
+) (valid bool, ptx *psbt.Packet, err error) {
 	args := m.Called(tx)
 	res0 := args.Get(0).(bool)
-	res1 := args.Get(1).(string)
+	res1 := args.Get(1).(*psbt.Packet)
 	return res0, res1, args.Error(2)
 }
 
