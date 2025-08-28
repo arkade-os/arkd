@@ -17,13 +17,16 @@ type Address struct {
 	VtxoTapKey *btcec.PublicKey
 }
 
-func (a *Address) GetPkScript() []byte {
-	// ignore error, we assume VtxoTapKey is valid
+func (a *Address) GetPkScript() ([]byte, error) {
+	if a.VtxoTapKey == nil {
+		return nil, fmt.Errorf("missing vtxo taproot key")
+	}
+
 	pkScript, _ := txscript.NewScriptBuilder().
 		AddOp(txscript.OP_1).
 		AddData(schnorr.SerializePubKey(a.VtxoTapKey)).
 		Script()
-	return pkScript
+	return pkScript, nil
 }
 
 // EncodeV0 converts the address to its bech32m string representation.

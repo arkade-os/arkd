@@ -33,6 +33,7 @@ import (
 	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -1763,12 +1764,9 @@ func TestDeleteIntent(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestDelegateRefresh is a test where Alice owns a vtxo and wants to refresh it.
-// she delegates the refresh to Bob.
-// Alice signs an intent transaction spending the vtxo and refreshing it.
-// Then, Alice signs a forfeit transaction using SIGHASH_ALL | ANYONECANPAY
-// It allows Bob to later adds the connector to the transaction inputs
-// and process with the batch settlement refreshing the Alice's vtxo.
+// TestDelegateRefresh tests the case where Alice owns a vtxo and delegates Bob to refresh it.
+// Alice creates and signs an intent that specifies how the vtxo is refreshed.
+// Alice also creates and signs a forfeit transaction using SIGHASH_ALL | ANYONECANPAY, so that Bob can later add the connector as input, sign the tx with SIGHASH_ALL and complete the refresh during the batch execution.
 func TestDelegateRefresh(t *testing.T) {
 	delegateLocktime := arklib.AbsoluteLocktime(10)
 
@@ -1791,10 +1789,10 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, bobTreeSigner)
 
-	infos, err := grpcClient.GetInfo(ctx)
+	aliceConfig, err := alice.GetConfigData(t.Context())
 	require.NoError(t, err)
 
-	signerPubKey := getSignerPubKey(t, infos)
+	signerPubKey := aliceConfig.SignerPubKey
 
 	collaborativeAliceBobClosure := &script.CLTVMultisigClosure{
 		Locktime: delegateLocktime,
@@ -1874,6 +1872,12 @@ func TestDelegateRefresh(t *testing.T) {
 	sequence, err := arklib.BIP68Sequence(exitLocktime)
 	require.NoError(t, err)
 
+	delegatePkScript, err := arkAddress.GetPkScript()
+	require.NoError(t, err)
+
+	alicePkScript, err := aliceArkAddr.GetPkScript()
+	require.NoError(t, err)
+
 	// Alice creates an intent proof that doesn't expire
 	intentProof, err := bip322.New(
 		encodedIntentMessage,
@@ -1886,14 +1890,14 @@ func TestDelegateRefresh(t *testing.T) {
 				Sequence: sequence,
 				WitnessUtxo: &wire.TxOut{
 					Value:    int64(aliceVtxo.Amount),
-					PkScript: arkAddress.GetPkScript(),
+					PkScript: delegatePkScript,
 				},
 			},
 		},
 		[]*wire.TxOut{
 			{
 				Value:    int64(aliceVtxo.Amount),
-				PkScript: aliceArkAddr.GetPkScript(),
+				PkScript: alicePkScript,
 			},
 		},
 	)
@@ -1929,11 +1933,15 @@ func TestDelegateRefresh(t *testing.T) {
 
 	// Alice creates a forfeit transaction spending the vtxo with SIGHASH_ALL | ANYONECANPAY
 
-	forfeitOutputScript := getForfeitOutputScript(t, infos)
+	forfeitOutputAddr, err := btcutil.DecodeAddress(aliceConfig.ForfeitAddress, nil)
+	require.NoError(t, err)
 
-	connectorAmount := infos.Dust
+	forfeitOutputScript, err := txscript.PayToAddrScript(forfeitOutputAddr)
+	require.NoError(t, err)
 
-	partialForfeitTx, err := tree.BuildCustomOutputForfeitTx(
+	connectorAmount := aliceConfig.Dust
+
+	partialForfeitTx, err := tree.BuildForfeitTxWithOutput(
 		[]*wire.OutPoint{{
 			Hash:  *vtxoHash,
 			Index: aliceVtxo.VOut,
@@ -1941,7 +1949,7 @@ func TestDelegateRefresh(t *testing.T) {
 		[]uint32{wire.MaxTxInSequenceNum - 1},
 		[]*wire.TxOut{{
 			Value:    int64(aliceVtxo.Amount),
-			PkScript: arkAddress.GetPkScript(),
+			PkScript: delegatePkScript,
 		}},
 		&wire.TxOut{
 			Value:    int64(aliceVtxo.Amount + connectorAmount),
@@ -2001,11 +2009,8 @@ func TestDelegateRefresh(t *testing.T) {
 		delegatorWallet:  bobWallet,
 		client:           grpcClient,
 		signerPubKey:     signerPubKey,
-		vtxoTreeExpiry: arklib.RelativeLocktime{
-			Type:  arklib.LocktimeTypeBlock,
-			Value: uint32(infos.VtxoTreeExpiry),
-		},
-		intentId: intentId,
+		vtxoTreeExpiry:   aliceConfig.VtxoTreeExpiry,
+		intentId:         intentId,
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, commitmentTxid)

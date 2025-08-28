@@ -390,24 +390,6 @@ func generateNote(t *testing.T, amount uint32) string {
 	return noteResp.Notes[0]
 }
 
-func getSignerPubKey(t *testing.T, infos *client.Info) *btcec.PublicKey {
-	signerPubKey, err := hex.DecodeString(infos.SignerPubKey)
-	require.NoError(t, err)
-	pubKey, err := btcec.ParsePubKey(signerPubKey)
-	require.NoError(t, err)
-	return pubKey
-}
-
-func getForfeitOutputScript(t *testing.T, infos *client.Info) []byte {
-	forfeitOutputAddr, err := btcutil.DecodeAddress(infos.ForfeitAddress, nil)
-	require.NoError(t, err)
-
-	forfeitOutputScript, err := txscript.PayToAddrScript(forfeitOutputAddr)
-	require.NoError(t, err)
-
-	return forfeitOutputScript
-}
-
 func faucetOffchainAddress(t *testing.T, address string) (types.Vtxo, error) {
 	client, _ := setupArkSDK(t)
 

@@ -18,10 +18,10 @@ func BuildForfeitTx(
 	sumPrevout -= txutils.ANCHOR_VALUE
 
 	forfeitOut := wire.NewTxOut(sumPrevout, signerScript)
-	return BuildCustomOutputForfeitTx(inputs, sequences, prevouts, forfeitOut, txLocktime)
+	return BuildForfeitTxWithOutput(inputs, sequences, prevouts, forfeitOut, txLocktime)
 }
 
-func BuildCustomOutputForfeitTx(
+func BuildForfeitTxWithOutput(
 	inputs []*wire.OutPoint, sequences []uint32, prevouts []*wire.TxOut,
 	forfeitOutput *wire.TxOut,
 	txLocktime uint32,
