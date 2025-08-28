@@ -7,8 +7,8 @@ replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 replace github.com/arkade-os/arkd/api-spec => ../../api-spec
 
 require (
-	github.com/arkade-os/arkd/api-spec v0.0.0-20250822193207-98c5ced2c36c
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.0
+	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
@@ -102,7 +102,7 @@ require (
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
+	github.com/stretchr/testify v1.10.0
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
