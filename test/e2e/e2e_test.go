@@ -501,6 +501,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+		time.Sleep(4 * time.Second)
 
 		err = generateBlock()
 		require.NoError(t, err)
