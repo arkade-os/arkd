@@ -281,22 +281,13 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 			continue
 		}
 
-		txHash, err := chainhash.NewHashFromStr(u.TransactionHash)
+		utxo, err := castUtxo(u)
 		if err != nil {
-			log.Warnf("failed to parse transaction hash: %s", err)
+			log.Errorf("failed to cast UTXO: %s", err)
 			continue
 		}
 
-		utxos = append(utxos, ports.Utxo{
-			OutPoint: wire.OutPoint{
-				Hash:  *txHash,
-				Index: u.Index,
-			},
-			Value:         u.Value,
-			Script:        u.ScriptPubKey,
-			Address:       u.Address,
-			Confirmations: u.Confirmations,
-		})
+		utxos = append(utxos, utxo)
 	}
 
 	for _, u := range resp.Unconfirmed.UtxOs {
@@ -304,22 +295,13 @@ func (n *nbxplorer) GetUtxos(ctx context.Context, derivationScheme string) ([]po
 			continue
 		}
 
-		txHash, err := chainhash.NewHashFromStr(u.TransactionHash)
+		utxo, err := castUtxo(u)
 		if err != nil {
-			log.Warnf("failed to parse transaction hash: %s", err)
+			log.Errorf("failed to cast UTXO: %s", err)
 			continue
 		}
 
-		utxos = append(utxos, ports.Utxo{
-			OutPoint: wire.OutPoint{
-				Hash:  *txHash,
-				Index: u.Index,
-			},
-			Value:         u.Value,
-			Script:        u.ScriptPubKey,
-			Address:       u.Address,
-			Confirmations: 0, // unconfirmed utxos always have 0 confirmations
-		})
+		utxos = append(utxos, utxo)
 	}
 
 	return utxos, nil
@@ -795,21 +777,13 @@ func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.
 			continue
 		}
 
-		hash, err := chainhash.NewHashFromStr(u.TransactionHash)
+		utxo, err := castUtxo(u)
 		if err != nil {
+			log.Errorf("failed to cast UTXO: %s", err)
 			continue
 		}
 
-		utxos = append(utxos, ports.Utxo{
-			OutPoint: wire.OutPoint{
-				Hash:  *hash,
-				Index: u.Index,
-			},
-			Value:         u.Value,
-			Script:        u.ScriptPubKey,
-			Address:       u.Address,
-			Confirmations: u.Confirmations,
-		})
+		utxos = append(utxos, utxo)
 	}
 
 	for _, u := range resp.Unconfirmed.UtxOs {
@@ -817,22 +791,31 @@ func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.
 			continue
 		}
 
-		hash, err := chainhash.NewHashFromStr(u.TransactionHash)
+		utxo, err := castUtxo(u)
 		if err != nil {
 			continue
 		}
 
-		utxos = append(utxos, ports.Utxo{
-			OutPoint: wire.OutPoint{
-				Hash:  *hash,
-				Index: u.Index,
-			},
-			Value:         u.Value,
-			Script:        u.ScriptPubKey,
-			Address:       u.Address,
-			Confirmations: u.Confirmations,
-		})
+		utxos = append(utxos, utxo)
 	}
 
 	return utxos, nil
+}
+
+func castUtxo(u utxoResponse) (ports.Utxo, error) {
+	hash, err := chainhash.NewHashFromStr(u.TransactionHash)
+	if err != nil {
+		return ports.Utxo{}, fmt.Errorf("failed to convert transaction hash to chainhash: %w", err)
+	}
+
+	return ports.Utxo{
+		OutPoint: wire.OutPoint{
+			Hash:  *hash,
+			Index: u.Index,
+		},
+		Value:         u.Value,
+		Script:        u.ScriptPubKey,
+		Address:       u.Address,
+		Confirmations: u.Confirmations,
+	}, nil
 }
