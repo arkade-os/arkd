@@ -127,6 +127,16 @@ func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isCo
 	return details.Confirmations > 0, int64(details.Height), details.Timestamp, nil
 }
 
+func (s *scanner) Close() {
+	s.cancel()
+	s.lock.Lock()
+	for _, listener := range s.notificationListeners {
+		close(listener)
+	}
+	s.notificationListeners = make([]chan map[string][]application.Utxo, 0)
+	s.lock.Unlock()
+}
+
 func scriptsToAddresses(scripts []string, chainParams *chaincfg.Params) ([]string, error) {
 	addresses := make([]string, 0, len(scripts))
 	for _, script := range scripts {

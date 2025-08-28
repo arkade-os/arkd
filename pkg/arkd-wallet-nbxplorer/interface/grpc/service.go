@@ -42,6 +42,7 @@ func (s *service) Start() error {
 
 	s.closeFn = func() {
 		s.cfg.WalletSvc.Close()
+		s.cfg.ScannerSvc.Close()
 	}
 
 	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc, s.cfg.ScannerSvc)

@@ -45,6 +45,7 @@ type BlockchainScanner interface {
 	UnwatchScripts(ctx context.Context, scripts []string) error
 	GetNotificationChannel(ctx context.Context) <-chan map[string][]Utxo
 	IsTransactionConfirmed(ctx context.Context, txid string) (isConfirmed bool, blocknumber int64, blocktime int64, err error)
+	Close()
 }
 
 type WalletStatus struct {
