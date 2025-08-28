@@ -285,7 +285,7 @@ func (w *wallet) FeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
 	rate, err := w.Nbxplorer.EstimateFeeRate(ctx)
 	if err != nil {
 		if w.Network == "regtest" {
-			// in regtest, somtimes the fee estimation fails because there is not enough transactions
+			// in regtest, sometimes the fee estimation fails because there is not enough transactions
 			// fallback to minrelayfee * 1.2 to ensure we never fail with "min-relay-fee-not-met" error
 			return chainfee.AbsoluteFeePerKwFloor.FeePerKVByte() * 120 / 100, nil
 		}
@@ -628,6 +628,10 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 	if w.keyMgr == nil {
 		return "", ErrWalletLocked
 	}
+	dustAmount := w.GetDustAmount(ctx)
+	if amount < dustAmount {
+		return "", fmt.Errorf("amount is too small to be withdrawn (dust amount: %d)", dustAmount)
+	}
 
 	// validate the destination address
 	destinationAddr, err := btcutil.DecodeAddress(destinationAddress, w.chainParams())
@@ -676,7 +680,6 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		PkScript: destPkScript,
 	})
 
-	dustAmount := w.GetDustAmount(ctx)
 	if changeAmount >= dustAmount {
 		changeAddress, err := w.Nbxplorer.GetNewUnusedAddress(ctx, w.keyMgr.mainAccountDerivationScheme, true, 0)
 		if err != nil {
