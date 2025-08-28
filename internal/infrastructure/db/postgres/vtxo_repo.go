@@ -303,8 +303,11 @@ func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint
 		return nil
 	}
 
-	err := execTx(ctx, v.db, txBody)
-	return sweptCount, err
+	if err := execTx(ctx, v.db, txBody); err != nil {
+		return -1, err
+	}
+
+	return sweptCount, nil
 }
 
 func (v *vtxoRepository) UpdateVtxosExpiration(

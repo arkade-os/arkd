@@ -334,7 +334,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	lastEvent := events[len(events)-1]
 	if lastEvent.GetType() == domain.EventTypeBatchSwept {
 		event := lastEvent.(domain.BatchSwept)
-		allSweptVtxos := append(event.TreeVtxos, event.ArkTxVtxos...)
+		allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
 		sweptCount, err := repo.SweepVtxos(ctx, allSweptVtxos)
 		if err != nil {
 			log.WithField("swept_count", sweptCount).

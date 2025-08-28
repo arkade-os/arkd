@@ -281,7 +281,7 @@ func (s *sweeper) createTask(
 
 				vtxoRepo := s.repoManager.Vtxos()
 				// get all vtxos that are children of the swept leaves
-				arkTxVtxos := make([]domain.Outpoint, 0)
+				preconfirmedVtxos := make([]domain.Outpoint, 0)
 				seen := make(map[string]struct{})
 				for _, leafVtxo := range leafVtxoKeys {
 					children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
@@ -291,13 +291,13 @@ func (s *sweeper) createTask(
 					}
 					for _, child := range children {
 						if _, ok := seen[child.String()]; !ok {
-							arkTxVtxos = append(arkTxVtxos, child)
+							preconfirmedVtxos = append(preconfirmedVtxos, child)
 							seen[child.String()] = struct{}{}
 						}
 					}
 				}
 
-				events, err := round.Sweep(leafVtxoKeys, arkTxVtxos, txid, sweepTx)
+				events, err := round.Sweep(leafVtxoKeys, preconfirmedVtxos, txid, sweepTx)
 				if err != nil {
 					log.WithError(err).Error("failed to sweep batch")
 					return

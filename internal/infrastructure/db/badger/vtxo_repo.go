@@ -156,7 +156,7 @@ func (r *vtxoRepository) SweepVtxos(
 	for _, outpoint := range outpoints {
 		vtxo, err := r.getVtxo(ctx, outpoint)
 		if err != nil {
-			return sweptCount, err
+			return -1, err
 		}
 		if vtxo.Swept {
 			continue // Skip already swept vtxos
@@ -165,7 +165,7 @@ func (r *vtxoRepository) SweepVtxos(
 		// Mark as swept
 		vtxo.Swept = true
 		if err := r.updateVtxo(ctx, vtxo); err != nil {
-			return sweptCount, err
+			return -1, err
 		}
 		sweptCount++
 	}

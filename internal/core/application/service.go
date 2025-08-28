@@ -168,8 +168,8 @@ func NewService(
 			if lastEvent.GetType() == domain.EventTypeBatchSwept {
 				batchSweptEvent := lastEvent.(domain.BatchSwept)
 				sweptVtxosOutpoints := append(
-					batchSweptEvent.TreeVtxos,
-					batchSweptEvent.ArkTxVtxos...)
+					batchSweptEvent.LeafVtxos,
+					batchSweptEvent.PreconfirmedVtxos...)
 				sweptVtxos, err := svc.repoManager.Vtxos().GetVtxos(ctx, sweptVtxosOutpoints)
 				if err != nil {
 					log.WithError(err).Warn("failed to get swept vtxos")

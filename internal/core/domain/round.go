@@ -199,8 +199,8 @@ func (r *Round) EndFinalization(forfeitTxs []ForfeitTx, finalCommitmentTx string
 }
 
 func (r *Round) Sweep(
-	treeVtxos []Outpoint,
-	arkTxVtxos []Outpoint,
+	leafVtxos []Outpoint,
+	preconfirmedVtxos []Outpoint,
 	txid, tx string,
 ) ([]Event, error) {
 	if !r.IsEnded() {
@@ -212,18 +212,18 @@ func (r *Round) Sweep(
 
 	sweptVtxosCount := countSweptVtxos(r.Changes)
 	leavesCount := len(tree.FlatTxTree(r.VtxoTree).Leaves())
-	fullySwept := len(treeVtxos)+sweptVtxosCount == leavesCount
+	fullySwept := len(leafVtxos)+sweptVtxosCount == leavesCount
 
 	event := BatchSwept{
 		RoundEvent: RoundEvent{
 			Id:   r.Id,
 			Type: EventTypeBatchSwept,
 		},
-		TreeVtxos:  treeVtxos,
-		ArkTxVtxos: arkTxVtxos,
-		Txid:       txid,
-		Tx:         tx,
-		FullySwept: fullySwept,
+		LeafVtxos:         leafVtxos,
+		PreconfirmedVtxos: preconfirmedVtxos,
+		Txid:              txid,
+		Tx:                tx,
+		FullySwept:        fullySwept,
 	}
 
 	r.raise(event)
@@ -327,7 +327,7 @@ func countSweptVtxos(events []Event) int {
 	count := 0
 	for _, event := range events {
 		if e, ok := event.(BatchSwept); ok {
-			count += len(e.TreeVtxos)
+			count += len(e.LeafVtxos)
 		}
 	}
 	return count
