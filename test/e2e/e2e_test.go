@@ -1209,7 +1209,7 @@ func TestSendArkTxWithSeveralInputs(t *testing.T) {
 
 	ctx := context.Background()
 
-	for i := 0; i < numberOfInputs; i++ {
+	for range numberOfInputs {
 		note := generateNote(t, amountPerInput)
 		_, err := alice.RedeemNotes(ctx, []string{note})
 		require.NoError(t, err)
