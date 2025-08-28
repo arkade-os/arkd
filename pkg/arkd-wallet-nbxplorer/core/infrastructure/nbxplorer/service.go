@@ -625,10 +625,7 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 		defer close(notificationsChan)
 
 		if err := n.connectWebSocket(ctx); err != nil {
-			select {
-			case notificationsChan <- nil:
-			case <-ctx.Done():
-			}
+			log.Errorf("failed to connect to WebSocket: %s", err)
 			return
 		}
 
@@ -641,10 +638,7 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 				if err != nil {
 					// reconnect on error
 					if err := n.connectWebSocket(ctx); err != nil {
-						select {
-						case notificationsChan <- nil:
-						case <-ctx.Done():
-						}
+						log.Errorf("failed to connect to WebSocket: %s", err)
 						return
 					}
 					continue
