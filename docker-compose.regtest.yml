@@ -10,6 +10,11 @@ services:
     volumes:
       - type: tmpfs
         target: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nbxplorer -h 127.0.0.1 -p 5432"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
   nbxplorer:
     restart: unless-stopped
     container_name: nbxplorer
@@ -34,7 +39,8 @@ services:
       - type: tmpfs
         target: /datadir
     depends_on:
-      - pgnbxplorer
+      pgnbxplorer:
+        condition: service_healthy
     
   arkd-wallet:
     restart: unless-stopped
@@ -54,7 +60,6 @@ services:
     volumes:
       - type: tmpfs
         target: /app/data
-  
   arkd:
     build:
       context: .
