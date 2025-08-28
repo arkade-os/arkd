@@ -19,8 +19,8 @@ func New() *cryptoService {
 	return &cryptoService{}
 }
 
-func (c *cryptoService) Encrypt(_ context.Context, privateKey []byte, password string) ([]byte, error) {
-	if len(privateKey) == 0 {
+func (c *cryptoService) Encrypt(_ context.Context, seed []byte, password string) ([]byte, error) {
+	if len(seed) == 0 {
 		return nil, fmt.Errorf("missing plaintext private key")
 	}
 	if len(password) == 0 {
@@ -45,22 +45,22 @@ func (c *cryptoService) Encrypt(_ context.Context, privateKey []byte, password s
 		return nil, err
 	}
 
-	ciphertext := gcm.Seal(nonce, nonce, privateKey, nil)
+	ciphertext := gcm.Seal(nonce, nonce, seed, nil)
 	ciphertext = append(ciphertext, salt...)
 
 	return ciphertext, nil
 }
 
-func (c *cryptoService) Decrypt(_ context.Context, encrypted []byte, password string) ([]byte, error) {
-	if len(encrypted) == 0 {
+func (c *cryptoService) Decrypt(_ context.Context, encryptedSeed []byte, password string) ([]byte, error) {
+	if len(encryptedSeed) == 0 {
 		return nil, fmt.Errorf("missing encrypted mnemonic")
 	}
 	if len(password) == 0 {
 		return nil, fmt.Errorf("missing decryption password")
 	}
 
-	salt := encrypted[len(encrypted)-32:]
-	data := encrypted[:len(encrypted)-32]
+	salt := encryptedSeed[len(encryptedSeed)-32:]
+	data := encryptedSeed[:len(encryptedSeed)-32]
 
 	key, _, err := deriveKey([]byte(password), salt)
 	if err != nil {
