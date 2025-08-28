@@ -364,7 +364,7 @@ func TestCollaborativeExit(t *testing.T) {
 		_, err = runArkCommand("settle", "--password", password)
 		require.NoError(t, err)
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Redeem 1000 satoshis onchain, keep 9000 satoshis offchain
 		_, err = runArkCommand(
@@ -389,7 +389,7 @@ func TestCollaborativeExit(t *testing.T) {
 		_, err = runArkCommand("settle", "--password", password)
 		require.NoError(t, err)
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Redeem 10000 satoshis onchain
 		_, err = runArkCommand(

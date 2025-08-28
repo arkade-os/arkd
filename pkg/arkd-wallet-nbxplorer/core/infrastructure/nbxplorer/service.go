@@ -32,8 +32,9 @@ const (
 var ErrTransactionNotFound = errors.New("transaction not found")
 
 type nbxplorer struct {
-	url        string
-	httpClient *http.Client
+	url           string
+	httpClient    *http.Client
+	minRelayTxFee chainfee.SatPerKVByte
 
 	// WebSocket connection for BlockchainScanner watch events
 	wsConn   *websocket.Conn
@@ -57,9 +58,12 @@ func New(url string) (ports.Nbxplorer, error) {
 		groupID:    "",
 	}
 
-	if _, err := svc.GetBitcoinStatus(context.Background()); err != nil {
+	status, err := svc.GetBitcoinStatus(context.Background())
+	if err != nil {
 		return nil, fmt.Errorf("failed to connect to nbxplorer: %s", err)
 	}
+
+	svc.minRelayTxFee = status.MinRelayTxFee
 
 	return svc, nil
 }
@@ -114,6 +118,7 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (*ports.BitcoinStatus,
 		ChainTipHeight: resp.BitcoinStatus.Blocks,
 		ChainTipTime:   blockchainInfo.Mediantime,
 		Synced:         resp.BitcoinStatus.IsSynced,
+		MinRelayTxFee:  chainfee.SatPerKVByte(resp.BitcoinStatus.MinRelayTxFee * 1000),
 	}, nil
 }
 
@@ -392,9 +397,8 @@ func (n *nbxplorer) EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte,
 		return 0, fmt.Errorf("invalid fee rate received: %f", resp.FeeRate)
 	}
 
-	// Convert sat/vB to sat/kvB
 	satPerKvB := chainfee.SatPerKVByte(resp.FeeRate * 1000)
-	return satPerKvB, nil
+	return max(satPerKvB, n.minRelayTxFee), nil
 }
 
 // BroadcastTransaction broadcasts transaction(s) via different methods based on count:

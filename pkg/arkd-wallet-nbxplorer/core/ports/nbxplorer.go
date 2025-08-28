@@ -11,6 +11,7 @@ type BitcoinStatus struct {
 	ChainTipHeight uint32
 	ChainTipTime   int64
 	Synced         bool
+	MinRelayTxFee  chainfee.SatPerKVByte
 }
 
 type TransactionDetails struct {
