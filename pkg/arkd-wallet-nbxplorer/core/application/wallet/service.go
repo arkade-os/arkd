@@ -732,6 +732,7 @@ func (w *wallet) Close() {
 	w.Nbxplorer.Close()
 	w.keyMgr = nil
 	close(w.isReady)
+	w.SeedRepository.Close()
 }
 
 func (w *wallet) init(ctx context.Context, mnemonic string, password string) (keyMgr *keyManager, err error) {

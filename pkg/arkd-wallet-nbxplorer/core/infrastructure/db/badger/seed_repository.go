@@ -7,6 +7,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
 	"github.com/dgraph-io/badger/v4"
+	log "github.com/sirupsen/logrus"
 	"github.com/timshannon/badgerhold/v4"
 )
 
@@ -69,6 +70,13 @@ func (r *seedRepository) AddEncryptedSeed(ctx context.Context, seed []byte) erro
 	}
 
 	return nil
+}
+
+func (r *seedRepository) Close() {
+	err := r.store.Close()
+	if err != nil {
+		log.Errorf("failed to close seed repository: %s", err)
+	}
 }
 
 func createDB(dbDir string, logger badger.Logger) (*badgerhold.Store, error) {
