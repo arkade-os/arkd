@@ -94,7 +94,7 @@ func (r *vtxoRepository) GetVtxos(
 	for _, outpoint := range outpoints {
 		vtxo, err := r.getVtxo(ctx, outpoint)
 		if err != nil {
-			return nil, err
+			return nil, nil
 		}
 		if vtxo == nil {
 			return nil, nil
@@ -107,14 +107,14 @@ func (r *vtxoRepository) GetVtxos(
 func (r *vtxoRepository) GetVtxosForRound(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
-	query := badgerhold.Where("CommitmentTx").Eq(txid)
+	query := badgerhold.Where("RootCommitmentTxid").Eq(txid)
 	return r.findVtxos(ctx, query)
 }
 
 func (r *vtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
-	query := badgerhold.Where("CommitmentTx").Eq(txid).And("Preconfirmed").Eq(false)
+	query := badgerhold.Where("RootCommitmentTxid").Eq(txid).And("Preconfirmed").Eq(false)
 	return r.findVtxos(ctx, query)
 }
 
@@ -167,13 +167,25 @@ func (r *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error)
 
 func (r *vtxoRepository) SweepVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
-) error {
+) (int, error) {
+	sweptCount := 0
 	for _, outpoint := range outpoints {
-		if err := r.sweepVtxo(ctx, outpoint); err != nil {
-			return err
+		vtxo, err := r.getVtxo(ctx, outpoint)
+		if err != nil {
+			return -1, err
 		}
+		if vtxo.Swept {
+			continue // Skip already swept vtxos
+		}
+
+		// Mark as swept
+		vtxo.Swept = true
+		if err := r.updateVtxo(ctx, vtxo); err != nil {
+			return -1, err
+		}
+		sweptCount++
 	}
-	return nil
+	return sweptCount, nil
 }
 
 func (r *vtxoRepository) UpdateVtxosExpiration(
@@ -372,22 +384,6 @@ func (r *vtxoRepository) findVtxos(
 	return vtxos, err
 }
 
-func (r *vtxoRepository) sweepVtxo(ctx context.Context, outpoint domain.Outpoint) error {
-	vtxo, err := r.getVtxo(ctx, outpoint)
-	if err != nil {
-		return err
-	}
-	if vtxo == nil {
-		return nil
-	}
-	if vtxo.Swept {
-		return nil
-	}
-
-	vtxo.Swept = true
-	return r.updateVtxo(ctx, vtxo)
-}
-
 func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) error {
 	var updateFn func() error
 	if ctx.Value("tx") != nil {
@@ -413,4 +409,44 @@ func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) erro
 		return err
 	}
 	return nil
+}
+
+func (r *vtxoRepository) GetAllChildrenVtxos(
+	ctx context.Context,
+	txid string,
+) ([]domain.Outpoint, error) {
+	visited := make(map[string]bool)
+	visitedTxids := make(map[string]bool)
+	var outpoints []domain.Outpoint
+
+	queue := []string{txid}
+
+	for len(queue) > 0 {
+		currentTxid := queue[0]
+		queue = queue[1:]
+
+		if visitedTxids[currentTxid] {
+			continue
+		}
+		visitedTxids[currentTxid] = true
+
+		query := badgerhold.Where("Txid").Eq(currentTxid)
+		vtxos, err := r.findVtxos(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find vtxos for txid %s: %w", currentTxid, err)
+		}
+
+		for _, vtxo := range vtxos {
+			outpointKey := vtxo.Outpoint.String()
+			if !visited[outpointKey] {
+				visited[outpointKey] = true
+				outpoints = append(outpoints, vtxo.Outpoint)
+				if vtxo.ArkTxid != "" {
+					queue = append(queue, vtxo.ArkTxid)
+				}
+			}
+		}
+	}
+
+	return outpoints, nil
 }

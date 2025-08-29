@@ -53,6 +53,7 @@ func newSweeper(
 }
 
 func (s *sweeper) start() error {
+	s.scheduledTasks = make(map[string]struct{})
 	s.scheduler.Start()
 
 	ctx := context.Background()
@@ -408,7 +409,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 		}
 
 		sweepInputs := make([]ports.SweepableOutput, 0)
-		vtxoKeys := make([]domain.Outpoint, 0) // vtxos associated to the sweep inputs
+		leafVtxoKeys := make([]domain.Outpoint, 0) // vtxos associated to the sweep inputs
 
 		// inspect the vtxo tree to find onchain batch outputs
 		batchOutputs, err := findSweepableOutputs(
@@ -505,7 +506,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 				}
 
 				if len(sweepableVtxos) > 0 {
-					vtxoKeys = append(vtxoKeys, sweepableVtxos...)
+					leafVtxoKeys = append(leafVtxoKeys, sweepableVtxos...)
 					sweepInputs = append(sweepInputs, input)
 				}
 			}
@@ -548,14 +549,36 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 		if len(txid) > 0 {
 			log.Debugf("sweeper: batch %s swept by: %s", commitmentTxid, txid)
 
-			events, err := round.Sweep(vtxoKeys, txid, sweepTx)
+			vtxoRepo := s.repoManager.Vtxos()
+			// get all vtxos that are children of the swept leaves
+			preconfirmedVtxos := make([]domain.Outpoint, 0)
+			seen := make(map[string]struct{})
+			for _, leafVtxo := range leafVtxoKeys {
+				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+				if err != nil {
+					log.WithError(err).Error("error while getting children vtxos")
+					continue
+				}
+				for _, child := range children {
+					if _, ok := seen[child.String()]; !ok {
+						preconfirmedVtxos = append(preconfirmedVtxos, child)
+						seen[child.String()] = struct{}{}
+					}
+				}
+			}
+
+			events, err := round.Sweep(leafVtxoKeys, preconfirmedVtxos, txid, sweepTx)
 			if err != nil {
+				log.WithError(err).Error("failed to sweep batch")
 				return err
 			}
 			if len(events) > 0 {
 				if err := s.repoManager.Events().Save(
 					ctx, domain.RoundTopic, round.Id, events,
 				); err != nil {
+					log.WithError(err).Errorf(
+						"failed to save sweep events for round %s", commitmentTxid,
+					)
 					return err
 				}
 			}
@@ -586,7 +609,8 @@ func (s *sweeper) createCheckpointSweepTask(
 			log.Debugf("sweeper: checkpoint %s swept by: %s", checkpointTxid, txid)
 		}
 
-		return s.repoManager.Vtxos().SweepVtxos(context.Background(), []domain.Outpoint{vtxo})
+		_, err = s.repoManager.Vtxos().SweepVtxos(context.Background(), []domain.Outpoint{vtxo})
+		return err
 	}
 }
 

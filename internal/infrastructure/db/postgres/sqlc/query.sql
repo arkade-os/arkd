@@ -109,8 +109,8 @@ UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 -- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true WHERE txid = @txid AND vout = @vout;
 
--- name: UpdateVtxoSwept :exec
-UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout;
+-- name: UpdateVtxoSweptIfNotSwept :execrows
+UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by
@@ -239,6 +239,39 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 
 -- name: SelectLatestMarketHour :one
 SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
+
+-- name: SelectVtxosByArkTxidRecursive :many
+WITH RECURSIVE descendants_chain AS (
+    -- seed
+    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
+           0 AS depth,
+           ARRAY[(v.txid||':'||v.vout)]::text[] AS visited
+    FROM vtxo v
+    WHERE v.txid = @txid
+
+    UNION ALL
+
+    -- children: next vtxo(s) are those whose txid == current.ark_txid
+    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
+           w.depth + 1,
+           w.visited || (c.txid||':'||c.vout)
+    FROM descendants_chain w
+             JOIN vtxo c
+                  ON c.txid = w.ark_txid
+    WHERE w.ark_txid IS NOT NULL
+      AND (c.txid||':'||c.vout) <> ALL (w.visited)   -- cycle/visited guard
+),
+-- keep one row per node at its MIN depth (layers)
+nodes AS (
+   SELECT DISTINCT ON (txid, vout)
+       txid, vout, preconfirmed, depth
+   FROM descendants_chain
+   ORDER BY txid, vout, depth
+)
+
+SELECT *
+FROM nodes
+ORDER BY depth, txid, vout;
 
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND COALESCE(settled_by, '') = '';

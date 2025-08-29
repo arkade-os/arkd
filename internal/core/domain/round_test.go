@@ -597,7 +597,7 @@ func testSweep(t *testing.T) {
 			require.False(t, round.IsFailed())
 
 			vtxos := leavesToVtxos(tree.FlatTxTree(vtxoTree).Leaves())
-			events, err = round.Sweep(vtxos, "sweepTxid", emptyPtx)
+			events, err = round.Sweep(vtxos, make([]domain.Outpoint, 0), "sweepTxid", emptyPtx)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
@@ -605,7 +605,8 @@ func testSweep(t *testing.T) {
 			require.True(t, ok)
 			require.Equal(t, domain.EventTypeBatchSwept, event.Type)
 			require.Equal(t, round.Id, event.Id)
-			require.Exactly(t, vtxos, event.Vtxos)
+			require.Exactly(t, vtxos, event.LeafVtxos)
+			require.Exactly(t, make([]domain.Outpoint, 0), event.PreconfirmedVtxos)
 			require.Equal(t, "sweepTxid", event.Txid)
 			require.Equal(t, emptyPtx, event.Tx)
 			require.True(t, event.FullySwept)

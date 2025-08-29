@@ -990,6 +990,74 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 	return i, err
 }
 
+const selectVtxosByArkTxidRecursive = `-- name: SelectVtxosByArkTxidRecursive :many
+WITH RECURSIVE descendants_chain AS (
+    -- seed
+    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
+           0 AS depth,
+           v.txid||':'||v.vout AS visited
+    FROM vtxo v
+    WHERE v.txid = ?1
+
+    UNION ALL
+
+    -- children: next vtxo(s) are those whose txid == current.ark_txid
+    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
+           w.depth + 1,
+           w.visited || ',' || (c.txid||':'||c.vout)
+    FROM descendants_chain w
+             JOIN vtxo c
+                  ON c.txid = w.ark_txid
+    WHERE w.ark_txid IS NOT NULL
+      AND w.visited NOT LIKE '%' || (c.txid||':'||c.vout) || '%'   -- cycle/visited guard
+),
+nodes AS (
+   SELECT txid, vout, preconfirmed, MIN(depth) as depth
+   FROM descendants_chain
+   GROUP BY txid, vout, preconfirmed
+)
+
+SELECT txid, vout, preconfirmed, depth
+FROM nodes
+ORDER BY depth, txid, vout
+`
+
+type SelectVtxosByArkTxidRecursiveRow struct {
+	Txid         string
+	Vout         int64
+	Preconfirmed bool
+	Depth        interface{}
+}
+
+// keep one row per node at its MIN depth (layers)
+func (q *Queries) SelectVtxosByArkTxidRecursive(ctx context.Context, txid string) ([]SelectVtxosByArkTxidRecursiveRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosByArkTxidRecursive, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxosByArkTxidRecursiveRow
+	for rows.Next() {
+		var i SelectVtxosByArkTxidRecursiveRow
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Preconfirmed,
+			&i.Depth,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxosWithCommitmentTxid = `-- name: SelectVtxosWithCommitmentTxid :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE commitment_txid = ?1
 `
@@ -1170,18 +1238,21 @@ func (q *Queries) UpdateVtxoSpent(ctx context.Context, arg UpdateVtxoSpentParams
 	return err
 }
 
-const updateVtxoSwept = `-- name: UpdateVtxoSwept :exec
-UPDATE vtxo SET swept = true WHERE txid = ?1 AND vout = ?2
+const updateVtxoSweptIfNotSwept = `-- name: UpdateVtxoSweptIfNotSwept :execrows
+UPDATE vtxo SET swept = true WHERE txid = ?1 AND vout = ?2 AND swept = false
 `
 
-type UpdateVtxoSweptParams struct {
+type UpdateVtxoSweptIfNotSweptParams struct {
 	Txid string
 	Vout int64
 }
 
-func (q *Queries) UpdateVtxoSwept(ctx context.Context, arg UpdateVtxoSweptParams) error {
-	_, err := q.db.ExecContext(ctx, updateVtxoSwept, arg.Txid, arg.Vout)
-	return err
+func (q *Queries) UpdateVtxoSweptIfNotSwept(ctx context.Context, arg UpdateVtxoSweptIfNotSweptParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateVtxoSweptIfNotSwept, arg.Txid, arg.Vout)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateVtxoUnrolled = `-- name: UpdateVtxoUnrolled :exec

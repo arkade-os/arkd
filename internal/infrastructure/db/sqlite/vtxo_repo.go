@@ -290,20 +290,33 @@ func (v *vtxoRepository) SpendVtxos(
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
+func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint) (int, error) {
+	sweptCount := 0
 	txBody := func(querierWithTx *queries.Queries) error {
-		for _, vtxo := range vtxos {
-			if err := querierWithTx.UpdateVtxoSwept(
-				ctx, queries.UpdateVtxoSweptParams{Txid: vtxo.Txid, Vout: int64(vtxo.VOut)},
-			); err != nil {
+		for _, outpoint := range vtxos {
+			affectedRows, err := querierWithTx.UpdateVtxoSweptIfNotSwept(
+				ctx,
+				queries.UpdateVtxoSweptIfNotSweptParams{
+					Txid: outpoint.Txid,
+					Vout: int64(outpoint.VOut),
+				},
+			)
+			if err != nil {
 				return err
+			}
+			if affectedRows > 0 {
+				sweptCount++
 			}
 		}
 
 		return nil
 	}
 
-	return execTx(ctx, v.db, txBody)
+	if err := execTx(ctx, v.db, txBody); err != nil {
+		return -1, err
+	}
+
+	return sweptCount, nil
 }
 
 func (v *vtxoRepository) UpdateVtxosExpiration(
@@ -353,6 +366,26 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	})
 
 	return vtxos, nil
+}
+
+func (v *vtxoRepository) GetAllChildrenVtxos(
+	ctx context.Context,
+	txid string,
+) ([]domain.Outpoint, error) {
+	res, err := v.querier.SelectVtxosByArkTxidRecursive(ctx, txid)
+	if err != nil {
+		return nil, err
+	}
+
+	outpoints := make([]domain.Outpoint, 0, len(res))
+	for _, row := range res {
+		outpoints = append(outpoints, domain.Outpoint{
+			Txid: row.Txid,
+			VOut: uint32(row.Vout),
+		})
+	}
+
+	return outpoints, nil
 }
 
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
