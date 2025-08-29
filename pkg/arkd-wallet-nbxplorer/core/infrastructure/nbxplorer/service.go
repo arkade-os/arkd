@@ -419,7 +419,7 @@ func (n *nbxplorer) IsSpent(ctx context.Context, outpoint wire.OutPoint) (spent 
 
 	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/v1/cryptos/%s/rpc", btcCryptoCode), strings.NewReader(string(jsonBody)))
 	if err != nil {
-		return false, fmt.Errorf("failed to call submitpackage RPC: %w", err)
+		return false, fmt.Errorf("failed to call gettxout RPC: %w", err)
 	}
 
 	var resp rpcResponse
@@ -431,7 +431,7 @@ func (n *nbxplorer) IsSpent(ctx context.Context, outpoint wire.OutPoint) (spent 
 		return false, fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
 	}
 
-	return resp.Result != nil, nil
+	return resp.Result == nil, nil
 }
 
 // BroadcastTransaction broadcasts transaction(s) via different methods based on count:
