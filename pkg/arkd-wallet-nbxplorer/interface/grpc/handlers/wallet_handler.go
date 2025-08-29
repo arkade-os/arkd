@@ -238,7 +238,7 @@ func (h *WalletServiceHandler) LockConnectorUtxos(
 	for _, u := range req.Utxos {
 		txhash, err := chainhash.NewHashFromStr(u.GetTxid())
 		if err != nil {
-			return nil, err
+			return nil, status.Errorf(codes.InvalidArgument, "invalid txid: %v", err)
 		}
 
 		utxos = append(utxos, wire.OutPoint{
@@ -330,7 +330,7 @@ func (h *WalletServiceHandler) GetOutpointStatus(
 
 	txhash, err := chainhash.NewHashFromStr(txid)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.InvalidArgument, "invalid txid: %v", err)
 	}
 
 	spent, err := h.scanner.GetOutpointStatus(ctx, wire.OutPoint{
