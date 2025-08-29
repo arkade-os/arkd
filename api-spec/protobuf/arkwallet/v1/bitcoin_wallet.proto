@@ -101,6 +101,11 @@ service WalletService {
       get: "/v1/wallet/transaction-confirmed"
     };
   }
+  rpc GetOutpointStatus(GetOutpointStatusRequest) returns (GetOutpointStatusResponse) {
+    option (google.api.http) = {
+      get: "/v1/wallet/outpoint-status"
+    };
+  }
   rpc EstimateFees(EstimateFeesRequest) returns (EstimateFeesResponse) {
     option (google.api.http) = {
       post: "/v1/wallet/estimate-fees"
@@ -201,7 +206,13 @@ message IsTransactionConfirmedResponse {
   int64 blocktime = 3;
 }
 
-
+message GetOutpointStatusRequest {
+  string txid = 1;
+  uint32 vout = 2;
+}
+message GetOutpointStatusResponse {
+  bool spent = 1;
+}
 message NotificationStreamRequest {
 }
 message NotificationStreamResponse {

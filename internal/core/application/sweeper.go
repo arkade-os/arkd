@@ -203,6 +203,19 @@ func (s *sweeper) scheduleCheckpointSweep(
 		return fmt.Errorf("no outputs found in checkpoint tx")
 	}
 
+	spent, err := s.wallet.GetOutpointStatus(context.Background(), domain.Outpoint{
+		Txid: txid,
+		VOut: 0,
+	})
+	if err != nil {
+		return err
+	}
+
+	if spent {
+		log.Debugf("checkpoint output %s is spent, skipping scheduling sweep", txid)
+		return nil
+	}
+
 	outputTaprootTapTree := ptx.Outputs[0].TaprootTapTree
 	if len(outputTaprootTapTree) <= 0 {
 		return fmt.Errorf("no taproot tap tree found in checkpoint tx")

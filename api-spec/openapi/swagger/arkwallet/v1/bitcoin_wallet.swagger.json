@@ -445,6 +445,43 @@
         ]
       }
     },
+    "/v1/wallet/outpoint-status": {
+      "get": {
+        "operationId": "WalletService_GetOutpointStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetOutpointStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googlerpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "vout",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "WalletService"
+        ]
+      }
+    },
     "/v1/wallet/pubkey": {
       "get": {
         "operationId": "WalletService_GetPubkey",
@@ -1103,6 +1140,14 @@
       "properties": {
         "network": {
           "type": "string"
+        }
+      }
+    },
+    "v1GetOutpointStatusResponse": {
+      "type": "object",
+      "properties": {
+        "spent": {
+          "type": "boolean"
         }
       }
     },

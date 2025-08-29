@@ -318,6 +318,31 @@ func (h *WalletServiceHandler) IsTransactionConfirmed(
 	}, nil
 }
 
+func (h *WalletServiceHandler) GetOutpointStatus(
+	ctx context.Context, req *arkwalletv1.GetOutpointStatusRequest,
+) (*arkwalletv1.GetOutpointStatusResponse, error) {
+	txid := req.GetTxid()
+	vout := req.GetVout()
+
+	if len(txid) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "txid is required")
+	}
+
+	txhash, err := chainhash.NewHashFromStr(txid)
+	if err != nil {
+		return nil, err
+	}
+
+	spent, err := h.scanner.GetOutpointStatus(ctx, wire.OutPoint{
+		Hash:  *txhash,
+		Index: vout,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &arkwalletv1.GetOutpointStatusResponse{Spent: spent}, nil
+}
+
 // GetReadyUpdate streams an empty response when the wallet is unlocker and synced.
 func (h *WalletServiceHandler) GetReadyUpdate(
 	_ *arkwalletv1.GetReadyUpdateRequest, stream arkwalletv1.WalletService_GetReadyUpdateServer,

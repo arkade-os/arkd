@@ -765,6 +765,12 @@ func (s *service) IsTransactionConfirmed(
 	return s.extraAPI.getTxStatus(txid)
 }
 
+func (s *service) GetOutpointStatus(
+	_ context.Context, outpoint wire.OutPoint,
+) (spent bool, err error) {
+	return s.extraAPI.IsSpent(outpoint)
+}
+
 func (s *service) GetDustAmount(
 	ctx context.Context,
 ) uint64 {

@@ -5,6 +5,10 @@ import (
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type WalletServiceHandler struct {
@@ -317,6 +321,31 @@ func (h *WalletServiceHandler) IsTransactionConfirmed(
 		Blocknumber: blocknumber,
 		Blocktime:   blocktime,
 	}, nil
+}
+
+func (h *WalletServiceHandler) GetOutpointStatus(
+	ctx context.Context, req *arkwalletv1.GetOutpointStatusRequest,
+) (*arkwalletv1.GetOutpointStatusResponse, error) {
+	txid := req.GetTxid()
+	vout := req.GetVout()
+
+	if len(txid) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "txid is required")
+	}
+
+	txhash, err := chainhash.NewHashFromStr(txid)
+	if err != nil {
+		return nil, err
+	}
+
+	spent, err := h.walletSvc.GetOutpointStatus(ctx, wire.OutPoint{
+		Hash:  *txhash,
+		Index: vout,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &arkwalletv1.GetOutpointStatusResponse{Spent: spent}, nil
 }
 
 // GetReadyUpdate streams an empty response when the wallet is unlocker and synced.

@@ -79,3 +79,12 @@ func (b *bitcoindRPCClient) getTx(txid string) (*wire.MsgTx, error) {
 
 	return tx.MsgTx(), nil
 }
+
+func (b *bitcoindRPCClient) IsSpent(outpoint wire.OutPoint) (spent bool, err error) {
+	txout, err := b.chainClient.GetTxOut(&outpoint.Hash, outpoint.Index, false)
+	if err != nil {
+		return false, err
+	}
+
+	return txout == nil, nil
+}

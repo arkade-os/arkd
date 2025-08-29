@@ -19,6 +19,7 @@ type WalletOption func(*service) error
 type extraChainAPI interface {
 	getTx(txid string) (*wire.MsgTx, error)
 	getTxStatus(txid string) (isConfirmed bool, blockHeight, blocktime int64, err error)
+	IsSpent(outpoint wire.OutPoint) (spent bool, err error)
 	broadcast(txs ...string) error
 }
 

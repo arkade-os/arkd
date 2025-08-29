@@ -401,6 +401,39 @@ func (n *nbxplorer) EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte,
 	return max(satPerKvB, n.minRelayTxFee), nil
 }
 
+// IsSpent checks if an outpoint is spent by proxying the RPC "gettxout" to Bitcoin Core
+func (n *nbxplorer) IsSpent(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error) {
+	// bitcoin core RPC request for gettxout
+	rpcReq := rpcRequest{
+		JSONRPC: "1.0",
+		// #nosec G404
+		ID:     rand.Intn(10_0000),
+		Method: "gettxout",
+		Params: []any{outpoint.Hash.String(), outpoint.Index},
+	}
+
+	jsonBody, err := json.Marshal(rpcReq)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal RPC request: %w", err)
+	}
+
+	data, err := n.makeRequest(ctx, "POST", fmt.Sprintf("/v1/cryptos/%s/rpc", btcCryptoCode), strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return false, fmt.Errorf("failed to call submitpackage RPC: %w", err)
+	}
+
+	var resp rpcResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return false, fmt.Errorf("failed to unmarshal RPC response: %w", err)
+	}
+
+	if resp.Error != nil {
+		return false, fmt.Errorf("RPC error %d: %s", resp.Error.Code, resp.Error.Message)
+	}
+
+	return resp.Result != nil, nil
+}
+
 // BroadcastTransaction broadcasts transaction(s) via different methods based on count:
 // - 1 transaction: use NBXplorer broadcast endpoint
 // - 2 transactions: use Bitcoin Core submitpackage RPC via NBXplorer proxy

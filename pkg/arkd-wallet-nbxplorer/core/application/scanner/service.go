@@ -10,6 +10,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 )
 
 type scanner struct {
@@ -125,6 +126,14 @@ func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isCo
 	}
 
 	return details.Confirmations > 0, int64(details.Height), details.Timestamp, nil
+}
+
+func (s *scanner) GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error) {
+	spent, err = s.nbxplorer.IsSpent(ctx, outpoint)
+	if err != nil {
+		return false, err
+	}
+	return spent, nil
 }
 
 func (s *scanner) Close() {

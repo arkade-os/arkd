@@ -35,6 +35,7 @@ type WalletServiceClient interface {
 	BroadcastTransaction(ctx context.Context, in *BroadcastTransactionRequest, opts ...grpc.CallOption) (*BroadcastTransactionResponse, error)
 	GetReadyUpdate(ctx context.Context, in *GetReadyUpdateRequest, opts ...grpc.CallOption) (WalletService_GetReadyUpdateClient, error)
 	IsTransactionConfirmed(ctx context.Context, in *IsTransactionConfirmedRequest, opts ...grpc.CallOption) (*IsTransactionConfirmedResponse, error)
+	GetOutpointStatus(ctx context.Context, in *GetOutpointStatusRequest, opts ...grpc.CallOption) (*GetOutpointStatusResponse, error)
 	EstimateFees(ctx context.Context, in *EstimateFeesRequest, opts ...grpc.CallOption) (*EstimateFeesResponse, error)
 	FeeRate(ctx context.Context, in *FeeRateRequest, opts ...grpc.CallOption) (*FeeRateResponse, error)
 	ListConnectorUtxos(ctx context.Context, in *ListConnectorUtxosRequest, opts ...grpc.CallOption) (*ListConnectorUtxosResponse, error)
@@ -236,6 +237,15 @@ func (c *walletServiceClient) IsTransactionConfirmed(ctx context.Context, in *Is
 	return out, nil
 }
 
+func (c *walletServiceClient) GetOutpointStatus(ctx context.Context, in *GetOutpointStatusRequest, opts ...grpc.CallOption) (*GetOutpointStatusResponse, error) {
+	out := new(GetOutpointStatusResponse)
+	err := c.cc.Invoke(ctx, "/arkwallet.v1.WalletService/GetOutpointStatus", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *walletServiceClient) EstimateFees(ctx context.Context, in *EstimateFeesRequest, opts ...grpc.CallOption) (*EstimateFeesResponse, error) {
 	out := new(EstimateFeesResponse)
 	err := c.cc.Invoke(ctx, "/arkwallet.v1.WalletService/EstimateFees", in, out, opts...)
@@ -415,6 +425,7 @@ type WalletServiceServer interface {
 	BroadcastTransaction(context.Context, *BroadcastTransactionRequest) (*BroadcastTransactionResponse, error)
 	GetReadyUpdate(*GetReadyUpdateRequest, WalletService_GetReadyUpdateServer) error
 	IsTransactionConfirmed(context.Context, *IsTransactionConfirmedRequest) (*IsTransactionConfirmedResponse, error)
+	GetOutpointStatus(context.Context, *GetOutpointStatusRequest) (*GetOutpointStatusResponse, error)
 	EstimateFees(context.Context, *EstimateFeesRequest) (*EstimateFeesResponse, error)
 	FeeRate(context.Context, *FeeRateRequest) (*FeeRateResponse, error)
 	ListConnectorUtxos(context.Context, *ListConnectorUtxosRequest) (*ListConnectorUtxosResponse, error)
@@ -486,6 +497,9 @@ func (UnimplementedWalletServiceServer) GetReadyUpdate(*GetReadyUpdateRequest, W
 }
 func (UnimplementedWalletServiceServer) IsTransactionConfirmed(context.Context, *IsTransactionConfirmedRequest) (*IsTransactionConfirmedResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method IsTransactionConfirmed not implemented")
+}
+func (UnimplementedWalletServiceServer) GetOutpointStatus(context.Context, *GetOutpointStatusRequest) (*GetOutpointStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOutpointStatus not implemented")
 }
 func (UnimplementedWalletServiceServer) EstimateFees(context.Context, *EstimateFeesRequest) (*EstimateFeesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method EstimateFees not implemented")
@@ -853,6 +867,24 @@ func _WalletService_IsTransactionConfirmed_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WalletService_GetOutpointStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOutpointStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).GetOutpointStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/arkwallet.v1.WalletService/GetOutpointStatus",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).GetOutpointStatus(ctx, req.(*GetOutpointStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WalletService_EstimateFees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(EstimateFeesRequest)
 	if err := dec(in); err != nil {
@@ -1196,6 +1228,10 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "IsTransactionConfirmed",
 			Handler:    _WalletService_IsTransactionConfirmed_Handler,
+		},
+		{
+			MethodName: "GetOutpointStatus",
+			Handler:    _WalletService_GetOutpointStatus_Handler,
 		},
 		{
 			MethodName: "EstimateFees",
