@@ -21,6 +21,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type txBuilder struct {
@@ -60,6 +62,15 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, *psbt.Pa
 	if err != nil {
 		return false, nil, err
 	}
+
+	operatorPubkeyHex := hex.EncodeToString(schnorr.SerializePubKey(operatorPubkey))
+
+	prevoutFetcher, err := b.getPrevOutputFetcher(ptx)
+	if err != nil {
+		return false, nil, err
+	}
+
+	txSigHashes := txscript.NewTxSigHashes(ptx.UnsignedTx, prevoutFetcher)
 
 	for index, input := range ptx.Inputs {
 		if len(input.TaprootLeafScript) == 0 {
@@ -114,7 +125,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, *psbt.Pa
 		}
 
 		// we don't need to check if operator signed
-		keys[hex.EncodeToString(schnorr.SerializePubKey(operatorPubkey))] = true
+		keys[operatorPubkeyHex] = true
 
 		if len(tapLeaf.ControlBlock) == 0 {
 			return false, nil, fmt.Errorf("missing control block for input %d", index)
@@ -138,11 +149,6 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, *psbt.Pa
 			return false, nil, fmt.Errorf("invalid control block for input %d", index)
 		}
 
-		preimage, err := b.getTaprootPreimage(ptx, index, tapLeaf.Script)
-		if err != nil {
-			return false, nil, err
-		}
-
 		for _, tapScriptSig := range input.TaprootScriptSpendSig {
 			sig, err := schnorr.ParseSignature(tapScriptSig.Signature)
 			if err != nil {
@@ -154,8 +160,26 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, *psbt.Pa
 				return false, nil, err
 			}
 
+			preimage, err := txscript.CalcTapscriptSignaturehash(
+				txSigHashes,
+				tapScriptSig.SigHash,
+				ptx.UnsignedTx,
+				index,
+				prevoutFetcher,
+				txscript.NewBaseTapLeaf(tapLeaf.Script),
+			)
+			if err != nil {
+				return false, nil, err
+			}
+
 			if !sig.Verify(preimage, pubkey) {
-				return false, nil, nil
+				return false, nil, fmt.Errorf(
+					"invalid signature for input %d, sig: %x, pubkey: %x, sighashtype: %d",
+					index,
+					sig.Serialize(),
+					pubkey.SerializeCompressed(),
+					tapScriptSig.SigHash,
+				)
 			}
 
 			keys[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = true
@@ -207,7 +231,10 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 			}
 
 			for _, sig := range in.TaprootScriptSpendSig {
-				args[hex.EncodeToString(sig.XOnlyPubKey)] = sig.Signature
+				args[hex.EncodeToString(sig.XOnlyPubKey)] = script.EncodeTaprootSignature(
+					sig.Signature,
+					sig.SigHash,
+				)
 			}
 
 			witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)
@@ -496,7 +523,22 @@ func (b *txBuilder) VerifyForfeitTxs(
 		}
 
 		if rebuilt.UnsignedTx.TxID() != tx.UnsignedTx.TxID() {
-			return nil, fmt.Errorf("invalid forfeit tx")
+			if log.IsLevelEnabled(log.TraceLevel) {
+				rebuiltB64, _ := rebuilt.B64Encode()
+				txB64, _ := tx.B64Encode()
+				log.WithFields(log.Fields{
+					"expectedTxid": rebuilt.UnsignedTx.TxID(),
+					"expectedB64":  rebuiltB64,
+					"gotTxid":      tx.UnsignedTx.TxID(),
+					"gotB64":       txB64,
+				}).Tracef("invalid forfeit tx")
+			}
+
+			return nil, fmt.Errorf(
+				"invalid forfeit tx: expected txid %s, got %s",
+				rebuilt.UnsignedTx.TxID(),
+				tx.UnsignedTx.TxID(),
+			)
 		}
 
 		validForfeitTxs[vtxoKey] = ports.ValidForfeitTx{
@@ -1112,9 +1154,7 @@ func (b *txBuilder) selectUtxos(
 	return append(selectedConnectorsUtxos, utxos...), change, nil
 }
 
-func (b *txBuilder) getTaprootPreimage(
-	tx *psbt.Packet, inputIndex int, leafScript []byte,
-) ([]byte, error) {
+func (b *txBuilder) getPrevOutputFetcher(tx *psbt.Packet) (txscript.PrevOutputFetcher, error) {
 	prevouts := make(map[wire.OutPoint]*wire.TxOut)
 
 	for i, input := range tx.Inputs {
@@ -1126,7 +1166,16 @@ func (b *txBuilder) getTaprootPreimage(
 		prevouts[outpoint] = input.WitnessUtxo
 	}
 
-	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
+	return txscript.NewMultiPrevOutFetcher(prevouts), nil
+}
+
+func (b *txBuilder) getTaprootPreimage(
+	tx *psbt.Packet, inputIndex int, leafScript []byte,
+) ([]byte, error) {
+	prevoutFetcher, err := b.getPrevOutputFetcher(tx)
+	if err != nil {
+		return nil, err
+	}
 
 	return txscript.CalcTapscriptSignaturehash(
 		txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),

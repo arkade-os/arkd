@@ -2,6 +2,8 @@ module github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer
 
 go 1.24.6
 
+replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
+
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
 replace github.com/arkade-os/arkd/api-spec => ../../api-spec

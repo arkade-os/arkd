@@ -2,9 +2,13 @@ package e2e_test
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -12,8 +16,21 @@ import (
 	"testing"
 	"time"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	arksdk "github.com/arkade-os/go-sdk"
+	"github.com/arkade-os/go-sdk/client"
+	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
 	"github.com/arkade-os/go-sdk/explorer"
+	"github.com/arkade-os/go-sdk/indexer"
+	grpcindexer "github.com/arkade-os/go-sdk/indexer/grpc"
+	"github.com/arkade-os/go-sdk/store"
+	"github.com/arkade-os/go-sdk/types"
+	"github.com/arkade-os/go-sdk/wallet"
+	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
+	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -260,4 +277,369 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	require.NoError(t, childTx.Serialize(&serializedTx))
 
 	return hex.EncodeToString(serializedTx.Bytes())
+}
+
+func setupArkSDK(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
+	alice, _, grpcAlice := setupArkSDKwithPublicKey(t)
+	return alice, grpcAlice
+}
+
+func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
+	appDataStore, err := store.NewStore(store.Config{
+		ConfigStoreType:  types.InMemoryStore,
+		AppDataStoreType: types.KVStore,
+	})
+	require.NoError(t, err)
+
+	walletStore, err := inmemorystore.NewWalletStore()
+	require.NoError(t, err)
+	require.NotNil(t, walletStore)
+
+	wallet, err := singlekeywallet.NewBitcoinWallet(appDataStore.ConfigStore(), walletStore)
+	require.NoError(t, err)
+
+	privkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	privkeyHex := hex.EncodeToString(privkey.Serialize())
+
+	password := "password"
+	ctx := context.Background()
+	_, err = wallet.Create(ctx, password, privkeyHex)
+	require.NoError(t, err)
+
+	_, err = wallet.Unlock(ctx, password)
+	require.NoError(t, err)
+
+	return wallet, privkey.PubKey(), nil
+}
+
+func setupArkSDKwithPublicKey(
+	t *testing.T,
+) (arksdk.ArkClient, *btcec.PublicKey, client.TransportClient) {
+	appDataStore, err := store.NewStore(store.Config{
+		ConfigStoreType:  types.InMemoryStore,
+		AppDataStoreType: types.KVStore,
+	})
+	require.NoError(t, err)
+
+	client, err := arksdk.NewArkClient(appDataStore)
+	require.NoError(t, err)
+
+	walletStore, err := inmemorystore.NewWalletStore()
+	require.NoError(t, err)
+	require.NotNil(t, walletStore)
+
+	wallet, err := singlekeywallet.NewBitcoinWallet(appDataStore.ConfigStore(), walletStore)
+	require.NoError(t, err)
+
+	privkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	privkeyHex := hex.EncodeToString(privkey.Serialize())
+
+	err = client.InitWithWallet(context.Background(), arksdk.InitWithWalletArgs{
+		Wallet:     wallet,
+		ClientType: arksdk.GrpcClient,
+		ServerUrl:  "localhost:7070",
+		Password:   password,
+		Seed:       privkeyHex,
+	})
+	require.NoError(t, err)
+
+	err = client.Unlock(context.Background(), password)
+	require.NoError(t, err)
+
+	grpcClient, err := grpcclient.NewClient("localhost:7070")
+	require.NoError(t, err)
+
+	return client, privkey.PubKey(), grpcClient
+}
+
+func setupIndexer(t *testing.T) indexer.Indexer {
+	svc, err := grpcindexer.NewClient("localhost:7070")
+	require.NoError(t, err)
+	return svc
+}
+
+func generateNote(t *testing.T, amount uint32) string {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	reqBody := bytes.NewReader([]byte(fmt.Sprintf(`{"amount": "%d"}`, amount)))
+	req, err := http.NewRequest("POST", "http://localhost:7070/v1/admin/note", reqBody)
+	if err != nil {
+		t.Fatalf("failed to prepare note request: %s", err)
+	}
+	req.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := adminHttpClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to create note: %s", err)
+	}
+
+	var noteResp struct {
+		Notes []string `json:"notes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&noteResp); err != nil {
+		t.Fatalf("failed to parse response: %s", err)
+	}
+
+	return noteResp.Notes[0]
+}
+
+func faucetOffchainAddress(t *testing.T, address string) (types.Vtxo, error) {
+	client, _ := setupArkSDK(t)
+
+	ctx := context.Background()
+	_, offchainAddr, boardingAddr, err := client.Receive(ctx)
+	require.NoError(t, err)
+
+	_, err = runCommand("nigiri", "faucet", boardingAddr, "0.0002")
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	go func() {
+		_, err := client.Settle(ctx)
+		require.NoError(t, err)
+	}()
+
+	vtxos, err := client.NotifyIncomingFunds(ctx, offchainAddr)
+	require.NoError(t, err)
+	require.NotEmpty(t, vtxos)
+	require.Len(t, vtxos, 1)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	var receivedVtxo types.Vtxo
+
+	go func() {
+		defer wg.Done()
+		vtxos, err = client.NotifyIncomingFunds(ctx, address)
+		require.NoError(t, err)
+		receivedVtxo = vtxos[0]
+	}()
+
+	_, err = client.SendOffChain(ctx, false, []types.Receiver{
+		{
+			To:     address,
+			Amount: vtxos[0].Amount,
+		},
+	})
+	require.NoError(t, err)
+
+	wg.Wait()
+
+	return receivedVtxo, nil
+}
+
+type delegateBatchEventsHandler struct {
+	intentId         string
+	signerSession    tree.SignerSession
+	partialForfeitTx string
+	delegatorWallet  wallet.WalletService
+	client           client.TransportClient
+	signerPubKey     *btcec.PublicKey
+	vtxoTreeExpiry   arklib.RelativeLocktime
+
+	cacheBatchId string
+}
+
+func (h *delegateBatchEventsHandler) OnBatchStarted(
+	ctx context.Context,
+	event client.BatchStartedEvent,
+) (bool, error) {
+	buf := sha256.Sum256([]byte(h.intentId))
+	hashedIntentId := hex.EncodeToString(buf[:])
+
+	for _, hash := range event.HashedIntentIds {
+		if hash == hashedIntentId {
+			if err := h.client.ConfirmRegistration(ctx, h.intentId); err != nil {
+				return false, err
+			}
+			h.cacheBatchId = event.Id
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func (h *delegateBatchEventsHandler) OnBatchFinalized(
+	ctx context.Context,
+	event client.BatchFinalizedEvent,
+) error {
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnBatchFailed(
+	ctx context.Context,
+	event client.BatchFailedEvent,
+) error {
+	if event.Id == h.cacheBatchId {
+		return fmt.Errorf("batch failed: %s", event.Reason)
+	}
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeTxEvent(
+	ctx context.Context,
+	event client.TreeTxEvent,
+) error {
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeSignatureEvent(
+	ctx context.Context,
+	event client.TreeSignatureEvent,
+) error {
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
+	ctx context.Context,
+	event client.TreeSigningStartedEvent,
+	vtxoTree *tree.TxTree,
+) (bool, error) {
+	pubkeyFound := false
+	myPubkey := h.signerSession.GetPublicKey()
+	for _, cosigner := range event.CosignersPubkeys {
+		if cosigner == myPubkey {
+			pubkeyFound = true
+			break
+		}
+	}
+
+	if !pubkeyFound {
+		return true, nil
+	}
+
+	sweepClosure := script.CSVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.signerPubKey}},
+		Locktime:        h.vtxoTreeExpiry,
+	}
+
+	script, err := sweepClosure.Script()
+	if err != nil {
+		return false, err
+	}
+
+	commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(event.UnsignedCommitmentTx), true)
+	if err != nil {
+		return false, err
+	}
+
+	batchOutput := commitmentTx.UnsignedTx.TxOut[0]
+	batchOutputAmount := batchOutput.Value
+
+	sweepTapLeaf := txscript.NewBaseTapLeaf(script)
+	sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
+	root := sweepTapTree.RootNode.TapHash()
+
+	generateAndSendNonces := func(session tree.SignerSession) error {
+		if err := session.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+			return err
+		}
+
+		nonces, err := session.GetNonces()
+		if err != nil {
+			return err
+		}
+
+		return h.client.SubmitTreeNonces(ctx, event.Id, session.GetPublicKey(), nonces)
+	}
+
+	if err := generateAndSendNonces(h.signerSession); err != nil {
+		return false, err
+	}
+
+	return false, nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeNoncesAggregated(
+	ctx context.Context,
+	event client.TreeNoncesAggregatedEvent,
+) error {
+	sign := func(session tree.SignerSession) error {
+		session.SetAggregatedNonces(event.Nonces)
+
+		sigs, err := session.Sign()
+		if err != nil {
+			return err
+		}
+
+		return h.client.SubmitTreeSignatures(
+			ctx,
+			event.Id,
+			session.GetPublicKey(),
+			sigs,
+		)
+	}
+
+	if err := sign(h.signerSession); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnBatchFinalization(
+	ctx context.Context,
+	event client.BatchFinalizationEvent,
+	vtxoTree *tree.TxTree,
+	connectorTree *tree.TxTree,
+) error {
+	forfeitPtx, err := psbt.NewFromRawBytes(strings.NewReader(h.partialForfeitTx), true)
+	if err != nil {
+		return err
+	}
+
+	updater, err := psbt.NewUpdater(forfeitPtx)
+	if err != nil {
+		return err
+	}
+
+	// add the connector input to the forfeit tx
+	connectors := connectorTree.Leaves()
+	connector := connectors[0]
+	updater.Upsbt.UnsignedTx.TxIn = append(updater.Upsbt.UnsignedTx.TxIn, &wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{
+			Hash:  connector.UnsignedTx.TxHash(),
+			Index: 0,
+		},
+		Sequence: wire.MaxTxInSequenceNum,
+	})
+	updater.Upsbt.Inputs = append(updater.Upsbt.Inputs, psbt.PInput{
+		WitnessUtxo: &wire.TxOut{
+			Value:    connector.UnsignedTx.TxOut[0].Value,
+			PkScript: connector.UnsignedTx.TxOut[0].PkScript,
+		},
+	})
+
+	if err := updater.AddInSighashType(txscript.SigHashDefault, 0); err != nil {
+		return err
+	}
+
+	encodedForfeitTx, err := updater.Upsbt.B64Encode()
+	if err != nil {
+		return err
+	}
+
+	// sign the forfeit tx
+	signedForfeitTx, err := h.delegatorWallet.SignTransaction(
+		context.Background(),
+		nil,
+		encodedForfeitTx,
+	)
+	if err != nil {
+		return err
+	}
+
+	return h.client.SubmitSignedForfeitTxs(
+		ctx, []string{signedForfeitTx}, "",
+	)
 }
