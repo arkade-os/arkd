@@ -246,4 +246,4 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
 
 -- name: SelectSweepableUnrolledVtxos :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');
