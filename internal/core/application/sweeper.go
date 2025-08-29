@@ -120,14 +120,19 @@ func (s *sweeper) start() error {
 		for _, vtxo := range unrolledUnsweptOffchainVtxos {
 			checkpointTxid := vtxo.SpentBy
 
-			checkpointB64, err := s.repoManager.Rounds().
+			txs, err := s.repoManager.Rounds().
 				GetTxsWithTxids(ctx, []string{checkpointTxid})
 			if err != nil {
 				log.WithError(err).Error("error while getting checkpoint tx")
 				continue
 			}
 
-			ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointB64[0]), true)
+			if len(txs) <= 0 {
+				log.Errorf("checkpoint tx %s not found", checkpointTxid)
+				continue
+			}
+
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
 			if err != nil {
 				log.WithError(err).Error("error while parsing checkpoint tx")
 				continue
