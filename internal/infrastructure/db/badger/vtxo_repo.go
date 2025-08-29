@@ -97,6 +97,9 @@ func (r *vtxoRepository) GetVtxos(
 		if err != nil {
 			return nil, err
 		}
+		if vtxo == nil {
+			return nil, nil
+		}
 		vtxos = append(vtxos, *vtxo)
 	}
 	return vtxos, nil
@@ -267,7 +270,7 @@ func (r *vtxoRepository) getVtxo(
 		err = r.store.Get(outpoint.String(), &vtxo)
 	}
 	if err != nil && err == badgerhold.ErrNotFound {
-		return nil, fmt.Errorf("vtxo %s:%d not found", outpoint.Txid, outpoint.VOut)
+		return nil, nil
 	}
 
 	return &vtxo, nil

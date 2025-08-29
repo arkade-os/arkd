@@ -116,7 +116,7 @@ func IPLockChecker() (string, checkers.Func) {
 
 		if !net.ParseIP(arg).Equal(net.ParseIP(peerAddr)) {
 			msg := "macaroon locked to different IP address"
-			return fmt.Errorf(msg)
+			return fmt.Errorf("%s", msg)
 		}
 		return nil
 	}

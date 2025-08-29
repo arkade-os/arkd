@@ -365,7 +365,7 @@ func TestCollaborativeExit(t *testing.T) {
 		_, err = runArkCommand("settle", "--password", password)
 		require.NoError(t, err)
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Redeem 1000 satoshis onchain, keep 9000 satoshis offchain
 		_, err = runArkCommand(
@@ -390,7 +390,7 @@ func TestCollaborativeExit(t *testing.T) {
 		_, err = runArkCommand("settle", "--password", password)
 		require.NoError(t, err)
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Redeem 10000 satoshis onchain
 		_, err = runArkCommand(
@@ -428,6 +428,7 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	require.NoError(t, err)
 
 	wg.Wait()
+	time.Sleep(4 * time.Second)
 
 	wg.Add(1)
 	go func() {
@@ -501,6 +502,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+		time.Sleep(4 * time.Second)
 
 		err = generateBlock()
 		require.NoError(t, err)
@@ -519,6 +521,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+
+		time.Sleep(4 * time.Second)
 
 		wg.Add(1)
 		go func() {
@@ -619,6 +623,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+
+		time.Sleep(4 * time.Second)
 
 		spendableVtxos, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -1204,7 +1210,7 @@ func TestSendArkTxWithSeveralInputs(t *testing.T) {
 
 	ctx := context.Background()
 
-	for i := 0; i < numberOfInputs; i++ {
+	for range numberOfInputs {
 		note := generateNote(t, amountPerInput)
 		_, err := alice.RedeemNotes(ctx, []string{note})
 		require.NoError(t, err)

@@ -1889,6 +1889,11 @@ func (s *service) listenToScannerNotifications() {
 						log.WithError(err).Warn("failed to retrieve vtxos, skipping...")
 						return
 					}
+					if len(vtxos) <= 0 {
+						log.Warnf("vtxo %s not found, skipping...", v.Outpoint.String())
+						return
+					}
+
 					vtxo := vtxos[0]
 
 					if !vtxo.Unrolled {

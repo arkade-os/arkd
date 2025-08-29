@@ -314,11 +314,6 @@ func (w *walletDaemonClient) BroadcastTransaction(
 	return resp.GetTxid(), nil
 }
 
-func (w *walletDaemonClient) WaitForSync(ctx context.Context, txid string) error {
-	_, err := w.client.WaitForSync(ctx, &arkwalletv1.WaitForSyncRequest{Txid: txid})
-	return err
-}
-
 func (w *walletDaemonClient) EstimateFees(ctx context.Context, psbt string) (uint64, error) {
 	resp, err := w.client.EstimateFees(ctx, &arkwalletv1.EstimateFeesRequest{Psbt: psbt})
 	if err != nil {

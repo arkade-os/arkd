@@ -33,7 +33,6 @@ type WalletServiceClient interface {
 	SignTransactionTapscript(ctx context.Context, in *SignTransactionTapscriptRequest, opts ...grpc.CallOption) (*SignTransactionTapscriptResponse, error)
 	SelectUtxos(ctx context.Context, in *SelectUtxosRequest, opts ...grpc.CallOption) (*SelectUtxosResponse, error)
 	BroadcastTransaction(ctx context.Context, in *BroadcastTransactionRequest, opts ...grpc.CallOption) (*BroadcastTransactionResponse, error)
-	WaitForSync(ctx context.Context, in *WaitForSyncRequest, opts ...grpc.CallOption) (*WaitForSyncResponse, error)
 	GetReadyUpdate(ctx context.Context, in *GetReadyUpdateRequest, opts ...grpc.CallOption) (WalletService_GetReadyUpdateClient, error)
 	IsTransactionConfirmed(ctx context.Context, in *IsTransactionConfirmedRequest, opts ...grpc.CallOption) (*IsTransactionConfirmedResponse, error)
 	EstimateFees(ctx context.Context, in *EstimateFeesRequest, opts ...grpc.CallOption) (*EstimateFeesResponse, error)
@@ -190,15 +189,6 @@ func (c *walletServiceClient) SelectUtxos(ctx context.Context, in *SelectUtxosRe
 func (c *walletServiceClient) BroadcastTransaction(ctx context.Context, in *BroadcastTransactionRequest, opts ...grpc.CallOption) (*BroadcastTransactionResponse, error) {
 	out := new(BroadcastTransactionResponse)
 	err := c.cc.Invoke(ctx, "/arkwallet.v1.WalletService/BroadcastTransaction", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *walletServiceClient) WaitForSync(ctx context.Context, in *WaitForSyncRequest, opts ...grpc.CallOption) (*WaitForSyncResponse, error) {
-	out := new(WaitForSyncResponse)
-	err := c.cc.Invoke(ctx, "/arkwallet.v1.WalletService/WaitForSync", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +413,6 @@ type WalletServiceServer interface {
 	SignTransactionTapscript(context.Context, *SignTransactionTapscriptRequest) (*SignTransactionTapscriptResponse, error)
 	SelectUtxos(context.Context, *SelectUtxosRequest) (*SelectUtxosResponse, error)
 	BroadcastTransaction(context.Context, *BroadcastTransactionRequest) (*BroadcastTransactionResponse, error)
-	WaitForSync(context.Context, *WaitForSyncRequest) (*WaitForSyncResponse, error)
 	GetReadyUpdate(*GetReadyUpdateRequest, WalletService_GetReadyUpdateServer) error
 	IsTransactionConfirmed(context.Context, *IsTransactionConfirmedRequest) (*IsTransactionConfirmedResponse, error)
 	EstimateFees(context.Context, *EstimateFeesRequest) (*EstimateFeesResponse, error)
@@ -491,9 +480,6 @@ func (UnimplementedWalletServiceServer) SelectUtxos(context.Context, *SelectUtxo
 }
 func (UnimplementedWalletServiceServer) BroadcastTransaction(context.Context, *BroadcastTransactionRequest) (*BroadcastTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BroadcastTransaction not implemented")
-}
-func (UnimplementedWalletServiceServer) WaitForSync(context.Context, *WaitForSyncRequest) (*WaitForSyncResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method WaitForSync not implemented")
 }
 func (UnimplementedWalletServiceServer) GetReadyUpdate(*GetReadyUpdateRequest, WalletService_GetReadyUpdateServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetReadyUpdate not implemented")
@@ -824,24 +810,6 @@ func _WalletService_BroadcastTransaction_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WalletServiceServer).BroadcastTransaction(ctx, req.(*BroadcastTransactionRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _WalletService_WaitForSync_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WaitForSyncRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WalletServiceServer).WaitForSync(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/arkwallet.v1.WalletService/WaitForSync",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WalletServiceServer).WaitForSync(ctx, req.(*WaitForSyncRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1224,10 +1192,6 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BroadcastTransaction",
 			Handler:    _WalletService_BroadcastTransaction_Handler,
-		},
-		{
-			MethodName: "WaitForSync",
-			Handler:    _WalletService_WaitForSync_Handler,
 		},
 		{
 			MethodName: "IsTransactionConfirmed",

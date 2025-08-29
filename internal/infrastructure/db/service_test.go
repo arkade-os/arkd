@@ -615,7 +615,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		}
 
 		vtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoKeys)
-		require.Error(t, err)
+		require.Nil(t, err)
 		require.Empty(t, vtxos)
 
 		spendableVtxos, spentVtxos, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
