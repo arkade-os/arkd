@@ -266,11 +266,6 @@ func (m *mockedWallet) LockConnectorUtxos(ctx context.Context, utxos []domain.Ou
 	return args.Error(0)
 }
 
-func (m *mockedWallet) WaitForSync(ctx context.Context, txid string) error {
-	args := m.Called(ctx, txid)
-	return args.Error(0)
-}
-
 func (m *mockedWallet) GetTransaction(ctx context.Context, txid string) (string, error) {
 	args := m.Called(ctx, txid)
 

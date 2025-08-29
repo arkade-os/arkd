@@ -1,20 +1,65 @@
 services:
+  pgnbxplorer:
+    restart: unless-stopped
+    image: postgres:16
+    container_name: pgnbxplorer
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    volumes:
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nbxplorer -h 127.0.0.1 -p 5432"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  nbxplorer:
+    restart: unless-stopped
+    container_name: nbxplorer
+    ports: 
+      - 32838:32838
+    image: nicolasdorier/nbxplorer:2.5.30
+    environment:
+      - NBXPLORER_NETWORK=regtest
+      - NBXPLORER_CHAINS=btc
+      - NBXPLORER_BTCRPCURL=http://bitcoin:18443
+      - NBXPLORER_BTCNODEENDPOINT=bitcoin:18444
+      - NBXPLORER_BTCRPCUSER=admin1
+      - NBXPLORER_BTCRPCPASSWORD=123
+      - NBXPLORER_VERBOSE=1
+      - NBXPLORER_BIND=0.0.0.0:32838
+      - NBXPLORER_TRIMEVENTS=10000
+      - NBXPLORER_SIGNALFILESDIR=/datadir
+      - NBXPLORER_POSTGRES=User ID=postgres;Host=pgnbxplorer;Port=5432;Application Name=nbxplorer;MaxPoolSize=20;Database=nbxplorer
+      - NBXPLORER_EXPOSERPC=1
+      - NBXPLORER_NOAUTH=1
+    volumes:
+      - type: tmpfs
+        target: /datadir
+    depends_on:
+      pgnbxplorer:
+        condition: service_healthy
+    
   arkd-wallet:
+    restart: unless-stopped
     build:
       context: .
-      dockerfile: arkdwallet.Dockerfile
+      dockerfile: arkdwallet.nbxplorer.Dockerfile
     container_name: arkd-wallet
+    depends_on:
+      - nbxplorer
     ports:
       - "6060:6060"
     environment:
-      - ARKD_WALLET_ESPLORA_URL=http://chopsticks:3000
-      - ARKD_WALLET_NEUTRINO_PEER=bitcoin:18444
+      - ARKD_WALLET_LOG_LEVEL=5
+      - ARKD_WALLET_NBXPLORER_URL=http://nbxplorer:32838
       - ARKD_WALLET_DATADIR=./data/regtest
       - ARKD_WALLET_NETWORK=regtest
     volumes:
       - type: tmpfs
         target: /app/data
-
   arkd:
     build:
       context: .
@@ -26,7 +71,7 @@ services:
     ports:
       - "7070:7070"
     environment:
-      - ARKD_LOG_LEVEL=5
+      - ARKD_LOG_LEVEL=6
       - ARKD_NO_MACAROONS=true
       - ARKD_VTXO_TREE_EXPIRY=20
       - ARKD_SCHEDULER_TYPE=block

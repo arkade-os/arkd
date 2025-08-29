@@ -177,15 +177,6 @@ func (h *WalletServiceHandler) BroadcastTransaction(
 	return &arkwalletv1.BroadcastTransactionResponse{Txid: txid}, nil
 }
 
-func (h *WalletServiceHandler) WaitForSync(
-	ctx context.Context, req *arkwalletv1.WaitForSyncRequest,
-) (*arkwalletv1.WaitForSyncResponse, error) {
-	if err := h.walletSvc.WaitForSync(ctx, req.GetTxid()); err != nil {
-		return nil, err
-	}
-	return &arkwalletv1.WaitForSyncResponse{}, nil
-}
-
 func (h *WalletServiceHandler) EstimateFees(
 	ctx context.Context, req *arkwalletv1.EstimateFeesRequest,
 ) (*arkwalletv1.EstimateFeesResponse, error) {
