@@ -12,6 +12,7 @@ type VtxoRepository interface {
 	GetVtxosForRound(ctx context.Context, txid string) ([]Vtxo, error)
 	GetAllNonUnrolledVtxos(ctx context.Context, pubkey string) ([]Vtxo, []Vtxo, error)
 	GetAllSweepableVtxos(ctx context.Context) ([]Vtxo, error)
+	GetAllSweepableUnrolledVtxos(ctx context.Context) ([]Vtxo, error)
 	GetAllVtxos(ctx context.Context) ([]Vtxo, error)
 	GetAllVtxosWithPubKeys(ctx context.Context, pubkeys []string) ([]Vtxo, error)
 	UpdateVtxosExpiration(ctx context.Context, outpoints []Outpoint, expiresAt int64) error

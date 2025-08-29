@@ -51,6 +51,7 @@ type Nbxplorer interface {
 	EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error)
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
 
+	IsSpent(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 	WatchAddresses(ctx context.Context, addresses ...string) error
 	UnwatchAddresses(ctx context.Context, addresses ...string) error
 	GetAddressNotifications(ctx context.Context) (<-chan []Utxo, error)

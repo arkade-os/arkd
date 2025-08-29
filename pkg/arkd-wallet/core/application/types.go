@@ -53,6 +53,7 @@ type BlockchainScanner interface {
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blockHeight, blockTime int64, err error)
+	GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 	Close()
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -53,6 +54,7 @@ type BlockchainScanner interface {
 	UnwatchScripts(ctx context.Context, scripts []string) error
 	GetNotificationChannel(ctx context.Context) <-chan map[string][]VtxoWithValue
 	IsTransactionConfirmed(ctx context.Context, txid string) (isConfirmed bool, blocknumber int64, blocktime int64, err error)
+	GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 }
 
 type WalletStatus struct {

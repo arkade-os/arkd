@@ -428,7 +428,7 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	require.NoError(t, err)
 
 	wg.Wait()
-	time.Sleep(4 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	wg.Add(1)
 	go func() {
@@ -502,7 +502,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
-		time.Sleep(4 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		err = generateBlock()
 		require.NoError(t, err)
@@ -522,7 +522,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 
 		wg.Wait()
 
-		time.Sleep(4 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		wg.Add(1)
 		go func() {
@@ -624,7 +624,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 
 		wg.Wait()
 
-		time.Sleep(4 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		spendableVtxos, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -747,10 +747,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		infos, err := grpcTransportClient.GetInfo(ctx)
 		require.NoError(t, err)
 
-		unilateralExitDelayType := arklib.LocktimeTypeSecond
-		if infos.UnilateralExitDelay < 512 {
-			unilateralExitDelayType = arklib.LocktimeTypeBlock
-		}
+		checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+		require.NoError(t, err)
 
 		ptx, checkpointsPtx, err := offchain.BuildTxs(
 			[]offchain.VtxoInput{
@@ -770,15 +768,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 					PkScript: alicePkScript,
 				},
 			},
-			&script.CSVMultisigClosure{
-				Locktime: arklib.RelativeLocktime{
-					Type:  unilateralExitDelayType,
-					Value: uint32(infos.UnilateralExitDelay),
-				},
-				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-				},
-			},
+			checkpointTapscript,
 		)
 		require.NoError(t, err)
 
@@ -1392,10 +1382,8 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	infos, err := grpcAlice.GetInfo(ctx)
 	require.NoError(t, err)
 
-	unilateralExitDelayType := arklib.LocktimeTypeSecond
-	if infos.UnilateralExitDelay < 512 {
-		unilateralExitDelayType = arklib.LocktimeTypeBlock
-	}
+	checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+	require.NoError(t, err)
 
 	ptx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
@@ -1415,15 +1403,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
-		&script.CSVMultisigClosure{
-			Locktime: arklib.RelativeLocktime{
-				Type:  unilateralExitDelayType,
-				Value: uint32(infos.UnilateralExitDelay),
-			},
-			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-			},
-		},
+		checkpointTapscript,
 	)
 	require.NoError(t, err)
 
@@ -1598,7 +1578,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		RevealedScript: merkleProof.Script,
 	}
 
-	checkpointTapscript := &waddrmgr.Tapscript{
+	customCheckpointTapscript := &waddrmgr.Tapscript{
 		ControlBlock:   checkpointCtrlBlock,
 		RevealedScript: checkpointMerkleProof.Script,
 	}
@@ -1668,10 +1648,8 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	infos, err := grpcAlice.GetInfo(ctx)
 	require.NoError(t, err)
 
-	unilateralExitDelayType := arklib.LocktimeTypeSecond
-	if infos.UnilateralExitDelay < 512 {
-		unilateralExitDelayType = arklib.LocktimeTypeBlock
-	}
+	checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+	require.NoError(t, err)
 
 	ptx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
@@ -1682,7 +1660,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 				},
 				Amount:              bobOutput.Value,
 				Tapscript:           tapscript,
-				CheckpointTapscript: checkpointTapscript,
+				CheckpointTapscript: customCheckpointTapscript,
 				RevealedTapscripts:  tapscripts,
 			},
 		},
@@ -1692,15 +1670,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
-		&script.CSVMultisigClosure{
-			Locktime: arklib.RelativeLocktime{
-				Type:  unilateralExitDelayType,
-				Value: uint32(infos.UnilateralExitDelay),
-			},
-			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-			},
-		},
+		checkpointTapscript,
 	)
 	require.NoError(t, err)
 
@@ -2046,45 +2016,145 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NotEmpty(t, commitmentTxid)
 }
 
-func TestSweep(t *testing.T) {
-	var receive arkReceive
-	receiveStr, err := runArkCommand("receive")
+func TestSweepBatchOutput(t *testing.T) {
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	ctx := t.Context()
+
+	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	err = json.Unmarshal([]byte(receiveStr), &receive)
-	require.NoError(t, err)
-
-	_, err = runCommand("nigiri", "faucet", receive.Boarding)
+	_, err = runCommand("nigiri", "faucet", boardingAddr)
 	require.NoError(t, err)
 
 	time.Sleep(5 * time.Second)
 
-	_, err = runArkCommand("settle", "--password", password)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var vtxo types.Vtxo
+	go func() {
+		defer wg.Done()
+		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+		require.Len(t, vtxos, 1)
+		vtxo = vtxos[0]
+	}()
+
+	// settle the boarding utxo to create a new batch output expiring in 20 blocks
+	_, err = alice.Settle(ctx)
 	require.NoError(t, err)
 
-	time.Sleep(3 * time.Second)
+	wg.Wait()
 
+	// generate 30 blocks to expire the batch output
 	_, err = runCommand("nigiri", "rpc", "--generate", "30")
 	require.NoError(t, err)
 
+	// wait for server to process the sweep
 	time.Sleep(20 * time.Second)
 
-	var balance arkBalance
-	balanceStr, err := runArkCommand("balance")
+	spendable, spent, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
-	require.Zero(t, balance.Offchain.Total) // all funds should be swept
+	require.Empty(t, spendable)
+	require.Len(t, spent, 1)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spent[0].Swept)
+	require.False(t, spent[0].Spent)
 
-	// redeem the note
-	_, err = runArkCommand("recover", "--password", password)
+	// test fund recovery
+	txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos)
 	require.NoError(t, err)
 
-	time.Sleep(3 * time.Second)
+	// give some time for the server to process the recovery
+	time.Sleep(5 * time.Second)
 
-	balanceStr, err = runArkCommand("balance")
+	spendable, spent, err = alice.ListVtxos(ctx)
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
-	require.NotZero(t, balance.Offchain.Total) // funds should be recovered
+	require.NotEmpty(t, spendable)
+	require.Len(t, spendable, 1)
+	require.Len(t, spent, 1)
+	require.Equal(t, txid, spent[0].SettledBy)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spent[0].Swept)
+	require.True(t, spent[0].Spent)
+}
+
+func TestSweepCheckpointOutput(t *testing.T) {
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	ctx := t.Context()
+
+	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	_, err = runCommand("nigiri", "faucet", boardingAddr)
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var vtxo types.Vtxo
+	go func() {
+		defer wg.Done()
+		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+		require.Len(t, vtxos, 1)
+		vtxo = vtxos[0]
+	}()
+
+	// settle the boarding utxo
+	_, err = alice.Settle(ctx)
+	require.NoError(t, err)
+
+	wg.Wait()
+
+	// self-send the VTXO to create a checkpoint output
+	txid, err := alice.SendOffChain(
+		ctx,
+		false,
+		[]types.Receiver{{To: offchainAddr, Amount: vtxo.Amount}},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, txid)
+
+	// unroll the spent VTXO to put checkpoint onchain
+	expl := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	branch, err := redemption.NewRedeemBranch(ctx, expl, setupIndexer(t), vtxo)
+	require.NoError(t, err)
+
+	for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
+		bumpAndBroadcastTx(t, parentTx, expl)
+	}
+
+	// give some time for the server to process the unroll and broadcast the checkpoint
+	time.Sleep(5 * time.Second)
+
+	// generate 20 blocks to expire the checkpoint output
+	_, err = runCommand("nigiri", "rpc", "--generate", "20")
+	require.NoError(t, err)
+
+	// give time for the server to process the sweep
+	time.Sleep(20 * time.Second)
+
+	// verify that the checkpoint output has been put onchain
+	// and that the VTXO has been swept
+	spendable, spent, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendable)
+	require.NotEmpty(t, spent)
+	require.Len(t, spent, 1)
+	require.Equal(t, txid, spendable[0].Txid)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spent[0].Swept)
+	require.True(t, spent[0].Spent)
+	require.True(t, spent[0].Unrolled)
 }
 
 func runArkCommand(arg ...string) (string, error) {
