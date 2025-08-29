@@ -121,7 +121,7 @@ func (s *sweeper) start() error {
 	}
 
 	go func() {
-		if len(sweepableBatches) <= 0 {
+		if len(sweepableUnrolledVtxos) <= 0 {
 			return
 		}
 
