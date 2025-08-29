@@ -1960,7 +1960,9 @@ func (s *service) listenToScannerNotifications() {
 
 					if vtxo.Preconfirmed {
 						go func() {
-							txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.Txid})
+							txs, err := s.repoManager.Rounds().GetTxsWithTxids(
+								ctx, []string{vtxo.Txid},
+							)
 							if err != nil {
 								log.WithError(err).Warn("failed to retrieve txs, skipping...")
 								return
