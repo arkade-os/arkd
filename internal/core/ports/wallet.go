@@ -36,7 +36,6 @@ type WalletService interface {
 		ctx context.Context, asset string, amount uint64, confirmedOnly bool,
 	) ([]TxInput, uint64, error)
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
-	WaitForSync(ctx context.Context, txid string) error
 	EstimateFees(ctx context.Context, psbt string) (uint64, error)
 	FeeRate(ctx context.Context) (uint64, error)
 	ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]TxInput, error)
@@ -45,6 +44,7 @@ type WalletService interface {
 	LockConnectorUtxos(ctx context.Context, utxos []domain.Outpoint) error
 	GetDustAmount(ctx context.Context) (uint64, error)
 	GetTransaction(ctx context.Context, txid string) (string, error)
+	GetOutpointStatus(ctx context.Context, outpoint domain.Outpoint) (spent bool, err error)
 	GetCurrentBlockTime(ctx context.Context) (*BlockTimestamp, error)
 	Withdraw(ctx context.Context, address string, amount uint64) (string, error)
 	Close()

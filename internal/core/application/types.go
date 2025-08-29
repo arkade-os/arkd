@@ -54,6 +54,7 @@ type ServiceInfo struct {
 	UtxoMaxAmount       int64
 	VtxoMinAmount       int64
 	VtxoMaxAmount       int64
+	CheckpointTapscript string
 }
 
 type NextMarketHour struct {

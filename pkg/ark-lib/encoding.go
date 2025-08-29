@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/bech32"
+	"github.com/btcsuite/btcd/txscript"
 )
 
 // Address represents an Ark address with Version, prefix, signer public key, and VTXO taproot key.
@@ -14,6 +15,18 @@ type Address struct {
 	HRP        string
 	Signer     *btcec.PublicKey
 	VtxoTapKey *btcec.PublicKey
+}
+
+func (a *Address) GetPkScript() ([]byte, error) {
+	if a.VtxoTapKey == nil {
+		return nil, fmt.Errorf("missing vtxo taproot key")
+	}
+
+	pkScript, _ := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_1).
+		AddData(schnorr.SerializePubKey(a.VtxoTapKey)).
+		Script()
+	return pkScript, nil
 }
 
 // EncodeV0 converts the address to its bech32m string representation.

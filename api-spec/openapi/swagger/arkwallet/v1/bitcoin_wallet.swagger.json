@@ -445,6 +445,43 @@
         ]
       }
     },
+    "/v1/wallet/outpoint-status": {
+      "get": {
+        "operationId": "WalletService_GetOutpointStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetOutpointStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googlerpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "vout",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "WalletService"
+        ]
+      }
+    },
     "/v1/wallet/pubkey": {
       "get": {
         "operationId": "WalletService_GetPubkey",
@@ -858,38 +895,6 @@
         ]
       }
     },
-    "/v1/wallet/wait-for-sync": {
-      "post": {
-        "operationId": "WalletService_WaitForSync",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1WaitForSyncResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googlerpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1WaitForSyncRequest"
-            }
-          }
-        ],
-        "tags": [
-          "WalletService"
-        ]
-      }
-    },
     "/v1/wallet/watch-scripts": {
       "post": {
         "operationId": "WalletService_WatchScripts",
@@ -1138,6 +1143,14 @@
         }
       }
     },
+    "v1GetOutpointStatusResponse": {
+      "type": "object",
+      "properties": {
+        "spent": {
+          "type": "boolean"
+        }
+      }
+    },
     "v1GetPubkeyResponse": {
       "type": "object",
       "properties": {
@@ -1217,7 +1230,8 @@
       "properties": {
         "confirmed": {
           "type": "string",
-          "format": "uint64"
+          "format": "uint64",
+          "title": "TODO rename to available and locked"
         },
         "unconfirmed": {
           "type": "string",
@@ -1464,17 +1478,6 @@
           "format": "uint64"
         }
       }
-    },
-    "v1WaitForSyncRequest": {
-      "type": "object",
-      "properties": {
-        "txid": {
-          "type": "string"
-        }
-      }
-    },
-    "v1WaitForSyncResponse": {
-      "type": "object"
     },
     "v1WatchScriptsRequest": {
       "type": "object",

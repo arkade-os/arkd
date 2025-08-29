@@ -86,6 +86,20 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 	return execTx(ctx, v.db, txBody)
 }
 
+func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	res, err := v.querier.SelectSweepableUnrolledVtxos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]queries.VtxoVw, 0, len(res))
+	for _, row := range res {
+		rows = append(rows, row.VtxoVw)
+	}
+	return readRows(rows)
+}
+
 func (v *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	res, err := v.querier.SelectSweepableVtxos(ctx)
 	if err != nil {

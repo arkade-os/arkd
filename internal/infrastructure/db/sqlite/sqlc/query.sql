@@ -276,3 +276,6 @@ nodes AS (
 SELECT *
 FROM nodes
 ORDER BY depth, txid, vout;
+
+-- name: SelectSweepableUnrolledVtxos :many
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');

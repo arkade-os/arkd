@@ -114,7 +114,7 @@ func prefetchTest(t *testing.T, db walletdb.DB,
 
 // testPrefetch tests that prefetching buckets works as expected even when the
 // prefetch happens multiple times and the bucket contents change. Our expectation
-// is that with or without prefetches, the kvdb layer works accourding to the
+// is that with or without prefetches, the kvdb layer works according to the
 // interface specification.
 func testPrefetch(t *testing.T, db walletdb.DB) {
 	tests := []struct {

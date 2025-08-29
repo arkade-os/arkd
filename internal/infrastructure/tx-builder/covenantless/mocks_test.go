@@ -266,11 +266,6 @@ func (m *mockedWallet) LockConnectorUtxos(ctx context.Context, utxos []domain.Ou
 	return args.Error(0)
 }
 
-func (m *mockedWallet) WaitForSync(ctx context.Context, txid string) error {
-	args := m.Called(ctx, txid)
-	return args.Error(0)
-}
-
 func (m *mockedWallet) GetTransaction(ctx context.Context, txid string) (string, error) {
 	args := m.Called(ctx, txid)
 
@@ -306,6 +301,13 @@ func (m *mockedWallet) GetCurrentBlockTime(ctx context.Context) (*ports.BlockTim
 func (m *mockedWallet) Withdraw(
 	ctx context.Context, address string, amount uint64,
 ) (string, error) {
+	panic("not implemented")
+}
+
+func (m *mockedWallet) GetOutpointStatus(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) (spent bool, err error) {
 	panic("not implemented")
 }
 

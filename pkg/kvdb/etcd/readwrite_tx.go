@@ -15,7 +15,7 @@ type readWriteTx struct {
 	stm STM
 
 	// rootBucketID holds the sha256 hash of the root bucket id, which is used
-	// for key space spearation.
+	// for key space separation.
 	rootBucketID [bucketIDLength]byte
 
 	// active is true if the transaction hasn't been committed yet.
