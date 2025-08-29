@@ -215,7 +215,9 @@ func NewService(
 				}
 			}()
 
-			go svc.scheduleSweepBatchOutput(round)
+			if lastEvent := events[len(events)-1]; lastEvent.GetType() != domain.EventTypeBatchSwept {
+				go svc.scheduleSweepBatchOutput(round)
+			}
 		},
 	)
 
@@ -1956,33 +1958,33 @@ func (s *service) listenToScannerNotifications() {
 
 					vtxo := vtxos[0]
 
-					go func() {
-						txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.Txid})
-						if err != nil {
-							log.WithError(err).Warn("failed to retrieve txs, skipping...")
-							return
-						}
+					if vtxo.Preconfirmed {
+						go func() {
+							txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.Txid})
+							if err != nil {
+								log.WithError(err).Warn("failed to retrieve txs, skipping...")
+								return
+							}
 
-						if len(txs) <= 0 {
-							log.Warnf("tx %s not found", vtxo.Txid)
-							return
-						}
+							if len(txs) <= 0 {
+								log.Warnf("tx %s not found", vtxo.Txid)
+								return
+							}
 
-						ptx, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
-						if err != nil {
-							log.WithError(err).Warn("failed to parse tx, skipping...")
-							return
-						}
+							ptx, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
+							if err != nil {
+								log.WithError(err).Warn("failed to parse tx, skipping...")
+								return
+							}
 
-						// remove sweeper task for the associated checkpoint outputs
-						for _, in := range ptx.UnsignedTx.TxIn {
-							s.sweeper.removeTask(in.PreviousOutPoint.Hash.String())
-							log.Debugf(
-								"removed sweeper task for tx %s",
-								in.PreviousOutPoint.Hash.String(),
-							)
-						}
-					}()
+							// remove sweeper task for the associated checkpoint outputs
+							for _, in := range ptx.UnsignedTx.TxIn {
+								taskId := in.PreviousOutPoint.Hash.String()
+								s.sweeper.removeTask(taskId)
+								log.Debugf("sweeper: unscheduled task for tx %s", taskId)
+							}
+						}()
+					}
 
 					if !vtxo.Unrolled {
 						go func() {
@@ -2119,11 +2121,6 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 	}
 
 	expirationTimestamp := s.sweeper.scheduler.AddNow(int64(s.vtxoTreeExpiry.Value))
-
-	log.Debugf(
-		"batch %s:0 sweeping scheduled at %s", round.CommitmentTxid,
-		fancyTime(expirationTimestamp, s.sweeper.scheduler.Unit()),
-	)
 
 	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
 	if err != nil {
