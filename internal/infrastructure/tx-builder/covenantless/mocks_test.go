@@ -304,7 +304,10 @@ func (m *mockedWallet) Withdraw(
 	panic("not implemented")
 }
 
-func (m *mockedWallet) GetOutpointStatus(ctx context.Context, outpoint domain.Outpoint) (spent bool, err error) {
+func (m *mockedWallet) GetOutpointStatus(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) (spent bool, err error) {
 	panic("not implemented")
 }
 

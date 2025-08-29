@@ -435,7 +435,10 @@ func (w *walletDaemonClient) Withdraw(
 	return resp.GetTxid(), nil
 }
 
-func (w *walletDaemonClient) GetOutpointStatus(ctx context.Context, outpoint domain.Outpoint) (spent bool, err error) {
+func (w *walletDaemonClient) GetOutpointStatus(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) (spent bool, err error) {
 	resp, err := w.client.GetOutpointStatus(ctx, &arkwalletv1.GetOutpointStatusRequest{
 		Txid: outpoint.Txid,
 		Vout: outpoint.VOut,
