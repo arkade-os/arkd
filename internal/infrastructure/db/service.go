@@ -337,14 +337,14 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
 		sweptCount, err := repo.SweepVtxos(ctx, allSweptVtxos)
 		if err != nil {
-			log.WithField("swept_count", sweptCount).
-				WithError(err).
-				Warn("failed to sweep some of the vtxos")
+			log.WithError(err).Warn("failed to sweep vtxos")
+		} else {
+			log.Debugf("swept %d vtxos", sweptCount)
 		}
+
 		if event.FullySwept {
 			log.Debugf("round %s fully swept", round.Id)
 		}
-		log.Debugf("swept %d vtxos", sweptCount)
 		return
 	}
 
