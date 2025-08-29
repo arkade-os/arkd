@@ -2027,14 +2027,13 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 
 	topics := arksdk.GetEventStreamTopics(
-		[]types.Outpoint{aliceVtxo.Outpoint},
-		[]string{bobTreeSigner.GetPublicKey()},
+		[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{bobTreeSigner},
 	)
 	stream, close, err := grpcClient.GetEventStream(ctx, topics)
 	require.NoError(t, err)
 	defer close()
 
-	commitmentTxid, err := arksdk.HandleBatchEvents(ctx, stream, &delegateBatchHandlers{
+	commitmentTxid, err := arksdk.JoinBatchSession(ctx, stream, &delegateBatchEventsHandler{
 		signerSession:    bobTreeSigner,
 		partialForfeitTx: signedPartialForfeitTx,
 		delegatorWallet:  bobWallet,

@@ -1890,7 +1890,7 @@ func (s *service) listenToScannerNotifications() {
 						return
 					}
 					if len(vtxos) <= 0 {
-						log.Warnf("vtxo %s not found, skipping...", v.Outpoint.String())
+						log.Warnf("vtxo %s not found, skipping...", v.String())
 						return
 					}
 

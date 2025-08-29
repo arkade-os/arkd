@@ -437,7 +437,7 @@ func faucetOffchainAddress(t *testing.T, address string) (types.Vtxo, error) {
 	return receivedVtxo, nil
 }
 
-type delegateBatchHandlers struct {
+type delegateBatchEventsHandler struct {
 	intentId         string
 	signerSession    tree.SignerSession
 	partialForfeitTx string
@@ -449,7 +449,7 @@ type delegateBatchHandlers struct {
 	cacheBatchId string
 }
 
-func (h *delegateBatchHandlers) OnBatchStarted(
+func (h *delegateBatchEventsHandler) OnBatchStarted(
 	ctx context.Context,
 	event client.BatchStartedEvent,
 ) (bool, error) {
@@ -469,14 +469,14 @@ func (h *delegateBatchHandlers) OnBatchStarted(
 	return true, nil
 }
 
-func (h *delegateBatchHandlers) OnBatchFinalized(
+func (h *delegateBatchEventsHandler) OnBatchFinalized(
 	ctx context.Context,
 	event client.BatchFinalizedEvent,
 ) error {
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnBatchFailed(
+func (h *delegateBatchEventsHandler) OnBatchFailed(
 	ctx context.Context,
 	event client.BatchFailedEvent,
 ) error {
@@ -486,18 +486,21 @@ func (h *delegateBatchHandlers) OnBatchFailed(
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnTreeTxEvent(ctx context.Context, event client.TreeTxEvent) error {
+func (h *delegateBatchEventsHandler) OnTreeTxEvent(
+	ctx context.Context,
+	event client.TreeTxEvent,
+) error {
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnTreeSignatureEvent(
+func (h *delegateBatchEventsHandler) OnTreeSignatureEvent(
 	ctx context.Context,
 	event client.TreeSignatureEvent,
 ) error {
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnTreeSigningStarted(
+func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
 	ctx context.Context,
 	event client.TreeSigningStartedEvent,
 	vtxoTree *tree.TxTree,
@@ -557,7 +560,7 @@ func (h *delegateBatchHandlers) OnTreeSigningStarted(
 	return false, nil
 }
 
-func (h *delegateBatchHandlers) OnTreeNoncesAggregated(
+func (h *delegateBatchEventsHandler) OnTreeNoncesAggregated(
 	ctx context.Context,
 	event client.TreeNoncesAggregatedEvent,
 ) error {
@@ -584,7 +587,7 @@ func (h *delegateBatchHandlers) OnTreeNoncesAggregated(
 	return nil
 }
 
-func (h *delegateBatchHandlers) OnBatchFinalization(
+func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	ctx context.Context,
 	event client.BatchFinalizationEvent,
 	vtxoTree *tree.TxTree,
