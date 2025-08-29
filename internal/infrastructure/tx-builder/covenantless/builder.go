@@ -683,6 +683,12 @@ func (b *txBuilder) GetSweepableBatchOutputs(
 		return nil, ports.SweepableOutput{}, err
 	}
 
+	if len(tx.TxOut) <= 0 {
+		return nil, ports.SweepableOutput{}, fmt.Errorf(
+			"no outputs found in checkpoint tx",
+		)
+	}
+
 	sweepInput = ports.SweepableOutput{
 		Hash:         txid,
 		Index:        index,
