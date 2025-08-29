@@ -427,7 +427,7 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	require.NoError(t, err)
 
 	wg.Wait()
-	time.Sleep(4 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	wg.Add(1)
 	go func() {
@@ -501,7 +501,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
-		time.Sleep(4 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		err = generateBlock()
 		require.NoError(t, err)
@@ -521,7 +521,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 
 		wg.Wait()
 
-		time.Sleep(4 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		wg.Add(1)
 		go func() {
@@ -623,7 +623,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 
 		wg.Wait()
 
-		time.Sleep(4 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		spendableVtxos, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -1817,7 +1817,7 @@ func TestSweepBatchOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	// give some time for the server to process the recovery
-	time.Sleep(4 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	spendable, spent, err = alice.ListVtxos(ctx)
 	require.NoError(t, err)
