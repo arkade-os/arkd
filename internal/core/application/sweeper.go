@@ -108,8 +108,13 @@ func (s *sweeper) start() error {
 		}
 	}()
 
-	unrolledUnsweptOffchainVtxos, err := s.repoManager.Vtxos().
+	sweepableUnrolledVtxos, err := s.repoManager.Vtxos().
 		GetAllSweepableUnrolledVtxos(ctx)
+	if err != nil {
+		return err
+	}
+
+	network, err := s.wallet.GetNetwork(ctx)
 	if err != nil {
 		return err
 	}
@@ -117,7 +122,7 @@ func (s *sweeper) start() error {
 	go func() {
 		defer wg.Done()
 
-		for _, vtxo := range unrolledUnsweptOffchainVtxos {
+		for _, vtxo := range sweepableUnrolledVtxos {
 			checkpointTxid := vtxo.SpentBy
 
 			txs, err := s.repoManager.Rounds().
@@ -138,16 +143,35 @@ func (s *sweeper) start() error {
 				continue
 			}
 
-			_, blockHeight, blockTime, err := s.wallet.IsTransactionConfirmed(ctx, checkpointTxid)
+			confirmed, blockHeight, blockTime, err := s.wallet.IsTransactionConfirmed(
+				ctx,
+				checkpointTxid,
+			)
 			if err != nil {
 				log.WithError(err).Error("error while checking if vtxo tx is confirmed")
 				continue
 			}
 
-			if err := s.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockHeight, blockTime); err != nil {
-				log.WithError(err).Error("error while scheduling checkpoint sweep")
+			if confirmed {
+				if err := s.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockHeight, blockTime); err != nil {
+					log.WithError(err).Error("error while scheduling checkpoint sweep")
+				}
 				continue
 			}
+
+			// asyncronously wait for the tx to be confirmed
+			go func() {
+				blockHeight, blockTime := waitForConfirmation(
+					ctx,
+					checkpointTxid,
+					s.wallet,
+					*network,
+				)
+
+				if err := s.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockHeight, blockTime); err != nil {
+					log.Errorf("failed to schedule checkpoint sweep: %s", err)
+				}
+			}()
 		}
 	}()
 

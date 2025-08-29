@@ -356,3 +356,39 @@ func getConnectorTreeTopic(
 		return topics, nil
 	}
 }
+
+var (
+	regtestTickerInterval = time.Second
+	mainnetTickerInterval = time.Minute
+)
+
+// waitForConfirmation waits for the given tx to be confirmed onchain.
+// It uses a ticker with an interval depending on the network
+// (1 second for regtest or 1 minute otherwise).
+// The function is blocking and returns once the tx is confirmed.
+func waitForConfirmation(
+	ctx context.Context,
+	txid string,
+	wallet ports.WalletService,
+	network arklib.Network,
+) (blockheight int64, blocktime int64) {
+	tickerInterval := mainnetTickerInterval
+	if network.Name == arklib.BitcoinRegTest.Name {
+		tickerInterval = regtestTickerInterval
+	}
+	ticker := time.NewTicker(tickerInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if confirmed, blockHeight, blockTime, _ := wallet.IsTransactionConfirmed(ctx, txid); confirmed {
+			log.Debugf(
+				"tx %s confirmed at block height %d, block time %d",
+				txid,
+				blockHeight,
+				blockTime,
+			)
+			return blockHeight, blockTime
+		}
+	}
+	return 0, 0
+}

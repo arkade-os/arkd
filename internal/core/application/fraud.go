@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil"
@@ -22,11 +20,6 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	log "github.com/sirupsen/logrus"
-)
-
-var (
-	regtestTickerInterval = time.Second
-	mainnetTickerInterval = time.Minute
 )
 
 // reactToFraud handles the case where a user spent or renewed a vtxo in the past and now tries to
@@ -370,33 +363,11 @@ func (s *service) bumpAnchorTx(
 	return hex.EncodeToString(serializedTx.Bytes()), nil
 }
 
-// waitForConfirmation waits for the given tx to be confirmed onchain.
-// It uses a ticker with an interval depending on the network
-// (1 second for regtest or 1 minute otherwise).
-// The function is blocking and returns once the tx is confirmed.
 func (s *service) waitForConfirmation(
 	ctx context.Context,
 	txid string,
 ) (blockheight int64, blocktime int64) {
-	tickerInterval := mainnetTickerInterval
-	if s.network.Name == arklib.BitcoinRegTest.Name {
-		tickerInterval = regtestTickerInterval
-	}
-	ticker := time.NewTicker(tickerInterval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		if confirmed, blockHeight, blockTime, _ := s.wallet.IsTransactionConfirmed(ctx, txid); confirmed {
-			log.Debugf(
-				"tx %s confirmed at block height %d, block time %d",
-				txid,
-				blockHeight,
-				blockTime,
-			)
-			return blockHeight, blockTime
-		}
-	}
-	return 0, 0
+	return waitForConfirmation(ctx, txid, s.wallet, s.network)
 }
 
 // findForfeitTx finds the correct forfeit tx and connector outpoint for the given vtxo from the
