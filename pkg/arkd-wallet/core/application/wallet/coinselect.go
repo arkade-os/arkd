@@ -3,7 +3,7 @@ package wallet
 import (
 	"encoding/hex"
 
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/coinset"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"

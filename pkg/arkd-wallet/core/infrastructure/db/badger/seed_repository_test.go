@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	badgerdb "github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/infrastructure/db/badger"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
+	badgerdb "github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/db/badger"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/stretchr/testify/require"
 )
 

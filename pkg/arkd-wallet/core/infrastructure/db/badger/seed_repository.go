@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/dgraph-io/badger/v4"
 	log "github.com/sirupsen/logrus"
 	"github.com/timshannon/badgerhold/v4"

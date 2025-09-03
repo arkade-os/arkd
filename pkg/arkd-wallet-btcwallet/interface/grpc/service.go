@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/config"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/interface/grpc/handlers"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/interface/grpc/interceptors"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet/config"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet/interface/grpc/handlers"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet/interface/grpc/interceptors"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -24,7 +24,6 @@ type service struct {
 	cfg     *config.Config
 	server  *http.Server
 	grpcSrv *grpc.Server
-	closeFn func()
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -40,12 +39,7 @@ func (s *service) Start() error {
 		interceptors.StreamInterceptor(),
 	)
 
-	s.closeFn = func() {
-		s.cfg.WalletSvc.Close()
-		s.cfg.ScannerSvc.Close()
-	}
-
-	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc, s.cfg.ScannerSvc)
+	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc)
 	arkwalletv1.RegisterWalletServiceServer(grpcSrv, walletHandler)
 
 	healthHandler := handlers.NewHealthHandler()

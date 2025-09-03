@@ -13,8 +13,8 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/application"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"

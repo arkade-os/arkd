@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/application"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/core/ports"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"

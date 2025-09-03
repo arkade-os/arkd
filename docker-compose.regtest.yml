@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
     build:
       context: .
-      dockerfile: arkdwallet.nbxplorer.Dockerfile
+      dockerfile: arkdwallet.Dockerfile
     container_name: arkd-wallet
     depends_on:
       - nbxplorer

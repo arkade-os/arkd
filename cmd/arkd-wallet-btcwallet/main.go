@@ -5,8 +5,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/config"
-	grpcservice "github.com/arkade-os/arkd/pkg/arkd-wallet-nbxplorer/interface/grpc"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet/config"
+	grpcservice "github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet/interface/grpc"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -24,6 +24,7 @@ type service struct {
 	cfg     *config.Config
 	server  *http.Server
 	grpcSrv *grpc.Server
+	closeFn func()
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -39,7 +40,12 @@ func (s *service) Start() error {
 		interceptors.StreamInterceptor(),
 	)
 
-	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc)
+	s.closeFn = func() {
+		s.cfg.WalletSvc.Close()
+		s.cfg.ScannerSvc.Close()
+	}
+
+	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc, s.cfg.ScannerSvc)
 	arkwalletv1.RegisterWalletServiceServer(grpcSrv, walletHandler)
 
 	healthHandler := handlers.NewHealthHandler()
