@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1008,15 +1009,7 @@ func (s *service) RegisterIntent(
 				Amount: amount,
 			}
 
-			isOnchain := false
-			for _, index := range message.OnchainOutputIndexes {
-				if index == outputIndex {
-					isOnchain = true
-					break
-				}
-			}
-
-			if isOnchain {
+			if slices.Contains(message.OnchainOutputIndexes, outputIndex) {
 				if s.utxoMaxAmount >= 0 {
 					if amount > uint64(s.utxoMaxAmount) {
 						return "", fmt.Errorf(
