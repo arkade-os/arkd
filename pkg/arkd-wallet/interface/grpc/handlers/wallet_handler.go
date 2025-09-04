@@ -6,7 +6,6 @@ import (
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/nbxplorer"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"google.golang.org/grpc/codes"
@@ -302,7 +301,7 @@ func (h *WalletServiceHandler) IsTransactionConfirmed(
 ) (*arkwalletv1.IsTransactionConfirmedResponse, error) {
 	confirmed, blocknumber, blocktime, err := h.scanner.IsTransactionConfirmed(ctx, req.GetTxid())
 	if err != nil {
-		if errors.Is(err, nbxplorer.ErrTransactionNotFound) {
+		if errors.Is(err, application.ErrTransactionNotFound) {
 			return &arkwalletv1.IsTransactionConfirmedResponse{
 				Confirmed:   false,
 				Blocknumber: 0,

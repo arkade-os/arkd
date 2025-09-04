@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -16,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -28,8 +28,6 @@ const (
 	// Default cryptocode for Bitcoin
 	btcCryptoCode = "BTC"
 )
-
-var ErrTransactionNotFound = errors.New("transaction not found")
 
 type nbxplorer struct {
 	url           string
@@ -134,7 +132,7 @@ func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (*ports.Tra
 	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/transactions/%s", btcCryptoCode, txid), nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "404") {
-			return nil, ErrTransactionNotFound
+			return nil, application.ErrTransactionNotFound
 		}
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}

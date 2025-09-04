@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
@@ -66,3 +67,5 @@ type BlockTimestamp struct {
 	Height uint32
 	Time   int64
 }
+
+var ErrTransactionNotFound = fmt.Errorf("transaction not found")
