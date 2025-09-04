@@ -284,14 +284,14 @@
         ]
       }
     },
-    "/v1/wallet/forfeit-address": {
+    "/v1/wallet/forfeit-pubkey": {
       "get": {
-        "operationId": "WalletService_GetForfeitAddress",
+        "operationId": "WalletService_GetForfeitPubkey",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1GetForfeitAddressResponse"
+              "$ref": "#/definitions/v1GetForfeitPubkeyResponse"
             }
           },
           "default": {
@@ -477,28 +477,6 @@
             "format": "int64"
           }
         ],
-        "tags": [
-          "WalletService"
-        ]
-      }
-    },
-    "/v1/wallet/pubkey": {
-      "get": {
-        "operationId": "WalletService_GetPubkey",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetPubkeyResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googlerpcStatus"
-            }
-          }
-        },
         "tags": [
           "WalletService"
         ]
@@ -709,6 +687,38 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1SignTransactionTapscriptRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WalletService"
+        ]
+      }
+    },
+    "/v1/wallet/signer-key": {
+      "post": {
+        "operationId": "WalletService_LoadSignerKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LoadSignerKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googlerpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1LoadSignerKeyRequest"
             }
           }
         ],
@@ -1127,10 +1137,10 @@
         }
       }
     },
-    "v1GetForfeitAddressResponse": {
+    "v1GetForfeitPubkeyResponse": {
       "type": "object",
       "properties": {
-        "address": {
+        "pubkey": {
           "type": "string"
         }
       }
@@ -1148,15 +1158,6 @@
       "properties": {
         "spent": {
           "type": "boolean"
-        }
-      }
-    },
-    "v1GetPubkeyResponse": {
-      "type": "object",
-      "properties": {
-        "pubkey": {
-          "type": "string",
-          "format": "byte"
         }
       }
     },
@@ -1203,6 +1204,17 @@
           }
         }
       }
+    },
+    "v1LoadSignerKeyRequest": {
+      "type": "object",
+      "properties": {
+        "privateKey": {
+          "type": "string"
+        }
+      }
+    },
+    "v1LoadSignerKeyResponse": {
+      "type": "object"
     },
     "v1LockConnectorUtxosRequest": {
       "type": "object",
