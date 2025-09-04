@@ -1009,7 +1009,8 @@ func (s *service) RegisterIntent(
 				Amount: amount,
 			}
 
-			if slices.Contains(message.OnchainOutputIndexes, outputIndex) {
+			intentHasOnchainOuts := slices.Contains(message.OnchainOutputIndexes, outputIndex)
+			if intentHasOnchainOuts {
 				if s.utxoMaxAmount >= 0 {
 					if amount > uint64(s.utxoMaxAmount) {
 						return "", fmt.Errorf(
