@@ -15,9 +15,8 @@ type keyManager struct {
 	mainAccount *hdkeychain.ExtendedKey
 	// m/86'/(cointype)'/1'
 	connectorAccount *hdkeychain.ExtendedKey
-	// the ark signer account key is the one used in VTXO script as ark signer
-	// m/86'/(cointype)'/2'/0/0
-	signerPrvKey *btcec.PrivateKey
+	// forfeit private key derived from path mainAccount/0/0
+	forfeitPrvkey *btcec.PrivateKey
 
 	// derivation schemes strings used by nbxplorer tracking system
 	// arkd wallet is taproot account = "xpub-[taproot]"
@@ -68,31 +67,19 @@ func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 		return nil, err
 	}
 
-	// m/86'/(cointype)'/2'
-	arkSignerAccount, err := coinTypeKey.Derive(hdkeychain.HardenedKeyStart + 2)
-	if err != nil {
-		return nil, err
-	}
-	// m/86'/(cointype)'/2'/0
-	arkSignerChangeKey, err := arkSignerAccount.Derive(0)
-	if err != nil {
-		return nil, err
-	}
-	// m/86'/(cointype)'/2'/0/0
-	arkSignerExtendedKey, err := arkSignerChangeKey.Derive(0)
-	if err != nil {
-		return nil, err
-	}
-	arkSignerPrvKey, err := arkSignerExtendedKey.ECPrivKey()
+	forfeitPrvkey, err := deriveForfeitPrvkey(mainAccount, network)
 	if err != nil {
 		return nil, err
 	}
 
-	return &keyManager{mainAccount, connectorAccount, arkSignerPrvKey, mainAccountDerivationScheme, connectorAccountDerivationScheme}, nil
+	return &keyManager{
+		mainAccount, connectorAccount, forfeitPrvkey,
+		mainAccountDerivationScheme, connectorAccountDerivationScheme,
+	}, nil
 }
 
 // compute the private key from main or connector account based on the derivation scheme and key path
-func (k *keyManager) getPrivateKey(derivationScheme string, keyPath string) (*btcec.PrivateKey, error) {
+func (k *keyManager) deriveKey(derivationScheme string, keyPath string) (*btcec.PrivateKey, error) {
 	var key *hdkeychain.ExtendedKey
 	switch derivationScheme {
 	case k.mainAccountDerivationScheme:
@@ -125,4 +112,16 @@ func computeTaprootDerivationScheme(accountKey *hdkeychain.ExtendedKey) (string,
 		return "", err
 	}
 	return neutered.String() + "-[taproot]", nil
+}
+
+func deriveForfeitPrvkey(xpub *hdkeychain.ExtendedKey, network *chaincfg.Params) (*btcec.PrivateKey, error) {
+	key, err := xpub.Derive(0)
+	if err != nil {
+		return nil, err
+	}
+	key, err = key.Derive(0)
+	if err != nil {
+		return nil, err
+	}
+	return key.ECPrivKey()
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/cypher"
 	db "github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/db/badger"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/nbxplorer"
+	"github.com/btcsuite/btcd/btcec/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -24,6 +26,7 @@ var (
 	LogLevel     = "LOG_LEVEL"
 	Network      = "NETWORK"
 	NbxplorerURL = "NBXPLORER_URL"
+	SignerKey    = "SIGNER_KEY"
 
 	defaultPort     = 6060
 	defaultLogLevel = int(log.InfoLevel)
@@ -60,6 +63,7 @@ func LoadConfig() (*Config, error) {
 		LogLevel:     viper.GetInt(LogLevel),
 		Network:      net,
 		NbxplorerURL: viper.GetString(NbxplorerURL),
+		SignerKey:    viper.GetString(SignerKey),
 	}
 
 	if err := cfg.initServices(); err != nil {
@@ -75,6 +79,7 @@ type Config struct {
 	LogLevel     int
 	Network      arklib.Network
 	NbxplorerURL string
+	SignerKey    string
 
 	WalletSvc  application.WalletService
 	ScannerSvc application.BlockchainScanner
@@ -91,6 +96,15 @@ func (c *Config) String() string {
 }
 
 func (c *Config) initServices() error {
+	var signerKey *btcec.PrivateKey
+	if c.SignerKey != "" {
+		buf, err := hex.DecodeString(c.SignerKey)
+		if err != nil {
+			return fmt.Errorf("invalid signer key format, must be hex")
+		}
+		signerKey, _ = btcec.PrivKeyFromBytes(buf)
+	}
+
 	repository, err := db.NewSeedRepository(c.DbDir, nil)
 	if err != nil {
 		return fmt.Errorf("error while creating seed repository: %s", err)
@@ -113,6 +127,7 @@ func (c *Config) initServices() error {
 		Cypher:         cryptoSvc,
 		Nbxplorer:      nbxplorerSvc,
 		Network:        network.Name,
+		SignerKey:      signerKey,
 	})
 
 	scannerSvc, err := scanner.New(nbxplorerSvc, network.Name)

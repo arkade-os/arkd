@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"google.golang.org/grpc/codes"
@@ -17,11 +19,15 @@ type WalletServiceHandler struct {
 	scanner application.BlockchainScanner
 }
 
-func NewWalletServiceHandler(walletSvc application.WalletService, scanner application.BlockchainScanner) arkwalletv1.WalletServiceServer {
+func NewWalletServiceHandler(
+	walletSvc application.WalletService, scanner application.BlockchainScanner,
+) arkwalletv1.WalletServiceServer {
 	return &WalletServiceHandler{wallet: walletSvc, scanner: scanner}
 }
 
-func (h *WalletServiceHandler) GenSeed(ctx context.Context, _ *arkwalletv1.GenSeedRequest) (*arkwalletv1.GenSeedResponse, error) {
+func (h *WalletServiceHandler) GenSeed(
+	ctx context.Context, _ *arkwalletv1.GenSeedRequest,
+) (*arkwalletv1.GenSeedResponse, error) {
 	seed, err := h.wallet.GenSeed(ctx)
 	if err != nil {
 		return nil, err
@@ -29,35 +35,45 @@ func (h *WalletServiceHandler) GenSeed(ctx context.Context, _ *arkwalletv1.GenSe
 	return &arkwalletv1.GenSeedResponse{Seed: seed}, nil
 }
 
-func (h *WalletServiceHandler) Create(ctx context.Context, req *arkwalletv1.CreateRequest) (*arkwalletv1.CreateResponse, error) {
+func (h *WalletServiceHandler) Create(
+	ctx context.Context, req *arkwalletv1.CreateRequest,
+) (*arkwalletv1.CreateResponse, error) {
 	if err := h.wallet.Create(ctx, req.GetSeed(), req.GetPassword()); err != nil {
 		return nil, err
 	}
 	return &arkwalletv1.CreateResponse{}, nil
 }
 
-func (h *WalletServiceHandler) Restore(ctx context.Context, req *arkwalletv1.RestoreRequest) (*arkwalletv1.RestoreResponse, error) {
+func (h *WalletServiceHandler) Restore(
+	ctx context.Context, req *arkwalletv1.RestoreRequest,
+) (*arkwalletv1.RestoreResponse, error) {
 	if err := h.wallet.Restore(ctx, req.GetSeed(), req.GetPassword()); err != nil {
 		return nil, err
 	}
 	return &arkwalletv1.RestoreResponse{}, nil
 }
 
-func (h *WalletServiceHandler) Unlock(ctx context.Context, req *arkwalletv1.UnlockRequest) (*arkwalletv1.UnlockResponse, error) {
+func (h *WalletServiceHandler) Unlock(
+	ctx context.Context, req *arkwalletv1.UnlockRequest,
+) (*arkwalletv1.UnlockResponse, error) {
 	if err := h.wallet.Unlock(ctx, req.GetPassword()); err != nil {
 		return nil, err
 	}
 	return &arkwalletv1.UnlockResponse{}, nil
 }
 
-func (h *WalletServiceHandler) Lock(ctx context.Context, req *arkwalletv1.LockRequest) (*arkwalletv1.LockResponse, error) {
+func (h *WalletServiceHandler) Lock(
+	ctx context.Context, req *arkwalletv1.LockRequest,
+) (*arkwalletv1.LockResponse, error) {
 	if err := h.wallet.Lock(ctx); err != nil {
 		return nil, err
 	}
 	return &arkwalletv1.LockResponse{}, nil
 }
 
-func (h *WalletServiceHandler) Status(ctx context.Context, _ *arkwalletv1.StatusRequest) (*arkwalletv1.StatusResponse, error) {
+func (h *WalletServiceHandler) Status(
+	ctx context.Context, _ *arkwalletv1.StatusRequest,
+) (*arkwalletv1.StatusResponse, error) {
 	status := h.wallet.Status(ctx)
 
 	return &arkwalletv1.StatusResponse{
@@ -67,27 +83,21 @@ func (h *WalletServiceHandler) Status(ctx context.Context, _ *arkwalletv1.Status
 	}, nil
 }
 
-func (h *WalletServiceHandler) GetPubkey(ctx context.Context, _ *arkwalletv1.GetPubkeyRequest) (*arkwalletv1.GetPubkeyResponse, error) {
-	pubkey, err := h.wallet.GetPubkey(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &arkwalletv1.GetPubkeyResponse{Pubkey: pubkey.SerializeCompressed()}, nil
-}
-
-func (h *WalletServiceHandler) GetNetwork(ctx context.Context, _ *arkwalletv1.GetNetworkRequest) (*arkwalletv1.GetNetworkResponse, error) {
+func (h *WalletServiceHandler) GetNetwork(
+	ctx context.Context, _ *arkwalletv1.GetNetworkRequest,
+) (*arkwalletv1.GetNetworkResponse, error) {
 	network := h.wallet.GetNetwork(ctx)
 	return &arkwalletv1.GetNetworkResponse{Network: network}, nil
 }
 
-func (h *WalletServiceHandler) GetForfeitAddress(
-	ctx context.Context, req *arkwalletv1.GetForfeitAddressRequest,
-) (*arkwalletv1.GetForfeitAddressResponse, error) {
-	addr, err := h.wallet.GetForfeitAddress(ctx)
+func (h *WalletServiceHandler) GetForfeitPubkey(
+	ctx context.Context, req *arkwalletv1.GetForfeitPubkeyRequest,
+) (*arkwalletv1.GetForfeitPubkeyResponse, error) {
+	pubkey, err := h.wallet.GetForfeitPubkey(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &arkwalletv1.GetForfeitAddressResponse{Address: addr}, nil
+	return &arkwalletv1.GetForfeitPubkeyResponse{Pubkey: pubkey}, nil
 }
 
 func (h *WalletServiceHandler) WatchScripts(
@@ -131,7 +141,8 @@ func (h *WalletServiceHandler) DeriveAddresses(
 func (h *WalletServiceHandler) SignTransaction(
 	ctx context.Context, req *arkwalletv1.SignTransactionRequest,
 ) (*arkwalletv1.SignTransactionResponse, error) {
-	tx, err := h.wallet.SignTransaction(ctx, req.PartialTx, req.ExtractRawTx, nil)
+	signMode := application.SignModeLiquidityProvider
+	tx, err := h.wallet.SignTransaction(ctx, signMode, req.PartialTx, req.ExtractRawTx, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -141,11 +152,12 @@ func (h *WalletServiceHandler) SignTransaction(
 func (h *WalletServiceHandler) SignTransactionTapscript(
 	ctx context.Context, req *arkwalletv1.SignTransactionTapscriptRequest,
 ) (*arkwalletv1.SignTransactionTapscriptResponse, error) {
+	signMode := application.SignModeLiquidityProvider
 	inIndexes := make([]int, 0, len(req.GetInputIndexes()))
 	for _, v := range req.GetInputIndexes() {
 		inIndexes = append(inIndexes, int(v))
 	}
-	tx, err := h.wallet.SignTransaction(ctx, req.GetPartialTx(), false, inIndexes)
+	tx, err := h.wallet.SignTransaction(ctx, signMode, req.GetPartialTx(), false, inIndexes)
 	if err != nil {
 		return nil, err
 	}
@@ -407,6 +419,24 @@ func (h *WalletServiceHandler) Withdraw(
 		return nil, err
 	}
 	return &arkwalletv1.WithdrawResponse{Txid: txid}, nil
+}
+
+func (h *WalletServiceHandler) LoadSignerKey(
+	ctx context.Context, req *arkwalletv1.LoadSignerKeyRequest,
+) (*arkwalletv1.LoadSignerKeyResponse, error) {
+	key := req.GetPrivateKey()
+	if len(key) <= 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "missing private key")
+	}
+	buf, err := hex.DecodeString(key)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid private key format, mut be hex")
+	}
+	prvkey, _ := btcec.PrivKeyFromBytes(buf)
+	if err := h.wallet.LoadSignerKey(ctx, prvkey); err != nil {
+		return nil, err
+	}
+	return &arkwalletv1.LoadSignerKeyResponse{}, nil
 }
 
 // toTxInput converts a UTXO to a TxInput protobuf message

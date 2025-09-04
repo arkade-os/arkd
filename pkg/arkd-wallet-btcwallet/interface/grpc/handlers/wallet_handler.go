@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet/core"
@@ -67,27 +68,15 @@ func (h *WalletServiceHandler) Status(ctx context.Context, _ *arkwalletv1.Status
 	}, nil
 }
 
-func (h *WalletServiceHandler) GetPubkey(ctx context.Context, _ *arkwalletv1.GetPubkeyRequest) (*arkwalletv1.GetPubkeyResponse, error) {
-	pubkey, err := h.walletSvc.GetPubkey(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &arkwalletv1.GetPubkeyResponse{Pubkey: pubkey.SerializeCompressed()}, nil
-}
-
 func (h *WalletServiceHandler) GetNetwork(ctx context.Context, _ *arkwalletv1.GetNetworkRequest) (*arkwalletv1.GetNetworkResponse, error) {
 	network := h.walletSvc.GetNetwork(ctx)
 	return &arkwalletv1.GetNetworkResponse{Network: network}, nil
 }
 
-func (h *WalletServiceHandler) GetForfeitAddress(
-	ctx context.Context, req *arkwalletv1.GetForfeitAddressRequest,
-) (*arkwalletv1.GetForfeitAddressResponse, error) {
-	addr, err := h.walletSvc.GetForfeitAddress(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &arkwalletv1.GetForfeitAddressResponse{Address: addr}, nil
+func (h *WalletServiceHandler) GetForfeitPubkey(
+	ctx context.Context, req *arkwalletv1.GetForfeitPubkeyRequest,
+) (*arkwalletv1.GetForfeitPubkeyResponse, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func (h *WalletServiceHandler) WatchScripts(
@@ -413,4 +402,10 @@ func (h *WalletServiceHandler) Withdraw(
 		return nil, err
 	}
 	return &arkwalletv1.WithdrawResponse{Txid: txid}, nil
+}
+
+func (h *WalletServiceHandler) LoadSignerKey(
+	_ context.Context, _ *arkwalletv1.LoadSignerKeyRequest,
+) (*arkwalletv1.LoadSignerKeyResponse, error) {
+	return &arkwalletv1.LoadSignerKeyResponse{}, fmt.Errorf("not implemented")
 }
