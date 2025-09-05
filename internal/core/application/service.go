@@ -141,10 +141,11 @@ func NewService(
 		return nil, fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
 	}
 
+	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	checkpointClosure := &script.CSVMultisigClosure{
 		Locktime: checkpointExitDelay,
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{forfeitPubkey},
+			PubKeys: []*btcec.PublicKey{signerPubkey},
 		},
 	}
 

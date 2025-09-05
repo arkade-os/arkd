@@ -108,7 +108,11 @@ func (s *sweeper) start() error {
 			count++
 		}
 
-		log.Infof("sweeper: scheduled sweep of %d batches", count)
+		if count > 0 {
+			log.Infof("sweeper: scheduled sweep of %d batches", count)
+		} else {
+			log.Info("sweeper: no batches to sweep, no sweep tasks to schedule")
+		}
 	}()
 
 	sweepableUnrolledVtxos, err := s.repoManager.Vtxos().GetAllSweepableUnrolledVtxos(ctx)
@@ -374,7 +378,7 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		// check if the task is still scheduled before executing it
 		s.locker.Lock()
 		if _, scheduled := s.scheduledTasks[task.id]; !scheduled {
-			log.Debugf("sweeper: task for sweeping tx %s has been unscheduled, cancelling", task.id)
+			log.Debugf("sweeper: task for sweeping tx %s has been unscheduled, nothing left to do", task.id)
 			s.locker.Unlock()
 			return
 		}
