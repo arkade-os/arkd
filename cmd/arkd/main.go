@@ -73,6 +73,7 @@ func main() {
 		app.Commands,
 		walletCmd,
 		signerCmd,
+		genkeyCmd,
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,

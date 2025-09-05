@@ -1,4 +1,4 @@
-.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest genkey help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner sqlc test vet
+.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner sqlc test vet
 
 define setup_env
     $(eval include $(1))
@@ -174,8 +174,3 @@ run-signer:
 	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
 	$(call setup_env, envs/signer.dev.env)
 	@go run ./cmd/arkd-wallet
-
-## genkey: generates a new random ec private key
-genkey:
-	@echo "Generating a new random ec private key..."
-	@./scripts/ec-gen-key

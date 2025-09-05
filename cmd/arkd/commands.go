@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/urfave/cli/v2"
 )
 
@@ -35,6 +37,11 @@ var (
 		Subcommands: cli.Commands{
 			signerLoadCmd,
 		},
+	}
+	genkeyCmd = &cli.Command{
+		Name:   "genkey",
+		Usage:  "Generate a new private key",
+		Action: genkeyAction,
 	}
 	walletStatusCmd = &cli.Command{
 		Name:   "status",
@@ -308,6 +315,15 @@ func signerLoadAction(ctx *cli.Context) error {
 	}
 
 	fmt.Println("signer loaded")
+	return nil
+}
+
+func genkeyAction(ctx *cli.Context) error {
+	key, err := btcec.NewPrivateKey()
+	if err != nil {
+		return err
+	}
+	fmt.Println(hex.EncodeToString(key.Serialize()))
 	return nil
 }
 
