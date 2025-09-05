@@ -1,4 +1,4 @@
-.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest genkey help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-signer run-wallet run-wallet-without-signer sqlc test vet
+.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest genkey help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner sqlc test vet
 
 define setup_env
     $(eval include $(1))
@@ -161,8 +161,8 @@ run-wallet:
 	$(call setup_env, envs/arkd-wallet.regtest.env)
 	@go run ./cmd/arkd-wallet
 
-## run-walle-without-signert: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
-run-wallet-without-signer:
+## run-walle-nosigner: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
+run-wallet-nosigner:
 	@echo "Running arkd wallet in dev mode with NBXplorer on regtest..."
 	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
 	$(call setup_env, envs/arkd-wallet-nosigner.regtest.env)
