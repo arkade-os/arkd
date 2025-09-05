@@ -72,6 +72,7 @@ func main() {
 	app.Commands = append(
 		app.Commands,
 		walletCmd,
+		signerCmd,
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,

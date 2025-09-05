@@ -9,7 +9,6 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
@@ -44,13 +43,11 @@ type IndexerService interface {
 }
 
 type indexerService struct {
-	pubkey      *btcec.PublicKey
 	repoManager ports.RepoManager
 }
 
-func NewIndexerService(pubkey *btcec.PublicKey, repoManager ports.RepoManager) IndexerService {
+func NewIndexerService(repoManager ports.RepoManager) IndexerService {
 	return &indexerService{
-		pubkey:      pubkey,
 		repoManager: repoManager,
 	}
 }

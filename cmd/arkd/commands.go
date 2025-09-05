@@ -29,6 +29,13 @@ var (
 			walletWithdrawCmd,
 		},
 	}
+	signerCmd = &cli.Command{
+		Name:  "signer",
+		Usage: "Manage the Ark Signer",
+		Subcommands: cli.Commands{
+			signerLoadCmd,
+		},
+	}
 	walletStatusCmd = &cli.Command{
 		Name:   "status",
 		Usage:  "Get info about the status of the wallet",
@@ -67,6 +74,12 @@ var (
 		Usage:  "Withdraw funds from the wallet",
 		Action: walletWithdrawAction,
 		Flags:  []cli.Flag{withdrawAmountFlag, withdrawAddressFlag},
+	}
+	signerLoadCmd = &cli.Command{
+		Name:   "load",
+		Usage:  "Load the ark signer address or private key",
+		Action: signerLoadAction,
+		Flags:  []cli.Flag{signerKeyFlag, signerUrlFlag},
 	}
 	noteCmd = &cli.Command{
 		Name:   "note",
@@ -266,6 +279,32 @@ func walletWithdrawAction(ctx *cli.Context) error {
 
 	fmt.Println("transaction successfully broadcasted:")
 	fmt.Println(txid)
+	return nil
+}
+
+func signerLoadAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	signerKey := ctx.String(signerKeyFlagName)
+	signerUrl := ctx.String(signerUrlFlagName)
+	if signerKey != "" && signerUrl != "" {
+		return fmt.Errorf("either private key or url must be provided")
+	}
+	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/signer", baseURL)
+	body := fmt.Sprintf(`{"address": "%s"}`, signerUrl)
+	if signerKey != "" {
+		body = fmt.Sprintf(`{"privateKey": "%s"}`, signerKey)
+	}
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+		return err
+	}
+
+	fmt.Println("signer loaded")
 	return nil
 }
 

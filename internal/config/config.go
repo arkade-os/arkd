@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +15,7 @@ import (
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
 	blockscheduler "github.com/arkade-os/arkd/internal/infrastructure/scheduler/block"
 	timescheduler "github.com/arkade-os/arkd/internal/infrastructure/scheduler/gocron"
+	signerclient "github.com/arkade-os/arkd/internal/infrastructure/signer"
 	txbuilder "github.com/arkade-os/arkd/internal/infrastructure/tx-builder/covenantless"
 	bitcointxdecoder "github.com/arkade-os/arkd/internal/infrastructure/tx-decoder/bitcoin"
 	envunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/env"
@@ -79,6 +79,7 @@ type Config struct {
 	RedisUrl            string
 	RedisTxNumOfRetries int
 	WalletAddr          string
+	SignerAddr          string
 	VtxoTreeExpiry      arklib.RelativeLocktime
 	UnilateralExitDelay arklib.RelativeLocktime
 	CheckpointExitDelay arklib.RelativeLocktime
@@ -110,6 +111,7 @@ type Config struct {
 	svc       application.Service
 	adminSvc  application.AdminService
 	wallet    ports.WalletService
+	signer    ports.SignerService
 	txBuilder ports.TxBuilder
 	scanner   ports.BlockchainScanner
 	scheduler ports.SchedulerService
@@ -133,6 +135,7 @@ func (c *Config) String() string {
 var (
 	Datadir                   = "DATADIR"
 	WalletAddr                = "WALLET_ADDR"
+	SignerAddr                = "SIGNER_ADDR"
 	RoundInterval             = "ROUND_INTERVAL"
 	Port                      = "PORT"
 	EventDbType               = "EVENT_DB_TYPE"
@@ -265,9 +268,15 @@ func LoadConfig() (*Config, error) {
 		allowCSVBlockType = true
 	}
 
+	signerAddr := viper.GetString(SignerAddr)
+	if signerAddr == "" {
+		signerAddr = viper.GetString(WalletAddr)
+	}
+
 	return &Config{
 		Datadir:                 viper.GetString(Datadir),
 		WalletAddr:              viper.GetString(WalletAddr),
+		SignerAddr:              signerAddr,
 		RoundInterval:           viper.GetInt64(RoundInterval),
 		Port:                    viper.GetUint32(Port),
 		EventDbType:             viper.GetString(EventDbType),
@@ -451,6 +460,9 @@ func (c *Config) Validate() error {
 	if err := c.walletService(); err != nil {
 		return err
 	}
+	if err := c.signerService(); err != nil {
+		return err
+	}
 	if err := c.txBuilderService(); err != nil {
 		return err
 	}
@@ -493,13 +505,15 @@ func (c *Config) UnlockerService() ports.Unlocker {
 	return c.unlocker
 }
 
-func (c *Config) IndexerService() (application.IndexerService, error) {
-	pubKey, err := c.wallet.GetPubkey(context.Background())
-	if err != nil {
+func (c *Config) IndexerService() application.IndexerService {
+	return application.NewIndexerService(c.repo)
+}
+
+func (c *Config) SignerService() (ports.SignerService, error) {
+	if err := c.signerService(); err != nil {
 		return nil, err
 	}
-
-	return application.NewIndexerService(pubKey, c.repo), nil
+	return c.signer, nil
 }
 
 func (c *Config) repoManager() error {
@@ -546,9 +560,9 @@ func (c *Config) repoManager() error {
 }
 
 func (c *Config) walletService() error {
-	arkWallet := viper.GetString(WalletAddr)
+	arkWallet := c.WalletAddr
 	if arkWallet == "" {
-		return fmt.Errorf("ark wallet address not set")
+		return fmt.Errorf("missing ark wallet address")
 	}
 
 	walletSvc, network, err := walletclient.New(arkWallet)
@@ -561,13 +575,28 @@ func (c *Config) walletService() error {
 	return nil
 }
 
+func (c *Config) signerService() error {
+	signer := c.SignerAddr
+	if signer == "" {
+		return fmt.Errorf("missing signer address")
+	}
+
+	signerSvc, err := signerclient.New(signer)
+	if err != nil {
+		return err
+	}
+
+	c.signer = signerSvc
+	return nil
+}
+
 func (c *Config) txBuilderService() error {
 	var svc ports.TxBuilder
 	var err error
 	switch c.TxBuilderType {
 	case "covenantless":
 		svc = txbuilder.NewTxBuilder(
-			c.wallet, *c.network, c.VtxoTreeExpiry, c.BoardingExitDelay,
+			c.wallet, c.signer, *c.network, c.VtxoTreeExpiry, c.BoardingExitDelay,
 		)
 	default:
 		err = fmt.Errorf("unknown tx builder type")
@@ -647,8 +676,15 @@ func (c *Config) appService() error {
 	if c.MarketHourRoundInterval > 0 {
 		mhRoundInterval = time.Duration(c.MarketHourRoundInterval) * time.Second
 	}
+	if err := c.signerService(); err != nil {
+		return err
+	}
+	if err := c.txBuilderService(); err != nil {
+		return err
+	}
+
 	svc, err := application.NewService(
-		c.wallet, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore,
+		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore,
 		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.RoundInterval, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,

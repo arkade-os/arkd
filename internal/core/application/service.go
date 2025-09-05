@@ -22,6 +22,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
@@ -33,6 +34,7 @@ import (
 type service struct {
 	// services
 	wallet      ports.WalletService
+	signer      ports.SignerService
 	repoManager ports.RepoManager
 	builder     ports.TxBuilder
 	scanner     ports.BlockchainScanner
@@ -42,6 +44,8 @@ type service struct {
 	// config
 	network                   arklib.Network
 	signerPubkey              *btcec.PublicKey
+	forfeitPubkey             *btcec.PublicKey
+	forfeitAddress            string
 	checkpointTapscript       []byte
 	vtxoTreeExpiry            arklib.RelativeLocktime
 	roundInterval             time.Duration
@@ -74,6 +78,7 @@ type service struct {
 
 func NewService(
 	wallet ports.WalletService,
+	signer ports.SignerService,
 	repoManager ports.RepoManager,
 	builder ports.TxBuilder,
 	scanner ports.BlockchainScanner,
@@ -90,9 +95,9 @@ func NewService(
 ) (Service, error) {
 	ctx := context.Background()
 
-	signerPubkey, err := wallet.GetPubkey(ctx)
+	signerPubkey, err := signer.GetPubkey(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch pubkey: %s", err)
+		return nil, fmt.Errorf("failed to fetch signer pubkey: %s", err)
 	}
 
 	// Try to load market hours from DB first
@@ -131,10 +136,15 @@ func NewService(
 		utxoMinAmount = int64(dustAmount)
 	}
 
+	forfeitPubkey, err := wallet.GetForfeitPubkey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
+	}
+
 	checkpointClosure := &script.CSVMultisigClosure{
 		Locktime: checkpointExitDelay,
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{signerPubkey},
+			PubKeys: []*btcec.PublicKey{forfeitPubkey},
 		},
 	}
 
@@ -148,11 +158,13 @@ func NewService(
 	svc := &service{
 		network:             network,
 		signerPubkey:        signerPubkey,
+		forfeitPubkey:       forfeitPubkey,
 		vtxoTreeExpiry:      vtxoTreeExpiry,
 		roundInterval:       time.Duration(roundInterval) * time.Second,
 		unilateralExitDelay: unilateralExitDelay,
 		allowCSVBlockType:   allowCSVBlockType,
 		wallet:              wallet,
+		signer:              signer,
 		repoManager:         repoManager,
 		builder:             builder,
 		cache:               cache,
@@ -179,6 +191,13 @@ func NewService(
 		wg:                        &sync.WaitGroup{},
 		checkpointTapscript:       checkpointTapscript,
 	}
+	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
+	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
+	if err != nil {
+		return nil, err
+	}
+
+	svc.forfeitAddress = forfeitAddr.String()
 
 	repoManager.Events().RegisterEventsHandler(
 		domain.RoundTopic, func(events []domain.Event) {
@@ -717,7 +736,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// sign the ark tx
-	fullySignedArkTx, err := s.wallet.SignTransactionTapscript(ctx, signedArkTx, nil)
+	fullySignedArkTx, err := s.signer.SignTransactionTapscript(ctx, signedArkTx, nil)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to sign ark tx: %s", err)
 	}
@@ -729,7 +748,7 @@ func (s *service) SubmitOffchainTx(
 		if err != nil {
 			return nil, "", "", fmt.Errorf("failed to encode checkpoint tx: %s", err)
 		}
-		signedCheckpointTx, err := s.wallet.SignTransactionTapscript(ctx, unsignedCheckpointTx, nil)
+		signedCheckpointTx, err := s.signer.SignTransactionTapscript(ctx, unsignedCheckpointTx, nil)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("failed to sign checkpoint tx: %s", err)
 		}
@@ -1163,11 +1182,6 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 		return nil, fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
-	forfeitAddr, err := s.wallet.GetForfeitAddress(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get forfeit address: %s", err)
-	}
-
 	marketHourConfig, err := s.repoManager.MarketHourRepo().Get(ctx)
 	if err != nil {
 		return nil, err
@@ -1195,7 +1209,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 		RoundInterval:       int64(s.roundInterval.Seconds()),
 		Network:             s.network.Name,
 		Dust:                dust,
-		ForfeitAddress:      forfeitAddr,
+		ForfeitAddress:      s.forfeitAddress,
 		NextMarketHour:      nextMarketHour,
 		UtxoMinAmount:       s.utxoMinAmount,
 		UtxoMaxAmount:       s.utxoMaxAmount,
@@ -1571,6 +1585,7 @@ func (s *service) startFinalization(
 	}
 
 	log.Debugf("building tx for round %s", roundId)
+	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
 		s.signerPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
 	)
@@ -1614,6 +1629,7 @@ func (s *service) startFinalization(
 
 	flatVtxoTree := make(tree.FlatTxTree, 0)
 	if vtxoTree != nil {
+		// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 		sweepClosure := script.CSVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.signerPubkey}},
 			Locktime:        s.vtxoTreeExpiry,
@@ -1853,6 +1869,13 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		txToSign = s.cache.CurrentRound().Get().CommitmentTx
+		commitmentTx, err = psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
+		if err != nil {
+			log.Debugf("failed to parse commitment tx: %s", txToSign)
+			changes = s.cache.CurrentRound().Fail(fmt.Errorf("failed to parse commitment tx: %s", err))
+			log.WithError(err).Warn("failed to parse commitment tx")
+			return
+		}
 
 		forfeitTxList, err := s.cache.ForfeitTxs().Pop()
 		if err != nil {
@@ -1882,7 +1905,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		if len(boardingInputsIndexes) > 0 {
-			txToSign, err = s.wallet.SignTransactionTapscript(ctx, txToSign, boardingInputsIndexes)
+			txToSign, err = s.signer.SignTransactionTapscript(ctx, txToSign, boardingInputsIndexes)
 			if err != nil {
 				changes = s.cache.CurrentRound().Fail(
 					fmt.Errorf("failed to sign commitment tx: %s", err),

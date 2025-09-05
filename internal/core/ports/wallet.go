@@ -23,9 +23,8 @@ type WalletService interface {
 	Unlock(ctx context.Context, password string) error
 	Lock(ctx context.Context) error
 	Status(ctx context.Context) (WalletStatus, error)
-	GetPubkey(ctx context.Context) (*btcec.PublicKey, error)
 	GetNetwork(ctx context.Context) (*arklib.Network, error)
-	GetForfeitAddress(ctx context.Context) (string, error)
+	GetForfeitPubkey(ctx context.Context) (*btcec.PublicKey, error)
 	DeriveConnectorAddress(ctx context.Context) (string, error)
 	DeriveAddresses(ctx context.Context, num int) ([]string, error)
 	SignTransaction(ctx context.Context, partialTx string, extractRawTx bool) (string, error)
@@ -47,6 +46,7 @@ type WalletService interface {
 	GetOutpointStatus(ctx context.Context, outpoint domain.Outpoint) (spent bool, err error)
 	GetCurrentBlockTime(ctx context.Context) (*BlockTimestamp, error)
 	Withdraw(ctx context.Context, address string, amount uint64) (string, error)
+	LoadSignerKey(ctx context.Context, prvkey string) error
 	Close()
 }
 
