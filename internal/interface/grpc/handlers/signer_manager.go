@@ -30,7 +30,9 @@ func (h *signerManagerHandler) LoadSigner(
 		return nil, status.Error(codes.InvalidArgument, "missing address or private key")
 	}
 	if signerUrl != "" && signerPrvkey != "" {
-		return nil, status.Error(codes.InvalidArgument, "address and private key are mutually exclusive")
+		return nil, status.Error(
+			codes.InvalidArgument, "address and private key are mutually exclusive",
+		)
 	}
 
 	if signerPrvkey != "" {
