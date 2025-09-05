@@ -1,4 +1,4 @@
-.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-wallet run-wallet-bitcoind run-wallet-neutrino sqlc test vet
+.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-signer run-wallet run-wallet-without-signer sqlc test vet
 
 define setup_env
     $(eval include $(1))
@@ -154,21 +154,23 @@ docker-stop:
 	@echo "Stopping dockerized arkd and arkd wallet in test mode on regtest..."
 	@docker compose -f docker-compose.regtest.yml down -v
 
-## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest
+## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest with a pre-loaded signer private key
 run-wallet:
-	@echo "Running arkd wallet in dev mode with Bitcoin Core on regtest..."
+	@echo "Running arkd wallet in dev mode with NBXplorer on regtest with pre-loaded signer private key..."
 	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
 	$(call setup_env, envs/arkd-wallet.regtest.env)
 	@go run ./cmd/arkd-wallet
 
-## run-wallet-bitcoind: run arkd wallet based on btcwallet in dev mode with bitcoind on regtest
-run-wallet-bitcoind:
-	@echo "Running arkd wallet in dev mode with Bitcoin Core on regtest..."
-	$(call setup_env, envs/arkd-wallet.bitcoind.regtest.env)
-	@go run ./cmd/arkd-wallet-btcwallet
+## run-walle-without-signert: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
+run-wallet-without-signer:
+	@echo "Running arkd wallet in dev mode with NBXplorer on regtest..."
+	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
+	$(call setup_env, envs/arkd-wallet-nosigner.regtest.env)
+	@go run ./cmd/arkd-wallet
 
-## run-wallet-neutrino: run arkd wallet based on btcwallet  in dev mode with neutrino on regtest
-run-wallet-neutrino:
-	@echo "Running arkd wallet in dev mode with Neutrino on regtest..."
-	$(call setup_env, envs/arkd-wallet.neutrino.regtest.env)
-	@go run ./cmd/arkd-wallet-btcwallet
+## run-signer: run arkd wallet as signer without a wallet
+run-signer:
+	@echo "Running signer in dev mode"
+	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
+	$(call setup_env, envs/signer.dev.env)
+	@go run ./cmd/arkd-wallet
