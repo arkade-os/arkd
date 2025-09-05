@@ -378,7 +378,10 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		// check if the task is still scheduled before executing it
 		s.locker.Lock()
 		if _, scheduled := s.scheduledTasks[task.id]; !scheduled {
-			log.Debugf("sweeper: task for sweeping tx %s has been unscheduled, nothing left to do", task.id)
+			log.Debugf(
+				"sweeper: task for sweeping tx %s has been unscheduled, nothing left to do",
+				task.id,
+			)
 			s.locker.Unlock()
 			return
 		}
