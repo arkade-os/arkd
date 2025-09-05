@@ -133,9 +133,11 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 
 	w.keyMgr = keyMgr
 
-	go func() {
-		w.isReady <- struct{}{}
-	}()
+	select {
+	case w.isReady <- struct{}{}:
+	default:
+	}
+
 	log.Infof("wallet unlocked")
 
 	return nil

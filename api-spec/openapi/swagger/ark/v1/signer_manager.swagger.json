@@ -81,10 +81,10 @@
     "v1LoadSignerRequest": {
       "type": "object",
       "properties": {
-        "address": {
+        "signerUrl": {
           "type": "string"
         },
-        "privateKey": {
+        "signerPrivateKey": {
           "type": "string"
         }
       }

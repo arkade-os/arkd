@@ -430,7 +430,7 @@ func (h *WalletServiceHandler) LoadSignerKey(
 	}
 	buf, err := hex.DecodeString(key)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid private key format, mut be hex")
+		return nil, status.Errorf(codes.InvalidArgument, "invalid private key format, must be hex")
 	}
 	prvkey, _ := btcec.PrivKeyFromBytes(buf)
 	if err := h.wallet.LoadSignerKey(ctx, prvkey); err != nil {

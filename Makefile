@@ -161,7 +161,7 @@ run-wallet:
 	$(call setup_env, envs/arkd-wallet.regtest.env)
 	@go run ./cmd/arkd-wallet
 
-## run-walle-nosigner: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
+## run-wallet-nosigner: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
 run-wallet-nosigner:
 	@echo "Running arkd wallet in dev mode with NBXplorer on regtest..."
 	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer

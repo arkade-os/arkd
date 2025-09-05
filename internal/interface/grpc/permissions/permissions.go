@@ -15,7 +15,6 @@ const (
 	EntityArk     = "ark"
 	EntityIndexer = "indexer"
 	EntityHealth  = "health"
-	EntitySigner  = "signer"
 )
 
 // ReadOnlyPermissions returns the permissions of the macaroon readonly.macaroon.
@@ -111,7 +110,7 @@ func Whitelist() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/LoadSigner", arkv1.SignerManagerService_ServiceDesc.ServiceName): {{
-			Entity: EntitySigner,
+			Entity: EntityManager,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/RegisterIntent", arkv1.ArkService_ServiceDesc.ServiceName): {{

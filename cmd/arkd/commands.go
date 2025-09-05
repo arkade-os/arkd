@@ -286,8 +286,11 @@ func signerLoadAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	signerKey := ctx.String(signerKeyFlagName)
 	signerUrl := ctx.String(signerUrlFlagName)
-	if signerKey != "" && signerUrl != "" {
+	if signerKey == "" && signerUrl == "" {
 		return fmt.Errorf("either private key or url must be provided")
+	}
+	if signerKey != "" && signerUrl != "" {
+		return fmt.Errorf("private key and url are mutually esclusive, only one must be provided")
 	}
 	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
 	if err != nil {
@@ -295,9 +298,9 @@ func signerLoadAction(ctx *cli.Context) error {
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/signer", baseURL)
-	body := fmt.Sprintf(`{"address": "%s"}`, signerUrl)
+	body := fmt.Sprintf(`{"signerUrl": "%s"}`, signerUrl)
 	if signerKey != "" {
-		body = fmt.Sprintf(`{"privateKey": "%s"}`, signerKey)
+		body = fmt.Sprintf(`{"signerPrivateKey": "%s"}`, signerKey)
 	}
 
 	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {

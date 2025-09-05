@@ -24,12 +24,17 @@ func NewSignerManagerHandler(
 func (h *signerManagerHandler) LoadSigner(
 	ctx context.Context, req *arkv1.LoadSignerRequest,
 ) (*arkv1.LoadSignerResponse, error) {
-	if req.GetAddress() == "" && req.GetPrivateKey() == "" {
+	signerUrl := req.GetSignerUrl()
+	signerPrvkey := req.GetSignerPrivateKey()
+	if signerUrl == "" && signerPrvkey == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing address or private key")
 	}
+	if signerUrl != "" && signerPrvkey != "" {
+		return nil, status.Error(codes.InvalidArgument, "address and private key are mutually exclusive")
+	}
 
-	if req.GetPrivateKey() != "" {
-		if err := h.walletSvc.LoadSignerKey(ctx, req.GetPrivateKey()); err != nil {
+	if signerPrvkey != "" {
+		if err := h.walletSvc.LoadSignerKey(ctx, signerPrvkey); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		return &arkv1.LoadSignerResponse{}, nil
@@ -39,12 +44,11 @@ func (h *signerManagerHandler) LoadSigner(
 		return &arkv1.LoadSignerResponse{}, nil
 	}
 
-	addr := req.GetAddress()
-	if err := h.onLoadSigner(addr); err != nil {
+	if err := h.onLoadSigner(signerUrl); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	log.Debugf("signer url set to %s", addr)
+	log.Debugf("signer url set to %s", signerUrl)
 
 	return &arkv1.LoadSignerResponse{}, nil
 }

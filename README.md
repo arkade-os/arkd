@@ -33,7 +33,7 @@ The Operator's role is designed with strict boundaries that ensure users always 
 * mutinynet
 * mainnet
 
-and makes use of [arkd-wallet](./pkg/arkd-wallet/), an onchain wallet based on NBXplorer, as liquidity provider and optionally also as signer.
+and makes use of [arkd-wallet](./pkg/arkd-wallet/), an on-chain wallet based on NBXplorer, as liquidity provider and optionally also as signer.
 
 ## Usage Documentation
 
@@ -105,12 +105,12 @@ You can specify a custom data directory using the `ARKD_DATADIR` environment var
 
 `arkd-wallet` is the wallet used by `arkd` as liqudiity provider.
 
-It is based on [NBXplorer](https://docs.btcpayserver.org/NBXplorer) and requires a running instance to connect to. You can check the [example](https://github.com/dgarage/NBXplorer/blob/master/docker-compose.regtest.yml) on official repository, or our docker compose [file](./docker-compose.regtest.yml), to see how to start one.
+It is based on [NBXplorer](https://docs.btcpayserver.org/NBXplorer) and requires a running instance to connect to. You can check the [example](https://github.com/dgarage/NBXplorer/blob/master/docker-compose.regtest.yml) in the official repository, or our Docker Compose [file](./docker-compose.regtest.yml), to see how to start one.
 
 To connect `arkd-wallet` to your running NBXplorer instance use this environment variable:
 
 ```sh
-# Make sure to use the right url and network, this is just an example.
+# Make sure to use the right URL, this is just an example.
 export ARKD_WALLET_NBXPLORER_URL=http://localhost:32838
 ```
 
@@ -122,7 +122,7 @@ The configuration can be done either via env vars or via API. To enable `arkd-wa
 
 ```sh
 # Make sure to use a random private key, this is just an example.
-ARKD_WALLET_SIGNER_KEY=19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
+export ARKD_WALLET_SIGNER_KEY=19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
 ```
 
 ### Connect to wallet
@@ -130,7 +130,7 @@ ARKD_WALLET_SIGNER_KEY=19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328
 To connect `arkd` to `arkd-wallet` use this environment variable:
 
 ```sh
-# Make sure to use the right url in the form host:port, this is just an example.
+# Make sure to use the right URL in the form host:port, this is just an example.
 export ARKD_WALLET_ADDR=localhost:6060
 ```
 
@@ -143,7 +143,7 @@ By default, `arkd` makes use of the provided `arkd-wallet` also as signer, but y
 To connect `arkd` to a custom signer use this environment variable:
 
 ```sh
-# Make sure to use the right signer url, this is just an example.
+# Make sure to use the right URL in the form host:port, this is just an example.
 export ARKD_SIGNER_ADDR=localhost:7071
 ```
 

@@ -27,8 +27,8 @@ const (
 	marketHourEndDateFlagName       = "end-date"
 	marketHourRoundIntervalFlagName = "round-interval"
 	marketHourPeriodFlagName        = "period"
-	signerKeyFlagName               = "prvkey"
-	signerUrlFlagName               = "addr"
+	signerKeyFlagName               = "signer-prvkey"
+	signerUrlFlagName               = "signer-url"
 
 	dateFormat           = time.DateOnly
 	marketHourDateFormat = time.DateTime
