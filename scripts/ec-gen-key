@@ -1,0 +1,17 @@
+#!/bin/bash
+# ec-gen-key — generate a random EC private key and show hex form
+# Default curve: secp256k1
+# Usage: ./ec-gen-key [curve]
+
+curve="${1:-secp256k1}"
+
+# Generate a new EC private key in PEM
+pem=$(openssl ecparam -name "$curve" -genkey 2>/dev/null)
+
+# Extract the raw private key in hex
+printf "%s" "$pem" \
+  | (openssl pkey -text -noout 2>/dev/null || openssl ec -text -noout 2>/dev/null) \
+  | sed -n '/priv:/,/pub:/p' \
+  | sed '1d;$d' \
+  | tr -d ' \n:' \
+  | tr '[:upper:]' '[:lower:]'
