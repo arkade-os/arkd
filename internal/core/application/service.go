@@ -1872,7 +1872,9 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		commitmentTx, err = psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
 		if err != nil {
 			log.Debugf("failed to parse commitment tx: %s", txToSign)
-			changes = s.cache.CurrentRound().Fail(fmt.Errorf("failed to parse commitment tx: %s", err))
+			changes = s.cache.CurrentRound().Fail(fmt.Errorf(
+				"failed to parse commitment tx: %s", err,
+			))
 			log.WithError(err).Warn("failed to parse commitment tx")
 			return
 		}
