@@ -42,6 +42,7 @@ type Service interface {
 
 type ServiceInfo struct {
 	SignerPubKey        string
+	ForfeitPubKey       string
 	VtxoTreeExpiry      int64
 	UnilateralExitDelay int64
 	BoardingExitDelay   int64

@@ -49,20 +49,20 @@ func (b *txBuilder) GetTxid(tx string) (string, error) {
 	return ptx.UnsignedTx.TxID(), nil
 }
 
-func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, *psbt.Packet, error) {
+func (b *txBuilder) VerifyTapscriptPartialSigs(
+	tx string, signerPubkey *btcec.PublicKey,
+) (bool, *psbt.Packet, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return false, nil, err
 	}
 
-	return b.verifyTapscriptPartialSigs(ptx)
+	return b.verifyTapscriptPartialSigs(ptx, signerPubkey)
 }
 
-func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, *psbt.Packet, error) {
-	signerPubkey, err := b.signer.GetPubkey(context.Background())
-	if err != nil {
-		return false, nil, err
-	}
+func (b *txBuilder) verifyTapscriptPartialSigs(
+	ptx *psbt.Packet, signerPubkey *btcec.PublicKey,
+) (bool, *psbt.Packet, error) {
 	signerPubkeyHex := hex.EncodeToString(schnorr.SerializePubKey(signerPubkey))
 
 	prevoutFetcher, err := b.getPrevOutputFetcher(ptx)
@@ -285,8 +285,7 @@ func (b *txBuilder) BuildSweepTx(
 	}
 
 	ctx := context.Background()
-	// TODO: use wallet once sdk is up-to-date.
-	signedSweepPsbtB64, err := b.signer.SignTransactionTapscript(ctx, sweepPsbtBase64, nil)
+	signedSweepPsbtB64, err := b.wallet.SignTransactionTapscript(ctx, sweepPsbtBase64, nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -1245,9 +1244,7 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 		return sweepLeaf, internalKey, vtxoTreeExpiry, nil
 	}
 
-	// TODO: uncomment the following line once the sdk is up-to-date.
-	// sweeperPubkey, err := b.wallet.GetForfeitPubkey(context.Background())
-	sweeperPubkey, err := b.signer.GetPubkey(context.Background())
+	sweeperPubkey, err := b.wallet.GetForfeitPubkey(context.Background())
 	if err != nil {
 		return nil, nil, nil, err
 	}

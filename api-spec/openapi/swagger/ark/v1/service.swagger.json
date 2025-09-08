@@ -598,6 +598,9 @@
         },
         "checkpointTapscript": {
           "type": "string"
+        },
+        "forfeitPubkey": {
+          "type": "string"
         }
       }
     },

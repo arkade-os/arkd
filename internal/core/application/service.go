@@ -141,11 +141,10 @@ func NewService(
 		return nil, fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
 	}
 
-	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	checkpointClosure := &script.CSVMultisigClosure{
 		Locktime: checkpointExitDelay,
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{signerPubkey},
+			PubKeys: []*btcec.PublicKey{forfeitPubkey},
 		},
 	}
 
@@ -732,7 +731,9 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// verify the tapscript signatures
-	if valid, _, err := s.builder.VerifyTapscriptPartialSigs(signedArkTx); err != nil || !valid {
+	if valid, _, err := s.builder.VerifyTapscriptPartialSigs(
+		signedArkTx, s.signerPubkey,
+	); err != nil || !valid {
 		return nil, "", "", fmt.Errorf("invalid ark tx signature(s): %s", err)
 	}
 
@@ -807,7 +808,7 @@ func (s *service) FinalizeOffchainTx(
 	for _, checkpoint := range finalCheckpointTxs {
 		var valid bool
 		var ptx *psbt.Packet
-		valid, ptx, err = s.builder.VerifyTapscriptPartialSigs(checkpoint)
+		valid, ptx, err = s.builder.VerifyTapscriptPartialSigs(checkpoint, s.signerPubkey)
 		if err != nil || !valid {
 			return err
 		}
@@ -1177,6 +1178,7 @@ func (s *service) GetIndexerTxChannel(ctx context.Context) <-chan TransactionEve
 
 func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 	signerPubkey := hex.EncodeToString(s.signerPubkey.SerializeCompressed())
+	forfeitPubkey := hex.EncodeToString(s.forfeitPubkey.SerializeCompressed())
 
 	dust, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
@@ -1204,6 +1206,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 
 	return &ServiceInfo{
 		SignerPubKey:        signerPubkey,
+		ForfeitPubKey:       forfeitPubkey,
 		VtxoTreeExpiry:      int64(s.vtxoTreeExpiry.Value),
 		UnilateralExitDelay: int64(s.unilateralExitDelay.Value),
 		BoardingExitDelay:   int64(s.boardingExitDelay.Value),
@@ -1586,9 +1589,8 @@ func (s *service) startFinalization(
 	}
 
 	log.Debugf("building tx for round %s", roundId)
-	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		s.signerPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
+		s.forfeitPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
 	)
 	if err != nil {
 		s.cache.CurrentRound().Fail(fmt.Errorf("failed to create commitment tx: %s", err))
@@ -1630,9 +1632,8 @@ func (s *service) startFinalization(
 
 	flatVtxoTree := make(tree.FlatTxTree, 0)
 	if vtxoTree != nil {
-		// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 		sweepClosure := script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.signerPubkey}},
+			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.forfeitPubkey}},
 			Locktime:        s.vtxoTreeExpiry,
 		}
 
@@ -2455,7 +2456,7 @@ func (s *service) verifyForfeitTxsSigs(txs []string) error {
 			defer wg.Done()
 
 			for tx := range jobs {
-				valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(tx)
+				valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(tx, s.forfeitPubkey)
 				if err != nil {
 					errChan <- fmt.Errorf("failed to validate forfeit tx %s: %s", ptx.UnsignedTx.TxID(), err)
 					return
