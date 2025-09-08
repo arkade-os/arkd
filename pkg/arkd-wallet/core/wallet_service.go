@@ -181,6 +181,16 @@ func (s *service) Unlock(_ context.Context, password string) error {
 		s.wallet = wlt
 		s.isUnlocked = true
 
+		key, err := s.serverKeyAddr.PrivKey()
+		if err != nil {
+			fmt.Println("ERROR:", err)
+		} else {
+			if key == nil {
+				fmt.Println("SIGNER KEY IS NIL")
+			} else {
+				fmt.Println("SIGNER KEY", hex.EncodeToString(key.Serialize()))
+			}
+		}
 		go s.listenToSynced()
 
 		return nil
