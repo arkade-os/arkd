@@ -74,7 +74,7 @@ func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	connectorAccountDerivationScheme, err := computeTaprootDerivationScheme(connectorAccount)
+	connectorAccountDerivationScheme, err := computeTaprootDerivationScheme(connectorAccount, "-[taproot]")
 	if err != nil {
 		return nil, err
 	}
@@ -118,12 +118,16 @@ func (k *keyManager) deriveKey(derivationScheme string, keyPath string) (*btcec.
 	return key.ECPrivKey()
 }
 
-func computeTaprootDerivationScheme(accountKey *hdkeychain.ExtendedKey) (string, error) {
+func computeTaprootDerivationScheme(accountKey *hdkeychain.ExtendedKey, suffix ...string) (string, error) {
+	var sfx string
+	if len(suffix) > 0 {
+		sfx = suffix[0]
+	}
 	neutered, err := accountKey.Neuter()
 	if err != nil {
 		return "", err
 	}
-	return neutered.String() + "-[taproot]", nil
+	return neutered.String() + sfx, nil
 }
 
 func deriveForfeitPrvkey(xpub *hdkeychain.ExtendedKey, network *chaincfg.Params) (*btcec.PrivateKey, error) {
