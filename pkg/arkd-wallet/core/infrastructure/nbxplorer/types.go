@@ -171,19 +171,18 @@ type trackedSource struct {
 }
 
 type blockchainInfoResponse struct {
-	Bestblockhash        string   `json:"bestblockhash"`
-	Bits                 string   `json:"bits"`
-	Blocks               uint32   `json:"blocks"`
-	Chain                string   `json:"chain"`
-	Chainwork            string   `json:"chainwork"`
-	Difficulty           float64  `json:"difficulty"`
-	Headers              uint32   `json:"headers"`
-	Initialblockdownload bool     `json:"initialblockdownload"`
-	Mediantime           int64    `json:"mediantime"`
-	Pruned               bool     `json:"pruned"`
-	SizeOnDisk           uint64   `json:"size_on_disk"`
-	Target               string   `json:"target"`
-	Time                 int64    `json:"time"`
-	Verificationprogress float64  `json:"verificationprogress"`
-	Warnings             []string `json:"warnings"`
+	Bestblockhash        string  `json:"bestblockhash"`
+	Bits                 string  `json:"bits"`
+	Blocks               uint32  `json:"blocks"`
+	Chain                string  `json:"chain"`
+	Chainwork            string  `json:"chainwork"`
+	Difficulty           float64 `json:"difficulty"`
+	Headers              uint32  `json:"headers"`
+	Initialblockdownload bool    `json:"initialblockdownload"`
+	Mediantime           int64   `json:"mediantime"`
+	Pruned               bool    `json:"pruned"`
+	SizeOnDisk           uint64  `json:"size_on_disk"`
+	Target               string  `json:"target"`
+	Time                 int64   `json:"time"`
+	Verificationprogress float64 `json:"verificationprogress"`
 }
