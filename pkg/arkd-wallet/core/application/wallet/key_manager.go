@@ -11,9 +11,9 @@ import (
 )
 
 type keyManager struct {
-	// m/86'/(cointype)'/0'
+	// m/84'/(cointype)'/0'
 	mainAccount *hdkeychain.ExtendedKey
-	// m/86'/(cointype)'/1'
+	// m/86'/(cointype)'/0'
 	connectorAccount *hdkeychain.ExtendedKey
 	// forfeit private key derived from path mainAccount/0/0
 	forfeitPrvkey *btcec.PrivateKey
@@ -32,8 +32,8 @@ func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 		return nil, err
 	}
 
-	// m/86'
-	taprootPurposeKey, err := masterKey.Derive(hdkeychain.HardenedKeyStart + 86)
+	// m/84'
+	taprootPurposeKey, err := masterKey.Derive(hdkeychain.HardenedKeyStart + 84)
 	if err != nil {
 		return nil, err
 	}
@@ -42,18 +42,30 @@ func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 	if network.Name != chaincfg.MainNetParams.Name {
 		cointypeIndex = 1
 	}
-	// m/86'/0' for mainnet, m/86'/1' for testnet/regtest
+	// m/84'/0' for mainnet, m/84'/1' for testnet/regtest
 	coinTypeKey, err := taprootPurposeKey.Derive(hdkeychain.HardenedKeyStart + cointypeIndex)
 	if err != nil {
 		return nil, err
 	}
-	// m/86'/(cointype)'/0' (main account)
+	// m/84'/(cointype)'/0' (main account)
 	mainAccount, err := coinTypeKey.Derive(hdkeychain.HardenedKeyStart)
 	if err != nil {
 		return nil, err
 	}
-	// m/86'/(cointype)'/1' (connector account)
-	connectorAccount, err := coinTypeKey.Derive(hdkeychain.HardenedKeyStart + 1)
+
+	// m/86'
+	taprootPurposeKey, err = masterKey.Derive(hdkeychain.HardenedKeyStart + 86)
+	if err != nil {
+		return nil, err
+	}
+
+	// m/86'/0' for mainnet, m/86'/1' for testnet/regtest
+	coinTypeKey, err = taprootPurposeKey.Derive(hdkeychain.HardenedKeyStart + cointypeIndex)
+	if err != nil {
+		return nil, err
+	}
+	// m/86'/(cointype)'/0' (connector account)
+	connectorAccount, err := coinTypeKey.Derive(hdkeychain.HardenedKeyStart + 0)
 	if err != nil {
 		return nil, err
 	}
