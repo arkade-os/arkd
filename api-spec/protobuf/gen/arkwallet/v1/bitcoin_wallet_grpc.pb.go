@@ -25,18 +25,17 @@ const (
 	WalletService_Unlock_FullMethodName                   = "/arkwallet.v1.WalletService/Unlock"
 	WalletService_Lock_FullMethodName                     = "/arkwallet.v1.WalletService/Lock"
 	WalletService_Status_FullMethodName                   = "/arkwallet.v1.WalletService/Status"
-	WalletService_GetPubkey_FullMethodName                = "/arkwallet.v1.WalletService/GetPubkey"
 	WalletService_GetNetwork_FullMethodName               = "/arkwallet.v1.WalletService/GetNetwork"
-	WalletService_GetForfeitAddress_FullMethodName        = "/arkwallet.v1.WalletService/GetForfeitAddress"
+	WalletService_GetForfeitPubkey_FullMethodName         = "/arkwallet.v1.WalletService/GetForfeitPubkey"
 	WalletService_DeriveConnectorAddress_FullMethodName   = "/arkwallet.v1.WalletService/DeriveConnectorAddress"
 	WalletService_DeriveAddresses_FullMethodName          = "/arkwallet.v1.WalletService/DeriveAddresses"
 	WalletService_SignTransaction_FullMethodName          = "/arkwallet.v1.WalletService/SignTransaction"
 	WalletService_SignTransactionTapscript_FullMethodName = "/arkwallet.v1.WalletService/SignTransactionTapscript"
 	WalletService_SelectUtxos_FullMethodName              = "/arkwallet.v1.WalletService/SelectUtxos"
 	WalletService_BroadcastTransaction_FullMethodName     = "/arkwallet.v1.WalletService/BroadcastTransaction"
-	WalletService_WaitForSync_FullMethodName              = "/arkwallet.v1.WalletService/WaitForSync"
 	WalletService_GetReadyUpdate_FullMethodName           = "/arkwallet.v1.WalletService/GetReadyUpdate"
 	WalletService_IsTransactionConfirmed_FullMethodName   = "/arkwallet.v1.WalletService/IsTransactionConfirmed"
+	WalletService_GetOutpointStatus_FullMethodName        = "/arkwallet.v1.WalletService/GetOutpointStatus"
 	WalletService_EstimateFees_FullMethodName             = "/arkwallet.v1.WalletService/EstimateFees"
 	WalletService_FeeRate_FullMethodName                  = "/arkwallet.v1.WalletService/FeeRate"
 	WalletService_ListConnectorUtxos_FullMethodName       = "/arkwallet.v1.WalletService/ListConnectorUtxos"
@@ -52,6 +51,7 @@ const (
 	WalletService_WatchScripts_FullMethodName             = "/arkwallet.v1.WalletService/WatchScripts"
 	WalletService_UnwatchScripts_FullMethodName           = "/arkwallet.v1.WalletService/UnwatchScripts"
 	WalletService_NotificationStream_FullMethodName       = "/arkwallet.v1.WalletService/NotificationStream"
+	WalletService_LoadSignerKey_FullMethodName            = "/arkwallet.v1.WalletService/LoadSignerKey"
 )
 
 // WalletServiceClient is the client API for WalletService service.
@@ -66,18 +66,17 @@ type WalletServiceClient interface {
 	Unlock(ctx context.Context, in *UnlockRequest, opts ...grpc.CallOption) (*UnlockResponse, error)
 	Lock(ctx context.Context, in *LockRequest, opts ...grpc.CallOption) (*LockResponse, error)
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
-	GetPubkey(ctx context.Context, in *GetPubkeyRequest, opts ...grpc.CallOption) (*GetPubkeyResponse, error)
 	GetNetwork(ctx context.Context, in *GetNetworkRequest, opts ...grpc.CallOption) (*GetNetworkResponse, error)
-	GetForfeitAddress(ctx context.Context, in *GetForfeitAddressRequest, opts ...grpc.CallOption) (*GetForfeitAddressResponse, error)
+	GetForfeitPubkey(ctx context.Context, in *GetForfeitPubkeyRequest, opts ...grpc.CallOption) (*GetForfeitPubkeyResponse, error)
 	DeriveConnectorAddress(ctx context.Context, in *DeriveConnectorAddressRequest, opts ...grpc.CallOption) (*DeriveConnectorAddressResponse, error)
 	DeriveAddresses(ctx context.Context, in *DeriveAddressesRequest, opts ...grpc.CallOption) (*DeriveAddressesResponse, error)
 	SignTransaction(ctx context.Context, in *SignTransactionRequest, opts ...grpc.CallOption) (*SignTransactionResponse, error)
 	SignTransactionTapscript(ctx context.Context, in *SignTransactionTapscriptRequest, opts ...grpc.CallOption) (*SignTransactionTapscriptResponse, error)
 	SelectUtxos(ctx context.Context, in *SelectUtxosRequest, opts ...grpc.CallOption) (*SelectUtxosResponse, error)
 	BroadcastTransaction(ctx context.Context, in *BroadcastTransactionRequest, opts ...grpc.CallOption) (*BroadcastTransactionResponse, error)
-	WaitForSync(ctx context.Context, in *WaitForSyncRequest, opts ...grpc.CallOption) (*WaitForSyncResponse, error)
 	GetReadyUpdate(ctx context.Context, in *GetReadyUpdateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetReadyUpdateResponse], error)
 	IsTransactionConfirmed(ctx context.Context, in *IsTransactionConfirmedRequest, opts ...grpc.CallOption) (*IsTransactionConfirmedResponse, error)
+	GetOutpointStatus(ctx context.Context, in *GetOutpointStatusRequest, opts ...grpc.CallOption) (*GetOutpointStatusResponse, error)
 	EstimateFees(ctx context.Context, in *EstimateFeesRequest, opts ...grpc.CallOption) (*EstimateFeesResponse, error)
 	FeeRate(ctx context.Context, in *FeeRateRequest, opts ...grpc.CallOption) (*FeeRateResponse, error)
 	ListConnectorUtxos(ctx context.Context, in *ListConnectorUtxosRequest, opts ...grpc.CallOption) (*ListConnectorUtxosResponse, error)
@@ -93,6 +92,7 @@ type WalletServiceClient interface {
 	WatchScripts(ctx context.Context, in *WatchScriptsRequest, opts ...grpc.CallOption) (*WatchScriptsResponse, error)
 	UnwatchScripts(ctx context.Context, in *UnwatchScriptsRequest, opts ...grpc.CallOption) (*UnwatchScriptsResponse, error)
 	NotificationStream(ctx context.Context, in *NotificationStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[NotificationStreamResponse], error)
+	LoadSignerKey(ctx context.Context, in *LoadSignerKeyRequest, opts ...grpc.CallOption) (*LoadSignerKeyResponse, error)
 }
 
 type walletServiceClient struct {
@@ -163,16 +163,6 @@ func (c *walletServiceClient) Status(ctx context.Context, in *StatusRequest, opt
 	return out, nil
 }
 
-func (c *walletServiceClient) GetPubkey(ctx context.Context, in *GetPubkeyRequest, opts ...grpc.CallOption) (*GetPubkeyResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetPubkeyResponse)
-	err := c.cc.Invoke(ctx, WalletService_GetPubkey_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *walletServiceClient) GetNetwork(ctx context.Context, in *GetNetworkRequest, opts ...grpc.CallOption) (*GetNetworkResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetNetworkResponse)
@@ -183,10 +173,10 @@ func (c *walletServiceClient) GetNetwork(ctx context.Context, in *GetNetworkRequ
 	return out, nil
 }
 
-func (c *walletServiceClient) GetForfeitAddress(ctx context.Context, in *GetForfeitAddressRequest, opts ...grpc.CallOption) (*GetForfeitAddressResponse, error) {
+func (c *walletServiceClient) GetForfeitPubkey(ctx context.Context, in *GetForfeitPubkeyRequest, opts ...grpc.CallOption) (*GetForfeitPubkeyResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetForfeitAddressResponse)
-	err := c.cc.Invoke(ctx, WalletService_GetForfeitAddress_FullMethodName, in, out, cOpts...)
+	out := new(GetForfeitPubkeyResponse)
+	err := c.cc.Invoke(ctx, WalletService_GetForfeitPubkey_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -253,16 +243,6 @@ func (c *walletServiceClient) BroadcastTransaction(ctx context.Context, in *Broa
 	return out, nil
 }
 
-func (c *walletServiceClient) WaitForSync(ctx context.Context, in *WaitForSyncRequest, opts ...grpc.CallOption) (*WaitForSyncResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(WaitForSyncResponse)
-	err := c.cc.Invoke(ctx, WalletService_WaitForSync_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *walletServiceClient) GetReadyUpdate(ctx context.Context, in *GetReadyUpdateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetReadyUpdateResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &WalletService_ServiceDesc.Streams[0], WalletService_GetReadyUpdate_FullMethodName, cOpts...)
@@ -286,6 +266,16 @@ func (c *walletServiceClient) IsTransactionConfirmed(ctx context.Context, in *Is
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IsTransactionConfirmedResponse)
 	err := c.cc.Invoke(ctx, WalletService_IsTransactionConfirmed_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *walletServiceClient) GetOutpointStatus(ctx context.Context, in *GetOutpointStatusRequest, opts ...grpc.CallOption) (*GetOutpointStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOutpointStatusResponse)
+	err := c.cc.Invoke(ctx, WalletService_GetOutpointStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -451,6 +441,16 @@ func (c *walletServiceClient) NotificationStream(ctx context.Context, in *Notifi
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type WalletService_NotificationStreamClient = grpc.ServerStreamingClient[NotificationStreamResponse]
 
+func (c *walletServiceClient) LoadSignerKey(ctx context.Context, in *LoadSignerKeyRequest, opts ...grpc.CallOption) (*LoadSignerKeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LoadSignerKeyResponse)
+	err := c.cc.Invoke(ctx, WalletService_LoadSignerKey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WalletServiceServer is the server API for WalletService service.
 // All implementations should embed UnimplementedWalletServiceServer
 // for forward compatibility.
@@ -463,18 +463,17 @@ type WalletServiceServer interface {
 	Unlock(context.Context, *UnlockRequest) (*UnlockResponse, error)
 	Lock(context.Context, *LockRequest) (*LockResponse, error)
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
-	GetPubkey(context.Context, *GetPubkeyRequest) (*GetPubkeyResponse, error)
 	GetNetwork(context.Context, *GetNetworkRequest) (*GetNetworkResponse, error)
-	GetForfeitAddress(context.Context, *GetForfeitAddressRequest) (*GetForfeitAddressResponse, error)
+	GetForfeitPubkey(context.Context, *GetForfeitPubkeyRequest) (*GetForfeitPubkeyResponse, error)
 	DeriveConnectorAddress(context.Context, *DeriveConnectorAddressRequest) (*DeriveConnectorAddressResponse, error)
 	DeriveAddresses(context.Context, *DeriveAddressesRequest) (*DeriveAddressesResponse, error)
 	SignTransaction(context.Context, *SignTransactionRequest) (*SignTransactionResponse, error)
 	SignTransactionTapscript(context.Context, *SignTransactionTapscriptRequest) (*SignTransactionTapscriptResponse, error)
 	SelectUtxos(context.Context, *SelectUtxosRequest) (*SelectUtxosResponse, error)
 	BroadcastTransaction(context.Context, *BroadcastTransactionRequest) (*BroadcastTransactionResponse, error)
-	WaitForSync(context.Context, *WaitForSyncRequest) (*WaitForSyncResponse, error)
 	GetReadyUpdate(*GetReadyUpdateRequest, grpc.ServerStreamingServer[GetReadyUpdateResponse]) error
 	IsTransactionConfirmed(context.Context, *IsTransactionConfirmedRequest) (*IsTransactionConfirmedResponse, error)
+	GetOutpointStatus(context.Context, *GetOutpointStatusRequest) (*GetOutpointStatusResponse, error)
 	EstimateFees(context.Context, *EstimateFeesRequest) (*EstimateFeesResponse, error)
 	FeeRate(context.Context, *FeeRateRequest) (*FeeRateResponse, error)
 	ListConnectorUtxos(context.Context, *ListConnectorUtxosRequest) (*ListConnectorUtxosResponse, error)
@@ -490,6 +489,7 @@ type WalletServiceServer interface {
 	WatchScripts(context.Context, *WatchScriptsRequest) (*WatchScriptsResponse, error)
 	UnwatchScripts(context.Context, *UnwatchScriptsRequest) (*UnwatchScriptsResponse, error)
 	NotificationStream(*NotificationStreamRequest, grpc.ServerStreamingServer[NotificationStreamResponse]) error
+	LoadSignerKey(context.Context, *LoadSignerKeyRequest) (*LoadSignerKeyResponse, error)
 }
 
 // UnimplementedWalletServiceServer should be embedded to have
@@ -517,14 +517,11 @@ func (UnimplementedWalletServiceServer) Lock(context.Context, *LockRequest) (*Lo
 func (UnimplementedWalletServiceServer) Status(context.Context, *StatusRequest) (*StatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Status not implemented")
 }
-func (UnimplementedWalletServiceServer) GetPubkey(context.Context, *GetPubkeyRequest) (*GetPubkeyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetPubkey not implemented")
-}
 func (UnimplementedWalletServiceServer) GetNetwork(context.Context, *GetNetworkRequest) (*GetNetworkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetNetwork not implemented")
 }
-func (UnimplementedWalletServiceServer) GetForfeitAddress(context.Context, *GetForfeitAddressRequest) (*GetForfeitAddressResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetForfeitAddress not implemented")
+func (UnimplementedWalletServiceServer) GetForfeitPubkey(context.Context, *GetForfeitPubkeyRequest) (*GetForfeitPubkeyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetForfeitPubkey not implemented")
 }
 func (UnimplementedWalletServiceServer) DeriveConnectorAddress(context.Context, *DeriveConnectorAddressRequest) (*DeriveConnectorAddressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeriveConnectorAddress not implemented")
@@ -544,14 +541,14 @@ func (UnimplementedWalletServiceServer) SelectUtxos(context.Context, *SelectUtxo
 func (UnimplementedWalletServiceServer) BroadcastTransaction(context.Context, *BroadcastTransactionRequest) (*BroadcastTransactionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BroadcastTransaction not implemented")
 }
-func (UnimplementedWalletServiceServer) WaitForSync(context.Context, *WaitForSyncRequest) (*WaitForSyncResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method WaitForSync not implemented")
-}
 func (UnimplementedWalletServiceServer) GetReadyUpdate(*GetReadyUpdateRequest, grpc.ServerStreamingServer[GetReadyUpdateResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method GetReadyUpdate not implemented")
 }
 func (UnimplementedWalletServiceServer) IsTransactionConfirmed(context.Context, *IsTransactionConfirmedRequest) (*IsTransactionConfirmedResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method IsTransactionConfirmed not implemented")
+}
+func (UnimplementedWalletServiceServer) GetOutpointStatus(context.Context, *GetOutpointStatusRequest) (*GetOutpointStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOutpointStatus not implemented")
 }
 func (UnimplementedWalletServiceServer) EstimateFees(context.Context, *EstimateFeesRequest) (*EstimateFeesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method EstimateFees not implemented")
@@ -597,6 +594,9 @@ func (UnimplementedWalletServiceServer) UnwatchScripts(context.Context, *Unwatch
 }
 func (UnimplementedWalletServiceServer) NotificationStream(*NotificationStreamRequest, grpc.ServerStreamingServer[NotificationStreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method NotificationStream not implemented")
+}
+func (UnimplementedWalletServiceServer) LoadSignerKey(context.Context, *LoadSignerKeyRequest) (*LoadSignerKeyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoadSignerKey not implemented")
 }
 func (UnimplementedWalletServiceServer) testEmbeddedByValue() {}
 
@@ -726,24 +726,6 @@ func _WalletService_Status_Handler(srv interface{}, ctx context.Context, dec fun
 	return interceptor(ctx, in, info, handler)
 }
 
-func _WalletService_GetPubkey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetPubkeyRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WalletServiceServer).GetPubkey(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WalletService_GetPubkey_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WalletServiceServer).GetPubkey(ctx, req.(*GetPubkeyRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _WalletService_GetNetwork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetNetworkRequest)
 	if err := dec(in); err != nil {
@@ -762,20 +744,20 @@ func _WalletService_GetNetwork_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
-func _WalletService_GetForfeitAddress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetForfeitAddressRequest)
+func _WalletService_GetForfeitPubkey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetForfeitPubkeyRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(WalletServiceServer).GetForfeitAddress(ctx, in)
+		return srv.(WalletServiceServer).GetForfeitPubkey(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: WalletService_GetForfeitAddress_FullMethodName,
+		FullMethod: WalletService_GetForfeitPubkey_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WalletServiceServer).GetForfeitAddress(ctx, req.(*GetForfeitAddressRequest))
+		return srv.(WalletServiceServer).GetForfeitPubkey(ctx, req.(*GetForfeitPubkeyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -888,24 +870,6 @@ func _WalletService_BroadcastTransaction_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
-func _WalletService_WaitForSync_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(WaitForSyncRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(WalletServiceServer).WaitForSync(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: WalletService_WaitForSync_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WalletServiceServer).WaitForSync(ctx, req.(*WaitForSyncRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _WalletService_GetReadyUpdate_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(GetReadyUpdateRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -931,6 +895,24 @@ func _WalletService_IsTransactionConfirmed_Handler(srv interface{}, ctx context.
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WalletServiceServer).IsTransactionConfirmed(ctx, req.(*IsTransactionConfirmedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WalletService_GetOutpointStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOutpointStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).GetOutpointStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_GetOutpointStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).GetOutpointStatus(ctx, req.(*GetOutpointStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1198,6 +1180,24 @@ func _WalletService_NotificationStream_Handler(srv interface{}, stream grpc.Serv
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type WalletService_NotificationStreamServer = grpc.ServerStreamingServer[NotificationStreamResponse]
 
+func _WalletService_LoadSignerKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoadSignerKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).LoadSignerKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_LoadSignerKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).LoadSignerKey(ctx, req.(*LoadSignerKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WalletService_ServiceDesc is the grpc.ServiceDesc for WalletService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1230,16 +1230,12 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _WalletService_Status_Handler,
 		},
 		{
-			MethodName: "GetPubkey",
-			Handler:    _WalletService_GetPubkey_Handler,
-		},
-		{
 			MethodName: "GetNetwork",
 			Handler:    _WalletService_GetNetwork_Handler,
 		},
 		{
-			MethodName: "GetForfeitAddress",
-			Handler:    _WalletService_GetForfeitAddress_Handler,
+			MethodName: "GetForfeitPubkey",
+			Handler:    _WalletService_GetForfeitPubkey_Handler,
 		},
 		{
 			MethodName: "DeriveConnectorAddress",
@@ -1266,12 +1262,12 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _WalletService_BroadcastTransaction_Handler,
 		},
 		{
-			MethodName: "WaitForSync",
-			Handler:    _WalletService_WaitForSync_Handler,
-		},
-		{
 			MethodName: "IsTransactionConfirmed",
 			Handler:    _WalletService_IsTransactionConfirmed_Handler,
+		},
+		{
+			MethodName: "GetOutpointStatus",
+			Handler:    _WalletService_GetOutpointStatus_Handler,
 		},
 		{
 			MethodName: "EstimateFees",
@@ -1328,6 +1324,10 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnwatchScripts",
 			Handler:    _WalletService_UnwatchScripts_Handler,
+		},
+		{
+			MethodName: "LoadSignerKey",
+			Handler:    _WalletService_LoadSignerKey_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

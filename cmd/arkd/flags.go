@@ -27,6 +27,8 @@ const (
 	marketHourEndDateFlagName       = "end-date"
 	marketHourRoundIntervalFlagName = "round-interval"
 	marketHourPeriodFlagName        = "period"
+	signerKeyFlagName               = "signer-prvkey"
+	signerUrlFlagName               = "signer-url"
 
 	dateFormat           = time.DateOnly
 	marketHourDateFormat = time.DateTime
@@ -127,5 +129,13 @@ var (
 	marketHourPeriodFlag = &cli.IntFlag{
 		Name:  marketHourPeriodFlagName,
 		Usage: "the market hour period in minutes, ie the interval between a market hour and the next one",
+	}
+	signerKeyFlag = &cli.StringFlag{
+		Name:  signerKeyFlagName,
+		Usage: "the private key to be loaded to arkd wallet and used as signer",
+	}
+	signerUrlFlag = &cli.StringFlag{
+		Name:  signerUrlFlagName,
+		Usage: "the url of the signer to connect to",
 	}
 )

@@ -596,39 +596,6 @@ func (s *service) Status(_ context.Context) (WalletStatus, error) {
 	}, nil
 }
 
-func (s *service) WaitForSync(ctx context.Context, txid string) error {
-	if err := s.safeCheck(); err != nil {
-		return err
-	}
-
-	w := s.wallet.InternalWallet()
-
-	txhash, err := chainhash.NewHashFromStr(txid)
-	if err != nil {
-		return err
-	}
-
-	ticker := time.NewTicker(5 * time.Second)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			_, err := w.GetTransaction(*txhash)
-			if err != nil {
-				if strings.Contains(err.Error(), wallet.ErrNoTx.Error()) {
-					continue
-				}
-				return err
-			} else {
-				ticker.Stop()
-				return nil
-			}
-		}
-	}
-}
-
 func (s *service) FeeRate(_ context.Context) (chainfee.SatPerKVByte, error) {
 	feeRate, err := s.feeEstimator.EstimateFeePerKW(1)
 	if err != nil {
@@ -796,6 +763,12 @@ func (s *service) IsTransactionConfirmed(
 	_ context.Context, txid string,
 ) (isConfirmed bool, blocknumber int64, blocktime int64, err error) {
 	return s.extraAPI.getTxStatus(txid)
+}
+
+func (s *service) GetOutpointStatus(
+	_ context.Context, outpoint wire.OutPoint,
+) (spent bool, err error) {
+	return s.extraAPI.IsSpent(outpoint)
 }
 
 func (s *service) GetDustAmount(

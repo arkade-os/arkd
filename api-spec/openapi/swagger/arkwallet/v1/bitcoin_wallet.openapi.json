@@ -354,19 +354,19 @@
         }
       }
     },
-    "/v1/wallet/forfeit-address": {
+    "/v1/wallet/forfeit-pubkey": {
       "get": {
         "tags": [
           "WalletService"
         ],
-        "operationId": "WalletService_GetForfeitAddress",
+        "operationId": "WalletService_GetForfeitPubkey",
         "responses": {
           "200": {
             "description": "a successful response.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GetForfeitAddressResponse"
+                  "$ref": "#/components/schemas/GetForfeitPubkeyResponse"
                 }
               }
             }
@@ -559,19 +559,36 @@
         }
       }
     },
-    "/v1/wallet/pubkey": {
+    "/v1/wallet/outpoint-status": {
       "get": {
         "tags": [
           "WalletService"
         ],
-        "operationId": "WalletService_GetPubkey",
+        "operationId": "WalletService_GetOutpointStatus",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vout",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "uint32"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "a successful response.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GetPubkeyResponse"
+                  "$ref": "#/components/schemas/GetOutpointStatusResponse"
                 }
               }
             }
@@ -854,6 +871,46 @@
         }
       }
     },
+    "/v1/wallet/signer-key": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_LoadSignerKey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoadSignerKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoadSignerKeyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/wallet/status": {
       "get": {
         "tags": [
@@ -1065,46 +1122,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VerifyMessageSignatureResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Status"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/wallet/wait-for-sync": {
-      "post": {
-        "tags": [
-          "WalletService"
-        ],
-        "operationId": "WalletService_WaitForSync",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/WaitForSyncRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "a successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WaitForSyncResponse"
                 }
               }
             }
@@ -1392,15 +1409,15 @@
           }
         }
       },
-      "GetForfeitAddressRequest": {
-        "title": "GetForfeitAddressRequest",
+      "GetForfeitPubkeyRequest": {
+        "title": "GetForfeitPubkeyRequest",
         "type": "object"
       },
-      "GetForfeitAddressResponse": {
-        "title": "GetForfeitAddressResponse",
+      "GetForfeitPubkeyResponse": {
+        "title": "GetForfeitPubkeyResponse",
         "type": "object",
         "properties": {
-          "address": {
+          "pubkey": {
             "type": "string"
           }
         }
@@ -1418,24 +1435,31 @@
           }
         }
       },
-      "GetPubkeyRequest": {
-        "title": "GetPubkeyRequest",
-        "type": "object"
-      },
-      "GetPubkeyResponse": {
-        "title": "GetPubkeyResponse",
+      "GetOutpointStatusRequest": {
+        "title": "GetOutpointStatusRequest",
         "type": "object",
         "properties": {
-          "pubkey": {
-            "type": "string",
-            "format": "byte"
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "GetOutpointStatusResponse": {
+        "title": "GetOutpointStatusResponse",
+        "type": "object",
+        "properties": {
+          "spent": {
+            "type": "boolean"
           }
         }
       },
       "GetReadyUpdateRequest": {
         "title": "GetReadyUpdateRequest",
-        "type": "object",
-        "description": "GetReadyUpdate"
+        "type": "object"
       },
       "GetReadyUpdateResponse": {
         "title": "GetReadyUpdateResponse",
@@ -1467,7 +1491,6 @@
       "IsTransactionConfirmedRequest": {
         "title": "IsTransactionConfirmedRequest",
         "type": "object",
-        "description": "IsTransactionConfirmed",
         "properties": {
           "txid": {
             "type": "string"
@@ -1512,6 +1535,19 @@
           }
         }
       },
+      "LoadSignerKeyRequest": {
+        "title": "LoadSignerKeyRequest",
+        "type": "object",
+        "properties": {
+          "privateKey": {
+            "type": "string"
+          }
+        }
+      },
+      "LoadSignerKeyResponse": {
+        "title": "LoadSignerKeyResponse",
+        "type": "object"
+      },
       "LockConnectorUtxosRequest": {
         "title": "LockConnectorUtxosRequest",
         "type": "object",
@@ -1546,6 +1582,7 @@
         "properties": {
           "confirmed": {
             "type": "integer",
+            "description": "TODO rename to available and locked",
             "format": "uint64"
           },
           "unconfirmed": {

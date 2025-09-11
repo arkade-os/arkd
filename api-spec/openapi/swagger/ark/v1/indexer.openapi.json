@@ -1156,6 +1156,12 @@
               "$ref": "#/components/schemas/IndexerVtxo"
             }
           },
+          "sweptVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerVtxo"
+            }
+          },
           "tx": {
             "type": "string"
           },

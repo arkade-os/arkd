@@ -144,10 +144,8 @@ func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep
 		for expirationTime, inputs := range batchOutsByExpiration {
 			for _, input := range inputs {
 				batchOutputs = append(batchOutputs, SweepableOutput{
-					TxId:        input.GetHash().String(),
-					Vout:        input.GetIndex(),
-					Amount:      input.GetAmount(),
-					ScheduledAt: expirationTime,
+					SweepableOutput: input,
+					ScheduledAt:     expirationTime,
 				})
 			}
 		}
@@ -363,9 +361,7 @@ type ArkProviderBalance struct {
 }
 
 type SweepableOutput struct {
-	TxId        string
-	Vout        uint32
-	Amount      uint64
+	ports.SweepableOutput
 	ScheduledAt int64
 }
 

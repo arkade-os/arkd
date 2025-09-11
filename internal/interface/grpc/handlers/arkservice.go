@@ -68,6 +68,7 @@ func (h *handler) GetInfo(
 		UtxoMaxAmount:       info.UtxoMaxAmount,
 		VtxoMinAmount:       info.VtxoMinAmount,
 		VtxoMaxAmount:       info.VtxoMaxAmount,
+		CheckpointTapscript: info.CheckpointTapscript,
 	}, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -33,7 +34,6 @@ type WalletService interface {
 	SignTransactionTapscript(ctx context.Context, partialTx string, inputIndexes []int) (string, error) // inputIndexes == nil means sign all inputs
 	SelectUtxos(ctx context.Context, asset string, amount uint64, confirmedOnly bool) ([]TxInput, uint64, error)
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
-	WaitForSync(ctx context.Context, txid string) error
 	EstimateFees(ctx context.Context, psbt string) (uint64, error)
 	FeeRate(ctx context.Context) (chainfee.SatPerKVByte, error)
 	ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]TxInput, error)
@@ -54,6 +54,7 @@ type BlockchainScanner interface {
 	UnwatchScripts(ctx context.Context, scripts []string) error
 	GetNotificationChannel(ctx context.Context) <-chan map[string][]VtxoWithValue
 	IsTransactionConfirmed(ctx context.Context, txid string) (isConfirmed bool, blocknumber int64, blocktime int64, err error)
+	GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 }
 
 type WalletStatus struct {

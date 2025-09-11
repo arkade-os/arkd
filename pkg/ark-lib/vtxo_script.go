@@ -34,7 +34,7 @@ type VtxoScript[T TaprootTree, C interface{}] interface {
 }
 
 // BiggestLeafMerkleProof returns the leaf with the biggest witness size (for fee estimation)
-// we need this to estimate the fee without knowning the exact leaf that will be spent
+// we need this to estimate the fee without knowing the exact leaf that will be spent
 func BiggestLeafMerkleProof(t TaprootTree) (*TaprootMerkleProof, error) {
 	var biggest *TaprootMerkleProof
 	var biggestSize int

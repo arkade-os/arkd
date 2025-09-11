@@ -623,6 +623,9 @@
             "type": "integer",
             "format": "int64"
           },
+          "checkpointTapscript": {
+            "type": "string"
+          },
           "dust": {
             "type": "integer",
             "format": "int64"

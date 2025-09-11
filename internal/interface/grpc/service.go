@@ -11,7 +11,6 @@ import (
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/config"
-	"github.com/arkade-os/arkd/internal/core/application"
 	interfaces "github.com/arkade-os/arkd/internal/interface"
 	"github.com/arkade-os/arkd/internal/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/internal/interface/grpc/interceptors"
@@ -192,43 +191,42 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	// Server grpc.
 	grpcServer := grpc.NewServer(grpcConfig...)
 
-	var appSvc application.Service
 	onInit := s.onInit
 	onUnlock := s.onUnlock
 	onReady := s.onReady
+	onLoadSigner := s.onLoadSigner
 	if withAppSvc {
-		svc, err := s.appConfig.AppService()
+		appSvc, err := s.appConfig.AppService()
 		if err != nil {
 			return err
 		}
-		appSvc = svc
 		appHandler := handlers.NewHandler(s.version, appSvc, s.config.HeartbeatInterval)
-		indexerSvc, err := s.appConfig.IndexerService()
-		if err != nil {
-			return err
-		}
 		eventsCh := appSvc.GetIndexerTxChannel(ctx)
 		subscriptionTimeoutDuration := time.Minute // TODO let to be set via config
 		indexerHandler := handlers.NewIndexerService(
-			indexerSvc, eventsCh, subscriptionTimeoutDuration, s.config.HeartbeatInterval,
+			s.appConfig.IndexerService(), eventsCh,
+			subscriptionTimeoutDuration, s.config.HeartbeatInterval,
 		)
 		arkv1.RegisterArkServiceServer(grpcServer, appHandler)
 		arkv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
 		onInit = nil
 		onUnlock = nil
 		onReady = nil
+		onLoadSigner = nil
 	}
 
+	walletSvc := s.appConfig.WalletService()
 	adminHandler := handlers.NewAdminHandler(s.appConfig.AdminService(), s.appConfig.NoteUriPrefix)
 	arkv1.RegisterAdminServiceServer(grpcServer, adminHandler)
 
-	walletHandler := handlers.NewWalletHandler(s.appConfig.WalletService())
+	walletHandler := handlers.NewWalletHandler(walletSvc)
 	arkv1.RegisterWalletServiceServer(grpcServer, walletHandler)
 
-	walletInitHandler := handlers.NewWalletInitializerHandler(
-		s.appConfig.WalletService(), onInit, onUnlock, onReady,
-	)
+	walletInitHandler := handlers.NewWalletInitializerHandler(walletSvc, onInit, onUnlock, onReady)
 	arkv1.RegisterWalletInitializerServiceServer(grpcServer, walletInitHandler)
+
+	signerManagerHandler := handlers.NewSignerManagerHandler(walletSvc, onLoadSigner)
+	arkv1.RegisterSignerManagerServiceServer(grpcServer, signerManagerHandler)
 
 	healthHandler := handlers.NewHealthHandler()
 	grpchealth.RegisterHealthServer(grpcServer, healthHandler)
@@ -277,6 +275,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	if withAppSvc {
 		arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
 		arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
+	} else {
+		arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn)
 	}
 	grpcGateway := http.Handler(gwmux)
 
@@ -347,8 +347,17 @@ func (s *service) onReady() {
 
 	withAppSvc := true
 	if err := s.start(withAppSvc); err != nil {
-		panic(err)
+		log.WithError(err).Fatal("failed to start service")
+		withAppSvc := true
+		withoutAppSvc := !withAppSvc
+		s.stop(withoutAppSvc)
 	}
+}
+
+func (s *service) onLoadSigner(addr string) error {
+	s.appConfig.SignerAddr = addr
+	_, err := s.appConfig.SignerService()
+	return err
 }
 
 func (s *service) autoUnlock() error {
