@@ -24,7 +24,7 @@ require (
 	github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.7.2-0.20250913042924-79b1f7d44a4c
+	github.com/arkade-os/go-sdk v0.7.2-0.20250913052455-82cfe9c1ad99
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/btcsuite/btcwallet/walletdb v1.4.2
 	github.com/dgraph-io/badger/v4 v4.8.0
