@@ -2,14 +2,14 @@ syntax = "proto3";
 
 package ark.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 
 service IndexerService {
   // GetCommitmentTx returns information about a specific commitment transaction identified by the
   // provided txid.
   rpc GetCommitmentTx(GetCommitmentTxRequest) returns (GetCommitmentTxResponse) {
-    option (google.api.http) = {
-      get: "/v1/commitmentTx/{txid}"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/commitmentTx/{txid}"
     };
   };
 
@@ -17,8 +17,8 @@ service IndexerService {
   // commitment transaction.
   // The response may include pagination information if the results span multiple pages.
   rpc GetForfeitTxs(GetForfeitTxsRequest) returns (GetForfeitTxsResponse) {
-    option (google.api.http) = {
-      get: "/v1/commitmentTx/{txid}/forfeitTxs"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/commitmentTx/{txid}/forfeitTxs"
     };
   };
   
@@ -26,8 +26,8 @@ service IndexerService {
   // The response includes a list of connector txs with details on the tree posistion and may
   // include pagination information if the results span multiple pages.
   rpc GetConnectors(GetConnectorsRequest) returns (GetConnectorsResponse) {
-    option (google.api.http) = {
-      get: "/v1/commitmentTx/{txid}/connectors"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/commitmentTx/{txid}/connectors"
     };
   };
 
@@ -35,8 +35,8 @@ service IndexerService {
   // The response includes a list of txs with details on the tree posistion and may
   // include pagination information if the results span multiple pages.
   rpc GetVtxoTree(GetVtxoTreeRequest) returns (GetVtxoTreeResponse) {
-    option (google.api.http) = {
-      get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree"
     };
   };
 
@@ -44,8 +44,8 @@ service IndexerService {
   // provided batch outpoint.
   // The response may be paginated if the results span multiple pages.
   rpc GetVtxoTreeLeaves(GetVtxoTreeLeavesRequest) returns (GetVtxoTreeLeavesResponse) {
-    option (google.api.http) = {
-      get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves"
     };
   };
 
@@ -53,8 +53,8 @@ service IndexerService {
   // by addresses or by outpoints, and optionally filtered by spendable or spent only.
   // The response may be paginated if the results span multiple pages.
   rpc GetVtxos(GetVtxosRequest) returns (GetVtxosResponse) {
-    option (google.api.http) = {
-      get: "/v1/vtxos"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/vtxos"
     };
   };
   
@@ -62,16 +62,16 @@ service IndexerService {
   // with the creation of the provided vtxo outpoint.
   // The response may be paginated if the results span multiple pages.
   rpc GetVtxoChain(GetVtxoChainRequest) returns (GetVtxoChainResponse) {
-    option (google.api.http) = {
-      get: "/v1/vtxo/{outpoint.txid}/{outpoint.vout}/chain"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/vtxo/{outpoint.txid}/{outpoint.vout}/chain"
     };
   }
 
   // GetVirtualTxs returns the virtual transactions in hex format for the specified txids.
   // The response may be paginated if the results span multiple pages.
   rpc GetVirtualTxs(GetVirtualTxsRequest) returns (GetVirtualTxsResponse) {
-    option (google.api.http) = {
-      get: "/v1/virtualTx/{txids}"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/virtualTx/{txids}"
     };
   }
 
@@ -86,24 +86,24 @@ service IndexerService {
   // If a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is
   // empty.
   rpc GetBatchSweepTransactions(GetBatchSweepTransactionsRequest) returns (GetBatchSweepTransactionsResponse) {
-    option (google.api.http) = {
-      get: "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs"
     };
   }
 
   // SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo
   // scripts. It can also be used to update an existing subscribtion by adding new scripts to it.
   rpc SubscribeForScripts(SubscribeForScriptsRequest) returns (SubscribeForScriptsResponse) {
-    option (google.api.http) = {
-      post: "/v1/script/subscribe"
+    option (meshapi.gateway.http) = {
+      post: "/v1/indexer/script/subscribe"
       body: "*"
     };
   };
 
   // UnsubscribeForScripts allows to remove scripts from an existing subscription.
   rpc UnsubscribeForScripts(UnsubscribeForScriptsRequest) returns (UnsubscribeForScriptsResponse) {
-    option (google.api.http) = {
-      post: "/v1/script/unsubscribe"
+    option (meshapi.gateway.http) = {
+      post: "/v1/indexer/script/unsubscribe"
       body: "*"
     };
   };
@@ -114,8 +114,12 @@ service IndexerService {
   // The subscription can be created or updated by using the SubscribeForScripts and 
   // UnsubscribeForScripts RPCs.
   rpc GetSubscription(GetSubscriptionRequest) returns (stream GetSubscriptionResponse) {
-    option (google.api.http) = {
-      get: "/v1/script/subscription/{subscription_id}"
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/script/subscription/{subscription_id}"
+      stream: {
+        disable_chunked_transfer: true
+        disable_websockets: true
+      }
     };
   };
 }
@@ -315,6 +319,21 @@ message GetSubscriptionRequest {
 }
 
 message GetSubscriptionResponse {
+  oneof data {
+    IndexerHeartbeat heartbeat = 1;
+    IndexerSubscriptionEvent event = 2;
+  }
+}
+
+message IndexerTxData {
+  string txid = 1;
+  string tx = 2;
+}
+
+message IndexerHeartbeat {
+}
+
+message IndexerSubscriptionEvent {
   string txid = 1;
   repeated string scripts = 2;
   repeated IndexerVtxo new_vtxos = 3;
@@ -322,9 +341,4 @@ message GetSubscriptionResponse {
   string tx = 5;
   map<string, IndexerTxData> checkpoint_txs = 6;
   repeated IndexerVtxo swept_vtxos = 7;
-}
-
-message IndexerTxData {
-  string txid = 1;
-  string tx = 2;
 }

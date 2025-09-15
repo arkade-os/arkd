@@ -1,0 +1,1346 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "",
+    "version": "version not set"
+  },
+  "paths": {
+    "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch\noutput.\nIn most cases the list contains only one txid, meaning that all the amount locked for a\nvtxo tree has been claimed back.\nIf any of the leaves of the tree have been unrolled onchain before the expiration, the\nlist will contain many txids instead.\nIn a binary tree with 4 or more leaves, 1 unroll causes the server to broadcast 3 txs to sweep\nthe whole rest of tree for example.\nIf a whole vtxo tree has been unrolled onchain, the list of txids for that batch output is\nempty.",
+        "operationId": "IndexerService_GetBatchSweepTransactions",
+        "parameters": [
+          {
+            "name": "batchOutpoint.txid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchOutpoint.vout",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetBatchSweepTransactionsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetVtxoTree returns the vtxo tree for the provided batch outpoint.\nThe response includes a list of txs with details on the tree posistion and may\ninclude pagination information if the results span multiple pages.",
+        "operationId": "IndexerService_GetVtxoTree",
+        "parameters": [
+          {
+            "name": "batchOutpoint.txid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchOutpoint.vout",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32"
+            }
+          },
+          {
+            "name": "page.size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page.index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetVtxoTreeResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetVtxoTreeLeaves returns the list of leaves (vtxo outpoints) of the tree(s) for the\nprovided batch outpoint.\nThe response may be paginated if the results span multiple pages.",
+        "operationId": "IndexerService_GetVtxoTreeLeaves",
+        "parameters": [
+          {
+            "name": "batchOutpoint.txid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchOutpoint.vout",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32"
+            }
+          },
+          {
+            "name": "page.size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page.index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetVtxoTreeLeavesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/commitmentTx/{txid}": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetCommitmentTx returns information about a specific commitment transaction identified by the\nprovided txid.",
+        "operationId": "IndexerService_GetCommitmentTx",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCommitmentTxResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/commitmentTx/{txid}/connectors": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetConnectors returns the tree of connectors for the provided commitment transaction.\nThe response includes a list of connector txs with details on the tree posistion and may\ninclude pagination information if the results span multiple pages.",
+        "operationId": "IndexerService_GetConnectors",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page.size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page.index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConnectorsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/commitmentTx/{txid}/forfeitTxs": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetForfeitTxs returns the list of forfeit transactions that were submitted for the provided\ncommitment transaction.\nThe response may include pagination information if the results span multiple pages.",
+        "operationId": "IndexerService_GetForfeitTxs",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page.size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page.index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetForfeitTxsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/script/subscribe": {
+      "post": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo\nscripts. It can also be used to update an existing subscribtion by adding new scripts to it.",
+        "operationId": "IndexerService_SubscribeForScripts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeForScriptsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribeForScriptsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/script/subscription/{subscription_id}": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetSubscription is a server-side streaming RPC which allows clients to receive real-time\nnotifications on transactions related to the subscribed vtxo scripts.\nThe subscription can be created or updated by using the SubscribeForScripts and\nUnsubscribeForScripts RPCs.",
+        "operationId": "IndexerService_GetSubscription",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response. (streaming responses)",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/script/unsubscribe": {
+      "post": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "UnsubscribeForScripts allows to remove scripts from an existing subscription.",
+        "operationId": "IndexerService_UnsubscribeForScripts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeForScriptsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeForScriptsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/virtualTx/{txids}": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetVirtualTxs returns the virtual transactions in hex format for the specified txids.\nThe response may be paginated if the results span multiple pages.",
+        "operationId": "IndexerService_GetVirtualTxs",
+        "parameters": [
+          {
+            "name": "txids",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "page.size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page.index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetVirtualTxsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/vtxo/{outpoint.txid}/{outpoint.vout}/chain": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetVtxoChain returns the the chain of ark txs that starts from spending any vtxo leaf and ends\nwith the creation of the provided vtxo outpoint.\nThe response may be paginated if the results span multiple pages.",
+        "operationId": "IndexerService_GetVtxoChain",
+        "parameters": [
+          {
+            "name": "outpoint.txid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outpoint.vout",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32"
+            }
+          },
+          {
+            "name": "page.size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page.index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetVtxoChainResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/vtxos": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetVtxos returns the list of vtxos based on the provided filter. Vtxos can be retrieved either\nby addresses or by outpoints, and optionally filtered by spendable or spent only.\nThe response may be paginated if the results span multiple pages.",
+        "operationId": "IndexerService_GetVtxos",
+        "parameters": [
+          {
+            "name": "scripts",
+            "in": "query",
+            "description": "Either specify a list of vtxo scripts.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "outpoints",
+            "in": "query",
+            "description": "Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "spendableOnly",
+            "in": "query",
+            "description": "Retrieve only spendable vtxos",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "spentOnly",
+            "in": "query",
+            "description": "Retrieve only spent vtxos.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "recoverableOnly",
+            "in": "query",
+            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).\nThe 3 filters are mutually exclusive,",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "page.size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page.index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetVtxosResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Any": {
+        "type": "object",
+        "description": "Any contains an arbitrary schema along with a URL to help identify the type of the schema.",
+        "properties": {
+          "@type": {
+            "type": "string",
+            "description": "A URL/resource name that uniquely identifies the type of the schema."
+          }
+        }
+      },
+      "GetBatchSweepTransactionsRequest": {
+        "title": "GetBatchSweepTransactionsRequest",
+        "type": "object",
+        "properties": {
+          "batchOutpoint": {
+            "$ref": "#/components/schemas/IndexerOutpoint"
+          }
+        }
+      },
+      "GetBatchSweepTransactionsResponse": {
+        "title": "GetBatchSweepTransactionsResponse",
+        "type": "object",
+        "properties": {
+          "sweptBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GetCommitmentTxRequest": {
+        "title": "GetCommitmentTxRequest",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "GetCommitmentTxResponse": {
+        "title": "GetCommitmentTxResponse",
+        "type": "object",
+        "properties": {
+          "batches": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/IndexerBatch"
+            }
+          },
+          "endedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "startedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalInputAmount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "totalInputVtxos": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalOutputAmount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "totalOutputVtxos": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "GetConnectorsRequest": {
+        "title": "GetConnectorsRequest",
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageRequest"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "GetConnectorsResponse": {
+        "title": "GetConnectorsResponse",
+        "type": "object",
+        "properties": {
+          "connectors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerNode"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageResponse"
+          }
+        }
+      },
+      "GetForfeitTxsRequest": {
+        "title": "GetForfeitTxsRequest",
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageRequest"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "GetForfeitTxsResponse": {
+        "title": "GetForfeitTxsResponse",
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageResponse"
+          },
+          "txids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GetSubscriptionRequest": {
+        "title": "GetSubscriptionRequest",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetSubscriptionResponse": {
+        "title": "GetSubscriptionResponse",
+        "type": "object",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/IndexerSubscriptionEvent"
+          },
+          "heartbeat": {
+            "$ref": "#/components/schemas/IndexerHeartbeat"
+          }
+        }
+      },
+      "GetVirtualTxsRequest": {
+        "title": "GetVirtualTxsRequest",
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageRequest"
+          },
+          "txids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GetVirtualTxsResponse": {
+        "title": "GetVirtualTxsResponse",
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageResponse"
+          },
+          "txs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GetVtxoChainRequest": {
+        "title": "GetVtxoChainRequest",
+        "type": "object",
+        "properties": {
+          "outpoint": {
+            "$ref": "#/components/schemas/IndexerOutpoint"
+          },
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageRequest"
+          }
+        }
+      },
+      "GetVtxoChainResponse": {
+        "title": "GetVtxoChainResponse",
+        "type": "object",
+        "properties": {
+          "chain": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerChain"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageResponse"
+          }
+        }
+      },
+      "GetVtxoTreeLeavesRequest": {
+        "title": "GetVtxoTreeLeavesRequest",
+        "type": "object",
+        "properties": {
+          "batchOutpoint": {
+            "$ref": "#/components/schemas/IndexerOutpoint"
+          },
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageRequest"
+          }
+        }
+      },
+      "GetVtxoTreeLeavesResponse": {
+        "title": "GetVtxoTreeLeavesResponse",
+        "type": "object",
+        "properties": {
+          "leaves": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerOutpoint"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageResponse"
+          }
+        }
+      },
+      "GetVtxoTreeRequest": {
+        "title": "GetVtxoTreeRequest",
+        "type": "object",
+        "properties": {
+          "batchOutpoint": {
+            "$ref": "#/components/schemas/IndexerOutpoint"
+          },
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageRequest"
+          }
+        }
+      },
+      "GetVtxoTreeResponse": {
+        "title": "GetVtxoTreeResponse",
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageResponse"
+          },
+          "vtxoTree": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerNode"
+            }
+          }
+        }
+      },
+      "GetVtxosRequest": {
+        "title": "GetVtxosRequest",
+        "type": "object",
+        "properties": {
+          "outpoints": {
+            "type": "array",
+            "description": "Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageRequest"
+          },
+          "recoverableOnly": {
+            "type": "boolean",
+            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).\nThe 3 filters are mutually exclusive,"
+          },
+          "scripts": {
+            "type": "array",
+            "description": "Either specify a list of vtxo scripts.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spendableOnly": {
+            "type": "boolean",
+            "description": "Retrieve only spendable vtxos"
+          },
+          "spentOnly": {
+            "type": "boolean",
+            "description": "Retrieve only spent vtxos."
+          }
+        }
+      },
+      "GetVtxosResponse": {
+        "title": "GetVtxosResponse",
+        "type": "object",
+        "properties": {
+          "page": {
+            "$ref": "#/components/schemas/IndexerPageResponse"
+          },
+          "vtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerVtxo"
+            }
+          }
+        }
+      },
+      "IndexerBatch": {
+        "title": "IndexerBatch",
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "swept": {
+            "type": "boolean"
+          },
+          "totalOutputAmount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "totalOutputVtxos": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "IndexerChain": {
+        "title": "IndexerChain",
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "spends": {
+            "type": "array",
+            "description": "txids of the transactions in the chain used as input of the current tx",
+            "items": {
+              "type": "string"
+            }
+          },
+          "txid": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/IndexerChainedTxType"
+          }
+        }
+      },
+      "IndexerChainedTxType": {
+        "title": "IndexerChainedTxType",
+        "enum": [
+          "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED",
+          "INDEXER_CHAINED_TX_TYPE_COMMITMENT",
+          "INDEXER_CHAINED_TX_TYPE_ARK",
+          "INDEXER_CHAINED_TX_TYPE_TREE",
+          "INDEXER_CHAINED_TX_TYPE_CHECKPOINT"
+        ],
+        "type": "string",
+        "default": "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED"
+      },
+      "IndexerHeartbeat": {
+        "title": "IndexerHeartbeat",
+        "type": "object"
+      },
+      "IndexerNode": {
+        "title": "IndexerNode",
+        "type": "object",
+        "properties": {
+          "children": {
+            "type": "object",
+            "description": "vout -\u003e txid",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "IndexerOutpoint": {
+        "title": "IndexerOutpoint",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "IndexerPageRequest": {
+        "title": "IndexerPageRequest",
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "IndexerPageResponse": {
+        "title": "IndexerPageResponse",
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "next": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "IndexerSubscriptionEvent": {
+        "title": "IndexerSubscriptionEvent",
+        "type": "object",
+        "properties": {
+          "checkpointTxs": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/IndexerTxData"
+            }
+          },
+          "newVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerVtxo"
+            }
+          },
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spentVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerVtxo"
+            }
+          },
+          "sweptVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerVtxo"
+            }
+          },
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "IndexerTxData": {
+        "title": "IndexerTxData",
+        "type": "object",
+        "properties": {
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "IndexerTxHistoryRecord": {
+        "title": "IndexerTxHistoryRecord",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isSettled": {
+            "type": "boolean"
+          },
+          "settledBy": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/IndexerTxType"
+          },
+          "virtualTxid": {
+            "type": "string"
+          }
+        }
+      },
+      "IndexerTxType": {
+        "title": "IndexerTxType",
+        "enum": [
+          "INDEXER_TX_TYPE_UNSPECIFIED",
+          "INDEXER_TX_TYPE_RECEIVED",
+          "INDEXER_TX_TYPE_SENT"
+        ],
+        "type": "string",
+        "default": "INDEXER_TX_TYPE_UNSPECIFIED"
+      },
+      "IndexerVtxo": {
+        "title": "IndexerVtxo",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "arkTxid": {
+            "type": "string"
+          },
+          "commitmentTxids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isPreconfirmed": {
+            "type": "boolean"
+          },
+          "isSpent": {
+            "type": "boolean"
+          },
+          "isSwept": {
+            "type": "boolean"
+          },
+          "isUnrolled": {
+            "type": "boolean"
+          },
+          "outpoint": {
+            "$ref": "#/components/schemas/IndexerOutpoint"
+          },
+          "script": {
+            "type": "string"
+          },
+          "settledBy": {
+            "type": "string"
+          },
+          "spentBy": {
+            "type": "string"
+          }
+        }
+      },
+      "Status": {
+        "title": "Status",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Any"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "SubscribeForScriptsRequest": {
+        "title": "SubscribeForScriptsRequest",
+        "type": "object",
+        "properties": {
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subscriptionId": {
+            "type": "string",
+            "description": "If set, update an existing subscription"
+          }
+        }
+      },
+      "SubscribeForScriptsResponse": {
+        "title": "SubscribeForScriptsResponse",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
+      "UnsubscribeForScriptsRequest": {
+        "title": "UnsubscribeForScriptsRequest",
+        "type": "object",
+        "properties": {
+          "scripts": {
+            "type": "array",
+            "description": "If empty, unsubscribe all scripts",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
+      "UnsubscribeForScriptsResponse": {
+        "title": "UnsubscribeForScriptsResponse",
+        "type": "object"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "IndexerService"
+    }
+  ]
+}

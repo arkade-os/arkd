@@ -2,11 +2,11 @@ syntax = "proto3";
 
 package ark.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 
 service SignerManagerService {
   rpc LoadSigner(LoadSignerRequest) returns (LoadSignerResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/signer"
       body: "*"      
     };

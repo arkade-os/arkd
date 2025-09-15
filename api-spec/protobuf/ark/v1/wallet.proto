@@ -2,34 +2,34 @@ syntax = "proto3";
 
 package ark.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 
 service WalletInitializerService {
   rpc GenSeed(GenSeedRequest) returns (GenSeedResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/wallet/seed"
     };
   }
   rpc Create(CreateRequest) returns (CreateResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/wallet/create"
       body: "*"
     };
   }
   rpc Restore(RestoreRequest) returns (RestoreResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/wallet/restore"
       body: "*"
     };
   }
   rpc Unlock(UnlockRequest) returns (UnlockResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/wallet/unlock"
       body: "*"
     };
   }
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/wallet/status"
     };
   }
@@ -37,23 +37,23 @@ service WalletInitializerService {
 
 service WalletService {
   rpc Lock(LockRequest) returns (LockResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/wallet/lock"
       body: "*"
     };
   }
   rpc DeriveAddress(DeriveAddressRequest) returns (DeriveAddressResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/wallet/address"
     };
   }
   rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/wallet/balance"
     };
   }
   rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/wallet/withdraw"
       body: "*"
     };

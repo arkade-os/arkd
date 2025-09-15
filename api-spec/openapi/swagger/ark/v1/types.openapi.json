@@ -1,0 +1,322 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "",
+    "version": "version not set"
+  },
+  "components": {
+    "schemas": {
+      "BatchFailedEvent": {
+        "title": "BatchFailedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchFinalizationEvent": {
+        "title": "BatchFinalizationEvent",
+        "type": "object",
+        "properties": {
+          "commitmentTx": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchFinalizedEvent": {
+        "title": "BatchFinalizedEvent",
+        "type": "object",
+        "properties": {
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchStartedEvent": {
+        "title": "BatchStartedEvent",
+        "type": "object",
+        "properties": {
+          "batchExpiry": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "intentIdHashes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Bip322Signature": {
+        "title": "Bip322Signature",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          }
+        }
+      },
+      "Heartbeat": {
+        "title": "Heartbeat",
+        "type": "object"
+      },
+      "Input": {
+        "title": "Input",
+        "type": "object",
+        "properties": {
+          "outpoint": {
+            "$ref": "#/components/schemas/Outpoint"
+          },
+          "taprootTree": {
+            "$ref": "#/components/schemas/Tapscripts"
+          }
+        }
+      },
+      "MarketHour": {
+        "title": "MarketHour",
+        "type": "object",
+        "properties": {
+          "nextEndTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nextStartTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundInterval": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "Outpoint": {
+        "title": "Outpoint",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "Tapscripts": {
+        "title": "Tapscripts",
+        "type": "object",
+        "properties": {
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TreeNoncesAggregatedEvent": {
+        "title": "TreeNoncesAggregatedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "treeNonces": {
+            "type": "string"
+          }
+        }
+      },
+      "TreeSignatureEvent": {
+        "title": "TreeSignatureEvent",
+        "type": "object",
+        "properties": {
+          "batchIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TreeSigningStartedEvent": {
+        "title": "TreeSigningStartedEvent",
+        "type": "object",
+        "properties": {
+          "cosignersPubkeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "unsignedCommitmentTx": {
+            "type": "string"
+          }
+        }
+      },
+      "TreeTxEvent": {
+        "title": "TreeTxEvent",
+        "type": "object",
+        "properties": {
+          "batchIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "children": {
+            "type": "object",
+            "description": "output index -\u003e child txid",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TxData": {
+        "title": "TxData",
+        "type": "object",
+        "properties": {
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TxNotification": {
+        "title": "TxNotification",
+        "type": "object",
+        "properties": {
+          "checkpointTxs": {
+            "type": "object",
+            "description": "This field is set only in case of offchain tx.\n\nkey: outpoint, value: checkpoint txid",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TxData"
+            }
+          },
+          "spendableVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "spentVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "Vtxo": {
+        "title": "Vtxo",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "arkTxid": {
+            "type": "string"
+          },
+          "commitmentTxids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isPreconfirmed": {
+            "type": "boolean"
+          },
+          "isSpent": {
+            "type": "boolean"
+          },
+          "isSwept": {
+            "type": "boolean"
+          },
+          "isUnrolled": {
+            "type": "boolean"
+          },
+          "outpoint": {
+            "$ref": "#/components/schemas/Outpoint"
+          },
+          "script": {
+            "type": "string"
+          },
+          "settledBy": {
+            "type": "string"
+          },
+          "spentBy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

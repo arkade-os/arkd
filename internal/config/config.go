@@ -86,6 +86,7 @@ type Config struct {
 	BoardingExitDelay   arklib.RelativeLocktime
 	NoteUriPrefix       string
 	AllowCSVBlockType   bool
+	HeartbeatInterval   int64
 
 	MarketHourStartTime     int64
 	MarketHourEndTime       int64
@@ -174,6 +175,7 @@ var (
 	UtxoMinAmount             = "UTXO_MIN_AMOUNT"
 	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
 	AllowCSVBlockType         = "ALLOW_CSV_BLOCK_TYPE"
+	HeartbeatInterval         = "HEARTBEAT_INTERVAL"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultRoundInterval       = 30
@@ -201,6 +203,7 @@ var (
 	defaultRoundMaxParticipantsCount = 128
 	defaultRoundMinParticipantsCount = 1
 	defaultOtelPushInterval          = 10 // seconds
+	defaultHeartbeatInterval         = 60 // seconds
 )
 
 func LoadConfig() (*Config, error) {
@@ -232,6 +235,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
 	viper.SetDefault(AllowCSVBlockType, defaultAllowCSVBlockType)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
+	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -310,6 +314,7 @@ func LoadConfig() (*Config, error) {
 		MarketHourRoundInterval: viper.GetInt64(MarketHourRoundInterval),
 		OtelCollectorEndpoint:   viper.GetString(OtelCollectorEndpoint),
 		OtelPushInterval:        viper.GetInt64(OtelPushInterval),
+		HeartbeatInterval:       viper.GetInt64(HeartbeatInterval),
 
 		RoundMaxParticipantsCount: viper.GetInt64(RoundMaxParticipantsCount),
 		RoundMinParticipantsCount: viper.GetInt64(RoundMinParticipantsCount),

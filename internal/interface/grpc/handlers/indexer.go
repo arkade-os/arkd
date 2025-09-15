@@ -24,17 +24,20 @@ type indexerService struct {
 
 	scriptSubsHandler           *broker[*arkv1.GetSubscriptionResponse]
 	subscriptionTimeoutDuration time.Duration
+
+	heartbeat time.Duration
 }
 
 func NewIndexerService(
-	indexerSvc application.IndexerService,
-	eventsCh <-chan application.TransactionEvent, subscriptionTimeoutDuration time.Duration,
+	indexerSvc application.IndexerService, eventsCh <-chan application.TransactionEvent,
+	subscriptionTimeoutDuration time.Duration, heartbeat int64,
 ) arkv1.IndexerServiceServer {
 	svc := &indexerService{
 		indexerSvc:                  indexerSvc,
 		eventsCh:                    eventsCh,
 		scriptSubsHandler:           newBroker[*arkv1.GetSubscriptionResponse](),
 		subscriptionTimeoutDuration: subscriptionTimeoutDuration,
+		heartbeat:                   time.Duration(heartbeat) * time.Second,
 	}
 
 	go svc.listenToTxEvents()
@@ -369,6 +372,22 @@ func (h *indexerService) GetSubscription(
 		return status.Error(codes.Internal, err.Error())
 	}
 
+	// create a Timer that will fire after one heartbeat interval
+	timer := time.NewTimer(h.heartbeat)
+	defer timer.Stop()
+
+	// helper to safely reset the timer
+	resetTimer := func() {
+		if !timer.Stop() {
+			// drain if it already fired
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(h.heartbeat)
+	}
+
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -377,6 +396,17 @@ func (h *indexerService) GetSubscription(
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
+			resetTimer()
+		case <-timer.C:
+			hb := &arkv1.GetSubscriptionResponse{
+				Data: &arkv1.GetSubscriptionResponse_Heartbeat{
+					Heartbeat: &arkv1.IndexerHeartbeat{},
+				},
+			}
+			if err := stream.Send(hb); err != nil {
+				return err
+			}
+			resetTimer()
 		}
 	}
 }
@@ -493,13 +523,17 @@ func (h *indexerService) listenToTxEvents() {
 				go func(listener *listener[*arkv1.GetSubscriptionResponse]) {
 					select {
 					case listener.ch <- &arkv1.GetSubscriptionResponse{
-						Txid:          event.Txid,
-						Scripts:       involvedScripts,
-						NewVtxos:      spendableVtxos,
-						SpentVtxos:    spentVtxos,
-						SweptVtxos:    sweptVtxos,
-						Tx:            event.Tx,
-						CheckpointTxs: checkpointTxs,
+						Data: &arkv1.GetSubscriptionResponse_Event{
+							Event: &arkv1.IndexerSubscriptionEvent{
+								Txid:          event.Txid,
+								Scripts:       involvedScripts,
+								NewVtxos:      spendableVtxos,
+								SpentVtxos:    spentVtxos,
+								SweptVtxos:    sweptVtxos,
+								Tx:            event.Tx,
+								CheckpointTxs: checkpointTxs,
+							},
+						},
 					}:
 					default:
 						// channel is full, skip this message to prevent blocking

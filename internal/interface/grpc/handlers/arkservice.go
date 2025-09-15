@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
@@ -20,7 +21,8 @@ type service interface {
 }
 
 type handler struct {
-	version string
+	version   string
+	heartbeat time.Duration
 
 	svc application.Service
 
@@ -28,9 +30,10 @@ type handler struct {
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewHandler(version string, service application.Service) service {
+func NewHandler(version string, service application.Service, heartbeat int64) service {
 	h := &handler{
 		version:                     version,
+		heartbeat:                   time.Duration(heartbeat) * time.Second,
 		svc:                         service,
 		eventsListenerHandler:       newBroker[*arkv1.GetEventStreamResponse](),
 		transactionsListenerHandler: newBroker[*arkv1.GetTransactionsStreamResponse](),
@@ -203,6 +206,22 @@ func (h *handler) GetEventStream(
 	defer h.eventsListenerHandler.removeListener(listener.id)
 	defer close(listener.ch)
 
+	// create a Timer that will fire after one heartbeat interval
+	timer := time.NewTimer(h.heartbeat)
+	defer timer.Stop()
+
+	// helper to safely reset the timer
+	resetTimer := func() {
+		if !timer.Stop() {
+			// drain if it already fired
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(h.heartbeat)
+	}
+
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -211,6 +230,17 @@ func (h *handler) GetEventStream(
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
+			resetTimer()
+		case <-timer.C:
+			hb := &arkv1.GetEventStreamResponse{
+				Event: &arkv1.GetEventStreamResponse_Heartbeat{
+					Heartbeat: &arkv1.Heartbeat{},
+				},
+			}
+			if err := stream.Send(hb); err != nil {
+				return err
+			}
+			resetTimer()
 		}
 	}
 }
@@ -273,6 +303,22 @@ func (h *handler) GetTransactionsStream(
 		close(listener.ch)
 	}()
 
+	// create a Timer that will fire after one heartbeat interval
+	timer := time.NewTimer(h.heartbeat)
+	defer timer.Stop()
+
+	// helper to safely reset the timer
+	resetTimer := func() {
+		if !timer.Stop() {
+			// drain if it already fired
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(h.heartbeat)
+	}
+
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -281,6 +327,17 @@ func (h *handler) GetTransactionsStream(
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
+			resetTimer()
+		case <-timer.C:
+			hb := &arkv1.GetTransactionsStreamResponse{
+				Data: &arkv1.GetTransactionsStreamResponse_Heartbeat{
+					Heartbeat: &arkv1.Heartbeat{},
+				},
+			}
+			if err := stream.Send(hb); err != nil {
+				return err
+			}
+			resetTimer()
 		}
 	}
 }
@@ -432,13 +489,13 @@ func (h *handler) listenToTxEvents() {
 		switch event.Type {
 		case application.CommitmentTxType:
 			msg = &arkv1.GetTransactionsStreamResponse{
-				Tx: &arkv1.GetTransactionsStreamResponse_CommitmentTx{
+				Data: &arkv1.GetTransactionsStreamResponse_CommitmentTx{
 					CommitmentTx: txEvent(event).toProto(),
 				},
 			}
 		case application.ArkTxType:
 			msg = &arkv1.GetTransactionsStreamResponse{
-				Tx: &arkv1.GetTransactionsStreamResponse_ArkTx{
+				Data: &arkv1.GetTransactionsStreamResponse_ArkTx{
 					ArkTx: txEvent(event).toProto(),
 				},
 			}
