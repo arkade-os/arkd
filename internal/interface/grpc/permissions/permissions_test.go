@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	indexerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/indexer/v1"
 	"github.com/arkade-os/arkd/internal/interface/grpc/permissions"
 	"github.com/stretchr/testify/require"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
@@ -55,15 +56,15 @@ func TestWhitelistedMethods(t *testing.T) {
 		))
 	}
 
-	for _, m := range arkv1.IndexerService_ServiceDesc.Methods {
+	for _, m := range indexerv1.IndexerService_ServiceDesc.Methods {
 		allMethods = append(allMethods, fmt.Sprintf(
-			"/%s/%s", arkv1.IndexerService_ServiceDesc.ServiceName, m.MethodName,
+			"/%s/%s", indexerv1.IndexerService_ServiceDesc.ServiceName, m.MethodName,
 		))
 	}
-	for _, m := range arkv1.IndexerService_ServiceDesc.Streams {
+	for _, m := range indexerv1.IndexerService_ServiceDesc.Streams {
 		allMethods = append(
 			allMethods,
-			fmt.Sprintf("/%s/%s", arkv1.IndexerService_ServiceDesc.ServiceName, m.StreamName),
+			fmt.Sprintf("/%s/%s", indexerv1.IndexerService_ServiceDesc.ServiceName, m.StreamName),
 		)
 	}
 	for _, m := range arkv1.SignerManagerService_ServiceDesc.Methods {

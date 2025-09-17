@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	indexerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/indexer/v1"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
@@ -162,57 +163,61 @@ func Whitelist() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		/* Indexer APIs */
-		fmt.Sprintf("/%s/GetCommitmentTx", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetCommitmentTx", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetForfeitTxs", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetForfeitTxs", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetConnectors", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetConnectors", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetVtxoTree", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetVtxoTree", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetVtxoTreeLeaves", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetVtxoTreeLeaves", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetVtxos", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetVtxos", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetTransactionHistory", arkv1.IndexerService_ServiceDesc.ServiceName): {{
-			Entity: EntityIndexer,
-			Action: "read",
-		}},
-		fmt.Sprintf("/%s/GetVtxoChain", arkv1.IndexerService_ServiceDesc.ServiceName): {{
-			Entity: EntityIndexer,
-			Action: "read",
-		}},
-		fmt.Sprintf("/%s/GetVirtualTxs", arkv1.IndexerService_ServiceDesc.ServiceName): {{
-			Entity: EntityIndexer,
-			Action: "read",
-		}},
-		fmt.Sprintf("/%s/GetBatchSweepTransactions", arkv1.IndexerService_ServiceDesc.ServiceName): {
+		fmt.Sprintf("/%s/GetTransactionHistory", indexerv1.IndexerService_ServiceDesc.ServiceName): {
 			{
 				Entity: EntityIndexer,
 				Action: "read",
 			},
 		},
-		fmt.Sprintf("/%s/SubscribeForScripts", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetVtxoChain", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/UnsubscribeForScripts", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetVirtualTxs", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetSubscription", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetBatchSweepTransactions", indexerv1.IndexerService_ServiceDesc.ServiceName): {
+			{
+				Entity: EntityIndexer,
+				Action: "read",
+			},
+		},
+		fmt.Sprintf("/%s/SubscribeForScripts", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
+			Entity: EntityIndexer,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/UnsubscribeForScripts", indexerv1.IndexerService_ServiceDesc.ServiceName): {
+			{
+				Entity: EntityIndexer,
+				Action: "read",
+			},
+		},
+		fmt.Sprintf("/%s/GetSubscription", indexerv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},

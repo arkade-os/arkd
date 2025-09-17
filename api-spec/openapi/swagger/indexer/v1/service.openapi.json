@@ -5,7 +5,7 @@
     "version": "version not set"
   },
   "paths": {
-    "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs": {
+    "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs": {
       "get": {
         "tags": [
           "IndexerService"
@@ -55,7 +55,7 @@
         }
       }
     },
-    "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree": {
+    "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree": {
       "get": {
         "tags": [
           "IndexerService"
@@ -121,7 +121,7 @@
         }
       }
     },
-    "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves": {
+    "/v1/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves": {
       "get": {
         "tags": [
           "IndexerService"
@@ -187,7 +187,7 @@
         }
       }
     },
-    "/v1/indexer/commitmentTx/{txid}": {
+    "/v1/commitmentTx/{txid}": {
       "get": {
         "tags": [
           "IndexerService"
@@ -228,7 +228,7 @@
         }
       }
     },
-    "/v1/indexer/commitmentTx/{txid}/connectors": {
+    "/v1/commitmentTx/{txid}/connectors": {
       "get": {
         "tags": [
           "IndexerService"
@@ -285,7 +285,7 @@
         }
       }
     },
-    "/v1/indexer/commitmentTx/{txid}/forfeitTxs": {
+    "/v1/commitmentTx/{txid}/forfeitTxs": {
       "get": {
         "tags": [
           "IndexerService"
@@ -342,7 +342,7 @@
         }
       }
     },
-    "/v1/indexer/script/subscribe": {
+    "/v1/script/subscribe": {
       "post": {
         "tags": [
           "IndexerService"
@@ -383,7 +383,7 @@
         }
       }
     },
-    "/v1/indexer/script/subscription/{subscription_id}": {
+    "/v1/script/subscription/{subscription_id}": {
       "get": {
         "tags": [
           "IndexerService"
@@ -424,7 +424,7 @@
         }
       }
     },
-    "/v1/indexer/script/unsubscribe": {
+    "/v1/script/unsubscribe": {
       "post": {
         "tags": [
           "IndexerService"
@@ -465,7 +465,7 @@
         }
       }
     },
-    "/v1/indexer/virtualTx/{txids}": {
+    "/v1/virtualTx/{txids}": {
       "get": {
         "tags": [
           "IndexerService"
@@ -527,7 +527,7 @@
         }
       }
     },
-    "/v1/indexer/vtxo/{outpoint.txid}/{outpoint.vout}/chain": {
+    "/v1/vtxo/{outpoint.txid}/{outpoint.vout}/chain": {
       "get": {
         "tags": [
           "IndexerService"
@@ -593,7 +593,7 @@
         }
       }
     },
-    "/v1/indexer/vtxos": {
+    "/v1/vtxos": {
       "get": {
         "tags": [
           "IndexerService"
@@ -705,12 +705,68 @@
           }
         }
       },
+      "Batch": {
+        "title": "Batch",
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "swept": {
+            "type": "boolean"
+          },
+          "totalOutputAmount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "totalOutputVtxos": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "Chain": {
+        "title": "Chain",
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "spends": {
+            "type": "array",
+            "description": "txids of the transactions in the chain used as input of the current tx",
+            "items": {
+              "type": "string"
+            }
+          },
+          "txid": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ChainedTxType"
+          }
+        }
+      },
+      "ChainedTxType": {
+        "title": "ChainedTxType",
+        "enum": [
+          "CHAINED_TX_TYPE_UNSPECIFIED",
+          "CHAINED_TX_TYPE_COMMITMENT",
+          "CHAINED_TX_TYPE_ARK",
+          "CHAINED_TX_TYPE_TREE",
+          "CHAINED_TX_TYPE_CHECKPOINT"
+        ],
+        "type": "string",
+        "default": "CHAINED_TX_TYPE_UNSPECIFIED"
+      },
       "GetBatchSweepTransactionsRequest": {
         "title": "GetBatchSweepTransactionsRequest",
         "type": "object",
         "properties": {
           "batchOutpoint": {
-            "$ref": "#/components/schemas/IndexerOutpoint"
+            "$ref": "#/components/schemas/Outpoint"
           }
         }
       },
@@ -742,7 +798,7 @@
           "batches": {
             "type": "object",
             "additionalProperties": {
-              "$ref": "#/components/schemas/IndexerBatch"
+              "$ref": "#/components/schemas/Batch"
             }
           },
           "endedAt": {
@@ -776,7 +832,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "$ref": "#/components/schemas/IndexerPageRequest"
+            "$ref": "#/components/schemas/PageRequest"
           },
           "txid": {
             "type": "string"
@@ -790,11 +846,11 @@
           "connectors": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/IndexerNode"
+              "$ref": "#/components/schemas/Node"
             }
           },
           "page": {
-            "$ref": "#/components/schemas/IndexerPageResponse"
+            "$ref": "#/components/schemas/PageResponse"
           }
         }
       },
@@ -803,7 +859,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "$ref": "#/components/schemas/IndexerPageRequest"
+            "$ref": "#/components/schemas/PageRequest"
           },
           "txid": {
             "type": "string"
@@ -815,7 +871,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "$ref": "#/components/schemas/IndexerPageResponse"
+            "$ref": "#/components/schemas/PageResponse"
           },
           "txids": {
             "type": "array",
@@ -839,10 +895,10 @@
         "type": "object",
         "properties": {
           "event": {
-            "$ref": "#/components/schemas/IndexerSubscriptionEvent"
+            "$ref": "#/components/schemas/SubscriptionEvent"
           },
           "heartbeat": {
-            "$ref": "#/components/schemas/IndexerHeartbeat"
+            "$ref": "#/components/schemas/Heartbeat"
           }
         }
       },
@@ -851,7 +907,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "$ref": "#/components/schemas/IndexerPageRequest"
+            "$ref": "#/components/schemas/PageRequest"
           },
           "txids": {
             "type": "array",
@@ -866,7 +922,7 @@
         "type": "object",
         "properties": {
           "page": {
-            "$ref": "#/components/schemas/IndexerPageResponse"
+            "$ref": "#/components/schemas/PageResponse"
           },
           "txs": {
             "type": "array",
@@ -881,10 +937,10 @@
         "type": "object",
         "properties": {
           "outpoint": {
-            "$ref": "#/components/schemas/IndexerOutpoint"
+            "$ref": "#/components/schemas/Outpoint"
           },
           "page": {
-            "$ref": "#/components/schemas/IndexerPageRequest"
+            "$ref": "#/components/schemas/PageRequest"
           }
         }
       },
@@ -895,11 +951,11 @@
           "chain": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/IndexerChain"
+              "$ref": "#/components/schemas/Chain"
             }
           },
           "page": {
-            "$ref": "#/components/schemas/IndexerPageResponse"
+            "$ref": "#/components/schemas/PageResponse"
           }
         }
       },
@@ -908,10 +964,10 @@
         "type": "object",
         "properties": {
           "batchOutpoint": {
-            "$ref": "#/components/schemas/IndexerOutpoint"
+            "$ref": "#/components/schemas/Outpoint"
           },
           "page": {
-            "$ref": "#/components/schemas/IndexerPageRequest"
+            "$ref": "#/components/schemas/PageRequest"
           }
         }
       },
@@ -922,11 +978,11 @@
           "leaves": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/IndexerOutpoint"
+              "$ref": "#/components/schemas/Outpoint"
             }
           },
           "page": {
-            "$ref": "#/components/schemas/IndexerPageResponse"
+            "$ref": "#/components/schemas/PageResponse"
           }
         }
       },
@@ -935,10 +991,10 @@
         "type": "object",
         "properties": {
           "batchOutpoint": {
-            "$ref": "#/components/schemas/IndexerOutpoint"
+            "$ref": "#/components/schemas/Outpoint"
           },
           "page": {
-            "$ref": "#/components/schemas/IndexerPageRequest"
+            "$ref": "#/components/schemas/PageRequest"
           }
         }
       },
@@ -947,12 +1003,12 @@
         "type": "object",
         "properties": {
           "page": {
-            "$ref": "#/components/schemas/IndexerPageResponse"
+            "$ref": "#/components/schemas/PageResponse"
           },
           "vtxoTree": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/IndexerNode"
+              "$ref": "#/components/schemas/Node"
             }
           }
         }
@@ -969,7 +1025,7 @@
             }
           },
           "page": {
-            "$ref": "#/components/schemas/IndexerPageRequest"
+            "$ref": "#/components/schemas/PageRequest"
           },
           "recoverableOnly": {
             "type": "boolean",
@@ -997,78 +1053,22 @@
         "type": "object",
         "properties": {
           "page": {
-            "$ref": "#/components/schemas/IndexerPageResponse"
+            "$ref": "#/components/schemas/PageResponse"
           },
           "vtxos": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/IndexerVtxo"
+              "$ref": "#/components/schemas/Vtxo"
             }
           }
         }
       },
-      "IndexerBatch": {
-        "title": "IndexerBatch",
-        "type": "object",
-        "properties": {
-          "expiresAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "swept": {
-            "type": "boolean"
-          },
-          "totalOutputAmount": {
-            "type": "integer",
-            "format": "uint64"
-          },
-          "totalOutputVtxos": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
-      },
-      "IndexerChain": {
-        "title": "IndexerChain",
-        "type": "object",
-        "properties": {
-          "expiresAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "spends": {
-            "type": "array",
-            "description": "txids of the transactions in the chain used as input of the current tx",
-            "items": {
-              "type": "string"
-            }
-          },
-          "txid": {
-            "type": "string"
-          },
-          "type": {
-            "$ref": "#/components/schemas/IndexerChainedTxType"
-          }
-        }
-      },
-      "IndexerChainedTxType": {
-        "title": "IndexerChainedTxType",
-        "enum": [
-          "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED",
-          "INDEXER_CHAINED_TX_TYPE_COMMITMENT",
-          "INDEXER_CHAINED_TX_TYPE_ARK",
-          "INDEXER_CHAINED_TX_TYPE_TREE",
-          "INDEXER_CHAINED_TX_TYPE_CHECKPOINT"
-        ],
-        "type": "string",
-        "default": "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED"
-      },
-      "IndexerHeartbeat": {
-        "title": "IndexerHeartbeat",
+      "Heartbeat": {
+        "title": "Heartbeat",
         "type": "object"
       },
-      "IndexerNode": {
-        "title": "IndexerNode",
+      "Node": {
+        "title": "Node",
         "type": "object",
         "properties": {
           "children": {
@@ -1083,8 +1083,8 @@
           }
         }
       },
-      "IndexerOutpoint": {
-        "title": "IndexerOutpoint",
+      "Outpoint": {
+        "title": "Outpoint",
         "type": "object",
         "properties": {
           "txid": {
@@ -1096,8 +1096,8 @@
           }
         }
       },
-      "IndexerPageRequest": {
-        "title": "IndexerPageRequest",
+      "PageRequest": {
+        "title": "PageRequest",
         "type": "object",
         "properties": {
           "index": {
@@ -1110,8 +1110,8 @@
           }
         }
       },
-      "IndexerPageResponse": {
-        "title": "IndexerPageResponse",
+      "PageResponse": {
+        "title": "PageResponse",
         "type": "object",
         "properties": {
           "current": {
@@ -1125,150 +1125,6 @@
           "total": {
             "type": "integer",
             "format": "int32"
-          }
-        }
-      },
-      "IndexerSubscriptionEvent": {
-        "title": "IndexerSubscriptionEvent",
-        "type": "object",
-        "properties": {
-          "checkpointTxs": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/IndexerTxData"
-            }
-          },
-          "newVtxos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IndexerVtxo"
-            }
-          },
-          "scripts": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "spentVtxos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IndexerVtxo"
-            }
-          },
-          "sweptVtxos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/IndexerVtxo"
-            }
-          },
-          "tx": {
-            "type": "string"
-          },
-          "txid": {
-            "type": "string"
-          }
-        }
-      },
-      "IndexerTxData": {
-        "title": "IndexerTxData",
-        "type": "object",
-        "properties": {
-          "tx": {
-            "type": "string"
-          },
-          "txid": {
-            "type": "string"
-          }
-        }
-      },
-      "IndexerTxHistoryRecord": {
-        "title": "IndexerTxHistoryRecord",
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "integer",
-            "format": "uint64"
-          },
-          "commitmentTxid": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "isSettled": {
-            "type": "boolean"
-          },
-          "settledBy": {
-            "type": "string"
-          },
-          "type": {
-            "$ref": "#/components/schemas/IndexerTxType"
-          },
-          "virtualTxid": {
-            "type": "string"
-          }
-        }
-      },
-      "IndexerTxType": {
-        "title": "IndexerTxType",
-        "enum": [
-          "INDEXER_TX_TYPE_UNSPECIFIED",
-          "INDEXER_TX_TYPE_RECEIVED",
-          "INDEXER_TX_TYPE_SENT"
-        ],
-        "type": "string",
-        "default": "INDEXER_TX_TYPE_UNSPECIFIED"
-      },
-      "IndexerVtxo": {
-        "title": "IndexerVtxo",
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "integer",
-            "format": "uint64"
-          },
-          "arkTxid": {
-            "type": "string"
-          },
-          "commitmentTxids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "createdAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "expiresAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "isPreconfirmed": {
-            "type": "boolean"
-          },
-          "isSpent": {
-            "type": "boolean"
-          },
-          "isSwept": {
-            "type": "boolean"
-          },
-          "isUnrolled": {
-            "type": "boolean"
-          },
-          "outpoint": {
-            "$ref": "#/components/schemas/IndexerOutpoint"
-          },
-          "script": {
-            "type": "string"
-          },
-          "settledBy": {
-            "type": "string"
-          },
-          "spentBy": {
-            "type": "string"
           }
         }
       },
@@ -1316,6 +1172,60 @@
           }
         }
       },
+      "SubscriptionEvent": {
+        "title": "SubscriptionEvent",
+        "type": "object",
+        "properties": {
+          "checkpointTxs": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TxData"
+            }
+          },
+          "newVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spentVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "sweptVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TxData": {
+        "title": "TxData",
+        "type": "object",
+        "properties": {
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
       "UnsubscribeForScriptsRequest": {
         "title": "UnsubscribeForScriptsRequest",
         "type": "object",
@@ -1335,6 +1245,57 @@
       "UnsubscribeForScriptsResponse": {
         "title": "UnsubscribeForScriptsResponse",
         "type": "object"
+      },
+      "Vtxo": {
+        "title": "Vtxo",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "arkTxid": {
+            "type": "string"
+          },
+          "commitmentTxids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isPreconfirmed": {
+            "type": "boolean"
+          },
+          "isSpent": {
+            "type": "boolean"
+          },
+          "isSwept": {
+            "type": "boolean"
+          },
+          "isUnrolled": {
+            "type": "boolean"
+          },
+          "outpoint": {
+            "$ref": "#/components/schemas/Outpoint"
+          },
+          "script": {
+            "type": "string"
+          },
+          "settledBy": {
+            "type": "string"
+          },
+          "spentBy": {
+            "type": "string"
+          }
+        }
       }
     }
   },

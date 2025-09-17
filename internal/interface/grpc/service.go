@@ -10,6 +10,7 @@ import (
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	indexerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/indexer/v1"
 	"github.com/arkade-os/arkd/internal/config"
 	interfaces "github.com/arkade-os/arkd/internal/interface"
 	"github.com/arkade-os/arkd/internal/interface/grpc/handlers"
@@ -208,7 +209,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 			subscriptionTimeoutDuration, s.config.HeartbeatInterval,
 		)
 		arkv1.RegisterArkServiceServer(grpcServer, appHandler)
-		arkv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
+		indexerv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
 		onInit = nil
 		onUnlock = nil
 		onReady = nil
@@ -274,7 +275,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn)
 	if withAppSvc {
 		arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
-		arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
+		indexerv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
 	} else {
 		arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn)
 	}

@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             (unknown)
-// source: ark/v1/indexer.proto
+// source: indexer/v1/service.proto
 
-package arkv1
+package indexerv1
 
 import (
 	context "context"
@@ -19,18 +19,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	IndexerService_GetCommitmentTx_FullMethodName           = "/ark.v1.IndexerService/GetCommitmentTx"
-	IndexerService_GetForfeitTxs_FullMethodName             = "/ark.v1.IndexerService/GetForfeitTxs"
-	IndexerService_GetConnectors_FullMethodName             = "/ark.v1.IndexerService/GetConnectors"
-	IndexerService_GetVtxoTree_FullMethodName               = "/ark.v1.IndexerService/GetVtxoTree"
-	IndexerService_GetVtxoTreeLeaves_FullMethodName         = "/ark.v1.IndexerService/GetVtxoTreeLeaves"
-	IndexerService_GetVtxos_FullMethodName                  = "/ark.v1.IndexerService/GetVtxos"
-	IndexerService_GetVtxoChain_FullMethodName              = "/ark.v1.IndexerService/GetVtxoChain"
-	IndexerService_GetVirtualTxs_FullMethodName             = "/ark.v1.IndexerService/GetVirtualTxs"
-	IndexerService_GetBatchSweepTransactions_FullMethodName = "/ark.v1.IndexerService/GetBatchSweepTransactions"
-	IndexerService_SubscribeForScripts_FullMethodName       = "/ark.v1.IndexerService/SubscribeForScripts"
-	IndexerService_UnsubscribeForScripts_FullMethodName     = "/ark.v1.IndexerService/UnsubscribeForScripts"
-	IndexerService_GetSubscription_FullMethodName           = "/ark.v1.IndexerService/GetSubscription"
+	IndexerService_GetCommitmentTx_FullMethodName           = "/indexer.v1.IndexerService/GetCommitmentTx"
+	IndexerService_GetForfeitTxs_FullMethodName             = "/indexer.v1.IndexerService/GetForfeitTxs"
+	IndexerService_GetConnectors_FullMethodName             = "/indexer.v1.IndexerService/GetConnectors"
+	IndexerService_GetVtxoTree_FullMethodName               = "/indexer.v1.IndexerService/GetVtxoTree"
+	IndexerService_GetVtxoTreeLeaves_FullMethodName         = "/indexer.v1.IndexerService/GetVtxoTreeLeaves"
+	IndexerService_GetVtxos_FullMethodName                  = "/indexer.v1.IndexerService/GetVtxos"
+	IndexerService_GetVtxoChain_FullMethodName              = "/indexer.v1.IndexerService/GetVtxoChain"
+	IndexerService_GetVirtualTxs_FullMethodName             = "/indexer.v1.IndexerService/GetVirtualTxs"
+	IndexerService_GetBatchSweepTransactions_FullMethodName = "/indexer.v1.IndexerService/GetBatchSweepTransactions"
+	IndexerService_SubscribeForScripts_FullMethodName       = "/indexer.v1.IndexerService/SubscribeForScripts"
+	IndexerService_UnsubscribeForScripts_FullMethodName     = "/indexer.v1.IndexerService/UnsubscribeForScripts"
+	IndexerService_GetSubscription_FullMethodName           = "/indexer.v1.IndexerService/GetSubscription"
 )
 
 // IndexerServiceClient is the client API for IndexerService service.
@@ -560,7 +560,7 @@ type IndexerService_GetSubscriptionServer = grpc.ServerStreamingServer[GetSubscr
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var IndexerService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "ark.v1.IndexerService",
+	ServiceName: "indexer.v1.IndexerService",
 	HandlerType: (*IndexerServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -615,5 +615,5 @@ var IndexerService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "ark/v1/indexer.proto",
+	Metadata: "indexer/v1/service.proto",
 }

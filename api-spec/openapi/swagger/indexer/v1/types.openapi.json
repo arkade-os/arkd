@@ -1,0 +1,276 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "",
+    "version": "version not set"
+  },
+  "components": {
+    "schemas": {
+      "Batch": {
+        "title": "Batch",
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "swept": {
+            "type": "boolean"
+          },
+          "totalOutputAmount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "totalOutputVtxos": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "Chain": {
+        "title": "Chain",
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "spends": {
+            "type": "array",
+            "description": "txids of the transactions in the chain used as input of the current tx",
+            "items": {
+              "type": "string"
+            }
+          },
+          "txid": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ChainedTxType"
+          }
+        }
+      },
+      "ChainedTxType": {
+        "title": "ChainedTxType",
+        "enum": [
+          "CHAINED_TX_TYPE_UNSPECIFIED",
+          "CHAINED_TX_TYPE_COMMITMENT",
+          "CHAINED_TX_TYPE_ARK",
+          "CHAINED_TX_TYPE_TREE",
+          "CHAINED_TX_TYPE_CHECKPOINT"
+        ],
+        "type": "string",
+        "default": "CHAINED_TX_TYPE_UNSPECIFIED"
+      },
+      "Heartbeat": {
+        "title": "Heartbeat",
+        "type": "object"
+      },
+      "Node": {
+        "title": "Node",
+        "type": "object",
+        "properties": {
+          "children": {
+            "type": "object",
+            "description": "vout -\u003e txid",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "Outpoint": {
+        "title": "Outpoint",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "PageRequest": {
+        "title": "PageRequest",
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "PageResponse": {
+        "title": "PageResponse",
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "next": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "SubscriptionEvent": {
+        "title": "SubscriptionEvent",
+        "type": "object",
+        "properties": {
+          "checkpointTxs": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TxData"
+            }
+          },
+          "newVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spentVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "sweptVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TxData": {
+        "title": "TxData",
+        "type": "object",
+        "properties": {
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TxHistoryRecord": {
+        "title": "TxHistoryRecord",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isSettled": {
+            "type": "boolean"
+          },
+          "settledBy": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TxType"
+          },
+          "virtualTxid": {
+            "type": "string"
+          }
+        }
+      },
+      "TxType": {
+        "title": "TxType",
+        "enum": [
+          "TX_TYPE_UNSPECIFIED",
+          "TX_TYPE_RECEIVED",
+          "TX_TYPE_SENT"
+        ],
+        "type": "string",
+        "default": "TX_TYPE_UNSPECIFIED"
+      },
+      "Vtxo": {
+        "title": "Vtxo",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "arkTxid": {
+            "type": "string"
+          },
+          "commitmentTxids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isPreconfirmed": {
+            "type": "boolean"
+          },
+          "isSpent": {
+            "type": "boolean"
+          },
+          "isSwept": {
+            "type": "boolean"
+          },
+          "isUnrolled": {
+            "type": "boolean"
+          },
+          "outpoint": {
+            "$ref": "#/components/schemas/Outpoint"
+          },
+          "script": {
+            "type": "string"
+          },
+          "settledBy": {
+            "type": "string"
+          },
+          "spentBy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

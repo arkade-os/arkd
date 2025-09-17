@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	indexerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/indexer/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -22,7 +22,7 @@ type indexerService struct {
 	indexerSvc application.IndexerService
 	eventsCh   <-chan application.TransactionEvent
 
-	scriptSubsHandler           *broker[*arkv1.GetSubscriptionResponse]
+	scriptSubsHandler           *broker[*indexerv1.GetSubscriptionResponse]
 	subscriptionTimeoutDuration time.Duration
 
 	heartbeat time.Duration
@@ -31,11 +31,11 @@ type indexerService struct {
 func NewIndexerService(
 	indexerSvc application.IndexerService, eventsCh <-chan application.TransactionEvent,
 	subscriptionTimeoutDuration time.Duration, heartbeat int64,
-) arkv1.IndexerServiceServer {
+) indexerv1.IndexerServiceServer {
 	svc := &indexerService{
 		indexerSvc:                  indexerSvc,
 		eventsCh:                    eventsCh,
-		scriptSubsHandler:           newBroker[*arkv1.GetSubscriptionResponse](),
+		scriptSubsHandler:           newBroker[*indexerv1.GetSubscriptionResponse](),
 		subscriptionTimeoutDuration: subscriptionTimeoutDuration,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
 	}
@@ -46,8 +46,8 @@ func NewIndexerService(
 }
 
 func (e *indexerService) GetCommitmentTx(
-	ctx context.Context, request *arkv1.GetCommitmentTxRequest,
-) (*arkv1.GetCommitmentTxResponse, error) {
+	ctx context.Context, request *indexerv1.GetCommitmentTxRequest,
+) (*indexerv1.GetCommitmentTxResponse, error) {
 	txid, err := parseTxid(request.GetTxid())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -58,9 +58,9 @@ func (e *indexerService) GetCommitmentTx(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	batches := make(map[uint32]*arkv1.IndexerBatch)
+	batches := make(map[uint32]*indexerv1.Batch)
 	for vout, batch := range resp.Batches {
-		batches[uint32(vout)] = &arkv1.IndexerBatch{
+		batches[uint32(vout)] = &indexerv1.Batch{
 			TotalOutputAmount: batch.TotalOutputAmount,
 			TotalOutputVtxos:  batch.TotalOutputVtxos,
 			ExpiresAt:         batch.ExpiresAt,
@@ -68,7 +68,7 @@ func (e *indexerService) GetCommitmentTx(
 		}
 	}
 
-	return &arkv1.GetCommitmentTxResponse{
+	return &indexerv1.GetCommitmentTxResponse{
 		StartedAt:         resp.StartedAt,
 		EndedAt:           resp.EndAt,
 		Batches:           batches,
@@ -80,8 +80,8 @@ func (e *indexerService) GetCommitmentTx(
 }
 
 func (e *indexerService) GetVtxoTree(
-	ctx context.Context, request *arkv1.GetVtxoTreeRequest,
-) (*arkv1.GetVtxoTreeResponse, error) {
+	ctx context.Context, request *indexerv1.GetVtxoTreeRequest,
+) (*indexerv1.GetVtxoTreeResponse, error) {
 	batchOutpoint, err := parseOutpoint(request.GetBatchOutpoint())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -96,23 +96,23 @@ func (e *indexerService) GetVtxoTree(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	nodes := make([]*arkv1.IndexerNode, len(resp.Txs))
+	nodes := make([]*indexerv1.Node, len(resp.Txs))
 	for i, node := range resp.Txs {
-		nodes[i] = &arkv1.IndexerNode{
+		nodes[i] = &indexerv1.Node{
 			Txid:     node.Txid,
 			Children: node.Children,
 		}
 	}
 
-	return &arkv1.GetVtxoTreeResponse{
+	return &indexerv1.GetVtxoTreeResponse{
 		VtxoTree: nodes,
 		Page:     protoPage(resp.Page),
 	}, nil
 }
 
 func (e *indexerService) GetVtxoTreeLeaves(
-	ctx context.Context, request *arkv1.GetVtxoTreeLeavesRequest,
-) (*arkv1.GetVtxoTreeLeavesResponse, error) {
+	ctx context.Context, request *indexerv1.GetVtxoTreeLeavesRequest,
+) (*indexerv1.GetVtxoTreeLeavesResponse, error) {
 	outpoint, err := parseOutpoint(request.GetBatchOutpoint())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -127,23 +127,23 @@ func (e *indexerService) GetVtxoTreeLeaves(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	leaves := make([]*arkv1.IndexerOutpoint, 0, len(resp.Leaves))
+	leaves := make([]*indexerv1.Outpoint, 0, len(resp.Leaves))
 	for _, leaf := range resp.Leaves {
-		leaves = append(leaves, &arkv1.IndexerOutpoint{
+		leaves = append(leaves, &indexerv1.Outpoint{
 			Txid: leaf.Txid,
 			Vout: leaf.VOut,
 		})
 	}
 
-	return &arkv1.GetVtxoTreeLeavesResponse{
+	return &indexerv1.GetVtxoTreeLeavesResponse{
 		Leaves: leaves,
 		Page:   protoPage(resp.Page),
 	}, nil
 }
 
 func (e *indexerService) GetForfeitTxs(
-	ctx context.Context, request *arkv1.GetForfeitTxsRequest,
-) (*arkv1.GetForfeitTxsResponse, error) {
+	ctx context.Context, request *indexerv1.GetForfeitTxsRequest,
+) (*indexerv1.GetForfeitTxsResponse, error) {
 	txid, err := parseTxid(request.GetTxid())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -158,15 +158,15 @@ func (e *indexerService) GetForfeitTxs(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	return &arkv1.GetForfeitTxsResponse{
+	return &indexerv1.GetForfeitTxsResponse{
 		Txids: resp.Txs,
 		Page:  protoPage(resp.Page),
 	}, nil
 }
 
 func (e *indexerService) GetConnectors(
-	ctx context.Context, request *arkv1.GetConnectorsRequest,
-) (*arkv1.GetConnectorsResponse, error) {
+	ctx context.Context, request *indexerv1.GetConnectorsRequest,
+) (*indexerv1.GetConnectorsResponse, error) {
 	txid, err := parseTxid(request.GetTxid())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -181,23 +181,23 @@ func (e *indexerService) GetConnectors(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	connectors := make([]*arkv1.IndexerNode, len(resp.Txs))
+	connectors := make([]*indexerv1.Node, len(resp.Txs))
 	for i, connector := range resp.Txs {
-		connectors[i] = &arkv1.IndexerNode{
+		connectors[i] = &indexerv1.Node{
 			Txid:     connector.Txid,
 			Children: connector.Children,
 		}
 	}
 
-	return &arkv1.GetConnectorsResponse{
+	return &indexerv1.GetConnectorsResponse{
 		Connectors: connectors,
 		Page:       protoPage(resp.Page),
 	}, nil
 }
 
 func (e *indexerService) GetVtxos(
-	ctx context.Context, request *arkv1.GetVtxosRequest,
-) (*arkv1.GetVtxosResponse, error) {
+	ctx context.Context, request *indexerv1.GetVtxosRequest,
+) (*indexerv1.GetVtxosResponse, error) {
 	page, err := parsePage(request.GetPage())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -252,20 +252,20 @@ func (e *indexerService) GetVtxos(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	vtxos := make([]*arkv1.IndexerVtxo, 0, len(resp.Vtxos))
+	vtxos := make([]*indexerv1.Vtxo, 0, len(resp.Vtxos))
 	for _, vtxo := range resp.Vtxos {
 		vtxos = append(vtxos, newIndexerVtxo(vtxo))
 	}
 
-	return &arkv1.GetVtxosResponse{
+	return &indexerv1.GetVtxosResponse{
 		Vtxos: vtxos,
 		Page:  protoPage(resp.Page),
 	}, nil
 }
 
 func (e *indexerService) GetVtxoChain(
-	ctx context.Context, request *arkv1.GetVtxoChainRequest,
-) (*arkv1.GetVtxoChainResponse, error) {
+	ctx context.Context, request *indexerv1.GetVtxoChainRequest,
+) (*indexerv1.GetVtxoChainResponse, error) {
 	outpoint, err := parseOutpoint(request.GetOutpoint())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -280,21 +280,21 @@ func (e *indexerService) GetVtxoChain(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	chain := make([]*arkv1.IndexerChain, 0)
+	chain := make([]*indexerv1.Chain, 0)
 	for _, c := range resp.Chain {
-		var txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_UNSPECIFIED
+		var txType = indexerv1.ChainedTxType_CHAINED_TX_TYPE_UNSPECIFIED
 		switch c.Type {
 		case application.IndexerChainedTxTypeCommitment:
-			txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_COMMITMENT
+			txType = indexerv1.ChainedTxType_CHAINED_TX_TYPE_COMMITMENT
 		case application.IndexerChainedTxTypeArk:
-			txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_ARK
+			txType = indexerv1.ChainedTxType_CHAINED_TX_TYPE_ARK
 		case application.IndexerChainedTxTypeTree:
-			txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_TREE
+			txType = indexerv1.ChainedTxType_CHAINED_TX_TYPE_TREE
 		case application.IndexerChainedTxTypeCheckpoint:
-			txType = arkv1.IndexerChainedTxType_INDEXER_CHAINED_TX_TYPE_CHECKPOINT
+			txType = indexerv1.ChainedTxType_CHAINED_TX_TYPE_CHECKPOINT
 		}
 
-		chain = append(chain, &arkv1.IndexerChain{
+		chain = append(chain, &indexerv1.Chain{
 			Txid:      c.Txid,
 			ExpiresAt: c.ExpiresAt,
 			Type:      txType,
@@ -302,15 +302,15 @@ func (e *indexerService) GetVtxoChain(
 		})
 	}
 
-	return &arkv1.GetVtxoChainResponse{
+	return &indexerv1.GetVtxoChainResponse{
 		Chain: chain,
 		Page:  protoPage(resp.Page),
 	}, nil
 }
 
 func (e *indexerService) GetVirtualTxs(
-	ctx context.Context, request *arkv1.GetVirtualTxsRequest,
-) (*arkv1.GetVirtualTxsResponse, error) {
+	ctx context.Context, request *indexerv1.GetVirtualTxsRequest,
+) (*indexerv1.GetVirtualTxsResponse, error) {
 	txids, err := parseTxids(request.GetTxids())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -325,15 +325,15 @@ func (e *indexerService) GetVirtualTxs(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	return &arkv1.GetVirtualTxsResponse{
+	return &indexerv1.GetVirtualTxsResponse{
 		Txs:  resp.Txs,
 		Page: protoPage(resp.Page),
 	}, nil
 }
 
 func (e *indexerService) GetBatchSweepTransactions(
-	ctx context.Context, request *arkv1.GetBatchSweepTransactionsRequest,
-) (*arkv1.GetBatchSweepTransactionsResponse, error) {
+	ctx context.Context, request *indexerv1.GetBatchSweepTransactionsRequest,
+) (*indexerv1.GetBatchSweepTransactionsResponse, error) {
 	outpoint, err := parseOutpoint(request.GetBatchOutpoint())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -344,13 +344,14 @@ func (e *indexerService) GetBatchSweepTransactions(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	return &arkv1.GetBatchSweepTransactionsResponse{
+	return &indexerv1.GetBatchSweepTransactionsResponse{
 		SweptBy: sweepTxs,
 	}, nil
 }
 
 func (h *indexerService) GetSubscription(
-	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
+	request *indexerv1.GetSubscriptionRequest,
+	stream indexerv1.IndexerService_GetSubscriptionServer,
 ) error {
 	subscriptionId := request.GetSubscriptionId()
 	if len(subscriptionId) == 0 {
@@ -398,9 +399,9 @@ func (h *indexerService) GetSubscription(
 			}
 			resetTimer()
 		case <-timer.C:
-			hb := &arkv1.GetSubscriptionResponse{
-				Data: &arkv1.GetSubscriptionResponse_Heartbeat{
-					Heartbeat: &arkv1.IndexerHeartbeat{},
+			hb := &indexerv1.GetSubscriptionResponse{
+				Data: &indexerv1.GetSubscriptionResponse_Heartbeat{
+					Heartbeat: &indexerv1.Heartbeat{},
 				},
 			}
 			if err := stream.Send(hb); err != nil {
@@ -412,8 +413,8 @@ func (h *indexerService) GetSubscription(
 }
 
 func (h *indexerService) UnsubscribeForScripts(
-	ctx context.Context, request *arkv1.UnsubscribeForScriptsRequest,
-) (*arkv1.UnsubscribeForScriptsResponse, error) {
+	ctx context.Context, request *indexerv1.UnsubscribeForScriptsRequest,
+) (*indexerv1.UnsubscribeForScriptsResponse, error) {
 	subscriptionId := request.GetSubscriptionId()
 	if len(subscriptionId) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing subscription id")
@@ -426,19 +427,19 @@ func (h *indexerService) UnsubscribeForScripts(
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		h.scriptSubsHandler.removeListener(subscriptionId)
-		return &arkv1.UnsubscribeForScriptsResponse{}, nil
+		return &indexerv1.UnsubscribeForScriptsResponse{}, nil
 	}
 
 	if err := h.scriptSubsHandler.removeTopics(subscriptionId, scripts); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	return &arkv1.UnsubscribeForScriptsResponse{}, nil
+	return &indexerv1.UnsubscribeForScriptsResponse{}, nil
 }
 
 func (h *indexerService) SubscribeForScripts(
-	ctx context.Context, req *arkv1.SubscribeForScriptsRequest,
-) (*arkv1.SubscribeForScriptsResponse, error) {
+	ctx context.Context, req *indexerv1.SubscribeForScriptsRequest,
+) (*indexerv1.SubscribeForScriptsResponse, error) {
 	subscriptionId := req.GetSubscriptionId()
 	scripts, err := parseScripts(req.GetScripts())
 	if err != nil {
@@ -449,7 +450,7 @@ func (h *indexerService) SubscribeForScripts(
 		// create new listener
 		subscriptionId = uuid.NewString()
 
-		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, scripts)
+		listener := newListener[*indexerv1.GetSubscriptionResponse](subscriptionId, scripts)
 
 		h.scriptSubsHandler.pushListener(listener)
 		h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
@@ -459,7 +460,7 @@ func (h *indexerService) SubscribeForScripts(
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
-	return &arkv1.SubscribeForScriptsResponse{
+	return &indexerv1.SubscribeForScriptsResponse{
 		SubscriptionId: subscriptionId,
 	}, nil
 }
@@ -470,9 +471,9 @@ func (h *indexerService) listenToTxEvents() {
 			continue
 		}
 
-		allSpendableVtxos := make(map[string][]*arkv1.IndexerVtxo)
-		allSpentVtxos := make(map[string][]*arkv1.IndexerVtxo)
-		allSweptVtxos := make(map[string][]*arkv1.IndexerVtxo)
+		allSpendableVtxos := make(map[string][]*indexerv1.Vtxo)
+		allSpentVtxos := make(map[string][]*indexerv1.Vtxo)
+		allSweptVtxos := make(map[string][]*indexerv1.Vtxo)
 
 		for _, vtxo := range event.SpendableVtxos {
 			vtxoScript := toP2TR(vtxo.PubKey)
@@ -489,11 +490,11 @@ func (h *indexerService) listenToTxEvents() {
 			allSweptVtxos[vtxoScript] = append(allSweptVtxos[vtxoScript], newIndexerVtxo(vtxo))
 		}
 
-		var checkpointTxs map[string]*arkv1.IndexerTxData
+		var checkpointTxs map[string]*indexerv1.TxData
 		if len(event.CheckpointTxs) > 0 {
-			checkpointTxs = make(map[string]*arkv1.IndexerTxData)
+			checkpointTxs = make(map[string]*indexerv1.TxData)
 			for k, v := range event.CheckpointTxs {
-				checkpointTxs[k] = &arkv1.IndexerTxData{
+				checkpointTxs[k] = &indexerv1.TxData{
 					Txid: v.Txid,
 					Tx:   v.Tx,
 				}
@@ -502,9 +503,9 @@ func (h *indexerService) listenToTxEvents() {
 
 		listenersCopy := h.scriptSubsHandler.getListenersCopy()
 		for _, l := range listenersCopy {
-			spendableVtxos := make([]*arkv1.IndexerVtxo, 0)
-			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
-			sweptVtxos := make([]*arkv1.IndexerVtxo, 0)
+			spendableVtxos := make([]*indexerv1.Vtxo, 0)
+			spentVtxos := make([]*indexerv1.Vtxo, 0)
+			sweptVtxos := make([]*indexerv1.Vtxo, 0)
 			involvedScripts := make([]string, 0)
 
 			for vtxoScript := range l.topics {
@@ -520,11 +521,11 @@ func (h *indexerService) listenToTxEvents() {
 			}
 
 			if len(spendableVtxos) > 0 || len(spentVtxos) > 0 {
-				go func(listener *listener[*arkv1.GetSubscriptionResponse]) {
+				go func(listener *listener[*indexerv1.GetSubscriptionResponse]) {
 					select {
-					case listener.ch <- &arkv1.GetSubscriptionResponse{
-						Data: &arkv1.GetSubscriptionResponse_Event{
-							Event: &arkv1.IndexerSubscriptionEvent{
+					case listener.ch <- &indexerv1.GetSubscriptionResponse{
+						Data: &indexerv1.GetSubscriptionResponse_Event{
+							Event: &indexerv1.SubscriptionEvent{
 								Txid:          event.Txid,
 								Scripts:       involvedScripts,
 								NewVtxos:      spendableVtxos,
@@ -581,7 +582,7 @@ func parseOutpoints(outpoints []string) ([]application.Outpoint, error) {
 	return outs, nil
 }
 
-func parseOutpoint(outpoint *arkv1.IndexerOutpoint) (*application.Outpoint, error) {
+func parseOutpoint(outpoint *indexerv1.Outpoint) (*application.Outpoint, error) {
 	if outpoint == nil {
 		return nil, fmt.Errorf("missing outpoint")
 	}
@@ -595,7 +596,7 @@ func parseOutpoint(outpoint *arkv1.IndexerOutpoint) (*application.Outpoint, erro
 	}, nil
 }
 
-func parsePage(page *arkv1.IndexerPageRequest) (*application.Page, error) {
+func parsePage(page *indexerv1.PageRequest) (*application.Page, error) {
 	if page == nil {
 		return nil, nil
 	}
@@ -623,12 +624,12 @@ func parseTxids(txids []string) ([]string, error) {
 	return txids, nil
 }
 
-func protoPage(page application.PageResp) *arkv1.IndexerPageResponse {
+func protoPage(page application.PageResp) *indexerv1.PageResponse {
 	emptyPage := application.PageResp{}
 	if page == emptyPage {
 		return nil
 	}
-	return &arkv1.IndexerPageResponse{
+	return &indexerv1.PageResponse{
 		Current: page.Current,
 		Next:    page.Next,
 		Total:   page.Total,
@@ -665,9 +666,9 @@ func parseScript(script string) (string, error) {
 	return script, nil
 }
 
-func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
-	return &arkv1.IndexerVtxo{
-		Outpoint: &arkv1.IndexerOutpoint{
+func newIndexerVtxo(vtxo domain.Vtxo) *indexerv1.Vtxo {
+	return &indexerv1.Vtxo{
+		Outpoint: &indexerv1.Outpoint{
 			Txid: vtxo.Txid,
 			Vout: vtxo.VOut,
 		},
