@@ -18,7 +18,7 @@ services:
   nbxplorer:
     restart: unless-stopped
     container_name: nbxplorer
-    ports: 
+    ports:
       - 32838:32838
     image: nicolasdorier/nbxplorer:2.5.30
     environment:
@@ -41,7 +41,7 @@ services:
     depends_on:
       pgnbxplorer:
         condition: service_healthy
-    
+
   arkd-wallet:
     restart: unless-stopped
     build:

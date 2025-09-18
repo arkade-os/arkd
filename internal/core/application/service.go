@@ -33,13 +33,14 @@ import (
 
 type service struct {
 	// services
-	wallet      ports.WalletService
-	signer      ports.SignerService
-	repoManager ports.RepoManager
-	builder     ports.TxBuilder
-	scanner     ports.BlockchainScanner
-	cache       ports.LiveStore
-	sweeper     *sweeper
+	wallet         ports.WalletService
+	signer         ports.SignerService
+	repoManager    ports.RepoManager
+	builder        ports.TxBuilder
+	scanner        ports.BlockchainScanner
+	cache          ports.LiveStore
+	sweeper        *sweeper
+	roundReportSvc RoundReportService
 
 	// config
 	network                   arklib.Network
@@ -88,7 +89,7 @@ func NewService(
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount int64,
 	network arklib.Network, allowCSVBlockType bool, noteUriPrefix string,
 	marketHourStartTime, marketHourEndTime time.Time,
-	marketHourPeriod, marketHourRoundInterval time.Duration,
+	marketHourPeriod, marketHourRoundInterval time.Duration, reportSvc RoundReportService,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -138,6 +139,11 @@ func NewService(
 		return nil, fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
 	}
 
+	roundReportSvc := reportSvc
+	if roundReportSvc == nil {
+		roundReportSvc = roundReportUnimplemented{}
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 
 	svc := &service{
@@ -174,6 +180,7 @@ func NewService(
 		stop:                      cancel,
 		ctx:                       ctx,
 		wg:                        &sync.WaitGroup{},
+		roundReportSvc:            roundReportSvc,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -1290,6 +1297,9 @@ func (s *service) startRound() {
 	s.cache.ForfeitTxs().Reset()
 
 	round := domain.NewRound()
+
+	s.roundReportSvc.RoundStarted(round.Id)
+
 	// nolint
 	round.StartRegistration()
 	if err := s.cache.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round {
@@ -1370,6 +1380,8 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	// TODO take into account available liquidity
 	intents := s.cache.Intents().Pop(num)
 
+	s.roundReportSvc.SetIntentsNum(len(intents))
+
 	totAmount := uint64(0)
 	for _, intent := range intents {
 		totAmount += intent.TotalOutputAmount()
@@ -1381,6 +1393,8 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 		log.WithError(err).Debugf("round %s aborted, balance: %d", roundId, availableBalance)
 		return
 	}
+
+	s.roundReportSvc.StageStarted(ConfirmationStage)
 
 	s.propagateBatchStartedEvent(intents)
 
@@ -1400,6 +1414,8 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	case <-s.cache.ConfirmationSessions().SessionCompleted():
 		confirmedIntents = intents
 	}
+
+	s.roundReportSvc.StageEnded(ConfirmationStage)
 
 	repushToQueue := notConfirmedIntents
 	if int64(len(confirmedIntents)) < s.roundMinParticipantsCount {
@@ -1520,6 +1536,9 @@ func (s *service) startFinalization(
 	}
 
 	log.Debugf("building tx for round %s", roundId)
+
+	s.roundReportSvc.OpStarted(BuildCommitmentTxOp)
+
 	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
 		s.signerPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
@@ -1529,6 +1548,9 @@ func (s *service) startFinalization(
 		log.WithError(err).Warn("failed to create commitment tx")
 		return
 	}
+
+	s.roundReportSvc.OpEnded(BuildCommitmentTxOp)
+
 	log.Debugf("commitment tx created for round %s", roundId)
 
 	flatConnectors, err := connectors.Serialize()
@@ -1601,6 +1623,8 @@ func (s *service) startFinalization(
 			return
 		}
 
+		s.roundReportSvc.OpStarted(GetNoncesOperatorOp)
+
 		nonces, err := operatorSignerSession.GetNonces()
 		if err != nil {
 			s.cache.CurrentRound().Fail(fmt.Errorf("failed to get nonces: %s", err))
@@ -1609,6 +1633,9 @@ func (s *service) startFinalization(
 		}
 
 		coordinator.AddNonce(s.operatorPubkey, nonces)
+
+		s.roundReportSvc.OpEnded(GetNoncesOperatorOp)
+
 		s.cache.TreeSigingSessions().New(roundId, uniqueSignerPubkeys)
 
 		log.Debugf(
@@ -1621,6 +1648,8 @@ func (s *service) startFinalization(
 		for pubkey := range uniqueSignerPubkeys {
 			listOfCosignersPubkeys = append(listOfCosignersPubkeys, pubkey)
 		}
+
+		s.roundReportSvc.StageStarted(TreeNoncesCollectionStage)
 
 		s.propagateRoundSigningStartedEvent(vtxoTree, listOfCosignersPubkeys)
 
@@ -1645,7 +1674,11 @@ func (s *service) startFinalization(
 			}
 		}
 
+		s.roundReportSvc.StageEnded(TreeNoncesCollectionStage)
+
 		log.Debugf("all nonces collected for round %s", roundId)
+
+		s.roundReportSvc.OpStarted(AggregateNoncesCoordinatorOp)
 
 		aggregatedNonces, err := coordinator.AggregateNonces()
 		if err != nil {
@@ -1653,22 +1686,28 @@ func (s *service) startFinalization(
 			log.WithError(err).Warn("failed to aggregate nonces")
 			return
 		}
+		operatorSignerSession.SetAggregatedNonces(aggregatedNonces)
+
+		s.roundReportSvc.OpEnded(AggregateNoncesCoordinatorOp)
 
 		log.Debugf("nonces aggregated for round %s", roundId)
 
-		operatorSignerSession.SetAggregatedNonces(aggregatedNonces)
+		s.roundReportSvc.StageStarted(TreeSigsCollectionStage)
 
-		// send the combined nonces to the clients
 		s.propagateRoundSigningNoncesGeneratedEvent(aggregatedNonces)
 
-		// sign the tree as operator
+		s.roundReportSvc.OpStarted(SignCommitmentTxOp)
+
 		operatorSignatures, err := operatorSignerSession.Sign()
 		if err != nil {
 			s.cache.CurrentRound().Fail(fmt.Errorf("failed to sign tree: %s", err))
 			log.WithError(err).Warn("failed to sign tree")
 			return
 		}
+
 		coordinator.AddSignatures(s.operatorPubkey, operatorSignatures)
+
+		s.roundReportSvc.OpEnded(SignCommitmentTxOp)
 
 		log.Debugf("tree signed by us for round %s", roundId)
 
@@ -1694,7 +1733,11 @@ func (s *service) startFinalization(
 			}
 		}
 
+		s.roundReportSvc.StageEnded(TreeSigsCollectionStage)
+
 		log.Debugf("all signatures collected for round %s", roundId)
+
+		s.roundReportSvc.OpStarted(SignTxOperatorOp)
 
 		signedTree, err := coordinator.SignTree()
 		if err != nil {
@@ -1702,6 +1745,8 @@ func (s *service) startFinalization(
 			log.WithError(err).Warn("failed to aggregate tree signatures")
 			return
 		}
+
+		s.roundReportSvc.OpEnded(SignTxOperatorOp)
 
 		log.Debugf("vtxo tree signed for round %s", roundId)
 
@@ -1713,6 +1758,8 @@ func (s *service) startFinalization(
 			return
 		}
 	}
+
+	s.roundReportSvc.StageStarted(ForfeitTxsCollectionStage)
 
 	round := s.cache.CurrentRound().Get()
 	_, err = round.StartFinalization(
@@ -1803,6 +1850,8 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			// TODO: should fail here and not continue
 		}
 
+		s.roundReportSvc.StageEnded(ForfeitTxsCollectionStage)
+
 		txToSign = s.cache.CurrentRound().Get().CommitmentTx
 		commitmentTx, err = psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
 		if err != nil {
@@ -1821,11 +1870,15 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			return
 		}
 
+		s.roundReportSvc.OpStarted(VerifyForfeitsSignaturesOp)
+
 		if err := s.verifyForfeitTxsSigs(forfeitTxList); err != nil {
 			changes = s.cache.CurrentRound().Fail(err)
 			log.WithError(err).Warn("failed to validate forfeit txs")
 			return
 		}
+
+		s.roundReportSvc.OpEnded(VerifyForfeitsSignaturesOp)
 
 		boardingInputsIndexes := make([]int, 0)
 		for i, in := range commitmentTx.Inputs {
@@ -1894,6 +1947,12 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		log.WithError(err).Warn("failed to finalize round")
 		return
 	}
+
+	totalInputsVtxos := s.cache.ForfeitTxs().Len()
+	totalOutputVtxos := len(s.cache.CurrentRound().Get().VtxoTree.Leaves())
+	numOfTreeNodes := len(s.cache.CurrentRound().Get().VtxoTree)
+
+	s.roundReportSvc.RoundEnded(commitmentTxid, totalInputsVtxos, totalOutputVtxos, numOfTreeNodes)
 
 	log.Debugf("finalized round %s with commitment tx %s", roundId, commitmentTxid)
 }
