@@ -213,7 +213,9 @@ func (o *orchestrator) settle(t *testing.T) string {
 	wg.Wait()
 	close(chCommitmentTx)
 
-	require.Len(t, commitmentTxs, 1, fmt.Sprintf("Clients did not settle in the same batch but in %d", len(commitmentTxs)))
+	require.Len(t, commitmentTxs, 1, fmt.Sprintf(
+		"Clients did not settle in the same batch but in %d", len(commitmentTxs),
+	))
 
 	var commitmentTxid string
 	for txid := range commitmentTxs {
@@ -233,7 +235,10 @@ type report struct {
 
 func newReport(commitmentTxid string) *report {
 	return &report{
-		Tree:   fmt.Sprintf("https://tree-query-poc.netlify.app/?fetch=http://localhost:7070/v1/commitmentTx/%s", commitmentTxid),
+		Tree: fmt.Sprintf(
+			"https://tree-query-poc.netlify.app/?fetch=http://localhost:7070/v1/commitmentTx/%s",
+			commitmentTxid,
+		),
 		Stages: map[string]application.StageMetric{},
 		Ops:    map[string]application.OpMetric{},
 	}
@@ -339,6 +344,7 @@ func getArkdLogs(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// nolint
 	defer rc.Close()
 
 	var buf bytes.Buffer

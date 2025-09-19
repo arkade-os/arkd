@@ -100,6 +100,7 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
+	// nolint
 	defer f.Close()
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
