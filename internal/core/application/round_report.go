@@ -11,17 +11,30 @@ import (
 )
 
 const (
-	ConfirmationStage         = "confirmation_stage"
-	TreeNoncesCollectionStage = "tree_nonces_collection_stage"
-	TreeSigsCollectionStage   = "tree_signaturea_collection_stage"
-	ForfeitTxsCollectionStage = "forfeit_txs_collection_stage"
+	SelectIntentsStage              = "select_intents_stage"
+	ConfirmationStage               = "confirmation_stage"
+	BuildCommitmentTxStage          = "build_commitment_tx_stage"
+	TreeSigningStage                = "tree_signing_stage"
+	ForfeitTxsCollectionStage       = "forfeit_txs_collection_stage"
+	SignAndPublishCommitmentTxStage = "sign_and_publish_commitment_tx_stage"
 
-	BuildCommitmentTxOp          = "build_commitment_tx_op"
-	GetNoncesOperatorOp          = "get_nonces_op"
-	AggregateNoncesCoordinatorOp = "aggregate_nonces_op"
-	SignCommitmentTxOp           = "sign_commitment_tx_op"
-	SignTxOperatorOp             = "sign_tx_op"
-	VerifyForfeitsSignaturesOp   = "verify_forfeits_signatures_op"
+	SendConfirmationEventOp          = "send_confiration_event_op"
+	WaitForConfirmationOp            = "wait_for_confiration_op"
+	BuildCommitmentTxOp              = "build_commitment_tx_op"
+	CreateTreeNoncesOp               = "create_tree_nonces_op"
+	SendUnsignedTreeEventOp          = "send_unsigned_tree_event_op"
+	WaitForTreeNoncesOp              = "wait_for_tree_nonces_op"
+	AggregateNoncesOp                = "aggregate_nonces_op"
+	SendAggregatedTreeNoncesEventOp  = "send_aggregated_tree_nonces_event_op"
+	SignTreeOp                       = "sign_tree_op"
+	WaitForTreeSignaturesOp          = "wait_for_tree_signatures_op"
+	AggregateTreeSignaturesOp        = "aggregate_tree_signatures_op"
+	SendSignedTreeEventOp            = "send_signed_tree_event_op"
+	VerifyForfeitsSignaturesOp       = "verify_forfeits_signatures_op"
+	WaitForForfeitTxsOp              = "wait_for_forfeit_txs_op"
+	VerifyBoardingInputsSignaturesOp = "verify_boarding_inputs_signatures_op"
+	SignCommitmentTxOp               = "sign_commitment_tx_op"
+	PublishCommitmentTxOp            = "publish_commitment_tx_op"
 )
 
 type RoundReportService interface {
