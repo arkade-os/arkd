@@ -202,7 +202,7 @@ run-simulation:
 		MIN="$${MIN:-$$CLIENTS}"; \
 		MAX="$${MAX:-128}"; \
 		echo "Running batch settlement test with $$CLIENTS clients (MIN=$$MIN, MAX=$$MAX)..."; \
-		go test -v -count=1 -timeout 1200s github.com/arkade-os/arkd/test/e2e -run TestBatchSettleMultipleClients -args -num-clients=$$CLIENTS; \
+		go test -v -count=1 -timeout 1200s github.com/arkade-os/arkd/test/e2e -run TestBatchSettleMultipleClients -args -smoke -num-clients=$$CLIENTS; \
 	'
 	@echo "Test completed. Docker environment will remain running."
 	@echo "Run 'make docker-stop' to shut down the environment when finished."
