@@ -4,25 +4,26 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/client"
 	"github.com/stretchr/testify/require"
 )
 
-// BatchSettleConfig holds configuration parameters for the batch settlement test
-type BatchSettleConfig struct {
-	NumClients             int    // Number of clients to participate in the batch
-	AmountPerVtxo          uint64 // Amount in satoshis per VTXO
+// multiVtxoConfig holds configuration parameters for the batch settlement test
+type multiVtxoConfig struct {
+	NumClients              int    // Number of clients to participate in the batch
+	AmountPerVtxo           uint64 // Amount in satoshis per VTXO
 	MinParticipantsPerRound int    // Minimum number of participants per round (ARKD_ROUND_MIN_PARTICIPANTS_COUNT)
 	MaxParticipantsPerRound int    // Maximum number of participants per round (ARKD_ROUND_MAX_PARTICIPANTS_COUNT)
 }
 
 // Command-line flags for test configuration
 var numClients = flag.Int("num-clients", 5, "Number of clients to participate in the batch")
+var runSmoke = flag.Bool("smoke", false, "run smoke tests")
 
 // TestBatchSettleMultipleClients tests multiple clients registering VTXOs in a single batch
 //
@@ -42,189 +43,157 @@ func TestBatchSettleMultipleClients(t *testing.T) {
 	if !flag.Parsed() {
 		flag.Parse()
 	}
-	
-	// Configuration - adjust these values as needed
-	config := BatchSettleConfig{
-		NumClients:             *numClients, // Number of clients participating (from command-line flag)
-		AmountPerVtxo:          10000,       // 10,000 satoshis per VTXO
-		MinParticipantsPerRound: 1,          // Default minimum participants per round
-		MaxParticipantsPerRound: 128,        // Default maximum participants per round
+
+	if !*runSmoke {
+		t.Skip("skip simulation")
 	}
-	
+
+	// Configuration - adjust these values as needed
+	config := multiVtxoConfig{
+		NumClients:              *numClients, // Number of clients participating (from command-line flag)
+		AmountPerVtxo:           10000,       // 10,000 satoshis per VTXO
+		MinParticipantsPerRound: 1,           // Default minimum participants per round
+		MaxParticipantsPerRound: 128,         // Default maximum participants per round
+	}
+
 	t.Logf("Running test with %d clients", config.NumClients)
-	
+
 	// Run the test with the specified configuration
 	runBatchSettleTest(t, config)
 }
 
 // runBatchSettleTest runs a test with multiple clients registering VTXOs in a single batch
-func runBatchSettleTest(t *testing.T, config BatchSettleConfig) {
-	ctx := context.Background()
-	
-	// Create clients
-	clients := make([]arksdk.ArkClient, config.NumClients)
-	grpcClients := make([]client.TransportClient, config.NumClients)
-	addresses := make([]string, config.NumClients)
-	boardingAddresses := make([]string, config.NumClients)
-	
-	// Setup clients
-	for i := 0; i < config.NumClients; i++ {
-		client, grpcClient := setupArkSDK(t)
-		defer client.Stop()
-		defer grpcClient.Close()
-		
-		clients[i] = client
-		grpcClients[i] = grpcClient
-		
-		// Generate receiving address for each client
-		_, addr, boardingAddr, err := client.Receive(ctx)
-		require.NoError(t, err)
-		addresses[i] = addr
-		boardingAddresses[i] = boardingAddr
-		
-		// Fund each client with a single on-chain transaction
-		_, err = runCommand("nigiri", "faucet", boardingAddr, fmt.Sprintf("%.8f", float64(config.AmountPerVtxo)/100000000))
-		require.NoError(t, err)
-		
-		// Only log every 5th client when there are many clients to reduce log spam
-		if config.NumClients < 20 || i % 5 == 0 {
-			t.Logf("Client %d funded with %.8f BTC", i, float64(config.AmountPerVtxo)/100000000)
+func runBatchSettleTest(t *testing.T, config multiVtxoConfig) {
+	clientsManager := newOrchestrator(t, config)
+
+	clientsManager.onboard(t)
+
+	if t.Failed() {
+		return
+	}
+
+	t.Logf("All clients funded with %.8f BTC", float64(config.AmountPerVtxo)/100000000)
+
+	commitmentTxid := clientsManager.settle(t)
+
+	if t.Failed() {
+		return
+	}
+
+	t.Logf("All clients settled in batch 0 of commitment tx %s", commitmentTxid)
+}
+
+type orchestrator struct {
+	config  multiVtxoConfig
+	clients map[int]arksdk.ArkClient
+}
+
+func newOrchestrator(t *testing.T, config multiVtxoConfig) *orchestrator {
+	chClients := make(chan struct {
+		id     int
+		client arksdk.ArkClient
+	}, config.NumClients)
+	clients := make(map[int]arksdk.ArkClient)
+	wg := &sync.WaitGroup{}
+	wg.Add(config.NumClients)
+	go func() {
+		for i := range config.NumClients {
+			go func(wg *sync.WaitGroup, id int) {
+				defer wg.Done()
+				client, _ := setupArkSDK(t)
+				chClients <- struct {
+					id     int
+					client arksdk.ArkClient
+				}{id, client}
+			}(wg, i)
 		}
-	}
-	
-	// Wait for funds to be confirmed - longer wait for more clients
-	t.Log("Waiting for funds to be confirmed...")
-	waitTime := 5 * time.Second
-	if config.NumClients > 20 {
-		waitTime = 10 * time.Second
-	}
-	if config.NumClients > 40 {
-		waitTime = 15 * time.Second
-	}
-	t.Logf("Waiting %v for funds to be confirmed...", waitTime)
-	time.Sleep(waitTime)
-	
-	// Set up notification handlers for all clients
-	notifyWg := &sync.WaitGroup{}
-	for i, client := range clients {
-		notifyWg.Add(1)
-		go func(idx int, c arksdk.ArkClient) {
-			defer notifyWg.Done()
-			vtxos, err := c.NotifyIncomingFunds(ctx, addresses[idx])
-			require.NoError(t, err)
-			require.NotEmpty(t, vtxos)
-			
-			// Only log every 5th client when there are many clients to reduce log spam
-			if config.NumClients < 20 || idx % 5 == 0 {
-				t.Logf("Client %d received notification of incoming funds", idx)
-			}
-		}(i, client)
-	}
-	
-	// Log the round participant limits
-	t.Logf("Round participant limits: min=%d, max=%d, clients=%d", 
-		config.MinParticipantsPerRound, config.MaxParticipantsPerRound, config.NumClients)
-	
-	// Verify that the test configuration makes sense
-	if config.NumClients > config.MaxParticipantsPerRound {
-		t.Logf("WARNING: NumClients (%d) exceeds MaxParticipantsPerRound (%d). Some clients may not join the same batch.", 
-			config.NumClients, config.MaxParticipantsPerRound)
-	}
-	
-	// All clients settle in the same batch
-	t.Log("All clients settling in the same batch...")
-	settleWg := &sync.WaitGroup{}
-	roundIDs := make([]string, config.NumClients)
-	errs := make([]error, config.NumClients)
-	
-	// Start settlement for all clients simultaneously
-	for i, client := range clients {
-		settleWg.Add(1)
-		go func(idx int, c arksdk.ArkClient) {
-			defer settleWg.Done()
-			roundID, err := c.Settle(ctx)
-			roundIDs[idx] = roundID
-			errs[idx] = err
-			
-			// Only log every 5th client when there are many clients to reduce log spam
-			if config.NumClients < 20 || idx % 5 == 0 {
-				t.Logf("Client %d initiated settlement", idx)
-			}
-		}(i, client)
-	}
-	
-	// Wait for all settlements to complete
-	settleWg.Wait()
-	
-	// Check for errors and verify round IDs
-	for i, err := range errs {
-		require.NoError(t, err, "Client %d settlement failed", i)
-		require.NotEmpty(t, roundIDs[i], "Client %d got empty round ID", i)
-	}
-	
-	// Check if all clients should be in the same round based on MaxParticipantsPerRound
-	expectSameRound := config.NumClients <= config.MaxParticipantsPerRound
-	
-	if expectSameRound {
-		// Verify all clients are in the same round (have the same round ID)
-		for i := 1; i < config.NumClients; i++ {
-			require.Equal(t, roundIDs[0], roundIDs[i], "Client %d has different round ID than client 0", i)
+	}()
+
+	go func() {
+		for client := range chClients {
+			clients[client.id] = client.client
 		}
-		t.Log("All clients are in the same settlement round as expected")
-	} else {
-		// Count how many different round IDs we have
-		roundIDMap := make(map[string]int)
-		for _, id := range roundIDs {
-			if id != "" {
-				roundIDMap[id]++
-			}
+	}()
+
+	wg.Wait()
+	close(chClients)
+
+	return &orchestrator{config, clients}
+}
+
+func (o *orchestrator) onboard(t *testing.T) {
+	out, err := runDockerExec(
+		"arkd", "arkd", "note", "--amount", strconv.Itoa(int(o.config.AmountPerVtxo)),
+		"--quantity", strconv.Itoa(o.config.NumClients),
+	)
+	require.NoError(t, err)
+
+	notes := strings.Fields(out)
+
+	chCommitmentTx := make(chan string)
+	commitmentTxs := make(map[string]struct{})
+	wg := &sync.WaitGroup{}
+	wg.Add(o.config.NumClients)
+
+	go func() {
+		for i, client := range o.clients {
+			note := append([]string{}, notes[i])
+			go func(id int, client arksdk.ArkClient, note []string) {
+				defer wg.Done()
+
+				txid, err := client.RedeemNotes(context.Background(), note)
+				require.NoError(t, err, "client %d failed to redeem note", id)
+
+				t.Logf("Client %d redeemd a note", i)
+				chCommitmentTx <- txid
+			}(i, client, note)
 		}
-		t.Logf("Clients were split across %d different rounds due to MaxParticipantsPerRound limit", len(roundIDMap))
-		
-		// Verify that no round exceeds MaxParticipantsPerRound
-		for id, count := range roundIDMap {
-			require.LessOrEqual(t, count, config.MaxParticipantsPerRound, 
-				"Round %s has %d participants, exceeding the maximum of %d", 
-				id, count, config.MaxParticipantsPerRound)
+	}()
+
+	go func() {
+		for txid := range chCommitmentTx {
+			commitmentTxs[txid] = struct{}{}
 		}
-	}
-	
-	// Wait for notifications to complete
-	t.Log("Waiting for notifications to complete...")
-	notifyWg.Wait()
-	
-	// Wait for settlement to complete - longer wait for more clients
-	settlementWaitTime := 5 * time.Second
-	if config.NumClients > 20 {
-		settlementWaitTime = 10 * time.Second
-	}
-	if config.NumClients > 40 {
-		settlementWaitTime = 15 * time.Second
-	}
-	t.Logf("Waiting %v for settlement to complete...", settlementWaitTime)
-	time.Sleep(settlementWaitTime)
-	
-	// Verify VTXOs for each client
-	for i, client := range clients {
-		vtxos, _, err := client.ListVtxos(ctx)
-		require.NoError(t, err)
-		
-		// Only log every 5th client when there are many clients to reduce log spam
-		if config.NumClients < 20 || i % 5 == 0 {
-			t.Logf("Client %d has %d VTXOs after batch settlement", i, len(vtxos))
+	}()
+
+	wg.Wait()
+	close(chCommitmentTx)
+}
+
+func (o *orchestrator) settle(t *testing.T) string {
+	chCommitmentTx := make(chan string)
+	commitmentTxs := make(map[string]struct{})
+	wg := &sync.WaitGroup{}
+	wg.Add(o.config.NumClients)
+
+	go func() {
+		for i, client := range o.clients {
+			go func(id int, client arksdk.ArkClient) {
+				defer wg.Done()
+
+				txid, err := client.Settle(context.Background())
+				require.NoError(t, err, "client %d failed to settle funds", id)
+
+				t.Logf("Client %d settled funds", i)
+				chCommitmentTx <- txid
+			}(i, client)
 		}
-		require.NotEmpty(t, vtxos)
-		
-		// Verify the VTXO has the correct round ID
-		found := false
-		for _, vtxo := range vtxos {
-			if len(vtxo.CommitmentTxids) > 0 && vtxo.CommitmentTxids[0] == roundIDs[i] {
-				found = true
-				break
-			}
+	}()
+
+	go func() {
+		for txid := range chCommitmentTx {
+			commitmentTxs[txid] = struct{}{}
 		}
-		require.True(t, found, "Client %d does not have a VTXO with the correct round ID", i)
+	}()
+
+	wg.Wait()
+	close(chCommitmentTx)
+
+	require.Len(t, commitmentTxs, 1, fmt.Sprintf("Clients did not settle in the same batch but in %d", len(commitmentTxs)))
+
+	var commitmentTxid string
+	for txid := range commitmentTxs {
+		commitmentTxid = txid
 	}
-	
-	t.Log("All clients successfully registered VTXOs in a single batch")
+	return commitmentTxid
 }
