@@ -150,6 +150,12 @@ var (
 		Value:       false,
 		DefaultText: "false",
 	}
+	verboseFlag = &cli.BoolFlag{
+		Name:        "verbose",
+		Usage:       "enable debug logs",
+		Value:       false,
+		DefaultText: "false",
+	}
 )
 
 var (
@@ -159,7 +165,9 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return initArkSdk(ctx)
 		},
-		Flags: []cli.Flag{networkFlag, passwordFlag, privateKeyFlag, urlFlag, explorerFlag, restFlag},
+		Flags: []cli.Flag{
+			networkFlag, passwordFlag, privateKeyFlag, urlFlag, explorerFlag, restFlag, verboseFlag,
+		},
 	}
 	configCommand = cli.Command{
 		Name:  "config",
@@ -253,6 +261,7 @@ func initArkSdk(ctx *cli.Context) error {
 			Seed:        ctx.String(privateKeyFlag.Name),
 			Password:    string(password),
 			ExplorerURL: ctx.String(explorerFlag.Name),
+			Verbose:     ctx.Bool(verboseFlag.Name),
 		},
 	)
 }
@@ -279,6 +288,7 @@ func config(ctx *cli.Context) error {
 		"utxo_max_amount":       cfgData.UtxoMaxAmount,
 		"vtxo_min_amount":       cfgData.VtxoMinAmount,
 		"vtxo_max_amount":       cfgData.VtxoMaxAmount,
+		"verbose":               cfgData.Verbose,
 	}
 
 	return printJSON(cfg)
