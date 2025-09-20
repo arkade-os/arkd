@@ -1,4 +1,4 @@
-.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner sqlc test vet
+.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner run-simulation run-simulation-and-setup run-large-simulation run-simulation-exact-batch run-simulation-min-batch run-simulation-custom sqlc test vet
 
 define setup_env
     $(eval include $(1))
@@ -174,3 +174,36 @@ run-signer:
 	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
 	$(call setup_env, envs/signer.dev.env)
 	@go run ./cmd/arkd-wallet
+
+## run-simulation: run the multi-VTXO batch settlement test
+## Usage: make run-simulation [CLIENTS=n] [MIN=n] [MAX=n]
+## Examples:
+##   make run-simulation                  # Default: 5 clients, min=5, max=128
+##   make run-simulation CLIENTS=10       # 10 clients, min=10, max=128
+##   make run-simulation CLIENTS=10 MAX=10  # 10 clients, exact batch size of 10
+##   make run-simulation CLIENTS=20 MIN=5   # 20 clients, minimum batch size of 5
+run-simulation:
+	@echo "Stopping any existing Docker environment..."
+	@docker compose -f docker-compose.regtest.yml down -v 2>/dev/null || true
+	@echo "Starting Docker environment with batch configuration..."
+	@bash -c '\
+		CLIENTS="$${CLIENTS:-5}"; \
+		MIN="$${MIN:-$$CLIENTS}"; \
+		MAX="$${MAX:-128}"; \
+		echo "Configuration: CLIENTS=$$CLIENTS, MIN=$$MIN, MAX=$$MAX"; \
+		ARKD_ROUND_MIN_PARTICIPANTS_COUNT=$$MIN \
+		ARKD_ROUND_MAX_PARTICIPANTS_COUNT=$$MAX \
+		ARKD_ROUND_INTERVAL=60 \
+		docker compose -f docker-compose.regtest.yml up --build -d; \
+	'
+	@echo "Waiting for services to start..."
+	@sleep 30
+	@bash -c '\
+		CLIENTS="$${CLIENTS:-5}"; \
+		MIN="$${MIN:-$$CLIENTS}"; \
+		MAX="$${MAX:-128}"; \
+		echo "Running batch settlement test with $$CLIENTS clients (MIN=$$MIN, MAX=$$MAX)..."; \
+		go test -v -count=1 -timeout 1200s github.com/arkade-os/arkd/test/e2e -run TestBatchSettleMultipleClients -args -smoke -num-clients=$$CLIENTS; \
+	'
+	@echo "Test completed. Docker environment will remain running."
+	@echo "Run 'make docker-stop' to shut down the environment when finished."
