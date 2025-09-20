@@ -1850,20 +1850,9 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		log.WithError(err).Warn("failed to parse commitment tx")
 		return
 	}
+
 	commitmentTxid := commitmentTx.UnsignedTx.TxID()
-
-	includesBoardingInputs := false
-	for _, in := range commitmentTx.Inputs {
-		// TODO: this is ok as long as the signer doesn't use taproot address too!
-		// We need to find a better way to understand if an in input is ours or if
-		// it's a boarding one.
-		scriptType := txscript.GetScriptClass(in.WitnessUtxo.PkScript)
-		if scriptType == txscript.WitnessV1TaprootTy {
-			includesBoardingInputs = true
-			break
-		}
-	}
-
+	includesBoardingInputs := s.cache.BoardingInputs().Get() > 0
 	txToSign := s.cache.CurrentRound().Get().CommitmentTx
 	forfeitTxs := make([]domain.ForfeitTx, 0)
 

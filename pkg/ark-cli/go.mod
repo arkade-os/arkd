@@ -7,8 +7,8 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
 require (
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.1-0.20250828160539-46c64760fbe0
-	github.com/arkade-os/go-sdk v0.6.3-0.20250829091740-3927041311a7
+	github.com/arkade-os/arkd/pkg/ark-lib v0.7.1
+	github.com/arkade-os/go-sdk v0.7.2-0.20250920044614-7ad704f4846f
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.30.0
 )
@@ -59,6 +59,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.25.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

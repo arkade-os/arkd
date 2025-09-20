@@ -454,7 +454,9 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 		}
 	}
 
-	expl, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	expl, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
 	require.NoError(t, err)
 
 	branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
@@ -550,7 +552,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		}
 		require.NotEmpty(t, vtxo)
 
-		expl, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+		expl, err := explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		)
 		require.NoError(t, err)
 
 		branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
@@ -784,7 +788,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		explorer, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+		explorer, err := explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		)
 		require.NoError(t, err)
 
 		encodedArkTx, err := ptx.B64Encode()
@@ -1430,7 +1436,9 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	explorer, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
 	require.NoError(t, err)
 
 	encodedVirtualTx, err := ptx.B64Encode()
@@ -1708,7 +1716,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	explorer, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
 	require.NoError(t, err)
 
 	encodedVirtualTx, err := ptx.B64Encode()
@@ -2214,7 +2224,7 @@ func setupServerWalletAndCLI() error {
 
 	if _, err := runArkCommand(
 		"init", "--server-url", "localhost:7070", "--password", password,
-		"--network", "regtest", "--explorer", "http://chopsticks:3000",
+		"--explorer", "http://chopsticks:3000",
 	); err != nil {
 		return fmt.Errorf("error initializing ark config: %s", err)
 	}

@@ -44,10 +44,7 @@ func main() {
 		&notesCommand,
 		&recoverCommand,
 	)
-	app.Flags = []cli.Flag{
-		datadirFlag,
-		networkFlag,
-	}
+	app.Flags = []cli.Flag{datadirFlag, verboseFlag}
 	app.Before = func(ctx *cli.Context) error {
 		sdk, err := getArkSdkClient(ctx)
 		if err != nil {
@@ -72,11 +69,6 @@ var (
 		Required: false,
 		Value:    arklib.AppDataDir("ark-cli", false),
 		EnvVars:  []string{DatadirEnvVar},
-	}
-	networkFlag = &cli.StringFlag{
-		Name:  "network",
-		Usage: "network to use mainnet, testnet, regtest, signet, mutinynet for bitcoin)",
-		Value: "mainnet",
 	}
 	explorerFlag = &cli.StringFlag{
 		Name:  "explorer",
@@ -150,6 +142,12 @@ var (
 		Value:       false,
 		DefaultText: "false",
 	}
+	verboseFlag = &cli.BoolFlag{
+		Name:        "verbose",
+		Usage:       "enable debug logs",
+		Value:       false,
+		DefaultText: "false",
+	}
 )
 
 var (
@@ -159,7 +157,7 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return initArkSdk(ctx)
 		},
-		Flags: []cli.Flag{networkFlag, passwordFlag, privateKeyFlag, urlFlag, explorerFlag, restFlag},
+		Flags: []cli.Flag{passwordFlag, privateKeyFlag, urlFlag, explorerFlag, restFlag},
 	}
 	configCommand = cli.Command{
 		Name:  "config",
@@ -478,19 +476,24 @@ func getArkSdkClient(ctx *cli.Context) (arksdk.ArkClient, error) {
 		return nil, fmt.Errorf("CLI not initialized, run 'init' cmd to initialize")
 	}
 
+	opts := make([]arksdk.ClientOption, 0)
+	if ctx.Bool(verboseFlag.Name) {
+		opts = append(opts, arksdk.WithVerbose())
+	}
+
 	return loadOrCreateClient(
-		arksdk.LoadArkClient, arksdk.NewArkClient, sdkRepository,
+		arksdk.LoadArkClient, arksdk.NewArkClient, sdkRepository, opts,
 	)
 }
 
 func loadOrCreateClient(
-	loadFunc, newFunc func(types.Store) (arksdk.ArkClient, error),
-	sdkRepository types.Store,
+	loadFunc, newFunc func(types.Store, ...arksdk.ClientOption) (arksdk.ArkClient, error),
+	sdkRepository types.Store, opts []arksdk.ClientOption,
 ) (arksdk.ArkClient, error) {
-	client, err := loadFunc(sdkRepository)
+	client, err := loadFunc(sdkRepository, opts...)
 	if err != nil {
 		if errors.Is(err, arksdk.ErrNotInitialized) {
-			return newFunc(sdkRepository)
+			return newFunc(sdkRepository, opts...)
 		}
 		return nil, err
 	}
