@@ -43,16 +43,19 @@
     
     <div class="status info">
         <strong>Instructions:</strong> This page tests browser subscription to ARK address events.
-        <br><strong>Note:</strong> The ARK indexer API requires hex-encoded P2TR (Pay-to-Taproot) scripts, not addresses.
-        <br>In a full implementation, you would need to convert ARK addresses to their corresponding script format.
-        <br>For testing purposes, you can enter a hex script directly or let this demo attempt address conversion.
+        <br><strong>Test Setup:</strong> 
+        <br>1. This page can convert ARK addresses to hex P2TR scripts automatically
+        <br>2. Use the test controls to subscribe to an address and monitor for events
+        <br>3. The Go test creates a round trip payment using CLI commands
+        <br>4. Events should be received in the browser when payments occur
+        <br><strong>Note:</strong> API endpoint at <code>/api/address-to-script</code> converts addresses to scripts
     </div>
 
     <div id="status" class="status warning">Ready - Not connected</div>
 
     <div>
         <h3>Test Controls</h3>
-        <input type="text" id="address" placeholder="Enter ARK address to monitor" style="width: 400px; padding: 8px;">
+        <input type="text" id="address" placeholder="Enter ARK address (ark1...) or hex P2TR script" style="width: 400px; padding: 8px;">
         <br>
         <button class="btn-primary" onclick="subscribeToAddress()">Subscribe to Address</button>
         <button class="btn-danger" onclick="unsubscribe()">Unsubscribe</button>
@@ -91,10 +94,42 @@
             eventCount = 0;
         }
 
+        // Helper function to convert ARK address to script using the API
+        async function convertAddressToScript(input) {
+            // If input looks like a hex string (even length, only hex chars), use as-is
+            if (input.match(/^[0-9a-fA-F]*$/) && input.length % 2 === 0 && input.length > 0) {
+                log(`Input appears to be hex script: ${input}`);
+                return input;
+            }
+            
+            // For ARK addresses, try to convert using the API
+            if (input.startsWith('ark1') || input.startsWith('tark1') || input.startsWith('rark1')) {
+                log(`Input appears to be ARK address: ${input}`);
+                try {
+                    const response = await fetch(`/api/address-to-script?address=${encodeURIComponent(input)}`);
+                    if (response.ok) {
+                        const result = await response.json();
+                        log(`Converted address to script: ${result.script}`);
+                        return result.script;
+                    } else {
+                        const error = await response.text();
+                        log(`Address conversion failed: ${error}`);
+                        throw new Error(`Address conversion failed: ${error}`);
+                    }
+                } catch (e) {
+                    log(`Address conversion error: ${e.message}`);
+                    throw e;
+                }
+            }
+            
+            log(`Using input as-is: ${input}`);
+            return input;
+        }
+
         async function subscribeToAddress() {
             const address = addressInput.value.trim();
             if (!address) {
-                updateStatus('Please enter an address', 'error');
+                updateStatus('Please enter an address or script', 'error');
                 return;
             }
 
@@ -106,20 +141,20 @@
             try {
                 updateStatus('Creating subscription...', 'info');
                 
-                // Note: ARK requires hex-encoded P2TR scripts, not addresses directly
-                // For this demo, we'll try using the address as-is and let the server validate it
-                // In a real implementation, you'd need to convert the address to its script format
-                log(`Attempting to subscribe to address: ${address}`);
-                log(`Note: Server expects hex-encoded P2TR scripts - this is a simplified test`);
+                // Convert address to script format if needed
+                const script = await convertAddressToScript(address);
+                
+                log(`Attempting to subscribe to: ${address}`);
+                log(`Using script: ${script}`);
 
-                // First, create a subscription for the address script
+                // First, create a subscription for the script
                 const subscribeResponse = await fetch('http://localhost:7070/v1/indexer/script/subscribe', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        scripts: [address] // Note: Server expects hex script, not address
+                        scripts: [script]
                     })
                 });
 

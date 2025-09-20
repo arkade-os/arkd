@@ -2198,6 +2198,33 @@ func TestRoundTripPaymentWithBrowserSubscription(t *testing.T) {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			http.ServeFile(w, r, "/home/runner/work/arkd/arkd/test/e2e/index.html")
 		})
+		// Add an endpoint to get the script for an address (for demo purposes)
+		http.HandleFunc("/api/address-to-script", func(w http.ResponseWriter, r *http.Request) {
+			addr := r.URL.Query().Get("address")
+			if addr == "" {
+				http.Error(w, "Missing address parameter", http.StatusBadRequest)
+				return
+			}
+			
+			// Try to decode the ARK address and get its script
+			arkAddr, err := arklib.DecodeAddressV0(addr)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Invalid ARK address: %v", err), http.StatusBadRequest)
+				return
+			}
+			
+			script, err := arkAddr.GetPkScript()
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to get script: %v", err), http.StatusInternalServerError)
+				return
+			}
+			
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"address": addr,
+				"script":  hex.EncodeToString(script),
+			})
+		})
 		http.ListenAndServe(":8080", nil)
 	}()
 
@@ -2249,6 +2276,18 @@ func TestRoundTripPaymentWithBrowserSubscription(t *testing.T) {
 	require.Contains(t, string(body), "subscribeToAddress")
 	require.Contains(t, string(body), "SubscribeForScripts")
 
+	// Test the address-to-script API endpoint
+	scriptResp, err := http.Get(fmt.Sprintf("http://localhost:8080/api/address-to-script?address=%s", bobAddr))
+	require.NoError(t, err)
+	defer scriptResp.Body.Close()
+	require.Equal(t, 200, scriptResp.StatusCode)
+
+	var scriptResult map[string]string
+	err = json.NewDecoder(scriptResp.Body).Decode(&scriptResult)
+	require.NoError(t, err)
+	require.Equal(t, bobAddr, scriptResult["address"])
+	require.NotEmpty(t, scriptResult["script"])
+
 	// Test that the HTML page contains proper subscription logic
 	htmlContent := string(body)
 	require.Contains(t, htmlContent, "/v1/indexer/script/subscribe")
@@ -2259,7 +2298,9 @@ func TestRoundTripPaymentWithBrowserSubscription(t *testing.T) {
 	t.Logf("- Payment amount: %s satoshis", sendAmount)
 	t.Logf("- From: Alice (%s)", aliceAddr)
 	t.Logf("- To: Bob (%s)", bobAddr)
+	t.Logf("- Bob's script: %s", scriptResult["script"])
 	t.Logf("- Browser subscription page accessible at http://localhost:8080")
+	t.Logf("- Address-to-script conversion API available at /api/address-to-script")
 	t.Logf("- Payment received via CLI send command and detected by SDK subscription")
 }
 
