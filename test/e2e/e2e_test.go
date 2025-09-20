@@ -2214,7 +2214,7 @@ func setupServerWalletAndCLI() error {
 
 	if _, err := runArkCommand(
 		"init", "--server-url", "localhost:7070", "--password", password,
-		"--network", "regtest", "--explorer", "http://chopsticks:3000",
+		"--explorer", "http://chopsticks:3000",
 	); err != nil {
 		return fmt.Errorf("error initializing ark config: %s", err)
 	}
