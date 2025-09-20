@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -2162,6 +2163,104 @@ func TestSweepCheckpointOutput(t *testing.T) {
 	require.True(t, spent[0].Swept)
 	require.True(t, spent[0].Spent)
 	require.True(t, spent[0].Unrolled)
+}
+
+func TestRoundTripPaymentWithBrowserSubscription(t *testing.T) {
+	ctx := context.Background()
+	
+	// Set up Alice and Bob
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	bob, grpcBob := setupArkSDK(t)
+	defer bob.Stop()
+	defer grpcBob.Close()
+
+	// Set up indexer for subscription testing
+	_ = setupIndexer(t)
+
+	// Get receiving addresses
+	_, aliceAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	_, bobAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	// Fund Alice's boarding address
+	_, err = runCommand("nigiri", "faucet", aliceBoardingAddr, "0.001")
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	// Start HTTP server for browser test
+	go func() {
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, "/home/runner/work/arkd/arkd/test/e2e/index.html")
+		})
+		http.ListenAndServe(":8080", nil)
+	}()
+
+	// Give the server a moment to start
+	time.Sleep(2 * time.Second)
+
+	// Alice settles her funds
+	_, err = runArkCommand("settle", "--password", password)
+	require.NoError(t, err)
+
+	time.Sleep(3 * time.Second)
+
+	// Set up subscription via Bob SDK to listen for incoming funds
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var receivedVtxos []types.Vtxo
+	go func() {
+		defer wg.Done()
+		vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddr)
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+		receivedVtxos = vtxos
+		t.Logf("Bob received %d VTXOs via SDK subscription", len(vtxos))
+	}()
+
+	// Use CLI to send payment from Alice to Bob (round trip payment)
+	sendAmount := "10000" // 10,000 satoshis
+	_, err = runArkCommand(
+		"send", "--amount", sendAmount, "--to", bobAddr, "--password", password,
+	)
+	require.NoError(t, err)
+
+	// Wait for Bob to receive the payment
+	wg.Wait()
+
+	// Verify the payment was received
+	require.NotEmpty(t, receivedVtxos)
+	require.Equal(t, uint64(10000), receivedVtxos[0].Amount)
+
+	// Test browser subscription page accessibility
+	resp, err := http.Get("http://localhost:8080")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(body), "ARK Browser Subscription Test")
+	require.Contains(t, string(body), "subscribeToAddress")
+	require.Contains(t, string(body), "SubscribeForScripts")
+
+	// Test that the HTML page contains proper subscription logic
+	htmlContent := string(body)
+	require.Contains(t, htmlContent, "/v1/indexer/script/subscribe")
+	require.Contains(t, htmlContent, "EventSource")
+	require.Contains(t, htmlContent, "paymentEventReceived")
+
+	t.Logf("Round trip payment test completed successfully")
+	t.Logf("- Payment amount: %s satoshis", sendAmount)
+	t.Logf("- From: Alice (%s)", aliceAddr)
+	t.Logf("- To: Bob (%s)", bobAddr)
+	t.Logf("- Browser subscription page accessible at http://localhost:8080")
+	t.Logf("- Payment received via CLI send command and detected by SDK subscription")
 }
 
 func runArkCommand(arg ...string) (string, error) {

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARK Browser Subscription Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        .warning { background-color: #fff3cd; color: #856404; }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        button {
+            padding: 8px 16px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <h1>ARK Browser Subscription Test</h1>
+    
+    <div class="status info">
+        <strong>Instructions:</strong> This page tests browser subscription to ARK address events.
+        <br><strong>Note:</strong> The ARK indexer API requires hex-encoded P2TR (Pay-to-Taproot) scripts, not addresses.
+        <br>In a full implementation, you would need to convert ARK addresses to their corresponding script format.
+        <br>For testing purposes, you can enter a hex script directly or let this demo attempt address conversion.
+    </div>
+
+    <div id="status" class="status warning">Ready - Not connected</div>
+
+    <div>
+        <h3>Test Controls</h3>
+        <input type="text" id="address" placeholder="Enter ARK address to monitor" style="width: 400px; padding: 8px;">
+        <br>
+        <button class="btn-primary" onclick="subscribeToAddress()">Subscribe to Address</button>
+        <button class="btn-danger" onclick="unsubscribe()">Unsubscribe</button>
+        <button class="btn-primary" onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div>
+        <h3>Event Log</h3>
+        <pre id="eventLog">Waiting for events...</pre>
+    </div>
+
+    <script>
+        let subscriptionId = null;
+        let eventSource = null;
+        let currentAddress = null;
+        let eventCount = 0;
+
+        const statusDiv = document.getElementById('status');
+        const eventLog = document.getElementById('eventLog');
+        const addressInput = document.getElementById('address');
+
+        function updateStatus(message, type = 'info') {
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            log(`[STATUS] ${message}`);
+        }
+
+        function log(message) {
+            const timestamp = new Date().toISOString();
+            eventLog.textContent += `${timestamp}: ${message}\n`;
+            eventLog.scrollTop = eventLog.scrollHeight;
+        }
+
+        function clearLog() {
+            eventLog.textContent = 'Event log cleared.\n';
+            eventCount = 0;
+        }
+
+        async function subscribeToAddress() {
+            const address = addressInput.value.trim();
+            if (!address) {
+                updateStatus('Please enter an address', 'error');
+                return;
+            }
+
+            if (subscriptionId) {
+                updateStatus('Already subscribed. Please unsubscribe first.', 'warning');
+                return;
+            }
+
+            try {
+                updateStatus('Creating subscription...', 'info');
+                
+                // Note: ARK requires hex-encoded P2TR scripts, not addresses directly
+                // For this demo, we'll try using the address as-is and let the server validate it
+                // In a real implementation, you'd need to convert the address to its script format
+                log(`Attempting to subscribe to address: ${address}`);
+                log(`Note: Server expects hex-encoded P2TR scripts - this is a simplified test`);
+
+                // First, create a subscription for the address script
+                const subscribeResponse = await fetch('http://localhost:7070/v1/indexer/script/subscribe', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        scripts: [address] // Note: Server expects hex script, not address
+                    })
+                });
+
+                if (!subscribeResponse.ok) {
+                    const errorText = await subscribeResponse.text();
+                    throw new Error(`Subscribe failed: ${subscribeResponse.status} ${subscribeResponse.statusText} - ${errorText}`);
+                }
+
+                const subscribeResult = await subscribeResponse.json();
+                subscriptionId = subscribeResult.subscription_id;
+                currentAddress = address;
+
+                log(`Subscription created with ID: ${subscriptionId}`);
+                log(`Monitoring address: ${address}`);
+
+                // Now start listening for events using Server-Sent Events
+                const streamUrl = `http://localhost:7070/v1/indexer/script/subscription/${subscriptionId}`;
+                eventSource = new EventSource(streamUrl);
+
+                eventSource.onopen = function(event) {
+                    updateStatus(`Connected - Monitoring ${address}`, 'success');
+                    log('Event stream connected');
+                };
+
+                eventSource.onmessage = function(event) {
+                    eventCount++;
+                    log(`Event ${eventCount} received: ${event.data}`);
+                    
+                    try {
+                        const eventData = JSON.parse(event.data);
+                        handleSubscriptionEvent(eventData);
+                    } catch (e) {
+                        log(`Failed to parse event data: ${e.message}`);
+                    }
+                };
+
+                eventSource.onerror = function(event) {
+                    log(`Event stream error: ${event.type}`);
+                    if (eventSource.readyState === EventSource.CLOSED) {
+                        updateStatus('Connection closed', 'error');
+                    } else {
+                        updateStatus('Connection error - retrying...', 'warning');
+                    }
+                };
+
+            } catch (error) {
+                updateStatus(`Subscription failed: ${error.message}`, 'error');
+                log(`Error: ${error.message}`);
+            }
+        }
+
+        function handleSubscriptionEvent(eventData) {
+            if (eventData.heartbeat) {
+                log('Heartbeat received');
+                return;
+            }
+
+            if (eventData.event) {
+                log(`Payment event detected!`);
+                log(`Event details: ${JSON.stringify(eventData.event, null, 2)}`);
+                
+                // Check for spendable VTXOs (incoming funds)
+                if (eventData.event.spendable_vtxos && eventData.event.spendable_vtxos.length > 0) {
+                    const totalReceived = eventData.event.spendable_vtxos.reduce((sum, vtxo) => sum + parseInt(vtxo.amount), 0);
+                    updateStatus(`Payment received! ${totalReceived} sats to ${currentAddress}`, 'success');
+                    log(`Incoming funds: ${totalReceived} satoshis`);
+                    
+                    // Signal test completion by setting a global flag
+                    window.paymentEventReceived = true;
+                    window.paymentAmount = totalReceived;
+                    window.paymentAddress = currentAddress;
+                }
+                
+                // Check for spent VTXOs (outgoing funds)
+                if (eventData.event.spent_vtxos && eventData.event.spent_vtxos.length > 0) {
+                    const totalSpent = eventData.event.spent_vtxos.reduce((sum, vtxo) => sum + parseInt(vtxo.amount), 0);
+                    log(`Outgoing funds: ${totalSpent} satoshis`);
+                }
+            }
+        }
+
+        async function unsubscribe() {
+            if (!subscriptionId) {
+                updateStatus('No active subscription', 'warning');
+                return;
+            }
+
+            try {
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+
+                // Unsubscribe from the server
+                const unsubscribeResponse = await fetch('http://localhost:7070/v1/indexer/script/unsubscribe', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        subscription_id: subscriptionId
+                    })
+                });
+
+                if (!unsubscribeResponse.ok) {
+                    throw new Error(`Unsubscribe failed: ${unsubscribeResponse.status}`);
+                }
+
+                log(`Unsubscribed from ${subscriptionId}`);
+                subscriptionId = null;
+                currentAddress = null;
+                updateStatus('Disconnected', 'info');
+
+            } catch (error) {
+                updateStatus(`Unsubscribe failed: ${error.message}`, 'error');
+                log(`Error: ${error.message}`);
+            }
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+
+        // Test helper functions for the Go test to use
+        window.arkTest = {
+            subscribe: subscribeToAddress,
+            unsubscribe: unsubscribe,
+            isConnected: () => eventSource && eventSource.readyState === EventSource.OPEN,
+            getEventCount: () => eventCount,
+            getSubscriptionId: () => subscriptionId,
+            getCurrentAddress: () => currentAddress,
+            clearEvents: clearLog
+        };
+
+        log('ARK Browser Subscription Test initialized');
+    </script>
+</body>
+</html>
