@@ -2,6 +2,7 @@ package txbuilder_test
 
 import (
 	"context"
+	"encoding/hex"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -167,12 +168,20 @@ func (m *mockedWallet) FeeRate(ctx context.Context) (uint64, error) {
 	return res, nil
 }
 
-func (m *mockedWallet) GetForfeitAddress(ctx context.Context) (string, error) {
+func (m *mockedWallet) GetForfeitPubkey(ctx context.Context) (*btcec.PublicKey, error) {
 	args := m.Called(ctx)
 
-	var res string
+	var res *btcec.PublicKey
 	if a := args.Get(0); a != nil {
-		res = a.(string)
+		key := a.(string)
+		buf, err := hex.DecodeString(key)
+		if err != nil {
+			return nil, err
+		}
+		res, err = btcec.ParsePubKey(buf)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return res, args.Error(1)
 }
@@ -266,11 +275,6 @@ func (m *mockedWallet) LockConnectorUtxos(ctx context.Context, utxos []domain.Ou
 	return args.Error(0)
 }
 
-func (m *mockedWallet) WaitForSync(ctx context.Context, txid string) error {
-	args := m.Called(ctx, txid)
-	return args.Error(0)
-}
-
 func (m *mockedWallet) GetTransaction(ctx context.Context, txid string) (string, error) {
 	args := m.Called(ctx, txid)
 
@@ -282,31 +286,90 @@ func (m *mockedWallet) GetTransaction(ctx context.Context, txid string) (string,
 }
 
 func (m *mockedWallet) SignMessage(ctx context.Context, message []byte) ([]byte, error) {
-	panic("not implemented")
+	args := m.Called(ctx, message)
+
+	var res []byte
+	if a := args.Get(0); a != nil {
+		res = a.([]byte)
+	}
+	return res, args.Error(1)
 }
 
 func (m *mockedWallet) VerifyMessageSignature(
 	ctx context.Context, message, signature []byte,
 ) (bool, error) {
-	panic("not implemented")
+	args := m.Called(ctx, message, signature)
+
+	var res bool
+	if a := args.Get(0); a != nil {
+		res = a.(bool)
+	}
+	return res, args.Error(1)
 }
 
 func (m *mockedWallet) ConnectorsAccountBalance(ctx context.Context) (uint64, uint64, error) {
-	panic("not implemented")
+	args := m.Called(ctx)
+
+	var res, res1 uint64
+	if a := args.Get(0); a != nil {
+		res = a.(uint64)
+	}
+	if a := args.Get(1); a != nil {
+		res1 = a.(uint64)
+	}
+	return res, res1, args.Error(2)
 }
 
 func (m *mockedWallet) MainAccountBalance(ctx context.Context) (uint64, uint64, error) {
-	panic("not implemented")
+	args := m.Called(ctx)
+
+	var res, res1 uint64
+	if a := args.Get(0); a != nil {
+		res = a.(uint64)
+	}
+	if a := args.Get(1); a != nil {
+		res1 = a.(uint64)
+	}
+	return res, res1, args.Error(2)
 }
 
 func (m *mockedWallet) GetCurrentBlockTime(ctx context.Context) (*ports.BlockTimestamp, error) {
-	panic("not implemented")
+	args := m.Called(ctx)
+
+	var res *ports.BlockTimestamp
+	if a := args.Get(0); a != nil {
+		res = a.(*ports.BlockTimestamp)
+	}
+	return res, args.Error(1)
 }
 
 func (m *mockedWallet) Withdraw(
 	ctx context.Context, address string, amount uint64,
 ) (string, error) {
-	panic("not implemented")
+	args := m.Called(ctx, address, amount)
+
+	var res string
+	if a := args.Get(0); a != nil {
+		res = a.(string)
+	}
+	return res, args.Error(1)
+}
+
+func (m *mockedWallet) GetOutpointStatus(
+	ctx context.Context, outpoint domain.Outpoint,
+) (bool, error) {
+	args := m.Called(ctx, outpoint)
+
+	var res bool
+	if a := args.Get(0); a != nil {
+		res = a.(bool)
+	}
+	return res, args.Error(1)
+}
+
+func (m *mockedWallet) LoadSignerKey(ctx context.Context, privateKey string) error {
+	args := m.Called(ctx, privateKey)
+	return args.Error(0)
 }
 
 type mockedInput struct {

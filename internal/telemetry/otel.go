@@ -1,4 +1,4 @@
-package grpcservice
+package telemetry
 
 import (
 	"context"
@@ -7,11 +7,20 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/propagation"
+
+	"github.com/arkade-os/arkd/internal/core/application"
+
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	metricExport "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	traceExport "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	"go.opentelemetry.io/otel/log/global"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -40,13 +49,20 @@ var arkRuntimeMetrics = []string{
 	"/gc/heap/frees:bytes",
 }
 
-func initOtelSDK(
-	ctx context.Context, otelCollectorUrl string, pushInterval time.Duration,
+func InitOtelSDK(
+	ctx context.Context,
+	otelCollectorUrl string,
+	pushInterval time.Duration,
+	rrsvc application.RoundReportService,
 ) (func(context.Context) error, error) {
+	// TODO: support secure connection in the future
 	otelCollectorUrl = strings.TrimSuffix(otelCollectorUrl, "/")
+	endpoint := strings.TrimPrefix(otelCollectorUrl, "http://")
+	endpoint = strings.TrimPrefix(endpoint, "https://")
+
 	traceExp, err := traceExport.New(
 		ctx,
-		traceExport.WithEndpoint(strings.TrimPrefix(otelCollectorUrl, "http://")),
+		traceExport.WithEndpoint(endpoint),
 		traceExport.WithInsecure(),
 	)
 	if err != nil {
@@ -64,7 +80,7 @@ func initOtelSDK(
 
 	metricExp, err := metricExport.New(
 		ctx,
-		metricExport.WithEndpoint(strings.TrimPrefix(otelCollectorUrl, "http://")),
+		metricExport.WithEndpoint(endpoint),
 		metricExport.WithInsecure(),
 	)
 	if err != nil {
@@ -81,14 +97,47 @@ func initOtelSDK(
 		sdkmetric.WithResource(res),
 	)
 
+	logExp, err := otlploghttp.New(
+		ctx,
+		otlploghttp.WithEndpoint(endpoint),
+		otlploghttp.WithInsecure(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	lp := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
+		sdklog.WithResource(res),
+	)
+
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mp)
+	global.SetLoggerProvider(lp)
+
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 
 	go collectGoRuntimeMetrics(context.Background())
 
+	var rrExporter *RoundReportLogExporter
+	if rrsvc != nil {
+		rrExporter, err = newRoundReportLogExporter(ctx, rrsvc)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	shutdown := func(ctx context.Context) error {
+		if rrExporter != nil {
+			if err := rrExporter.Close(ctx); err != nil {
+				return err
+			}
+		}
+		err3 := lp.Shutdown(ctx)
 		err1 := tp.Shutdown(ctx)
 		err2 := mp.Shutdown(ctx)
+		if err3 != nil {
+			return err3
+		}
 		if err1 != nil {
 			return err1
 		}
@@ -103,7 +152,7 @@ func initOtelSDK(
 // collectGoRuntimeMetrics is the main function that sets up the OTEL callback
 // to read runtime/metrics and publish them as OTel metrics.
 func collectGoRuntimeMetrics(ctx context.Context) {
-	m := otel.Meter("ark.runtime")
+	m := otel.Meter("arkd.runtime")
 	inst, err := initArkRuntimeInstruments(m)
 	if err != nil {
 		return

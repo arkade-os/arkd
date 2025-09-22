@@ -40,19 +40,14 @@ service WalletService {
       get: "/v1/wallet/status"
     };
   }
-  rpc GetPubkey(GetPubkeyRequest) returns (GetPubkeyResponse) {
-    option (google.api.http) = {
-      get: "/v1/wallet/pubkey"
-    };
-  }
   rpc GetNetwork(GetNetworkRequest) returns (GetNetworkResponse) {
     option (google.api.http) = {
       get: "/v1/wallet/network"
     };
   }
-  rpc GetForfeitAddress(GetForfeitAddressRequest) returns (GetForfeitAddressResponse) {
+  rpc GetForfeitPubkey(GetForfeitPubkeyRequest) returns (GetForfeitPubkeyResponse) {
     option (google.api.http) = {
-      get: "/v1/wallet/forfeit-address"
+      get: "/v1/wallet/forfeit-pubkey"
     };
   }
   rpc DeriveConnectorAddress(DeriveConnectorAddressRequest) returns (DeriveConnectorAddressResponse) {
@@ -90,13 +85,6 @@ service WalletService {
       body: "*"
     };
   }
-  rpc WaitForSync(WaitForSyncRequest) returns (WaitForSyncResponse) {
-    option (google.api.http) = {
-      post: "/v1/wallet/wait-for-sync"
-      body: "*"
-    };
-  }
-
   rpc GetReadyUpdate(GetReadyUpdateRequest) returns (stream GetReadyUpdateResponse) {
     option (google.api.http) = {
       get: "/v1/wallet/ready-update"
@@ -189,15 +177,19 @@ service WalletService {
       get: "/v1/wallet/notifications"
     };
   }
+  rpc LoadSignerKey(LoadSignerKeyRequest) returns (LoadSignerKeyResponse) {
+    option (google.api.http) = {
+      post: "/v1/wallet/signer-key"
+      body: "*"
+    };
+  }
 }
 
-// GetReadyUpdate
 message GetReadyUpdateRequest {}
 message GetReadyUpdateResponse {
   bool ready = 1;
 }
 
-// IsTransactionConfirmed
 message IsTransactionConfirmedRequest {
   string txid = 1;
 }
@@ -224,8 +216,6 @@ message VtxoWithKey {
   uint32 vout = 2;
   uint64 value = 3;
 }
-
-
 
 message GenSeedRequest {}
 message GenSeedResponse {
@@ -259,19 +249,14 @@ message StatusResponse {
   bool synced = 3;
 }
 
-message GetPubkeyRequest {}
-message GetPubkeyResponse {
-  bytes pubkey = 1;
-}
-
 message GetNetworkRequest {}
 message GetNetworkResponse {
   string network = 1;
 }
 
-message GetForfeitAddressRequest {}
-message GetForfeitAddressResponse {
-  string address = 1;
+message GetForfeitPubkeyRequest {}
+message GetForfeitPubkeyResponse {
+  string pubkey = 1;
 }
 
 message DeriveConnectorAddressRequest {}
@@ -345,6 +330,7 @@ message ListConnectorUtxosResponse {
 
 message MainAccountBalanceRequest {}
 message MainAccountBalanceResponse {
+  // TODO rename to available and locked
   uint64 confirmed = 1;
   uint64 unconfirmed = 2;
 }
@@ -409,6 +395,11 @@ message WithdrawRequest {
 message WithdrawResponse {
   string txid = 1;
 }
+
+message LoadSignerKeyRequest {
+  string private_key = 1;
+}
+message LoadSignerKeyResponse {}
 
 message TxInput {
   string txid = 1;

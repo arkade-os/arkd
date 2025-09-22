@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/urfave/cli/v2"
 )
 
@@ -28,6 +30,18 @@ var (
 			walletBalanceCmd,
 			walletWithdrawCmd,
 		},
+	}
+	signerCmd = &cli.Command{
+		Name:  "signer",
+		Usage: "Manage the Ark Signer",
+		Subcommands: cli.Commands{
+			signerLoadCmd,
+		},
+	}
+	genkeyCmd = &cli.Command{
+		Name:   "genkey",
+		Usage:  "Generate a new private key",
+		Action: genkeyAction,
 	}
 	walletStatusCmd = &cli.Command{
 		Name:   "status",
@@ -67,6 +81,12 @@ var (
 		Usage:  "Withdraw funds from the wallet",
 		Action: walletWithdrawAction,
 		Flags:  []cli.Flag{withdrawAmountFlag, withdrawAddressFlag},
+	}
+	signerLoadCmd = &cli.Command{
+		Name:   "load",
+		Usage:  "Load the ark signer address or private key",
+		Action: signerLoadAction,
+		Flags:  []cli.Flag{signerKeyFlag, signerUrlFlag},
 	}
 	noteCmd = &cli.Command{
 		Name:   "note",
@@ -266,6 +286,44 @@ func walletWithdrawAction(ctx *cli.Context) error {
 
 	fmt.Println("transaction successfully broadcasted:")
 	fmt.Println(txid)
+	return nil
+}
+
+func signerLoadAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	signerKey := ctx.String(signerKeyFlagName)
+	signerUrl := ctx.String(signerUrlFlagName)
+	if signerKey == "" && signerUrl == "" {
+		return fmt.Errorf("either private key or url must be provided")
+	}
+	if signerKey != "" && signerUrl != "" {
+		return fmt.Errorf("private key and url are mutually esclusive, only one must be provided")
+	}
+	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/signer", baseURL)
+	body := fmt.Sprintf(`{"signerUrl": "%s"}`, signerUrl)
+	if signerKey != "" {
+		body = fmt.Sprintf(`{"signerPrivateKey": "%s"}`, signerKey)
+	}
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+		return err
+	}
+
+	fmt.Println("signer loaded")
+	return nil
+}
+
+func genkeyAction(ctx *cli.Context) error {
+	key, err := btcec.NewPrivateKey()
+	if err != nil {
+		return err
+	}
+	fmt.Println(hex.EncodeToString(key.Serialize()))
 	return nil
 }
 

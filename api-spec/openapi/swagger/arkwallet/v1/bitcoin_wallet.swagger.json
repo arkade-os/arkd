@@ -284,14 +284,14 @@
         ]
       }
     },
-    "/v1/wallet/forfeit-address": {
+    "/v1/wallet/forfeit-pubkey": {
       "get": {
-        "operationId": "WalletService_GetForfeitAddress",
+        "operationId": "WalletService_GetForfeitPubkey",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1GetForfeitAddressResponse"
+              "$ref": "#/definitions/v1GetForfeitPubkeyResponse"
             }
           },
           "default": {
@@ -431,28 +431,6 @@
                 }
               },
               "title": "Stream result of v1NotificationStreamResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googlerpcStatus"
-            }
-          }
-        },
-        "tags": [
-          "WalletService"
-        ]
-      }
-    },
-    "/v1/wallet/pubkey": {
-      "get": {
-        "operationId": "WalletService_GetPubkey",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetPubkeyResponse"
             }
           },
           "default": {
@@ -680,6 +658,38 @@
         ]
       }
     },
+    "/v1/wallet/signer-key": {
+      "post": {
+        "operationId": "WalletService_LoadSignerKey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LoadSignerKeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googlerpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1LoadSignerKeyRequest"
+            }
+          }
+        ],
+        "tags": [
+          "WalletService"
+        ]
+      }
+    },
     "/v1/wallet/status": {
       "get": {
         "operationId": "WalletService_Status",
@@ -850,38 +860,6 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1VerifyMessageSignatureRequest"
-            }
-          }
-        ],
-        "tags": [
-          "WalletService"
-        ]
-      }
-    },
-    "/v1/wallet/wait-for-sync": {
-      "post": {
-        "operationId": "WalletService_WaitForSync",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1WaitForSyncResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/googlerpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/v1WaitForSyncRequest"
             }
           }
         ],
@@ -1122,10 +1100,10 @@
         }
       }
     },
-    "v1GetForfeitAddressResponse": {
+    "v1GetForfeitPubkeyResponse": {
       "type": "object",
       "properties": {
-        "address": {
+        "pubkey": {
           "type": "string"
         }
       }
@@ -1135,15 +1113,6 @@
       "properties": {
         "network": {
           "type": "string"
-        }
-      }
-    },
-    "v1GetPubkeyResponse": {
-      "type": "object",
-      "properties": {
-        "pubkey": {
-          "type": "string",
-          "format": "byte"
         }
       }
     },
@@ -1191,6 +1160,17 @@
         }
       }
     },
+    "v1LoadSignerKeyRequest": {
+      "type": "object",
+      "properties": {
+        "privateKey": {
+          "type": "string"
+        }
+      }
+    },
+    "v1LoadSignerKeyResponse": {
+      "type": "object"
+    },
     "v1LockConnectorUtxosRequest": {
       "type": "object",
       "properties": {
@@ -1217,7 +1197,8 @@
       "properties": {
         "confirmed": {
           "type": "string",
-          "format": "uint64"
+          "format": "uint64",
+          "title": "TODO rename to available and locked"
         },
         "unconfirmed": {
           "type": "string",
@@ -1464,17 +1445,6 @@
           "format": "uint64"
         }
       }
-    },
-    "v1WaitForSyncRequest": {
-      "type": "object",
-      "properties": {
-        "txid": {
-          "type": "string"
-        }
-      }
-    },
-    "v1WaitForSyncResponse": {
-      "type": "object"
     },
     "v1WatchScriptsRequest": {
       "type": "object",

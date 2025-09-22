@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	common "github.com/arkade-os/arkd/pkg/ark-lib"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -75,9 +75,9 @@ func GetConditionWitness(in psbt.PInput) (wire.TxWitness, error) {
 }
 
 func AddVtxoTreeExpiry(
-	inIndex int, ptx *psbt.Packet, vtxoTreeExpiry common.RelativeLocktime,
+	inIndex int, ptx *psbt.Packet, vtxoTreeExpiry arklib.RelativeLocktime,
 ) error {
-	sequence, err := common.BIP68Sequence(vtxoTreeExpiry)
+	sequence, err := arklib.BIP68Sequence(vtxoTreeExpiry)
 	if err != nil {
 		return err
 	}
@@ -106,10 +106,10 @@ func AddVtxoTreeExpiry(
 	return nil
 }
 
-func GetVtxoTreeExpiry(in psbt.PInput) (*common.RelativeLocktime, error) {
+func GetVtxoTreeExpiry(in psbt.PInput) (*arklib.RelativeLocktime, error) {
 	for _, u := range in.Unknowns {
 		if bytes.Contains(u.Key, VTXO_TREE_EXPIRY_PSBT_KEY) {
-			return common.BIP68DecodeSequenceFromBytes(u.Value)
+			return arklib.BIP68DecodeSequenceFromBytes(u.Value)
 		}
 	}
 

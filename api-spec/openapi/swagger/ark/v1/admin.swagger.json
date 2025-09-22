@@ -118,7 +118,6 @@
     },
     "/v1/admin/convictions/{id}": {
       "get": {
-        "summary": "Conviction management RPCs",
         "operationId": "AdminService_GetConviction",
         "responses": {
           "200": {
@@ -576,8 +575,7 @@
       "type": "object",
       "properties": {
         "conviction": {
-          "$ref": "#/definitions/v1Conviction",
-          "title": "Will be empty if no active conviction found"
+          "$ref": "#/definitions/v1Conviction"
         }
       }
     },

@@ -83,7 +83,11 @@ func (s *sweeper) start() error {
 			count++
 		}
 
-		log.Infof("sweeper: scheduled sweeping for %d batches", count)
+		if count > 0 {
+			log.Infof("sweeper: scheduled sweep of %d batches", count)
+		} else {
+			log.Info("sweeper: no batches to sweep, no sweep tasks to schedule")
+		}
 	}
 
 	return nil
@@ -224,8 +228,12 @@ func (s *sweeper) createTask(
 
 					firstVtxo, err := s.repoManager.Vtxos().GetVtxos(ctx, sweepableVtxos[:1])
 					if err != nil {
-						log.Error(fmt.Errorf("error while getting vtxo: %w", err))
+						log.WithError(err).Errorf("failed to get vtxo %s", sweepableVtxos[0])
 						sweepInputs = append(sweepInputs, input) // add the input anyway in order to try to sweep it
+						continue
+					}
+					if len(firstVtxo) <= 0 {
+						log.Errorf("vtxo %s not found", sweepableVtxos[0])
 						continue
 					}
 

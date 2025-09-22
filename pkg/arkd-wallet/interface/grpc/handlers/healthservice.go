@@ -27,3 +27,16 @@ func (h *healthHandler) Watch(
 ) error {
 	return nil
 }
+
+func (h *healthHandler) List(
+	_ context.Context,
+	_ *grpchealth.HealthListRequest,
+) (*grpchealth.HealthListResponse, error) {
+	return &grpchealth.HealthListResponse{
+		Statuses: map[string]*grpchealth.HealthCheckResponse{
+			"arkd-wallet": {
+				Status: grpchealth.HealthCheckResponse_SERVING,
+			},
+		},
+	}, nil
+}

@@ -226,10 +226,6 @@ func (s *service) broadcastConnectorBranch(
 			}
 			log.Debugf("broadcasted connector branch tx %s", txid)
 
-			if err := s.wallet.WaitForSync(ctx, txid); err != nil {
-				return false, fmt.Errorf("failed to wait for sync: %s", err)
-			}
-
 			s.waitForConfirmation(ctx, txid)
 			return true, nil
 		}

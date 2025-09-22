@@ -66,6 +66,11 @@ func TestWhitelistedMethods(t *testing.T) {
 			fmt.Sprintf("/%s/%s", arkv1.IndexerService_ServiceDesc.ServiceName, m.StreamName),
 		)
 	}
+	for _, m := range arkv1.SignerManagerService_ServiceDesc.Methods {
+		allMethods = append(allMethods, fmt.Sprintf(
+			"/%s/%s", arkv1.SignerManagerService_ServiceDesc.ServiceName, m.MethodName,
+		))
+	}
 
 	allMethods = append(allMethods, fmt.Sprintf(
 		"/%s/%s", grpchealth.Health_ServiceDesc.ServiceName, "Check",

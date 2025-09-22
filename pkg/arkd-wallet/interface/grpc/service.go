@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
+	signerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/signer/v1"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/config"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/interceptors"
@@ -24,6 +25,7 @@ type service struct {
 	cfg     *config.Config
 	server  *http.Server
 	grpcSrv *grpc.Server
+	closeFn func()
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -39,8 +41,15 @@ func (s *service) Start() error {
 		interceptors.StreamInterceptor(),
 	)
 
-	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc)
+	s.closeFn = func() {
+		s.cfg.WalletSvc.Close()
+		s.cfg.ScannerSvc.Close()
+	}
+
+	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc, s.cfg.ScannerSvc)
 	arkwalletv1.RegisterWalletServiceServer(grpcSrv, walletHandler)
+	signerHandler := handlers.NewSignerHandler(s.cfg.WalletSvc)
+	signerv1.RegisterSignerServiceServer(grpcSrv, signerHandler)
 
 	healthHandler := handlers.NewHealthHandler()
 	grpchealth.RegisterHealthServer(grpcSrv, healthHandler)
@@ -67,9 +76,11 @@ func (s *service) Start() error {
 		}),
 	)
 
-	if err := arkwalletv1.RegisterWalletServiceHandler(
-		context.Background(), gwmux, conn,
-	); err != nil {
+	ctx := context.Background()
+	if err := arkwalletv1.RegisterWalletServiceHandler(ctx, gwmux, conn); err != nil {
+		return err
+	}
+	if err := signerv1.RegisterSignerServiceHandler(ctx, gwmux, conn); err != nil {
 		return err
 	}
 

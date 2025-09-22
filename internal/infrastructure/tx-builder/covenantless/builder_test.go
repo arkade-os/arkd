@@ -22,7 +22,7 @@ import (
 const (
 	testingKey       = "020000000000000000000000000000000000000000000000000000000000000001"
 	connectorAddress = "bc1py00yhcjpcj0k0sqra0etq0u3yy0purmspppsw0shyzyfe8c83tmq5h6kc2"
-	forfeitAddress   = "bc1py00yhcjpcj0k0sqra0etq0u3yy0purmspppsw0shyzyfe8c83tmq5h6kc2"
+	forfeitPubkey    = "020000000000000000000000000000000000000000000000000000000000000002"
 	changeAddress    = "bcrt1qhhq55mut9easvrncy4se8q6vg3crlug7yj4j56"
 	minRelayFeeRate  = 3
 )
@@ -47,8 +47,8 @@ func TestMain(m *testing.M) {
 		Return(connectorAddress, nil)
 	wallet.On("GetDustAmount", mock.Anything).
 		Return(uint64(1000), nil)
-	wallet.On("GetForfeitAddress", mock.Anything).
-		Return(forfeitAddress, nil)
+	wallet.On("GetForfeitPubkey", mock.Anything).
+		Return(forfeitPubkey, nil)
 
 	pubkeyBytes, _ := hex.DecodeString(testingKey)
 	pubkey, _ = btcec.ParsePubKey(pubkeyBytes)
@@ -58,7 +58,7 @@ func TestMain(m *testing.M) {
 
 func TestBuildCommitmentTx(t *testing.T) {
 	builder := txbuilder.NewTxBuilder(
-		wallet, arklib.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
+		wallet, nil, arklib.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
 	)
 
 	fixtures, err := parseCommitmentTxFixtures()

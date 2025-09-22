@@ -1384,7 +1384,6 @@ func (*Output_VtxoScript) isOutput_Destination() {}
 
 func (*Output_OnchainAddress) isOutput_Destination() {}
 
-// Conviction management messages
 type GetConvictionRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -1727,7 +1726,7 @@ type GetActiveScriptConvictionResponse struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Conviction *Conviction `protobuf:"bytes,1,opt,name=conviction,proto3" json:"conviction,omitempty"` // Will be empty if no active conviction found
+	Conviction *Conviction `protobuf:"bytes,1,opt,name=conviction,proto3" json:"conviction,omitempty"`
 }
 
 func (x *GetActiveScriptConvictionResponse) Reset() {

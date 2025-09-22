@@ -1,0 +1,216 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "signer/v1/service.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "SignerService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/pubkey": {
+      "get": {
+        "operationId": "SignerService_GetPubkey",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPubkeyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SignerService"
+        ]
+      }
+    },
+    "/v1/sign-transaction": {
+      "post": {
+        "operationId": "SignerService_SignTransaction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SignTransactionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SignTransactionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SignerService"
+        ]
+      }
+    },
+    "/v1/sign-transaction-tapscript": {
+      "post": {
+        "operationId": "SignerService_SignTransactionTapscript",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SignTransactionTapscriptResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SignTransactionTapscriptRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SignerService"
+        ]
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "operationId": "SignerService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "SignerService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1GetPubkeyResponse": {
+      "type": "object",
+      "properties": {
+        "pubkey": {
+          "type": "string"
+        }
+      }
+    },
+    "v1GetStatusResponse": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1SignTransactionRequest": {
+      "type": "object",
+      "properties": {
+        "partialTx": {
+          "type": "string"
+        },
+        "extractRawTx": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1SignTransactionResponse": {
+      "type": "object",
+      "properties": {
+        "signedTx": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SignTransactionTapscriptRequest": {
+      "type": "object",
+      "properties": {
+        "partialTx": {
+          "type": "string"
+        },
+        "inputIndexes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      }
+    },
+    "v1SignTransactionTapscriptResponse": {
+      "type": "object",
+      "properties": {
+        "signedTx": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

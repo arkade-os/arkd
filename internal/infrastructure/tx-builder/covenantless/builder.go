@@ -21,20 +21,23 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type txBuilder struct {
 	wallet            ports.WalletService
+	signer            ports.SignerService
 	network           arklib.Network
 	vtxoTreeExpiry    arklib.RelativeLocktime
 	boardingExitDelay arklib.RelativeLocktime
 }
 
 func NewTxBuilder(
-	wallet ports.WalletService, network arklib.Network,
+	wallet ports.WalletService, signer ports.SignerService, network arklib.Network,
 	vtxoTreeExpiry, boardingExitDelay arklib.RelativeLocktime,
 ) ports.TxBuilder {
-	return &txBuilder{wallet, network, vtxoTreeExpiry, boardingExitDelay}
+	return &txBuilder{wallet, signer, network, vtxoTreeExpiry, boardingExitDelay}
 }
 
 func (b *txBuilder) GetTxid(tx string) (string, error) {
@@ -58,10 +61,18 @@ func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, string, error) 
 func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, error) {
 	txid := ptx.UnsignedTx.TxID()
 
-	operatorPubkey, err := b.wallet.GetPubkey(context.Background())
+	signerPubkey, err := b.signer.GetPubkey(context.Background())
 	if err != nil {
 		return false, txid, err
 	}
+	signerPubkeyHex := hex.EncodeToString(schnorr.SerializePubKey(signerPubkey))
+
+	prevoutFetcher, err := b.getPrevOutputFetcher(ptx)
+	if err != nil {
+		return false, txid, err
+	}
+
+	txSigHashes := txscript.NewTxSigHashes(ptx.UnsignedTx, prevoutFetcher)
 
 	for index, input := range ptx.Inputs {
 		if len(input.TaprootLeafScript) == 0 {
@@ -116,7 +127,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 		}
 
 		// we don't need to check if operator signed
-		keys[hex.EncodeToString(schnorr.SerializePubKey(operatorPubkey))] = true
+		keys[signerPubkeyHex] = true
 
 		if len(tapLeaf.ControlBlock) == 0 {
 			return false, txid, fmt.Errorf("missing control block for input %d", index)
@@ -140,11 +151,6 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 			return false, txid, fmt.Errorf("invalid control block for input %d", index)
 		}
 
-		preimage, err := b.getTaprootPreimage(ptx, index, tapLeaf.Script)
-		if err != nil {
-			return false, txid, err
-		}
-
 		for _, tapScriptSig := range input.TaprootScriptSpendSig {
 			sig, err := schnorr.ParseSignature(tapScriptSig.Signature)
 			if err != nil {
@@ -156,8 +162,26 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 				return false, txid, err
 			}
 
+			preimage, err := txscript.CalcTapscriptSignaturehash(
+				txSigHashes,
+				tapScriptSig.SigHash,
+				ptx.UnsignedTx,
+				index,
+				prevoutFetcher,
+				txscript.NewBaseTapLeaf(tapLeaf.Script),
+			)
+			if err != nil {
+				return false, txid, err
+			}
+
 			if !sig.Verify(preimage, pubkey) {
-				return false, txid, nil
+				return false, txid, fmt.Errorf(
+					"invalid signature for input %d, sig: %x, pubkey: %x, sighashtype: %d",
+					index,
+					sig.Serialize(),
+					pubkey.SerializeCompressed(),
+					tapScriptSig.SigHash,
+				)
 			}
 
 			keys[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = true
@@ -209,7 +233,10 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 			}
 
 			for _, sig := range in.TaprootScriptSpendSig {
-				args[hex.EncodeToString(sig.XOnlyPubKey)] = sig.Signature
+				args[hex.EncodeToString(sig.XOnlyPubKey)] = script.EncodeTaprootSignature(
+					sig.Signature,
+					sig.SigHash,
+				)
 			}
 
 			witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)
@@ -249,10 +276,7 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 func (b *txBuilder) BuildSweepTx(
 	inputs []ports.SweepableBatchOutput,
 ) (txid, signedSweepTx string, err error) {
-	sweepPsbt, err := sweepTransaction(
-		b.wallet,
-		inputs,
-	)
+	sweepPsbt, err := sweepTransaction(b.wallet, inputs)
 	if err != nil {
 		return "", "", err
 	}
@@ -263,7 +287,8 @@ func (b *txBuilder) BuildSweepTx(
 	}
 
 	ctx := context.Background()
-	signedSweepPsbtB64, err := b.wallet.SignTransactionTapscript(ctx, sweepPsbtBase64, nil)
+	// TODO: use wallet once sdk is up-to-date.
+	signedSweepPsbtB64, err := b.signer.SignTransactionTapscript(ctx, sweepPsbtBase64, nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -504,7 +529,22 @@ func (b *txBuilder) VerifyForfeitTxs(
 		}
 
 		if rebuilt.UnsignedTx.TxID() != tx.UnsignedTx.TxID() {
-			return nil, fmt.Errorf("invalid forfeit tx")
+			if log.IsLevelEnabled(log.TraceLevel) {
+				rebuiltB64, _ := rebuilt.B64Encode()
+				txB64, _ := tx.B64Encode()
+				log.WithFields(log.Fields{
+					"expectedTxid": rebuilt.UnsignedTx.TxID(),
+					"expectedB64":  rebuiltB64,
+					"gotTxid":      tx.UnsignedTx.TxID(),
+					"gotB64":       txB64,
+				}).Tracef("invalid forfeit tx")
+			}
+
+			return nil, fmt.Errorf(
+				"invalid forfeit tx: expected txid %s, got %s",
+				rebuilt.UnsignedTx.TxID(),
+				tx.UnsignedTx.TxID(),
+			)
 		}
 
 		validForfeitTxs[vtxoKey] = ports.ValidForfeitTx{
@@ -1115,9 +1155,7 @@ func (b *txBuilder) selectUtxos(
 	return append(selectedConnectorsUtxos, utxos...), change, nil
 }
 
-func (b *txBuilder) getTaprootPreimage(
-	tx *psbt.Packet, inputIndex int, leafScript []byte,
-) ([]byte, error) {
+func (b *txBuilder) getPrevOutputFetcher(tx *psbt.Packet) (txscript.PrevOutputFetcher, error) {
 	prevouts := make(map[wire.OutPoint]*wire.TxOut)
 
 	for i, input := range tx.Inputs {
@@ -1129,7 +1167,16 @@ func (b *txBuilder) getTaprootPreimage(
 		prevouts[outpoint] = input.WitnessUtxo
 	}
 
-	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
+	return txscript.NewMultiPrevOutFetcher(prevouts), nil
+}
+
+func (b *txBuilder) getTaprootPreimage(
+	tx *psbt.Packet, inputIndex int, leafScript []byte,
+) ([]byte, error) {
+	prevoutFetcher, err := b.getPrevOutputFetcher(tx)
+	if err != nil {
+		return nil, err
+	}
 
 	return txscript.CalcTapscriptSignaturehash(
 		txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),
@@ -1201,7 +1248,9 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 		return sweepLeaf, internalKey, vtxoTreeExpiry, nil
 	}
 
-	signerPubKey, err := b.wallet.GetPubkey(context.Background())
+	// TODO: uncomment the following line once the sdk is up-to-date.
+	// sweeperPubkey, err := b.wallet.GetForfeitPubkey(context.Background())
+	sweeperPubkey, err := b.signer.GetPubkey(context.Background())
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1223,7 +1272,7 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 	sweepClosure := &script.CSVMultisigClosure{
 		Locktime: *vtxoTreeExpiry,
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{signerPubKey},
+			PubKeys: []*btcec.PublicKey{sweeperPubkey},
 		},
 	}
 
@@ -1257,13 +1306,19 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 	return sweepLeaf, internalKey, vtxoTreeExpiry, nil
 }
 
+// TODO: Encode pubkey directly to segwit v1 out script.
 func (b *txBuilder) getForfeitScript() ([]byte, error) {
-	forfeitAddress, err := b.wallet.GetForfeitAddress(context.Background())
+	forfeitPubkey, err := b.wallet.GetForfeitPubkey(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
+	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, b.onchainNetwork())
 	if err != nil {
 		return nil, err
 	}
 
-	addr, err := btcutil.DecodeAddress(forfeitAddress, nil)
+	addr, err := btcutil.DecodeAddress(forfeitAddr.String(), nil)
 	if err != nil {
 		return nil, err
 	}

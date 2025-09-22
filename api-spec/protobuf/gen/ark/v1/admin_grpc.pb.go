@@ -26,7 +26,6 @@ type AdminServiceClient interface {
 	UpdateMarketHourConfig(ctx context.Context, in *UpdateMarketHourConfigRequest, opts ...grpc.CallOption) (*UpdateMarketHourConfigResponse, error)
 	ListIntents(ctx context.Context, in *ListIntentsRequest, opts ...grpc.CallOption) (*ListIntentsResponse, error)
 	DeleteIntents(ctx context.Context, in *DeleteIntentsRequest, opts ...grpc.CallOption) (*DeleteIntentsResponse, error)
-	// Conviction management RPCs
 	GetConviction(ctx context.Context, in *GetConvictionRequest, opts ...grpc.CallOption) (*GetConvictionResponse, error)
 	GetConvictions(ctx context.Context, in *GetConvictionsRequest, opts ...grpc.CallOption) (*GetConvictionsResponse, error)
 	GetConvictionsByRound(ctx context.Context, in *GetConvictionsByRoundRequest, opts ...grpc.CallOption) (*GetConvictionsByRoundResponse, error)
@@ -171,7 +170,6 @@ type AdminServiceServer interface {
 	UpdateMarketHourConfig(context.Context, *UpdateMarketHourConfigRequest) (*UpdateMarketHourConfigResponse, error)
 	ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error)
 	DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error)
-	// Conviction management RPCs
 	GetConviction(context.Context, *GetConvictionRequest) (*GetConvictionResponse, error)
 	GetConvictions(context.Context, *GetConvictionsRequest) (*GetConvictionsResponse, error)
 	GetConvictionsByRound(context.Context, *GetConvictionsByRoundRequest) (*GetConvictionsByRoundResponse, error)

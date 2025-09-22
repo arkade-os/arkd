@@ -2,6 +2,7 @@ package walletclient
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -186,18 +187,6 @@ func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{
 	return ch, nil
 }
 
-func (w *walletDaemonClient) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) {
-	resp, err := w.client.GetPubkey(ctx, &arkwalletv1.GetPubkeyRequest{})
-	if err != nil {
-		return nil, err
-	}
-	pubkey, err := btcec.ParsePubKey(resp.Pubkey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse pubkey: %w", err)
-	}
-	return pubkey, nil
-}
-
 func (w *walletDaemonClient) GetNetwork(ctx context.Context) (*arklib.Network, error) {
 	resp, err := w.client.GetNetwork(ctx, &arkwalletv1.GetNetworkRequest{})
 	if err != nil {
@@ -223,12 +212,16 @@ func (w *walletDaemonClient) GetNetwork(ctx context.Context) (*arklib.Network, e
 	return &network, nil
 }
 
-func (w *walletDaemonClient) GetForfeitAddress(ctx context.Context) (string, error) {
-	resp, err := w.client.GetForfeitAddress(ctx, &arkwalletv1.GetForfeitAddressRequest{})
+func (w *walletDaemonClient) GetForfeitPubkey(ctx context.Context) (*btcec.PublicKey, error) {
+	resp, err := w.client.GetForfeitPubkey(ctx, &arkwalletv1.GetForfeitPubkeyRequest{})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return resp.GetAddress(), nil
+	buf, err := hex.DecodeString(resp.GetPubkey())
+	if err != nil {
+		return nil, err
+	}
+	return btcec.ParsePubKey(buf)
 }
 
 func (w *walletDaemonClient) DeriveConnectorAddress(ctx context.Context) (string, error) {
@@ -312,11 +305,6 @@ func (w *walletDaemonClient) BroadcastTransaction(
 		return "", err
 	}
 	return resp.GetTxid(), nil
-}
-
-func (w *walletDaemonClient) WaitForSync(ctx context.Context, txid string) error {
-	_, err := w.client.WaitForSync(ctx, &arkwalletv1.WaitForSyncRequest{Txid: txid})
-	return err
 }
 
 func (w *walletDaemonClient) EstimateFees(ctx context.Context, psbt string) (uint64, error) {
@@ -438,4 +426,9 @@ func (w *walletDaemonClient) Withdraw(
 		return "", err
 	}
 	return resp.GetTxid(), nil
+}
+
+func (w *walletDaemonClient) LoadSignerKey(ctx context.Context, prvkey string) error {
+	_, err := w.client.LoadSignerKey(ctx, &arkwalletv1.LoadSignerKeyRequest{PrivateKey: prvkey})
+	return err
 }

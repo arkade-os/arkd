@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package ark.v1;
+
+import "google/api/annotations.proto";
+
+service SignerManagerService {
+  rpc LoadSigner(LoadSignerRequest) returns (LoadSignerResponse) {
+    option (google.api.http) = {
+      post: "/v1/admin/signer"
+      body: "*"      
+    };
+  }
+}
+
+message LoadSignerRequest {
+  oneof config {
+    string signer_url = 1;
+    string signer_private_key = 2;
+  }
+}
+message LoadSignerResponse {}
