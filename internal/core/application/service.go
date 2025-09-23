@@ -1908,8 +1908,9 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	commitmentTxid := commitmentTx.UnsignedTx.TxID()
 	includesBoardingInputs := s.cache.BoardingInputs().Get() > 0
-	txToSign := s.cache.CurrentRound().Get().CommitmentTx
 	forfeitTxs := make([]domain.ForfeitTx, 0)
+
+	txToSign := s.cache.CurrentRound().Get().CommitmentTx
 
 	if s.cache.ForfeitTxs().Len() > 0 || includesBoardingInputs {
 		s.roundReportSvc.OpStarted(WaitForForfeitTxsOp)
@@ -1923,13 +1924,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		s.roundReportSvc.OpEnded(WaitForForfeitTxsOp)
-
-		txToSign = s.cache.CurrentRound().Get().CommitmentTx
-		log.Debugf("failed to parse commitment tx: %s", txToSign)
-		changes = s.cache.CurrentRound().Fail(fmt.Errorf(
-			"failed to parse commitment tx: %s", err,
-		))
-		log.WithError(err).Warn("failed to parse commitment tx")
 
 		forfeitTxList, err := s.cache.ForfeitTxs().Pop()
 		if err != nil {
@@ -2040,7 +2034,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		if len(boardingInputsIndexes) > 0 {
 			s.roundReportSvc.OpStarted(VerifyBoardingInputsSignaturesOp)
 
-			txToSign, err = s.signer.SignTransactionTapscript(ctx, txToSign, boardingInputsIndexes)
+			txToSign, err = s.signer.SignTransactionTapscript(ctx, s.cache.CurrentRound().Get().CommitmentTx, boardingInputsIndexes)
 			if err != nil {
 				changes = s.cache.CurrentRound().Fail(
 					fmt.Errorf("failed to sign commitment tx: %s", err),
