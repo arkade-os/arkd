@@ -1900,7 +1900,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		strings.NewReader(s.cache.CurrentRound().Get().CommitmentTx), true,
 	)
 	if err != nil {
-		log.Debugf("failed to parse commitment tx: %s", commitmentTx.UnsignedTx.TxID())
 		changes = s.cache.CurrentRound().Fail(fmt.Errorf("failed to parse commitment tx: %s", err))
 		log.WithError(err).Warn("failed to parse commitment tx")
 		return
@@ -1986,7 +1985,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			strings.NewReader(s.cache.CurrentRound().Get().CommitmentTx), true,
 		)
 		if err != nil {
-			log.Debugf("failed to parse commitment tx: %s", commitmentTx.UnsignedTx.TxID())
 			changes = s.cache.CurrentRound().
 				Fail(fmt.Errorf("failed to parse commitment tx: %s", err))
 			log.WithError(err).Warn("failed to parse commitment tx")
