@@ -17,7 +17,21 @@ const (
 	CrimeTypeForfeitSubmission
 	CrimeTypeForfeitInvalidSignature
 	CrimeTypeBoardingInputSubmission
+	CrimeTypeManualBan
 )
+
+func (c CrimeType) String() string {
+	return []string{
+		"Unknown",
+		"Musig2NonceSubmission",
+		"Musig2SignatureSubmission",
+		"Musig2InvalidSignature",
+		"ForfeitSubmission",
+		"ForfeitInvalidSignature",
+		"BoardingInputSubmission",
+		"ManualBan",
+	}[c]
+}
 
 type Crime struct {
 	Type    CrimeType
@@ -82,12 +96,18 @@ type ScriptConviction struct {
 
 func (s ScriptConviction) String() string {
 	if s.ExpiresAt == nil {
-		return fmt.Sprintf("VtxoScript %x banned forever, reason: %s", s.Script, s.Crime.Reason)
+		return fmt.Sprintf(
+			"VtxoScript %x banned forever, type: %s, reason: %s",
+			s.Script,
+			s.Crime.Type,
+			s.Crime.Reason,
+		)
 	}
 	return fmt.Sprintf(
-		"VtxoScript %x banned until %s, reason: %s",
+		"VtxoScript %x banned until %s, type: %s, reason: %s",
 		s.Script,
 		s.ExpiresAt.Format(time.RFC3339),
+		s.Crime.Type,
 		s.Crime.Reason,
 	)
 }

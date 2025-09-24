@@ -328,6 +328,29 @@ func (a *adminHandler) PardonConviction(
 	return &arkv1.PardonConvictionResponse{}, nil
 }
 
+func (a *adminHandler) BanScript(
+	ctx context.Context, req *arkv1.BanScriptRequest,
+) (*arkv1.BanScriptResponse, error) {
+	script := req.GetScript()
+	if len(script) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing script")
+	}
+
+	banDuration := req.GetBanDuration()
+	var banTime *time.Duration
+
+	if banDuration != 0 {
+		duration := time.Duration(banDuration) * time.Second
+		banTime = &duration
+	}
+
+	if err := a.adminService.BanScript(ctx, script, req.GetReason(), banTime); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.BanScriptResponse{}, nil
+}
+
 func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, error) {
 	var expiresAt int64
 	if conviction.GetExpiresAt() != nil {

@@ -56,6 +56,38 @@
         ]
       }
     },
+    "/v1/admin/convictions/ban": {
+      "post": {
+        "operationId": "AdminService_BanScript",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BanScriptResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BanScriptRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
     "/v1/admin/convictions/round/{roundId}": {
       "get": {
         "operationId": "AdminService_GetConvictionsByRound",
@@ -456,6 +488,25 @@
           }
         }
       }
+    },
+    "v1BanScriptRequest": {
+      "type": "object",
+      "properties": {
+        "script": {
+          "type": "string"
+        },
+        "banDuration": {
+          "type": "string",
+          "format": "int64",
+          "title": "0 = permanent ban"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "v1BanScriptResponse": {
+      "type": "object"
     },
     "v1Bip322Signature": {
       "type": "object",

@@ -31,6 +31,7 @@ type AdminServiceClient interface {
 	GetConvictionsByRound(ctx context.Context, in *GetConvictionsByRoundRequest, opts ...grpc.CallOption) (*GetConvictionsByRoundResponse, error)
 	GetActiveScriptConviction(ctx context.Context, in *GetActiveScriptConvictionRequest, opts ...grpc.CallOption) (*GetActiveScriptConvictionResponse, error)
 	PardonConviction(ctx context.Context, in *PardonConvictionRequest, opts ...grpc.CallOption) (*PardonConvictionResponse, error)
+	BanScript(ctx context.Context, in *BanScriptRequest, opts ...grpc.CallOption) (*BanScriptResponse, error)
 }
 
 type adminServiceClient struct {
@@ -158,6 +159,15 @@ func (c *adminServiceClient) PardonConviction(ctx context.Context, in *PardonCon
 	return out, nil
 }
 
+func (c *adminServiceClient) BanScript(ctx context.Context, in *BanScriptRequest, opts ...grpc.CallOption) (*BanScriptResponse, error) {
+	out := new(BanScriptResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/BanScript", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility
@@ -175,6 +185,7 @@ type AdminServiceServer interface {
 	GetConvictionsByRound(context.Context, *GetConvictionsByRoundRequest) (*GetConvictionsByRoundResponse, error)
 	GetActiveScriptConviction(context.Context, *GetActiveScriptConvictionRequest) (*GetActiveScriptConvictionResponse, error)
 	PardonConviction(context.Context, *PardonConvictionRequest) (*PardonConvictionResponse, error)
+	BanScript(context.Context, *BanScriptRequest) (*BanScriptResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have forward compatible implementations.
@@ -219,6 +230,9 @@ func (UnimplementedAdminServiceServer) GetActiveScriptConviction(context.Context
 }
 func (UnimplementedAdminServiceServer) PardonConviction(context.Context, *PardonConvictionRequest) (*PardonConvictionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PardonConviction not implemented")
+}
+func (UnimplementedAdminServiceServer) BanScript(context.Context, *BanScriptRequest) (*BanScriptResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BanScript not implemented")
 }
 
 // UnsafeAdminServiceServer may be embedded to opt out of forward compatibility for this service.
@@ -466,6 +480,24 @@ func _AdminService_PardonConviction_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_BanScript_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BanScriptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).BanScript(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.AdminService/BanScript",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).BanScript(ctx, req.(*BanScriptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -524,6 +556,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PardonConviction",
 			Handler:    _AdminService_PardonConviction_Handler,
+		},
+		{
+			MethodName: "BanScript",
+			Handler:    _AdminService_BanScript_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

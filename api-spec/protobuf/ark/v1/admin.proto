@@ -75,6 +75,12 @@ service AdminService {
       body: "*"
     };
   }
+  rpc BanScript(BanScriptRequest) returns (BanScriptResponse) {
+    option (google.api.http) = {
+      post: "/v1/admin/convictions/ban"
+      body: "*"
+    };
+  }
 }
 
 message GetScheduledSweepRequest {}
@@ -218,6 +224,13 @@ message PardonConvictionRequest {
 }
 
 message PardonConvictionResponse {}
+
+message BanScriptRequest {
+  string script = 1;
+  int64 ban_duration = 2; // 0 = permanent ban
+  string reason = 3;
+}
+message BanScriptResponse {}
 
 enum CrimeType {
   CRIME_TYPE_UNSPECIFIED = 0;

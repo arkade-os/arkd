@@ -34,6 +34,7 @@ type AdminService interface {
 	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
 	GetActiveScriptConviction(ctx context.Context, script string) (*domain.ScriptConviction, error)
 	PardonConviction(ctx context.Context, id string) error
+	BanScript(ctx context.Context, script, reason string, banDuration *time.Duration) error
 }
 
 type adminService struct {
@@ -385,6 +386,21 @@ func (s *adminService) GetActiveScriptConviction(
 
 func (s *adminService) PardonConviction(ctx context.Context, id string) error {
 	return s.repoManager.Convictions().Pardon(id)
+}
+
+func (s *adminService) BanScript(
+	ctx context.Context,
+	script, reason string,
+	banDuration *time.Duration,
+) error {
+	crime := domain.Crime{
+		Type:    domain.CrimeTypeManualBan,
+		RoundID: "manual-ban",
+		Reason:  reason,
+	}
+
+	conviction := domain.NewScriptConviction(script, crime, banDuration)
+	return s.repoManager.Convictions().Add(conviction)
 }
 
 type Balance struct {
