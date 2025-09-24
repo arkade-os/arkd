@@ -2034,7 +2034,11 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		if len(boardingInputsIndexes) > 0 {
 			s.roundReportSvc.OpStarted(VerifyBoardingInputsSignaturesOp)
 
-			txToSign, err = s.signer.SignTransactionTapscript(ctx, s.cache.CurrentRound().Get().CommitmentTx, boardingInputsIndexes)
+			txToSign, err = s.signer.SignTransactionTapscript(
+				ctx,
+				s.cache.CurrentRound().Get().CommitmentTx,
+				boardingInputsIndexes,
+			)
 			if err != nil {
 				changes = s.cache.CurrentRound().Fail(
 					fmt.Errorf("failed to sign commitment tx: %s", err),

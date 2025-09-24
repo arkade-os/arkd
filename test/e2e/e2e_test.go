@@ -2079,12 +2079,19 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		signerSession := tree.NewTreeSignerSession(secKey)
 
-		intentId, err := alice.RegisterIntent(t.Context(), []types.Vtxo{aliceVtxo}, []types.Utxo{}, nil, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
 			},
-		}, []string{signerSession.GetPublicKey()})
+			[]string{signerSession.GetPublicKey()},
+		)
 		require.NoError(t, err)
 
 		topics := arksdk.GetEventStreamTopics(
@@ -2135,12 +2142,19 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		signerSession := tree.NewTreeSignerSession(secKey)
 
-		intentId, err := alice.RegisterIntent(t.Context(), []types.Vtxo{aliceVtxo}, []types.Utxo{}, nil, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
 			},
-		}, []string{signerSession.GetPublicKey()})
+			[]string{signerSession.GetPublicKey()},
+		)
 		require.NoError(t, err)
 
 		topics := arksdk.GetEventStreamTopics(
@@ -2174,8 +2188,13 @@ func TestBan(t *testing.T) {
 				signerPubKey := secKey.PubKey()
 
 				sweepClosure := script.CSVMultisigClosure{
-					MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{signerPubKey}},
-					Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(info.VtxoTreeExpiry)},
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{signerPubKey},
+					},
+					Locktime: arklib.RelativeLocktime{
+						Type:  arklib.LocktimeTypeBlock,
+						Value: uint32(info.VtxoTreeExpiry),
+					},
 				}
 
 				script, err := sweepClosure.Script()
@@ -2183,7 +2202,10 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(event.UnsignedCommitmentTx), true)
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
 				if err != nil {
 					return false, err
 				}
@@ -2239,12 +2261,19 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		signerSession := tree.NewTreeSignerSession(secKey)
 
-		intentId, err := alice.RegisterIntent(t.Context(), []types.Vtxo{aliceVtxo}, []types.Utxo{}, nil, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
 			},
-		}, []string{signerSession.GetPublicKey()})
+			[]string{signerSession.GetPublicKey()},
+		)
 		require.NoError(t, err)
 
 		topics := arksdk.GetEventStreamTopics(
@@ -2272,7 +2301,10 @@ func TestBan(t *testing.T) {
 					return true, nil
 				}
 
-				commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(event.UnsignedCommitmentTx), true)
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
 				if err != nil {
 					return false, err
 				}
@@ -2339,12 +2371,19 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		signerSession := tree.NewTreeSignerSession(secKey)
 
-		intentId, err := alice.RegisterIntent(t.Context(), []types.Vtxo{aliceVtxo}, []types.Utxo{}, nil, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
 			},
-		}, []string{signerSession.GetPublicKey()})
+			[]string{signerSession.GetPublicKey()},
+		)
 		require.NoError(t, err)
 
 		topics := arksdk.GetEventStreamTopics(
@@ -2378,8 +2417,13 @@ func TestBan(t *testing.T) {
 				signerPubKey := secKey.PubKey()
 
 				sweepClosure := script.CSVMultisigClosure{
-					MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{signerPubKey}},
-					Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(info.VtxoTreeExpiry)},
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{signerPubKey},
+					},
+					Locktime: arklib.RelativeLocktime{
+						Type:  arklib.LocktimeTypeBlock,
+						Value: uint32(info.VtxoTreeExpiry),
+					},
 				}
 
 				script, err := sweepClosure.Script()
@@ -2387,7 +2431,10 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(event.UnsignedCommitmentTx), true)
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
 				if err != nil {
 					return false, err
 				}
@@ -2458,12 +2505,19 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		signerSession := tree.NewTreeSignerSession(secKey)
 
-		intentId, err := alice.RegisterIntent(t.Context(), []types.Vtxo{aliceVtxo}, []types.Utxo{}, nil, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
 			},
-		}, []string{signerSession.GetPublicKey()})
+			[]string{signerSession.GetPublicKey()},
+		)
 		require.NoError(t, err)
 
 		topics := arksdk.GetEventStreamTopics(
@@ -2497,8 +2551,13 @@ func TestBan(t *testing.T) {
 				signerPubKey := secKey.PubKey()
 
 				sweepClosure := script.CSVMultisigClosure{
-					MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{signerPubKey}},
-					Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(info.VtxoTreeExpiry)},
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{signerPubKey},
+					},
+					Locktime: arklib.RelativeLocktime{
+						Type:  arklib.LocktimeTypeBlock,
+						Value: uint32(info.VtxoTreeExpiry),
+					},
 				}
 
 				script, err := sweepClosure.Script()
@@ -2506,7 +2565,10 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(event.UnsignedCommitmentTx), true)
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
 				if err != nil {
 					return false, err
 				}
@@ -2549,7 +2611,7 @@ func TestBan(t *testing.T) {
 				)
 			},
 			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
-				txhash, err := chainhash.NewHashFromStr(aliceVtxo.Outpoint.Txid)
+				txhash, err := chainhash.NewHashFromStr(aliceVtxo.Txid)
 				if err != nil {
 					return err
 				}
@@ -2570,7 +2632,7 @@ func TestBan(t *testing.T) {
 				forfeitPtx, err := tree.BuildForfeitTx(
 					[]*wire.OutPoint{{
 						Hash:  *txhash,
-						Index: aliceVtxo.Outpoint.VOut,
+						Index: aliceVtxo.VOut,
 					}},
 					[]uint32{wire.MaxTxInSequenceNum},
 					[]*wire.TxOut{{Value: int64(aliceVtxo.Amount), PkScript: fakeScript}},
@@ -2625,25 +2687,42 @@ func TestBan(t *testing.T) {
 		info, err := grpcAlice.GetInfo(t.Context())
 		require.NoError(t, err)
 
-		explr, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest, explorer.WithPollInterval(time.Second))
+		explr, err := explorer.NewExplorer(
+			"http://localhost:3000",
+			arklib.BitcoinRegTest,
+			explorer.WithPollInterval(time.Second),
+		)
 		require.NoError(t, err)
 		boardingUtxos, err := explr.GetUtxos(boardingAddr.Address)
 		require.NoError(t, err)
 
 		aliceUtxo := boardingUtxos[0]
-		utxo := aliceUtxo.ToUtxo(arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(info.BoardingExitDelay)}, boardingAddr.Tapscripts)
+		utxo := aliceUtxo.ToUtxo(
+			arklib.RelativeLocktime{
+				Type:  arklib.LocktimeTypeBlock,
+				Value: uint32(info.BoardingExitDelay),
+			},
+			boardingAddr.Tapscripts,
+		)
 
 		// setup a random musig2 tree signer
 		secKey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 		signerSession := tree.NewTreeSignerSession(secKey)
 
-		intentId, err := alice.RegisterIntent(t.Context(), []types.Vtxo{}, []types.Utxo{utxo}, nil, []types.Receiver{
-			{
-				Amount: aliceUtxo.Amount,
-				To:     offchainAddr.Address,
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{},
+			[]types.Utxo{utxo},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceUtxo.Amount,
+					To:     offchainAddr.Address,
+				},
 			},
-		}, []string{signerSession.GetPublicKey()})
+			[]string{signerSession.GetPublicKey()},
+		)
 		require.NoError(t, err)
 
 		topics := arksdk.GetEventStreamTopics(
@@ -2674,8 +2753,13 @@ func TestBan(t *testing.T) {
 				signerPubKey := secKey.PubKey()
 
 				sweepClosure := script.CSVMultisigClosure{
-					MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{signerPubKey}},
-					Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(info.VtxoTreeExpiry)},
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{signerPubKey},
+					},
+					Locktime: arklib.RelativeLocktime{
+						Type:  arklib.LocktimeTypeBlock,
+						Value: uint32(info.VtxoTreeExpiry),
+					},
 				}
 
 				script, err := sweepClosure.Script()
@@ -2683,7 +2767,10 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(event.UnsignedCommitmentTx), true)
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
 				if err != nil {
 					return false, err
 				}

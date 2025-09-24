@@ -647,56 +647,83 @@ type customBatchEventsHandler struct {
 	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) error
 }
 
-func (h *customBatchEventsHandler) OnBatchStarted(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+func (h *customBatchEventsHandler) OnBatchStarted(
+	ctx context.Context,
+	event client.BatchStartedEvent,
+) (bool, error) {
 	if h.onBatchStarted != nil {
 		return h.onBatchStarted(ctx, event)
 	}
 	return false, nil
 }
 
-func (h *customBatchEventsHandler) OnBatchFinalization(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) error {
+func (h *customBatchEventsHandler) OnBatchFinalization(
+	ctx context.Context,
+	event client.BatchFinalizationEvent,
+	vtxoTree *tree.TxTree,
+	connectorTree *tree.TxTree,
+) error {
 	if h.onBatchFinalization != nil {
 		return h.onBatchFinalization(ctx, event, vtxoTree, connectorTree)
 	}
 	return nil
 }
 
-func (h *customBatchEventsHandler) OnBatchFinalized(ctx context.Context, event client.BatchFinalizedEvent) error {
+func (h *customBatchEventsHandler) OnBatchFinalized(
+	ctx context.Context,
+	event client.BatchFinalizedEvent,
+) error {
 	if h.onBatchFinalized != nil {
 		return h.onBatchFinalized(ctx, event)
 	}
 	return nil
 }
 
-func (h *customBatchEventsHandler) OnBatchFailed(ctx context.Context, event client.BatchFailedEvent) error {
+func (h *customBatchEventsHandler) OnBatchFailed(
+	ctx context.Context,
+	event client.BatchFailedEvent,
+) error {
 	if h.onBatchFailed != nil {
 		return h.onBatchFailed(ctx, event)
 	}
 	return errors.New(event.Reason)
 }
 
-func (h *customBatchEventsHandler) OnTreeTxEvent(ctx context.Context, event client.TreeTxEvent) error {
+func (h *customBatchEventsHandler) OnTreeTxEvent(
+	ctx context.Context,
+	event client.TreeTxEvent,
+) error {
 	if h.onTreeTxEvent != nil {
 		return h.onTreeTxEvent(ctx, event)
 	}
 	return nil
 }
 
-func (h *customBatchEventsHandler) OnTreeSignatureEvent(ctx context.Context, event client.TreeSignatureEvent) error {
+func (h *customBatchEventsHandler) OnTreeSignatureEvent(
+	ctx context.Context,
+	event client.TreeSignatureEvent,
+) error {
 	if h.onTreeSignatureEvent != nil {
 		return h.onTreeSignatureEvent(ctx, event)
 	}
 	return nil
 }
 
-func (h *customBatchEventsHandler) OnTreeSigningStarted(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
+func (h *customBatchEventsHandler) OnTreeSigningStarted(
+	ctx context.Context,
+	event client.TreeSigningStartedEvent,
+	vtxoTree *tree.TxTree,
+) (bool, error) {
 	if h.onTreeSigningStarted != nil {
 		return h.onTreeSigningStarted(ctx, event, vtxoTree)
 	}
 	return false, nil
 }
 
-func (h *customBatchEventsHandler) OnTreeNoncesAggregated(ctx context.Context, event client.TreeNoncesAggregatedEvent) error {
+func (h *customBatchEventsHandler) OnTreeNoncesAggregated(
+	ctx context.Context,
+	event client.TreeNoncesAggregatedEvent,
+) error {
 	if h.onTreeNoncesAggregated != nil {
 		return h.onTreeNoncesAggregated(ctx, event)
 	}
