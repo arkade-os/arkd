@@ -56,15 +56,12 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, coordinator)
 
-			signers, err := makeCosigners(v.privKeys, batchOutAmount, vtxoTree)
-			require.NoError(t, err)
+			signers := makeCosigners(t, v.privKeys, batchOutAmount, vtxoTree)
 			require.NotNil(t, signers)
 
-			err = makeAggregatedNonces(signers, coordinator, checkNoncesRoundtrip(t))
-			require.NoError(t, err)
+			makeAggregatedNonces(t, signers, coordinator, checkNoncesRoundtrip(t))
 
-			signedTree, err := makeAggregatedSignatures(signers, coordinator, checkSigsRoundtrip(t))
-			require.NoError(t, err)
+			signedTree := makeAggregatedSignatures(t, signers, coordinator, checkSigsRoundtrip(t))
 			require.NotNil(t, signedTree)
 
 			// validate signatures
@@ -119,86 +116,73 @@ func checkSigsRoundtrip(t *testing.T) func(sigs tree.TreePartialSigs) {
 }
 
 func makeCosigners(
-	keys []*btcec.PrivateKey, batchOutAmount int64, vtxoTree *tree.TxTree,
-) (map[string]tree.SignerSession, error) {
+	t *testing.T, keys []*btcec.PrivateKey, batchOutAmount int64, vtxoTree *tree.TxTree,
+) map[string]tree.SignerSession {
 	signers := make(map[string]tree.SignerSession)
 	for _, prvkey := range keys {
 		session := tree.NewTreeSignerSession(prvkey)
-		if err := session.Init(batchOutSweepClosure[:], batchOutAmount, vtxoTree); err != nil {
-			return nil, err
-		}
+		err := session.Init(batchOutSweepClosure[:], batchOutAmount, vtxoTree)
+		require.NoError(t, err)
 		signers[keyToStr(prvkey)] = session
 	}
 
 	// create signer session for the operator itself
 	operatorSession := tree.NewTreeSignerSession(signerPrvkey)
-	if err := operatorSession.Init(batchOutSweepClosure[:], batchOutAmount, vtxoTree); err != nil {
-		return nil, err
-	}
+	err := operatorSession.Init(batchOutSweepClosure[:], batchOutAmount, vtxoTree)
+	require.NoError(t, err)
 	signers[keyToStr(signerPrvkey)] = operatorSession
-	return signers, nil
+	return signers
 }
 
 func makeAggregatedNonces(
-	signers map[string]tree.SignerSession, coordinator tree.CoordinatorSession,
+	t *testing.T, signers map[string]tree.SignerSession, coordinator tree.CoordinatorSession,
 	checkNoncesRoundtrip func(tree.TreeNonces),
-) error {
+) {
 	for pk, session := range signers {
 		buf, err := hex.DecodeString(pk)
-		if err != nil {
-			return err
-		}
+		require.NoError(t, err)
 		pubkey, err := btcec.ParsePubKey(buf)
-		if err != nil {
-			return err
-		}
+		require.NoError(t, err)
 
 		nonces, err := session.GetNonces()
-		if err != nil {
-			return err
-		}
+		require.NoError(t, err)
 		checkNoncesRoundtrip(nonces)
 
 		coordinator.AddNonce(pubkey, nonces)
 	}
 
 	aggregatedNonce, err := coordinator.AggregateNonces()
-	if err != nil {
-		return err
-	}
+	require.NoError(t, err)
 
 	// set the aggregated nonces for all signers sessions
 	for _, session := range signers {
 		session.SetAggregatedNonces(aggregatedNonce)
 	}
-	return nil
 }
 
 func makeAggregatedSignatures(
-	signers map[string]tree.SignerSession, coordinator tree.CoordinatorSession,
+	t *testing.T, signers map[string]tree.SignerSession, coordinator tree.CoordinatorSession,
 	checkSigsRoundtrip func(tree.TreePartialSigs),
-) (*tree.TxTree, error) {
+) *tree.TxTree {
 	for pk, session := range signers {
 		buf, err := hex.DecodeString(pk)
-		if err != nil {
-			return nil, err
-		}
+		require.NoError(t, err)
 		pubkey, err := btcec.ParsePubKey(buf)
-		if err != nil {
-			return nil, err
-		}
+		require.NoError(t, err)
 
 		sigs, err := session.Sign()
-		if err != nil {
-			return nil, err
-		}
+		require.NoError(t, err)
 		checkSigsRoundtrip(sigs)
 
-		coordinator.AddSignatures(pubkey, sigs)
+		shouldBan, err := coordinator.AddSignatures(pubkey, sigs)
+		require.NoError(t, err)
+		require.False(t, shouldBan)
 	}
 
 	// aggregate signatures
-	return coordinator.SignTree()
+	signedTree, err := coordinator.SignTree()
+	require.NoError(t, err)
+	return signedTree
 }
 
 type vtxoTreeTestCase struct {

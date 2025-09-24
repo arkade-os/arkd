@@ -73,6 +73,7 @@ type Config struct {
 	EventDbUrl          string
 	EventDbDir          string
 	RoundInterval       int64
+	BanDuration         int64
 	SchedulerType       string
 	TxBuilderType       string
 	LiveStoreType       string
@@ -138,6 +139,7 @@ var (
 	WalletAddr                = "WALLET_ADDR"
 	SignerAddr                = "SIGNER_ADDR"
 	RoundInterval             = "ROUND_INTERVAL"
+	BanDuration               = "BAN_DURATION"
 	Port                      = "PORT"
 	EventDbType               = "EVENT_DB_TYPE"
 	DbType                    = "DB_TYPE"
@@ -178,6 +180,7 @@ var (
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultRoundInterval       = 30
+	defaultBanDuration         = 10 * defaultRoundInterval
 	DefaultPort                = 7070
 	defaultDbType              = "postgres"
 	defaultEventDbType         = "postgres"
@@ -214,6 +217,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(RoundInterval, defaultRoundInterval)
+	viper.SetDefault(BanDuration, defaultBanDuration)
 	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
 	viper.SetDefault(SchedulerType, defaultSchedulerType)
 	viper.SetDefault(EventDbType, defaultEventDbType)
@@ -279,6 +283,7 @@ func LoadConfig() (*Config, error) {
 		WalletAddr:              viper.GetString(WalletAddr),
 		SignerAddr:              signerAddr,
 		RoundInterval:           viper.GetInt64(RoundInterval),
+		BanDuration:             viper.GetInt64(BanDuration),
 		Port:                    viper.GetUint32(Port),
 		EventDbType:             viper.GetString(EventDbType),
 		DbType:                  viper.GetString(DbType),
@@ -378,6 +383,9 @@ func (c *Config) Validate() error {
 	}
 	if c.RoundInterval < 2 {
 		return fmt.Errorf("invalid round interval, must be at least 2 seconds")
+	}
+	if c.BanDuration < 1 {
+		return fmt.Errorf("invalid ban duration, must be at least 1 second")
 	}
 	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
 		if c.SchedulerType != "block" {
@@ -691,7 +699,7 @@ func (c *Config) appService() error {
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore,
 		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay,
-		c.RoundInterval, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		c.RoundInterval, c.BanDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		mhStartTime, mhEndTime, mhPeriod, mhRoundInterval, roundReportSvc,

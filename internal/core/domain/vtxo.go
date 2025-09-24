@@ -4,7 +4,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 )
@@ -12,6 +15,20 @@ import (
 type Outpoint struct {
 	Txid string
 	VOut uint32
+}
+
+func (k *Outpoint) FromString(s string) error {
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid outpoint string: %s", s)
+	}
+	k.Txid = parts[0]
+	vout, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		return fmt.Errorf("invalid vout string: %s", parts[1])
+	}
+	k.VOut = uint32(vout)
+	return nil
 }
 
 func (k Outpoint) String() string {
@@ -59,4 +76,12 @@ func (v Vtxo) TapKey() (*btcec.PublicKey, error) {
 		return nil, err
 	}
 	return schnorr.ParsePubKey(pubkeyBytes)
+}
+
+func (v Vtxo) OutputScript() ([]byte, error) {
+	pubkey, err := v.TapKey()
+	if err != nil {
+		return nil, err
+	}
+	return script.P2TRScript(pubkey)
 }
