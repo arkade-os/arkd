@@ -247,14 +247,7 @@ INSERT INTO conviction (
     @id, @type, @created_at, @expires_at, @crime_type, @crime_round_id, @crime_reason, @pardoned, @script
 )
 ON CONFLICT(id) DO UPDATE SET
-    type = EXCLUDED.type,
-    created_at = EXCLUDED.created_at,
-    expires_at = EXCLUDED.expires_at,
-    crime_type = EXCLUDED.crime_type,
-    crime_round_id = EXCLUDED.crime_round_id,
-    crime_reason = EXCLUDED.crime_reason,
-    pardoned = EXCLUDED.pardoned,
-    script = EXCLUDED.script;
+    pardoned = EXCLUDED.pardoned;
 
 -- name: SelectConviction :one
 SELECT * FROM conviction WHERE id = @id;
