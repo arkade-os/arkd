@@ -18,7 +18,7 @@ services:
   nbxplorer:
     restart: unless-stopped
     container_name: nbxplorer
-    ports: 
+    ports:
       - 32838:32838
     image: nicolasdorier/nbxplorer:2.5.30
     environment:
@@ -41,7 +41,7 @@ services:
     depends_on:
       pgnbxplorer:
         condition: service_healthy
-    
+
   arkd-wallet:
     restart: unless-stopped
     build:
@@ -82,11 +82,14 @@ services:
       - ARKD_DATADIR=./data/regtest
       - ARKD_WALLET_ADDR=arkd-wallet:6060
       - ARKD_ESPLORA_URL=http://chopsticks:3000
+      - ARKD_ROUND_MIN_PARTICIPANTS_COUNT=${ARKD_ROUND_MIN_PARTICIPANTS_COUNT:-1}
+      - ARKD_ROUND_MAX_PARTICIPANTS_COUNT=${ARKD_ROUND_MAX_PARTICIPANTS_COUNT:-128}
       - ARKD_VTXO_MIN_AMOUNT=1
       - ARKD_LIVE_STORE_TYPE=inmemory
       - ARKD_EVENT_DB_TYPE=badger
       - ARKD_DB_TYPE=sqlite
-      - ARKD_ROUND_INTERVAL=10
+      - ARKD_ROUND_INTERVAL=${ARKD_ROUND_INTERVAL:-10}
+      - ARKD_ROUND_REPORT_ENABLED=${ARKD_ROUND_REPORT_ENABLED:-true}
     volumes:
       - type: tmpfs
         target: /app/data

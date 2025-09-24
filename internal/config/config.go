@@ -88,12 +88,13 @@ type Config struct {
 	AllowCSVBlockType   bool
 	HeartbeatInterval   int64
 
-	MarketHourStartTime     int64
-	MarketHourEndTime       int64
-	MarketHourPeriod        int64
-	MarketHourRoundInterval int64
-	OtelCollectorEndpoint   string
-	OtelPushInterval        int64
+	MarketHourStartTime       int64
+	MarketHourEndTime         int64
+	MarketHourPeriod          int64
+	MarketHourRoundInterval   int64
+	OtelCollectorEndpoint     string
+	OtelPushInterval          int64
+	RoundReportServiceEnabled bool
 
 	EsploraURL string
 
@@ -108,17 +109,18 @@ type Config struct {
 	VtxoMaxAmount             int64
 	VtxoMinAmount             int64
 
-	repo      ports.RepoManager
-	svc       application.Service
-	adminSvc  application.AdminService
-	wallet    ports.WalletService
-	signer    ports.SignerService
-	txBuilder ports.TxBuilder
-	scanner   ports.BlockchainScanner
-	scheduler ports.SchedulerService
-	unlocker  ports.Unlocker
-	liveStore ports.LiveStore
-	network   *arklib.Network
+	repo           ports.RepoManager
+	svc            application.Service
+	adminSvc       application.AdminService
+	wallet         ports.WalletService
+	signer         ports.SignerService
+	txBuilder      ports.TxBuilder
+	scanner        ports.BlockchainScanner
+	scheduler      ports.SchedulerService
+	unlocker       ports.Unlocker
+	liveStore      ports.LiveStore
+	network        *arklib.Network
+	roundReportSvc application.RoundReportService
 }
 
 func (c *Config) String() string {
@@ -176,6 +178,7 @@ var (
 	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
 	AllowCSVBlockType         = "ALLOW_CSV_BLOCK_TYPE"
 	HeartbeatInterval         = "HEARTBEAT_INTERVAL"
+	RoundReportServiceEnabled = "ROUND_REPORT_ENABLED"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultRoundInterval       = 30
@@ -204,6 +207,7 @@ var (
 	defaultRoundMinParticipantsCount = 1
 	defaultOtelPushInterval          = 10 // seconds
 	defaultHeartbeatInterval         = 60 // seconds
+	defaultRoundReportServiceEnabled = false
 )
 
 func LoadConfig() (*Config, error) {
@@ -236,6 +240,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AllowCSVBlockType, defaultAllowCSVBlockType)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
+	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -323,6 +328,7 @@ func LoadConfig() (*Config, error) {
 		VtxoMaxAmount:             viper.GetInt64(VtxoMaxAmount),
 		VtxoMinAmount:             viper.GetInt64(VtxoMinAmount),
 		AllowCSVBlockType:         allowCSVBlockType,
+		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
 	}, nil
 }
 
@@ -521,6 +527,15 @@ func (c *Config) SignerService() (ports.SignerService, error) {
 	return c.signer, nil
 }
 
+func (c *Config) RoundReportService() (application.RoundReportService, error) {
+	if c.roundReportSvc == nil {
+		if err := c.roundReportService(); err != nil {
+			return nil, err
+		}
+	}
+	return c.roundReportSvc, nil
+}
+
 func (c *Config) repoManager() error {
 	var svc ports.RepoManager
 	var err error
@@ -688,13 +703,18 @@ func (c *Config) appService() error {
 		return err
 	}
 
+	roundReportSvc, err := c.RoundReportService()
+	if err != nil {
+		return err
+	}
+
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore,
 		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.RoundInterval, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
-		mhStartTime, mhEndTime, mhPeriod, mhRoundInterval,
+		mhStartTime, mhEndTime, mhPeriod, mhRoundInterval, roundReportSvc,
 	)
 	if err != nil {
 		return err
@@ -733,6 +753,15 @@ func (c *Config) unlockerService() error {
 		return err
 	}
 	c.unlocker = svc
+	return nil
+}
+
+func (c *Config) roundReportService() error {
+	if !c.RoundReportServiceEnabled {
+		return nil
+	}
+
+	c.roundReportSvc = application.NewRoundReportService()
 	return nil
 }
 

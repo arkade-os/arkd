@@ -8,6 +8,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/config"
 	grpcservice "github.com/arkade-os/arkd/internal/interface/grpc"
+	"github.com/arkade-os/arkd/internal/telemetry"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -29,6 +30,9 @@ func mainAction(_ *cli.Context) error {
 	}
 
 	log.SetLevel(log.Level(cfg.LogLevel))
+	if cfg.OtelCollectorEndpoint != "" {
+		log.AddHook(telemetry.NewOTelHook())
+	}
 
 	svcConfig := grpcservice.Config{
 		Datadir:           cfg.Datadir,
