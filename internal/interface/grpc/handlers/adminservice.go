@@ -357,9 +357,14 @@ func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, 
 		expiresAt = conviction.GetExpiresAt().Unix()
 	}
 
+	convictionType := arkv1.ConvictionType_CONVICTION_TYPE_UNSPECIFIED
+	if conviction.GetType() == domain.ConvictionTypeScript {
+		convictionType = arkv1.ConvictionType_CONVICTION_TYPE_SCRIPT
+	}
+
 	protoConviction := &arkv1.Conviction{
 		Id:        conviction.GetID(),
-		Type:      arkv1.ConvictionType(conviction.GetType()),
+		Type:      convictionType,
 		CreatedAt: conviction.GetCreatedAt().Unix(),
 		ExpiresAt: expiresAt,
 		Crime: &arkv1.Crime{
