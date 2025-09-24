@@ -49,16 +49,22 @@ func (b *txBuilder) GetTxid(tx string) (string, error) {
 	return ptx.UnsignedTx.TxID(), nil
 }
 
-func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, string, error) {
+func (b *txBuilder) VerifyTapscriptPartialSigs(
+	tx string,
+	checkSignerSig bool,
+) (bool, string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return false, "", err
 	}
 
-	return b.verifyTapscriptPartialSigs(ptx)
+	return b.verifyTapscriptPartialSigs(ptx, checkSignerSig)
 }
 
-func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, error) {
+func (b *txBuilder) verifyTapscriptPartialSigs(
+	ptx *psbt.Packet,
+	checkSignerSig bool,
+) (bool, string, error) {
 	txid := ptx.UnsignedTx.TxID()
 
 	signerPubkey, err := b.signer.GetPubkey(context.Background())
@@ -126,8 +132,10 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 			}
 		}
 
-		// we don't need to check if operator signed
-		keys[signerPubkeyHex] = true
+		if !checkSignerSig {
+			// we don't need to check if operator signed, so we set valid = true
+			keys[signerPubkeyHex] = true
+		}
 
 		if len(tapLeaf.ControlBlock) == 0 {
 			return false, txid, fmt.Errorf("missing control block for input %d", index)
