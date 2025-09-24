@@ -1957,7 +1957,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 				convictions = append(convictions, domain.NewScriptConviction(script, domain.Crime{
 					Type:    domain.CrimeTypeForfeitSubmission,
 					RoundID: roundId,
-					Reason:  "invalid signature for vtxo",
+					Reason:  "missing forfeit signature",
 				}, &s.banDuration))
 			}
 
