@@ -1958,7 +1958,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 					Type:    domain.CrimeTypeForfeitSubmission,
 					RoundID: roundId,
 					Reason:  "invalid signature for vtxo",
-				}, nil))
+				}, &s.banDuration))
 			}
 
 			if err := s.repoManager.Convictions().Add(convictions...); err != nil {
@@ -2012,7 +2012,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 							Type:    domain.CrimeTypeBoardingInputSubmission,
 							RoundID: roundId,
 							Reason:  fmt.Sprintf("missing tapscript spend sig for input %d", i),
-						}, nil),
+						}, &s.banDuration),
 					)
 					continue
 				}
