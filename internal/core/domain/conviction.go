@@ -97,14 +97,14 @@ type ScriptConviction struct {
 func (s ScriptConviction) String() string {
 	if s.ExpiresAt == nil {
 		return fmt.Sprintf(
-			"VtxoScript %x banned forever, type: %s, reason: %s",
+			"VtxoScript %s banned forever, type: %s, reason: %s",
 			s.Script,
 			s.Crime.Type,
 			s.Crime.Reason,
 		)
 	}
 	return fmt.Sprintf(
-		"VtxoScript %x banned until %s, type: %s, reason: %s",
+		"VtxoScript %s banned until %s, type: %s, reason: %s",
 		s.Script,
 		s.ExpiresAt.Format(time.RFC3339),
 		s.Crime.Type,
