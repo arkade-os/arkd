@@ -339,7 +339,7 @@ func (a *adminHandler) BanScript(
 	banDuration := req.GetBanDuration()
 	var banTime *time.Duration
 
-	if banDuration != 0 {
+	if banDuration > 0 {
 		duration := time.Duration(banDuration) * time.Second
 		banTime = &duration
 	}
