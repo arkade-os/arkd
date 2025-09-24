@@ -49,6 +49,7 @@ type service struct {
 	forfeitAddress            string
 	vtxoTreeExpiry            arklib.RelativeLocktime
 	roundInterval             time.Duration
+	banDuration               time.Duration
 	unilateralExitDelay       arklib.RelativeLocktime
 	boardingExitDelay         arklib.RelativeLocktime
 	roundMinParticipantsCount int64
@@ -59,8 +60,6 @@ type service struct {
 	vtxoMinSettlementAmount   int64
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
-
-	banDuration time.Duration
 
 	// TODO: derive the key pair used for the musig2 signing session from wallet.
 	operatorPrvkey *btcec.PrivateKey
@@ -87,7 +86,7 @@ func NewService(
 	scheduler ports.SchedulerService,
 	cache ports.LiveStore,
 	vtxoTreeExpiry, unilateralExitDelay, boardingExitDelay arklib.RelativeLocktime,
-	roundInterval, roundMinParticipantsCount, roundMaxParticipantsCount,
+	roundInterval, banDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount int64,
 	network arklib.Network, allowCSVBlockType bool, noteUriPrefix string,
 	marketHourStartTime, marketHourEndTime time.Time,
@@ -148,6 +147,7 @@ func NewService(
 
 	ctx, cancel := context.WithCancel(ctx)
 	roundIntervalDuration := time.Duration(roundInterval) * time.Second
+	banDurationDuration := time.Duration(banDuration) * time.Second
 
 	svc := &service{
 		network:             network,
@@ -155,6 +155,7 @@ func NewService(
 		forfeitPubkey:       forfeitPubkey,
 		vtxoTreeExpiry:      vtxoTreeExpiry,
 		roundInterval:       roundIntervalDuration,
+		banDuration:         banDurationDuration,
 		unilateralExitDelay: unilateralExitDelay,
 		allowCSVBlockType:   allowCSVBlockType,
 		wallet:              wallet,
@@ -183,7 +184,6 @@ func NewService(
 		stop:                      cancel,
 		ctx:                       ctx,
 		wg:                        &sync.WaitGroup{},
-		banDuration:               roundIntervalDuration * 10,
 		roundReportSvc:            roundReportSvc,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
