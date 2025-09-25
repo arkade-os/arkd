@@ -65,6 +65,13 @@ func (h *handler) GetInfo(
 		UtxoMaxAmount:       info.UtxoMaxAmount,
 		VtxoMinAmount:       info.VtxoMinAmount,
 		VtxoMaxAmount:       info.VtxoMaxAmount,
+		// TODO
+		Fees: &arkv1.FeeInfo{
+			IntentFee: &arkv1.IntentFeeInfo{},
+			TxFeeRate: "",
+		},
+		DeprecatedSignerPubkeys: []string{},
+		Digest:                  "",
 	}, nil
 }
 
@@ -257,6 +264,12 @@ func (h *handler) FinalizeTx(
 	}
 
 	return &arkv1.FinalizeTxResponse{}, nil
+}
+
+func (h *handler) GetPendingTx(
+	ctx context.Context, req *arkv1.GetPendingTxRequest,
+) (*arkv1.GetPendingTxResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
 func (h *handler) GetTransactionsStream(

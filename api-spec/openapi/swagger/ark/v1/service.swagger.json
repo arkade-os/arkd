@@ -314,6 +314,39 @@
         ]
       }
     },
+    "/v1/tx/pending": {
+      "post": {
+        "summary": "GetPendingTx returns not finalized transaction(s) for a given set of inputs.\nthe client should provide a BIP322 proof of ownership of the inputs",
+        "operationId": "ArkService_GetPendingTx",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPendingTxResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GetPendingTxRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ArkService"
+        ]
+      }
+    },
     "/v1/tx/submit": {
       "post": {
         "summary": "SubmitTx is the first leg of the process of spending vtxos offchain and allows a client to\nsubmit a signed Ark transaction and the unsigned checkpoint transactions.\nThe server should verify the signed transactions and return the fully signed Ark tx and the\nsigned checkpoint txs.",
@@ -494,6 +527,17 @@
     "v1DeleteIntentResponse": {
       "type": "object"
     },
+    "v1FeeInfo": {
+      "type": "object",
+      "properties": {
+        "intentFee": {
+          "$ref": "#/definitions/v1IntentFeeInfo"
+        },
+        "txFeeRate": {
+          "type": "string"
+        }
+      }
+    },
     "v1FinalizeTxRequest": {
       "type": "object",
       "properties": {
@@ -595,6 +639,38 @@
         "boardingExitDelay": {
           "type": "string",
           "format": "int64"
+        },
+        "fees": {
+          "$ref": "#/definitions/v1FeeInfo"
+        },
+        "deprecatedSignerPubkeys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "digest": {
+          "type": "string"
+        }
+      }
+    },
+    "v1GetPendingTxRequest": {
+      "type": "object",
+      "properties": {
+        "proof": {
+          "$ref": "#/definitions/v1Bip322Signature"
+        }
+      }
+    },
+    "v1GetPendingTxResponse": {
+      "type": "object",
+      "properties": {
+        "pendingTxs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PendingTx"
+          }
         }
       }
     },
@@ -606,6 +682,23 @@
         },
         "arkTx": {
           "$ref": "#/definitions/v1TxNotification"
+        }
+      }
+    },
+    "v1IntentFeeInfo": {
+      "type": "object",
+      "properties": {
+        "offchainInput": {
+          "type": "string"
+        },
+        "offchainOutput": {
+          "type": "string"
+        },
+        "onchainInput": {
+          "type": "string"
+        },
+        "onchainOutput": {
+          "type": "string"
         }
       }
     },
@@ -639,6 +732,23 @@
         "vout": {
           "type": "integer",
           "format": "int64"
+        }
+      }
+    },
+    "v1PendingTx": {
+      "type": "object",
+      "properties": {
+        "arkTxid": {
+          "type": "string"
+        },
+        "finalArkTx": {
+          "type": "string"
+        },
+        "signedCheckpointTxs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

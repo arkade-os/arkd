@@ -66,6 +66,9 @@ type ArkServiceClient interface {
 	// The server verifies the signed checkpoint transactions and returns success if everything is
 	// valid.
 	FinalizeTx(ctx context.Context, in *FinalizeTxRequest, opts ...grpc.CallOption) (*FinalizeTxResponse, error)
+	// GetPendingTx returns not finalized transaction(s) for a given set of inputs.
+	// the client should provide a BIP322 proof of ownership of the inputs
+	GetPendingTx(ctx context.Context, in *GetPendingTxRequest, opts ...grpc.CallOption) (*GetPendingTxResponse, error)
 	// GetTransactionsStream is a server-side streaming RPC that allows clients to receive
 	// notifications in real-time about any commitment tx or ark tx processed and finalized by the
 	// server.
@@ -195,6 +198,15 @@ func (c *arkServiceClient) FinalizeTx(ctx context.Context, in *FinalizeTxRequest
 	return out, nil
 }
 
+func (c *arkServiceClient) GetPendingTx(ctx context.Context, in *GetPendingTxRequest, opts ...grpc.CallOption) (*GetPendingTxResponse, error) {
+	out := new(GetPendingTxResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.ArkService/GetPendingTx", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *arkServiceClient) GetTransactionsStream(ctx context.Context, in *GetTransactionsStreamRequest, opts ...grpc.CallOption) (ArkService_GetTransactionsStreamClient, error) {
 	stream, err := c.cc.NewStream(ctx, &ArkService_ServiceDesc.Streams[1], "/ark.v1.ArkService/GetTransactionsStream", opts...)
 	if err != nil {
@@ -279,6 +291,9 @@ type ArkServiceServer interface {
 	// The server verifies the signed checkpoint transactions and returns success if everything is
 	// valid.
 	FinalizeTx(context.Context, *FinalizeTxRequest) (*FinalizeTxResponse, error)
+	// GetPendingTx returns not finalized transaction(s) for a given set of inputs.
+	// the client should provide a BIP322 proof of ownership of the inputs
+	GetPendingTx(context.Context, *GetPendingTxRequest) (*GetPendingTxResponse, error)
 	// GetTransactionsStream is a server-side streaming RPC that allows clients to receive
 	// notifications in real-time about any commitment tx or ark tx processed and finalized by the
 	// server.
@@ -320,6 +335,9 @@ func (UnimplementedArkServiceServer) SubmitTx(context.Context, *SubmitTxRequest)
 }
 func (UnimplementedArkServiceServer) FinalizeTx(context.Context, *FinalizeTxRequest) (*FinalizeTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FinalizeTx not implemented")
+}
+func (UnimplementedArkServiceServer) GetPendingTx(context.Context, *GetPendingTxRequest) (*GetPendingTxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPendingTx not implemented")
 }
 func (UnimplementedArkServiceServer) GetTransactionsStream(*GetTransactionsStreamRequest, ArkService_GetTransactionsStreamServer) error {
 	return status.Errorf(codes.Unimplemented, "method GetTransactionsStream not implemented")
@@ -519,6 +537,24 @@ func _ArkService_FinalizeTx_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ArkService_GetPendingTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPendingTxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArkServiceServer).GetPendingTx(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.ArkService/GetPendingTx",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArkServiceServer).GetPendingTx(ctx, req.(*GetPendingTxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ArkService_GetTransactionsStream_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(GetTransactionsStreamRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -582,6 +618,10 @@ var ArkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FinalizeTx",
 			Handler:    _ArkService_FinalizeTx_Handler,
+		},
+		{
+			MethodName: "GetPendingTx",
+			Handler:    _ArkService_GetPendingTx_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
