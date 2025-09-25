@@ -2,6 +2,7 @@
 package bip322
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -81,6 +82,19 @@ func (p *FullProof) Signature(finalize ...func(*psbt.Packet) error) (*Signature,
 	}
 
 	return (*Signature)(signed), nil
+}
+
+func (p FullProof) IsOutputsSpecified() bool {
+	if len(p.UnsignedTx.TxOut) > 1 {
+		return true
+	}
+
+	// if the first output is the "empty" BIP322 OP_RETURN, then the outputs are not specified
+	if bytes.Equal(p.UnsignedTx.TxOut[0].PkScript, opReturnEmptyPkScript) && p.UnsignedTx.TxOut[0].Value == 0 {
+		return false
+	}
+
+	return true
 }
 
 func (i *Input) validate() error {

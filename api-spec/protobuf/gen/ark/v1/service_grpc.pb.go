@@ -20,6 +20,8 @@ const _ = grpc.SupportPackageIsVersion7
 type ArkServiceClient interface {
 	// GetInfo returns information and parameters of the server.
 	GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error)
+	// SignIntent allows the ark operator to counter sign a BIP322 proof of ownership.
+	SignIntent(ctx context.Context, in *SignIntentRequest, opts ...grpc.CallOption) (*SignIntentResponse, error)
 	// RegisterIntent allows to register a new intent that will be eventually selected by the server
 	// for a particular batch.
 	// The client should provide a BIP-322 message with the intent information, and the server should
@@ -85,6 +87,15 @@ func NewArkServiceClient(cc grpc.ClientConnInterface) ArkServiceClient {
 func (c *arkServiceClient) GetInfo(ctx context.Context, in *GetInfoRequest, opts ...grpc.CallOption) (*GetInfoResponse, error) {
 	out := new(GetInfoResponse)
 	err := c.cc.Invoke(ctx, "/ark.v1.ArkService/GetInfo", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *arkServiceClient) SignIntent(ctx context.Context, in *SignIntentRequest, opts ...grpc.CallOption) (*SignIntentResponse, error) {
+	out := new(SignIntentResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.ArkService/SignIntent", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +244,8 @@ func (x *arkServiceGetTransactionsStreamClient) Recv() (*GetTransactionsStreamRe
 type ArkServiceServer interface {
 	// GetInfo returns information and parameters of the server.
 	GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error)
+	// SignIntent allows the ark operator to counter sign a BIP322 proof of ownership.
+	SignIntent(context.Context, *SignIntentRequest) (*SignIntentResponse, error)
 	// RegisterIntent allows to register a new intent that will be eventually selected by the server
 	// for a particular batch.
 	// The client should provide a BIP-322 message with the intent information, and the server should
@@ -294,6 +307,9 @@ type UnimplementedArkServiceServer struct {
 func (UnimplementedArkServiceServer) GetInfo(context.Context, *GetInfoRequest) (*GetInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetInfo not implemented")
 }
+func (UnimplementedArkServiceServer) SignIntent(context.Context, *SignIntentRequest) (*SignIntentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignIntent not implemented")
+}
 func (UnimplementedArkServiceServer) RegisterIntent(context.Context, *RegisterIntentRequest) (*RegisterIntentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterIntent not implemented")
 }
@@ -350,6 +366,24 @@ func _ArkService_GetInfo_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ArkServiceServer).GetInfo(ctx, req.(*GetInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ArkService_SignIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignIntentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArkServiceServer).SignIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.ArkService/SignIntent",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArkServiceServer).SignIntent(ctx, req.(*SignIntentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -550,6 +584,10 @@ var ArkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetInfo",
 			Handler:    _ArkService_GetInfo_Handler,
+		},
+		{
+			MethodName: "SignIntent",
+			Handler:    _ArkService_SignIntent_Handler,
 		},
 		{
 			MethodName: "RegisterIntent",

@@ -811,6 +811,46 @@ func (s *service) FinalizeOffchainTx(
 	return nil
 }
 
+func (s *service) SignIntent(ctx context.Context, tx, message string) (string, error) {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+	if err != nil {
+		return "", err
+	}
+
+	// verify the integrity of the BIP322 proof tx
+	inputs := make([]bip322.Input, 0, len(ptx.Inputs)-1)
+	// we ignore the first input, as it is the fake BIP322 input making the tx invalid
+	for inputIndex, input := range ptx.Inputs[1:] {
+		inputs = append(inputs, bip322.Input{
+			OutPoint:    &ptx.UnsignedTx.TxIn[inputIndex+1].PreviousOutPoint,
+			WitnessUtxo: input.WitnessUtxo,
+			Sequence:    ptx.UnsignedTx.TxIn[inputIndex+1].Sequence,
+		})
+	}
+
+	outputs := make([]*wire.TxOut, 0, len(ptx.UnsignedTx.TxOut))
+	if bip322.FullProof(*ptx).IsOutputsSpecified() {
+		outputs = ptx.UnsignedTx.TxOut
+	}
+
+	rebuiltProof, err := bip322.New(message, inputs, outputs)
+	if err != nil {
+		return "", err
+	}
+
+	// fail if the rebuilt tx != the provided one
+	if rebuiltProof.UnsignedTx.TxID() != ptx.UnsignedTx.TxID() {
+		return "", fmt.Errorf(
+			"invalid proof, recomputed txid %s does not match the original txid %s",
+			rebuiltProof.UnsignedTx.TxID(),
+			ptx.UnsignedTx.TxID(),
+		)
+	}
+
+	// otherwise counter sign and return the psbt with additional partial sigs
+	return s.wallet.SignTransactionTapscript(ctx, tx, nil)
+}
+
 func (s *service) RegisterIntent(
 	ctx context.Context, proof bip322.Signature, message bip322.IntentMessage,
 ) (string, error) {

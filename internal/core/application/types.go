@@ -12,6 +12,7 @@ import (
 type Service interface {
 	Start() error
 	Stop()
+	SignIntent(ctx context.Context, tx string, message string) (string, error)
 	RegisterIntent(
 		ctx context.Context, proof bip322.Signature, message bip322.IntentMessage,
 	) (string, error)

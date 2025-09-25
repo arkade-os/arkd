@@ -159,6 +159,39 @@
         ]
       }
     },
+    "/v1/batch/signIntent": {
+      "post": {
+        "summary": "SignIntent allows the ark operator to counter sign a BIP322 proof of ownership.",
+        "operationId": "ArkService_SignIntent",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SignIntentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SignIntentRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ArkService"
+        ]
+      }
+    },
     "/v1/batch/submitForfeitTxs": {
       "post": {
         "summary": "SubmitSignedForfeitTxs allows a client to submit signed forfeit transactions and/or signed\ncommitment transaction (in case of onboarding).\nThe server should verify the signed txs and return success.",
@@ -655,6 +688,25 @@
       "type": "object",
       "properties": {
         "intentId": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SignIntentRequest": {
+      "type": "object",
+      "properties": {
+        "tx": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SignIntentResponse": {
+      "type": "object",
+      "properties": {
+        "signedTx": {
           "type": "string"
         }
       }

@@ -68,6 +68,25 @@ func (h *handler) GetInfo(
 	}, nil
 }
 
+func (h *handler) SignIntent(
+	ctx context.Context, req *arkv1.SignIntentRequest,
+) (*arkv1.SignIntentResponse, error) {
+	if len(req.GetTx()) <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing tx")
+	}
+
+	if len(req.GetMessage()) <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing message")
+	}
+
+	signedTx, err := h.svc.SignIntent(ctx, req.GetTx(), req.GetMessage())
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &arkv1.SignIntentResponse{SignedTx: signedTx}, nil
+}
+
 func (h *handler) RegisterIntent(
 	ctx context.Context, req *arkv1.RegisterIntentRequest,
 ) (*arkv1.RegisterIntentResponse, error) {

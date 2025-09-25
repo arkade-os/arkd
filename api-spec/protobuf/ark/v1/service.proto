@@ -13,6 +13,14 @@ service ArkService {
     };
   }
 
+  // SignIntent allows the ark operator to counter sign a BIP322 proof of ownership.
+  rpc SignIntent(SignIntentRequest) returns (SignIntentResponse) {
+    option (google.api.http) = {
+      post: "/v1/batch/signIntent"
+      body: "*"
+    };
+  }
+
   // RegisterIntent allows to register a new intent that will be eventually selected by the server
   // for a particular batch.
   // The client should provide a BIP-322 message with the intent information, and the server should
@@ -140,6 +148,14 @@ message GetInfoResponse {
   int64 vtxo_min_amount = 12; 
   int64 vtxo_max_amount = 13; // -1 means no limit (default)
   int64 boarding_exit_delay = 14;
+}
+
+message SignIntentRequest {
+  string tx = 1;
+  string message = 2;
+}
+message SignIntentResponse {
+  string signed_tx = 1;
 }
 
 message RegisterIntentRequest {
