@@ -467,9 +467,9 @@ func (m *mockedTxBuilder) FinalizeAndExtract(tx string) (txhex string, err error
 }
 
 func (m *mockedTxBuilder) VerifyTapscriptPartialSigs(
-	tx string,
+	tx string, mustIncludeSignerSig bool,
 ) (valid bool, txid string, err error) {
-	args := m.Called(tx)
+	args := m.Called(tx, mustIncludeSignerSig)
 	res0 := args.Get(0).(bool)
 	res1 := args.Get(1).(string)
 	return res0, res1, args.Error(2)
