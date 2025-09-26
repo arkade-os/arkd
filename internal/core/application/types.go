@@ -32,7 +32,11 @@ type Service interface {
 		ctx context.Context, roundId, pubkey string, signatures tree.TreePartialSigs,
 	) error
 	GetTxEventsChannel(ctx context.Context) <-chan TransactionEvent
-	DeleteIntentsByProof(ctx context.Context, proof intent.Proof, message intent.DeleteMessage) error
+	DeleteIntentsByProof(
+		ctx context.Context,
+		proof intent.Proof,
+		message intent.DeleteMessage,
+	) error
 
 	// TODO: remove when detaching the indexer svc.
 	GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent

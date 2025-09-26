@@ -1886,16 +1886,10 @@ func TestDelegateRefresh(t *testing.T) {
 	aliceVtxo, err := faucetOffchainAddress(t, arkAddressStr)
 	require.NoError(t, err)
 
-	scripts, err := delegationVtxoScript.Encode()
-	require.NoError(t, err)
-	tapTree, err := txutils.TapTree(scripts).Encode()
-	require.NoError(t, err)
-
 	intentMessage := intent.RegisterMessage{
 		BaseMessage: intent.BaseMessage{
 			Type: intent.IntentMessageTypeRegister,
 		},
-		InputTapTrees:       []string{hex.EncodeToString(tapTree)},
 		CosignersPublicKeys: []string{bobTreeSigner.GetPublicKey()},
 		ValidAt:             0,
 		ExpireAt:            0,
@@ -1958,9 +1952,17 @@ func TestDelegateRefresh(t *testing.T) {
 	intentProof.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
 	intentProof.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
 
-	intentProofPsbt := psbt.Packet(*intentProof)
+	scripts, err := delegationVtxoScript.Encode()
+	require.NoError(t, err)
+	tapTree, err := txutils.TapTree(scripts).Encode()
+	require.NoError(t, err)
 
-	unsignedIntentProof, err := intentProofPsbt.B64Encode()
+	intentProof.Inputs[1].Unknowns = []*psbt.Unknown{{
+		Value: tapTree,
+		Key:   txutils.VTXO_TAPROOT_TREE_KEY,
+	}}
+
+	unsignedIntentProof, err := intentProof.B64Encode()
 	require.NoError(t, err)
 
 	signedIntentProof, err := alice.SignTransaction(ctx, unsignedIntentProof)

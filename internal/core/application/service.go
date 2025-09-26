@@ -877,11 +877,19 @@ func (s *service) RegisterIntent(
 			prevout := tx.TxOut[vtxoOutpoint.VOut]
 
 			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
-				return "", fmt.Errorf("invalid witness utxo script: got %x expected %x", prevout.PkScript, psbtInput.WitnessUtxo.PkScript)
+				return "", fmt.Errorf(
+					"invalid witness utxo script: got %x expected %x",
+					prevout.PkScript,
+					psbtInput.WitnessUtxo.PkScript,
+				)
 			}
 
 			if prevout.Value != int64(psbtInput.WitnessUtxo.Value) {
-				return "", fmt.Errorf("invalid witness utxo value: got %d expected %d", prevout.Value, psbtInput.WitnessUtxo.Value)
+				return "", fmt.Errorf(
+					"invalid witness utxo value: got %d expected %d",
+					prevout.Value,
+					psbtInput.WitnessUtxo.Value,
+				)
 			}
 
 			input := ports.Input{
@@ -909,7 +917,11 @@ func (s *service) RegisterIntent(
 		}
 
 		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
-			return "", fmt.Errorf("invalid witness utxo value: got %d expected %d", psbtInput.WitnessUtxo.Value, vtxo.Amount)
+			return "", fmt.Errorf(
+				"invalid witness utxo value: got %d expected %d",
+				psbtInput.WitnessUtxo.Value,
+				vtxo.Amount,
+			)
 		}
 
 		pubkeyBytes, err := hex.DecodeString(vtxo.PubKey)
@@ -928,7 +940,11 @@ func (s *service) RegisterIntent(
 		}
 
 		if !bytes.Equal(pkScript, psbtInput.WitnessUtxo.PkScript) {
-			return "", fmt.Errorf("invalid witness utxo script: got %x expected %x", psbtInput.WitnessUtxo.PkScript, pkScript)
+			return "", fmt.Errorf(
+				"invalid witness utxo script: got %x expected %x",
+				psbtInput.WitnessUtxo.PkScript,
+				pkScript,
+			)
 		}
 
 		// Only in case the vtxo is a note we skip the validation of its script and the csv delay.
@@ -1214,11 +1230,19 @@ func (s *service) DeleteIntentsByProof(
 			prevout := tx.TxOut[vtxoOutpoint.VOut]
 
 			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
-				return fmt.Errorf("invalid witness utxo script: got %x expected %x", prevout.PkScript, psbtInput.WitnessUtxo.PkScript)
+				return fmt.Errorf(
+					"invalid witness utxo script: got %x expected %x",
+					prevout.PkScript,
+					psbtInput.WitnessUtxo.PkScript,
+				)
 			}
 
 			if prevout.Value != int64(psbtInput.WitnessUtxo.Value) {
-				return fmt.Errorf("invalid witness utxo value: got %d expected %d", prevout.Value, psbtInput.WitnessUtxo.Value)
+				return fmt.Errorf(
+					"invalid witness utxo value: got %d expected %d",
+					prevout.Value,
+					psbtInput.WitnessUtxo.Value,
+				)
 			}
 
 			continue
@@ -1227,7 +1251,11 @@ func (s *service) DeleteIntentsByProof(
 		vtxo := vtxosResult[0]
 
 		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
-			return fmt.Errorf("invalid witness utxo value: got %d expected %d", psbtInput.WitnessUtxo.Value, vtxo.Amount)
+			return fmt.Errorf(
+				"invalid witness utxo value: got %d expected %d",
+				psbtInput.WitnessUtxo.Value,
+				vtxo.Amount,
+			)
 		}
 
 		pubkeyBytes, err := hex.DecodeString(vtxo.PubKey)
@@ -1246,7 +1274,11 @@ func (s *service) DeleteIntentsByProof(
 		}
 
 		if !bytes.Equal(pkScript, psbtInput.WitnessUtxo.PkScript) {
-			return fmt.Errorf("invalid witness utxo script: got %x expected %x", psbtInput.WitnessUtxo.PkScript, pkScript)
+			return fmt.Errorf(
+				"invalid witness utxo script: got %x expected %x",
+				psbtInput.WitnessUtxo.PkScript,
+				pkScript,
+			)
 		}
 	}
 

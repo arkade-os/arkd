@@ -32,7 +32,9 @@ func parseIntentProofTx(i *arkv1.IntentProof) (*intent.Proof, error) {
 	return &intent.Proof{Packet: *proofTx}, nil
 }
 
-func parseRegisterIntent(intentProof *arkv1.IntentProof) (*intent.Proof, *intent.RegisterMessage, error) {
+func parseRegisterIntent(
+	intentProof *arkv1.IntentProof,
+) (*intent.Proof, *intent.RegisterMessage, error) {
 	proof, err := parseIntentProofTx(intentProof)
 	if err != nil {
 		return nil, nil, err
