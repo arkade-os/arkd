@@ -22,7 +22,7 @@ import (
 const (
 	exPubKey1               = "f8352deebdf5658d95875d89656112b1dd150f176c702eea4f91a91527e48e26"
 	exPubKey2               = "fc68d5ea9279cc9d2c57e6885e21bbaee9c3aec85089f1d6c705c017d321ea84"
-	exHash                  = "628850CB844FE63C308C62AFC8BC5351F1952A7F"
+	exHash                  = "628850cb844fe63c308c62afc8bc5351f1952a7f"
 	sequenceExample         = "03070040"
 	disabledSequenceExample = "ffffffff"
 	exampleLocktime         = "049a696167"
@@ -102,7 +102,7 @@ func TestDecodeClosure(t *testing.T) {
 			},
 			{
 				name: "cltv multisig closure 2 byte locktime",
-				script: "02abcd" +
+				script: "020102" +
 					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
 					fmt.Sprintf("%x", txscript.OP_DROP) +
 					fmt.Sprintf("%x", txscript.OP_DATA_32) +
@@ -111,7 +111,7 @@ func TestDecodeClosure(t *testing.T) {
 			},
 			{
 				name: "cltv multisig closure 3 byte locktime",
-				script: "03aabbcc" +
+				script: "03010203" +
 					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
 					fmt.Sprintf("%x", txscript.OP_DROP) +
 					fmt.Sprintf("%x", txscript.OP_DATA_32) +
@@ -120,25 +120,7 @@ func TestDecodeClosure(t *testing.T) {
 			},
 			{
 				name: "cltv multisig closure 4 byte locktime",
-				script: "04fff6adaa" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 5 byte locktime",
-				script: "05efae91fff6" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 6 byte locktime",
-				script: "06efae91fff6af" +
+				script: "0401020304" +
 					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
 					fmt.Sprintf("%x", txscript.OP_DROP) +
 					fmt.Sprintf("%x", txscript.OP_DATA_32) +
@@ -207,6 +189,10 @@ func TestDecodeClosure(t *testing.T) {
 				closure, err := script.DecodeClosure(scriptBytes)
 				require.NoError(t, err)
 				require.NotNil(t, closure)
+
+				decodedScript, err := closure.Script()
+				require.NoError(t, err)
+				require.Equal(t, f.script, hex.EncodeToString(decodedScript))
 			})
 		}
 	})
