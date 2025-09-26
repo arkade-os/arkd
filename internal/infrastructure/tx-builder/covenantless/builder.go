@@ -50,20 +50,18 @@ func (b *txBuilder) GetTxid(tx string) (string, error) {
 }
 
 func (b *txBuilder) VerifyTapscriptPartialSigs(
-	tx string,
-	checkSignerSig bool,
+	tx string, mustIncludeSignerSig bool,
 ) (bool, string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return false, "", err
 	}
 
-	return b.verifyTapscriptPartialSigs(ptx, checkSignerSig)
+	return b.verifyTapscriptPartialSigs(ptx, mustIncludeSignerSig)
 }
 
 func (b *txBuilder) verifyTapscriptPartialSigs(
-	ptx *psbt.Packet,
-	checkSignerSig bool,
+	ptx *psbt.Packet, mustIncludeSignerSig bool,
 ) (bool, string, error) {
 	txid := ptx.UnsignedTx.TxID()
 
@@ -132,8 +130,11 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 			}
 		}
 
-		if !checkSignerSig {
-			// we don't need to check if operator signed, so we set valid = true
+		if !mustIncludeSignerSig {
+			// If the tx must not include signer's sig, we mock its verification in advance.
+			// If any input contain the signer's sig, it will be actually verified, otherwise they
+			// are pretend to be verified so that the function doesn't return a
+			// 'missing signature for <signer> pubkey' error.
 			keys[signerPubkeyHex] = true
 		}
 
