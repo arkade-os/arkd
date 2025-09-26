@@ -59,27 +59,27 @@ func (*GetInfoRequest) Descriptor() ([]byte, []int) {
 }
 
 type GetInfoResponse struct {
-	state                   protoimpl.MessageState `protogen:"open.v1"`
-	SignerPubkey            string                 `protobuf:"bytes,1,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	VtxoTreeExpiry          int64                  `protobuf:"varint,2,opt,name=vtxo_tree_expiry,json=vtxoTreeExpiry,proto3" json:"vtxo_tree_expiry,omitempty"`
-	UnilateralExitDelay     int64                  `protobuf:"varint,3,opt,name=unilateral_exit_delay,json=unilateralExitDelay,proto3" json:"unilateral_exit_delay,omitempty"`
-	RoundInterval           int64                  `protobuf:"varint,4,opt,name=round_interval,json=roundInterval,proto3" json:"round_interval,omitempty"`
-	Network                 string                 `protobuf:"bytes,5,opt,name=network,proto3" json:"network,omitempty"`
-	Dust                    int64                  `protobuf:"varint,6,opt,name=dust,proto3" json:"dust,omitempty"`
-	ForfeitAddress          string                 `protobuf:"bytes,7,opt,name=forfeit_address,json=forfeitAddress,proto3" json:"forfeit_address,omitempty"`
-	MarketHour              *MarketHour            `protobuf:"bytes,8,opt,name=market_hour,json=marketHour,proto3" json:"market_hour,omitempty"`
-	Version                 string                 `protobuf:"bytes,9,opt,name=version,proto3" json:"version,omitempty"`
-	UtxoMinAmount           int64                  `protobuf:"varint,10,opt,name=utxo_min_amount,json=utxoMinAmount,proto3" json:"utxo_min_amount,omitempty"`
-	UtxoMaxAmount           int64                  `protobuf:"varint,11,opt,name=utxo_max_amount,json=utxoMaxAmount,proto3" json:"utxo_max_amount,omitempty"` // -1 means no limit (default), 0 means boarding not allowed
-	VtxoMinAmount           int64                  `protobuf:"varint,12,opt,name=vtxo_min_amount,json=vtxoMinAmount,proto3" json:"vtxo_min_amount,omitempty"`
-	VtxoMaxAmount           int64                  `protobuf:"varint,13,opt,name=vtxo_max_amount,json=vtxoMaxAmount,proto3" json:"vtxo_max_amount,omitempty"` // -1 means no limit (default)
-	BoardingExitDelay       int64                  `protobuf:"varint,14,opt,name=boarding_exit_delay,json=boardingExitDelay,proto3" json:"boarding_exit_delay,omitempty"`
-	CheckpointTapscript     string                 `protobuf:"bytes,15,opt,name=checkpoint_tapscript,json=checkpointTapscript,proto3" json:"checkpoint_tapscript,omitempty"`
-	Fees                    *FeeInfo               `protobuf:"bytes,16,opt,name=fees,proto3" json:"fees,omitempty"`
-	DeprecatedSignerPubkeys []string               `protobuf:"bytes,17,rep,name=deprecated_signer_pubkeys,json=deprecatedSignerPubkeys,proto3" json:"deprecated_signer_pubkeys,omitempty"`
-	Digest                  string                 `protobuf:"bytes,18,opt,name=digest,proto3" json:"digest,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	SignerPubkey        string                 `protobuf:"bytes,1,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
+	VtxoTreeExpiry      int64                  `protobuf:"varint,2,opt,name=vtxo_tree_expiry,json=vtxoTreeExpiry,proto3" json:"vtxo_tree_expiry,omitempty"`
+	UnilateralExitDelay int64                  `protobuf:"varint,3,opt,name=unilateral_exit_delay,json=unilateralExitDelay,proto3" json:"unilateral_exit_delay,omitempty"`
+	RoundInterval       int64                  `protobuf:"varint,4,opt,name=round_interval,json=roundInterval,proto3" json:"round_interval,omitempty"`
+	Network             string                 `protobuf:"bytes,5,opt,name=network,proto3" json:"network,omitempty"`
+	Dust                int64                  `protobuf:"varint,6,opt,name=dust,proto3" json:"dust,omitempty"`
+	ForfeitAddress      string                 `protobuf:"bytes,7,opt,name=forfeit_address,json=forfeitAddress,proto3" json:"forfeit_address,omitempty"`
+	MarketHour          *MarketHour            `protobuf:"bytes,8,opt,name=market_hour,json=marketHour,proto3" json:"market_hour,omitempty"`
+	Version             string                 `protobuf:"bytes,9,opt,name=version,proto3" json:"version,omitempty"`
+	UtxoMinAmount       int64                  `protobuf:"varint,10,opt,name=utxo_min_amount,json=utxoMinAmount,proto3" json:"utxo_min_amount,omitempty"`
+	UtxoMaxAmount       int64                  `protobuf:"varint,11,opt,name=utxo_max_amount,json=utxoMaxAmount,proto3" json:"utxo_max_amount,omitempty"` // -1 means no limit (default), 0 means boarding not allowed
+	VtxoMinAmount       int64                  `protobuf:"varint,12,opt,name=vtxo_min_amount,json=vtxoMinAmount,proto3" json:"vtxo_min_amount,omitempty"`
+	VtxoMaxAmount       int64                  `protobuf:"varint,13,opt,name=vtxo_max_amount,json=vtxoMaxAmount,proto3" json:"vtxo_max_amount,omitempty"` // -1 means no limit (default)
+	BoardingExitDelay   int64                  `protobuf:"varint,14,opt,name=boarding_exit_delay,json=boardingExitDelay,proto3" json:"boarding_exit_delay,omitempty"`
+	CheckpointTapscript string                 `protobuf:"bytes,15,opt,name=checkpoint_tapscript,json=checkpointTapscript,proto3" json:"checkpoint_tapscript,omitempty"`
+	Fees                *FeeInfo               `protobuf:"bytes,16,opt,name=fees,proto3" json:"fees,omitempty"`
+	DeprecatedSigners   []*DeprecatedSigner    `protobuf:"bytes,17,rep,name=deprecated_signers,json=deprecatedSigners,proto3" json:"deprecated_signers,omitempty"`
+	Digest              string                 `protobuf:"bytes,18,opt,name=digest,proto3" json:"digest,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *GetInfoResponse) Reset() {
@@ -224,9 +224,9 @@ func (x *GetInfoResponse) GetFees() *FeeInfo {
 	return nil
 }
 
-func (x *GetInfoResponse) GetDeprecatedSignerPubkeys() []string {
+func (x *GetInfoResponse) GetDeprecatedSigners() []*DeprecatedSigner {
 	if x != nil {
-		return x.DeprecatedSignerPubkeys
+		return x.DeprecatedSigners
 	}
 	return nil
 }
@@ -1437,7 +1437,7 @@ var File_ark_v1_service_proto protoreflect.FileDescriptor
 const file_ark_v1_service_proto_rawDesc = "" +
 	"\n" +
 	"\x14ark/v1/service.proto\x12\x06ark.v1\x1a!meshapi/gateway/annotations.proto\x1a\x12ark/v1/types.proto\"\x10\n" +
-	"\x0eGetInfoRequest\"\xdd\x05\n" +
+	"\x0eGetInfoRequest\"\xea\x05\n" +
 	"\x0fGetInfoResponse\x12#\n" +
 	"\rsigner_pubkey\x18\x01 \x01(\tR\fsignerPubkey\x12(\n" +
 	"\x10vtxo_tree_expiry\x18\x02 \x01(\x03R\x0evtxoTreeExpiry\x122\n" +
@@ -1456,8 +1456,8 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x0fvtxo_max_amount\x18\r \x01(\x03R\rvtxoMaxAmount\x12.\n" +
 	"\x13boarding_exit_delay\x18\x0e \x01(\x03R\x11boardingExitDelay\x121\n" +
 	"\x14checkpoint_tapscript\x18\x0f \x01(\tR\x13checkpointTapscript\x12#\n" +
-	"\x04fees\x18\x10 \x01(\v2\x0f.ark.v1.FeeInfoR\x04fees\x12:\n" +
-	"\x19deprecated_signer_pubkeys\x18\x11 \x03(\tR\x17deprecatedSignerPubkeys\x12\x16\n" +
+	"\x04fees\x18\x10 \x01(\v2\x0f.ark.v1.FeeInfoR\x04fees\x12G\n" +
+	"\x12deprecated_signers\x18\x11 \x03(\v2\x18.ark.v1.DeprecatedSignerR\x11deprecatedSigners\x12\x16\n" +
 	"\x06digest\x18\x12 \x01(\tR\x06digest\"H\n" +
 	"\x15RegisterIntentRequest\x12/\n" +
 	"\x06intent\x18\x01 \x01(\v2\x17.ark.v1.Bip322SignatureR\x06intent\"5\n" +
@@ -1580,67 +1580,69 @@ var file_ark_v1_service_proto_goTypes = []any{
 	(*GetTransactionsStreamResponse)(nil),  // 23: ark.v1.GetTransactionsStreamResponse
 	(*MarketHour)(nil),                     // 24: ark.v1.MarketHour
 	(*FeeInfo)(nil),                        // 25: ark.v1.FeeInfo
-	(*Bip322Signature)(nil),                // 26: ark.v1.Bip322Signature
-	(*BatchStartedEvent)(nil),              // 27: ark.v1.BatchStartedEvent
-	(*BatchFinalizationEvent)(nil),         // 28: ark.v1.BatchFinalizationEvent
-	(*BatchFinalizedEvent)(nil),            // 29: ark.v1.BatchFinalizedEvent
-	(*BatchFailedEvent)(nil),               // 30: ark.v1.BatchFailedEvent
-	(*TreeSigningStartedEvent)(nil),        // 31: ark.v1.TreeSigningStartedEvent
-	(*TreeNoncesAggregatedEvent)(nil),      // 32: ark.v1.TreeNoncesAggregatedEvent
-	(*TreeTxEvent)(nil),                    // 33: ark.v1.TreeTxEvent
-	(*TreeSignatureEvent)(nil),             // 34: ark.v1.TreeSignatureEvent
-	(*Heartbeat)(nil),                      // 35: ark.v1.Heartbeat
-	(*PendingTx)(nil),                      // 36: ark.v1.PendingTx
-	(*TxNotification)(nil),                 // 37: ark.v1.TxNotification
+	(*DeprecatedSigner)(nil),               // 26: ark.v1.DeprecatedSigner
+	(*Bip322Signature)(nil),                // 27: ark.v1.Bip322Signature
+	(*BatchStartedEvent)(nil),              // 28: ark.v1.BatchStartedEvent
+	(*BatchFinalizationEvent)(nil),         // 29: ark.v1.BatchFinalizationEvent
+	(*BatchFinalizedEvent)(nil),            // 30: ark.v1.BatchFinalizedEvent
+	(*BatchFailedEvent)(nil),               // 31: ark.v1.BatchFailedEvent
+	(*TreeSigningStartedEvent)(nil),        // 32: ark.v1.TreeSigningStartedEvent
+	(*TreeNoncesAggregatedEvent)(nil),      // 33: ark.v1.TreeNoncesAggregatedEvent
+	(*TreeTxEvent)(nil),                    // 34: ark.v1.TreeTxEvent
+	(*TreeSignatureEvent)(nil),             // 35: ark.v1.TreeSignatureEvent
+	(*Heartbeat)(nil),                      // 36: ark.v1.Heartbeat
+	(*PendingTx)(nil),                      // 37: ark.v1.PendingTx
+	(*TxNotification)(nil),                 // 38: ark.v1.TxNotification
 }
 var file_ark_v1_service_proto_depIdxs = []int32{
 	24, // 0: ark.v1.GetInfoResponse.market_hour:type_name -> ark.v1.MarketHour
 	25, // 1: ark.v1.GetInfoResponse.fees:type_name -> ark.v1.FeeInfo
-	26, // 2: ark.v1.RegisterIntentRequest.intent:type_name -> ark.v1.Bip322Signature
-	26, // 3: ark.v1.DeleteIntentRequest.proof:type_name -> ark.v1.Bip322Signature
-	27, // 4: ark.v1.GetEventStreamResponse.batch_started:type_name -> ark.v1.BatchStartedEvent
-	28, // 5: ark.v1.GetEventStreamResponse.batch_finalization:type_name -> ark.v1.BatchFinalizationEvent
-	29, // 6: ark.v1.GetEventStreamResponse.batch_finalized:type_name -> ark.v1.BatchFinalizedEvent
-	30, // 7: ark.v1.GetEventStreamResponse.batch_failed:type_name -> ark.v1.BatchFailedEvent
-	31, // 8: ark.v1.GetEventStreamResponse.tree_signing_started:type_name -> ark.v1.TreeSigningStartedEvent
-	32, // 9: ark.v1.GetEventStreamResponse.tree_nonces_aggregated:type_name -> ark.v1.TreeNoncesAggregatedEvent
-	33, // 10: ark.v1.GetEventStreamResponse.tree_tx:type_name -> ark.v1.TreeTxEvent
-	34, // 11: ark.v1.GetEventStreamResponse.tree_signature:type_name -> ark.v1.TreeSignatureEvent
-	35, // 12: ark.v1.GetEventStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
-	26, // 13: ark.v1.GetPendingTxRequest.proof:type_name -> ark.v1.Bip322Signature
-	36, // 14: ark.v1.GetPendingTxResponse.pending_txs:type_name -> ark.v1.PendingTx
-	37, // 15: ark.v1.GetTransactionsStreamResponse.commitment_tx:type_name -> ark.v1.TxNotification
-	37, // 16: ark.v1.GetTransactionsStreamResponse.ark_tx:type_name -> ark.v1.TxNotification
-	35, // 17: ark.v1.GetTransactionsStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
-	0,  // 18: ark.v1.ArkService.GetInfo:input_type -> ark.v1.GetInfoRequest
-	2,  // 19: ark.v1.ArkService.RegisterIntent:input_type -> ark.v1.RegisterIntentRequest
-	4,  // 20: ark.v1.ArkService.DeleteIntent:input_type -> ark.v1.DeleteIntentRequest
-	6,  // 21: ark.v1.ArkService.ConfirmRegistration:input_type -> ark.v1.ConfirmRegistrationRequest
-	8,  // 22: ark.v1.ArkService.SubmitTreeNonces:input_type -> ark.v1.SubmitTreeNoncesRequest
-	10, // 23: ark.v1.ArkService.SubmitTreeSignatures:input_type -> ark.v1.SubmitTreeSignaturesRequest
-	12, // 24: ark.v1.ArkService.SubmitSignedForfeitTxs:input_type -> ark.v1.SubmitSignedForfeitTxsRequest
-	14, // 25: ark.v1.ArkService.GetEventStream:input_type -> ark.v1.GetEventStreamRequest
-	16, // 26: ark.v1.ArkService.SubmitTx:input_type -> ark.v1.SubmitTxRequest
-	18, // 27: ark.v1.ArkService.FinalizeTx:input_type -> ark.v1.FinalizeTxRequest
-	20, // 28: ark.v1.ArkService.GetPendingTx:input_type -> ark.v1.GetPendingTxRequest
-	22, // 29: ark.v1.ArkService.GetTransactionsStream:input_type -> ark.v1.GetTransactionsStreamRequest
-	1,  // 30: ark.v1.ArkService.GetInfo:output_type -> ark.v1.GetInfoResponse
-	3,  // 31: ark.v1.ArkService.RegisterIntent:output_type -> ark.v1.RegisterIntentResponse
-	5,  // 32: ark.v1.ArkService.DeleteIntent:output_type -> ark.v1.DeleteIntentResponse
-	7,  // 33: ark.v1.ArkService.ConfirmRegistration:output_type -> ark.v1.ConfirmRegistrationResponse
-	9,  // 34: ark.v1.ArkService.SubmitTreeNonces:output_type -> ark.v1.SubmitTreeNoncesResponse
-	11, // 35: ark.v1.ArkService.SubmitTreeSignatures:output_type -> ark.v1.SubmitTreeSignaturesResponse
-	13, // 36: ark.v1.ArkService.SubmitSignedForfeitTxs:output_type -> ark.v1.SubmitSignedForfeitTxsResponse
-	15, // 37: ark.v1.ArkService.GetEventStream:output_type -> ark.v1.GetEventStreamResponse
-	17, // 38: ark.v1.ArkService.SubmitTx:output_type -> ark.v1.SubmitTxResponse
-	19, // 39: ark.v1.ArkService.FinalizeTx:output_type -> ark.v1.FinalizeTxResponse
-	21, // 40: ark.v1.ArkService.GetPendingTx:output_type -> ark.v1.GetPendingTxResponse
-	23, // 41: ark.v1.ArkService.GetTransactionsStream:output_type -> ark.v1.GetTransactionsStreamResponse
-	30, // [30:42] is the sub-list for method output_type
-	18, // [18:30] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	26, // 2: ark.v1.GetInfoResponse.deprecated_signers:type_name -> ark.v1.DeprecatedSigner
+	27, // 3: ark.v1.RegisterIntentRequest.intent:type_name -> ark.v1.Bip322Signature
+	27, // 4: ark.v1.DeleteIntentRequest.proof:type_name -> ark.v1.Bip322Signature
+	28, // 5: ark.v1.GetEventStreamResponse.batch_started:type_name -> ark.v1.BatchStartedEvent
+	29, // 6: ark.v1.GetEventStreamResponse.batch_finalization:type_name -> ark.v1.BatchFinalizationEvent
+	30, // 7: ark.v1.GetEventStreamResponse.batch_finalized:type_name -> ark.v1.BatchFinalizedEvent
+	31, // 8: ark.v1.GetEventStreamResponse.batch_failed:type_name -> ark.v1.BatchFailedEvent
+	32, // 9: ark.v1.GetEventStreamResponse.tree_signing_started:type_name -> ark.v1.TreeSigningStartedEvent
+	33, // 10: ark.v1.GetEventStreamResponse.tree_nonces_aggregated:type_name -> ark.v1.TreeNoncesAggregatedEvent
+	34, // 11: ark.v1.GetEventStreamResponse.tree_tx:type_name -> ark.v1.TreeTxEvent
+	35, // 12: ark.v1.GetEventStreamResponse.tree_signature:type_name -> ark.v1.TreeSignatureEvent
+	36, // 13: ark.v1.GetEventStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
+	27, // 14: ark.v1.GetPendingTxRequest.proof:type_name -> ark.v1.Bip322Signature
+	37, // 15: ark.v1.GetPendingTxResponse.pending_txs:type_name -> ark.v1.PendingTx
+	38, // 16: ark.v1.GetTransactionsStreamResponse.commitment_tx:type_name -> ark.v1.TxNotification
+	38, // 17: ark.v1.GetTransactionsStreamResponse.ark_tx:type_name -> ark.v1.TxNotification
+	36, // 18: ark.v1.GetTransactionsStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
+	0,  // 19: ark.v1.ArkService.GetInfo:input_type -> ark.v1.GetInfoRequest
+	2,  // 20: ark.v1.ArkService.RegisterIntent:input_type -> ark.v1.RegisterIntentRequest
+	4,  // 21: ark.v1.ArkService.DeleteIntent:input_type -> ark.v1.DeleteIntentRequest
+	6,  // 22: ark.v1.ArkService.ConfirmRegistration:input_type -> ark.v1.ConfirmRegistrationRequest
+	8,  // 23: ark.v1.ArkService.SubmitTreeNonces:input_type -> ark.v1.SubmitTreeNoncesRequest
+	10, // 24: ark.v1.ArkService.SubmitTreeSignatures:input_type -> ark.v1.SubmitTreeSignaturesRequest
+	12, // 25: ark.v1.ArkService.SubmitSignedForfeitTxs:input_type -> ark.v1.SubmitSignedForfeitTxsRequest
+	14, // 26: ark.v1.ArkService.GetEventStream:input_type -> ark.v1.GetEventStreamRequest
+	16, // 27: ark.v1.ArkService.SubmitTx:input_type -> ark.v1.SubmitTxRequest
+	18, // 28: ark.v1.ArkService.FinalizeTx:input_type -> ark.v1.FinalizeTxRequest
+	20, // 29: ark.v1.ArkService.GetPendingTx:input_type -> ark.v1.GetPendingTxRequest
+	22, // 30: ark.v1.ArkService.GetTransactionsStream:input_type -> ark.v1.GetTransactionsStreamRequest
+	1,  // 31: ark.v1.ArkService.GetInfo:output_type -> ark.v1.GetInfoResponse
+	3,  // 32: ark.v1.ArkService.RegisterIntent:output_type -> ark.v1.RegisterIntentResponse
+	5,  // 33: ark.v1.ArkService.DeleteIntent:output_type -> ark.v1.DeleteIntentResponse
+	7,  // 34: ark.v1.ArkService.ConfirmRegistration:output_type -> ark.v1.ConfirmRegistrationResponse
+	9,  // 35: ark.v1.ArkService.SubmitTreeNonces:output_type -> ark.v1.SubmitTreeNoncesResponse
+	11, // 36: ark.v1.ArkService.SubmitTreeSignatures:output_type -> ark.v1.SubmitTreeSignaturesResponse
+	13, // 37: ark.v1.ArkService.SubmitSignedForfeitTxs:output_type -> ark.v1.SubmitSignedForfeitTxsResponse
+	15, // 38: ark.v1.ArkService.GetEventStream:output_type -> ark.v1.GetEventStreamResponse
+	17, // 39: ark.v1.ArkService.SubmitTx:output_type -> ark.v1.SubmitTxResponse
+	19, // 40: ark.v1.ArkService.FinalizeTx:output_type -> ark.v1.FinalizeTxResponse
+	21, // 41: ark.v1.ArkService.GetPendingTx:output_type -> ark.v1.GetPendingTxResponse
+	23, // 42: ark.v1.ArkService.GetTransactionsStream:output_type -> ark.v1.GetTransactionsStreamResponse
+	31, // [31:43] is the sub-list for method output_type
+	19, // [19:31] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_service_proto_init() }

@@ -159,7 +159,7 @@ message GetInfoResponse {
   int64 boarding_exit_delay = 14;
   string checkpoint_tapscript = 15;
   FeeInfo fees = 16;
-  repeated string deprecated_signer_pubkeys = 17;
+  repeated DeprecatedSigner deprecated_signers = 17;
   string digest = 18;
 }
 

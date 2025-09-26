@@ -73,6 +73,19 @@
           }
         }
       },
+      "DeprecatedSigner": {
+        "title": "DeprecatedSigner",
+        "type": "object",
+        "properties": {
+          "cutoffDate": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pubkey": {
+            "type": "string"
+          }
+        }
+      },
       "FeeInfo": {
         "title": "FeeInfo",
         "type": "object",
