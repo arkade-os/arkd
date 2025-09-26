@@ -17,21 +17,22 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
-func parseIntentProofTx(i *arkv1.Bip322Signature) (*intent.Proof, error) {
+func parseIntentProofTx(i *arkv1.IntentProof) (*intent.Proof, error) {
 	if i == nil {
 		return nil, fmt.Errorf("missing intent")
 	}
-	if len(i.GetSignature()) <= 0 {
+	proof := i.GetProof()
+	if len(proof) <= 0 {
 		return nil, fmt.Errorf("missing intent proof")
 	}
-	proof, err := psbt.NewFromRawBytes(strings.NewReader(i.GetSignature()), true)
+	proofTx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
 	if err != nil {
 		return nil, fmt.Errorf("invalid intent proof: %s", err)
 	}
-	return &intent.Proof{Packet: *proof}, nil
+	return &intent.Proof{Packet: *proofTx}, nil
 }
 
-func parseRegisterIntent(intentProof *arkv1.Bip322Signature) (*intent.Proof, *intent.RegisterMessage, error) {
+func parseRegisterIntent(intentProof *arkv1.IntentProof) (*intent.Proof, *intent.RegisterMessage, error) {
 	proof, err := parseIntentProofTx(intentProof)
 	if err != nil {
 		return nil, nil, err
@@ -48,7 +49,7 @@ func parseRegisterIntent(intentProof *arkv1.Bip322Signature) (*intent.Proof, *in
 }
 
 func parseDeleteIntent(
-	intentProof *arkv1.Bip322Signature,
+	intentProof *arkv1.IntentProof,
 ) (*intent.Proof, *intent.DeleteMessage, error) {
 	proof, err := parseIntentProofTx(intentProof)
 	if err != nil {

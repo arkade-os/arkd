@@ -460,17 +460,6 @@
         }
       }
     },
-    "v1Bip322Signature": {
-      "type": "object",
-      "properties": {
-        "signature": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        }
-      }
-    },
     "v1ConfirmRegistrationRequest": {
       "type": "object",
       "properties": {
@@ -486,8 +475,8 @@
       "type": "object",
       "properties": {
         "proof": {
-          "$ref": "#/definitions/v1Bip322Signature",
-          "description": "A BIP322 signature that includes any of the inputs of the intent to be deleted to prove the\nownership of that intent."
+          "$ref": "#/definitions/v1IntentProof",
+          "description": "an intent proof that includes any of the inputs of the intent to be deleted to prove the\nownership of that intent."
         }
       }
     },
@@ -609,6 +598,17 @@
         }
       }
     },
+    "v1IntentProof": {
+      "type": "object",
+      "properties": {
+        "proof": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
     "v1MarketHour": {
       "type": "object",
       "properties": {
@@ -646,8 +646,8 @@
       "type": "object",
       "properties": {
         "intent": {
-          "$ref": "#/definitions/v1Bip322Signature",
-          "description": "BIP322 signature embeds the outpoints to be spent and new ones to be created, as well as the\nthe proof of funds."
+          "$ref": "#/definitions/v1IntentProof",
+          "description": "an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the\nthe proof of funds."
         }
       }
     },

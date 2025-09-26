@@ -286,17 +286,6 @@
         }
       }
     },
-    "v1Bip322Signature": {
-      "type": "object",
-      "properties": {
-        "signature": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        }
-      }
-    },
     "v1CreateNoteRequest": {
       "type": "object",
       "properties": {
@@ -453,7 +442,7 @@
           }
         },
         "proof": {
-          "$ref": "#/definitions/v1Bip322Signature"
+          "$ref": "#/definitions/v1IntentProof"
         }
       }
     },
@@ -470,6 +459,17 @@
         "amount": {
           "type": "string",
           "format": "uint64"
+        }
+      }
+    },
+    "v1IntentProof": {
+      "type": "object",
+      "properties": {
+        "proof": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
         }
       }
     },
