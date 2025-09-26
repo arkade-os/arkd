@@ -12,7 +12,6 @@ import (
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -435,7 +434,7 @@ func (h *handler) listenToEvents() {
 			case application.TreeNoncesAggregated:
 				serialized, err := json.Marshal(e.Nonces)
 				if err != nil {
-					logrus.WithError(err).Error("failed to serialize nonces")
+					log.WithError(err).Error("failed to serialize nonces")
 					continue
 				}
 
@@ -491,7 +490,7 @@ func (h *handler) listenToEvents() {
 							count++
 						}
 					}
-					logrus.Debugf("forwarded event to %d listeners", count)
+					log.Debugf("forwarded event to %d listeners", count)
 				}(l)
 			}
 		}
@@ -525,7 +524,7 @@ func (h *handler) listenToTxEvents() {
 					l.ch <- msg
 				}(l)
 			}
-			logrus.Debugf(
+			log.Debugf(
 				"forwarded tx event to %d listeners", len(h.transactionsListenerHandler.listeners),
 			)
 		}
