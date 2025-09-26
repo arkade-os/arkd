@@ -92,7 +92,8 @@ func NewService(
 	allowCSVBlockType bool,
 	noteUriPrefix string,
 	marketHourStartTime, marketHourEndTime time.Time,
-	marketHourPeriod, marketHourRoundInterval time.Duration, reportSvc RoundReportService,
+	marketHourPeriod, marketHourRoundInterval time.Duration,
+	reportSvc RoundReportService,
 ) (Service, error) {
 	ctx := context.Background()
 
