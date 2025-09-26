@@ -334,13 +334,17 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	lastEvent := events[len(events)-1]
 	if lastEvent.GetType() == domain.EventTypeBatchSwept {
 		event := lastEvent.(domain.BatchSwept)
-		if err := repo.SweepVtxos(ctx, event.Vtxos); err != nil {
+		allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
+		sweptCount, err := repo.SweepVtxos(ctx, allSweptVtxos)
+		if err != nil {
 			log.WithError(err).Warn("failed to sweep vtxos")
+		} else {
+			log.Debugf("swept %d vtxos", sweptCount)
 		}
+
 		if event.FullySwept {
 			log.Debugf("round %s fully swept", round.Id)
 		}
-		log.Debugf("swept %d vtxos", len(event.Vtxos))
 		return
 	}
 

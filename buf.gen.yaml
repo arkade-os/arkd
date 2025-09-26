@@ -4,7 +4,7 @@ managed:
   go_package_prefix:
     default: github.com/arkade-os/arkd
     except:
-      - buf.build/googleapis/googleapis
+      - buf.build/meshapi/grpc-api-gateway
 plugins:
   # Golang
   - plugin: go
@@ -13,9 +13,10 @@ plugins:
   - plugin: go-grpc
     out: api-spec/protobuf/gen
     opt: paths=source_relative,require_unimplemented_servers=false
-  - plugin: grpc-gateway
+  - plugin: grpc-api-gateway
     out: api-spec/protobuf/gen
     opt: paths=source_relative
   #OpenApi
-  - plugin: openapiv2
+  - plugin: openapiv3
     out: api-spec/openapi/swagger
+    opt: paths=source_relative 

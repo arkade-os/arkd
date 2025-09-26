@@ -617,7 +617,6 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		vtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.Nil(t, err)
 		require.Empty(t, vtxos)
-
 		spendableVtxos, spentVtxos, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
 		require.Empty(t, spendableVtxos)
@@ -687,6 +686,99 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, spentVtxoMap[v.Outpoint], v.SpentBy)
 			require.Equal(t, commitmentTxid, v.SettledBy)
 		}
+
+		// Test GetAllChildrenVtxos recursive query
+		// Create a chain of vtxos: vtxo1 -> vtxo2 -> vtxo3 -> vtxo4 (end with null ark_txid)
+		vtxo1 := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: randomString(32),
+				VOut: 0,
+			},
+			PubKey:             pubkey,
+			Amount:             1000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
+			ArkTxid:            randomString(32), // Points to vtxo2
+		}
+
+		vtxo2 := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: vtxo1.ArkTxid, // Same as vtxo1's ark_txid
+				VOut: 0,
+			},
+			PubKey:             pubkey,
+			Amount:             2000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
+			ArkTxid:            randomString(32), // Points to vtxo3
+		}
+
+		vtxo3 := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: vtxo2.ArkTxid, // Same as vtxo2's ark_txid
+				VOut: 0,
+			},
+			PubKey:             pubkey,
+			Amount:             3000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
+			ArkTxid:            randomString(32), // Points to vtxo4
+		}
+
+		vtxo4 := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: vtxo3.ArkTxid, // Same as vtxo3's ark_txid
+				VOut: 0,
+			},
+			PubKey:             pubkey,
+			Amount:             4000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
+			ArkTxid:            "", // End of chain - null ark_txid
+		}
+
+		// Add all vtxos to the database
+		chainVtxos := []domain.Vtxo{vtxo1, vtxo2, vtxo3, vtxo4}
+		err = svc.Vtxos().AddVtxos(ctx, chainVtxos)
+		require.NoError(t, err)
+
+		// Test recursive query starting from vtxo1
+		children, err := svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo1.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
+
+		// Verify all outpoints are returned
+		expectedOutpoints := []domain.Outpoint{
+			vtxo1.Outpoint,
+			vtxo2.Outpoint,
+			vtxo3.Outpoint,
+			vtxo4.Outpoint,
+		}
+
+		// Sort both slices for comparison
+		sort.Slice(children, func(i, j int) bool {
+			return children[i].Txid < children[j].Txid
+		})
+		sort.Slice(expectedOutpoints, func(i, j int) bool {
+			return expectedOutpoints[i].Txid < expectedOutpoints[j].Txid
+		})
+
+		require.Equal(t, expectedOutpoints, children)
+
+		// Test starting from middle of chain (vtxo2)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo2.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 3) // Should return vtxo2, vtxo3, vtxo4
+
+		// Test starting from end of chain (vtxo4)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo4.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 1) // Should return only vtxo4
+
+		// Test with non-existent txid
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, randomString(32))
+		require.NoError(t, err)
+		require.Empty(t, children)
 	})
 }
 
@@ -735,8 +827,8 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		repo := svc.OffchainTxs()
 
 		offchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
-		require.Error(t, err)
 		require.Nil(t, offchainTx)
+		require.Error(t, err)
 
 		checkpointTxid1 := "0000000000000000000000000000000000000000000000000000000000000001"
 		signedCheckpointPtx1 := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA=signed"

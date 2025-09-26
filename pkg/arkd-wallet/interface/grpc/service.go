@@ -12,13 +12,12 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/config"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/interceptors"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/meshapi/grpc-api-gateway/gateway"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type service struct {
@@ -63,26 +62,22 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to connect wallet grpc-gateway: %w", err)
 	}
 
-	gwmux := runtime.NewServeMux(
-		runtime.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
-		runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
-			MarshalOptions: protojson.MarshalOptions{
-				Indent:    "  ",
-				Multiline: true,
-			},
-			UnmarshalOptions: protojson.UnmarshalOptions{
-				DiscardUnknown: true,
-			},
-		}),
+	gwmux := gateway.NewServeMux(
+		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
+		// runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
+		// 	MarshalOptions: protojson.MarshalOptions{
+		// 		Indent:    "  ",
+		// 		Multiline: true,
+		// 	},
+		// 	UnmarshalOptions: protojson.UnmarshalOptions{
+		// 		DiscardUnknown: true,
+		// 	},
+		// }),
 	)
 
 	ctx := context.Background()
-	if err := arkwalletv1.RegisterWalletServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if err := signerv1.RegisterSignerServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
+	arkwalletv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
+	signerv1.RegisterSignerServiceHandler(ctx, gwmux, conn)
 
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcSrv, grpcGateway)

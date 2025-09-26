@@ -1,0 +1,1938 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "",
+    "version": "version not set"
+  },
+  "paths": {
+    "/v1/wallet/block-time": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetCurrentBlockTime",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCurrentBlockTimeResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/broadcast": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_BroadcastTransaction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BroadcastTransactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BroadcastTransactionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/connector-address": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_DeriveConnectorAddress",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeriveConnectorAddressResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/connector-utxos": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_ListConnectorUtxos",
+        "parameters": [
+          {
+            "name": "connectorAddress",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListConnectorUtxosResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/connectors-account-balance": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_ConnectorsAccountBalance",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorsAccountBalanceResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/create": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_Create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/derive-addresses": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_DeriveAddresses",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeriveAddressesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeriveAddressesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/dust": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetDustAmount",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDustAmountResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/estimate-fees": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_EstimateFees",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateFeesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateFeesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/fee-rate": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_FeeRate",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeRateResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/forfeit-pubkey": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetForfeitPubkey",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetForfeitPubkeyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/lock": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_Lock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/lock-connector-utxos": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_LockConnectorUtxos",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockConnectorUtxosRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockConnectorUtxosResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/main-account-balance": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_MainAccountBalance",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MainAccountBalanceResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/network": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetNetwork",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetNetworkResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/notifications": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_NotificationStream",
+        "responses": {
+          "200": {
+            "description": "a successful response. (streaming responses)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationStreamResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationStreamResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/outpoint-status": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetOutpointStatus",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "vout",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "uint32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetOutpointStatusResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/ready-update": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetReadyUpdate",
+        "responses": {
+          "200": {
+            "description": "a successful response. (streaming responses)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetReadyUpdateResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetReadyUpdateResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/restore": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_Restore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/seed": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GenSeed",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenSeedResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/select-utxos": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_SelectUtxos",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectUtxosRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelectUtxosResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/sign-message": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_SignMessage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignMessageResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/sign-transaction": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_SignTransaction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignTransactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignTransactionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/sign-transaction-tapscript": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_SignTransactionTapscript",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignTransactionTapscriptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignTransactionTapscriptResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/signer-key": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_LoadSignerKey",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoadSignerKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoadSignerKeyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/status": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_Status",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/transaction-confirmed": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_IsTransactionConfirmed",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IsTransactionConfirmedResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/tx": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetTransaction",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetTransactionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/unlock": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_Unlock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnlockResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/unwatch-scripts": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_UnwatchScripts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnwatchScriptsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnwatchScriptsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/verify-message-signature": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_VerifyMessageSignature",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyMessageSignatureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyMessageSignatureResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/watch-scripts": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_WatchScripts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchScriptsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchScriptsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/withdraw": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_Withdraw",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Any": {
+        "type": "object",
+        "description": "Any contains an arbitrary schema along with a URL to help identify the type of the schema.",
+        "properties": {
+          "@type": {
+            "type": "string",
+            "description": "A URL/resource name that uniquely identifies the type of the schema."
+          }
+        }
+      },
+      "BlockTimestamp": {
+        "title": "BlockTimestamp",
+        "type": "object",
+        "properties": {
+          "height": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "time": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "BroadcastTransactionRequest": {
+        "title": "BroadcastTransactionRequest",
+        "type": "object",
+        "properties": {
+          "txs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "BroadcastTransactionResponse": {
+        "title": "BroadcastTransactionResponse",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "ConnectorsAccountBalanceRequest": {
+        "title": "ConnectorsAccountBalanceRequest",
+        "type": "object"
+      },
+      "ConnectorsAccountBalanceResponse": {
+        "title": "ConnectorsAccountBalanceResponse",
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "unconfirmed": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "CreateRequest": {
+        "title": "CreateRequest",
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateResponse": {
+        "title": "CreateResponse",
+        "type": "object"
+      },
+      "DeriveAddressesRequest": {
+        "title": "DeriveAddressesRequest",
+        "type": "object",
+        "properties": {
+          "num": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "DeriveAddressesResponse": {
+        "title": "DeriveAddressesResponse",
+        "type": "object",
+        "properties": {
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DeriveConnectorAddressRequest": {
+        "title": "DeriveConnectorAddressRequest",
+        "type": "object"
+      },
+      "DeriveConnectorAddressResponse": {
+        "title": "DeriveConnectorAddressResponse",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          }
+        }
+      },
+      "EstimateFeesRequest": {
+        "title": "EstimateFeesRequest",
+        "type": "object",
+        "properties": {
+          "psbt": {
+            "type": "string"
+          }
+        }
+      },
+      "EstimateFeesResponse": {
+        "title": "EstimateFeesResponse",
+        "type": "object",
+        "properties": {
+          "fee": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "FeeRateRequest": {
+        "title": "FeeRateRequest",
+        "type": "object"
+      },
+      "FeeRateResponse": {
+        "title": "FeeRateResponse",
+        "type": "object",
+        "properties": {
+          "satPerKvbyte": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "GenSeedRequest": {
+        "title": "GenSeedRequest",
+        "type": "object"
+      },
+      "GenSeedResponse": {
+        "title": "GenSeedResponse",
+        "type": "object",
+        "properties": {
+          "seed": {
+            "type": "string"
+          }
+        }
+      },
+      "GetCurrentBlockTimeRequest": {
+        "title": "GetCurrentBlockTimeRequest",
+        "type": "object"
+      },
+      "GetCurrentBlockTimeResponse": {
+        "title": "GetCurrentBlockTimeResponse",
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "$ref": "#/components/schemas/BlockTimestamp"
+          }
+        }
+      },
+      "GetDustAmountRequest": {
+        "title": "GetDustAmountRequest",
+        "type": "object"
+      },
+      "GetDustAmountResponse": {
+        "title": "GetDustAmountResponse",
+        "type": "object",
+        "properties": {
+          "dustAmount": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "GetForfeitPubkeyRequest": {
+        "title": "GetForfeitPubkeyRequest",
+        "type": "object"
+      },
+      "GetForfeitPubkeyResponse": {
+        "title": "GetForfeitPubkeyResponse",
+        "type": "object",
+        "properties": {
+          "pubkey": {
+            "type": "string"
+          }
+        }
+      },
+      "GetNetworkRequest": {
+        "title": "GetNetworkRequest",
+        "type": "object"
+      },
+      "GetNetworkResponse": {
+        "title": "GetNetworkResponse",
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string"
+          }
+        }
+      },
+      "GetOutpointStatusRequest": {
+        "title": "GetOutpointStatusRequest",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "GetOutpointStatusResponse": {
+        "title": "GetOutpointStatusResponse",
+        "type": "object",
+        "properties": {
+          "spent": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GetReadyUpdateRequest": {
+        "title": "GetReadyUpdateRequest",
+        "type": "object"
+      },
+      "GetReadyUpdateResponse": {
+        "title": "GetReadyUpdateResponse",
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          }
+        }
+      },
+      "GetTransactionRequest": {
+        "title": "GetTransactionRequest",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "GetTransactionResponse": {
+        "title": "GetTransactionResponse",
+        "type": "object",
+        "properties": {
+          "txHex": {
+            "type": "string"
+          }
+        }
+      },
+      "IsTransactionConfirmedRequest": {
+        "title": "IsTransactionConfirmedRequest",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "IsTransactionConfirmedResponse": {
+        "title": "IsTransactionConfirmedResponse",
+        "type": "object",
+        "properties": {
+          "blocknumber": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "blocktime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ListConnectorUtxosRequest": {
+        "title": "ListConnectorUtxosRequest",
+        "type": "object",
+        "properties": {
+          "connectorAddress": {
+            "type": "string"
+          }
+        }
+      },
+      "ListConnectorUtxosResponse": {
+        "title": "ListConnectorUtxosResponse",
+        "type": "object",
+        "properties": {
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TxInput"
+            }
+          }
+        }
+      },
+      "LoadSignerKeyRequest": {
+        "title": "LoadSignerKeyRequest",
+        "type": "object",
+        "properties": {
+          "privateKey": {
+            "type": "string"
+          }
+        }
+      },
+      "LoadSignerKeyResponse": {
+        "title": "LoadSignerKeyResponse",
+        "type": "object"
+      },
+      "LockConnectorUtxosRequest": {
+        "title": "LockConnectorUtxosRequest",
+        "type": "object",
+        "properties": {
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TxOutpoint"
+            }
+          }
+        }
+      },
+      "LockConnectorUtxosResponse": {
+        "title": "LockConnectorUtxosResponse",
+        "type": "object"
+      },
+      "LockRequest": {
+        "title": "LockRequest",
+        "type": "object"
+      },
+      "LockResponse": {
+        "title": "LockResponse",
+        "type": "object"
+      },
+      "MainAccountBalanceRequest": {
+        "title": "MainAccountBalanceRequest",
+        "type": "object"
+      },
+      "MainAccountBalanceResponse": {
+        "title": "MainAccountBalanceResponse",
+        "type": "object",
+        "properties": {
+          "confirmed": {
+            "type": "integer",
+            "description": "TODO rename to available and locked",
+            "format": "uint64"
+          },
+          "unconfirmed": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "NotificationStreamRequest": {
+        "title": "NotificationStreamRequest",
+        "type": "object"
+      },
+      "NotificationStreamResponse": {
+        "title": "NotificationStreamResponse",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VtoxsPerScript"
+            }
+          }
+        }
+      },
+      "RestoreRequest": {
+        "title": "RestoreRequest",
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "string"
+          }
+        }
+      },
+      "RestoreResponse": {
+        "title": "RestoreResponse",
+        "type": "object"
+      },
+      "SelectUtxosRequest": {
+        "title": "SelectUtxosRequest",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "asset": {
+            "type": "string"
+          },
+          "confirmedOnly": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SelectUtxosResponse": {
+        "title": "SelectUtxosResponse",
+        "type": "object",
+        "properties": {
+          "totalAmount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TxInput"
+            }
+          }
+        }
+      },
+      "SignMessageRequest": {
+        "title": "SignMessageRequest",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "format": "byte"
+          }
+        }
+      },
+      "SignMessageResponse": {
+        "title": "SignMessageResponse",
+        "type": "object",
+        "properties": {
+          "signature": {
+            "type": "string",
+            "format": "byte"
+          }
+        }
+      },
+      "SignTransactionRequest": {
+        "title": "SignTransactionRequest",
+        "type": "object",
+        "properties": {
+          "extractRawTx": {
+            "type": "boolean"
+          },
+          "partialTx": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionResponse": {
+        "title": "SignTransactionResponse",
+        "type": "object",
+        "properties": {
+          "signedTx": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionTapscriptRequest": {
+        "title": "SignTransactionTapscriptRequest",
+        "type": "object",
+        "properties": {
+          "inputIndexes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "partialTx": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionTapscriptResponse": {
+        "title": "SignTransactionTapscriptResponse",
+        "type": "object",
+        "properties": {
+          "signedTx": {
+            "type": "string"
+          }
+        }
+      },
+      "Status": {
+        "title": "Status",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Any"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "StatusRequest": {
+        "title": "StatusRequest",
+        "type": "object"
+      },
+      "StatusResponse": {
+        "title": "StatusResponse",
+        "type": "object",
+        "properties": {
+          "initialized": {
+            "type": "boolean"
+          },
+          "synced": {
+            "type": "boolean"
+          },
+          "unlocked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TxInput": {
+        "title": "TxInput",
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "script": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "TxOutpoint": {
+        "title": "TxOutpoint",
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "UnlockRequest": {
+        "title": "UnlockRequest",
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "UnlockResponse": {
+        "title": "UnlockResponse",
+        "type": "object"
+      },
+      "UnwatchScriptsRequest": {
+        "title": "UnwatchScriptsRequest",
+        "type": "object",
+        "properties": {
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UnwatchScriptsResponse": {
+        "title": "UnwatchScriptsResponse",
+        "type": "object"
+      },
+      "VerifyMessageSignatureRequest": {
+        "title": "VerifyMessageSignatureRequest",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "format": "byte"
+          },
+          "signature": {
+            "type": "string",
+            "format": "byte"
+          }
+        }
+      },
+      "VerifyMessageSignatureResponse": {
+        "title": "VerifyMessageSignatureResponse",
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VtoxsPerScript": {
+        "title": "VtoxsPerScript",
+        "type": "object",
+        "properties": {
+          "script": {
+            "type": "string",
+            "description": "hex-encoded script"
+          },
+          "vtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VtxoWithKey"
+            }
+          }
+        }
+      },
+      "VtxoWithKey": {
+        "title": "VtxoWithKey",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "WaitForSyncRequest": {
+        "title": "WaitForSyncRequest",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "WaitForSyncResponse": {
+        "title": "WaitForSyncResponse",
+        "type": "object"
+      },
+      "WatchScriptsRequest": {
+        "title": "WatchScriptsRequest",
+        "type": "object",
+        "properties": {
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WatchScriptsResponse": {
+        "title": "WatchScriptsResponse",
+        "type": "object"
+      },
+      "WithdrawRequest": {
+        "title": "WithdrawRequest",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "WithdrawResponse": {
+        "title": "WithdrawResponse",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "WalletService"
+    }
+  ]
+}

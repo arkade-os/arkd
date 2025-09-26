@@ -31,14 +31,23 @@ type VtxoInput struct {
 
 // BuildTxs builds the ark and checkpoint txs for the given inputs and outputs.
 func BuildTxs(
-	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript *script.CSVMultisigClosure,
+	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript []byte,
 ) (*psbt.Packet, []*psbt.Packet, error) {
 	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
 	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 	inputAmount := int64(0)
 
+	signerUnrollScriptClosure := &script.CSVMultisigClosure{}
+	valid, err := signerUnrollScriptClosure.Decode(signerUnrollScript)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !valid {
+		return nil, nil, fmt.Errorf("invalid signer unroll script")
+	}
+
 	for _, vtxo := range vtxos {
-		checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScript)
+		checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScriptClosure)
 		if err != nil {
 			return nil, nil, err
 		}

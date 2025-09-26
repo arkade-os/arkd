@@ -17,7 +17,7 @@ import (
 	"github.com/arkade-os/arkd/internal/telemetry"
 	"github.com/arkade-os/arkd/pkg/kvdb"
 	"github.com/arkade-os/arkd/pkg/macaroons"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/meshapi/grpc-api-gateway/gateway"
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -27,7 +27,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -212,11 +211,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		if err != nil {
 			return err
 		}
-		appHandler := handlers.NewHandler(s.version, appSvc)
+		appHandler := handlers.NewHandler(s.version, appSvc, s.config.HeartbeatInterval)
 		eventsCh := appSvc.GetIndexerTxChannel(ctx)
 		subscriptionTimeoutDuration := time.Minute // TODO let to be set via config
 		indexerHandler := handlers.NewIndexerService(
-			s.appConfig.IndexerService(), eventsCh, subscriptionTimeoutDuration,
+			s.appConfig.IndexerService(), eventsCh,
+			subscriptionTimeoutDuration, s.config.HeartbeatInterval,
 		)
 		arkv1.RegisterArkServiceServer(grpcServer, appHandler)
 		arkv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
@@ -266,39 +266,28 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		}
 	}
 	// Reverse proxy grpc-gateway.
-	gwmux := runtime.NewServeMux(
-		runtime.WithIncomingHeaderMatcher(customMatcher),
-		runtime.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
-		runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
-			MarshalOptions: protojson.MarshalOptions{
-				Indent:    "  ",
-				Multiline: true,
-			},
-			UnmarshalOptions: protojson.UnmarshalOptions{
-				DiscardUnknown: true,
-			},
-		}),
+	gwmux := gateway.NewServeMux(
+		gateway.WithIncomingHeaderMatcher(customMatcher),
+		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
+		// runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
+		// 	MarshalOptions: protojson.MarshalOptions{
+		// 		Indent:    "  ",
+		// 		Multiline: true,
+		// 	},
+		// 	UnmarshalOptions: protojson.UnmarshalOptions{
+		// 		DiscardUnknown: true,
+		// 	},
+		// }),
 	)
 
-	if err := arkv1.RegisterAdminServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if err := arkv1.RegisterWalletServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if err := arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if err := arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
+	arkv1.RegisterAdminServiceHandler(ctx, gwmux, conn)
+	arkv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
+	arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn)
 	if withAppSvc {
-		if err := arkv1.RegisterArkServiceHandler(ctx, gwmux, conn); err != nil {
-			return err
-		}
-		if err := arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn); err != nil {
-			return err
-		}
+		arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
+		arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
+	} else {
+		arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn)
 	}
 	grpcGateway := http.Handler(gwmux)
 

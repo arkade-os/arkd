@@ -1,0 +1,259 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "",
+    "version": "version not set"
+  },
+  "paths": {
+    "/v1/pubkey": {
+      "get": {
+        "tags": [
+          "SignerService"
+        ],
+        "operationId": "SignerService_GetPubkey",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPubkeyResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sign-transaction": {
+      "post": {
+        "tags": [
+          "SignerService"
+        ],
+        "operationId": "SignerService_SignTransaction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignTransactionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignTransactionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/sign-transaction-tapscript": {
+      "post": {
+        "tags": [
+          "SignerService"
+        ],
+        "operationId": "SignerService_SignTransactionTapscript",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignTransactionTapscriptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignTransactionTapscriptResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/status": {
+      "get": {
+        "tags": [
+          "SignerService"
+        ],
+        "operationId": "SignerService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetStatusResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Any": {
+        "type": "object",
+        "description": "Any contains an arbitrary schema along with a URL to help identify the type of the schema.",
+        "properties": {
+          "@type": {
+            "type": "string",
+            "description": "A URL/resource name that uniquely identifies the type of the schema."
+          }
+        }
+      },
+      "GetPubkeyRequest": {
+        "title": "GetPubkeyRequest",
+        "type": "object"
+      },
+      "GetPubkeyResponse": {
+        "title": "GetPubkeyResponse",
+        "type": "object",
+        "properties": {
+          "pubkey": {
+            "type": "string"
+          }
+        }
+      },
+      "GetStatusRequest": {
+        "title": "GetStatusRequest",
+        "type": "object"
+      },
+      "GetStatusResponse": {
+        "title": "GetStatusResponse",
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SignTransactionRequest": {
+        "title": "SignTransactionRequest",
+        "type": "object",
+        "properties": {
+          "extractRawTx": {
+            "type": "boolean"
+          },
+          "partialTx": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionResponse": {
+        "title": "SignTransactionResponse",
+        "type": "object",
+        "properties": {
+          "signedTx": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionTapscriptRequest": {
+        "title": "SignTransactionTapscriptRequest",
+        "type": "object",
+        "properties": {
+          "inputIndexes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "partialTx": {
+            "type": "string"
+          }
+        }
+      },
+      "SignTransactionTapscriptResponse": {
+        "title": "SignTransactionTapscriptResponse",
+        "type": "object",
+        "properties": {
+          "signedTx": {
+            "type": "string"
+          }
+        }
+      },
+      "Status": {
+        "title": "Status",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Any"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "SignerService"
+    }
+  ]
+}

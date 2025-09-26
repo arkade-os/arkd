@@ -2,49 +2,49 @@ syntax = "proto3";
 
 package ark.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 import "ark/v1/types.proto";
 
 service AdminService {
   rpc GetScheduledSweep(GetScheduledSweepRequest) returns (GetScheduledSweepResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/sweeps"
     };
   }
   rpc GetRoundDetails(GetRoundDetailsRequest) returns (GetRoundDetailsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/round/{round_id}"
     };
   }
   rpc GetRounds(GetRoundsRequest) returns (GetRoundsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/rounds"
     };
   }
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/note"
       body: "*"
     };
   }
   rpc GetMarketHourConfig(GetMarketHourConfigRequest) returns (GetMarketHourConfigResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/marketHour"
     };
   }
   rpc UpdateMarketHourConfig(UpdateMarketHourConfigRequest) returns (UpdateMarketHourConfigResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/marketHour"
       body: "*"
     };
   }
   rpc ListIntents(ListIntentsRequest) returns (ListIntentsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/intents"
     };
   }
   rpc DeleteIntents(DeleteIntentsRequest) returns (DeleteIntentsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/intents/delete"
       body: "*"
     };

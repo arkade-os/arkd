@@ -176,3 +176,39 @@ func (f *esploraClient) GetFeeMap() (map[uint32]uint32, error) {
 
 	return mapResponse, nil
 }
+
+// /tx/:txid/outspends
+func (f *esploraClient) IsSpent(outpoint wire.OutPoint) (spent bool, err error) {
+	endpoint, err := url.JoinPath(f.url, "tx", outpoint.Hash.String(), "outspends")
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := http.DefaultClient.Get(endpoint)
+	if err != nil {
+		return false, err
+	}
+
+	// nolint:all
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, errors.New("outspends endpoint HTTP error: " + resp.Status)
+	}
+
+	type spentStatusResponse struct {
+		Spent bool `json:"spent"`
+	}
+
+	response := make([]spentStatusResponse, 0)
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return false, err
+	}
+
+	if len(response) < int(outpoint.Index) {
+		return false, errors.New("outpoint index out of range")
+	}
+
+	return response[outpoint.Index].Spent, nil
+}

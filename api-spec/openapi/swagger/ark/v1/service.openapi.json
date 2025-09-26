@@ -1,0 +1,1178 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "",
+    "version": "version not set"
+  },
+  "paths": {
+    "/v1/batch/ack": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "ConfirmRegistration allows a client that has been selected for the next batch to confirm its\nparticipation by revealing the intent id.",
+        "operationId": "ArkService_ConfirmRegistration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfirmRegistrationResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batch/deleteIntent": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "DeleteIntent removes a previously registered intent from the server.\nThe client should provide the BIP-322 signature and message including any of the vtxos used in\nthe registered intent to prove its ownership.\nThe server should delete the intent and return success.",
+        "operationId": "ArkService_DeleteIntent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteIntentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteIntentResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batch/events": {
+      "get": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "GetEventStream is a server-side streaming RPC that allows clients to receive a stream of\nevents related to batch processing.\nClients should use this stream as soon as they are ready to join a batch and can listen for\nvarious events such as batch start, batch finalization, and other related activities.\nThe server pushes these events to the client in real-time as soon as its ready to move to the\nnext phase of the batch processing.",
+        "operationId": "ArkService_GetEventStream",
+        "parameters": [
+          {
+            "name": "topics",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response. (streaming responses)",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetEventStreamResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batch/registerIntent": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "RegisterIntent allows to register a new intent that will be eventually selected by the server\nfor a particular batch.\nThe client should provide a BIP-322 message with the intent information, and the server should\nrespond with an intent id.",
+        "operationId": "ArkService_RegisterIntent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterIntentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterIntentResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batch/submitForfeitTxs": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "SubmitSignedForfeitTxs allows a client to submit signed forfeit transactions and/or signed\ncommitment transaction (in case of onboarding).\nThe server should verify the signed txs and return success.",
+        "operationId": "ArkService_SubmitSignedForfeitTxs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitSignedForfeitTxsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitSignedForfeitTxsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batch/tree/submitNonces": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "SubmitTreeNonces allows a cosigner to submit the tree nonces for the musig2 session of a given\nbatch.\nThe client should provide the batch id, the cosigner public key, and the tree nonces.\nThe server should verify the cosigner public key and the nonces, and store them for later\naggregation once nonces from all clients are collected.",
+        "operationId": "ArkService_SubmitTreeNonces",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTreeNoncesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitTreeNoncesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/batch/tree/submitSignatures": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "SubmitTreeSignatures allows a cosigner to submit the tree signatures for the musig2 session of\na given batch.\nThe client should provide the batch id, the cosigner public key, and the tree signatures.\nThe server should verify the cosigner public key and the signatures, and store them for later\naggregation once signatures from all clients are collected.",
+        "operationId": "ArkService_SubmitTreeSignatures",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTreeSignaturesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitTreeSignaturesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/info": {
+      "get": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "GetInfo returns information and parameters of the server.",
+        "operationId": "ArkService_GetInfo",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInfoResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tx/finalize": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "FinalizeTx is the last lef of the process of spending vtxos offchain and allows a client to\nsubmit the fully signed checkpoint txs for the provided Ark txid .\nThe server verifies the signed checkpoint transactions and returns success if everything is\nvalid.",
+        "operationId": "ArkService_FinalizeTx",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizeTxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalizeTxResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tx/pending": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "GetPendingTx returns not finalized transaction(s) for a given set of inputs.\nthe client should provide a BIP322 proof of ownership of the inputs",
+        "operationId": "ArkService_GetPendingTx",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetPendingTxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetPendingTxResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tx/submit": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "SubmitTx is the first leg of the process of spending vtxos offchain and allows a client to\nsubmit a signed Ark transaction and the unsigned checkpoint transactions.\nThe server should verify the signed transactions and return the fully signed Ark tx and the\nsigned checkpoint txs.",
+        "operationId": "ArkService_SubmitTx",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitTxResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/txs": {
+      "get": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "GetTransactionsStream is a server-side streaming RPC that allows clients to receive\nnotifications in real-time about any commitment tx or ark tx processed and finalized by the\nserver.\nNOTE: the stream doesn't have history support, therefore returns only txs from the moment it's\nopened until it's closed.",
+        "operationId": "ArkService_GetTransactionsStream",
+        "responses": {
+          "200": {
+            "description": "a successful response. (streaming responses)",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetTransactionsStreamResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Any": {
+        "type": "object",
+        "description": "Any contains an arbitrary schema along with a URL to help identify the type of the schema.",
+        "properties": {
+          "@type": {
+            "type": "string",
+            "description": "A URL/resource name that uniquely identifies the type of the schema."
+          }
+        }
+      },
+      "BatchFailedEvent": {
+        "title": "BatchFailedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchFinalizationEvent": {
+        "title": "BatchFinalizationEvent",
+        "type": "object",
+        "properties": {
+          "commitmentTx": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchFinalizedEvent": {
+        "title": "BatchFinalizedEvent",
+        "type": "object",
+        "properties": {
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchStartedEvent": {
+        "title": "BatchStartedEvent",
+        "type": "object",
+        "properties": {
+          "batchExpiry": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "intentIdHashes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Bip322Signature": {
+        "title": "Bip322Signature",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfirmRegistrationRequest": {
+        "title": "ConfirmRegistrationRequest",
+        "type": "object",
+        "properties": {
+          "intentId": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfirmRegistrationResponse": {
+        "title": "ConfirmRegistrationResponse",
+        "type": "object"
+      },
+      "DeleteIntentRequest": {
+        "title": "DeleteIntentRequest",
+        "type": "object",
+        "properties": {
+          "proof": {
+            "$ref": "#/components/schemas/Bip322Signature",
+            "description": "A BIP322 signature that includes any of the inputs of the intent to be deleted to prove the\nownership of that intent."
+          }
+        }
+      },
+      "DeleteIntentResponse": {
+        "title": "DeleteIntentResponse",
+        "type": "object"
+      },
+      "FeeInfo": {
+        "title": "FeeInfo",
+        "type": "object",
+        "properties": {
+          "intentFee": {
+            "$ref": "#/components/schemas/IntentFeeInfo"
+          },
+          "txFeeRate": {
+            "type": "string"
+          }
+        }
+      },
+      "FinalizeTxRequest": {
+        "title": "FinalizeTxRequest",
+        "type": "object",
+        "properties": {
+          "arkTxid": {
+            "type": "string"
+          },
+          "finalCheckpointTxs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "FinalizeTxResponse": {
+        "title": "FinalizeTxResponse",
+        "type": "object"
+      },
+      "GetEventStreamRequest": {
+        "title": "GetEventStreamRequest",
+        "type": "object",
+        "properties": {
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GetEventStreamResponse": {
+        "title": "GetEventStreamResponse",
+        "type": "object",
+        "properties": {
+          "batchFailed": {
+            "$ref": "#/components/schemas/BatchFailedEvent"
+          },
+          "batchFinalization": {
+            "$ref": "#/components/schemas/BatchFinalizationEvent"
+          },
+          "batchFinalized": {
+            "$ref": "#/components/schemas/BatchFinalizedEvent"
+          },
+          "batchStarted": {
+            "$ref": "#/components/schemas/BatchStartedEvent"
+          },
+          "heartbeat": {
+            "$ref": "#/components/schemas/Heartbeat"
+          },
+          "treeNoncesAggregated": {
+            "$ref": "#/components/schemas/TreeNoncesAggregatedEvent"
+          },
+          "treeSignature": {
+            "$ref": "#/components/schemas/TreeSignatureEvent"
+          },
+          "treeSigningStarted": {
+            "$ref": "#/components/schemas/TreeSigningStartedEvent"
+          },
+          "treeTx": {
+            "$ref": "#/components/schemas/TreeTxEvent"
+          }
+        }
+      },
+      "GetInfoRequest": {
+        "title": "GetInfoRequest",
+        "type": "object"
+      },
+      "GetInfoResponse": {
+        "title": "GetInfoResponse",
+        "type": "object",
+        "properties": {
+          "boardingExitDelay": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "checkpointTapscript": {
+            "type": "string"
+          },
+          "deprecatedSignerPubkeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "digest": {
+            "type": "string"
+          },
+          "dust": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fees": {
+            "$ref": "#/components/schemas/FeeInfo"
+          },
+          "forfeitAddress": {
+            "type": "string"
+          },
+          "marketHour": {
+            "$ref": "#/components/schemas/MarketHour"
+          },
+          "network": {
+            "type": "string"
+          },
+          "roundInterval": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "signerPubkey": {
+            "type": "string"
+          },
+          "unilateralExitDelay": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "utxoMaxAmount": {
+            "type": "integer",
+            "description": "-1 means no limit (default), 0 means boarding not allowed",
+            "format": "int64"
+          },
+          "utxoMinAmount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "version": {
+            "type": "string"
+          },
+          "vtxoMaxAmount": {
+            "type": "integer",
+            "description": "-1 means no limit (default)",
+            "format": "int64"
+          },
+          "vtxoMinAmount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vtxoTreeExpiry": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "GetPendingTxRequest": {
+        "title": "GetPendingTxRequest",
+        "type": "object",
+        "properties": {
+          "proof": {
+            "$ref": "#/components/schemas/Bip322Signature"
+          }
+        }
+      },
+      "GetPendingTxResponse": {
+        "title": "GetPendingTxResponse",
+        "type": "object",
+        "properties": {
+          "pendingTxs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PendingTx"
+            }
+          }
+        }
+      },
+      "GetTransactionsStreamRequest": {
+        "title": "GetTransactionsStreamRequest",
+        "type": "object"
+      },
+      "GetTransactionsStreamResponse": {
+        "title": "GetTransactionsStreamResponse",
+        "type": "object",
+        "properties": {
+          "arkTx": {
+            "$ref": "#/components/schemas/TxNotification"
+          },
+          "commitmentTx": {
+            "$ref": "#/components/schemas/TxNotification"
+          },
+          "heartbeat": {
+            "$ref": "#/components/schemas/Heartbeat"
+          }
+        }
+      },
+      "Heartbeat": {
+        "title": "Heartbeat",
+        "type": "object"
+      },
+      "IntentFeeInfo": {
+        "title": "IntentFeeInfo",
+        "type": "object",
+        "properties": {
+          "offchainInput": {
+            "type": "string"
+          },
+          "offchainOutput": {
+            "type": "string"
+          },
+          "onchainInput": {
+            "type": "string"
+          },
+          "onchainOutput": {
+            "type": "string"
+          }
+        }
+      },
+      "MarketHour": {
+        "title": "MarketHour",
+        "type": "object",
+        "properties": {
+          "nextEndTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nextStartTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundInterval": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "Outpoint": {
+        "title": "Outpoint",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "PendingTx": {
+        "title": "PendingTx",
+        "type": "object",
+        "properties": {
+          "arkTxid": {
+            "type": "string"
+          },
+          "finalArkTx": {
+            "type": "string"
+          },
+          "signedCheckpointTxs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RegisterIntentRequest": {
+        "title": "RegisterIntentRequest",
+        "type": "object",
+        "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/Bip322Signature",
+            "description": "BIP322 signature embeds the outpoints to be spent and new ones to be created, as well as the\nthe proof of funds."
+          }
+        }
+      },
+      "RegisterIntentResponse": {
+        "title": "RegisterIntentResponse",
+        "type": "object",
+        "properties": {
+          "intentId": {
+            "type": "string"
+          }
+        }
+      },
+      "Status": {
+        "title": "Status",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Any"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "SubmitSignedForfeitTxsRequest": {
+        "title": "SubmitSignedForfeitTxsRequest",
+        "type": "object",
+        "properties": {
+          "signedCommitmentTx": {
+            "type": "string",
+            "description": "The user has to sign also the commitment tx if he registered a boarding UTXO."
+          },
+          "signedForfeitTxs": {
+            "type": "array",
+            "description": "Forfeit txs signed by the user.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SubmitSignedForfeitTxsResponse": {
+        "title": "SubmitSignedForfeitTxsResponse",
+        "type": "object"
+      },
+      "SubmitTreeNoncesRequest": {
+        "title": "SubmitTreeNoncesRequest",
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "pubkey": {
+            "type": "string"
+          },
+          "treeNonces": {
+            "type": "string"
+          }
+        }
+      },
+      "SubmitTreeNoncesResponse": {
+        "title": "SubmitTreeNoncesResponse",
+        "type": "object"
+      },
+      "SubmitTreeSignaturesRequest": {
+        "title": "SubmitTreeSignaturesRequest",
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "pubkey": {
+            "type": "string"
+          },
+          "treeSignatures": {
+            "type": "string"
+          }
+        }
+      },
+      "SubmitTreeSignaturesResponse": {
+        "title": "SubmitTreeSignaturesResponse",
+        "type": "object"
+      },
+      "SubmitTxRequest": {
+        "title": "SubmitTxRequest",
+        "type": "object",
+        "properties": {
+          "checkpointTxs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "signedArkTx": {
+            "type": "string"
+          }
+        }
+      },
+      "SubmitTxResponse": {
+        "title": "SubmitTxResponse",
+        "type": "object",
+        "properties": {
+          "arkTxid": {
+            "type": "string"
+          },
+          "finalArkTx": {
+            "type": "string"
+          },
+          "signedCheckpointTxs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TreeNoncesAggregatedEvent": {
+        "title": "TreeNoncesAggregatedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "treeNonces": {
+            "type": "string"
+          }
+        }
+      },
+      "TreeSignatureEvent": {
+        "title": "TreeSignatureEvent",
+        "type": "object",
+        "properties": {
+          "batchIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TreeSigningStartedEvent": {
+        "title": "TreeSigningStartedEvent",
+        "type": "object",
+        "properties": {
+          "cosignersPubkeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "unsignedCommitmentTx": {
+            "type": "string"
+          }
+        }
+      },
+      "TreeTxEvent": {
+        "title": "TreeTxEvent",
+        "type": "object",
+        "properties": {
+          "batchIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "children": {
+            "type": "object",
+            "description": "output index -\u003e child txid",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "topic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TxData": {
+        "title": "TxData",
+        "type": "object",
+        "properties": {
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "TxNotification": {
+        "title": "TxNotification",
+        "type": "object",
+        "properties": {
+          "checkpointTxs": {
+            "type": "object",
+            "description": "This field is set only in case of offchain tx.\n\nkey: outpoint, value: checkpoint txid",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TxData"
+            }
+          },
+          "spendableVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "spentVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "tx": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "Vtxo": {
+        "title": "Vtxo",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "arkTxid": {
+            "type": "string"
+          },
+          "commitmentTxids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "isPreconfirmed": {
+            "type": "boolean"
+          },
+          "isSpent": {
+            "type": "boolean"
+          },
+          "isSwept": {
+            "type": "boolean"
+          },
+          "isUnrolled": {
+            "type": "boolean"
+          },
+          "outpoint": {
+            "$ref": "#/components/schemas/Outpoint"
+          },
+          "script": {
+            "type": "string"
+          },
+          "settledBy": {
+            "type": "string"
+          },
+          "spentBy": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "ArkService"
+    }
+  ]
+}

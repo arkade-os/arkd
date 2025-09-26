@@ -2,13 +2,13 @@ syntax = "proto3";
 
 package ark.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 import "ark/v1/types.proto";
 
 service ArkService {
   // GetInfo returns information and parameters of the server.
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/info"
     };
   }
@@ -18,7 +18,7 @@ service ArkService {
   // The client should provide a BIP-322 message with the intent information, and the server should
   // respond with an intent id.
   rpc RegisterIntent(RegisterIntentRequest) returns (RegisterIntentResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/registerIntent"
       body: "*"
     };
@@ -29,7 +29,7 @@ service ArkService {
   // the registered intent to prove its ownership.
   // The server should delete the intent and return success.
   rpc DeleteIntent(DeleteIntentRequest) returns (DeleteIntentResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/deleteIntent"
       body: "*"
     };
@@ -38,7 +38,7 @@ service ArkService {
   // ConfirmRegistration allows a client that has been selected for the next batch to confirm its
   // participation by revealing the intent id.
   rpc ConfirmRegistration(ConfirmRegistrationRequest) returns (ConfirmRegistrationResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/ack"
       body: "*"
     };
@@ -50,7 +50,7 @@ service ArkService {
   // The server should verify the cosigner public key and the nonces, and store them for later
   // aggregation once nonces from all clients are collected.
   rpc SubmitTreeNonces(SubmitTreeNoncesRequest) returns (SubmitTreeNoncesResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/tree/submitNonces"
       body: "*"
     };
@@ -62,7 +62,7 @@ service ArkService {
   // The server should verify the cosigner public key and the signatures, and store them for later
   // aggregation once signatures from all clients are collected.
   rpc SubmitTreeSignatures(SubmitTreeSignaturesRequest) returns (SubmitTreeSignaturesResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/tree/submitSignatures"
       body: "*"
     };
@@ -72,7 +72,7 @@ service ArkService {
   // commitment transaction (in case of onboarding).
   // The server should verify the signed txs and return success.
   rpc SubmitSignedForfeitTxs(SubmitSignedForfeitTxsRequest) returns (SubmitSignedForfeitTxsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/batch/submitForfeitTxs"
       body: "*"
     };
@@ -85,8 +85,12 @@ service ArkService {
   // The server pushes these events to the client in real-time as soon as its ready to move to the
   // next phase of the batch processing.
   rpc GetEventStream(GetEventStreamRequest) returns (stream GetEventStreamResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/batch/events"
+      stream: {
+        disable_chunked_transfer: true
+        disable_websockets: true
+      }
     };
   };
 
@@ -95,7 +99,7 @@ service ArkService {
   // The server should verify the signed transactions and return the fully signed Ark tx and the
   // signed checkpoint txs.
   rpc SubmitTx(SubmitTxRequest) returns (SubmitTxResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/tx/submit"
       body: "*"
     };
@@ -106,7 +110,7 @@ service ArkService {
   // The server verifies the signed checkpoint transactions and returns success if everything is
   // valid.
   rpc FinalizeTx(FinalizeTxRequest) returns (FinalizeTxResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/tx/finalize"
       body: "*"
     };
@@ -115,7 +119,7 @@ service ArkService {
   // GetPendingTx returns not finalized transaction(s) for a given set of inputs.
   // the client should provide a BIP322 proof of ownership of the inputs
   rpc GetPendingTx(GetPendingTxRequest) returns (GetPendingTxResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/tx/pending"
       body: "*"
     };
@@ -127,8 +131,12 @@ service ArkService {
   // NOTE: the stream doesn't have history support, therefore returns only txs from the moment it's
   // opened until it's closed.
   rpc GetTransactionsStream(GetTransactionsStreamRequest) returns (stream GetTransactionsStreamResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/txs"
+      stream: {
+        disable_chunked_transfer: true
+        disable_websockets: true
+      }
     };
   }
 }
@@ -149,20 +157,10 @@ message GetInfoResponse {
   int64 vtxo_min_amount = 12; 
   int64 vtxo_max_amount = 13; // -1 means no limit (default)
   int64 boarding_exit_delay = 14;
-  FeeInfo fees = 15;
-  repeated string deprecated_signer_pubkeys = 16;
-  string digest = 17;
-}
-
-message FeeInfo {
-  IntentFeeInfo intent_fee = 1;
-  string tx_fee_rate = 2;
-}
-message IntentFeeInfo  {
-  string offchain_input = 1;
-  string offchain_output = 2;
-  string onchain_input = 3;
-  string onchain_output = 4;
+  string checkpoint_tapscript = 15;
+  FeeInfo fees = 16;
+  repeated string deprecated_signer_pubkeys = 17;
+  string digest = 18;
 }
 
 message RegisterIntentRequest {
@@ -221,6 +219,7 @@ message GetEventStreamResponse {
     TreeNoncesAggregatedEvent tree_nonces_aggregated = 6;
     TreeTxEvent tree_tx = 7;
     TreeSignatureEvent tree_signature = 8;
+    Heartbeat heartbeat = 9;
   }
 }
 
@@ -246,16 +245,12 @@ message GetPendingTxRequest {
 message GetPendingTxResponse {
   repeated PendingTx pending_txs = 1;
 }
-message PendingTx {
-  string ark_txid = 1;
-  string final_ark_tx = 2;
-  repeated string signed_checkpoint_txs = 3;
-}
 
 message GetTransactionsStreamRequest {}
 message GetTransactionsStreamResponse {
-  oneof tx {
+  oneof data {
     TxNotification commitment_tx = 1;
     TxNotification ark_tx = 2;
+    Heartbeat heartbeat = 3;
   }
 }

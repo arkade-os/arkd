@@ -54,6 +54,7 @@ type ServiceInfo struct {
 	UtxoMaxAmount       int64
 	VtxoMinAmount       int64
 	VtxoMaxAmount       int64
+	CheckpointTapscript string
 }
 
 type NextMarketHour struct {
@@ -72,6 +73,7 @@ type WalletStatus struct {
 const (
 	CommitmentTxType TransactionEventType = "commitment_tx"
 	ArkTxType        TransactionEventType = "ark_tx"
+	SweepTxType      TransactionEventType = "sweep_tx"
 )
 
 type TransactionEventType string
@@ -86,6 +88,7 @@ type TransactionEvent struct {
 	Type           TransactionEventType
 	SpentVtxos     []domain.Vtxo
 	SpendableVtxos []domain.Vtxo
+	SweptVtxos     []domain.Vtxo
 	CheckpointTxs  map[string]TxData
 }
 
@@ -101,7 +104,7 @@ type CommitmentTxInfo struct {
 	EndAt             int64
 	Batches           map[VOut]Batch
 	TotalInputAmount  uint64
-	TotalInputtVtxos  int32
+	TotalInputVtxos   int32
 	TotalOutputAmount uint64
 	TotalOutputVtxos  int32
 }

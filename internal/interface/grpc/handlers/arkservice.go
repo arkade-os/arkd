@@ -2,15 +2,18 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -20,7 +23,8 @@ type service interface {
 }
 
 type handler struct {
-	version string
+	version   string
+	heartbeat time.Duration
 
 	svc application.Service
 
@@ -28,9 +32,10 @@ type handler struct {
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewHandler(version string, service application.Service) service {
+func NewHandler(version string, service application.Service, heartbeat int64) service {
 	h := &handler{
 		version:                     version,
+		heartbeat:                   time.Duration(heartbeat) * time.Second,
 		svc:                         service,
 		eventsListenerHandler:       newBroker[*arkv1.GetEventStreamResponse](),
 		transactionsListenerHandler: newBroker[*arkv1.GetTransactionsStreamResponse](),
@@ -50,7 +55,7 @@ func (h *handler) GetInfo(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	return &arkv1.GetInfoResponse{
+	resp := &arkv1.GetInfoResponse{
 		SignerPubkey:        info.SignerPubKey,
 		VtxoTreeExpiry:      info.VtxoTreeExpiry,
 		UnilateralExitDelay: info.UnilateralExitDelay,
@@ -65,14 +70,18 @@ func (h *handler) GetInfo(
 		UtxoMaxAmount:       info.UtxoMaxAmount,
 		VtxoMinAmount:       info.VtxoMinAmount,
 		VtxoMaxAmount:       info.VtxoMaxAmount,
-		// TODO
-		Fees: &arkv1.FeeInfo{
-			IntentFee: &arkv1.IntentFeeInfo{},
-			TxFeeRate: "",
-		},
-		DeprecatedSignerPubkeys: []string{},
-		Digest:                  "",
-	}, nil
+		CheckpointTapscript: info.CheckpointTapscript,
+	}
+	buf, err := json.Marshal(resp)
+	if err != nil {
+		log.WithError(err).Warn("failed to marshal get info response")
+		return resp, nil
+	}
+
+	digest := sha256.Sum256(buf)
+	resp.Digest = hex.EncodeToString(digest[:])
+
+	return resp, nil
 }
 
 func (h *handler) RegisterIntent(
@@ -209,6 +218,22 @@ func (h *handler) GetEventStream(
 	defer h.eventsListenerHandler.removeListener(listener.id)
 	defer close(listener.ch)
 
+	// create a Timer that will fire after one heartbeat interval
+	timer := time.NewTimer(h.heartbeat)
+	defer timer.Stop()
+
+	// helper to safely reset the timer
+	resetTimer := func() {
+		if !timer.Stop() {
+			// drain if it already fired
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(h.heartbeat)
+	}
+
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -217,6 +242,17 @@ func (h *handler) GetEventStream(
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
+			resetTimer()
+		case <-timer.C:
+			hb := &arkv1.GetEventStreamResponse{
+				Event: &arkv1.GetEventStreamResponse_Heartbeat{
+					Heartbeat: &arkv1.Heartbeat{},
+				},
+			}
+			if err := stream.Send(hb); err != nil {
+				return err
+			}
+			resetTimer()
 		}
 	}
 }
@@ -285,6 +321,22 @@ func (h *handler) GetTransactionsStream(
 		close(listener.ch)
 	}()
 
+	// create a Timer that will fire after one heartbeat interval
+	timer := time.NewTimer(h.heartbeat)
+	defer timer.Stop()
+
+	// helper to safely reset the timer
+	resetTimer := func() {
+		if !timer.Stop() {
+			// drain if it already fired
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(h.heartbeat)
+	}
+
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -293,6 +345,17 @@ func (h *handler) GetTransactionsStream(
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
+			resetTimer()
+		case <-timer.C:
+			hb := &arkv1.GetTransactionsStreamResponse{
+				Data: &arkv1.GetTransactionsStreamResponse_Heartbeat{
+					Heartbeat: &arkv1.Heartbeat{},
+				},
+			}
+			if err := stream.Send(hb); err != nil {
+				return err
+			}
+			resetTimer()
 		}
 	}
 }
@@ -444,13 +507,13 @@ func (h *handler) listenToTxEvents() {
 		switch event.Type {
 		case application.CommitmentTxType:
 			msg = &arkv1.GetTransactionsStreamResponse{
-				Tx: &arkv1.GetTransactionsStreamResponse_CommitmentTx{
+				Data: &arkv1.GetTransactionsStreamResponse_CommitmentTx{
 					CommitmentTx: txEvent(event).toProto(),
 				},
 			}
 		case application.ArkTxType:
 			msg = &arkv1.GetTransactionsStreamResponse{
-				Tx: &arkv1.GetTransactionsStreamResponse_ArkTx{
+				Data: &arkv1.GetTransactionsStreamResponse_ArkTx{
 					ArkTx: txEvent(event).toProto(),
 				},
 			}
