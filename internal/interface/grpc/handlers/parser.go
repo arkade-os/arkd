@@ -27,7 +27,7 @@ func parseIntentProofTx(i *arkv1.IntentProof) (*intent.Proof, error) {
 	}
 	proofTx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
 	if err != nil {
-		return nil, fmt.Errorf("invalid intent proof: %s", err)
+		return nil, fmt.Errorf("failed to parse intent proof tx: %s", err)
 	}
 	return &intent.Proof{Packet: *proofTx}, nil
 }

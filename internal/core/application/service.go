@@ -979,6 +979,11 @@ func (s *service) RegisterIntent(
 	}
 
 	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+		log.
+			WithField("unsignedProof", encodedProof).
+			WithField("signedProof", signedProof).
+			WithField("encodedMessage", encodedMessage).
+			Tracef("failed to verify intent proof: %s", err)
 		return "", fmt.Errorf("invalid intent proof: %s", err)
 	}
 
@@ -1298,6 +1303,11 @@ func (s *service) DeleteIntentsByProof(
 	}
 
 	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+		log.
+			WithField("unsignedProof", encodedProof).
+			WithField("signedProof", signedProof).
+			WithField("encodedMessage", encodedMessage).
+			Tracef("failed to verify intent proof: %s", err)
 		return fmt.Errorf("invalid intent proof: %s", err)
 	}
 

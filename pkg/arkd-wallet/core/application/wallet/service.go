@@ -512,7 +512,7 @@ func (w *wallet) SignTransaction(
 			leafHash := tapLeaf.TapHash()
 
 			ptx.Inputs[inputIndex].TaprootScriptSpendSig = append(ptx.Inputs[inputIndex].TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
-				Signature:   signature,
+				Signature:   signature[:64], // remove the last byte (sig hash type) because signature is already encoded
 				XOnlyPubKey: schnorr.SerializePubKey(signingKey.PubKey()),
 				LeafHash:    leafHash[:],
 				SigHash:     input.SighashType,

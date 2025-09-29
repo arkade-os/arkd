@@ -53,7 +53,7 @@ type Input struct {
 func Verify(proofB64, message string) error {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(proofB64), true)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse proof tx: %s", err)
 	}
 
 	proof := Proof{Packet: *ptx}
@@ -68,7 +68,7 @@ func Verify(proofB64, message string) error {
 
 	prevoutFetcher, err := proof.getPrevoutFetcher()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get prevout fetcher: %s", err)
 	}
 
 	// the first input of the tx is always the toSpend tx,
@@ -115,7 +115,7 @@ func Verify(proofB64, message string) error {
 			sigCache, txSigHashes, prevout.Value, prevoutFetcher,
 		)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to execute bitcoin script: %s", err)
 		}
 
 		if err := engine.Execute(); err != nil {
@@ -289,6 +289,10 @@ func finalizeAndExtract(p Proof) (*wire.MsgTx, error) {
 		Unknowns:   p.Unknowns,
 	}
 
+	// copy the unknowns from the second input to the first input
+	// in order to have the condition witness also in the first "fake" proof input
+	ptx.Inputs[0].Unknowns = ptx.Inputs[1].Unknowns
+
 	for i := range p.Inputs {
 		if err := finalizeInput(ptx, i); err != nil {
 			return nil, err
@@ -310,7 +314,7 @@ func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 		return nil
 	}
 
-	var noteClosure *note.NoteClosure
+	var noteClosure note.NoteClosure
 	valid, err := noteClosure.Decode(in.TaprootLeafScript[0].Script)
 	if valid && err == nil {
 		conditionWitness, err := txutils.GetConditionWitness(in)
