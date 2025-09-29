@@ -1335,7 +1335,7 @@ func (s *service) DeleteIntentsByProof(
 	}
 
 	if len(idsToDeleteMap) == 0 {
-		return fmt.Errorf("no matching intents found for BIP322 proof")
+		return fmt.Errorf("no matching intents found for intent proof")
 	}
 
 	idsToDelete := make([]string, 0, len(idsToDeleteMap))

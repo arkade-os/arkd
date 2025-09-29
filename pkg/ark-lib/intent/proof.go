@@ -83,7 +83,7 @@ func Verify(proofB64, message string) error {
 	toSpendHash := toSpend.TxHash()
 
 	// overwrite the prevoutFetcher to include the toSpend tx
-	prevoutFetcher = &bip322PrevoutFetcher{
+	prevoutFetcher = &intentProofPrevoutFetcher{
 		prevoutFetcher: prevoutFetcher,
 		toSpend:        toSpend,
 	}
@@ -264,14 +264,14 @@ func buildToSignTx(
 	return toSign, nil
 }
 
-// bip322PrevoutFetcher is a wrapper of txscript.PrevOutputFetcher
+// intentProofPrevoutFetcher is a wrapper of txscript.PrevOutputFetcher
 // it handles the special case of the toSpend tx
-type bip322PrevoutFetcher struct {
+type intentProofPrevoutFetcher struct {
 	prevoutFetcher txscript.PrevOutputFetcher
 	toSpend        *wire.MsgTx
 }
 
-func (f *bip322PrevoutFetcher) FetchPrevOutput(outpoint wire.OutPoint) *wire.TxOut {
+func (f *intentProofPrevoutFetcher) FetchPrevOutput(outpoint wire.OutPoint) *wire.TxOut {
 	// if toSpend prevout requested, return the first output
 	toSpendHash := f.toSpend.TxHash()
 	if outpoint.Hash.IsEqual(&toSpendHash) && outpoint.Index == 0 {

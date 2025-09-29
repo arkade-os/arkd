@@ -216,7 +216,7 @@ type RegisterIntentRequest struct {
 	unknownFields protoimpl.UnknownFields
 
 	// an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the
-	// the proof of funds.
+	// proof of funds.
 	Intent *IntentProof `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
 }
 

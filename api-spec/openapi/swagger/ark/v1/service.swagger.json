@@ -647,7 +647,7 @@
       "properties": {
         "intent": {
           "$ref": "#/definitions/v1IntentProof",
-          "description": "an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the\nthe proof of funds."
+          "description": "an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the\nproof of funds."
         }
       }
     },

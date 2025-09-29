@@ -144,7 +144,7 @@ message GetInfoResponse {
 
 message RegisterIntentRequest {
   // an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the
-  // the proof of funds.
+  // proof of funds.
   IntentProof intent = 1;
 }
 message RegisterIntentResponse {
