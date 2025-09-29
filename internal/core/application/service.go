@@ -842,11 +842,6 @@ func (s *service) RegisterIntent(
 			return "", fmt.Errorf("missing witness utxo for input %s", outpoint.String())
 		}
 
-		tapscripts, err := txutils.GetTaprootTree(psbtInput)
-		if err != nil {
-			return "", fmt.Errorf("missing taptree for input %s: %s", outpoint.String(), err)
-		}
-
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
 			VOut: outpoint.Index,
@@ -856,6 +851,9 @@ func (s *service) RegisterIntent(
 			return "", fmt.Errorf("vtxo %s is currently being spent", vtxoOutpoint.String())
 		}
 
+		// we ignore error cause sometimes the taproot tree is not required
+		tapscripts, _ := txutils.GetTaprootTree(psbtInput)
+
 		now := time.Now()
 		locktime, disabled := arklib.BIP68DecodeSequence(proof.UnsignedTx.TxIn[i+1].Sequence)
 
@@ -863,6 +861,10 @@ func (s *service) RegisterIntent(
 		if err != nil || len(vtxosResult) == 0 {
 			// vtxo not found in db, check if it exists on-chain
 			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
+				if len(tapscripts) == 0 {
+					return "", fmt.Errorf("missing taptree for input %s", outpoint)
+				}
+
 				tx, err := s.validateBoardingInput(
 					ctx, vtxoOutpoint, tapscripts, now, locktime, disabled,
 				)
@@ -952,6 +954,9 @@ func (s *service) RegisterIntent(
 			vtxoTapKey, err := vtxo.TapKey()
 			if err != nil {
 				return "", fmt.Errorf("failed to get taproot key: %s", err)
+			}
+			if len(tapscripts) == 0 {
+				return "", fmt.Errorf("missing taptree for input %s", outpoint)
 			}
 			if err := s.validateVtxoInput(
 				tapscripts, vtxoTapKey, vtxo.CreatedAt, now, locktime, disabled,
