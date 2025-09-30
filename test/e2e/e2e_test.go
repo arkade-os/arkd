@@ -19,7 +19,7 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/bip322"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -1886,16 +1886,10 @@ func TestDelegateRefresh(t *testing.T) {
 	aliceVtxo, err := faucetOffchainAddress(t, arkAddressStr)
 	require.NoError(t, err)
 
-	scripts, err := delegationVtxoScript.Encode()
-	require.NoError(t, err)
-	tapTree, err := txutils.TapTree(scripts).Encode()
-	require.NoError(t, err)
-
-	intentMessage := bip322.IntentMessage{
-		BaseIntentMessage: bip322.BaseIntentMessage{
-			Type: bip322.IntentMessageTypeRegister,
+	intentMessage := intent.RegisterMessage{
+		BaseMessage: intent.BaseMessage{
+			Type: intent.IntentMessageTypeRegister,
 		},
-		InputTapTrees:       []string{hex.EncodeToString(tapTree)},
 		CosignersPublicKeys: []string{bobTreeSigner.GetPublicKey()},
 		ValidAt:             0,
 		ExpireAt:            0,
@@ -1925,9 +1919,9 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice creates an intent proof that doesn't expire
-	intentProof, err := bip322.New(
+	intentProof, err := intent.New(
 		encodedIntentMessage,
-		[]bip322.Input{
+		[]intent.Input{
 			{
 				OutPoint: &wire.OutPoint{
 					Hash:  *vtxoHash,
@@ -1958,9 +1952,17 @@ func TestDelegateRefresh(t *testing.T) {
 	intentProof.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
 	intentProof.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
 
-	intentProofPsbt := psbt.Packet(*intentProof)
+	scripts, err := delegationVtxoScript.Encode()
+	require.NoError(t, err)
+	tapTree, err := txutils.TapTree(scripts).Encode()
+	require.NoError(t, err)
 
-	unsignedIntentProof, err := intentProofPsbt.B64Encode()
+	intentProof.Inputs[1].Unknowns = []*psbt.Unknown{{
+		Value: tapTree,
+		Key:   txutils.VTXO_TAPROOT_TREE_KEY,
+	}}
+
+	unsignedIntentProof, err := intentProof.B64Encode()
 	require.NoError(t, err)
 
 	signedIntentProof, err := alice.SignTransaction(ctx, unsignedIntentProof)
@@ -1969,12 +1971,7 @@ func TestDelegateRefresh(t *testing.T) {
 	signedIntentProofPsbt, err := psbt.NewFromRawBytes(strings.NewReader(signedIntentProof), true)
 	require.NoError(t, err)
 
-	proof := (*bip322.FullProof)(signedIntentProofPsbt)
-
-	sig, err := proof.Signature()
-	require.NoError(t, err)
-
-	encodedIntentProof, err := sig.Encode()
+	encodedIntentProof, err := signedIntentProofPsbt.B64Encode()
 	require.NoError(t, err)
 
 	// Alice creates a forfeit transaction spending the vtxo with SIGHASH_ALL | ANYONECANPAY

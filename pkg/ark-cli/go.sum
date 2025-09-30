@@ -16,8 +16,8 @@ github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da h1:KjTM2ks9d14ZYCvmH
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da/go.mod h1:eHEWzANqSiWQsof+nXEI9bUVUyV6F53Fp89EuCh2EAA=
 github.com/aead/siphash v1.0.1 h1:FwHfE/T45KPKYuuSAKyyvE+oPWcaQ+CUmFW0bPlM+kg=
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
-github.com/arkade-os/go-sdk v0.7.2-0.20250924142957-945cb4b3ab2c h1:hQc+NcHEYBKrJXKZZYFqyCJKn9edc2EFtFQPlaeriQA=
-github.com/arkade-os/go-sdk v0.7.2-0.20250924142957-945cb4b3ab2c/go.mod h1:yfRXijyOA89Z7+5Btuuj4TlUnG8MCHmT7xeZkgAaMIY=
+github.com/arkade-os/go-sdk v0.7.2-0.20250930103210-69d66029c662 h1:2bzRfGF1tM7nBX5ajo9CXEzP1cRE0DXuHHq9C0PWcK8=
+github.com/arkade-os/go-sdk v0.7.2-0.20250930103210-69d66029c662/go.mod h1:jsYpr+PF1em4+DEWwgSKSxInHGYTnKpFzmcI1e8ihxo=
 github.com/armon/consul-api v0.0.0-20180202201655-eb2c6b5be1b6/go.mod h1:grANhF5doyWs3UAsr3K4I6qtAmlQcZDesFNEHPZAzj8=
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 h1:DklsrG3dyBCFEj5IhUbnKptjxatkF07cF2ak3yi77so=
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2/go.mod h1:WaHUgvxTVq04UNunO+XhnAqY/wQc+bxr74GqbsZ/Jqw=

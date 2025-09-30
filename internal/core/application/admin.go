@@ -197,18 +197,18 @@ func (a *adminService) CreateNotes(
 			return nil, err
 		}
 
-		bip322Input, err := note.BIP322Input()
+		outpoint, pInput, err := note.IntentProofInput()
 		if err != nil {
 			return nil, err
 		}
 
 		vtxo := domain.Vtxo{
 			Outpoint: domain.Outpoint{
-				Txid: bip322Input.OutPoint.Hash.String(),
-				VOut: bip322Input.OutPoint.Index,
+				Txid: outpoint.Hash.String(),
+				VOut: outpoint.Index,
 			},
 			Amount:    uint64(note.Value),
-			PubKey:    hex.EncodeToString(bip322Input.WitnessUtxo.PkScript[2:]),
+			PubKey:    hex.EncodeToString(pInput.WitnessUtxo.PkScript[2:]),
 			CreatedAt: now,
 		}
 

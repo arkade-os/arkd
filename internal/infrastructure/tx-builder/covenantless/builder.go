@@ -220,47 +220,10 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 	for i, in := range ptx.Inputs {
 		isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
 		if isTaproot && len(in.TaprootLeafScript) > 0 {
-			closure, err := script.DecodeClosure(in.TaprootLeafScript[0].Script)
-			if err != nil {
+			if err := script.FinalizeVtxoScript(ptx, i); err != nil {
 				return "", err
 			}
-
-			conditionWitness, err := txutils.GetConditionWitness(in)
-			if err != nil {
-				return "", err
-			}
-
-			args := make(map[string][]byte)
-			if len(conditionWitness) > 0 {
-				var conditionWitnessBytes bytes.Buffer
-				if err := psbt.WriteTxWitness(
-					&conditionWitnessBytes, conditionWitness,
-				); err != nil {
-					return "", err
-				}
-				args[string(txutils.CONDITION_WITNESS_KEY_PREFIX)] = conditionWitnessBytes.Bytes()
-			}
-
-			for _, sig := range in.TaprootScriptSpendSig {
-				args[hex.EncodeToString(sig.XOnlyPubKey)] = script.EncodeTaprootSignature(
-					sig.Signature,
-					sig.SigHash,
-				)
-			}
-
-			witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)
-			if err != nil {
-				return "", err
-			}
-
-			var witnessBuf bytes.Buffer
-			if err := psbt.WriteTxWitness(&witnessBuf, witness); err != nil {
-				return "", err
-			}
-
-			ptx.Inputs[i].FinalScriptWitness = witnessBuf.Bytes()
 			continue
-
 		}
 
 		if err := psbt.Finalize(ptx, i); err != nil {
