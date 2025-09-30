@@ -474,8 +474,8 @@
     "v1DeleteIntentRequest": {
       "type": "object",
       "properties": {
-        "proof": {
-          "$ref": "#/definitions/v1IntentProof",
+        "intent": {
+          "$ref": "#/definitions/v1Intent",
           "description": "an intent proof that includes any of the inputs of the intent to be deleted to prove the\nownership of that intent."
         }
       }
@@ -598,7 +598,7 @@
         }
       }
     },
-    "v1IntentProof": {
+    "v1Intent": {
       "type": "object",
       "properties": {
         "proof": {
@@ -646,7 +646,7 @@
       "type": "object",
       "properties": {
         "intent": {
-          "$ref": "#/definitions/v1IntentProof",
+          "$ref": "#/definitions/v1Intent",
           "description": "an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the\nproof of funds."
         }
       }

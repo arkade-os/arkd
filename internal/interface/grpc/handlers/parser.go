@@ -17,7 +17,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
-func parseIntentProofTx(i *arkv1.IntentProof) (*intent.Proof, error) {
+func parseIntentProofTx(i *arkv1.Intent) (*intent.Proof, error) {
 	if i == nil {
 		return nil, fmt.Errorf("missing intent")
 	}
@@ -33,7 +33,7 @@ func parseIntentProofTx(i *arkv1.IntentProof) (*intent.Proof, error) {
 }
 
 func parseRegisterIntent(
-	intentProof *arkv1.IntentProof,
+	intentProof *arkv1.Intent,
 ) (*intent.Proof, *intent.RegisterMessage, error) {
 	proof, err := parseIntentProofTx(intentProof)
 	if err != nil {
@@ -51,7 +51,7 @@ func parseRegisterIntent(
 }
 
 func parseDeleteIntent(
-	intentProof *arkv1.IntentProof,
+	intentProof *arkv1.Intent,
 ) (*intent.Proof, *intent.DeleteMessage, error) {
 	proof, err := parseIntentProofTx(intentProof)
 	if err != nil {

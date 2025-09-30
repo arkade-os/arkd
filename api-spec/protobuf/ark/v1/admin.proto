@@ -143,7 +143,7 @@ message IntentInfo {
   repeated IntentInput inputs = 4;
   repeated IntentInput boarding_inputs = 5;
   repeated string cosigners_public_keys = 6;
-  IntentProof proof = 7;
+  Intent intent = 7;
 }
 
 message Output {

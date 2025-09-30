@@ -404,6 +404,17 @@
         }
       }
     },
+    "v1Intent": {
+      "type": "object",
+      "properties": {
+        "proof": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
     "v1IntentInfo": {
       "type": "object",
       "properties": {
@@ -441,8 +452,8 @@
             "type": "string"
           }
         },
-        "proof": {
-          "$ref": "#/definitions/v1IntentProof"
+        "intent": {
+          "$ref": "#/definitions/v1Intent"
         }
       }
     },
@@ -459,17 +470,6 @@
         "amount": {
           "type": "string",
           "format": "uint64"
-        }
-      }
-    },
-    "v1IntentProof": {
-      "type": "object",
-      "properties": {
-        "proof": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
         }
       }
     },
