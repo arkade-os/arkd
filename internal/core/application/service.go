@@ -402,6 +402,13 @@ func (s *service) SubmitOffchainTx(
 		return nil, "", "", fmt.Errorf("some vtxos not found")
 	}
 
+	// check if any of the spent vtxos are banned
+	for _, vtxo := range spentVtxos {
+		if err := s.checkIfBanned(vtxo); err != nil {
+			return nil, "", "", err
+		}
+	}
+
 	if exists, vtxo := s.cache.Intents().IncludesAny(spentVtxoKeys); exists {
 		return nil, "", "", fmt.Errorf("vtxo %s is already registered for next round", vtxo)
 	}

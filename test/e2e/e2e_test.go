@@ -2124,6 +2124,15 @@ func TestBan(t *testing.T) {
 		// next settle should fail because the nonce has not been submitted
 		_, err = alice.Settle(t.Context())
 		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
+		require.Error(t, err)
 	})
 
 	t.Run("Musig2SignatureSubmission", func(t *testing.T) {
@@ -2243,6 +2252,15 @@ func TestBan(t *testing.T) {
 		// next settle should fail because the signature has not been submitted
 		_, err = alice.Settle(t.Context())
 		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
+		require.Error(t, err)
 	})
 
 	t.Run("Musig2InvalidSignature", func(t *testing.T) {
@@ -2352,6 +2370,15 @@ func TestBan(t *testing.T) {
 
 		// next settle should fail because the signature was invalid
 		_, err = alice.Settle(t.Context())
+		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
 		require.Error(t, err)
 	})
 
@@ -2486,6 +2513,15 @@ func TestBan(t *testing.T) {
 
 		// next settle should fail because the forfeit txs have not been submitted
 		_, err = alice.Settle(t.Context())
+		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
 		require.Error(t, err)
 	})
 
@@ -2669,6 +2705,15 @@ func TestBan(t *testing.T) {
 		// next settle should fail because the forfeit txs have not been submitted
 		_, err = alice.Settle(t.Context())
 		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
+		require.Error(t, err)
 	})
 
 	t.Run("BoardingInputSubmission", func(t *testing.T) {
@@ -2682,7 +2727,7 @@ func TestBan(t *testing.T) {
 		err = faucetOnchainAddress(t, boardingAddr.Address)
 		require.NoError(t, err)
 
-		time.Sleep(4 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		info, err := grpcAlice.GetInfo(t.Context())
 		require.NoError(t, err)
@@ -2695,6 +2740,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		boardingUtxos, err := explr.GetUtxos(boardingAddr.Address)
 		require.NoError(t, err)
+		require.NotEmpty(t, boardingUtxos)
 
 		aliceUtxo := boardingUtxos[0]
 		utxo := aliceUtxo.ToUtxo(
