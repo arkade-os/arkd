@@ -183,7 +183,7 @@ var (
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultRoundInterval       = 30
 	defaultBanDuration         = 10 * defaultRoundInterval
-	defaultBanThreshold        = 1
+	defaultBanThreshold        = 3
 	DefaultPort                = 7070
 	defaultDbType              = "postgres"
 	defaultEventDbType         = "postgres"

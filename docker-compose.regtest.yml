@@ -89,6 +89,7 @@ services:
       - ARKD_DB_TYPE=sqlite
       - ARKD_ROUND_INTERVAL=${ARKD_ROUND_INTERVAL:-10}
       - ARKD_ROUND_REPORT_ENABLED=${ARKD_ROUND_REPORT_ENABLED:-true}
+      - ARKD_BAN_THRESHOLD=1
     volumes:
       - type: tmpfs
         target: /app/data
