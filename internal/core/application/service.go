@@ -15,7 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/bip322"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -739,7 +739,8 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// verify the tapscript signatures
-	if valid, _, err := s.builder.VerifyTapscriptPartialSigs(signedArkTx); err != nil || !valid {
+	if valid, _, err := s.builder.VerifyTapscriptPartialSigs(signedArkTx, false); err != nil ||
+		!valid {
 		return nil, "", "", fmt.Errorf("invalid ark tx signature(s): %s", err)
 	}
 
@@ -812,9 +813,8 @@ func (s *service) FinalizeOffchainTx(
 
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	for _, checkpoint := range finalCheckpointTxs {
-		var valid bool
-		var ptx *psbt.Packet
-		valid, ptx, err = s.builder.VerifyTapscriptPartialSigs(checkpoint)
+		// verify the tapscript signatures
+		valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(checkpoint, true)
 		if err != nil || !valid {
 			return err
 		}
@@ -877,7 +877,7 @@ func (s *service) FinalizeOffchainTx(
 }
 
 func (s *service) RegisterIntent(
-	ctx context.Context, proof bip322.Signature, message bip322.IntentMessage,
+	ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
 ) (string, error) {
 	// the vtxo to swap for new ones, require forfeit transactions
 	vtxoInputs := make([]domain.Vtxo, 0)
@@ -886,9 +886,6 @@ func (s *service) RegisterIntent(
 	boardingTxs := make(map[string]wire.MsgTx, 0) // txid -> txhex
 
 	outpoints := proof.GetOutpoints()
-	if len(outpoints) != len(message.InputTapTrees) {
-		return "", fmt.Errorf("number of outpoints and taptrees must match")
-	}
 
 	if message.ValidAt > 0 {
 		validAt := time.Unix(message.ValidAt, 0)
@@ -904,18 +901,10 @@ func (s *service) RegisterIntent(
 		}
 	}
 
-	// we need the prevout to verify the BIP0322 signature
-	prevouts := make(map[wire.OutPoint]*wire.TxOut)
 	for i, outpoint := range outpoints {
-		tapTree := message.InputTapTrees[i]
-		tapTreeBytes, err := hex.DecodeString(tapTree)
-		if err != nil {
-			return "", fmt.Errorf("failed to decode taptree: %s", err)
-		}
-
-		tapscripts, err := txutils.DecodeTapTree(tapTreeBytes)
-		if err != nil {
-			return "", fmt.Errorf("failed to decode taptree: %s", err)
+		psbtInput := proof.Inputs[i+1]
+		if psbtInput.WitnessUtxo == nil {
+			return "", fmt.Errorf("missing witness utxo for input %s", outpoint.String())
 		}
 
 		vtxoOutpoint := domain.Outpoint{
@@ -927,13 +916,20 @@ func (s *service) RegisterIntent(
 			return "", fmt.Errorf("vtxo %s is currently being spent", vtxoOutpoint.String())
 		}
 
+		// we ignore error cause sometimes the taproot tree is not required
+		tapscripts, _ := txutils.GetTaprootTree(psbtInput)
+
 		now := time.Now()
-		locktime, disabled := arklib.BIP68DecodeSequence(proof.TxIn[i+1].Sequence)
+		locktime, disabled := arklib.BIP68DecodeSequence(proof.UnsignedTx.TxIn[i+1].Sequence)
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
 		if err != nil || len(vtxosResult) == 0 {
 			// vtxo not found in db, check if it exists on-chain
 			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
+				if len(tapscripts) == 0 {
+					return "", fmt.Errorf("missing taptree for input %s", outpoint)
+				}
+
 				tx, err := s.validateBoardingInput(
 					ctx, vtxoOutpoint, tapscripts, now, locktime, disabled,
 				)
@@ -945,7 +941,24 @@ func (s *service) RegisterIntent(
 			}
 
 			tx := boardingTxs[vtxoOutpoint.Txid]
-			prevouts[outpoint] = tx.TxOut[vtxoOutpoint.VOut]
+			prevout := tx.TxOut[vtxoOutpoint.VOut]
+
+			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
+				return "", fmt.Errorf(
+					"invalid witness utxo script: got %x expected %x",
+					prevout.PkScript,
+					psbtInput.WitnessUtxo.PkScript,
+				)
+			}
+
+			if prevout.Value != int64(psbtInput.WitnessUtxo.Value) {
+				return "", fmt.Errorf(
+					"invalid witness utxo value: got %d expected %d",
+					prevout.Value,
+					psbtInput.WitnessUtxo.Value,
+				)
+			}
+
 			input := ports.Input{
 				Outpoint:   vtxoOutpoint,
 				Tapscripts: tapscripts,
@@ -970,6 +983,14 @@ func (s *service) RegisterIntent(
 			return "", fmt.Errorf("input %s already unrolled", vtxo.Outpoint.String())
 		}
 
+		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
+			return "", fmt.Errorf(
+				"invalid witness utxo value: got %d expected %d",
+				psbtInput.WitnessUtxo.Value,
+				vtxo.Amount,
+			)
+		}
+
 		pubkeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
 			return "", fmt.Errorf("failed to decode script pubkey: %s", err)
@@ -985,9 +1006,12 @@ func (s *service) RegisterIntent(
 			return "", fmt.Errorf("failed to create p2tr script: %s", err)
 		}
 
-		prevouts[outpoint] = &wire.TxOut{
-			Value:    int64(vtxo.Amount),
-			PkScript: pkScript,
+		if !bytes.Equal(pkScript, psbtInput.WitnessUtxo.PkScript) {
+			return "", fmt.Errorf(
+				"invalid witness utxo script: got %x expected %x",
+				psbtInput.WitnessUtxo.PkScript,
+				pkScript,
+			)
 		}
 
 		// Only in case the vtxo is a note we skip the validation of its script and the csv delay.
@@ -995,6 +1019,9 @@ func (s *service) RegisterIntent(
 			vtxoTapKey, err := vtxo.TapKey()
 			if err != nil {
 				return "", fmt.Errorf("failed to get taproot key: %s", err)
+			}
+			if len(tapscripts) == 0 {
+				return "", fmt.Errorf("missing taptree for input %s", outpoint)
 			}
 			if err := s.validateVtxoInput(
 				tapscripts, vtxoTapKey, vtxo.CreatedAt, now, locktime, disabled,
@@ -1006,22 +1033,31 @@ func (s *service) RegisterIntent(
 		vtxoInputs = append(vtxoInputs, vtxo)
 	}
 
-	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
-
 	encodedMessage, err := message.Encode()
 	if err != nil {
 		return "", fmt.Errorf("failed to encode message: %s", err)
 	}
-	encodedProof, err := proof.Encode()
+
+	encodedProof, err := proof.B64Encode()
 	if err != nil {
 		return "", fmt.Errorf("failed to encode proof: %s", err)
 	}
 
-	if err := proof.Verify(encodedMessage, prevoutFetcher); err != nil {
-		return "", fmt.Errorf("invalid BIP0322 proof of funds: %s", err)
+	signedProof, err := s.wallet.SignTransactionTapscript(ctx, encodedProof, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign proof: %s", err)
 	}
 
-	intent, err := domain.NewIntent(encodedProof, encodedMessage, vtxoInputs)
+	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+		log.
+			WithField("unsignedProof", encodedProof).
+			WithField("signedProof", signedProof).
+			WithField("encodedMessage", encodedMessage).
+			Tracef("failed to verify intent proof: %s", err)
+		return "", fmt.Errorf("invalid intent proof: %s", err)
+	}
+
+	intent, err := domain.NewIntent(signedProof, encodedMessage, vtxoInputs)
 	if err != nil {
 		return "", err
 	}
@@ -1030,7 +1066,7 @@ func (s *service) RegisterIntent(
 		hasOffChainReceiver := false
 		receivers := make([]domain.Receiver, 0)
 
-		for outputIndex, output := range proof.TxOut {
+		for outputIndex, output := range proof.UnsignedTx.TxOut {
 			amount := uint64(output.Value)
 			rcv := domain.Receiver{
 				Amount: amount,
@@ -1227,9 +1263,9 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 	}, nil
 }
 
-// DeleteIntentsByProof deletes transaction intents matching the BIP322 proof.
+// DeleteIntentsByProof deletes transaction intents matching the proof of ownership.
 func (s *service) DeleteIntentsByProof(
-	ctx context.Context, sig bip322.Signature, message bip322.DeleteIntentMessage,
+	ctx context.Context, proof intent.Proof, message intent.DeleteMessage,
 ) error {
 	if message.ExpireAt > 0 {
 		expireAt := time.Unix(message.ExpireAt, 0)
@@ -1238,11 +1274,11 @@ func (s *service) DeleteIntentsByProof(
 		}
 	}
 
-	outpoints := sig.GetOutpoints()
+	outpoints := proof.GetOutpoints()
 
 	boardingTxs := make(map[string]wire.MsgTx)
-	prevouts := make(map[wire.OutPoint]*wire.TxOut)
-	for _, outpoint := range outpoints {
+	for i, outpoint := range outpoints {
+		psbtInput := proof.Inputs[i+1]
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
 			VOut: outpoint.Index,
@@ -1268,11 +1304,36 @@ func (s *service) DeleteIntentsByProof(
 
 			tx := boardingTxs[vtxoOutpoint.Txid]
 			prevout := tx.TxOut[vtxoOutpoint.VOut]
-			prevouts[outpoint] = prevout
+
+			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
+				return fmt.Errorf(
+					"invalid witness utxo script: got %x expected %x",
+					prevout.PkScript,
+					psbtInput.WitnessUtxo.PkScript,
+				)
+			}
+
+			if prevout.Value != int64(psbtInput.WitnessUtxo.Value) {
+				return fmt.Errorf(
+					"invalid witness utxo value: got %d expected %d",
+					prevout.Value,
+					psbtInput.WitnessUtxo.Value,
+				)
+			}
+
 			continue
 		}
 
 		vtxo := vtxosResult[0]
+
+		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
+			return fmt.Errorf(
+				"invalid witness utxo value: got %d expected %d",
+				psbtInput.WitnessUtxo.Value,
+				vtxo.Amount,
+			)
+		}
+
 		pubkeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
 			return fmt.Errorf("failed to decode script pubkey: %s", err)
@@ -1288,20 +1349,37 @@ func (s *service) DeleteIntentsByProof(
 			return fmt.Errorf("failed to create p2tr script: %s", err)
 		}
 
-		prevouts[outpoint] = &wire.TxOut{
-			Value:    int64(vtxo.Amount),
-			PkScript: pkScript,
+		if !bytes.Equal(pkScript, psbtInput.WitnessUtxo.PkScript) {
+			return fmt.Errorf(
+				"invalid witness utxo script: got %x expected %x",
+				psbtInput.WitnessUtxo.PkScript,
+				pkScript,
+			)
 		}
 	}
 
-	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
 	encodedMessage, err := message.Encode()
 	if err != nil {
 		return fmt.Errorf("failed to encode message: %s", err)
 	}
 
-	if err := sig.Verify(encodedMessage, prevoutFetcher); err != nil {
-		return fmt.Errorf("failed to verify signature: %s", err)
+	encodedProof, err := proof.B64Encode()
+	if err != nil {
+		return fmt.Errorf("failed to encode proof: %s", err)
+	}
+
+	signedProof, err := s.wallet.SignTransactionTapscript(ctx, encodedProof, nil)
+	if err != nil {
+		return fmt.Errorf("failed to sign proof: %s", err)
+	}
+
+	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+		log.
+			WithField("unsignedProof", encodedProof).
+			WithField("signedProof", signedProof).
+			WithField("encodedMessage", encodedMessage).
+			Tracef("failed to verify intent proof: %s", err)
+		return fmt.Errorf("invalid intent proof: %s", err)
 	}
 
 	allIntents, err := s.cache.Intents().ViewAll(nil)
@@ -1323,7 +1401,7 @@ func (s *service) DeleteIntentsByProof(
 	}
 
 	if len(idsToDeleteMap) == 0 {
-		return fmt.Errorf("no matching intents found for BIP322 proof")
+		return fmt.Errorf("no matching intents found for intent proof")
 	}
 
 	idsToDelete := make([]string, 0, len(idsToDeleteMap))
@@ -2552,7 +2630,7 @@ func (s *service) verifyForfeitTxsSigs(txs []string) error {
 			defer wg.Done()
 
 			for tx := range jobs {
-				valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(tx)
+				valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(tx, false)
 				if err != nil {
 					errChan <- fmt.Errorf("failed to validate forfeit tx %s: %s", ptx.UnsignedTx.TxID(), err)
 					return

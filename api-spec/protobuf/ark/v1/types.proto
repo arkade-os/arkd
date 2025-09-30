@@ -48,8 +48,8 @@ message Tapscripts {
   repeated string scripts = 1;
 }
 
-message Bip322Signature {
-  string signature = 1;
+message Intent {
+  string proof = 1;
   string message = 2;
 }
 

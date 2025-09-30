@@ -438,28 +438,28 @@ func (x *Tapscripts) GetScripts() []string {
 	return nil
 }
 
-type Bip322Signature struct {
+type Intent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Signature     string                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	Proof         string                 `protobuf:"bytes,1,opt,name=proof,proto3" json:"proof,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Bip322Signature) Reset() {
-	*x = Bip322Signature{}
+func (x *Intent) Reset() {
+	*x = Intent{}
 	mi := &file_ark_v1_types_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Bip322Signature) String() string {
+func (x *Intent) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Bip322Signature) ProtoMessage() {}
+func (*Intent) ProtoMessage() {}
 
-func (x *Bip322Signature) ProtoReflect() protoreflect.Message {
+func (x *Intent) ProtoReflect() protoreflect.Message {
 	mi := &file_ark_v1_types_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -471,19 +471,19 @@ func (x *Bip322Signature) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Bip322Signature.ProtoReflect.Descriptor instead.
-func (*Bip322Signature) Descriptor() ([]byte, []int) {
+// Deprecated: Use Intent.ProtoReflect.Descriptor instead.
+func (*Intent) Descriptor() ([]byte, []int) {
 	return file_ark_v1_types_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *Bip322Signature) GetSignature() string {
+func (x *Intent) GetProof() string {
 	if x != nil {
-		return x.Signature
+		return x.Proof
 	}
 	return ""
 }
 
-func (x *Bip322Signature) GetMessage() string {
+func (x *Intent) GetMessage() string {
 	if x != nil {
 		return x.Message
 	}
@@ -1127,9 +1127,9 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\v2\x0e.ark.v1.TxDataR\x05value:\x028\x01\"&\n" +
 	"\n" +
 	"Tapscripts\x12\x18\n" +
-	"\ascripts\x18\x01 \x03(\tR\ascripts\"I\n" +
-	"\x0fBip322Signature\x12\x1c\n" +
-	"\tsignature\x18\x01 \x01(\tR\tsignature\x12\x18\n" +
+	"\ascripts\x18\x01 \x03(\tR\ascripts\"8\n" +
+	"\x06Intent\x12\x14\n" +
+	"\x05proof\x18\x01 \x01(\tR\x05proof\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"\x97\x01\n" +
 	"\n" +
 	"MarketHour\x12&\n" +
@@ -1201,7 +1201,7 @@ var file_ark_v1_types_proto_goTypes = []any{
 	(*TxData)(nil),                    // 3: ark.v1.TxData
 	(*TxNotification)(nil),            // 4: ark.v1.TxNotification
 	(*Tapscripts)(nil),                // 5: ark.v1.Tapscripts
-	(*Bip322Signature)(nil),           // 6: ark.v1.Bip322Signature
+	(*Intent)(nil),                    // 6: ark.v1.Intent
 	(*MarketHour)(nil),                // 7: ark.v1.MarketHour
 	(*BatchStartedEvent)(nil),         // 8: ark.v1.BatchStartedEvent
 	(*BatchFinalizationEvent)(nil),    // 9: ark.v1.BatchFinalizationEvent

@@ -61,18 +61,6 @@
           }
         }
       },
-      "Bip322Signature": {
-        "title": "Bip322Signature",
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "signature": {
-            "type": "string"
-          }
-        }
-      },
       "Heartbeat": {
         "title": "Heartbeat",
         "type": "object"
@@ -86,6 +74,18 @@
           },
           "taprootTree": {
             "$ref": "#/components/schemas/Tapscripts"
+          }
+        }
+      },
+      "Intent": {
+        "title": "Intent",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
           }
         }
       },
