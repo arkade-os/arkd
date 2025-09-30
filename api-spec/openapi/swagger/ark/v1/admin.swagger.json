@@ -508,17 +508,6 @@
     "v1BanScriptResponse": {
       "type": "object"
     },
-    "v1Bip322Signature": {
-      "type": "object",
-      "properties": {
-        "signature": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        }
-      }
-    },
     "v1Conviction": {
       "type": "object",
       "properties": {
@@ -747,6 +736,17 @@
         }
       }
     },
+    "v1Intent": {
+      "type": "object",
+      "properties": {
+        "proof": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
     "v1IntentInfo": {
       "type": "object",
       "properties": {
@@ -784,8 +784,8 @@
             "type": "string"
           }
         },
-        "proof": {
-          "$ref": "#/definitions/v1Bip322Signature"
+        "intent": {
+          "$ref": "#/definitions/v1Intent"
         }
       }
     },

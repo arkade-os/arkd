@@ -49,16 +49,20 @@ func (b *txBuilder) GetTxid(tx string) (string, error) {
 	return ptx.UnsignedTx.TxID(), nil
 }
 
-func (b *txBuilder) VerifyTapscriptPartialSigs(tx string) (bool, string, error) {
+func (b *txBuilder) VerifyTapscriptPartialSigs(
+	tx string, mustIncludeSignerSig bool,
+) (bool, string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return false, "", err
 	}
 
-	return b.verifyTapscriptPartialSigs(ptx)
+	return b.verifyTapscriptPartialSigs(ptx, mustIncludeSignerSig)
 }
 
-func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, error) {
+func (b *txBuilder) verifyTapscriptPartialSigs(
+	ptx *psbt.Packet, mustIncludeSignerSig bool,
+) (bool, string, error) {
 	txid := ptx.UnsignedTx.TxID()
 
 	signerPubkey, err := b.signer.GetPubkey(context.Background())
@@ -126,8 +130,13 @@ func (b *txBuilder) verifyTapscriptPartialSigs(ptx *psbt.Packet) (bool, string, 
 			}
 		}
 
-		// we don't need to check if operator signed
-		keys[signerPubkeyHex] = true
+		if !mustIncludeSignerSig {
+			// If the tx must not include signer's sig, we mock its verification in advance.
+			// If any input contain the signer's sig, it will be actually verified, otherwise they
+			// are pretend to be verified so that the function doesn't return a
+			// 'missing signature for <signer> pubkey' error.
+			keys[signerPubkeyHex] = true
+		}
 
 		if len(tapLeaf.ControlBlock) == 0 {
 			return false, txid, fmt.Errorf("missing control block for input %d", index)
@@ -211,47 +220,10 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 	for i, in := range ptx.Inputs {
 		isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
 		if isTaproot && len(in.TaprootLeafScript) > 0 {
-			closure, err := script.DecodeClosure(in.TaprootLeafScript[0].Script)
-			if err != nil {
+			if err := script.FinalizeVtxoScript(ptx, i); err != nil {
 				return "", err
 			}
-
-			conditionWitness, err := txutils.GetConditionWitness(in)
-			if err != nil {
-				return "", err
-			}
-
-			args := make(map[string][]byte)
-			if len(conditionWitness) > 0 {
-				var conditionWitnessBytes bytes.Buffer
-				if err := psbt.WriteTxWitness(
-					&conditionWitnessBytes, conditionWitness,
-				); err != nil {
-					return "", err
-				}
-				args[string(txutils.CONDITION_WITNESS_KEY_PREFIX)] = conditionWitnessBytes.Bytes()
-			}
-
-			for _, sig := range in.TaprootScriptSpendSig {
-				args[hex.EncodeToString(sig.XOnlyPubKey)] = script.EncodeTaprootSignature(
-					sig.Signature,
-					sig.SigHash,
-				)
-			}
-
-			witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)
-			if err != nil {
-				return "", err
-			}
-
-			var witnessBuf bytes.Buffer
-			if err := psbt.WriteTxWitness(&witnessBuf, witness); err != nil {
-				return "", err
-			}
-
-			ptx.Inputs[i].FinalScriptWitness = witnessBuf.Bytes()
 			continue
-
 		}
 
 		if err := psbt.Finalize(ptx, i); err != nil {

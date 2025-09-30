@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/bip322"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 )
 
@@ -13,7 +13,7 @@ type Service interface {
 	Start() error
 	Stop()
 	RegisterIntent(
-		ctx context.Context, proof bip322.Signature, message bip322.IntentMessage,
+		ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
 	) (string, error)
 	ConfirmRegistration(ctx context.Context, intentId string) error
 	SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) error
@@ -33,7 +33,9 @@ type Service interface {
 	) error
 	GetTxEventsChannel(ctx context.Context) <-chan TransactionEvent
 	DeleteIntentsByProof(
-		ctx context.Context, bip322signature bip322.Signature, message bip322.DeleteIntentMessage,
+		ctx context.Context,
+		proof intent.Proof,
+		message intent.DeleteMessage,
 	) error
 
 	// TODO: remove when detaching the indexer svc.
