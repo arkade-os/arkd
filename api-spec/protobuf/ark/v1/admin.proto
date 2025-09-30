@@ -64,7 +64,7 @@ service AdminService {
       get: "/v1/admin/convictions/round/{round_id}"
     };
   }
-  rpc GetActiveScriptConviction(GetActiveScriptConvictionRequest) returns (GetActiveScriptConvictionResponse) {
+  rpc GetActiveScriptConvictions(GetActiveScriptConvictionsRequest) returns (GetActiveScriptConvictionsResponse) {
     option (google.api.http) = {
       get: "/v1/admin/convictions/script/{script}"
     };
@@ -211,12 +211,12 @@ message GetConvictionsByRoundResponse {
   repeated Conviction convictions = 1;
 }
 
-message GetActiveScriptConvictionRequest {
+message GetActiveScriptConvictionsRequest {
   string script = 1;
 }
 
-message GetActiveScriptConvictionResponse {
-  Conviction conviction = 1;
+message GetActiveScriptConvictionsResponse {
+  repeated Conviction convictions = 1;
 }
 
 message PardonConvictionRequest {

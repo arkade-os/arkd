@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -20,13 +21,23 @@ func (s *service) checkIfBanned(script withOutputScript) error {
 		return err
 	}
 	conviction, err := s.repoManager.Convictions().
-		GetActiveScriptConviction(hex.EncodeToString(scriptBytes))
+		GetActiveScriptConvictions(hex.EncodeToString(scriptBytes))
 	if err != nil {
 		return err
 	}
-	if conviction != nil {
-		return fmt.Errorf("%s", conviction)
+	if len(conviction) >= s.banThreshold {
+		convictionsStr := make([]string, 0)
+		for _, conviction := range conviction {
+			convictionsStr = append(convictionsStr, conviction.String())
+		}
+		return fmt.Errorf(
+			"script %s is banned by %d convictions: %s",
+			script,
+			len(conviction),
+			strings.Join(convictionsStr, ", "),
+		)
 	}
+
 	return nil
 }
 

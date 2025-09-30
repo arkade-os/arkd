@@ -120,12 +120,12 @@
     },
     "/v1/admin/convictions/script/{script}": {
       "get": {
-        "operationId": "AdminService_GetActiveScriptConviction",
+        "operationId": "AdminService_GetActiveScriptConvictions",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1GetActiveScriptConvictionResponse"
+              "$ref": "#/definitions/v1GetActiveScriptConvictionsResponse"
             }
           },
           "default": {
@@ -623,11 +623,15 @@
     "v1DeleteIntentsResponse": {
       "type": "object"
     },
-    "v1GetActiveScriptConvictionResponse": {
+    "v1GetActiveScriptConvictionsResponse": {
       "type": "object",
       "properties": {
-        "conviction": {
-          "$ref": "#/definitions/v1Conviction"
+        "convictions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Conviction"
+          }
         }
       }
     },

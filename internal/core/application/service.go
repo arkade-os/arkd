@@ -50,6 +50,7 @@ type service struct {
 	vtxoTreeExpiry            arklib.RelativeLocktime
 	roundInterval             time.Duration
 	banDuration               time.Duration
+	banThreshold              int
 	unilateralExitDelay       arklib.RelativeLocktime
 	boardingExitDelay         arklib.RelativeLocktime
 	roundMinParticipantsCount int64
@@ -91,6 +92,7 @@ func NewService(
 	network arklib.Network, allowCSVBlockType bool, noteUriPrefix string,
 	marketHourStartTime, marketHourEndTime time.Time,
 	marketHourPeriod, marketHourRoundInterval time.Duration, reportSvc RoundReportService,
+	banThreshold int,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -156,6 +158,7 @@ func NewService(
 		vtxoTreeExpiry:      vtxoTreeExpiry,
 		roundInterval:       roundIntervalDuration,
 		banDuration:         banDurationDuration,
+		banThreshold:        banThreshold,
 		unilateralExitDelay: unilateralExitDelay,
 		allowCSVBlockType:   allowCSVBlockType,
 		wallet:              wallet,

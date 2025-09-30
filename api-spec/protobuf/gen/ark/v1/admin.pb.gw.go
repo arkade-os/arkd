@@ -380,9 +380,9 @@ func local_request_AdminService_GetConvictionsByRound_0(ctx context.Context, mar
 	return msg, metadata, err
 }
 
-func request_AdminService_GetActiveScriptConviction_0(ctx context.Context, marshaler runtime.Marshaler, client AdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+func request_AdminService_GetActiveScriptConvictions_0(ctx context.Context, marshaler runtime.Marshaler, client AdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq GetActiveScriptConvictionRequest
+		protoReq GetActiveScriptConvictionsRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -397,13 +397,13 @@ func request_AdminService_GetActiveScriptConviction_0(ctx context.Context, marsh
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "script", err)
 	}
-	msg, err := client.GetActiveScriptConviction(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	msg, err := client.GetActiveScriptConvictions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 }
 
-func local_request_AdminService_GetActiveScriptConviction_0(ctx context.Context, marshaler runtime.Marshaler, server AdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+func local_request_AdminService_GetActiveScriptConvictions_0(ctx context.Context, marshaler runtime.Marshaler, server AdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq GetActiveScriptConvictionRequest
+		protoReq GetActiveScriptConvictionsRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -415,7 +415,7 @@ func local_request_AdminService_GetActiveScriptConviction_0(ctx context.Context,
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "script", err)
 	}
-	msg, err := server.GetActiveScriptConviction(ctx, &protoReq)
+	msg, err := server.GetActiveScriptConvictions(ctx, &protoReq)
 	return msg, metadata, err
 }
 
@@ -717,25 +717,25 @@ func RegisterAdminServiceHandlerServer(ctx context.Context, mux *runtime.ServeMu
 		}
 		forward_AdminService_GetConvictionsByRound_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
-	mux.Handle(http.MethodGet, pattern_AdminService_GetActiveScriptConviction_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_AdminService_GetActiveScriptConvictions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/ark.v1.AdminService/GetActiveScriptConviction", runtime.WithHTTPPathPattern("/v1/admin/convictions/script/{script}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/ark.v1.AdminService/GetActiveScriptConvictions", runtime.WithHTTPPathPattern("/v1/admin/convictions/script/{script}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		resp, md, err := local_request_AdminService_GetActiveScriptConviction_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		resp, md, err := local_request_AdminService_GetActiveScriptConvictions_0(annotatedContext, inboundMarshaler, server, req, pathParams)
 		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
 		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_AdminService_GetActiveScriptConviction_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_AdminService_GetActiveScriptConvictions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 	mux.Handle(http.MethodPost, pattern_AdminService_PardonConviction_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
@@ -1004,22 +1004,22 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *runtime.ServeMu
 		}
 		forward_AdminService_GetConvictionsByRound_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
-	mux.Handle(http.MethodGet, pattern_AdminService_GetActiveScriptConviction_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+	mux.Handle(http.MethodGet, pattern_AdminService_GetActiveScriptConvictions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetActiveScriptConviction", runtime.WithHTTPPathPattern("/v1/admin/convictions/script/{script}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetActiveScriptConvictions", runtime.WithHTTPPathPattern("/v1/admin/convictions/script/{script}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		resp, md, err := request_AdminService_GetActiveScriptConviction_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		resp, md, err := request_AdminService_GetActiveScriptConvictions_0(annotatedContext, inboundMarshaler, client, req, pathParams)
 		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
 			return
 		}
-		forward_AdminService_GetActiveScriptConviction_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+		forward_AdminService_GetActiveScriptConvictions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 	mux.Handle(http.MethodPost, pattern_AdminService_PardonConviction_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
@@ -1059,35 +1059,35 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *runtime.ServeMu
 }
 
 var (
-	pattern_AdminService_GetScheduledSweep_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "sweeps"}, ""))
-	pattern_AdminService_GetRoundDetails_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "round", "round_id"}, ""))
-	pattern_AdminService_GetRounds_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "rounds"}, ""))
-	pattern_AdminService_CreateNote_0                = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "note"}, ""))
-	pattern_AdminService_GetMarketHourConfig_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "marketHour"}, ""))
-	pattern_AdminService_UpdateMarketHourConfig_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "marketHour"}, ""))
-	pattern_AdminService_ListIntents_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "intents"}, ""))
-	pattern_AdminService_DeleteIntents_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "admin", "intents", "delete"}, ""))
-	pattern_AdminService_GetConviction_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "convictions", "id"}, ""))
-	pattern_AdminService_GetConvictions_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "convictions"}, ""))
-	pattern_AdminService_GetConvictionsByRound_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "admin", "convictions", "round", "round_id"}, ""))
-	pattern_AdminService_GetActiveScriptConviction_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "convictions", "script"}, ""))
-	pattern_AdminService_PardonConviction_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3, 2, 4}, []string{"v1", "admin", "convictions", "id", "pardon"}, ""))
-	pattern_AdminService_BanScript_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "admin", "convictions", "ban"}, ""))
+	pattern_AdminService_GetScheduledSweep_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "sweeps"}, ""))
+	pattern_AdminService_GetRoundDetails_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "round", "round_id"}, ""))
+	pattern_AdminService_GetRounds_0                  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "rounds"}, ""))
+	pattern_AdminService_CreateNote_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "note"}, ""))
+	pattern_AdminService_GetMarketHourConfig_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "marketHour"}, ""))
+	pattern_AdminService_UpdateMarketHourConfig_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "marketHour"}, ""))
+	pattern_AdminService_ListIntents_0                = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "intents"}, ""))
+	pattern_AdminService_DeleteIntents_0              = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "admin", "intents", "delete"}, ""))
+	pattern_AdminService_GetConviction_0              = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "convictions", "id"}, ""))
+	pattern_AdminService_GetConvictions_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "admin", "convictions"}, ""))
+	pattern_AdminService_GetConvictionsByRound_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4}, []string{"v1", "admin", "convictions", "round", "round_id"}, ""))
+	pattern_AdminService_GetActiveScriptConvictions_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 3}, []string{"v1", "admin", "convictions", "script"}, ""))
+	pattern_AdminService_PardonConviction_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3, 2, 4}, []string{"v1", "admin", "convictions", "id", "pardon"}, ""))
+	pattern_AdminService_BanScript_0                  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "admin", "convictions", "ban"}, ""))
 )
 
 var (
-	forward_AdminService_GetScheduledSweep_0         = runtime.ForwardResponseMessage
-	forward_AdminService_GetRoundDetails_0           = runtime.ForwardResponseMessage
-	forward_AdminService_GetRounds_0                 = runtime.ForwardResponseMessage
-	forward_AdminService_CreateNote_0                = runtime.ForwardResponseMessage
-	forward_AdminService_GetMarketHourConfig_0       = runtime.ForwardResponseMessage
-	forward_AdminService_UpdateMarketHourConfig_0    = runtime.ForwardResponseMessage
-	forward_AdminService_ListIntents_0               = runtime.ForwardResponseMessage
-	forward_AdminService_DeleteIntents_0             = runtime.ForwardResponseMessage
-	forward_AdminService_GetConviction_0             = runtime.ForwardResponseMessage
-	forward_AdminService_GetConvictions_0            = runtime.ForwardResponseMessage
-	forward_AdminService_GetConvictionsByRound_0     = runtime.ForwardResponseMessage
-	forward_AdminService_GetActiveScriptConviction_0 = runtime.ForwardResponseMessage
-	forward_AdminService_PardonConviction_0          = runtime.ForwardResponseMessage
-	forward_AdminService_BanScript_0                 = runtime.ForwardResponseMessage
+	forward_AdminService_GetScheduledSweep_0          = runtime.ForwardResponseMessage
+	forward_AdminService_GetRoundDetails_0            = runtime.ForwardResponseMessage
+	forward_AdminService_GetRounds_0                  = runtime.ForwardResponseMessage
+	forward_AdminService_CreateNote_0                 = runtime.ForwardResponseMessage
+	forward_AdminService_GetMarketHourConfig_0        = runtime.ForwardResponseMessage
+	forward_AdminService_UpdateMarketHourConfig_0     = runtime.ForwardResponseMessage
+	forward_AdminService_ListIntents_0                = runtime.ForwardResponseMessage
+	forward_AdminService_DeleteIntents_0              = runtime.ForwardResponseMessage
+	forward_AdminService_GetConviction_0              = runtime.ForwardResponseMessage
+	forward_AdminService_GetConvictions_0             = runtime.ForwardResponseMessage
+	forward_AdminService_GetConvictionsByRound_0      = runtime.ForwardResponseMessage
+	forward_AdminService_GetActiveScriptConvictions_0 = runtime.ForwardResponseMessage
+	forward_AdminService_PardonConviction_0           = runtime.ForwardResponseMessage
+	forward_AdminService_BanScript_0                  = runtime.ForwardResponseMessage
 )

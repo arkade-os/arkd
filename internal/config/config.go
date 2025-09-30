@@ -74,6 +74,7 @@ type Config struct {
 	EventDbDir          string
 	RoundInterval       int64
 	BanDuration         int64
+	BanThreshold        int // number of convictions to trigger a ban
 	SchedulerType       string
 	TxBuilderType       string
 	LiveStoreType       string
@@ -140,6 +141,7 @@ var (
 	SignerAddr                = "SIGNER_ADDR"
 	RoundInterval             = "ROUND_INTERVAL"
 	BanDuration               = "BAN_DURATION"
+	BanThreshold              = "BAN_THRESHOLD"
 	Port                      = "PORT"
 	EventDbType               = "EVENT_DB_TYPE"
 	DbType                    = "DB_TYPE"
@@ -181,6 +183,7 @@ var (
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultRoundInterval       = 30
 	defaultBanDuration         = 10 * defaultRoundInterval
+	defaultBanThreshold        = 1
 	DefaultPort                = 7070
 	defaultDbType              = "postgres"
 	defaultEventDbType         = "postgres"
@@ -218,6 +221,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(RoundInterval, defaultRoundInterval)
 	viper.SetDefault(BanDuration, defaultBanDuration)
+	viper.SetDefault(BanThreshold, defaultBanThreshold)
 	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
 	viper.SetDefault(SchedulerType, defaultSchedulerType)
 	viper.SetDefault(EventDbType, defaultEventDbType)
@@ -284,6 +288,7 @@ func LoadConfig() (*Config, error) {
 		SignerAddr:              signerAddr,
 		RoundInterval:           viper.GetInt64(RoundInterval),
 		BanDuration:             viper.GetInt64(BanDuration),
+		BanThreshold:            viper.GetInt(BanThreshold),
 		Port:                    viper.GetUint32(Port),
 		EventDbType:             viper.GetString(EventDbType),
 		DbType:                  viper.GetString(DbType),
@@ -386,6 +391,9 @@ func (c *Config) Validate() error {
 	}
 	if c.BanDuration < 1 {
 		return fmt.Errorf("invalid ban duration, must be at least 1 second")
+	}
+	if c.BanThreshold < 1 {
+		return fmt.Errorf("invalid ban threshold, must be at least 1")
 	}
 	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
 		if c.SchedulerType != "block" {
@@ -703,6 +711,7 @@ func (c *Config) appService() error {
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		mhStartTime, mhEndTime, mhPeriod, mhRoundInterval, roundReportSvc,
+		c.BanThreshold,
 	)
 	if err != nil {
 		return err

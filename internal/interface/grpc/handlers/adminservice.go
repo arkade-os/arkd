@@ -288,29 +288,33 @@ func (a *adminHandler) GetConvictionsByRound(
 	return &arkv1.GetConvictionsByRoundResponse{Convictions: protoConvictions}, nil
 }
 
-func (a *adminHandler) GetActiveScriptConviction(
-	ctx context.Context, req *arkv1.GetActiveScriptConvictionRequest,
-) (*arkv1.GetActiveScriptConvictionResponse, error) {
+func (a *adminHandler) GetActiveScriptConvictions(
+	ctx context.Context, req *arkv1.GetActiveScriptConvictionsRequest,
+) (*arkv1.GetActiveScriptConvictionsResponse, error) {
 	script := req.GetScript()
 	if len(script) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing script")
 	}
 
-	conviction, err := a.adminService.GetActiveScriptConviction(ctx, script)
+	conviction, err := a.adminService.GetActiveScriptConvictions(ctx, script)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	if conviction == nil {
-		return &arkv1.GetActiveScriptConvictionResponse{Conviction: nil}, nil
+	protoConvictions := make([]*arkv1.Conviction, 0, len(conviction))
+	for _, conviction := range conviction {
+		protoConviction, err := convertConvictionToProto(conviction)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.Internal,
+				"failed to convert conviction: %s",
+				err.Error(),
+			)
+		}
+		protoConvictions = append(protoConvictions, protoConviction)
 	}
 
-	protoConviction, err := convertConvictionToProto(conviction)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to convert conviction: %s", err.Error())
-	}
-
-	return &arkv1.GetActiveScriptConvictionResponse{Conviction: protoConviction}, nil
+	return &arkv1.GetActiveScriptConvictionsResponse{Convictions: protoConvictions}, nil
 }
 
 func (a *adminHandler) PardonConviction(

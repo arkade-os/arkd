@@ -27,35 +27,50 @@ func (q *Queries) InsertVtxoCommitmentTxid(ctx context.Context, arg InsertVtxoCo
 	return err
 }
 
-const selectActiveScriptConviction = `-- name: SelectActiveScriptConviction :one
+const selectActiveScriptConvictions = `-- name: SelectActiveScriptConvictions :many
 SELECT id, type, created_at, expires_at, crime_type, crime_round_id, crime_reason, pardoned, script FROM conviction 
 WHERE script = ?1 
 AND pardoned = false 
 AND (expires_at IS NULL OR expires_at > ?2)
-ORDER BY created_at ASC 
-LIMIT 1
+ORDER BY created_at ASC
 `
 
-type SelectActiveScriptConvictionParams struct {
-	Script      sql.NullString
-	CurrentTime sql.NullInt64
+type SelectActiveScriptConvictionsParams struct {
+	Script    sql.NullString
+	ExpiresAt sql.NullInt64
 }
 
-func (q *Queries) SelectActiveScriptConviction(ctx context.Context, arg SelectActiveScriptConvictionParams) (Conviction, error) {
-	row := q.db.QueryRowContext(ctx, selectActiveScriptConviction, arg.Script, arg.CurrentTime)
-	var i Conviction
-	err := row.Scan(
-		&i.ID,
-		&i.Type,
-		&i.CreatedAt,
-		&i.ExpiresAt,
-		&i.CrimeType,
-		&i.CrimeRoundID,
-		&i.CrimeReason,
-		&i.Pardoned,
-		&i.Script,
-	)
-	return i, err
+func (q *Queries) SelectActiveScriptConvictions(ctx context.Context, arg SelectActiveScriptConvictionsParams) ([]Conviction, error) {
+	rows, err := q.db.QueryContext(ctx, selectActiveScriptConvictions, arg.Script, arg.ExpiresAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Conviction
+	for rows.Next() {
+		var i Conviction
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.CrimeType,
+			&i.CrimeRoundID,
+			&i.CrimeReason,
+			&i.Pardoned,
+			&i.Script,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const selectAllRoundIds = `-- name: SelectAllRoundIds :many

@@ -815,9 +815,9 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 		require.Error(t, err)
 		require.Nil(t, conviction)
 
-		scriptConviction, err := repo.GetActiveScriptConviction("non-existent-script")
+		scriptConviction, err := repo.GetActiveScriptConvictions("non-existent-script")
 		require.NoError(t, err)
-		require.Nil(t, scriptConviction)
+		require.Empty(t, scriptConviction)
 
 		convictions, err := repo.GetAll(time.Now().Add(-time.Hour), time.Now())
 		require.NoError(t, err)
@@ -860,17 +860,19 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, retrievedConviction2)
 		assertConvictionEqual(t, conviction2, retrievedConviction2)
 
-		activeConviction1, err := repo.GetActiveScriptConviction(script1)
+		activeConviction1, err := repo.GetActiveScriptConvictions(script1)
 		require.NoError(t, err)
 		require.NotNil(t, activeConviction1)
-		require.Equal(t, script1, activeConviction1.Script)
-		require.False(t, activeConviction1.IsPardoned())
+		require.Len(t, activeConviction1, 1)
+		require.Equal(t, script1, activeConviction1[0].Script)
+		require.False(t, activeConviction1[0].IsPardoned())
 
-		activeConviction2, err := repo.GetActiveScriptConviction(script2)
+		activeConviction2, err := repo.GetActiveScriptConvictions(script2)
 		require.NoError(t, err)
 		require.NotNil(t, activeConviction2)
-		require.Equal(t, script2, activeConviction2.Script)
-		require.False(t, activeConviction2.IsPardoned())
+		require.Len(t, activeConviction2, 1)
+		require.Equal(t, script2, activeConviction2[0].Script)
+		require.False(t, activeConviction2[0].IsPardoned())
 
 		round1Convictions, err := repo.GetByRoundID(roundID1)
 		require.NoError(t, err)
@@ -894,7 +896,7 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, pardonedConviction)
 		require.True(t, pardonedConviction.IsPardoned())
 
-		activeConvictionAfterPardon, err := repo.GetActiveScriptConviction(script1)
+		activeConvictionAfterPardon, err := repo.GetActiveScriptConvictions(script1)
 		require.NoError(t, err)
 		require.Nil(t, activeConvictionAfterPardon)
 
@@ -910,7 +912,7 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 
 		time.Sleep(10 * time.Millisecond)
 
-		_, err = repo.GetActiveScriptConviction(script1)
+		_, err = repo.GetActiveScriptConvictions(script1)
 		require.NoError(t, err)
 	})
 }

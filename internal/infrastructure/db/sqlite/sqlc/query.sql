@@ -257,13 +257,12 @@ ON CONFLICT(id) DO UPDATE SET
 -- name: SelectConviction :one
 SELECT * FROM conviction WHERE id = @id;
 
--- name: SelectActiveScriptConviction :one
+-- name: SelectActiveScriptConvictions :many
 SELECT * FROM conviction 
 WHERE script = @script 
 AND pardoned = false 
-AND (expires_at IS NULL OR expires_at > @current_time)
-ORDER BY created_at ASC 
-LIMIT 1;
+AND (expires_at IS NULL OR expires_at > @expires_at)
+ORDER BY created_at ASC;
 
 -- name: UpdateConvictionPardoned :exec
 UPDATE conviction SET pardoned = true WHERE id = @id;

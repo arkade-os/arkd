@@ -51,15 +51,15 @@ func (r *convictionRepository) Get(id string) (domain.Conviction, error) {
 	return r.convertToDomainConviction(conviction)
 }
 
-func (r *convictionRepository) GetActiveScriptConviction(
+func (r *convictionRepository) GetActiveScriptConvictions(
 	script string,
-) (*domain.ScriptConviction, error) {
+) ([]domain.ScriptConviction, error) {
 	ctx := context.Background()
 	currentTime := time.Now().Unix()
 
-	conviction, err := r.querier.SelectActiveScriptConviction(
+	convictions, err := r.querier.SelectActiveScriptConvictions(
 		ctx,
-		queries.SelectActiveScriptConvictionParams{
+		queries.SelectActiveScriptConvictionsParams{
 			Script: sql.NullString{
 				String: script,
 				Valid:  true,
@@ -74,20 +74,20 @@ func (r *convictionRepository) GetActiveScriptConviction(
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get active script conviction: %w", err)
+		return nil, fmt.Errorf("failed to get active script convictions: %w", err)
 	}
 
-	domainConviction, err := r.convertToDomainConviction(conviction)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert conviction: %w", err)
+	domainConvictions := make([]domain.ScriptConviction, 0, len(convictions))
+	for _, c := range convictions {
+		domainConviction, err := r.convertToDomainConviction(c)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert conviction: %w", err)
+		}
+
+		domainConvictions = append(domainConvictions, domainConviction)
 	}
 
-	scriptConviction, ok := domainConviction.(domain.ScriptConviction)
-	if !ok {
-		return nil, fmt.Errorf("conviction is not a script conviction")
-	}
-
-	return &scriptConviction, nil
+	return domainConvictions, nil
 }
 
 func (r *convictionRepository) Add(convictions ...domain.Conviction) error {
@@ -165,7 +165,7 @@ func (r *convictionRepository) Pardon(id string) error {
 
 func (r *convictionRepository) convertToDomainConviction(
 	c queries.Conviction,
-) (domain.Conviction, error) {
+) (domain.ScriptConviction, error) {
 	var expiresAt *time.Time
 	if c.ExpiresAt.Valid {
 		t := time.Unix(c.ExpiresAt.Int64, 0)
@@ -194,7 +194,7 @@ func (r *convictionRepository) convertToDomainConviction(
 		}, nil
 	}
 
-	return nil, fmt.Errorf("unknown conviction type")
+	return domain.ScriptConviction{}, fmt.Errorf("unknown conviction type")
 }
 
 func (r *convictionRepository) convertToDBParams(

@@ -32,7 +32,10 @@ type AdminService interface {
 	GetConviction(ctx context.Context, id string) (domain.Conviction, error)
 	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
 	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
-	GetActiveScriptConviction(ctx context.Context, script string) (*domain.ScriptConviction, error)
+	GetActiveScriptConvictions(
+		ctx context.Context,
+		script string,
+	) ([]domain.ScriptConviction, error)
 	PardonConviction(ctx context.Context, id string) error
 	BanScript(ctx context.Context, script, reason string, banDuration *time.Duration) error
 }
@@ -377,11 +380,11 @@ func (s *adminService) GetConvictionsByRound(
 	return s.repoManager.Convictions().GetByRoundID(roundID)
 }
 
-func (s *adminService) GetActiveScriptConviction(
+func (s *adminService) GetActiveScriptConvictions(
 	ctx context.Context,
 	script string,
-) (*domain.ScriptConviction, error) {
-	return s.repoManager.Convictions().GetActiveScriptConviction(script)
+) ([]domain.ScriptConviction, error) {
+	return s.repoManager.Convictions().GetActiveScriptConvictions(script)
 }
 
 func (s *adminService) PardonConviction(ctx context.Context, id string) error {
