@@ -216,7 +216,11 @@ func (a *adminHandler) GetConvictions(
 	for _, conviction := range convictions {
 		protoConviction, err := convertConvictionToProto(conviction)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to convert conviction: %s", err.Error())
+			return nil, status.Errorf(
+				codes.Internal,
+				"failed to convert conviction: %s",
+				err.Error(),
+			)
 		}
 		protoConvictions = append(protoConvictions, protoConviction)
 	}

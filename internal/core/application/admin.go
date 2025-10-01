@@ -362,7 +362,10 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 }
 
 // Conviction management methods
-func (s *adminService) GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error) {
+func (s *adminService) GetConvictionsByIds(
+	ctx context.Context,
+	ids []string,
+) ([]domain.Conviction, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("missing conviction ids")
 	}
