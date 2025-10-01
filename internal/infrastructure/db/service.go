@@ -62,6 +62,11 @@ var (
 		"sqlite":   sqlitedb.NewOffchainTxRepository,
 		"postgres": pgdb.NewOffchainTxRepository,
 	}
+	convictionStoreTypes = map[string]func(...interface{}) (domain.ConvictionRepository, error){
+		"badger":   badgerdb.NewConvictionRepository,
+		"sqlite":   sqlitedb.NewConvictionRepository,
+		"postgres": pgdb.NewConvictionRepository,
+	}
 )
 
 const (
@@ -82,8 +87,8 @@ type service struct {
 	vtxoStore       domain.VtxoRepository
 	marketHourStore domain.MarketHourRepo
 	offchainTxStore domain.OffchainTxRepository
-
-	txDecoder ports.TxDecoder
+	convictionStore domain.ConvictionRepository
+	txDecoder       ports.TxDecoder
 }
 
 func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoManager, error) {
@@ -107,12 +112,17 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
+	convictionStoreFactory, ok := convictionStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
 
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
 	var vtxoStore domain.VtxoRepository
 	var marketHourStore domain.MarketHourRepo
 	var offchainTxStore domain.OffchainTxRepository
+	var convictionStore domain.ConvictionRepository
 	var err error
 
 	switch config.EventStoreType {
@@ -161,6 +171,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		offchainTxStore, err = offchainTxStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create offchain tx store: %w", err)
+		}
+		convictionStore, err = convictionStoreFactory(config.DataStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
 	case "postgres":
 		if len(config.DataStoreConfig) != 1 {
@@ -215,6 +229,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create offchain tx store: %w", err)
 		}
+		convictionStore, err = convictionStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create conviction store: %w", err)
+		}
 	case "sqlite":
 		if len(config.DataStoreConfig) != 1 {
 			return nil, fmt.Errorf("invalid data store config")
@@ -266,6 +284,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create offchain tx store: %w", err)
 		}
+		convictionStore, err = convictionStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create conviction store: %w", err)
+		}
 	}
 
 	svc := &service{
@@ -275,6 +297,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		marketHourStore: marketHourStore,
 		offchainTxStore: offchainTxStore,
 		txDecoder:       txDecoder,
+		convictionStore: convictionStore,
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -308,12 +331,17 @@ func (s *service) OffchainTxs() domain.OffchainTxRepository {
 	return s.offchainTxStore
 }
 
+func (s *service) Convictions() domain.ConvictionRepository {
+	return s.convictionStore
+}
+
 func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
 	s.vtxoStore.Close()
 	s.marketHourStore.Close()
 	s.offchainTxStore.Close()
+	s.convictionStore.Close()
 }
 
 func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {

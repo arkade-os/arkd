@@ -16,6 +16,211 @@
     "application/json"
   ],
   "paths": {
+    "/v1/admin/convictions/ban": {
+      "post": {
+        "operationId": "AdminService_BanScript",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BanScriptResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1BanScriptRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
+    "/v1/admin/convictions/{ids}": {
+      "get": {
+        "operationId": "AdminService_GetConvictions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetConvictionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "path",
+            "required": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "csv",
+            "minItems": 1
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
+    "/v1/admin/convictions/{id}/pardon": {
+      "post": {
+        "operationId": "AdminService_PardonConviction",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PardonConvictionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AdminServicePardonConvictionBody"
+            }
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
+    "/v1/admin/convictionsByRound/{roundId}": {
+      "get": {
+        "operationId": "AdminService_GetConvictionsByRound",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetConvictionsByRoundResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "roundId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
+    "/v1/admin/convictionsByScript/{script}": {
+      "get": {
+        "operationId": "AdminService_GetActiveScriptConvictions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetActiveScriptConvictionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "script",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
+    "/v1/admin/convictionsInRange": {
+      "get": {
+        "operationId": "AdminService_GetConvictionsInRange",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetConvictionsInRangeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "description": "Unix timestamp",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "to",
+            "description": "Unix timestamp",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
     "/v1/admin/intents": {
       "get": {
         "operationId": "AdminService_ListIntents",
@@ -258,6 +463,9 @@
     }
   },
   "definitions": {
+    "AdminServicePardonConvictionBody": {
+      "type": "object"
+    },
     "protobufAny": {
       "type": "object",
       "properties": {
@@ -286,6 +494,69 @@
         }
       }
     },
+    "v1BanScriptRequest": {
+      "type": "object",
+      "properties": {
+        "script": {
+          "type": "string"
+        },
+        "banDuration": {
+          "type": "string",
+          "format": "int64",
+          "title": "0 = permanent ban"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "v1BanScriptResponse": {
+      "type": "object"
+    },
+    "v1Conviction": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/v1ConvictionType"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "int64"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "int64",
+          "title": "0 if never expires"
+        },
+        "pardoned": {
+          "type": "boolean"
+        },
+        "script": {
+          "type": "string",
+          "title": "Only set for script convictions"
+        },
+        "crimeType": {
+          "$ref": "#/definitions/v1CrimeType"
+        },
+        "roundId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ConvictionType": {
+      "type": "string",
+      "enum": [
+        "CONVICTION_TYPE_UNSPECIFIED",
+        "CONVICTION_TYPE_SCRIPT"
+      ],
+      "default": "CONVICTION_TYPE_UNSPECIFIED"
+    },
     "v1CreateNoteRequest": {
       "type": "object",
       "properties": {
@@ -310,6 +581,20 @@
         }
       }
     },
+    "v1CrimeType": {
+      "type": "string",
+      "enum": [
+        "CRIME_TYPE_UNSPECIFIED",
+        "CRIME_TYPE_MUSIG2_NONCE_SUBMISSION",
+        "CRIME_TYPE_MUSIG2_SIGNATURE_SUBMISSION",
+        "CRIME_TYPE_MUSIG2_INVALID_SIGNATURE",
+        "CRIME_TYPE_FORFEIT_SUBMISSION",
+        "CRIME_TYPE_FORFEIT_INVALID_SIGNATURE",
+        "CRIME_TYPE_BOARDING_INPUT_SUBMISSION",
+        "CRIME_TYPE_MANUAL_BAN"
+      ],
+      "default": "CRIME_TYPE_UNSPECIFIED"
+    },
     "v1DeleteIntentsRequest": {
       "type": "object",
       "properties": {
@@ -323,6 +608,54 @@
     },
     "v1DeleteIntentsResponse": {
       "type": "object"
+    },
+    "v1GetActiveScriptConvictionsResponse": {
+      "type": "object",
+      "properties": {
+        "convictions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Conviction"
+          }
+        }
+      }
+    },
+    "v1GetConvictionsByRoundResponse": {
+      "type": "object",
+      "properties": {
+        "convictions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Conviction"
+          }
+        }
+      }
+    },
+    "v1GetConvictionsInRangeResponse": {
+      "type": "object",
+      "properties": {
+        "convictions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Conviction"
+          }
+        }
+      }
+    },
+    "v1GetConvictionsResponse": {
+      "type": "object",
+      "properties": {
+        "convictions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Conviction"
+          }
+        }
+      }
     },
     "v1GetMarketHourConfigResponse": {
       "type": "object",
@@ -521,6 +854,9 @@
           "description": "Amount to send in satoshis."
         }
       }
+    },
+    "v1PardonConvictionResponse": {
+      "type": "object"
     },
     "v1ScheduledSweep": {
       "type": "object",

@@ -26,6 +26,12 @@ type AdminServiceClient interface {
 	UpdateMarketHourConfig(ctx context.Context, in *UpdateMarketHourConfigRequest, opts ...grpc.CallOption) (*UpdateMarketHourConfigResponse, error)
 	ListIntents(ctx context.Context, in *ListIntentsRequest, opts ...grpc.CallOption) (*ListIntentsResponse, error)
 	DeleteIntents(ctx context.Context, in *DeleteIntentsRequest, opts ...grpc.CallOption) (*DeleteIntentsResponse, error)
+	GetConvictions(ctx context.Context, in *GetConvictionsRequest, opts ...grpc.CallOption) (*GetConvictionsResponse, error)
+	GetConvictionsInRange(ctx context.Context, in *GetConvictionsInRangeRequest, opts ...grpc.CallOption) (*GetConvictionsInRangeResponse, error)
+	GetConvictionsByRound(ctx context.Context, in *GetConvictionsByRoundRequest, opts ...grpc.CallOption) (*GetConvictionsByRoundResponse, error)
+	GetActiveScriptConvictions(ctx context.Context, in *GetActiveScriptConvictionsRequest, opts ...grpc.CallOption) (*GetActiveScriptConvictionsResponse, error)
+	PardonConviction(ctx context.Context, in *PardonConvictionRequest, opts ...grpc.CallOption) (*PardonConvictionResponse, error)
+	BanScript(ctx context.Context, in *BanScriptRequest, opts ...grpc.CallOption) (*BanScriptResponse, error)
 }
 
 type adminServiceClient struct {
@@ -108,6 +114,60 @@ func (c *adminServiceClient) DeleteIntents(ctx context.Context, in *DeleteIntent
 	return out, nil
 }
 
+func (c *adminServiceClient) GetConvictions(ctx context.Context, in *GetConvictionsRequest, opts ...grpc.CallOption) (*GetConvictionsResponse, error) {
+	out := new(GetConvictionsResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/GetConvictions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetConvictionsInRange(ctx context.Context, in *GetConvictionsInRangeRequest, opts ...grpc.CallOption) (*GetConvictionsInRangeResponse, error) {
+	out := new(GetConvictionsInRangeResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/GetConvictionsInRange", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetConvictionsByRound(ctx context.Context, in *GetConvictionsByRoundRequest, opts ...grpc.CallOption) (*GetConvictionsByRoundResponse, error) {
+	out := new(GetConvictionsByRoundResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/GetConvictionsByRound", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetActiveScriptConvictions(ctx context.Context, in *GetActiveScriptConvictionsRequest, opts ...grpc.CallOption) (*GetActiveScriptConvictionsResponse, error) {
+	out := new(GetActiveScriptConvictionsResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/GetActiveScriptConvictions", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) PardonConviction(ctx context.Context, in *PardonConvictionRequest, opts ...grpc.CallOption) (*PardonConvictionResponse, error) {
+	out := new(PardonConvictionResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/PardonConviction", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) BanScript(ctx context.Context, in *BanScriptRequest, opts ...grpc.CallOption) (*BanScriptResponse, error) {
+	out := new(BanScriptResponse)
+	err := c.cc.Invoke(ctx, "/ark.v1.AdminService/BanScript", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility
@@ -120,6 +180,12 @@ type AdminServiceServer interface {
 	UpdateMarketHourConfig(context.Context, *UpdateMarketHourConfigRequest) (*UpdateMarketHourConfigResponse, error)
 	ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error)
 	DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error)
+	GetConvictions(context.Context, *GetConvictionsRequest) (*GetConvictionsResponse, error)
+	GetConvictionsInRange(context.Context, *GetConvictionsInRangeRequest) (*GetConvictionsInRangeResponse, error)
+	GetConvictionsByRound(context.Context, *GetConvictionsByRoundRequest) (*GetConvictionsByRoundResponse, error)
+	GetActiveScriptConvictions(context.Context, *GetActiveScriptConvictionsRequest) (*GetActiveScriptConvictionsResponse, error)
+	PardonConviction(context.Context, *PardonConvictionRequest) (*PardonConvictionResponse, error)
+	BanScript(context.Context, *BanScriptRequest) (*BanScriptResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have forward compatible implementations.
@@ -149,6 +215,24 @@ func (UnimplementedAdminServiceServer) ListIntents(context.Context, *ListIntents
 }
 func (UnimplementedAdminServiceServer) DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteIntents not implemented")
+}
+func (UnimplementedAdminServiceServer) GetConvictions(context.Context, *GetConvictionsRequest) (*GetConvictionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetConvictions not implemented")
+}
+func (UnimplementedAdminServiceServer) GetConvictionsInRange(context.Context, *GetConvictionsInRangeRequest) (*GetConvictionsInRangeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetConvictionsInRange not implemented")
+}
+func (UnimplementedAdminServiceServer) GetConvictionsByRound(context.Context, *GetConvictionsByRoundRequest) (*GetConvictionsByRoundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetConvictionsByRound not implemented")
+}
+func (UnimplementedAdminServiceServer) GetActiveScriptConvictions(context.Context, *GetActiveScriptConvictionsRequest) (*GetActiveScriptConvictionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetActiveScriptConvictions not implemented")
+}
+func (UnimplementedAdminServiceServer) PardonConviction(context.Context, *PardonConvictionRequest) (*PardonConvictionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PardonConviction not implemented")
+}
+func (UnimplementedAdminServiceServer) BanScript(context.Context, *BanScriptRequest) (*BanScriptResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BanScript not implemented")
 }
 
 // UnsafeAdminServiceServer may be embedded to opt out of forward compatibility for this service.
@@ -306,6 +390,114 @@ func _AdminService_DeleteIntents_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetConvictions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConvictionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetConvictions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.AdminService/GetConvictions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetConvictions(ctx, req.(*GetConvictionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetConvictionsInRange_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConvictionsInRangeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetConvictionsInRange(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.AdminService/GetConvictionsInRange",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetConvictionsInRange(ctx, req.(*GetConvictionsInRangeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetConvictionsByRound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConvictionsByRoundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetConvictionsByRound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.AdminService/GetConvictionsByRound",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetConvictionsByRound(ctx, req.(*GetConvictionsByRoundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetActiveScriptConvictions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActiveScriptConvictionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetActiveScriptConvictions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.AdminService/GetActiveScriptConvictions",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetActiveScriptConvictions(ctx, req.(*GetActiveScriptConvictionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_PardonConviction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PardonConvictionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).PardonConviction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.AdminService/PardonConviction",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).PardonConviction(ctx, req.(*PardonConvictionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_BanScript_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BanScriptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).BanScript(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/ark.v1.AdminService/BanScript",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).BanScript(ctx, req.(*BanScriptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -344,6 +536,30 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteIntents",
 			Handler:    _AdminService_DeleteIntents_Handler,
+		},
+		{
+			MethodName: "GetConvictions",
+			Handler:    _AdminService_GetConvictions_Handler,
+		},
+		{
+			MethodName: "GetConvictionsInRange",
+			Handler:    _AdminService_GetConvictionsInRange_Handler,
+		},
+		{
+			MethodName: "GetConvictionsByRound",
+			Handler:    _AdminService_GetConvictionsByRound_Handler,
+		},
+		{
+			MethodName: "GetActiveScriptConvictions",
+			Handler:    _AdminService_GetActiveScriptConvictions_Handler,
+		},
+		{
+			MethodName: "PardonConviction",
+			Handler:    _AdminService_PardonConviction_Handler,
+		},
+		{
+			MethodName: "BanScript",
+			Handler:    _AdminService_BanScript_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
