@@ -2084,10 +2084,11 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		if len(convictions) > 0 {
 			err = fmt.Errorf("missing boarding inputs signatures")
 			changes = s.cache.CurrentRound().Fail(err)
-			log.Warn(err)
-			if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
-				log.WithError(err).Warn("failed to ban boarding inputs")
-			}
+			go func() {
+				if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
+					log.WithError(err).Warn("failed to ban boarding inputs")
+				}
+			}()
 			return
 		}
 
