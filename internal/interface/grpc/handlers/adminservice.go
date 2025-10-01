@@ -371,12 +371,10 @@ func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, 
 		Type:      convictionType,
 		CreatedAt: conviction.GetCreatedAt().Unix(),
 		ExpiresAt: expiresAt,
-		Crime: &arkv1.Crime{
-			Type:    arkv1.CrimeType(conviction.GetCrime().Type),
-			RoundId: conviction.GetCrime().RoundID,
-			Reason:  conviction.GetCrime().Reason,
-		},
-		Pardoned: conviction.IsPardoned(),
+		CrimeType: arkv1.CrimeType(conviction.GetCrime().Type),
+		RoundId:   conviction.GetCrime().RoundID,
+		Reason:    conviction.GetCrime().Reason,
+		Pardoned:  conviction.IsPardoned(),
 	}
 
 	if scriptConviction, ok := conviction.(domain.ScriptConviction); ok {

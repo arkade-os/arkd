@@ -154,7 +154,7 @@ func (m *forfeitTxsStore) AllSigned() bool {
 	return true
 }
 
-func (m *forfeitTxsStore) UnsignedVtxoKeys() []domain.Outpoint {
+func (m *forfeitTxsStore) GetUnsignedInputs() []domain.Outpoint {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 

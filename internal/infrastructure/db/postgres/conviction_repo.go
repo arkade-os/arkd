@@ -37,9 +37,7 @@ func (r *convictionRepository) Close() {
 	r.db.Close()
 }
 
-func (r *convictionRepository) Get(id string) (domain.Conviction, error) {
-	ctx := context.Background()
-
+func (r *convictionRepository) Get(ctx context.Context, id string) (domain.Conviction, error) {
 	conviction, err := r.querier.SelectConviction(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -52,9 +50,9 @@ func (r *convictionRepository) Get(id string) (domain.Conviction, error) {
 }
 
 func (r *convictionRepository) GetActiveScriptConvictions(
+	ctx context.Context,
 	script string,
 ) ([]domain.ScriptConviction, error) {
-	ctx := context.Background()
 	currentTime := time.Now().Unix()
 
 	convictions, err := r.querier.SelectActiveScriptConvictions(
@@ -90,8 +88,7 @@ func (r *convictionRepository) GetActiveScriptConvictions(
 	return domainConvictions, nil
 }
 
-func (r *convictionRepository) Add(convictions ...domain.Conviction) error {
-	ctx := context.Background()
+func (r *convictionRepository) Add(ctx context.Context, convictions ...domain.Conviction) error {
 
 	for _, conviction := range convictions {
 		params, err := r.convertToDBParams(conviction)
@@ -107,8 +104,10 @@ func (r *convictionRepository) Add(convictions ...domain.Conviction) error {
 	return nil
 }
 
-func (r *convictionRepository) GetAll(from, to time.Time) ([]domain.Conviction, error) {
-	ctx := context.Background()
+func (r *convictionRepository) GetAll(
+	ctx context.Context,
+	from, to time.Time,
+) ([]domain.Conviction, error) {
 
 	convictions, err := r.querier.SelectConvictionsInTimeRange(
 		ctx,
@@ -133,8 +132,10 @@ func (r *convictionRepository) GetAll(from, to time.Time) ([]domain.Conviction, 
 	return result, nil
 }
 
-func (r *convictionRepository) GetByRoundID(roundID string) ([]domain.Conviction, error) {
-	ctx := context.Background()
+func (r *convictionRepository) GetByRoundID(
+	ctx context.Context,
+	roundID string,
+) ([]domain.Conviction, error) {
 
 	convictions, err := r.querier.SelectConvictionsByRoundID(ctx, roundID)
 	if err != nil {
@@ -153,8 +154,7 @@ func (r *convictionRepository) GetByRoundID(roundID string) ([]domain.Conviction
 	return result, nil
 }
 
-func (r *convictionRepository) Pardon(id string) error {
-	ctx := context.Background()
+func (r *convictionRepository) Pardon(ctx context.Context, id string) error {
 
 	if err := r.querier.UpdateConvictionPardoned(ctx, id); err != nil {
 		return fmt.Errorf("failed to pardon conviction: %w", err)

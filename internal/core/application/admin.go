@@ -363,32 +363,32 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 
 // Conviction management methods
 func (s *adminService) GetConviction(ctx context.Context, id string) (domain.Conviction, error) {
-	return s.repoManager.Convictions().Get(id)
+	return s.repoManager.Convictions().Get(ctx, id)
 }
 
 func (s *adminService) GetConvictions(
 	ctx context.Context,
 	from, to time.Time,
 ) ([]domain.Conviction, error) {
-	return s.repoManager.Convictions().GetAll(from, to)
+	return s.repoManager.Convictions().GetAll(ctx, from, to)
 }
 
 func (s *adminService) GetConvictionsByRound(
 	ctx context.Context,
 	roundID string,
 ) ([]domain.Conviction, error) {
-	return s.repoManager.Convictions().GetByRoundID(roundID)
+	return s.repoManager.Convictions().GetByRoundID(ctx, roundID)
 }
 
 func (s *adminService) GetActiveScriptConvictions(
 	ctx context.Context,
 	script string,
 ) ([]domain.ScriptConviction, error) {
-	return s.repoManager.Convictions().GetActiveScriptConvictions(script)
+	return s.repoManager.Convictions().GetActiveScriptConvictions(ctx, script)
 }
 
 func (s *adminService) PardonConviction(ctx context.Context, id string) error {
-	return s.repoManager.Convictions().Pardon(id)
+	return s.repoManager.Convictions().Pardon(ctx, id)
 }
 
 func (s *adminService) BanScript(
@@ -403,7 +403,7 @@ func (s *adminService) BanScript(
 	}
 
 	conviction := domain.NewScriptConviction(script, crime, banDuration)
-	return s.repoManager.Convictions().Add(conviction)
+	return s.repoManager.Convictions().Add(ctx, conviction)
 }
 
 type Balance struct {

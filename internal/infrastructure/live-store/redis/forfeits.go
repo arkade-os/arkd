@@ -194,7 +194,7 @@ func (s *forfeitTxsStore) AllSigned() bool {
 	return true
 }
 
-func (s *forfeitTxsStore) UnsignedVtxoKeys() []domain.Outpoint {
+func (s *forfeitTxsStore) GetUnsignedInputs() []domain.Outpoint {
 	ctx := context.Background()
 	hash, err := s.rdb.HGetAll(ctx, forfeitTxsStoreTxsKey).Result()
 	if err != nil {

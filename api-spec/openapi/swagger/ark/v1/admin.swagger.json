@@ -526,15 +526,21 @@
           "format": "int64",
           "title": "0 if never expires"
         },
-        "crime": {
-          "$ref": "#/definitions/v1Crime"
-        },
         "pardoned": {
           "type": "boolean"
         },
         "script": {
           "type": "string",
           "title": "Only set for script convictions"
+        },
+        "crimeType": {
+          "$ref": "#/definitions/v1CrimeType"
+        },
+        "roundId": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
         }
       }
     },
@@ -567,20 +573,6 @@
           "items": {
             "type": "string"
           }
-        }
-      }
-    },
-    "v1Crime": {
-      "type": "object",
-      "properties": {
-        "type": {
-          "$ref": "#/definitions/v1CrimeType"
-        },
-        "roundId": {
-          "type": "string"
-        },
-        "reason": {
-          "type": "string"
         }
       }
     },

@@ -809,21 +809,22 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 
 func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_conviction_repository", func(t *testing.T) {
+		ctx := context.Background()
 		repo := svc.Convictions()
 
-		conviction, err := repo.Get("non-existent-id")
+		conviction, err := repo.Get(ctx, "non-existent-id")
 		require.Error(t, err)
 		require.Nil(t, conviction)
 
-		scriptConviction, err := repo.GetActiveScriptConvictions("non-existent-script")
+		scriptConviction, err := repo.GetActiveScriptConvictions(ctx, "non-existent-script")
 		require.NoError(t, err)
 		require.Empty(t, scriptConviction)
 
-		convictions, err := repo.GetAll(time.Now().Add(-time.Hour), time.Now())
+		convictions, err := repo.GetAll(ctx, time.Now().Add(-time.Hour), time.Now())
 		require.NoError(t, err)
 		require.Empty(t, convictions)
 
-		roundConvictions, err := repo.GetByRoundID("non-existent-round")
+		roundConvictions, err := repo.GetByRoundID(ctx, "non-existent-round")
 		require.NoError(t, err)
 		require.Empty(t, roundConvictions)
 
@@ -847,56 +848,60 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 		conviction1 := domain.NewScriptConviction(script1, crime1, &banDuration)
 		conviction2 := domain.NewScriptConviction(script2, crime2, nil) // Permanent ban
 
-		err = repo.Add(conviction1, conviction2)
+		err = repo.Add(ctx, conviction1, conviction2)
 		require.NoError(t, err)
 
-		retrievedConviction1, err := repo.Get(conviction1.GetID())
+		retrievedConviction1, err := repo.Get(ctx, conviction1.GetID())
 		require.NoError(t, err)
 		require.NotNil(t, retrievedConviction1)
 		assertConvictionEqual(t, conviction1, retrievedConviction1)
 
-		retrievedConviction2, err := repo.Get(conviction2.GetID())
+		retrievedConviction2, err := repo.Get(ctx, conviction2.GetID())
 		require.NoError(t, err)
 		require.NotNil(t, retrievedConviction2)
 		assertConvictionEqual(t, conviction2, retrievedConviction2)
 
-		activeConviction1, err := repo.GetActiveScriptConvictions(script1)
+		activeConviction1, err := repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
 		require.NotNil(t, activeConviction1)
 		require.Len(t, activeConviction1, 1)
 		require.Equal(t, script1, activeConviction1[0].Script)
 		require.False(t, activeConviction1[0].IsPardoned())
 
-		activeConviction2, err := repo.GetActiveScriptConvictions(script2)
+		activeConviction2, err := repo.GetActiveScriptConvictions(ctx, script2)
 		require.NoError(t, err)
 		require.NotNil(t, activeConviction2)
 		require.Len(t, activeConviction2, 1)
 		require.Equal(t, script2, activeConviction2[0].Script)
 		require.False(t, activeConviction2[0].IsPardoned())
 
-		round1Convictions, err := repo.GetByRoundID(roundID1)
+		round1Convictions, err := repo.GetByRoundID(ctx, roundID1)
 		require.NoError(t, err)
 		require.Len(t, round1Convictions, 1)
 		assertConvictionEqual(t, conviction1, round1Convictions[0])
 
-		round2Convictions, err := repo.GetByRoundID(roundID2)
+		round2Convictions, err := repo.GetByRoundID(ctx, roundID2)
 		require.NoError(t, err)
 		require.Len(t, round2Convictions, 1)
 		assertConvictionEqual(t, conviction2, round2Convictions[0])
 
-		allConvictions, err := repo.GetAll(time.Now().Add(-time.Hour), time.Now().Add(time.Hour))
+		allConvictions, err := repo.GetAll(
+			ctx,
+			time.Now().Add(-time.Hour),
+			time.Now().Add(time.Hour),
+		)
 		require.NoError(t, err)
 		require.Len(t, allConvictions, 2)
 
-		err = repo.Pardon(conviction1.GetID())
+		err = repo.Pardon(ctx, conviction1.GetID())
 		require.NoError(t, err)
 
-		pardonedConviction, err := repo.Get(conviction1.GetID())
+		pardonedConviction, err := repo.Get(ctx, conviction1.GetID())
 		require.NoError(t, err)
 		require.NotNil(t, pardonedConviction)
 		require.True(t, pardonedConviction.IsPardoned())
 
-		activeConvictionAfterPardon, err := repo.GetActiveScriptConvictions(script1)
+		activeConvictionAfterPardon, err := repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
 		require.Nil(t, activeConvictionAfterPardon)
 
@@ -907,12 +912,12 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 			Reason:  "Test expired crime",
 		}
 		expiredConviction := domain.NewScriptConviction(script1, crime3, &shortDuration)
-		err = repo.Add(expiredConviction)
+		err = repo.Add(ctx, expiredConviction)
 		require.NoError(t, err)
 
 		time.Sleep(10 * time.Millisecond)
 
-		_, err = repo.GetActiveScriptConvictions(script1)
+		_, err = repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
 	})
 }

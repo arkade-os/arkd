@@ -248,18 +248,14 @@ enum ConvictionType {
   CONVICTION_TYPE_SCRIPT = 1;
 }
 
-message Crime {
-  CrimeType type = 1;
-  string round_id = 2;
-  string reason = 3;
-}
-
 message Conviction {
   string id = 1;
   ConvictionType type = 2;
   int64 created_at = 3;
   int64 expires_at = 4; // 0 if never expires
-  Crime crime = 5;
-  bool pardoned = 6;
-  string script = 7; // Only set for script convictions
+  bool pardoned = 5;
+  string script = 6; // Only set for script convictions
+  CrimeType crime_type = 7;
+  string round_id = 8;
+  string reason = 9;
 }

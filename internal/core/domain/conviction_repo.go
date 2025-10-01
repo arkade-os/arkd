@@ -1,14 +1,17 @@
 package domain
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type ConvictionRepository interface {
-	Get(id string) (Conviction, error)
-	GetAll(from, to time.Time) ([]Conviction, error)
-	GetByRoundID(roundID string) ([]Conviction, error)
+	Get(ctx context.Context, id string) (Conviction, error)
+	GetAll(ctx context.Context, from, to time.Time) ([]Conviction, error)
+	GetByRoundID(ctx context.Context, roundID string) ([]Conviction, error)
 	// GetActiveScriptConviction returns all not-expired convictions associated with a given script
-	GetActiveScriptConvictions(script string) ([]ScriptConviction, error)
-	Add(...Conviction) error
-	Pardon(id string) error
+	GetActiveScriptConvictions(ctx context.Context, script string) ([]ScriptConviction, error)
+	Add(ctx context.Context, convictions ...Conviction) error
+	Pardon(ctx context.Context, id string) error
 	Close()
 }

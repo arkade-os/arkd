@@ -393,7 +393,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid ban duration, must be at least 1 second")
 	}
 	if c.BanThreshold < 1 {
-		return fmt.Errorf("invalid ban threshold, must be at least 1")
+		log.Debugf("autoban is disabled")
 	}
 	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
 		if c.SchedulerType != "block" {

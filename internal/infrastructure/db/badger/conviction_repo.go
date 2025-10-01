@@ -1,6 +1,7 @@
 package badgerdb
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -46,7 +47,7 @@ func (r *convictionRepository) Close() {
 	r.store.Close()
 }
 
-func (r *convictionRepository) Get(id string) (domain.Conviction, error) {
+func (r *convictionRepository) Get(ctx context.Context, id string) (domain.Conviction, error) {
 
 	var conviction Conviction
 	if err := r.store.FindOne(&conviction, badgerhold.Where("ID").Eq(id)); err != nil {
@@ -60,6 +61,7 @@ func (r *convictionRepository) Get(id string) (domain.Conviction, error) {
 }
 
 func (r *convictionRepository) GetActiveScriptConvictions(
+	ctx context.Context,
 	script string,
 ) ([]domain.ScriptConviction, error) {
 	currentTime := time.Now()
@@ -104,7 +106,7 @@ func (r *convictionRepository) GetActiveScriptConvictions(
 	return domainConvictions, nil
 }
 
-func (r *convictionRepository) Add(convictions ...domain.Conviction) error {
+func (r *convictionRepository) Add(ctx context.Context, convictions ...domain.Conviction) error {
 
 	for _, conviction := range convictions {
 		dbConviction, err := r.convertToDBConviction(conviction)
@@ -120,7 +122,10 @@ func (r *convictionRepository) Add(convictions ...domain.Conviction) error {
 	return nil
 }
 
-func (r *convictionRepository) GetAll(from, to time.Time) ([]domain.Conviction, error) {
+func (r *convictionRepository) GetAll(
+	ctx context.Context,
+	from, to time.Time,
+) ([]domain.Conviction, error) {
 	var convictions []Conviction
 
 	// Convert time.Time to Unix timestamp for comparison
@@ -145,7 +150,10 @@ func (r *convictionRepository) GetAll(from, to time.Time) ([]domain.Conviction, 
 	return result, nil
 }
 
-func (r *convictionRepository) GetByRoundID(roundID string) ([]domain.Conviction, error) {
+func (r *convictionRepository) GetByRoundID(
+	ctx context.Context,
+	roundID string,
+) ([]domain.Conviction, error) {
 	var convictions []Conviction
 
 	query := badgerhold.Where("CrimeRoundID").Eq(roundID)
@@ -166,7 +174,7 @@ func (r *convictionRepository) GetByRoundID(roundID string) ([]domain.Conviction
 	return result, nil
 }
 
-func (r *convictionRepository) Pardon(id string) error {
+func (r *convictionRepository) Pardon(ctx context.Context, id string) error {
 
 	var conviction Conviction
 	if err := r.store.FindOne(&conviction, badgerhold.Where("ID").Eq(id)); err != nil {

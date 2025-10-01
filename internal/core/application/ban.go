@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"slices"
@@ -15,13 +16,17 @@ type withOutputScript interface {
 	OutputScript() ([]byte, error)
 }
 
-func (s *service) checkIfBanned(script withOutputScript) error {
+func (s *service) checkIfBanned(ctx context.Context, script withOutputScript) error {
+	// if ban threshold is less than 1, we disable banning
+	if s.banThreshold <= 0 {
+		return nil
+	}
 	scriptBytes, err := script.OutputScript()
 	if err != nil {
 		return err
 	}
 	conviction, err := s.repoManager.Convictions().
-		GetActiveScriptConvictions(hex.EncodeToString(scriptBytes))
+		GetActiveScriptConvictions(ctx, hex.EncodeToString(scriptBytes))
 	if err != nil {
 		return err
 	}
@@ -42,10 +47,10 @@ func (s *service) checkIfBanned(script withOutputScript) error {
 }
 
 func (s *service) banCosignerInputs(
+	ctx context.Context,
 	toBan map[string]domain.Crime,
 	registeredIntents []ports.TimedIntent,
 ) {
-	// ban the vtxo associated with the signing session that didn't submit their nonces
 	convictions := make([]domain.Conviction, 0)
 
 	for cosignerPublicKey, crime := range toBan {
@@ -91,7 +96,7 @@ func (s *service) banCosignerInputs(
 	}
 
 	if len(convictions) > 0 {
-		if err := s.repoManager.Convictions().Add(convictions...); err != nil {
+		if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
 			log.WithError(err).Warn("failed to ban")
 		}
 		log.Debugf("banned %d script for %s", len(convictions), s.banDuration)
@@ -99,6 +104,7 @@ func (s *service) banCosignerInputs(
 }
 
 func (s *service) banNoncesCollectionTimeout(
+	ctx context.Context,
 	roundId string,
 	signingSession *ports.MusigSigningSession,
 	registeredIntents []ports.TimedIntent,
@@ -116,10 +122,11 @@ func (s *service) banNoncesCollectionTimeout(
 		}
 	}
 
-	s.banCosignerInputs(toBan, registeredIntents)
+	s.banCosignerInputs(ctx, toBan, registeredIntents)
 }
 
 func (s *service) banSignaturesCollectionTimeout(
+	ctx context.Context,
 	roundId string,
 	signingSession *ports.MusigSigningSession,
 	registeredIntents []ports.TimedIntent,
@@ -137,5 +144,41 @@ func (s *service) banSignaturesCollectionTimeout(
 		}
 	}
 
-	s.banCosignerInputs(toBan, registeredIntents)
+	s.banCosignerInputs(ctx, toBan, registeredIntents)
+}
+
+func (s *service) banForfeitCollectionTimeout(
+	ctx context.Context,
+	roundId string,
+) {
+	unsignedVtxoKeys := s.cache.ForfeitTxs().GetUnsignedInputs()
+	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, unsignedVtxoKeys)
+	if err != nil {
+		log.WithError(err).Warn("failed to get vtxos")
+		return
+	}
+
+	uniqueScripts := make(map[string]struct{})
+	for _, vtxo := range vtxos {
+		outputScript, err := vtxo.OutputScript()
+		if err != nil {
+			log.WithError(err).
+				Warnf("failed to compute output script for vtxo %s", vtxo.Outpoint)
+			continue
+		}
+		uniqueScripts[hex.EncodeToString(outputScript)] = struct{}{}
+	}
+
+	convictions := make([]domain.Conviction, 0)
+	for script := range uniqueScripts {
+		convictions = append(convictions, domain.NewScriptConviction(script, domain.Crime{
+			Type:    domain.CrimeTypeForfeitSubmission,
+			RoundID: roundId,
+			Reason:  "missing forfeit signature",
+		}, &s.banDuration))
+	}
+
+	if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
+		log.WithError(err).Warn("failed to ban vtxos")
+	}
 }
