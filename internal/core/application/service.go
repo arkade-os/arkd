@@ -1996,9 +1996,8 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	commitmentTxid := commitmentTx.UnsignedTx.TxID()
 	includesBoardingInputs := s.cache.BoardingInputs().Get() > 0
-	forfeitTxs := make([]domain.ForfeitTx, 0)
-
 	txToSign := s.cache.CurrentRound().Get().CommitmentTx
+	forfeitTxs := make([]domain.ForfeitTx, 0)
 
 	if s.cache.ForfeitTxs().Len() > 0 || includesBoardingInputs {
 		s.roundReportSvc.OpStarted(WaitForForfeitTxsOp)

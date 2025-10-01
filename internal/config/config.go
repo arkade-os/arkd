@@ -74,7 +74,7 @@ type Config struct {
 	EventDbDir          string
 	RoundInterval       int64
 	BanDuration         int64
-	BanThreshold        int // number of convictions to trigger a ban
+	BanThreshold        int // number of crimes to trigger a ban
 	SchedulerType       string
 	TxBuilderType       string
 	LiveStoreType       string
