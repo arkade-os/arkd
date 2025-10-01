@@ -1789,7 +1789,7 @@ func (s *service) startFinalization(
 			log.Warn(err)
 
 			// ban all the scripts that didn't submitted their nonces
-			s.banNoncesCollectionTimeout(roundId, signingSession, registeredIntents)
+			go s.banNoncesCollectionTimeout(roundId, signingSession, registeredIntents)
 			return
 		case <-s.cache.TreeSigingSessions().NoncesCollected(roundId):
 			signingSession, _ := s.cache.TreeSigingSessions().Get(roundId)
@@ -1859,7 +1859,7 @@ func (s *service) startFinalization(
 			log.Warn(err)
 
 			// ban all the scripts that didn't submitted their signatures
-			s.banSignaturesCollectionTimeout(roundId, signingSession, registeredIntents)
+			go s.banSignaturesCollectionTimeout(roundId, signingSession, registeredIntents)
 			return
 		case <-s.cache.TreeSigingSessions().SignaturesCollected(roundId):
 			signingSession, _ := s.cache.TreeSigingSessions().Get(roundId)
@@ -1897,7 +1897,7 @@ func (s *service) startFinalization(
 				err = fmt.Errorf("some musig2 signatures are invalid")
 				s.cache.CurrentRound().Fail(err)
 				log.Warn(err)
-				s.banCosignerInputs(cosignersToBan, registeredIntents)
+				go s.banCosignerInputs(cosignersToBan, registeredIntents)
 				return
 			}
 		}
