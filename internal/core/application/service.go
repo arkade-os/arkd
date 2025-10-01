@@ -2012,8 +2012,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 		s.roundReportSvc.OpEnded(WaitForForfeitTxsOp)
 
-		s.roundReportSvc.OpStarted(VerifyForfeitsSignaturesOp)
-
 		forfeitTxList, err := s.cache.ForfeitTxs().Pop()
 		if err != nil {
 			changes = s.cache.CurrentRound().Fail(fmt.Errorf("failed to finalize round: %s", err))
@@ -2042,6 +2040,8 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			}()
 			return
 		}
+
+		s.roundReportSvc.OpStarted(VerifyForfeitsSignaturesOp)
 
 		commitmentTx, err = psbt.NewFromRawBytes(
 			strings.NewReader(s.cache.CurrentRound().Get().CommitmentTx), true,

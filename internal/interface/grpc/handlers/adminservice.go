@@ -199,30 +199,34 @@ func (a *adminHandler) DeleteIntents(
 	return &arkv1.DeleteIntentsResponse{}, nil
 }
 
-func (a *adminHandler) GetConviction(
-	ctx context.Context, req *arkv1.GetConvictionRequest,
-) (*arkv1.GetConvictionResponse, error) {
-	id := req.GetId()
-	if len(id) == 0 {
+func (a *adminHandler) GetConvictions(
+	ctx context.Context, req *arkv1.GetConvictionsRequest,
+) (*arkv1.GetConvictionsResponse, error) {
+	ids := req.GetIds()
+	if len(ids) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing conviction id")
 	}
 
-	conviction, err := a.adminService.GetConviction(ctx, id)
+	convictions, err := a.adminService.GetConvictionsByIds(ctx, ids)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	protoConviction, err := convertConvictionToProto(conviction)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to convert conviction: %s", err.Error())
+	protoConvictions := make([]*arkv1.Conviction, 0, len(convictions))
+	for _, conviction := range convictions {
+		protoConviction, err := convertConvictionToProto(conviction)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to convert conviction: %s", err.Error())
+		}
+		protoConvictions = append(protoConvictions, protoConviction)
 	}
 
-	return &arkv1.GetConvictionResponse{Conviction: protoConviction}, nil
+	return &arkv1.GetConvictionsResponse{Convictions: protoConvictions}, nil
 }
 
-func (a *adminHandler) GetConvictions(
-	ctx context.Context, req *arkv1.GetConvictionsRequest,
-) (*arkv1.GetConvictionsResponse, error) {
+func (a *adminHandler) GetConvictionsInRange(
+	ctx context.Context, req *arkv1.GetConvictionsInRangeRequest,
+) (*arkv1.GetConvictionsInRangeResponse, error) {
 	from := time.Unix(req.GetFrom(), 0)
 	to := time.Unix(req.GetTo(), 0)
 
@@ -256,7 +260,7 @@ func (a *adminHandler) GetConvictions(
 		protoConvictions[i] = protoConviction
 	}
 
-	return &arkv1.GetConvictionsResponse{Convictions: protoConvictions}, nil
+	return &arkv1.GetConvictionsInRangeResponse{Convictions: protoConvictions}, nil
 }
 
 func (a *adminHandler) GetConvictionsByRound(

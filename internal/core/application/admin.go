@@ -29,7 +29,7 @@ type AdminService interface {
 	) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
-	GetConviction(ctx context.Context, id string) (domain.Conviction, error)
+	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
 	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
 	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
 	GetActiveScriptConvictions(
@@ -362,8 +362,20 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 }
 
 // Conviction management methods
-func (s *adminService) GetConviction(ctx context.Context, id string) (domain.Conviction, error) {
-	return s.repoManager.Convictions().Get(ctx, id)
+func (s *adminService) GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("missing conviction ids")
+	}
+
+	convictions := make([]domain.Conviction, 0, len(ids))
+	for _, id := range ids {
+		conviction, err := s.repoManager.Convictions().Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		convictions = append(convictions, conviction)
+	}
+	return convictions, nil
 }
 
 func (s *adminService) GetConvictions(

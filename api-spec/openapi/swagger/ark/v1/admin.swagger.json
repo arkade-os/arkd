@@ -16,46 +16,6 @@
     "application/json"
   ],
   "paths": {
-    "/v1/admin/convictions": {
-      "get": {
-        "operationId": "AdminService_GetConvictions",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetConvictionsResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "from",
-            "description": "Unix timestamp",
-            "in": "query",
-            "required": false,
-            "type": "string",
-            "format": "int64"
-          },
-          {
-            "name": "to",
-            "description": "Unix timestamp",
-            "in": "query",
-            "required": false,
-            "type": "string",
-            "format": "int64"
-          }
-        ],
-        "tags": [
-          "AdminService"
-        ]
-      }
-    },
     "/v1/admin/convictions/ban": {
       "post": {
         "operationId": "AdminService_BanScript",
@@ -88,14 +48,14 @@
         ]
       }
     },
-    "/v1/admin/convictions/round/{roundId}": {
+    "/v1/admin/convictions/{ids}": {
       "get": {
-        "operationId": "AdminService_GetConvictionsByRound",
+        "operationId": "AdminService_GetConvictions",
         "responses": {
           "200": {
             "description": "A successful response.",
             "schema": {
-              "$ref": "#/definitions/v1GetConvictionsByRoundResponse"
+              "$ref": "#/definitions/v1GetConvictionsResponse"
             }
           },
           "default": {
@@ -107,70 +67,15 @@
         },
         "parameters": [
           {
-            "name": "roundId",
+            "name": "ids",
             "in": "path",
             "required": true,
-            "type": "string"
-          }
-        ],
-        "tags": [
-          "AdminService"
-        ]
-      }
-    },
-    "/v1/admin/convictions/script/{script}": {
-      "get": {
-        "operationId": "AdminService_GetActiveScriptConvictions",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetActiveScriptConvictionsResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "script",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          }
-        ],
-        "tags": [
-          "AdminService"
-        ]
-      }
-    },
-    "/v1/admin/convictions/{id}": {
-      "get": {
-        "operationId": "AdminService_GetConviction",
-        "responses": {
-          "200": {
-            "description": "A successful response.",
-            "schema": {
-              "$ref": "#/definitions/v1GetConvictionResponse"
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "schema": {
-              "$ref": "#/definitions/rpcStatus"
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "type": "string"
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "csv",
+            "minItems": 1
           }
         ],
         "tags": [
@@ -209,6 +114,106 @@
             "schema": {
               "$ref": "#/definitions/AdminServicePardonConvictionBody"
             }
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
+    "/v1/admin/convictionsByRound/{roundId}": {
+      "get": {
+        "operationId": "AdminService_GetConvictionsByRound",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetConvictionsByRoundResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "roundId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
+    "/v1/admin/convictionsByScript/{script}": {
+      "get": {
+        "operationId": "AdminService_GetActiveScriptConvictions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetActiveScriptConvictionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "script",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AdminService"
+        ]
+      }
+    },
+    "/v1/admin/convictionsInRange": {
+      "get": {
+        "operationId": "AdminService_GetConvictionsInRange",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetConvictionsInRangeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "description": "Unix timestamp",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "to",
+            "description": "Unix timestamp",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
           }
         ],
         "tags": [
@@ -616,15 +621,19 @@
         }
       }
     },
-    "v1GetConvictionResponse": {
+    "v1GetConvictionsByRoundResponse": {
       "type": "object",
       "properties": {
-        "conviction": {
-          "$ref": "#/definitions/v1Conviction"
+        "convictions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Conviction"
+          }
         }
       }
     },
-    "v1GetConvictionsByRoundResponse": {
+    "v1GetConvictionsInRangeResponse": {
       "type": "object",
       "properties": {
         "convictions": {

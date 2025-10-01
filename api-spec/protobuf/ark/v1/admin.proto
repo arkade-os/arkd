@@ -49,24 +49,24 @@ service AdminService {
       body: "*"
     };
   }
-  rpc GetConviction(GetConvictionRequest) returns (GetConvictionResponse) {
-    option (google.api.http) = {
-      get: "/v1/admin/convictions/{id}"
-    };
-  }
   rpc GetConvictions(GetConvictionsRequest) returns (GetConvictionsResponse) {
     option (google.api.http) = {
-      get: "/v1/admin/convictions"
+      get: "/v1/admin/convictions/{ids}"
+    };
+  }
+  rpc GetConvictionsInRange(GetConvictionsInRangeRequest) returns (GetConvictionsInRangeResponse) {
+    option (google.api.http) = {
+      get: "/v1/admin/convictionsInRange"
     };
   }
   rpc GetConvictionsByRound(GetConvictionsByRoundRequest) returns (GetConvictionsByRoundResponse) {
     option (google.api.http) = {
-      get: "/v1/admin/convictions/round/{round_id}"
+      get: "/v1/admin/convictionsByRound/{round_id}"
     };
   }
   rpc GetActiveScriptConvictions(GetActiveScriptConvictionsRequest) returns (GetActiveScriptConvictionsResponse) {
     option (google.api.http) = {
-      get: "/v1/admin/convictions/script/{script}"
+      get: "/v1/admin/convictionsByScript/{script}"
     };
   }
   rpc PardonConviction(PardonConvictionRequest) returns (PardonConvictionResponse) {
@@ -186,20 +186,20 @@ message Output {
   uint64 amount = 3; // Amount to send in satoshis.
 }
 
-message GetConvictionRequest {
-  string id = 1;
-}
-
-message GetConvictionResponse {
-  Conviction conviction = 1;
-}
-
 message GetConvictionsRequest {
+  repeated string ids = 1;
+}
+
+message GetConvictionsResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetConvictionsInRangeRequest {
   int64 from = 1; // Unix timestamp
   int64 to = 2;   // Unix timestamp
 }
 
-message GetConvictionsResponse {
+message GetConvictionsInRangeResponse {
   repeated Conviction convictions = 1;
 }
 
