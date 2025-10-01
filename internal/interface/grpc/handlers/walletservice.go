@@ -52,7 +52,9 @@ func (a *walletInitHandler) Create(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	go a.onInit(req.GetPassword())
+	if a.onInit != nil {
+		go a.onInit(req.GetPassword())
+	}
 
 	return &arkv1.CreateResponse{}, nil
 }
@@ -71,7 +73,9 @@ func (a *walletInitHandler) Restore(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	go a.onInit(req.GetPassword())
+	if a.onInit != nil {
+		go a.onInit(req.GetPassword())
+	}
 
 	return &arkv1.RestoreResponse{}, nil
 }
@@ -82,11 +86,24 @@ func (a *walletInitHandler) Unlock(
 	if len(req.GetPassword()) <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing wallet password")
 	}
+	walletStatus, err := a.walletService.Status(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if !walletStatus.IsInitialized() {
+		return nil, status.Error(codes.InvalidArgument, "wallet not initialized, cannot unlock")
+	}
+	if walletStatus.IsUnlocked() {
+		return &arkv1.UnlockResponse{}, nil
+	}
+
 	if err := a.walletService.Unlock(ctx, req.GetPassword()); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	go a.onUnlock(req.GetPassword())
+	if a.onUnlock != nil {
+		go a.onUnlock(req.GetPassword())
+	}
 
 	return &arkv1.UnlockResponse{}, nil
 }
@@ -119,7 +136,9 @@ func (a *walletInitHandler) listenWhenReady() {
 		return
 	}
 
-	a.onReady()
+	if a.onReady != nil {
+		a.onReady()
+	}
 }
 
 type walletHandler struct {
