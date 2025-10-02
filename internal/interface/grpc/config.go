@@ -86,7 +86,7 @@ func (c Config) address() string {
 }
 
 func (c Config) gatewayAddress() string {
-	return fmt.Sprintf("localhost:%d", c.Port)
+	return fmt.Sprintf("127.0.0.1:%d", c.Port)
 }
 
 func (c Config) adminAddress() string {
@@ -94,7 +94,7 @@ func (c Config) adminAddress() string {
 }
 
 func (c Config) adminGatewayAddress() string {
-	return fmt.Sprintf("localhost:%d", c.AdminPort)
+	return fmt.Sprintf("127.0.0.1:%d", c.AdminPort)
 }
 
 func (c Config) hasAdminPort() bool {

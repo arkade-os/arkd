@@ -38,7 +38,7 @@ var (
 	urlFlag = &cli.StringFlag{
 		Name:  urlFlagName,
 		Usage: "the url where to reach ark server",
-		Value: fmt.Sprintf("http://localhost:%d", config.DefaultPort),
+		Value: fmt.Sprintf("http://127.0.0.1:%d", config.DefaultPort),
 	}
 	datadirFlag = &cli.StringFlag{
 		Name:  datadirFlagName,

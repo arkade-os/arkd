@@ -150,5 +150,5 @@ func address(port uint32) string {
 }
 
 func gatewayAddress(port uint32) string {
-	return fmt.Sprintf("localhost:%d", port)
+	return fmt.Sprintf("127.0.0.1:%d", port)
 }
