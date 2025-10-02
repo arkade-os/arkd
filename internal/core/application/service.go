@@ -483,7 +483,11 @@ func (s *service) SubmitOffchainTx(
 			)
 		}
 
-		taptreeFields, err := txutils.GetArkPsbtFields(checkpointPsbt, 0, txutils.VtxoTaprootTreeField)
+		taptreeFields, err := txutils.GetArkPsbtFields(
+			checkpointPsbt,
+			0,
+			txutils.VtxoTaprootTreeField,
+		)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("missing taptree: %s", err)
 		}
@@ -873,7 +877,11 @@ func (s *service) RegisterIntent(
 		}
 
 		// we ignore error cause sometimes the taproot tree is not required
-		taptreeFields, _ := txutils.GetArkPsbtFields(&proof.Packet, i+1, txutils.VtxoTaprootTreeField)
+		taptreeFields, _ := txutils.GetArkPsbtFields(
+			&proof.Packet,
+			i+1,
+			txutils.VtxoTaprootTreeField,
+		)
 		tapscripts := make([]string, 0)
 		if len(taptreeFields) > 0 {
 			tapscripts = taptreeFields[0]

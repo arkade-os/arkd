@@ -1198,7 +1198,11 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 	*psbt.TaprootTapLeafScript, *btcec.PublicKey, *arklib.RelativeLocktime, error,
 ) {
 	if len(ptx.Inputs) <= inputIndex {
-		return nil, nil, nil, fmt.Errorf("input index out of bounds %d, len(inputs)=%d", inputIndex, len(ptx.Inputs))
+		return nil, nil, nil, fmt.Errorf(
+			"input index out of bounds %d, len(inputs)=%d",
+			inputIndex,
+			len(ptx.Inputs),
+		)
 	}
 
 	// TODO: uncomment the following line once the sdk is up-to-date.
@@ -1208,7 +1212,11 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 		return nil, nil, nil, err
 	}
 
-	vtxoTreeExpiryFields, err := txutils.GetArkPsbtFields(ptx, inputIndex, txutils.VtxoTreeExpiryField)
+	vtxoTreeExpiryFields, err := txutils.GetArkPsbtFields(
+		ptx,
+		inputIndex,
+		txutils.VtxoTreeExpiryField,
+	)
 	if err != nil {
 		return nil, nil, nil, err
 	}

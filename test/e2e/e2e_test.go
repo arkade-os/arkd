@@ -1747,7 +1747,12 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
 		require.NoError(t, err)
 
-		err = txutils.SetArkPsbtField(ptx, 0, txutils.ConditionWitnessField, wire.TxWitness{preimage[:]})
+		err = txutils.SetArkPsbtField(
+			ptx,
+			0,
+			txutils.ConditionWitnessField,
+			wire.TxWitness{preimage[:]},
+		)
 		require.NoError(t, err)
 
 		encoded, err := ptx.B64Encode()
