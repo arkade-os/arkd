@@ -316,14 +316,14 @@ func treeSignatureEvents(txTree *tree.TxTree, batchIndex int32, roundId string) 
 
 // getVtxoTreeTopic returns the list of topics (cosigner keys) for the given vtxo subtree
 func getVtxoTreeTopic(g *tree.TxTree) ([]string, error) {
-	cosignerKeys, err := txutils.GetCosignerKeys(g.Root.Inputs[0])
+	cosignerKeysFields, err := txutils.GetArkPsbtFields(g.Root, 0, txutils.CosignerPublicKeyField)
 	if err != nil {
 		return nil, err
 	}
 
-	topics := make([]string, 0, len(cosignerKeys))
-	for _, key := range cosignerKeys {
-		topics = append(topics, hex.EncodeToString(key.SerializeCompressed()))
+	topics := make([]string, 0, len(cosignerKeysFields))
+	for _, field := range cosignerKeysFields {
+		topics = append(topics, hex.EncodeToString(field.PublicKey.SerializeCompressed()))
 	}
 
 	return topics, nil

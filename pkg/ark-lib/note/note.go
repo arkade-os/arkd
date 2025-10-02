@@ -145,10 +145,10 @@ func (n Note) IntentProofInput() (outpoint *wire.OutPoint, pInput *psbt.PInput, 
 			},
 			Unknowns: []*psbt.Unknown{{
 				Value: witnessBytes.Bytes(),
-				Key:   txutils.CONDITION_WITNESS_KEY_PREFIX,
+				Key:   txutils.ArkFieldConditionWitness,
 			}, {
 				Value: taptree,
-				Key:   txutils.VTXO_TAPROOT_TREE_KEY,
+				Key:   txutils.ArkFieldTaprootTree,
 			}},
 		}, nil
 }

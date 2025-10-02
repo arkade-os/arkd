@@ -100,9 +100,14 @@ func ValidateVtxoTree(
 				return false, ErrInvalidTaprootScript
 			}
 
-			cosigners, err := txutils.GetCosignerKeys(child.Root.Inputs[0])
+			cosignerFields, err := txutils.GetArkPsbtFields(child.Root, 0, txutils.CosignerPublicKeyField)
 			if err != nil {
 				return false, fmt.Errorf("unable to get cosigners keys: %w", err)
+			}
+
+			cosigners, err := txutils.MakeCosignerPublicKeyList(cosignerFields)
+			if err != nil {
+				return false, fmt.Errorf("unable to make cosigner list: %w", err)
 			}
 
 			cosigners = uniqueCosigners(cosigners)

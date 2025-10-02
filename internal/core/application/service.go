@@ -446,15 +446,10 @@ func (s *service) SubmitOffchainTx(
 			return nil, "", "", fmt.Errorf("expected exactly one taproot leaf script")
 		}
 
-		tapscripts, err := txutils.GetTaprootTree(input)
-		if err != nil {
-			return nil, "", "", fmt.Errorf("missing tapscripts: %s", err)
-		}
-
 		spendingTapscript := input.TaprootLeafScript[0]
 
 		if spendingTapscript == nil {
-			return nil, "", "", fmt.Errorf("no matching tapscript found")
+			return nil, "", "", fmt.Errorf("no matching taptree found")
 		}
 
 		outpoint := domain.Outpoint{
@@ -488,7 +483,18 @@ func (s *service) SubmitOffchainTx(
 			)
 		}
 
-		vtxoScript, err := script.ParseVtxoScript(tapscripts)
+		taptreeFields, err := txutils.GetArkPsbtFields(checkpointPsbt, 0, txutils.VtxoTaprootTreeField)
+		if err != nil {
+			return nil, "", "", fmt.Errorf("missing taptree: %s", err)
+		}
+
+		if len(taptreeFields) == 0 {
+			return nil, "", "", fmt.Errorf("missing taptree")
+		}
+
+		taptree := taptreeFields[0]
+
+		vtxoScript, err := script.ParseVtxoScript(taptree)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("failed to parse vtxo script: %s", err)
 		}
@@ -608,7 +614,7 @@ func (s *service) SubmitOffchainTx(
 			Outpoint:            &checkpointPsbt.UnsignedTx.TxIn[0].PreviousOutPoint,
 			Tapscript:           tapscript,
 			CheckpointTapscript: checkpointTapscript,
-			RevealedTapscripts:  tapscripts,
+			RevealedTapscripts:  taptree,
 			Amount:              int64(vtxo.Amount),
 		})
 	}
@@ -867,7 +873,11 @@ func (s *service) RegisterIntent(
 		}
 
 		// we ignore error cause sometimes the taproot tree is not required
-		tapscripts, _ := txutils.GetTaprootTree(psbtInput)
+		taptreeFields, _ := txutils.GetArkPsbtFields(&proof.Packet, i+1, txutils.VtxoTaprootTreeField)
+		tapscripts := make([]string, 0)
+		if len(taptreeFields) > 0 {
+			tapscripts = taptreeFields[0]
+		}
 
 		now := time.Now()
 		locktime, disabled := arklib.BIP68DecodeSequence(proof.UnsignedTx.TxIn[i+1].Sequence)

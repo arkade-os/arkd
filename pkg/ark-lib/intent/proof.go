@@ -317,17 +317,17 @@ func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 	var noteClosure note.NoteClosure
 	valid, err := noteClosure.Decode(in.TaprootLeafScript[0].Script)
 	if valid && err == nil {
-		conditionWitness, err := txutils.GetConditionWitness(in)
+		arkConditionWitnessFields, err := txutils.GetArkPsbtFields(ptx, inputIndex, txutils.ConditionWitnessField)
 		if err != nil {
 			return err
 		}
 
-		if len(conditionWitness) != 1 {
-			return fmt.Errorf("invalid condition witness, expected 1 witness for note vtxo, got %d", len(conditionWitness))
+		if len(arkConditionWitnessFields) == 0 || len(arkConditionWitnessFields[0]) == 0 {
+			return fmt.Errorf("invalid condition witness, expected 1 witness for note vtxo")
 		}
 
 		witness, err := noteClosure.Witness(in.TaprootLeafScript[0].ControlBlock, map[string][]byte{
-			"preimage": conditionWitness[0],
+			"preimage": arkConditionWitnessFields[0][0],
 		})
 		if err != nil {
 			return err
