@@ -37,6 +37,7 @@ func mainAction(_ *cli.Context) error {
 	svcConfig := grpcservice.Config{
 		Datadir:         cfg.Datadir,
 		Port:            cfg.Port,
+		AdminPort:       cfg.AdminPort,
 		NoTLS:           cfg.NoTLS,
 		NoMacaroons:     cfg.NoMacaroons,
 		TLSExtraIPs:     cfg.TLSExtraIPs,

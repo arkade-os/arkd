@@ -59,6 +59,7 @@ var (
 type Config struct {
 	Datadir         string
 	Port            uint32
+	AdminPort       uint32
 	DbMigrationPath string
 	NoTLS           bool
 	NoMacaroons     bool
@@ -139,6 +140,7 @@ var (
 	SignerAddr                = "SIGNER_ADDR"
 	RoundInterval             = "ROUND_INTERVAL"
 	Port                      = "PORT"
+	AdminPort                 = "ADMIN_PORT"
 	EventDbType               = "EVENT_DB_TYPE"
 	DbType                    = "DB_TYPE"
 	DbUrl                     = "PG_DB_URL"
@@ -274,12 +276,18 @@ func LoadConfig() (*Config, error) {
 		signerAddr = viper.GetString(WalletAddr)
 	}
 
+	adminPort := viper.GetUint32(AdminPort)
+	if adminPort == 0 {
+		adminPort = viper.GetUint32(Port)
+	}
+
 	return &Config{
 		Datadir:                 viper.GetString(Datadir),
 		WalletAddr:              viper.GetString(WalletAddr),
 		SignerAddr:              signerAddr,
 		RoundInterval:           viper.GetInt64(RoundInterval),
 		Port:                    viper.GetUint32(Port),
+		AdminPort:               adminPort,
 		EventDbType:             viper.GetString(EventDbType),
 		DbType:                  viper.GetString(DbType),
 		SchedulerType:           viper.GetString(SchedulerType),
