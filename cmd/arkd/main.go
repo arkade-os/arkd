@@ -87,7 +87,7 @@ func main() {
 		marketHourCmd,
 	)
 	app.Action = mainAction
-	app.Flags = append(app.Flags, urlFlag, datadirFlag)
+	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)

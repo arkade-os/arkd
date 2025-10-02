@@ -60,8 +60,8 @@ The `arkd` server can be configured using environment variables.
 | Environment Variable                | Description                                                               | Default                       |
 |-------------------------------------|---------------------------------------------------------------------------|-------------------------------|
 | `ARKD_DATADIR`                      | Directory to store data                                                   | App data directory            |
-| `ARKD_PORT`                         | Port to listen on                                                         | `7070`                        |
-| `ARKD_ADMIN_PORT`                   | Run Admin RPC's on separate port                                          | `7070`                  |
+| `ARKD_PORT`                         | Port (public) to listen on                                                | `7070`                        |
+| `ARKD_ADMIN_PORT`                   | Admin port (private) to listen on, fallback to service port if 0          | `7071`                        |
 | `ARKD_LOG_LEVEL`                    | Logging level (0-6, where 6 is trace)                                     | `4` (info)                    |
 | `ARKD_ROUND_INTERVAL`               | Interval between rounds in seconds                                        | `30`                          |
 | `ARKD_DB_TYPE`                      | Database type (postgres, sqlite, badger)                                  | `postgres`                    |

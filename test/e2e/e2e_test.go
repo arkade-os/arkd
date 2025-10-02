@@ -2117,7 +2117,7 @@ func setupServerWalletAndCLI() error {
 		return ErrAlreadySetup
 	}
 
-	req, err := http.NewRequest("GET", "http://localhost:7070/v1/admin/wallet/seed", nil)
+	req, err := http.NewRequest("GET", "http://localhost:7071/v1/admin/wallet/seed", nil)
 	if err != nil {
 		return fmt.Errorf("failed to prepare generate seed request: %s", err)
 	}
@@ -2139,7 +2139,7 @@ func setupServerWalletAndCLI() error {
 	reqBody := bytes.NewReader(
 		[]byte(fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, password)),
 	)
-	req, err = http.NewRequest("POST", "http://localhost:7070/v1/admin/wallet/create", reqBody)
+	req, err = http.NewRequest("POST", "http://localhost:7071/v1/admin/wallet/create", reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to prepare wallet create request: %s", err)
 	}
@@ -2151,7 +2151,7 @@ func setupServerWalletAndCLI() error {
 	}
 
 	reqBody = bytes.NewReader([]byte(fmt.Sprintf(`{"password": "%s"}`, password)))
-	req, err = http.NewRequest("POST", "http://localhost:7070/v1/admin/wallet/unlock", reqBody)
+	req, err = http.NewRequest("POST", "http://localhost:7071/v1/admin/wallet/unlock", reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to prepare wallet unlock request: %s", err)
 	}
@@ -2170,7 +2170,7 @@ func setupServerWalletAndCLI() error {
 	for {
 		time.Sleep(time.Second)
 
-		req, err := http.NewRequest("GET", "http://localhost:7070/v1/admin/wallet/status", nil)
+		req, err := http.NewRequest("GET", "http://localhost:7071/v1/admin/wallet/status", nil)
 		if err != nil {
 			return fmt.Errorf("failed to prepare status request: %s", err)
 		}
@@ -2192,7 +2192,7 @@ func setupServerWalletAndCLI() error {
 	for addr.Address == "" {
 		time.Sleep(time.Second)
 
-		req, err = http.NewRequest("GET", "http://localhost:7070/v1/admin/wallet/address", nil)
+		req, err = http.NewRequest("GET", "http://localhost:7071/v1/admin/wallet/address", nil)
 		if err != nil {
 			return fmt.Errorf("failed to prepare new address request: %s", err)
 		}

@@ -71,6 +71,7 @@ services:
       - arkd-wallet
     ports:
       - "7070:7070"
+      - "7071:7071"
     environment:
       - ARKD_LOG_LEVEL=6
       - ARKD_NO_MACAROONS=true

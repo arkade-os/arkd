@@ -181,6 +181,7 @@ var (
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultRoundInterval       = 30
 	DefaultPort                = 7070
+	DefaultAdminPort           = 7071
 	defaultDbType              = "postgres"
 	defaultEventDbType         = "postgres"
 	defaultSchedulerType       = "gocron"
@@ -212,6 +213,7 @@ func LoadConfig() (*Config, error) {
 
 	viper.SetDefault(Datadir, defaultDatadir)
 	viper.SetDefault(Port, DefaultPort)
+	viper.SetDefault(AdminPort, DefaultAdminPort)
 	viper.SetDefault(DbType, defaultDbType)
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
@@ -276,6 +278,7 @@ func LoadConfig() (*Config, error) {
 		signerAddr = viper.GetString(WalletAddr)
 	}
 
+	// In case the admin port is unset, fallback to service port.
 	adminPort := viper.GetUint32(AdminPort)
 	if adminPort == 0 {
 		adminPort = viper.GetUint32(Port)

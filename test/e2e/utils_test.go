@@ -368,7 +368,7 @@ func generateNote(t *testing.T, amount uint32) string {
 	}
 
 	reqBody := bytes.NewReader([]byte(fmt.Sprintf(`{"amount": "%d"}`, amount)))
-	req, err := http.NewRequest("POST", "http://localhost:7070/v1/admin/note", reqBody)
+	req, err := http.NewRequest("POST", "http://localhost:7071/v1/admin/note", reqBody)
 	if err != nil {
 		t.Fatalf("failed to prepare note request: %s", err)
 	}
