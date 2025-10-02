@@ -37,6 +37,7 @@ func mainAction(_ *cli.Context) error {
 	svcConfig := grpcservice.Config{
 		Datadir:         cfg.Datadir,
 		Port:            cfg.Port,
+		AdminPort:       cfg.AdminPort,
 		NoTLS:           cfg.NoTLS,
 		NoMacaroons:     cfg.NoMacaroons,
 		TLSExtraIPs:     cfg.TLSExtraIPs,
@@ -86,7 +87,7 @@ func main() {
 		marketHourCmd,
 	)
 	app.Action = mainAction
-	app.Flags = append(app.Flags, urlFlag, datadirFlag)
+	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)

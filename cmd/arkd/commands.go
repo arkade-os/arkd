@@ -149,13 +149,13 @@ var timeout = time.Minute
 
 func walletStatusAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	_, tlsCertPath, err := getCredentialPaths(ctx)
+	_, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/status", baseURL)
-	status, err := getStatus(url, tlsCertPath)
+	status, err := getStatus(url, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -166,7 +166,7 @@ func walletStatusAction(ctx *cli.Context) error {
 
 func walletCreateOrRestoreAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	_, tlsCertPath, err := getCredentialPaths(ctx)
+	_, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -181,7 +181,7 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 			`{"seed": "%s", "password": "%s", "gap_limit": %d}`,
 			mnemonic, password, gapLimit,
 		)
-		if _, err := post[struct{}](url, body, "", "", tlsCertPath); err != nil {
+		if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
 			return err
 		}
 
@@ -190,7 +190,7 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/seed", baseURL)
-	seed, err := get[string](url, "seed", "", tlsCertPath)
+	seed, err := get[string](url, "seed", "", tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -199,7 +199,7 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 	body := fmt.Sprintf(
 		`{"seed": "%s", "password": "%s"}`, seed, password,
 	)
-	if _, err := post[struct{}](url, body, "", "", tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
 		return err
 	}
 
@@ -215,7 +215,7 @@ func walletDropWtxmgrAction(ctx *cli.Context) error {
 
 func walletUnlockAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	_, tlsCertPath, err := getCredentialPaths(ctx)
+	_, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -224,7 +224,7 @@ func walletUnlockAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", baseURL)
 	body := fmt.Sprintf(`{"password": "%s"}`, password)
 
-	if _, err := post[struct{}](url, body, "", "", tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
 		return err
 	}
 
@@ -234,13 +234,13 @@ func walletUnlockAction(ctx *cli.Context) error {
 
 func walletAddressAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/address", baseURL)
-	addr, err := get[string](url, "address", macaroon, tlsCertPath)
+	addr, err := get[string](url, "address", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -251,13 +251,13 @@ func walletAddressAction(ctx *cli.Context) error {
 
 func walletBalanceAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/balance", baseURL)
-	balance, err := getBalance(url, macaroon, tlsCertPath)
+	balance, err := getBalance(url, macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -270,7 +270,7 @@ func walletWithdrawAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	amount := ctx.Float64(amountFlagName)
 	address := ctx.String(addressFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func walletWithdrawAction(ctx *cli.Context) error {
 	amountInSats := uint64(amount * ONE_BTC)
 	body := fmt.Sprintf(`{"address": "%s", "amount": %d}`, address, amountInSats)
 
-	txid, err := post[string](url, body, "txid", macaroon, tlsCertPath)
+	txid, err := post[string](url, body, "txid", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func signerLoadAction(ctx *cli.Context) error {
 	if signerKey != "" && signerUrl != "" {
 		return fmt.Errorf("private key and url are mutually esclusive, only one must be provided")
 	}
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -310,7 +310,7 @@ func signerLoadAction(ctx *cli.Context) error {
 		body = fmt.Sprintf(`{"signerPrivateKey": "%s"}`, signerKey)
 	}
 
-	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
 		return err
 	}
 
@@ -331,7 +331,7 @@ func createNoteAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	amount := ctx.Uint(amountFlagName)
 	quantity := ctx.Uint(quantityFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -339,7 +339,7 @@ func createNoteAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/note", baseURL)
 	body := fmt.Sprintf(`{"amount": %d, "quantity": %d}`, amount, quantity)
 
-	notes, err := post[[]string](url, body, "notes", macaroon, tlsCertPath)
+	notes, err := post[[]string](url, body, "notes", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -353,7 +353,7 @@ func createNoteAction(ctx *cli.Context) error {
 
 func listIntentsAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -368,7 +368,7 @@ func listIntentsAction(ctx *cli.Context) error {
 		q.Set("intent_ids", strings.Join(requestIds, ","))
 		u.RawQuery = q.Encode()
 	}
-	response, err := get[[]map[string]any](u.String(), "intents", macaroon, tlsCertPath)
+	response, err := get[[]map[string]any](u.String(), "intents", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -383,7 +383,7 @@ func listIntentsAction(ctx *cli.Context) error {
 
 func deleteIntentsAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -397,7 +397,7 @@ func deleteIntentsAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)
 	body := fmt.Sprintf(`{"intent_ids": %s}`, intentIdsJSON)
 
-	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
 		return err
 	}
 
@@ -407,7 +407,7 @@ func deleteIntentsAction(ctx *cli.Context) error {
 
 func clearIntentsAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -415,7 +415,7 @@ func clearIntentsAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)
 	body := `{"intent_ids": []}`
 
-	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
 		return err
 	}
 
@@ -425,14 +425,14 @@ func clearIntentsAction(ctx *cli.Context) error {
 
 func scheduledSweepAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/sweeps", baseURL)
 
-	resp, err := get[[]map[string]any](url, "sweeps", macaroon, tlsCertPath)
+	resp, err := get[[]map[string]any](url, "sweeps", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -448,14 +448,14 @@ func scheduledSweepAction(ctx *cli.Context) error {
 func roundInfoAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	roundId := ctx.String(roundIdFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/round/%s", baseURL, roundId)
 
-	resp, err := getRoundInfo(url, macaroon, tlsCertPath)
+	resp, err := getRoundInfo(url, macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	beforeDate := ctx.String(beforeDateFlagName)
 	afterDate := ctx.String(afterDateFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -497,7 +497,7 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 		}
 	}
 
-	roundIds, err := get[map[string]string](url, "rounds", macaroon, tlsCertPath)
+	roundIds, err := get[map[string]string](url, "rounds", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -512,14 +512,14 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 
 func getMarketHourAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/marketHour", baseURL)
 
-	resp, err := get[map[string]string](url, "config", macaroon, tlsCertPath)
+	resp, err := get[map[string]string](url, "config", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -570,7 +570,7 @@ func updateMarketHourAction(ctx *cli.Context) error {
 		return fmt.Errorf("--start-date and --end-date must be set together")
 	}
 
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -600,7 +600,7 @@ func updateMarketHourAction(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode request body: %s", err)
 	}
-	if _, err := post[any](url, string(body), "", macaroon, tlsCertPath); err != nil {
+	if _, err := post[any](url, string(body), "", macaroon, tlsConfig); err != nil {
 		return err
 	}
 

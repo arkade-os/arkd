@@ -28,7 +28,7 @@ type handler struct {
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewHandler(version string, service application.Service) service {
+func NewAppServiceHandler(version string, service application.Service) service {
 	h := &handler{
 		version:                     version,
 		svc:                         service,

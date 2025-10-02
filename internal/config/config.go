@@ -59,6 +59,7 @@ var (
 type Config struct {
 	Datadir         string
 	Port            uint32
+	AdminPort       uint32
 	DbMigrationPath string
 	NoTLS           bool
 	NoMacaroons     bool
@@ -143,6 +144,7 @@ var (
 	BanDuration               = "BAN_DURATION"
 	BanThreshold              = "BAN_THRESHOLD"
 	Port                      = "PORT"
+	AdminPort                 = "ADMIN_PORT"
 	EventDbType               = "EVENT_DB_TYPE"
 	DbType                    = "DB_TYPE"
 	DbUrl                     = "PG_DB_URL"
@@ -185,6 +187,7 @@ var (
 	defaultBanDuration         = 10 * defaultRoundInterval
 	defaultBanThreshold        = 3
 	DefaultPort                = 7070
+	DefaultAdminPort           = 7071
 	defaultDbType              = "postgres"
 	defaultEventDbType         = "postgres"
 	defaultSchedulerType       = "gocron"
@@ -216,6 +219,7 @@ func LoadConfig() (*Config, error) {
 
 	viper.SetDefault(Datadir, defaultDatadir)
 	viper.SetDefault(Port, DefaultPort)
+	viper.SetDefault(AdminPort, DefaultAdminPort)
 	viper.SetDefault(DbType, defaultDbType)
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
@@ -282,6 +286,12 @@ func LoadConfig() (*Config, error) {
 		signerAddr = viper.GetString(WalletAddr)
 	}
 
+	// In case the admin port is unset, fallback to service port.
+	adminPort := viper.GetUint32(AdminPort)
+	if adminPort == 0 {
+		adminPort = viper.GetUint32(Port)
+	}
+
 	return &Config{
 		Datadir:                 viper.GetString(Datadir),
 		WalletAddr:              viper.GetString(WalletAddr),
@@ -290,6 +300,7 @@ func LoadConfig() (*Config, error) {
 		BanDuration:             viper.GetInt64(BanDuration),
 		BanThreshold:            viper.GetInt(BanThreshold),
 		Port:                    viper.GetUint32(Port),
+		AdminPort:               adminPort,
 		EventDbType:             viper.GetString(EventDbType),
 		DbType:                  viper.GetString(DbType),
 		SchedulerType:           viper.GetString(SchedulerType),
