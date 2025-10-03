@@ -2107,7 +2107,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x15CRIME_TYPE_MANUAL_BAN\x10\a*M\n" +
 	"\x0eConvictionType\x12\x1f\n" +
 	"\x1bCONVICTION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\x9a\r\n" +
+	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\x99\r\n" +
 	"\fAdminService\x12o\n" +
 	"\x11GetScheduledSweep\x12 .ark.v1.GetScheduledSweepRequest\x1a!.ark.v1.GetScheduledSweepResponse\"\x15\xb2J\x12\x12\x10/v1/admin/sweeps\x12s\n" +
 	"\x0fGetRoundDetails\x12\x1e.ark.v1.GetRoundDetailsRequest\x1a\x1f.ark.v1.GetRoundDetailsResponse\"\x1f\xb2J\x1c\x12\x1a/v1/admin/round/{round_id}\x12W\n" +
@@ -2122,8 +2122,8 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x15GetConvictionsInRange\x12$.ark.v1.GetConvictionsInRangeRequest\x1a%.ark.v1.GetConvictionsInRangeResponse\"!\xb2J\x1e\x12\x1c/v1/admin/convictionsInRange\x12\x92\x01\n" +
 	"\x15GetConvictionsByRound\x12$.ark.v1.GetConvictionsByRoundRequest\x1a%.ark.v1.GetConvictionsByRoundResponse\",\xb2J)\x12'/v1/admin/convictionsByRound/{round_id}\x12\xa0\x01\n" +
 	"\x1aGetActiveScriptConvictions\x12).ark.v1.GetActiveScriptConvictionsRequest\x1a*.ark.v1.GetActiveScriptConvictionsResponse\"+\xb2J(\x12&/v1/admin/convictionsByScript/{script}\x12\x80\x01\n" +
-	"\x10PardonConviction\x12\x1f.ark.v1.PardonConvictionRequest\x1a .ark.v1.PardonConvictionResponse\")\xb2J&B\x01*\"!/v1/admin/convictions/{id}/pardon\x12c\n" +
-	"\tBanScript\x12\x18.ark.v1.BanScriptRequest\x1a\x19.ark.v1.BanScriptResponse\"!\xb2J\x1eB\x01*\"\x19/v1/admin/convictions/banBy\n" +
+	"\x10PardonConviction\x12\x1f.ark.v1.PardonConvictionRequest\x1a .ark.v1.PardonConvictionResponse\")\xb2J&B\x01*\"!/v1/admin/convictions/{id}/pardon\x12b\n" +
+	"\tBanScript\x12\x18.ark.v1.BanScriptRequest\x1a\x19.ark.v1.BanScriptResponse\" \xb2J\x1dB\x01*\"\x18/v1/admin/conviction/banBy\n" +
 	"\n" +
 	"com.ark.v1B\n" +
 	"AdminProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"

@@ -5,7 +5,7 @@
     "version": "version not set"
   },
   "paths": {
-    "/v1/admin/convictions/ban": {
+    "/v1/admin/conviction/ban": {
       "post": {
         "tags": [
           "AdminService"

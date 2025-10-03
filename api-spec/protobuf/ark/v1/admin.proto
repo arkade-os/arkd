@@ -77,7 +77,7 @@ service AdminService {
   }
   rpc BanScript(BanScriptRequest) returns (BanScriptResponse) {
     option (meshapi.gateway.http) = {
-      post: "/v1/admin/convictions/ban"
+      post: "/v1/admin/conviction/ban"
       body: "*"
     };
   }
