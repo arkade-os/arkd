@@ -7,8 +7,8 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
 require (
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251003172242-b6c5f843f120
-	github.com/arkade-os/go-sdk v0.7.2-0.20251003172503-f247ed4893e1
+	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251003174109-cf2b879a8b2c
+	github.com/arkade-os/go-sdk v0.7.2-0.20251003174219-eb4e94f1a062
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.30.0
 )
