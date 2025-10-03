@@ -903,7 +903,7 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 
 		activeConvictionAfterPardon, err := repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
-		require.Nil(t, activeConvictionAfterPardon)
+		require.Empty(t, activeConvictionAfterPardon)
 
 		shortDuration := time.Duration(1) * time.Millisecond
 		crime3 := domain.Crime{

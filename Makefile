@@ -68,9 +68,11 @@ run-light: clean
 test: pgtest redis-up
 	@sleep 2
 	@echo "Running unit tests..."
-	-@go test -v -count=1 -race ./internal/...
-	-@find ./pkg -name go.mod -execdir go test -v ./... \;
-	@$(MAKE) droppgtest && $(MAKE) redis-down
+	@failed=0; \
+	go test -v -count=1 -race ./internal/... || failed=1; \
+	find ./pkg -name go.mod -execdir go test -v ./... \; || failed=1; \
+	$(MAKE) droppgtest && $(MAKE) redis-down; \
+	exit $$failed
 
 ## vet: code analysis
 vet:
