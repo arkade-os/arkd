@@ -19,12 +19,12 @@ replace github.com/arkade-os/arkd/pkg/kvdb => ./pkg/kvdb
 require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251003174109-cf2b879a8b2c
+	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251003175732-01993fb6d85b
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.7.2-0.20251003174219-eb4e94f1a062
+	github.com/arkade-os/go-sdk v0.7.2-0.20251003181110-19bd89c799f8
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/btcsuite/btcwallet/walletdb v1.4.2
 	github.com/dgraph-io/badger/v4 v4.8.0
