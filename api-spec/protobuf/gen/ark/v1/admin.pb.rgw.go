@@ -147,6 +147,145 @@ func request_AdminService_DeleteIntents_0(ctx context.Context, marshaler gateway
 
 }
 
+func request_AdminService_GetConvictions_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetConvictionsRequest
+	var metadata gateway.ServerMetadata
+
+	var (
+		val string
+		err error
+		_   = err
+	)
+
+	val = pathParams.ByName("ids")
+	if val == "" {
+		return nil, metadata, gateway.ErrPathParameterMissing{Name: "ids"}
+	}
+
+	protoReq.Ids, err = protoconvert.StringSlice(val, ",")
+	if err != nil {
+		return nil, metadata, gateway.ErrPathParameterTypeMismatch{Err: err, Name: "ids"}
+	}
+
+	msg, err := client.GetConvictions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+var (
+	query_params_AdminService_GetConvictionsInRange_0 = gateway.QueryParameterParseOptions{
+		Filter: trie.New(),
+	}
+)
+
+func request_AdminService_GetConvictionsInRange_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetConvictionsInRangeRequest
+	var metadata gateway.ServerMetadata
+
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_AdminService_GetConvictionsInRange_0); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+
+	msg, err := client.GetConvictionsInRange(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func request_AdminService_GetConvictionsByRound_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetConvictionsByRoundRequest
+	var metadata gateway.ServerMetadata
+
+	var (
+		val string
+		err error
+		_   = err
+	)
+
+	val = pathParams.ByName("round_id")
+	if val == "" {
+		return nil, metadata, gateway.ErrPathParameterMissing{Name: "round_id"}
+	}
+
+	protoReq.RoundId, err = protoconvert.String(val)
+	if err != nil {
+		return nil, metadata, gateway.ErrPathParameterTypeMismatch{Err: err, Name: "round_id"}
+	}
+
+	msg, err := client.GetConvictionsByRound(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func request_AdminService_GetActiveScriptConvictions_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetActiveScriptConvictionsRequest
+	var metadata gateway.ServerMetadata
+
+	var (
+		val string
+		err error
+		_   = err
+	)
+
+	val = pathParams.ByName("script")
+	if val == "" {
+		return nil, metadata, gateway.ErrPathParameterMissing{Name: "script"}
+	}
+
+	protoReq.Script, err = protoconvert.String(val)
+	if err != nil {
+		return nil, metadata, gateway.ErrPathParameterTypeMismatch{Err: err, Name: "script"}
+	}
+
+	msg, err := client.GetActiveScriptConvictions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func request_AdminService_PardonConviction_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq PardonConvictionRequest
+	var metadata gateway.ServerMetadata
+
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+		return nil, metadata, gateway.ErrMarshal{Err: err, Inbound: true}
+	}
+
+	var (
+		val string
+		err error
+		_   = err
+	)
+
+	val = pathParams.ByName("id")
+	if val == "" {
+		return nil, metadata, gateway.ErrPathParameterMissing{Name: "id"}
+	}
+
+	protoReq.Id, err = protoconvert.String(val)
+	if err != nil {
+		return nil, metadata, gateway.ErrPathParameterTypeMismatch{Err: err, Name: "id"}
+	}
+
+	msg, err := client.PardonConviction(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func request_AdminService_BanScript_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq BanScriptRequest
+	var metadata gateway.ServerMetadata
+
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+		return nil, metadata, gateway.ErrMarshal{Err: err, Inbound: true}
+	}
+
+	msg, err := client.BanScript(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
 // RegisterAdminServiceHandlerFromEndpoint is same as RegisterAdminServiceHandler but
 // automatically dials to "endpoint" and closes the connection when "ctx" gets done.
 func RegisterAdminServiceHandlerFromEndpoint(ctx context.Context, mux *gateway.ServeMux, endpoint string, opts []grpc.DialOption) error {
@@ -353,6 +492,138 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *gateway.ServeMu
 		}
 
 		resp, md, err := request_AdminService_DeleteIntents_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/admin/convictions/:ids", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetConvictions", gateway.WithHTTPPathPattern("/v1/admin/convictions/{ids}"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_AdminService_GetConvictions_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/admin/convictionsInRange", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetConvictionsInRange", gateway.WithHTTPPathPattern("/v1/admin/convictionsInRange"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_AdminService_GetConvictionsInRange_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/admin/convictionsByRound/:round_id", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetConvictionsByRound", gateway.WithHTTPPathPattern("/v1/admin/convictionsByRound/{round_id}"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_AdminService_GetConvictionsByRound_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/admin/convictionsByScript/:script", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetActiveScriptConvictions", gateway.WithHTTPPathPattern("/v1/admin/convictionsByScript/{script}"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_AdminService_GetActiveScriptConvictions_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("POST", "/v1/admin/convictions/:id/pardon", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/PardonConviction", gateway.WithHTTPPathPattern("/v1/admin/convictions/{id}/pardon"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_AdminService_PardonConviction_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("POST", "/v1/admin/convictions/ban", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/BanScript", gateway.WithHTTPPathPattern("/v1/admin/convictions/ban"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_AdminService_BanScript_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)

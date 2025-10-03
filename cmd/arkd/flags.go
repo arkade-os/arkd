@@ -12,6 +12,7 @@ import (
 const (
 	urlFlagName                     = "url"
 	datadirFlagName                 = "datadir"
+	macaroonFlagName                = "macaroon"
 	passwordFlagName                = "password"
 	dbPathFlagName                  = "datadir"
 	mnemonicFlagName                = "mnemonic"
@@ -38,12 +39,16 @@ var (
 	urlFlag = &cli.StringFlag{
 		Name:  urlFlagName,
 		Usage: "the url where to reach ark server",
-		Value: fmt.Sprintf("http://localhost:%d", config.DefaultPort),
+		Value: fmt.Sprintf("http://127.0.0.1:%d", config.DefaultAdminPort),
 	}
 	datadirFlag = &cli.StringFlag{
 		Name:  datadirFlagName,
 		Usage: "arkd datadir from where to source TLS cert and macaroon if needed",
 		Value: arklib.AppDataDir("arkd", false),
+	}
+	macaroonFlag = &cli.StringFlag{
+		Name:  macaroonFlagName,
+		Usage: "macaroon in hex format used for authenticated requests",
 	}
 	dbPathFlag = &cli.StringFlag{
 		Name:     dbPathFlagName,

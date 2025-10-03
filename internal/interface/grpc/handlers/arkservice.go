@@ -30,7 +30,7 @@ type handler struct {
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewHandler(version string, service application.Service, heartbeat int64) service {
+func NewAppServiceHandler(version string, service application.Service, heartbeat int64) service {
 	h := &handler{
 		version:                     version,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,

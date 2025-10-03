@@ -196,7 +196,10 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 
 		// AllSigned
-		require.True(t, store.ForfeitTxs().AllSigned())
+		allSigned := store.ForfeitTxs().AllSigned()
+		require.True(t, allSigned)
+		unsigned := store.ForfeitTxs().GetUnsignedInputs()
+		require.Empty(t, unsigned)
 
 		require.True(t, store.ForfeitTxs().Len() == 4)
 

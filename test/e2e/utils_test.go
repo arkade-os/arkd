@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -288,7 +290,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 }
 
 func setupArkSDK(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
-	alice, _, grpcAlice := setupArkSDKwithPublicKey(t)
+	alice, _, _, grpcAlice := setupArkSDKwithPublicKey(t)
 	return alice, grpcAlice
 }
 
@@ -324,7 +326,7 @@ func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, e
 
 func setupArkSDKwithPublicKey(
 	t *testing.T,
-) (arksdk.ArkClient, *btcec.PublicKey, client.TransportClient) {
+) (arksdk.ArkClient, wallet.WalletService, *btcec.PublicKey, client.TransportClient) {
 	appDataStore, err := store.NewStore(store.Config{
 		ConfigStoreType:  types.InMemoryStore,
 		AppDataStoreType: types.KVStore,
@@ -361,7 +363,7 @@ func setupArkSDKwithPublicKey(
 	grpcClient, err := grpcclient.NewClient("localhost:7070")
 	require.NoError(t, err)
 
-	return client, privkey.PubKey(), grpcClient
+	return client, wallet, privkey.PubKey(), grpcClient
 }
 
 func setupIndexer(t *testing.T) indexer.Indexer {
@@ -376,7 +378,7 @@ func generateNote(t *testing.T, amount uint32) string {
 	}
 
 	reqBody := bytes.NewReader([]byte(fmt.Sprintf(`{"amount": "%d"}`, amount)))
-	req, err := http.NewRequest("POST", "http://localhost:7070/v1/admin/note", reqBody)
+	req, err := http.NewRequest("POST", "http://localhost:7071/v1/admin/note", reqBody)
 	if err != nil {
 		t.Fatalf("failed to prepare note request: %s", err)
 	}
@@ -396,6 +398,12 @@ func generateNote(t *testing.T, amount uint32) string {
 	}
 
 	return noteResp.Notes[0]
+}
+
+func faucetOnchainAddress(t *testing.T, address string) error {
+	_, err := runCommand("nigiri", "faucet", address, "0.0002")
+	require.NoError(t, err)
+	return nil
 }
 
 func faucetOffchainAddress(t *testing.T, address string) (types.Vtxo, error) {
@@ -513,16 +521,8 @@ func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
 	event client.TreeSigningStartedEvent,
 	vtxoTree *tree.TxTree,
 ) (bool, error) {
-	pubkeyFound := false
 	myPubkey := h.signerSession.GetPublicKey()
-	for _, cosigner := range event.CosignersPubkeys {
-		if cosigner == myPubkey {
-			pubkeyFound = true
-			break
-		}
-	}
-
-	if !pubkeyFound {
+	if !slices.Contains(event.CosignersPubkeys, myPubkey) {
 		return true, nil
 	}
 
@@ -572,27 +572,19 @@ func (h *delegateBatchEventsHandler) OnTreeNoncesAggregated(
 	ctx context.Context,
 	event client.TreeNoncesAggregatedEvent,
 ) error {
-	sign := func(session tree.SignerSession) error {
-		session.SetAggregatedNonces(event.Nonces)
+	h.signerSession.SetAggregatedNonces(event.Nonces)
 
-		sigs, err := session.Sign()
-		if err != nil {
-			return err
-		}
-
-		return h.client.SubmitTreeSignatures(
-			ctx,
-			event.Id,
-			session.GetPublicKey(),
-			sigs,
-		)
-	}
-
-	if err := sign(h.signerSession); err != nil {
+	sigs, err := h.signerSession.Sign()
+	if err != nil {
 		return err
 	}
 
-	return nil
+	return h.client.SubmitTreeSignatures(
+		ctx,
+		event.Id,
+		h.signerSession.GetPublicKey(),
+		sigs,
+	)
 }
 
 func (h *delegateBatchEventsHandler) OnBatchFinalization(
@@ -650,4 +642,98 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	return h.client.SubmitSignedForfeitTxs(
 		ctx, []string{signedForfeitTx}, "",
 	)
+}
+
+type customBatchEventsHandler struct {
+	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, error)
+	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) error
+	onBatchFinalized       func(ctx context.Context, event client.BatchFinalizedEvent) error
+	onBatchFailed          func(ctx context.Context, event client.BatchFailedEvent) error
+	onTreeTxEvent          func(ctx context.Context, event client.TreeTxEvent) error
+	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
+	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
+	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) error
+}
+
+func (h *customBatchEventsHandler) OnBatchStarted(
+	ctx context.Context,
+	event client.BatchStartedEvent,
+) (bool, error) {
+	if h.onBatchStarted != nil {
+		return h.onBatchStarted(ctx, event)
+	}
+	return false, nil
+}
+
+func (h *customBatchEventsHandler) OnBatchFinalization(
+	ctx context.Context,
+	event client.BatchFinalizationEvent,
+	vtxoTree *tree.TxTree,
+	connectorTree *tree.TxTree,
+) error {
+	if h.onBatchFinalization != nil {
+		return h.onBatchFinalization(ctx, event, vtxoTree, connectorTree)
+	}
+	return nil
+}
+
+func (h *customBatchEventsHandler) OnBatchFinalized(
+	ctx context.Context,
+	event client.BatchFinalizedEvent,
+) error {
+	if h.onBatchFinalized != nil {
+		return h.onBatchFinalized(ctx, event)
+	}
+	return nil
+}
+
+func (h *customBatchEventsHandler) OnBatchFailed(
+	ctx context.Context,
+	event client.BatchFailedEvent,
+) error {
+	if h.onBatchFailed != nil {
+		return h.onBatchFailed(ctx, event)
+	}
+	return errors.New(event.Reason)
+}
+
+func (h *customBatchEventsHandler) OnTreeTxEvent(
+	ctx context.Context,
+	event client.TreeTxEvent,
+) error {
+	if h.onTreeTxEvent != nil {
+		return h.onTreeTxEvent(ctx, event)
+	}
+	return nil
+}
+
+func (h *customBatchEventsHandler) OnTreeSignatureEvent(
+	ctx context.Context,
+	event client.TreeSignatureEvent,
+) error {
+	if h.onTreeSignatureEvent != nil {
+		return h.onTreeSignatureEvent(ctx, event)
+	}
+	return nil
+}
+
+func (h *customBatchEventsHandler) OnTreeSigningStarted(
+	ctx context.Context,
+	event client.TreeSigningStartedEvent,
+	vtxoTree *tree.TxTree,
+) (bool, error) {
+	if h.onTreeSigningStarted != nil {
+		return h.onTreeSigningStarted(ctx, event, vtxoTree)
+	}
+	return false, nil
+}
+
+func (h *customBatchEventsHandler) OnTreeNoncesAggregated(
+	ctx context.Context,
+	event client.TreeNoncesAggregatedEvent,
+) error {
+	if h.onTreeNoncesAggregated != nil {
+		return h.onTreeNoncesAggregated(ctx, event)
+	}
+	return nil
 }
