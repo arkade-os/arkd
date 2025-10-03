@@ -94,7 +94,8 @@ func NewService(
 	allowCSVBlockType bool,
 	noteUriPrefix string,
 	marketHourStartTime, marketHourEndTime time.Time,
-	marketHourPeriod, marketHourRoundInterval time.Duration, reportSvc RoundReportService,
+	marketHourPeriod, marketHourRoundInterval time.Duration,
+	reportSvc RoundReportService,
 	banThreshold int,
 ) (Service, error) {
 	ctx := context.Background()
@@ -859,7 +860,7 @@ func (s *service) FinalizeOffchainTx(
 		return fmt.Errorf("failed to parse ark tx: %s", err)
 	}
 
-	for inIndex, input := range arkTx.Inputs {
+	for inIndex := range arkTx.Inputs {
 		checkpointTxid := arkTx.UnsignedTx.TxIn[inIndex].PreviousOutPoint.Hash.String()
 		checkpointTx, ok := decodedCheckpointTxs[checkpointTxid]
 		if !ok {
@@ -867,11 +868,16 @@ func (s *service) FinalizeOffchainTx(
 			return err
 		}
 
-		var taprootTree txutils.TapTree
-		taprootTree, err = txutils.GetTaprootTree(input)
+		taprootTreeField, err := txutils.GetArkPsbtFields(
+			arkTx, inIndex, txutils.VtxoTaprootTreeField,
+		)
 		if err != nil {
 			return fmt.Errorf("failed to get taproot tree: %s", err)
 		}
+		if len(taprootTreeField) <= 0 {
+			return fmt.Errorf("missing taproot tree")
+		}
+		taprootTree := taprootTreeField[0]
 
 		var encodedTapTree []byte
 		encodedTapTree, err = taprootTree.Encode()
@@ -2770,14 +2776,17 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 			for tx := range jobs {
 				valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(tx, false)
 				if err == nil && !valid {
-					err = fmt.Errorf("invalid signature for forfeit tx %s", txid)
+					err = fmt.Errorf("invalid signature for forfeit tx %s", ptx.UnsignedTx.TxID())
 				}
 				if err != nil {
 					verificationErr := err
 					vtxoOutputScript, extractErr := extractVtxoScriptFromSignedForfeitTx(tx)
 					if extractErr != nil {
 						log.WithError(extractErr).
-							Errorf("failed to extract vtxo script from forfeit tx %s, cannot ban", txid)
+							Errorf(
+								"failed to extract vtxo script from forfeit tx %s, cannot ban",
+								ptx.UnsignedTx.TxID(),
+							)
 						continue
 					}
 
