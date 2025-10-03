@@ -560,7 +560,7 @@ func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
 	return false, nil
 }
 
-func (h *delegateBatchEventsHandler) OnTreeNoncesEvent(
+func (h *delegateBatchEventsHandler) OnTreeNonces(
 	ctx context.Context,
 	event client.TreeNoncesEvent,
 ) (bool, error) {
@@ -738,7 +738,7 @@ func (h *customBatchEventsHandler) OnTreeNoncesAggregated(
 	return false, nil
 }
 
-func (h *customBatchEventsHandler) OnTreeNoncesEvent(
+func (h *customBatchEventsHandler) OnTreeNonces(
 	ctx context.Context,
 	event client.TreeNoncesEvent,
 ) (bool, error) {
