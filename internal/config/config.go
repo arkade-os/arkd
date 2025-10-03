@@ -59,6 +59,7 @@ var (
 type Config struct {
 	Datadir         string
 	Port            uint32
+	AdminPort       uint32
 	DbMigrationPath string
 	NoTLS           bool
 	NoMacaroons     bool
@@ -73,6 +74,8 @@ type Config struct {
 	EventDbUrl          string
 	EventDbDir          string
 	RoundInterval       int64
+	BanDuration         int64
+	BanThreshold        int // number of crimes to trigger a ban
 	SchedulerType       string
 	TxBuilderType       string
 	LiveStoreType       string
@@ -140,7 +143,10 @@ var (
 	WalletAddr                = "WALLET_ADDR"
 	SignerAddr                = "SIGNER_ADDR"
 	RoundInterval             = "ROUND_INTERVAL"
+	BanDuration               = "BAN_DURATION"
+	BanThreshold              = "BAN_THRESHOLD"
 	Port                      = "PORT"
+	AdminPort                 = "ADMIN_PORT"
 	EventDbType               = "EVENT_DB_TYPE"
 	DbType                    = "DB_TYPE"
 	DbUrl                     = "PG_DB_URL"
@@ -182,7 +188,10 @@ var (
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultRoundInterval       = 30
+	defaultBanDuration         = 10 * defaultRoundInterval
+	defaultBanThreshold        = 3
 	DefaultPort                = 7070
+	DefaultAdminPort           = 7071
 	defaultDbType              = "postgres"
 	defaultEventDbType         = "postgres"
 	defaultSchedulerType       = "gocron"
@@ -216,10 +225,13 @@ func LoadConfig() (*Config, error) {
 
 	viper.SetDefault(Datadir, defaultDatadir)
 	viper.SetDefault(Port, DefaultPort)
+	viper.SetDefault(AdminPort, DefaultAdminPort)
 	viper.SetDefault(DbType, defaultDbType)
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(RoundInterval, defaultRoundInterval)
+	viper.SetDefault(BanDuration, defaultBanDuration)
+	viper.SetDefault(BanThreshold, defaultBanThreshold)
 	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
 	viper.SetDefault(SchedulerType, defaultSchedulerType)
 	viper.SetDefault(EventDbType, defaultEventDbType)
@@ -282,12 +294,21 @@ func LoadConfig() (*Config, error) {
 		signerAddr = viper.GetString(WalletAddr)
 	}
 
+	// In case the admin port is unset, fallback to service port.
+	adminPort := viper.GetUint32(AdminPort)
+	if adminPort == 0 {
+		adminPort = viper.GetUint32(Port)
+	}
+
 	return &Config{
 		Datadir:                 viper.GetString(Datadir),
 		WalletAddr:              viper.GetString(WalletAddr),
 		SignerAddr:              signerAddr,
 		RoundInterval:           viper.GetInt64(RoundInterval),
+		BanDuration:             viper.GetInt64(BanDuration),
+		BanThreshold:            viper.GetInt(BanThreshold),
 		Port:                    viper.GetUint32(Port),
+		AdminPort:               adminPort,
 		EventDbType:             viper.GetString(EventDbType),
 		DbType:                  viper.GetString(DbType),
 		SchedulerType:           viper.GetString(SchedulerType),
@@ -388,6 +409,12 @@ func (c *Config) Validate() error {
 	}
 	if c.RoundInterval < 2 {
 		return fmt.Errorf("invalid round interval, must be at least 2 seconds")
+	}
+	if c.BanDuration < 1 {
+		return fmt.Errorf("invalid ban duration, must be at least 1 second")
+	}
+	if c.BanThreshold < 1 {
+		log.Debugf("autoban is disabled")
 	}
 	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
 		if c.SchedulerType != "block" {
@@ -711,10 +738,11 @@ func (c *Config) appService() error {
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore,
 		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay, c.CheckpointExitDelay,
-		c.RoundInterval, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		c.RoundInterval, c.BanDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		mhStartTime, mhEndTime, mhPeriod, mhRoundInterval, roundReportSvc,
+		c.BanThreshold,
 	)
 	if err != nil {
 		return err

@@ -57,37 +57,38 @@ In this documentation, you'll learn how to install and use `arkd`, a Bitcoin ser
 
 The `arkd` server can be configured using environment variables.
 
-| Environment Variable | Description | Default |
-|---------------------|-------------|--------|
-| `ARKD_DATADIR` | Directory to store data | App data directory |
-| `ARKD_PORT` | Port to listen on | `7070` |
-| `ARKD_LOG_LEVEL` | Logging level (0-6, where 6 is trace) | `4` (info) |
-| `ARKD_ROUND_INTERVAL` | Interval between rounds in seconds | `30` |
-| `ARKD_DB_TYPE` | Database type (postgres, sqlite, badger) | `postgres` |
-| `ARKD_PG_DB_URL` | Postgres connection url if `ARKD_DB_TYPE` is set to `postgres` | - |
-| `ARKD_EVENT_DB_TYPE` | Event database type (postgres, badger) | `postgres` |
-| `ARKD_PG_EVENT_DB_URL` | Event database url if `ARKD_EVENT_DB_TYPE` is set to `postgres` | - |
-| `ARKD_TX_BUILDER_TYPE` | Transaction builder type (covenantless) | `covenantless` |
-| `ARKD_LIVE_STORE_TYPE` | Cache service type (redis, inmemory) | `redis` |
-| `ARKD_REDIS_URL` | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis` | - |
-| `ARKD_REDIS_NUM_OF_RETRIES` | Maximum number of retries for Redis write operations in case of conflicts | - |
-| `ARKD_VTXO_TREE_EXPIRY` | VTXO tree expiry in seconds | `604672` (7 days) |
-| `ARKD_UNILATERAL_EXIT_DELAY` | Unilateral exit delay in seconds | `86400` (24 hours) |
-| `ARKD_BOARDING_EXIT_DELAY` | Boarding exit delay in seconds | `7776000` (3 months) |
-| `ARKD_ESPLORA_URL` | Esplora API URL | `https://blockstream.info/api` |
-| `ARKD_WALLET_ADDR` | The arkd wallet address to connect to in the form `host:port` | - |
-| `ARKD_SIGNER_ADDR` | The signer address to connect to in the form `host:port` | value of `ARKD_WALLET_ADDR` |
-| `ARKD_NO_MACAROONS` | Disable macaroon authentication | `false` |
-| `ARKD_NO_TLS` | Disable TLS | `true` |
-| `ARKD_UNLOCKER_TYPE` | Wallet unlocker type (env, file) to enable auto-unlock | - |
-| `ARKD_UNLOCKER_FILE_PATH` | Path to unlocker file | - |
-| `ARKD_UNLOCKER_PASSWORD` | Wallet unlocker password | - |
-| `ARKD_ROUND_MAX_PARTICIPANTS_COUNT` | Maximum number of participants per round | `128` |
-| `ARKD_ROUND_MIN_PARTICIPANTS_COUNT` | Minimum number of participants per round | `1` |
-| `ARKD_UTXO_MAX_AMOUNT` | The maximum allowed amount for boarding or collaborative exit | `-1` (unset) |
-| `ARKD_UTXO_MIN_AMOUNT` | The minimum allowed amount for boarding or collaborative exit | `-1` (dust) |
-| `ARKD_VTXO_MAX_AMOUNT` | The maximum allowed amount for vtxos | `-1` (unset) |
-| `ARKD_VTXO_MIN_AMOUNT` | The minimum allowed amount for vtxos | `-1` (dust) |
+| Environment Variable                | Description                                                               | Default                       |
+|-------------------------------------|---------------------------------------------------------------------------|-------------------------------|
+| `ARKD_DATADIR`                      | Directory to store data                                                   | App data directory            |
+| `ARKD_PORT`                         | Port (public) to listen on                                                | `7070`                        |
+| `ARKD_ADMIN_PORT`                   | Admin port (private) to listen on, fallback to service port if 0          | `7071`                        |
+| `ARKD_LOG_LEVEL`                    | Logging level (0-6, where 6 is trace)                                     | `4` (info)                    |
+| `ARKD_ROUND_INTERVAL`               | Interval between rounds in seconds                                        | `30`                          |
+| `ARKD_DB_TYPE`                      | Database type (postgres, sqlite, badger)                                  | `postgres`                    |
+| `ARKD_PG_DB_URL`                    | Postgres connection url if `ARKD_DB_TYPE` is set to `postgres`            | -                             |
+| `ARKD_EVENT_DB_TYPE`                | Event database type (postgres, badger)                                    | `postgres`                    |
+| `ARKD_PG_EVENT_DB_URL`              | Event database url if `ARKD_EVENT_DB_TYPE` is set to `postgres`           | -                             |
+| `ARKD_TX_BUILDER_TYPE`              | Transaction builder type (covenantless)                                   | `covenantless`                |
+| `ARKD_LIVE_STORE_TYPE`              | Cache service type (redis, inmemory)                                      | `redis`                       |
+| `ARKD_REDIS_URL`                    | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis`       | -                             |
+| `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts | -                             |
+| `ARKD_VTXO_TREE_EXPIRY`             | VTXO tree expiry in seconds                                               | `604672` (7 days)             |
+| `ARKD_UNILATERAL_EXIT_DELAY`        | Unilateral exit delay in seconds                                          | `86400` (24 hours)            |
+| `ARKD_BOARDING_EXIT_DELAY`          | Boarding exit delay in seconds                                            | `7776000` (3 months)          |
+| `ARKD_ESPLORA_URL`                  | Esplora API URL                                                           | `https://blockstream.info/api` |
+| `ARKD_WALLET_ADDR`                  | The arkd wallet address to connect to in the form `host:port`             | -                             |
+| `ARKD_SIGNER_ADDR`                  | The signer address to connect to in the form `host:port`                  | value of `ARKD_WALLET_ADDR`   |
+| `ARKD_NO_MACAROONS`                 | Disable macaroon authentication                                           | `false`                       |
+| `ARKD_NO_TLS`                       | Disable TLS                                                               | `true`                        |
+| `ARKD_UNLOCKER_TYPE`                | Wallet unlocker type (env, file) to enable auto-unlock                    | -                             |
+| `ARKD_UNLOCKER_FILE_PATH`           | Path to unlocker file                                                     | -                             |
+| `ARKD_UNLOCKER_PASSWORD`            | Wallet unlocker password                                                  | -                             |
+| `ARKD_ROUND_MAX_PARTICIPANTS_COUNT` | Maximum number of participants per round                                  | `128`                         |
+| `ARKD_ROUND_MIN_PARTICIPANTS_COUNT` | Minimum number of participants per round                                  | `1`                           |
+| `ARKD_UTXO_MAX_AMOUNT`              | The maximum allowed amount for boarding or collaborative exit             | `-1` (unset)                  |
+| `ARKD_UTXO_MIN_AMOUNT`              | The minimum allowed amount for boarding or collaborative exit             | `-1` (dust)                   |
+| `ARKD_VTXO_MAX_AMOUNT`              | The maximum allowed amount for vtxos                                      | `-1` (unset)                  |
+| `ARKD_VTXO_MIN_AMOUNT`              | The minimum allowed amount for vtxos                                      | `-1` (dust)                   |
 
 ## Provisioning
 

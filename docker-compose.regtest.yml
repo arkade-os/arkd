@@ -71,6 +71,7 @@ services:
       - arkd-wallet
     ports:
       - "7070:7070"
+      - "7071:7071"
     environment:
       - ARKD_LOG_LEVEL=6
       - ARKD_NO_MACAROONS=true
@@ -90,6 +91,7 @@ services:
       - ARKD_DB_TYPE=sqlite
       - ARKD_ROUND_INTERVAL=${ARKD_ROUND_INTERVAL:-10}
       - ARKD_ROUND_REPORT_ENABLED=${ARKD_ROUND_REPORT_ENABLED:-true}
+      - ARKD_BAN_THRESHOLD=1
     volumes:
       - type: tmpfs
         target: /app/data

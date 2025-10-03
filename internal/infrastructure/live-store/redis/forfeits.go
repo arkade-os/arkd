@@ -194,6 +194,35 @@ func (s *forfeitTxsStore) AllSigned() bool {
 	return true
 }
 
+func (s *forfeitTxsStore) GetUnsignedInputs() []domain.Outpoint {
+	ctx := context.Background()
+	hash, err := s.rdb.HGetAll(ctx, forfeitTxsStoreTxsKey).Result()
+	if err != nil {
+		return nil
+	}
+	vtxoKeys := make([]domain.Outpoint, 0)
+	for vtxoStr, forfeitJSON := range hash {
+		var vtxoKey domain.Outpoint
+		if err := vtxoKey.FromString(vtxoStr); err != nil {
+			continue
+		}
+		if len(forfeitJSON) == 0 {
+			vtxoKeys = append(vtxoKeys, vtxoKey)
+			continue
+		}
+		var validTx ports.ValidForfeitTx
+		if err := json.Unmarshal([]byte(forfeitJSON), &validTx); err != nil {
+			vtxoKeys = append(vtxoKeys, vtxoKey)
+			continue
+		}
+		if len(validTx.Tx) == 0 {
+			vtxoKeys = append(vtxoKeys, vtxoKey)
+		}
+	}
+
+	return vtxoKeys
+}
+
 func (s *forfeitTxsStore) Len() int {
 	ctx := context.Background()
 	count, err := s.rdb.HLen(ctx, forfeitTxsStoreTxsKey).Result()

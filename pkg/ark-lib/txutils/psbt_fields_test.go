@@ -31,16 +31,18 @@ func TestPsbtCustomUnknownFields(t *testing.T) {
 		}
 
 		// Add witness to input 0
-		err = txutils.AddConditionWitness(0, ptx, witness)
+		err = txutils.SetArkPsbtField(ptx, 0, txutils.ConditionWitnessField, witness)
 		require.NoError(t, err)
 
 		// Get witness back and verify
-		retrievedWitness, err := txutils.GetConditionWitness(ptx.Inputs[0])
+		fields, err := txutils.GetArkPsbtFields(ptx, 0, txutils.ConditionWitnessField)
+		require.NotNil(t, fields)
+		require.Len(t, fields, 1)
 		require.NoError(t, err)
-		require.Equal(t, len(witness), len(retrievedWitness))
+		require.Equal(t, len(witness), len(fields[0]))
 
 		for i := range witness {
-			require.Equal(t, witness[i], retrievedWitness[i])
+			require.Equal(t, witness[i], fields[0][i])
 		}
 	})
 
@@ -61,15 +63,16 @@ func TestPsbtCustomUnknownFields(t *testing.T) {
 			Type:  common.LocktimeTypeBlock,
 			Value: 144, // 1 day worth of blocks
 		}
-		err = txutils.AddVtxoTreeExpiry(0, ptx, vtxoTreeExpiry)
+		err = txutils.SetArkPsbtField(ptx, 0, txutils.VtxoTreeExpiryField, vtxoTreeExpiry)
 		require.NoError(t, err)
 
 		// Get vtxo tree expiry back and verify
-		retrievedVtxoTreeExpiry, err := txutils.GetVtxoTreeExpiry(ptx.Inputs[0])
+		fields, err := txutils.GetArkPsbtFields(ptx, 0, txutils.VtxoTreeExpiryField)
+		require.NotNil(t, fields)
+		require.Len(t, fields, 1)
 		require.NoError(t, err)
-		require.NotNil(t, retrievedVtxoTreeExpiry)
-		require.Equal(t, vtxoTreeExpiry.Type, retrievedVtxoTreeExpiry.Type)
-		require.Equal(t, vtxoTreeExpiry.Value, retrievedVtxoTreeExpiry.Value)
+		require.Equal(t, vtxoTreeExpiry.Type, fields[0].Type)
+		require.Equal(t, vtxoTreeExpiry.Value, fields[0].Value)
 	})
 
 	t.Run("cosigner keys", func(t *testing.T) {
@@ -86,23 +89,27 @@ func TestPsbtCustomUnknownFields(t *testing.T) {
 
 		// Create and add 40 cosigner keys
 		var keys []*btcec.PublicKey
-		for i := 0; i < 40; i++ {
+		for i := range 40 {
 			key, err := btcec.NewPrivateKey()
 			require.NoError(t, err)
 			keys = append(keys, key.PubKey())
 
-			err = txutils.AddCosignerKey(0, ptx, key.PubKey())
+			err = txutils.SetArkPsbtField(ptx, 0, txutils.CosignerPublicKeyField, txutils.IndexedCosignerPublicKey{
+				Index:     i,
+				PublicKey: key.PubKey(),
+			})
 			require.NoError(t, err)
 		}
 
 		// Get cosigner keys back and verify
-		retrievedKeys, err := txutils.GetCosignerKeys(ptx.Inputs[0])
+		fields, err := txutils.GetArkPsbtFields(ptx, 0, txutils.CosignerPublicKeyField)
+		require.NotNil(t, fields)
+		require.Len(t, fields, 40)
 		require.NoError(t, err)
-		require.Len(t, retrievedKeys, 40)
 
 		// Verify each key matches and is in the correct order
-		for i := 0; i < 40; i++ {
-			require.Equal(t, keys[i].SerializeCompressed(), retrievedKeys[i].SerializeCompressed())
+		for i := range 40 {
+			require.Equal(t, keys[i].SerializeCompressed(), fields[i].PublicKey.SerializeCompressed())
 		}
 	})
 
@@ -131,16 +138,18 @@ func TestPsbtCustomUnknownFields(t *testing.T) {
 
 		for _, scripts := range testCases {
 			// Add tapscripts to input 0
-			err = txutils.AddTaprootTree(0, ptx, scripts)
+			err = txutils.SetArkPsbtField(ptx, 0, txutils.VtxoTaprootTreeField, scripts)
 			require.NoError(t, err)
 
 			// Get tapscripts back and verify
-			retrievedScripts, err := txutils.GetTaprootTree(ptx.Inputs[0])
+			fields, err := txutils.GetArkPsbtFields(ptx, 0, txutils.VtxoTaprootTreeField)
+			require.NotNil(t, fields)
+			require.Len(t, fields, 1)
 			require.NoError(t, err)
-			require.Equal(t, len(scripts), len(retrievedScripts))
+			require.Equal(t, len(scripts), len(fields[0]))
 
 			for i := range scripts {
-				require.Equal(t, scripts[i], retrievedScripts[i])
+				require.Equal(t, scripts[i], fields[0][i])
 			}
 
 			// Clear the unknowns for next test case

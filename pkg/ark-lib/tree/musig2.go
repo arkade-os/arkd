@@ -167,14 +167,17 @@ type SignerSession interface {
 	Init(batchOutSweepClosure []byte, batchOutAmount int64, vtxoTree *TxTree) error
 	GetPublicKey() string
 	GetNonces() (TreeNonces, error) // generate tree nonces for this session
+	// deprecated, safer to use AggregateNonces instead
 	SetAggregatedNonces(TreeNonces) // set the aggregated nonces
+	AggregateNonces(txid string, pubkeyNonces map[string]*Musig2Nonce) (hasAllNonces bool, err error)
 	Sign() (TreePartialSigs, error) // sign the tree
 }
 
 type CoordinatorSession interface {
 	AddNonce(*btcec.PublicKey, TreeNonces)
-	AddSignatures(*btcec.PublicKey, TreePartialSigs)
+	AddSignatures(*btcec.PublicKey, TreePartialSigs) (shouldBan bool, err error)
 	AggregateNonces() (TreeNonces, error)
+	GetPublicNonces() map[string]TreeNonces // pubkey -> nonces
 	// SignTree combines the signatures and add them to the tree's psbts
 	SignTree() (*TxTree, error)
 }
@@ -239,8 +242,8 @@ func ValidateTreeSigs(
 
 	txs := treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet))
 
-	_, err = workPoolMap(txs, func(partialTx *psbt.Packet) (any, error) {
-		sig := partialTx.Inputs[0].TaprootKeySpendSig
+	_, err = workPoolMap(txs, func(ptx *psbt.Packet) (any, error) {
+		sig := ptx.Inputs[0].TaprootKeySpendSig
 		if len(sig) == 0 {
 			return nil, errors.New("unsigned tree input")
 		}
@@ -250,35 +253,36 @@ func ValidateTreeSigs(
 			return nil, fmt.Errorf("failed to parse signature: %w", err)
 		}
 
-		prevoutFetcher, err := prevoutFetcherFactory(partialTx)
+		prevoutFetcher, err := prevoutFetcherFactory(ptx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get prevout fetcher: %w", err)
 		}
 
 		message, err := txscript.CalcTaprootSignatureHash(
-			txscript.NewTxSigHashes(partialTx.UnsignedTx, prevoutFetcher),
-			txscript.SigHashDefault, partialTx.UnsignedTx, 0, prevoutFetcher,
+			txscript.NewTxSigHashes(ptx.UnsignedTx, prevoutFetcher),
+			txscript.SigHashDefault, ptx.UnsignedTx, 0, prevoutFetcher,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate sighash: %w", err)
 		}
 
-		keys, err := txutils.GetCosignerKeys(partialTx.Inputs[0])
+		consignerPubkeys, err := txutils.ParseCosignerKeysFromArkPsbt(ptx, 0)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get cosigner keys: %w", err)
+			return nil, fmt.Errorf(
+				"failed to extract cosigners from tx %s: %s", ptx.UnsignedTx.TxID(), err,
+			)
+		}
+		if len(consignerPubkeys) == 0 {
+			return nil, fmt.Errorf("no cosigner pubkeys found in tx %s", ptx.UnsignedTx.TxID())
 		}
 
-		if len(keys) == 0 {
-			return nil, fmt.Errorf("no keys for txid %s", partialTx.UnsignedTx.TxID())
-		}
-
-		aggregateKey, err := AggregateKeys(keys, batchOutSweepClosure)
+		aggregateKey, err := AggregateKeys(consignerPubkeys, batchOutSweepClosure)
 		if err != nil {
 			return nil, fmt.Errorf("failed to aggregate keys: %w", err)
 		}
 
 		if !schnorrSig.Verify(message, aggregateKey.FinalKey) {
-			return nil, fmt.Errorf("invalid signature for txid %s", partialTx.UnsignedTx.TxID())
+			return nil, fmt.Errorf("invalid signature for txid %s", ptx.UnsignedTx.TxID())
 		}
 
 		return nil, nil
@@ -338,6 +342,63 @@ func (t *treeSignerSession) GetNonces() (TreeNonces, error) {
 
 func (t *treeSignerSession) SetAggregatedNonces(nonces TreeNonces) {
 	t.aggregateNonces = nonces
+}
+
+func (t *treeSignerSession) AggregateNonces(txid string, pubkeyNonces map[string]*Musig2Nonce) (bool, error) {
+	if t.myNonces == nil {
+		return false, fmt.Errorf("nonces not generated")
+	}
+
+	if t.txs == nil {
+		return false, fmt.Errorf("vtxo tree not initialized")
+	}
+
+	tx, ok := t.txs[txid]
+	if !ok {
+		return false, fmt.Errorf("missing tx %s", txid)
+	}
+
+	myNonce, ok := t.myNonces[txid]
+	if !ok {
+		return false, fmt.Errorf("missing my nonce for txid %s", txid)
+	}
+
+	if t.aggregateNonces == nil {
+		t.aggregateNonces = make(TreeNonces)
+	}
+
+	if aggNonce, ok := t.aggregateNonces[txid]; ok && aggNonce != nil {
+		return len(t.aggregateNonces) == len(t.txs), nil // skip: we already have the aggregated nonce for this txid
+	}
+
+	pubkeyNonces[t.GetPublicKey()] = &Musig2Nonce{myNonce.PubNonce}
+
+	keys, err := txutils.ParseCosignerKeysFromArkPsbt(tx, 0)
+	if err != nil {
+		return false, fmt.Errorf("failed to get cosigner keys: %w", err)
+	}
+
+	if len(keys) == 0 {
+		return false, fmt.Errorf("no keys for txid %s", tx.UnsignedTx.TxID())
+	}
+
+	allNonces := make([][66]byte, 0, len(keys))
+	for _, key := range keys {
+		keyStr := hex.EncodeToString(schnorr.SerializePubKey(key))
+		nonce, ok := pubkeyNonces[keyStr]
+		if !ok {
+			return false, fmt.Errorf("missing nonce for cosigner key %s", keyStr)
+		}
+		allNonces = append(allNonces, nonce.PubNonce)
+	}
+
+	aggregatedNonce, err := musig2.AggregateNonces(allNonces)
+	if err != nil {
+		return false, fmt.Errorf("failed to aggregate nonces: %w", err)
+	}
+
+	t.aggregateNonces[txid] = &Musig2Nonce{aggregatedNonce}
+	return len(t.aggregateNonces) == len(t.txs), nil
 }
 
 // Sign generates the musig2 partial signatures for each transaction of the tree that includes the
@@ -414,6 +475,7 @@ type treeCoordinatorSession struct {
 	prevoutFetcherFactory func(*psbt.Packet) (txscript.PrevOutputFetcher, error)
 	vtxoTree              *TxTree
 	txs                   map[string]*psbt.Packet
+	combinedNonces        TreeNonces
 }
 
 func NewTreeCoordinatorSession(
@@ -440,14 +502,79 @@ func (t *treeCoordinatorSession) AddNonce(pubkey *btcec.PublicKey, nonce TreeNon
 	t.nonces[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = nonce
 }
 
-func (t *treeCoordinatorSession) AddSignatures(pubkey *btcec.PublicKey, sig TreePartialSigs) {
+func (t *treeCoordinatorSession) GetPublicNonces() map[string]TreeNonces {
+	return t.nonces
+}
+
+func (t *treeCoordinatorSession) AddSignatures(pubkey *btcec.PublicKey, sig TreePartialSigs) (shouldBan bool, err error) {
+	nonces, ok := t.nonces[hex.EncodeToString(schnorr.SerializePubKey(pubkey))]
+	if !ok {
+		return false, fmt.Errorf("missing musig2 nonces for pubkey %s", hex.EncodeToString(schnorr.SerializePubKey(pubkey)))
+	}
+
+	for txid, tx := range t.txs {
+		serializedPubkey := schnorr.SerializePubKey(pubkey)
+		mustSign, cosigners, err := getCosignersPublicKeys(serializedPubkey, tx)
+		if err != nil {
+			return false, fmt.Errorf("failed to get cosigners public keys: %w", err)
+		}
+
+		if !mustSign {
+			// the signer doesn't have to sign this tx, skip it
+			continue
+		}
+
+		sig, ok := sig[txid]
+		if !ok {
+			return true, fmt.Errorf("missing musig2 signature for tx %s", txid)
+		}
+
+		nonce, ok := nonces[txid]
+		if !ok {
+			return true, fmt.Errorf("missing musig2 nonce for txid %s", txid)
+		}
+
+		combinedNonce, ok := t.combinedNonces[txid]
+		if !ok {
+			return false, fmt.Errorf("missing combined nonce for txid %s, cannot validate signature", txid)
+		}
+
+		prevoutFetcher, err := t.prevoutFetcherFactory(tx)
+		if err != nil {
+			return false, fmt.Errorf("failed to get prevout fetcher: %w", err)
+		}
+
+		message, err := txscript.CalcTaprootSignatureHash(
+			txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),
+			txscript.SigHashDefault, tx.UnsignedTx, 0, prevoutFetcher,
+		)
+		if err != nil {
+			return false, fmt.Errorf("failed to calculate sighash: %w", err)
+		}
+		if len(message) != 32 {
+			return false, fmt.Errorf("invalid taproot signature hash length for txid %s", tx.UnsignedTx.TxID())
+		}
+
+		if !sig.Verify(nonce.PubNonce, combinedNonce.PubNonce, cosigners, pubkey, [32]byte(message), musig2.WithTaprootSignTweak(t.scriptRoot)) {
+			return true, fmt.Errorf("invalid signature for txid %s", txid)
+		}
+	}
+
 	t.sigs[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = sig
+	return false, nil
 }
 
 // AggregateNonces aggregates the musig2 nonces for each transaction in the tree
 // it returns an error if any of the nonces are not set
 func (t *treeCoordinatorSession) AggregateNonces() (TreeNonces, error) {
-	return workPoolMap(t.txs, combineNonces(t.nonces))
+	combinedNonces, err := workPoolMap(t.txs, combineNonces(t.nonces))
+	if err != nil {
+		return nil, err
+	}
+
+	t.combinedNonces = combinedNonces
+
+	return t.combinedNonces, nil
 }
 
 // SignTree combines the signatures and add them to the tree's psbts
@@ -492,16 +619,17 @@ func prevOutFetcherFactory(
 		parentTxID := parentOutpoint.Hash.String()
 		// root tx case
 		if vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String() == parentTxID {
-			keys, err := txutils.GetCosignerKeys(ptx.Inputs[0])
+			cosignerPubkeys, err := txutils.ParseCosignerKeysFromArkPsbt(ptx, 0)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf(
+					"failed to extract cosigners from tx %s: %s", ptx.UnsignedTx.TxID(), err,
+				)
+			}
+			if len(cosignerPubkeys) == 0 {
+				return nil, fmt.Errorf("no cosigner pubkeys found in tx %s", ptx.UnsignedTx.TxID())
 			}
 
-			if len(keys) == 0 {
-				return nil, fmt.Errorf("no keys for txid %s", ptx.UnsignedTx.TxID())
-			}
-
-			aggregateKey, err := AggregateKeys(keys, batchOutSweepClosure)
+			aggregateKey, err := AggregateKeys(cosignerPubkeys, batchOutSweepClosure)
 			if err != nil {
 				return nil, err
 			}
@@ -633,14 +761,14 @@ func workPoolMap[T any, R comparable](
 func getCosignersPublicKeys(
 	signerPubkey []byte, tx *psbt.Packet,
 ) (bool, []*btcec.PublicKey, error) {
-	keys, err := txutils.GetCosignerKeys(tx.Inputs[0])
+	cosignerFields, err := txutils.GetArkPsbtFields(tx, 0, txutils.CosignerPublicKeyField)
 	if err != nil {
 		return false, nil, err
 	}
 
-	for _, key := range keys {
-		if bytes.Equal(schnorr.SerializePubKey(key), signerPubkey) {
-			return true, keys, nil
+	for _, field := range cosignerFields {
+		if bytes.Equal(schnorr.SerializePubKey(field.PublicKey), signerPubkey) {
+			return true, txutils.ParseCosignersToECPubKeys(cosignerFields), nil
 		}
 	}
 	return false, nil, nil
@@ -658,7 +786,7 @@ func treeToIndexedTxs(txTree *TxTree, res map[string]*psbt.Packet) map[string]*p
 
 func combineNonces(allNonces map[string]TreeNonces) func(tx *psbt.Packet) (*Musig2Nonce, error) {
 	return func(tx *psbt.Packet) (*Musig2Nonce, error) {
-		keys, err := txutils.GetCosignerKeys(tx.Inputs[0])
+		keys, err := txutils.GetArkPsbtFields(tx, 0, txutils.CosignerPublicKeyField)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get cosigner keys: %w", err)
 		}
@@ -669,13 +797,13 @@ func combineNonces(allNonces map[string]TreeNonces) func(tx *psbt.Packet) (*Musi
 
 		nonces := make([][66]byte, 0, len(keys))
 
-		for _, key := range keys {
-			keyStr := hex.EncodeToString(schnorr.SerializePubKey(key))
+		for _, field := range keys {
+			keyStr := hex.EncodeToString(schnorr.SerializePubKey(field.PublicKey))
 			nonceMap, ok := allNonces[keyStr]
 			if !ok {
 				return nil, fmt.Errorf(
 					"nonces not set for cosigner key %x",
-					key.SerializeCompressed(),
+					field.PublicKey.SerializeCompressed(),
 				)
 			}
 
@@ -683,7 +811,7 @@ func combineNonces(allNonces map[string]TreeNonces) func(tx *psbt.Packet) (*Musi
 			if nonce == nil {
 				return nil, fmt.Errorf(
 					"missing nonce for cosigner key %x",
-					key.SerializeCompressed(),
+					field.PublicKey.SerializeCompressed(),
 				)
 			}
 
@@ -759,6 +887,9 @@ func sign(
 		if err != nil {
 			return nil, err
 		}
+		if len(message) != 32 {
+			return nil, fmt.Errorf("invalid taproot signature hash length for txid %s", params.tx.UnsignedTx.TxID())
+		}
 
 		return musig2.Sign(
 			params.secretNonce, signer, params.combinedNonce, params.cosigners, [32]byte(message),
@@ -789,19 +920,20 @@ type combineSigsParams struct {
 // equal to the number of cosigners.
 //
 // The function returns an error if the aggregated key is not set.
-//
-// The function returns an error if the combined signature is invalid.
 func combineSigs(
 	batchOutSweepClosure []byte, allSigs map[string]TreePartialSigs,
 ) func(combineSigsParams) (*schnorr.Signature, error) {
 	return func(params combineSigsParams) (*schnorr.Signature, error) {
-		keys, err := txutils.GetCosignerKeys(params.tx.Inputs[0])
+		keys, err := txutils.ParseCosignerKeysFromArkPsbt(params.tx, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf(
+				"failed to extract cosigners from tx %s: %s", params.tx.UnsignedTx.TxID(), err,
+			)
 		}
-
 		if len(keys) == 0 {
-			return nil, fmt.Errorf("no keys for txid %s", params.tx.UnsignedTx.TxID())
+			return nil, fmt.Errorf(
+				"no cosigner pubkeys found in tx %s", params.tx.UnsignedTx.TxID(),
+			)
 		}
 
 		var combinedNonce *btcec.PublicKey
@@ -842,6 +974,9 @@ func combineSigs(
 		if err != nil {
 			return nil, err
 		}
+		if len(message) != 32 {
+			return nil, fmt.Errorf("invalid taproot signature hash length for txid %s", params.tx.UnsignedTx.TxID())
+		}
 
 		if len(sigs) == 0 {
 			return nil, fmt.Errorf("missing signatures for txid %s", params.tx.UnsignedTx.TxID())
@@ -867,18 +1002,6 @@ func combineSigs(
 			combinedNonce, sigs,
 			combineOpts...,
 		)
-
-		aggregatedKey, err := AggregateKeys(keys, batchOutSweepClosure)
-		if err != nil {
-			return nil, err
-		}
-
-		if !combinedSig.Verify(message, aggregatedKey.FinalKey) {
-			return nil, fmt.Errorf(
-				"invalid signature for cosigner key %x, txid %s",
-				keys[0].SerializeCompressed(), params.tx.UnsignedTx.TxID(),
-			)
-		}
 
 		return combinedSig, nil
 	}

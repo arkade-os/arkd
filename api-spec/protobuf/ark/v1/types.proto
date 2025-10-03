@@ -118,6 +118,13 @@ message TreeNoncesAggregatedEvent {
   string tree_nonces = 2;
 }
 
+message TreeNoncesEvent {
+  string id = 1;
+  repeated string topic = 2;
+  string txid = 3;
+  map<string, string> nonces = 4; // pubkey -> musig2 public nonce
+}
+
 message TreeTxEvent {
   string id = 1;
   repeated string topic = 2;
