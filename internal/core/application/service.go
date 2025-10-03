@@ -489,7 +489,7 @@ func (s *service) SubmitOffchainTx(
 			txutils.VtxoTaprootTreeField,
 		)
 		if err != nil {
-			return nil, "", "", fmt.Errorf("missing taptree: %s", err)
+			return nil, "", "", fmt.Errorf("failed to extract taptree from tx: %s", err)
 		}
 
 		if len(taptreeFields) == 0 {
@@ -895,7 +895,7 @@ func (s *service) RegisterIntent(
 			// vtxo not found in db, check if it exists on-chain
 			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
 				if len(tapscripts) == 0 {
-					return "", fmt.Errorf("missing taptree for input %s", outpoint)
+					return "", fmt.Errorf("failed to extract taptree from input %s", outpoint)
 				}
 
 				tx, err := s.validateBoardingInput(

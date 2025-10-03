@@ -119,19 +119,19 @@ func (n Note) IntentProofInput() (outpoint *wire.OutPoint, pInput *psbt.PInput, 
 		return nil, nil, fmt.Errorf("failed to get p2tr pk script: %w", err)
 	}
 
-	var witnessBytes bytes.Buffer
-	if err := psbt.WriteTxWitness(&witnessBytes, wire.TxWitness{n.Preimage[:]}); err != nil {
-		return nil, nil, fmt.Errorf("failed to write witness: %w", err)
-	}
-
 	scripts, err := vtxoScript.Encode()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to encode vtxo script: %w", err)
 	}
 
-	taptree, err := txutils.TapTree(scripts).Encode()
+	taptreeField, err := txutils.VtxoTaprootTreeField.Encode(txutils.TapTree(scripts))
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to encode taptree: %w", err)
+		return nil, nil, fmt.Errorf("failed to encode taptree field: %w", err)
+	}
+
+	conditionWitnessField, err := txutils.ConditionWitnessField.Encode(wire.TxWitness{n.Preimage[:]})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to encode condition witness field: %w", err)
 	}
 
 	return &wire.OutPoint{
@@ -143,13 +143,7 @@ func (n Note) IntentProofInput() (outpoint *wire.OutPoint, pInput *psbt.PInput, 
 				PkScript: p2trPkScript,
 				Value:    int64(n.Value),
 			},
-			Unknowns: []*psbt.Unknown{{
-				Value: witnessBytes.Bytes(),
-				Key:   txutils.ArkFieldConditionWitness,
-			}, {
-				Value: taptree,
-				Key:   txutils.ArkFieldTaprootTree,
-			}},
+			Unknowns: []*psbt.Unknown{taptreeField, conditionWitnessField},
 		}, nil
 }
 

@@ -3,6 +3,7 @@ package txutils
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -36,6 +37,10 @@ type ArkPsbtFieldCoder[T any] interface {
 
 // SetArkPsbtField sets an ark psbt field on the given psbt at the given input index
 func SetArkPsbtField[T any](ptx *psbt.Packet, inputIndex int, coder ArkPsbtFieldCoder[T], value T) error {
+	if len(ptx.Inputs) <= inputIndex {
+		return fmt.Errorf("input index out of bounds %d, len(inputs)=%d", inputIndex, len(ptx.Inputs))
+	}
+
 	arkField, err := coder.Encode(value)
 	if err != nil {
 		return err
@@ -46,6 +51,10 @@ func SetArkPsbtField[T any](ptx *psbt.Packet, inputIndex int, coder ArkPsbtField
 
 // GetArkPsbtFields gets all ark psbt fields of the given type from the given psbt at the given input index
 func GetArkPsbtFields[T any](ptx *psbt.Packet, inputIndex int, coder ArkPsbtFieldCoder[T]) ([]T, error) {
+	if len(ptx.Inputs) <= inputIndex {
+		return nil, fmt.Errorf("input index out of bounds %d, len(inputs)=%d", inputIndex, len(ptx.Inputs))
+	}
+
 	fieldsFound := make([]T, 0)
 
 	for _, unknown := range ptx.Inputs[inputIndex].Unknowns {

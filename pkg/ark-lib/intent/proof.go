@@ -322,7 +322,7 @@ func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 			return err
 		}
 
-		if len(arkConditionWitnessFields) == 0 || len(arkConditionWitnessFields[0]) == 0 {
+		if len(arkConditionWitnessFields) != 1 || len(arkConditionWitnessFields[0]) == 0 {
 			return fmt.Errorf("invalid condition witness, expected 1 witness for note vtxo")
 		}
 
