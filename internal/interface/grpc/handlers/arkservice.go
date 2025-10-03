@@ -293,7 +293,6 @@ func (h *handler) listenToEvents() {
 		for _, event := range events {
 			switch e := event.(type) {
 			case domain.RoundFinalizationStarted:
-
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFinalization{
 						BatchFinalization: &arkv1.BatchFinalizationEvent{
@@ -356,6 +355,25 @@ func (h *handler) listenToEvents() {
 				}
 
 				evs = append(evs, eventWithTopics{event: ev})
+			case application.TreeTxNoncesEvent:
+
+				nonces := make(map[string]string)
+				for pubkey, nonce := range e.Nonces {
+					nonces[pubkey] = hex.EncodeToString(nonce.PubNonce[:])
+				}
+
+				ev := &arkv1.GetEventStreamResponse{
+					Event: &arkv1.GetEventStreamResponse_TreeNonces{
+						TreeNonces: &arkv1.TreeNoncesEvent{
+							Id:     e.Id,
+							Txid:   e.Txid,
+							Topic:  e.Topic,
+							Nonces: nonces,
+						},
+					},
+				}
+
+				evs = append(evs, eventWithTopics{event: ev, topics: e.Topic})
 			case application.TreeNoncesAggregated:
 				serialized, err := json.Marshal(e.Nonces)
 				if err != nil {

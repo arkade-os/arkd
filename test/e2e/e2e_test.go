@@ -2241,8 +2241,8 @@ func TestBan(t *testing.T) {
 
 				return false, nil
 			},
-			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) error {
-				return nil // skip sending signatures
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
+				return false, nil // skip sending signatures
 			},
 		}
 
@@ -2348,20 +2348,21 @@ func TestBan(t *testing.T) {
 
 				return false, nil
 			},
-			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) error {
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
 				signerSession.SetAggregatedNonces(event.Nonces)
 
 				sigs, err := signerSession.Sign()
 				if err != nil {
-					return err
+					return false, err
 				}
 
-				return grpcAlice.SubmitTreeSignatures(
+				err = grpcAlice.SubmitTreeSignatures(
 					ctx,
 					event.Id,
 					signerSession.GetPublicKey(),
 					sigs,
 				)
+				return err == nil, err
 			},
 		}
 
@@ -2488,20 +2489,21 @@ func TestBan(t *testing.T) {
 
 				return false, nil
 			},
-			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) error {
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
 				signerSession.SetAggregatedNonces(event.Nonces)
 
 				sigs, err := signerSession.Sign()
 				if err != nil {
-					return err
+					return false, err
 				}
 
-				return grpcAlice.SubmitTreeSignatures(
+				err = grpcAlice.SubmitTreeSignatures(
 					ctx,
 					event.Id,
 					signerSession.GetPublicKey(),
 					sigs,
 				)
+				return err == nil, err
 			},
 			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
 				return nil // do not submit forfeit txs
@@ -2631,20 +2633,21 @@ func TestBan(t *testing.T) {
 
 				return false, nil
 			},
-			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) error {
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
 				signerSession.SetAggregatedNonces(event.Nonces)
 
 				sigs, err := signerSession.Sign()
 				if err != nil {
-					return err
+					return false, err
 				}
 
-				return grpcAlice.SubmitTreeSignatures(
+				err = grpcAlice.SubmitTreeSignatures(
 					ctx,
 					event.Id,
 					signerSession.GetPublicKey(),
 					sigs,
 				)
+				return err == nil, err
 			},
 			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
 				txhash, err := chainhash.NewHashFromStr(aliceVtxo.Txid)
@@ -2843,20 +2846,21 @@ func TestBan(t *testing.T) {
 
 				return false, nil
 			},
-			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) error {
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
 				signerSession.SetAggregatedNonces(event.Nonces)
 
 				sigs, err := signerSession.Sign()
 				if err != nil {
-					return err
+					return false, err
 				}
 
-				return grpcAlice.SubmitTreeSignatures(
+				err = grpcAlice.SubmitTreeSignatures(
 					ctx,
 					event.Id,
 					signerSession.GetPublicKey(),
 					sigs,
 				)
+				return err == nil, err
 			},
 			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
 				commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(event.Tx), true)

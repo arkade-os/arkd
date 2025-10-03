@@ -560,23 +560,31 @@ func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
 	return false, nil
 }
 
+func (h *delegateBatchEventsHandler) OnTreeNonces(
+	ctx context.Context,
+	event client.TreeNoncesEvent,
+) (bool, error) {
+	return false, nil
+}
+
 func (h *delegateBatchEventsHandler) OnTreeNoncesAggregated(
 	ctx context.Context,
 	event client.TreeNoncesAggregatedEvent,
-) error {
+) (bool, error) {
 	h.signerSession.SetAggregatedNonces(event.Nonces)
 
 	sigs, err := h.signerSession.Sign()
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	return h.client.SubmitTreeSignatures(
+	err = h.client.SubmitTreeSignatures(
 		ctx,
 		event.Id,
 		h.signerSession.GetPublicKey(),
 		sigs,
 	)
+	return err == nil, err
 }
 
 func (h *delegateBatchEventsHandler) OnBatchFinalization(
@@ -644,7 +652,7 @@ type customBatchEventsHandler struct {
 	onTreeTxEvent          func(ctx context.Context, event client.TreeTxEvent) error
 	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
 	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
-	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) error
+	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error)
 }
 
 func (h *customBatchEventsHandler) OnBatchStarted(
@@ -723,9 +731,16 @@ func (h *customBatchEventsHandler) OnTreeSigningStarted(
 func (h *customBatchEventsHandler) OnTreeNoncesAggregated(
 	ctx context.Context,
 	event client.TreeNoncesAggregatedEvent,
-) error {
+) (bool, error) {
 	if h.onTreeNoncesAggregated != nil {
 		return h.onTreeNoncesAggregated(ctx, event)
 	}
-	return nil
+	return false, nil
+}
+
+func (h *customBatchEventsHandler) OnTreeNonces(
+	ctx context.Context,
+	event client.TreeNoncesEvent,
+) (bool, error) {
+	return false, nil
 }

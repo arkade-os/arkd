@@ -110,7 +110,9 @@ type SignerSession interface {
 	Init(batchOutSweepClosure []byte, batchOutAmount int64, vtxoTree *TxTree) error
 	GetPublicKey() string
 	GetNonces() (TreeNonces, error) // generate tree nonces for this session
+	// deprecated, safer to use AggregateNonces instead
 	SetAggregatedNonces(TreeNonces) // set the aggregated nonces
+	AggregateNonces(txid string, pubkeyNonces map[string]*Musig2Nonce) (hasAllNonces bool, err error)
 	Sign() (TreePartialSigs, error) // sign the tree
 }
 
@@ -118,6 +120,7 @@ type CoordinatorSession interface {
 	AddNonce(*btcec.PublicKey, TreeNonces)
 	AddSignatures(*btcec.PublicKey, TreePartialSigs) (shouldBan bool, err error)
 	AggregateNonces() (TreeNonces, error)
+	GetPublicNonces() map[string]TreeNonces // pubkey -> nonces
 	// SignTree combines the signatures and add them to the tree's psbts
 	SignTree() (*TxTree, error)
 }
@@ -284,6 +287,63 @@ func (t *treeSignerSession) SetAggregatedNonces(nonces TreeNonces) {
 	t.aggregateNonces = nonces
 }
 
+func (t *treeSignerSession) AggregateNonces(txid string, pubkeyNonces map[string]*Musig2Nonce) (bool, error) {
+	if t.myNonces == nil {
+		return false, fmt.Errorf("nonces not generated")
+	}
+
+	if t.txs == nil {
+		return false, fmt.Errorf("vtxo tree not initialized")
+	}
+
+	tx, ok := t.txs[txid]
+	if !ok {
+		return false, fmt.Errorf("missing tx %s", txid)
+	}
+
+	myNonce, ok := t.myNonces[txid]
+	if !ok {
+		return false, fmt.Errorf("missing my nonce for txid %s", txid)
+	}
+
+	if t.aggregateNonces == nil {
+		t.aggregateNonces = make(TreeNonces)
+	}
+
+	if aggNonce, ok := t.aggregateNonces[txid]; ok && aggNonce != nil {
+		return len(t.aggregateNonces) == len(t.txs), nil // skip: we already have the aggregated nonce for this txid
+	}
+
+	pubkeyNonces[t.GetPublicKey()] = &Musig2Nonce{myNonce.PubNonce}
+
+	keys, err := txutils.ParseCosignerKeysFromArkPsbt(tx, 0)
+	if err != nil {
+		return false, fmt.Errorf("failed to get cosigner keys: %w", err)
+	}
+
+	if len(keys) == 0 {
+		return false, fmt.Errorf("no keys for txid %s", tx.UnsignedTx.TxID())
+	}
+
+	allNonces := make([][66]byte, 0, len(keys))
+	for _, key := range keys {
+		keyStr := hex.EncodeToString(schnorr.SerializePubKey(key))
+		nonce, ok := pubkeyNonces[keyStr]
+		if !ok {
+			return false, fmt.Errorf("missing nonce for cosigner key %s", keyStr)
+		}
+		allNonces = append(allNonces, nonce.PubNonce)
+	}
+
+	aggregatedNonce, err := musig2.AggregateNonces(allNonces)
+	if err != nil {
+		return false, fmt.Errorf("failed to aggregate nonces: %w", err)
+	}
+
+	t.aggregateNonces[txid] = &Musig2Nonce{aggregatedNonce}
+	return len(t.aggregateNonces) == len(t.txs), nil
+}
+
 // Sign generates the musig2 partial signatures for each transaction of the tree that includes the
 // signer as in the cosigners list.
 func (t *treeSignerSession) Sign() (TreePartialSigs, error) {
@@ -383,6 +443,10 @@ func NewTreeCoordinatorSession(
 
 func (t *treeCoordinatorSession) AddNonce(pubkey *btcec.PublicKey, nonce TreeNonces) {
 	t.nonces[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = nonce
+}
+
+func (t *treeCoordinatorSession) GetPublicNonces() map[string]TreeNonces {
+	return t.nonces
 }
 
 func (t *treeCoordinatorSession) AddSignatures(pubkey *btcec.PublicKey, sig TreePartialSigs) (shouldBan bool, err error) {

@@ -252,6 +252,60 @@ func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {
 	return
 }
 
+func treeTxNoncesEvents(
+	txTree *tree.TxTree,
+	roundId string,
+	publicNoncesMap map[string]tree.TreeNonces,
+) []domain.Event {
+	events := make([]domain.Event, 0)
+	if err := txTree.Apply(func(g *tree.TxTree) (bool, error) {
+		txid := g.Root.UnsignedTx.TxID()
+
+		noncesByPubkey := make(map[string]*tree.Musig2Nonce)
+
+		cosignerKeys, err := txutils.ParseCosignerKeysFromArkPsbt(g.Root, 0)
+		if err != nil {
+			return false, err
+		}
+
+		for _, cosignerKey := range cosignerKeys {
+			keyStr := hex.EncodeToString(schnorr.SerializePubKey(cosignerKey))
+			noncesForCosigner, ok := publicNoncesMap[keyStr]
+			if !ok {
+				return false, fmt.Errorf("missing nonces for cosigner key %s", keyStr)
+			}
+
+			txNonce, ok := noncesForCosigner[txid]
+			if !ok {
+				return false, fmt.Errorf("missing nonce for cosigner key %s and txid %s", keyStr, txid)
+			}
+
+			noncesByPubkey[keyStr] = txNonce
+		}
+
+		topics, err := getVtxoTreeTopic(g)
+		if err != nil {
+			return false, err
+		}
+
+		events = append(events, TreeTxNoncesEvent{
+			RoundEvent: domain.RoundEvent{
+				Id:   roundId,
+				Type: domain.EventTypeUndefined,
+			},
+			Topic:  topics,
+			Txid:   txid,
+			Nonces: noncesByPubkey,
+		})
+
+		return true, nil
+	}); err != nil {
+		log.WithError(err).Error("failed to send tree tx nonces events")
+	}
+
+	return events
+}
+
 func treeTxEvents(
 	txTree *tree.TxTree, batchIndex int32, roundId string,
 	getTopic func(g *tree.TxTree) ([]string, error),

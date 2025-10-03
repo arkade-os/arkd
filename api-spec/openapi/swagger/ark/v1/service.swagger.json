@@ -526,6 +526,9 @@
         },
         "treeSignature": {
           "$ref": "#/definitions/v1TreeSignatureEvent"
+        },
+        "treeNonces": {
+          "$ref": "#/definitions/v1TreeNoncesEvent"
         }
       }
     },
@@ -751,6 +754,30 @@
         },
         "treeNonces": {
           "type": "string"
+        }
+      }
+    },
+    "v1TreeNoncesEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "txid": {
+          "type": "string"
+        },
+        "nonces": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "pubkey -\u003e musig2 public nonce"
         }
       }
     },
