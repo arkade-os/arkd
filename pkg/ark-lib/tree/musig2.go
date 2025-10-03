@@ -118,6 +118,7 @@ type CoordinatorSession interface {
 	AddNonce(*btcec.PublicKey, TreeNonces)
 	AddSignatures(*btcec.PublicKey, TreePartialSigs) (shouldBan bool, err error)
 	AggregateNonces() (TreeNonces, error)
+	GetPublicNonces() map[string]TreeNonces // pubkey -> nonces
 	// SignTree combines the signatures and add them to the tree's psbts
 	SignTree() (*TxTree, error)
 }
@@ -382,6 +383,10 @@ func NewTreeCoordinatorSession(
 
 func (t *treeCoordinatorSession) AddNonce(pubkey *btcec.PublicKey, nonce TreeNonces) {
 	t.nonces[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = nonce
+}
+
+func (t *treeCoordinatorSession) GetPublicNonces() map[string]TreeNonces {
+	return t.nonces
 }
 
 func (t *treeCoordinatorSession) AddSignatures(pubkey *btcec.PublicKey, sig TreePartialSigs) (shouldBan bool, err error) {
