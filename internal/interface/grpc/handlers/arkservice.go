@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -53,8 +54,9 @@ func (h *handler) GetInfo(
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	return &arkv1.GetInfoResponse{
+	resp := &arkv1.GetInfoResponse{
 		SignerPubkey:        info.SignerPubKey,
+		ForfeitPubkey:       info.ForfeitPubKey,
 		VtxoTreeExpiry:      info.VtxoTreeExpiry,
 		UnilateralExitDelay: info.UnilateralExitDelay,
 		BoardingExitDelay:   info.BoardingExitDelay,
@@ -62,14 +64,24 @@ func (h *handler) GetInfo(
 		Network:             info.Network,
 		Dust:                int64(info.Dust),
 		ForfeitAddress:      info.ForfeitAddress,
-		MarketHour:          marketHour{info.NextMarketHour}.toProto(),
 		Version:             h.version,
 		UtxoMinAmount:       info.UtxoMinAmount,
 		UtxoMaxAmount:       info.UtxoMaxAmount,
 		VtxoMinAmount:       info.VtxoMinAmount,
 		VtxoMaxAmount:       info.VtxoMaxAmount,
 		CheckpointTapscript: info.CheckpointTapscript,
-	}, nil
+	}
+	buf, err := json.Marshal(resp)
+	if err != nil {
+		log.WithError(err).Warn("failed to marshal get info response")
+		return resp, nil
+	}
+
+	digest := sha256.Sum256(buf)
+	resp.Digest = hex.EncodeToString(digest[:])
+	resp.MarketHour = marketHour{info.NextMarketHour}.toProto()
+
+	return resp, nil
 }
 
 func (h *handler) RegisterIntent(
@@ -290,6 +302,12 @@ func (h *handler) FinalizeTx(
 	return &arkv1.FinalizeTxResponse{}, nil
 }
 
+func (h *handler) GetPendingTx(
+	ctx context.Context, req *arkv1.GetPendingTxRequest,
+) (*arkv1.GetPendingTxResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
+}
+
 func (h *handler) GetTransactionsStream(
 	_ *arkv1.GetTransactionsStreamRequest,
 	stream arkv1.ArkService_GetTransactionsStreamServer,
@@ -435,7 +453,7 @@ func (h *handler) listenToEvents() {
 			case application.TreeNoncesAggregated:
 				serialized, err := json.Marshal(e.Nonces)
 				if err != nil {
-					logrus.WithError(err).Error("failed to serialize nonces")
+					log.WithError(err).Error("failed to serialize nonces")
 					continue
 				}
 
@@ -491,7 +509,7 @@ func (h *handler) listenToEvents() {
 							count++
 						}
 					}
-					logrus.Debugf("forwarded event to %d listeners", count)
+					log.Debugf("forwarded event to %d listeners", count)
 				}(l)
 			}
 		}
@@ -525,7 +543,7 @@ func (h *handler) listenToTxEvents() {
 					l.ch <- msg
 				}(l)
 			}
-			logrus.Debugf(
+			log.Debugf(
 				"forwarded tx event to %d listeners", len(h.transactionsListenerHandler.listeners),
 			)
 		}

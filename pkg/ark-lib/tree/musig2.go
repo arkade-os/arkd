@@ -31,6 +31,33 @@ type Musig2Nonce struct {
 // it implements json.Marshaler and json.Unmarshaler
 type TreeNonces map[string]*Musig2Nonce // txid -> public nonces only
 
+func NewTreeNonces(noncesMap map[string]string) (TreeNonces, error) {
+	nonces := make(TreeNonces)
+	for txid, nonce := range noncesMap {
+		nonceBytes, err := hex.DecodeString(nonce)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(nonceBytes) != 66 {
+			return nil, fmt.Errorf("expected nonce to be 66 bytes, got %d", len(nonceBytes))
+		}
+
+		nonces[txid] = &Musig2Nonce{
+			PubNonce: [66]byte(nonceBytes),
+		}
+	}
+	return nonces, nil
+}
+
+func (n TreeNonces) ToMap() map[string]string {
+	m := make(map[string]string)
+	for txid, nonce := range n {
+		m[txid] = hex.EncodeToString(nonce.PubNonce[:])
+	}
+	return m
+}
+
 func (n TreeNonces) MarshalJSON() ([]byte, error) {
 	mapObject := make(map[string]string)
 	for txid, nonce := range n {
@@ -69,6 +96,37 @@ func (n *TreeNonces) UnmarshalJSON(data []byte) error {
 // TreePartialSigs is a map of txid to partial signature
 // it implements json.Marshaler and json.Unmarshaler
 type TreePartialSigs map[string]*musig2.PartialSignature // txid -> partial signature
+
+func NewTreePartialSigs(sigsMap map[string]string) (TreePartialSigs, error) {
+	sigs := make(TreePartialSigs)
+	for txid, sig := range sigsMap {
+		sigBytes, err := hex.DecodeString(sig)
+		if err != nil {
+			return nil, err
+		}
+
+		sig := &musig2.PartialSignature{}
+		if err := sig.Decode(bytes.NewReader(sigBytes)); err != nil {
+			return nil, err
+		}
+
+		sigs[txid] = sig
+	}
+	return sigs, nil
+}
+
+func (s TreePartialSigs) ToMap() (map[string]string, error) {
+	m := make(map[string]string)
+	for txid, sig := range s {
+		var sigBytes bytes.Buffer
+		if err := sig.Encode(&sigBytes); err != nil {
+			return nil, err
+		}
+
+		m[txid] = hex.EncodeToString(sigBytes.Bytes())
+	}
+	return m, nil
+}
 
 func (s TreePartialSigs) MarshalJSON() ([]byte, error) {
 	mapObject := make(map[string]string)

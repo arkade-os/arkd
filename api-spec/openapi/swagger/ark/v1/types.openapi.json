@@ -61,6 +61,31 @@
           }
         }
       },
+      "DeprecatedSigner": {
+        "title": "DeprecatedSigner",
+        "type": "object",
+        "properties": {
+          "cutoffDate": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pubkey": {
+            "type": "string"
+          }
+        }
+      },
+      "FeeInfo": {
+        "title": "FeeInfo",
+        "type": "object",
+        "properties": {
+          "intentFee": {
+            "$ref": "#/components/schemas/IntentFeeInfo"
+          },
+          "txFeeRate": {
+            "type": "string"
+          }
+        }
+      },
       "Heartbeat": {
         "title": "Heartbeat",
         "type": "object"
@@ -89,10 +114,31 @@
           }
         }
       },
+      "IntentFeeInfo": {
+        "title": "IntentFeeInfo",
+        "type": "object",
+        "properties": {
+          "offchainInput": {
+            "type": "string"
+          },
+          "offchainOutput": {
+            "type": "string"
+          },
+          "onchainInput": {
+            "type": "string"
+          },
+          "onchainOutput": {
+            "type": "string"
+          }
+        }
+      },
       "MarketHour": {
         "title": "MarketHour",
         "type": "object",
         "properties": {
+          "fees": {
+            "$ref": "#/components/schemas/FeeInfo"
+          },
           "nextEndTime": {
             "type": "integer",
             "format": "int64"
@@ -121,6 +167,24 @@
           "vout": {
             "type": "integer",
             "format": "uint32"
+          }
+        }
+      },
+      "PendingTx": {
+        "title": "PendingTx",
+        "type": "object",
+        "properties": {
+          "arkTxid": {
+            "type": "string"
+          },
+          "finalArkTx": {
+            "type": "string"
+          },
+          "signedCheckpointTxs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

@@ -116,6 +116,15 @@ service ArkService {
     };
   }
 
+  // GetPendingTx returns not finalized transaction(s) for a given set of inputs.
+  // the client should provide a BIP322 proof of ownership of the inputs
+  rpc GetPendingTx(GetPendingTxRequest) returns (GetPendingTxResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/tx/pending"
+      body: "*"
+    };
+  }
+
   // GetTransactionsStream is a server-side streaming RPC that allows clients to receive
   // notifications in real-time about any commitment tx or ark tx processed and finalized by the
   // server.
@@ -149,6 +158,11 @@ message GetInfoResponse {
   int64 vtxo_max_amount = 13; // -1 means no limit (default)
   int64 boarding_exit_delay = 14;
   string checkpoint_tapscript = 15;
+  FeeInfo fees = 16;
+  repeated DeprecatedSigner deprecated_signers = 17;
+  string forfeit_pubkey = 18;
+  map<string, string> service_status = 19;
+  string digest = 20;
 }
 
 message RegisterIntentRequest {
@@ -175,14 +189,14 @@ message ConfirmRegistrationResponse {}
 message SubmitTreeNoncesRequest {
   string batch_id = 1;
   string pubkey = 2;
-  string tree_nonces = 3;
+  map<string, string> tree_nonces = 3;
 }
 message SubmitTreeNoncesResponse {}
 
 message SubmitTreeSignaturesRequest {
   string batch_id = 1;
   string pubkey = 2;
-  string tree_signatures = 3;
+  map<string, string> tree_signatures = 3;
 }
 message SubmitTreeSignaturesResponse {}
 
@@ -227,6 +241,13 @@ message FinalizeTxRequest {
   repeated string final_checkpoint_txs = 2;
 }
 message FinalizeTxResponse {}
+
+message GetPendingTxRequest {
+  Intent intent = 1;
+}
+message GetPendingTxResponse {
+  repeated PendingTx pending_txs = 1;
+}
 
 message GetTransactionsStreamRequest {}
 message GetTransactionsStreamResponse {

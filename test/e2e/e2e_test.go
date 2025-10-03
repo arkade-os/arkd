@@ -455,7 +455,9 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 		}
 	}
 
-	expl, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	expl, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
 	require.NoError(t, err)
 
 	branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
@@ -551,7 +553,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		}
 		require.NotEmpty(t, vtxo)
 
-		expl, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+		expl, err := explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		)
 		require.NoError(t, err)
 
 		branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
@@ -775,7 +779,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		explorer, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+		explorer, err := explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		)
 		require.NoError(t, err)
 
 		encodedArkTx, err := ptx.B64Encode()
@@ -1411,7 +1417,9 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	explorer, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
 	require.NoError(t, err)
 
 	encodedVirtualTx, err := ptx.B64Encode()
@@ -1679,7 +1687,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	explorer, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
 	require.NoError(t, err)
 
 	encodedVirtualTx, err := ptx.B64Encode()
@@ -2969,7 +2979,8 @@ func TestSweepCheckpointOutput(t *testing.T) {
 	require.NotEmpty(t, txid)
 
 	// unroll the spent VTXO to put checkpoint onchain
-	expl, err := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	expl, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false))
 	require.NoError(t, err)
 
 	branch, err := redemption.NewRedeemBranch(ctx, expl, setupIndexer(t), vtxo)

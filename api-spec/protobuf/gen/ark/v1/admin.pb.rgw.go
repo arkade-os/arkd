@@ -611,13 +611,13 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *gateway.ServeMu
 		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
 	})
 
-	mux.HandleWithParams("POST", "/v1/admin/convictions/ban", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+	mux.HandleWithParams("POST", "/v1/admin/conviction/ban", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
 		var err error
 		var annotatedContext context.Context
-		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/BanScript", gateway.WithHTTPPathPattern("/v1/admin/convictions/ban"))
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/BanScript", gateway.WithHTTPPathPattern("/v1/admin/conviction/ban"))
 		if err != nil {
 			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
 			return
