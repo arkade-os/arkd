@@ -496,6 +496,7 @@ type MarketHour struct {
 	NextEndTime   int64                  `protobuf:"varint,2,opt,name=next_end_time,json=nextEndTime,proto3" json:"next_end_time,omitempty"`
 	Period        int64                  `protobuf:"varint,3,opt,name=period,proto3" json:"period,omitempty"`
 	RoundInterval int64                  `protobuf:"varint,4,opt,name=round_interval,json=roundInterval,proto3" json:"round_interval,omitempty"`
+	Fees          *FeeInfo               `protobuf:"bytes,5,opt,name=fees,proto3" json:"fees,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -556,6 +557,13 @@ func (x *MarketHour) GetRoundInterval() int64 {
 		return x.RoundInterval
 	}
 	return 0
+}
+
+func (x *MarketHour) GetFees() *FeeInfo {
+	if x != nil {
+		return x.Fees
+	}
+	return nil
 }
 
 type FeeInfo struct {
@@ -1362,13 +1370,14 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\ascripts\x18\x01 \x03(\tR\ascripts\"I\n" +
 	"\x0fBip322Signature\x12\x1c\n" +
 	"\tsignature\x18\x01 \x01(\tR\tsignature\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x97\x01\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xbc\x01\n" +
 	"\n" +
 	"MarketHour\x12&\n" +
 	"\x0fnext_start_time\x18\x01 \x01(\x03R\rnextStartTime\x12\"\n" +
 	"\rnext_end_time\x18\x02 \x01(\x03R\vnextEndTime\x12\x16\n" +
 	"\x06period\x18\x03 \x01(\x03R\x06period\x12%\n" +
-	"\x0eround_interval\x18\x04 \x01(\x03R\rroundInterval\"_\n" +
+	"\x0eround_interval\x18\x04 \x01(\x03R\rroundInterval\x12#\n" +
+	"\x04fees\x18\x05 \x01(\v2\x0f.ark.v1.FeeInfoR\x04fees\"_\n" +
 	"\aFeeInfo\x124\n" +
 	"\n" +
 	"intent_fee\x18\x01 \x01(\v2\x15.ark.v1.IntentFeeInfoR\tintentFee\x12\x1e\n" +
@@ -1476,14 +1485,15 @@ var file_ark_v1_types_proto_depIdxs = []int32{
 	2,  // 3: ark.v1.TxNotification.spent_vtxos:type_name -> ark.v1.Vtxo
 	2,  // 4: ark.v1.TxNotification.spendable_vtxos:type_name -> ark.v1.Vtxo
 	21, // 5: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
-	9,  // 6: ark.v1.FeeInfo.intent_fee:type_name -> ark.v1.IntentFeeInfo
-	22, // 7: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
-	3,  // 8: ark.v1.TxNotification.CheckpointTxsEntry.value:type_name -> ark.v1.TxData
-	9,  // [9:9] is the sub-list for method output_type
-	9,  // [9:9] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	8,  // 6: ark.v1.MarketHour.fees:type_name -> ark.v1.FeeInfo
+	9,  // 7: ark.v1.FeeInfo.intent_fee:type_name -> ark.v1.IntentFeeInfo
+	22, // 8: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
+	3,  // 9: ark.v1.TxNotification.CheckpointTxsEntry.value:type_name -> ark.v1.TxData
+	10, // [10:10] is the sub-list for method output_type
+	10, // [10:10] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_types_proto_init() }

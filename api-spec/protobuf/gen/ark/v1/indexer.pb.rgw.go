@@ -243,7 +243,7 @@ func request_IndexerService_GetVtxos_0(ctx context.Context, marshaler gateway.Ma
 
 var (
 	query_params_IndexerService_GetVtxoChain_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("outpoint.txid", "outpoint.vout", "txid", "vout"),
+		Filter: trie.New("txid", "vout", "outpoint.txid", "outpoint.vout"),
 	}
 )
 

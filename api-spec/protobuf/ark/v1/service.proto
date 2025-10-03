@@ -160,7 +160,8 @@ message GetInfoResponse {
   string checkpoint_tapscript = 15;
   FeeInfo fees = 16;
   repeated DeprecatedSigner deprecated_signers = 17;
-  string digest = 18;
+  string forfeit_pubkey = 18;
+  string digest = 19;
 }
 
 message RegisterIntentRequest {
@@ -187,14 +188,14 @@ message ConfirmRegistrationResponse {}
 message SubmitTreeNoncesRequest {
   string batch_id = 1;
   string pubkey = 2;
-  string tree_nonces = 3;
+  map<string, string> tree_nonces = 3;
 }
 message SubmitTreeNoncesResponse {}
 
 message SubmitTreeSignaturesRequest {
   string batch_id = 1;
   string pubkey = 2;
-  string tree_signatures = 3;
+  map<string, string> tree_signatures = 3;
 }
 message SubmitTreeSignaturesResponse {}
 

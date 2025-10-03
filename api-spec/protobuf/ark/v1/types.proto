@@ -58,6 +58,7 @@ message MarketHour {
   int64 next_end_time = 2;
   int64 period = 3;
   int64 round_interval = 4;
+  FeeInfo fees = 5;
 }
 
 message FeeInfo {

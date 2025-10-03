@@ -711,6 +711,9 @@
           "forfeitAddress": {
             "type": "string"
           },
+          "forfeitPubkey": {
+            "type": "string"
+          },
           "marketHour": {
             "$ref": "#/components/schemas/MarketHour"
           },
@@ -821,6 +824,9 @@
         "title": "MarketHour",
         "type": "object",
         "properties": {
+          "fees": {
+            "$ref": "#/components/schemas/FeeInfo"
+          },
           "nextEndTime": {
             "type": "integer",
             "format": "int64"
@@ -940,7 +946,10 @@
             "type": "string"
           },
           "treeNonces": {
-            "type": "string"
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },
@@ -959,7 +968,10 @@
             "type": "string"
           },
           "treeSignatures": {
-            "type": "string"
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },

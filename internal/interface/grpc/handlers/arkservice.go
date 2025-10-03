@@ -56,6 +56,7 @@ func (h *handler) GetInfo(
 
 	resp := &arkv1.GetInfoResponse{
 		SignerPubkey:        info.SignerPubKey,
+		ForfeitPubkey:       info.ForfeitPubKey,
 		VtxoTreeExpiry:      info.VtxoTreeExpiry,
 		UnilateralExitDelay: info.UnilateralExitDelay,
 		BoardingExitDelay:   info.BoardingExitDelay,

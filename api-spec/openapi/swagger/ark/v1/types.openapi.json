@@ -136,6 +136,9 @@
         "title": "MarketHour",
         "type": "object",
         "properties": {
+          "fees": {
+            "$ref": "#/components/schemas/FeeInfo"
+          },
           "nextEndTime": {
             "type": "integer",
             "format": "int64"

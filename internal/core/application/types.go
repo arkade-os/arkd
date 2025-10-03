@@ -42,6 +42,7 @@ type Service interface {
 
 type ServiceInfo struct {
 	SignerPubKey        string
+	ForfeitPubKey       string
 	VtxoTreeExpiry      int64
 	UnilateralExitDelay int64
 	BoardingExitDelay   int64
@@ -55,6 +56,7 @@ type ServiceInfo struct {
 	VtxoMinAmount       int64
 	VtxoMaxAmount       int64
 	CheckpointTapscript string
+	Fees                FeeInfo
 }
 
 type NextMarketHour struct {
@@ -62,12 +64,25 @@ type NextMarketHour struct {
 	EndTime       time.Time
 	Period        time.Duration
 	RoundInterval time.Duration
+	Fees          FeeInfo
 }
 
 type WalletStatus struct {
 	IsInitialized bool
 	IsUnlocked    bool
 	IsSynced      bool
+}
+
+type FeeInfo struct {
+	IntentFees IntentFeeInfo
+	TxFeeRate  float64
+}
+
+type IntentFeeInfo struct {
+	OffchainInput  string
+	OffchainOutput string
+	OnchainInput   uint64
+	OnchainOutput  uint64
 }
 
 const (

@@ -1185,6 +1185,7 @@ func (s *service) GetIndexerTxChannel(ctx context.Context) <-chan TransactionEve
 
 func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 	signerPubkey := hex.EncodeToString(s.signerPubkey.SerializeCompressed())
+	forfeitPubkey := hex.EncodeToString(s.forfeitPubkey.SerializeCompressed())
 
 	dust, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
@@ -1212,6 +1213,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 
 	return &ServiceInfo{
 		SignerPubKey:        signerPubkey,
+		ForfeitPubKey:       forfeitPubkey,
 		VtxoTreeExpiry:      int64(s.vtxoTreeExpiry.Value),
 		UnilateralExitDelay: int64(s.unilateralExitDelay.Value),
 		BoardingExitDelay:   int64(s.boardingExitDelay.Value),
