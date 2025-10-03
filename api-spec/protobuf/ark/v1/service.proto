@@ -161,7 +161,8 @@ message GetInfoResponse {
   FeeInfo fees = 16;
   repeated DeprecatedSigner deprecated_signers = 17;
   string forfeit_pubkey = 18;
-  string digest = 19;
+  map<string, string> service_status = 19;
+  string digest = 20;
 }
 
 message RegisterIntentRequest {

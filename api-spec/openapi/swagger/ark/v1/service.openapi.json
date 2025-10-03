@@ -715,6 +715,12 @@
             "type": "integer",
             "format": "int64"
           },
+          "serviceStatus": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "signerPubkey": {
             "type": "string"
           },
