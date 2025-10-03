@@ -433,6 +433,7 @@ func (s *service) SubmitOffchainTx(
 	// rebuilding the txs.
 	for inputIndex, in := range ptx.UnsignedTx.TxIn {
 		checkpointPsbt := checkpointPsbts[in.PreviousOutPoint.Hash.String()]
+		checkpointTxid := checkpointPsbt.UnsignedTx.TxHash().String()
 		input := checkpointPsbt.Inputs[0]
 
 		if input.WitnessUtxo == nil {
@@ -484,30 +485,34 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		taptreeFields, err := txutils.GetArkPsbtFields(
-			checkpointPsbt,
-			0,
-			txutils.VtxoTaprootTreeField,
+			checkpointPsbt, 0, txutils.VtxoTaprootTreeField,
 		)
 		if err != nil {
-			return nil, "", "", fmt.Errorf("failed to extract taptree from tx: %s", err)
+			return nil, "", "", fmt.Errorf(
+				"failed to extract taptree field from tx %s: %s", checkpointTxid, err,
+			)
 		}
 
 		if len(taptreeFields) == 0 {
-			return nil, "", "", fmt.Errorf("missing taptree")
+			return nil, "", "", fmt.Errorf("taptree field not found in tx %s", checkpointTxid)
 		}
 
 		taptree := taptreeFields[0]
 
 		vtxoScript, err := script.ParseVtxoScript(taptree)
 		if err != nil {
-			return nil, "", "", fmt.Errorf("failed to parse vtxo script: %s", err)
+			return nil, "", "", fmt.Errorf(
+				"failed to parse taptree field in tx %s: %s", checkpointTxid, err,
+			)
 		}
 
 		// validate the vtxo script
 		if err := vtxoScript.Validate(
 			s.signerPubkey, s.unilateralExitDelay, s.allowCSVBlockType,
 		); err != nil {
-			return nil, "", "", fmt.Errorf("invalid vtxo script: %s", err)
+			return nil, "", "", fmt.Errorf(
+				"invalid vtxo script in tx %s: %s", checkpointTxid, err,
+			)
 		}
 
 		witnessUtxoScript := input.WitnessUtxo.PkScript
@@ -878,9 +883,7 @@ func (s *service) RegisterIntent(
 
 		// we ignore error cause sometimes the taproot tree is not required
 		taptreeFields, _ := txutils.GetArkPsbtFields(
-			&proof.Packet,
-			i+1,
-			txutils.VtxoTaprootTreeField,
+			&proof.Packet, i+1, txutils.VtxoTaprootTreeField,
 		)
 		tapscripts := make([]string, 0)
 		if len(taptreeFields) > 0 {
@@ -895,7 +898,7 @@ func (s *service) RegisterIntent(
 			// vtxo not found in db, check if it exists on-chain
 			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
 				if len(tapscripts) == 0 {
-					return "", fmt.Errorf("failed to extract taptree from input %s", outpoint)
+					return "", fmt.Errorf("missing taptree in boarding input %s", outpoint)
 				}
 
 				tx, err := s.validateBoardingInput(

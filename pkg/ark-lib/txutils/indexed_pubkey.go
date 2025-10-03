@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
 // IndexedCosignerPublicKey is a public key with its associated index.
@@ -13,7 +14,7 @@ type IndexedCosignerPublicKey struct {
 	PublicKey *btcec.PublicKey
 }
 
-func MakeCosignerPublicKeyList(fields []IndexedCosignerPublicKey) ([]*btcec.PublicKey, error) {
+func ParseCosignersToECPubKeys(fields []IndexedCosignerPublicKey) []*btcec.PublicKey {
 	sort.Slice(fields, func(i, j int) bool {
 		return fields[i].Index < fields[j].Index
 	})
@@ -22,5 +23,13 @@ func MakeCosignerPublicKeyList(fields []IndexedCosignerPublicKey) ([]*btcec.Publ
 	for _, field := range fields {
 		cosigners = append(cosigners, field.PublicKey)
 	}
-	return cosigners, nil
+	return cosigners
+}
+
+func ParseCosignerKeysFromArkPsbt(ptx *psbt.Packet, inIndex int) ([]*btcec.PublicKey, error) {
+	fields, err := GetArkPsbtFields(ptx, inIndex, CosignerPublicKeyField)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCosignersToECPubKeys(fields), nil
 }

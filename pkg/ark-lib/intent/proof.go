@@ -306,7 +306,9 @@ func finalizeAndExtract(p Proof) (*wire.MsgTx, error) {
 func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 	// check if the input is a note first
 	if len(ptx.Inputs) <= inputIndex {
-		return fmt.Errorf("input index out of bounds %d, len(inputs)=%d", inputIndex, len(ptx.Inputs))
+		return fmt.Errorf(
+			"input index out of bounds %d, len(inputs)=%d", inputIndex, len(ptx.Inputs),
+		)
 	}
 
 	in := ptx.Inputs[inputIndex]
@@ -317,7 +319,9 @@ func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 	var noteClosure note.NoteClosure
 	valid, err := noteClosure.Decode(in.TaprootLeafScript[0].Script)
 	if valid && err == nil {
-		arkConditionWitnessFields, err := txutils.GetArkPsbtFields(ptx, inputIndex, txutils.ConditionWitnessField)
+		arkConditionWitnessFields, err := txutils.GetArkPsbtFields(
+			ptx, inputIndex, txutils.ConditionWitnessField,
+		)
 		if err != nil {
 			return err
 		}

@@ -1242,21 +1242,19 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 	sweepTapTree := txscript.AssembleTaprootScriptTree(txscript.NewBaseTapLeaf(sweepScript))
 	sweepRoot := sweepTapTree.RootNode.TapHash()
 
-	cosignerFields, err := txutils.GetArkPsbtFields(ptx, inputIndex, txutils.CosignerPublicKeyField)
+	cosignerPubkeys, err := txutils.ParseCosignerKeysFromArkPsbt(ptx, inputIndex)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf(
+			"failed to extract cosigners from tx %s: %s", ptx.UnsignedTx.TxID(), err,
+		)
+	}
+	if len(cosignerPubkeys) == 0 {
+		return nil, nil, nil, fmt.Errorf(
+			"no cosigner pubkeys found in tx %s", ptx.UnsignedTx.TxID(),
+		)
 	}
 
-	if len(cosignerFields) == 0 {
-		return nil, nil, nil, fmt.Errorf("no cosigner pubkeys found")
-	}
-
-	cosignerPubKeys, err := txutils.MakeCosignerPublicKeyList(cosignerFields)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	aggregatedKey, err := tree.AggregateKeys(cosignerPubKeys, sweepRoot[:])
+	aggregatedKey, err := tree.AggregateKeys(cosignerPubkeys, sweepRoot[:])
 	if err != nil {
 		return nil, nil, nil, err
 	}
