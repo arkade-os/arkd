@@ -148,6 +148,31 @@
           }
         }
       },
+      "TreeNoncesEvent": {
+        "title": "TreeNoncesEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "nonces": {
+            "type": "object",
+            "description": "pubkey -\u003e musig2 public nonce",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "topic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
       "TreeSignatureEvent": {
         "title": "TreeSignatureEvent",
         "type": "object",

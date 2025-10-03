@@ -31,6 +31,13 @@ type TreeNoncesAggregated struct {
 	Nonces tree.TreeNonces // aggregated nonces
 }
 
+type TreeTxNoncesEvent struct {
+	domain.RoundEvent
+	Txid   string
+	Topic  []string
+	Nonces map[string]*tree.Musig2Nonce // pubkey -> nonces
+}
+
 type RoundFinalized struct {
 	domain.RoundFinalized
 	Txid string
@@ -56,3 +63,4 @@ func (r RoundSigningStarted) GetTopic() string  { return domain.RoundTopic }
 func (r TreeNoncesAggregated) GetTopic() string { return domain.RoundTopic }
 func (r TreeTxMessage) GetTopic() string        { return domain.RoundTopic }
 func (r TreeSignatureMessage) GetTopic() string { return domain.RoundTopic }
+func (r TreeTxNoncesEvent) GetTopic() string    { return domain.RoundTopic }

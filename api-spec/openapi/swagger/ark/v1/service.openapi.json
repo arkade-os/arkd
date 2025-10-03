@@ -585,6 +585,9 @@
           "heartbeat": {
             "$ref": "#/components/schemas/Heartbeat"
           },
+          "treeNonces": {
+            "$ref": "#/components/schemas/TreeNoncesEvent"
+          },
           "treeNoncesAggregated": {
             "$ref": "#/components/schemas/TreeNoncesAggregatedEvent"
           },
@@ -873,6 +876,31 @@
             "type": "string"
           },
           "treeNonces": {
+            "type": "string"
+          }
+        }
+      },
+      "TreeNoncesEvent": {
+        "title": "TreeNoncesEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "nonces": {
+            "type": "object",
+            "description": "pubkey -\u003e musig2 public nonce",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "topic": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "txid": {
             "type": "string"
           }
         }

@@ -207,7 +207,8 @@ message GetEventStreamResponse {
     TreeNoncesAggregatedEvent tree_nonces_aggregated = 6;
     TreeTxEvent tree_tx = 7;
     TreeSignatureEvent tree_signature = 8;
-    Heartbeat heartbeat = 9;
+    TreeNoncesEvent tree_nonces = 9;
+    Heartbeat heartbeat = 10;
   }
 }
 
