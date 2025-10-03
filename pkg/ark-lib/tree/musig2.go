@@ -316,7 +316,7 @@ func (t *treeSignerSession) AggregateNonces(txid string, pubkeyNonces map[string
 
 	pubkeyNonces[t.GetPublicKey()] = &Musig2Nonce{myNonce.PubNonce}
 
-	keys, err := txutils.GetCosignerKeys(tx.Inputs[0])
+	keys, err := txutils.ParseCosignerKeysFromArkPsbt(tx, 0)
 	if err != nil {
 		return false, fmt.Errorf("failed to get cosigner keys: %w", err)
 	}

@@ -263,7 +263,7 @@ func treeTxNoncesEvents(
 
 		noncesByPubkey := make(map[string]*tree.Musig2Nonce)
 
-		cosignerKeys, err := txutils.GetCosignerKeys(g.Root.Inputs[0])
+		cosignerKeys, err := txutils.ParseCosignerKeysFromArkPsbt(g.Root, 0)
 		if err != nil {
 			return false, err
 		}
