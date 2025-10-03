@@ -2318,7 +2318,7 @@ func (s *service) propagateRoundSigningNoncesGeneratedEvent(
 	publicNoncesMap map[string]tree.TreeNonces,
 	vtxoTree *tree.TxTree,
 ) {
-	events := treeTxNoncesEvents(vtxoTree, 0, s.cache.CurrentRound().Get().Id, publicNoncesMap)
+	events := treeTxNoncesEvents(vtxoTree, s.cache.CurrentRound().Get().Id, publicNoncesMap)
 	events = append(events, TreeNoncesAggregated{
 		RoundEvent: domain.RoundEvent{
 			Id:   s.cache.CurrentRound().Get().Id,
