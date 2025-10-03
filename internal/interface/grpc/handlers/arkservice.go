@@ -64,7 +64,6 @@ func (h *handler) GetInfo(
 		Network:             info.Network,
 		Dust:                int64(info.Dust),
 		ForfeitAddress:      info.ForfeitAddress,
-		MarketHour:          marketHour{info.NextMarketHour}.toProto(),
 		Version:             h.version,
 		UtxoMinAmount:       info.UtxoMinAmount,
 		UtxoMaxAmount:       info.UtxoMaxAmount,
@@ -80,6 +79,7 @@ func (h *handler) GetInfo(
 
 	digest := sha256.Sum256(buf)
 	resp.Digest = hex.EncodeToString(digest[:])
+	resp.MarketHour = marketHour{info.NextMarketHour}.toProto()
 
 	return resp, nil
 }

@@ -30,6 +30,7 @@ type Musig2Nonce struct {
 // TreeNonces is a map of txid to public nonces only
 // it implements json.Marshaler and json.Unmarshaler
 type TreeNonces map[string]*Musig2Nonce // txid -> public nonces only
+
 func NewTreeNonces(noncesMap map[string]string) (TreeNonces, error) {
 	nonces := make(TreeNonces)
 	for txid, nonce := range noncesMap {
