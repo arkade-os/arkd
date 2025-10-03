@@ -111,9 +111,13 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *script.ConditionMultisigClosure:
-			witness, err := txutils.GetConditionWitness(input)
+			witnessFields, err := txutils.GetArkPsbtFields(ptx, index, txutils.ConditionWitnessField)
 			if err != nil {
 				return false, txid, err
+			}
+			witness := make(wire.TxWitness, 0)
+			if len(witnessFields) > 0 {
+				witness = witnessFields[0]
 			}
 
 			result, err := script.EvaluateScriptToBool(c.Condition, witness)
@@ -688,7 +692,7 @@ func (b *txBuilder) GetSweepableBatchOutputs(
 	txid := input.PreviousOutPoint.Hash
 	index := input.PreviousOutPoint.Index
 
-	sweepLeaf, internalKey, vtxoTreeExpiry, err := b.extractSweepLeaf(vtxoTree.Root.Inputs[0])
+	sweepLeaf, internalKey, vtxoTreeExpiry, err := b.extractSweepLeaf(vtxoTree.Root, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1190,34 +1194,15 @@ func castToOutpoints(inputs []ports.TxInput) []domain.Outpoint {
 	return outpoints
 }
 
-func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
-	sweepLeaf *psbt.TaprootTapLeafScript, internalKey *btcec.PublicKey,
-	vtxoTreeExpiry *arklib.RelativeLocktime, err error,
+func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
+	*psbt.TaprootTapLeafScript, *btcec.PublicKey, *arklib.RelativeLocktime, error,
 ) {
-	// this if case is here to handle previous version of the tree
-	if len(input.TaprootLeafScript) > 0 {
-		for _, leaf := range input.TaprootLeafScript {
-			closure := &script.CSVMultisigClosure{}
-			valid, err := closure.Decode(leaf.Script)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-
-			if valid && (vtxoTreeExpiry == nil || closure.Locktime.LessThan(*vtxoTreeExpiry)) {
-				sweepLeaf = leaf
-				vtxoTreeExpiry = &closure.Locktime
-			}
-		}
-
-		internalKey, err = schnorr.ParsePubKey(input.TaprootInternalKey)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
-		if sweepLeaf == nil {
-			return nil, nil, nil, fmt.Errorf("sweep leaf not found")
-		}
-		return sweepLeaf, internalKey, vtxoTreeExpiry, nil
+	if len(ptx.Inputs) <= inputIndex {
+		return nil, nil, nil, fmt.Errorf(
+			"input index out of bounds %d, len(inputs)=%d",
+			inputIndex,
+			len(ptx.Inputs),
+		)
 	}
 
 	// TODO: uncomment the following line once the sdk is up-to-date.
@@ -1227,22 +1212,23 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 		return nil, nil, nil, err
 	}
 
-	cosignerPubKeys, err := txutils.GetCosignerKeys(input)
+	vtxoTreeExpiryFields, err := txutils.GetArkPsbtFields(
+		ptx,
+		inputIndex,
+		txutils.VtxoTreeExpiryField,
+	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	if len(cosignerPubKeys) == 0 {
-		return nil, nil, nil, fmt.Errorf("no cosigner pubkeys found")
+	if len(vtxoTreeExpiryFields) == 0 {
+		return nil, nil, nil, fmt.Errorf("no vtxo tree expiry found")
 	}
 
-	vtxoTreeExpiry, err = txutils.GetVtxoTreeExpiry(input)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	vtxoTreeExpiry := vtxoTreeExpiryFields[0]
 
 	sweepClosure := &script.CSVMultisigClosure{
-		Locktime: *vtxoTreeExpiry,
+		Locktime: vtxoTreeExpiry,
 		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*btcec.PublicKey{sweeperPubkey},
 		},
@@ -1256,11 +1242,23 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 	sweepTapTree := txscript.AssembleTaprootScriptTree(txscript.NewBaseTapLeaf(sweepScript))
 	sweepRoot := sweepTapTree.RootNode.TapHash()
 
-	aggregatedKey, err := tree.AggregateKeys(cosignerPubKeys, sweepRoot[:])
+	cosignerPubkeys, err := txutils.ParseCosignerKeysFromArkPsbt(ptx, inputIndex)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf(
+			"failed to extract cosigners from tx %s: %s", ptx.UnsignedTx.TxID(), err,
+		)
+	}
+	if len(cosignerPubkeys) == 0 {
+		return nil, nil, nil, fmt.Errorf(
+			"no cosigner pubkeys found in tx %s", ptx.UnsignedTx.TxID(),
+		)
+	}
+
+	aggregatedKey, err := tree.AggregateKeys(cosignerPubkeys, sweepRoot[:])
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	internalKey = aggregatedKey.PreTweakedKey
+	internalKey := aggregatedKey.PreTweakedKey
 
 	sweepLeafMerkleProof := sweepTapTree.LeafMerkleProofs[0]
 	sweepLeafControlBlock := sweepLeafMerkleProof.ToControlBlock(internalKey)
@@ -1269,13 +1267,13 @@ func (b *txBuilder) extractSweepLeaf(input psbt.PInput) (
 		return nil, nil, nil, err
 	}
 
-	sweepLeaf = &psbt.TaprootTapLeafScript{
+	sweepLeaf := &psbt.TaprootTapLeafScript{
 		Script:       sweepScript,
 		ControlBlock: sweepLeafControlBlockBytes,
 		LeafVersion:  txscript.BaseLeafVersion,
 	}
 
-	return sweepLeaf, internalKey, vtxoTreeExpiry, nil
+	return sweepLeaf, internalKey, &vtxoTreeExpiry, nil
 }
 
 // TODO: Encode pubkey directly to segwit v1 out script.

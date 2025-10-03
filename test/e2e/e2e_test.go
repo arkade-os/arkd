@@ -1747,7 +1747,12 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
 		require.NoError(t, err)
 
-		err = txutils.AddConditionWitness(0, ptx, wire.TxWitness{preimage[:]})
+		err = txutils.SetArkPsbtField(
+			ptx,
+			0,
+			txutils.ConditionWitnessField,
+			wire.TxWitness{preimage[:]},
+		)
 		require.NoError(t, err)
 
 		encoded, err := ptx.B64Encode()
@@ -1955,13 +1960,11 @@ func TestDelegateRefresh(t *testing.T) {
 
 	scripts, err := delegationVtxoScript.Encode()
 	require.NoError(t, err)
-	tapTree, err := txutils.TapTree(scripts).Encode()
-	require.NoError(t, err)
 
-	intentProof.Inputs[1].Unknowns = []*psbt.Unknown{{
-		Value: tapTree,
-		Key:   txutils.VTXO_TAPROOT_TREE_KEY,
-	}}
+	tapTree := txutils.TapTree(scripts)
+
+	err = txutils.SetArkPsbtField(&intentProof.Packet, 1, txutils.VtxoTaprootTreeField, tapTree)
+	require.NoError(t, err)
 
 	unsignedIntentProof, err := intentProof.B64Encode()
 	require.NoError(t, err)

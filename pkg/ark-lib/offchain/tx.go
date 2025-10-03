@@ -154,7 +154,8 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 	for i := range arkTx.Inputs {
 		arkTx.Inputs[i].WitnessUtxo = witnessUtxos[i]
 		arkTx.Inputs[i].TaprootLeafScript = []*psbt.TaprootTapLeafScript{signingTapLeaves[i]}
-		if err := txutils.AddTaprootTree(i, arkTx, tapscripts[i]); err != nil {
+
+		if err := txutils.SetArkPsbtField(arkTx, i, txutils.VtxoTaprootTreeField, tapscripts[i]); err != nil {
 			return nil, err
 		}
 	}
