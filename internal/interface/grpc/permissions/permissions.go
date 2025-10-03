@@ -272,11 +272,11 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		// Conviction management RPCs
-		fmt.Sprintf("/%s/GetConviction", arkv1.AdminService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetConvictions", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetConvictions", arkv1.AdminService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetConvictionsInRange", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
 		}},
@@ -284,7 +284,7 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Entity: EntityManager,
 			Action: "read",
 		}},
-		fmt.Sprintf("/%s/GetActiveScriptConviction", arkv1.AdminService_ServiceDesc.ServiceName): {{
+		fmt.Sprintf("/%s/GetActiveScriptConvictions", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
 		}},
