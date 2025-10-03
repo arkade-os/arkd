@@ -248,9 +248,9 @@ func (x *GetInfoResponse) GetDigest() string {
 
 type RegisterIntentRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// BIP322 signature embeds the outpoints to be spent and new ones to be created, as well as the
-	// the proof of funds.
-	Intent        *Bip322Signature `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
+	// an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the
+	// proof of funds.
+	Intent        *Intent `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -285,7 +285,7 @@ func (*RegisterIntentRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_service_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *RegisterIntentRequest) GetIntent() *Bip322Signature {
+func (x *RegisterIntentRequest) GetIntent() *Intent {
 	if x != nil {
 		return x.Intent
 	}
@@ -338,9 +338,9 @@ func (x *RegisterIntentResponse) GetIntentId() string {
 
 type DeleteIntentRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// A BIP322 signature that includes any of the inputs of the intent to be deleted to prove the
+	// an intent proof that includes any of the inputs of the intent to be deleted to prove the
 	// ownership of that intent.
-	Proof         *Bip322Signature `protobuf:"bytes,1,opt,name=proof,proto3" json:"proof,omitempty"`
+	Intent        *Intent `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -375,9 +375,9 @@ func (*DeleteIntentRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_service_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *DeleteIntentRequest) GetProof() *Bip322Signature {
+func (x *DeleteIntentRequest) GetIntent() *Intent {
 	if x != nil {
-		return x.Proof
+		return x.Intent
 	}
 	return nil
 }
@@ -1220,7 +1220,7 @@ func (*FinalizeTxResponse) Descriptor() ([]byte, []int) {
 
 type GetPendingTxRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Proof         *Bip322Signature       `protobuf:"bytes,1,opt,name=proof,proto3" json:"proof,omitempty"`
+	Intent        *Intent                `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1255,9 +1255,9 @@ func (*GetPendingTxRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_service_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *GetPendingTxRequest) GetProof() *Bip322Signature {
+func (x *GetPendingTxRequest) GetIntent() *Intent {
 	if x != nil {
-		return x.Proof
+		return x.Intent
 	}
 	return nil
 }
@@ -1467,13 +1467,13 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x04fees\x18\x10 \x01(\v2\x0f.ark.v1.FeeInfoR\x04fees\x12G\n" +
 	"\x12deprecated_signers\x18\x11 \x03(\v2\x18.ark.v1.DeprecatedSignerR\x11deprecatedSigners\x12%\n" +
 	"\x0eforfeit_pubkey\x18\x12 \x01(\tR\rforfeitPubkey\x12\x16\n" +
-	"\x06digest\x18\x13 \x01(\tR\x06digest\"H\n" +
-	"\x15RegisterIntentRequest\x12/\n" +
-	"\x06intent\x18\x01 \x01(\v2\x17.ark.v1.Bip322SignatureR\x06intent\"5\n" +
+	"\x06digest\x18\x13 \x01(\tR\x06digest\"?\n" +
+	"\x15RegisterIntentRequest\x12&\n" +
+	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"5\n" +
 	"\x16RegisterIntentResponse\x12\x1b\n" +
-	"\tintent_id\x18\x01 \x01(\tR\bintentId\"D\n" +
-	"\x13DeleteIntentRequest\x12-\n" +
-	"\x05proof\x18\x01 \x01(\v2\x17.ark.v1.Bip322SignatureR\x05proof\"\x16\n" +
+	"\tintent_id\x18\x01 \x01(\tR\bintentId\"=\n" +
+	"\x13DeleteIntentRequest\x12&\n" +
+	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"\x16\n" +
 	"\x14DeleteIntentResponse\"9\n" +
 	"\x1aConfirmRegistrationRequest\x12\x1b\n" +
 	"\tintent_id\x18\x01 \x01(\tR\bintentId\"\x1d\n" +
@@ -1523,9 +1523,9 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x11FinalizeTxRequest\x12\x19\n" +
 	"\bark_txid\x18\x01 \x01(\tR\aarkTxid\x120\n" +
 	"\x14final_checkpoint_txs\x18\x02 \x03(\tR\x12finalCheckpointTxs\"\x14\n" +
-	"\x12FinalizeTxResponse\"D\n" +
-	"\x13GetPendingTxRequest\x12-\n" +
-	"\x05proof\x18\x01 \x01(\v2\x17.ark.v1.Bip322SignatureR\x05proof\"J\n" +
+	"\x12FinalizeTxResponse\"=\n" +
+	"\x13GetPendingTxRequest\x12&\n" +
+	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"J\n" +
 	"\x14GetPendingTxResponse\x122\n" +
 	"\vpending_txs\x18\x01 \x03(\v2\x11.ark.v1.PendingTxR\n" +
 	"pendingTxs\"\x1e\n" +
@@ -1598,7 +1598,7 @@ var file_ark_v1_service_proto_goTypes = []any{
 	(*MarketHour)(nil),                     // 26: ark.v1.MarketHour
 	(*FeeInfo)(nil),                        // 27: ark.v1.FeeInfo
 	(*DeprecatedSigner)(nil),               // 28: ark.v1.DeprecatedSigner
-	(*Bip322Signature)(nil),                // 29: ark.v1.Bip322Signature
+	(*Intent)(nil),                         // 29: ark.v1.Intent
 	(*BatchStartedEvent)(nil),              // 30: ark.v1.BatchStartedEvent
 	(*BatchFinalizationEvent)(nil),         // 31: ark.v1.BatchFinalizationEvent
 	(*BatchFinalizedEvent)(nil),            // 32: ark.v1.BatchFinalizedEvent
@@ -1615,8 +1615,8 @@ var file_ark_v1_service_proto_depIdxs = []int32{
 	26, // 0: ark.v1.GetInfoResponse.market_hour:type_name -> ark.v1.MarketHour
 	27, // 1: ark.v1.GetInfoResponse.fees:type_name -> ark.v1.FeeInfo
 	28, // 2: ark.v1.GetInfoResponse.deprecated_signers:type_name -> ark.v1.DeprecatedSigner
-	29, // 3: ark.v1.RegisterIntentRequest.intent:type_name -> ark.v1.Bip322Signature
-	29, // 4: ark.v1.DeleteIntentRequest.proof:type_name -> ark.v1.Bip322Signature
+	29, // 3: ark.v1.RegisterIntentRequest.intent:type_name -> ark.v1.Intent
+	29, // 4: ark.v1.DeleteIntentRequest.intent:type_name -> ark.v1.Intent
 	24, // 5: ark.v1.SubmitTreeNoncesRequest.tree_nonces:type_name -> ark.v1.SubmitTreeNoncesRequest.TreeNoncesEntry
 	25, // 6: ark.v1.SubmitTreeSignaturesRequest.tree_signatures:type_name -> ark.v1.SubmitTreeSignaturesRequest.TreeSignaturesEntry
 	30, // 7: ark.v1.GetEventStreamResponse.batch_started:type_name -> ark.v1.BatchStartedEvent
@@ -1628,7 +1628,7 @@ var file_ark_v1_service_proto_depIdxs = []int32{
 	36, // 13: ark.v1.GetEventStreamResponse.tree_tx:type_name -> ark.v1.TreeTxEvent
 	37, // 14: ark.v1.GetEventStreamResponse.tree_signature:type_name -> ark.v1.TreeSignatureEvent
 	38, // 15: ark.v1.GetEventStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
-	29, // 16: ark.v1.GetPendingTxRequest.proof:type_name -> ark.v1.Bip322Signature
+	29, // 16: ark.v1.GetPendingTxRequest.intent:type_name -> ark.v1.Intent
 	39, // 17: ark.v1.GetPendingTxResponse.pending_txs:type_name -> ark.v1.PendingTx
 	40, // 18: ark.v1.GetTransactionsStreamResponse.commitment_tx:type_name -> ark.v1.TxNotification
 	40, // 19: ark.v1.GetTransactionsStreamResponse.ark_tx:type_name -> ark.v1.TxNotification

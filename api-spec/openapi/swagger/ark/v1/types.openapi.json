@@ -61,18 +61,6 @@
           }
         }
       },
-      "Bip322Signature": {
-        "title": "Bip322Signature",
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "signature": {
-            "type": "string"
-          }
-        }
-      },
       "DeprecatedSigner": {
         "title": "DeprecatedSigner",
         "type": "object",
@@ -111,6 +99,18 @@
           },
           "taprootTree": {
             "$ref": "#/components/schemas/Tapscripts"
+          }
+        }
+      },
+      "Intent": {
+        "title": "Intent",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
           }
         }
       },

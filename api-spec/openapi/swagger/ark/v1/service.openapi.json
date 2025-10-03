@@ -549,18 +549,6 @@
           }
         }
       },
-      "Bip322Signature": {
-        "title": "Bip322Signature",
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "signature": {
-            "type": "string"
-          }
-        }
-      },
       "ConfirmRegistrationRequest": {
         "title": "ConfirmRegistrationRequest",
         "type": "object",
@@ -578,9 +566,9 @@
         "title": "DeleteIntentRequest",
         "type": "object",
         "properties": {
-          "proof": {
-            "$ref": "#/components/schemas/Bip322Signature",
-            "description": "A BIP322 signature that includes any of the inputs of the intent to be deleted to prove the\nownership of that intent."
+          "intent": {
+            "$ref": "#/components/schemas/Intent",
+            "description": "an intent proof that includes any of the inputs of the intent to be deleted to prove the\nownership of that intent."
           }
         }
       },
@@ -762,8 +750,8 @@
         "title": "GetPendingTxRequest",
         "type": "object",
         "properties": {
-          "proof": {
-            "$ref": "#/components/schemas/Bip322Signature"
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
           }
         }
       },
@@ -801,6 +789,18 @@
       "Heartbeat": {
         "title": "Heartbeat",
         "type": "object"
+      },
+      "Intent": {
+        "title": "Intent",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
+          }
+        }
       },
       "IntentFeeInfo": {
         "title": "IntentFeeInfo",
@@ -881,8 +881,8 @@
         "type": "object",
         "properties": {
           "intent": {
-            "$ref": "#/components/schemas/Bip322Signature",
-            "description": "BIP322 signature embeds the outpoints to be spent and new ones to be created, as well as the\nthe proof of funds."
+            "$ref": "#/components/schemas/Intent",
+            "description": "an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the\nproof of funds."
           }
         }
       },

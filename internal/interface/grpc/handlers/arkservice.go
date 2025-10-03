@@ -87,7 +87,7 @@ func (h *handler) GetInfo(
 func (h *handler) RegisterIntent(
 	ctx context.Context, req *arkv1.RegisterIntentRequest,
 ) (*arkv1.RegisterIntentResponse, error) {
-	proof, message, err := parseIntent(req.GetIntent())
+	proof, message, err := parseRegisterIntent(req.GetIntent())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -103,7 +103,7 @@ func (h *handler) RegisterIntent(
 func (h *handler) DeleteIntent(
 	ctx context.Context, req *arkv1.DeleteIntentRequest,
 ) (*arkv1.DeleteIntentResponse, error) {
-	proof, message, err := parseDeleteIntent(req.GetProof())
+	proof, message, err := parseDeleteIntent(req.GetIntent())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}

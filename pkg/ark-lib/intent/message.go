@@ -1,8 +1,10 @@
-package bip322
+package intent
 
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
 type IntentMessageType string
@@ -12,16 +14,14 @@ const (
 	IntentMessageTypeDelete   IntentMessageType = "delete"
 )
 
-type BaseIntentMessage struct {
+var tagHashMessage = []byte("ark-intent-proof-message")
+
+type BaseMessage struct {
 	Type IntentMessageType `json:"type"`
 }
 
-type IntentMessage struct {
-	BaseIntentMessage
-	// InputTapTrees is the list of taproot trees associated with the spent inputs
-	// the index of the taproot tree in the list corresponds to the index of the input + 1
-	// (we ignore the first bip322 input, as it is duplicate of the second one)
-	InputTapTrees []string `json:"input_tap_trees"`
+type RegisterMessage struct {
+	BaseMessage
 	// OnchainOutputIndexes specifies what are the outputs in the proof tx
 	// that should be considered as onchain by the Ark operator
 	OnchainOutputIndexes []int `json:"onchain_output_indexes"`
@@ -37,7 +37,7 @@ type IntentMessage struct {
 	CosignersPublicKeys []string `json:"cosigners_public_keys"`
 }
 
-func (m IntentMessage) Encode() (string, error) {
+func (m RegisterMessage) Encode() (string, error) {
 	encoded, err := json.Marshal(m)
 	if err != nil {
 		return "", err
@@ -45,7 +45,7 @@ func (m IntentMessage) Encode() (string, error) {
 	return string(encoded), nil
 }
 
-func (m *IntentMessage) Decode(data string) error {
+func (m *RegisterMessage) Decode(data string) error {
 	if err := json.Unmarshal([]byte(data), m); err != nil {
 		return err
 	}
@@ -57,14 +57,14 @@ func (m *IntentMessage) Decode(data string) error {
 	return nil
 }
 
-type DeleteIntentMessage struct {
-	BaseIntentMessage
+type DeleteMessage struct {
+	BaseMessage
 	// ExpireAt is the timestamp (in seconds) at which the proof should be considered invalid
 	// if set to 0, the proof will be considered valid indefinitely
 	ExpireAt int64 `json:"expire_at"`
 }
 
-func (m DeleteIntentMessage) Encode() (string, error) {
+func (m DeleteMessage) Encode() (string, error) {
 	encoded, err := json.Marshal(m)
 	if err != nil {
 		return "", err
@@ -72,7 +72,7 @@ func (m DeleteIntentMessage) Encode() (string, error) {
 	return string(encoded), nil
 }
 
-func (m *DeleteIntentMessage) Decode(data string) error {
+func (m *DeleteMessage) Decode(data string) error {
 	if err := json.Unmarshal([]byte(data), m); err != nil {
 		return err
 	}
@@ -82,4 +82,9 @@ func (m *DeleteIntentMessage) Decode(data string) error {
 	}
 
 	return nil
+}
+
+func hashMessage(message string) []byte {
+	tagged := chainhash.TaggedHash(tagHashMessage, []byte(message))
+	return tagged[:]
 }

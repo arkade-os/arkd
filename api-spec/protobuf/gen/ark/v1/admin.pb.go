@@ -1046,7 +1046,7 @@ type IntentInfo struct {
 	Inputs              []*IntentInput         `protobuf:"bytes,4,rep,name=inputs,proto3" json:"inputs,omitempty"`
 	BoardingInputs      []*IntentInput         `protobuf:"bytes,5,rep,name=boarding_inputs,json=boardingInputs,proto3" json:"boarding_inputs,omitempty"`
 	CosignersPublicKeys []string               `protobuf:"bytes,6,rep,name=cosigners_public_keys,json=cosignersPublicKeys,proto3" json:"cosigners_public_keys,omitempty"`
-	Proof               *Bip322Signature       `protobuf:"bytes,7,opt,name=proof,proto3" json:"proof,omitempty"`
+	Intent              *Intent                `protobuf:"bytes,7,opt,name=intent,proto3" json:"intent,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1123,9 +1123,9 @@ func (x *IntentInfo) GetCosignersPublicKeys() []string {
 	return nil
 }
 
-func (x *IntentInfo) GetProof() *Bip322Signature {
+func (x *IntentInfo) GetIntent() *Intent {
 	if x != nil {
-		return x.Proof
+		return x.Intent
 	}
 	return nil
 }
@@ -1286,7 +1286,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\vIntentInput\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x12\n" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\x12\x16\n" +
-	"\x06amount\x18\x03 \x01(\x04R\x06amount\"\xb7\x02\n" +
+	"\x06amount\x18\x03 \x01(\x04R\x06amount\"\xb0\x02\n" +
 	"\n" +
 	"IntentInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
@@ -1295,8 +1295,8 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\treceivers\x18\x03 \x03(\v2\x0e.ark.v1.OutputR\treceivers\x12+\n" +
 	"\x06inputs\x18\x04 \x03(\v2\x13.ark.v1.IntentInputR\x06inputs\x12<\n" +
 	"\x0fboarding_inputs\x18\x05 \x03(\v2\x13.ark.v1.IntentInputR\x0eboardingInputs\x122\n" +
-	"\x15cosigners_public_keys\x18\x06 \x03(\tR\x13cosignersPublicKeys\x12-\n" +
-	"\x05proof\x18\a \x01(\v2\x17.ark.v1.Bip322SignatureR\x05proof\"}\n" +
+	"\x15cosigners_public_keys\x18\x06 \x03(\tR\x13cosignersPublicKeys\x12&\n" +
+	"\x06intent\x18\a \x01(\v2\x0e.ark.v1.IntentR\x06intent\"}\n" +
 	"\x06Output\x12!\n" +
 	"\vvtxo_script\x18\x01 \x01(\tH\x00R\n" +
 	"vtxoScript\x12)\n" +
@@ -1353,7 +1353,7 @@ var file_ark_v1_admin_proto_goTypes = []any{
 	(*IntentInput)(nil),                    // 19: ark.v1.IntentInput
 	(*IntentInfo)(nil),                     // 20: ark.v1.IntentInfo
 	(*Output)(nil),                         // 21: ark.v1.Output
-	(*Bip322Signature)(nil),                // 22: ark.v1.Bip322Signature
+	(*Intent)(nil),                         // 22: ark.v1.Intent
 }
 var file_ark_v1_admin_proto_depIdxs = []int32{
 	17, // 0: ark.v1.GetScheduledSweepResponse.sweeps:type_name -> ark.v1.ScheduledSweep
@@ -1364,7 +1364,7 @@ var file_ark_v1_admin_proto_depIdxs = []int32{
 	21, // 5: ark.v1.IntentInfo.receivers:type_name -> ark.v1.Output
 	19, // 6: ark.v1.IntentInfo.inputs:type_name -> ark.v1.IntentInput
 	19, // 7: ark.v1.IntentInfo.boarding_inputs:type_name -> ark.v1.IntentInput
-	22, // 8: ark.v1.IntentInfo.proof:type_name -> ark.v1.Bip322Signature
+	22, // 8: ark.v1.IntentInfo.intent:type_name -> ark.v1.Intent
 	0,  // 9: ark.v1.AdminService.GetScheduledSweep:input_type -> ark.v1.GetScheduledSweepRequest
 	2,  // 10: ark.v1.AdminService.GetRoundDetails:input_type -> ark.v1.GetRoundDetailsRequest
 	4,  // 11: ark.v1.AdminService.GetRounds:input_type -> ark.v1.GetRoundsRequest

@@ -165,18 +165,18 @@ message GetInfoResponse {
 }
 
 message RegisterIntentRequest {
-  // BIP322 signature embeds the outpoints to be spent and new ones to be created, as well as the
-  // the proof of funds.
-  Bip322Signature intent = 1;
+  // an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the
+  // proof of funds.
+  Intent intent = 1;
 }
 message RegisterIntentResponse {
   string intent_id = 1;
 }
 
 message DeleteIntentRequest {
-  // A BIP322 signature that includes any of the inputs of the intent to be deleted to prove the
+  // an intent proof that includes any of the inputs of the intent to be deleted to prove the
   // ownership of that intent.
-  Bip322Signature proof = 1;
+  Intent intent = 1;
 }
 message DeleteIntentResponse {}
 
@@ -241,7 +241,7 @@ message FinalizeTxRequest {
 message FinalizeTxResponse {}
 
 message GetPendingTxRequest {
-  Bip322Signature proof = 1;
+  Intent intent = 1;
 }
 message GetPendingTxResponse {
   repeated PendingTx pending_txs = 1;

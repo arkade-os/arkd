@@ -3,60 +3,65 @@ package handlers
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/bip322"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
-// From interface type to app type
-
-func parseIntent(intent *arkv1.Bip322Signature) (*bip322.Signature, *bip322.IntentMessage, error) {
-	if intent == nil {
-		return nil, nil, fmt.Errorf("missing intent")
+func parseIntentProofTx(i *arkv1.Intent) (*intent.Proof, error) {
+	if i == nil {
+		return nil, fmt.Errorf("missing intent")
 	}
-	if len(intent.GetSignature()) <= 0 {
-		return nil, nil, fmt.Errorf("missing intent proof")
+	proof := i.GetProof()
+	if len(proof) <= 0 {
+		return nil, fmt.Errorf("missing intent proof")
 	}
-	proof, err := bip322.DecodeSignature(intent.GetSignature())
+	proofTx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid intent proof: %s", err)
+		return nil, fmt.Errorf("failed to parse intent proof tx: %s", err)
+	}
+	return &intent.Proof{Packet: *proofTx}, nil
+}
+
+func parseRegisterIntent(
+	intentProof *arkv1.Intent,
+) (*intent.Proof, *intent.RegisterMessage, error) {
+	proof, err := parseIntentProofTx(intentProof)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if len(intent.GetMessage()) <= 0 {
+	if len(intentProof.GetMessage()) <= 0 {
 		return nil, nil, fmt.Errorf("missing message")
 	}
-	var message bip322.IntentMessage
-	if err := message.Decode(intent.GetMessage()); err != nil {
+	var message intent.RegisterMessage
+	if err := message.Decode(intentProof.GetMessage()); err != nil {
 		return nil, nil, fmt.Errorf("invalid intent message")
 	}
 	return proof, &message, nil
 }
 
 func parseDeleteIntent(
-	intent *arkv1.Bip322Signature,
-) (*bip322.Signature, *bip322.DeleteIntentMessage, error) {
-	if intent == nil {
-		return nil, nil, fmt.Errorf("missing intent")
-	}
-	if len(intent.GetSignature()) <= 0 {
-		return nil, nil, fmt.Errorf("missing intent proof")
-	}
-	proof, err := bip322.DecodeSignature(intent.GetSignature())
+	intentProof *arkv1.Intent,
+) (*intent.Proof, *intent.DeleteMessage, error) {
+	proof, err := parseIntentProofTx(intentProof)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid intent proof: %s", err)
+		return nil, nil, err
 	}
 
-	if len(intent.GetMessage()) <= 0 {
+	if len(intentProof.GetMessage()) <= 0 {
 		return nil, nil, fmt.Errorf("missing message")
 	}
-	var message bip322.DeleteIntentMessage
-	if err := message.Decode(intent.GetMessage()); err != nil {
+	var message intent.DeleteMessage
+	if err := message.Decode(intentProof.GetMessage()); err != nil {
 		return nil, nil, fmt.Errorf("invalid delete intent message")
 	}
 	return proof, &message, nil
