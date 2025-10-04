@@ -261,8 +261,7 @@ func (b *txBuilder) BuildSweepTx(
 	}
 
 	ctx := context.Background()
-	// TODO: use wallet once sdk is up-to-date.
-	signedSweepPsbtB64, err := b.signer.SignTransactionTapscript(ctx, sweepPsbtBase64, nil)
+	signedSweepPsbtB64, err := b.wallet.SignTransactionTapscript(ctx, sweepPsbtBase64, nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -1208,9 +1207,7 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 		)
 	}
 
-	// TODO: uncomment the following line once the sdk is up-to-date.
-	// sweeperPubkey, err := b.wallet.GetForfeitPubkey(context.Background())
-	sweeperPubkey, err := b.signer.GetPubkey(context.Background())
+	sweeperPubkey, err := b.wallet.GetForfeitPubkey(context.Background())
 	if err != nil {
 		return nil, nil, nil, err
 	}

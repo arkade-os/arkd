@@ -2024,7 +2024,7 @@ func TestDelegateRefresh(t *testing.T) {
 		partialForfeitTx: signedPartialForfeitTx,
 		delegatorWallet:  bobWallet,
 		client:           grpcClient,
-		signerPubKey:     signerPubKey,
+		forfeitPubKey:    aliceConfig.ForfeitPubKey,
 		vtxoTreeExpiry:   aliceConfig.VtxoTreeExpiry,
 		intentId:         intentId,
 	})
