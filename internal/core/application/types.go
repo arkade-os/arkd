@@ -44,6 +44,7 @@ type Service interface {
 
 type ServiceInfo struct {
 	SignerPubKey        string
+	ForfeitPubKey       string
 	VtxoTreeExpiry      int64
 	UnilateralExitDelay int64
 	BoardingExitDelay   int64
@@ -56,6 +57,8 @@ type ServiceInfo struct {
 	UtxoMaxAmount       int64
 	VtxoMinAmount       int64
 	VtxoMaxAmount       int64
+	CheckpointTapscript string
+	Fees                FeeInfo
 }
 
 type NextMarketHour struct {
@@ -63,6 +66,7 @@ type NextMarketHour struct {
 	EndTime       time.Time
 	Period        time.Duration
 	RoundInterval time.Duration
+	Fees          FeeInfo
 }
 
 type WalletStatus struct {
@@ -71,9 +75,22 @@ type WalletStatus struct {
 	IsSynced      bool
 }
 
+type FeeInfo struct {
+	IntentFees IntentFeeInfo
+	TxFeeRate  float64
+}
+
+type IntentFeeInfo struct {
+	OffchainInput  string
+	OffchainOutput string
+	OnchainInput   uint64
+	OnchainOutput  uint64
+}
+
 const (
 	CommitmentTxType TransactionEventType = "commitment_tx"
 	ArkTxType        TransactionEventType = "ark_tx"
+	SweepTxType      TransactionEventType = "sweep_tx"
 )
 
 type TransactionEventType string
@@ -88,6 +105,7 @@ type TransactionEvent struct {
 	Type           TransactionEventType
 	SpentVtxos     []domain.Vtxo
 	SpendableVtxos []domain.Vtxo
+	SweptVtxos     []domain.Vtxo
 	CheckpointTxs  map[string]TxData
 }
 
@@ -103,7 +121,7 @@ type CommitmentTxInfo struct {
 	EndAt             int64
 	Batches           map[VOut]Batch
 	TotalInputAmount  uint64
-	TotalInputtVtxos  int32
+	TotalInputVtxos   int32
 	TotalOutputAmount uint64
 	TotalOutputVtxos  int32
 }

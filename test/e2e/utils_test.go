@@ -92,7 +92,15 @@ func getBlockHeight() (uint32, error) {
 
 func runDockerExec(container string, arg ...string) (string, error) {
 	args := append([]string{"exec", "-t", container}, arg...)
-	return runCommand("docker", args...)
+	out, err := runCommand("docker", args...)
+	if err != nil {
+		return "", err
+	}
+	idx := strings.Index(out, "{")
+	if idx == -1 {
+		return out, nil
+	}
+	return out[idx:], nil
 }
 
 func runCommand(name string, arg ...string) (string, error) {

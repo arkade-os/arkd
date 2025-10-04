@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil"
@@ -22,11 +20,6 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	log "github.com/sirupsen/logrus"
-)
-
-var (
-	regtestTickerInterval = time.Second
-	mainnetTickerInterval = time.Minute
 )
 
 // reactToFraud handles the case where a user spent or renewed a vtxo in the past and now tries to
@@ -44,10 +37,21 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 
 	// If the vtxo wasn't settled we must broadcast a checkpoint tx.
 	if !vtxo.IsSettled() {
-		if err := s.broadcastCheckpointTx(ctx, vtxo); err != nil {
+		ptx, err := s.broadcastCheckpointTx(ctx, vtxo)
+		if err != nil {
 			return fmt.Errorf("failed to broadcast checkpoint tx: %s", err)
 		}
 
+		go func() {
+			blockHeight, blockTime := s.waitForConfirmation(
+				context.Background(),
+				ptx.UnsignedTx.TxID(),
+			)
+
+			if err := s.sweeper.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockHeight, blockTime); err != nil {
+				log.Errorf("failed to schedule checkpoint sweep: %s", err)
+			}
+		}()
 		return nil
 	}
 
@@ -65,37 +69,41 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 // redeem it onchain.
 // To react to this attack, the relative offchain tx is fetched from db, then the fully signed
 // checkpoint tx is finalized and broadcasted as soon as the vtxo hit the blockchain.
-func (s *service) broadcastCheckpointTx(ctx context.Context, vtxo domain.Vtxo) error {
+func (s *service) broadcastCheckpointTx(
+	ctx context.Context,
+	vtxo domain.Vtxo,
+) (*psbt.Packet, error) {
 	txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.SpentBy})
 	if err != nil {
-		return fmt.Errorf("failed to retrieve checkpoint tx: %s", err)
+		return nil, fmt.Errorf("failed to retrieve checkpoint tx: %s", err)
 	}
 	if len(txs) <= 0 {
-		return fmt.Errorf("checkpoint tx %s not found", vtxo.SpentBy)
+		return nil, fmt.Errorf("checkpoint tx %s not found", vtxo.SpentBy)
 	}
 
-	checkpointPsbt := txs[0]
-	ptx, err := s.builder.FinalizeAndExtract(checkpointPsbt)
+	checkpointB64 := txs[0]
+	txHex, err := s.builder.FinalizeAndExtract(checkpointB64)
 	if err != nil {
-		return fmt.Errorf("failed to finalize checkpoint tx: %s", err)
+		return nil, fmt.Errorf("failed to finalize checkpoint tx: %s", err)
 	}
 
 	var checkpointTx wire.MsgTx
-	if err := checkpointTx.Deserialize(hex.NewDecoder(strings.NewReader(ptx))); err != nil {
-		return fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
+	if err := checkpointTx.Deserialize(hex.NewDecoder(strings.NewReader(txHex))); err != nil {
+		return nil, fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
 	}
 
 	child, err := s.bumpAnchorTx(ctx, &checkpointTx)
 	if err != nil {
-		return fmt.Errorf("failed to bump checkpoint tx: %s", err)
+		return nil, fmt.Errorf("failed to bump checkpoint tx: %s", err)
 	}
 
-	if _, err := s.wallet.BroadcastTransaction(ctx, ptx, child); err != nil {
-		return fmt.Errorf("failed to broadcast checkpoint package: %s", err)
+	if _, err := s.wallet.BroadcastTransaction(ctx, txHex, child); err != nil {
+		return nil, fmt.Errorf("failed to broadcast checkpoint package: %s", err)
 	}
 
 	log.Debugf("broadcasted checkpoint tx %s", checkpointTx.TxHash().String())
-	return nil
+
+	return psbt.NewFromRawBytes(strings.NewReader(checkpointB64), true)
 }
 
 // broadcastForfeitTx broadcasts a forfeit transaction for a given vtxo.
@@ -351,23 +359,11 @@ func (s *service) bumpAnchorTx(
 	return hex.EncodeToString(serializedTx.Bytes()), nil
 }
 
-// waitForConfirmation waits for the given tx to be confirmed onchain.
-// It uses a ticker with an interval depending on the network
-// (1 second for regtest or 1 minute otherwise).
-// The function is blocking and returns once the tx is confirmed.
-func (s *service) waitForConfirmation(ctx context.Context, txid string) {
-	tickerInterval := mainnetTickerInterval
-	if s.network.Name == arklib.BitcoinRegTest.Name {
-		tickerInterval = regtestTickerInterval
-	}
-	ticker := time.NewTicker(tickerInterval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		if confirmed, _, _, _ := s.wallet.IsTransactionConfirmed(ctx, txid); confirmed {
-			return
-		}
-	}
+func (s *service) waitForConfirmation(
+	ctx context.Context,
+	txid string,
+) (blockheight int64, blocktime int64) {
+	return waitForConfirmation(ctx, txid, s.wallet, s.network)
 }
 
 // findForfeitTx finds the correct forfeit tx and connector outpoint for the given vtxo from the

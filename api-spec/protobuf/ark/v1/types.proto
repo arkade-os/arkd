@@ -58,6 +58,30 @@ message MarketHour {
   int64 next_end_time = 2;
   int64 period = 3;
   int64 round_interval = 4;
+  FeeInfo fees = 5;
+}
+
+message FeeInfo {
+  IntentFeeInfo intent_fee = 1;
+  string tx_fee_rate = 2;
+}
+
+message IntentFeeInfo  {
+  string offchain_input = 1;
+  string offchain_output = 2;
+  string onchain_input = 3;
+  string onchain_output = 4;
+}
+
+message PendingTx {
+  string ark_txid = 1;
+  string final_ark_tx = 2;
+  repeated string signed_checkpoint_txs = 3;
+}
+
+message DeprecatedSigner {
+  string pubkey = 1;
+  int64 cutoff_date = 2;
 }
 
 /* Events */
@@ -116,4 +140,7 @@ message TreeSignatureEvent {
   int32 batch_index = 3;
   string txid = 4;
   string signature = 5;
+}
+
+message Heartbeat {
 }

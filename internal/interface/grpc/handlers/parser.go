@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -99,23 +98,23 @@ func parseECPubkey(pubkey string) (string, error) {
 	return pubkey, nil
 }
 
-func parseNonces(serializedNonces string) (tree.TreeNonces, error) {
-	if len(serializedNonces) <= 0 {
+func parseNonces(noncesMap map[string]string) (tree.TreeNonces, error) {
+	if len(noncesMap) <= 0 {
 		return nil, fmt.Errorf("missing tree nonces")
 	}
-	var nonces tree.TreeNonces
-	if err := json.Unmarshal([]byte(serializedNonces), &nonces); err != nil {
+	nonces, err := tree.NewTreeNonces(noncesMap)
+	if err != nil {
 		return nil, fmt.Errorf("invalid tree nonces: %s", err)
 	}
 	return nonces, nil
 }
 
-func parseSignatures(serializedSignatures string) (tree.TreePartialSigs, error) {
-	if len(serializedSignatures) <= 0 {
+func parseSignatures(signaturesMap map[string]string) (tree.TreePartialSigs, error) {
+	if len(signaturesMap) <= 0 {
 		return nil, fmt.Errorf("missing tree signatures")
 	}
-	signatures := make(tree.TreePartialSigs)
-	if err := json.Unmarshal([]byte(serializedSignatures), &signatures); err != nil {
+	signatures, err := tree.NewTreePartialSigs(signaturesMap)
+	if err != nil {
 		return nil, fmt.Errorf("invalid tree signatures %s", err)
 	}
 	return signatures, nil

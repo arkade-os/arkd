@@ -1,0 +1,522 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "",
+    "version": "version not set"
+  },
+  "paths": {
+    "/v1/admin/wallet/address": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_DeriveAddress",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeriveAddressResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/balance": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetBalance",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetBalanceResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/create": {
+      "post": {
+        "tags": [
+          "WalletInitializerService"
+        ],
+        "operationId": "WalletInitializerService_Create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/lock": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_Lock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LockResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/restore": {
+      "post": {
+        "tags": [
+          "WalletInitializerService"
+        ],
+        "operationId": "WalletInitializerService_Restore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/seed": {
+      "get": {
+        "tags": [
+          "WalletInitializerService"
+        ],
+        "operationId": "WalletInitializerService_GenSeed",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenSeedResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/status": {
+      "get": {
+        "tags": [
+          "WalletInitializerService"
+        ],
+        "operationId": "WalletInitializerService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetStatusResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/unlock": {
+      "post": {
+        "tags": [
+          "WalletInitializerService"
+        ],
+        "operationId": "WalletInitializerService_Unlock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnlockRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnlockResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/withdraw": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_Withdraw",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Any": {
+        "type": "object",
+        "description": "Any contains an arbitrary schema along with a URL to help identify the type of the schema.",
+        "properties": {
+          "@type": {
+            "type": "string",
+            "description": "A URL/resource name that uniquely identifies the type of the schema."
+          }
+        }
+      },
+      "Balance": {
+        "title": "Balance",
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateRequest": {
+        "title": "CreateRequest",
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateResponse": {
+        "title": "CreateResponse",
+        "type": "object"
+      },
+      "DeriveAddressRequest": {
+        "title": "DeriveAddressRequest",
+        "type": "object"
+      },
+      "DeriveAddressResponse": {
+        "title": "DeriveAddressResponse",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          }
+        }
+      },
+      "GenSeedRequest": {
+        "title": "GenSeedRequest",
+        "type": "object"
+      },
+      "GenSeedResponse": {
+        "title": "GenSeedResponse",
+        "type": "object",
+        "properties": {
+          "seed": {
+            "type": "string"
+          }
+        }
+      },
+      "GetBalanceRequest": {
+        "title": "GetBalanceRequest",
+        "type": "object"
+      },
+      "GetBalanceResponse": {
+        "title": "GetBalanceResponse",
+        "type": "object",
+        "properties": {
+          "connectorsAccount": {
+            "$ref": "#/components/schemas/Balance"
+          },
+          "mainAccount": {
+            "$ref": "#/components/schemas/Balance"
+          }
+        }
+      },
+      "GetStatusRequest": {
+        "title": "GetStatusRequest",
+        "type": "object"
+      },
+      "GetStatusResponse": {
+        "title": "GetStatusResponse",
+        "type": "object",
+        "properties": {
+          "initialized": {
+            "type": "boolean"
+          },
+          "synced": {
+            "type": "boolean"
+          },
+          "unlocked": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LockRequest": {
+        "title": "LockRequest",
+        "type": "object"
+      },
+      "LockResponse": {
+        "title": "LockResponse",
+        "type": "object"
+      },
+      "RestoreRequest": {
+        "title": "RestoreRequest",
+        "type": "object",
+        "properties": {
+          "gapLimit": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "password": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "string"
+          }
+        }
+      },
+      "RestoreResponse": {
+        "title": "RestoreResponse",
+        "type": "object"
+      },
+      "Status": {
+        "title": "Status",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Any"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "UnlockRequest": {
+        "title": "UnlockRequest",
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "UnlockResponse": {
+        "title": "UnlockResponse",
+        "type": "object"
+      },
+      "WithdrawRequest": {
+        "title": "WithdrawRequest",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "WithdrawResponse": {
+        "title": "WithdrawResponse",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "WalletInitializerService"
+    },
+    {
+      "name": "WalletService"
+    }
+  ]
+}

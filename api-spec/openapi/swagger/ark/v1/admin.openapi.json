@@ -1,0 +1,1148 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "",
+    "version": "version not set"
+  },
+  "paths": {
+    "/v1/admin/conviction/ban": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_BanScript",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanScriptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BanScriptResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictions/{ids}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetConvictions",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConvictionsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictions/{id}/pardon": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_PardonConviction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "PardonConvictionRequest",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PardonConvictionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictionsByRound/{round_id}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetConvictionsByRound",
+        "parameters": [
+          {
+            "name": "roundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConvictionsByRoundResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictionsByScript/{script}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetActiveScriptConvictions",
+        "parameters": [
+          {
+            "name": "script",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetActiveScriptConvictionsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictionsInRange": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetConvictionsInRange",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Unix timestamp",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Unix timestamp",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConvictionsInRangeResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/intents": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_ListIntents",
+        "parameters": [
+          {
+            "name": "intentIds",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListIntentsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/intents/delete": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_DeleteIntents",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteIntentsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteIntentsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/marketHour": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetMarketHourConfig",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMarketHourConfigResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_UpdateMarketHourConfig",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMarketHourConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateMarketHourConfigResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/note": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_CreateNote",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateNoteResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/round/{round_id}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetRoundDetails",
+        "parameters": [
+          {
+            "name": "roundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetRoundDetailsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/rounds": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetRounds",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetRoundsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/sweeps": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetScheduledSweep",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetScheduledSweepResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Any": {
+        "type": "object",
+        "description": "Any contains an arbitrary schema along with a URL to help identify the type of the schema.",
+        "properties": {
+          "@type": {
+            "type": "string",
+            "description": "A URL/resource name that uniquely identifies the type of the schema."
+          }
+        }
+      },
+      "BanScriptRequest": {
+        "title": "BanScriptRequest",
+        "type": "object",
+        "properties": {
+          "banDuration": {
+            "type": "integer",
+            "description": "0 = permanent ban",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          }
+        }
+      },
+      "BanScriptResponse": {
+        "title": "BanScriptResponse",
+        "type": "object"
+      },
+      "Conviction": {
+        "title": "Conviction",
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "crimeType": {
+            "$ref": "#/components/schemas/CrimeType"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "description": "0 if never expires",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "pardoned": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "roundId": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string",
+            "description": "Only set for script convictions"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ConvictionType"
+          }
+        }
+      },
+      "ConvictionType": {
+        "title": "ConvictionType",
+        "enum": [
+          "CONVICTION_TYPE_UNSPECIFIED",
+          "CONVICTION_TYPE_SCRIPT"
+        ],
+        "type": "string",
+        "default": "CONVICTION_TYPE_UNSPECIFIED"
+      },
+      "CreateNoteRequest": {
+        "title": "CreateNoteRequest",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "CreateNoteResponse": {
+        "title": "CreateNoteResponse",
+        "type": "object",
+        "properties": {
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CrimeType": {
+        "title": "CrimeType",
+        "enum": [
+          "CRIME_TYPE_UNSPECIFIED",
+          "CRIME_TYPE_MUSIG2_NONCE_SUBMISSION",
+          "CRIME_TYPE_MUSIG2_SIGNATURE_SUBMISSION",
+          "CRIME_TYPE_MUSIG2_INVALID_SIGNATURE",
+          "CRIME_TYPE_FORFEIT_SUBMISSION",
+          "CRIME_TYPE_FORFEIT_INVALID_SIGNATURE",
+          "CRIME_TYPE_BOARDING_INPUT_SUBMISSION",
+          "CRIME_TYPE_MANUAL_BAN"
+        ],
+        "type": "string",
+        "default": "CRIME_TYPE_UNSPECIFIED"
+      },
+      "DeleteIntentsRequest": {
+        "title": "DeleteIntentsRequest",
+        "type": "object",
+        "properties": {
+          "intentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DeleteIntentsResponse": {
+        "title": "DeleteIntentsResponse",
+        "type": "object"
+      },
+      "GetActiveScriptConvictionsRequest": {
+        "title": "GetActiveScriptConvictionsRequest",
+        "type": "object",
+        "properties": {
+          "script": {
+            "type": "string"
+          }
+        }
+      },
+      "GetActiveScriptConvictionsResponse": {
+        "title": "GetActiveScriptConvictionsResponse",
+        "type": "object",
+        "properties": {
+          "convictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
+      },
+      "GetConvictionsByRoundRequest": {
+        "title": "GetConvictionsByRoundRequest",
+        "type": "object",
+        "properties": {
+          "roundId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetConvictionsByRoundResponse": {
+        "title": "GetConvictionsByRoundResponse",
+        "type": "object",
+        "properties": {
+          "convictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
+      },
+      "GetConvictionsInRangeRequest": {
+        "title": "GetConvictionsInRangeRequest",
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "Unix timestamp",
+            "format": "int64"
+          },
+          "to": {
+            "type": "integer",
+            "description": "Unix timestamp",
+            "format": "int64"
+          }
+        }
+      },
+      "GetConvictionsInRangeResponse": {
+        "title": "GetConvictionsInRangeResponse",
+        "type": "object",
+        "properties": {
+          "convictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
+      },
+      "GetConvictionsRequest": {
+        "title": "GetConvictionsRequest",
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GetConvictionsResponse": {
+        "title": "GetConvictionsResponse",
+        "type": "object",
+        "properties": {
+          "convictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
+      },
+      "GetMarketHourConfigRequest": {
+        "title": "GetMarketHourConfigRequest",
+        "type": "object"
+      },
+      "GetMarketHourConfigResponse": {
+        "title": "GetMarketHourConfigResponse",
+        "type": "object",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/MarketHourConfig"
+          }
+        }
+      },
+      "GetRoundDetailsRequest": {
+        "title": "GetRoundDetailsRequest",
+        "type": "object",
+        "properties": {
+          "roundId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetRoundDetailsResponse": {
+        "title": "GetRoundDetailsResponse",
+        "type": "object",
+        "properties": {
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "endedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "exitAddresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forfeitedAmount": {
+            "type": "string"
+          },
+          "inputsVtxos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputsVtxos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "roundId": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalExitAmount": {
+            "type": "string"
+          },
+          "totalFeeAmount": {
+            "type": "string"
+          },
+          "totalVtxosAmount": {
+            "type": "string"
+          }
+        }
+      },
+      "GetRoundsRequest": {
+        "title": "GetRoundsRequest",
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "before": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "GetRoundsResponse": {
+        "title": "GetRoundsResponse",
+        "type": "object",
+        "properties": {
+          "rounds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GetScheduledSweepRequest": {
+        "title": "GetScheduledSweepRequest",
+        "type": "object"
+      },
+      "GetScheduledSweepResponse": {
+        "title": "GetScheduledSweepResponse",
+        "type": "object",
+        "properties": {
+          "sweeps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledSweep"
+            }
+          }
+        }
+      },
+      "Intent": {
+        "title": "Intent",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
+          }
+        }
+      },
+      "IntentInfo": {
+        "title": "IntentInfo",
+        "type": "object",
+        "properties": {
+          "boardingInputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntentInput"
+            }
+          },
+          "cosignersPublicKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntentInput"
+            }
+          },
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
+          },
+          "receivers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Output"
+            }
+          }
+        }
+      },
+      "IntentInput": {
+        "title": "IntentInput",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "ListIntentsRequest": {
+        "title": "ListIntentsRequest",
+        "type": "object",
+        "properties": {
+          "intentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ListIntentsResponse": {
+        "title": "ListIntentsResponse",
+        "type": "object",
+        "properties": {
+          "intents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntentInfo"
+            }
+          }
+        }
+      },
+      "MarketHourConfig": {
+        "title": "MarketHourConfig",
+        "type": "object",
+        "properties": {
+          "endTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundInterval": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "startTime": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "Output": {
+        "title": "Output",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "description": "Amount to send in satoshis.",
+            "format": "uint64"
+          },
+          "onchainAddress": {
+            "type": "string"
+          },
+          "vtxoScript": {
+            "type": "string"
+          }
+        }
+      },
+      "PardonConvictionRequest": {
+        "title": "PardonConvictionRequest",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "PardonConvictionResponse": {
+        "title": "PardonConvictionResponse",
+        "type": "object"
+      },
+      "ScheduledSweep": {
+        "title": "ScheduledSweep",
+        "type": "object",
+        "properties": {
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SweepableOutput"
+            }
+          },
+          "roundId": {
+            "type": "string"
+          }
+        }
+      },
+      "Status": {
+        "title": "Status",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Any"
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "SweepableOutput": {
+        "title": "SweepableOutput",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "scheduledAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "UpdateMarketHourConfigRequest": {
+        "title": "UpdateMarketHourConfigRequest",
+        "type": "object",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/MarketHourConfig"
+          }
+        }
+      },
+      "UpdateMarketHourConfigResponse": {
+        "title": "UpdateMarketHourConfigResponse",
+        "type": "object"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "AdminService"
+    }
+  ]
+}

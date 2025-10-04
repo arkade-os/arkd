@@ -2,28 +2,28 @@ syntax = "proto3";
 
 package signer.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 
 // SignerService defines the apis to interact with the Ark signer.
 service SignerService {
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/status"
     };
   }
   rpc GetPubkey(GetPubkeyRequest) returns (GetPubkeyResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/pubkey"
     };
   }
   rpc SignTransaction(SignTransactionRequest) returns (SignTransactionResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/sign-transaction"
       body: "*"
     };
   }
   rpc SignTransactionTapscript(SignTransactionTapscriptRequest) returns (SignTransactionTapscriptResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/sign-transaction-tapscript"
       body: "*"
     };
