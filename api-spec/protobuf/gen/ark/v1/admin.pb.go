@@ -1021,13 +1021,15 @@ func (x *ScheduledSweep) GetOutputs() []*SweepableOutput {
 }
 
 type MarketHourConfig struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	StartTime     int64                  `protobuf:"varint,1,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
-	EndTime       int64                  `protobuf:"varint,2,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	Period        int64                  `protobuf:"varint,3,opt,name=period,proto3" json:"period,omitempty"`
-	RoundInterval int64                  `protobuf:"varint,4,opt,name=round_interval,json=roundInterval,proto3" json:"round_interval,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	StartTime                 int64                  `protobuf:"varint,1,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	EndTime                   int64                  `protobuf:"varint,2,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	Period                    int64                  `protobuf:"varint,3,opt,name=period,proto3" json:"period,omitempty"`
+	RoundInterval             int64                  `protobuf:"varint,4,opt,name=round_interval,json=roundInterval,proto3" json:"round_interval,omitempty"`
+	RoundMinParticipantsCount int64                  `protobuf:"varint,5,opt,name=round_min_participants_count,json=roundMinParticipantsCount,proto3" json:"round_min_participants_count,omitempty"`
+	RoundMaxParticipantsCount int64                  `protobuf:"varint,6,opt,name=round_max_participants_count,json=roundMaxParticipantsCount,proto3" json:"round_max_participants_count,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *MarketHourConfig) Reset() {
@@ -1084,6 +1086,20 @@ func (x *MarketHourConfig) GetPeriod() int64 {
 func (x *MarketHourConfig) GetRoundInterval() int64 {
 	if x != nil {
 		return x.RoundInterval
+	}
+	return 0
+}
+
+func (x *MarketHourConfig) GetRoundMinParticipantsCount() int64 {
+	if x != nil {
+		return x.RoundMinParticipantsCount
+	}
+	return 0
+}
+
+func (x *MarketHourConfig) GetRoundMaxParticipantsCount() int64 {
+	if x != nil {
+		return x.RoundMaxParticipantsCount
 	}
 	return 0
 }
@@ -2030,13 +2046,15 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\fscheduled_at\x18\x04 \x01(\x03R\vscheduledAt\"^\n" +
 	"\x0eScheduledSweep\x12\x19\n" +
 	"\bround_id\x18\x01 \x01(\tR\aroundId\x121\n" +
-	"\aoutputs\x18\x02 \x03(\v2\x17.ark.v1.SweepableOutputR\aoutputs\"\x8b\x01\n" +
+	"\aoutputs\x18\x02 \x03(\v2\x17.ark.v1.SweepableOutputR\aoutputs\"\x8d\x02\n" +
 	"\x10MarketHourConfig\x12\x1d\n" +
 	"\n" +
 	"start_time\x18\x01 \x01(\x03R\tstartTime\x12\x19\n" +
 	"\bend_time\x18\x02 \x01(\x03R\aendTime\x12\x16\n" +
 	"\x06period\x18\x03 \x01(\x03R\x06period\x12%\n" +
-	"\x0eround_interval\x18\x04 \x01(\x03R\rroundInterval\"M\n" +
+	"\x0eround_interval\x18\x04 \x01(\x03R\rroundInterval\x12?\n" +
+	"\x1cround_min_participants_count\x18\x05 \x01(\x03R\x19roundMinParticipantsCount\x12?\n" +
+	"\x1cround_max_participants_count\x18\x06 \x01(\x03R\x19roundMaxParticipantsCount\"M\n" +
 	"\vIntentInput\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x12\n" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\x12\x16\n" +

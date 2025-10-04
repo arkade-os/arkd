@@ -1035,6 +1035,14 @@
             "type": "integer",
             "format": "int64"
           },
+          "roundMaxParticipantsCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundMinParticipantsCount": {
+            "type": "integer",
+            "format": "int64"
+          },
           "startTime": {
             "type": "integer",
             "format": "int64"
