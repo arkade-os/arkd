@@ -26,6 +26,7 @@ type AdminService interface {
 	UpdateMarketHourConfig(
 		ctx context.Context,
 		marketHourStartTime, marketHourEndTime time.Time, period, roundInterval time.Duration,
+		roundMinParticipantsCount, roundMaxParticipantsCount int64,
 	) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
@@ -238,6 +239,7 @@ func (s *adminService) GetMarketHourConfig(ctx context.Context) (*domain.MarketH
 func (s *adminService) UpdateMarketHourConfig(
 	ctx context.Context,
 	marketHourStartTime, marketHourEndTime time.Time, period, roundInterval time.Duration,
+	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) error {
 	if marketHourStartTime.IsZero() && marketHourEndTime.IsZero() &&
 		period <= 0 && roundInterval <= 0 {
@@ -287,8 +289,23 @@ func (s *adminService) UpdateMarketHourConfig(
 	if roundInterval <= 0 {
 		roundInterval = marketHour.RoundInterval
 	}
+	if roundMinParticipantsCount <= 0 {
+		roundMinParticipantsCount = marketHour.RoundMinParticipantsCount
+	}
+	if roundMaxParticipantsCount <= 0 {
+		roundMaxParticipantsCount = marketHour.RoundMaxParticipantsCount
+	}
+	if roundMaxParticipantsCount < roundMinParticipantsCount {
+		return fmt.Errorf(
+			"got round max participants %d, expected at least %d",
+			roundMaxParticipantsCount, roundMinParticipantsCount,
+		)
+	}
 
-	mh := domain.NewMarketHour(marketHourStartTime, marketHourEndTime, period, roundInterval)
+	mh := domain.NewMarketHour(
+		marketHourStartTime, marketHourEndTime, period, roundInterval,
+		roundMinParticipantsCount, roundMaxParticipantsCount,
+	)
 	if err := s.repoManager.MarketHourRepo().Upsert(ctx, *mh); err != nil {
 		return fmt.Errorf("failed to upsert market hours: %w", err)
 	}

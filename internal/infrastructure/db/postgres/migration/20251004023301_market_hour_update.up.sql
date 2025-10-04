@@ -1,0 +1,2 @@
+ALTER TABLE market_hour ADD COLUMN IF NOT EXISTS round_min_participants BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE market_hour ADD COLUMN IF NOT EXISTS round_max_participants BIGINT NOT NULL DEFAULT 0;

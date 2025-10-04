@@ -91,13 +91,15 @@ ON CONFLICT(txid) DO UPDATE SET
     offchain_txid = EXCLUDED.offchain_txid;
 
 -- name: UpsertMarketHour :exec
-INSERT INTO market_hour (id, start_time, end_time, period, round_interval, updated_at)
-VALUES (@id, @start_time, @end_time, @period, @round_interval, @updated_at)
+INSERT INTO market_hour (id, start_time, end_time, period, round_interval, round_min_participants, round_max_participants, updated_at)
+VALUES (@id, @start_time, @end_time, @period, @round_interval, @round_min_participants, @round_max_participants, @updated_at)
 ON CONFLICT (id) DO UPDATE SET
     start_time = EXCLUDED.start_time,
     end_time = EXCLUDED.end_time,
     period = EXCLUDED.period,
     round_interval = EXCLUDED.round_interval,
+    round_min_participants = EXCLUDED.round_min_participants,
+    round_max_participants = EXCLUDED.round_max_participants,
     updated_at = EXCLUDED.updated_at;
 
 -- name: UpdateVtxoIntentId :exec

@@ -161,16 +161,27 @@ func (a *adminHandler) GetMarketHourConfig(
 func (a *adminHandler) UpdateMarketHourConfig(
 	ctx context.Context, req *arkv1.UpdateMarketHourConfigRequest,
 ) (*arkv1.UpdateMarketHourConfigResponse, error) {
-	if req.GetConfig() == nil {
+	cfg := req.GetConfig()
+	if cfg == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing market hour config")
+	}
+	startTime := time.Unix(cfg.GetStartTime(), 0)
+	endTime := time.Unix(cfg.GetEndTime(), 0)
+	period := time.Duration(cfg.GetPeriod()) * time.Minute
+	roundInterval := time.Duration(cfg.GetRoundInterval()) * time.Second
+	roundMinParticipantsCount := cfg.GetRoundMinParticipantsCount()
+	roundMaxParticipantsCount := cfg.GetRoundMaxParticipantsCount()
+	if roundMinParticipantsCount != 0 && roundMaxParticipantsCount != 0 &&
+		roundMinParticipantsCount > roundMaxParticipantsCount {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"round min participants count must be less than or equal to max participants count",
+		)
 	}
 
 	if err := a.adminService.UpdateMarketHourConfig(
-		ctx,
-		time.Unix(req.GetConfig().GetStartTime(), 0),
-		time.Unix(req.GetConfig().GetEndTime(), 0),
-		time.Duration(req.GetConfig().GetPeriod())*time.Minute,
-		time.Duration(req.GetConfig().GetRoundInterval())*time.Second,
+		ctx, startTime, endTime, period, roundInterval,
+		roundMinParticipantsCount, roundMaxParticipantsCount,
 	); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}

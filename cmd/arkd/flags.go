@@ -10,26 +10,28 @@ import (
 )
 
 const (
-	urlFlagName                     = "url"
-	datadirFlagName                 = "datadir"
-	macaroonFlagName                = "macaroon"
-	passwordFlagName                = "password"
-	dbPathFlagName                  = "datadir"
-	mnemonicFlagName                = "mnemonic"
-	gapLimitFlagName                = "addr-gap-limit"
-	amountFlagName                  = "amount"
-	quantityFlagName                = "quantity"
-	addressFlagName                 = "address"
-	intentIdsFlagName               = "ids"
-	roundIdFlagName                 = "id"
-	beforeDateFlagName              = "before-date"
-	afterDateFlagName               = "after-date"
-	marketHourStartDateFlagName     = "start-date"
-	marketHourEndDateFlagName       = "end-date"
-	marketHourRoundIntervalFlagName = "round-interval"
-	marketHourPeriodFlagName        = "period"
-	signerKeyFlagName               = "signer-prvkey"
-	signerUrlFlagName               = "signer-url"
+	urlFlagName                                 = "url"
+	datadirFlagName                             = "datadir"
+	macaroonFlagName                            = "macaroon"
+	passwordFlagName                            = "password"
+	dbPathFlagName                              = "datadir"
+	mnemonicFlagName                            = "mnemonic"
+	gapLimitFlagName                            = "addr-gap-limit"
+	amountFlagName                              = "amount"
+	quantityFlagName                            = "quantity"
+	addressFlagName                             = "address"
+	intentIdsFlagName                           = "ids"
+	roundIdFlagName                             = "id"
+	beforeDateFlagName                          = "before-date"
+	afterDateFlagName                           = "after-date"
+	marketHourStartDateFlagName                 = "start-date"
+	marketHourEndDateFlagName                   = "end-date"
+	marketHourRoundIntervalFlagName             = "round-interval"
+	marketHourPeriodFlagName                    = "period"
+	marketHourRoundMinParticipantsCountFlagName = "round-min-participants"
+	marketHourRoundMaxParticipantsCountFlagName = "round-max-participants"
+	signerKeyFlagName                           = "signer-prvkey"
+	signerUrlFlagName                           = "signer-url"
 
 	dateFormat           = time.DateOnly
 	marketHourDateFormat = time.DateTime
@@ -134,6 +136,14 @@ var (
 	marketHourPeriodFlag = &cli.IntFlag{
 		Name:  marketHourPeriodFlagName,
 		Usage: "the market hour period in minutes, ie the interval between a market hour and the next one",
+	}
+	marketHourRoundMinParticipantsCountFlag = &cli.IntFlag{
+		Name:  marketHourRoundMinParticipantsCountFlagName,
+		Usage: "the min number of participants per round during a market hour",
+	}
+	marketHourRoundMaxParticipantsCountFlag = &cli.IntFlag{
+		Name:  marketHourRoundMaxParticipantsCountFlagName,
+		Usage: "the max number of participants per round during a market hour",
 	}
 	signerKeyFlag = &cli.StringFlag{
 		Name:  signerKeyFlagName,
