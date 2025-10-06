@@ -76,7 +76,7 @@ func OperatorPermissions() []bakery.Op {
 
 func AdminPermissions() []bakery.Op {
 	indexedPermissions := make(map[bakery.Op]struct{})
-	for _, op := range append(UnlockerPermissions(), AdminPermissions()...) {
+	for _, op := range append(UnlockerPermissions(), OperatorPermissions()...) {
 		indexedPermissions[op] = struct{}{}
 	}
 	indexedPermissions[bakery.Op{
