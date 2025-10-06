@@ -7,36 +7,37 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	. "github.com/arkade-os/arkd/pkg/errors"
 )
 
 type Service interface {
-	Start() error
+	Start() Error
 	Stop()
 	RegisterIntent(
 		ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
-	) (string, error)
-	ConfirmRegistration(ctx context.Context, intentId string) error
-	SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) error
-	SignCommitmentTx(ctx context.Context, commitmentTx string) error
+	) (string, Error)
+	ConfirmRegistration(ctx context.Context, intentId string) Error
+	SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) Error
+	SignCommitmentTx(ctx context.Context, commitmentTx string) Error
 	GetEventsChannel(ctx context.Context) <-chan []domain.Event
-	GetInfo(ctx context.Context) (*ServiceInfo, error)
+	GetInfo(ctx context.Context) (*ServiceInfo, Error)
 	SubmitOffchainTx(
 		ctx context.Context, checkpointTxs []string, signedArkTx string,
-	) (signedCheckpoints []string, finalArkTx string, arkTxid string, err error)
-	FinalizeOffchainTx(ctx context.Context, txid string, finalCheckpoints []string) error
+	) (signedCheckpoints []string, finalArkTx string, arkTxid string, err Error)
+	FinalizeOffchainTx(ctx context.Context, txid string, finalCheckpoints []string) Error
 	// Tree signing methods
 	RegisterCosignerNonces(
 		ctx context.Context, roundId, pubkey string, nonces tree.TreeNonces,
-	) error
+	) Error
 	RegisterCosignerSignatures(
 		ctx context.Context, roundId, pubkey string, signatures tree.TreePartialSigs,
-	) error
+	) Error
 	GetTxEventsChannel(ctx context.Context) <-chan TransactionEvent
 	DeleteIntentsByProof(
 		ctx context.Context,
 		proof intent.Proof,
 		message intent.DeleteMessage,
-	) error
+	) Error
 
 	// TODO: remove when detaching the indexer svc.
 	GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent
