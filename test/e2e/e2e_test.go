@@ -473,7 +473,7 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	bumpAndBroadcastTx(t, leafTx, expl)
 
 	// Give time to the explorer to track down the braodcasted txs.
-	time.Sleep(1 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	// The vtxo is now unrolled and unspent in the Bitcoin mempool.
 	spentStatus, err := expl.GetTxOutspends(vtxo.Txid)
