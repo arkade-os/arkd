@@ -12,16 +12,18 @@ import (
 )
 
 var (
-	adminMacaroonFile   = "admin.macaroon"
-	walletMacaroonFile  = "wallet.macaroon"
-	managerMacaroonFile = "manager.macaroon"
-	roMacaroonFile      = "readonly.macaroon"
+	superAdminMacaroonFile = "superadmin.macaroon"
+	adminMacaroonFile      = "admin.macaroon"
+	operatorMacaroonFile   = "operator.macaroon"
+	unlockerMacaroonFile   = "unlocker.macaroon"
+	roMacaroonFile         = "readonly.macaroon"
 
 	macFiles = map[string][]bakery.Op{
-		adminMacaroonFile:   permissions.AdminPermissions(),
-		walletMacaroonFile:  permissions.WalletPermissions(),
-		managerMacaroonFile: permissions.ManagerPermissions(),
-		roMacaroonFile:      permissions.ReadOnlyPermissions(),
+		superAdminMacaroonFile: permissions.SuperAdminPermissions(),
+		adminMacaroonFile:      permissions.AdminPermissions(),
+		operatorMacaroonFile:   permissions.OperatorPermissions(),
+		unlockerMacaroonFile:   permissions.UnlockerPermissions(),
+		roMacaroonFile:         permissions.ReadOnlyPermissions(),
 	}
 )
 
@@ -32,20 +34,19 @@ var (
 func genMacaroons(
 	ctx context.Context, svc *macaroons.Service, datadir string,
 ) (bool, error) {
-	adminMacFile := filepath.Join(datadir, adminMacaroonFile)
-	walletMacFile := filepath.Join(datadir, walletMacaroonFile)
-	managerMacFile := filepath.Join(datadir, managerMacaroonFile)
-	roMacFile := filepath.Join(datadir, roMacaroonFile)
-	if pathExists(adminMacFile) || pathExists(walletMacFile) ||
-		pathExists(managerMacFile) || pathExists(roMacFile) {
-		return false, nil
+	// Don't do anything if macaroon files already exist.
+	for macaroonFile := range macFiles {
+		if pathExists(filepath.Join(datadir, macaroonFile)) {
+			return false, nil
+		}
 	}
 
-	// Let's create the datadir if it doesn't exist.
+	// Create the datadir if it doesn't exist.
 	if err := makeDirectoryIfNotExists(datadir); err != nil {
 		return false, err
 	}
 
+	// Create the macaroon files.
 	for macFilename, macPermissions := range macFiles {
 		mktMacBytes, err := svc.BakeMacaroon(ctx, macPermissions)
 		if err != nil {
