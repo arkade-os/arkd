@@ -145,6 +145,10 @@ func Whitelist() map[string][]bakery.Op {
 			Entity: EntityArk,
 			Action: "write",
 		}},
+		fmt.Sprintf("/%s/GetPendingTx", arkv1.ArkService_ServiceDesc.ServiceName): {{
+			Entity: EntityArk,
+			Action: "read",
+		}},
 		fmt.Sprintf("/%s/Check", grpchealth.Health_ServiceDesc.ServiceName): {{
 			Entity: EntityHealth,
 			Action: "read",
@@ -270,6 +274,33 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 		fmt.Sprintf("/%s/ListIntents", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
+		}},
+		// Conviction management RPCs
+		fmt.Sprintf("/%s/GetConvictions", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetConvictionsInRange", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetConvictionsByRound", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetActiveScriptConvictions", arkv1.AdminService_ServiceDesc.ServiceName): {
+			{
+				Entity: EntityManager,
+				Action: "read",
+			},
+		},
+		fmt.Sprintf("/%s/PardonConviction", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "write",
+		}},
+		fmt.Sprintf("/%s/BanScript", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "write",
 		}},
 	}
 }

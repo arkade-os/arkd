@@ -100,11 +100,13 @@ func ValidateVtxoTree(
 				return false, ErrInvalidTaprootScript
 			}
 
-			cosigners, err := txutils.GetCosignerKeys(child.Root.Inputs[0])
+			cosigners, err := txutils.ParseCosignerKeysFromArkPsbt(child.Root, 0)
 			if err != nil {
-				return false, fmt.Errorf("unable to get cosigners keys: %w", err)
+				return false, fmt.Errorf(
+					"failed to extract cosigners from tx %s: %s",
+					child.Root.UnsignedTx.TxID(), err,
+				)
 			}
-
 			cosigners = uniqueCosigners(cosigners)
 
 			if len(cosigners) == 0 {

@@ -5,6 +5,272 @@
     "version": "version not set"
   },
   "paths": {
+    "/v1/admin/conviction/ban": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_BanScript",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanScriptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BanScriptResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictions/{ids}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetConvictions",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "path",
+            "required": true,
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConvictionsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictions/{id}/pardon": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_PardonConviction",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "PardonConvictionRequest",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PardonConvictionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictionsByRound/{round_id}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetConvictionsByRound",
+        "parameters": [
+          {
+            "name": "roundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConvictionsByRoundResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictionsByScript/{script}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetActiveScriptConvictions",
+        "parameters": [
+          {
+            "name": "script",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetActiveScriptConvictionsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/convictionsInRange": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetConvictionsInRange",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Unix timestamp",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Unix timestamp",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetConvictionsInRangeResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/intents": {
       "get": {
         "tags": [
@@ -328,6 +594,73 @@
           }
         }
       },
+      "BanScriptRequest": {
+        "title": "BanScriptRequest",
+        "type": "object",
+        "properties": {
+          "banDuration": {
+            "type": "integer",
+            "description": "0 = permanent ban",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          }
+        }
+      },
+      "BanScriptResponse": {
+        "title": "BanScriptResponse",
+        "type": "object"
+      },
+      "Conviction": {
+        "title": "Conviction",
+        "type": "object",
+        "properties": {
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "crimeType": {
+            "$ref": "#/components/schemas/CrimeType"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "description": "0 if never expires",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "pardoned": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "roundId": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string",
+            "description": "Only set for script convictions"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ConvictionType"
+          }
+        }
+      },
+      "ConvictionType": {
+        "title": "ConvictionType",
+        "enum": [
+          "CONVICTION_TYPE_UNSPECIFIED",
+          "CONVICTION_TYPE_SCRIPT"
+        ],
+        "type": "string",
+        "default": "CONVICTION_TYPE_UNSPECIFIED"
+      },
       "CreateNoteRequest": {
         "title": "CreateNoteRequest",
         "type": "object",
@@ -354,6 +687,21 @@
           }
         }
       },
+      "CrimeType": {
+        "title": "CrimeType",
+        "enum": [
+          "CRIME_TYPE_UNSPECIFIED",
+          "CRIME_TYPE_MUSIG2_NONCE_SUBMISSION",
+          "CRIME_TYPE_MUSIG2_SIGNATURE_SUBMISSION",
+          "CRIME_TYPE_MUSIG2_INVALID_SIGNATURE",
+          "CRIME_TYPE_FORFEIT_SUBMISSION",
+          "CRIME_TYPE_FORFEIT_INVALID_SIGNATURE",
+          "CRIME_TYPE_BOARDING_INPUT_SUBMISSION",
+          "CRIME_TYPE_MANUAL_BAN"
+        ],
+        "type": "string",
+        "default": "CRIME_TYPE_UNSPECIFIED"
+      },
       "DeleteIntentsRequest": {
         "title": "DeleteIntentsRequest",
         "type": "object",
@@ -369,6 +717,100 @@
       "DeleteIntentsResponse": {
         "title": "DeleteIntentsResponse",
         "type": "object"
+      },
+      "GetActiveScriptConvictionsRequest": {
+        "title": "GetActiveScriptConvictionsRequest",
+        "type": "object",
+        "properties": {
+          "script": {
+            "type": "string"
+          }
+        }
+      },
+      "GetActiveScriptConvictionsResponse": {
+        "title": "GetActiveScriptConvictionsResponse",
+        "type": "object",
+        "properties": {
+          "convictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
+      },
+      "GetConvictionsByRoundRequest": {
+        "title": "GetConvictionsByRoundRequest",
+        "type": "object",
+        "properties": {
+          "roundId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetConvictionsByRoundResponse": {
+        "title": "GetConvictionsByRoundResponse",
+        "type": "object",
+        "properties": {
+          "convictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
+      },
+      "GetConvictionsInRangeRequest": {
+        "title": "GetConvictionsInRangeRequest",
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "Unix timestamp",
+            "format": "int64"
+          },
+          "to": {
+            "type": "integer",
+            "description": "Unix timestamp",
+            "format": "int64"
+          }
+        }
+      },
+      "GetConvictionsInRangeResponse": {
+        "title": "GetConvictionsInRangeResponse",
+        "type": "object",
+        "properties": {
+          "convictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
+      },
+      "GetConvictionsRequest": {
+        "title": "GetConvictionsRequest",
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "GetConvictionsResponse": {
+        "title": "GetConvictionsResponse",
+        "type": "object",
+        "properties": {
+          "convictions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
       },
       "GetMarketHourConfigRequest": {
         "title": "GetMarketHourConfigRequest",
@@ -615,6 +1057,19 @@
             "type": "string"
           }
         }
+      },
+      "PardonConvictionRequest": {
+        "title": "PardonConvictionRequest",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "PardonConvictionResponse": {
+        "title": "PardonConvictionResponse",
+        "type": "object"
       },
       "ScheduledSweep": {
         "title": "ScheduledSweep",

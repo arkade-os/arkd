@@ -37,11 +37,7 @@ func (b balance) String() string {
 	)
 }
 
-func getBalance(url, macaroon, tlsCert string) (*balance, error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return nil, err
-	}
+func getBalance(url, macaroon string, tlsConfig *tls.Config) (*balance, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -92,12 +88,7 @@ func (s status) String() string {
 	)
 }
 
-func getStatus(url, tlsCert string) (*status, error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return nil, err
-	}
-
+func getStatus(url string, tlsConfig *tls.Config) (*status, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -148,11 +139,7 @@ type roundInfo struct {
 	EndedAt          string   `json:"endedAt"`
 }
 
-func getRoundInfo(url, macaroon, tlsCert string) (*roundInfo, error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return nil, err
-	}
+func getRoundInfo(url, macaroon string, tlsConfig *tls.Config) (*roundInfo, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -190,30 +177,38 @@ func getRoundInfo(url, macaroon, tlsCert string) (*roundInfo, error) {
 	return result, nil
 }
 
-func getCredentialPaths(ctx *cli.Context) (macaroon string, tlsCertPath string, err error) {
-	datadir := ctx.String(datadirFlagName)
+func getCredentials(ctx *cli.Context) (macaroon string, tlsConfig *tls.Config, err error) {
+	var macaroonPath, tlsCertPath string
+	if ctx.String(macaroonFlagName) != "" {
+		macaroon = ctx.String(macaroonFlagName)
+	} else {
+		datadir := ctx.String(datadirFlagName)
+		macaroonPath = filepath.Join(datadir, macaroonDir, macaroonFile)
+		tlsCertPath = filepath.Join(datadir, tlsDir, tlsCertFile)
+	}
 
-	macaroonPath := filepath.Join(datadir, macaroonDir, macaroonFile)
 	if _, err := os.Stat(macaroonPath); err == nil {
 		macaroon, err = getMacaroon(macaroonPath)
 		if err != nil {
-			return "", "", fmt.Errorf("failed to read macaroon: %w", err)
+			return "", nil, fmt.Errorf("failed to read macaroon: %w", err)
 		}
 	}
 
-	tlsCertPath = filepath.Join(datadir, tlsDir, tlsCertFile)
 	if strings.Contains(ctx.String(urlFlagName), "http://") {
 		tlsCertPath = ""
 	}
 
-	return macaroon, tlsCertPath, nil
+	if _, err := os.Stat(tlsCertPath); err == nil {
+		tlsConfig, err = getTLSConfig(tlsCertPath)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to get tls config: %s", err)
+		}
+	}
+
+	return
 }
 
-func post[T any](url, body, key, macaroon, tlsCert string) (result T, err error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return
-	}
+func post[T any](url, body, key, macaroon string, tlsConfig *tls.Config) (result T, err error) {
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {
 		return
@@ -256,11 +251,7 @@ func post[T any](url, body, key, macaroon, tlsCert string) (result T, err error)
 	return
 }
 
-func get[T any](url, key, macaroon, tlsCert string) (result T, err error) {
-	tlsConfig, err := getTLSConfig(tlsCert)
-	if err != nil {
-		return
-	}
+func get[T any](url, key, macaroon string, tlsConfig *tls.Config) (result T, err error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return
@@ -315,15 +306,10 @@ func getMacaroon(path string) (string, error) {
 }
 
 func getTLSConfig(path string) (*tls.Config, error) {
-	if len(path) <= 0 {
-		return nil, nil
-	}
-	var buf []byte
 	buf, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-
 	caCertPool := x509.NewCertPool()
 	if ok := caCertPool.AppendCertsFromPEM(buf); !ok {
 		return nil, fmt.Errorf("failed to parse tls cert")

@@ -8,5 +8,6 @@ type RepoManager interface {
 	Vtxos() domain.VtxoRepository
 	MarketHourRepo() domain.MarketHourRepo
 	OffchainTxs() domain.OffchainTxRepository
+	Convictions() domain.ConvictionRepository
 	Close()
 }

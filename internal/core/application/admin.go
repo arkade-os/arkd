@@ -29,6 +29,15 @@ type AdminService interface {
 	) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
+	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
+	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
+	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
+	GetActiveScriptConvictions(
+		ctx context.Context,
+		script string,
+	) ([]domain.ScriptConviction, error)
+	PardonConviction(ctx context.Context, id string) error
+	BanScript(ctx context.Context, script, reason string, banDuration *time.Duration) error
 }
 
 type adminService struct {
@@ -348,6 +357,66 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 		return s.liveStore.Intents().DeleteAll()
 	}
 	return s.liveStore.Intents().Delete(intentIds)
+}
+
+// Conviction management methods
+func (s *adminService) GetConvictionsByIds(
+	ctx context.Context,
+	ids []string,
+) ([]domain.Conviction, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("missing conviction ids")
+	}
+
+	convictions := make([]domain.Conviction, 0, len(ids))
+	for _, id := range ids {
+		conviction, err := s.repoManager.Convictions().Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		convictions = append(convictions, conviction)
+	}
+	return convictions, nil
+}
+
+func (s *adminService) GetConvictions(
+	ctx context.Context,
+	from, to time.Time,
+) ([]domain.Conviction, error) {
+	return s.repoManager.Convictions().GetAll(ctx, from, to)
+}
+
+func (s *adminService) GetConvictionsByRound(
+	ctx context.Context,
+	roundID string,
+) ([]domain.Conviction, error) {
+	return s.repoManager.Convictions().GetByRoundID(ctx, roundID)
+}
+
+func (s *adminService) GetActiveScriptConvictions(
+	ctx context.Context,
+	script string,
+) ([]domain.ScriptConviction, error) {
+	return s.repoManager.Convictions().GetActiveScriptConvictions(ctx, script)
+}
+
+func (s *adminService) PardonConviction(ctx context.Context, id string) error {
+	return s.repoManager.Convictions().Pardon(ctx, id)
+}
+
+func (s *adminService) BanScript(
+	ctx context.Context,
+	script, reason string,
+	banDuration *time.Duration,
+) error {
+	crime := domain.Crime{
+		Type:    domain.CrimeTypeManualBan,
+		RoundID: "manual-ban",
+		Reason:  reason,
+	}
+
+	conviction := domain.NewScriptConviction(script, crime, banDuration)
+	return s.repoManager.Convictions().Add(ctx, conviction)
 }
 
 type Balance struct {

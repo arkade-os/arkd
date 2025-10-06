@@ -18,6 +18,18 @@ type CheckpointTx struct {
 	OffchainTxid         string
 }
 
+type Conviction struct {
+	ID           string
+	Type         int32
+	CreatedAt    int64
+	ExpiresAt    sql.NullInt64
+	CrimeType    int32
+	CrimeRoundID string
+	CrimeReason  string
+	Pardoned     bool
+	Script       sql.NullString
+}
+
 type Intent struct {
 	ID      sql.NullString
 	RoundID sql.NullString

@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Datadir           string
 	Port              uint32
+	AdminPort         uint32
 	NoTLS             bool
 	NoMacaroons       bool
 	TLSExtraIPs       []string
@@ -27,6 +28,16 @@ func (c Config) Validate() error {
 	}
 	// nolint:all
 	defer lis.Close()
+
+	// Validate admin port if it's different from main port
+	if c.hasAdminPort() {
+		adminLis, err := net.Listen("tcp", c.adminAddress())
+		if err != nil {
+			return fmt.Errorf("invalid admin port: %s", err)
+		}
+		// nolint:all
+		defer adminLis.Close()
+	}
 
 	if !c.NoTLS {
 		tlsDir := c.tlsDatadir()
@@ -76,7 +87,19 @@ func (c Config) address() string {
 }
 
 func (c Config) gatewayAddress() string {
-	return fmt.Sprintf("localhost:%d", c.Port)
+	return fmt.Sprintf("127.0.0.1:%d", c.Port)
+}
+
+func (c Config) adminAddress() string {
+	return fmt.Sprintf(":%d", c.AdminPort)
+}
+
+func (c Config) adminGatewayAddress() string {
+	return fmt.Sprintf("127.0.0.1:%d", c.AdminPort)
+}
+
+func (c Config) hasAdminPort() bool {
+	return c.AdminPort != c.Port
 }
 
 func (c Config) macaroonsDatadir() string {

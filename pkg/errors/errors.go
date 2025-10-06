@@ -281,3 +281,4 @@ var INVALID_BOARDING_INPUT_SIG = Code[InvalidBoardingInputSigMetadata]{
 	grpccodes.InvalidArgument,
 }
 var SIGNING_SESSION_TIMED_OUT = Code[any]{28, "SIGNING_SESSION_TIMED_OUT", grpccodes.Internal}
+var VTXO_BANNED = Code[VtxoMetadata]{29, "VTXO_BANNED", grpccodes.InvalidArgument}
