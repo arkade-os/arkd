@@ -1879,7 +1879,6 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	if err != nil {
 		s.cache.CurrentRound().
 			Fail(INTERNAL_ERROR.New("failed to get main account balance: %s", err))
-		log.WithError(err).Warn("failed to get main account balance")
 		return
 	}
 
@@ -2229,8 +2228,8 @@ func (s *service) startFinalization(
 		}
 		_, err = coordinator.AddSignatures(s.operatorPubkey, operatorSignatures)
 		if err != nil {
-			s.cache.CurrentRound().Fail(fmt.Errorf("invalid operator tree signature: %s", err))
-			log.WithError(err).Warn("invalid operator tree signature")
+			s.cache.CurrentRound().
+				Fail(INTERNAL_ERROR.New("invalid operator tree signature: %s", err))
 			return
 		}
 
@@ -2380,7 +2379,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		strings.NewReader(s.cache.CurrentRound().Get().CommitmentTx), true,
 	)
 	if err != nil {
-		log.Debugf("failed to parse commitment tx: %s", s.cache.CurrentRound().Get().CommitmentTx)
 		changes = s.cache.CurrentRound().
 			Fail(INTERNAL_ERROR.New("failed to parse commitment tx: %s", err))
 		return
@@ -2407,7 +2405,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		txToSign = s.cache.CurrentRound().Get().CommitmentTx
 		commitmentTx, err = psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
 		if err != nil {
-			log.Debugf("failed to parse commitment tx: %s", txToSign)
 			changes = s.cache.CurrentRound().Fail(INTERNAL_ERROR.New(
 				"failed to parse commitment tx: %s", err,
 			))
@@ -2425,11 +2422,12 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		if !s.cache.ForfeitTxs().AllSigned() {
 			go s.banForfeitCollectionTimeout(ctx, roundId)
 
-			err = fmt.Errorf("missing forfeit transactions")
-			changes = s.cache.CurrentRound().Fail(err)
-			log.Warn(err)
+			changes = s.cache.CurrentRound().
+				Fail(INTERNAL_ERROR.New("missing forfeit transactions"))
 			return
 		}
+
+		s.roundReportSvc.OpStarted(VerifyForfeitsSignaturesOp)
 
 		// verify is forfeit tx signatures are valid, if not we ban the associated scripts
 		if convictions := s.verifyForfeitTxsSigs(roundId, forfeitTxList); len(convictions) > 0 {
@@ -2440,14 +2438,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 					log.WithError(err).Warn("failed to ban vtxos")
 				}
 			}()
-			return
-		}
-
-		s.roundReportSvc.OpStarted(VerifyForfeitsSignaturesOp)
-
-		if err := s.verifyForfeitTxsSigs(roundId, forfeitTxList); err != nil {
-			changes = s.cache.CurrentRound().
-				Fail(INTERNAL_ERROR.New("invalid forfeit txs: %s", err))
 			return
 		}
 

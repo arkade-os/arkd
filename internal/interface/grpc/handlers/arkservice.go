@@ -5,12 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -392,6 +394,14 @@ func (h *handler) listenToEvents() {
 
 				evs = append(evs, eventWithTopics{event: ev})
 			case domain.RoundFailed:
+				reasonErr := errors.New(e.Reason)
+				var structuredErr arkerrors.Error
+				if errors.As(reasonErr, &structuredErr) {
+					structuredErr.Log().Error(reasonErr)
+				} else {
+					log.WithError(reasonErr).Error("round failed")
+				}
+
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFailed{
 						BatchFailed: &arkv1.BatchFailedEvent{

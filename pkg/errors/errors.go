@@ -6,6 +6,7 @@ import (
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	log "github.com/sirupsen/logrus"
 	grpccodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -41,11 +42,13 @@ type Error interface {
 	error
 	// GRPCStatus is required by gPRC to be parsable by the status.FromError function
 	GRPCStatus() *status.Status
+	Log() *log.Entry
+	Code() uint16
+	CodeName() string
 }
 
 type TypedError[MT any] interface {
 	Error
-	Code() Code[MT]
 	WithMetadata(MT) TypedError[MT]
 	Metadata() MT
 }
@@ -57,8 +60,18 @@ type ErrorImpl[MT any] struct {
 	metadata MT
 }
 
-func (e *ErrorImpl[MT]) Code() Code[MT] {
-	return e.code
+func (e *ErrorImpl[MT]) Log() *log.Entry {
+	return log.WithField("name", e.code.Name).
+		WithField("code", e.code.Code).
+		WithField("metadata", e.metadata)
+}
+
+func (e *ErrorImpl[MT]) Code() uint16 {
+	return e.code.Code
+}
+
+func (e *ErrorImpl[MT]) CodeName() string {
+	return e.code.Name
 }
 
 func (e *ErrorImpl[MT]) Metadata() MT {
