@@ -85,17 +85,33 @@ func (e *ErrorImpl[MT]) Error() string {
 
 func (e *ErrorImpl[MT]) GRPCStatus() *status.Status {
 	st := status.New(e.code.grpcCode, e.Error())
-	buf, _ := json.Marshal(e.metadata)
+
+	// convert any metadata to map[string]string
 	metadata := make(map[string]string)
-	// nolint:errcheck
-	json.Unmarshal(buf, &metadata)
-	st, _ = st.WithDetails(&arkv1.ErrorDetails{
+	buf, err := json.Marshal(e.metadata)
+	if err == nil {
+		var genericMap map[string]any
+		if err := json.Unmarshal(buf, &genericMap); err == nil {
+			for k, v := range genericMap {
+				vStr := ""
+				if v != nil {
+					vStr = fmt.Sprintf("%v", v)
+				}
+				metadata[k] = vStr
+			}
+		}
+	}
+
+	stWithDetails, err := st.WithDetails(&arkv1.ErrorDetails{
 		Code:     int32(e.code.Code),
 		Name:     e.code.Name,
 		Message:  e.cause.Error(),
 		Metadata: metadata,
 	})
-	return st
+	if err != nil {
+		return st
+	}
+	return stWithDetails
 }
 
 func (e *ErrorImpl[MT]) WithMetadata(metadata MT) TypedError[MT] {
