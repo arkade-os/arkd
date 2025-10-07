@@ -240,7 +240,7 @@ func (r *Round) Fail(err error) []Event {
 			Id:   r.Id,
 			Type: EventTypeRoundFailed,
 		},
-		Reason:    err,
+		Reason:    err.Error(),
 		Timestamp: time.Now().Unix(),
 	}
 	r.raise(event)
@@ -291,7 +291,7 @@ func (r *Round) on(event Event, replayed bool) {
 		r.CommitmentTx = e.FinalCommitmentTx
 	case RoundFailed:
 		r.Stage.Failed = true
-		r.FailReason = e.Reason.Error()
+		r.FailReason = e.Reason
 		r.EndingTimestamp = e.Timestamp
 	case IntentsRegistered:
 		if r.Intents == nil {
