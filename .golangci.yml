@@ -4,11 +4,6 @@ run:
   timeout: 5m
   tests: true
 
-linters:
-  disable:
-    # TODO disable only the "ST1001: should not use dot imports (staticcheck)" rule
-    - staticcheck
-
 formatters:
   enable:
     - gofmt

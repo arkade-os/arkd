@@ -14,7 +14,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	. "github.com/arkade-os/arkd/pkg/errors"
+	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -144,42 +144,42 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 func newBoardingInput(
 	tx wire.MsgTx, input ports.Input, signerPubkey *btcec.PublicKey,
 	boardingExitDelay arklib.RelativeLocktime, blockTypeCSVAllowed bool,
-) (*ports.BoardingInput, Error) {
+) (*ports.BoardingInput, errors.Error) {
 	if len(tx.TxOut) <= int(input.VOut) {
-		return nil, INVALID_PSBT_INPUT.New("output index out of range [0, %d]", len(tx.TxOut)-1).
-			WithMetadata(InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, errors.INVALID_PSBT_INPUT.New("output index out of range [0, %d]", len(tx.TxOut)-1).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	output := tx.TxOut[input.VOut]
 
 	boardingScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
-		return nil, INVALID_PSBT_INPUT.New("failed to parse boarding utxo taproot tree: %w", err).
-			WithMetadata(InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, errors.INVALID_PSBT_INPUT.New("failed to parse boarding utxo taproot tree: %w", err).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	tapKey, _, err := boardingScript.TapTree()
 	if err != nil {
-		return nil, INVALID_PSBT_INPUT.New("failed to compute taproot tree: %w", err).
-			WithMetadata(InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, errors.INVALID_PSBT_INPUT.New("failed to compute taproot tree: %w", err).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	expectedScriptPubkey, err := script.P2TRScript(tapKey)
 	if err != nil {
-		return nil, INVALID_PSBT_INPUT.New("failed to compute P2TR script from tapkey: %w", err).
-			WithMetadata(InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, errors.INVALID_PSBT_INPUT.New("failed to compute P2TR script from tapkey: %w", err).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	if !bytes.Equal(output.PkScript, expectedScriptPubkey) {
-		return nil, INVALID_PSBT_INPUT.New("invalid boarding utxo taproot key: got %x expected %x", output.PkScript, expectedScriptPubkey).
-			WithMetadata(InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, errors.INVALID_PSBT_INPUT.New("invalid boarding utxo taproot key: got %x expected %x", output.PkScript, expectedScriptPubkey).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	if err := boardingScript.Validate(
 		signerPubkey, boardingExitDelay, blockTypeCSVAllowed,
 	); err != nil {
-		return nil, INVALID_PSBT_INPUT.New("invalid boarding utxo taproot tree: %w", err).
-			WithMetadata(InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, errors.INVALID_PSBT_INPUT.New("invalid boarding utxo taproot tree: %w", err).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	return &ports.BoardingInput{
