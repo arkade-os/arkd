@@ -215,7 +215,7 @@ var VTXO_ALREADY_REGISTERED = Code[VtxoMetadata]{
 
 var INVALID_PSBT_INPUT = Code[InputMetadata]{
 	5,
-	"INVALID_PSBT_EXPECTED_WITNESS_UTXO",
+	"INVALID_PSBT_INPUT",
 	grpccodes.InvalidArgument,
 }
 var VTXO_ALREADY_SPENT = Code[VtxoMetadata]{6, "VTXO_ALREADY_SPENT", grpccodes.AlreadyExists}
@@ -230,7 +230,7 @@ var OFFCHAIN_TX_SPENDING_NOTE = Code[VtxoMetadata]{
 
 var INVALID_VTXO_SCRIPT = Code[InvalidVtxoScriptMetadata]{
 	10,
-	"VTXO_SCRIPT_INVALID",
+	"INVALID_VTXO_SCRIPT",
 	grpccodes.InvalidArgument,
 }
 
@@ -242,7 +242,7 @@ var FORFEIT_CLOSURE_LOCKED = Code[ForfeitClosureLockedMetadata]{
 
 var ARK_TX_INPUT_NOT_SIGNED = Code[InputMetadata]{
 	12,
-	"ARK_TX_NOT_SIGNED",
+	"ARK_TX_INPUT_NOT_SIGNED",
 	grpccodes.InvalidArgument,
 }
 var MALFORMED_ARK_TX = Code[PsbtMetadata]{13, "MALFORMED_ARK_TX", grpccodes.InvalidArgument}
