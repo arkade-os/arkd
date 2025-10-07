@@ -218,7 +218,7 @@ var INVALID_CHECKPOINT_PSBT = Code[PsbtMetadata]{
 
 var INVALID_PSBT_MISSING_INPUT = Code[PsbtInputMetadata]{
 	3,
-	"INVALID_CHECKPOINT_MISSING_INPUT",
+	"INVALID_PSBT_MISSING_INPUT",
 	grpccodes.InvalidArgument,
 }
 
