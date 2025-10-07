@@ -6,6 +6,8 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 
 replace github.com/arkade-os/arkd/api-spec => ./api-spec
 
+replace github.com/arkade-os/go-sdk/api-spec => ./api-spec
+
 replace github.com/arkade-os/arkd/pkg/ark-lib => ./pkg/ark-lib
 
 replace github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet => ./pkg/arkd-wallet-btcwallet
@@ -21,13 +23,13 @@ replace github.com/arkade-os/arkd/pkg/errors => ./pkg/errors
 require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251007080101-cba99efa9cd1
+	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251007125213-048c455106ec
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.7.2-0.20251007105622-9574833fd994
+	github.com/arkade-os/go-sdk v0.7.2-0.20251007125331-8c3aa97e36a0
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/btcsuite/btcwallet/walletdb v1.4.2
 	github.com/dgraph-io/badger/v4 v4.8.0

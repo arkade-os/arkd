@@ -4,18 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 
-	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	log "github.com/sirupsen/logrus"
 	grpccodes "google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // Code is the type representing a namespace error code.
 type Code[MT any] struct {
 	Code     uint16
 	Name     string
-	grpcCode grpccodes.Code
+	GrpcCode grpccodes.Code
 }
 
 // New creates a new error with the given code and the message
@@ -40,17 +38,16 @@ func (c Code[MT]) String() string {
 
 type Error interface {
 	error
-	// GRPCStatus is required by gPRC to be parsable by the status.FromError function
-	GRPCStatus() *status.Status
 	Log() *log.Entry
 	Code() uint16
 	CodeName() string
+	GrpcCode() grpccodes.Code
+	Metadata() map[string]string
 }
 
 type TypedError[MT any] interface {
 	Error
 	WithMetadata(MT) TypedError[MT]
-	Metadata() MT
 }
 
 // ErrorImpl is the default concrete implementation of TypedError.
@@ -66,26 +63,7 @@ func (e *ErrorImpl[MT]) Log() *log.Entry {
 		WithField("metadata", e.metadata)
 }
 
-func (e *ErrorImpl[MT]) Code() uint16 {
-	return e.code.Code
-}
-
-func (e *ErrorImpl[MT]) CodeName() string {
-	return e.code.Name
-}
-
-func (e *ErrorImpl[MT]) Metadata() MT {
-	return e.metadata
-}
-
-// Error() implements the error interface.
-func (e *ErrorImpl[MT]) Error() string {
-	return fmt.Sprintf("%s: %s", e.code.String(), e.cause.Error())
-}
-
-func (e *ErrorImpl[MT]) GRPCStatus() *status.Status {
-	st := status.New(e.code.grpcCode, e.Error())
-
+func (e *ErrorImpl[MT]) Metadata() map[string]string {
 	// convert any metadata to map[string]string
 	metadata := make(map[string]string)
 	buf, err := json.Marshal(e.metadata)
@@ -101,17 +79,24 @@ func (e *ErrorImpl[MT]) GRPCStatus() *status.Status {
 			}
 		}
 	}
+	return metadata
+}
 
-	stWithDetails, err := st.WithDetails(&arkv1.ErrorDetails{
-		Code:     int32(e.code.Code),
-		Name:     e.code.Name,
-		Message:  e.cause.Error(),
-		Metadata: metadata,
-	})
-	if err != nil {
-		return st
-	}
-	return stWithDetails
+func (e *ErrorImpl[MT]) GrpcCode() grpccodes.Code {
+	return e.code.GrpcCode
+}
+
+func (e *ErrorImpl[MT]) Code() uint16 {
+	return e.code.Code
+}
+
+func (e *ErrorImpl[MT]) CodeName() string {
+	return e.code.Name
+}
+
+// Error() implements the error interface.
+func (e *ErrorImpl[MT]) Error() string {
+	return fmt.Sprintf("%s: %s", e.code.String(), e.cause.Error())
 }
 
 func (e *ErrorImpl[MT]) WithMetadata(metadata MT) TypedError[MT] {
