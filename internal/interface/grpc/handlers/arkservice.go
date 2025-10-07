@@ -394,19 +394,18 @@ func (h *handler) listenToEvents() {
 
 				evs = append(evs, eventWithTopics{event: ev})
 			case domain.RoundFailed:
-				reasonErr := errors.New(e.Reason)
 				var structuredErr arkerrors.Error
-				if errors.As(reasonErr, &structuredErr) {
-					structuredErr.Log().Error(reasonErr)
+				if errors.As(e.Reason, &structuredErr) {
+					structuredErr.Log().Error(e.Reason)
 				} else {
-					log.WithError(reasonErr).Error("round failed")
+					log.WithError(e.Reason).Error("round failed")
 				}
 
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFailed{
 						BatchFailed: &arkv1.BatchFailedEvent{
 							Id:     e.Id,
-							Reason: e.Reason,
+							Reason: e.Reason.Error(),
 						},
 					},
 				}

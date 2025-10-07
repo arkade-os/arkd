@@ -640,7 +640,7 @@ func testFail(t *testing.T) {
 			require.Equal(t, domain.EventTypeRoundFailed, event.Type)
 			require.Exactly(t, round.Id, event.Id)
 			require.Exactly(t, round.EndingTimestamp, event.Timestamp)
-			require.EqualError(t, reason, event.Reason)
+			require.ErrorIs(t, reason, event.Reason)
 
 			events = round.Fail(reason)
 			require.Empty(t, events)
