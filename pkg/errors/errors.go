@@ -39,6 +39,7 @@ func (c Code[MT]) String() string {
 
 type Error interface {
 	error
+	// GRPCStatus is required by gPRC to be parsable by the status.FromError function
 	GRPCStatus() *status.Status
 }
 
@@ -46,6 +47,7 @@ type TypedError[MT any] interface {
 	Error
 	Code() Code[MT]
 	WithMetadata(MT) TypedError[MT]
+	Metadata() MT
 }
 
 // ErrorImpl is the default concrete implementation of TypedError.
@@ -59,9 +61,13 @@ func (e *ErrorImpl[MT]) Code() Code[MT] {
 	return e.code
 }
 
+func (e *ErrorImpl[MT]) Metadata() MT {
+	return e.metadata
+}
+
 // Error() implements the error interface.
 func (e *ErrorImpl[MT]) Error() string {
-	return e.code.String()
+	return fmt.Sprintf("%s: %s", e.code.String(), e.cause.Error())
 }
 
 func (e *ErrorImpl[MT]) GRPCStatus() *status.Status {
@@ -165,6 +171,11 @@ type InvalidForfeitTxsMetadata struct {
 
 type InvalidBoardingInputSigMetadata struct {
 	SignedCommitmentTx string `json:"signed_commitment_tx"`
+}
+
+type VtxoNotFoundMetadata struct {
+	VtxoOutpoints []string `json:"vtxo_outpoints"`
+	GotVtxos      []string `json:"got_vtxos"`
 }
 
 var INTERNAL_ERROR = Code[map[string]any]{0, "INTERNAL_ERROR", grpccodes.Internal}
@@ -282,3 +293,4 @@ var INVALID_BOARDING_INPUT_SIG = Code[InvalidBoardingInputSigMetadata]{
 }
 var SIGNING_SESSION_TIMED_OUT = Code[any]{28, "SIGNING_SESSION_TIMED_OUT", grpccodes.Internal}
 var VTXO_BANNED = Code[VtxoMetadata]{29, "VTXO_BANNED", grpccodes.InvalidArgument}
+var VTXO_NOT_FOUND = Code[VtxoNotFoundMetadata]{30, "VTXO_NOT_FOUND", grpccodes.NotFound}

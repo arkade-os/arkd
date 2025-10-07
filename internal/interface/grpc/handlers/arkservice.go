@@ -71,9 +71,9 @@ func (h *handler) GetInfo(
 		VtxoMaxAmount:       info.VtxoMaxAmount,
 		CheckpointTapscript: info.CheckpointTapscript,
 	}
-	buf, err := json.Marshal(resp)
-	if err != nil {
-		log.WithError(err).Warn("failed to marshal get info response")
+	buf, errJSON := json.Marshal(resp)
+	if errJSON != nil {
+		log.WithError(errJSON).Warn("failed to marshal get info response")
 		return resp, nil
 	}
 

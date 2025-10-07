@@ -435,10 +435,21 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	if len(spentVtxos) != len(spentVtxoKeys) {
-		return nil, "", "", INTERNAL_ERROR.New("some vtxos not found").WithMetadata(map[string]any{
-			"expected_vtxos": spentVtxoKeys,
-			"got_vtxos":      spentVtxos,
-		})
+		vtxoOutpoints := make([]string, 0)
+		for _, vtxo := range spentVtxoKeys {
+			vtxoOutpoints = append(vtxoOutpoints, vtxo.String())
+		}
+
+		gotVtxos := make([]string, 0)
+		for _, vtxo := range spentVtxos {
+			gotVtxos = append(gotVtxos, vtxo.Outpoint.String())
+		}
+
+		return nil, "", "", VTXO_NOT_FOUND.New("some vtxos not found").
+			WithMetadata(VtxoNotFoundMetadata{
+				VtxoOutpoints: vtxoOutpoints,
+				GotVtxos:      gotVtxos,
+			})
 	}
 
 	// check if any of the spent vtxos are banned
@@ -509,7 +520,11 @@ func (s *service) SubmitOffchainTx(
 				})
 		}
 
-		tapscriptsFields, err := txutils.GetArkPsbtFields(checkpointPsbt, 0, txutils.VtxoTaprootTreeField)
+		tapscriptsFields, err := txutils.GetArkPsbtFields(
+			checkpointPsbt,
+			0,
+			txutils.VtxoTaprootTreeField,
+		)
 		if err != nil || len(tapscriptsFields) == 0 {
 			return nil, "", "", INVALID_PSBT_INPUT.New("missing taptree on input %d", inputIndex).
 				WithMetadata(InputMetadata{
@@ -2249,7 +2264,8 @@ func (s *service) startFinalization(
 				shouldBan, err := coordinator.AddSignatures(pk, sig)
 				if err != nil && !shouldBan {
 					// an unexpected error has occurred during the signature validation, round should fail
-					s.cache.CurrentRound().Fail(INTERNAL_ERROR.New("failed to validate signatures: %s", err))
+					s.cache.CurrentRound().
+						Fail(INTERNAL_ERROR.New("failed to validate signatures: %s", err))
 					return
 				}
 
@@ -2464,7 +2480,8 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		if len(convictions) > 0 {
-			changes = s.cache.CurrentRound().Fail(INTERNAL_ERROR.New("missing boarding inputs signatures"))
+			changes = s.cache.CurrentRound().
+				Fail(INTERNAL_ERROR.New("missing boarding inputs signatures"))
 			go func() {
 				if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
 					log.WithError(err).Warn("failed to ban boarding inputs")

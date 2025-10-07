@@ -15,10 +15,13 @@ func unaryLogger(
 	log.Debugf("gRPC method: %s", info.FullMethod)
 	resp, err := handler(ctx, req)
 	if err != nil {
-		var structuredErr arkerrors.TypedError[any]
+		var structuredErr arkerrors.TypedError[map[string]any]
 		if errors.As(err, &structuredErr) {
 			if structuredErr.Code().Code == 0 {
-				log.WithField("code", structuredErr.Code().String()).
+				log.WithContext(ctx).
+					WithField("name", structuredErr.Code().Name).
+					WithField("code", structuredErr.Code().Code).
+					WithField("metadata", structuredErr.Metadata()).
 					Error(structuredErr.Error())
 			}
 		}
