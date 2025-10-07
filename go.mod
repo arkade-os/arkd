@@ -6,8 +6,6 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 
 replace github.com/arkade-os/arkd/api-spec => ./api-spec
 
-replace github.com/arkade-os/go-sdk/api-spec => ./api-spec
-
 replace github.com/arkade-os/arkd/pkg/ark-lib => ./pkg/ark-lib
 
 replace github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet => ./pkg/arkd-wallet-btcwallet
