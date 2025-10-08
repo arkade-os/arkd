@@ -140,6 +140,7 @@ var (
 		Flags: []cli.Flag{
 			scheduledSessionStartDateFlag, scheduledSessionEndDateFlag,
 			scheduledSessionDurationFlag, scheduledSessionPeriodFlag,
+			scheduledSessionRoundMinParticipantsCountFlag, scheduledSessionRoundMaxParticipantsCountFlag,
 		},
 		Action: updateScheduledSessionAction,
 	}
@@ -565,6 +566,8 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	endDate := ctx.String(scheduledSessionEndDateFlagName)
 	duration := ctx.Uint(scheduledSessionDurationFlagName)
 	period := ctx.Uint(scheduledSessionPeriodFlagName)
+	roundMinParticipantsCount := ctx.Uint(scheduledSessionRoundMinParticipantsCountFlagName)
+	roundMaxParticipantsCount := ctx.Uint(scheduledSessionRoundMaxParticipantsCountFlagName)
 
 	if ctx.IsSet(scheduledSessionStartDateFlagName) != ctx.IsSet(scheduledSessionEndDateFlagName) {
 		return fmt.Errorf("--start-date and --end-date must be set together")
@@ -594,6 +597,12 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	}
 	if period > 0 {
 		config["period"] = strconv.Itoa(int(period))
+	}
+	if roundMinParticipantsCount > 0 {
+		config["roundMinParticipantsCount"] = strconv.Itoa(int(roundMinParticipantsCount))
+	}
+	if roundMaxParticipantsCount > 0 {
+		config["roundMaxParticipantsCount"] = strconv.Itoa(int(roundMaxParticipantsCount))
 	}
 	bodyMap := map[string]map[string]string{"config": config}
 	body, err := json.Marshal(bodyMap)

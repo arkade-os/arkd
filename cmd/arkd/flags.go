@@ -10,26 +10,28 @@ import (
 )
 
 const (
-	urlFlagName                       = "url"
-	datadirFlagName                   = "datadir"
-	macaroonFlagName                  = "macaroon"
-	passwordFlagName                  = "password"
-	dbPathFlagName                    = "datadir"
-	mnemonicFlagName                  = "mnemonic"
-	gapLimitFlagName                  = "addr-gap-limit"
-	amountFlagName                    = "amount"
-	quantityFlagName                  = "quantity"
-	addressFlagName                   = "address"
-	intentIdsFlagName                 = "ids"
-	roundIdFlagName                   = "id"
-	beforeDateFlagName                = "before-date"
-	afterDateFlagName                 = "after-date"
-	scheduledSessionStartDateFlagName = "start-date"
-	scheduledSessionEndDateFlagName   = "end-date"
-	scheduledSessionDurationFlagName  = "duration"
-	scheduledSessionPeriodFlagName    = "period"
-	signerKeyFlagName                 = "signer-prvkey"
-	signerUrlFlagName                 = "signer-url"
+	urlFlagName                                       = "url"
+	datadirFlagName                                   = "datadir"
+	macaroonFlagName                                  = "macaroon"
+	passwordFlagName                                  = "password"
+	dbPathFlagName                                    = "datadir"
+	mnemonicFlagName                                  = "mnemonic"
+	gapLimitFlagName                                  = "addr-gap-limit"
+	amountFlagName                                    = "amount"
+	quantityFlagName                                  = "quantity"
+	addressFlagName                                   = "address"
+	intentIdsFlagName                                 = "ids"
+	roundIdFlagName                                   = "id"
+	beforeDateFlagName                                = "before-date"
+	afterDateFlagName                                 = "after-date"
+	scheduledSessionStartDateFlagName                 = "start-date"
+	scheduledSessionEndDateFlagName                   = "end-date"
+	scheduledSessionDurationFlagName                  = "duration"
+	scheduledSessionPeriodFlagName                    = "period"
+	scheduledSessionRoundMinParticipantsCountFlagName = "round-min-participants"
+	scheduledSessionRoundMaxParticipantsCountFlagName = "round-max-participants"
+	signerKeyFlagName                                 = "signer-prvkey"
+	signerUrlFlagName                                 = "signer-url"
 
 	dateFormat                 = time.DateOnly
 	scheduledSessionDateFormat = time.DateTime
@@ -133,7 +135,15 @@ var (
 	}
 	scheduledSessionPeriodFlag = &cli.IntFlag{
 		Name:  scheduledSessionPeriodFlagName,
-		Usage: "the the interval between a scheduled session and the next one",
+		Usage: "the interval between a scheduled session and the next one",
+	}
+	scheduledSessionRoundMinParticipantsCountFlag = &cli.IntFlag{
+		Name:  scheduledSessionRoundMinParticipantsCountFlagName,
+		Usage: "the min number of participants per round during a scheduled session",
+	}
+	scheduledSessionRoundMaxParticipantsCountFlag = &cli.IntFlag{
+		Name:  scheduledSessionRoundMaxParticipantsCountFlagName,
+		Usage: "the max number of participants per round during a scheduled session",
 	}
 	signerKeyFlag = &cli.StringFlag{
 		Name:  signerKeyFlagName,

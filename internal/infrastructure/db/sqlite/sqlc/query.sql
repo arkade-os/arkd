@@ -91,13 +91,15 @@ ON CONFLICT(txid) DO UPDATE SET
     offchain_txid = EXCLUDED.offchain_txid;
 
 -- name: UpsertScheduledSession :exec
-INSERT INTO scheduled_session (id, start_time, end_time, period, duration, updated_at)
-VALUES (@id, @start_time, @end_time, @period, @duration, @updated_at)
+INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
+VALUES (@id, @start_time, @end_time, @period, @duration, @round_min_participants, @round_max_participants, @updated_at)
 ON CONFLICT (id) DO UPDATE SET
     start_time = EXCLUDED.start_time,
     end_time = EXCLUDED.end_time,
     period = EXCLUDED.period,
     duration = EXCLUDED.duration,
+    round_min_participants = EXCLUDED.round_min_participants,
+    round_max_participants = EXCLUDED.round_max_participants,
     updated_at = EXCLUDED.updated_at;
 
 -- name: UpdateVtxoIntentId :exec

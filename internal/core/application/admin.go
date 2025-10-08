@@ -25,7 +25,7 @@ type AdminService interface {
 	GetScheduledSessionConfig(ctx context.Context) (*domain.ScheduledSession, error)
 	UpdateScheduledSessionConfig(
 		ctx context.Context, scheduledSessionStartTime, scheduledSessionEndTime time.Time,
-		period, duration time.Duration,
+		period, duration time.Duration, roundMinParticipantsCount, roundMaxParticipantsCount int64,
 	) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
@@ -45,18 +45,24 @@ type adminService struct {
 	txBuilder       ports.TxBuilder
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
+
+	roundMinParticipantsCount int64
+	roundMaxParticipantsCount int64
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit,
+	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) AdminService {
 	return &adminService{
-		walletSvc:       walletSvc,
-		repoManager:     repoManager,
-		txBuilder:       txBuilder,
-		sweeperTimeUnit: timeUnit,
-		liveStore:       liveStoreSvc,
+		walletSvc:                 walletSvc,
+		repoManager:               repoManager,
+		txBuilder:                 txBuilder,
+		sweeperTimeUnit:           timeUnit,
+		liveStore:                 liveStoreSvc,
+		roundMinParticipantsCount: roundMinParticipantsCount,
+		roundMaxParticipantsCount: roundMaxParticipantsCount,
 	}
 }
 
@@ -239,11 +245,8 @@ func (s *adminService) GetScheduledSessionConfig(
 func (s *adminService) UpdateScheduledSessionConfig(
 	ctx context.Context,
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time, period, duration time.Duration,
+	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) error {
-	if scheduledSessionStartTime.IsZero() && scheduledSessionEndTime.IsZero() &&
-		period <= 0 && duration <= 0 {
-		return fmt.Errorf("missing scheduled session config")
-	}
 	startTimeSet := !scheduledSessionStartTime.IsZero()
 	endTimeSet := !scheduledSessionEndTime.IsZero()
 	if startTimeSet != endTimeSet {
@@ -268,6 +271,12 @@ func (s *adminService) UpdateScheduledSessionConfig(
 		if duration <= 0 {
 			return fmt.Errorf("missing scheduled session duration")
 		}
+		if roundMinParticipantsCount <= 0 {
+			roundMinParticipantsCount = s.roundMinParticipantsCount
+		}
+		if roundMaxParticipantsCount <= 0 {
+			roundMaxParticipantsCount = s.roundMaxParticipantsCount
+		}
 	}
 
 	now := time.Now()
@@ -288,9 +297,22 @@ func (s *adminService) UpdateScheduledSessionConfig(
 	if duration <= 0 {
 		duration = scheduledSession.Duration
 	}
+	if roundMinParticipantsCount <= 0 {
+		roundMinParticipantsCount = scheduledSession.RoundMinParticipantsCount
+	}
+	if roundMaxParticipantsCount <= 0 {
+		roundMaxParticipantsCount = scheduledSession.RoundMaxParticipantsCount
+	}
+	if roundMaxParticipantsCount < roundMinParticipantsCount {
+		return fmt.Errorf(
+			"got round max participants %d, expected at least %d",
+			roundMaxParticipantsCount, roundMinParticipantsCount,
+		)
+	}
 
 	mh := domain.NewScheduledSession(
 		scheduledSessionStartTime, scheduledSessionEndTime, period, duration,
+		roundMinParticipantsCount, roundMaxParticipantsCount,
 	)
 	if err := s.repoManager.ScheduledSession().Upsert(ctx, *mh); err != nil {
 		return fmt.Errorf("failed to upsert scheduled session: %w", err)

@@ -152,12 +152,14 @@ type RoundWithCommitmentTxVw struct {
 }
 
 type ScheduledSession struct {
-	ID        int64
-	StartTime int64
-	EndTime   int64
-	Period    int64
-	Duration  int64
-	UpdatedAt int64
+	ID                   int64
+	StartTime            int64
+	EndTime              int64
+	Period               int64
+	Duration             int64
+	RoundMinParticipants int64
+	RoundMaxParticipants int64
+	UpdatedAt            int64
 }
 
 type Tx struct {

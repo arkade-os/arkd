@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS scheduled_session (
    end_time BIGINT NOT NULL,
    period BIGINT NOT NULL,
    duration BIGINT NOT NULL,
+   round_min_participants BIGINT NOT NULL DEFAULT 0,
+   round_max_participants BIGINT NOT NULL DEFAULT 0,
    updated_at BIGINT NOT NULL
 );
 
@@ -23,8 +25,8 @@ BEGIN
     -- Prevent concurrent writes during the copy
     EXECUTE 'LOCK TABLE market_hour IN ACCESS EXCLUSIVE MODE';
 
-    INSERT INTO scheduled_session (id, start_time, end_time, period, duration, updated_at)
-    SELECT id, start_time, end_time, period, round_interval, updated_at
+    INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
+    SELECT id, start_time, end_time, period, round_interval, round_min_participants, round_max_participants, updated_at
     FROM market_hour
     ORDER BY id ASC;
 

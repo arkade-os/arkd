@@ -43,11 +43,13 @@ func (r *scheduledSessionRepository) Get(ctx context.Context) (*domain.Scheduled
 	}
 
 	return &domain.ScheduledSession{
-		StartTime: time.Unix(scheduledSession.StartTime, 0),
-		EndTime:   time.Unix(scheduledSession.EndTime, 0),
-		Period:    time.Duration(scheduledSession.Period),
-		Duration:  time.Duration(scheduledSession.Duration),
-		UpdatedAt: time.Unix(scheduledSession.UpdatedAt, 0),
+		StartTime:                 time.Unix(scheduledSession.StartTime, 0),
+		EndTime:                   time.Unix(scheduledSession.EndTime, 0),
+		Period:                    time.Duration(scheduledSession.Period),
+		Duration:                  time.Duration(scheduledSession.Duration),
+		RoundMinParticipantsCount: scheduledSession.RoundMinParticipants,
+		RoundMaxParticipantsCount: scheduledSession.RoundMaxParticipants,
+		UpdatedAt:                 time.Unix(scheduledSession.UpdatedAt, 0),
 	}, nil
 }
 
@@ -55,11 +57,13 @@ func (r *scheduledSessionRepository) Upsert(
 	ctx context.Context, scheduledSession domain.ScheduledSession,
 ) error {
 	return r.querier.UpsertScheduledSession(ctx, queries.UpsertScheduledSessionParams{
-		StartTime: scheduledSession.StartTime.Unix(),
-		EndTime:   scheduledSession.EndTime.Unix(),
-		Period:    int64(scheduledSession.Period),
-		Duration:  int64(scheduledSession.Duration),
-		UpdatedAt: scheduledSession.UpdatedAt.Unix(),
+		StartTime:            scheduledSession.StartTime.Unix(),
+		EndTime:              scheduledSession.EndTime.Unix(),
+		Period:               int64(scheduledSession.Period),
+		Duration:             int64(scheduledSession.Duration),
+		RoundMinParticipants: scheduledSession.RoundMinParticipantsCount,
+		RoundMaxParticipants: scheduledSession.RoundMaxParticipantsCount,
+		UpdatedAt:            scheduledSession.UpdatedAt.Unix(),
 	})
 }
 

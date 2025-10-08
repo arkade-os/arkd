@@ -459,7 +459,7 @@ type delegateBatchEventsHandler struct {
 	partialForfeitTx string
 	delegatorWallet  wallet.WalletService
 	client           client.TransportClient
-	signerPubKey     *btcec.PublicKey
+	forfeitPubKey    *btcec.PublicKey
 	batchExpiry      arklib.RelativeLocktime
 
 	cacheBatchId string
@@ -521,7 +521,7 @@ func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
 	}
 
 	sweepClosure := script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.signerPubKey}},
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.forfeitPubKey}},
 		Locktime:        h.batchExpiry,
 	}
 

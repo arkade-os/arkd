@@ -148,10 +148,12 @@ func (a *adminHandler) GetScheduledSessionConfig(
 	var config *arkv1.ScheduledSessionConfig
 	if scheduledSession != nil {
 		config = &arkv1.ScheduledSessionConfig{
-			StartTime: scheduledSession.StartTime.Unix(),
-			EndTime:   scheduledSession.EndTime.Unix(),
-			Period:    int64(scheduledSession.Period.Minutes()),
-			Duration:  int64(scheduledSession.Duration.Seconds()),
+			StartTime:                 scheduledSession.StartTime.Unix(),
+			EndTime:                   scheduledSession.EndTime.Unix(),
+			Period:                    int64(scheduledSession.Period.Minutes()),
+			Duration:                  int64(scheduledSession.Duration.Seconds()),
+			RoundMinParticipantsCount: scheduledSession.RoundMinParticipantsCount,
+			RoundMaxParticipantsCount: scheduledSession.RoundMaxParticipantsCount,
 		}
 	}
 
@@ -161,16 +163,27 @@ func (a *adminHandler) GetScheduledSessionConfig(
 func (a *adminHandler) UpdateScheduledSessionConfig(
 	ctx context.Context, req *arkv1.UpdateScheduledSessionConfigRequest,
 ) (*arkv1.UpdateScheduledSessionConfigResponse, error) {
-	if req.GetConfig() == nil {
+	cfg := req.GetConfig()
+	if cfg == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing scheduled session config")
+	}
+	startTime := parseTime(cfg.GetStartTime())
+	endTime := parseTime(cfg.GetEndTime())
+	period := time.Duration(cfg.GetPeriod()) * time.Minute
+	duration := time.Duration(cfg.GetDuration()) * time.Second
+	roundMinParticipantsCount := cfg.GetRoundMinParticipantsCount()
+	roundMaxParticipantsCount := cfg.GetRoundMaxParticipantsCount()
+	if roundMinParticipantsCount != 0 && roundMaxParticipantsCount != 0 &&
+		roundMinParticipantsCount > roundMaxParticipantsCount {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"round min participants count must be less than or equal to max participants count",
+		)
 	}
 
 	if err := a.adminService.UpdateScheduledSessionConfig(
-		ctx,
-		time.Unix(req.GetConfig().GetStartTime(), 0),
-		time.Unix(req.GetConfig().GetEndTime(), 0),
-		time.Duration(req.GetConfig().GetPeriod())*time.Minute,
-		time.Duration(req.GetConfig().GetDuration())*time.Second,
+		ctx, startTime, endTime, period, duration,
+		roundMinParticipantsCount, roundMaxParticipantsCount,
 	); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -390,4 +403,11 @@ func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, 
 	}
 
 	return protoConviction, nil
+}
+
+func parseTime(t int64) time.Time {
+	if t <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(t, 0)
 }

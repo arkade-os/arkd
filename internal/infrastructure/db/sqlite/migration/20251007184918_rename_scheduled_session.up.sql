@@ -5,12 +5,14 @@ CREATE TABLE IF NOT EXISTS scheduled_session (
    end_time INTEGER NOT NULL,
    period INTEGER NOT NULL,
    duration INTEGER NOT NULL,
+   round_min_participants INTEGER NOT NULL DEFAULT 0,
+   round_max_participants INTEGER NOT NULL DEFAULT 0,
    updated_at INTEGER NOT NULL
 );
 
 -- 2) Copy rows from old table, ordered by id
-INSERT INTO scheduled_session (id, start_time, end_time, period, duration, updated_at)
-SELECT id, start_time, end_time, period, round_interval AS duration, updated_at
+INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
+SELECT id, start_time, end_time, period, round_interval AS duration, round_min_participants, round_max_participants, updated_at
 FROM market_hour
 ORDER BY id ASC;
 

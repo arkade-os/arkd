@@ -51,7 +51,7 @@ type service struct {
 	batchExpiry               arklib.RelativeLocktime
 	sessionDuration           time.Duration
 	banDuration               time.Duration
-	banThreshold              int
+	banThreshold              int64
 	unilateralExitDelay       arklib.RelativeLocktime
 	boardingExitDelay         arklib.RelativeLocktime
 	roundMinParticipantsCount int64
@@ -87,16 +87,16 @@ func NewService(
 	scanner ports.BlockchainScanner,
 	scheduler ports.SchedulerService,
 	cache ports.LiveStore,
+	reportSvc RoundReportService,
 	vtxoTreeExpiry, unilateralExitDelay, boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
-	sessionDuration, banDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
-	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount int64,
+	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
+	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	network arklib.Network,
 	allowCSVBlockType bool,
 	noteUriPrefix string,
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
-	reportSvc RoundReportService,
-	banThreshold int,
+	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -114,9 +114,18 @@ func NewService(
 	if scheduledSession == nil &&
 		!scheduledSessionStartTime.IsZero() && !scheduledSessionEndTime.IsZero() &&
 		int(scheduledSessionPeriod) > 0 && scheduledSessionDuration > 0 {
+		rMinParticipantsCount := roundMinParticipantsCount
+		if scheduledSessionRoundMinParticipantsCount > 0 {
+			rMinParticipantsCount = scheduledSessionRoundMinParticipantsCount
+		}
+		rMaxParticipantsCount := roundMaxParticipantsCount
+		if scheduledSessionRoundMaxParticipantsCount > 0 {
+			rMaxParticipantsCount = scheduledSessionRoundMaxParticipantsCount
+		}
 		scheduledSession = domain.NewScheduledSession(
 			scheduledSessionStartTime, scheduledSessionEndTime,
 			scheduledSessionPeriod, scheduledSessionDuration,
+			rMinParticipantsCount, rMaxParticipantsCount,
 		)
 		if err := repoManager.ScheduledSession().Upsert(ctx, *scheduledSession); err != nil {
 			return nil, fmt.Errorf("failed to upsert initial scheduled session to db: %w", err)
@@ -148,11 +157,10 @@ func NewService(
 		return nil, fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
 	}
 
-	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	checkpointClosure := &script.CSVMultisigClosure{
 		Locktime: checkpointExitDelay,
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{signerPubkey},
+			PubKeys: []*btcec.PublicKey{forfeitPubkey},
 		},
 	}
 
@@ -1511,13 +1519,36 @@ func (s *service) startRound() {
 
 	s.roundReportSvc.StageStarted(SelectIntentsStage)
 
-	roundTiming := newRoundTiming(s.sessionDuration)
+	sessionDuration := s.sessionDuration
+	roundMinParticipants := s.roundMinParticipantsCount
+	roundMaxParticipants := s.roundMaxParticipantsCount
+	scheduledSession, _ := s.repoManager.ScheduledSession().Get(context.Background())
+	if scheduledSession != nil {
+		nextStartTime, nextEndTime := calcNextScheduledSession(
+			time.Now(),
+			scheduledSession.StartTime, scheduledSession.EndTime, scheduledSession.Period,
+		)
+		if now := time.Now(); !now.Before(nextStartTime) && !now.After(nextEndTime) {
+			log.WithFields(log.Fields{
+				"duration":             scheduledSession.Duration,
+				"minRoundParticipants": scheduledSession.RoundMinParticipantsCount,
+				"maxRoundParticipants": scheduledSession.RoundMaxParticipantsCount,
+			}).Debug("scheduled session is active")
+			sessionDuration = scheduledSession.Duration
+			roundMinParticipants = scheduledSession.RoundMinParticipantsCount
+			roundMaxParticipants = scheduledSession.RoundMaxParticipantsCount
+		}
+	}
+
+	roundTiming := newRoundTiming(sessionDuration)
 	<-time.After(roundTiming.registrationDuration())
 	s.wg.Add(1)
-	go s.startConfirmation(roundTiming)
+	go s.startConfirmation(roundTiming, roundMinParticipants, roundMaxParticipants)
 }
 
-func (s *service) startConfirmation(roundTiming roundTiming) {
+func (s *service) startConfirmation(
+	roundTiming roundTiming, roundMinParticipantsCount, roundMaxParticipantsCount int64,
+) {
 	defer s.wg.Done()
 
 	select {
@@ -1557,14 +1588,14 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	}()
 
 	num := s.cache.Intents().Len()
-	if num < s.roundMinParticipantsCount {
+	if num < roundMinParticipantsCount {
 		roundAborted = true
-		err := fmt.Errorf("not enough intents registered %d/%d", num, s.roundMinParticipantsCount)
+		err := fmt.Errorf("not enough intents registered %d/%d", num, roundMinParticipantsCount)
 		log.WithError(err).Debugf("round %s aborted", roundId)
 		return
 	}
-	if num > s.roundMaxParticipantsCount {
-		num = s.roundMaxParticipantsCount
+	if num > roundMaxParticipantsCount {
+		num = roundMaxParticipantsCount
 	}
 
 	availableBalance, _, err := s.wallet.MainAccountBalance(ctx)
@@ -1575,7 +1606,53 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	}
 
 	// TODO take into account available liquidity
-	intents := s.cache.Intents().Pop(num)
+	intentsPopped := s.cache.Intents().Pop(num)
+	intents := make([]ports.TimedIntent, 0, len(intentsPopped))
+
+	// for each intent, check if all boarding inputs are unspent
+	// exclude any intent with at least one spent boarding input
+	for _, intent := range intentsPopped {
+		includeIntent := true
+
+		for _, input := range intent.BoardingInputs {
+			spent, err := s.wallet.GetOutpointStatus(ctx, input.Outpoint)
+			if err != nil {
+				log.WithError(err).
+					Warnf("failed to get outpoint status for boarding input %s", input.Outpoint)
+				continue
+			}
+
+			if spent {
+				log.WithField("intent_id", intent.Id).
+					Debugf("boarding input %s is spent", input.Outpoint)
+				includeIntent = false
+				break
+			}
+		}
+
+		if includeIntent {
+			intents = append(intents, intent)
+		}
+	}
+
+	if len(intents) < int(s.roundMinParticipantsCount) {
+		// repush valid intents back to the queue
+		for _, intent := range intents {
+			if err := s.cache.Intents().Push(intent.Intent, intent.BoardingInputs, intent.CosignersPublicKeys); err != nil {
+				log.WithError(err).Warn("failed to re-push intents to the queue")
+				continue
+			}
+		}
+
+		roundAborted = true
+		err := fmt.Errorf(
+			"not enough intents registered %d/%d",
+			len(intents),
+			s.roundMinParticipantsCount,
+		)
+		log.WithError(err).Debugf("round %s aborted", roundId)
+		return
+	}
 
 	s.roundReportSvc.SetIntentsNum(len(intents))
 
@@ -1622,7 +1699,7 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	s.roundReportSvc.OpEnded(WaitForConfirmationOp)
 
 	repushToQueue := notConfirmedIntents
-	if int64(len(confirmedIntents)) < s.roundMinParticipantsCount {
+	if int64(len(confirmedIntents)) < roundMinParticipantsCount {
 		repushToQueue = append(repushToQueue, confirmedIntents...)
 		confirmedIntents = make([]ports.TimedIntent, 0)
 	}
@@ -1747,9 +1824,8 @@ func (s *service) startFinalization(
 
 	s.roundReportSvc.OpStarted(BuildCommitmentTxOp)
 
-	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		s.signerPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
+		s.forfeitPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
 	)
 	if err != nil {
 		s.cache.CurrentRound().Fail(fmt.Errorf("failed to create commitment tx: %s", err))
@@ -1798,9 +1874,8 @@ func (s *service) startFinalization(
 	if vtxoTree != nil {
 		s.roundReportSvc.StageStarted(TreeSigningStage)
 
-		// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 		sweepClosure := script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.signerPubkey}},
+			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.forfeitPubkey}},
 			Locktime:        s.batchExpiry,
 		}
 

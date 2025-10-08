@@ -255,7 +255,7 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 }
 
 const selectLatestScheduledSession = `-- name: SelectLatestScheduledSession :one
-SELECT id, start_time, end_time, period, duration, updated_at FROM scheduled_session ORDER BY updated_at DESC LIMIT 1
+SELECT id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at FROM scheduled_session ORDER BY updated_at DESC LIMIT 1
 `
 
 func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSession, error) {
@@ -267,6 +267,8 @@ func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSe
 		&i.EndTime,
 		&i.Period,
 		&i.Duration,
+		&i.RoundMinParticipants,
+		&i.RoundMaxParticipants,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -1579,23 +1581,27 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 }
 
 const upsertScheduledSession = `-- name: UpsertScheduledSession :exec
-INSERT INTO scheduled_session (id, start_time, end_time, period, duration, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (id) DO UPDATE SET
     start_time = EXCLUDED.start_time,
     end_time = EXCLUDED.end_time,
     period = EXCLUDED.period,
     duration = EXCLUDED.duration,
+    round_min_participants = EXCLUDED.round_min_participants,
+    round_max_participants = EXCLUDED.round_max_participants,
     updated_at = EXCLUDED.updated_at
 `
 
 type UpsertScheduledSessionParams struct {
-	ID        int32
-	StartTime int64
-	EndTime   int64
-	Period    int64
-	Duration  int64
-	UpdatedAt int64
+	ID                   int32
+	StartTime            int64
+	EndTime              int64
+	Period               int64
+	Duration             int64
+	RoundMinParticipants int64
+	RoundMaxParticipants int64
+	UpdatedAt            int64
 }
 
 func (q *Queries) UpsertScheduledSession(ctx context.Context, arg UpsertScheduledSessionParams) error {
@@ -1605,6 +1611,8 @@ func (q *Queries) UpsertScheduledSession(ctx context.Context, arg UpsertSchedule
 		arg.EndTime,
 		arg.Period,
 		arg.Duration,
+		arg.RoundMinParticipants,
+		arg.RoundMaxParticipants,
 		arg.UpdatedAt,
 	)
 	return err

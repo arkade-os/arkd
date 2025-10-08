@@ -3,6 +3,7 @@ package interceptors
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/permissions"
 	"github.com/arkade-os/arkd/pkg/macaroons"
@@ -57,5 +58,11 @@ func checkMacaroon(ctx context.Context, fullMethod string, svc *macaroons.Servic
 		validator = svc
 	}
 	// Now that we know what validator to use, let it do its work.
-	return validator.ValidateMacaroon(ctx, uriPermissions, fullMethod)
+	if err := validator.ValidateMacaroon(ctx, uriPermissions, fullMethod); err != nil {
+		if strings.Contains(err.Error(), "doesn't exist") {
+			return fmt.Errorf("invalid macaroon")
+		}
+		return err
+	}
+	return nil
 }
