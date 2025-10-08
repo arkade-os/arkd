@@ -21,13 +21,13 @@ replace github.com/arkade-os/arkd/pkg/errors => ./pkg/errors
 require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251008204558-e17c9b6bbc17
+	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251008210147-277c5d4229bb
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.7.2-0.20251008204906-98c37f4e35dd
+	github.com/arkade-os/go-sdk v0.7.2-0.20251008210548-f35e9755b2cb
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/docker/docker v27.1.1+incompatible

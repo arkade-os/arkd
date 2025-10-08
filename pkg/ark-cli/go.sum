@@ -16,8 +16,8 @@ github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da h1:KjTM2ks9d14ZYCvmH
 github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da/go.mod h1:eHEWzANqSiWQsof+nXEI9bUVUyV6F53Fp89EuCh2EAA=
 github.com/aead/siphash v1.0.1 h1:FwHfE/T45KPKYuuSAKyyvE+oPWcaQ+CUmFW0bPlM+kg=
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
-github.com/arkade-os/go-sdk v0.7.2-0.20251008204906-98c37f4e35dd h1:xf+bIV45l/HQNNwTwah7/Nu1ajruQKRpbgHJlsq/cyU=
-github.com/arkade-os/go-sdk v0.7.2-0.20251008204906-98c37f4e35dd/go.mod h1:hOhVUFDog8sgJ5pP4YcHqajam/xCG/Vsup4kts/qpQk=
+github.com/arkade-os/go-sdk v0.7.2-0.20251008210548-f35e9755b2cb h1:qGq3QP3URnJmR3CYKn/yGCWxwGsVXj6BYLGeGGQRMcA=
+github.com/arkade-os/go-sdk v0.7.2-0.20251008210548-f35e9755b2cb/go.mod h1:iA0oSdi+/qNhEZxuEYxt6Dl1aBRgEdr0Br6KmRyWq4c=
 github.com/armon/consul-api v0.0.0-20180202201655-eb2c6b5be1b6/go.mod h1:grANhF5doyWs3UAsr3K4I6qtAmlQcZDesFNEHPZAzj8=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
