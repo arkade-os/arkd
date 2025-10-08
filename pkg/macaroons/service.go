@@ -358,6 +358,9 @@ func (svc *Service) BakeMacaroon(
 ) ([]byte, error) {
 	rootKeyId := fmt.Sprintf("%s-%d", role, time.Now().Unix())
 	ids, err := svc.ListMacaroonIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var targetId []byte
 	for _, id := range ids {
 		if strings.Contains(string(id), role) {
@@ -368,9 +371,7 @@ func (svc *Service) BakeMacaroon(
 		svc.DeleteMacaroonID(ctx, targetId)
 	}
 
-	mac, err := svc.NewMacaroon(
-		ctx, []byte(rootKeyId), permissions...,
-	)
+	mac, err := svc.NewMacaroon(ctx, []byte(rootKeyId), permissions...)
 	if err != nil {
 		return nil, err
 	}
