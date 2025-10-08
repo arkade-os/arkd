@@ -67,7 +67,7 @@ func newKeyManager(seed []byte, network *chaincfg.Params) (*keyManager, error) {
 		return nil, err
 	}
 
-	forfeitPrvkey, err := deriveForfeitPrvkey(mainAccount, network)
+	forfeitPrvkey, err := deriveForfeitPrvkey(mainAccount)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func computeTaprootDerivationScheme(accountKey *hdkeychain.ExtendedKey) (string,
 	return neutered.String() + "-[taproot]", nil
 }
 
-func deriveForfeitPrvkey(xpub *hdkeychain.ExtendedKey, network *chaincfg.Params) (*btcec.PrivateKey, error) {
+func deriveForfeitPrvkey(xpub *hdkeychain.ExtendedKey) (*btcec.PrivateKey, error) {
 	key, err := xpub.Derive(0)
 	if err != nil {
 		return nil, err

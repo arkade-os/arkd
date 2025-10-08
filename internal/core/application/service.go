@@ -1858,7 +1858,53 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	}
 
 	// TODO take into account available liquidity
-	intents := s.cache.Intents().Pop(num)
+	intentsPopped := s.cache.Intents().Pop(num)
+	intents := make([]ports.TimedIntent, 0, len(intentsPopped))
+
+	// for each intent, check if all boarding inputs are unspent
+	// exclude any intent with at least one spent boarding input
+	for _, intent := range intentsPopped {
+		includeIntent := true
+
+		for _, input := range intent.BoardingInputs {
+			spent, err := s.wallet.GetOutpointStatus(ctx, input.Outpoint)
+			if err != nil {
+				log.WithError(err).
+					Warnf("failed to get outpoint status for boarding input %s", input.Outpoint)
+				continue
+			}
+
+			if spent {
+				log.WithField("intent_id", intent.Id).
+					Debugf("boarding input %s is spent", input.Outpoint)
+				includeIntent = false
+				break
+			}
+		}
+
+		if includeIntent {
+			intents = append(intents, intent)
+		}
+	}
+
+	if len(intents) < int(s.roundMinParticipantsCount) {
+		// repush valid intents back to the queue
+		for _, intent := range intents {
+			if err := s.cache.Intents().Push(intent.Intent, intent.BoardingInputs, intent.CosignersPublicKeys); err != nil {
+				log.WithError(err).Warn("failed to re-push intents to the queue")
+				continue
+			}
+		}
+
+		roundAborted = true
+		err := fmt.Errorf(
+			"not enough intents registered %d/%d",
+			len(intents),
+			s.roundMinParticipantsCount,
+		)
+		log.WithError(err).Debugf("round %s aborted", roundId)
+		return
+	}
 
 	s.roundReportSvc.SetIntentsNum(len(intents))
 
