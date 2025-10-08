@@ -141,7 +141,7 @@ func TestBroker(t *testing.T) {
 		listener := newListener[string]("test-id", topics)
 		broker.pushListener(listener)
 
-		topicsToRemove := []string{"topic2", "TOPIC3"}
+		topicsToRemove := []string{"topic2", "TOPIC3", "topic-not-exists"}
 		err := broker.removeTopics("test-id", topicsToRemove)
 		require.NoError(t, err)
 
