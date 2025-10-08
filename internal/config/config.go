@@ -774,7 +774,10 @@ func (c *Config) adminService() error {
 		unit = ports.BlockHeight
 	}
 
-	c.adminSvc = application.NewAdminService(c.wallet, c.repo, c.txBuilder, c.liveStore, unit)
+	c.adminSvc = application.NewAdminService(
+		c.wallet, c.repo, c.txBuilder, c.liveStore, unit,
+		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+	)
 	return nil
 }
 

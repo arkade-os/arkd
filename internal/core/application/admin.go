@@ -47,18 +47,24 @@ type adminService struct {
 	txBuilder       ports.TxBuilder
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
+
+	roundMinParticipantsCount int64
+	roundMaxParticipantsCount int64
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit,
+	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) AdminService {
 	return &adminService{
-		walletSvc:       walletSvc,
-		repoManager:     repoManager,
-		txBuilder:       txBuilder,
-		sweeperTimeUnit: timeUnit,
-		liveStore:       liveStoreSvc,
+		walletSvc:                 walletSvc,
+		repoManager:               repoManager,
+		txBuilder:                 txBuilder,
+		sweeperTimeUnit:           timeUnit,
+		liveStore:                 liveStoreSvc,
+		roundMinParticipantsCount: roundMinParticipantsCount,
+		roundMaxParticipantsCount: roundMaxParticipantsCount,
 	}
 }
 
@@ -268,6 +274,12 @@ func (s *adminService) UpdateMarketHourConfig(
 		}
 		if roundInterval <= 0 {
 			return fmt.Errorf("missing market hour round interval")
+		}
+		if roundMinParticipantsCount <= 0 {
+			roundMinParticipantsCount = s.roundMinParticipantsCount
+		}
+		if roundMaxParticipantsCount <= 0 {
+			roundMinParticipantsCount = s.roundMaxParticipantsCount
 		}
 	}
 
