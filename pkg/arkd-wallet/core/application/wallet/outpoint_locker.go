@@ -38,7 +38,9 @@ func (l *outpointLocker) lock(_ context.Context, outpoints ...wire.OutPoint) err
 		if _, ok := l.lockedOutpoints[outpoint]; ok {
 			return fmt.Errorf("outpoint %s is already locked", outpoint)
 		}
+	}
 
+	for _, outpoint := range outpoints {
 		l.lockedOutpoints[outpoint] = lockedUntil
 	}
 
