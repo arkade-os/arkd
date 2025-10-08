@@ -192,6 +192,19 @@ type VtxoNotFoundMetadata struct {
 	GotVtxos      []string `json:"got_vtxos"`
 }
 
+type IntentInsufficientFeeMetadata struct {
+	InputExpectedFees  map[string]int `json:"input_expected_fees"`
+	OutputExpectedFees map[string]int `json:"output_expected_fees"`
+	ExpectedFee        int            `json:"expected_fee"`
+	ActualFee          int            `json:"actual_fee"`
+}
+
+type OffchainTxInsufficientFeeMetadata struct {
+	ExpectedFee         int            `json:"expected_fee"`
+	ActualFee           int            `json:"actual_fee"`
+	InputThrottledUntil map[string]any `json:"input_throttled_until"`
+}
+
 var INTERNAL_ERROR = Code[map[string]any]{0, "INTERNAL_ERROR", grpccodes.Internal}
 var INVALID_ARK_PSBT = Code[PsbtMetadata]{1, "INVALID_ARK_PSBT", grpccodes.InvalidArgument}
 
@@ -308,3 +321,15 @@ var INVALID_BOARDING_INPUT_SIG = Code[InvalidBoardingInputSigMetadata]{
 var SIGNING_SESSION_TIMED_OUT = Code[any]{28, "SIGNING_SESSION_TIMED_OUT", grpccodes.Internal}
 var VTXO_BANNED = Code[VtxoMetadata]{29, "VTXO_BANNED", grpccodes.InvalidArgument}
 var VTXO_NOT_FOUND = Code[VtxoNotFoundMetadata]{30, "VTXO_NOT_FOUND", grpccodes.NotFound}
+
+var INTENT_INSUFFICIENT_FEE = Code[IntentInsufficientFeeMetadata]{
+	31,
+	"INTENT_INSUFFICIENT_FEE",
+	grpccodes.InvalidArgument,
+}
+
+var OFFCHAIN_TX_INSUFFICIENT_FEE = Code[OffchainTxInsufficientFeeMetadata]{
+	32,
+	"OFFCHAIN_TX_INSUFFICIENT_FEE",
+	grpccodes.InvalidArgument,
+}
