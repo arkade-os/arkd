@@ -23,9 +23,14 @@ func newOutpointLocker(lockFor time.Duration) *outpointLocker {
 	}
 }
 
-func (l *outpointLocker) lock(_ context.Context, outpoints ...wire.OutPoint) error {
+func (l *outpointLocker) lock(ctx context.Context, outpoints ...wire.OutPoint) error {
 	if len(outpoints) == 0 {
 		return nil
+	}
+
+	lockedOutpoints, err := l.get(ctx)
+	if err != nil {
+		return err
 	}
 
 	l.locker.Lock()
@@ -35,7 +40,7 @@ func (l *outpointLocker) lock(_ context.Context, outpoints ...wire.OutPoint) err
 	lockedUntil := now.Add(l.lockExpiry)
 
 	for _, outpoint := range outpoints {
-		if _, ok := l.lockedOutpoints[outpoint]; ok {
+		if _, isLocked := lockedOutpoints[outpoint]; isLocked {
 			return fmt.Errorf("outpoint %s is already locked", outpoint)
 		}
 	}
