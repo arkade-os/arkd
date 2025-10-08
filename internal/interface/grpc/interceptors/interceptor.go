@@ -11,6 +11,7 @@ func UnaryInterceptor(svc *macaroons.Service) grpc.ServerOption {
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
 		unaryLogger,
 		unaryMacaroonAuthHandler(svc),
+		errorConverter,
 	))
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -51,7 +52,7 @@ func (h *handler) GetInfo(
 ) (*arkv1.GetInfoResponse, error) {
 	info, err := h.svc.GetInfo(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	resp := &arkv1.GetInfoResponse{
@@ -70,9 +71,9 @@ func (h *handler) GetInfo(
 		VtxoMaxAmount:       info.VtxoMaxAmount,
 		CheckpointTapscript: info.CheckpointTapscript,
 	}
-	buf, err := json.Marshal(resp)
-	if err != nil {
-		log.WithError(err).Warn("failed to marshal get info response")
+	buf, errJSON := json.Marshal(resp)
+	if errJSON != nil {
+		log.WithError(errJSON).Warn("failed to marshal get info response")
 		return resp, nil
 	}
 
@@ -93,7 +94,7 @@ func (h *handler) RegisterIntent(
 
 	intentId, err := h.svc.RegisterIntent(ctx, *proof, *message)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.RegisterIntentResponse{IntentId: intentId}, nil
@@ -108,7 +109,7 @@ func (h *handler) DeleteIntent(
 	}
 
 	if err := h.svc.DeleteIntentsByProof(ctx, *proof, *message); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.DeleteIntentResponse{}, nil
@@ -123,7 +124,7 @@ func (h *handler) ConfirmRegistration(
 	}
 
 	if err := h.svc.ConfirmRegistration(ctx, intentId); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.ConfirmRegistrationResponse{}, nil
@@ -150,7 +151,7 @@ func (h *handler) SubmitTreeNonces(
 	}
 
 	if err := h.svc.RegisterCosignerNonces(ctx, batchId, pubkey, nonces); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.SubmitTreeNoncesResponse{}, nil
@@ -175,7 +176,7 @@ func (h *handler) SubmitTreeSignatures(
 	}
 
 	if err := h.svc.RegisterCosignerSignatures(ctx, batchId, pubkey, signatures); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.SubmitTreeSignaturesResponse{}, nil
@@ -194,13 +195,13 @@ func (h *handler) SubmitSignedForfeitTxs(
 
 	if len(forfeitTxs) > 0 {
 		if err := h.svc.SubmitForfeitTxs(ctx, forfeitTxs); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, err
 		}
 	}
 
 	if len(commitmentTx) > 0 {
 		if err := h.svc.SignCommitmentTx(ctx, commitmentTx); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, err
 		}
 	}
 
@@ -271,7 +272,7 @@ func (h *handler) SubmitTx(
 		ctx, req.GetCheckpointTxs(), req.GetSignedArkTx(),
 	)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.SubmitTxResponse{
@@ -295,7 +296,7 @@ func (h *handler) FinalizeTx(
 	if err := h.svc.FinalizeOffchainTx(
 		ctx, req.GetArkTxid(), req.GetFinalCheckpointTxs(),
 	); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.FinalizeTxResponse{}, nil
@@ -391,6 +392,8 @@ func (h *handler) listenToEvents() {
 
 				evs = append(evs, eventWithTopics{event: ev})
 			case domain.RoundFailed:
+				log.WithError(errors.New(e.Reason)).Error("round failed")
+
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFailed{
 						BatchFailed: &arkv1.BatchFailedEvent{

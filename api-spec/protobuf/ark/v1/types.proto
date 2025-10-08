@@ -144,3 +144,10 @@ message TreeSignatureEvent {
 
 message Heartbeat {
 }
+
+message ErrorDetails {
+  int32 code = 1;
+  string name = 2;
+  string message = 3;
+  map<string, string> metadata = 4;
+}

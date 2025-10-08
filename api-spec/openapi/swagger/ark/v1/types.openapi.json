@@ -74,6 +74,28 @@
           }
         }
       },
+      "ErrorDetails": {
+        "title": "ErrorDetails",
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "FeeInfo": {
         "title": "FeeInfo",
         "type": "object",

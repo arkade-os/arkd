@@ -16,15 +16,18 @@ replace github.com/arkade-os/arkd/pkg/macaroons => ./pkg/macaroons
 
 replace github.com/arkade-os/arkd/pkg/kvdb => ./pkg/kvdb
 
+replace github.com/arkade-os/arkd/pkg/errors => ./pkg/errors
+
 require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251008195901-5b27537cf084
+	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251008204558-e17c9b6bbc17
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.7.2-0.20251008200943-e32dc3a6b65f
+	github.com/arkade-os/go-sdk v0.7.2-0.20251008204906-98c37f4e35dd
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/docker/docker v27.1.1+incompatible
@@ -53,7 +56,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.38.0
 	go.opentelemetry.io/otel/sdk/log v0.14.0
 	go.opentelemetry.io/otel/sdk/metric v1.38.0
-	google.golang.org/grpc v1.75.0
+	google.golang.org/grpc v1.76.0
 	gopkg.in/macaroon-bakery.v2 v2.3.0
 	gopkg.in/macaroon.v2 v2.1.0
 	modernc.org/sqlite v1.33.1
