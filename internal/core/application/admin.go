@@ -247,14 +247,10 @@ func (s *adminService) UpdateMarketHourConfig(
 	marketHourStartTime, marketHourEndTime time.Time, period, roundInterval time.Duration,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) error {
-	if marketHourStartTime.IsZero() && marketHourEndTime.IsZero() &&
-		period <= 0 && roundInterval <= 0 {
-		return fmt.Errorf("missing market hour config")
-	}
 	startTimeSet := !marketHourStartTime.IsZero()
 	endTimeSet := !marketHourEndTime.IsZero()
 	if startTimeSet != endTimeSet {
-		return fmt.Errorf("market hour start time and end time must be set together")
+		return fmt.Errorf("market hour start time and end time must be both set or unset")
 	}
 
 	marketHour, err := s.repoManager.MarketHourRepo().Get(ctx)

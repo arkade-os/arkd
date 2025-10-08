@@ -1530,7 +1530,10 @@ func (s *service) startRound() {
 	roundMaxParticipants := s.roundMaxParticipantsCount
 	mktHour, _ := s.repoManager.MarketHourRepo().Get(context.Background())
 	if mktHour != nil {
-		if now := time.Now(); !now.Before(mktHour.StartTime) && !now.After(mktHour.EndTime) {
+		nextStartTime, nextEndTime := calcNextMarketHour(
+			time.Now(), mktHour.StartTime, mktHour.EndTime, mktHour.Period,
+		)
+		if now := time.Now(); !now.Before(nextStartTime) && !now.After(nextEndTime) {
 			log.WithFields(log.Fields{
 				"roundInterval":        mktHour.RoundInterval,
 				"minRoundParticipants": mktHour.RoundMinParticipantsCount,

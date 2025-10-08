@@ -23,5 +23,6 @@ func NewMarketHour(
 		RoundInterval:             roundInterval,
 		RoundMinParticipantsCount: roundMinParticipantsCount,
 		RoundMaxParticipantsCount: roundMaxParticipantsCount,
+		UpdatedAt:                 time.Now(),
 	}
 }

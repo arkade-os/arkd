@@ -148,10 +148,12 @@ func (a *adminHandler) GetMarketHourConfig(
 	var config *arkv1.MarketHourConfig
 	if marketHour != nil {
 		config = &arkv1.MarketHourConfig{
-			StartTime:     marketHour.StartTime.Unix(),
-			EndTime:       marketHour.EndTime.Unix(),
-			Period:        int64(marketHour.Period.Minutes()),
-			RoundInterval: int64(marketHour.RoundInterval.Seconds()),
+			StartTime:                 marketHour.StartTime.Unix(),
+			EndTime:                   marketHour.EndTime.Unix(),
+			Period:                    int64(marketHour.Period.Minutes()),
+			RoundInterval:             int64(marketHour.RoundInterval.Seconds()),
+			RoundMinParticipantsCount: marketHour.RoundMinParticipantsCount,
+			RoundMaxParticipantsCount: marketHour.RoundMaxParticipantsCount,
 		}
 	}
 
@@ -165,8 +167,8 @@ func (a *adminHandler) UpdateMarketHourConfig(
 	if cfg == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing market hour config")
 	}
-	startTime := time.Unix(cfg.GetStartTime(), 0)
-	endTime := time.Unix(cfg.GetEndTime(), 0)
+	startTime := parseTime(cfg.GetStartTime())
+	endTime := parseTime(cfg.GetEndTime())
 	period := time.Duration(cfg.GetPeriod()) * time.Minute
 	roundInterval := time.Duration(cfg.GetRoundInterval()) * time.Second
 	roundMinParticipantsCount := cfg.GetRoundMinParticipantsCount()
@@ -401,4 +403,11 @@ func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, 
 	}
 
 	return protoConviction, nil
+}
+
+func parseTime(t int64) time.Time {
+	if t <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(t, 0)
 }
