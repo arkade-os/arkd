@@ -14,7 +14,6 @@ const (
 	datadirFlagName                                   = "datadir"
 	macaroonFlagName                                  = "macaroon"
 	passwordFlagName                                  = "password"
-	dbPathFlagName                                    = "datadir"
 	mnemonicFlagName                                  = "mnemonic"
 	gapLimitFlagName                                  = "addr-gap-limit"
 	amountFlagName                                    = "amount"
@@ -51,11 +50,6 @@ var (
 	macaroonFlag = &cli.StringFlag{
 		Name:  macaroonFlagName,
 		Usage: "macaroon in hex format used for authenticated requests",
-	}
-	dbPathFlag = &cli.StringFlag{
-		Name:     dbPathFlagName,
-		Usage:    "path to the wallet database",
-		Required: true,
 	}
 	passwordFlag = &cli.StringFlag{
 		Name:     passwordFlagName,

@@ -113,7 +113,7 @@ func NewService(
 
 	if scheduledSession == nil &&
 		!scheduledSessionStartTime.IsZero() && !scheduledSessionEndTime.IsZero() &&
-		int(scheduledSessionPeriod) > 0 && scheduledSessionDuration > 0 {
+		scheduledSessionPeriod > 0 && scheduledSessionDuration > 0 {
 		rMinParticipantsCount := roundMinParticipantsCount
 		if scheduledSessionRoundMinParticipantsCount > 0 {
 			rMinParticipantsCount = scheduledSessionRoundMinParticipantsCount

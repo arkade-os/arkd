@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
@@ -262,7 +263,7 @@ type fees application.FeeInfo
 
 func (f fees) toProto() *arkv1.FeeInfo {
 	return &arkv1.FeeInfo{
-		TxFeeRate: fmt.Sprintf("%.1f", f.TxFeeRate),
+		TxFeeRate: strconv.FormatFloat(f.TxFeeRate, 'f', -1, 64),
 		IntentFee: &arkv1.IntentFeeInfo{
 			OffchainInput:  f.IntentFees.OffchainInput,
 			OffchainOutput: f.IntentFees.OffchainOutput,
