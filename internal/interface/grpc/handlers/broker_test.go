@@ -59,8 +59,10 @@ func TestBroker(t *testing.T) {
 
 		broker.pushListener(listener)
 
+		broker.lock.RLock()
 		require.Equal(t, 1, len(broker.listeners))
 		require.Equal(t, listener, broker.listeners["test-id"])
+		broker.lock.RUnlock()
 	})
 
 	t.Run("removeListener", func(t *testing.T) {
@@ -68,14 +70,20 @@ func TestBroker(t *testing.T) {
 		listener := newListener[string]("test-id", []string{"topic1"})
 		broker.pushListener(listener)
 
+		broker.lock.RLock()
 		require.Equal(t, 1, len(broker.listeners))
+		broker.lock.RUnlock()
 
 		broker.removeListener("test-id")
+		broker.lock.RLock()
 		require.Equal(t, 0, len(broker.listeners))
+		broker.lock.RUnlock()
 
 		// test remove non-existent listener does not panic
 		broker.removeListener("non-existent")
+		broker.lock.RLock()
 		require.Equal(t, 0, len(broker.listeners))
+		broker.lock.RUnlock()
 	})
 
 	t.Run("getListenerChannel", func(t *testing.T) {
@@ -176,7 +184,9 @@ func TestBroker(t *testing.T) {
 
 			// wait for timeout to trigger, check if listener is removed
 			time.Sleep(150 * time.Millisecond)
+			broker.lock.RLock()
 			require.Equal(t, 0, len(broker.listeners))
+			broker.lock.RUnlock()
 		})
 
 		t.Run("stopTimeout", func(t *testing.T) {
@@ -189,7 +199,9 @@ func TestBroker(t *testing.T) {
 
 			// wait to ensure timeout doesn't trigger
 			time.Sleep(150 * time.Millisecond)
+			broker.lock.RLock()
 			require.Equal(t, 1, len(broker.listeners)) // should still exist
+			broker.lock.RUnlock()
 		})
 
 		t.Run("concurrent timeout with several listeners", func(t *testing.T) {
@@ -212,13 +224,17 @@ func TestBroker(t *testing.T) {
 				}(i)
 			}
 			wg.Wait()
+			broker.lock.RLock()
 			require.Equal(t, nbListeners, len(broker.listeners))
+			broker.lock.RUnlock()
 
 			// wait for all timeouts to trigger
 			time.Sleep(100 * time.Millisecond)
 
 			// all listeners should be removed
+			broker.lock.RLock()
 			require.Equal(t, 0, len(broker.listeners))
+			broker.lock.RUnlock()
 		})
 	})
 
@@ -244,7 +260,9 @@ func TestBroker(t *testing.T) {
 
 			// Modifying copy should not affect original
 			delete(copy, "id1")
+			broker.lock.RLock()
 			require.Equal(t, 2, len(broker.listeners))
+			broker.lock.RUnlock()
 		})
 	})
 
@@ -327,6 +345,8 @@ func TestBroker(t *testing.T) {
 		}()
 
 		wg.Wait()
+		broker.lock.RLock()
 		require.Equal(t, 0, len(broker.listeners))
+		broker.lock.RUnlock()
 	})
 }

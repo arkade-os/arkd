@@ -156,7 +156,17 @@ func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 	}
 
 	h.listeners[id].timeoutTimer = time.AfterFunc(timeout, func() {
-		h.removeListener(id)
+		h.lock.Lock()
+		defer h.lock.Unlock()
+
+		listener, ok := h.listeners[id]
+		if !ok {
+			return
+		}
+		if listener.timeoutTimer != nil {
+			listener.timeoutTimer.Stop()
+		}
+		delete(h.listeners, id)
 	})
 }
 
