@@ -1348,14 +1348,16 @@ func (s *service) RegisterIntent(
 							"network": s.network.Name,
 						})
 				}
-				_, addrs, _, err := txscript.ExtractPkScriptAddrs(output.PkScript, chainParams)
+				scriptType, addrs, _, err := txscript.ExtractPkScriptAddrs(
+					output.PkScript, chainParams,
+				)
 				if err != nil {
-					return "", errors.INVALID_PKSCRIPT.New("failed to extract addrs from output %d script: %w", outputIndex, err).
+					return "", errors.INVALID_PKSCRIPT.New("failed to get onchain address from script of output %d: %w", outputIndex, err).
 						WithMetadata(errors.InvalidPkScriptMetadata{Script: hex.EncodeToString(output.PkScript)})
 				}
 
 				if len(addrs) == 0 {
-					return "", errors.INVALID_PKSCRIPT.New("failed to extract addrs from output %d script", outputIndex).
+					return "", errors.INVALID_PKSCRIPT.New("invalid script type for output %d: %s", outputIndex, scriptType).
 						WithMetadata(errors.InvalidPkScriptMetadata{Script: hex.EncodeToString(output.PkScript)})
 				}
 
