@@ -8,8 +8,8 @@ type roundTiming struct {
 	roundEnd time.Time
 }
 
-func newRoundTiming(roundInterval time.Duration) roundTiming {
-	roundEndTime := time.Now().Add(roundInterval)
+func newRoundTiming(sessionDuration time.Duration) roundTiming {
+	roundEndTime := time.Now().Add(sessionDuration)
 	return roundTiming{roundEndTime}
 }
 

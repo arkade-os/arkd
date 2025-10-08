@@ -2,27 +2,26 @@ package domain
 
 import "time"
 
-type MarketHour struct {
+type ScheduledSession struct {
 	StartTime                 time.Time
 	EndTime                   time.Time
 	Period                    time.Duration
-	RoundInterval             time.Duration
+	Duration                  time.Duration
 	RoundMinParticipantsCount int64
 	RoundMaxParticipantsCount int64
 	UpdatedAt                 time.Time
 }
 
-func NewMarketHour(
-	startTime, endTime time.Time, period, roundInterval time.Duration,
+func NewScheduledSession(
+	startTime, endTime time.Time, period, duration time.Duration,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
-) *MarketHour {
-	return &MarketHour{
+) *ScheduledSession {
+	return &ScheduledSession{
 		StartTime:                 startTime,
 		EndTime:                   endTime,
 		Period:                    period,
-		RoundInterval:             roundInterval,
+		Duration:                  duration,
 		RoundMinParticipantsCount: roundMinParticipantsCount,
 		RoundMaxParticipantsCount: roundMaxParticipantsCount,
-		UpdatedAt:                 time.Now(),
 	}
 }

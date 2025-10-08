@@ -85,7 +85,7 @@ func main() {
 		scheduledSweepCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
-		marketHourCmd,
+		scheduledSessionCmd,
 	)
 	app.Action = mainAction
 	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)

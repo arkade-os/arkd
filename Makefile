@@ -195,7 +195,7 @@ run-simulation:
 		echo "Configuration: CLIENTS=$$CLIENTS, MIN=$$MIN, MAX=$$MAX"; \
 		ARKD_ROUND_MIN_PARTICIPANTS_COUNT=$$MIN \
 		ARKD_ROUND_MAX_PARTICIPANTS_COUNT=$$MAX \
-		ARKD_ROUND_INTERVAL=60 \
+		ARKD_SESSION_DURATION=60 \
 		docker compose -f docker-compose.regtest.yml up --build -d; \
 	'
 	@echo "Waiting for services to start..."

@@ -186,7 +186,7 @@ func TestService(t *testing.T) {
 			testRoundRepository(t, svc)
 			testVtxoRepository(t, svc)
 			testOffchainTxRepository(t, svc)
-			testMarketHourRepository(t, svc)
+			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
 		})
 	}
@@ -783,21 +783,21 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-func testMarketHourRepository(t *testing.T, svc ports.RepoManager) {
-	t.Run("test_market_hour_repository", func(t *testing.T) {
+func testScheduledSessionRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_scheduled_session_repository", func(t *testing.T) {
 		ctx := context.Background()
-		repo := svc.MarketHourRepo()
+		repo := svc.ScheduledSession()
 
-		marketHour, err := repo.Get(ctx)
+		scheduledSession, err := repo.Get(ctx)
 		require.NoError(t, err)
-		require.Nil(t, marketHour)
+		require.Nil(t, scheduledSession)
 
 		now := time.Now().Truncate(time.Second)
-		expected := domain.MarketHour{
-			StartTime:     now,
-			Period:        time.Duration(3) * time.Hour,
-			RoundInterval: time.Duration(20) * time.Second,
-			UpdatedAt:     now,
+		expected := domain.ScheduledSession{
+			StartTime: now,
+			Period:    time.Duration(3) * time.Hour,
+			Duration:  time.Duration(20) * time.Second,
+			UpdatedAt: now,
 		}
 
 		err = repo.Upsert(ctx, expected)
@@ -806,10 +806,10 @@ func testMarketHourRepository(t *testing.T, svc ports.RepoManager) {
 		got, err := repo.Get(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, got)
-		assertMarketHourEqual(t, expected, *got)
+		assertScheduledSessionEqual(t, expected, *got)
 
 		expected.Period = time.Duration(4) * time.Hour
-		expected.RoundInterval = time.Duration(40) * time.Second
+		expected.Duration = time.Duration(40) * time.Second
 		expected.UpdatedAt = now.Add(100 * time.Second)
 
 		err = repo.Upsert(ctx, expected)
@@ -818,7 +818,7 @@ func testMarketHourRepository(t *testing.T, svc ports.RepoManager) {
 		got, err = repo.Get(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, got)
-		assertMarketHourEqual(t, expected, *got)
+		assertScheduledSessionEqual(t, expected, *got)
 	})
 }
 
@@ -1014,10 +1014,10 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-func assertMarketHourEqual(t *testing.T, expected, actual domain.MarketHour) {
+func assertScheduledSessionEqual(t *testing.T, expected, actual domain.ScheduledSession) {
 	assert.True(t, expected.StartTime.Equal(actual.StartTime), "StartTime not equal")
 	assert.Equal(t, expected.Period, actual.Period, "Period not equal")
-	assert.Equal(t, expected.RoundInterval, actual.RoundInterval, "RoundInterval not equal")
+	assert.Equal(t, expected.Duration, actual.Duration, "Duration not equal")
 	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
 	assert.True(t, expected.EndTime.Equal(actual.EndTime), "EndTime not equal")
 }

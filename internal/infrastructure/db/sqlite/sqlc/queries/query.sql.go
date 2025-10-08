@@ -252,22 +252,22 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
-const selectLatestMarketHour = `-- name: SelectLatestMarketHour :one
-SELECT id, start_time, end_time, period, round_interval, updated_at, round_min_participants, round_max_participants FROM market_hour ORDER BY updated_at DESC LIMIT 1
+const selectLatestScheduledSession = `-- name: SelectLatestScheduledSession :one
+SELECT id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at FROM scheduled_session ORDER BY updated_at DESC LIMIT 1
 `
 
-func (q *Queries) SelectLatestMarketHour(ctx context.Context) (MarketHour, error) {
-	row := q.db.QueryRowContext(ctx, selectLatestMarketHour)
-	var i MarketHour
+func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSession, error) {
+	row := q.db.QueryRowContext(ctx, selectLatestScheduledSession)
+	var i ScheduledSession
 	err := row.Scan(
 		&i.ID,
 		&i.StartTime,
 		&i.EndTime,
 		&i.Period,
-		&i.RoundInterval,
-		&i.UpdatedAt,
+		&i.Duration,
 		&i.RoundMinParticipants,
 		&i.RoundMaxParticipants,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1521,44 +1521,6 @@ func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) erro
 	return err
 }
 
-const upsertMarketHour = `-- name: UpsertMarketHour :exec
-INSERT INTO market_hour (id, start_time, end_time, period, round_interval, round_min_participants, round_max_participants, updated_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7,?8)
-ON CONFLICT (id) DO UPDATE SET
-    start_time = EXCLUDED.start_time,
-    end_time = EXCLUDED.end_time,
-    period = EXCLUDED.period,
-    round_interval = EXCLUDED.round_interval,
-    round_min_participants = EXCLUDED.round_min_participants,
-    round_max_participants = EXCLUDED.round_max_participants,
-    updated_at = EXCLUDED.updated_at
-`
-
-type UpsertMarketHourParams struct {
-	ID                   int64
-	StartTime            int64
-	EndTime              int64
-	Period               int64
-	RoundInterval        int64
-	RoundMinParticipants int64
-	RoundMaxParticipants int64
-	UpdatedAt            int64
-}
-
-func (q *Queries) UpsertMarketHour(ctx context.Context, arg UpsertMarketHourParams) error {
-	_, err := q.db.ExecContext(ctx, upsertMarketHour,
-		arg.ID,
-		arg.StartTime,
-		arg.EndTime,
-		arg.Period,
-		arg.RoundInterval,
-		arg.RoundMinParticipants,
-		arg.RoundMaxParticipants,
-		arg.UpdatedAt,
-	)
-	return err
-}
-
 const upsertOffchainTx = `-- name: UpsertOffchainTx :exec
 INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code)
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -1668,6 +1630,44 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 		arg.Version,
 		arg.Swept,
 		arg.VtxoTreeExpiration,
+	)
+	return err
+}
+
+const upsertScheduledSession = `-- name: UpsertScheduledSession :exec
+INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+ON CONFLICT (id) DO UPDATE SET
+    start_time = EXCLUDED.start_time,
+    end_time = EXCLUDED.end_time,
+    period = EXCLUDED.period,
+    duration = EXCLUDED.duration,
+    round_min_participants = EXCLUDED.round_min_participants,
+    round_max_participants = EXCLUDED.round_max_participants,
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertScheduledSessionParams struct {
+	ID                   int64
+	StartTime            int64
+	EndTime              int64
+	Period               int64
+	Duration             int64
+	RoundMinParticipants int64
+	RoundMaxParticipants int64
+	UpdatedAt            int64
+}
+
+func (q *Queries) UpsertScheduledSession(ctx context.Context, arg UpsertScheduledSessionParams) error {
+	_, err := q.db.ExecContext(ctx, upsertScheduledSession,
+		arg.ID,
+		arg.StartTime,
+		arg.EndTime,
+		arg.Period,
+		arg.Duration,
+		arg.RoundMinParticipants,
+		arg.RoundMaxParticipants,
+		arg.UpdatedAt,
 	)
 	return err
 }

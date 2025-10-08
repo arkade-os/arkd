@@ -164,6 +164,17 @@ type RoundWithCommitmentTxVw struct {
 	Children           pqtype.NullRawMessage
 }
 
+type ScheduledSession struct {
+	ID                   int32
+	StartTime            int64
+	EndTime              int64
+	Period               int64
+	Duration             int64
+	RoundMinParticipants int64
+	RoundMaxParticipants int64
+	UpdatedAt            int64
+}
+
 type Tx struct {
 	Txid     string
 	Tx       string

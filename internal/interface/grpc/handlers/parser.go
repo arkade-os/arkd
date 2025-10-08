@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
@@ -241,18 +242,33 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 	return list
 }
 
-type marketHour struct {
-	t *application.NextMarketHour
+type scheduledSession struct {
+	t *application.NextScheduledSession
 }
 
-func (mh marketHour) toProto() *arkv1.MarketHour {
-	if mh.t == nil {
+func (s scheduledSession) toProto() *arkv1.ScheduledSession {
+	if s.t == nil {
 		return nil
 	}
-	return &arkv1.MarketHour{
-		NextStartTime: mh.t.StartTime.Unix(),
-		NextEndTime:   mh.t.EndTime.Unix(),
-		Period:        int64(mh.t.Period.Minutes()),
-		RoundInterval: int64(mh.t.RoundInterval.Seconds()),
+	return &arkv1.ScheduledSession{
+		NextStartTime: s.t.StartTime.Unix(),
+		NextEndTime:   s.t.EndTime.Unix(),
+		Period:        int64(s.t.Period.Minutes()),
+		Duration:      int64(s.t.Duration.Seconds()),
+		Fees:          fees(s.t.Fees).toProto(),
+	}
+}
+
+type fees application.FeeInfo
+
+func (f fees) toProto() *arkv1.FeeInfo {
+	return &arkv1.FeeInfo{
+		TxFeeRate: strconv.FormatFloat(f.TxFeeRate, 'f', -1, 64),
+		IntentFee: &arkv1.IntentFeeInfo{
+			OffchainInput:  f.IntentFees.OffchainInput,
+			OffchainOutput: f.IntentFees.OffchainOutput,
+			OnchainInput:   fmt.Sprintf("%d", f.IntentFees.OnchainInput),
+			OnchainOutput:  fmt.Sprintf("%d", f.IntentFees.OnchainOutput),
+		},
 	}
 }

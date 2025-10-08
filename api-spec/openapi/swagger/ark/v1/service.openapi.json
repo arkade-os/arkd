@@ -705,21 +705,21 @@
           "forfeitPubkey": {
             "type": "string"
           },
-          "marketHour": {
-            "$ref": "#/components/schemas/MarketHour"
-          },
           "network": {
             "type": "string"
           },
-          "roundInterval": {
-            "type": "integer",
-            "format": "int64"
+          "scheduledSession": {
+            "$ref": "#/components/schemas/ScheduledSession"
           },
           "serviceStatus": {
             "type": "object",
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "sessionDuration": {
+            "type": "integer",
+            "format": "int64"
           },
           "signerPubkey": {
             "type": "string"
@@ -746,10 +746,6 @@
             "format": "int64"
           },
           "vtxoMinAmount": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "vtxoTreeExpiry": {
             "type": "integer",
             "format": "int64"
           }
@@ -829,31 +825,6 @@
           }
         }
       },
-      "MarketHour": {
-        "title": "MarketHour",
-        "type": "object",
-        "properties": {
-          "fees": {
-            "$ref": "#/components/schemas/FeeInfo"
-          },
-          "nextEndTime": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "nextStartTime": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "period": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "roundInterval": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
       "Outpoint": {
         "title": "Outpoint",
         "type": "object",
@@ -901,6 +872,31 @@
         "properties": {
           "intentId": {
             "type": "string"
+          }
+        }
+      },
+      "ScheduledSession": {
+        "title": "ScheduledSession",
+        "type": "object",
+        "properties": {
+          "duration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fees": {
+            "$ref": "#/components/schemas/FeeInfo"
+          },
+          "nextEndTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nextStartTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -1029,7 +1025,10 @@
             "type": "string"
           },
           "treeNonces": {
-            "type": "string"
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },

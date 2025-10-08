@@ -69,17 +69,6 @@ type IntentWithReceiversVw struct {
 	Message        sql.NullString
 }
 
-type MarketHour struct {
-	ID                   int64
-	StartTime            int64
-	EndTime              int64
-	Period               int64
-	RoundInterval        int64
-	UpdatedAt            int64
-	RoundMinParticipants int64
-	RoundMaxParticipants int64
-}
-
 type OffchainTx struct {
 	Txid              string
 	Tx                string
@@ -160,6 +149,17 @@ type RoundWithCommitmentTxVw struct {
 	Type               string
 	Position           int64
 	Children           sql.NullString
+}
+
+type ScheduledSession struct {
+	ID                   int64
+	StartTime            int64
+	EndTime              int64
+	Period               int64
+	Duration             int64
+	RoundMinParticipants int64
+	RoundMaxParticipants int64
+	UpdatedAt            int64
 }
 
 type Tx struct {

@@ -355,74 +355,6 @@
         }
       }
     },
-    "/v1/admin/marketHour": {
-      "get": {
-        "tags": [
-          "AdminService"
-        ],
-        "operationId": "AdminService_GetMarketHourConfig",
-        "responses": {
-          "200": {
-            "description": "a successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetMarketHourConfigResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Status"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "AdminService"
-        ],
-        "operationId": "AdminService_UpdateMarketHourConfig",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateMarketHourConfigRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "a successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UpdateMarketHourConfigResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Status"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/admin/note": {
       "post": {
         "tags": [
@@ -534,6 +466,74 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GetRoundsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/scheduledSession": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetScheduledSessionConfig",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetScheduledSessionConfigResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_UpdateScheduledSessionConfig",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateScheduledSessionConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateScheduledSessionConfigResponse"
                 }
               }
             }
@@ -824,19 +824,6 @@
           }
         }
       },
-      "GetMarketHourConfigRequest": {
-        "title": "GetMarketHourConfigRequest",
-        "type": "object"
-      },
-      "GetMarketHourConfigResponse": {
-        "title": "GetMarketHourConfigResponse",
-        "type": "object",
-        "properties": {
-          "config": {
-            "$ref": "#/components/schemas/MarketHourConfig"
-          }
-        }
-      },
       "GetRoundDetailsRequest": {
         "title": "GetRoundDetailsRequest",
         "type": "object",
@@ -919,6 +906,19 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "GetScheduledSessionConfigRequest": {
+        "title": "GetScheduledSessionConfigRequest",
+        "type": "object"
+      },
+      "GetScheduledSessionConfigResponse": {
+        "title": "GetScheduledSessionConfigResponse",
+        "type": "object",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ScheduledSessionConfig"
           }
         }
       },
@@ -1049,39 +1049,6 @@
           }
         }
       },
-      "MarketHourConfig": {
-        "title": "MarketHourConfig",
-        "type": "object",
-        "properties": {
-          "endTime": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "fees": {
-            "$ref": "#/components/schemas/FeeInfo"
-          },
-          "period": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "roundInterval": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "roundMaxParticipantsCount": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "roundMinParticipantsCount": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "startTime": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
       "Output": {
         "title": "Output",
         "type": "object",
@@ -1111,6 +1078,39 @@
       "PardonConvictionResponse": {
         "title": "PardonConvictionResponse",
         "type": "object"
+      },
+      "ScheduledSessionConfig": {
+        "title": "ScheduledSessionConfig",
+        "type": "object",
+        "properties": {
+          "duration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "endTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fees": {
+            "$ref": "#/components/schemas/FeeInfo"
+          },
+          "period": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundMaxParticipantsCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundMinParticipantsCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "startTime": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "ScheduledSweep": {
         "title": "ScheduledSweep",
@@ -1166,17 +1166,17 @@
           }
         }
       },
-      "UpdateMarketHourConfigRequest": {
-        "title": "UpdateMarketHourConfigRequest",
+      "UpdateScheduledSessionConfigRequest": {
+        "title": "UpdateScheduledSessionConfigRequest",
         "type": "object",
         "properties": {
           "config": {
-            "$ref": "#/components/schemas/MarketHourConfig"
+            "$ref": "#/components/schemas/ScheduledSessionConfig"
           }
         }
       },
-      "UpdateMarketHourConfigResponse": {
-        "title": "UpdateMarketHourConfigResponse",
+      "UpdateScheduledSessionConfigResponse": {
+        "title": "UpdateScheduledSessionConfigResponse",
         "type": "object"
       }
     }

@@ -48,8 +48,8 @@ type service struct {
 	forfeitPubkey             *btcec.PublicKey
 	forfeitAddress            string
 	checkpointTapscript       []byte
-	vtxoTreeExpiry            arklib.RelativeLocktime
-	roundInterval             time.Duration
+	batchExpiry               arklib.RelativeLocktime
+	sessionDuration           time.Duration
 	banDuration               time.Duration
 	banThreshold              int64
 	unilateralExitDelay       arklib.RelativeLocktime
@@ -89,14 +89,14 @@ func NewService(
 	cache ports.LiveStore,
 	reportSvc RoundReportService,
 	vtxoTreeExpiry, unilateralExitDelay, boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
-	roundInterval, roundMinParticipantsCount, roundMaxParticipantsCount,
+	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	network arklib.Network,
 	allowCSVBlockType bool,
 	noteUriPrefix string,
-	marketHourStartTime, marketHourEndTime time.Time,
-	marketHourPeriod, marketHourRoundInterval time.Duration,
-	marketHourRoundMinParticipantsCount, marketHourRoundMaxParticipantsCount int64,
+	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
+	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
+	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -105,32 +105,30 @@ func NewService(
 		return nil, fmt.Errorf("failed to fetch signer pubkey: %s", err)
 	}
 
-	// Try to load market hours from DB first
-	marketHour, err := repoManager.MarketHourRepo().Get(ctx)
+	// Try to load scheduled session from DB first
+	scheduledSession, err := repoManager.ScheduledSession().Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get market hours from db: %w", err)
+		return nil, fmt.Errorf("failed to get scheduled session from db: %w", err)
 	}
 
-	if marketHour == nil && !marketHourStartTime.IsZero() && !marketHourEndTime.IsZero() &&
-		int(marketHourPeriod) > 0 {
-		rInterval := time.Duration(roundInterval) * time.Second
-		if marketHourRoundInterval > 0 {
-			rInterval = marketHourRoundInterval
-		}
+	if scheduledSession == nil &&
+		!scheduledSessionStartTime.IsZero() && !scheduledSessionEndTime.IsZero() &&
+		scheduledSessionPeriod > 0 && scheduledSessionDuration > 0 {
 		rMinParticipantsCount := roundMinParticipantsCount
-		if marketHourRoundMinParticipantsCount > 0 {
-			rMinParticipantsCount = marketHourRoundMinParticipantsCount
+		if scheduledSessionRoundMinParticipantsCount > 0 {
+			rMinParticipantsCount = scheduledSessionRoundMinParticipantsCount
 		}
 		rMaxParticipantsCount := roundMaxParticipantsCount
-		if marketHourRoundMaxParticipantsCount > 0 {
-			rMaxParticipantsCount = marketHourRoundMaxParticipantsCount
+		if scheduledSessionRoundMaxParticipantsCount > 0 {
+			rMaxParticipantsCount = scheduledSessionRoundMaxParticipantsCount
 		}
-		marketHour = domain.NewMarketHour(
-			marketHourStartTime, marketHourEndTime, marketHourPeriod,
-			rInterval, rMinParticipantsCount, rMaxParticipantsCount,
+		scheduledSession = domain.NewScheduledSession(
+			scheduledSessionStartTime, scheduledSessionEndTime,
+			scheduledSessionPeriod, scheduledSessionDuration,
+			rMinParticipantsCount, rMaxParticipantsCount,
 		)
-		if err := repoManager.MarketHourRepo().Upsert(ctx, *marketHour); err != nil {
-			return nil, fmt.Errorf("failed to upsert initial market hours to db: %w", err)
+		if err := repoManager.ScheduledSession().Upsert(ctx, *scheduledSession); err != nil {
+			return nil, fmt.Errorf("failed to upsert initial scheduled session to db: %w", err)
 		}
 	}
 
@@ -177,16 +175,14 @@ func NewService(
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	roundIntervalDuration := time.Duration(roundInterval) * time.Second
-	banDurationDuration := time.Duration(banDuration) * time.Second
 
 	svc := &service{
 		network:             network,
 		signerPubkey:        signerPubkey,
 		forfeitPubkey:       forfeitPubkey,
-		vtxoTreeExpiry:      vtxoTreeExpiry,
-		roundInterval:       roundIntervalDuration,
-		banDuration:         banDurationDuration,
+		batchExpiry:         vtxoTreeExpiry,
+		sessionDuration:     time.Duration(sessionDuration) * time.Second,
+		banDuration:         time.Duration(banDuration) * time.Second,
 		banThreshold:        banThreshold,
 		unilateralExitDelay: unilateralExitDelay,
 		allowCSVBlockType:   allowCSVBlockType,
@@ -1289,41 +1285,40 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, error) {
 		return nil, fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
-	marketHourConfig, err := s.repoManager.MarketHourRepo().Get(ctx)
+	scheduledSessionConfig, err := s.repoManager.ScheduledSession().Get(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var nextMarketHour *NextMarketHour
-	if marketHourConfig != nil {
-		marketHourNextStart, marketHourNextEnd := calcNextMarketHour(
-			time.Now(), marketHourConfig.StartTime, marketHourConfig.EndTime,
-			marketHourConfig.Period,
+	var nextScheduledSession *NextScheduledSession
+	if scheduledSessionConfig != nil {
+		scheduledSessionNextStart, scheduledSessionNextEnd := calcNextScheduledSession(
+			time.Now(), scheduledSessionConfig.StartTime, scheduledSessionConfig.EndTime,
+			scheduledSessionConfig.Period,
 		)
-		nextMarketHour = &NextMarketHour{
-			StartTime:     marketHourNextStart,
-			EndTime:       marketHourNextEnd,
-			Period:        marketHourConfig.Period,
-			RoundInterval: marketHourConfig.RoundInterval,
+		nextScheduledSession = &NextScheduledSession{
+			StartTime: scheduledSessionNextStart,
+			EndTime:   scheduledSessionNextEnd,
+			Period:    scheduledSessionConfig.Period,
+			Duration:  scheduledSessionConfig.Duration,
 		}
 	}
 
 	return &ServiceInfo{
-		SignerPubKey:        signerPubkey,
-		ForfeitPubKey:       forfeitPubkey,
-		VtxoTreeExpiry:      int64(s.vtxoTreeExpiry.Value),
-		UnilateralExitDelay: int64(s.unilateralExitDelay.Value),
-		BoardingExitDelay:   int64(s.boardingExitDelay.Value),
-		RoundInterval:       int64(s.roundInterval.Seconds()),
-		Network:             s.network.Name,
-		Dust:                dust,
-		ForfeitAddress:      s.forfeitAddress,
-		NextMarketHour:      nextMarketHour,
-		UtxoMinAmount:       s.utxoMinAmount,
-		UtxoMaxAmount:       s.utxoMaxAmount,
-		VtxoMinAmount:       s.vtxoMinSettlementAmount,
-		VtxoMaxAmount:       s.vtxoMaxAmount,
-		CheckpointTapscript: hex.EncodeToString(s.checkpointTapscript),
+		SignerPubKey:         signerPubkey,
+		ForfeitPubKey:        forfeitPubkey,
+		UnilateralExitDelay:  int64(s.unilateralExitDelay.Value),
+		BoardingExitDelay:    int64(s.boardingExitDelay.Value),
+		SessionDuration:      int64(s.sessionDuration.Seconds()),
+		Network:              s.network.Name,
+		Dust:                 dust,
+		ForfeitAddress:       s.forfeitAddress,
+		NextScheduledSession: nextScheduledSession,
+		UtxoMinAmount:        s.utxoMinAmount,
+		UtxoMaxAmount:        s.utxoMaxAmount,
+		VtxoMinAmount:        s.vtxoMinSettlementAmount,
+		VtxoMaxAmount:        s.vtxoMaxAmount,
+		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 	}, nil
 }
 
@@ -1524,29 +1519,28 @@ func (s *service) startRound() {
 
 	s.roundReportSvc.StageStarted(SelectIntentsStage)
 
-	roundInterval := s.roundInterval
+	sessionDuration := s.sessionDuration
 	roundMinParticipants := s.roundMinParticipantsCount
 	roundMaxParticipants := s.roundMaxParticipantsCount
-	mktHour, _ := s.repoManager.MarketHourRepo().Get(context.Background())
-	if mktHour != nil {
-		nextStartTime, nextEndTime := calcNextMarketHour(
-			time.Now(), mktHour.StartTime, mktHour.EndTime, mktHour.Period,
+	scheduledSession, _ := s.repoManager.ScheduledSession().Get(context.Background())
+	if scheduledSession != nil {
+		nextStartTime, nextEndTime := calcNextScheduledSession(
+			time.Now(),
+			scheduledSession.StartTime, scheduledSession.EndTime, scheduledSession.Period,
 		)
 		if now := time.Now(); !now.Before(nextStartTime) && !now.After(nextEndTime) {
 			log.WithFields(log.Fields{
-				"roundInterval":        mktHour.RoundInterval,
-				"minRoundParticipants": mktHour.RoundMinParticipantsCount,
-				"maxRoundParticipants": mktHour.RoundMaxParticipantsCount,
-			}).Debug(
-				"market hour is active, using market hour params",
-			)
-			roundInterval = mktHour.RoundInterval
-			roundMinParticipants = mktHour.RoundMinParticipantsCount
-			roundMaxParticipants = mktHour.RoundMaxParticipantsCount
+				"duration":             scheduledSession.Duration,
+				"minRoundParticipants": scheduledSession.RoundMinParticipantsCount,
+				"maxRoundParticipants": scheduledSession.RoundMaxParticipantsCount,
+			}).Debug("scheduled session is active")
+			sessionDuration = scheduledSession.Duration
+			roundMinParticipants = scheduledSession.RoundMinParticipantsCount
+			roundMaxParticipants = scheduledSession.RoundMaxParticipantsCount
 		}
 	}
 
-	roundTiming := newRoundTiming(roundInterval)
+	roundTiming := newRoundTiming(sessionDuration)
 	<-time.After(roundTiming.registrationDuration())
 	s.wg.Add(1)
 	go s.startConfirmation(roundTiming, roundMinParticipants, roundMaxParticipants)
@@ -1882,7 +1876,7 @@ func (s *service) startFinalization(
 
 		sweepClosure := script.CSVMultisigClosure{
 			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.forfeitPubkey}},
-			Locktime:        s.vtxoTreeExpiry,
+			Locktime:        s.batchExpiry,
 		}
 
 		sweepScript, err := sweepClosure.Script()
@@ -2111,7 +2105,7 @@ func (s *service) startFinalization(
 	round := s.cache.CurrentRound().Get()
 	_, err = round.StartFinalization(
 		connectorAddress, flatConnectors, flatVtxoTree,
-		round.CommitmentTxid, round.CommitmentTx, s.vtxoTreeExpiry.Seconds(),
+		round.CommitmentTxid, round.CommitmentTx, s.batchExpiry.Seconds(),
 	)
 	if err != nil {
 		s.cache.CurrentRound().Fail(fmt.Errorf("failed to start finalization: %s", err))
@@ -2492,7 +2486,7 @@ func (s *service) propagateBatchStartedEvent(intents []ports.TimedIntent) {
 			Type: domain.EventTypeUndefined,
 		},
 		IntentIdsHashes: hashedIntentIds,
-		BatchExpiry:     s.vtxoTreeExpiry.Value,
+		BatchExpiry:     s.batchExpiry.Value,
 	}
 	s.eventsCh <- []domain.Event{ev}
 }
@@ -2545,7 +2539,7 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 		return
 	}
 
-	expirationTimestamp := s.sweeper.scheduler.AddNow(int64(s.vtxoTreeExpiry.Value))
+	expirationTimestamp := s.sweeper.scheduler.AddNow(int64(s.batchExpiry.Value))
 
 	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
 	if err != nil {

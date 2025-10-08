@@ -19,20 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AdminService_GetScheduledSweep_FullMethodName          = "/ark.v1.AdminService/GetScheduledSweep"
-	AdminService_GetRoundDetails_FullMethodName            = "/ark.v1.AdminService/GetRoundDetails"
-	AdminService_GetRounds_FullMethodName                  = "/ark.v1.AdminService/GetRounds"
-	AdminService_CreateNote_FullMethodName                 = "/ark.v1.AdminService/CreateNote"
-	AdminService_GetMarketHourConfig_FullMethodName        = "/ark.v1.AdminService/GetMarketHourConfig"
-	AdminService_UpdateMarketHourConfig_FullMethodName     = "/ark.v1.AdminService/UpdateMarketHourConfig"
-	AdminService_ListIntents_FullMethodName                = "/ark.v1.AdminService/ListIntents"
-	AdminService_DeleteIntents_FullMethodName              = "/ark.v1.AdminService/DeleteIntents"
-	AdminService_GetConvictions_FullMethodName             = "/ark.v1.AdminService/GetConvictions"
-	AdminService_GetConvictionsInRange_FullMethodName      = "/ark.v1.AdminService/GetConvictionsInRange"
-	AdminService_GetConvictionsByRound_FullMethodName      = "/ark.v1.AdminService/GetConvictionsByRound"
-	AdminService_GetActiveScriptConvictions_FullMethodName = "/ark.v1.AdminService/GetActiveScriptConvictions"
-	AdminService_PardonConviction_FullMethodName           = "/ark.v1.AdminService/PardonConviction"
-	AdminService_BanScript_FullMethodName                  = "/ark.v1.AdminService/BanScript"
+	AdminService_GetScheduledSweep_FullMethodName            = "/ark.v1.AdminService/GetScheduledSweep"
+	AdminService_GetRoundDetails_FullMethodName              = "/ark.v1.AdminService/GetRoundDetails"
+	AdminService_GetRounds_FullMethodName                    = "/ark.v1.AdminService/GetRounds"
+	AdminService_CreateNote_FullMethodName                   = "/ark.v1.AdminService/CreateNote"
+	AdminService_GetScheduledSessionConfig_FullMethodName    = "/ark.v1.AdminService/GetScheduledSessionConfig"
+	AdminService_UpdateScheduledSessionConfig_FullMethodName = "/ark.v1.AdminService/UpdateScheduledSessionConfig"
+	AdminService_ListIntents_FullMethodName                  = "/ark.v1.AdminService/ListIntents"
+	AdminService_DeleteIntents_FullMethodName                = "/ark.v1.AdminService/DeleteIntents"
+	AdminService_GetConvictions_FullMethodName               = "/ark.v1.AdminService/GetConvictions"
+	AdminService_GetConvictionsInRange_FullMethodName        = "/ark.v1.AdminService/GetConvictionsInRange"
+	AdminService_GetConvictionsByRound_FullMethodName        = "/ark.v1.AdminService/GetConvictionsByRound"
+	AdminService_GetActiveScriptConvictions_FullMethodName   = "/ark.v1.AdminService/GetActiveScriptConvictions"
+	AdminService_PardonConviction_FullMethodName             = "/ark.v1.AdminService/PardonConviction"
+	AdminService_BanScript_FullMethodName                    = "/ark.v1.AdminService/BanScript"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -43,8 +43,8 @@ type AdminServiceClient interface {
 	GetRoundDetails(ctx context.Context, in *GetRoundDetailsRequest, opts ...grpc.CallOption) (*GetRoundDetailsResponse, error)
 	GetRounds(ctx context.Context, in *GetRoundsRequest, opts ...grpc.CallOption) (*GetRoundsResponse, error)
 	CreateNote(ctx context.Context, in *CreateNoteRequest, opts ...grpc.CallOption) (*CreateNoteResponse, error)
-	GetMarketHourConfig(ctx context.Context, in *GetMarketHourConfigRequest, opts ...grpc.CallOption) (*GetMarketHourConfigResponse, error)
-	UpdateMarketHourConfig(ctx context.Context, in *UpdateMarketHourConfigRequest, opts ...grpc.CallOption) (*UpdateMarketHourConfigResponse, error)
+	GetScheduledSessionConfig(ctx context.Context, in *GetScheduledSessionConfigRequest, opts ...grpc.CallOption) (*GetScheduledSessionConfigResponse, error)
+	UpdateScheduledSessionConfig(ctx context.Context, in *UpdateScheduledSessionConfigRequest, opts ...grpc.CallOption) (*UpdateScheduledSessionConfigResponse, error)
 	ListIntents(ctx context.Context, in *ListIntentsRequest, opts ...grpc.CallOption) (*ListIntentsResponse, error)
 	DeleteIntents(ctx context.Context, in *DeleteIntentsRequest, opts ...grpc.CallOption) (*DeleteIntentsResponse, error)
 	GetConvictions(ctx context.Context, in *GetConvictionsRequest, opts ...grpc.CallOption) (*GetConvictionsResponse, error)
@@ -103,20 +103,20 @@ func (c *adminServiceClient) CreateNote(ctx context.Context, in *CreateNoteReque
 	return out, nil
 }
 
-func (c *adminServiceClient) GetMarketHourConfig(ctx context.Context, in *GetMarketHourConfigRequest, opts ...grpc.CallOption) (*GetMarketHourConfigResponse, error) {
+func (c *adminServiceClient) GetScheduledSessionConfig(ctx context.Context, in *GetScheduledSessionConfigRequest, opts ...grpc.CallOption) (*GetScheduledSessionConfigResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetMarketHourConfigResponse)
-	err := c.cc.Invoke(ctx, AdminService_GetMarketHourConfig_FullMethodName, in, out, cOpts...)
+	out := new(GetScheduledSessionConfigResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetScheduledSessionConfig_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *adminServiceClient) UpdateMarketHourConfig(ctx context.Context, in *UpdateMarketHourConfigRequest, opts ...grpc.CallOption) (*UpdateMarketHourConfigResponse, error) {
+func (c *adminServiceClient) UpdateScheduledSessionConfig(ctx context.Context, in *UpdateScheduledSessionConfigRequest, opts ...grpc.CallOption) (*UpdateScheduledSessionConfigResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateMarketHourConfigResponse)
-	err := c.cc.Invoke(ctx, AdminService_UpdateMarketHourConfig_FullMethodName, in, out, cOpts...)
+	out := new(UpdateScheduledSessionConfigResponse)
+	err := c.cc.Invoke(ctx, AdminService_UpdateScheduledSessionConfig_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -211,8 +211,8 @@ type AdminServiceServer interface {
 	GetRoundDetails(context.Context, *GetRoundDetailsRequest) (*GetRoundDetailsResponse, error)
 	GetRounds(context.Context, *GetRoundsRequest) (*GetRoundsResponse, error)
 	CreateNote(context.Context, *CreateNoteRequest) (*CreateNoteResponse, error)
-	GetMarketHourConfig(context.Context, *GetMarketHourConfigRequest) (*GetMarketHourConfigResponse, error)
-	UpdateMarketHourConfig(context.Context, *UpdateMarketHourConfigRequest) (*UpdateMarketHourConfigResponse, error)
+	GetScheduledSessionConfig(context.Context, *GetScheduledSessionConfigRequest) (*GetScheduledSessionConfigResponse, error)
+	UpdateScheduledSessionConfig(context.Context, *UpdateScheduledSessionConfigRequest) (*UpdateScheduledSessionConfigResponse, error)
 	ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error)
 	DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error)
 	GetConvictions(context.Context, *GetConvictionsRequest) (*GetConvictionsResponse, error)
@@ -242,11 +242,11 @@ func (UnimplementedAdminServiceServer) GetRounds(context.Context, *GetRoundsRequ
 func (UnimplementedAdminServiceServer) CreateNote(context.Context, *CreateNoteRequest) (*CreateNoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateNote not implemented")
 }
-func (UnimplementedAdminServiceServer) GetMarketHourConfig(context.Context, *GetMarketHourConfigRequest) (*GetMarketHourConfigResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetMarketHourConfig not implemented")
+func (UnimplementedAdminServiceServer) GetScheduledSessionConfig(context.Context, *GetScheduledSessionConfigRequest) (*GetScheduledSessionConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetScheduledSessionConfig not implemented")
 }
-func (UnimplementedAdminServiceServer) UpdateMarketHourConfig(context.Context, *UpdateMarketHourConfigRequest) (*UpdateMarketHourConfigResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateMarketHourConfig not implemented")
+func (UnimplementedAdminServiceServer) UpdateScheduledSessionConfig(context.Context, *UpdateScheduledSessionConfigRequest) (*UpdateScheduledSessionConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateScheduledSessionConfig not implemented")
 }
 func (UnimplementedAdminServiceServer) ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListIntents not implemented")
@@ -364,38 +364,38 @@ func _AdminService_CreateNote_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AdminService_GetMarketHourConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetMarketHourConfigRequest)
+func _AdminService_GetScheduledSessionConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetScheduledSessionConfigRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AdminServiceServer).GetMarketHourConfig(ctx, in)
+		return srv.(AdminServiceServer).GetScheduledSessionConfig(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AdminService_GetMarketHourConfig_FullMethodName,
+		FullMethod: AdminService_GetScheduledSessionConfig_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminServiceServer).GetMarketHourConfig(ctx, req.(*GetMarketHourConfigRequest))
+		return srv.(AdminServiceServer).GetScheduledSessionConfig(ctx, req.(*GetScheduledSessionConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AdminService_UpdateMarketHourConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateMarketHourConfigRequest)
+func _AdminService_UpdateScheduledSessionConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateScheduledSessionConfigRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AdminServiceServer).UpdateMarketHourConfig(ctx, in)
+		return srv.(AdminServiceServer).UpdateScheduledSessionConfig(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: AdminService_UpdateMarketHourConfig_FullMethodName,
+		FullMethod: AdminService_UpdateScheduledSessionConfig_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminServiceServer).UpdateMarketHourConfig(ctx, req.(*UpdateMarketHourConfigRequest))
+		return srv.(AdminServiceServer).UpdateScheduledSessionConfig(ctx, req.(*UpdateScheduledSessionConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -568,12 +568,12 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_CreateNote_Handler,
 		},
 		{
-			MethodName: "GetMarketHourConfig",
-			Handler:    _AdminService_GetMarketHourConfig_Handler,
+			MethodName: "GetScheduledSessionConfig",
+			Handler:    _AdminService_GetScheduledSessionConfig_Handler,
 		},
 		{
-			MethodName: "UpdateMarketHourConfig",
-			Handler:    _AdminService_UpdateMarketHourConfig_Handler,
+			MethodName: "UpdateScheduledSessionConfig",
+			Handler:    _AdminService_UpdateScheduledSessionConfig_Handler,
 		},
 		{
 			MethodName: "ListIntents",

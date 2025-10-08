@@ -572,26 +572,26 @@ func (x *CreateNoteResponse) GetNotes() []string {
 	return nil
 }
 
-type GetMarketHourConfigRequest struct {
+type GetScheduledSessionConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetMarketHourConfigRequest) Reset() {
-	*x = GetMarketHourConfigRequest{}
+func (x *GetScheduledSessionConfigRequest) Reset() {
+	*x = GetScheduledSessionConfigRequest{}
 	mi := &file_ark_v1_admin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetMarketHourConfigRequest) String() string {
+func (x *GetScheduledSessionConfigRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetMarketHourConfigRequest) ProtoMessage() {}
+func (*GetScheduledSessionConfigRequest) ProtoMessage() {}
 
-func (x *GetMarketHourConfigRequest) ProtoReflect() protoreflect.Message {
+func (x *GetScheduledSessionConfigRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_ark_v1_admin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -603,32 +603,32 @@ func (x *GetMarketHourConfigRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetMarketHourConfigRequest.ProtoReflect.Descriptor instead.
-func (*GetMarketHourConfigRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetScheduledSessionConfigRequest.ProtoReflect.Descriptor instead.
+func (*GetScheduledSessionConfigRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{8}
 }
 
-type GetMarketHourConfigResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Config        *MarketHourConfig      `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
+type GetScheduledSessionConfigResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Config        *ScheduledSessionConfig `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetMarketHourConfigResponse) Reset() {
-	*x = GetMarketHourConfigResponse{}
+func (x *GetScheduledSessionConfigResponse) Reset() {
+	*x = GetScheduledSessionConfigResponse{}
 	mi := &file_ark_v1_admin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetMarketHourConfigResponse) String() string {
+func (x *GetScheduledSessionConfigResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetMarketHourConfigResponse) ProtoMessage() {}
+func (*GetScheduledSessionConfigResponse) ProtoMessage() {}
 
-func (x *GetMarketHourConfigResponse) ProtoReflect() protoreflect.Message {
+func (x *GetScheduledSessionConfigResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_ark_v1_admin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -640,39 +640,39 @@ func (x *GetMarketHourConfigResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetMarketHourConfigResponse.ProtoReflect.Descriptor instead.
-func (*GetMarketHourConfigResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetScheduledSessionConfigResponse.ProtoReflect.Descriptor instead.
+func (*GetScheduledSessionConfigResponse) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *GetMarketHourConfigResponse) GetConfig() *MarketHourConfig {
+func (x *GetScheduledSessionConfigResponse) GetConfig() *ScheduledSessionConfig {
 	if x != nil {
 		return x.Config
 	}
 	return nil
 }
 
-type UpdateMarketHourConfigRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Config        *MarketHourConfig      `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
+type UpdateScheduledSessionConfigRequest struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Config        *ScheduledSessionConfig `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateMarketHourConfigRequest) Reset() {
-	*x = UpdateMarketHourConfigRequest{}
+func (x *UpdateScheduledSessionConfigRequest) Reset() {
+	*x = UpdateScheduledSessionConfigRequest{}
 	mi := &file_ark_v1_admin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateMarketHourConfigRequest) String() string {
+func (x *UpdateScheduledSessionConfigRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateMarketHourConfigRequest) ProtoMessage() {}
+func (*UpdateScheduledSessionConfigRequest) ProtoMessage() {}
 
-func (x *UpdateMarketHourConfigRequest) ProtoReflect() protoreflect.Message {
+func (x *UpdateScheduledSessionConfigRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_ark_v1_admin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -684,38 +684,38 @@ func (x *UpdateMarketHourConfigRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateMarketHourConfigRequest.ProtoReflect.Descriptor instead.
-func (*UpdateMarketHourConfigRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use UpdateScheduledSessionConfigRequest.ProtoReflect.Descriptor instead.
+func (*UpdateScheduledSessionConfigRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *UpdateMarketHourConfigRequest) GetConfig() *MarketHourConfig {
+func (x *UpdateScheduledSessionConfigRequest) GetConfig() *ScheduledSessionConfig {
 	if x != nil {
 		return x.Config
 	}
 	return nil
 }
 
-type UpdateMarketHourConfigResponse struct {
+type UpdateScheduledSessionConfigResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateMarketHourConfigResponse) Reset() {
-	*x = UpdateMarketHourConfigResponse{}
+func (x *UpdateScheduledSessionConfigResponse) Reset() {
+	*x = UpdateScheduledSessionConfigResponse{}
 	mi := &file_ark_v1_admin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateMarketHourConfigResponse) String() string {
+func (x *UpdateScheduledSessionConfigResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateMarketHourConfigResponse) ProtoMessage() {}
+func (*UpdateScheduledSessionConfigResponse) ProtoMessage() {}
 
-func (x *UpdateMarketHourConfigResponse) ProtoReflect() protoreflect.Message {
+func (x *UpdateScheduledSessionConfigResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_ark_v1_admin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -727,8 +727,8 @@ func (x *UpdateMarketHourConfigResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateMarketHourConfigResponse.ProtoReflect.Descriptor instead.
-func (*UpdateMarketHourConfigResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use UpdateScheduledSessionConfigResponse.ProtoReflect.Descriptor instead.
+func (*UpdateScheduledSessionConfigResponse) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{11}
 }
 
@@ -1556,12 +1556,12 @@ func (x *ScheduledSweep) GetOutputs() []*SweepableOutput {
 	return nil
 }
 
-type MarketHourConfig struct {
+type ScheduledSessionConfig struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	StartTime                 int64                  `protobuf:"varint,1,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime                   int64                  `protobuf:"varint,2,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
 	Period                    int64                  `protobuf:"varint,3,opt,name=period,proto3" json:"period,omitempty"`
-	RoundInterval             int64                  `protobuf:"varint,4,opt,name=round_interval,json=roundInterval,proto3" json:"round_interval,omitempty"`
+	Duration                  int64                  `protobuf:"varint,4,opt,name=duration,proto3" json:"duration,omitempty"`
 	RoundMinParticipantsCount int64                  `protobuf:"varint,5,opt,name=round_min_participants_count,json=roundMinParticipantsCount,proto3" json:"round_min_participants_count,omitempty"`
 	RoundMaxParticipantsCount int64                  `protobuf:"varint,6,opt,name=round_max_participants_count,json=roundMaxParticipantsCount,proto3" json:"round_max_participants_count,omitempty"`
 	Fees                      *FeeInfo               `protobuf:"bytes,7,opt,name=fees,proto3" json:"fees,omitempty"`
@@ -1569,20 +1569,20 @@ type MarketHourConfig struct {
 	sizeCache                 protoimpl.SizeCache
 }
 
-func (x *MarketHourConfig) Reset() {
-	*x = MarketHourConfig{}
+func (x *ScheduledSessionConfig) Reset() {
+	*x = ScheduledSessionConfig{}
 	mi := &file_ark_v1_admin_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MarketHourConfig) String() string {
+func (x *ScheduledSessionConfig) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MarketHourConfig) ProtoMessage() {}
+func (*ScheduledSessionConfig) ProtoMessage() {}
 
-func (x *MarketHourConfig) ProtoReflect() protoreflect.Message {
+func (x *ScheduledSessionConfig) ProtoReflect() protoreflect.Message {
 	mi := &file_ark_v1_admin_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1594,54 +1594,54 @@ func (x *MarketHourConfig) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MarketHourConfig.ProtoReflect.Descriptor instead.
-func (*MarketHourConfig) Descriptor() ([]byte, []int) {
+// Deprecated: Use ScheduledSessionConfig.ProtoReflect.Descriptor instead.
+func (*ScheduledSessionConfig) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{30}
 }
 
-func (x *MarketHourConfig) GetStartTime() int64 {
+func (x *ScheduledSessionConfig) GetStartTime() int64 {
 	if x != nil {
 		return x.StartTime
 	}
 	return 0
 }
 
-func (x *MarketHourConfig) GetEndTime() int64 {
+func (x *ScheduledSessionConfig) GetEndTime() int64 {
 	if x != nil {
 		return x.EndTime
 	}
 	return 0
 }
 
-func (x *MarketHourConfig) GetPeriod() int64 {
+func (x *ScheduledSessionConfig) GetPeriod() int64 {
 	if x != nil {
 		return x.Period
 	}
 	return 0
 }
 
-func (x *MarketHourConfig) GetRoundInterval() int64 {
+func (x *ScheduledSessionConfig) GetDuration() int64 {
 	if x != nil {
-		return x.RoundInterval
+		return x.Duration
 	}
 	return 0
 }
 
-func (x *MarketHourConfig) GetRoundMinParticipantsCount() int64 {
+func (x *ScheduledSessionConfig) GetRoundMinParticipantsCount() int64 {
 	if x != nil {
 		return x.RoundMinParticipantsCount
 	}
 	return 0
 }
 
-func (x *MarketHourConfig) GetRoundMaxParticipantsCount() int64 {
+func (x *ScheduledSessionConfig) GetRoundMaxParticipantsCount() int64 {
 	if x != nil {
 		return x.RoundMaxParticipantsCount
 	}
 	return 0
 }
 
-func (x *MarketHourConfig) GetFees() *FeeInfo {
+func (x *ScheduledSessionConfig) GetFees() *FeeInfo {
 	if x != nil {
 		return x.Fees
 	}
@@ -2031,13 +2031,13 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x06amount\x18\x01 \x01(\rR\x06amount\x12\x1a\n" +
 	"\bquantity\x18\x02 \x01(\rR\bquantity\"*\n" +
 	"\x12CreateNoteResponse\x12\x14\n" +
-	"\x05notes\x18\x01 \x03(\tR\x05notes\"\x1c\n" +
-	"\x1aGetMarketHourConfigRequest\"O\n" +
-	"\x1bGetMarketHourConfigResponse\x120\n" +
-	"\x06config\x18\x01 \x01(\v2\x18.ark.v1.MarketHourConfigR\x06config\"Q\n" +
-	"\x1dUpdateMarketHourConfigRequest\x120\n" +
-	"\x06config\x18\x01 \x01(\v2\x18.ark.v1.MarketHourConfigR\x06config\" \n" +
-	"\x1eUpdateMarketHourConfigResponse\"3\n" +
+	"\x05notes\x18\x01 \x03(\tR\x05notes\"\"\n" +
+	" GetScheduledSessionConfigRequest\"[\n" +
+	"!GetScheduledSessionConfigResponse\x126\n" +
+	"\x06config\x18\x01 \x01(\v2\x1e.ark.v1.ScheduledSessionConfigR\x06config\"]\n" +
+	"#UpdateScheduledSessionConfigRequest\x126\n" +
+	"\x06config\x18\x01 \x01(\v2\x1e.ark.v1.ScheduledSessionConfigR\x06config\"&\n" +
+	"$UpdateScheduledSessionConfigResponse\"3\n" +
 	"\x12ListIntentsRequest\x12\x1d\n" +
 	"\n" +
 	"intent_ids\x18\x01 \x03(\tR\tintentIds\"C\n" +
@@ -2079,13 +2079,13 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\fscheduled_at\x18\x04 \x01(\x03R\vscheduledAt\"^\n" +
 	"\x0eScheduledSweep\x12\x19\n" +
 	"\bround_id\x18\x01 \x01(\tR\aroundId\x121\n" +
-	"\aoutputs\x18\x02 \x03(\v2\x17.ark.v1.SweepableOutputR\aoutputs\"\xb2\x02\n" +
-	"\x10MarketHourConfig\x12\x1d\n" +
+	"\aoutputs\x18\x02 \x03(\v2\x17.ark.v1.SweepableOutputR\aoutputs\"\xad\x02\n" +
+	"\x16ScheduledSessionConfig\x12\x1d\n" +
 	"\n" +
 	"start_time\x18\x01 \x01(\x03R\tstartTime\x12\x19\n" +
 	"\bend_time\x18\x02 \x01(\x03R\aendTime\x12\x16\n" +
-	"\x06period\x18\x03 \x01(\x03R\x06period\x12%\n" +
-	"\x0eround_interval\x18\x04 \x01(\x03R\rroundInterval\x12?\n" +
+	"\x06period\x18\x03 \x01(\x03R\x06period\x12\x1a\n" +
+	"\bduration\x18\x04 \x01(\x03R\bduration\x12?\n" +
 	"\x1cround_min_participants_count\x18\x05 \x01(\x03R\x19roundMinParticipantsCount\x12?\n" +
 	"\x1cround_max_participants_count\x18\x06 \x01(\x03R\x19roundMaxParticipantsCount\x12#\n" +
 	"\x04fees\x18\a \x01(\v2\x0f.ark.v1.FeeInfoR\x04fees\"M\n" +
@@ -2134,15 +2134,15 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x15CRIME_TYPE_MANUAL_BAN\x10\a*M\n" +
 	"\x0eConvictionType\x12\x1f\n" +
 	"\x1bCONVICTION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\x99\r\n" +
+	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\xca\r\n" +
 	"\fAdminService\x12o\n" +
 	"\x11GetScheduledSweep\x12 .ark.v1.GetScheduledSweepRequest\x1a!.ark.v1.GetScheduledSweepResponse\"\x15\xb2J\x12\x12\x10/v1/admin/sweeps\x12s\n" +
 	"\x0fGetRoundDetails\x12\x1e.ark.v1.GetRoundDetailsRequest\x1a\x1f.ark.v1.GetRoundDetailsResponse\"\x1f\xb2J\x1c\x12\x1a/v1/admin/round/{round_id}\x12W\n" +
 	"\tGetRounds\x12\x18.ark.v1.GetRoundsRequest\x1a\x19.ark.v1.GetRoundsResponse\"\x15\xb2J\x12\x12\x10/v1/admin/rounds\x12[\n" +
 	"\n" +
-	"CreateNote\x12\x19.ark.v1.CreateNoteRequest\x1a\x1a.ark.v1.CreateNoteResponse\"\x16\xb2J\x13B\x01*\"\x0e/v1/admin/note\x12y\n" +
-	"\x13GetMarketHourConfig\x12\".ark.v1.GetMarketHourConfigRequest\x1a#.ark.v1.GetMarketHourConfigResponse\"\x19\xb2J\x16\x12\x14/v1/admin/marketHour\x12\x85\x01\n" +
-	"\x16UpdateMarketHourConfig\x12%.ark.v1.UpdateMarketHourConfigRequest\x1a&.ark.v1.UpdateMarketHourConfigResponse\"\x1c\xb2J\x19B\x01*\"\x14/v1/admin/marketHour\x12^\n" +
+	"CreateNote\x12\x19.ark.v1.CreateNoteRequest\x1a\x1a.ark.v1.CreateNoteResponse\"\x16\xb2J\x13B\x01*\"\x0e/v1/admin/note\x12\x91\x01\n" +
+	"\x19GetScheduledSessionConfig\x12(.ark.v1.GetScheduledSessionConfigRequest\x1a).ark.v1.GetScheduledSessionConfigResponse\"\x1f\xb2J\x1c\x12\x1a/v1/admin/scheduledSession\x12\x9d\x01\n" +
+	"\x1cUpdateScheduledSessionConfig\x12+.ark.v1.UpdateScheduledSessionConfigRequest\x1a,.ark.v1.UpdateScheduledSessionConfigResponse\"\"\xb2J\x1fB\x01*\"\x1a/v1/admin/scheduledSession\x12^\n" +
 	"\vListIntents\x12\x1a.ark.v1.ListIntentsRequest\x1a\x1b.ark.v1.ListIntentsResponse\"\x16\xb2J\x13\x12\x11/v1/admin/intents\x12n\n" +
 	"\rDeleteIntents\x12\x1c.ark.v1.DeleteIntentsRequest\x1a\x1d.ark.v1.DeleteIntentsResponse\" \xb2J\x1dB\x01*\"\x18/v1/admin/intents/delete\x12q\n" +
 	"\x0eGetConvictions\x12\x1d.ark.v1.GetConvictionsRequest\x1a\x1e.ark.v1.GetConvictionsResponse\" \xb2J\x1d\x12\x1b/v1/admin/convictions/{ids}\x12\x87\x01\n" +
@@ -2170,57 +2170,57 @@ func file_ark_v1_admin_proto_rawDescGZIP() []byte {
 var file_ark_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_ark_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_ark_v1_admin_proto_goTypes = []any{
-	(CrimeType)(0),                             // 0: ark.v1.CrimeType
-	(ConvictionType)(0),                        // 1: ark.v1.ConvictionType
-	(*GetScheduledSweepRequest)(nil),           // 2: ark.v1.GetScheduledSweepRequest
-	(*GetScheduledSweepResponse)(nil),          // 3: ark.v1.GetScheduledSweepResponse
-	(*GetRoundDetailsRequest)(nil),             // 4: ark.v1.GetRoundDetailsRequest
-	(*GetRoundDetailsResponse)(nil),            // 5: ark.v1.GetRoundDetailsResponse
-	(*GetRoundsRequest)(nil),                   // 6: ark.v1.GetRoundsRequest
-	(*GetRoundsResponse)(nil),                  // 7: ark.v1.GetRoundsResponse
-	(*CreateNoteRequest)(nil),                  // 8: ark.v1.CreateNoteRequest
-	(*CreateNoteResponse)(nil),                 // 9: ark.v1.CreateNoteResponse
-	(*GetMarketHourConfigRequest)(nil),         // 10: ark.v1.GetMarketHourConfigRequest
-	(*GetMarketHourConfigResponse)(nil),        // 11: ark.v1.GetMarketHourConfigResponse
-	(*UpdateMarketHourConfigRequest)(nil),      // 12: ark.v1.UpdateMarketHourConfigRequest
-	(*UpdateMarketHourConfigResponse)(nil),     // 13: ark.v1.UpdateMarketHourConfigResponse
-	(*ListIntentsRequest)(nil),                 // 14: ark.v1.ListIntentsRequest
-	(*ListIntentsResponse)(nil),                // 15: ark.v1.ListIntentsResponse
-	(*DeleteIntentsRequest)(nil),               // 16: ark.v1.DeleteIntentsRequest
-	(*DeleteIntentsResponse)(nil),              // 17: ark.v1.DeleteIntentsResponse
-	(*GetConvictionsRequest)(nil),              // 18: ark.v1.GetConvictionsRequest
-	(*GetConvictionsResponse)(nil),             // 19: ark.v1.GetConvictionsResponse
-	(*GetConvictionsInRangeRequest)(nil),       // 20: ark.v1.GetConvictionsInRangeRequest
-	(*GetConvictionsInRangeResponse)(nil),      // 21: ark.v1.GetConvictionsInRangeResponse
-	(*GetConvictionsByRoundRequest)(nil),       // 22: ark.v1.GetConvictionsByRoundRequest
-	(*GetConvictionsByRoundResponse)(nil),      // 23: ark.v1.GetConvictionsByRoundResponse
-	(*GetActiveScriptConvictionsRequest)(nil),  // 24: ark.v1.GetActiveScriptConvictionsRequest
-	(*GetActiveScriptConvictionsResponse)(nil), // 25: ark.v1.GetActiveScriptConvictionsResponse
-	(*PardonConvictionRequest)(nil),            // 26: ark.v1.PardonConvictionRequest
-	(*PardonConvictionResponse)(nil),           // 27: ark.v1.PardonConvictionResponse
-	(*BanScriptRequest)(nil),                   // 28: ark.v1.BanScriptRequest
-	(*BanScriptResponse)(nil),                  // 29: ark.v1.BanScriptResponse
-	(*SweepableOutput)(nil),                    // 30: ark.v1.SweepableOutput
-	(*ScheduledSweep)(nil),                     // 31: ark.v1.ScheduledSweep
-	(*MarketHourConfig)(nil),                   // 32: ark.v1.MarketHourConfig
-	(*IntentInput)(nil),                        // 33: ark.v1.IntentInput
-	(*IntentInfo)(nil),                         // 34: ark.v1.IntentInfo
-	(*Output)(nil),                             // 35: ark.v1.Output
-	(*Conviction)(nil),                         // 36: ark.v1.Conviction
-	(*FeeInfo)(nil),                            // 37: ark.v1.FeeInfo
-	(*Intent)(nil),                             // 38: ark.v1.Intent
+	(CrimeType)(0),                               // 0: ark.v1.CrimeType
+	(ConvictionType)(0),                          // 1: ark.v1.ConvictionType
+	(*GetScheduledSweepRequest)(nil),             // 2: ark.v1.GetScheduledSweepRequest
+	(*GetScheduledSweepResponse)(nil),            // 3: ark.v1.GetScheduledSweepResponse
+	(*GetRoundDetailsRequest)(nil),               // 4: ark.v1.GetRoundDetailsRequest
+	(*GetRoundDetailsResponse)(nil),              // 5: ark.v1.GetRoundDetailsResponse
+	(*GetRoundsRequest)(nil),                     // 6: ark.v1.GetRoundsRequest
+	(*GetRoundsResponse)(nil),                    // 7: ark.v1.GetRoundsResponse
+	(*CreateNoteRequest)(nil),                    // 8: ark.v1.CreateNoteRequest
+	(*CreateNoteResponse)(nil),                   // 9: ark.v1.CreateNoteResponse
+	(*GetScheduledSessionConfigRequest)(nil),     // 10: ark.v1.GetScheduledSessionConfigRequest
+	(*GetScheduledSessionConfigResponse)(nil),    // 11: ark.v1.GetScheduledSessionConfigResponse
+	(*UpdateScheduledSessionConfigRequest)(nil),  // 12: ark.v1.UpdateScheduledSessionConfigRequest
+	(*UpdateScheduledSessionConfigResponse)(nil), // 13: ark.v1.UpdateScheduledSessionConfigResponse
+	(*ListIntentsRequest)(nil),                   // 14: ark.v1.ListIntentsRequest
+	(*ListIntentsResponse)(nil),                  // 15: ark.v1.ListIntentsResponse
+	(*DeleteIntentsRequest)(nil),                 // 16: ark.v1.DeleteIntentsRequest
+	(*DeleteIntentsResponse)(nil),                // 17: ark.v1.DeleteIntentsResponse
+	(*GetConvictionsRequest)(nil),                // 18: ark.v1.GetConvictionsRequest
+	(*GetConvictionsResponse)(nil),               // 19: ark.v1.GetConvictionsResponse
+	(*GetConvictionsInRangeRequest)(nil),         // 20: ark.v1.GetConvictionsInRangeRequest
+	(*GetConvictionsInRangeResponse)(nil),        // 21: ark.v1.GetConvictionsInRangeResponse
+	(*GetConvictionsByRoundRequest)(nil),         // 22: ark.v1.GetConvictionsByRoundRequest
+	(*GetConvictionsByRoundResponse)(nil),        // 23: ark.v1.GetConvictionsByRoundResponse
+	(*GetActiveScriptConvictionsRequest)(nil),    // 24: ark.v1.GetActiveScriptConvictionsRequest
+	(*GetActiveScriptConvictionsResponse)(nil),   // 25: ark.v1.GetActiveScriptConvictionsResponse
+	(*PardonConvictionRequest)(nil),              // 26: ark.v1.PardonConvictionRequest
+	(*PardonConvictionResponse)(nil),             // 27: ark.v1.PardonConvictionResponse
+	(*BanScriptRequest)(nil),                     // 28: ark.v1.BanScriptRequest
+	(*BanScriptResponse)(nil),                    // 29: ark.v1.BanScriptResponse
+	(*SweepableOutput)(nil),                      // 30: ark.v1.SweepableOutput
+	(*ScheduledSweep)(nil),                       // 31: ark.v1.ScheduledSweep
+	(*ScheduledSessionConfig)(nil),               // 32: ark.v1.ScheduledSessionConfig
+	(*IntentInput)(nil),                          // 33: ark.v1.IntentInput
+	(*IntentInfo)(nil),                           // 34: ark.v1.IntentInfo
+	(*Output)(nil),                               // 35: ark.v1.Output
+	(*Conviction)(nil),                           // 36: ark.v1.Conviction
+	(*FeeInfo)(nil),                              // 37: ark.v1.FeeInfo
+	(*Intent)(nil),                               // 38: ark.v1.Intent
 }
 var file_ark_v1_admin_proto_depIdxs = []int32{
 	31, // 0: ark.v1.GetScheduledSweepResponse.sweeps:type_name -> ark.v1.ScheduledSweep
-	32, // 1: ark.v1.GetMarketHourConfigResponse.config:type_name -> ark.v1.MarketHourConfig
-	32, // 2: ark.v1.UpdateMarketHourConfigRequest.config:type_name -> ark.v1.MarketHourConfig
+	32, // 1: ark.v1.GetScheduledSessionConfigResponse.config:type_name -> ark.v1.ScheduledSessionConfig
+	32, // 2: ark.v1.UpdateScheduledSessionConfigRequest.config:type_name -> ark.v1.ScheduledSessionConfig
 	34, // 3: ark.v1.ListIntentsResponse.intents:type_name -> ark.v1.IntentInfo
 	36, // 4: ark.v1.GetConvictionsResponse.convictions:type_name -> ark.v1.Conviction
 	36, // 5: ark.v1.GetConvictionsInRangeResponse.convictions:type_name -> ark.v1.Conviction
 	36, // 6: ark.v1.GetConvictionsByRoundResponse.convictions:type_name -> ark.v1.Conviction
 	36, // 7: ark.v1.GetActiveScriptConvictionsResponse.convictions:type_name -> ark.v1.Conviction
 	30, // 8: ark.v1.ScheduledSweep.outputs:type_name -> ark.v1.SweepableOutput
-	37, // 9: ark.v1.MarketHourConfig.fees:type_name -> ark.v1.FeeInfo
+	37, // 9: ark.v1.ScheduledSessionConfig.fees:type_name -> ark.v1.FeeInfo
 	35, // 10: ark.v1.IntentInfo.receivers:type_name -> ark.v1.Output
 	33, // 11: ark.v1.IntentInfo.inputs:type_name -> ark.v1.IntentInput
 	33, // 12: ark.v1.IntentInfo.boarding_inputs:type_name -> ark.v1.IntentInput
@@ -2231,8 +2231,8 @@ var file_ark_v1_admin_proto_depIdxs = []int32{
 	4,  // 17: ark.v1.AdminService.GetRoundDetails:input_type -> ark.v1.GetRoundDetailsRequest
 	6,  // 18: ark.v1.AdminService.GetRounds:input_type -> ark.v1.GetRoundsRequest
 	8,  // 19: ark.v1.AdminService.CreateNote:input_type -> ark.v1.CreateNoteRequest
-	10, // 20: ark.v1.AdminService.GetMarketHourConfig:input_type -> ark.v1.GetMarketHourConfigRequest
-	12, // 21: ark.v1.AdminService.UpdateMarketHourConfig:input_type -> ark.v1.UpdateMarketHourConfigRequest
+	10, // 20: ark.v1.AdminService.GetScheduledSessionConfig:input_type -> ark.v1.GetScheduledSessionConfigRequest
+	12, // 21: ark.v1.AdminService.UpdateScheduledSessionConfig:input_type -> ark.v1.UpdateScheduledSessionConfigRequest
 	14, // 22: ark.v1.AdminService.ListIntents:input_type -> ark.v1.ListIntentsRequest
 	16, // 23: ark.v1.AdminService.DeleteIntents:input_type -> ark.v1.DeleteIntentsRequest
 	18, // 24: ark.v1.AdminService.GetConvictions:input_type -> ark.v1.GetConvictionsRequest
@@ -2245,8 +2245,8 @@ var file_ark_v1_admin_proto_depIdxs = []int32{
 	5,  // 31: ark.v1.AdminService.GetRoundDetails:output_type -> ark.v1.GetRoundDetailsResponse
 	7,  // 32: ark.v1.AdminService.GetRounds:output_type -> ark.v1.GetRoundsResponse
 	9,  // 33: ark.v1.AdminService.CreateNote:output_type -> ark.v1.CreateNoteResponse
-	11, // 34: ark.v1.AdminService.GetMarketHourConfig:output_type -> ark.v1.GetMarketHourConfigResponse
-	13, // 35: ark.v1.AdminService.UpdateMarketHourConfig:output_type -> ark.v1.UpdateMarketHourConfigResponse
+	11, // 34: ark.v1.AdminService.GetScheduledSessionConfig:output_type -> ark.v1.GetScheduledSessionConfigResponse
+	13, // 35: ark.v1.AdminService.UpdateScheduledSessionConfig:output_type -> ark.v1.UpdateScheduledSessionConfigResponse
 	15, // 36: ark.v1.AdminService.ListIntents:output_type -> ark.v1.ListIntentsResponse
 	17, // 37: ark.v1.AdminService.DeleteIntents:output_type -> ark.v1.DeleteIntentsResponse
 	19, // 38: ark.v1.AdminService.GetConvictions:output_type -> ark.v1.GetConvictionsResponse

@@ -275,14 +275,18 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Entity: EntityNote,
 			Action: "write",
 		}},
-		fmt.Sprintf("/%s/GetMarketHourConfig", arkv1.AdminService_ServiceDesc.ServiceName): {{
-			Entity: EntityManager,
-			Action: "read",
-		}},
-		fmt.Sprintf("/%s/UpdateMarketHourConfig", arkv1.AdminService_ServiceDesc.ServiceName): {{
-			Entity: EntityManager,
-			Action: "write",
-		}},
+		fmt.Sprintf("/%s/GetScheduledSessionConfig", arkv1.AdminService_ServiceDesc.ServiceName): {
+			{
+				Entity: EntityManager,
+				Action: "read",
+			},
+		},
+		fmt.Sprintf("/%s/UpdateScheduledSessionConfig", arkv1.AdminService_ServiceDesc.ServiceName): {
+			{
+				Entity: EntityManager,
+				Action: "write",
+			},
+		},
 		fmt.Sprintf("/%s/DeleteIntents", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "write",

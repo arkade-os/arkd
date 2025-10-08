@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNextMarketHour(t *testing.T) {
-	marketHourStartTime := parseTime(t, "2023-10-10 13:00:00")
-	marketHourEndTime := parseTime(t, "2023-10-10 14:00:00")
+func TestNextScheduledSession(t *testing.T) {
+	scheduledSessionStartTime := parseTime(t, "2023-10-10 13:00:00")
+	scheduledSessionEndTime := parseTime(t, "2023-10-10 14:00:00")
 	period := 1 * time.Hour
 
 	testCases := []struct {
@@ -22,38 +22,38 @@ func TestNextMarketHour(t *testing.T) {
 			now:           parseTime(t, "2023-10-10 13:00:00"),
 			expectedStart: parseTime(t, "2023-10-10 13:00:00"),
 			expectedEnd:   parseTime(t, "2023-10-10 14:00:00"),
-			description:   "now is exactly market hour start time",
+			description:   "now is exactly scheduled session start time",
 		},
 		{
 			now:           parseTime(t, "2023-10-10 13:55:00"),
 			expectedStart: parseTime(t, "2023-10-10 13:00:00"),
 			expectedEnd:   parseTime(t, "2023-10-10 14:00:00"),
-			description:   "now is in the first market hour",
+			description:   "now is in the first scheduled session",
 		},
 		{
 			now:           parseTime(t, "2023-10-10 14:00:00"),
 			expectedStart: parseTime(t, "2023-10-10 14:00:00"),
 			expectedEnd:   parseTime(t, "2023-10-10 15:00:00"),
-			description:   "now is exactly market hour end time",
+			description:   "now is exactly scheduled session end time",
 		},
 		{
 			now:           parseTime(t, "2023-10-10 14:06:00"),
 			expectedStart: parseTime(t, "2023-10-10 14:00:00"),
 			expectedEnd:   parseTime(t, "2023-10-10 15:00:00"),
-			description:   "now is after first market hour",
+			description:   "now is after first scheduled session",
 		},
 		{
 			now:           parseTime(t, "2023-10-10 15:30:00"),
 			expectedStart: parseTime(t, "2023-10-10 15:00:00"),
 			expectedEnd:   parseTime(t, "2023-10-10 16:00:00"),
-			description:   "now is after second market hour",
+			description:   "now is after second scheduled session",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			startTime, endTime := calcNextMarketHour(
-				tc.now, marketHourStartTime, marketHourEndTime, period,
+			startTime, endTime := calcNextScheduledSession(
+				tc.now, scheduledSessionStartTime, scheduledSessionEndTime, period,
 			)
 			require.True(t, startTime.Equal(tc.expectedStart))
 			require.True(t, endTime.Equal(tc.expectedEnd))

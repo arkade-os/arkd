@@ -24,9 +24,8 @@ require (
 	github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.7.2-0.20251008174500-fbe663c3b993
+	github.com/arkade-os/go-sdk v0.7.2-0.20251008175829-a281ad44ed18
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
-	github.com/btcsuite/btcwallet/walletdb v1.4.2
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/docker/docker v27.1.1+incompatible
 	github.com/go-co-op/gocron v1.37.0
@@ -75,6 +74,7 @@ require (
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.4 // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.1 // indirect
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.4 // indirect
+	github.com/btcsuite/btcwallet/walletdb v1.4.2 // indirect
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.3 // indirect
 	github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd // indirect
 	github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792 // indirect

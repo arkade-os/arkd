@@ -2045,7 +2045,6 @@ func TestDelegateRefresh(t *testing.T) {
 		delegatorWallet:  bobWallet,
 		client:           grpcClient,
 		forfeitPubKey:    aliceConfig.ForfeitPubKey,
-		vtxoTreeExpiry:   aliceConfig.VtxoTreeExpiry,
 		intentId:         intentId,
 	})
 	require.NoError(t, err)
@@ -2163,9 +2162,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		defer close()
 
-		info, err := grpcAlice.GetInfo(t.Context())
-		require.NoError(t, err)
-
+		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
 				buf := sha256.Sum256([]byte(intentId))
@@ -2173,6 +2170,7 @@ func TestBan(t *testing.T) {
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 					return false, err
 				}
 
@@ -2190,10 +2188,7 @@ func TestBan(t *testing.T) {
 					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*btcec.PublicKey{signerPubKey},
 					},
-					Locktime: arklib.RelativeLocktime{
-						Type:  arklib.LocktimeTypeBlock,
-						Value: uint32(info.VtxoTreeExpiry),
-					},
+					Locktime: batchExpiry,
 				}
 
 				script, err := sweepClosure.Script()
@@ -2411,9 +2406,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		defer close()
 
-		info, err := grpcAlice.GetInfo(t.Context())
-		require.NoError(t, err)
-
+		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
 				buf := sha256.Sum256([]byte(intentId))
@@ -2421,6 +2414,7 @@ func TestBan(t *testing.T) {
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 					return false, err
 				}
 
@@ -2438,10 +2432,7 @@ func TestBan(t *testing.T) {
 					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*btcec.PublicKey{signerPubKey},
 					},
-					Locktime: arklib.RelativeLocktime{
-						Type:  arklib.LocktimeTypeBlock,
-						Value: uint32(info.VtxoTreeExpiry),
-					},
+					Locktime: batchExpiry,
 				}
 
 				script, err := sweepClosure.Script()
@@ -2557,6 +2548,7 @@ func TestBan(t *testing.T) {
 
 		info, err := grpcAlice.GetInfo(t.Context())
 		require.NoError(t, err)
+		var batchExpiry arklib.RelativeLocktime
 
 		handlers := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
@@ -2565,6 +2557,7 @@ func TestBan(t *testing.T) {
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 					return false, err
 				}
 
@@ -2582,10 +2575,7 @@ func TestBan(t *testing.T) {
 					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*btcec.PublicKey{signerPubKey},
 					},
-					Locktime: arklib.RelativeLocktime{
-						Type:  arklib.LocktimeTypeBlock,
-						Value: uint32(info.VtxoTreeExpiry),
-					},
+					Locktime: batchExpiry,
 				}
 
 				script, err := sweepClosure.Script()
@@ -2771,6 +2761,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		defer close()
 
+		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
 				buf := sha256.Sum256([]byte(intentId))
@@ -2778,6 +2769,7 @@ func TestBan(t *testing.T) {
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 					return false, err
 				}
 
@@ -2795,10 +2787,7 @@ func TestBan(t *testing.T) {
 					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*btcec.PublicKey{signerPubKey},
 					},
-					Locktime: arklib.RelativeLocktime{
-						Type:  arklib.LocktimeTypeBlock,
-						Value: uint32(info.VtxoTreeExpiry),
-					},
+					Locktime: batchExpiry,
 				}
 
 				script, err := sweepClosure.Script()
