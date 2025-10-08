@@ -22,7 +22,11 @@ func newOutpointLocker(lockFor time.Duration) *outpointLocker {
 	}
 }
 
-func (l *outpointLocker) lock(ctx context.Context, outpoints ...wire.OutPoint) error {
+func (l *outpointLocker) lock(_ context.Context, outpoints ...wire.OutPoint) error {
+	if len(outpoints) == 0 {
+		return nil
+	}
+
 	l.locker.Lock()
 	defer l.locker.Unlock()
 
@@ -36,7 +40,7 @@ func (l *outpointLocker) lock(ctx context.Context, outpoints ...wire.OutPoint) e
 	return nil
 }
 
-func (l *outpointLocker) get(ctx context.Context) (map[wire.OutPoint]struct{}, error) {
+func (l *outpointLocker) get(_ context.Context) (map[wire.OutPoint]struct{}, error) {
 	l.locker.Lock()
 	defer l.locker.Unlock()
 
