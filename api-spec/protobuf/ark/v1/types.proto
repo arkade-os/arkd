@@ -53,11 +53,11 @@ message Intent {
   string message = 2;
 }
 
-message MarketHour {
+message ScheduledSession {
   int64 next_start_time = 1;
   int64 next_end_time = 2;
   int64 period = 3;
-  int64 round_interval = 4;
+  int64 duration = 4;
   FeeInfo fees = 5;
 }
 
@@ -115,7 +115,7 @@ message TreeSigningStartedEvent {
 
 message TreeNoncesAggregatedEvent {
   string id = 1;
-  string tree_nonces = 2;
+  map<string,string> tree_nonces = 2;
 }
 
 message TreeNoncesEvent {

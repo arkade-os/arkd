@@ -44,30 +44,29 @@ type Service interface {
 }
 
 type ServiceInfo struct {
-	SignerPubKey        string
-	ForfeitPubKey       string
-	VtxoTreeExpiry      int64
-	UnilateralExitDelay int64
-	BoardingExitDelay   int64
-	RoundInterval       int64
-	Network             string
-	Dust                uint64
-	ForfeitAddress      string
-	NextMarketHour      *NextMarketHour
-	UtxoMinAmount       int64
-	UtxoMaxAmount       int64
-	VtxoMinAmount       int64
-	VtxoMaxAmount       int64
-	CheckpointTapscript string
-	Fees                FeeInfo
+	SignerPubKey         string
+	ForfeitPubKey        string
+	UnilateralExitDelay  int64
+	BoardingExitDelay    int64
+	SessionDuration      int64
+	Network              string
+	Dust                 uint64
+	ForfeitAddress       string
+	NextScheduledSession *NextScheduledSession
+	UtxoMinAmount        int64
+	UtxoMaxAmount        int64
+	VtxoMinAmount        int64
+	VtxoMaxAmount        int64
+	CheckpointTapscript  string
+	Fees                 FeeInfo
 }
 
-type NextMarketHour struct {
-	StartTime     time.Time
-	EndTime       time.Time
-	Period        time.Duration
-	RoundInterval time.Duration
-	Fees          FeeInfo
+type NextScheduledSession struct {
+	StartTime time.Time
+	EndTime   time.Time
+	Period    time.Duration
+	Duration  time.Duration
+	Fees      FeeInfo
 }
 
 type WalletStatus struct {

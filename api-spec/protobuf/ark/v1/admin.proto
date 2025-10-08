@@ -27,14 +27,14 @@ service AdminService {
       body: "*"
     };
   }
-  rpc GetMarketHourConfig(GetMarketHourConfigRequest) returns (GetMarketHourConfigResponse) {
+  rpc GetScheduledSessionConfig(GetScheduledSessionConfigRequest) returns (GetScheduledSessionConfigResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/admin/marketHour"
+      get: "/v1/admin/scheduledSession"
     };
   }
-  rpc UpdateMarketHourConfig(UpdateMarketHourConfigRequest) returns (UpdateMarketHourConfigResponse) {
+  rpc UpdateScheduledSessionConfig(UpdateScheduledSessionConfigRequest) returns (UpdateScheduledSessionConfigResponse) {
     option (meshapi.gateway.http) = {
-      post: "/v1/admin/marketHour"
+      post: "/v1/admin/scheduledSession"
       body: "*"
     };
   }
@@ -121,15 +121,15 @@ message CreateNoteResponse {
   repeated string notes = 1;
 }
 
-message GetMarketHourConfigRequest {}
-message GetMarketHourConfigResponse {
-  MarketHourConfig config = 1;
+message GetScheduledSessionConfigRequest {}
+message GetScheduledSessionConfigResponse {
+  ScheduledSessionConfig config = 1;
 }
 
-message UpdateMarketHourConfigRequest {
-  MarketHourConfig config = 1;
+message UpdateScheduledSessionConfigRequest {
+  ScheduledSessionConfig config = 1;
 }
-message UpdateMarketHourConfigResponse {}
+message UpdateScheduledSessionConfigResponse {}
 
 message ListIntentsRequest {
   repeated string intent_ids = 1;
@@ -143,6 +143,47 @@ message DeleteIntentsRequest {
 }
 message DeleteIntentsResponse {}
 
+message GetConvictionsRequest {
+  repeated string ids = 1;
+}
+message GetConvictionsResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetConvictionsInRangeRequest {
+  int64 from = 1; // Unix timestamp
+  int64 to = 2;   // Unix timestamp
+}
+message GetConvictionsInRangeResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetConvictionsByRoundRequest {
+  string round_id = 1;
+}
+message GetConvictionsByRoundResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetActiveScriptConvictionsRequest {
+  string script = 1;
+}
+message GetActiveScriptConvictionsResponse {
+  repeated Conviction convictions = 1;
+}
+
+message PardonConvictionRequest {
+  string id = 1;
+}
+message PardonConvictionResponse {}
+
+message BanScriptRequest {
+  string script = 1;
+  int64 ban_duration = 2; // 0 = permanent ban
+  string reason = 3;
+}
+message BanScriptResponse {}
+
 message SweepableOutput {
   string txid = 1;
   uint32 vout = 2;
@@ -155,11 +196,14 @@ message ScheduledSweep {
   repeated SweepableOutput outputs = 2;
 }
 
-message MarketHourConfig {
+message ScheduledSessionConfig {
   int64 start_time = 1;
   int64 end_time = 2;
   int64 period = 3;
-  int64 round_interval = 4;
+  int64 duration = 4;
+  int64 round_min_participants_count = 5;
+  int64 round_max_participants_count = 6;
+  FeeInfo fees = 7;
 }
 
 message IntentInput {
@@ -185,52 +229,6 @@ message Output {
   }; // onchain or off-chain
   uint64 amount = 3; // Amount to send in satoshis.
 }
-
-message GetConvictionsRequest {
-  repeated string ids = 1;
-}
-
-message GetConvictionsResponse {
-  repeated Conviction convictions = 1;
-}
-
-message GetConvictionsInRangeRequest {
-  int64 from = 1; // Unix timestamp
-  int64 to = 2;   // Unix timestamp
-}
-
-message GetConvictionsInRangeResponse {
-  repeated Conviction convictions = 1;
-}
-
-message GetConvictionsByRoundRequest {
-  string round_id = 1;
-}
-
-message GetConvictionsByRoundResponse {
-  repeated Conviction convictions = 1;
-}
-
-message GetActiveScriptConvictionsRequest {
-  string script = 1;
-}
-
-message GetActiveScriptConvictionsResponse {
-  repeated Conviction convictions = 1;
-}
-
-message PardonConvictionRequest {
-  string id = 1;
-}
-
-message PardonConvictionResponse {}
-
-message BanScriptRequest {
-  string script = 1;
-  int64 ban_duration = 2; // 0 = permanent ban
-  string reason = 3;
-}
-message BanScriptResponse {}
 
 enum CrimeType {
   CRIME_TYPE_UNSPECIFIED = 0;

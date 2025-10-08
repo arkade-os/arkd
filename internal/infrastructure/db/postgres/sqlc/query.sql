@@ -90,14 +90,16 @@ ON CONFLICT(txid) DO UPDATE SET
     is_root_commitment_txid = EXCLUDED.is_root_commitment_txid,
     offchain_txid = EXCLUDED.offchain_txid;
 
--- name: UpsertMarketHour :exec
-INSERT INTO market_hour (id, start_time, end_time, period, round_interval, updated_at)
-VALUES (@id, @start_time, @end_time, @period, @round_interval, @updated_at)
+-- name: UpsertScheduledSession :exec
+INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
+VALUES (@id, @start_time, @end_time, @period, @duration, @round_min_participants, @round_max_participants, @updated_at)
 ON CONFLICT (id) DO UPDATE SET
     start_time = EXCLUDED.start_time,
     end_time = EXCLUDED.end_time,
     period = EXCLUDED.period,
-    round_interval = EXCLUDED.round_interval,
+    duration = EXCLUDED.duration,
+    round_min_participants = EXCLUDED.round_min_participants,
+    round_max_participants = EXCLUDED.round_max_participants,
     updated_at = EXCLUDED.updated_at;
 
 -- name: UpdateVtxoIntentId :exec
@@ -237,8 +239,8 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey = ANY($1::varchar[]);
 -- name: SelectOffchainTx :many
 SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 
--- name: SelectLatestMarketHour :one
-SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
+-- name: SelectLatestScheduledSession :one
+SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 
 -- name: SelectVtxosByArkTxidRecursive :many
 WITH RECURSIVE descendants_chain AS (

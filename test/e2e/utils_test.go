@@ -459,15 +459,14 @@ type delegateBatchEventsHandler struct {
 	partialForfeitTx string
 	delegatorWallet  wallet.WalletService
 	client           client.TransportClient
-	signerPubKey     *btcec.PublicKey
-	vtxoTreeExpiry   arklib.RelativeLocktime
+	forfeitPubKey    *btcec.PublicKey
+	batchExpiry      arklib.RelativeLocktime
 
 	cacheBatchId string
 }
 
 func (h *delegateBatchEventsHandler) OnBatchStarted(
-	ctx context.Context,
-	event client.BatchStartedEvent,
+	ctx context.Context, event client.BatchStartedEvent,
 ) (bool, error) {
 	buf := sha256.Sum256([]byte(h.intentId))
 	hashedIntentId := hex.EncodeToString(buf[:])
@@ -478,6 +477,7 @@ func (h *delegateBatchEventsHandler) OnBatchStarted(
 				return false, err
 			}
 			h.cacheBatchId = event.Id
+			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 			return false, nil
 		}
 	}
@@ -486,15 +486,13 @@ func (h *delegateBatchEventsHandler) OnBatchStarted(
 }
 
 func (h *delegateBatchEventsHandler) OnBatchFinalized(
-	ctx context.Context,
-	event client.BatchFinalizedEvent,
+	ctx context.Context, event client.BatchFinalizedEvent,
 ) error {
 	return nil
 }
 
 func (h *delegateBatchEventsHandler) OnBatchFailed(
-	ctx context.Context,
-	event client.BatchFailedEvent,
+	ctx context.Context, event client.BatchFailedEvent,
 ) error {
 	if event.Id == h.cacheBatchId {
 		return fmt.Errorf("batch failed: %s", event.Reason)
@@ -503,23 +501,19 @@ func (h *delegateBatchEventsHandler) OnBatchFailed(
 }
 
 func (h *delegateBatchEventsHandler) OnTreeTxEvent(
-	ctx context.Context,
-	event client.TreeTxEvent,
+	ctx context.Context, event client.TreeTxEvent,
 ) error {
 	return nil
 }
 
 func (h *delegateBatchEventsHandler) OnTreeSignatureEvent(
-	ctx context.Context,
-	event client.TreeSignatureEvent,
+	ctx context.Context, event client.TreeSignatureEvent,
 ) error {
 	return nil
 }
 
 func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
-	ctx context.Context,
-	event client.TreeSigningStartedEvent,
-	vtxoTree *tree.TxTree,
+	ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree,
 ) (bool, error) {
 	myPubkey := h.signerSession.GetPublicKey()
 	if !slices.Contains(event.CosignersPubkeys, myPubkey) {
@@ -527,8 +521,8 @@ func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
 	}
 
 	sweepClosure := script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.signerPubKey}},
-		Locktime:        h.vtxoTreeExpiry,
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.forfeitPubKey}},
+		Locktime:        h.batchExpiry,
 	}
 
 	script, err := sweepClosure.Script()
@@ -751,4 +745,17 @@ func (h *customBatchEventsHandler) OnTreeNonces(
 	event client.TreeNoncesEvent,
 ) (bool, error) {
 	return false, nil
+}
+
+func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
+	if batchExpiry >= 512 {
+		return arklib.RelativeLocktime{
+			Type:  arklib.LocktimeTypeSecond,
+			Value: batchExpiry,
+		}
+	}
+	return arklib.RelativeLocktime{
+		Type:  arklib.LocktimeTypeBlock,
+		Value: batchExpiry,
+	}
 }

@@ -425,7 +425,7 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, vtxos)
 	}()
-	roundId, err := sdkClient.Settle(ctx)
+	commitmentTxid, err := sdkClient.Settle(ctx)
 	require.NoError(t, err)
 
 	wg.Wait()
@@ -449,7 +449,7 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 
 	var vtxo types.Vtxo
 	for _, v := range spentVtxos {
-		if !v.Preconfirmed && v.CommitmentTxids[0] == roundId {
+		if !v.Preconfirmed && v.CommitmentTxids[0] == commitmentTxid {
 			vtxo = v
 			break
 		}
@@ -463,18 +463,38 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
 	require.NoError(t, err)
 
-	for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
-		bumpAndBroadcastTx(t, parentTx, expl)
-	}
+	// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
+	// Ideally, there should be a (long) branch of txs to be broadcasted and a loop should be used
+	// to publish them from the root of the tree down to the leaf.
+	leafTx, err := branch.NextRedeemTx()
+	require.NoError(t, err)
+	require.NotEmpty(t, leafTx)
 
-	// give time for the server to detect and process the fraud
-	err = generateBlocks(30)
+	bumpAndBroadcastTx(t, leafTx, expl)
+
+	// Give time to the explorer to track down the braodcasted txs.
+	time.Sleep(5 * time.Second)
+
+	// The vtxo is now unrolled and unspent in the Bitcoin mempool.
+	spentStatus, err := expl.GetTxOutspends(vtxo.Txid)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
+	require.False(t, spentStatus[vtxo.VOut].Spent)
+	require.Empty(t, spentStatus[vtxo.VOut].SpentBy)
+
+	// Include the tx in a block.
+	err = generateBlocks(1)
 	require.NoError(t, err)
 
-	balance, err := sdkClient.Balance(ctx, false)
-	require.NoError(t, err)
+	// Give the server the time to react the fraud.
+	time.Sleep(5 * time.Second)
 
-	require.Empty(t, balance.OnchainBalance.LockedAmount)
+	// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
+	spentStatus, err = expl.GetTxOutspends(vtxo.Txid)
+	require.NoError(t, err)
+	require.NotEmpty(t, spentStatus)
+	require.True(t, spentStatus[vtxo.VOut].Spent)
+	require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
 }
 
 func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
@@ -2024,8 +2044,7 @@ func TestDelegateRefresh(t *testing.T) {
 		partialForfeitTx: signedPartialForfeitTx,
 		delegatorWallet:  bobWallet,
 		client:           grpcClient,
-		signerPubKey:     signerPubKey,
-		vtxoTreeExpiry:   aliceConfig.VtxoTreeExpiry,
+		forfeitPubKey:    aliceConfig.ForfeitPubKey,
 		intentId:         intentId,
 	})
 	require.NoError(t, err)
@@ -2143,9 +2162,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		defer close()
 
-		info, err := grpcAlice.GetInfo(t.Context())
-		require.NoError(t, err)
-
+		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
 				buf := sha256.Sum256([]byte(intentId))
@@ -2153,6 +2170,7 @@ func TestBan(t *testing.T) {
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 					return false, err
 				}
 
@@ -2170,10 +2188,7 @@ func TestBan(t *testing.T) {
 					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*btcec.PublicKey{signerPubKey},
 					},
-					Locktime: arklib.RelativeLocktime{
-						Type:  arklib.LocktimeTypeBlock,
-						Value: uint32(info.VtxoTreeExpiry),
-					},
+					Locktime: batchExpiry,
 				}
 
 				script, err := sweepClosure.Script()
@@ -2391,9 +2406,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		defer close()
 
-		info, err := grpcAlice.GetInfo(t.Context())
-		require.NoError(t, err)
-
+		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
 				buf := sha256.Sum256([]byte(intentId))
@@ -2401,6 +2414,7 @@ func TestBan(t *testing.T) {
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 					return false, err
 				}
 
@@ -2418,10 +2432,7 @@ func TestBan(t *testing.T) {
 					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*btcec.PublicKey{signerPubKey},
 					},
-					Locktime: arklib.RelativeLocktime{
-						Type:  arklib.LocktimeTypeBlock,
-						Value: uint32(info.VtxoTreeExpiry),
-					},
+					Locktime: batchExpiry,
 				}
 
 				script, err := sweepClosure.Script()
@@ -2537,6 +2548,7 @@ func TestBan(t *testing.T) {
 
 		info, err := grpcAlice.GetInfo(t.Context())
 		require.NoError(t, err)
+		var batchExpiry arklib.RelativeLocktime
 
 		handlers := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
@@ -2545,6 +2557,7 @@ func TestBan(t *testing.T) {
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 					return false, err
 				}
 
@@ -2562,10 +2575,7 @@ func TestBan(t *testing.T) {
 					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*btcec.PublicKey{signerPubKey},
 					},
-					Locktime: arklib.RelativeLocktime{
-						Type:  arklib.LocktimeTypeBlock,
-						Value: uint32(info.VtxoTreeExpiry),
-					},
+					Locktime: batchExpiry,
 				}
 
 				script, err := sweepClosure.Script()
@@ -2751,6 +2761,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		defer close()
 
+		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
 				buf := sha256.Sum256([]byte(intentId))
@@ -2758,6 +2769,7 @@ func TestBan(t *testing.T) {
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 					return false, err
 				}
 
@@ -2775,10 +2787,7 @@ func TestBan(t *testing.T) {
 					MultisigClosure: script.MultisigClosure{
 						PubKeys: []*btcec.PublicKey{signerPubKey},
 					},
-					Locktime: arklib.RelativeLocktime{
-						Type:  arklib.LocktimeTypeBlock,
-						Value: uint32(info.VtxoTreeExpiry),
-					},
+					Locktime: batchExpiry,
 				}
 
 				script, err := sweepClosure.Script()

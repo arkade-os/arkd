@@ -188,19 +188,19 @@ func newBoardingInput(
 	}, nil
 }
 
-func calcNextMarketHour(
-	now, marketHourStartTime, marketHourEndTime time.Time, period time.Duration,
+func calcNextScheduledSession(
+	now, scheduledSessionStartTime, scheduledSessionEndTime time.Time, period time.Duration,
 ) (time.Time, time.Time) {
-	// Calculate the number of periods since the initial marketHourStartTime
-	elapsed := now.Sub(marketHourEndTime)
+	// Calculate the number of periods since the initial scheduledSessionStartTime
+	elapsed := now.Sub(scheduledSessionEndTime)
 	var n int64
 	if elapsed >= 0 {
 		n = int64(elapsed/period) + 1
 	}
 
-	// Calculate the next market hour start and end timestamps
-	nextStartTime := marketHourStartTime.Add(time.Duration(n) * period)
-	nextEndTime := marketHourEndTime.Add(time.Duration(n) * period)
+	// Calculate the next scheduled session start and end timestamps
+	nextStartTime := scheduledSessionStartTime.Add(time.Duration(n) * period)
+	nextEndTime := scheduledSessionEndTime.Add(time.Duration(n) * period)
 
 	return nextStartTime, nextEndTime
 }

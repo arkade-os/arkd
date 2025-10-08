@@ -52,10 +52,10 @@ var (
 		"sqlite":   sqlitedb.NewVtxoRepository,
 		"postgres": pgdb.NewVtxoRepository,
 	}
-	marketHourStoreTypes = map[string]func(...interface{}) (domain.MarketHourRepo, error){
-		"badger":   badgerdb.NewMarketHourRepository,
-		"sqlite":   sqlitedb.NewMarketHourRepository,
-		"postgres": pgdb.NewMarketHourRepository,
+	scheduledSessionStoreTypes = map[string]func(...interface{}) (domain.ScheduledSessionRepo, error){
+		"badger":   badgerdb.NewScheduledSessionRepository,
+		"sqlite":   sqlitedb.NewScheduledSessionRepository,
+		"postgres": pgdb.NewScheduledSessionRepository,
 	}
 	offchainTxStoreTypes = map[string]func(...interface{}) (domain.OffchainTxRepository, error){
 		"badger":   newBadgerOffchainTxRepository,
@@ -82,13 +82,13 @@ type ServiceConfig struct {
 }
 
 type service struct {
-	eventStore      domain.EventRepository
-	roundStore      domain.RoundRepository
-	vtxoStore       domain.VtxoRepository
-	marketHourStore domain.MarketHourRepo
-	offchainTxStore domain.OffchainTxRepository
-	convictionStore domain.ConvictionRepository
-	txDecoder       ports.TxDecoder
+	eventStore            domain.EventRepository
+	roundStore            domain.RoundRepository
+	vtxoStore             domain.VtxoRepository
+	scheduledSessionStore domain.ScheduledSessionRepo
+	offchainTxStore       domain.OffchainTxRepository
+	convictionStore       domain.ConvictionRepository
+	txDecoder             ports.TxDecoder
 }
 
 func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoManager, error) {
@@ -104,7 +104,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("vtxo store type not supported")
 	}
-	marketHourStoreFactory, ok := marketHourStoreTypes[config.DataStoreType]
+	scheduledSessionStoreFactory, ok := scheduledSessionStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
@@ -120,7 +120,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
 	var vtxoStore domain.VtxoRepository
-	var marketHourStore domain.MarketHourRepo
+	var scheduledSessionStore domain.ScheduledSessionRepo
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
 	var err error
@@ -164,9 +164,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
 		}
-		marketHourStore, err = marketHourStoreFactory(config.DataStoreConfig...)
+		scheduledSessionStore, err = scheduledSessionStoreFactory(config.DataStoreConfig...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create market hour store: %w", err)
+			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
 		}
 		offchainTxStore, err = offchainTxStoreFactory(config.DataStoreConfig...)
 		if err != nil {
@@ -220,9 +220,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
 		}
 
-		marketHourStore, err = marketHourStoreFactory(db)
+		scheduledSessionStore, err = scheduledSessionStoreFactory(db)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create market hour store: %w", err)
+			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
 		}
 
 		offchainTxStore, err = offchainTxStoreFactory(db)
@@ -276,9 +276,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
 		}
-		marketHourStore, err = marketHourStoreFactory(db)
+		scheduledSessionStore, err = scheduledSessionStoreFactory(db)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create market hour store: %w", err)
+			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
 		}
 		offchainTxStore, err = offchainTxStoreFactory(db)
 		if err != nil {
@@ -291,13 +291,13 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	}
 
 	svc := &service{
-		eventStore:      eventStore,
-		roundStore:      roundStore,
-		vtxoStore:       vtxoStore,
-		marketHourStore: marketHourStore,
-		offchainTxStore: offchainTxStore,
-		txDecoder:       txDecoder,
-		convictionStore: convictionStore,
+		eventStore:            eventStore,
+		roundStore:            roundStore,
+		vtxoStore:             vtxoStore,
+		scheduledSessionStore: scheduledSessionStore,
+		offchainTxStore:       offchainTxStore,
+		txDecoder:             txDecoder,
+		convictionStore:       convictionStore,
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -323,8 +323,8 @@ func (s *service) Vtxos() domain.VtxoRepository {
 	return s.vtxoStore
 }
 
-func (s *service) MarketHourRepo() domain.MarketHourRepo {
-	return s.marketHourStore
+func (s *service) ScheduledSession() domain.ScheduledSessionRepo {
+	return s.scheduledSessionStore
 }
 
 func (s *service) OffchainTxs() domain.OffchainTxRepository {
@@ -339,7 +339,7 @@ func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
 	s.vtxoStore.Close()
-	s.marketHourStore.Close()
+	s.scheduledSessionStore.Close()
 	s.offchainTxStore.Close()
 	s.convictionStore.Close()
 }

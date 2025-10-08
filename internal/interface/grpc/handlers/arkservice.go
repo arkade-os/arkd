@@ -58,10 +58,9 @@ func (h *handler) GetInfo(
 	resp := &arkv1.GetInfoResponse{
 		SignerPubkey:        info.SignerPubKey,
 		ForfeitPubkey:       info.ForfeitPubKey,
-		VtxoTreeExpiry:      info.VtxoTreeExpiry,
 		UnilateralExitDelay: info.UnilateralExitDelay,
 		BoardingExitDelay:   info.BoardingExitDelay,
-		RoundInterval:       info.RoundInterval,
+		SessionDuration:     info.SessionDuration,
 		Network:             info.Network,
 		Dust:                int64(info.Dust),
 		ForfeitAddress:      info.ForfeitAddress,
@@ -80,7 +79,7 @@ func (h *handler) GetInfo(
 
 	digest := sha256.Sum256(buf)
 	resp.Digest = hex.EncodeToString(digest[:])
-	resp.MarketHour = marketHour{info.NextMarketHour}.toProto()
+	resp.ScheduledSession = scheduledSession{info.NextScheduledSession}.toProto()
 
 	return resp, nil
 }
@@ -454,17 +453,11 @@ func (h *handler) listenToEvents() {
 
 				evs = append(evs, eventWithTopics{event: ev, topics: e.Topic})
 			case application.TreeNoncesAggregated:
-				serialized, err := json.Marshal(e.Nonces)
-				if err != nil {
-					log.WithError(err).Error("failed to serialize nonces")
-					continue
-				}
-
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeNoncesAggregated{
 						TreeNoncesAggregated: &arkv1.TreeNoncesAggregatedEvent{
 							Id:         e.Id,
-							TreeNonces: string(serialized),
+							TreeNonces: e.Nonces.ToMap(),
 						},
 					},
 				}

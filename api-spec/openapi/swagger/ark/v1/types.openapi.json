@@ -154,31 +154,6 @@
           }
         }
       },
-      "MarketHour": {
-        "title": "MarketHour",
-        "type": "object",
-        "properties": {
-          "fees": {
-            "$ref": "#/components/schemas/FeeInfo"
-          },
-          "nextEndTime": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "nextStartTime": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "period": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "roundInterval": {
-            "type": "integer",
-            "format": "int64"
-          }
-        }
-      },
       "Outpoint": {
         "title": "Outpoint",
         "type": "object",
@@ -210,6 +185,31 @@
           }
         }
       },
+      "ScheduledSession": {
+        "title": "ScheduledSession",
+        "type": "object",
+        "properties": {
+          "duration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fees": {
+            "$ref": "#/components/schemas/FeeInfo"
+          },
+          "nextEndTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nextStartTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "period": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "Tapscripts": {
         "title": "Tapscripts",
         "type": "object",
@@ -230,7 +230,10 @@
             "type": "string"
           },
           "treeNonces": {
-            "type": "string"
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           }
         }
       },

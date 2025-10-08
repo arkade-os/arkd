@@ -30,7 +30,7 @@ func (s *service) checkIfBanned(ctx context.Context, script withOutputScript) er
 	if err != nil {
 		return err
 	}
-	if len(conviction) >= s.banThreshold {
+	if int64(len(conviction)) >= s.banThreshold {
 		convictionsStr := make([]string, 0)
 		for _, conviction := range conviction {
 			convictionsStr = append(convictionsStr, conviction.String())
