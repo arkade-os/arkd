@@ -718,6 +718,18 @@
         "title": "DeleteIntentsResponse",
         "type": "object"
       },
+      "FeeInfo": {
+        "title": "FeeInfo",
+        "type": "object",
+        "properties": {
+          "intentFee": {
+            "$ref": "#/components/schemas/IntentFeeInfo"
+          },
+          "txFeeRate": {
+            "type": "string"
+          }
+        }
+      },
       "GetActiveScriptConvictionsRequest": {
         "title": "GetActiveScriptConvictionsRequest",
         "type": "object",
@@ -938,6 +950,24 @@
           }
         }
       },
+      "IntentFeeInfo": {
+        "title": "IntentFeeInfo",
+        "type": "object",
+        "properties": {
+          "offchainInput": {
+            "type": "string"
+          },
+          "offchainOutput": {
+            "type": "string"
+          },
+          "onchainInput": {
+            "type": "string"
+          },
+          "onchainOutput": {
+            "type": "string"
+          }
+        }
+      },
       "IntentInfo": {
         "title": "IntentInfo",
         "type": "object",
@@ -1027,11 +1057,22 @@
             "type": "integer",
             "format": "int64"
           },
+          "fees": {
+            "$ref": "#/components/schemas/FeeInfo"
+          },
           "period": {
             "type": "integer",
             "format": "int64"
           },
           "roundInterval": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundMaxParticipantsCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundMinParticipantsCount": {
             "type": "integer",
             "format": "int64"
           },
