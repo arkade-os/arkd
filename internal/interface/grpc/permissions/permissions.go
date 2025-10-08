@@ -75,17 +75,21 @@ func OperatorPermissions() []bakery.Op {
 }
 
 func AdminPermissions() []bakery.Op {
-	indexedPermissions := make(map[bakery.Op]struct{})
+	seen := make(map[bakery.Op]struct{})
+	permissions := make([]bakery.Op, 0)
 	for _, op := range append(UnlockerPermissions(), OperatorPermissions()...) {
-		indexedPermissions[op] = struct{}{}
+		if _, ok := seen[op]; ok {
+			continue
+		}
+		seen[op] = struct{}{}
+		permissions = append(permissions, op)
 	}
-	indexedPermissions[bakery.Op{
+	noteWrite := bakery.Op{
 		Entity: EntityNote,
 		Action: "write",
-	}] = struct{}{}
-	permissions := make([]bakery.Op, 0, len(indexedPermissions))
-	for op := range indexedPermissions {
-		permissions = append(permissions, op)
+	}
+	if _, ok := seen[noteWrite]; !ok {
+		permissions = append(permissions, noteWrite)
 	}
 	return permissions
 }

@@ -34,11 +34,18 @@ var (
 func genMacaroons(
 	ctx context.Context, svc *macaroons.Service, datadir string,
 ) (bool, error) {
-	// Don't do anything if macaroon files already exist.
-	for macaroonFile := range macFiles {
-		if pathExists(filepath.Join(datadir, macaroonFile)) {
-			return false, nil
+	// Check the macaroons to (re-)generate.
+	macaroonsToGenerate := make(map[string][]bakery.Op)
+	for filename, ops := range macFiles {
+		if pathExists(filepath.Join(datadir, filename)) {
+			continue
 		}
+		macaroonsToGenerate[filename] = ops
+	}
+
+	// Don't do anything if all macaroons already exist.
+	if len(macaroonsToGenerate) == 0 {
+		return false, nil
 	}
 
 	// Create the datadir if it doesn't exist.
@@ -47,7 +54,7 @@ func genMacaroons(
 	}
 
 	// Create the macaroon files.
-	for macFilename, macPermissions := range macFiles {
+	for macFilename, macPermissions := range macaroonsToGenerate {
 		mktMacBytes, err := svc.BakeMacaroon(ctx, macPermissions)
 		if err != nil {
 			return false, err
