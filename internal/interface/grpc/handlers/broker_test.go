@@ -118,7 +118,7 @@ func TestBroker(t *testing.T) {
 		listener := newListener[string]("test-id", []string{"topic1"})
 		broker.pushListener(listener)
 
-		newTopics := []string{"topic2", "TOPIC3"}
+		newTopics := []string{"topic2", "TOPIC3", "topic1"}
 		err := broker.addTopics("test-id", newTopics)
 		require.NoError(t, err)
 
