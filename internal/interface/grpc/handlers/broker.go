@@ -9,10 +9,10 @@ import (
 )
 
 type listener[T any] struct {
-	id      string
-	topics  map[string]struct{}
-	ch      chan T
-	timeout *time.Timer
+	id           string
+	topics       map[string]struct{}
+	ch           chan T
+	timeoutTimer *time.Timer
 }
 
 func newListener[T any](id string, topics []string) *listener[T] {
@@ -71,8 +71,8 @@ func (h *broker[T]) removeListener(id string) {
 	if !ok {
 		return
 	}
-	if listener.timeout != nil {
-		listener.timeout.Stop()
+	if listener.timeoutTimer != nil {
+		listener.timeoutTimer.Stop()
 	}
 	delete(h.listeners, id)
 }
@@ -145,6 +145,9 @@ func (h *broker[T]) removeAllTopics(id string) error {
 }
 
 func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
+	// stop any existing timeout on this listener
+	h.stopTimeout(id)
+
 	h.lock.Lock()
 	defer h.lock.Unlock()
 	_, ok := h.listeners[id]
@@ -152,7 +155,7 @@ func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 		return
 	}
 
-	h.listeners[id].timeout = time.AfterFunc(timeout, func() {
+	h.listeners[id].timeoutTimer = time.AfterFunc(timeout, func() {
 		h.removeListener(id)
 	})
 }
@@ -165,9 +168,9 @@ func (h *broker[T]) stopTimeout(id string) {
 		return
 	}
 
-	if h.listeners[id].timeout != nil {
-		h.listeners[id].timeout.Stop()
-		h.listeners[id].timeout = nil
+	if h.listeners[id].timeoutTimer != nil {
+		h.listeners[id].timeoutTimer.Stop()
+		h.listeners[id].timeoutTimer = nil
 	}
 }
 
