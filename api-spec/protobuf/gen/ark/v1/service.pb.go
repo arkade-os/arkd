@@ -60,26 +60,25 @@ func (*GetInfoRequest) Descriptor() ([]byte, []int) {
 
 type GetInfoResponse struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
-	SignerPubkey        string                 `protobuf:"bytes,1,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
-	VtxoTreeExpiry      int64                  `protobuf:"varint,2,opt,name=vtxo_tree_expiry,json=vtxoTreeExpiry,proto3" json:"vtxo_tree_expiry,omitempty"`
-	UnilateralExitDelay int64                  `protobuf:"varint,3,opt,name=unilateral_exit_delay,json=unilateralExitDelay,proto3" json:"unilateral_exit_delay,omitempty"`
-	RoundInterval       int64                  `protobuf:"varint,4,opt,name=round_interval,json=roundInterval,proto3" json:"round_interval,omitempty"`
-	Network             string                 `protobuf:"bytes,5,opt,name=network,proto3" json:"network,omitempty"`
-	Dust                int64                  `protobuf:"varint,6,opt,name=dust,proto3" json:"dust,omitempty"`
-	ForfeitAddress      string                 `protobuf:"bytes,7,opt,name=forfeit_address,json=forfeitAddress,proto3" json:"forfeit_address,omitempty"`
-	MarketHour          *MarketHour            `protobuf:"bytes,8,opt,name=market_hour,json=marketHour,proto3" json:"market_hour,omitempty"`
-	Version             string                 `protobuf:"bytes,9,opt,name=version,proto3" json:"version,omitempty"`
+	Version             string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	SignerPubkey        string                 `protobuf:"bytes,2,opt,name=signer_pubkey,json=signerPubkey,proto3" json:"signer_pubkey,omitempty"`
+	ForfeitPubkey       string                 `protobuf:"bytes,3,opt,name=forfeit_pubkey,json=forfeitPubkey,proto3" json:"forfeit_pubkey,omitempty"`
+	ForfeitAddress      string                 `protobuf:"bytes,4,opt,name=forfeit_address,json=forfeitAddress,proto3" json:"forfeit_address,omitempty"`
+	CheckpointTapscript string                 `protobuf:"bytes,5,opt,name=checkpoint_tapscript,json=checkpointTapscript,proto3" json:"checkpoint_tapscript,omitempty"`
+	Network             string                 `protobuf:"bytes,6,opt,name=network,proto3" json:"network,omitempty"`
+	SessionDuration     int64                  `protobuf:"varint,7,opt,name=session_duration,json=sessionDuration,proto3" json:"session_duration,omitempty"`
+	UnilateralExitDelay int64                  `protobuf:"varint,8,opt,name=unilateral_exit_delay,json=unilateralExitDelay,proto3" json:"unilateral_exit_delay,omitempty"`
+	BoardingExitDelay   int64                  `protobuf:"varint,9,opt,name=boarding_exit_delay,json=boardingExitDelay,proto3" json:"boarding_exit_delay,omitempty"`
 	UtxoMinAmount       int64                  `protobuf:"varint,10,opt,name=utxo_min_amount,json=utxoMinAmount,proto3" json:"utxo_min_amount,omitempty"`
 	UtxoMaxAmount       int64                  `protobuf:"varint,11,opt,name=utxo_max_amount,json=utxoMaxAmount,proto3" json:"utxo_max_amount,omitempty"` // -1 means no limit (default), 0 means boarding not allowed
 	VtxoMinAmount       int64                  `protobuf:"varint,12,opt,name=vtxo_min_amount,json=vtxoMinAmount,proto3" json:"vtxo_min_amount,omitempty"`
 	VtxoMaxAmount       int64                  `protobuf:"varint,13,opt,name=vtxo_max_amount,json=vtxoMaxAmount,proto3" json:"vtxo_max_amount,omitempty"` // -1 means no limit (default)
-	BoardingExitDelay   int64                  `protobuf:"varint,14,opt,name=boarding_exit_delay,json=boardingExitDelay,proto3" json:"boarding_exit_delay,omitempty"`
-	CheckpointTapscript string                 `protobuf:"bytes,15,opt,name=checkpoint_tapscript,json=checkpointTapscript,proto3" json:"checkpoint_tapscript,omitempty"`
-	Fees                *FeeInfo               `protobuf:"bytes,16,opt,name=fees,proto3" json:"fees,omitempty"`
+	Dust                int64                  `protobuf:"varint,14,opt,name=dust,proto3" json:"dust,omitempty"`
+	Fees                *FeeInfo               `protobuf:"bytes,15,opt,name=fees,proto3" json:"fees,omitempty"`
+	ScheduledSession    *ScheduledSession      `protobuf:"bytes,16,opt,name=scheduled_session,json=scheduledSession,proto3" json:"scheduled_session,omitempty"`
 	DeprecatedSigners   []*DeprecatedSigner    `protobuf:"bytes,17,rep,name=deprecated_signers,json=deprecatedSigners,proto3" json:"deprecated_signers,omitempty"`
-	ForfeitPubkey       string                 `protobuf:"bytes,18,opt,name=forfeit_pubkey,json=forfeitPubkey,proto3" json:"forfeit_pubkey,omitempty"`
-	ServiceStatus       map[string]string      `protobuf:"bytes,19,rep,name=service_status,json=serviceStatus,proto3" json:"service_status,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Digest              string                 `protobuf:"bytes,20,opt,name=digest,proto3" json:"digest,omitempty"`
+	ServiceStatus       map[string]string      `protobuf:"bytes,18,rep,name=service_status,json=serviceStatus,proto3" json:"service_status,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Digest              string                 `protobuf:"bytes,19,opt,name=digest,proto3" json:"digest,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -114,6 +113,13 @@ func (*GetInfoResponse) Descriptor() ([]byte, []int) {
 	return file_ark_v1_service_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *GetInfoResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
 func (x *GetInfoResponse) GetSignerPubkey() string {
 	if x != nil {
 		return x.SignerPubkey
@@ -121,9 +127,37 @@ func (x *GetInfoResponse) GetSignerPubkey() string {
 	return ""
 }
 
-func (x *GetInfoResponse) GetVtxoTreeExpiry() int64 {
+func (x *GetInfoResponse) GetForfeitPubkey() string {
 	if x != nil {
-		return x.VtxoTreeExpiry
+		return x.ForfeitPubkey
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetForfeitAddress() string {
+	if x != nil {
+		return x.ForfeitAddress
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetCheckpointTapscript() string {
+	if x != nil {
+		return x.CheckpointTapscript
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *GetInfoResponse) GetSessionDuration() int64 {
+	if x != nil {
+		return x.SessionDuration
 	}
 	return 0
 }
@@ -135,46 +169,11 @@ func (x *GetInfoResponse) GetUnilateralExitDelay() int64 {
 	return 0
 }
 
-func (x *GetInfoResponse) GetRoundInterval() int64 {
+func (x *GetInfoResponse) GetBoardingExitDelay() int64 {
 	if x != nil {
-		return x.RoundInterval
+		return x.BoardingExitDelay
 	}
 	return 0
-}
-
-func (x *GetInfoResponse) GetNetwork() string {
-	if x != nil {
-		return x.Network
-	}
-	return ""
-}
-
-func (x *GetInfoResponse) GetDust() int64 {
-	if x != nil {
-		return x.Dust
-	}
-	return 0
-}
-
-func (x *GetInfoResponse) GetForfeitAddress() string {
-	if x != nil {
-		return x.ForfeitAddress
-	}
-	return ""
-}
-
-func (x *GetInfoResponse) GetMarketHour() *MarketHour {
-	if x != nil {
-		return x.MarketHour
-	}
-	return nil
-}
-
-func (x *GetInfoResponse) GetVersion() string {
-	if x != nil {
-		return x.Version
-	}
-	return ""
 }
 
 func (x *GetInfoResponse) GetUtxoMinAmount() int64 {
@@ -205,18 +204,11 @@ func (x *GetInfoResponse) GetVtxoMaxAmount() int64 {
 	return 0
 }
 
-func (x *GetInfoResponse) GetBoardingExitDelay() int64 {
+func (x *GetInfoResponse) GetDust() int64 {
 	if x != nil {
-		return x.BoardingExitDelay
+		return x.Dust
 	}
 	return 0
-}
-
-func (x *GetInfoResponse) GetCheckpointTapscript() string {
-	if x != nil {
-		return x.CheckpointTapscript
-	}
-	return ""
 }
 
 func (x *GetInfoResponse) GetFees() *FeeInfo {
@@ -226,18 +218,18 @@ func (x *GetInfoResponse) GetFees() *FeeInfo {
 	return nil
 }
 
+func (x *GetInfoResponse) GetScheduledSession() *ScheduledSession {
+	if x != nil {
+		return x.ScheduledSession
+	}
+	return nil
+}
+
 func (x *GetInfoResponse) GetDeprecatedSigners() []*DeprecatedSigner {
 	if x != nil {
 		return x.DeprecatedSigners
 	}
 	return nil
-}
-
-func (x *GetInfoResponse) GetForfeitPubkey() string {
-	if x != nil {
-		return x.ForfeitPubkey
-	}
-	return ""
 }
 
 func (x *GetInfoResponse) GetServiceStatus() map[string]string {
@@ -1469,30 +1461,28 @@ var File_ark_v1_service_proto protoreflect.FileDescriptor
 const file_ark_v1_service_proto_rawDesc = "" +
 	"\n" +
 	"\x14ark/v1/service.proto\x12\x06ark.v1\x1a!meshapi/gateway/annotations.proto\x1a\x12ark/v1/types.proto\"\x10\n" +
-	"\x0eGetInfoRequest\"\xa6\a\n" +
-	"\x0fGetInfoResponse\x12#\n" +
-	"\rsigner_pubkey\x18\x01 \x01(\tR\fsignerPubkey\x12(\n" +
-	"\x10vtxo_tree_expiry\x18\x02 \x01(\x03R\x0evtxoTreeExpiry\x122\n" +
-	"\x15unilateral_exit_delay\x18\x03 \x01(\x03R\x13unilateralExitDelay\x12%\n" +
-	"\x0eround_interval\x18\x04 \x01(\x03R\rroundInterval\x12\x18\n" +
-	"\anetwork\x18\x05 \x01(\tR\anetwork\x12\x12\n" +
-	"\x04dust\x18\x06 \x01(\x03R\x04dust\x12'\n" +
-	"\x0fforfeit_address\x18\a \x01(\tR\x0eforfeitAddress\x123\n" +
-	"\vmarket_hour\x18\b \x01(\v2\x12.ark.v1.MarketHourR\n" +
-	"marketHour\x12\x18\n" +
-	"\aversion\x18\t \x01(\tR\aversion\x12&\n" +
+	"\x0eGetInfoRequest\"\x92\a\n" +
+	"\x0fGetInfoResponse\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12#\n" +
+	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12%\n" +
+	"\x0eforfeit_pubkey\x18\x03 \x01(\tR\rforfeitPubkey\x12'\n" +
+	"\x0fforfeit_address\x18\x04 \x01(\tR\x0eforfeitAddress\x121\n" +
+	"\x14checkpoint_tapscript\x18\x05 \x01(\tR\x13checkpointTapscript\x12\x18\n" +
+	"\anetwork\x18\x06 \x01(\tR\anetwork\x12)\n" +
+	"\x10session_duration\x18\a \x01(\x03R\x0fsessionDuration\x122\n" +
+	"\x15unilateral_exit_delay\x18\b \x01(\x03R\x13unilateralExitDelay\x12.\n" +
+	"\x13boarding_exit_delay\x18\t \x01(\x03R\x11boardingExitDelay\x12&\n" +
 	"\x0futxo_min_amount\x18\n" +
 	" \x01(\x03R\rutxoMinAmount\x12&\n" +
 	"\x0futxo_max_amount\x18\v \x01(\x03R\rutxoMaxAmount\x12&\n" +
 	"\x0fvtxo_min_amount\x18\f \x01(\x03R\rvtxoMinAmount\x12&\n" +
-	"\x0fvtxo_max_amount\x18\r \x01(\x03R\rvtxoMaxAmount\x12.\n" +
-	"\x13boarding_exit_delay\x18\x0e \x01(\x03R\x11boardingExitDelay\x121\n" +
-	"\x14checkpoint_tapscript\x18\x0f \x01(\tR\x13checkpointTapscript\x12#\n" +
-	"\x04fees\x18\x10 \x01(\v2\x0f.ark.v1.FeeInfoR\x04fees\x12G\n" +
-	"\x12deprecated_signers\x18\x11 \x03(\v2\x18.ark.v1.DeprecatedSignerR\x11deprecatedSigners\x12%\n" +
-	"\x0eforfeit_pubkey\x18\x12 \x01(\tR\rforfeitPubkey\x12Q\n" +
-	"\x0eservice_status\x18\x13 \x03(\v2*.ark.v1.GetInfoResponse.ServiceStatusEntryR\rserviceStatus\x12\x16\n" +
-	"\x06digest\x18\x14 \x01(\tR\x06digest\x1a@\n" +
+	"\x0fvtxo_max_amount\x18\r \x01(\x03R\rvtxoMaxAmount\x12\x12\n" +
+	"\x04dust\x18\x0e \x01(\x03R\x04dust\x12#\n" +
+	"\x04fees\x18\x0f \x01(\v2\x0f.ark.v1.FeeInfoR\x04fees\x12E\n" +
+	"\x11scheduled_session\x18\x10 \x01(\v2\x18.ark.v1.ScheduledSessionR\x10scheduledSession\x12G\n" +
+	"\x12deprecated_signers\x18\x11 \x03(\v2\x18.ark.v1.DeprecatedSignerR\x11deprecatedSigners\x12Q\n" +
+	"\x0eservice_status\x18\x12 \x03(\v2*.ark.v1.GetInfoResponse.ServiceStatusEntryR\rserviceStatus\x12\x16\n" +
+	"\x06digest\x18\x13 \x01(\tR\x06digest\x1a@\n" +
 	"\x12ServiceStatusEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"?\n" +
@@ -1627,8 +1617,8 @@ var file_ark_v1_service_proto_goTypes = []any{
 	nil,                                    // 24: ark.v1.GetInfoResponse.ServiceStatusEntry
 	nil,                                    // 25: ark.v1.SubmitTreeNoncesRequest.TreeNoncesEntry
 	nil,                                    // 26: ark.v1.SubmitTreeSignaturesRequest.TreeSignaturesEntry
-	(*MarketHour)(nil),                     // 27: ark.v1.MarketHour
-	(*FeeInfo)(nil),                        // 28: ark.v1.FeeInfo
+	(*FeeInfo)(nil),                        // 27: ark.v1.FeeInfo
+	(*ScheduledSession)(nil),               // 28: ark.v1.ScheduledSession
 	(*DeprecatedSigner)(nil),               // 29: ark.v1.DeprecatedSigner
 	(*Intent)(nil),                         // 30: ark.v1.Intent
 	(*BatchStartedEvent)(nil),              // 31: ark.v1.BatchStartedEvent
@@ -1645,8 +1635,8 @@ var file_ark_v1_service_proto_goTypes = []any{
 	(*TxNotification)(nil),                 // 42: ark.v1.TxNotification
 }
 var file_ark_v1_service_proto_depIdxs = []int32{
-	27, // 0: ark.v1.GetInfoResponse.market_hour:type_name -> ark.v1.MarketHour
-	28, // 1: ark.v1.GetInfoResponse.fees:type_name -> ark.v1.FeeInfo
+	27, // 0: ark.v1.GetInfoResponse.fees:type_name -> ark.v1.FeeInfo
+	28, // 1: ark.v1.GetInfoResponse.scheduled_session:type_name -> ark.v1.ScheduledSession
 	29, // 2: ark.v1.GetInfoResponse.deprecated_signers:type_name -> ark.v1.DeprecatedSigner
 	24, // 3: ark.v1.GetInfoResponse.service_status:type_name -> ark.v1.GetInfoResponse.ServiceStatusEntry
 	30, // 4: ark.v1.RegisterIntentRequest.intent:type_name -> ark.v1.Intent

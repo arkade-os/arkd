@@ -241,18 +241,18 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 	return list
 }
 
-type marketHour struct {
-	t *application.NextMarketHour
+type scheduledSession struct {
+	t *application.NextScheduledSession
 }
 
-func (mh marketHour) toProto() *arkv1.MarketHour {
+func (mh scheduledSession) toProto() *arkv1.ScheduledSession {
 	if mh.t == nil {
 		return nil
 	}
-	return &arkv1.MarketHour{
+	return &arkv1.ScheduledSession{
 		NextStartTime: mh.t.StartTime.Unix(),
 		NextEndTime:   mh.t.EndTime.Unix(),
 		Period:        int64(mh.t.Period.Minutes()),
-		RoundInterval: int64(mh.t.RoundInterval.Seconds()),
+		Duration:      int64(mh.t.Duration.Seconds()),
 	}
 }

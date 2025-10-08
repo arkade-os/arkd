@@ -137,45 +137,45 @@ func (a *adminHandler) CreateNote(
 	return &arkv1.CreateNoteResponse{Notes: notesWithURI}, nil
 }
 
-func (a *adminHandler) GetMarketHourConfig(
-	ctx context.Context, _ *arkv1.GetMarketHourConfigRequest,
-) (*arkv1.GetMarketHourConfigResponse, error) {
-	marketHour, err := a.adminService.GetMarketHourConfig(ctx)
+func (a *adminHandler) GetScheduledSessionConfig(
+	ctx context.Context, _ *arkv1.GetScheduledSessionConfigRequest,
+) (*arkv1.GetScheduledSessionConfigResponse, error) {
+	scheduledSession, err := a.adminService.GetScheduledSessionConfig(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	var config *arkv1.MarketHourConfig
-	if marketHour != nil {
-		config = &arkv1.MarketHourConfig{
-			StartTime:     marketHour.StartTime.Unix(),
-			EndTime:       marketHour.EndTime.Unix(),
-			Period:        int64(marketHour.Period.Minutes()),
-			RoundInterval: int64(marketHour.RoundInterval.Seconds()),
+	var config *arkv1.ScheduledSessionConfig
+	if scheduledSession != nil {
+		config = &arkv1.ScheduledSessionConfig{
+			StartTime: scheduledSession.StartTime.Unix(),
+			EndTime:   scheduledSession.EndTime.Unix(),
+			Period:    int64(scheduledSession.Period.Minutes()),
+			Duration:  int64(scheduledSession.Duration.Seconds()),
 		}
 	}
 
-	return &arkv1.GetMarketHourConfigResponse{Config: config}, nil
+	return &arkv1.GetScheduledSessionConfigResponse{Config: config}, nil
 }
 
-func (a *adminHandler) UpdateMarketHourConfig(
-	ctx context.Context, req *arkv1.UpdateMarketHourConfigRequest,
-) (*arkv1.UpdateMarketHourConfigResponse, error) {
+func (a *adminHandler) UpdateScheduledSessionConfig(
+	ctx context.Context, req *arkv1.UpdateScheduledSessionConfigRequest,
+) (*arkv1.UpdateScheduledSessionConfigResponse, error) {
 	if req.GetConfig() == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing market hour config")
+		return nil, status.Error(codes.InvalidArgument, "missing scheduled session config")
 	}
 
-	if err := a.adminService.UpdateMarketHourConfig(
+	if err := a.adminService.UpdateScheduledSessionConfig(
 		ctx,
 		time.Unix(req.GetConfig().GetStartTime(), 0),
 		time.Unix(req.GetConfig().GetEndTime(), 0),
 		time.Duration(req.GetConfig().GetPeriod())*time.Minute,
-		time.Duration(req.GetConfig().GetRoundInterval())*time.Second,
+		time.Duration(req.GetConfig().GetDuration())*time.Second,
 	); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	return &arkv1.UpdateMarketHourConfigResponse{}, nil
+	return &arkv1.UpdateScheduledSessionConfigResponse{}, nil
 }
 
 func (a *adminHandler) ListIntents(

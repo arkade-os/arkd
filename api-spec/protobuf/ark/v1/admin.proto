@@ -27,14 +27,14 @@ service AdminService {
       body: "*"
     };
   }
-  rpc GetMarketHourConfig(GetMarketHourConfigRequest) returns (GetMarketHourConfigResponse) {
+  rpc GetScheduledSessionConfig(GetScheduledSessionConfigRequest) returns (GetScheduledSessionConfigResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/admin/marketHour"
+      get: "/v1/admin/scheduledSession"
     };
   }
-  rpc UpdateMarketHourConfig(UpdateMarketHourConfigRequest) returns (UpdateMarketHourConfigResponse) {
+  rpc UpdateScheduledSessionConfig(UpdateScheduledSessionConfigRequest) returns (UpdateScheduledSessionConfigResponse) {
     option (meshapi.gateway.http) = {
-      post: "/v1/admin/marketHour"
+      post: "/v1/admin/scheduledSession"
       body: "*"
     };
   }
@@ -121,15 +121,15 @@ message CreateNoteResponse {
   repeated string notes = 1;
 }
 
-message GetMarketHourConfigRequest {}
-message GetMarketHourConfigResponse {
-  MarketHourConfig config = 1;
+message GetScheduledSessionConfigRequest {}
+message GetScheduledSessionConfigResponse {
+  ScheduledSessionConfig config = 1;
 }
 
-message UpdateMarketHourConfigRequest {
-  MarketHourConfig config = 1;
+message UpdateScheduledSessionConfigRequest {
+  ScheduledSessionConfig config = 1;
 }
-message UpdateMarketHourConfigResponse {}
+message UpdateScheduledSessionConfigResponse {}
 
 message ListIntentsRequest {
   repeated string intent_ids = 1;
@@ -155,11 +155,11 @@ message ScheduledSweep {
   repeated SweepableOutput outputs = 2;
 }
 
-message MarketHourConfig {
+message ScheduledSessionConfig {
   int64 start_time = 1;
   int64 end_time = 2;
   int64 period = 3;
-  int64 round_interval = 4;
+  int64 duration = 4;
 }
 
 message IntentInput {

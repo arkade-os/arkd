@@ -25,10 +25,7 @@ var (
 	}
 )
 
-// genMacaroons generates four macaroon files; one admin-level, one for
-// updating the strategy of a market, one for updating its price  and one
-// read-only. Admin and read-only can also be used to generate more granular
-// macaroons.
+// genMacaroons generates the macaroon files if they don't already exist.
 func genMacaroons(
 	ctx context.Context, svc *macaroons.Service, datadir string,
 ) (bool, error) {

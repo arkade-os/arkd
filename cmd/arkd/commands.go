@@ -128,20 +128,20 @@ var (
 		Flags:  []cli.Flag{beforeDateFlag, afterDateFlag},
 		Action: roundsInTimeRangeAction,
 	}
-	marketHourCmd = &cli.Command{
-		Name:        "market-hour",
-		Usage:       "Get or update the market hour configuration",
-		Subcommands: cli.Commands{updateMarketHourCmd},
-		Action:      getMarketHourAction,
+	scheduledSessionCmd = &cli.Command{
+		Name:        "scheduled-session",
+		Usage:       "Get or update the scheduled session configuration",
+		Subcommands: cli.Commands{updateScheduledSessionCmd},
+		Action:      getScheduledSessionAction,
 	}
-	updateMarketHourCmd = &cli.Command{
+	updateScheduledSessionCmd = &cli.Command{
 		Name:  "update",
-		Usage: "Update the market hour configuration",
+		Usage: "Update the scheduled session configuration",
 		Flags: []cli.Flag{
-			marketHourStartDateFlag, marketHourEndDateFlag,
-			marketHourRoundIntervalFlag, marketHourPeriodFlag,
+			scheduledSessionStartDateFlag, scheduledSessionEndDateFlag,
+			scheduledSessionDurationFlag, scheduledSessionPeriodFlag,
 		},
-		Action: updateMarketHourAction,
+		Action: updateScheduledSessionAction,
 	}
 )
 
@@ -510,14 +510,14 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	return nil
 }
 
-func getMarketHourAction(ctx *cli.Context) error {
+func getScheduledSessionAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/marketHour", baseURL)
+	url := fmt.Sprintf("%s/v1/admin/scheduledSession", baseURL)
 
 	resp, err := get[map[string]string](url, "config", macaroon, tlsConfig)
 	if err != nil {
@@ -531,7 +531,7 @@ func getMarketHourAction(ctx *cli.Context) error {
 	if resp["startTime"] != "" {
 		startTime, err := strconv.Atoi(resp["startTime"])
 		if err != nil {
-			return fmt.Errorf("failed to parse market hour start time: %s", err)
+			return fmt.Errorf("failed to parse scheduled session start time: %s", err)
 		}
 		startDate := time.Unix(int64(startTime), 0)
 		resp["startTime"] = startDate.Format(time.RFC3339)
@@ -539,7 +539,7 @@ func getMarketHourAction(ctx *cli.Context) error {
 	if resp["endTime"] != "" {
 		endTime, err := strconv.Atoi(resp["endTime"])
 		if err != nil {
-			return fmt.Errorf("failed to parse market hour end time: %s", err)
+			return fmt.Errorf("failed to parse scheduled session end time: %s", err)
 		}
 		endDate := time.Unix(int64(endTime), 0)
 		resp["endTime"] = endDate.Format(time.RFC3339)
@@ -547,8 +547,8 @@ func getMarketHourAction(ctx *cli.Context) error {
 	if resp["period"] != "" {
 		resp["period"] += " minutes"
 	}
-	if resp["roundInterval"] != "" {
-		resp["roundInterval"] += " seconds"
+	if resp["duration"] != "" {
+		resp["duration"] += " seconds"
 	}
 
 	respJson, err := json.MarshalIndent(resp, "", "  ")
@@ -559,14 +559,14 @@ func getMarketHourAction(ctx *cli.Context) error {
 	return nil
 }
 
-func updateMarketHourAction(ctx *cli.Context) error {
+func updateScheduledSessionAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	startDate := ctx.String(marketHourStartDateFlagName)
-	endDate := ctx.String(marketHourEndDateFlagName)
-	roundInterval := ctx.Uint(marketHourRoundIntervalFlagName)
-	period := ctx.Uint(marketHourPeriodFlagName)
+	startDate := ctx.String(scheduledSessionStartDateFlagName)
+	endDate := ctx.String(scheduledSessionEndDateFlagName)
+	duration := ctx.Uint(scheduledSessionDurationFlagName)
+	period := ctx.Uint(scheduledSessionPeriodFlagName)
 
-	if ctx.IsSet(marketHourStartDateFlagName) != ctx.IsSet(marketHourEndDateFlagName) {
+	if ctx.IsSet(scheduledSessionStartDateFlagName) != ctx.IsSet(scheduledSessionEndDateFlagName) {
 		return fmt.Errorf("--start-date and --end-date must be set together")
 	}
 
@@ -575,27 +575,27 @@ func updateMarketHourAction(ctx *cli.Context) error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/marketHour", baseURL)
-	mhConfig := map[string]string{}
+	url := fmt.Sprintf("%s/v1/admin/scheduledSession", baseURL)
+	config := map[string]string{}
 	if startDate != "" {
-		startTime, err := time.Parse(marketHourDateFormat, startDate)
+		startTime, err := time.Parse(scheduledSessionDateFormat, startDate)
 		if err != nil {
-			return fmt.Errorf("invalid --start-date format, must be %s", marketHourDateFormat)
+			return fmt.Errorf("invalid --start-date format, must be %s", scheduledSessionDateFormat)
 		}
-		endTime, err := time.Parse(marketHourDateFormat, endDate)
+		endTime, err := time.Parse(scheduledSessionDateFormat, endDate)
 		if err != nil {
-			return fmt.Errorf("invalid --end-date format, must be %s", marketHourDateFormat)
+			return fmt.Errorf("invalid --end-date format, must be %s", scheduledSessionDateFormat)
 		}
-		mhConfig["startTime"] = strconv.Itoa(int(startTime.Unix()))
-		mhConfig["endTime"] = strconv.Itoa(int(endTime.Unix()))
+		config["startTime"] = strconv.Itoa(int(startTime.Unix()))
+		config["endTime"] = strconv.Itoa(int(endTime.Unix()))
 	}
-	if roundInterval > 0 {
-		mhConfig["roundInterval"] = strconv.Itoa(int(roundInterval))
+	if duration > 0 {
+		config["duration"] = strconv.Itoa(int(duration))
 	}
 	if period > 0 {
-		mhConfig["period"] = strconv.Itoa(int(period))
+		config["period"] = strconv.Itoa(int(period))
 	}
-	bodyMap := map[string]map[string]string{"config": mhConfig}
+	bodyMap := map[string]map[string]string{"config": config}
 	body, err := json.Marshal(bodyMap)
 	if err != nil {
 		return fmt.Errorf("failed to encode request body: %s", err)
@@ -604,6 +604,6 @@ func updateMarketHourAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Println("Successfully updated market hour config")
+	fmt.Println("Successfully updated scheduled session config")
 	return nil
 }
