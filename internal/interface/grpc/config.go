@@ -60,23 +60,6 @@ func (c Config) Validate() error {
 		}
 	}
 
-	if !c.NoMacaroons {
-		macDir := c.macaroonsDatadir()
-		roMacExists := pathExists(filepath.Join(macDir, roMacaroonFile))
-		operatorMacExists := pathExists(filepath.Join(macDir, operatorMacaroonFile))
-		unlockerMacExists := pathExists(filepath.Join(macDir, unlockerMacaroonFile))
-		adminMacExists := pathExists(filepath.Join(macDir, adminMacaroonFile))
-		superAdminMacExists := pathExists(filepath.Join(macDir, superAdminMacaroonFile))
-
-		if superAdminMacExists != roMacExists ||
-			superAdminMacExists != operatorMacExists ||
-			superAdminMacExists != unlockerMacExists ||
-			superAdminMacExists != adminMacExists {
-			return fmt.Errorf(
-				"all macaroons must be either existing or not in path %s", macDir,
-			)
-		}
-	}
 	return nil
 }
 
