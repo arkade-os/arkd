@@ -43,6 +43,7 @@ func main() {
 		&redeemCommand,
 		&notesCommand,
 		&recoverCommand,
+		&versionCommand,
 	)
 	app.Flags = []cli.Flag{datadirFlag, verboseFlag}
 	app.Before = func(ctx *cli.Context) error {
@@ -228,6 +229,15 @@ var (
 		Flags: []cli.Flag{passwordFlag},
 		Action: func(ctx *cli.Context) error {
 			return recoverVtxos(ctx)
+		},
+	}
+
+	versionCommand = cli.Command{
+		Name:  "version",
+		Usage: "Display version information",
+		Action: func(ctx *cli.Context) error {
+			fmt.Printf("Ark CLI version %s\n", Version)
+			return nil
 		},
 	}
 )
@@ -471,7 +481,7 @@ func getArkSdkClient(ctx *cli.Context) (arksdk.ArkClient, error) {
 	}
 
 	commandName := ctx.Args().First()
-	if commandName != "init" && cfgData == nil {
+	if commandName != "init" && commandName != "version" && cfgData == nil {
 		return nil, fmt.Errorf("CLI not initialized, run 'init' cmd to initialize")
 	}
 

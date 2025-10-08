@@ -41,6 +41,11 @@ var (
 		Usage:  "Generate a new private key",
 		Action: genkeyAction,
 	}
+	versionCmd = &cli.Command{
+		Name:   "version",
+		Usage:  "Display version information",
+		Action: versionAction,
+	}
 	walletStatusCmd = &cli.Command{
 		Name:   "status",
 		Usage:  "Get info about the status of the wallet",
@@ -311,6 +316,11 @@ func genkeyAction(ctx *cli.Context) error {
 		return err
 	}
 	fmt.Println(hex.EncodeToString(key.Serialize()))
+	return nil
+}
+
+func versionAction(ctx *cli.Context) error {
+	fmt.Printf("arkd version %s\n", Version)
 	return nil
 }
 

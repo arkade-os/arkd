@@ -80,6 +80,7 @@ func main() {
 		walletCmd,
 		signerCmd,
 		genkeyCmd,
+		versionCmd,
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
