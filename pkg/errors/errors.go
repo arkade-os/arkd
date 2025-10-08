@@ -218,9 +218,9 @@ var INVALID_PSBT_INPUT = Code[InputMetadata]{
 	"INVALID_PSBT_INPUT",
 	grpccodes.InvalidArgument,
 }
-var VTXO_ALREADY_SPENT = Code[VtxoMetadata]{6, "VTXO_ALREADY_SPENT", grpccodes.AlreadyExists}
-var VTXO_ALREADY_UNROLLED = Code[VtxoMetadata]{7, "VTXO_ALREADY_UNROLLED", grpccodes.AlreadyExists}
-var VTXO_ALREADY_SWEPT = Code[VtxoMetadata]{8, "VTXO_ALREADY_SWEPT", grpccodes.AlreadyExists}
+var VTXO_ALREADY_SPENT = Code[VtxoMetadata]{6, "VTXO_ALREADY_SPENT", grpccodes.InvalidArgument}
+var VTXO_ALREADY_UNROLLED = Code[VtxoMetadata]{7, "VTXO_ALREADY_UNROLLED", grpccodes.InvalidArgument}
+var VTXO_RECOVERABLE = Code[VtxoMetadata]{8, "VTXO_RECOVERABLE", grpccodes.InvalidArgument}
 
 var OFFCHAIN_TX_SPENDING_NOTE = Code[VtxoMetadata]{
 	9,

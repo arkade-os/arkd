@@ -576,7 +576,8 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if vtxo.Swept {
-			return nil, "", "", errors.VTXO_ALREADY_SWEPT.New("%s already swept", vtxo.Outpoint).
+			// if we reach this point, it means vtxo.Spent = false so the vtxo is recoverable
+			return nil, "", "", errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
 
