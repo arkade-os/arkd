@@ -1532,7 +1532,7 @@ func (s *service) startRound() {
 	if mktHour != nil {
 		if now := time.Now(); !now.Before(mktHour.StartTime) && !now.After(mktHour.EndTime) {
 			log.WithFields(log.Fields{
-				"roundInterval":        roundInterval,
+				"roundInterval":        mktHour.RoundInterval,
 				"minRoundParticipants": mktHour.RoundMinParticipantsCount,
 				"maxRoundParticipants": mktHour.RoundMaxParticipantsCount,
 			}).Debug(
