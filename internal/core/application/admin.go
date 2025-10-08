@@ -26,6 +26,7 @@ type AdminService interface {
 	UpdateMarketHourConfig(
 		ctx context.Context,
 		marketHourStartTime, marketHourEndTime time.Time, period, roundInterval time.Duration,
+		roundMinParticipantsCount, roundMaxParticipantsCount int64,
 	) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
@@ -46,18 +47,24 @@ type adminService struct {
 	txBuilder       ports.TxBuilder
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
+
+	roundMinParticipantsCount int64
+	roundMaxParticipantsCount int64
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit,
+	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) AdminService {
 	return &adminService{
-		walletSvc:       walletSvc,
-		repoManager:     repoManager,
-		txBuilder:       txBuilder,
-		sweeperTimeUnit: timeUnit,
-		liveStore:       liveStoreSvc,
+		walletSvc:                 walletSvc,
+		repoManager:               repoManager,
+		txBuilder:                 txBuilder,
+		sweeperTimeUnit:           timeUnit,
+		liveStore:                 liveStoreSvc,
+		roundMinParticipantsCount: roundMinParticipantsCount,
+		roundMaxParticipantsCount: roundMaxParticipantsCount,
 	}
 }
 
@@ -238,15 +245,12 @@ func (s *adminService) GetMarketHourConfig(ctx context.Context) (*domain.MarketH
 func (s *adminService) UpdateMarketHourConfig(
 	ctx context.Context,
 	marketHourStartTime, marketHourEndTime time.Time, period, roundInterval time.Duration,
+	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) error {
-	if marketHourStartTime.IsZero() && marketHourEndTime.IsZero() &&
-		period <= 0 && roundInterval <= 0 {
-		return fmt.Errorf("missing market hour config")
-	}
 	startTimeSet := !marketHourStartTime.IsZero()
 	endTimeSet := !marketHourEndTime.IsZero()
 	if startTimeSet != endTimeSet {
-		return fmt.Errorf("market hour start time and end time must be set together")
+		return fmt.Errorf("market hour start time and end time must be both set or unset")
 	}
 
 	marketHour, err := s.repoManager.MarketHourRepo().Get(ctx)
@@ -266,6 +270,12 @@ func (s *adminService) UpdateMarketHourConfig(
 		}
 		if roundInterval <= 0 {
 			return fmt.Errorf("missing market hour round interval")
+		}
+		if roundMinParticipantsCount <= 0 {
+			roundMinParticipantsCount = s.roundMinParticipantsCount
+		}
+		if roundMaxParticipantsCount <= 0 {
+			roundMaxParticipantsCount = s.roundMaxParticipantsCount
 		}
 	}
 
@@ -287,8 +297,23 @@ func (s *adminService) UpdateMarketHourConfig(
 	if roundInterval <= 0 {
 		roundInterval = marketHour.RoundInterval
 	}
+	if roundMinParticipantsCount <= 0 {
+		roundMinParticipantsCount = marketHour.RoundMinParticipantsCount
+	}
+	if roundMaxParticipantsCount <= 0 {
+		roundMaxParticipantsCount = marketHour.RoundMaxParticipantsCount
+	}
+	if roundMaxParticipantsCount < roundMinParticipantsCount {
+		return fmt.Errorf(
+			"got round max participants %d, expected at least %d",
+			roundMaxParticipantsCount, roundMinParticipantsCount,
+		)
+	}
 
-	mh := domain.NewMarketHour(marketHourStartTime, marketHourEndTime, period, roundInterval)
+	mh := domain.NewMarketHour(
+		marketHourStartTime, marketHourEndTime, period, roundInterval,
+		roundMinParticipantsCount, roundMaxParticipantsCount,
+	)
 	if err := s.repoManager.MarketHourRepo().Upsert(ctx, *mh); err != nil {
 		return fmt.Errorf("failed to upsert market hours: %w", err)
 	}

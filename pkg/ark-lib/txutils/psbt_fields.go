@@ -11,7 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-const ArkPsbtFieldKeyType = 255
+const ArkPsbtFieldKeyType = 222
 
 var (
 	// ArkPsbtFieldTaprootTree reveals the taproot tree associated with an input

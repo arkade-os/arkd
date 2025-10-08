@@ -51,7 +51,7 @@ type service struct {
 	vtxoTreeExpiry            arklib.RelativeLocktime
 	roundInterval             time.Duration
 	banDuration               time.Duration
-	banThreshold              int
+	banThreshold              int64
 	unilateralExitDelay       arklib.RelativeLocktime
 	boardingExitDelay         arklib.RelativeLocktime
 	roundMinParticipantsCount int64
@@ -87,16 +87,16 @@ func NewService(
 	scanner ports.BlockchainScanner,
 	scheduler ports.SchedulerService,
 	cache ports.LiveStore,
+	reportSvc RoundReportService,
 	vtxoTreeExpiry, unilateralExitDelay, boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
-	roundInterval, banDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
-	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount int64,
+	roundInterval, roundMinParticipantsCount, roundMaxParticipantsCount,
+	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	network arklib.Network,
 	allowCSVBlockType bool,
 	noteUriPrefix string,
 	marketHourStartTime, marketHourEndTime time.Time,
 	marketHourPeriod, marketHourRoundInterval time.Duration,
-	reportSvc RoundReportService,
-	banThreshold int,
+	marketHourRoundMinParticipantsCount, marketHourRoundMaxParticipantsCount int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -112,9 +112,22 @@ func NewService(
 	}
 
 	if marketHour == nil && !marketHourStartTime.IsZero() && !marketHourEndTime.IsZero() &&
-		int(marketHourPeriod) > 0 && marketHourRoundInterval > 0 {
+		int(marketHourPeriod) > 0 {
+		rInterval := time.Duration(roundInterval) * time.Second
+		if marketHourRoundInterval > 0 {
+			rInterval = marketHourRoundInterval
+		}
+		rMinParticipantsCount := roundMinParticipantsCount
+		if marketHourRoundMinParticipantsCount > 0 {
+			rMinParticipantsCount = marketHourRoundMinParticipantsCount
+		}
+		rMaxParticipantsCount := roundMaxParticipantsCount
+		if marketHourRoundMaxParticipantsCount > 0 {
+			rMaxParticipantsCount = marketHourRoundMaxParticipantsCount
+		}
 		marketHour = domain.NewMarketHour(
-			marketHourStartTime, marketHourEndTime, marketHourPeriod, marketHourRoundInterval,
+			marketHourStartTime, marketHourEndTime, marketHourPeriod,
+			rInterval, rMinParticipantsCount, rMaxParticipantsCount,
 		)
 		if err := repoManager.MarketHourRepo().Upsert(ctx, *marketHour); err != nil {
 			return nil, fmt.Errorf("failed to upsert initial market hours to db: %w", err)
@@ -1511,13 +1524,37 @@ func (s *service) startRound() {
 
 	s.roundReportSvc.StageStarted(SelectIntentsStage)
 
-	roundTiming := newRoundTiming(s.roundInterval)
+	roundInterval := s.roundInterval
+	roundMinParticipants := s.roundMinParticipantsCount
+	roundMaxParticipants := s.roundMaxParticipantsCount
+	mktHour, _ := s.repoManager.MarketHourRepo().Get(context.Background())
+	if mktHour != nil {
+		nextStartTime, nextEndTime := calcNextMarketHour(
+			time.Now(), mktHour.StartTime, mktHour.EndTime, mktHour.Period,
+		)
+		if now := time.Now(); !now.Before(nextStartTime) && !now.After(nextEndTime) {
+			log.WithFields(log.Fields{
+				"roundInterval":        mktHour.RoundInterval,
+				"minRoundParticipants": mktHour.RoundMinParticipantsCount,
+				"maxRoundParticipants": mktHour.RoundMaxParticipantsCount,
+			}).Debug(
+				"market hour is active, using market hour params",
+			)
+			roundInterval = mktHour.RoundInterval
+			roundMinParticipants = mktHour.RoundMinParticipantsCount
+			roundMaxParticipants = mktHour.RoundMaxParticipantsCount
+		}
+	}
+
+	roundTiming := newRoundTiming(roundInterval)
 	<-time.After(roundTiming.registrationDuration())
 	s.wg.Add(1)
-	go s.startConfirmation(roundTiming)
+	go s.startConfirmation(roundTiming, roundMinParticipants, roundMaxParticipants)
 }
 
-func (s *service) startConfirmation(roundTiming roundTiming) {
+func (s *service) startConfirmation(
+	roundTiming roundTiming, roundMinParticipantsCount, roundMaxParticipantsCount int64,
+) {
 	defer s.wg.Done()
 
 	select {
@@ -1557,14 +1594,14 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	}()
 
 	num := s.cache.Intents().Len()
-	if num < s.roundMinParticipantsCount {
+	if num < roundMinParticipantsCount {
 		roundAborted = true
-		err := fmt.Errorf("not enough intents registered %d/%d", num, s.roundMinParticipantsCount)
+		err := fmt.Errorf("not enough intents registered %d/%d", num, roundMinParticipantsCount)
 		log.WithError(err).Debugf("round %s aborted", roundId)
 		return
 	}
-	if num > s.roundMaxParticipantsCount {
-		num = s.roundMaxParticipantsCount
+	if num > roundMaxParticipantsCount {
+		num = roundMaxParticipantsCount
 	}
 
 	availableBalance, _, err := s.wallet.MainAccountBalance(ctx)
@@ -1575,7 +1612,53 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	}
 
 	// TODO take into account available liquidity
-	intents := s.cache.Intents().Pop(num)
+	intentsPopped := s.cache.Intents().Pop(num)
+	intents := make([]ports.TimedIntent, 0, len(intentsPopped))
+
+	// for each intent, check if all boarding inputs are unspent
+	// exclude any intent with at least one spent boarding input
+	for _, intent := range intentsPopped {
+		includeIntent := true
+
+		for _, input := range intent.BoardingInputs {
+			spent, err := s.wallet.GetOutpointStatus(ctx, input.Outpoint)
+			if err != nil {
+				log.WithError(err).
+					Warnf("failed to get outpoint status for boarding input %s", input.Outpoint)
+				continue
+			}
+
+			if spent {
+				log.WithField("intent_id", intent.Id).
+					Debugf("boarding input %s is spent", input.Outpoint)
+				includeIntent = false
+				break
+			}
+		}
+
+		if includeIntent {
+			intents = append(intents, intent)
+		}
+	}
+
+	if len(intents) < int(s.roundMinParticipantsCount) {
+		// repush valid intents back to the queue
+		for _, intent := range intents {
+			if err := s.cache.Intents().Push(intent.Intent, intent.BoardingInputs, intent.CosignersPublicKeys); err != nil {
+				log.WithError(err).Warn("failed to re-push intents to the queue")
+				continue
+			}
+		}
+
+		roundAborted = true
+		err := fmt.Errorf(
+			"not enough intents registered %d/%d",
+			len(intents),
+			s.roundMinParticipantsCount,
+		)
+		log.WithError(err).Debugf("round %s aborted", roundId)
+		return
+	}
 
 	s.roundReportSvc.SetIntentsNum(len(intents))
 
@@ -1622,7 +1705,7 @@ func (s *service) startConfirmation(roundTiming roundTiming) {
 	s.roundReportSvc.OpEnded(WaitForConfirmationOp)
 
 	repushToQueue := notConfirmedIntents
-	if int64(len(confirmedIntents)) < s.roundMinParticipantsCount {
+	if int64(len(confirmedIntents)) < roundMinParticipantsCount {
 		repushToQueue = append(repushToQueue, confirmedIntents...)
 		confirmedIntents = make([]ports.TimedIntent, 0)
 	}

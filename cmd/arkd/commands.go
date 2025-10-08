@@ -139,7 +139,8 @@ var (
 		Usage: "Update the market hour configuration",
 		Flags: []cli.Flag{
 			marketHourStartDateFlag, marketHourEndDateFlag,
-			marketHourRoundIntervalFlag, marketHourPeriodFlag,
+			marketHourPeriodFlag, marketHourRoundIntervalFlag,
+			marketHourRoundMinParticipantsCountFlag, marketHourRoundMaxParticipantsCountFlag,
 		},
 		Action: updateMarketHourAction,
 	}
@@ -563,8 +564,10 @@ func updateMarketHourAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	startDate := ctx.String(marketHourStartDateFlagName)
 	endDate := ctx.String(marketHourEndDateFlagName)
-	roundInterval := ctx.Uint(marketHourRoundIntervalFlagName)
 	period := ctx.Uint(marketHourPeriodFlagName)
+	roundInterval := ctx.Uint(marketHourRoundIntervalFlagName)
+	roundMinParticipantsCount := ctx.Uint(marketHourRoundMinParticipantsCountFlagName)
+	roundMaxParticipantsCount := ctx.Uint(marketHourRoundMaxParticipantsCountFlagName)
 
 	if ctx.IsSet(marketHourStartDateFlagName) != ctx.IsSet(marketHourEndDateFlagName) {
 		return fmt.Errorf("--start-date and --end-date must be set together")
@@ -594,6 +597,12 @@ func updateMarketHourAction(ctx *cli.Context) error {
 	}
 	if period > 0 {
 		mhConfig["period"] = strconv.Itoa(int(period))
+	}
+	if roundMinParticipantsCount > 0 {
+		mhConfig["roundMinParticipantsCount"] = strconv.Itoa(int(roundMinParticipantsCount))
+	}
+	if roundMaxParticipantsCount > 0 {
+		mhConfig["roundMaxParticipantsCount"] = strconv.Itoa(int(roundMaxParticipantsCount))
 	}
 	bodyMap := map[string]map[string]string{"config": mhConfig}
 	body, err := json.Marshal(bodyMap)

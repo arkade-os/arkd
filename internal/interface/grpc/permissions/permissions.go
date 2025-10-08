@@ -9,16 +9,16 @@ import (
 )
 
 const (
-	EntityWallet  = "wallet"
-	EntityAdmin   = "admin"
-	EntityManager = "manager"
-	EntityArk     = "ark"
-	EntityIndexer = "indexer"
-	EntityHealth  = "health"
+	EntityWallet            = "wallet"
+	EntityWalletInitializer = "walletinitializer"
+	EntityManager           = "manager"
+	EntityWithdraw          = "withdraw"
+	EntityNote              = "note"
+	EntityArk               = "ark"
+	EntityIndexer           = "indexer"
+	EntityHealth            = "health"
 )
 
-// ReadOnlyPermissions returns the permissions of the macaroon readonly.macaroon.
-// This grants access to the read action for all entities.
 func ReadOnlyPermissions() []bakery.Op {
 	return []bakery.Op{
 		{
@@ -32,10 +32,16 @@ func ReadOnlyPermissions() []bakery.Op {
 	}
 }
 
-// WalletPermissions returns the permissions of the macaroon wallet.macaroon.
-// This grants access to the all actions for the wallet entity.
-func WalletPermissions() []bakery.Op {
+func UnlockerPermissions() []bakery.Op {
 	return []bakery.Op{
+		{
+			Entity: EntityWalletInitializer,
+			Action: "write",
+		},
+		{
+			Entity: EntityWalletInitializer,
+			Action: "read",
+		},
 		{
 			Entity: EntityWallet,
 			Action: "read",
@@ -47,9 +53,7 @@ func WalletPermissions() []bakery.Op {
 	}
 }
 
-// ManagerPermissions returns the permissions of the macaroon manager.macaroon.
-// This grants access to the all actions for the manager entity.
-func ManagerPermissions() []bakery.Op {
+func OperatorPermissions() []bakery.Op {
 	return []bakery.Op{
 		{
 			Entity: EntityManager,
@@ -59,30 +63,42 @@ func ManagerPermissions() []bakery.Op {
 			Entity: EntityManager,
 			Action: "write",
 		},
+		{
+			Entity: EntityWallet,
+			Action: "read",
+		},
+		{
+			Entity: EntityWallet,
+			Action: "write",
+		},
 	}
 }
 
-// AdminPermissions returns the permissions of the macaroon admin.macaroon.
-// This grants access to the all actions for all entities.
 func AdminPermissions() []bakery.Op {
-	return []bakery.Op{
-		{
-			Entity: EntityManager,
-			Action: "read",
-		},
-		{
-			Entity: EntityManager,
-			Action: "write",
-		},
-		{
-			Entity: EntityWallet,
-			Action: "read",
-		},
-		{
-			Entity: EntityWallet,
-			Action: "write",
-		},
+	seen := make(map[bakery.Op]struct{})
+	permissions := make([]bakery.Op, 0)
+	for _, op := range append(UnlockerPermissions(), OperatorPermissions()...) {
+		if _, ok := seen[op]; ok {
+			continue
+		}
+		seen[op] = struct{}{}
+		permissions = append(permissions, op)
 	}
+	noteWrite := bakery.Op{
+		Entity: EntityNote,
+		Action: "write",
+	}
+	if _, ok := seen[noteWrite]; !ok {
+		permissions = append(permissions, noteWrite)
+	}
+	return permissions
+}
+
+func SuperAdminPermissions() []bakery.Op {
+	return append(AdminPermissions(), bakery.Op{
+		Entity: EntityWithdraw,
+		Action: "write",
+	})
 }
 
 // Whitelist returns the list of all whitelisted methods with the relative
@@ -94,15 +110,15 @@ func Whitelist() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/Create", arkv1.WalletInitializerService_ServiceDesc.ServiceName): {{
-			Entity: EntityWallet,
+			Entity: EntityWalletInitializer,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/Restore", arkv1.WalletInitializerService_ServiceDesc.ServiceName): {{
-			Entity: EntityWallet,
+			Entity: EntityWalletInitializer,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/Unlock", arkv1.WalletInitializerService_ServiceDesc.ServiceName): {{
-			Entity: EntityWallet,
+			Entity: EntityWalletInitializer,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/GetStatus", arkv1.WalletInitializerService_ServiceDesc.ServiceName): {{
@@ -110,7 +126,7 @@ func Whitelist() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/LoadSigner", arkv1.SignerManagerService_ServiceDesc.ServiceName): {{
-			Entity: EntityManager,
+			Entity: EntityWalletInitializer,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/RegisterIntent", arkv1.ArkService_ServiceDesc.ServiceName): {{
@@ -228,7 +244,7 @@ func Whitelist() map[string][]bakery.Op {
 func AllPermissionsByMethod() map[string][]bakery.Op {
 	return map[string][]bakery.Op{
 		fmt.Sprintf("/%s/Lock", arkv1.WalletService_ServiceDesc.ServiceName): {{
-			Entity: EntityWallet,
+			Entity: EntityWalletInitializer,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/DeriveAddress", arkv1.WalletService_ServiceDesc.ServiceName): {{
@@ -240,7 +256,7 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/Withdraw", arkv1.WalletService_ServiceDesc.ServiceName): {{
-			Entity: EntityWallet,
+			Entity: EntityWithdraw,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/GetScheduledSweep", arkv1.AdminService_ServiceDesc.ServiceName): {{
@@ -256,7 +272,7 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/CreateNote", arkv1.AdminService_ServiceDesc.ServiceName): {{
-			Entity: EntityManager,
+			Entity: EntityNote,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/GetMarketHourConfig", arkv1.AdminService_ServiceDesc.ServiceName): {{
