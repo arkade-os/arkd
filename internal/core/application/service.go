@@ -159,11 +159,10 @@ func NewService(
 		return nil, fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
 	}
 
-	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	checkpointClosure := &script.CSVMultisigClosure{
 		Locktime: checkpointExitDelay,
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{signerPubkey},
+			PubKeys: []*btcec.PublicKey{forfeitPubkey},
 		},
 	}
 
@@ -1831,9 +1830,8 @@ func (s *service) startFinalization(
 
 	s.roundReportSvc.OpStarted(BuildCommitmentTxOp)
 
-	// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		s.signerPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
+		s.forfeitPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
 	)
 	if err != nil {
 		s.cache.CurrentRound().Fail(fmt.Errorf("failed to create commitment tx: %s", err))
@@ -1882,9 +1880,8 @@ func (s *service) startFinalization(
 	if vtxoTree != nil {
 		s.roundReportSvc.StageStarted(TreeSigningStage)
 
-		// TODO: use forfeitPubkey instead of signerPubkey once sdk is up-to-date.
 		sweepClosure := script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.signerPubkey}},
+			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.forfeitPubkey}},
 			Locktime:        s.vtxoTreeExpiry,
 		}
 
