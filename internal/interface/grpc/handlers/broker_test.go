@@ -173,11 +173,10 @@ func TestBroker(t *testing.T) {
 	})
 
 	t.Run("timeout management", func(t *testing.T) {
-		broker := newBroker[string]()
-		listener := newListener[string]("test-id", []string{"topic1"})
-		broker.pushListener(listener)
-
 		t.Run("startTimeout", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
 			broker.startTimeout("test-id", 100*time.Millisecond)
 
 			// wait for timeout to trigger, check if listener is removed
