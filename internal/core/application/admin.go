@@ -266,7 +266,7 @@ func (s *adminService) UpdateScheduledSessionConfig(
 			return fmt.Errorf("missing scheduled session period")
 		}
 		if duration <= 0 {
-			return fmt.Errorf("missing scheduled session round interval")
+			return fmt.Errorf("missing scheduled session duration")
 		}
 	}
 

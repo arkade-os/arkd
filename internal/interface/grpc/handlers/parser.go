@@ -245,14 +245,29 @@ type scheduledSession struct {
 	t *application.NextScheduledSession
 }
 
-func (mh scheduledSession) toProto() *arkv1.ScheduledSession {
-	if mh.t == nil {
+func (s scheduledSession) toProto() *arkv1.ScheduledSession {
+	if s.t == nil {
 		return nil
 	}
 	return &arkv1.ScheduledSession{
-		NextStartTime: mh.t.StartTime.Unix(),
-		NextEndTime:   mh.t.EndTime.Unix(),
-		Period:        int64(mh.t.Period.Minutes()),
-		Duration:      int64(mh.t.Duration.Seconds()),
+		NextStartTime: s.t.StartTime.Unix(),
+		NextEndTime:   s.t.EndTime.Unix(),
+		Period:        int64(s.t.Period.Minutes()),
+		Duration:      int64(s.t.Duration.Seconds()),
+		Fees:          fees(s.t.Fees).toProto(),
+	}
+}
+
+type fees application.FeeInfo
+
+func (f fees) toProto() *arkv1.FeeInfo {
+	return &arkv1.FeeInfo{
+		TxFeeRate: fmt.Sprintf("%.1f", f.TxFeeRate),
+		IntentFee: &arkv1.IntentFeeInfo{
+			OffchainInput:  f.IntentFees.OffchainInput,
+			OffchainOutput: f.IntentFees.OffchainOutput,
+			OnchainInput:   fmt.Sprintf("%d", f.IntentFees.OnchainInput),
+			OnchainOutput:  fmt.Sprintf("%d", f.IntentFees.OnchainOutput),
+		},
 	}
 }
