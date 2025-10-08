@@ -2,6 +2,7 @@ package wallet
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -34,6 +35,10 @@ func (l *outpointLocker) lock(_ context.Context, outpoints ...wire.OutPoint) err
 	lockedUntil := now.Add(l.lockExpiry)
 
 	for _, outpoint := range outpoints {
+		if _, ok := l.lockedOutpoints[outpoint]; ok {
+			return fmt.Errorf("outpoint %s is already locked", outpoint)
+		}
+
 		l.lockedOutpoints[outpoint] = lockedUntil
 	}
 

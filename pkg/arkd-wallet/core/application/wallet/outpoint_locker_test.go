@@ -1,7 +1,6 @@
 package wallet
 
 import (
-	"context"
 	"crypto/rand"
 	"sync"
 	"testing"
@@ -11,84 +10,82 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewOutpointLocker(t *testing.T) {
-	lockDuration := 5 * time.Minute
-	locker := newOutpointLocker(lockDuration)
+func TestOutpointLocker(t *testing.T) {
+	t.Run("new", func(t *testing.T) {
+		lockDuration := 5 * time.Minute
+		locker := newOutpointLocker(lockDuration)
 
-	require.NotNil(t, locker)
-	require.Equal(t, lockDuration, locker.lockExpiry)
-	require.NotNil(t, locker.lockedOutpoints)
-	require.Empty(t, locker.lockedOutpoints)
-}
+		require.NotNil(t, locker)
+		require.Equal(t, lockDuration, locker.lockExpiry)
+		require.NotNil(t, locker.lockedOutpoints)
+		require.Empty(t, locker.lockedOutpoints)
+	})
 
-func TestOutpointLocker_Lock(t *testing.T) {
-	lockDuration := 1 * time.Hour
-	locker := newOutpointLocker(lockDuration)
+	t.Run("lock", func(t *testing.T) {
+		lockDuration := 1 * time.Hour
+		locker := newOutpointLocker(lockDuration)
 
-	hash0 := random32Bytes()
-	hash1 := random32Bytes()
-	outpoint1 := wire.OutPoint{Hash: hash0, Index: 0}
-	outpoint2 := wire.OutPoint{Hash: hash1, Index: 1}
+		outpoint1 := wire.OutPoint{Hash: random32Bytes(), Index: 0}
+		outpoint2 := wire.OutPoint{Hash: random32Bytes(), Index: 1}
 
-	// test locking single outpoint
-	err := locker.lock(context.Background(), outpoint1)
-	require.NoError(t, err)
+		// test locking single outpoint
+		err := locker.lock(t.Context(), outpoint1)
+		require.NoError(t, err)
 
-	// verify outpoint is locked
-	lockedOutpoints, err := locker.get(context.Background())
-	require.NoError(t, err)
-	require.Len(t, lockedOutpoints, 1)
-	require.Contains(t, lockedOutpoints, outpoint1)
+		// verify outpoint is locked
+		lockedOutpoints, err := locker.get(t.Context())
+		require.NoError(t, err)
+		require.Len(t, lockedOutpoints, 1)
+		require.Contains(t, lockedOutpoints, outpoint1)
 
-	// test locking multiple outpoints
-	err = locker.lock(context.Background(), outpoint2)
-	require.NoError(t, err)
+		// test locking multiple outpoints
+		err = locker.lock(t.Context(), outpoint2)
+		require.NoError(t, err)
 
-	// verify both outpoints are locked
-	lockedOutpoints, err = locker.get(context.Background())
-	require.NoError(t, err)
-	require.Len(t, lockedOutpoints, 2)
-	require.Contains(t, lockedOutpoints, outpoint1)
-	require.Contains(t, lockedOutpoints, outpoint2)
+		// verify both outpoints are locked
+		lockedOutpoints, err = locker.get(t.Context())
+		require.NoError(t, err)
+		require.Len(t, lockedOutpoints, 2)
+		require.Contains(t, lockedOutpoints, outpoint1)
+		require.Contains(t, lockedOutpoints, outpoint2)
 
-	// test locking same outpoint again (should update expiry)
-	time.Sleep(10 * time.Millisecond) // Small delay to ensure different timestamps
-	err = locker.lock(context.Background(), outpoint1)
-	require.NoError(t, err)
+		// test locking same outpoint again
+		time.Sleep(10 * time.Millisecond)
+		err = locker.lock(t.Context(), outpoint1)
+		require.ErrorContains(t, err, "already locked")
 
-	// verify outpoint is still locked with updated expiry
-	lockedOutpoints, err = locker.get(context.Background())
-	require.NoError(t, err)
-	require.Len(t, lockedOutpoints, 2)
-	require.Contains(t, lockedOutpoints, outpoint1)
-	require.Contains(t, lockedOutpoints, outpoint2)
-}
+		// verify outpoint is still locked with updated expiry
+		lockedOutpoints, err = locker.get(t.Context())
+		require.NoError(t, err)
+		require.Len(t, lockedOutpoints, 2)
+		require.Contains(t, lockedOutpoints, outpoint1)
+		require.Contains(t, lockedOutpoints, outpoint2)
+	})
 
-func TestOutpointLocker_Get(t *testing.T) {
-	lockDuration := 100 * time.Millisecond
-	locker := newOutpointLocker(lockDuration)
+	t.Run("lock and unlock", func(t *testing.T) {
+		lockDuration := 100 * time.Millisecond
+		locker := newOutpointLocker(lockDuration)
 
-	hash0 := random32Bytes()
-	hash1 := random32Bytes()
-	outpoint1 := wire.OutPoint{Hash: hash0, Index: 0}
-	outpoint2 := wire.OutPoint{Hash: hash1, Index: 1}
+		outpoint1 := wire.OutPoint{Hash: random32Bytes(), Index: 0}
+		outpoint2 := wire.OutPoint{Hash: random32Bytes(), Index: 1}
 
-	// lock outpoints
-	err := locker.lock(context.Background(), outpoint1, outpoint2)
-	require.NoError(t, err)
+		// lock outpoints
+		err := locker.lock(t.Context(), outpoint1, outpoint2)
+		require.NoError(t, err)
 
-	lockedOutpoints, err := locker.get(context.Background())
-	require.NoError(t, err)
-	require.Len(t, lockedOutpoints, 2)
-	require.Contains(t, lockedOutpoints, outpoint1)
-	require.Contains(t, lockedOutpoints, outpoint2)
+		lockedOutpoints, err := locker.get(t.Context())
+		require.NoError(t, err)
+		require.Len(t, lockedOutpoints, 2)
+		require.Contains(t, lockedOutpoints, outpoint1)
+		require.Contains(t, lockedOutpoints, outpoint2)
 
-	// wait for locks to expire
-	time.Sleep(lockDuration + 50*time.Millisecond)
+		// wait for locks to expire
+		time.Sleep(lockDuration + 50*time.Millisecond)
 
-	lockedOutpoints, err = locker.get(context.Background())
-	require.NoError(t, err)
-	require.Empty(t, lockedOutpoints)
+		lockedOutpoints, err = locker.get(t.Context())
+		require.NoError(t, err)
+		require.Empty(t, lockedOutpoints)
+	})
 }
 
 func TestOutpointLocker_ConcurrentGetAndLock(t *testing.T) {
@@ -97,7 +94,7 @@ func TestOutpointLocker_ConcurrentGetAndLock(t *testing.T) {
 	lockDuration := 100 * time.Millisecond
 	locker := newOutpointLocker(lockDuration)
 
-	outpoints := make([]wire.OutPoint, 0, 10)
+	outpoints := make([]wire.OutPoint, 0, numberOfRoutines/2)
 	for index := range numberOfRoutines / 2 {
 		outpoints = append(outpoints, wire.OutPoint{Hash: random32Bytes(), Index: uint32(index)})
 	}
@@ -105,27 +102,31 @@ func TestOutpointLocker_ConcurrentGetAndLock(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(numberOfRoutines)
 
-	// start 10 goroutines that lock the outpoint
-	for _, outpoint := range outpoints {
-		go func() {
-			err := locker.lock(context.Background(), outpoint)
-			require.NoError(t, err)
-			wg.Done()
-		}()
-	}
+	go func() {
+		// start one half of goroutines that lock the outpoint
+		for _, outpoint := range outpoints {
+			go func(outpoint wire.OutPoint) {
+				err := locker.lock(t.Context(), outpoint)
+				require.NoError(t, err)
+				wg.Done()
+			}(outpoint)
+		}
+	}()
 
-	// start 10 goroutines that get locked outpoints
-	for range numberOfRoutines / 2 {
-		go func() {
-			_, err := locker.get(context.Background())
-			require.NoError(t, err)
-			wg.Done()
-		}()
-	}
+	go func() {
+		// start the other half of goroutines that get locked outpoints
+		for range numberOfRoutines / 2 {
+			go func() {
+				_, err := locker.get(t.Context())
+				require.NoError(t, err)
+				wg.Done()
+			}()
+		}
+	}()
 
 	wg.Wait()
 
-	lockedOutpoints, err := locker.get(context.Background())
+	lockedOutpoints, err := locker.get(t.Context())
 	require.NoError(t, err)
 	require.Len(t, lockedOutpoints, len(outpoints))
 	for _, outpoint := range outpoints {
