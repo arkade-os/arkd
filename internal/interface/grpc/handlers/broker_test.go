@@ -78,8 +78,9 @@ func TestBroker(t *testing.T) {
 		listeners = broker.getListenersCopy()
 		require.Empty(t, listeners)
 
-		// test remove non-existent listener does not panic
-		broker.removeListener("non-existent")
+		require.NotPanics(t, func() {
+			broker.removeListener("non-existent")
+		})
 	})
 
 	t.Run("getListenerChannel", func(t *testing.T) {
