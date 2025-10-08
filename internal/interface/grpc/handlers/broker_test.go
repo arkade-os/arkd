@@ -232,44 +232,34 @@ func TestBroker(t *testing.T) {
 	t.Run("getListenersCopy", func(t *testing.T) {
 		broker := newBroker[string]()
 
-		t.Run("empty broker", func(t *testing.T) {
-			copy := broker.getListenersCopy()
-			require.Empty(t, copy)
-		})
+		copy := broker.getListenersCopy()
+		require.Empty(t, copy)
 
-		t.Run("broker with listeners", func(t *testing.T) {
-			listener1 := newListener[string]("id1", []string{"topic1"})
-			listener2 := newListener[string]("id2", []string{"topic2"})
+		listener1 := newListener[string]("id1", []string{"topic1"})
+		listener2 := newListener[string]("id2", []string{"topic2"})
 
-			broker.pushListener(listener1)
-			broker.pushListener(listener2)
+		broker.pushListener(listener1)
+		broker.pushListener(listener2)
 
-			copy := broker.getListenersCopy()
-			require.Len(t, copy, 2)
-			require.Equal(t, listener1, copy["id1"])
-			require.Equal(t, listener2, copy["id2"])
+		copy = broker.getListenersCopy()
+		require.Len(t, copy, 2)
+		require.Equal(t, listener1, copy["id1"])
+		require.Equal(t, listener2, copy["id2"])
 
-			// Modifying copy should not affect original
-			delete(copy, "id1")
-			listeners := broker.getListenersCopy()
-			require.Len(t, listeners, 2)
-			require.Equal(t, listener1, listeners["id1"])
-			require.Equal(t, listener2, listeners["id2"])
-		})
+		// Modifying copy should not affect original
+		delete(copy, "id1")
+		listeners := broker.getListenersCopy()
+		require.Len(t, listeners, 2)
+		require.Equal(t, listener1, listeners["id1"])
+		require.Equal(t, listener2, listeners["id2"])
 	})
 
 	t.Run("hasListeners", func(t *testing.T) {
 		broker := newBroker[string]()
-
-		t.Run("empty broker", func(t *testing.T) {
-			require.False(t, broker.hasListeners())
-		})
-
-		t.Run("broker with listeners", func(t *testing.T) {
-			listener := newListener[string]("test-id", []string{"topic1"})
-			broker.pushListener(listener)
-			require.True(t, broker.hasListeners())
-		})
+		require.False(t, broker.hasListeners())
+		listener := newListener[string]("test-id", []string{"topic1"})
+		broker.pushListener(listener)
+		require.True(t, broker.hasListeners())
 	})
 
 	t.Run("formatTopic", func(t *testing.T) {
