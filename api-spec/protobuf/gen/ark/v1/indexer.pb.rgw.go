@@ -125,7 +125,7 @@ func request_IndexerService_GetConnectors_0(ctx context.Context, marshaler gatew
 
 var (
 	query_params_IndexerService_GetVtxoTree_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("batch_outpoint.txid", "batch_outpoint.vout", "txid", "vout"),
+		Filter: trie.New("batch_outpoint.vout", "batch_outpoint.txid", "txid", "vout"),
 	}
 )
 
@@ -173,7 +173,7 @@ func request_IndexerService_GetVtxoTree_0(ctx context.Context, marshaler gateway
 
 var (
 	query_params_IndexerService_GetVtxoTreeLeaves_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("batch_outpoint.vout", "batch_outpoint.txid", "txid", "vout"),
+		Filter: trie.New("batch_outpoint.txid", "batch_outpoint.vout", "txid", "vout"),
 	}
 )
 
@@ -243,7 +243,7 @@ func request_IndexerService_GetVtxos_0(ctx context.Context, marshaler gateway.Ma
 
 var (
 	query_params_IndexerService_GetVtxoChain_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("vout", "outpoint.txid", "outpoint.vout", "txid"),
+		Filter: trie.New("outpoint.txid", "outpoint.vout", "txid", "vout"),
 	}
 )
 
