@@ -279,7 +279,7 @@ func (s *adminService) UpdateMarketHourConfig(
 			roundMinParticipantsCount = s.roundMinParticipantsCount
 		}
 		if roundMaxParticipantsCount <= 0 {
-			roundMinParticipantsCount = s.roundMaxParticipantsCount
+			roundMaxParticipantsCount = s.roundMaxParticipantsCount
 		}
 	}
 
