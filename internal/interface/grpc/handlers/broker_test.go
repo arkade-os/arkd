@@ -17,7 +17,7 @@ func TestBroker(t *testing.T) {
 		require.NotNil(t, broker)
 		require.NotNil(t, broker.lock)
 		require.NotNil(t, broker.listeners)
-		require.Equal(t, 0, len(broker.listeners))
+		require.Empty(t, broker.listeners)
 	})
 
 	t.Run("newListener", func(t *testing.T) {
@@ -28,7 +28,7 @@ func TestBroker(t *testing.T) {
 		require.Equal(t, "test-id", listener.id)
 		require.NotNil(t, listener.ch)
 		require.NotNil(t, listener.topics)
-		require.Equal(t, 3, len(listener.topics))
+		require.Len(t, listener.topics, 3)
 
 		// check topics are formatted correctly
 		require.Contains(t, listener.topics, "topic1")
@@ -59,10 +59,9 @@ func TestBroker(t *testing.T) {
 
 		broker.pushListener(listener)
 
-		broker.lock.RLock()
-		require.Equal(t, 1, len(broker.listeners))
-		require.Equal(t, listener, broker.listeners["test-id"])
-		broker.lock.RUnlock()
+		listeners := broker.getListenersCopy()
+		require.Len(t, listeners, 1)
+		require.Equal(t, listener, listeners["test-id"])
 	})
 
 	t.Run("removeListener", func(t *testing.T) {
@@ -70,20 +69,17 @@ func TestBroker(t *testing.T) {
 		listener := newListener[string]("test-id", []string{"topic1"})
 		broker.pushListener(listener)
 
-		broker.lock.RLock()
-		require.Equal(t, 1, len(broker.listeners))
-		broker.lock.RUnlock()
+		listeners := broker.getListenersCopy()
+		require.Len(t, listeners, 1)
+		require.Equal(t, listener, listeners["test-id"])
 
 		broker.removeListener("test-id")
-		broker.lock.RLock()
-		require.Equal(t, 0, len(broker.listeners))
-		broker.lock.RUnlock()
+
+		listeners = broker.getListenersCopy()
+		require.Empty(t, listeners)
 
 		// test remove non-existent listener does not panic
 		broker.removeListener("non-existent")
-		broker.lock.RLock()
-		require.Equal(t, 0, len(broker.listeners))
-		broker.lock.RUnlock()
 	})
 
 	t.Run("getListenerChannel", func(t *testing.T) {
@@ -98,7 +94,7 @@ func TestBroker(t *testing.T) {
 		ch, err = broker.getListenerChannel("non-existent")
 		require.Error(t, err)
 		require.Nil(t, ch)
-		require.Contains(t, err.Error(), "subscription non-existent not found")
+		require.ErrorContains(t, err, "subscription non-existent not found")
 	})
 
 	t.Run("getTopics", func(t *testing.T) {
@@ -108,7 +104,7 @@ func TestBroker(t *testing.T) {
 		broker.pushListener(listener)
 
 		result := broker.getTopics("test-id")
-		require.Equal(t, 3, len(result))
+		require.Len(t, result, 3)
 		require.Contains(t, result, "topic1")
 		require.Contains(t, result, "topic2")
 		require.Contains(t, result, "topic3") // should be lowercase, topic has been formatted
@@ -127,7 +123,7 @@ func TestBroker(t *testing.T) {
 
 		// add to an existing listener
 		topics := broker.getTopics("test-id")
-		require.Equal(t, 3, len(topics))
+		require.Len(t, topics, 3)
 		require.Contains(t, topics, "topic1")
 		require.Contains(t, topics, "topic2")
 		require.Contains(t, topics, "topic3")
@@ -135,7 +131,7 @@ func TestBroker(t *testing.T) {
 		// add to a non-existent listener
 		err = broker.addTopics("non-existent", []string{"topic1"})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "subscription non-existent not found")
+		require.ErrorContains(t, err, "subscription non-existent not found")
 	})
 
 	t.Run("removeTopics", func(t *testing.T) {
@@ -149,12 +145,14 @@ func TestBroker(t *testing.T) {
 		require.NoError(t, err)
 
 		result := broker.getTopics("test-id")
-		require.Equal(t, 1, len(result))
+		require.Len(t, result, 1)
 		require.Contains(t, result, "topic1")
+		require.NotContains(t, result, "topic2")
+		require.NotContains(t, result, "topic3")
 
 		err = broker.removeTopics("non-existent", []string{"topic1"})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "subscription non-existent not found")
+		require.ErrorContains(t, err, "subscription non-existent not found")
 	})
 
 	t.Run("removeAllTopics", func(t *testing.T) {
@@ -167,11 +165,11 @@ func TestBroker(t *testing.T) {
 		require.NoError(t, err)
 
 		result := broker.getTopics("test-id")
-		require.Equal(t, 0, len(result))
+		require.Empty(t, result)
 
 		err = broker.removeAllTopics("non-existent")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "subscription non-existent not found")
+		require.ErrorContains(t, err, "subscription non-existent not found")
 	})
 
 	t.Run("timeout management", func(t *testing.T) {
@@ -184,9 +182,8 @@ func TestBroker(t *testing.T) {
 
 			// wait for timeout to trigger, check if listener is removed
 			time.Sleep(150 * time.Millisecond)
-			broker.lock.RLock()
-			require.Equal(t, 0, len(broker.listeners))
-			broker.lock.RUnlock()
+			listeners := broker.getListenersCopy()
+			require.Len(t, listeners, 0)
 		})
 
 		t.Run("stopTimeout", func(t *testing.T) {
@@ -199,9 +196,8 @@ func TestBroker(t *testing.T) {
 
 			// wait to ensure timeout doesn't trigger
 			time.Sleep(150 * time.Millisecond)
-			broker.lock.RLock()
-			require.Equal(t, 1, len(broker.listeners)) // should still exist
-			broker.lock.RUnlock()
+			listeners := broker.getListenersCopy()
+			require.Len(t, listeners, 1) // should still exist
 		})
 
 		t.Run("concurrent timeout with several listeners", func(t *testing.T) {
@@ -220,21 +216,17 @@ func TestBroker(t *testing.T) {
 					)
 					broker.pushListener(listener)
 					defer wg.Done()
-					broker.startTimeout(fmt.Sprintf("listener-%d", id), 50*time.Millisecond)
+					broker.startTimeout(fmt.Sprintf("listener-%d", i), 50*time.Millisecond)
 				}(i)
 			}
 			wg.Wait()
-			broker.lock.RLock()
-			require.Equal(t, nbListeners, len(broker.listeners))
-			broker.lock.RUnlock()
 
 			// wait for all timeouts to trigger
 			time.Sleep(100 * time.Millisecond)
 
 			// all listeners should be removed
-			broker.lock.RLock()
-			require.Equal(t, 0, len(broker.listeners))
-			broker.lock.RUnlock()
+			listeners := broker.getListenersCopy()
+			require.Len(t, listeners, 0)
 		})
 	})
 
@@ -243,7 +235,7 @@ func TestBroker(t *testing.T) {
 
 		t.Run("empty broker", func(t *testing.T) {
 			copy := broker.getListenersCopy()
-			require.Equal(t, 0, len(copy))
+			require.Empty(t, copy)
 		})
 
 		t.Run("broker with listeners", func(t *testing.T) {
@@ -254,15 +246,16 @@ func TestBroker(t *testing.T) {
 			broker.pushListener(listener2)
 
 			copy := broker.getListenersCopy()
-			require.Equal(t, 2, len(copy))
+			require.Len(t, copy, 2)
 			require.Equal(t, listener1, copy["id1"])
 			require.Equal(t, listener2, copy["id2"])
 
 			// Modifying copy should not affect original
 			delete(copy, "id1")
-			broker.lock.RLock()
-			require.Equal(t, 2, len(broker.listeners))
-			broker.lock.RUnlock()
+			listeners := broker.getListenersCopy()
+			require.Len(t, listeners, 2)
+			require.Equal(t, listener1, listeners["id1"])
+			require.Equal(t, listener2, listeners["id2"])
 		})
 	})
 
@@ -345,8 +338,7 @@ func TestBroker(t *testing.T) {
 		}()
 
 		wg.Wait()
-		broker.lock.RLock()
-		require.Equal(t, 0, len(broker.listeners))
-		broker.lock.RUnlock()
+		listeners := broker.getListenersCopy()
+		require.Empty(t, listeners)
 	})
 }
