@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
+	"time"
 
 	"google.golang.org/grpc/metadata"
 	"gopkg.in/macaroon-bakery.v2/bakery"
@@ -352,10 +354,22 @@ func (svc *Service) ChangePassword(oldPw, newPw []byte) error {
 // BakeMacaroon creates a new macaroon with newest version and the given
 // permissions then returns it binary serialized.
 func (svc *Service) BakeMacaroon(
-	ctx context.Context, permissions []bakery.Op,
+	ctx context.Context, permissions []bakery.Op, role string,
 ) ([]byte, error) {
+	rootKeyId := fmt.Sprintf("%s-%d", role, time.Now().Unix())
+	ids, err := svc.ListMacaroonIDs(ctx)
+	var targetId []byte
+	for _, id := range ids {
+		if strings.Contains(string(id), role) {
+			targetId = id
+		}
+	}
+	if len(targetId) > 0 {
+		svc.DeleteMacaroonID(ctx, targetId)
+	}
+
 	mac, err := svc.NewMacaroon(
-		ctx, DefaultRootKeyID, permissions...,
+		ctx, []byte(rootKeyId), permissions...,
 	)
 	if err != nil {
 		return nil, err

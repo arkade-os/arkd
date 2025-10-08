@@ -55,7 +55,7 @@ func genMacaroons(
 
 	// Create the macaroon files.
 	for macFilename, macPermissions := range macaroonsToGenerate {
-		mktMacBytes, err := svc.BakeMacaroon(ctx, macPermissions)
+		mktMacBytes, err := svc.BakeMacaroon(ctx, macPermissions, macFilename)
 		if err != nil {
 			return false, err
 		}
