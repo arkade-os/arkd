@@ -2,16 +2,17 @@ package handlers
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
 )
 
 type listener[T any] struct {
-	id            string
-	topics        map[string]struct{}
-	ch            chan T
-	stopTimeoutCh chan struct{}
+	id      string
+	topics  map[string]struct{}
+	ch      chan T
+	timeout *time.Timer
 }
 
 func newListener[T any](id string, topics []string) *listener[T] {
@@ -20,10 +21,9 @@ func newListener[T any](id string, topics []string) *listener[T] {
 		topicsMap[formatTopic(topic)] = struct{}{}
 	}
 	return &listener[T]{
-		id:            id,
-		topics:        topicsMap,
-		ch:            make(chan T, 100),
-		stopTimeoutCh: make(chan struct{}),
+		id:     id,
+		topics: topicsMap,
+		ch:     make(chan T, 100),
 	}
 }
 
@@ -71,8 +71,8 @@ func (h *broker[T]) removeListener(id string) {
 	if !ok {
 		return
 	}
-	if listener.stopTimeoutCh != nil {
-		close(listener.stopTimeoutCh)
+	if listener.timeout != nil {
+		listener.timeout.Stop()
 	}
 	delete(h.listeners, id)
 }
@@ -146,23 +146,15 @@ func (h *broker[T]) removeAllTopics(id string) error {
 
 func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 	h.lock.Lock()
+	defer h.lock.Unlock()
 	_, ok := h.listeners[id]
 	if !ok {
-		h.lock.Unlock()
 		return
 	}
 
-	h.listeners[id].stopTimeoutCh = make(chan struct{})
-	h.lock.Unlock()
-
-	go func() {
-		select {
-		case <-h.listeners[id].stopTimeoutCh:
-			return
-		case <-time.After(timeout):
-			h.removeListener(id)
-		}
-	}()
+	h.listeners[id].timeout = time.AfterFunc(timeout, func() {
+		h.removeListener(id)
+	})
 }
 
 func (h *broker[T]) stopTimeout(id string) {
@@ -173,9 +165,9 @@ func (h *broker[T]) stopTimeout(id string) {
 		return
 	}
 
-	if h.listeners[id].stopTimeoutCh != nil {
-		close(h.listeners[id].stopTimeoutCh)
-		h.listeners[id].stopTimeoutCh = nil
+	if h.listeners[id].timeout != nil {
+		h.listeners[id].timeout.Stop()
+		h.listeners[id].timeout = nil
 	}
 }
 
@@ -184,9 +176,7 @@ func (h *broker[T]) getListenersCopy() map[string]*listener[T] {
 	defer h.lock.RUnlock()
 
 	listenersCopy := make(map[string]*listener[T], len(h.listeners))
-	for id, listener := range h.listeners {
-		listenersCopy[id] = listener
-	}
+	maps.Copy(listenersCopy, h.listeners)
 	return listenersCopy
 }
 
