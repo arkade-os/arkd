@@ -81,6 +81,12 @@ service AdminService {
       body: "*"
     };
   }
+  rpc RevokeAuth(RevokeAuthRequest) returns (RevokeAuthResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/auth/revoke"
+      body: "*"
+    };
+  }
 }
 
 message GetScheduledSweepRequest {}
@@ -183,6 +189,13 @@ message BanScriptRequest {
   string reason = 3;
 }
 message BanScriptResponse {}
+
+message RevokeAuthRequest {
+  string token = 1;
+}
+message RevokeAuthResponse {
+  string token = 1;
+}
 
 message SweepableOutput {
   string txid = 1;

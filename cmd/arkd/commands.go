@@ -136,6 +136,12 @@ var (
 		},
 		Action: updateScheduledSessionAction,
 	}
+	revokeAuthCmd = &cli.Command{
+		Name:   "revoke-auth",
+		Usage:  "Revoke auth token",
+		Flags:  []cli.Flag{tokenFlag},
+		Action: revokeTokenAction,
+	}
 )
 
 var timeout = time.Minute
@@ -600,5 +606,30 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	}
 
 	fmt.Println("Successfully updated scheduled session config")
+	return nil
+}
+
+func revokeTokenAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	token := ctx.String(tokenFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/auth/revoke", baseURL)
+	body := fmt.Sprintf(`{"token": "%s"}`, token)
+
+	newToken, err := post[string](url, body, "token", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	resp := map[string]string{"newToken": newToken}
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
 	return nil
 }

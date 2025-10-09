@@ -33,6 +33,7 @@ const (
 	AdminService_GetActiveScriptConvictions_FullMethodName   = "/ark.v1.AdminService/GetActiveScriptConvictions"
 	AdminService_PardonConviction_FullMethodName             = "/ark.v1.AdminService/PardonConviction"
 	AdminService_BanScript_FullMethodName                    = "/ark.v1.AdminService/BanScript"
+	AdminService_RevokeAuth_FullMethodName                   = "/ark.v1.AdminService/RevokeAuth"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -53,6 +54,7 @@ type AdminServiceClient interface {
 	GetActiveScriptConvictions(ctx context.Context, in *GetActiveScriptConvictionsRequest, opts ...grpc.CallOption) (*GetActiveScriptConvictionsResponse, error)
 	PardonConviction(ctx context.Context, in *PardonConvictionRequest, opts ...grpc.CallOption) (*PardonConvictionResponse, error)
 	BanScript(ctx context.Context, in *BanScriptRequest, opts ...grpc.CallOption) (*BanScriptResponse, error)
+	RevokeAuth(ctx context.Context, in *RevokeAuthRequest, opts ...grpc.CallOption) (*RevokeAuthResponse, error)
 }
 
 type adminServiceClient struct {
@@ -203,6 +205,16 @@ func (c *adminServiceClient) BanScript(ctx context.Context, in *BanScriptRequest
 	return out, nil
 }
 
+func (c *adminServiceClient) RevokeAuth(ctx context.Context, in *RevokeAuthRequest, opts ...grpc.CallOption) (*RevokeAuthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeAuthResponse)
+	err := c.cc.Invoke(ctx, AdminService_RevokeAuth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility.
@@ -221,6 +233,7 @@ type AdminServiceServer interface {
 	GetActiveScriptConvictions(context.Context, *GetActiveScriptConvictionsRequest) (*GetActiveScriptConvictionsResponse, error)
 	PardonConviction(context.Context, *PardonConvictionRequest) (*PardonConvictionResponse, error)
 	BanScript(context.Context, *BanScriptRequest) (*BanScriptResponse, error)
+	RevokeAuth(context.Context, *RevokeAuthRequest) (*RevokeAuthResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have
@@ -271,6 +284,9 @@ func (UnimplementedAdminServiceServer) PardonConviction(context.Context, *Pardon
 }
 func (UnimplementedAdminServiceServer) BanScript(context.Context, *BanScriptRequest) (*BanScriptResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BanScript not implemented")
+}
+func (UnimplementedAdminServiceServer) RevokeAuth(context.Context, *RevokeAuthRequest) (*RevokeAuthResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RevokeAuth not implemented")
 }
 func (UnimplementedAdminServiceServer) testEmbeddedByValue() {}
 
@@ -544,6 +560,24 @@ func _AdminService_BanScript_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_RevokeAuth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeAuthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).RevokeAuth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_RevokeAuth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).RevokeAuth(ctx, req.(*RevokeAuthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -606,6 +640,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BanScript",
 			Handler:    _AdminService_BanScript_Handler,
+		},
+		{
+			MethodName: "RevokeAuth",
+			Handler:    _AdminService_RevokeAuth_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

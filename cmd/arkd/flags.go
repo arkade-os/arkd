@@ -31,6 +31,7 @@ const (
 	scheduledSessionRoundMaxParticipantsCountFlagName = "round-max-participants"
 	signerKeyFlagName                                 = "signer-prvkey"
 	signerUrlFlagName                                 = "signer-url"
+	tokenFlagName                                     = "token"
 
 	dateFormat                 = time.DateOnly
 	scheduledSessionDateFormat = time.DateTime
@@ -146,5 +147,9 @@ var (
 	signerUrlFlag = &cli.StringFlag{
 		Name:  signerUrlFlagName,
 		Usage: "the url of the signer to connect to",
+	}
+	tokenFlag = &cli.StringFlag{
+		Name:  tokenFlagName,
+		Usage: "the macaroon to be revoked",
 	}
 )

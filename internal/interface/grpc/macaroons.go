@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/permissions"
 	"github.com/arkade-os/arkd/pkg/macaroons"
@@ -12,18 +13,18 @@ import (
 )
 
 var (
-	superAdminMacaroonFile = "superadmin.macaroon"
-	adminMacaroonFile      = "admin.macaroon"
-	operatorMacaroonFile   = "operator.macaroon"
-	unlockerMacaroonFile   = "unlocker.macaroon"
-	roMacaroonFile         = "readonly.macaroon"
+	superUserMacaroonFile = "superuser.macaroon"
+	adminMacaroonFile     = "admin.macaroon"
+	operatorMacaroonFile  = "operator.macaroon"
+	unlockerMacaroonFile  = "unlocker.macaroon"
+	roMacaroonFile        = "readonly.macaroon"
 
 	macFiles = map[string][]bakery.Op{
-		superAdminMacaroonFile: permissions.SuperAdminPermissions(),
-		adminMacaroonFile:      permissions.AdminPermissions(),
-		operatorMacaroonFile:   permissions.OperatorPermissions(),
-		unlockerMacaroonFile:   permissions.UnlockerPermissions(),
-		roMacaroonFile:         permissions.ReadOnlyPermissions(),
+		superUserMacaroonFile: permissions.SuperUserPermissions(),
+		adminMacaroonFile:     permissions.AdminPermissions(),
+		operatorMacaroonFile:  permissions.OperatorPermissions(),
+		unlockerMacaroonFile:  permissions.UnlockerPermissions(),
+		roMacaroonFile:        permissions.ReadOnlyPermissions(),
 	}
 )
 
@@ -52,16 +53,16 @@ func genMacaroons(
 
 	// Create the macaroon files.
 	for macFilename, macPermissions := range macaroonsToGenerate {
-		mktMacBytes, err := svc.BakeMacaroon(ctx, macPermissions, macFilename)
+		macBytes, err := svc.BakeMacaroon(ctx, macPermissions, strings.Split(macFilename, ".")[0])
 		if err != nil {
 			return false, err
 		}
 		macFile := filepath.Join(datadir, macFilename)
 		perms := fs.FileMode(0644)
-		if macFilename == adminMacaroonFile {
-			perms = 0600
+		if macFilename == adminMacaroonFile || macFilename == superUserMacaroonFile {
+			perms = fs.FileMode(0600)
 		}
-		if err := os.WriteFile(macFile, mktMacBytes, perms); err != nil {
+		if err := os.WriteFile(macFile, macBytes, perms); err != nil {
 			// nolint:all
 			os.Remove(macFile)
 			return false, err

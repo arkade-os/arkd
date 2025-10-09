@@ -96,15 +96,10 @@ func NewService(
 	}
 
 	return &service{
-		version:       version,
-		config:        svcConfig,
-		appConfig:     appConfig,
-		server:        nil,
-		adminServer:   nil,
-		grpcServer:    nil,
-		adminGrpcSrvr: nil,
-		macaroonSvc:   macaroonSvc,
-		otelShutdown:  nil,
+		version:     version,
+		config:      svcConfig,
+		appConfig:   appConfig,
+		macaroonSvc: macaroonSvc,
 	}, nil
 }
 
@@ -261,7 +256,10 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	}
 
 	walletSvc := s.appConfig.WalletService()
-	adminHandler := handlers.NewAdminHandler(s.appConfig.AdminService(), s.appConfig.NoteUriPrefix)
+	adminHandler := handlers.NewAdminHandler(
+		s.appConfig.AdminService(), s.macaroonSvc,
+		s.config.macaroonsDatadir(), s.appConfig.NoteUriPrefix,
+	)
 	walletHandler := handlers.NewWalletHandler(walletSvc)
 	walletInitHandler := handlers.NewWalletInitializerHandler(walletSvc, onInit, onUnlock, onReady)
 	signerManagerHandler := handlers.NewSignerManagerHandler(walletSvc, onLoadSigner)
@@ -310,15 +308,6 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	gwmux := gateway.NewServeMux(
 		gateway.WithIncomingHeaderMatcher(customMatcher),
 		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
-		// runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
-		// 	MarshalOptions: protojson.MarshalOptions{
-		// 		Indent:    "  ",
-		// 		Multiline: true,
-		// 	},
-		// 	UnmarshalOptions: protojson.UnmarshalOptions{
-		// 		DiscardUnknown: true,
-		// 	},
-		// }),
 	)
 
 	if !s.config.hasAdminPort() {
@@ -334,11 +323,9 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	if withAppSvc {
 		arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
 		arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
-	} else {
-		arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn)
 	}
-	grpcGateway := http.Handler(gwmux)
 
+	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcServer, grpcGateway)
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
@@ -368,15 +355,6 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		adminGwmux := gateway.NewServeMux(
 			gateway.WithIncomingHeaderMatcher(customMatcher),
 			gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(adminConn)),
-			// runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
-			// 	MarshalOptions: protojson.MarshalOptions{
-			// 		Indent:    "  ",
-			// 		Multiline: true,
-			// 	},
-			// 	UnmarshalOptions: protojson.UnmarshalOptions{
-			// 		DiscardUnknown: true,
-			// 	},
-			// }),
 		)
 
 		arkv1.RegisterAdminServiceHandler(ctx, adminGwmux, adminConn)

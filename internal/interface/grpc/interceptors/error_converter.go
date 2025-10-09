@@ -6,7 +6,6 @@ import (
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	arkerrors "github.com/arkade-os/arkd/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 )
@@ -41,7 +40,6 @@ func (e gRPCError) GRPCStatus() *status.Status {
 func errorConverter(
 	ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 ) (any, error) {
-	log.Debugf("gRPC method: %s", info.FullMethod)
 	resp, err := handler(ctx, req)
 	if err != nil {
 		var structuredErr arkerrors.Error

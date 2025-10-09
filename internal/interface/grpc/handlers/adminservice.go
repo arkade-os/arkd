@@ -1,27 +1,41 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/interface/grpc/interceptors"
+	"github.com/arkade-os/arkd/pkg/macaroons"
+	"github.com/go-macaroon-bakery/macaroonpb"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"gopkg.in/macaroon-bakery.v2/bakery"
+	"gopkg.in/macaroon.v2"
 )
 
 type adminHandler struct {
-	adminService application.AdminService
-
-	noteUriPrefix string
+	adminService    application.AdminService
+	macaroonSvc     *macaroons.Service
+	macaroonDatadir string
+	noteUriPrefix   string
 }
 
 func NewAdminHandler(
-	adminService application.AdminService, noteUriPrefix string,
+	adminService application.AdminService, macaroonSvc *macaroons.Service,
+	macaroonDatadir, noteUriPrefix string,
 ) arkv1.AdminServiceServer {
-	return &adminHandler{adminService, noteUriPrefix}
+	return &adminHandler{adminService, macaroonSvc, macaroonDatadir, noteUriPrefix}
 }
 
 func (a *adminHandler) GetRoundDetails(
@@ -376,6 +390,52 @@ func (a *adminHandler) BanScript(
 	return &arkv1.BanScriptResponse{}, nil
 }
 
+func (a *adminHandler) RevokeAuth(
+	ctx context.Context, req *arkv1.RevokeAuthRequest,
+) (*arkv1.RevokeAuthResponse, error) {
+	if a.macaroonSvc == nil {
+		return &arkv1.RevokeAuthResponse{}, nil
+	}
+
+	mac, id, ops, err := parseMacaroon(req.GetToken())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Make sure the given macaroon is valid.
+	testCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("macaroon", mac))
+	if err := interceptors.CheckMacaroon(
+		testCtx, "/ark.v1.WalletService/GetBalance", a.macaroonSvc,
+	); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid token")
+	}
+
+	// Superuser macaroon can't be revoked.
+	if bytes.Contains(id, []byte("superuser")) {
+		return nil, status.Error(codes.InvalidArgument, "invalid token")
+	}
+
+	// Create the new macaroon and delete the old one (handled by BakeMacaroon).
+	role := strings.Split(string(id), "-")[0]
+	macBytes, err := a.macaroonSvc.BakeMacaroon(ctx, ops, role)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	macFile := filepath.Join(a.macaroonDatadir, fmt.Sprintf("%s.macaroon", role))
+	perms := fs.FileMode(0644)
+	if role == "admin" {
+		perms = fs.FileMode(0600)
+	}
+	if err := os.WriteFile(macFile, macBytes, perms); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &arkv1.RevokeAuthResponse{
+		Token: hex.EncodeToString(macBytes),
+	}, nil
+}
+
 func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, error) {
 	var expiresAt int64
 	if conviction.GetExpiresAt() != nil {
@@ -410,4 +470,34 @@ func parseTime(t int64) time.Time {
 		return time.Time{}
 	}
 	return time.Unix(t, 0)
+}
+
+func parseMacaroon(mac string) (string, []byte, []bakery.Op, error) {
+	// Decode hex to bytes.
+	buf, err := hex.DecodeString(mac)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("macaroon must be in hex format")
+	}
+
+	// Unmarshal the macaroon.
+	m := &macaroon.Macaroon{}
+	if err := m.UnmarshalBinary(buf); err != nil {
+		return "", nil, nil, fmt.Errorf("failed to unmarshal macaroon: %s", err)
+	}
+
+	// Unmarshal the macaroon id.
+	macId := &macaroonpb.MacaroonId{}
+	if err := macId.UnmarshalBinary(m.Id()[1:]); err != nil {
+		return "", nil, nil, fmt.Errorf("failed to unmarshal macaroon id: %s", err)
+	}
+
+	// Extract rootkeey id and ops from macaroon id.
+	ops := make([]bakery.Op, 0, len(macId.GetOps()))
+	for _, op := range macId.GetOps() {
+		ops = append(ops, bakery.Op{
+			Entity: op.GetEntity(),
+			Action: op.GetActions()[0],
+		})
+	}
+	return mac, macId.GetStorageId(), ops, nil
 }
