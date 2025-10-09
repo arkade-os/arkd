@@ -373,8 +373,6 @@ func (t *treeSignerSession) AggregateNonces(txid string, pubkeyNonces map[string
 	}
 
 	// set our nonce to ensure server didn't overwrite it
-	pubkey := schnorr.SerializePubKey(nonce.Pub.X)
-	pubkeyNonces[string(pubkey)] = nonce.R
 	xonlyPubkey := hex.EncodeToString(schnorr.SerializePubKey(t.secretKey.PubKey()))
 	pubkeyNonces[xonlyPubkey] = &Musig2Nonce{myNonce.PubNonce}
 
