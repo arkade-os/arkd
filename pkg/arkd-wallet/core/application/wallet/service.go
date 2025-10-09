@@ -629,82 +629,22 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		return "", fmt.Errorf("failed to get fee rate: %w", err)
 	}
 
-	// estimate fees for a typical 2-input withdraw
-	estimatedFee := w.estimateWithdrawFee(feeRate, 2, destPkScript)
-
-	selectedUtxos, _, err := w.SelectUtxos(ctx, amount+estimatedFee, true)
+	balance, _, err := w.MainAccountBalance(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to select UTXOs: %w", err)
+		return "", err
 	}
 
-	totalInputValue := uint64(0)
-	inputs := make([]*wire.OutPoint, 0)
-	outputs := make([]*wire.TxOut, 0)
-	nSequences := make([]uint32, 0)
+	var ptx *psbt.Packet
 
-	for _, utxo := range selectedUtxos {
-		hash, err := chainhash.NewHashFromStr(utxo.Txid)
+	if balance == amount {
+		ptx, err = w.withdrawAll(ctx, feeRate, amount, destPkScript)
 		if err != nil {
-			return "", fmt.Errorf("failed to parse txid: %w", err)
+			return "", fmt.Errorf("failed to create send all tx: %w", err)
 		}
-		inputs = append(inputs, &wire.OutPoint{Hash: *hash, Index: utxo.Index})
-		totalInputValue += utxo.Value
-		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
-	}
-
-	actualFee := w.estimateWithdrawFee(feeRate, len(selectedUtxos), destPkScript) // 2 outputs: destination + change
-	changeAmount := totalInputValue - amount - actualFee
-
-	outputs = append(outputs, &wire.TxOut{
-		Value:    int64(amount),
-		PkScript: destPkScript,
-	})
-
-	if changeAmount >= dustAmount {
-		changeAddress, err := w.Nbxplorer.GetNewUnusedAddress(ctx, w.keyMgr.mainAccountDerivationScheme, true, 0)
-		if err != nil {
-			return "", fmt.Errorf("failed to generate change address: %w", err)
-		}
-
-		changeAddr, err := btcutil.DecodeAddress(changeAddress, w.chainParams())
-		if err != nil {
-			return "", fmt.Errorf("failed to decode change address: %w", err)
-		}
-
-		changePkScript, err := txscript.PayToAddrScript(changeAddr)
-		if err != nil {
-			return "", fmt.Errorf("failed to create change script: %w", err)
-		}
-
-		outputs = append(outputs, &wire.TxOut{
-			Value:    int64(changeAmount),
-			PkScript: changePkScript,
-		})
 	} else {
-		actualFee += changeAmount
-	}
-
-	ptx, err := psbt.New(inputs, outputs, 2, 0, nSequences)
-	if err != nil {
-		return "", fmt.Errorf("failed to create PSBT: %w", err)
-	}
-
-	updater, err := psbt.NewUpdater(ptx)
-	if err != nil {
-		return "", fmt.Errorf("failed to create PSBT updater: %w", err)
-	}
-
-	for inputIndex, utxo := range selectedUtxos {
-		scriptBytes, err := hex.DecodeString(utxo.Script)
+		ptx, err = w.withdrawPartially(ctx, feeRate, amount, destPkScript)
 		if err != nil {
-			return "", fmt.Errorf("failed to decode script: %w", err)
-		}
-
-		if err := updater.AddInWitnessUtxo(&wire.TxOut{
-			Value:    int64(utxo.Value),
-			PkScript: scriptBytes,
-		}, inputIndex); err != nil {
-			return "", fmt.Errorf("failed to add input witness utxo: %w", err)
+			return "", fmt.Errorf("failed to create send partially tx: %w", err)
 		}
 	}
 
@@ -737,6 +677,153 @@ func (w *wallet) Close() {
 	w.keyMgr = nil
 	close(w.isReady)
 	w.SeedRepository.Close()
+}
+
+func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerKVByte, amount uint64, destPkScript []byte) (*psbt.Packet, error) {
+	// estimate fees for a typical 2-input withdraw
+	estimatedFee := w.estimateWithdrawFee(feeRate, 2, destPkScript)
+
+	selectedUtxos, _, err := w.SelectUtxos(ctx, amount+estimatedFee, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to select UTXOs: %w", err)
+	}
+
+	totalInputValue := uint64(0)
+	inputs := make([]*wire.OutPoint, 0)
+	outputs := make([]*wire.TxOut, 0)
+	nSequences := make([]uint32, 0)
+
+	for _, utxo := range selectedUtxos {
+		hash, err := chainhash.NewHashFromStr(utxo.Txid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse txid: %w", err)
+		}
+		inputs = append(inputs, &wire.OutPoint{Hash: *hash, Index: utxo.Index})
+		totalInputValue += utxo.Value
+		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
+	}
+
+	actualFee := w.estimateWithdrawFee(feeRate, len(selectedUtxos), destPkScript) // 2 outputs: destination + change
+	changeAmount := totalInputValue - amount - actualFee
+
+	outputs = append(outputs, &wire.TxOut{
+		Value:    int64(amount),
+		PkScript: destPkScript,
+	})
+
+	if changeAmount >= w.GetDustAmount(ctx) {
+		changeAddress, err := w.Nbxplorer.GetNewUnusedAddress(ctx, w.keyMgr.mainAccountDerivationScheme, true, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate change address: %w", err)
+		}
+
+		changeAddr, err := btcutil.DecodeAddress(changeAddress, w.chainParams())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode change address: %w", err)
+		}
+
+		changePkScript, err := txscript.PayToAddrScript(changeAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create change script: %w", err)
+		}
+
+		outputs = append(outputs, &wire.TxOut{
+			Value:    int64(changeAmount),
+			PkScript: changePkScript,
+		})
+	} else {
+		actualFee += changeAmount
+	}
+
+	ptx, err := psbt.New(inputs, outputs, 2, 0, nSequences)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PSBT: %w", err)
+	}
+
+	updater, err := psbt.NewUpdater(ptx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PSBT updater: %w", err)
+	}
+
+	for inputIndex, utxo := range selectedUtxos {
+		scriptBytes, err := hex.DecodeString(utxo.Script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode script: %w", err)
+		}
+
+		if err := updater.AddInWitnessUtxo(&wire.TxOut{
+			Value:    int64(utxo.Value),
+			PkScript: scriptBytes,
+		}, inputIndex); err != nil {
+			return nil, fmt.Errorf("failed to add input witness utxo: %w", err)
+		}
+	}
+
+	return ptx, nil
+}
+
+func (w *wallet) withdrawAll(ctx context.Context, feeRate chainfee.SatPerKVByte, amount uint64, destPkScript []byte) (*psbt.Packet, error) {
+	mainAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.mainAccountDerivationScheme)
+	if err != nil {
+		return nil, err
+	}
+
+	lockedOutpoints, err := w.locker.get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	availableUtxos := make([]ports.Utxo, 0, len(mainAccountUtxos))
+	for _, utxo := range mainAccountUtxos {
+		if _, isLocked := lockedOutpoints[utxo.OutPoint]; isLocked {
+			continue
+		}
+
+		availableUtxos = append(availableUtxos, utxo)
+	}
+
+	estimatedFee := w.estimateWithdrawFee(feeRate, len(availableUtxos), destPkScript)
+	amount -= estimatedFee
+
+	inputs := make([]*wire.OutPoint, 0)
+	outputs := make([]*wire.TxOut, 0, 1)
+	nSequences := make([]uint32, 0)
+
+	for _, utxo := range availableUtxos {
+		inputs = append(inputs, &utxo.OutPoint)
+		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
+	}
+
+	outputs = append(outputs, &wire.TxOut{
+		Value:    int64(amount),
+		PkScript: destPkScript,
+	})
+
+	ptx, err := psbt.New(inputs, outputs, 2, 0, nSequences)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PSBT: %w", err)
+	}
+
+	updater, err := psbt.NewUpdater(ptx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PSBT updater: %w", err)
+	}
+
+	for i, utxo := range availableUtxos {
+		script, err := hex.DecodeString(utxo.Script)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode prevout script: %w", err)
+		}
+
+		if err := updater.AddInWitnessUtxo(&wire.TxOut{
+			Value:    int64(utxo.Value),
+			PkScript: script,
+		}, i); err != nil {
+			return nil, fmt.Errorf("failed to add input witness utxo: %w", err)
+		}
+	}
+
+	return ptx, nil
 }
 
 func (w *wallet) init(ctx context.Context, mnemonic string, password string) (keyMgr *keyManager, err error) {
