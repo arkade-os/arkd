@@ -344,9 +344,9 @@ func (m *mockedWallet) GetCurrentBlockTime(ctx context.Context) (*ports.BlockTim
 }
 
 func (m *mockedWallet) Withdraw(
-	ctx context.Context, address string, amount uint64,
+	ctx context.Context, address string, amount uint64, all bool,
 ) (string, error) {
-	args := m.Called(ctx, address, amount)
+	args := m.Called(ctx, address, amount, all)
 
 	var res string
 	if a := args.Get(0); a != nil {

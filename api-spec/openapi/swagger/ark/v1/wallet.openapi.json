@@ -494,6 +494,10 @@
           "address": {
             "type": "string"
           },
+          "all": {
+            "type": "boolean",
+            "description": "if all=true, amount is ignored and all available balance is withdrawn including connectors account funds\nmust be used carefully to not make connectors utxos unspendable, making forfeit txs invalid"
+          },
           "amount": {
             "type": "integer",
             "format": "uint64"

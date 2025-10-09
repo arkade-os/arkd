@@ -45,7 +45,7 @@ type WalletService interface {
 	GetTransaction(ctx context.Context, txid string) (string, error)
 	GetOutpointStatus(ctx context.Context, outpoint domain.Outpoint) (spent bool, err error)
 	GetCurrentBlockTime(ctx context.Context) (*BlockTimestamp, error)
-	Withdraw(ctx context.Context, address string, amount uint64) (string, error)
+	Withdraw(ctx context.Context, address string, amount uint64, all bool) (string, error)
 	LoadSignerKey(ctx context.Context, prvkey string) error
 	Close()
 }

@@ -113,6 +113,9 @@ message GetBalanceResponse {
 message WithdrawRequest {
   string address = 1;
   uint64 amount = 2;
+  // if all=true, amount is ignored and all available balance is withdrawn including connectors account funds
+  // must be used carefully to not make connectors utxos unspendable, making forfeit txs invalid
+  bool all = 3; 
 }
 
 message WithdrawResponse {

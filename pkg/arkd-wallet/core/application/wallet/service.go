@@ -604,6 +604,43 @@ func (w *wallet) SignTransaction(
 	return ptx.B64Encode()
 }
 
+// WithdrawAll withdraws all available balance including connectors account funds
+func (w *wallet) WithdrawAll(ctx context.Context, destinationAddress string) (string, error) {
+	destinationAddr, err := btcutil.DecodeAddress(destinationAddress, w.chainParams())
+	if err != nil {
+		return "", fmt.Errorf("invalid address: %w", err)
+	}
+
+	destPkScript, err := txscript.PayToAddrScript(destinationAddr)
+	if err != nil {
+		return "", fmt.Errorf("failed to create destination script: %w", err)
+	}
+
+	feeRate, err := w.FeeRate(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get fee rate: %w", err)
+	}
+
+	ptx, err := w.withdrawAll(ctx, feeRate, destPkScript, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to create send all tx: %w", err)
+	}
+
+	psbtB64, err := ptx.B64Encode()
+	if err != nil {
+		return "", fmt.Errorf("failed to encode PSBT: %w", err)
+	}
+
+	signMode := application.SignModeLiquidityProvider
+	signedTx, err := w.SignTransaction(ctx, signMode, psbtB64, true, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign transaction: %w", err)
+	}
+
+	return w.BroadcastTransaction(ctx, signedTx)
+}
+
+// Withdraw withdraws a specified amount of main account funds
 func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount uint64) (string, error) {
 	if w.keyMgr == nil {
 		return "", ErrWalletLocked
@@ -637,7 +674,7 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 	var ptx *psbt.Packet
 
 	if balance == amount {
-		ptx, err = w.withdrawAll(ctx, feeRate, amount, destPkScript)
+		ptx, err = w.withdrawAll(ctx, feeRate, destPkScript, false)
 		if err != nil {
 			return "", fmt.Errorf("failed to create send all tx: %w", err)
 		}
@@ -762,10 +799,22 @@ func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerK
 	return ptx, nil
 }
 
-func (w *wallet) withdrawAll(ctx context.Context, feeRate chainfee.SatPerKVByte, amount uint64, destPkScript []byte) (*psbt.Packet, error) {
+func (w *wallet) withdrawAll(ctx context.Context, feeRate chainfee.SatPerKVByte, destPkScript []byte, withConnectors bool) (*psbt.Packet, error) {
+	utxos := make([]ports.Utxo, 0)
+
 	mainAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.mainAccountDerivationScheme)
 	if err != nil {
 		return nil, err
+	}
+
+	utxos = append(utxos, mainAccountUtxos...)
+
+	if withConnectors {
+		connectorAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.connectorAccountDerivationScheme)
+		if err != nil {
+			return nil, err
+		}
+		utxos = append(utxos, connectorAccountUtxos...)
 	}
 
 	lockedOutpoints, err := w.locker.get(ctx)
@@ -773,13 +822,16 @@ func (w *wallet) withdrawAll(ctx context.Context, feeRate chainfee.SatPerKVByte,
 		return nil, err
 	}
 
-	availableUtxos := make([]ports.Utxo, 0, len(mainAccountUtxos))
-	for _, utxo := range mainAccountUtxos {
+	amount := uint64(0)
+	availableUtxos := make([]ports.Utxo, 0, len(utxos))
+
+	for _, utxo := range utxos {
 		if _, isLocked := lockedOutpoints[utxo.OutPoint]; isLocked {
 			continue
 		}
 
 		availableUtxos = append(availableUtxos, utxo)
+		amount += utxo.Value
 	}
 
 	estimatedFee := w.estimateWithdrawFee(feeRate, len(availableUtxos), destPkScript)

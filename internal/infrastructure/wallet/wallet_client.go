@@ -417,10 +417,10 @@ func (w *walletDaemonClient) GetCurrentBlockTime(
 }
 
 func (w *walletDaemonClient) Withdraw(
-	ctx context.Context, address string, amount uint64,
+	ctx context.Context, address string, amount uint64, all bool,
 ) (string, error) {
 	resp, err := w.client.Withdraw(ctx, &arkwalletv1.WithdrawRequest{
-		Address: address, Amount: amount},
+		Address: address, Amount: amount, All: all},
 	)
 	if err != nil {
 		return "", err

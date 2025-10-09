@@ -77,7 +77,7 @@ var (
 		Name:   "withdraw",
 		Usage:  "Withdraw funds from the wallet",
 		Action: walletWithdrawAction,
-		Flags:  []cli.Flag{withdrawAmountFlag, withdrawAddressFlag},
+		Flags:  []cli.Flag{withdrawAmountFlag, withdrawAddressFlag, withdrawAllFlag},
 	}
 	signerLoadCmd = &cli.Command{
 		Name:   "load",
@@ -268,6 +268,28 @@ func walletWithdrawAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	amount := ctx.Float64(amountFlagName)
 	address := ctx.String(addressFlagName)
+	all := ctx.Bool(withdrawAllFlagName)
+
+	if !all && amount == 0 {
+		return fmt.Errorf("amount must be provided")
+	}
+
+	// ask for confirmation
+	if all {
+		fmt.Println(
+			"WARNING: this will withdraw all available balance including connectors account funds",
+		)
+		fmt.Println("WARNING: it may make connectors utxos unspendable, making forfeit txs invalid")
+		fmt.Println("WARNING: are you sure you want to proceed? (y/n)")
+		var confirm string
+		if _, err := fmt.Scanln(&confirm); err != nil {
+			return fmt.Errorf("failed to read confirmation: %w", err)
+		}
+		if confirm != "y" {
+			return fmt.Errorf("operation cancelled")
+		}
+	}
+
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
@@ -275,7 +297,7 @@ func walletWithdrawAction(ctx *cli.Context) error {
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/withdraw", baseURL)
 	amountInSats := uint64(amount * ONE_BTC)
-	body := fmt.Sprintf(`{"address": "%s", "amount": %d}`, address, amountInSats)
+	body := fmt.Sprintf(`{"address": "%s", "amount": %d, "all": %t}`, address, amountInSats, all)
 
 	txid, err := post[string](url, body, "txid", macaroon, tlsConfig)
 	if err != nil {
