@@ -1,14 +1,15 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/urfave/cli/v2"
 )
 
@@ -22,12 +23,28 @@ var (
 		Subcommands: cli.Commands{
 			walletStatusCmd,
 			walletCreateOrRestoreCmd,
-			walletDropWtxmgrCmd,
 			walletUnlockCmd,
 			walletAddressCmd,
 			walletBalanceCmd,
 			walletWithdrawCmd,
 		},
+	}
+	signerCmd = &cli.Command{
+		Name:  "signer",
+		Usage: "Manage the Ark Signer",
+		Subcommands: cli.Commands{
+			signerLoadCmd,
+		},
+	}
+	genkeyCmd = &cli.Command{
+		Name:   "genkey",
+		Usage:  "Generate a new private key",
+		Action: genkeyAction,
+	}
+	versionCmd = &cli.Command{
+		Name:   "version",
+		Usage:  "Display version information",
+		Action: versionAction,
 	}
 	walletStatusCmd = &cli.Command{
 		Name:   "status",
@@ -39,12 +56,6 @@ var (
 		Usage:  "Create or restore the wallet",
 		Action: walletCreateOrRestoreAction,
 		Flags:  []cli.Flag{passwordFlag, mnemonicFlag, gapLimitFlag},
-	}
-	walletDropWtxmgrCmd = &cli.Command{
-		Name:   "dropwtxmgr",
-		Usage:  "Run the dropwtxmgr tool",
-		Action: walletDropWtxmgrAction,
-		Flags:  []cli.Flag{dbPathFlag},
 	}
 	walletUnlockCmd = &cli.Command{
 		Name:   "unlock",
@@ -67,6 +78,12 @@ var (
 		Usage:  "Withdraw funds from the wallet",
 		Action: walletWithdrawAction,
 		Flags:  []cli.Flag{withdrawAmountFlag, withdrawAddressFlag},
+	}
+	signerLoadCmd = &cli.Command{
+		Name:   "load",
+		Usage:  "Load the ark signer address or private key",
+		Action: signerLoadAction,
+		Flags:  []cli.Flag{signerKeyFlag, signerUrlFlag},
 	}
 	noteCmd = &cli.Command{
 		Name:   "note",
@@ -108,20 +125,27 @@ var (
 		Flags:  []cli.Flag{beforeDateFlag, afterDateFlag},
 		Action: roundsInTimeRangeAction,
 	}
-	marketHourCmd = &cli.Command{
-		Name:        "market-hour",
-		Usage:       "Get or update the market hour configuration",
-		Subcommands: cli.Commands{updateMarketHourCmd},
-		Action:      getMarketHourAction,
+	scheduledSessionCmd = &cli.Command{
+		Name:        "scheduled-session",
+		Usage:       "Get or update the scheduled session configuration",
+		Subcommands: cli.Commands{updateScheduledSessionCmd},
+		Action:      getScheduledSessionAction,
 	}
-	updateMarketHourCmd = &cli.Command{
+	updateScheduledSessionCmd = &cli.Command{
 		Name:  "update",
-		Usage: "Update the market hour configuration",
+		Usage: "Update the scheduled session configuration",
 		Flags: []cli.Flag{
-			marketHourStartDateFlag, marketHourEndDateFlag,
-			marketHourRoundIntervalFlag, marketHourPeriodFlag,
+			scheduledSessionStartDateFlag, scheduledSessionEndDateFlag,
+			scheduledSessionDurationFlag, scheduledSessionPeriodFlag,
+			scheduledSessionRoundMinParticipantsCountFlag, scheduledSessionRoundMaxParticipantsCountFlag,
 		},
-		Action: updateMarketHourAction,
+		Action: updateScheduledSessionAction,
+	}
+	revokeAuthCmd = &cli.Command{
+		Name:   "revoke-auth",
+		Usage:  "Revoke auth token",
+		Flags:  []cli.Flag{tokenFlag},
+		Action: revokeTokenAction,
 	}
 )
 
@@ -129,13 +153,13 @@ var timeout = time.Minute
 
 func walletStatusAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	_, tlsCertPath, err := getCredentialPaths(ctx)
+	_, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/status", baseURL)
-	status, err := getStatus(url, tlsCertPath)
+	status, err := getStatus(url, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -146,7 +170,7 @@ func walletStatusAction(ctx *cli.Context) error {
 
 func walletCreateOrRestoreAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	_, tlsCertPath, err := getCredentialPaths(ctx)
+	_, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -161,7 +185,7 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 			`{"seed": "%s", "password": "%s", "gap_limit": %d}`,
 			mnemonic, password, gapLimit,
 		)
-		if _, err := post[struct{}](url, body, "", "", tlsCertPath); err != nil {
+		if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
 			return err
 		}
 
@@ -170,7 +194,7 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/seed", baseURL)
-	seed, err := get[string](url, "seed", "", tlsCertPath)
+	seed, err := get[string](url, "seed", "", tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -179,7 +203,7 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 	body := fmt.Sprintf(
 		`{"seed": "%s", "password": "%s"}`, seed, password,
 	)
-	if _, err := post[struct{}](url, body, "", "", tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
 		return err
 	}
 
@@ -187,15 +211,9 @@ func walletCreateOrRestoreAction(ctx *cli.Context) error {
 	return nil
 }
 
-func walletDropWtxmgrAction(ctx *cli.Context) error {
-	dbPath := ctx.String(dbPathFlagName)
-	os.Exit(dropWtxmgr(dbPath))
-	return nil
-}
-
 func walletUnlockAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	_, tlsCertPath, err := getCredentialPaths(ctx)
+	_, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -204,7 +222,7 @@ func walletUnlockAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", baseURL)
 	body := fmt.Sprintf(`{"password": "%s"}`, password)
 
-	if _, err := post[struct{}](url, body, "", "", tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
 		return err
 	}
 
@@ -214,13 +232,13 @@ func walletUnlockAction(ctx *cli.Context) error {
 
 func walletAddressAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/address", baseURL)
-	addr, err := get[string](url, "address", macaroon, tlsCertPath)
+	addr, err := get[string](url, "address", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -231,13 +249,13 @@ func walletAddressAction(ctx *cli.Context) error {
 
 func walletBalanceAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/wallet/balance", baseURL)
-	balance, err := getBalance(url, macaroon, tlsCertPath)
+	balance, err := getBalance(url, macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -250,7 +268,7 @@ func walletWithdrawAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	amount := ctx.Float64(amountFlagName)
 	address := ctx.String(addressFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -259,7 +277,7 @@ func walletWithdrawAction(ctx *cli.Context) error {
 	amountInSats := uint64(amount * ONE_BTC)
 	body := fmt.Sprintf(`{"address": "%s", "amount": %d}`, address, amountInSats)
 
-	txid, err := post[string](url, body, "txid", macaroon, tlsCertPath)
+	txid, err := post[string](url, body, "txid", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -269,11 +287,54 @@ func walletWithdrawAction(ctx *cli.Context) error {
 	return nil
 }
 
+func signerLoadAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	signerKey := ctx.String(signerKeyFlagName)
+	signerUrl := ctx.String(signerUrlFlagName)
+	if signerKey == "" && signerUrl == "" {
+		return fmt.Errorf("either private key or url must be provided")
+	}
+	if signerKey != "" && signerUrl != "" {
+		return fmt.Errorf("private key and url are mutually esclusive, only one must be provided")
+	}
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/signer", baseURL)
+	body := fmt.Sprintf(`{"signerUrl": "%s"}`, signerUrl)
+	if signerKey != "" {
+		body = fmt.Sprintf(`{"signerPrivateKey": "%s"}`, signerKey)
+	}
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Println("signer loaded")
+	return nil
+}
+
+func genkeyAction(ctx *cli.Context) error {
+	key, err := btcec.NewPrivateKey()
+	if err != nil {
+		return err
+	}
+	fmt.Println(hex.EncodeToString(key.Serialize()))
+	return nil
+}
+
+func versionAction(ctx *cli.Context) error {
+	fmt.Printf("Arkd version: %s\n", Version)
+	return nil
+}
+
 func createNoteAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	amount := ctx.Uint(amountFlagName)
 	quantity := ctx.Uint(quantityFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -281,7 +342,7 @@ func createNoteAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/note", baseURL)
 	body := fmt.Sprintf(`{"amount": %d, "quantity": %d}`, amount, quantity)
 
-	notes, err := post[[]string](url, body, "notes", macaroon, tlsCertPath)
+	notes, err := post[[]string](url, body, "notes", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -295,7 +356,7 @@ func createNoteAction(ctx *cli.Context) error {
 
 func listIntentsAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -310,7 +371,7 @@ func listIntentsAction(ctx *cli.Context) error {
 		q.Set("intent_ids", strings.Join(requestIds, ","))
 		u.RawQuery = q.Encode()
 	}
-	response, err := get[[]map[string]any](u.String(), "intents", macaroon, tlsCertPath)
+	response, err := get[[]map[string]any](u.String(), "intents", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -325,7 +386,7 @@ func listIntentsAction(ctx *cli.Context) error {
 
 func deleteIntentsAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -339,7 +400,7 @@ func deleteIntentsAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)
 	body := fmt.Sprintf(`{"intent_ids": %s}`, intentIdsJSON)
 
-	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
 		return err
 	}
 
@@ -349,7 +410,7 @@ func deleteIntentsAction(ctx *cli.Context) error {
 
 func clearIntentsAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -357,7 +418,7 @@ func clearIntentsAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/intents/delete", baseURL)
 	body := `{"intent_ids": []}`
 
-	if _, err := post[struct{}](url, body, "", macaroon, tlsCertPath); err != nil {
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
 		return err
 	}
 
@@ -367,14 +428,14 @@ func clearIntentsAction(ctx *cli.Context) error {
 
 func scheduledSweepAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/sweeps", baseURL)
 
-	resp, err := get[[]map[string]any](url, "sweeps", macaroon, tlsCertPath)
+	resp, err := get[[]map[string]any](url, "sweeps", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -390,14 +451,14 @@ func scheduledSweepAction(ctx *cli.Context) error {
 func roundInfoAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	roundId := ctx.String(roundIdFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/round/%s", baseURL, roundId)
 
-	resp, err := getRoundInfo(url, macaroon, tlsCertPath)
+	resp, err := getRoundInfo(url, macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -414,7 +475,7 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	beforeDate := ctx.String(beforeDateFlagName)
 	afterDate := ctx.String(afterDateFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
@@ -439,7 +500,7 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 		}
 	}
 
-	roundIds, err := get[map[string]string](url, "rounds", macaroon, tlsCertPath)
+	roundIds, err := get[map[string]string](url, "rounds", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -452,16 +513,16 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	return nil
 }
 
-func getMarketHourAction(ctx *cli.Context) error {
+func getScheduledSessionAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/marketHour", baseURL)
+	url := fmt.Sprintf("%s/v1/admin/scheduledSession", baseURL)
 
-	resp, err := get[map[string]string](url, "config", macaroon, tlsCertPath)
+	resp, err := get[map[string]string](url, "config", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -473,7 +534,7 @@ func getMarketHourAction(ctx *cli.Context) error {
 	if resp["startTime"] != "" {
 		startTime, err := strconv.Atoi(resp["startTime"])
 		if err != nil {
-			return fmt.Errorf("failed to parse market hour start time: %s", err)
+			return fmt.Errorf("failed to parse scheduled session start time: %s", err)
 		}
 		startDate := time.Unix(int64(startTime), 0)
 		resp["startTime"] = startDate.Format(time.RFC3339)
@@ -481,7 +542,7 @@ func getMarketHourAction(ctx *cli.Context) error {
 	if resp["endTime"] != "" {
 		endTime, err := strconv.Atoi(resp["endTime"])
 		if err != nil {
-			return fmt.Errorf("failed to parse market hour end time: %s", err)
+			return fmt.Errorf("failed to parse scheduled session end time: %s", err)
 		}
 		endDate := time.Unix(int64(endTime), 0)
 		resp["endTime"] = endDate.Format(time.RFC3339)
@@ -489,8 +550,8 @@ func getMarketHourAction(ctx *cli.Context) error {
 	if resp["period"] != "" {
 		resp["period"] += " minutes"
 	}
-	if resp["roundInterval"] != "" {
-		resp["roundInterval"] += " seconds"
+	if resp["duration"] != "" {
+		resp["duration"] += " seconds"
 	}
 
 	respJson, err := json.MarshalIndent(resp, "", "  ")
@@ -501,51 +562,84 @@ func getMarketHourAction(ctx *cli.Context) error {
 	return nil
 }
 
-func updateMarketHourAction(ctx *cli.Context) error {
+func updateScheduledSessionAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	startDate := ctx.String(marketHourStartDateFlagName)
-	endDate := ctx.String(marketHourEndDateFlagName)
-	roundInterval := ctx.Uint(marketHourRoundIntervalFlagName)
-	period := ctx.Uint(marketHourPeriodFlagName)
+	startDate := ctx.String(scheduledSessionStartDateFlagName)
+	endDate := ctx.String(scheduledSessionEndDateFlagName)
+	duration := ctx.Uint(scheduledSessionDurationFlagName)
+	period := ctx.Uint(scheduledSessionPeriodFlagName)
+	roundMinParticipantsCount := ctx.Uint(scheduledSessionRoundMinParticipantsCountFlagName)
+	roundMaxParticipantsCount := ctx.Uint(scheduledSessionRoundMaxParticipantsCountFlagName)
 
-	if ctx.IsSet(marketHourStartDateFlagName) != ctx.IsSet(marketHourEndDateFlagName) {
+	if ctx.IsSet(scheduledSessionStartDateFlagName) != ctx.IsSet(scheduledSessionEndDateFlagName) {
 		return fmt.Errorf("--start-date and --end-date must be set together")
 	}
 
-	macaroon, tlsCertPath, err := getCredentialPaths(ctx)
+	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/marketHour", baseURL)
-	mhConfig := map[string]string{}
+	url := fmt.Sprintf("%s/v1/admin/scheduledSession", baseURL)
+	config := map[string]string{}
 	if startDate != "" {
-		startTime, err := time.Parse(marketHourDateFormat, startDate)
+		startTime, err := time.Parse(scheduledSessionDateFormat, startDate)
 		if err != nil {
-			return fmt.Errorf("invalid --start-date format, must be %s", marketHourDateFormat)
+			return fmt.Errorf("invalid --start-date format, must be %s", scheduledSessionDateFormat)
 		}
-		endTime, err := time.Parse(marketHourDateFormat, endDate)
+		endTime, err := time.Parse(scheduledSessionDateFormat, endDate)
 		if err != nil {
-			return fmt.Errorf("invalid --end-date format, must be %s", marketHourDateFormat)
+			return fmt.Errorf("invalid --end-date format, must be %s", scheduledSessionDateFormat)
 		}
-		mhConfig["startTime"] = strconv.Itoa(int(startTime.Unix()))
-		mhConfig["endTime"] = strconv.Itoa(int(endTime.Unix()))
+		config["startTime"] = strconv.Itoa(int(startTime.Unix()))
+		config["endTime"] = strconv.Itoa(int(endTime.Unix()))
 	}
-	if roundInterval > 0 {
-		mhConfig["roundInterval"] = strconv.Itoa(int(roundInterval))
+	if duration > 0 {
+		config["duration"] = strconv.Itoa(int(duration))
 	}
 	if period > 0 {
-		mhConfig["period"] = strconv.Itoa(int(period))
+		config["period"] = strconv.Itoa(int(period))
 	}
-	bodyMap := map[string]map[string]string{"config": mhConfig}
+	if roundMinParticipantsCount > 0 {
+		config["roundMinParticipantsCount"] = strconv.Itoa(int(roundMinParticipantsCount))
+	}
+	if roundMaxParticipantsCount > 0 {
+		config["roundMaxParticipantsCount"] = strconv.Itoa(int(roundMaxParticipantsCount))
+	}
+	bodyMap := map[string]map[string]string{"config": config}
 	body, err := json.Marshal(bodyMap)
 	if err != nil {
 		return fmt.Errorf("failed to encode request body: %s", err)
 	}
-	if _, err := post[any](url, string(body), "", macaroon, tlsCertPath); err != nil {
+	if _, err := post[any](url, string(body), "", macaroon, tlsConfig); err != nil {
 		return err
 	}
 
-	fmt.Println("Successfully updated market hour config")
+	fmt.Println("Successfully updated scheduled session config")
+	return nil
+}
+
+func revokeTokenAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	token := ctx.String(tokenFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/auth/revoke", baseURL)
+	body := fmt.Sprintf(`{"token": "%s"}`, token)
+
+	newToken, err := post[string](url, body, "token", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	resp := map[string]string{"newToken": newToken}
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
 	return nil
 }

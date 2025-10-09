@@ -2,202 +2,199 @@ syntax = "proto3";
 
 package arkwallet.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 
 // WalletService exposes wallet operations via gRPC. Methods match the ports.WalletService interface.
 service WalletService {
   rpc GenSeed(GenSeedRequest) returns (GenSeedResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/seed"
     };
   }
   rpc Create(CreateRequest) returns (CreateResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/create"
       body: "*"
     };
   }
   rpc Restore(RestoreRequest) returns (RestoreResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/restore"
       body: "*"
     };
   }
   rpc Unlock(UnlockRequest) returns (UnlockResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/unlock"
       body: "*"
     };
   }
   rpc Lock(LockRequest) returns (LockResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/lock"
       body: "*"
     };
   }
   rpc Status(StatusRequest) returns (StatusResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/status"
     };
   }
-  rpc GetPubkey(GetPubkeyRequest) returns (GetPubkeyResponse) {
-    option (google.api.http) = {
-      get: "/v1/wallet/pubkey"
-    };
-  }
   rpc GetNetwork(GetNetworkRequest) returns (GetNetworkResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/network"
     };
   }
-  rpc GetForfeitAddress(GetForfeitAddressRequest) returns (GetForfeitAddressResponse) {
-    option (google.api.http) = {
-      get: "/v1/wallet/forfeit-address"
+  rpc GetForfeitPubkey(GetForfeitPubkeyRequest) returns (GetForfeitPubkeyResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/wallet/forfeit-pubkey"
     };
   }
   rpc DeriveConnectorAddress(DeriveConnectorAddressRequest) returns (DeriveConnectorAddressResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/connector-address"
     };
   }
   rpc DeriveAddresses(DeriveAddressesRequest) returns (DeriveAddressesResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/derive-addresses"
       body: "*"
     };
   }
   rpc SignTransaction(SignTransactionRequest) returns (SignTransactionResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/sign-transaction"
       body: "*"
     };
   }
   rpc SignTransactionTapscript(SignTransactionTapscriptRequest) returns (SignTransactionTapscriptResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/sign-transaction-tapscript"
       body: "*"
     };
   }
   rpc SelectUtxos(SelectUtxosRequest) returns (SelectUtxosResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/select-utxos"
       body: "*"
     };
   }
   rpc BroadcastTransaction(BroadcastTransactionRequest) returns (BroadcastTransactionResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/broadcast"
       body: "*"
     };
   }
-  rpc WaitForSync(WaitForSyncRequest) returns (WaitForSyncResponse) {
-    option (google.api.http) = {
-      post: "/v1/wallet/wait-for-sync"
-      body: "*"
-    };
-  }
-
   rpc GetReadyUpdate(GetReadyUpdateRequest) returns (stream GetReadyUpdateResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/ready-update"
     };
   }
   rpc IsTransactionConfirmed(IsTransactionConfirmedRequest) returns (IsTransactionConfirmedResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/transaction-confirmed"
     };
   }
+  rpc GetOutpointStatus(GetOutpointStatusRequest) returns (GetOutpointStatusResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/wallet/outpoint-status"
+    };
+  }
   rpc EstimateFees(EstimateFeesRequest) returns (EstimateFeesResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/estimate-fees"
       body: "*"
     };
   }
   rpc FeeRate(FeeRateRequest) returns (FeeRateResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/fee-rate"
     };
   }
   rpc ListConnectorUtxos(ListConnectorUtxosRequest) returns (ListConnectorUtxosResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/connector-utxos"
     };
   }
   rpc MainAccountBalance(MainAccountBalanceRequest) returns (MainAccountBalanceResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/main-account-balance"
     };
   }
   rpc ConnectorsAccountBalance(ConnectorsAccountBalanceRequest) returns (ConnectorsAccountBalanceResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/connectors-account-balance"
     };
   }
   rpc LockConnectorUtxos(LockConnectorUtxosRequest) returns (LockConnectorUtxosResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/lock-connector-utxos"
       body: "*"
     };
   }
   rpc GetDustAmount(GetDustAmountRequest) returns (GetDustAmountResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/dust"
     };
   }
   rpc GetTransaction(GetTransactionRequest) returns (GetTransactionResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/tx"
     };
   }
   rpc SignMessage(SignMessageRequest) returns (SignMessageResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/sign-message"
       body: "*"
     };
   }
   rpc VerifyMessageSignature(VerifyMessageSignatureRequest) returns (VerifyMessageSignatureResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/verify-message-signature"
       body: "*"
     };
   }
   rpc GetCurrentBlockTime(GetCurrentBlockTimeRequest) returns (GetCurrentBlockTimeResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/block-time"
     };
   }
   rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/withdraw"
       body: "*"
     };
   }
   rpc WatchScripts(WatchScriptsRequest) returns (WatchScriptsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/watch-scripts"
       body: "*"
     };
   }
   rpc UnwatchScripts(UnwatchScriptsRequest) returns (UnwatchScriptsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/wallet/unwatch-scripts"
       body: "*"
     };
   }
   rpc NotificationStream(NotificationStreamRequest) returns (stream NotificationStreamResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/wallet/notifications"
+    };
+  }
+  rpc LoadSignerKey(LoadSignerKeyRequest) returns (LoadSignerKeyResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/wallet/signer-key"
+      body: "*"
     };
   }
 }
 
-// GetReadyUpdate
 message GetReadyUpdateRequest {}
 message GetReadyUpdateResponse {
   bool ready = 1;
 }
 
-// IsTransactionConfirmed
 message IsTransactionConfirmedRequest {
   string txid = 1;
 }
@@ -207,7 +204,13 @@ message IsTransactionConfirmedResponse {
   int64 blocktime = 3;
 }
 
-
+message GetOutpointStatusRequest {
+  string txid = 1;
+  uint32 vout = 2;
+}
+message GetOutpointStatusResponse {
+  bool spent = 1;
+}
 message NotificationStreamRequest {
 }
 message NotificationStreamResponse {
@@ -224,8 +227,6 @@ message VtxoWithKey {
   uint32 vout = 2;
   uint64 value = 3;
 }
-
-
 
 message GenSeedRequest {}
 message GenSeedResponse {
@@ -259,19 +260,14 @@ message StatusResponse {
   bool synced = 3;
 }
 
-message GetPubkeyRequest {}
-message GetPubkeyResponse {
-  bytes pubkey = 1;
-}
-
 message GetNetworkRequest {}
 message GetNetworkResponse {
   string network = 1;
 }
 
-message GetForfeitAddressRequest {}
-message GetForfeitAddressResponse {
-  string address = 1;
+message GetForfeitPubkeyRequest {}
+message GetForfeitPubkeyResponse {
+  string pubkey = 1;
 }
 
 message DeriveConnectorAddressRequest {}
@@ -345,6 +341,7 @@ message ListConnectorUtxosResponse {
 
 message MainAccountBalanceRequest {}
 message MainAccountBalanceResponse {
+  // TODO rename to available and locked
   uint64 confirmed = 1;
   uint64 unconfirmed = 2;
 }
@@ -409,6 +406,11 @@ message WithdrawRequest {
 message WithdrawResponse {
   string txid = 1;
 }
+
+message LoadSignerKeyRequest {
+  string private_key = 1;
+}
+message LoadSignerKeyResponse {}
 
 message TxInput {
   string txid = 1;

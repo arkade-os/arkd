@@ -3,6 +3,7 @@ package interceptors
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/permissions"
 	"github.com/arkade-os/arkd/pkg/macaroons"
@@ -14,7 +15,7 @@ func unaryMacaroonAuthHandler(macaroonSvc *macaroons.Service) grpc.UnaryServerIn
 		ctx context.Context, req interface{},
 		info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		if err := checkMacaroon(ctx, info.FullMethod, macaroonSvc); err != nil {
+		if err := CheckMacaroon(ctx, info.FullMethod, macaroonSvc); err != nil {
 			return nil, err
 		}
 
@@ -27,7 +28,7 @@ func streamMacaroonAuthHandler(macaroonSvc *macaroons.Service) grpc.StreamServer
 		srv interface{}, ss grpc.ServerStream,
 		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
-		if err := checkMacaroon(ss.Context(), info.FullMethod, macaroonSvc); err != nil {
+		if err := CheckMacaroon(ss.Context(), info.FullMethod, macaroonSvc); err != nil {
 			return err
 		}
 
@@ -35,7 +36,7 @@ func streamMacaroonAuthHandler(macaroonSvc *macaroons.Service) grpc.StreamServer
 	}
 }
 
-func checkMacaroon(ctx context.Context, fullMethod string, svc *macaroons.Service) error {
+func CheckMacaroon(ctx context.Context, fullMethod string, svc *macaroons.Service) error {
 	if svc == nil {
 		return nil
 	}
@@ -57,5 +58,11 @@ func checkMacaroon(ctx context.Context, fullMethod string, svc *macaroons.Servic
 		validator = svc
 	}
 	// Now that we know what validator to use, let it do its work.
-	return validator.ValidateMacaroon(ctx, uriPermissions, fullMethod)
+	if err := validator.ValidateMacaroon(ctx, uriPermissions, fullMethod); err != nil {
+		if strings.Contains(err.Error(), "doesn't exist") {
+			return fmt.Errorf("invalid macaroon")
+		}
+		return err
+	}
+	return nil
 }

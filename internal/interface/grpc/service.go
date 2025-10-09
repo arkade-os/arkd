@@ -11,13 +11,13 @@ import (
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/config"
-	"github.com/arkade-os/arkd/internal/core/application"
 	interfaces "github.com/arkade-os/arkd/internal/interface"
 	"github.com/arkade-os/arkd/internal/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/internal/interface/grpc/interceptors"
+	"github.com/arkade-os/arkd/internal/telemetry"
 	"github.com/arkade-os/arkd/pkg/kvdb"
 	"github.com/arkade-os/arkd/pkg/macaroons"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/meshapi/grpc-api-gateway/gateway"
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -27,7 +27,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -41,13 +40,15 @@ const (
 )
 
 type service struct {
-	version      string
-	config       Config
-	appConfig    *config.Config
-	server       *http.Server
-	grpcServer   *grpc.Server
-	macaroonSvc  *macaroons.Service
-	otelShutdown func(context.Context) error
+	version       string
+	config        Config
+	appConfig     *config.Config
+	server        *http.Server
+	adminServer   *http.Server
+	grpcServer    *grpc.Server
+	adminGrpcSrvr *grpc.Server
+	macaroonSvc   *macaroons.Service
+	otelShutdown  func(context.Context) error
 }
 
 func NewService(
@@ -94,7 +95,12 @@ func NewService(
 		log.Debugf("generated TLS key pair at path: %s", svcConfig.tlsDatadir())
 	}
 
-	return &service{version, svcConfig, appConfig, nil, nil, macaroonSvc, nil}, nil
+	return &service{
+		version:     version,
+		config:      svcConfig,
+		appConfig:   appConfig,
+		macaroonSvc: macaroonSvc,
+	}, nil
 }
 
 func (s *service) Start() error {
@@ -103,6 +109,9 @@ func (s *service) Start() error {
 		return err
 	}
 	log.Infof("started listening at %s", s.config.address())
+	if s.config.hasAdminPort() {
+		log.Infof("started admin listening at %s", s.config.adminAddress())
+	}
 
 	if s.appConfig.UnlockerService() != nil {
 		return s.autoUnlock()
@@ -139,12 +148,24 @@ func (s *service) start(withAppSvc bool) error {
 		log.Info("started app service")
 	}
 
+	// Start main server
 	if s.config.insecure() {
 		// nolint:all
 		go s.server.ListenAndServe()
 	} else {
 		// nolint:all
 		go s.server.ListenAndServeTLS("", "")
+	}
+
+	// Start admin server if configured on different port
+	if s.adminServer != nil {
+		if s.config.insecure() {
+			// nolint:all
+			go s.adminServer.ListenAndServe()
+		} else {
+			// nolint:all
+			go s.adminServer.ListenAndServeTLS("", "")
+		}
 	}
 
 	return nil
@@ -158,16 +179,33 @@ func (s *service) stop(withAppSvc bool) {
 			log.Info("stopped app service")
 		}
 		s.grpcServer.Stop()
+		if s.adminGrpcSrvr != nil {
+			s.adminGrpcSrvr.Stop()
+		}
 	}
 	// nolint
 	s.server.Shutdown(context.Background())
+	if s.adminServer != nil {
+		// nolint
+		s.adminServer.Shutdown(context.Background())
+	}
 }
 
 func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	ctx := context.Background()
 	if s.appConfig.OtelCollectorEndpoint != "" {
 		pushInteval := time.Duration(s.appConfig.OtelPushInterval) * time.Second
-		otelShutdown, err := initOtelSDK(ctx, s.appConfig.OtelCollectorEndpoint, pushInteval)
+		rrsc, err := s.appConfig.RoundReportService()
+		if err != nil {
+			return err
+		}
+
+		otelShutdown, err := telemetry.InitOtelSDK(
+			ctx,
+			s.appConfig.OtelCollectorEndpoint,
+			pushInteval,
+			rrsc,
+		)
 		if err != nil {
 			return err
 		}
@@ -193,45 +231,54 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	// Server grpc.
 	grpcServer := grpc.NewServer(grpcConfig...)
 
-	var appSvc application.Service
 	onInit := s.onInit
 	onUnlock := s.onUnlock
 	onReady := s.onReady
+	onLoadSigner := s.onLoadSigner
 	if withAppSvc {
-		svc, err := s.appConfig.AppService()
+		appSvc, err := s.appConfig.AppService()
 		if err != nil {
 			return err
 		}
-		appSvc = svc
-		appHandler := handlers.NewHandler(s.version, appSvc)
-		indexerSvc, err := s.appConfig.IndexerService()
-		if err != nil {
-			return err
-		}
+		appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
 		eventsCh := appSvc.GetIndexerTxChannel(ctx)
 		subscriptionTimeoutDuration := time.Minute // TODO let to be set via config
 		indexerHandler := handlers.NewIndexerService(
-			indexerSvc, eventsCh, subscriptionTimeoutDuration,
+			s.appConfig.IndexerService(), eventsCh,
+			subscriptionTimeoutDuration, s.config.HeartbeatInterval,
 		)
 		arkv1.RegisterArkServiceServer(grpcServer, appHandler)
 		arkv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
 		onInit = nil
 		onUnlock = nil
 		onReady = nil
+		onLoadSigner = nil
 	}
 
-	adminHandler := handlers.NewAdminHandler(s.appConfig.AdminService(), s.appConfig.NoteUriPrefix)
-	arkv1.RegisterAdminServiceServer(grpcServer, adminHandler)
-
-	walletHandler := handlers.NewWalletHandler(s.appConfig.WalletService())
-	arkv1.RegisterWalletServiceServer(grpcServer, walletHandler)
-
-	walletInitHandler := handlers.NewWalletInitializerHandler(
-		s.appConfig.WalletService(), onInit, onUnlock, onReady,
+	walletSvc := s.appConfig.WalletService()
+	adminHandler := handlers.NewAdminHandler(
+		s.appConfig.AdminService(), s.macaroonSvc,
+		s.config.macaroonsDatadir(), s.appConfig.NoteUriPrefix,
 	)
-	arkv1.RegisterWalletInitializerServiceServer(grpcServer, walletInitHandler)
-
+	walletHandler := handlers.NewWalletHandler(walletSvc)
+	walletInitHandler := handlers.NewWalletInitializerHandler(walletSvc, onInit, onUnlock, onReady)
+	signerManagerHandler := handlers.NewSignerManagerHandler(walletSvc, onLoadSigner)
 	healthHandler := handlers.NewHealthHandler()
+
+	var adminGrpcServer *grpc.Server
+	if s.config.hasAdminPort() {
+		adminGrpcServer = grpc.NewServer(grpcConfig...)
+		arkv1.RegisterAdminServiceServer(adminGrpcServer, adminHandler)
+		arkv1.RegisterWalletServiceServer(adminGrpcServer, walletHandler)
+		arkv1.RegisterWalletInitializerServiceServer(adminGrpcServer, walletInitHandler)
+		arkv1.RegisterSignerManagerServiceServer(adminGrpcServer, signerManagerHandler)
+		grpchealth.RegisterHealthServer(adminGrpcServer, healthHandler)
+	} else {
+		arkv1.RegisterAdminServiceServer(grpcServer, adminHandler)
+		arkv1.RegisterWalletServiceServer(grpcServer, walletHandler)
+		arkv1.RegisterWalletInitializerServiceServer(grpcServer, walletInitHandler)
+		arkv1.RegisterSignerManagerServiceServer(grpcServer, signerManagerHandler)
+	}
 	grpchealth.RegisterHealthServer(grpcServer, healthHandler)
 
 	// Creds for grpc gateway reverse proxy.
@@ -258,39 +305,27 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		}
 	}
 	// Reverse proxy grpc-gateway.
-	gwmux := runtime.NewServeMux(
-		runtime.WithIncomingHeaderMatcher(customMatcher),
-		runtime.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
-		runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
-			MarshalOptions: protojson.MarshalOptions{
-				Indent:    "  ",
-				Multiline: true,
-			},
-			UnmarshalOptions: protojson.UnmarshalOptions{
-				DiscardUnknown: true,
-			},
-		}),
+	gwmux := gateway.NewServeMux(
+		gateway.WithIncomingHeaderMatcher(customMatcher),
+		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
 	)
 
-	if err := arkv1.RegisterAdminServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if err := arkv1.RegisterWalletServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if err := arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn); err != nil {
-		return err
-	}
-	if withAppSvc {
-		if err := arkv1.RegisterArkServiceHandler(ctx, gwmux, conn); err != nil {
-			return err
-		}
-		if err := arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn); err != nil {
-			return err
+	if !s.config.hasAdminPort() {
+		arkv1.RegisterAdminServiceHandler(ctx, gwmux, conn)
+		arkv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
+		arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn)
+		if !withAppSvc {
+			arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn)
 		}
 	}
-	grpcGateway := http.Handler(gwmux)
 
+	// Register public services on main gateway
+	if withAppSvc {
+		arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
+		arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
+	}
+
+	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcServer, grpcGateway)
 	mux := http.NewServeMux()
 	mux.Handle("/", handler)
@@ -305,6 +340,46 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		Addr:      s.config.address(),
 		Handler:   httpServerHandler,
 		TLSConfig: tlsConfig,
+	}
+
+	// Create separate admin server if admin port is configured
+	if s.config.hasAdminPort() {
+		adminConn, err := grpc.NewClient(
+			s.config.adminGatewayAddress(), gatewayOpts,
+		)
+		if err != nil {
+			return err
+		}
+
+		// Create admin gateway mux
+		adminGwmux := gateway.NewServeMux(
+			gateway.WithIncomingHeaderMatcher(customMatcher),
+			gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(adminConn)),
+		)
+
+		arkv1.RegisterAdminServiceHandler(ctx, adminGwmux, adminConn)
+		arkv1.RegisterWalletServiceHandler(ctx, adminGwmux, adminConn)
+		arkv1.RegisterWalletInitializerServiceHandler(ctx, adminGwmux, adminConn)
+		if !withAppSvc {
+			arkv1.RegisterSignerManagerServiceHandler(ctx, adminGwmux, adminConn)
+		}
+
+		adminGrpcGateway := http.Handler(adminGwmux)
+		adminHandler := router(adminGrpcServer, adminGrpcGateway)
+		adminMux := http.NewServeMux()
+		adminMux.Handle("/", adminHandler)
+
+		adminHttpServerHandler := http.Handler(adminMux)
+		if s.config.insecure() {
+			adminHttpServerHandler = h2c.NewHandler(adminHttpServerHandler, &http2.Server{})
+		}
+
+		s.adminGrpcSrvr = adminGrpcServer
+		s.adminServer = &http.Server{
+			Addr:      s.config.adminAddress(),
+			Handler:   adminHttpServerHandler,
+			TLSConfig: tlsConfig,
+		}
 	}
 
 	return nil
@@ -358,8 +433,17 @@ func (s *service) onReady() {
 
 	withAppSvc := true
 	if err := s.start(withAppSvc); err != nil {
-		panic(err)
+		log.WithError(err).Fatal("failed to start service")
+		withAppSvc := true
+		withoutAppSvc := !withAppSvc
+		s.stop(withoutAppSvc)
 	}
+}
+
+func (s *service) onLoadSigner(addr string) error {
+	s.appConfig.SignerAddr = addr
+	_, err := s.appConfig.SignerService()
+	return err
 }
 
 func (s *service) autoUnlock() error {

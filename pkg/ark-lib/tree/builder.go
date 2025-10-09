@@ -229,14 +229,17 @@ func getTx(n node, input *wire.OutPoint, expiry *arklib.RelativeLocktime) (*psbt
 		return nil, err
 	}
 
-	for _, cosigner := range n.getCosigners() {
-		if err := txutils.AddCosignerKey(0, tx, cosigner); err != nil {
+	for cosignerIndex, cosigner := range n.getCosigners() {
+		if err := txutils.SetArkPsbtField(tx, 0, txutils.CosignerPublicKeyField, txutils.IndexedCosignerPublicKey{
+			Index:     cosignerIndex,
+			PublicKey: cosigner,
+		}); err != nil {
 			return nil, err
 		}
 	}
 
 	if expiry != nil {
-		if err := txutils.AddVtxoTreeExpiry(0, tx, *expiry); err != nil {
+		if err := txutils.SetArkPsbtField(tx, 0, txutils.VtxoTreeExpiryField, *expiry); err != nil {
 			return nil, err
 		}
 	}

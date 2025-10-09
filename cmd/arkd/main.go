@@ -8,6 +8,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/config"
 	grpcservice "github.com/arkade-os/arkd/internal/interface/grpc"
+	"github.com/arkade-os/arkd/internal/telemetry"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -17,7 +18,7 @@ var Version string
 
 const (
 	macaroonDir  = "macaroons"
-	macaroonFile = "admin.macaroon"
+	macaroonFile = "operator.macaroon"
 	tlsDir       = "tls"
 	tlsCertFile  = "cert.pem"
 )
@@ -29,14 +30,19 @@ func mainAction(_ *cli.Context) error {
 	}
 
 	log.SetLevel(log.Level(cfg.LogLevel))
+	if cfg.OtelCollectorEndpoint != "" {
+		log.AddHook(telemetry.NewOTelHook())
+	}
 
 	svcConfig := grpcservice.Config{
-		Datadir:         cfg.Datadir,
-		Port:            cfg.Port,
-		NoTLS:           cfg.NoTLS,
-		NoMacaroons:     cfg.NoMacaroons,
-		TLSExtraIPs:     cfg.TLSExtraIPs,
-		TLSExtraDomains: cfg.TLSExtraDomains,
+		Datadir:           cfg.Datadir,
+		Port:              cfg.Port,
+		AdminPort:         cfg.AdminPort,
+		NoTLS:             cfg.NoTLS,
+		NoMacaroons:       cfg.NoMacaroons,
+		TLSExtraIPs:       cfg.TLSExtraIPs,
+		TLSExtraDomains:   cfg.TLSExtraDomains,
+		HeartbeatInterval: cfg.HeartbeatInterval,
 	}
 
 	svc, err := grpcservice.NewService(Version, svcConfig, cfg)
@@ -71,16 +77,20 @@ func main() {
 	app.UsageText = "Run the Ark Server with:\n\tarkd\nManage the Ark Server with:\n\tarkd [global options] command [command options]"
 	app.Commands = append(
 		app.Commands,
+		versionCmd,
 		walletCmd,
+		signerCmd,
+		genkeyCmd,
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
-		marketHourCmd,
+		scheduledSessionCmd,
+		revokeAuthCmd,
 	)
 	app.Action = mainAction
-	app.Flags = append(app.Flags, urlFlag, datadirFlag)
+	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)

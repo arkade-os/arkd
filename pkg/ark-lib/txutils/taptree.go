@@ -16,11 +16,6 @@ type TapTree []string
 func (t TapTree) Encode() ([]byte, error) {
 	var tapscriptsBytes bytes.Buffer
 
-	// write number of leaves as compact size uint
-	if err := writeCompactSizeUint(&tapscriptsBytes, uint64(len(t))); err != nil {
-		return nil, err
-	}
-
 	for _, tapscript := range t {
 		scriptBytes, err := hex.DecodeString(tapscript)
 		if err != nil {
@@ -50,17 +45,11 @@ func (t TapTree) Encode() ([]byte, error) {
 }
 
 func DecodeTapTree(data []byte) (TapTree, error) {
-	var leaves []string
+	leaves := make([]string, 0)
 
 	buf := bytes.NewReader(data)
 
-	// len of tapscripts
-	count, err := readCompactSizeUint(buf)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := uint64(0); i < count; i++ {
+	for buf.Len() > 0 {
 		// depth : ignore
 		if _, err := buf.ReadByte(); err != nil {
 			return nil, err

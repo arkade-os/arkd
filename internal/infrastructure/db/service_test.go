@@ -186,7 +186,8 @@ func TestService(t *testing.T) {
 			testRoundRepository(t, svc)
 			testVtxoRepository(t, svc)
 			testOffchainTxRepository(t, svc)
-			testMarketHourRepository(t, svc)
+			testScheduledSessionRepository(t, svc)
+			testConvictionRepository(t, svc)
 		})
 	}
 }
@@ -615,9 +616,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		}
 
 		vtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoKeys)
-		require.Error(t, err)
+		require.Nil(t, err)
 		require.Empty(t, vtxos)
-
 		spendableVtxos, spentVtxos, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
 		require.Empty(t, spendableVtxos)
@@ -687,24 +687,117 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, spentVtxoMap[v.Outpoint], v.SpentBy)
 			require.Equal(t, commitmentTxid, v.SettledBy)
 		}
+
+		// Test GetAllChildrenVtxos recursive query
+		// Create a chain of vtxos: vtxo1 -> vtxo2 -> vtxo3 -> vtxo4 (end with null ark_txid)
+		vtxo1 := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: randomString(32),
+				VOut: 0,
+			},
+			PubKey:             pubkey,
+			Amount:             1000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
+			ArkTxid:            randomString(32), // Points to vtxo2
+		}
+
+		vtxo2 := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: vtxo1.ArkTxid, // Same as vtxo1's ark_txid
+				VOut: 0,
+			},
+			PubKey:             pubkey,
+			Amount:             2000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
+			ArkTxid:            randomString(32), // Points to vtxo3
+		}
+
+		vtxo3 := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: vtxo2.ArkTxid, // Same as vtxo2's ark_txid
+				VOut: 0,
+			},
+			PubKey:             pubkey,
+			Amount:             3000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
+			ArkTxid:            randomString(32), // Points to vtxo4
+		}
+
+		vtxo4 := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: vtxo3.ArkTxid, // Same as vtxo3's ark_txid
+				VOut: 0,
+			},
+			PubKey:             pubkey,
+			Amount:             4000,
+			RootCommitmentTxid: "root",
+			CommitmentTxids:    []string{"root"},
+			ArkTxid:            "", // End of chain - null ark_txid
+		}
+
+		// Add all vtxos to the database
+		chainVtxos := []domain.Vtxo{vtxo1, vtxo2, vtxo3, vtxo4}
+		err = svc.Vtxos().AddVtxos(ctx, chainVtxos)
+		require.NoError(t, err)
+
+		// Test recursive query starting from vtxo1
+		children, err := svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo1.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
+
+		// Verify all outpoints are returned
+		expectedOutpoints := []domain.Outpoint{
+			vtxo1.Outpoint,
+			vtxo2.Outpoint,
+			vtxo3.Outpoint,
+			vtxo4.Outpoint,
+		}
+
+		// Sort both slices for comparison
+		sort.Slice(children, func(i, j int) bool {
+			return children[i].Txid < children[j].Txid
+		})
+		sort.Slice(expectedOutpoints, func(i, j int) bool {
+			return expectedOutpoints[i].Txid < expectedOutpoints[j].Txid
+		})
+
+		require.Equal(t, expectedOutpoints, children)
+
+		// Test starting from middle of chain (vtxo2)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo2.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 3) // Should return vtxo2, vtxo3, vtxo4
+
+		// Test starting from end of chain (vtxo4)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo4.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 1) // Should return only vtxo4
+
+		// Test with non-existent txid
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, randomString(32))
+		require.NoError(t, err)
+		require.Empty(t, children)
 	})
 }
 
-func testMarketHourRepository(t *testing.T, svc ports.RepoManager) {
-	t.Run("test_market_hour_repository", func(t *testing.T) {
+func testScheduledSessionRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_scheduled_session_repository", func(t *testing.T) {
 		ctx := context.Background()
-		repo := svc.MarketHourRepo()
+		repo := svc.ScheduledSession()
 
-		marketHour, err := repo.Get(ctx)
+		scheduledSession, err := repo.Get(ctx)
 		require.NoError(t, err)
-		require.Nil(t, marketHour)
+		require.Nil(t, scheduledSession)
 
 		now := time.Now().Truncate(time.Second)
-		expected := domain.MarketHour{
-			StartTime:     now,
-			Period:        time.Duration(3) * time.Hour,
-			RoundInterval: time.Duration(20) * time.Second,
-			UpdatedAt:     now,
+		expected := domain.ScheduledSession{
+			StartTime: now,
+			Period:    time.Duration(3) * time.Hour,
+			Duration:  time.Duration(20) * time.Second,
+			UpdatedAt: now,
 		}
 
 		err = repo.Upsert(ctx, expected)
@@ -713,10 +806,10 @@ func testMarketHourRepository(t *testing.T, svc ports.RepoManager) {
 		got, err := repo.Get(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, got)
-		assertMarketHourEqual(t, expected, *got)
+		assertScheduledSessionEqual(t, expected, *got)
 
 		expected.Period = time.Duration(4) * time.Hour
-		expected.RoundInterval = time.Duration(40) * time.Second
+		expected.Duration = time.Duration(40) * time.Second
 		expected.UpdatedAt = now.Add(100 * time.Second)
 
 		err = repo.Upsert(ctx, expected)
@@ -725,7 +818,7 @@ func testMarketHourRepository(t *testing.T, svc ports.RepoManager) {
 		got, err = repo.Get(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, got)
-		assertMarketHourEqual(t, expected, *got)
+		assertScheduledSessionEqual(t, expected, *got)
 	})
 }
 
@@ -735,8 +828,8 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		repo := svc.OffchainTxs()
 
 		offchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
-		require.Error(t, err)
 		require.Nil(t, offchainTx)
+		require.Error(t, err)
 
 		checkpointTxid1 := "0000000000000000000000000000000000000000000000000000000000000001"
 		signedCheckpointPtx1 := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA=signed"
@@ -806,12 +899,149 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-func assertMarketHourEqual(t *testing.T, expected, actual domain.MarketHour) {
+func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_conviction_repository", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Convictions()
+
+		conviction, err := repo.Get(ctx, "non-existent-id")
+		require.Error(t, err)
+		require.Nil(t, conviction)
+
+		scriptConviction, err := repo.GetActiveScriptConvictions(ctx, "non-existent-script")
+		require.NoError(t, err)
+		require.Empty(t, scriptConviction)
+
+		convictions, err := repo.GetAll(ctx, time.Now().Add(-time.Hour), time.Now())
+		require.NoError(t, err)
+		require.Empty(t, convictions)
+
+		roundConvictions, err := repo.GetByRoundID(ctx, "non-existent-round")
+		require.NoError(t, err)
+		require.Empty(t, roundConvictions)
+
+		roundID1 := uuid.New().String()
+		roundID2 := uuid.New().String()
+		script1 := randomString(32)
+		script2 := randomString(32)
+		banDuration := time.Duration(1) * time.Hour
+
+		crime1 := domain.Crime{
+			Type:    domain.CrimeTypeMusig2NonceSubmission,
+			RoundID: roundID1,
+			Reason:  "Test crime 1",
+		}
+		crime2 := domain.Crime{
+			Type:    domain.CrimeTypeMusig2SignatureSubmission,
+			RoundID: roundID2,
+			Reason:  "Test crime 2",
+		}
+
+		conviction1 := domain.NewScriptConviction(script1, crime1, &banDuration)
+		conviction2 := domain.NewScriptConviction(script2, crime2, nil) // Permanent ban
+
+		err = repo.Add(ctx, conviction1, conviction2)
+		require.NoError(t, err)
+
+		retrievedConviction1, err := repo.Get(ctx, conviction1.GetID())
+		require.NoError(t, err)
+		require.NotNil(t, retrievedConviction1)
+		assertConvictionEqual(t, conviction1, retrievedConviction1)
+
+		retrievedConviction2, err := repo.Get(ctx, conviction2.GetID())
+		require.NoError(t, err)
+		require.NotNil(t, retrievedConviction2)
+		assertConvictionEqual(t, conviction2, retrievedConviction2)
+
+		activeConviction1, err := repo.GetActiveScriptConvictions(ctx, script1)
+		require.NoError(t, err)
+		require.NotNil(t, activeConviction1)
+		require.Len(t, activeConviction1, 1)
+		require.Equal(t, script1, activeConviction1[0].Script)
+		require.False(t, activeConviction1[0].IsPardoned())
+
+		activeConviction2, err := repo.GetActiveScriptConvictions(ctx, script2)
+		require.NoError(t, err)
+		require.NotNil(t, activeConviction2)
+		require.Len(t, activeConviction2, 1)
+		require.Equal(t, script2, activeConviction2[0].Script)
+		require.False(t, activeConviction2[0].IsPardoned())
+
+		round1Convictions, err := repo.GetByRoundID(ctx, roundID1)
+		require.NoError(t, err)
+		require.Len(t, round1Convictions, 1)
+		assertConvictionEqual(t, conviction1, round1Convictions[0])
+
+		round2Convictions, err := repo.GetByRoundID(ctx, roundID2)
+		require.NoError(t, err)
+		require.Len(t, round2Convictions, 1)
+		assertConvictionEqual(t, conviction2, round2Convictions[0])
+
+		allConvictions, err := repo.GetAll(
+			ctx,
+			time.Now().Add(-time.Hour),
+			time.Now().Add(time.Hour),
+		)
+		require.NoError(t, err)
+		require.Len(t, allConvictions, 2)
+
+		err = repo.Pardon(ctx, conviction1.GetID())
+		require.NoError(t, err)
+
+		pardonedConviction, err := repo.Get(ctx, conviction1.GetID())
+		require.NoError(t, err)
+		require.NotNil(t, pardonedConviction)
+		require.True(t, pardonedConviction.IsPardoned())
+
+		activeConvictionAfterPardon, err := repo.GetActiveScriptConvictions(ctx, script1)
+		require.NoError(t, err)
+		require.Empty(t, activeConvictionAfterPardon)
+
+		shortDuration := time.Duration(1) * time.Millisecond
+		crime3 := domain.Crime{
+			Type:    domain.CrimeTypeMusig2InvalidSignature,
+			RoundID: roundID1,
+			Reason:  "Test expired crime",
+		}
+		expiredConviction := domain.NewScriptConviction(script1, crime3, &shortDuration)
+		err = repo.Add(ctx, expiredConviction)
+		require.NoError(t, err)
+
+		time.Sleep(10 * time.Millisecond)
+
+		_, err = repo.GetActiveScriptConvictions(ctx, script1)
+		require.NoError(t, err)
+	})
+}
+
+func assertScheduledSessionEqual(t *testing.T, expected, actual domain.ScheduledSession) {
 	assert.True(t, expected.StartTime.Equal(actual.StartTime), "StartTime not equal")
 	assert.Equal(t, expected.Period, actual.Period, "Period not equal")
-	assert.Equal(t, expected.RoundInterval, actual.RoundInterval, "RoundInterval not equal")
+	assert.Equal(t, expected.Duration, actual.Duration, "Duration not equal")
 	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
 	assert.True(t, expected.EndTime.Equal(actual.EndTime), "EndTime not equal")
+}
+
+func assertConvictionEqual(t *testing.T, expected, actual domain.Conviction) {
+	require.Equal(t, expected.GetID(), actual.GetID())
+	require.Equal(t, expected.GetType(), actual.GetType())
+	require.Equal(t, expected.GetCrime(), actual.GetCrime())
+	require.Equal(t, expected.IsPardoned(), actual.IsPardoned())
+
+	require.WithinDuration(t, expected.GetCreatedAt(), actual.GetCreatedAt(), time.Second)
+
+	if expected.GetExpiresAt() == nil {
+		require.Nil(t, actual.GetExpiresAt())
+	} else {
+		require.NotNil(t, actual.GetExpiresAt())
+		require.WithinDuration(t, *expected.GetExpiresAt(), *actual.GetExpiresAt(), time.Second)
+	}
+
+	if expectedConv, ok := expected.(domain.ScriptConviction); ok {
+		if actualConv, ok := actual.(domain.ScriptConviction); ok {
+			require.Equal(t, expectedConv.Script, actualConv.Script)
+		}
+	}
 }
 
 func roundsMatch(t *testing.T, expected, got domain.Round) {

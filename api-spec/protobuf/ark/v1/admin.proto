@@ -2,50 +2,88 @@ syntax = "proto3";
 
 package ark.v1;
 
-import "google/api/annotations.proto";
+import "meshapi/gateway/annotations.proto";
 import "ark/v1/types.proto";
 
 service AdminService {
   rpc GetScheduledSweep(GetScheduledSweepRequest) returns (GetScheduledSweepResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/sweeps"
     };
   }
   rpc GetRoundDetails(GetRoundDetailsRequest) returns (GetRoundDetailsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/round/{round_id}"
     };
   }
   rpc GetRounds(GetRoundsRequest) returns (GetRoundsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/rounds"
     };
   }
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/note"
       body: "*"
     };
   }
-  rpc GetMarketHourConfig(GetMarketHourConfigRequest) returns (GetMarketHourConfigResponse) {
-    option (google.api.http) = {
-      get: "/v1/admin/marketHour"
+  rpc GetScheduledSessionConfig(GetScheduledSessionConfigRequest) returns (GetScheduledSessionConfigResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/scheduledSession"
     };
   }
-  rpc UpdateMarketHourConfig(UpdateMarketHourConfigRequest) returns (UpdateMarketHourConfigResponse) {
-    option (google.api.http) = {
-      post: "/v1/admin/marketHour"
+  rpc UpdateScheduledSessionConfig(UpdateScheduledSessionConfigRequest) returns (UpdateScheduledSessionConfigResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/scheduledSession"
       body: "*"
     };
   }
   rpc ListIntents(ListIntentsRequest) returns (ListIntentsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       get: "/v1/admin/intents"
     };
   }
   rpc DeleteIntents(DeleteIntentsRequest) returns (DeleteIntentsResponse) {
-    option (google.api.http) = {
+    option (meshapi.gateway.http) = {
       post: "/v1/admin/intents/delete"
+      body: "*"
+    };
+  }
+  rpc GetConvictions(GetConvictionsRequest) returns (GetConvictionsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/convictions/{ids}"
+    };
+  }
+  rpc GetConvictionsInRange(GetConvictionsInRangeRequest) returns (GetConvictionsInRangeResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/convictionsInRange"
+    };
+  }
+  rpc GetConvictionsByRound(GetConvictionsByRoundRequest) returns (GetConvictionsByRoundResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/convictionsByRound/{round_id}"
+    };
+  }
+  rpc GetActiveScriptConvictions(GetActiveScriptConvictionsRequest) returns (GetActiveScriptConvictionsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/convictionsByScript/{script}"
+    };
+  }
+  rpc PardonConviction(PardonConvictionRequest) returns (PardonConvictionResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/convictions/{id}/pardon"
+      body: "*"
+    };
+  }
+  rpc BanScript(BanScriptRequest) returns (BanScriptResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/conviction/ban"
+      body: "*"
+    };
+  }
+  rpc RevokeAuth(RevokeAuthRequest) returns (RevokeAuthResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/auth/revoke"
       body: "*"
     };
   }
@@ -89,15 +127,15 @@ message CreateNoteResponse {
   repeated string notes = 1;
 }
 
-message GetMarketHourConfigRequest {}
-message GetMarketHourConfigResponse {
-  MarketHourConfig config = 1;
+message GetScheduledSessionConfigRequest {}
+message GetScheduledSessionConfigResponse {
+  ScheduledSessionConfig config = 1;
 }
 
-message UpdateMarketHourConfigRequest {
-  MarketHourConfig config = 1;
+message UpdateScheduledSessionConfigRequest {
+  ScheduledSessionConfig config = 1;
 }
-message UpdateMarketHourConfigResponse {}
+message UpdateScheduledSessionConfigResponse {}
 
 message ListIntentsRequest {
   repeated string intent_ids = 1;
@@ -111,6 +149,54 @@ message DeleteIntentsRequest {
 }
 message DeleteIntentsResponse {}
 
+message GetConvictionsRequest {
+  repeated string ids = 1;
+}
+message GetConvictionsResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetConvictionsInRangeRequest {
+  int64 from = 1; // Unix timestamp
+  int64 to = 2;   // Unix timestamp
+}
+message GetConvictionsInRangeResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetConvictionsByRoundRequest {
+  string round_id = 1;
+}
+message GetConvictionsByRoundResponse {
+  repeated Conviction convictions = 1;
+}
+
+message GetActiveScriptConvictionsRequest {
+  string script = 1;
+}
+message GetActiveScriptConvictionsResponse {
+  repeated Conviction convictions = 1;
+}
+
+message PardonConvictionRequest {
+  string id = 1;
+}
+message PardonConvictionResponse {}
+
+message BanScriptRequest {
+  string script = 1;
+  int64 ban_duration = 2; // 0 = permanent ban
+  string reason = 3;
+}
+message BanScriptResponse {}
+
+message RevokeAuthRequest {
+  string token = 1;
+}
+message RevokeAuthResponse {
+  string token = 1;
+}
+
 message SweepableOutput {
   string txid = 1;
   uint32 vout = 2;
@@ -123,11 +209,14 @@ message ScheduledSweep {
   repeated SweepableOutput outputs = 2;
 }
 
-message MarketHourConfig {
+message ScheduledSessionConfig {
   int64 start_time = 1;
   int64 end_time = 2;
   int64 period = 3;
-  int64 round_interval = 4;
+  int64 duration = 4;
+  int64 round_min_participants_count = 5;
+  int64 round_max_participants_count = 6;
+  FeeInfo fees = 7;
 }
 
 message IntentInput {
@@ -143,7 +232,7 @@ message IntentInfo {
   repeated IntentInput inputs = 4;
   repeated IntentInput boarding_inputs = 5;
   repeated string cosigners_public_keys = 6;
-  Bip322Signature proof = 7;
+  Intent intent = 7;
 }
 
 message Output {
@@ -152,4 +241,32 @@ message Output {
     string onchain_address = 2;
   }; // onchain or off-chain
   uint64 amount = 3; // Amount to send in satoshis.
+}
+
+enum CrimeType {
+  CRIME_TYPE_UNSPECIFIED = 0;
+  CRIME_TYPE_MUSIG2_NONCE_SUBMISSION = 1;
+  CRIME_TYPE_MUSIG2_SIGNATURE_SUBMISSION = 2;
+  CRIME_TYPE_MUSIG2_INVALID_SIGNATURE = 3;
+  CRIME_TYPE_FORFEIT_SUBMISSION = 4;
+  CRIME_TYPE_FORFEIT_INVALID_SIGNATURE = 5;
+  CRIME_TYPE_BOARDING_INPUT_SUBMISSION = 6;
+  CRIME_TYPE_MANUAL_BAN = 7;
+}
+
+enum ConvictionType {
+  CONVICTION_TYPE_UNSPECIFIED = 0;
+  CONVICTION_TYPE_SCRIPT = 1;
+}
+
+message Conviction {
+  string id = 1;
+  ConvictionType type = 2;
+  int64 created_at = 3;
+  int64 expires_at = 4; // 0 if never expires
+  bool pardoned = 5;
+  string script = 6; // Only set for script convictions
+  CrimeType crime_type = 7;
+  string round_id = 8;
+  string reason = 9;
 }

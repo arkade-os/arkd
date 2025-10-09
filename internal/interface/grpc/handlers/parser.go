@@ -2,62 +2,67 @@ package handlers
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/bip322"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
-// From interface type to app type
-
-func parseIntent(intent *arkv1.Bip322Signature) (*bip322.Signature, *bip322.IntentMessage, error) {
-	if intent == nil {
-		return nil, nil, fmt.Errorf("missing intent")
+func parseIntentProofTx(i *arkv1.Intent) (*intent.Proof, error) {
+	if i == nil {
+		return nil, fmt.Errorf("missing intent")
 	}
-	if len(intent.GetSignature()) <= 0 {
-		return nil, nil, fmt.Errorf("missing intent proof")
+	proof := i.GetProof()
+	if len(proof) <= 0 {
+		return nil, fmt.Errorf("missing intent proof")
 	}
-	proof, err := bip322.DecodeSignature(intent.GetSignature())
+	proofTx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid intent proof: %s", err)
+		return nil, fmt.Errorf("failed to parse intent proof tx: %s", err)
+	}
+	return &intent.Proof{Packet: *proofTx}, nil
+}
+
+func parseRegisterIntent(
+	intentProof *arkv1.Intent,
+) (*intent.Proof, *intent.RegisterMessage, error) {
+	proof, err := parseIntentProofTx(intentProof)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if len(intent.GetMessage()) <= 0 {
+	if len(intentProof.GetMessage()) <= 0 {
 		return nil, nil, fmt.Errorf("missing message")
 	}
-	var message bip322.IntentMessage
-	if err := message.Decode(intent.GetMessage()); err != nil {
+	var message intent.RegisterMessage
+	if err := message.Decode(intentProof.GetMessage()); err != nil {
 		return nil, nil, fmt.Errorf("invalid intent message")
 	}
 	return proof, &message, nil
 }
 
 func parseDeleteIntent(
-	intent *arkv1.Bip322Signature,
-) (*bip322.Signature, *bip322.DeleteIntentMessage, error) {
-	if intent == nil {
-		return nil, nil, fmt.Errorf("missing intent")
-	}
-	if len(intent.GetSignature()) <= 0 {
-		return nil, nil, fmt.Errorf("missing intent proof")
-	}
-	proof, err := bip322.DecodeSignature(intent.GetSignature())
+	intentProof *arkv1.Intent,
+) (*intent.Proof, *intent.DeleteMessage, error) {
+	proof, err := parseIntentProofTx(intentProof)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid intent proof: %s", err)
+		return nil, nil, err
 	}
 
-	if len(intent.GetMessage()) <= 0 {
+	if len(intentProof.GetMessage()) <= 0 {
 		return nil, nil, fmt.Errorf("missing message")
 	}
-	var message bip322.DeleteIntentMessage
-	if err := message.Decode(intent.GetMessage()); err != nil {
+	var message intent.DeleteMessage
+	if err := message.Decode(intentProof.GetMessage()); err != nil {
 		return nil, nil, fmt.Errorf("invalid delete intent message")
 	}
 	return proof, &message, nil
@@ -94,23 +99,23 @@ func parseECPubkey(pubkey string) (string, error) {
 	return pubkey, nil
 }
 
-func parseNonces(serializedNonces string) (tree.TreeNonces, error) {
-	if len(serializedNonces) <= 0 {
+func parseNonces(noncesMap map[string]string) (tree.TreeNonces, error) {
+	if len(noncesMap) <= 0 {
 		return nil, fmt.Errorf("missing tree nonces")
 	}
-	var nonces tree.TreeNonces
-	if err := json.Unmarshal([]byte(serializedNonces), &nonces); err != nil {
+	nonces, err := tree.NewTreeNonces(noncesMap)
+	if err != nil {
 		return nil, fmt.Errorf("invalid tree nonces: %s", err)
 	}
 	return nonces, nil
 }
 
-func parseSignatures(serializedSignatures string) (tree.TreePartialSigs, error) {
-	if len(serializedSignatures) <= 0 {
+func parseSignatures(signaturesMap map[string]string) (tree.TreePartialSigs, error) {
+	if len(signaturesMap) <= 0 {
 		return nil, fmt.Errorf("missing tree signatures")
 	}
-	signatures := make(tree.TreePartialSigs)
-	if err := json.Unmarshal([]byte(serializedSignatures), &signatures); err != nil {
+	signatures, err := tree.NewTreePartialSigs(signaturesMap)
+	if err != nil {
 		return nil, fmt.Errorf("invalid tree signatures %s", err)
 	}
 	return signatures, nil
@@ -237,18 +242,33 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 	return list
 }
 
-type marketHour struct {
-	t *application.NextMarketHour
+type scheduledSession struct {
+	t *application.NextScheduledSession
 }
 
-func (mh marketHour) toProto() *arkv1.MarketHour {
-	if mh.t == nil {
+func (s scheduledSession) toProto() *arkv1.ScheduledSession {
+	if s.t == nil {
 		return nil
 	}
-	return &arkv1.MarketHour{
-		NextStartTime: mh.t.StartTime.Unix(),
-		NextEndTime:   mh.t.EndTime.Unix(),
-		Period:        int64(mh.t.Period.Minutes()),
-		RoundInterval: int64(mh.t.RoundInterval.Seconds()),
+	return &arkv1.ScheduledSession{
+		NextStartTime: s.t.StartTime.Unix(),
+		NextEndTime:   s.t.EndTime.Unix(),
+		Period:        int64(s.t.Period.Minutes()),
+		Duration:      int64(s.t.Duration.Seconds()),
+		Fees:          fees(s.t.Fees).toProto(),
+	}
+}
+
+type fees application.FeeInfo
+
+func (f fees) toProto() *arkv1.FeeInfo {
+	return &arkv1.FeeInfo{
+		TxFeeRate: strconv.FormatFloat(f.TxFeeRate, 'f', -1, 64),
+		IntentFee: &arkv1.IntentFeeInfo{
+			OffchainInput:  f.IntentFees.OffchainInput,
+			OffchainOutput: f.IntentFees.OffchainOutput,
+			OnchainInput:   fmt.Sprintf("%d", f.IntentFees.OnchainInput),
+			OnchainOutput:  fmt.Sprintf("%d", f.IntentFees.OnchainOutput),
+		},
 	}
 }

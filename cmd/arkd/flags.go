@@ -10,43 +10,47 @@ import (
 )
 
 const (
-	urlFlagName                     = "url"
-	datadirFlagName                 = "datadir"
-	passwordFlagName                = "password"
-	dbPathFlagName                  = "datadir"
-	mnemonicFlagName                = "mnemonic"
-	gapLimitFlagName                = "addr-gap-limit"
-	amountFlagName                  = "amount"
-	quantityFlagName                = "quantity"
-	addressFlagName                 = "address"
-	intentIdsFlagName               = "ids"
-	roundIdFlagName                 = "id"
-	beforeDateFlagName              = "before-date"
-	afterDateFlagName               = "after-date"
-	marketHourStartDateFlagName     = "start-date"
-	marketHourEndDateFlagName       = "end-date"
-	marketHourRoundIntervalFlagName = "round-interval"
-	marketHourPeriodFlagName        = "period"
+	urlFlagName                                       = "url"
+	datadirFlagName                                   = "datadir"
+	macaroonFlagName                                  = "macaroon"
+	passwordFlagName                                  = "password"
+	mnemonicFlagName                                  = "mnemonic"
+	gapLimitFlagName                                  = "addr-gap-limit"
+	amountFlagName                                    = "amount"
+	quantityFlagName                                  = "quantity"
+	addressFlagName                                   = "address"
+	intentIdsFlagName                                 = "ids"
+	roundIdFlagName                                   = "id"
+	beforeDateFlagName                                = "before-date"
+	afterDateFlagName                                 = "after-date"
+	scheduledSessionStartDateFlagName                 = "start-date"
+	scheduledSessionEndDateFlagName                   = "end-date"
+	scheduledSessionDurationFlagName                  = "duration"
+	scheduledSessionPeriodFlagName                    = "period"
+	scheduledSessionRoundMinParticipantsCountFlagName = "round-min-participants"
+	scheduledSessionRoundMaxParticipantsCountFlagName = "round-max-participants"
+	signerKeyFlagName                                 = "signer-prvkey"
+	signerUrlFlagName                                 = "signer-url"
+	tokenFlagName                                     = "token"
 
-	dateFormat           = time.DateOnly
-	marketHourDateFormat = time.DateTime
+	dateFormat                 = time.DateOnly
+	scheduledSessionDateFormat = time.DateTime
 )
 
 var (
 	urlFlag = &cli.StringFlag{
 		Name:  urlFlagName,
 		Usage: "the url where to reach ark server",
-		Value: fmt.Sprintf("http://localhost:%d", config.DefaultPort),
+		Value: fmt.Sprintf("http://127.0.0.1:%d", config.DefaultAdminPort),
 	}
 	datadirFlag = &cli.StringFlag{
 		Name:  datadirFlagName,
 		Usage: "arkd datadir from where to source TLS cert and macaroon if needed",
 		Value: arklib.AppDataDir("arkd", false),
 	}
-	dbPathFlag = &cli.StringFlag{
-		Name:     dbPathFlagName,
-		Usage:    "path to the wallet database",
-		Required: true,
+	macaroonFlag = &cli.StringFlag{
+		Name:  macaroonFlagName,
+		Usage: "macaroon in hex format used for authenticated requests",
 	}
 	passwordFlag = &cli.StringFlag{
 		Name:     passwordFlagName,
@@ -106,26 +110,46 @@ var (
 			"get ids of rounds after the give date, must be in %s format", dateFormat,
 		),
 	}
-	marketHourStartDateFlag = &cli.StringFlag{
-		Name: marketHourStartDateFlagName,
+	scheduledSessionStartDateFlag = &cli.StringFlag{
+		Name: scheduledSessionStartDateFlagName,
 		Usage: fmt.Sprintf(
-			"the market hour starting date, must be in %s format",
-			marketHourDateFormat,
+			"the starting date of the very first scheduled session, must be in %s format (GMT)",
+			scheduledSessionDateFormat,
 		),
 	}
-	marketHourEndDateFlag = &cli.StringFlag{
-		Name: marketHourEndDateFlagName,
+	scheduledSessionEndDateFlag = &cli.StringFlag{
+		Name: scheduledSessionEndDateFlagName,
 		Usage: fmt.Sprintf(
-			"the market hour ending date, must be in %s format",
-			marketHourDateFormat,
+			"the ending date of the very first scheduled session, must be in %s format (GMT)",
+			scheduledSessionDateFormat,
 		),
 	}
-	marketHourRoundIntervalFlag = &cli.IntFlag{
-		Name:  marketHourRoundIntervalFlagName,
-		Usage: "the market hour round interval in seconds",
+	scheduledSessionDurationFlag = &cli.IntFlag{
+		Name:  scheduledSessionDurationFlagName,
+		Usage: "the duration of the scheduled sessions in seconds",
 	}
-	marketHourPeriodFlag = &cli.IntFlag{
-		Name:  marketHourPeriodFlagName,
-		Usage: "the market hour period in minutes, ie the interval between a market hour and the next one",
+	scheduledSessionPeriodFlag = &cli.IntFlag{
+		Name:  scheduledSessionPeriodFlagName,
+		Usage: "the interval between a scheduled session and the next one",
+	}
+	scheduledSessionRoundMinParticipantsCountFlag = &cli.IntFlag{
+		Name:  scheduledSessionRoundMinParticipantsCountFlagName,
+		Usage: "the min number of participants per round during a scheduled session",
+	}
+	scheduledSessionRoundMaxParticipantsCountFlag = &cli.IntFlag{
+		Name:  scheduledSessionRoundMaxParticipantsCountFlagName,
+		Usage: "the max number of participants per round during a scheduled session",
+	}
+	signerKeyFlag = &cli.StringFlag{
+		Name:  signerKeyFlagName,
+		Usage: "the private key to be loaded to arkd wallet and used as signer",
+	}
+	signerUrlFlag = &cli.StringFlag{
+		Name:  signerUrlFlagName,
+		Usage: "the url of the signer to connect to",
+	}
+	tokenFlag = &cli.StringFlag{
+		Name:  tokenFlagName,
+		Usage: "the macaroon to be revoked",
 	}
 )

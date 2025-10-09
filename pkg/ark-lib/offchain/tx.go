@@ -29,14 +29,23 @@ type VtxoInput struct {
 
 // BuildTxs builds the ark and checkpoint txs for the given inputs and outputs.
 func BuildTxs(
-	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript *script.CSVMultisigClosure,
+	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript []byte,
 ) (*psbt.Packet, []*psbt.Packet, error) {
 	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
 	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 	inputAmount := int64(0)
 
+	signerUnrollScriptClosure := &script.CSVMultisigClosure{}
+	valid, err := signerUnrollScriptClosure.Decode(signerUnrollScript)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !valid {
+		return nil, nil, fmt.Errorf("invalid signer unroll script")
+	}
+
 	for _, vtxo := range vtxos {
-		checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScript)
+		checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScriptClosure)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -152,7 +161,8 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 	for i := range arkTx.Inputs {
 		arkTx.Inputs[i].WitnessUtxo = witnessUtxos[i]
 		arkTx.Inputs[i].TaprootLeafScript = []*psbt.TaprootTapLeafScript{signingTapLeaves[i]}
-		if err := txutils.AddTaprootTree(i, arkTx, tapscripts[i]); err != nil {
+
+		if err := txutils.SetArkPsbtField(arkTx, i, txutils.VtxoTaprootTreeField, tapscripts[i]); err != nil {
 			return nil, err
 		}
 	}

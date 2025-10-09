@@ -2,15 +2,18 @@ package handlers
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -20,7 +23,8 @@ type service interface {
 }
 
 type handler struct {
-	version string
+	version   string
+	heartbeat time.Duration
 
 	svc application.Service
 
@@ -28,9 +32,10 @@ type handler struct {
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewHandler(version string, service application.Service) service {
+func NewAppServiceHandler(version string, service application.Service, heartbeat int64) service {
 	h := &handler{
 		version:                     version,
+		heartbeat:                   time.Duration(heartbeat) * time.Second,
 		svc:                         service,
 		eventsListenerHandler:       newBroker[*arkv1.GetEventStreamResponse](),
 		transactionsListenerHandler: newBroker[*arkv1.GetTransactionsStreamResponse](),
@@ -47,38 +52,49 @@ func (h *handler) GetInfo(
 ) (*arkv1.GetInfoResponse, error) {
 	info, err := h.svc.GetInfo(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
-	return &arkv1.GetInfoResponse{
+	resp := &arkv1.GetInfoResponse{
 		SignerPubkey:        info.SignerPubKey,
-		VtxoTreeExpiry:      info.VtxoTreeExpiry,
+		ForfeitPubkey:       info.ForfeitPubKey,
 		UnilateralExitDelay: info.UnilateralExitDelay,
 		BoardingExitDelay:   info.BoardingExitDelay,
-		RoundInterval:       info.RoundInterval,
+		SessionDuration:     info.SessionDuration,
 		Network:             info.Network,
 		Dust:                int64(info.Dust),
 		ForfeitAddress:      info.ForfeitAddress,
-		MarketHour:          marketHour{info.NextMarketHour}.toProto(),
 		Version:             h.version,
 		UtxoMinAmount:       info.UtxoMinAmount,
 		UtxoMaxAmount:       info.UtxoMaxAmount,
 		VtxoMinAmount:       info.VtxoMinAmount,
 		VtxoMaxAmount:       info.VtxoMaxAmount,
-	}, nil
+		CheckpointTapscript: info.CheckpointTapscript,
+	}
+	buf, errJSON := json.Marshal(resp)
+	if errJSON != nil {
+		log.WithError(errJSON).Warn("failed to marshal get info response")
+		return resp, nil
+	}
+
+	digest := sha256.Sum256(buf)
+	resp.Digest = hex.EncodeToString(digest[:])
+	resp.ScheduledSession = scheduledSession{info.NextScheduledSession}.toProto()
+
+	return resp, nil
 }
 
 func (h *handler) RegisterIntent(
 	ctx context.Context, req *arkv1.RegisterIntentRequest,
 ) (*arkv1.RegisterIntentResponse, error) {
-	proof, message, err := parseIntent(req.GetIntent())
+	proof, message, err := parseRegisterIntent(req.GetIntent())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	intentId, err := h.svc.RegisterIntent(ctx, *proof, *message)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.RegisterIntentResponse{IntentId: intentId}, nil
@@ -87,13 +103,13 @@ func (h *handler) RegisterIntent(
 func (h *handler) DeleteIntent(
 	ctx context.Context, req *arkv1.DeleteIntentRequest,
 ) (*arkv1.DeleteIntentResponse, error) {
-	proof, message, err := parseDeleteIntent(req.GetProof())
+	proof, message, err := parseDeleteIntent(req.GetIntent())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if err := h.svc.DeleteIntentsByProof(ctx, *proof, *message); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.DeleteIntentResponse{}, nil
@@ -108,7 +124,7 @@ func (h *handler) ConfirmRegistration(
 	}
 
 	if err := h.svc.ConfirmRegistration(ctx, intentId); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.ConfirmRegistrationResponse{}, nil
@@ -135,7 +151,7 @@ func (h *handler) SubmitTreeNonces(
 	}
 
 	if err := h.svc.RegisterCosignerNonces(ctx, batchId, pubkey, nonces); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.SubmitTreeNoncesResponse{}, nil
@@ -160,7 +176,7 @@ func (h *handler) SubmitTreeSignatures(
 	}
 
 	if err := h.svc.RegisterCosignerSignatures(ctx, batchId, pubkey, signatures); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.SubmitTreeSignaturesResponse{}, nil
@@ -179,13 +195,13 @@ func (h *handler) SubmitSignedForfeitTxs(
 
 	if len(forfeitTxs) > 0 {
 		if err := h.svc.SubmitForfeitTxs(ctx, forfeitTxs); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, err
 		}
 	}
 
 	if len(commitmentTx) > 0 {
 		if err := h.svc.SignCommitmentTx(ctx, commitmentTx); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, err
 		}
 	}
 
@@ -202,6 +218,22 @@ func (h *handler) GetEventStream(
 	defer h.eventsListenerHandler.removeListener(listener.id)
 	defer close(listener.ch)
 
+	// create a Timer that will fire after one heartbeat interval
+	timer := time.NewTimer(h.heartbeat)
+	defer timer.Stop()
+
+	// helper to safely reset the timer
+	resetTimer := func() {
+		if !timer.Stop() {
+			// drain if it already fired
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(h.heartbeat)
+	}
+
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -210,6 +242,17 @@ func (h *handler) GetEventStream(
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
+			resetTimer()
+		case <-timer.C:
+			hb := &arkv1.GetEventStreamResponse{
+				Event: &arkv1.GetEventStreamResponse_Heartbeat{
+					Heartbeat: &arkv1.Heartbeat{},
+				},
+			}
+			if err := stream.Send(hb); err != nil {
+				return err
+			}
+			resetTimer()
 		}
 	}
 }
@@ -229,7 +272,7 @@ func (h *handler) SubmitTx(
 		ctx, req.GetCheckpointTxs(), req.GetSignedArkTx(),
 	)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.SubmitTxResponse{
@@ -253,10 +296,16 @@ func (h *handler) FinalizeTx(
 	if err := h.svc.FinalizeOffchainTx(
 		ctx, req.GetArkTxid(), req.GetFinalCheckpointTxs(),
 	); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return &arkv1.FinalizeTxResponse{}, nil
+}
+
+func (h *handler) GetPendingTx(
+	ctx context.Context, req *arkv1.GetPendingTxRequest,
+) (*arkv1.GetPendingTxResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
 func (h *handler) GetTransactionsStream(
@@ -272,6 +321,22 @@ func (h *handler) GetTransactionsStream(
 		close(listener.ch)
 	}()
 
+	// create a Timer that will fire after one heartbeat interval
+	timer := time.NewTimer(h.heartbeat)
+	defer timer.Stop()
+
+	// helper to safely reset the timer
+	resetTimer := func() {
+		if !timer.Stop() {
+			// drain if it already fired
+			select {
+			case <-timer.C:
+			default:
+			}
+		}
+		timer.Reset(h.heartbeat)
+	}
+
 	for {
 		select {
 		case <-stream.Context().Done():
@@ -280,6 +345,17 @@ func (h *handler) GetTransactionsStream(
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
+			resetTimer()
+		case <-timer.C:
+			hb := &arkv1.GetTransactionsStreamResponse{
+				Data: &arkv1.GetTransactionsStreamResponse_Heartbeat{
+					Heartbeat: &arkv1.Heartbeat{},
+				},
+			}
+			if err := stream.Send(hb); err != nil {
+				return err
+			}
+			resetTimer()
 		}
 	}
 }
@@ -293,7 +369,6 @@ func (h *handler) listenToEvents() {
 		for _, event := range events {
 			switch e := event.(type) {
 			case domain.RoundFinalizationStarted:
-
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFinalization{
 						BatchFinalization: &arkv1.BatchFinalizationEvent{
@@ -317,6 +392,8 @@ func (h *handler) listenToEvents() {
 
 				evs = append(evs, eventWithTopics{event: ev})
 			case domain.RoundFailed:
+				log.WithError(errors.New(e.Reason)).Error("round failed")
+
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchFailed{
 						BatchFailed: &arkv1.BatchFailedEvent{
@@ -356,18 +433,31 @@ func (h *handler) listenToEvents() {
 				}
 
 				evs = append(evs, eventWithTopics{event: ev})
-			case application.TreeNoncesAggregated:
-				serialized, err := json.Marshal(e.Nonces)
-				if err != nil {
-					logrus.WithError(err).Error("failed to serialize nonces")
-					continue
+			case application.TreeTxNoncesEvent:
+
+				nonces := make(map[string]string)
+				for pubkey, nonce := range e.Nonces {
+					nonces[pubkey] = hex.EncodeToString(nonce.PubNonce[:])
 				}
 
+				ev := &arkv1.GetEventStreamResponse{
+					Event: &arkv1.GetEventStreamResponse_TreeNonces{
+						TreeNonces: &arkv1.TreeNoncesEvent{
+							Id:     e.Id,
+							Txid:   e.Txid,
+							Topic:  e.Topic,
+							Nonces: nonces,
+						},
+					},
+				}
+
+				evs = append(evs, eventWithTopics{event: ev, topics: e.Topic})
+			case application.TreeNoncesAggregated:
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_TreeNoncesAggregated{
 						TreeNoncesAggregated: &arkv1.TreeNoncesAggregatedEvent{
 							Id:         e.Id,
-							TreeNonces: string(serialized),
+							TreeNonces: e.Nonces.ToMap(),
 						},
 					},
 				}
@@ -415,7 +505,7 @@ func (h *handler) listenToEvents() {
 							count++
 						}
 					}
-					logrus.Debugf("forwarded event to %d listeners", count)
+					log.Debugf("forwarded event to %d listeners", count)
 				}(l)
 			}
 		}
@@ -431,13 +521,13 @@ func (h *handler) listenToTxEvents() {
 		switch event.Type {
 		case application.CommitmentTxType:
 			msg = &arkv1.GetTransactionsStreamResponse{
-				Tx: &arkv1.GetTransactionsStreamResponse_CommitmentTx{
+				Data: &arkv1.GetTransactionsStreamResponse_CommitmentTx{
 					CommitmentTx: txEvent(event).toProto(),
 				},
 			}
 		case application.ArkTxType:
 			msg = &arkv1.GetTransactionsStreamResponse{
-				Tx: &arkv1.GetTransactionsStreamResponse_ArkTx{
+				Data: &arkv1.GetTransactionsStreamResponse_ArkTx{
 					ArkTx: txEvent(event).toProto(),
 				},
 			}
@@ -449,7 +539,7 @@ func (h *handler) listenToTxEvents() {
 					l.ch <- msg
 				}(l)
 			}
-			logrus.Debugf(
+			log.Debugf(
 				"forwarded tx event to %d listeners", len(h.transactionsListenerHandler.listeners),
 			)
 		}

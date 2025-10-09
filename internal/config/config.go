@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +15,7 @@ import (
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
 	blockscheduler "github.com/arkade-os/arkd/internal/infrastructure/scheduler/block"
 	timescheduler "github.com/arkade-os/arkd/internal/infrastructure/scheduler/gocron"
+	signerclient "github.com/arkade-os/arkd/internal/infrastructure/signer"
 	txbuilder "github.com/arkade-os/arkd/internal/infrastructure/tx-builder/covenantless"
 	bitcointxdecoder "github.com/arkade-os/arkd/internal/infrastructure/tx-decoder/bitcoin"
 	envunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/env"
@@ -59,6 +59,7 @@ var (
 type Config struct {
 	Datadir         string
 	Port            uint32
+	AdminPort       uint32
 	DbMigrationPath string
 	NoTLS           bool
 	NoMacaroons     bool
@@ -72,25 +73,33 @@ type Config struct {
 	DbUrl               string
 	EventDbUrl          string
 	EventDbDir          string
-	RoundInterval       int64
+	SessionDuration     int64
+	BanDuration         int64
+	BanThreshold        int64 // number of crimes to trigger a ban
 	SchedulerType       string
 	TxBuilderType       string
 	LiveStoreType       string
 	RedisUrl            string
 	RedisTxNumOfRetries int
 	WalletAddr          string
+	SignerAddr          string
 	VtxoTreeExpiry      arklib.RelativeLocktime
 	UnilateralExitDelay arklib.RelativeLocktime
+	CheckpointExitDelay arklib.RelativeLocktime
 	BoardingExitDelay   arklib.RelativeLocktime
 	NoteUriPrefix       string
 	AllowCSVBlockType   bool
+	HeartbeatInterval   int64
 
-	MarketHourStartTime     int64
-	MarketHourEndTime       int64
-	MarketHourPeriod        int64
-	MarketHourRoundInterval int64
-	OtelCollectorEndpoint   string
-	OtelPushInterval        int64
+	ScheduledSessionStartTime                 int64
+	ScheduledSessionEndTime                   int64
+	ScheduledSessionPeriod                    int64
+	ScheduledSessionDuration                  int64
+	ScheduledSessionMinRoundParticipantsCount int64
+	ScheduledSessionMaxRoundParticipantsCount int64
+	OtelCollectorEndpoint                     string
+	OtelPushInterval                          int64
+	RoundReportServiceEnabled                 bool
 
 	EsploraURL string
 
@@ -105,16 +114,18 @@ type Config struct {
 	VtxoMaxAmount             int64
 	VtxoMinAmount             int64
 
-	repo      ports.RepoManager
-	svc       application.Service
-	adminSvc  application.AdminService
-	wallet    ports.WalletService
-	txBuilder ports.TxBuilder
-	scanner   ports.BlockchainScanner
-	scheduler ports.SchedulerService
-	unlocker  ports.Unlocker
-	liveStore ports.LiveStore
-	network   *arklib.Network
+	repo           ports.RepoManager
+	svc            application.Service
+	adminSvc       application.AdminService
+	wallet         ports.WalletService
+	signer         ports.SignerService
+	txBuilder      ports.TxBuilder
+	scanner        ports.BlockchainScanner
+	scheduler      ports.SchedulerService
+	unlocker       ports.Unlocker
+	liveStore      ports.LiveStore
+	network        *arklib.Network
+	roundReportSvc application.RoundReportService
 }
 
 func (c *Config) String() string {
@@ -130,49 +141,61 @@ func (c *Config) String() string {
 }
 
 var (
-	Datadir                   = "DATADIR"
-	WalletAddr                = "WALLET_ADDR"
-	RoundInterval             = "ROUND_INTERVAL"
-	Port                      = "PORT"
-	EventDbType               = "EVENT_DB_TYPE"
-	DbType                    = "DB_TYPE"
-	DbUrl                     = "PG_DB_URL"
-	EventDbUrl                = "PG_EVENT_DB_URL"
-	SchedulerType             = "SCHEDULER_TYPE"
-	TxBuilderType             = "TX_BUILDER_TYPE"
-	LiveStoreType             = "LIVE_STORE_TYPE"
-	RedisUrl                  = "REDIS_URL"
-	RedisTxNumOfRetries       = "REDIS_NUM_OF_RETRIES"
-	LogLevel                  = "LOG_LEVEL"
-	VtxoTreeExpiry            = "VTXO_TREE_EXPIRY"
-	UnilateralExitDelay       = "UNILATERAL_EXIT_DELAY"
-	BoardingExitDelay         = "BOARDING_EXIT_DELAY"
-	EsploraURL                = "ESPLORA_URL"
-	NoMacaroons               = "NO_MACAROONS"
-	NoTLS                     = "NO_TLS"
-	TLSExtraIP                = "TLS_EXTRA_IP"
-	TLSExtraDomain            = "TLS_EXTRA_DOMAIN"
-	UnlockerType              = "UNLOCKER_TYPE"
-	UnlockerFilePath          = "UNLOCKER_FILE_PATH"
-	UnlockerPassword          = "UNLOCKER_PASSWORD"
-	NoteUriPrefix             = "NOTE_URI_PREFIX"
-	MarketHourStartTime       = "MARKET_HOUR_START_TIME"
-	MarketHourEndTime         = "MARKET_HOUR_END_TIME"
-	MarketHourPeriod          = "MARKET_HOUR_PERIOD"
-	MarketHourRoundInterval   = "MARKET_HOUR_ROUND_INTERVAL"
-	OtelCollectorEndpoint     = "OTEL_COLLECTOR_ENDPOINT"
-	OtelPushInterval          = "OTEL_PUSH_INTERVAL"
-	RoundMaxParticipantsCount = "ROUND_MAX_PARTICIPANTS_COUNT"
-	RoundMinParticipantsCount = "ROUND_MIN_PARTICIPANTS_COUNT"
-	UtxoMaxAmount             = "UTXO_MAX_AMOUNT"
-	VtxoMaxAmount             = "VTXO_MAX_AMOUNT"
-	UtxoMinAmount             = "UTXO_MIN_AMOUNT"
-	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
-	AllowCSVBlockType         = "ALLOW_CSV_BLOCK_TYPE"
+	Datadir                              = "DATADIR"
+	WalletAddr                           = "WALLET_ADDR"
+	SignerAddr                           = "SIGNER_ADDR"
+	SessionDuration                      = "SESSION_DURATION"
+	BanDuration                          = "BAN_DURATION"
+	BanThreshold                         = "BAN_THRESHOLD"
+	Port                                 = "PORT"
+	AdminPort                            = "ADMIN_PORT"
+	EventDbType                          = "EVENT_DB_TYPE"
+	DbType                               = "DB_TYPE"
+	DbUrl                                = "PG_DB_URL"
+	EventDbUrl                           = "PG_EVENT_DB_URL"
+	SchedulerType                        = "SCHEDULER_TYPE"
+	TxBuilderType                        = "TX_BUILDER_TYPE"
+	LiveStoreType                        = "LIVE_STORE_TYPE"
+	RedisUrl                             = "REDIS_URL"
+	RedisTxNumOfRetries                  = "REDIS_NUM_OF_RETRIES"
+	LogLevel                             = "LOG_LEVEL"
+	VtxoTreeExpiry                       = "VTXO_TREE_EXPIRY"
+	UnilateralExitDelay                  = "UNILATERAL_EXIT_DELAY"
+	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
+	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
+	EsploraURL                           = "ESPLORA_URL"
+	NoMacaroons                          = "NO_MACAROONS"
+	NoTLS                                = "NO_TLS"
+	TLSExtraIP                           = "TLS_EXTRA_IP"
+	TLSExtraDomain                       = "TLS_EXTRA_DOMAIN"
+	UnlockerType                         = "UNLOCKER_TYPE"
+	UnlockerFilePath                     = "UNLOCKER_FILE_PATH"
+	UnlockerPassword                     = "UNLOCKER_PASSWORD"
+	NoteUriPrefix                        = "NOTE_URI_PREFIX"
+	ScheduledSessionStartTime            = "SCHEDULED_SESSION_START_TIME"
+	ScheduledSessionEndTime              = "SCHEDULED_SESSION_END_TIME"
+	ScheduledSessionPeriod               = "SCHEDULED_SESSION_PERIOD"
+	ScheduledSessionDuration             = "SCHEDULED_SESSION_DURATION"
+	ScheduledSessionMinRoundParticipants = "SCHEDULED_SESSION_MIN_ROUND_PARTICIPANTS_COUNT"
+	ScheduledSessionMaxRoundParticipants = "SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT"
+	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
+	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
+	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
+	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
+	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
+	VtxoMaxAmount                        = "VTXO_MAX_AMOUNT"
+	UtxoMinAmount                        = "UTXO_MIN_AMOUNT"
+	VtxoMinAmount                        = "VTXO_MIN_AMOUNT"
+	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
+	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
+	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
-	defaultRoundInterval       = 30
+	defaultSessionDuration     = 30
+	defaultBanDuration         = 10 * defaultSessionDuration
+	defaultBanThreshold        = 3
 	DefaultPort                = 7070
+	DefaultAdminPort           = 7071
 	defaultDbType              = "postgres"
 	defaultEventDbType         = "postgres"
 	defaultSchedulerType       = "gocron"
@@ -183,6 +206,7 @@ var (
 	defaultLogLevel            = 4
 	defaultVtxoTreeExpiry      = 604672  // 7 days
 	defaultUnilateralExitDelay = 86400   // 24 hours
+	defaultCheckpointExitDelay = 86400   // 24 hours
 	defaultBoardingExitDelay   = 7776000 // 3 months
 	defaultNoMacaroons         = false
 	defaultNoTLS               = true
@@ -195,6 +219,8 @@ var (
 	defaultRoundMaxParticipantsCount = 128
 	defaultRoundMinParticipantsCount = 1
 	defaultOtelPushInterval          = 10 // seconds
+	defaultHeartbeatInterval         = 60 // seconds
+	defaultRoundReportServiceEnabled = false
 )
 
 func LoadConfig() (*Config, error) {
@@ -203,15 +229,19 @@ func LoadConfig() (*Config, error) {
 
 	viper.SetDefault(Datadir, defaultDatadir)
 	viper.SetDefault(Port, DefaultPort)
+	viper.SetDefault(AdminPort, DefaultAdminPort)
 	viper.SetDefault(DbType, defaultDbType)
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
-	viper.SetDefault(RoundInterval, defaultRoundInterval)
+	viper.SetDefault(SessionDuration, defaultSessionDuration)
+	viper.SetDefault(BanDuration, defaultBanDuration)
+	viper.SetDefault(BanThreshold, defaultBanThreshold)
 	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
 	viper.SetDefault(SchedulerType, defaultSchedulerType)
 	viper.SetDefault(EventDbType, defaultEventDbType)
 	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
 	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
+	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
 	viper.SetDefault(BoardingExitDelay, defaultBoardingExitDelay)
@@ -225,6 +255,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
 	viper.SetDefault(AllowCSVBlockType, defaultAllowCSVBlockType)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
+	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
+	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -261,41 +293,64 @@ func LoadConfig() (*Config, error) {
 		allowCSVBlockType = true
 	}
 
+	signerAddr := viper.GetString(SignerAddr)
+	if signerAddr == "" {
+		signerAddr = viper.GetString(WalletAddr)
+	}
+
+	// In case the admin port is unset, fallback to service port.
+	adminPort := viper.GetUint32(AdminPort)
+	if adminPort == 0 {
+		adminPort = viper.GetUint32(Port)
+	}
+
 	return &Config{
-		Datadir:                 viper.GetString(Datadir),
-		WalletAddr:              viper.GetString(WalletAddr),
-		RoundInterval:           viper.GetInt64(RoundInterval),
-		Port:                    viper.GetUint32(Port),
-		EventDbType:             viper.GetString(EventDbType),
-		DbType:                  viper.GetString(DbType),
-		SchedulerType:           viper.GetString(SchedulerType),
-		TxBuilderType:           viper.GetString(TxBuilderType),
-		LiveStoreType:           viper.GetString(LiveStoreType),
-		RedisUrl:                redisUrl,
-		RedisTxNumOfRetries:     viper.GetInt(RedisTxNumOfRetries),
-		NoTLS:                   viper.GetBool(NoTLS),
-		DbDir:                   dbPath,
-		DbUrl:                   dbUrl,
-		EventDbDir:              dbPath,
-		EventDbUrl:              eventDbUrl,
-		LogLevel:                viper.GetInt(LogLevel),
-		VtxoTreeExpiry:          determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
-		UnilateralExitDelay:     determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
-		BoardingExitDelay:       determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
-		EsploraURL:              viper.GetString(EsploraURL),
-		NoMacaroons:             viper.GetBool(NoMacaroons),
-		TLSExtraIPs:             viper.GetStringSlice(TLSExtraIP),
-		TLSExtraDomains:         viper.GetStringSlice(TLSExtraDomain),
-		UnlockerType:            viper.GetString(UnlockerType),
-		UnlockerFilePath:        viper.GetString(UnlockerFilePath),
-		UnlockerPassword:        viper.GetString(UnlockerPassword),
-		NoteUriPrefix:           viper.GetString(NoteUriPrefix),
-		MarketHourStartTime:     viper.GetInt64(MarketHourStartTime),
-		MarketHourEndTime:       viper.GetInt64(MarketHourEndTime),
-		MarketHourPeriod:        viper.GetInt64(MarketHourPeriod),
-		MarketHourRoundInterval: viper.GetInt64(MarketHourRoundInterval),
-		OtelCollectorEndpoint:   viper.GetString(OtelCollectorEndpoint),
-		OtelPushInterval:        viper.GetInt64(OtelPushInterval),
+		Datadir:                   viper.GetString(Datadir),
+		WalletAddr:                viper.GetString(WalletAddr),
+		SignerAddr:                signerAddr,
+		SessionDuration:           viper.GetInt64(SessionDuration),
+		BanDuration:               viper.GetInt64(BanDuration),
+		BanThreshold:              viper.GetInt64(BanThreshold),
+		Port:                      viper.GetUint32(Port),
+		AdminPort:                 adminPort,
+		EventDbType:               viper.GetString(EventDbType),
+		DbType:                    viper.GetString(DbType),
+		SchedulerType:             viper.GetString(SchedulerType),
+		TxBuilderType:             viper.GetString(TxBuilderType),
+		LiveStoreType:             viper.GetString(LiveStoreType),
+		RedisUrl:                  redisUrl,
+		RedisTxNumOfRetries:       viper.GetInt(RedisTxNumOfRetries),
+		NoTLS:                     viper.GetBool(NoTLS),
+		DbDir:                     dbPath,
+		DbUrl:                     dbUrl,
+		EventDbDir:                dbPath,
+		EventDbUrl:                eventDbUrl,
+		LogLevel:                  viper.GetInt(LogLevel),
+		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
+		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
+		CheckpointExitDelay:       determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
+		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
+		EsploraURL:                viper.GetString(EsploraURL),
+		NoMacaroons:               viper.GetBool(NoMacaroons),
+		TLSExtraIPs:               viper.GetStringSlice(TLSExtraIP),
+		TLSExtraDomains:           viper.GetStringSlice(TLSExtraDomain),
+		UnlockerType:              viper.GetString(UnlockerType),
+		UnlockerFilePath:          viper.GetString(UnlockerFilePath),
+		UnlockerPassword:          viper.GetString(UnlockerPassword),
+		NoteUriPrefix:             viper.GetString(NoteUriPrefix),
+		ScheduledSessionStartTime: viper.GetInt64(ScheduledSessionStartTime),
+		ScheduledSessionEndTime:   viper.GetInt64(ScheduledSessionEndTime),
+		ScheduledSessionPeriod:    viper.GetInt64(ScheduledSessionPeriod),
+		ScheduledSessionDuration:  viper.GetInt64(ScheduledSessionDuration),
+		ScheduledSessionMinRoundParticipantsCount: viper.GetInt64(
+			ScheduledSessionMinRoundParticipants,
+		),
+		ScheduledSessionMaxRoundParticipantsCount: viper.GetInt64(
+			ScheduledSessionMaxRoundParticipants,
+		),
+		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
+		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
+		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
 
 		RoundMaxParticipantsCount: viper.GetInt64(RoundMaxParticipantsCount),
 		RoundMinParticipantsCount: viper.GetInt64(RoundMinParticipantsCount),
@@ -304,6 +359,7 @@ func LoadConfig() (*Config, error) {
 		VtxoMaxAmount:             viper.GetInt64(VtxoMaxAmount),
 		VtxoMinAmount:             viper.GetInt64(VtxoMinAmount),
 		AllowCSVBlockType:         allowCSVBlockType,
+		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
 	}, nil
 }
 
@@ -361,8 +417,14 @@ func (c *Config) Validate() error {
 			supportedLiveStores,
 		)
 	}
-	if c.RoundInterval < 2 {
-		return fmt.Errorf("invalid round interval, must be at least 2 seconds")
+	if c.SessionDuration < 2 {
+		return fmt.Errorf("invalid session duration, must be at least 2 seconds")
+	}
+	if c.BanDuration < 1 {
+		return fmt.Errorf("invalid ban duration, must be at least 1 second")
+	}
+	if c.BanThreshold < 1 {
+		log.Debugf("autoban is disabled")
 	}
 	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
 		if c.SchedulerType != "block" {
@@ -402,6 +464,16 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	if c.CheckpointExitDelay.Type == arklib.LocktimeTypeSecond {
+		if c.CheckpointExitDelay.Value%minAllowedSequence != 0 {
+			c.CheckpointExitDelay.Value -= c.CheckpointExitDelay.Value % minAllowedSequence
+			log.Infof(
+				"checkpoint exit delay must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.CheckpointExitDelay,
+			)
+		}
+	}
+
 	if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
 		c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % minAllowedSequence
 		log.Infof(
@@ -434,6 +506,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.walletService(); err != nil {
+		return err
+	}
+	if err := c.signerService(); err != nil {
 		return err
 	}
 	if err := c.txBuilderService(); err != nil {
@@ -478,13 +553,24 @@ func (c *Config) UnlockerService() ports.Unlocker {
 	return c.unlocker
 }
 
-func (c *Config) IndexerService() (application.IndexerService, error) {
-	pubKey, err := c.wallet.GetPubkey(context.Background())
-	if err != nil {
+func (c *Config) IndexerService() application.IndexerService {
+	return application.NewIndexerService(c.repo)
+}
+
+func (c *Config) SignerService() (ports.SignerService, error) {
+	if err := c.signerService(); err != nil {
 		return nil, err
 	}
+	return c.signer, nil
+}
 
-	return application.NewIndexerService(pubKey, c.repo), nil
+func (c *Config) RoundReportService() (application.RoundReportService, error) {
+	if c.roundReportSvc == nil {
+		if err := c.roundReportService(); err != nil {
+			return nil, err
+		}
+	}
+	return c.roundReportSvc, nil
 }
 
 func (c *Config) repoManager() error {
@@ -531,9 +617,9 @@ func (c *Config) repoManager() error {
 }
 
 func (c *Config) walletService() error {
-	arkWallet := viper.GetString(WalletAddr)
+	arkWallet := c.WalletAddr
 	if arkWallet == "" {
-		return fmt.Errorf("ark wallet address not set")
+		return fmt.Errorf("missing ark wallet address")
 	}
 
 	walletSvc, network, err := walletclient.New(arkWallet)
@@ -546,13 +632,28 @@ func (c *Config) walletService() error {
 	return nil
 }
 
+func (c *Config) signerService() error {
+	signer := c.SignerAddr
+	if signer == "" {
+		return fmt.Errorf("missing signer address")
+	}
+
+	signerSvc, err := signerclient.New(signer)
+	if err != nil {
+		return err
+	}
+
+	c.signer = signerSvc
+	return nil
+}
+
 func (c *Config) txBuilderService() error {
 	var svc ports.TxBuilder
 	var err error
 	switch c.TxBuilderType {
 	case "covenantless":
 		svc = txbuilder.NewTxBuilder(
-			c.wallet, *c.network, c.VtxoTreeExpiry, c.BoardingExitDelay,
+			c.wallet, c.signer, *c.network, c.VtxoTreeExpiry, c.BoardingExitDelay,
 		)
 	default:
 		err = fmt.Errorf("unknown tx builder type")
@@ -619,26 +720,41 @@ func (c *Config) schedulerService() error {
 }
 
 func (c *Config) appService() error {
-	var mhStartTime, mhEndTime time.Time
-	var mhPeriod, mhRoundInterval time.Duration
+	var ssStartTime, ssEndTime time.Time
+	var ssPeriod, ssDuration time.Duration
 
-	if c.MarketHourStartTime > 0 {
-		mhStartTime = time.Unix(c.MarketHourStartTime, 0)
-		mhEndTime = time.Unix(c.MarketHourEndTime, 0)
+	if c.ScheduledSessionStartTime > 0 {
+		ssStartTime = time.Unix(c.ScheduledSessionStartTime, 0)
+		ssEndTime = time.Unix(c.ScheduledSessionEndTime, 0)
 	}
-	if c.MarketHourPeriod > 0 {
-		mhPeriod = time.Duration(c.MarketHourPeriod) * time.Minute
+	if c.ScheduledSessionPeriod > 0 {
+		ssPeriod = time.Duration(c.ScheduledSessionPeriod) * time.Minute
 	}
-	if c.MarketHourRoundInterval > 0 {
-		mhRoundInterval = time.Duration(c.MarketHourRoundInterval) * time.Second
+	if c.ScheduledSessionDuration > 0 {
+		ssDuration = time.Duration(c.ScheduledSessionDuration) * time.Second
 	}
+	if err := c.signerService(); err != nil {
+		return err
+	}
+	if err := c.txBuilderService(); err != nil {
+		return err
+	}
+
+	roundReportSvc, err := c.RoundReportService()
+	if err != nil {
+		return err
+	}
+
 	svc, err := application.NewService(
-		c.wallet, c.repo, c.txBuilder, c.scanner, c.scheduler, c.liveStore,
-		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay,
-		c.RoundInterval, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
+		c.scheduler, c.liveStore, roundReportSvc,
+		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay, c.CheckpointExitDelay,
+		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
+		c.BanDuration, c.BanThreshold,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
-		mhStartTime, mhEndTime, mhPeriod, mhRoundInterval,
+		ssStartTime, ssEndTime, ssPeriod, ssDuration,
+		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 	)
 	if err != nil {
 		return err
@@ -654,7 +770,10 @@ func (c *Config) adminService() error {
 		unit = ports.BlockHeight
 	}
 
-	c.adminSvc = application.NewAdminService(c.wallet, c.repo, c.txBuilder, c.liveStore, unit)
+	c.adminSvc = application.NewAdminService(
+		c.wallet, c.repo, c.txBuilder, c.liveStore, unit,
+		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+	)
 	return nil
 }
 
@@ -677,6 +796,15 @@ func (c *Config) unlockerService() error {
 		return err
 	}
 	c.unlocker = svc
+	return nil
+}
+
+func (c *Config) roundReportService() error {
+	if !c.RoundReportServiceEnabled {
+		return nil
+	}
+
+	c.roundReportSvc = application.NewRoundReportService()
 	return nil
 }
 

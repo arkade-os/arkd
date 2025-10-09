@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -18,24 +19,25 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	arksdk "github.com/arkade-os/go-sdk"
 	"github.com/arkade-os/go-sdk/client"
-	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
 	"github.com/arkade-os/go-sdk/explorer"
 	"github.com/arkade-os/go-sdk/indexer"
-	grpcindexer "github.com/arkade-os/go-sdk/indexer/grpc"
 	"github.com/arkade-os/go-sdk/redemption"
-	"github.com/arkade-os/go-sdk/store"
 	inmemorystoreconfig "github.com/arkade-os/go-sdk/store/inmemory"
 	"github.com/arkade-os/go-sdk/types"
 	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
 	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -364,7 +366,7 @@ func TestCollaborativeExit(t *testing.T) {
 		_, err = runArkCommand("settle", "--password", password)
 		require.NoError(t, err)
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Redeem 1000 satoshis onchain, keep 9000 satoshis offchain
 		_, err = runArkCommand(
@@ -389,7 +391,7 @@ func TestCollaborativeExit(t *testing.T) {
 		_, err = runArkCommand("settle", "--password", password)
 		require.NoError(t, err)
 
-		time.Sleep(3 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Redeem 10000 satoshis onchain
 		_, err = runArkCommand(
@@ -423,10 +425,11 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, vtxos)
 	}()
-	roundId, err := sdkClient.Settle(ctx)
+	commitmentTxid, err := sdkClient.Settle(ctx)
 	require.NoError(t, err)
 
 	wg.Wait()
+	time.Sleep(5 * time.Second)
 
 	wg.Add(1)
 	go func() {
@@ -446,29 +449,52 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 
 	var vtxo types.Vtxo
 	for _, v := range spentVtxos {
-		if !v.Preconfirmed && v.CommitmentTxids[0] == roundId {
+		if !v.Preconfirmed && v.CommitmentTxids[0] == commitmentTxid {
 			vtxo = v
 			break
 		}
 	}
 
-	expl := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	expl, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
+	require.NoError(t, err)
 
 	branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
 	require.NoError(t, err)
 
-	for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
-		bumpAndBroadcastTx(t, parentTx, expl)
-	}
+	// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
+	// Ideally, there should be a (long) branch of txs to be broadcasted and a loop should be used
+	// to publish them from the root of the tree down to the leaf.
+	leafTx, err := branch.NextRedeemTx()
+	require.NoError(t, err)
+	require.NotEmpty(t, leafTx)
 
-	// give time for the server to detect and process the fraud
-	err = generateBlocks(30)
+	bumpAndBroadcastTx(t, leafTx, expl)
+
+	// Give time to the explorer to track down the braodcasted txs.
+	time.Sleep(5 * time.Second)
+
+	// The vtxo is now unrolled and unspent in the Bitcoin mempool.
+	spentStatus, err := expl.GetTxOutspends(vtxo.Txid)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
+	require.False(t, spentStatus[vtxo.VOut].Spent)
+	require.Empty(t, spentStatus[vtxo.VOut].SpentBy)
+
+	// Include the tx in a block.
+	err = generateBlocks(1)
 	require.NoError(t, err)
 
-	balance, err := sdkClient.Balance(ctx, false)
-	require.NoError(t, err)
+	// Give the server the time to react the fraud.
+	time.Sleep(5 * time.Second)
 
-	require.Empty(t, balance.OnchainBalance.LockedAmount)
+	// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
+	spentStatus, err = expl.GetTxOutspends(vtxo.Txid)
+	require.NoError(t, err)
+	require.NotEmpty(t, spentStatus)
+	require.True(t, spentStatus[vtxo.VOut].Spent)
+	require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
 }
 
 func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
@@ -500,6 +526,7 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+		time.Sleep(5 * time.Second)
 
 		err = generateBlock()
 		require.NoError(t, err)
@@ -518,6 +545,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+
+		time.Sleep(5 * time.Second)
 
 		wg.Add(1)
 		go func() {
@@ -544,7 +573,10 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		}
 		require.NotEmpty(t, vtxo)
 
-		expl := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+		expl, err := explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
 
 		branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
 		require.NoError(t, err)
@@ -618,6 +650,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+
+		time.Sleep(5 * time.Second)
 
 		spendableVtxos, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -740,10 +774,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		infos, err := grpcTransportClient.GetInfo(ctx)
 		require.NoError(t, err)
 
-		unilateralExitDelayType := arklib.LocktimeTypeSecond
-		if infos.UnilateralExitDelay < 512 {
-			unilateralExitDelayType = arklib.LocktimeTypeBlock
-		}
+		checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+		require.NoError(t, err)
 
 		ptx, checkpointsPtx, err := offchain.BuildTxs(
 			[]offchain.VtxoInput{
@@ -763,19 +795,14 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 					PkScript: alicePkScript,
 				},
 			},
-			&script.CSVMultisigClosure{
-				Locktime: arklib.RelativeLocktime{
-					Type:  unilateralExitDelayType,
-					Value: uint32(infos.UnilateralExitDelay),
-				},
-				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-				},
-			},
+			checkpointTapscript,
 		)
 		require.NoError(t, err)
 
-		explorer := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+		explorer, err := explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
 
 		encodedArkTx, err := ptx.B64Encode()
 		require.NoError(t, err)
@@ -1203,7 +1230,7 @@ func TestSendArkTxWithSeveralInputs(t *testing.T) {
 
 	ctx := context.Background()
 
-	for i := 0; i < numberOfInputs; i++ {
+	for range numberOfInputs {
 		note := generateNote(t, amountPerInput)
 		_, err := alice.RedeemNotes(ctx, []string{note})
 		require.NoError(t, err)
@@ -1385,10 +1412,8 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	infos, err := grpcAlice.GetInfo(ctx)
 	require.NoError(t, err)
 
-	unilateralExitDelayType := arklib.LocktimeTypeSecond
-	if infos.UnilateralExitDelay < 512 {
-		unilateralExitDelayType = arklib.LocktimeTypeBlock
-	}
+	checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+	require.NoError(t, err)
 
 	ptx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
@@ -1408,19 +1433,14 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
-		&script.CSVMultisigClosure{
-			Locktime: arklib.RelativeLocktime{
-				Type:  unilateralExitDelayType,
-				Value: uint32(infos.UnilateralExitDelay),
-			},
-			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-			},
-		},
+		checkpointTapscript,
 	)
 	require.NoError(t, err)
 
-	explorer := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	explorer, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
+	require.NoError(t, err)
 
 	encodedVirtualTx, err := ptx.B64Encode()
 	require.NoError(t, err)
@@ -1644,10 +1664,8 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	infos, err := grpcAlice.GetInfo(ctx)
 	require.NoError(t, err)
 
-	unilateralExitDelayType := arklib.LocktimeTypeSecond
-	if infos.UnilateralExitDelay < 512 {
-		unilateralExitDelayType = arklib.LocktimeTypeBlock
-	}
+	checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+	require.NoError(t, err)
 
 	arkPtx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
@@ -1667,22 +1685,22 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
-		&script.CSVMultisigClosure{
-			Locktime: arklib.RelativeLocktime{
-				Type:  unilateralExitDelayType,
-				Value: uint32(infos.UnilateralExitDelay),
-			},
-			MultisigClosure: script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{aliceAddr.Signer},
-			},
-		},
+		checkpointTapscript,
 	)
 	require.NoError(t, err)
 
-	explorer := explorer.NewExplorer("http://localhost:3000", arklib.BitcoinRegTest)
+	explorer, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	)
+	require.NoError(t, err)
 
 	// add condition witness to the ark ptx
-	err = txutils.AddConditionWitness(0, arkPtx, wire.TxWitness{preimage[:]})
+	err = txutils.SetArkPsbtField(
+		arkPtx,
+		0,
+		txutils.ConditionWitnessField,
+		wire.TxWitness{preimage[:]},
+	)
 	require.NoError(t, err)
 
 	encodedVirtualTx, err := arkPtx.B64Encode()
@@ -1710,8 +1728,12 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
 		require.NoError(t, err)
 
-		// add condition witness to the checkpoint ptx
-		err = txutils.AddConditionWitness(0, ptx, wire.TxWitness{preimage[:]})
+		err = txutils.SetArkPsbtField(
+			ptx,
+			0,
+			txutils.ConditionWitnessField,
+			wire.TxWitness{preimage[:]},
+		)
 		require.NoError(t, err)
 
 		encoded, err := ptx.B64Encode()
@@ -1775,45 +1797,1221 @@ func TestDeleteIntent(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSweep(t *testing.T) {
-	var receive arkReceive
-	receiveStr, err := runArkCommand("receive")
+// TestDelegateRefresh tests the case where Alice owns a vtxo and delegates Bob to refresh it.
+// Alice creates and signs an intent that specifies how the vtxo is refreshed.
+// Alice also creates and signs a forfeit transaction using SIGHASH_ALL | ANYONECANPAY, so that Bob can later add the connector as input, sign the tx with SIGHASH_ALL and complete the refresh during the batch execution.
+func TestDelegateRefresh(t *testing.T) {
+	delegateLocktime := arklib.AbsoluteLocktime(10)
+
+	ctx := context.Background()
+	alice, _, alicePubKey, grpcClient := setupArkSDKwithPublicKey(t)
+	defer alice.Stop()
+	defer grpcClient.Close()
+	_, aliceAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	err = json.Unmarshal([]byte(receiveStr), &receive)
+	aliceArkAddr, err := arklib.DecodeAddressV0(aliceAddr)
 	require.NoError(t, err)
 
-	_, err = runCommand("nigiri", "faucet", receive.Boarding)
+	bobWallet, bobPubKey, err := setupWalletService(t)
+	require.NoError(t, err)
+	require.NotNil(t, bobWallet)
+	require.NotNil(t, bobPubKey)
+
+	bobTreeSigner, err := bobWallet.NewVtxoTreeSigner(ctx, "m/0/1")
+	require.NoError(t, err)
+	require.NotNil(t, bobTreeSigner)
+
+	aliceConfig, err := alice.GetConfigData(t.Context())
+	require.NoError(t, err)
+
+	signerPubKey := aliceConfig.SignerPubKey
+
+	collaborativeAliceBobClosure := &script.CLTVMultisigClosure{
+		Locktime: delegateLocktime,
+		MultisigClosure: script.MultisigClosure{
+			// both alice and bob must sign the transaction
+			PubKeys: []*btcec.PublicKey{alicePubKey, bobPubKey, signerPubKey},
+		},
+	}
+
+	exitLocktime := arklib.RelativeLocktime{
+		Type:  arklib.LocktimeTypeBlock,
+		Value: 10,
+	}
+
+	delegationVtxoScript := script.TapscriptsVtxoScript{
+		Closures: []script.Closure{
+			// delegation script
+			collaborativeAliceBobClosure,
+			// classic collaborative closure, alice only
+			&script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{alicePubKey, signerPubKey},
+			},
+			// alice exit script
+			&script.CSVMultisigClosure{
+				Locktime: exitLocktime,
+				MultisigClosure: script.MultisigClosure{
+					PubKeys: []*btcec.PublicKey{alicePubKey},
+				},
+			},
+		},
+	}
+
+	vtxoTapKey, vtxoTapTree, err := delegationVtxoScript.TapTree()
+	require.NoError(t, err)
+
+	arkAddress := arklib.Address{
+		HRP:        "tark",
+		VtxoTapKey: vtxoTapKey,
+		Signer:     signerPubKey,
+	}
+
+	arkAddressStr, err := arkAddress.EncodeV0()
+	require.NoError(t, err)
+
+	aliceVtxo, err := faucetOffchainAddress(t, arkAddressStr)
+	require.NoError(t, err)
+
+	intentMessage := intent.RegisterMessage{
+		BaseMessage: intent.BaseMessage{
+			Type: intent.IntentMessageTypeRegister,
+		},
+		CosignersPublicKeys: []string{bobTreeSigner.GetPublicKey()},
+		ValidAt:             0,
+		ExpireAt:            0,
+	}
+
+	encodedIntentMessage, err := intentMessage.Encode()
+	require.NoError(t, err)
+
+	vtxoHash, err := chainhash.NewHashFromStr(aliceVtxo.Txid)
+	require.NoError(t, err)
+
+	exitScript, err := delegationVtxoScript.ExitClosures()[0].Script()
+	require.NoError(t, err)
+
+	exitScriptMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(exitScript).TapHash(),
+	)
+	require.NoError(t, err)
+
+	sequence, err := arklib.BIP68Sequence(exitLocktime)
+	require.NoError(t, err)
+
+	delegatePkScript, err := arkAddress.GetPkScript()
+	require.NoError(t, err)
+
+	alicePkScript, err := aliceArkAddr.GetPkScript()
+	require.NoError(t, err)
+
+	// Alice creates an intent proof that doesn't expire
+	intentProof, err := intent.New(
+		encodedIntentMessage,
+		[]intent.Input{
+			{
+				OutPoint: &wire.OutPoint{
+					Hash:  *vtxoHash,
+					Index: aliceVtxo.VOut,
+				},
+				Sequence: sequence,
+				WitnessUtxo: &wire.TxOut{
+					Value:    int64(aliceVtxo.Amount),
+					PkScript: delegatePkScript,
+				},
+			},
+		},
+		[]*wire.TxOut{
+			{
+				Value:    int64(aliceVtxo.Amount),
+				PkScript: alicePkScript,
+			},
+		},
+	)
+	require.NoError(t, err)
+
+	tapLeafScript := &psbt.TaprootTapLeafScript{
+		ControlBlock: exitScriptMerkleProof.ControlBlock,
+		Script:       exitScriptMerkleProof.Script,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}
+
+	intentProof.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+	intentProof.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+
+	scripts, err := delegationVtxoScript.Encode()
+	require.NoError(t, err)
+
+	tapTree := txutils.TapTree(scripts)
+
+	err = txutils.SetArkPsbtField(&intentProof.Packet, 1, txutils.VtxoTaprootTreeField, tapTree)
+	require.NoError(t, err)
+
+	unsignedIntentProof, err := intentProof.B64Encode()
+	require.NoError(t, err)
+
+	signedIntentProof, err := alice.SignTransaction(ctx, unsignedIntentProof)
+	require.NoError(t, err)
+
+	signedIntentProofPsbt, err := psbt.NewFromRawBytes(strings.NewReader(signedIntentProof), true)
+	require.NoError(t, err)
+
+	encodedIntentProof, err := signedIntentProofPsbt.B64Encode()
+	require.NoError(t, err)
+
+	// Alice creates a forfeit transaction spending the vtxo with SIGHASH_ALL | ANYONECANPAY
+
+	forfeitOutputAddr, err := btcutil.DecodeAddress(aliceConfig.ForfeitAddress, nil)
+	require.NoError(t, err)
+
+	forfeitOutputScript, err := txscript.PayToAddrScript(forfeitOutputAddr)
+	require.NoError(t, err)
+
+	connectorAmount := aliceConfig.Dust
+
+	partialForfeitTx, err := tree.BuildForfeitTxWithOutput(
+		[]*wire.OutPoint{{
+			Hash:  *vtxoHash,
+			Index: aliceVtxo.VOut,
+		}},
+		[]uint32{wire.MaxTxInSequenceNum - 1},
+		[]*wire.TxOut{{
+			Value:    int64(aliceVtxo.Amount),
+			PkScript: delegatePkScript,
+		}},
+		&wire.TxOut{
+			Value:    int64(aliceVtxo.Amount + connectorAmount),
+			PkScript: forfeitOutputScript,
+		},
+		uint32(delegateLocktime),
+	)
+	require.NoError(t, err)
+
+	updater, err := psbt.NewUpdater(partialForfeitTx)
+	require.NoError(t, err)
+	require.NotNil(t, updater)
+
+	err = updater.AddInSighashType(txscript.SigHashAnyOneCanPay|txscript.SigHashAll, 0)
+	require.NoError(t, err)
+
+	aliceBobScript, err := collaborativeAliceBobClosure.Script()
+	require.NoError(t, err)
+
+	aliceBobMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(aliceBobScript).TapHash(),
+	)
+	require.NoError(t, err)
+
+	aliceBobTapLeafScript := &psbt.TaprootTapLeafScript{
+		ControlBlock: aliceBobMerkleProof.ControlBlock,
+		Script:       aliceBobMerkleProof.Script,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}
+
+	updater.Upsbt.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{aliceBobTapLeafScript}
+
+	b64partialForfeitTx, err := updater.Upsbt.B64Encode()
+	require.NoError(t, err)
+
+	signedPartialForfeitTx, err := alice.SignTransaction(ctx, b64partialForfeitTx)
+	require.NoError(t, err)
+
+	// 10 blocks later, Bob registers using Alice's intent, sign the tree and submit the forfeit transaction
+	err = exec.Command("nigiri", "rpc", "--generate", "11").Run()
+	require.NoError(t, err)
+
+	intentId, err := grpcClient.RegisterIntent(ctx, encodedIntentProof, encodedIntentMessage)
+	require.NoError(t, err)
+
+	topics := arksdk.GetEventStreamTopics(
+		[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{bobTreeSigner},
+	)
+	stream, close, err := grpcClient.GetEventStream(ctx, topics)
+	require.NoError(t, err)
+	defer close()
+
+	commitmentTxid, err := arksdk.JoinBatchSession(ctx, stream, &delegateBatchEventsHandler{
+		signerSession:    bobTreeSigner,
+		partialForfeitTx: signedPartialForfeitTx,
+		delegatorWallet:  bobWallet,
+		client:           grpcClient,
+		forfeitPubKey:    aliceConfig.ForfeitPubKey,
+		intentId:         intentId,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, commitmentTxid)
+}
+
+func TestBan(t *testing.T) {
+	t.Run("Musig2NonceSubmission", func(t *testing.T) {
+		alice, grpcAlice := setupArkSDK(t)
+		defer alice.Stop()
+		defer grpcAlice.Close()
+
+		// faucet the alice's wallet
+		_, aliceAddr, _, err := alice.Receive(t.Context())
+		require.NoError(t, err)
+		aliceVtxo, err := faucetOffchainAddress(t, aliceAddr)
+		require.NoError(t, err)
+
+		// setup a random musig2 tree signer
+		secKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signerSession := tree.NewTreeSignerSession(secKey)
+
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
+			},
+			[]string{signerSession.GetPublicKey()},
+		)
+		require.NoError(t, err)
+
+		topics := arksdk.GetEventStreamTopics(
+			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
+		)
+		stream, close, err := grpcAlice.GetEventStream(t.Context(), topics)
+		require.NoError(t, err)
+		defer close()
+
+		handlers := &customBatchEventsHandler{
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+				buf := sha256.Sum256([]byte(intentId))
+				hashedIntentId := hex.EncodeToString(buf[:])
+
+				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
+					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					return false, err
+				}
+
+				return true, nil
+			},
+			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
+				return true, nil // just skip, do not submit nonces
+			},
+		}
+
+		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		require.Error(t, err)
+
+		// next settle should fail because the nonce has not been submitted
+		_, err = alice.Settle(t.Context())
+		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("Musig2SignatureSubmission", func(t *testing.T) {
+		alice, grpcAlice := setupArkSDK(t)
+		defer alice.Stop()
+		defer grpcAlice.Close()
+
+		// faucet the alice's wallet
+		_, aliceAddr, _, err := alice.Receive(t.Context())
+		require.NoError(t, err)
+		aliceVtxo, err := faucetOffchainAddress(t, aliceAddr)
+		require.NoError(t, err)
+
+		// setup a random musig2 tree signer
+		secKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signerSession := tree.NewTreeSignerSession(secKey)
+
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
+			},
+			[]string{signerSession.GetPublicKey()},
+		)
+		require.NoError(t, err)
+
+		topics := arksdk.GetEventStreamTopics(
+			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
+		)
+		stream, close, err := grpcAlice.GetEventStream(t.Context(), topics)
+		require.NoError(t, err)
+		defer close()
+
+		var batchExpiry arklib.RelativeLocktime
+		handlers := &customBatchEventsHandler{
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+				buf := sha256.Sum256([]byte(intentId))
+				hashedIntentId := hex.EncodeToString(buf[:])
+
+				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
+					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
+					return false, err
+				}
+
+				return true, nil
+			},
+			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
+				myPubkey := signerSession.GetPublicKey()
+				if !slices.Contains(event.CosignersPubkeys, myPubkey) {
+					return true, nil
+				}
+
+				signerPubKey := secKey.PubKey()
+
+				sweepClosure := script.CSVMultisigClosure{
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{signerPubKey},
+					},
+					Locktime: batchExpiry,
+				}
+
+				script, err := sweepClosure.Script()
+				if err != nil {
+					return false, err
+				}
+
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
+				if err != nil {
+					return false, err
+				}
+
+				batchOutput := commitmentTx.UnsignedTx.TxOut[0]
+				batchOutputAmount := batchOutput.Value
+
+				sweepTapLeaf := txscript.NewBaseTapLeaf(script)
+				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
+				root := sweepTapTree.RootNode.TapHash()
+
+				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+					return false, err
+				}
+
+				nonces, err := signerSession.GetNonces()
+				if err != nil {
+					return false, err
+				}
+
+				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+					return false, err
+				}
+
+				return false, nil
+			},
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
+				return false, nil // skip sending signatures
+			},
+		}
+
+		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		require.Error(t, err)
+
+		// next settle should fail because the signature has not been submitted
+		_, err = alice.Settle(t.Context())
+		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("Musig2InvalidSignature", func(t *testing.T) {
+		alice, grpcAlice := setupArkSDK(t)
+		defer alice.Stop()
+		defer grpcAlice.Close()
+
+		// faucet the alice's wallet
+		_, aliceAddr, _, err := alice.Receive(t.Context())
+		require.NoError(t, err)
+		aliceVtxo, err := faucetOffchainAddress(t, aliceAddr)
+		require.NoError(t, err)
+
+		// setup a random musig2 tree signer
+		secKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signerSession := tree.NewTreeSignerSession(secKey)
+
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
+			},
+			[]string{signerSession.GetPublicKey()},
+		)
+		require.NoError(t, err)
+
+		topics := arksdk.GetEventStreamTopics(
+			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
+		)
+		stream, close, err := grpcAlice.GetEventStream(t.Context(), topics)
+		require.NoError(t, err)
+		defer close()
+
+		handlers := &customBatchEventsHandler{
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+				buf := sha256.Sum256([]byte(intentId))
+				hashedIntentId := hex.EncodeToString(buf[:])
+
+				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
+					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					return false, err
+				}
+
+				return true, nil
+			},
+			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
+				myPubkey := signerSession.GetPublicKey()
+				if !slices.Contains(event.CosignersPubkeys, myPubkey) {
+					return true, nil
+				}
+
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
+				if err != nil {
+					return false, err
+				}
+
+				batchOutput := commitmentTx.UnsignedTx.TxOut[0]
+				batchOutputAmount := batchOutput.Value
+
+				// use a fake sweep to create invalid signatures
+				fakeSweepTapHash := sha256.Sum256([]byte("random_sweep_tap_hash"))
+
+				if err := signerSession.Init(fakeSweepTapHash[:], batchOutputAmount, vtxoTree); err != nil {
+					return false, err
+				}
+
+				nonces, err := signerSession.GetNonces()
+				if err != nil {
+					return false, err
+				}
+
+				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+					return false, err
+				}
+
+				return false, nil
+			},
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
+				signerSession.SetAggregatedNonces(event.Nonces)
+
+				sigs, err := signerSession.Sign()
+				if err != nil {
+					return false, err
+				}
+
+				err = grpcAlice.SubmitTreeSignatures(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					sigs,
+				)
+				return err == nil, err
+			},
+		}
+
+		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		require.Error(t, err)
+
+		// next settle should fail because the signature was invalid
+		_, err = alice.Settle(t.Context())
+		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("ForfeitSubmission", func(t *testing.T) {
+		alice, grpcAlice := setupArkSDK(t)
+		defer alice.Stop()
+		defer grpcAlice.Close()
+
+		// faucet the alice's wallet
+		_, aliceAddr, _, err := alice.Receive(t.Context())
+		require.NoError(t, err)
+		aliceVtxo, err := faucetOffchainAddress(t, aliceAddr)
+		require.NoError(t, err)
+
+		// setup a random musig2 tree signer
+		secKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signerSession := tree.NewTreeSignerSession(secKey)
+
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
+			},
+			[]string{signerSession.GetPublicKey()},
+		)
+		require.NoError(t, err)
+
+		topics := arksdk.GetEventStreamTopics(
+			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
+		)
+		stream, close, err := grpcAlice.GetEventStream(t.Context(), topics)
+		require.NoError(t, err)
+		defer close()
+
+		var batchExpiry arklib.RelativeLocktime
+		handlers := &customBatchEventsHandler{
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+				buf := sha256.Sum256([]byte(intentId))
+				hashedIntentId := hex.EncodeToString(buf[:])
+
+				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
+					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
+					return false, err
+				}
+
+				return true, nil
+			},
+			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
+				myPubkey := signerSession.GetPublicKey()
+				if !slices.Contains(event.CosignersPubkeys, myPubkey) {
+					return true, nil
+				}
+
+				signerPubKey := secKey.PubKey()
+
+				sweepClosure := script.CSVMultisigClosure{
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{signerPubKey},
+					},
+					Locktime: batchExpiry,
+				}
+
+				script, err := sweepClosure.Script()
+				if err != nil {
+					return false, err
+				}
+
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
+				if err != nil {
+					return false, err
+				}
+
+				batchOutput := commitmentTx.UnsignedTx.TxOut[0]
+				batchOutputAmount := batchOutput.Value
+
+				sweepTapLeaf := txscript.NewBaseTapLeaf(script)
+				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
+				root := sweepTapTree.RootNode.TapHash()
+
+				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+					return false, err
+				}
+
+				nonces, err := signerSession.GetNonces()
+				if err != nil {
+					return false, err
+				}
+
+				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+					return false, err
+				}
+
+				return false, nil
+			},
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
+				signerSession.SetAggregatedNonces(event.Nonces)
+
+				sigs, err := signerSession.Sign()
+				if err != nil {
+					return false, err
+				}
+
+				err = grpcAlice.SubmitTreeSignatures(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					sigs,
+				)
+				return err == nil, err
+			},
+			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
+				return nil // do not submit forfeit txs
+			},
+		}
+
+		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		require.Error(t, err)
+
+		// next settle should fail because the forfeit txs have not been submitted
+		_, err = alice.Settle(t.Context())
+		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("ForfeitInvalidSignature", func(t *testing.T) {
+		alice, grpcAlice := setupArkSDK(t)
+		defer alice.Stop()
+		defer grpcAlice.Close()
+
+		// faucet the alice's wallet
+		_, aliceAddr, _, err := alice.Receive(t.Context())
+		require.NoError(t, err)
+		aliceVtxo, err := faucetOffchainAddress(t, aliceAddr)
+		require.NoError(t, err)
+
+		// setup a random musig2 tree signer
+		secKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signerSession := tree.NewTreeSignerSession(secKey)
+
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{aliceVtxo},
+			[]types.Utxo{},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceVtxo.Amount,
+					To:     aliceAddr,
+				},
+			},
+			[]string{signerSession.GetPublicKey()},
+		)
+		require.NoError(t, err)
+
+		topics := arksdk.GetEventStreamTopics(
+			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
+		)
+		stream, close, err := grpcAlice.GetEventStream(t.Context(), topics)
+		require.NoError(t, err)
+		defer close()
+
+		info, err := grpcAlice.GetInfo(t.Context())
+		require.NoError(t, err)
+		var batchExpiry arklib.RelativeLocktime
+
+		handlers := &customBatchEventsHandler{
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+				buf := sha256.Sum256([]byte(intentId))
+				hashedIntentId := hex.EncodeToString(buf[:])
+
+				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
+					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
+					return false, err
+				}
+
+				return true, nil
+			},
+			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
+				myPubkey := signerSession.GetPublicKey()
+				if !slices.Contains(event.CosignersPubkeys, myPubkey) {
+					return true, nil
+				}
+
+				signerPubKey := secKey.PubKey()
+
+				sweepClosure := script.CSVMultisigClosure{
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{signerPubKey},
+					},
+					Locktime: batchExpiry,
+				}
+
+				script, err := sweepClosure.Script()
+				if err != nil {
+					return false, err
+				}
+
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
+				if err != nil {
+					return false, err
+				}
+
+				batchOutput := commitmentTx.UnsignedTx.TxOut[0]
+				batchOutputAmount := batchOutput.Value
+
+				sweepTapLeaf := txscript.NewBaseTapLeaf(script)
+				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
+				root := sweepTapTree.RootNode.TapHash()
+
+				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+					return false, err
+				}
+
+				nonces, err := signerSession.GetNonces()
+				if err != nil {
+					return false, err
+				}
+
+				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+					return false, err
+				}
+
+				return false, nil
+			},
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
+				signerSession.SetAggregatedNonces(event.Nonces)
+
+				sigs, err := signerSession.Sign()
+				if err != nil {
+					return false, err
+				}
+
+				err = grpcAlice.SubmitTreeSignatures(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					sigs,
+				)
+				return err == nil, err
+			},
+			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
+				txhash, err := chainhash.NewHashFromStr(aliceVtxo.Txid)
+				if err != nil {
+					return err
+				}
+
+				// use a wrong script to create invalid signatures
+				fakeScript := []byte("random_script")
+
+				forfeitOutputAddr, err := btcutil.DecodeAddress(info.ForfeitAddress, nil)
+				if err != nil {
+					return err
+				}
+
+				forfeitOutputScript, err := txscript.PayToAddrScript(forfeitOutputAddr)
+				if err != nil {
+					return err
+				}
+
+				forfeitPtx, err := tree.BuildForfeitTx(
+					[]*wire.OutPoint{{
+						Hash:  *txhash,
+						Index: aliceVtxo.VOut,
+					}},
+					[]uint32{wire.MaxTxInSequenceNum},
+					[]*wire.TxOut{{Value: int64(aliceVtxo.Amount), PkScript: fakeScript}},
+					forfeitOutputScript,
+					0,
+				)
+				if err != nil {
+					return err
+				}
+
+				encodedForfeitTx, err := forfeitPtx.B64Encode()
+				if err != nil {
+					return err
+				}
+
+				// sign the forfeit tx
+				signedForfeitTx, err := alice.SignTransaction(
+					context.Background(),
+					encodedForfeitTx,
+				)
+				if err != nil {
+					return err
+				}
+
+				return grpcAlice.SubmitSignedForfeitTxs(
+					ctx, []string{signedForfeitTx}, "",
+				)
+			},
+		}
+
+		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		require.Error(t, err)
+
+		// next settle should fail because the forfeit txs have not been submitted
+		_, err = alice.Settle(t.Context())
+		require.Error(t, err)
+
+		// send should fail
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
+			{
+				Amount: aliceVtxo.Amount,
+				To:     aliceAddr,
+			},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("BoardingInputSubmission", func(t *testing.T) {
+		alice, wallet, _, grpcAlice := setupArkSDKwithPublicKey(t)
+		defer alice.Stop()
+		defer grpcAlice.Close()
+
+		// faucet the alice's wallet
+		_, offchainAddr, boardingAddr, err := wallet.NewAddress(t.Context(), false)
+		require.NoError(t, err)
+		err = faucetOnchainAddress(t, boardingAddr.Address)
+		require.NoError(t, err)
+
+		time.Sleep(5 * time.Second)
+
+		info, err := grpcAlice.GetInfo(t.Context())
+		require.NoError(t, err)
+
+		explr, err := explorer.NewExplorer(
+			"http://localhost:3000",
+			arklib.BitcoinRegTest,
+			explorer.WithPollInterval(time.Second),
+		)
+		require.NoError(t, err)
+		boardingUtxos, err := explr.GetUtxos(boardingAddr.Address)
+		require.NoError(t, err)
+		require.NotEmpty(t, boardingUtxos)
+
+		aliceUtxo := boardingUtxos[0]
+		utxo := aliceUtxo.ToUtxo(
+			arklib.RelativeLocktime{
+				Type:  arklib.LocktimeTypeBlock,
+				Value: uint32(info.BoardingExitDelay),
+			},
+			boardingAddr.Tapscripts,
+		)
+
+		// setup a random musig2 tree signer
+		secKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signerSession := tree.NewTreeSignerSession(secKey)
+
+		intentId, err := alice.RegisterIntent(
+			t.Context(),
+			[]types.Vtxo{},
+			[]types.Utxo{utxo},
+			nil,
+			[]types.Receiver{
+				{
+					Amount: aliceUtxo.Amount,
+					To:     offchainAddr.Address,
+				},
+			},
+			[]string{signerSession.GetPublicKey()},
+		)
+		require.NoError(t, err)
+
+		topics := arksdk.GetEventStreamTopics(
+			[]types.Outpoint{utxo.Outpoint}, []tree.SignerSession{signerSession},
+		)
+		stream, close, err := grpcAlice.GetEventStream(t.Context(), topics)
+		require.NoError(t, err)
+		defer close()
+
+		var batchExpiry arklib.RelativeLocktime
+		handlers := &customBatchEventsHandler{
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+				buf := sha256.Sum256([]byte(intentId))
+				hashedIntentId := hex.EncodeToString(buf[:])
+
+				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
+					err := grpcAlice.ConfirmRegistration(ctx, intentId)
+					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
+					return false, err
+				}
+
+				return true, nil
+			},
+			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
+				myPubkey := signerSession.GetPublicKey()
+				if !slices.Contains(event.CosignersPubkeys, myPubkey) {
+					return true, nil
+				}
+
+				signerPubKey := secKey.PubKey()
+
+				sweepClosure := script.CSVMultisigClosure{
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{signerPubKey},
+					},
+					Locktime: batchExpiry,
+				}
+
+				script, err := sweepClosure.Script()
+				if err != nil {
+					return false, err
+				}
+
+				commitmentTx, err := psbt.NewFromRawBytes(
+					strings.NewReader(event.UnsignedCommitmentTx),
+					true,
+				)
+				if err != nil {
+					return false, err
+				}
+
+				batchOutput := commitmentTx.UnsignedTx.TxOut[0]
+				batchOutputAmount := batchOutput.Value
+
+				sweepTapLeaf := txscript.NewBaseTapLeaf(script)
+				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
+				root := sweepTapTree.RootNode.TapHash()
+
+				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+					return false, err
+				}
+
+				nonces, err := signerSession.GetNonces()
+				if err != nil {
+					return false, err
+				}
+
+				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+					return false, err
+				}
+
+				return false, nil
+			},
+			onTreeNoncesAggregated: func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error) {
+				signerSession.SetAggregatedNonces(event.Nonces)
+
+				sigs, err := signerSession.Sign()
+				if err != nil {
+					return false, err
+				}
+
+				err = grpcAlice.SubmitTreeSignatures(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					sigs,
+				)
+				return err == nil, err
+			},
+			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
+				commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(event.Tx), true)
+				if err != nil {
+					return err
+				}
+
+				// modify the prevout amount to create invalid signature
+				commitmentPtx.Inputs[0].WitnessUtxo.Value = int64(aliceUtxo.Amount + 2000)
+
+				encodedCommitmentTx, err := commitmentPtx.B64Encode()
+				if err != nil {
+					return err
+				}
+
+				// sign the forfeit tx
+				signedCommitmentTx, err := alice.SignTransaction(
+					context.Background(),
+					encodedCommitmentTx,
+				)
+				if err != nil {
+					return err
+				}
+
+				return grpcAlice.SubmitSignedForfeitTxs(
+					ctx, []string{}, signedCommitmentTx,
+				)
+			},
+		}
+
+		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		require.Error(t, err)
+
+		// next settle should fail because the forfeit txs have not been submitted
+		_, err = alice.Settle(t.Context())
+		require.Error(t, err)
+	})
+}
+
+func TestSweepBatchOutput(t *testing.T) {
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	ctx := t.Context()
+
+	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	_, err = runCommand("nigiri", "faucet", boardingAddr)
 	require.NoError(t, err)
 
 	time.Sleep(5 * time.Second)
 
-	_, err = runArkCommand("settle", "--password", password)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var vtxo types.Vtxo
+	go func() {
+		defer wg.Done()
+		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+		require.Len(t, vtxos, 1)
+		vtxo = vtxos[0]
+	}()
+
+	// settle the boarding utxo to create a new batch output expiring in 20 blocks
+	_, err = alice.Settle(ctx)
 	require.NoError(t, err)
 
-	time.Sleep(3 * time.Second)
+	wg.Wait()
 
+	// generate 30 blocks to expire the batch output
 	_, err = runCommand("nigiri", "rpc", "--generate", "30")
 	require.NoError(t, err)
 
+	// wait for server to process the sweep
 	time.Sleep(20 * time.Second)
 
-	var balance arkBalance
-	balanceStr, err := runArkCommand("balance")
+	spendable, spent, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
-	require.Zero(t, balance.Offchain.Total) // all funds should be swept
+	require.Empty(t, spendable)
+	require.Len(t, spent, 1)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spent[0].Swept)
+	require.False(t, spent[0].Spent)
 
-	// redeem the note
-	_, err = runArkCommand("recover", "--password", password)
+	// test fund recovery
+	txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos)
 	require.NoError(t, err)
 
-	time.Sleep(3 * time.Second)
+	// give some time for the server to process the recovery
+	time.Sleep(5 * time.Second)
 
-	balanceStr, err = runArkCommand("balance")
+	spendable, spent, err = alice.ListVtxos(ctx)
 	require.NoError(t, err)
-	require.NoError(t, json.Unmarshal([]byte(balanceStr), &balance))
-	require.NotZero(t, balance.Offchain.Total) // funds should be recovered
+	require.NotEmpty(t, spendable)
+	require.Len(t, spendable, 1)
+	require.Len(t, spent, 1)
+	require.Equal(t, txid, spent[0].SettledBy)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spent[0].Swept)
+	require.True(t, spent[0].Spent)
+}
+
+func TestSweepCheckpointOutput(t *testing.T) {
+	alice, grpcAlice := setupArkSDK(t)
+	defer alice.Stop()
+	defer grpcAlice.Close()
+
+	ctx := t.Context()
+
+	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	_, err = runCommand("nigiri", "faucet", boardingAddr)
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var vtxo types.Vtxo
+	go func() {
+		defer wg.Done()
+		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+		require.Len(t, vtxos, 1)
+		vtxo = vtxos[0]
+	}()
+
+	// settle the boarding utxo
+	_, err = alice.Settle(ctx)
+	require.NoError(t, err)
+
+	wg.Wait()
+
+	// self-send the VTXO to create a checkpoint output
+	txid, err := alice.SendOffChain(
+		ctx,
+		false,
+		[]types.Receiver{{To: offchainAddr, Amount: vtxo.Amount}},
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, txid)
+
+	// unroll the spent VTXO to put checkpoint onchain
+	expl, err := explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false))
+	require.NoError(t, err)
+
+	branch, err := redemption.NewRedeemBranch(ctx, expl, setupIndexer(t), vtxo)
+	require.NoError(t, err)
+
+	for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
+		bumpAndBroadcastTx(t, parentTx, expl)
+	}
+
+	// give some time for the server to process the unroll and broadcast the checkpoint
+	time.Sleep(5 * time.Second)
+
+	// generate 20 blocks to expire the checkpoint output
+	_, err = runCommand("nigiri", "rpc", "--generate", "20")
+	require.NoError(t, err)
+
+	// give time for the server to process the sweep
+	time.Sleep(20 * time.Second)
+
+	// verify that the checkpoint output has been put onchain
+	// and that the VTXO has been swept
+	spendable, spent, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendable)
+	require.NotEmpty(t, spent)
+	require.Len(t, spent, 1)
+	require.Equal(t, txid, spendable[0].Txid)
+	require.Equal(t, vtxo.Txid, spent[0].Txid)
+	require.True(t, spent[0].Swept)
+	require.True(t, spent[0].Spent)
+	require.True(t, spent[0].Unrolled)
 }
 
 func runArkCommand(arg ...string) (string, error) {
@@ -1834,7 +3032,7 @@ func setupServerWalletAndCLI() error {
 		return ErrAlreadySetup
 	}
 
-	req, err := http.NewRequest("GET", "http://localhost:7070/v1/admin/wallet/seed", nil)
+	req, err := http.NewRequest("GET", "http://localhost:7071/v1/admin/wallet/seed", nil)
 	if err != nil {
 		return fmt.Errorf("failed to prepare generate seed request: %s", err)
 	}
@@ -1856,7 +3054,7 @@ func setupServerWalletAndCLI() error {
 	reqBody := bytes.NewReader(
 		[]byte(fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, password)),
 	)
-	req, err = http.NewRequest("POST", "http://localhost:7070/v1/admin/wallet/create", reqBody)
+	req, err = http.NewRequest("POST", "http://localhost:7071/v1/admin/wallet/create", reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to prepare wallet create request: %s", err)
 	}
@@ -1868,7 +3066,7 @@ func setupServerWalletAndCLI() error {
 	}
 
 	reqBody = bytes.NewReader([]byte(fmt.Sprintf(`{"password": "%s"}`, password)))
-	req, err = http.NewRequest("POST", "http://localhost:7070/v1/admin/wallet/unlock", reqBody)
+	req, err = http.NewRequest("POST", "http://localhost:7071/v1/admin/wallet/unlock", reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to prepare wallet unlock request: %s", err)
 	}
@@ -1887,7 +3085,7 @@ func setupServerWalletAndCLI() error {
 	for {
 		time.Sleep(time.Second)
 
-		req, err := http.NewRequest("GET", "http://localhost:7070/v1/admin/wallet/status", nil)
+		req, err := http.NewRequest("GET", "http://localhost:7071/v1/admin/wallet/status", nil)
 		if err != nil {
 			return fmt.Errorf("failed to prepare status request: %s", err)
 		}
@@ -1909,7 +3107,7 @@ func setupServerWalletAndCLI() error {
 	for addr.Address == "" {
 		time.Sleep(time.Second)
 
-		req, err = http.NewRequest("GET", "http://localhost:7070/v1/admin/wallet/address", nil)
+		req, err = http.NewRequest("GET", "http://localhost:7071/v1/admin/wallet/address", nil)
 		if err != nil {
 			return fmt.Errorf("failed to prepare new address request: %s", err)
 		}
@@ -1938,70 +3136,9 @@ func setupServerWalletAndCLI() error {
 
 	if _, err := runArkCommand(
 		"init", "--server-url", "localhost:7070", "--password", password,
-		"--network", "regtest", "--explorer", "http://chopsticks:3000",
+		"--explorer", "http://chopsticks:3000",
 	); err != nil {
 		return fmt.Errorf("error initializing ark config: %s", err)
 	}
 	return nil
-}
-
-func setupArkSDK(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
-	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
-	})
-	require.NoError(t, err)
-
-	client, err := arksdk.NewArkClient(appDataStore)
-	require.NoError(t, err)
-
-	err = client.Init(context.Background(), arksdk.InitArgs{
-		WalletType: arksdk.SingleKeyWallet,
-		ClientType: arksdk.GrpcClient,
-		ServerUrl:  "localhost:7070",
-		Password:   password,
-	})
-	require.NoError(t, err)
-
-	err = client.Unlock(context.Background(), password)
-	require.NoError(t, err)
-
-	grpcClient, err := grpcclient.NewClient("localhost:7070")
-	require.NoError(t, err)
-
-	return client, grpcClient
-}
-
-func setupIndexer(t *testing.T) indexer.Indexer {
-	svc, err := grpcindexer.NewClient("localhost:7070")
-	require.NoError(t, err)
-	return svc
-}
-
-func generateNote(t *testing.T, amount uint32) string {
-	adminHttpClient := &http.Client{
-		Timeout: 15 * time.Second,
-	}
-
-	reqBody := bytes.NewReader([]byte(fmt.Sprintf(`{"amount": "%d"}`, amount)))
-	req, err := http.NewRequest("POST", "http://localhost:7070/v1/admin/note", reqBody)
-	if err != nil {
-		t.Fatalf("failed to prepare note request: %s", err)
-	}
-	req.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := adminHttpClient.Do(req)
-	if err != nil {
-		t.Fatalf("failed to create note: %s", err)
-	}
-
-	var noteResp struct {
-		Notes []string `json:"notes"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&noteResp); err != nil {
-		t.Fatalf("failed to parse response: %s", err)
-	}
-
-	return noteResp.Notes[0]
 }

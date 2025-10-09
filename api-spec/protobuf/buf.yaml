@@ -1,7 +1,7 @@
 version: v1
 name: buf.build/arkade-os/arkd
 deps:
-  - buf.build/googleapis/googleapis
+  - buf.build/meshapi/grpc-api-gateway
 breaking:
   use:
     - FILE

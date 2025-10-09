@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,7 +9,13 @@ import (
 	"strings"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application/scanner"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application/wallet"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/cypher"
+	db "github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/db/badger"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/nbxplorer"
+	"github.com/btcsuite/btcd/btcec/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -18,21 +25,13 @@ var (
 	Datadir      = "DATADIR"
 	LogLevel     = "LOG_LEVEL"
 	Network      = "NETWORK"
-	EsploraURL   = "ESPLORA_URL"
-	NeutrinoPeer = "NEUTRINO_PEER"
-	// #nosec G101
-	BitcoindRpcUser = "BITCOIND_RPC_USER"
-	// #nosec G101
-	BitcoindRpcPass  = "BITCOIND_RPC_PASS"
-	BitcoindRpcHost  = "BITCOIND_RPC_HOST"
-	BitcoindZMQBlock = "BITCOIND_ZMQ_BLOCK"
-	BitcoindZMQTx    = "BITCOIND_ZMQ_TX"
+	NbxplorerURL = "NBXPLORER_URL"
+	SignerKey    = "SIGNER_KEY"
 
-	defaultPort       = 6060
-	defaultLogLevel   = int(log.InfoLevel)
-	defaultDatadir    = arklib.AppDataDir("arkd-wallet", false)
-	defaultNetwork    = "bitcoin"
-	defaultEsploraURL = "https://blockstream.info/api"
+	defaultPort     = 6060
+	defaultLogLevel = int(log.InfoLevel)
+	defaultDatadir  = arklib.AppDataDir("arkd-wallet", false)
+	defaultNetwork  = "bitcoin"
 )
 
 func LoadConfig() (*Config, error) {
@@ -43,7 +42,6 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(Datadir, defaultDatadir)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(Network, defaultNetwork)
-	viper.SetDefault(EsploraURL, defaultEsploraURL)
 
 	net, err := getNetwork()
 	if err != nil {
@@ -59,56 +57,37 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to create db dir: %s", err)
 	}
 
-	esploraURL := viper.GetString(EsploraURL)
-	if len(esploraURL) == 0 {
-		return nil, fmt.Errorf("missing esplora url")
-	}
-
 	cfg := &Config{
-		Port:             viper.GetUint32(Port),
-		DbDir:            dbPath,
-		LogLevel:         viper.GetInt(LogLevel),
-		Network:          net,
-		EsploraURL:       esploraURL,
-		NeutrinoPeer:     viper.GetString(NeutrinoPeer),
-		BitcoindRpcUser:  viper.GetString(BitcoindRpcUser),
-		BitcoindRpcPass:  viper.GetString(BitcoindRpcPass),
-		BitcoindRpcHost:  viper.GetString(BitcoindRpcHost),
-		BitcoindZMQBlock: viper.GetString(BitcoindZMQBlock),
-		BitcoindZMQTx:    viper.GetString(BitcoindZMQTx),
+		Port:         viper.GetUint32(Port),
+		DbDir:        dbPath,
+		LogLevel:     viper.GetInt(LogLevel),
+		Network:      net,
+		NbxplorerURL: viper.GetString(NbxplorerURL),
+		SignerKey:    viper.GetString(SignerKey),
 	}
 
-	if err := cfg.walletService(); err != nil {
-		return nil, fmt.Errorf("error while creating wallet service: %s", err)
+	if err := cfg.initServices(); err != nil {
+		return nil, fmt.Errorf("error while initializing services: %s", err)
 	}
 
 	return cfg, nil
 }
 
 type Config struct {
-	Port             uint32
-	DbDir            string
-	LogLevel         int
-	Network          arklib.Network
-	EsploraURL       string
-	NeutrinoPeer     string
-	BitcoindRpcUser  string
-	BitcoindRpcPass  string
-	BitcoindRpcHost  string
-	BitcoindZMQBlock string
-	BitcoindZMQTx    string
+	Port         uint32
+	DbDir        string
+	LogLevel     int
+	Network      arklib.Network
+	NbxplorerURL string
+	SignerKey    string
 
-	WalletSvc application.WalletService
+	WalletSvc  application.WalletService
+	ScannerSvc application.BlockchainScanner
 }
 
 func (c *Config) String() string {
 	clone := *c
-	if clone.BitcoindRpcPass != "" {
-		clone.BitcoindRpcPass = "••••••"
-	}
-	if clone.BitcoindRpcUser != "" {
-		clone.BitcoindRpcUser = "••••••"
-	}
+
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
@@ -116,41 +95,48 @@ func (c *Config) String() string {
 	return string(json)
 }
 
-func (c *Config) walletService() error {
-	// Check if both Neutrino peer and Bitcoind RPC credentials are provided
-	if c.NeutrinoPeer != "" && (c.BitcoindRpcUser != "" || c.BitcoindRpcPass != "") {
-		return fmt.Errorf("cannot use both Neutrino peer and Bitcoind RPC credentials")
-	}
-
-	var svc application.WalletService
-	var err error
-
-	switch {
-	case c.BitcoindZMQBlock != "" && c.BitcoindZMQTx != "" && c.BitcoindRpcUser != "" && c.BitcoindRpcPass != "":
-		svc, err = application.NewService(application.WalletConfig{
-			Datadir: c.DbDir,
-			Network: c.Network,
-		}, application.WithBitcoindZMQ(c.BitcoindZMQBlock, c.BitcoindZMQTx, c.BitcoindRpcHost, c.BitcoindRpcUser, c.BitcoindRpcPass))
-	case c.BitcoindRpcUser != "" && c.BitcoindRpcPass != "":
-		svc, err = application.NewService(application.WalletConfig{
-			Datadir: c.DbDir,
-			Network: c.Network,
-		}, application.WithPollingBitcoind(c.BitcoindRpcHost, c.BitcoindRpcUser, c.BitcoindRpcPass))
-	default:
-		// Default to Neutrino for Bitcoin mainnet or when NeutrinoPeer is explicitly set
-		if len(c.EsploraURL) == 0 {
-			return fmt.Errorf("missing esplora url")
+func (c *Config) initServices() error {
+	var signerKey *btcec.PrivateKey
+	if c.SignerKey != "" {
+		buf, err := hex.DecodeString(c.SignerKey)
+		if err != nil {
+			return fmt.Errorf("invalid signer key format, must be hex")
 		}
-		svc, err = application.NewService(application.WalletConfig{
-			Datadir: c.DbDir,
-			Network: c.Network,
-		}, application.WithNeutrino(c.NeutrinoPeer, c.EsploraURL))
+		signerKey, _ = btcec.PrivKeyFromBytes(buf)
 	}
+
+	repository, err := db.NewSeedRepository(c.DbDir, nil)
+	if err != nil {
+		return fmt.Errorf("error while creating seed repository: %s", err)
+	}
+
+	cryptoSvc := cypher.New()
+
+	nbxplorerSvc, err := nbxplorer.New(c.NbxplorerURL)
 	if err != nil {
 		return err
 	}
 
-	c.WalletSvc = svc
+	network, err := getNetwork()
+	if err != nil {
+		return fmt.Errorf("error while getting network: %s", err)
+	}
+
+	walletSvc := wallet.New(wallet.WalletOptions{
+		SeedRepository: repository,
+		Cypher:         cryptoSvc,
+		Nbxplorer:      nbxplorerSvc,
+		Network:        network.Name,
+		SignerKey:      signerKey,
+	})
+
+	scannerSvc, err := scanner.New(nbxplorerSvc, network.Name)
+	if err != nil {
+		return fmt.Errorf("error while creating scanner: %w", err)
+	}
+
+	c.WalletSvc = walletSvc
+	c.ScannerSvc = scannerSvc
 	return nil
 }
 

@@ -90,14 +90,16 @@ ON CONFLICT(txid) DO UPDATE SET
     is_root_commitment_txid = EXCLUDED.is_root_commitment_txid,
     offchain_txid = EXCLUDED.offchain_txid;
 
--- name: UpsertMarketHour :exec
-INSERT INTO market_hour (id, start_time, end_time, period, round_interval, updated_at)
-VALUES (@id, @start_time, @end_time, @period, @round_interval, @updated_at)
+-- name: UpsertScheduledSession :exec
+INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
+VALUES (@id, @start_time, @end_time, @period, @duration, @round_min_participants, @round_max_participants, @updated_at)
 ON CONFLICT (id) DO UPDATE SET
     start_time = EXCLUDED.start_time,
     end_time = EXCLUDED.end_time,
     period = EXCLUDED.period,
-    round_interval = EXCLUDED.round_interval,
+    duration = EXCLUDED.duration,
+    round_min_participants = EXCLUDED.round_min_participants,
+    round_max_participants = EXCLUDED.round_max_participants,
     updated_at = EXCLUDED.updated_at;
 
 -- name: UpdateVtxoIntentId :exec
@@ -109,8 +111,8 @@ UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 -- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true WHERE txid = @txid AND vout = @vout;
 
--- name: UpdateVtxoSwept :exec
-UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout;
+-- name: UpdateVtxoSweptIfNotSwept :execrows
+UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by
@@ -242,5 +244,72 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkey'));
 -- name: SelectOffchainTx :many
 SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 
--- name: SelectLatestMarketHour :one
-SELECT * FROM market_hour ORDER BY updated_at DESC LIMIT 1;
+-- name: SelectLatestScheduledSession :one
+SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
+
+-- name: SelectVtxosByArkTxidRecursive :many
+WITH RECURSIVE descendants_chain AS (
+    -- seed
+    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
+           0 AS depth,
+           v.txid||':'||v.vout AS visited
+    FROM vtxo v
+    WHERE v.txid = @txid
+
+    UNION ALL
+
+    -- children: next vtxo(s) are those whose txid == current.ark_txid
+    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
+           w.depth + 1,
+           w.visited || ',' || (c.txid||':'||c.vout)
+    FROM descendants_chain w
+             JOIN vtxo c
+                  ON c.txid = w.ark_txid
+    WHERE w.ark_txid IS NOT NULL
+      AND w.visited NOT LIKE '%' || (c.txid||':'||c.vout) || '%'   -- cycle/visited guard
+),
+-- keep one row per node at its MIN depth (layers)
+nodes AS (
+   SELECT txid, vout, preconfirmed, MIN(depth) as depth
+   FROM descendants_chain
+   GROUP BY txid, vout, preconfirmed
+)
+
+SELECT *
+FROM nodes
+ORDER BY depth, txid, vout;
+
+-- name: SelectSweepableUnrolledVtxos :many
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');
+
+-- name: UpsertConviction :exec
+INSERT INTO conviction (
+    id, type, created_at, expires_at, crime_type, crime_round_id, crime_reason, pardoned, script
+) VALUES (
+    @id, @type, @created_at, @expires_at, @crime_type, @crime_round_id, @crime_reason, @pardoned, @script
+)
+ON CONFLICT(id) DO UPDATE SET
+    pardoned = EXCLUDED.pardoned;
+
+-- name: SelectConviction :one
+SELECT * FROM conviction WHERE id = @id;
+
+-- name: SelectActiveScriptConvictions :many
+SELECT * FROM conviction 
+WHERE script = @script 
+AND pardoned = false 
+AND (expires_at IS NULL OR expires_at > @expires_at)
+ORDER BY created_at ASC;
+
+-- name: UpdateConvictionPardoned :exec
+UPDATE conviction SET pardoned = true WHERE id = @id;
+
+-- name: SelectConvictionsInTimeRange :many
+SELECT * FROM conviction 
+WHERE created_at >= @from_time AND created_at <= @to_time
+ORDER BY created_at ASC;
+
+-- name: SelectConvictionsByRoundID :many
+SELECT * FROM conviction 
+WHERE crime_round_id = @round_id
+ORDER BY created_at ASC;

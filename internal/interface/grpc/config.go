@@ -11,12 +11,14 @@ import (
 )
 
 type Config struct {
-	Datadir         string
-	Port            uint32
-	NoTLS           bool
-	NoMacaroons     bool
-	TLSExtraIPs     []string
-	TLSExtraDomains []string
+	Datadir           string
+	Port              uint32
+	AdminPort         uint32
+	NoTLS             bool
+	NoMacaroons       bool
+	TLSExtraIPs       []string
+	TLSExtraDomains   []string
+	HeartbeatInterval int64
 }
 
 func (c Config) Validate() error {
@@ -26,6 +28,16 @@ func (c Config) Validate() error {
 	}
 	// nolint:all
 	defer lis.Close()
+
+	// Validate admin port if it's different from main port
+	if c.hasAdminPort() {
+		adminLis, err := net.Listen("tcp", c.adminAddress())
+		if err != nil {
+			return fmt.Errorf("invalid admin port: %s", err)
+		}
+		// nolint:all
+		defer adminLis.Close()
+	}
 
 	if !c.NoTLS {
 		tlsDir := c.tlsDatadir()
@@ -48,21 +60,6 @@ func (c Config) Validate() error {
 		}
 	}
 
-	if !c.NoMacaroons {
-		macDir := c.macaroonsDatadir()
-		adminMacExists := pathExists(filepath.Join(macDir, adminMacaroonFile))
-		roMacExists := pathExists(filepath.Join(macDir, roMacaroonFile))
-		walletMacExists := pathExists(filepath.Join(macDir, walletMacaroonFile))
-		managerMacExists := pathExists(filepath.Join(macDir, managerMacaroonFile))
-
-		if adminMacExists != roMacExists ||
-			adminMacExists != walletMacExists ||
-			adminMacExists != managerMacExists {
-			return fmt.Errorf(
-				"all macaroons must be either existing or not in path %s", macDir,
-			)
-		}
-	}
 	return nil
 }
 
@@ -75,7 +72,19 @@ func (c Config) address() string {
 }
 
 func (c Config) gatewayAddress() string {
-	return fmt.Sprintf("localhost:%d", c.Port)
+	return fmt.Sprintf("127.0.0.1:%d", c.Port)
+}
+
+func (c Config) adminAddress() string {
+	return fmt.Sprintf(":%d", c.AdminPort)
+}
+
+func (c Config) adminGatewayAddress() string {
+	return fmt.Sprintf("127.0.0.1:%d", c.AdminPort)
+}
+
+func (c Config) hasAdminPort() bool {
+	return c.AdminPort != c.Port
 }
 
 func (c Config) macaroonsDatadir() string {

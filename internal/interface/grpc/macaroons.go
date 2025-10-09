@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/permissions"
 	"github.com/arkade-os/arkd/pkg/macaroons"
@@ -12,51 +13,56 @@ import (
 )
 
 var (
-	adminMacaroonFile   = "admin.macaroon"
-	walletMacaroonFile  = "wallet.macaroon"
-	managerMacaroonFile = "manager.macaroon"
-	roMacaroonFile      = "readonly.macaroon"
+	superUserMacaroonFile = "superuser.macaroon"
+	adminMacaroonFile     = "admin.macaroon"
+	operatorMacaroonFile  = "operator.macaroon"
+	unlockerMacaroonFile  = "unlocker.macaroon"
+	roMacaroonFile        = "readonly.macaroon"
 
 	macFiles = map[string][]bakery.Op{
-		adminMacaroonFile:   permissions.AdminPermissions(),
-		walletMacaroonFile:  permissions.WalletPermissions(),
-		managerMacaroonFile: permissions.ManagerPermissions(),
-		roMacaroonFile:      permissions.ReadOnlyPermissions(),
+		superUserMacaroonFile: permissions.SuperUserPermissions(),
+		adminMacaroonFile:     permissions.AdminPermissions(),
+		operatorMacaroonFile:  permissions.OperatorPermissions(),
+		unlockerMacaroonFile:  permissions.UnlockerPermissions(),
+		roMacaroonFile:        permissions.ReadOnlyPermissions(),
 	}
 )
 
-// genMacaroons generates four macaroon files; one admin-level, one for
-// updating the strategy of a market, one for updating its price  and one
-// read-only. Admin and read-only can also be used to generate more granular
-// macaroons.
+// genMacaroons generates the macaroon files if they don't already exist.
 func genMacaroons(
 	ctx context.Context, svc *macaroons.Service, datadir string,
 ) (bool, error) {
-	adminMacFile := filepath.Join(datadir, adminMacaroonFile)
-	walletMacFile := filepath.Join(datadir, walletMacaroonFile)
-	managerMacFile := filepath.Join(datadir, managerMacaroonFile)
-	roMacFile := filepath.Join(datadir, roMacaroonFile)
-	if pathExists(adminMacFile) || pathExists(walletMacFile) ||
-		pathExists(managerMacFile) || pathExists(roMacFile) {
+	// Check the macaroons to (re-)generate.
+	macaroonsToGenerate := make(map[string][]bakery.Op)
+	for filename, ops := range macFiles {
+		if pathExists(filepath.Join(datadir, filename)) {
+			continue
+		}
+		macaroonsToGenerate[filename] = ops
+	}
+
+	// Don't do anything if all macaroons already exist.
+	if len(macaroonsToGenerate) == 0 {
 		return false, nil
 	}
 
-	// Let's create the datadir if it doesn't exist.
+	// Create the datadir if it doesn't exist.
 	if err := makeDirectoryIfNotExists(datadir); err != nil {
 		return false, err
 	}
 
-	for macFilename, macPermissions := range macFiles {
-		mktMacBytes, err := svc.BakeMacaroon(ctx, macPermissions)
+	// Create the macaroon files.
+	for macFilename, macPermissions := range macaroonsToGenerate {
+		macBytes, err := svc.BakeMacaroon(ctx, macPermissions, strings.Split(macFilename, ".")[0])
 		if err != nil {
 			return false, err
 		}
 		macFile := filepath.Join(datadir, macFilename)
 		perms := fs.FileMode(0644)
-		if macFilename == adminMacaroonFile {
-			perms = 0600
+		if macFilename == adminMacaroonFile || macFilename == superUserMacaroonFile {
+			perms = fs.FileMode(0600)
 		}
-		if err := os.WriteFile(macFile, mktMacBytes, perms); err != nil {
+		if err := os.WriteFile(macFile, macBytes, perms); err != nil {
 			// nolint:all
 			os.Remove(macFile)
 			return false, err

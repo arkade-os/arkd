@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package signer.v1;
+
+import "meshapi/gateway/annotations.proto";
+
+// SignerService defines the apis to interact with the Ark signer.
+service SignerService {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/status"
+    };
+  }
+  rpc GetPubkey(GetPubkeyRequest) returns (GetPubkeyResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/pubkey"
+    };
+  }
+  rpc SignTransaction(SignTransactionRequest) returns (SignTransactionResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/sign-transaction"
+      body: "*"
+    };
+  }
+  rpc SignTransactionTapscript(SignTransactionTapscriptRequest) returns (SignTransactionTapscriptResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/sign-transaction-tapscript"
+      body: "*"
+    };
+  }
+}
+
+message GetStatusRequest {}
+message GetStatusResponse {
+  bool ready = 1;
+}
+
+message GetPubkeyRequest {}
+message GetPubkeyResponse {
+  string pubkey = 1;
+}
+
+message SignTransactionRequest {
+  string partial_tx = 1;
+  bool extract_raw_tx = 2;
+}
+message SignTransactionResponse {
+  string signed_tx = 1;
+}
+
+message SignTransactionTapscriptRequest {
+  string partial_tx = 1;
+  repeated int32 input_indexes = 2;
+}
+message SignTransactionTapscriptResponse {
+  string signed_tx = 1;
+}

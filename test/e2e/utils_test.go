@@ -2,18 +2,37 @@ package e2e_test
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	arksdk "github.com/arkade-os/go-sdk"
+	"github.com/arkade-os/go-sdk/client"
+	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
 	"github.com/arkade-os/go-sdk/explorer"
+	"github.com/arkade-os/go-sdk/indexer"
+	grpcindexer "github.com/arkade-os/go-sdk/indexer/grpc"
+	"github.com/arkade-os/go-sdk/store"
+	"github.com/arkade-os/go-sdk/types"
+	"github.com/arkade-os/go-sdk/wallet"
+	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
+	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -73,7 +92,15 @@ func getBlockHeight() (uint32, error) {
 
 func runDockerExec(container string, arg ...string) (string, error) {
 	args := append([]string{"exec", "-t", container}, arg...)
-	return runCommand("docker", args...)
+	out, err := runCommand("docker", args...)
+	if err != nil {
+		return "", err
+	}
+	idx := strings.Index(out, "{")
+	if idx == -1 {
+		return out, nil
+	}
+	return out[idx:], nil
 }
 
 func runCommand(name string, arg ...string) (string, error) {
@@ -260,4 +287,475 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	require.NoError(t, childTx.Serialize(&serializedTx))
 
 	return hex.EncodeToString(serializedTx.Bytes())
+}
+
+func setupArkSDK(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
+	alice, _, _, grpcAlice := setupArkSDKwithPublicKey(t)
+	return alice, grpcAlice
+}
+
+func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
+	appDataStore, err := store.NewStore(store.Config{
+		ConfigStoreType:  types.InMemoryStore,
+		AppDataStoreType: types.KVStore,
+	})
+	require.NoError(t, err)
+
+	walletStore, err := inmemorystore.NewWalletStore()
+	require.NoError(t, err)
+	require.NotNil(t, walletStore)
+
+	wallet, err := singlekeywallet.NewBitcoinWallet(appDataStore.ConfigStore(), walletStore)
+	require.NoError(t, err)
+
+	privkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	privkeyHex := hex.EncodeToString(privkey.Serialize())
+
+	password := "password"
+	ctx := context.Background()
+	_, err = wallet.Create(ctx, password, privkeyHex)
+	require.NoError(t, err)
+
+	_, err = wallet.Unlock(ctx, password)
+	require.NoError(t, err)
+
+	return wallet, privkey.PubKey(), nil
+}
+
+func setupArkSDKwithPublicKey(
+	t *testing.T,
+) (arksdk.ArkClient, wallet.WalletService, *btcec.PublicKey, client.TransportClient) {
+	appDataStore, err := store.NewStore(store.Config{
+		ConfigStoreType:  types.InMemoryStore,
+		AppDataStoreType: types.KVStore,
+	})
+	require.NoError(t, err)
+
+	client, err := arksdk.NewArkClient(appDataStore)
+	require.NoError(t, err)
+
+	walletStore, err := inmemorystore.NewWalletStore()
+	require.NoError(t, err)
+	require.NotNil(t, walletStore)
+
+	wallet, err := singlekeywallet.NewBitcoinWallet(appDataStore.ConfigStore(), walletStore)
+	require.NoError(t, err)
+
+	privkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	privkeyHex := hex.EncodeToString(privkey.Serialize())
+
+	err = client.InitWithWallet(context.Background(), arksdk.InitWithWalletArgs{
+		Wallet:     wallet,
+		ClientType: arksdk.GrpcClient,
+		ServerUrl:  "localhost:7070",
+		Password:   password,
+		Seed:       privkeyHex,
+	})
+	require.NoError(t, err)
+
+	err = client.Unlock(context.Background(), password)
+	require.NoError(t, err)
+
+	grpcClient, err := grpcclient.NewClient("localhost:7070")
+	require.NoError(t, err)
+
+	return client, wallet, privkey.PubKey(), grpcClient
+}
+
+func setupIndexer(t *testing.T) indexer.Indexer {
+	svc, err := grpcindexer.NewClient("localhost:7070")
+	require.NoError(t, err)
+	return svc
+}
+
+func generateNote(t *testing.T, amount uint32) string {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	reqBody := bytes.NewReader([]byte(fmt.Sprintf(`{"amount": "%d"}`, amount)))
+	req, err := http.NewRequest("POST", "http://localhost:7071/v1/admin/note", reqBody)
+	if err != nil {
+		t.Fatalf("failed to prepare note request: %s", err)
+	}
+	req.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := adminHttpClient.Do(req)
+	if err != nil {
+		t.Fatalf("failed to create note: %s", err)
+	}
+
+	var noteResp struct {
+		Notes []string `json:"notes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&noteResp); err != nil {
+		t.Fatalf("failed to parse response: %s", err)
+	}
+
+	return noteResp.Notes[0]
+}
+
+func faucetOnchainAddress(t *testing.T, address string) error {
+	_, err := runCommand("nigiri", "faucet", address, "0.0002")
+	require.NoError(t, err)
+	return nil
+}
+
+func faucetOffchainAddress(t *testing.T, address string) (types.Vtxo, error) {
+	client, _ := setupArkSDK(t)
+
+	ctx := context.Background()
+	_, offchainAddr, boardingAddr, err := client.Receive(ctx)
+	require.NoError(t, err)
+
+	_, err = runCommand("nigiri", "faucet", boardingAddr, "0.0002")
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	go func() {
+		_, err := client.Settle(ctx)
+		require.NoError(t, err)
+	}()
+
+	vtxos, err := client.NotifyIncomingFunds(ctx, offchainAddr)
+	require.NoError(t, err)
+	require.NotEmpty(t, vtxos)
+	require.Len(t, vtxos, 1)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	var receivedVtxo types.Vtxo
+
+	go func() {
+		defer wg.Done()
+		vtxos, err = client.NotifyIncomingFunds(ctx, address)
+		require.NoError(t, err)
+		receivedVtxo = vtxos[0]
+	}()
+
+	_, err = client.SendOffChain(ctx, false, []types.Receiver{
+		{
+			To:     address,
+			Amount: vtxos[0].Amount,
+		},
+	})
+	require.NoError(t, err)
+
+	wg.Wait()
+
+	return receivedVtxo, nil
+}
+
+type delegateBatchEventsHandler struct {
+	intentId         string
+	signerSession    tree.SignerSession
+	partialForfeitTx string
+	delegatorWallet  wallet.WalletService
+	client           client.TransportClient
+	forfeitPubKey    *btcec.PublicKey
+	batchExpiry      arklib.RelativeLocktime
+
+	cacheBatchId string
+}
+
+func (h *delegateBatchEventsHandler) OnBatchStarted(
+	ctx context.Context, event client.BatchStartedEvent,
+) (bool, error) {
+	buf := sha256.Sum256([]byte(h.intentId))
+	hashedIntentId := hex.EncodeToString(buf[:])
+
+	for _, hash := range event.HashedIntentIds {
+		if hash == hashedIntentId {
+			if err := h.client.ConfirmRegistration(ctx, h.intentId); err != nil {
+				return false, err
+			}
+			h.cacheBatchId = event.Id
+			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func (h *delegateBatchEventsHandler) OnBatchFinalized(
+	ctx context.Context, event client.BatchFinalizedEvent,
+) error {
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnBatchFailed(
+	ctx context.Context, event client.BatchFailedEvent,
+) error {
+	if event.Id == h.cacheBatchId {
+		return fmt.Errorf("batch failed: %s", event.Reason)
+	}
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeTxEvent(
+	ctx context.Context, event client.TreeTxEvent,
+) error {
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeSignatureEvent(
+	ctx context.Context, event client.TreeSignatureEvent,
+) error {
+	return nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
+	ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree,
+) (bool, error) {
+	myPubkey := h.signerSession.GetPublicKey()
+	if !slices.Contains(event.CosignersPubkeys, myPubkey) {
+		return true, nil
+	}
+
+	sweepClosure := script.CSVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.forfeitPubKey}},
+		Locktime:        h.batchExpiry,
+	}
+
+	script, err := sweepClosure.Script()
+	if err != nil {
+		return false, err
+	}
+
+	commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(event.UnsignedCommitmentTx), true)
+	if err != nil {
+		return false, err
+	}
+
+	batchOutput := commitmentTx.UnsignedTx.TxOut[0]
+	batchOutputAmount := batchOutput.Value
+
+	sweepTapLeaf := txscript.NewBaseTapLeaf(script)
+	sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
+	root := sweepTapTree.RootNode.TapHash()
+
+	generateAndSendNonces := func(session tree.SignerSession) error {
+		if err := session.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+			return err
+		}
+
+		nonces, err := session.GetNonces()
+		if err != nil {
+			return err
+		}
+
+		return h.client.SubmitTreeNonces(ctx, event.Id, session.GetPublicKey(), nonces)
+	}
+
+	if err := generateAndSendNonces(h.signerSession); err != nil {
+		return false, err
+	}
+
+	return false, nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeNonces(
+	ctx context.Context,
+	event client.TreeNoncesEvent,
+) (bool, error) {
+	return false, nil
+}
+
+func (h *delegateBatchEventsHandler) OnTreeNoncesAggregated(
+	ctx context.Context,
+	event client.TreeNoncesAggregatedEvent,
+) (bool, error) {
+	h.signerSession.SetAggregatedNonces(event.Nonces)
+
+	sigs, err := h.signerSession.Sign()
+	if err != nil {
+		return false, err
+	}
+
+	err = h.client.SubmitTreeSignatures(
+		ctx,
+		event.Id,
+		h.signerSession.GetPublicKey(),
+		sigs,
+	)
+	return err == nil, err
+}
+
+func (h *delegateBatchEventsHandler) OnBatchFinalization(
+	ctx context.Context,
+	event client.BatchFinalizationEvent,
+	vtxoTree *tree.TxTree,
+	connectorTree *tree.TxTree,
+) error {
+	forfeitPtx, err := psbt.NewFromRawBytes(strings.NewReader(h.partialForfeitTx), true)
+	if err != nil {
+		return err
+	}
+
+	updater, err := psbt.NewUpdater(forfeitPtx)
+	if err != nil {
+		return err
+	}
+
+	// add the connector input to the forfeit tx
+	connectors := connectorTree.Leaves()
+	connector := connectors[0]
+	updater.Upsbt.UnsignedTx.TxIn = append(updater.Upsbt.UnsignedTx.TxIn, &wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{
+			Hash:  connector.UnsignedTx.TxHash(),
+			Index: 0,
+		},
+		Sequence: wire.MaxTxInSequenceNum,
+	})
+	updater.Upsbt.Inputs = append(updater.Upsbt.Inputs, psbt.PInput{
+		WitnessUtxo: &wire.TxOut{
+			Value:    connector.UnsignedTx.TxOut[0].Value,
+			PkScript: connector.UnsignedTx.TxOut[0].PkScript,
+		},
+	})
+
+	if err := updater.AddInSighashType(txscript.SigHashDefault, 0); err != nil {
+		return err
+	}
+
+	encodedForfeitTx, err := updater.Upsbt.B64Encode()
+	if err != nil {
+		return err
+	}
+
+	// sign the forfeit tx
+	signedForfeitTx, err := h.delegatorWallet.SignTransaction(
+		context.Background(),
+		nil,
+		encodedForfeitTx,
+	)
+	if err != nil {
+		return err
+	}
+
+	return h.client.SubmitSignedForfeitTxs(
+		ctx, []string{signedForfeitTx}, "",
+	)
+}
+
+type customBatchEventsHandler struct {
+	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, error)
+	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) error
+	onBatchFinalized       func(ctx context.Context, event client.BatchFinalizedEvent) error
+	onBatchFailed          func(ctx context.Context, event client.BatchFailedEvent) error
+	onTreeTxEvent          func(ctx context.Context, event client.TreeTxEvent) error
+	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
+	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
+	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error)
+}
+
+func (h *customBatchEventsHandler) OnBatchStarted(
+	ctx context.Context,
+	event client.BatchStartedEvent,
+) (bool, error) {
+	if h.onBatchStarted != nil {
+		return h.onBatchStarted(ctx, event)
+	}
+	return false, nil
+}
+
+func (h *customBatchEventsHandler) OnBatchFinalization(
+	ctx context.Context,
+	event client.BatchFinalizationEvent,
+	vtxoTree *tree.TxTree,
+	connectorTree *tree.TxTree,
+) error {
+	if h.onBatchFinalization != nil {
+		return h.onBatchFinalization(ctx, event, vtxoTree, connectorTree)
+	}
+	return nil
+}
+
+func (h *customBatchEventsHandler) OnBatchFinalized(
+	ctx context.Context,
+	event client.BatchFinalizedEvent,
+) error {
+	if h.onBatchFinalized != nil {
+		return h.onBatchFinalized(ctx, event)
+	}
+	return nil
+}
+
+func (h *customBatchEventsHandler) OnBatchFailed(
+	ctx context.Context,
+	event client.BatchFailedEvent,
+) error {
+	if h.onBatchFailed != nil {
+		return h.onBatchFailed(ctx, event)
+	}
+	return errors.New(event.Reason)
+}
+
+func (h *customBatchEventsHandler) OnTreeTxEvent(
+	ctx context.Context,
+	event client.TreeTxEvent,
+) error {
+	if h.onTreeTxEvent != nil {
+		return h.onTreeTxEvent(ctx, event)
+	}
+	return nil
+}
+
+func (h *customBatchEventsHandler) OnTreeSignatureEvent(
+	ctx context.Context,
+	event client.TreeSignatureEvent,
+) error {
+	if h.onTreeSignatureEvent != nil {
+		return h.onTreeSignatureEvent(ctx, event)
+	}
+	return nil
+}
+
+func (h *customBatchEventsHandler) OnTreeSigningStarted(
+	ctx context.Context,
+	event client.TreeSigningStartedEvent,
+	vtxoTree *tree.TxTree,
+) (bool, error) {
+	if h.onTreeSigningStarted != nil {
+		return h.onTreeSigningStarted(ctx, event, vtxoTree)
+	}
+	return false, nil
+}
+
+func (h *customBatchEventsHandler) OnTreeNoncesAggregated(
+	ctx context.Context,
+	event client.TreeNoncesAggregatedEvent,
+) (bool, error) {
+	if h.onTreeNoncesAggregated != nil {
+		return h.onTreeNoncesAggregated(ctx, event)
+	}
+	return false, nil
+}
+
+func (h *customBatchEventsHandler) OnTreeNonces(
+	ctx context.Context,
+	event client.TreeNoncesEvent,
+) (bool, error) {
+	return false, nil
+}
+
+func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
+	if batchExpiry >= 512 {
+		return arklib.RelativeLocktime{
+			Type:  arklib.LocktimeTypeSecond,
+			Value: batchExpiry,
+		}
+	}
+	return arklib.RelativeLocktime{
+		Type:  arklib.LocktimeTypeBlock,
+		Value: batchExpiry,
+	}
 }

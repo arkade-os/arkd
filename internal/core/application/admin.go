@@ -22,13 +22,21 @@ type AdminService interface {
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
 	CreateNotes(ctx context.Context, amount uint32, quantity int) ([]string, error)
-	GetMarketHourConfig(ctx context.Context) (*domain.MarketHour, error)
-	UpdateMarketHourConfig(
-		ctx context.Context,
-		marketHourStartTime, marketHourEndTime time.Time, period, roundInterval time.Duration,
+	GetScheduledSessionConfig(ctx context.Context) (*domain.ScheduledSession, error)
+	UpdateScheduledSessionConfig(
+		ctx context.Context, scheduledSessionStartTime, scheduledSessionEndTime time.Time,
+		period, duration time.Duration, roundMinParticipantsCount, roundMaxParticipantsCount int64,
 	) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
+	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
+	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
+	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
+	GetActiveScriptConvictions(
+		ctx context.Context, script string,
+	) ([]domain.ScriptConviction, error)
+	PardonConviction(ctx context.Context, id string) error
+	BanScript(ctx context.Context, script, reason string, banDuration *time.Duration) error
 }
 
 type adminService struct {
@@ -37,18 +45,24 @@ type adminService struct {
 	txBuilder       ports.TxBuilder
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
+
+	roundMinParticipantsCount int64
+	roundMaxParticipantsCount int64
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit,
+	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) AdminService {
 	return &adminService{
-		walletSvc:       walletSvc,
-		repoManager:     repoManager,
-		txBuilder:       txBuilder,
-		sweeperTimeUnit: timeUnit,
-		liveStore:       liveStoreSvc,
+		walletSvc:                 walletSvc,
+		repoManager:               repoManager,
+		txBuilder:                 txBuilder,
+		sweeperTimeUnit:           timeUnit,
+		liveStore:                 liveStoreSvc,
+		roundMinParticipantsCount: roundMinParticipantsCount,
+		roundMaxParticipantsCount: roundMaxParticipantsCount,
 	}
 }
 
@@ -144,10 +158,8 @@ func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep
 		for expirationTime, inputs := range batchOutsByExpiration {
 			for _, input := range inputs {
 				batchOutputs = append(batchOutputs, SweepableOutput{
-					TxId:        input.GetHash().String(),
-					Vout:        input.GetIndex(),
-					Amount:      input.GetAmount(),
-					ScheduledAt: expirationTime,
+					SweepableOutput: input,
+					ScheduledAt:     expirationTime,
 				})
 			}
 		}
@@ -197,18 +209,18 @@ func (a *adminService) CreateNotes(
 			return nil, err
 		}
 
-		bip322Input, err := note.BIP322Input()
+		outpoint, pInput, err := note.IntentProofInput()
 		if err != nil {
 			return nil, err
 		}
 
 		vtxo := domain.Vtxo{
 			Outpoint: domain.Outpoint{
-				Txid: bip322Input.OutPoint.Hash.String(),
-				VOut: bip322Input.OutPoint.Index,
+				Txid: outpoint.Hash.String(),
+				VOut: outpoint.Index,
 			},
 			Amount:    uint64(note.Value),
-			PubKey:    hex.EncodeToString(bip322Input.WitnessUtxo.PkScript[2:]),
+			PubKey:    hex.EncodeToString(pInput.WitnessUtxo.PkScript[2:]),
 			CreatedAt: now,
 		}
 
@@ -224,66 +236,86 @@ func (a *adminService) CreateNotes(
 	return notes, nil
 }
 
-func (s *adminService) GetMarketHourConfig(ctx context.Context) (*domain.MarketHour, error) {
-	return s.repoManager.MarketHourRepo().Get(ctx)
+func (s *adminService) GetScheduledSessionConfig(
+	ctx context.Context,
+) (*domain.ScheduledSession, error) {
+	return s.repoManager.ScheduledSession().Get(ctx)
 }
 
-func (s *adminService) UpdateMarketHourConfig(
+func (s *adminService) UpdateScheduledSessionConfig(
 	ctx context.Context,
-	marketHourStartTime, marketHourEndTime time.Time, period, roundInterval time.Duration,
+	scheduledSessionStartTime, scheduledSessionEndTime time.Time, period, duration time.Duration,
+	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) error {
-	if marketHourStartTime.IsZero() && marketHourEndTime.IsZero() &&
-		period <= 0 && roundInterval <= 0 {
-		return fmt.Errorf("missing market hour config")
-	}
-	startTimeSet := !marketHourStartTime.IsZero()
-	endTimeSet := !marketHourEndTime.IsZero()
+	startTimeSet := !scheduledSessionStartTime.IsZero()
+	endTimeSet := !scheduledSessionEndTime.IsZero()
 	if startTimeSet != endTimeSet {
-		return fmt.Errorf("market hour start time and end time must be set together")
+		return fmt.Errorf("scheduled session start time and end time must be set together")
 	}
 
-	marketHour, err := s.repoManager.MarketHourRepo().Get(ctx)
+	scheduledSession, err := s.repoManager.ScheduledSession().Get(ctx)
 	if err != nil {
 		return err
 	}
 
-	if marketHour == nil {
-		if marketHourStartTime.IsZero() {
-			return fmt.Errorf("missing market hour start time")
+	if scheduledSession == nil {
+		if scheduledSessionStartTime.IsZero() {
+			return fmt.Errorf("missing scheduled session start time")
 		}
-		if marketHourEndTime.IsZero() {
-			return fmt.Errorf("missing market hour end time")
+		if scheduledSessionEndTime.IsZero() {
+			return fmt.Errorf("missing scheduled session end time")
 		}
 		if period <= 0 {
-			return fmt.Errorf("missing market hour period")
+			return fmt.Errorf("missing scheduled session period")
 		}
-		if roundInterval <= 0 {
-			return fmt.Errorf("missing market hour round interval")
+		if duration <= 0 {
+			return fmt.Errorf("missing scheduled session duration")
+		}
+		if roundMinParticipantsCount <= 0 {
+			roundMinParticipantsCount = s.roundMinParticipantsCount
+		}
+		if roundMaxParticipantsCount <= 0 {
+			roundMaxParticipantsCount = s.roundMaxParticipantsCount
 		}
 	}
 
 	now := time.Now()
-	if marketHourStartTime.IsZero() {
-		marketHourStartTime = marketHour.StartTime
-	} else if !marketHourStartTime.After(now) {
-		return fmt.Errorf("market hour start time must be in the future")
+	if scheduledSessionStartTime.IsZero() {
+		scheduledSessionStartTime = scheduledSession.StartTime
+	} else if !scheduledSessionStartTime.After(now) {
+		return fmt.Errorf("scheduled session start time must be in the future")
 	}
 
-	if marketHourEndTime.IsZero() {
-		marketHourEndTime = marketHour.EndTime
-	} else if !marketHourEndTime.After(marketHourStartTime) {
-		return fmt.Errorf("market hour end time must be after start time")
+	if scheduledSessionEndTime.IsZero() {
+		scheduledSessionEndTime = scheduledSession.EndTime
+	} else if !scheduledSessionEndTime.After(scheduledSessionStartTime) {
+		return fmt.Errorf("scheduled session end time must be after start time")
 	}
 	if period <= 0 {
-		period = marketHour.Period
+		period = scheduledSession.Period
 	}
-	if roundInterval <= 0 {
-		roundInterval = marketHour.RoundInterval
+	if duration <= 0 {
+		duration = scheduledSession.Duration
+	}
+	if roundMinParticipantsCount <= 0 {
+		roundMinParticipantsCount = scheduledSession.RoundMinParticipantsCount
+	}
+	if roundMaxParticipantsCount <= 0 {
+		roundMaxParticipantsCount = scheduledSession.RoundMaxParticipantsCount
+	}
+	if roundMaxParticipantsCount < roundMinParticipantsCount {
+		return fmt.Errorf(
+			"got round max participants %d, expected at least %d",
+			roundMaxParticipantsCount, roundMinParticipantsCount,
+		)
 	}
 
-	mh := domain.NewMarketHour(marketHourStartTime, marketHourEndTime, period, roundInterval)
-	if err := s.repoManager.MarketHourRepo().Upsert(ctx, *mh); err != nil {
-		return fmt.Errorf("failed to upsert market hours: %w", err)
+	mh := domain.NewScheduledSession(
+		scheduledSessionStartTime, scheduledSessionEndTime, period, duration,
+		roundMinParticipantsCount, roundMaxParticipantsCount,
+	)
+	if err := s.repoManager.ScheduledSession().Upsert(ctx, *mh); err != nil {
+		return fmt.Errorf("failed to upsert scheduled session: %w", err)
 	}
 
 	return nil
@@ -352,6 +384,66 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 	return s.liveStore.Intents().Delete(intentIds)
 }
 
+// Conviction management methods
+func (s *adminService) GetConvictionsByIds(
+	ctx context.Context,
+	ids []string,
+) ([]domain.Conviction, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("missing conviction ids")
+	}
+
+	convictions := make([]domain.Conviction, 0, len(ids))
+	for _, id := range ids {
+		conviction, err := s.repoManager.Convictions().Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		convictions = append(convictions, conviction)
+	}
+	return convictions, nil
+}
+
+func (s *adminService) GetConvictions(
+	ctx context.Context,
+	from, to time.Time,
+) ([]domain.Conviction, error) {
+	return s.repoManager.Convictions().GetAll(ctx, from, to)
+}
+
+func (s *adminService) GetConvictionsByRound(
+	ctx context.Context,
+	roundID string,
+) ([]domain.Conviction, error) {
+	return s.repoManager.Convictions().GetByRoundID(ctx, roundID)
+}
+
+func (s *adminService) GetActiveScriptConvictions(
+	ctx context.Context,
+	script string,
+) ([]domain.ScriptConviction, error) {
+	return s.repoManager.Convictions().GetActiveScriptConvictions(ctx, script)
+}
+
+func (s *adminService) PardonConviction(ctx context.Context, id string) error {
+	return s.repoManager.Convictions().Pardon(ctx, id)
+}
+
+func (s *adminService) BanScript(
+	ctx context.Context,
+	script, reason string,
+	banDuration *time.Duration,
+) error {
+	crime := domain.Crime{
+		Type:    domain.CrimeTypeManualBan,
+		RoundID: "manual-ban",
+		Reason:  reason,
+	}
+
+	conviction := domain.NewScriptConviction(script, crime, banDuration)
+	return s.repoManager.Convictions().Add(ctx, conviction)
+}
+
 type Balance struct {
 	Locked    uint64
 	Available uint64
@@ -363,9 +455,7 @@ type ArkProviderBalance struct {
 }
 
 type SweepableOutput struct {
-	TxId        string
-	Vout        uint32
-	Amount      uint64
+	ports.SweepableOutput
 	ScheduledAt int64
 }
 

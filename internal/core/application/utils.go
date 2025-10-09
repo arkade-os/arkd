@@ -14,6 +14,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -26,8 +27,8 @@ import (
 func findSweepableOutputs(
 	ctx context.Context, walletSvc ports.WalletService, txbuilder ports.TxBuilder,
 	schedulerUnit ports.TimeUnit, vtxoTree *tree.TxTree,
-) (map[int64][]ports.SweepableBatchOutput, error) {
-	sweepableBatchOutputs := make(map[int64][]ports.SweepableBatchOutput)
+) (map[int64][]ports.SweepableOutput, error) {
+	sweepableBatchOutputs := make(map[int64][]ports.SweepableOutput)
 	blocktimeCache := make(map[string]int64) // txid -> blocktime / blockheight
 
 	if err := vtxoTree.Apply(func(g *tree.TxTree) (bool, error) {
@@ -63,7 +64,7 @@ func findSweepableOutputs(
 
 			expirationTime := blocktimeCache[parentTxid] + int64(vtxoTreeExpiry.Value)
 			if _, ok := sweepableBatchOutputs[expirationTime]; !ok {
-				sweepableBatchOutputs[expirationTime] = make([]ports.SweepableBatchOutput, 0)
+				sweepableBatchOutputs[expirationTime] = make([]ports.SweepableOutput, 0)
 			}
 			sweepableBatchOutputs[expirationTime] = append(
 				sweepableBatchOutputs[expirationTime], sweepInput,
@@ -143,39 +144,42 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 func newBoardingInput(
 	tx wire.MsgTx, input ports.Input, signerPubkey *btcec.PublicKey,
 	boardingExitDelay arklib.RelativeLocktime, blockTypeCSVAllowed bool,
-) (*ports.BoardingInput, error) {
+) (*ports.BoardingInput, errors.Error) {
 	if len(tx.TxOut) <= int(input.VOut) {
-		return nil, fmt.Errorf("output index out of range [0, %d]", len(tx.TxOut)-1)
+		return nil, errors.INVALID_PSBT_INPUT.New("output index out of range [0, %d]", len(tx.TxOut)-1).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	output := tx.TxOut[input.VOut]
 
 	boardingScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse boarding utxo taproot tree: %s", err)
+		return nil, errors.INVALID_PSBT_INPUT.New("failed to parse boarding utxo taproot tree: %w", err).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	tapKey, _, err := boardingScript.TapTree()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get taproot key: %s", err)
+		return nil, errors.INVALID_PSBT_INPUT.New("failed to compute taproot tree: %w", err).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	expectedScriptPubkey, err := script.P2TRScript(tapKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get script pubkey: %s", err)
+		return nil, errors.INVALID_PSBT_INPUT.New("failed to compute P2TR script from tapkey: %w", err).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	if !bytes.Equal(output.PkScript, expectedScriptPubkey) {
-		return nil, fmt.Errorf(
-			"invalid boarding utxo taproot key: got %x expected %x",
-			output.PkScript, expectedScriptPubkey,
-		)
+		return nil, errors.INVALID_PSBT_INPUT.New("invalid boarding utxo taproot key: got %x expected %x", output.PkScript, expectedScriptPubkey).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	if err := boardingScript.Validate(
 		signerPubkey, boardingExitDelay, blockTypeCSVAllowed,
 	); err != nil {
-		return nil, err
+		return nil, errors.INVALID_PSBT_INPUT.New("invalid boarding utxo taproot tree: %w", err).
+			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
 	}
 
 	return &ports.BoardingInput{
@@ -184,19 +188,19 @@ func newBoardingInput(
 	}, nil
 }
 
-func calcNextMarketHour(
-	now, marketHourStartTime, marketHourEndTime time.Time, period time.Duration,
+func calcNextScheduledSession(
+	now, scheduledSessionStartTime, scheduledSessionEndTime time.Time, period time.Duration,
 ) (time.Time, time.Time) {
-	// Calculate the number of periods since the initial marketHourStartTime
-	elapsed := now.Sub(marketHourEndTime)
+	// Calculate the number of periods since the initial scheduledSessionStartTime
+	elapsed := now.Sub(scheduledSessionEndTime)
 	var n int64
 	if elapsed >= 0 {
 		n = int64(elapsed/period) + 1
 	}
 
-	// Calculate the next market hour start and end timestamps
-	nextStartTime := marketHourStartTime.Add(time.Duration(n) * period)
-	nextEndTime := marketHourEndTime.Add(time.Duration(n) * period)
+	// Calculate the next scheduled session start and end timestamps
+	nextStartTime := scheduledSessionStartTime.Add(time.Duration(n) * period)
+	nextEndTime := scheduledSessionEndTime.Add(time.Duration(n) * period)
 
 	return nextStartTime, nextEndTime
 }
@@ -250,6 +254,60 @@ func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {
 		fancyTime = fmt.Sprintf("block %d", timestamp)
 	}
 	return
+}
+
+func treeTxNoncesEvents(
+	txTree *tree.TxTree,
+	roundId string,
+	publicNoncesMap map[string]tree.TreeNonces,
+) []domain.Event {
+	events := make([]domain.Event, 0)
+	if err := txTree.Apply(func(g *tree.TxTree) (bool, error) {
+		txid := g.Root.UnsignedTx.TxID()
+
+		noncesByPubkey := make(map[string]*tree.Musig2Nonce)
+
+		cosignerKeys, err := txutils.ParseCosignerKeysFromArkPsbt(g.Root, 0)
+		if err != nil {
+			return false, err
+		}
+
+		for _, cosignerKey := range cosignerKeys {
+			keyStr := hex.EncodeToString(schnorr.SerializePubKey(cosignerKey))
+			noncesForCosigner, ok := publicNoncesMap[keyStr]
+			if !ok {
+				return false, fmt.Errorf("missing nonces for cosigner key %s", keyStr)
+			}
+
+			txNonce, ok := noncesForCosigner[txid]
+			if !ok {
+				return false, fmt.Errorf("missing nonce for cosigner key %s and txid %s", keyStr, txid)
+			}
+
+			noncesByPubkey[keyStr] = txNonce
+		}
+
+		topics, err := getVtxoTreeTopic(g)
+		if err != nil {
+			return false, err
+		}
+
+		events = append(events, TreeTxNoncesEvent{
+			RoundEvent: domain.RoundEvent{
+				Id:   roundId,
+				Type: domain.EventTypeUndefined,
+			},
+			Topic:  topics,
+			Txid:   txid,
+			Nonces: noncesByPubkey,
+		})
+
+		return true, nil
+	}); err != nil {
+		log.WithError(err).Error("failed to send tree tx nonces events")
+	}
+
+	return events
 }
 
 func treeTxEvents(
@@ -316,14 +374,14 @@ func treeSignatureEvents(txTree *tree.TxTree, batchIndex int32, roundId string) 
 
 // getVtxoTreeTopic returns the list of topics (cosigner keys) for the given vtxo subtree
 func getVtxoTreeTopic(g *tree.TxTree) ([]string, error) {
-	cosignerKeys, err := txutils.GetCosignerKeys(g.Root.Inputs[0])
+	cosignerKeysFields, err := txutils.GetArkPsbtFields(g.Root, 0, txutils.CosignerPublicKeyField)
 	if err != nil {
 		return nil, err
 	}
 
-	topics := make([]string, 0, len(cosignerKeys))
-	for _, key := range cosignerKeys {
-		topics = append(topics, hex.EncodeToString(key.SerializeCompressed()))
+	topics := make([]string, 0, len(cosignerKeysFields))
+	for _, field := range cosignerKeysFields {
+		topics = append(topics, hex.EncodeToString(field.PublicKey.SerializeCompressed()))
 	}
 
 	return topics, nil
@@ -355,4 +413,40 @@ func getConnectorTreeTopic(
 
 		return topics, nil
 	}
+}
+
+var (
+	regtestTickerInterval = time.Second
+	mainnetTickerInterval = time.Minute
+)
+
+// waitForConfirmation waits for the given tx to be confirmed onchain.
+// It uses a ticker with an interval depending on the network
+// (1 second for regtest or 1 minute otherwise).
+// The function is blocking and returns once the tx is confirmed.
+func waitForConfirmation(
+	ctx context.Context,
+	txid string,
+	wallet ports.WalletService,
+	network arklib.Network,
+) (blockheight int64, blocktime int64) {
+	tickerInterval := mainnetTickerInterval
+	if network.Name == arklib.BitcoinRegTest.Name {
+		tickerInterval = regtestTickerInterval
+	}
+	ticker := time.NewTicker(tickerInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if confirmed, blockHeight, blockTime, _ := wallet.IsTransactionConfirmed(ctx, txid); confirmed {
+			log.Debugf(
+				"tx %s confirmed at block height %d, block time %d",
+				txid,
+				blockHeight,
+				blockTime,
+			)
+			return blockHeight, blockTime
+		}
+	}
+	return 0, 0
 }

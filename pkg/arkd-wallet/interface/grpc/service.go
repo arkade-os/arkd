@@ -8,22 +8,23 @@ import (
 	"strings"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
+	signerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/signer/v1"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/config"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/interceptors"
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/meshapi/grpc-api-gateway/gateway"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type service struct {
 	cfg     *config.Config
 	server  *http.Server
 	grpcSrv *grpc.Server
+	closeFn func()
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -39,8 +40,15 @@ func (s *service) Start() error {
 		interceptors.StreamInterceptor(),
 	)
 
-	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc)
+	s.closeFn = func() {
+		s.cfg.WalletSvc.Close()
+		s.cfg.ScannerSvc.Close()
+	}
+
+	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc, s.cfg.ScannerSvc)
 	arkwalletv1.RegisterWalletServiceServer(grpcSrv, walletHandler)
+	signerHandler := handlers.NewSignerHandler(s.cfg.WalletSvc)
+	signerv1.RegisterSignerServiceServer(grpcSrv, signerHandler)
 
 	healthHandler := handlers.NewHealthHandler()
 	grpchealth.RegisterHealthServer(grpcSrv, healthHandler)
@@ -54,24 +62,22 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to connect wallet grpc-gateway: %w", err)
 	}
 
-	gwmux := runtime.NewServeMux(
-		runtime.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
-		runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
-			MarshalOptions: protojson.MarshalOptions{
-				Indent:    "  ",
-				Multiline: true,
-			},
-			UnmarshalOptions: protojson.UnmarshalOptions{
-				DiscardUnknown: true,
-			},
-		}),
+	gwmux := gateway.NewServeMux(
+		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
+		// runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
+		// 	MarshalOptions: protojson.MarshalOptions{
+		// 		Indent:    "  ",
+		// 		Multiline: true,
+		// 	},
+		// 	UnmarshalOptions: protojson.UnmarshalOptions{
+		// 		DiscardUnknown: true,
+		// 	},
+		// }),
 	)
 
-	if err := arkwalletv1.RegisterWalletServiceHandler(
-		context.Background(), gwmux, conn,
-	); err != nil {
-		return err
-	}
+	ctx := context.Background()
+	arkwalletv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
+	signerv1.RegisterSignerServiceHandler(ctx, gwmux, conn)
 
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcSrv, grpcGateway)
@@ -139,5 +145,5 @@ func address(port uint32) string {
 }
 
 func gatewayAddress(port uint32) string {
-	return fmt.Sprintf("localhost:%d", port)
+	return fmt.Sprintf("127.0.0.1:%d", port)
 }

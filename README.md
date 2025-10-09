@@ -33,7 +33,7 @@ The Operator's role is designed with strict boundaries that ensure users always 
 * mutinynet
 * mainnet
 
-and uses [lnwallet](https://pkg.go.dev/github.com/lightningnetwork/lnd/lnwallet/btcwallet) as embedded on-chain wallet.
+and makes use of [arkd-wallet](./pkg/arkd-wallet/), an on-chain wallet based on NBXplorer, as liquidity provider and optionally also as signer.
 
 ## Usage Documentation
 
@@ -57,36 +57,38 @@ In this documentation, you'll learn how to install and use `arkd`, a Bitcoin ser
 
 The `arkd` server can be configured using environment variables.
 
-| Environment Variable | Description | Default |
-|---------------------|-------------|--------|
-| `ARKD_DATADIR` | Directory to store data | App data directory |
-| `ARKD_PORT` | Port to listen on | `7070` |
-| `ARKD_LOG_LEVEL` | Logging level (0-6, where 6 is trace) | `4` (info) |
-| `ARKD_ROUND_INTERVAL` | Interval between rounds in seconds | `30` |
-| `ARKD_DB_TYPE` | Database type (postgres, sqlite, badger) | `postgres` |
-| `ARKD_PG_DB_URL` | Postgres connection url if `ARKD_DB_TYPE` is set to `postgres` | - |
-| `ARKD_EVENT_DB_TYPE` | Event database type (postgres, badger) | `postgres` |
-| `ARKD_PG_EVENT_DB_URL` | Event database url if `ARKD_EVENT_DB_TYPE` is set to `postgres` | - |
-| `ARKD_TX_BUILDER_TYPE` | Transaction builder type (covenantless) | `covenantless` |
-| `ARKD_LIVE_STORE_TYPE` | Cache service type (redis, inmemory) | `redis` |
-| `ARKD_REDIS_URL` | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis` | - |
-| `ARKD_REDIS_NUM_OF_RETRIES` | Maximum number of retries for Redis write operations in case of conflicts | - |
-| `ARKD_VTXO_TREE_EXPIRY` | VTXO tree expiry in seconds | `604672` (7 days) |
-| `ARKD_UNILATERAL_EXIT_DELAY` | Unilateral exit delay in seconds | `86400` (24 hours) |
-| `ARKD_BOARDING_EXIT_DELAY` | Boarding exit delay in seconds | `7776000` (3 months) |
-| `ARKD_ESPLORA_URL` | Esplora API URL | `https://blockstream.info/api` |
-| `ARKD_WALLET_ADDR` | The arkd wallet address to connect to in the form `host:port` | - |
-| `ARKD_NO_MACAROONS` | Disable macaroon authentication | `false` |
-| `ARKD_NO_TLS` | Disable TLS | `true` |
-| `ARKD_UNLOCKER_TYPE` | Wallet unlocker type (env, file) to enable auto-unlock | - |
-| `ARKD_UNLOCKER_FILE_PATH` | Path to unlocker file | - |
-| `ARKD_UNLOCKER_PASSWORD` | Wallet unlocker password | - |
-| `ARKD_ROUND_MAX_PARTICIPANTS_COUNT` | Maximum number of participants per round | `128` |
-| `ARKD_ROUND_MIN_PARTICIPANTS_COUNT` | Minimum number of participants per round | `1` |
-| `ARKD_UTXO_MAX_AMOUNT` | The maximum allowed amount for boarding or collaborative exit | `-1` (unset) |
-| `ARKD_UTXO_MIN_AMOUNT` | The minimum allowed amount for boarding or collaborative exit | `-1` (dust) |
-| `ARKD_VTXO_MAX_AMOUNT` | The maximum allowed amount for vtxos | `-1` (unset) |
-| `ARKD_VTXO_MIN_AMOUNT` | The minimum allowed amount for vtxos | `-1` (dust) |
+| Environment Variable                | Description                                                                     | Default                        |
+|-------------------------------------|---------------------------------------------------------------------------------|--------------------------------|
+| `ARKD_DATADIR`                      | Directory to store data                                                         | App data directory             |
+| `ARKD_PORT`                         | Port (public) to listen on                                                      | `7070`                         |
+| `ARKD_ADMIN_PORT`                   | Admin port (private) to listen on, fallback to service port if 0                | `7071`                         |
+| `ARKD_LOG_LEVEL`                    | Logging level (0-6, where 6 is trace)                                           | `4` (info)                     |
+| `ARKD_SESSION_DURATION`             | How long a batch session lasts (in seconds) before timing out once it started   | `30`                           |
+| `ARKD_DB_TYPE`                      | Database type (postgres, sqlite, badger)                                        | `postgres`                     |
+| `ARKD_PG_DB_URL`                    | Postgres connection url if `ARKD_DB_TYPE` is set to `postgres`                  | -                              |
+| `ARKD_EVENT_DB_TYPE`                | Event database type (postgres, badger)                                          | `postgres`                     |
+| `ARKD_PG_EVENT_DB_URL`              | Event database url if `ARKD_EVENT_DB_TYPE` is set to `postgres`                 | -                              |
+| `ARKD_TX_BUILDER_TYPE`              | Transaction builder type (covenantless)                                         | `covenantless`                 |
+| `ARKD_LIVE_STORE_TYPE`              | Cache service type (redis, inmemory)                                            | `redis`                        |
+| `ARKD_REDIS_URL`                    | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis`             | -                              |
+| `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts       | -                              |
+| `ARKD_VTXO_TREE_EXPIRY`             | VTXO tree expiry in seconds                                                     | `604672` (7 days)              |
+| `ARKD_UNILATERAL_EXIT_DELAY`        | Unilateral exit delay in seconds                                                | `86400` (24 hours)             |
+| `ARKD_BOARDING_EXIT_DELAY`          | Boarding exit delay in seconds                                                  | `7776000` (3 months)           |
+| `ARKD_ESPLORA_URL`                  | Esplora API URL                                                                 | `https://blockstream.info/api` |
+| `ARKD_WALLET_ADDR`                  | The arkd wallet address to connect to in the form `host:port`                   | -                              |
+| `ARKD_SIGNER_ADDR`                  | The signer address to connect to in the form `host:port`                        | value of `ARKD_WALLET_ADDR`    |
+| `ARKD_NO_MACAROONS`                 | Disable macaroon authentication                                                 | `false`                        |
+| `ARKD_NO_TLS`                       | Disable TLS                                                                     | `true`                         |
+| `ARKD_UNLOCKER_TYPE`                | Wallet unlocker type (env, file) to enable auto-unlock                          | -                              |
+| `ARKD_UNLOCKER_FILE_PATH`           | Path to unlocker file                                                           | -                              |
+| `ARKD_UNLOCKER_PASSWORD`            | Wallet unlocker password                                                        | -                              |
+| `ARKD_ROUND_MAX_PARTICIPANTS_COUNT` | Maximum number of participants per round                                        | `128`                          |
+| `ARKD_ROUND_MIN_PARTICIPANTS_COUNT` | Minimum number of participants per round                                        | `1`                            |
+| `ARKD_UTXO_MAX_AMOUNT`              | The maximum allowed amount for boarding or collaborative exit                   | `-1` (unset)                   |
+| `ARKD_UTXO_MIN_AMOUNT`              | The minimum allowed amount for boarding or collaborative exit                   | `-1` (dust)                    |
+| `ARKD_VTXO_MAX_AMOUNT`              | The maximum allowed amount for vtxos                                            | `-1` (unset)                   |
+| `ARKD_VTXO_MIN_AMOUNT`              | The minimum allowed amount for vtxos                                            | `-1` (dust)                    |
 
 ## Provisioning
 
@@ -100,36 +102,53 @@ By default, `arkd` stores all data in the following location:
 
 You can specify a custom data directory using the `ARKD_DATADIR` environment variable.
 
-### Connecting to Bitcoin
+### Connect to Bitcoin
 
-#### Option 1: Connect to Bitcoin Core via RPC
+`arkd-wallet` is the wallet used by `arkd` as liqudiity provider.
 
-To connect `arkd` to your own Bitcoin Core node via RPC, use these environment variables:
+It is based on [NBXplorer](https://docs.btcpayserver.org/NBXplorer) and requires a running instance to connect to. You can check the [example](https://github.com/dgarage/NBXplorer/blob/master/docker-compose.regtest.yml) in the official repository, or our Docker Compose [file](./docker-compose.regtest.yml), to see how to start one.
 
-```sh
-export ARKD_WALLET_BITCOIND_RPC_USER=admin1
-export ARKD_WALLET_BITCOIND_RPC_PASS=123
-export ARKD_WALLET_BITCOIND_RPC_HOST=localhost:18443
-```
-
-For ZMQ notifications (recommended for better performance):
+To connect `arkd-wallet` to your running NBXplorer instance use this environment variable:
 
 ```sh
-export ARKD_WALLET_BITCOIND_ZMQ_BLOCK=tcp://localhost:28332
-export ARKD_WALLET_BITCOIND_ZMQ_TX=tcp://localhost:28333
+# Make sure to use the right URL, this is just an example.
+export ARKD_WALLET_NBXPLORER_URL=http://localhost:32838
 ```
 
-#### Option 2: Connect via Neutrino
+### Configure signer
 
-For a lighter setup using Neutrino (BIP 157/158):
+`arkd-wallet` can be used also as signer.
+
+The configuration can be done either via env vars or via API. To enable `arkd-wallet`'s signer mode use this environment variable:
 
 ```sh
-export ARKD_WALLET_NEUTRINO_PEER=yourhost:p2p_port_bitcoin
+# Make sure to use a random private key, this is just an example.
+export ARKD_WALLET_SIGNER_KEY=19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
 ```
 
-If none of the above options are specified, the wallet uses Neutrino by default with peer discovery.
+### Connect to wallet
 
-### Wallet Setup
+To connect `arkd` to `arkd-wallet` use this environment variable:
+
+```sh
+# Make sure to use the right URL in the form host:port, this is just an example.
+export ARKD_WALLET_ADDR=localhost:6060
+```
+
+### Connect to signer
+
+By default, `arkd` makes use of the provided `arkd-wallet` also as signer, but you can customize its url either via environment variable or via API.
+
+#### Connect to custom signer
+
+To connect `arkd` to a custom signer use this environment variable:
+
+```sh
+# Make sure to use the right URL in the form host:port, this is just an example.
+export ARKD_SIGNER_ADDR=localhost:7071
+```
+
+### Setup arkd
 
 1. Start the wallet:
    ```sh
@@ -150,25 +169,33 @@ If none of the above options are specified, the wallet uses Neutrino by default 
    ```sh
    arkd wallet create --mnemonic "your twelve word mnemonic phrase here" --password <password>
    ```
+4. Only if you didn't configure either the wallet as signer, or a custom signer, you must load the signer before unlocking the wallet, or `arkd` will fail to start:
+   ```sh
+   # If you configured a custom signer
+   arkd signer load --signer-url localhost:7071
+   # Or, if you want to configure the wallet as signer with a private key
+   arkd signer load --signer-prvkey 19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
+   ```
+   Remember, if you use this command, you must use it at every restart unless you export the required environment variable(s).
 
-4. Unlock the wallet:
+5. Unlock the wallet:
    ```sh
    arkd wallet unlock --password <password>
    ```
 
-5. Generate a funding address:
+6. Generate a funding address:
    ```sh
    arkd wallet address
    ```
 
-6. Fund the on-chain address with BTC and wait for at least 2 confirmations.
+7. Fund the on-chain address with BTC and wait for at least 2 confirmations.
 
-7. Check your wallet balance:
+8. Check your wallet balance:
    ```sh
    arkd wallet balance
    ```
 
-8. Withdraw funds from your wallet:
+9. Withdraw funds from your wallet:
    ```sh
    arkd wallet withdraw --address <address> --amount <amount_in_btc>
    ```
@@ -238,11 +265,15 @@ To compile the `arkd` binary from source, you can use the following Make command
 6. Run arkd wallet in dev mode:
 
    ```sh
-   # with neutrino
-   make run-wallet-neutrino
-   # or with bitcoind
-   make run-wallet-bitcoind
+   # run wallet with signer enabled
+   make run-wallet
+   # or, run wallet with signer disabled...
+   make run-wallet-nosigner
+   # ... and in another tab run a custom signer
+   make run-signer
    ```
+
+   NOTE: This command starts `pgnbxplorer` and `nbxplorer` services defined in `docker-compose.regtest.yml`, make sure to tear them down once you want to delete your dev env with `make docker-stop`
 
 7. Run arkd in dev mode:
 

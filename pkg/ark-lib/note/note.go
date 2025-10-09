@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/bip322"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/base58"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
@@ -106,29 +107,44 @@ func (n Note) VtxoScript() script.TapscriptsVtxoScript {
 	}
 }
 
-func (n Note) BIP322Input() (*bip322.Input, error) {
+func (n Note) IntentProofInput() (outpoint *wire.OutPoint, pInput *psbt.PInput, err error) {
 	vtxoScript := n.VtxoScript()
 	taprootKey, _, err := vtxoScript.TapTree()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get taproot key: %w", err)
+		return nil, nil, fmt.Errorf("failed to get taproot key: %w", err)
 	}
 
 	p2trPkScript, err := script.P2TRScript(taprootKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get p2tr pk script: %w", err)
+		return nil, nil, fmt.Errorf("failed to get p2tr pk script: %w", err)
 	}
 
-	return &bip322.Input{
-		OutPoint: &wire.OutPoint{
+	scripts, err := vtxoScript.Encode()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to encode vtxo script: %w", err)
+	}
+
+	taptreeField, err := txutils.VtxoTaprootTreeField.Encode(txutils.TapTree(scripts))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to encode taptree field: %w", err)
+	}
+
+	conditionWitnessField, err := txutils.ConditionWitnessField.Encode(wire.TxWitness{n.Preimage[:]})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to encode condition witness field: %w", err)
+	}
+
+	return &wire.OutPoint{
 			Hash:  n.PreimageHash(),
 			Index: fakeOutpointOutputIndex,
 		},
-		Sequence: wire.MaxTxInSequenceNum,
-		WitnessUtxo: &wire.TxOut{
-			PkScript: p2trPkScript,
-			Value:    int64(n.Value),
-		},
-	}, nil
+		&psbt.PInput{
+			WitnessUtxo: &wire.TxOut{
+				PkScript: p2trPkScript,
+				Value:    int64(n.Value),
+			},
+			Unknowns: []*psbt.Unknown{taptreeField, conditionWitnessField},
+		}, nil
 }
 
 // implements tree.Closure interface,
