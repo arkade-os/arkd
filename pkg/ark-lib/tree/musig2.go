@@ -372,7 +372,9 @@ func (t *treeSignerSession) AggregateNonces(txid string, pubkeyNonces map[string
 		return len(t.aggregateNonces) == len(t.txs), nil // skip: we already have the aggregated nonce for this txid
 	}
 
-	pubkeyNonces[t.GetPublicKey()] = &Musig2Nonce{myNonce.PubNonce}
+	// set our nonce to ensure server didn't overwrite it
+	xonlyPubkey := hex.EncodeToString(schnorr.SerializePubKey(t.secretKey.PubKey()))
+	pubkeyNonces[xonlyPubkey] = &Musig2Nonce{myNonce.PubNonce}
 
 	keys, err := txutils.ParseCosignerKeysFromArkPsbt(tx, 0)
 	if err != nil {
