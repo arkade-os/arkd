@@ -619,14 +619,18 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		return "", fmt.Errorf("invalid address: %w", err)
 	}
 
+	destPkScript, err := txscript.PayToAddrScript(destinationAddr)
+	if err != nil {
+		return "", fmt.Errorf("failed to create destination script: %w", err)
+	}
+
 	feeRate, err := w.FeeRate(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get fee rate: %w", err)
 	}
 
-	// estimate fees for a typical 2-input, 2-output transaction (amount + change)
-	// will be refined after coin selection
-	estimatedFee := w.estimateWithdrawFee(feeRate, 2, 2)
+	// estimate fees for a typical 2-input withdraw
+	estimatedFee := w.estimateWithdrawFee(feeRate, 2, destPkScript)
 
 	selectedUtxos, _, err := w.SelectUtxos(ctx, amount+estimatedFee, true)
 	if err != nil {
@@ -648,13 +652,9 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
 	}
 
-	actualFee := w.estimateWithdrawFee(feeRate, len(selectedUtxos), 2) // 2 outputs: destination + change
+	actualFee := w.estimateWithdrawFee(feeRate, len(selectedUtxos), destPkScript) // 2 outputs: destination + change
 	changeAmount := totalInputValue - amount - actualFee
 
-	destPkScript, err := txscript.PayToAddrScript(destinationAddr)
-	if err != nil {
-		return "", fmt.Errorf("failed to create destination script: %w", err)
-	}
 	outputs = append(outputs, &wire.TxOut{
 		Value:    int64(amount),
 		PkScript: destPkScript,
@@ -705,10 +705,6 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 			PkScript: scriptBytes,
 		}, inputIndex); err != nil {
 			return "", fmt.Errorf("failed to add input witness utxo: %w", err)
-		}
-
-		if err := updater.AddInSighashType(txscript.SigHashAll, inputIndex); err != nil {
-			return "", fmt.Errorf("failed to add input sighash type: %w", err)
 		}
 	}
 
@@ -794,18 +790,20 @@ func (w *wallet) chainParams() *chaincfg.Params {
 	return application.NetworkToChainParams(w.Network)
 }
 
-func (w *wallet) estimateWithdrawFee(feeRate chainfee.SatPerKVByte, numInputs, numOutputs int) uint64 {
+// estimateWithdrawFee tries to compute the expected fee for a withdrawal transaction
+// it assumes inputs are all tapkey and outputs are 1 change (tapkey) and 1 destination
+func (w *wallet) estimateWithdrawFee(feeRate chainfee.SatPerKVByte, numInputs int, destinationScript []byte) uint64 {
 	weightEstimator := &input.TxWeightEstimator{}
 
-	for i := 0; i < numInputs; i++ {
+	for range numInputs {
 		weightEstimator.AddTaprootKeySpendInput(txscript.SigHashAll)
 	}
 
-	for i := 0; i < numOutputs; i++ {
-		dummyAddr, _ := btcutil.NewAddressWitnessPubKeyHash(make([]byte, 20), w.chainParams())
-		dummyScript, _ := txscript.PayToAddrScript(dummyAddr)
-		weightEstimator.AddOutput(dummyScript)
-	}
+	weightEstimator.
+		// destination output
+		AddOutput(destinationScript).
+		// change output
+		AddP2TROutput()
 
 	fee := feeRate.FeeForVSize(lntypes.VByte(weightEstimator.VSize()))
 	return uint64(math.Ceil(fee.ToUnit(btcutil.AmountSatoshi)))
