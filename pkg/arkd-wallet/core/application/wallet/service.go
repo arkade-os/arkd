@@ -783,7 +783,13 @@ func (w *wallet) withdrawAll(ctx context.Context, feeRate chainfee.SatPerKVByte,
 	}
 
 	estimatedFee := w.estimateWithdrawFee(feeRate, len(availableUtxos), destPkScript)
+	if amount < estimatedFee {
+		return nil, fmt.Errorf("amount is too small to be withdrawn (estimated fee: %d)", estimatedFee)
+	}
 	amount -= estimatedFee
+	if amount < w.GetDustAmount(ctx) {
+		return nil, fmt.Errorf("amount is too small to be withdrawn (dust amount: %d)", w.GetDustAmount(ctx))
+	}
 
 	inputs := make([]*wire.OutPoint, 0)
 	outputs := make([]*wire.TxOut, 0, 1)
