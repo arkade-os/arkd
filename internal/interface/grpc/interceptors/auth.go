@@ -15,7 +15,7 @@ func unaryMacaroonAuthHandler(macaroonSvc *macaroons.Service) grpc.UnaryServerIn
 		ctx context.Context, req interface{},
 		info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		if err := checkMacaroon(ctx, info.FullMethod, macaroonSvc); err != nil {
+		if err := CheckMacaroon(ctx, info.FullMethod, macaroonSvc); err != nil {
 			return nil, err
 		}
 
@@ -28,7 +28,7 @@ func streamMacaroonAuthHandler(macaroonSvc *macaroons.Service) grpc.StreamServer
 		srv interface{}, ss grpc.ServerStream,
 		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
-		if err := checkMacaroon(ss.Context(), info.FullMethod, macaroonSvc); err != nil {
+		if err := CheckMacaroon(ss.Context(), info.FullMethod, macaroonSvc); err != nil {
 			return err
 		}
 
@@ -36,7 +36,7 @@ func streamMacaroonAuthHandler(macaroonSvc *macaroons.Service) grpc.StreamServer
 	}
 }
 
-func checkMacaroon(ctx context.Context, fullMethod string, svc *macaroons.Service) error {
+func CheckMacaroon(ctx context.Context, fullMethod string, svc *macaroons.Service) error {
 	if svc == nil {
 		return nil
 	}

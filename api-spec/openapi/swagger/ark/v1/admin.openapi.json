@@ -5,6 +5,46 @@
     "version": "version not set"
   },
   "paths": {
+    "/v1/admin/auth/revoke": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_RevokeAuth",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeAuthRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeAuthResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/conviction/ban": {
       "post": {
         "tags": [
@@ -1078,6 +1118,24 @@
       "PardonConvictionResponse": {
         "title": "PardonConvictionResponse",
         "type": "object"
+      },
+      "RevokeAuthRequest": {
+        "title": "RevokeAuthRequest",
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "RevokeAuthResponse": {
+        "title": "RevokeAuthResponse",
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
       },
       "ScheduledSessionConfig": {
         "title": "ScheduledSessionConfig",

@@ -18,7 +18,7 @@ var Version string
 
 const (
 	macaroonDir  = "macaroons"
-	macaroonFile = "admin.macaroon"
+	macaroonFile = "operator.macaroon"
 	tlsDir       = "tls"
 	tlsCertFile  = "cert.pem"
 )
@@ -86,6 +86,7 @@ func main() {
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,
+		revokeAuthCmd,
 	)
 	app.Action = mainAction
 	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)

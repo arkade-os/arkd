@@ -17,6 +17,7 @@ const (
 	EntityArk               = "ark"
 	EntityIndexer           = "indexer"
 	EntityHealth            = "health"
+	EntityAuthManager       = "authmanager"
 )
 
 func ReadOnlyPermissions() []bakery.Op {
@@ -94,11 +95,17 @@ func AdminPermissions() []bakery.Op {
 	return permissions
 }
 
-func SuperAdminPermissions() []bakery.Op {
-	return append(AdminPermissions(), bakery.Op{
-		Entity: EntityWithdraw,
-		Action: "write",
-	})
+func SuperUserPermissions() []bakery.Op {
+	return append(AdminPermissions(), []bakery.Op{
+		{
+			Entity: EntityWithdraw,
+			Action: "write",
+		},
+		{
+			Entity: EntityAuthManager,
+			Action: "write",
+		},
+	}...)
 }
 
 // Whitelist returns the list of all whitelisted methods with the relative
@@ -320,6 +327,10 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 		}},
 		fmt.Sprintf("/%s/BanScript", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
+			Action: "write",
+		}},
+		fmt.Sprintf("/%s/RevokeAuth", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityAuthManager,
 			Action: "write",
 		}},
 	}
