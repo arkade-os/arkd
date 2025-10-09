@@ -77,10 +77,10 @@ func main() {
 	app.UsageText = "Run the Ark Server with:\n\tarkd\nManage the Ark Server with:\n\tarkd [global options] command [command options]"
 	app.Commands = append(
 		app.Commands,
+		versionCmd,
 		walletCmd,
 		signerCmd,
 		genkeyCmd,
-		versionCmd,
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,

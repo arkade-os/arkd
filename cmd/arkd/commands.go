@@ -320,7 +320,7 @@ func genkeyAction(ctx *cli.Context) error {
 }
 
 func versionAction(ctx *cli.Context) error {
-	fmt.Printf("arkd version %s\n", Version)
+	fmt.Printf("Arkd version: %s\n", Version)
 	return nil
 }
 

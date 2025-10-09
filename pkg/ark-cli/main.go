@@ -236,7 +236,7 @@ var (
 		Name:  "version",
 		Usage: "Display version information",
 		Action: func(ctx *cli.Context) error {
-			fmt.Printf("Ark CLI version %s\n", Version)
+			fmt.Printf("Ark CLI version: %s\n", Version)
 			return nil
 		},
 	}

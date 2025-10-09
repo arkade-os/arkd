@@ -4,8 +4,6 @@
 *.dll
 *.so
 *.dylib
-arkd
-ark-cli
 
 # Test binary, built with 'go test -c'
 *.test
