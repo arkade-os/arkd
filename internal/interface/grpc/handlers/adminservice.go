@@ -494,10 +494,12 @@ func parseMacaroon(mac string) (string, []byte, []bakery.Op, error) {
 	// Extract rootkeey id and ops from macaroon id.
 	ops := make([]bakery.Op, 0, len(macId.GetOps()))
 	for _, op := range macId.GetOps() {
-		ops = append(ops, bakery.Op{
-			Entity: op.GetEntity(),
-			Action: op.GetActions()[0],
-		})
+		for _, action := range op.GetActions() {
+			ops = append(ops, bakery.Op{
+				Entity: op.GetEntity(),
+				Action: action,
+			})
+		}
 	}
 	return mac, macId.GetStorageId(), ops, nil
 }
