@@ -89,6 +89,24 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_UTXO_MIN_AMOUNT`              | The minimum allowed amount for boarding or collaborative exit                   | `-1` (dust)                    |
 | `ARKD_VTXO_MAX_AMOUNT`              | The maximum allowed amount for vtxos                                            | `-1` (unset)                   |
 | `ARKD_VTXO_MIN_AMOUNT`              | The minimum allowed amount for vtxos                                            | `-1` (dust)                    |
+| `ARKD_BAN_DURATION`                | Ban duration in seconds                                                         | `300` (5 minutes)              |
+| `ARKD_BAN_THRESHOLD`               | Number of crimes to trigger a ban                                               | `3`                            |
+| `ARKD_SCHEDULER_TYPE`              | Scheduler type (gocron, block)                                                 | `gocron`                       |
+| `ARKD_CHECKPOINT_EXIT_DELAY`       | Checkpoint exit delay in seconds                                                | `86400` (24 hours)             |
+| `ARKD_TLS_EXTRA_IP`                | Extra IP addresses for TLS (comma-separated)                                   | -                              |
+| `ARKD_TLS_EXTRA_DOMAIN`            | Extra domains for TLS (comma-separated)                                         | -                              |
+| `ARKD_NOTE_URI_PREFIX`             | Note URI prefix                                                                 | -                              |
+| `ARKD_SCHEDULED_SESSION_START_TIME` | Scheduled session start time (Unix timestamp)                                 | -                              |
+| `ARKD_SCHEDULED_SESSION_END_TIME`   | Scheduled session end time (Unix timestamp)                                    | -                              |
+| `ARKD_SCHEDULED_SESSION_PERIOD`    | Scheduled session period in minutes                                             | -                              |
+| `ARKD_SCHEDULED_SESSION_DURATION`  | Scheduled session duration in seconds                                           | -                              |
+| `ARKD_SCHEDULED_SESSION_MIN_ROUND_PARTICIPANTS_COUNT` | Min participants for scheduled sessions        | -                              |
+| `ARKD_SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT` | Max participants for scheduled sessions        | -                              |
+| `ARKD_OTEL_COLLECTOR_ENDPOINT`     | OpenTelemetry collector endpoint                                                | -                              |
+| `ARKD_OTEL_PUSH_INTERVAL`          | OpenTelemetry push interval in seconds                                          | `10`                           |
+| `ARKD_ALLOW_CSV_BLOCK_TYPE`        | Allow CSV block type                                                            | `false`                        |
+| `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
+| `ARKD_ROUND_REPORT_ENABLED`        | Enable round report service                                                     | `false`                        |
 
 ## Provisioning
 
