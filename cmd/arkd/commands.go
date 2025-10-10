@@ -148,21 +148,17 @@ var (
 		Action: revokeTokenAction,
 	}
 	convictionsCmd = &cli.Command{
-		Name:  "conviction",
-		Usage: "Manage convictions",
+		Name:   "convictions",
+		Usage:  "Get convictions by IDs",
+		Flags:  []cli.Flag{convictionIdsFlag},
+		Action: getConvictionsAction,
 		Subcommands: cli.Commands{
-			getConvictionsCmd,
 			getConvictionsInRangeCmd,
 			getConvictionsByRoundCmd,
 			getActiveScriptConvictionsCmd,
 			pardonConvictionCmd,
+			addConvictionCmd,
 		},
-	}
-	getConvictionsCmd = &cli.Command{
-		Name:   "get",
-		Usage:  "Get convictions by IDs",
-		Flags:  []cli.Flag{convictionIdsFlag},
-		Action: getConvictionsAction,
 	}
 	getConvictionsInRangeCmd = &cli.Command{
 		Name:   "range",
@@ -177,7 +173,7 @@ var (
 		Action: getConvictionsByRoundAction,
 	}
 	getActiveScriptConvictionsCmd = &cli.Command{
-		Name:   "by-script",
+		Name:   "active",
 		Usage:  "Get active script convictions",
 		Flags:  []cli.Flag{scriptFlag},
 		Action: getActiveScriptConvictionsAction,
@@ -188,9 +184,9 @@ var (
 		Flags:  []cli.Flag{convictionIdFlag},
 		Action: pardonConvictionAction,
 	}
-	banScriptCmd = &cli.Command{
-		Name:   "ban",
-		Usage:  "Ban a script",
+	addConvictionCmd = &cli.Command{
+		Name:   "add",
+		Usage:  "Add a conviction",
 		Flags:  []cli.Flag{scriptFlag, banDurationFlag, banReasonFlag},
 		Action: banScriptAction,
 	}
