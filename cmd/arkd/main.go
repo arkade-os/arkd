@@ -88,6 +88,7 @@ func main() {
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,
 		revokeAuthCmd,
+		convictionsCmd,
 	)
 	app.Action = mainAction
 	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)

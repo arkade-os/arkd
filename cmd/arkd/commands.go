@@ -147,6 +147,49 @@ var (
 		Flags:  []cli.Flag{tokenFlag},
 		Action: revokeTokenAction,
 	}
+	convictionsCmd = &cli.Command{
+		Name:   "convictions",
+		Usage:  "Get convictions by IDs",
+		Flags:  []cli.Flag{convictionIdsFlag},
+		Action: getConvictionsAction,
+		Subcommands: cli.Commands{
+			getConvictionsInRangeCmd,
+			getConvictionsByRoundCmd,
+			getActiveScriptConvictionsCmd,
+			pardonConvictionCmd,
+			addConvictionCmd,
+		},
+	}
+	getConvictionsInRangeCmd = &cli.Command{
+		Name:   "range",
+		Usage:  "Get convictions in time range",
+		Flags:  []cli.Flag{convictionFromFlag, convictionToFlag},
+		Action: getConvictionsInRangeAction,
+	}
+	getConvictionsByRoundCmd = &cli.Command{
+		Name:   "by-round",
+		Usage:  "Get convictions by round ID",
+		Flags:  []cli.Flag{roundIdFlag},
+		Action: getConvictionsByRoundAction,
+	}
+	getActiveScriptConvictionsCmd = &cli.Command{
+		Name:   "active",
+		Usage:  "Get active script convictions",
+		Flags:  []cli.Flag{scriptFlag},
+		Action: getActiveScriptConvictionsAction,
+	}
+	pardonConvictionCmd = &cli.Command{
+		Name:   "pardon",
+		Usage:  "Pardon a conviction",
+		Flags:  []cli.Flag{convictionIdFlag},
+		Action: pardonConvictionAction,
+	}
+	addConvictionCmd = &cli.Command{
+		Name:   "add",
+		Usage:  "Add a conviction",
+		Flags:  []cli.Flag{scriptFlag, banDurationFlag, banReasonFlag},
+		Action: banScriptAction,
+	}
 )
 
 var timeout = time.Minute
@@ -663,5 +706,152 @@ func revokeTokenAction(ctx *cli.Context) error {
 		return fmt.Errorf("failed to json encode response: %s", err)
 	}
 	fmt.Println(string(respJson))
+	return nil
+}
+
+func getConvictionsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	convictionIds := ctx.StringSlice(convictionIdsFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf(
+		"%s/v1/admin/convictions/%s",
+		baseURL,
+		url.PathEscape(strings.Join(convictionIds, ",")),
+	)
+	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func getConvictionsInRangeAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Default to last 24 hours if flags are not set
+	now := time.Now()
+	from := ctx.Int64(convictionFromFlagName)
+	to := ctx.Int64(convictionToFlagName)
+
+	if !ctx.IsSet(convictionFromFlagName) {
+		from = now.Add(-24 * time.Hour).Unix()
+	}
+	if !ctx.IsSet(convictionToFlagName) {
+		to = now.Unix()
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/convictionsInRange?from=%d&to=%d", baseURL, from, to)
+	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func getConvictionsByRoundAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	roundId := ctx.String(roundIdFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/convictionsByRound/%s", baseURL, url.PathEscape(roundId))
+	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func getActiveScriptConvictionsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	script := ctx.String(scriptFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/convictionsByScript/%s", baseURL, url.PathEscape(script))
+	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func pardonConvictionAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	convictionId := ctx.String(convictionIdFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/convictions/%s/pardon", baseURL, url.PathEscape(convictionId))
+
+	if _, err := post[struct{}](url, "", "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully pardoned conviction: %s\n", convictionId)
+	return nil
+}
+
+func banScriptAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	script := ctx.String(scriptFlagName)
+	banDuration := ctx.Int64(banDurationFlagName)
+	banReason := ctx.String(banReasonFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/conviction/ban", baseURL)
+	body := fmt.Sprintf(
+		`{"script": "%s", "ban_duration": %d, "reason": "%s"}`,
+		script,
+		banDuration,
+		banReason,
+	)
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully banned script: %s\n", script)
 	return nil
 }
