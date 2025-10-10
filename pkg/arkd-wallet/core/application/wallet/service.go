@@ -838,6 +838,7 @@ func (w *wallet) withdrawAll(ctx context.Context, feeRate chainfee.SatPerKVByte,
 	if amount < estimatedFee {
 		return nil, fmt.Errorf("amount is too small to be withdrawn (estimated fee: %d)", estimatedFee)
 	}
+	fmt.Println("AMOUNT", amount, "FEES", estimatedFee, "RATE", feeRate.String())
 	amount -= estimatedFee
 	if amount < w.GetDustAmount(ctx) {
 		return nil, fmt.Errorf("amount is too small to be withdrawn (dust amount: %d)", w.GetDustAmount(ctx))
