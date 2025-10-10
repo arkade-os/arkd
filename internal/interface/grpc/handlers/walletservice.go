@@ -197,15 +197,15 @@ func (a *walletHandler) GetBalance(
 func (a *walletHandler) Withdraw(
 	ctx context.Context, req *arkv1.WithdrawRequest,
 ) (*arkv1.WithdrawResponse, error) {
-	if req.GetAmount() <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "amount must be greater than 0")
-	}
-
 	if req.GetAddress() == "" {
 		return nil, status.Error(codes.InvalidArgument, "address is required")
 	}
 
-	txid, err := a.walletService.Withdraw(ctx, req.GetAddress(), req.GetAmount())
+	if !req.GetAll() && req.GetAmount() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "amount must be greater than 0")
+	}
+
+	txid, err := a.walletService.Withdraw(ctx, req.GetAddress(), req.GetAmount(), req.GetAll())
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}

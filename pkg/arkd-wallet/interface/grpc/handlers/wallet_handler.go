@@ -414,7 +414,25 @@ func (h *WalletServiceHandler) NotificationStream(
 func (h *WalletServiceHandler) Withdraw(
 	ctx context.Context, req *arkwalletv1.WithdrawRequest,
 ) (*arkwalletv1.WithdrawResponse, error) {
-	txid, err := h.wallet.Withdraw(ctx, req.GetAddress(), req.GetAmount())
+	address := req.GetAddress()
+	if len(address) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "address is required")
+	}
+
+	if req.GetAll() {
+		txid, err := h.wallet.WithdrawAll(ctx, address)
+		if err != nil {
+			return nil, err
+		}
+		return &arkwalletv1.WithdrawResponse{Txid: txid}, nil
+	}
+
+	amount := req.GetAmount()
+	if amount <= 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "amount must be greater than 0")
+	}
+
+	txid, err := h.wallet.Withdraw(ctx, address, amount)
 	if err != nil {
 		return nil, err
 	}

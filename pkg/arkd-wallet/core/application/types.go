@@ -41,7 +41,10 @@ type WalletService interface {
 	GetDustAmount(ctx context.Context) uint64
 	GetTransaction(ctx context.Context, txid string) (string, error)
 	GetCurrentBlockTime(ctx context.Context) (*BlockTimestamp, error)
+	// Withdraw from main account only
 	Withdraw(ctx context.Context, destinationAddress string, amount uint64) (string, error)
+	// Withdraw both main and connectors account funds
+	WithdrawAll(ctx context.Context, destinationAddress string) (string, error)
 	LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) error
 	Close()
 }

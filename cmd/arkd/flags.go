@@ -17,6 +17,7 @@ const (
 	mnemonicFlagName                                  = "mnemonic"
 	gapLimitFlagName                                  = "addr-gap-limit"
 	amountFlagName                                    = "amount"
+	withdrawAllFlagName                               = "all"
 	quantityFlagName                                  = "quantity"
 	addressFlagName                                   = "address"
 	intentIdsFlagName                                 = "ids"
@@ -83,10 +84,14 @@ var (
 			Required: required,
 		}
 	}
+	withdrawAllFlag = &cli.BoolFlag{
+		Name:  withdrawAllFlagName,
+		Usage: "withdraw all available balance including connectors account funds",
+		Value: false,
+	}
 	withdrawAmountFlag = &cli.Float64Flag{
-		Name:     amountFlagName,
-		Usage:    "amount to withdraw in BTC",
-		Required: true,
+		Name:  amountFlagName,
+		Usage: "amount to withdraw in BTC",
 	}
 	withdrawAddressFlag = &cli.StringFlag{
 		Name:     addressFlagName,
