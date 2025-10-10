@@ -1118,6 +1118,12 @@ func (s *service) RegisterIntent(
 
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
+
+		if len(psbtInput.TaprootLeafScript) == 0 {
+			return "", errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", i+1).
+				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
 		if psbtInput.WitnessUtxo == nil {
 			return "", errors.INVALID_PSBT_INPUT.New("missing witness utxo for input %s", outpoint.String()).
 				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
@@ -1584,6 +1590,12 @@ func (s *service) DeleteIntentsByProof(
 	boardingTxs := make(map[string]wire.MsgTx)
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
+
+		if len(psbtInput.TaprootLeafScript) == 0 {
+			return errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", i+1).
+				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
 			VOut: outpoint.Index,

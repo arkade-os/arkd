@@ -304,7 +304,6 @@ func finalizeAndExtract(p Proof) (*wire.MsgTx, error) {
 
 // finalizeInput is a wrapper of script.FinalizeVtxoScript with note support
 func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
-	// check if the input is a note first
 	if len(ptx.Inputs) <= inputIndex {
 		return fmt.Errorf(
 			"input index out of bounds %d, len(inputs)=%d", inputIndex, len(ptx.Inputs),
@@ -312,10 +311,17 @@ func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 	}
 
 	in := ptx.Inputs[inputIndex]
+
+	if len(in.FinalScriptWitness) > 0 {
+		// already finalized, skip
+		return nil
+	}
+
 	if len(in.TaprootLeafScript) == 0 {
 		return nil
 	}
 
+	// check if the input is a note first
 	var noteClosure note.NoteClosure
 	valid, err := noteClosure.Decode(in.TaprootLeafScript[0].Script)
 	if valid && err == nil {
