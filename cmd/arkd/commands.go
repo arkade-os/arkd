@@ -699,7 +699,11 @@ func getConvictionsAction(ctx *cli.Context) error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/convictions/%s", baseURL, strings.Join(convictionIds, ","))
+	url := fmt.Sprintf(
+		"%s/v1/admin/convictions/%s",
+		baseURL,
+		url.PathEscape(strings.Join(convictionIds, ",")),
+	)
 	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
 	if err != nil {
 		return err
@@ -754,7 +758,7 @@ func getConvictionsByRoundAction(ctx *cli.Context) error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/convictionsByRound/%s", baseURL, roundId)
+	url := fmt.Sprintf("%s/v1/admin/convictionsByRound/%s", baseURL, url.PathEscape(roundId))
 	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
 	if err != nil {
 		return err
@@ -776,7 +780,7 @@ func getActiveScriptConvictionsAction(ctx *cli.Context) error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/convictionsByScript/%s", baseURL, script)
+	url := fmt.Sprintf("%s/v1/admin/convictionsByScript/%s", baseURL, url.PathEscape(script))
 	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
 	if err != nil {
 		return err
@@ -798,10 +802,9 @@ func pardonConvictionAction(ctx *cli.Context) error {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/convictions/%s/pardon", baseURL, convictionId)
-	body := fmt.Sprintf(`{"id": "%s"}`, convictionId)
+	url := fmt.Sprintf("%s/v1/admin/convictions/%s/pardon", baseURL, url.PathEscape(convictionId))
 
-	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
+	if _, err := post[struct{}](url, "", "", macaroon, tlsConfig); err != nil {
 		return err
 	}
 
