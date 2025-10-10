@@ -347,6 +347,7 @@ func (n *nbxplorer) GetNewUnusedAddress(ctx context.Context, derivationScheme st
 	}
 
 	params := url.Values{}
+	params.Set("autoTrack", "true")
 	if change {
 		params.Set("feature", "Change")
 	} else {
