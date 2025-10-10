@@ -1284,7 +1284,7 @@ func (s *service) RegisterIntent(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	signedProof, err := s.wallet.SignTransactionTapscript(ctx, encodedProof, nil)
+	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
 			WithMetadata(map[string]any{
@@ -1685,7 +1685,7 @@ func (s *service) DeleteIntentsByProof(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	signedProof, err := s.wallet.SignTransactionTapscript(ctx, encodedProof, nil)
+	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
 	if err != nil {
 		return errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
 			WithMetadata(map[string]any{
