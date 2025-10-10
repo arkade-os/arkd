@@ -125,6 +125,7 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println("AAAAA", hex.EncodeToString(seed))
 
 	keyMgr, err := newKeyManager(seed, w.chainParams())
 	if err != nil {
