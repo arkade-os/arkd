@@ -143,74 +143,125 @@ service ArkService {
 
 message GetInfoRequest {}
 message GetInfoResponse {
-  string version = 1;
-  string signer_pubkey = 2;
-  string forfeit_pubkey = 3;
-  string forfeit_address = 4;
-  string checkpoint_tapscript = 5;
-  string network = 6;
-  int64 session_duration = 7;
-  int64 unilateral_exit_delay = 8;
-  int64 boarding_exit_delay = 9;
+  // The compressed public key (hex-encoded) of the current server signer used for txs.
+  string signer_pubkey = 1;
+  // The BIP68 relative locktime for vtxo tree expiry. Can be expressed in blocks (< 512) or seconds
+  // (>= 512, must be multiple of 512). Default: 604672 seconds (~7 days).
+  int64 vtxo_tree_expiry = 2;
+  // The BIP68 relative locktime delay before a unilateral exit can be executed after vtxo unrolling.
+  // Must be >= 512 and multiple of 512. Default: 86400 seconds (24 hours).
+  int64 unilateral_exit_delay = 3;
+  // The interval in seconds between batch rounds. Minimum 2 seconds. Default: 30 seconds.
+  int64 round_interval = 4;
+  // The Bitcoin network the server is operating on (e.g., "mainnet", "testnet", "regtest", "signet").
+  string network = 5;
+  // The minimum amount in satoshis considered as dust, determined by the wallet's dust calculation.
+  int64 dust = 6;
+  // The Bitcoin address where forfeit funds are sent when users fail to cooperate.
+  string forfeit_address = 7;
+  // Market hour configuration defining when the server accepts transactions, including start/end
+  // times, period, round interval, and fee schedule during market hours.
+  MarketHour market_hour = 8;
+  // The version string of the running arkd instance.
+  string version = 9;
+  // The minimum amount in satoshis for boarding UTXOs. -1 means use native dust limit (default).
   int64 utxo_min_amount = 10;
-  int64 utxo_max_amount = 11; // -1 means no limit (default), 0 means boarding not allowed
-  int64 vtxo_min_amount = 12; 
-  int64 vtxo_max_amount = 13; // -1 means no limit (default)
-  int64 dust = 14;
-  FeeInfo fees = 15;
-  ScheduledSession scheduled_session = 16;
+  // The maximum amount in satoshis for boarding UTXOs. -1 means no limit (default), 0 means
+  // boarding is not allowed.
+  int64 utxo_max_amount = 11;
+  // The minimum amount in satoshis for vtxo settlement outputs. If configured value is below dust,
+  // the dust amount is used instead. -1 means use native dust limit (default).
+  int64 vtxo_min_amount = 12;
+  // The maximum amount in satoshis for vtxos. -1 means no limit (default).
+  int64 vtxo_max_amount = 13;
+  // The BIP68 relative locktime delay before a boarding exit can be executed. Must be >= 512,
+  // multiple of 512, and different from unilateral_exit_delay. Default: 7776000 seconds (~3 months).
+  int64 boarding_exit_delay = 14;
+  // The hex-encoded tapscript used for checkpoint transactions in offchain vtxo spending. This
+  // script is derived from a checkpoint closure with the forfeit public key.
+  string checkpoint_tapscript = 15;
+  // Fee information including intent fees (offchain/onchain inputs/outputs) and transaction fee rate.
+  FeeInfo fees = 16;
+  // List of previously used signers that are being phased out, each with their public key and the
+  // Unix timestamp after which they are no longer valid.
   repeated DeprecatedSigner deprecated_signers = 17;
-  map<string, string> service_status = 18;
-  string digest = 19;
+  // The compressed public key (hex-encoded) used for forfeit transactions, derived from the
+  // signer's forfeit key.
+  string forfeit_pubkey = 18;
+  // Status information for various server services. Key is the service name, value is the status
+  // (e.g., "running", "stopped", "degraded").
+  map<string, string> service_status = 19;
+  // A SHA256 digest (hex-encoded) of the serialized GetInfoResponse (excluding this field and
+  // deprecated_signers/service_status), used for configuration verification and integrity checks.
+  string digest = 20;
 }
 
 message RegisterIntentRequest {
-  // an intent proof that embeds the outpoints to be spent and new ones to be created, as well as the
-  // proof of funds.
+  // A BIP-322 signed intent containing proof of ownership for inputs (vtxos/UTXOs) and the
+  // RegisterMessage with outputs to be created. The proof embeds outpoints to be spent and new
+  // ones to be created.
   Intent intent = 1;
 }
 message RegisterIntentResponse {
+  // The unique identifier for the registered intent. This ID is used to confirm registration when
+  // the intent is selected for a batch. The SHA256 hash of this ID is included in BatchStartedEvent.
   string intent_id = 1;
 }
 
 message DeleteIntentRequest {
-  // an intent proof that includes any of the inputs of the intent to be deleted to prove the
-  // ownership of that intent.
+  // A BIP-322 signed intent containing proof of ownership for any of the inputs used in the intent
+  // to be deleted. This proves ownership and allows deletion of the previously registered intent.
   Intent intent = 1;
 }
 message DeleteIntentResponse {}
 
 message ConfirmRegistrationRequest {
+  // The intent ID returned from RegisterIntent. This confirms the client's participation in the
+  // batch after receiving a BatchStartedEvent containing the SHA256 hash of this intent_id.
   string intent_id = 1;
 }
 message ConfirmRegistrationResponse {}
 
 message SubmitTreeNoncesRequest {
+  // The unique identifier of the batch (round ID) from the TreeSigningStartedEvent.
   string batch_id = 1;
+  // The hex-encoded compressed public key of the cosigner submitting nonces.
   string pubkey = 2;
+  // Map of transaction IDs to MuSig2 public nonces (hex-encoded) for each transaction in the
+  // vtxo tree that requires cosigning.
   map<string, string> tree_nonces = 3;
 }
 message SubmitTreeNoncesResponse {}
 
 message SubmitTreeSignaturesRequest {
+  // The unique identifier of the batch (round ID) from the TreeSigningStartedEvent.
   string batch_id = 1;
+  // The hex-encoded compressed public key of the cosigner submitting signatures.
   string pubkey = 2;
+  // Map of transaction IDs to MuSig2 partial signatures (hex-encoded) for each transaction in
+  // the vtxo tree that requires cosigning.
   map<string, string> tree_signatures = 3;
 }
 message SubmitTreeSignaturesResponse {}
 
 message SubmitSignedForfeitTxsRequest {
-  // Forfeit txs signed by the user.
+  // List of hex-encoded signed forfeit transactions. Each forfeit tx allows the server to claim
+  // funds if the user fails to cooperate. Required for all vtxo outputs the user receives.
   repeated string signed_forfeit_txs = 1;
-  // The user has to sign also the commitment tx if he registered a boarding UTXO.
+  // The hex-encoded signed commitment transaction. Required only if the user registered a boarding
+  // UTXO, as they must sign the commitment tx that spends their onchain UTXO.
   string signed_commitment_tx = 2;
 }
 message SubmitSignedForfeitTxsResponse {}
 
 message GetEventStreamRequest {
+  // Optional list of event topics to subscribe to. If empty, subscribes to all events. Topics
+  // filter which events are sent to the client.
   repeated string topics = 1;
 }
 message GetEventStreamResponse {
+  // Server-side streaming response containing various batch processing events. Clients should
+  // listen to this stream to participate in batch rounds and receive real-time updates.
   oneof event {
     BatchStartedEvent batch_started = 1;
     BatchFinalizationEvent batch_finalization = 2;
@@ -226,30 +277,49 @@ message GetEventStreamResponse {
 }
 
 message SubmitTxRequest {
+  // The hex-encoded signed Ark transaction spending vtxos offchain. This is the first step in the
+  // two-phase offchain transaction protocol.
   string signed_ark_tx = 1;
+  // List of hex-encoded unsigned checkpoint transactions, one for each input vtxo being spent.
+  // These allow recovery if the Ark tx is not finalized.
   repeated string checkpoint_txs = 2;
 }
 message SubmitTxResponse {
+  // The transaction ID (hex-encoded) of the Ark transaction.
   string ark_txid = 1;
+  // The hex-encoded fully signed Ark transaction with the server's signature added.
   string final_ark_tx = 2;
+  // List of hex-encoded checkpoint transactions signed by the server, corresponding to the
+  // checkpoint_txs from the request.
   repeated string signed_checkpoint_txs = 3;
 }
 
 message FinalizeTxRequest {
+  // The transaction ID of the Ark transaction to finalize, as returned from SubmitTx.
   string ark_txid = 1;
+  // List of hex-encoded fully signed checkpoint transactions. These must include the client's
+  // signatures on the checkpoint txs returned from SubmitTx.
   repeated string final_checkpoint_txs = 2;
 }
 message FinalizeTxResponse {}
 
 message GetPendingTxRequest {
+  // A BIP-322 signed intent containing proof of ownership for the inputs. Used to retrieve
+  // pending (not finalized) transactions associated with the provided inputs.
   Intent intent = 1;
 }
 message GetPendingTxResponse {
+  // List of pending transactions that have been submitted but not yet finalized. Each includes
+  // the ark_txid, final_ark_tx, and signed_checkpoint_txs.
   repeated PendingTx pending_txs = 1;
 }
 
 message GetTransactionsStreamRequest {}
 message GetTransactionsStreamResponse {
+  // Server-side streaming response for real-time transaction notifications. Returns commitment
+  // txs (batch rounds) and ark txs (offchain transfers) as they are processed and finalized.
+  // Note: This stream does not have history support and only returns txs from the moment it's
+  // opened until it's closed.
   oneof data {
     TxNotification commitment_tx = 1;
     TxNotification ark_tx = 2;
