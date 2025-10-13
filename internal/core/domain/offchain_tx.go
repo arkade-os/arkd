@@ -149,8 +149,8 @@ func (s *OffchainTx) Finalize(finalCheckpointTxs map[string]string) (Event, erro
 	}
 
 	// check that all the final checkpoints are the ones that were signed
-	for txid := range finalCheckpointTxs {
-		if _, ok := s.CheckpointTxs[txid]; !ok {
+	for txid := range s.CheckpointTxs {
+		if _, ok := finalCheckpointTxs[txid]; !ok {
 			return nil, fmt.Errorf("cannot finalize offchain tx, checkpoint tx %s not found", txid)
 		}
 	}
