@@ -55,6 +55,9 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 		return nil
 	}
 
+	// add a conviction for the double spend attempt only if the vtxo was settled
+	go s.banDoubleSpendAttempt(ctx, vtxo)
+
 	// Otherwise, we must broadcast a forfeit tx.
 	if err := s.broadcastForfeitTx(ctx, vtxo); err != nil {
 		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)

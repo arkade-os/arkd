@@ -497,6 +497,9 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	require.NotEmpty(t, spentStatus)
 	require.True(t, spentStatus[vtxo.VOut].Spent)
 	require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
+
+	// Pardon any convictions associated with the script
+	pardonConvictionsForScript(t, vtxo.Script)
 }
 
 func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
@@ -595,6 +598,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Empty(t, balance.OnchainBalance.LockedAmount)
+
+		pardonConvictionsForScript(t, vtxo.Script)
 	})
 
 	t.Run("cltv vtxo script", func(t *testing.T) {
@@ -895,6 +900,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, aliceVtxos, vtxoToFraud)
+
+		// Pardon any convictions associated with the script
+		pardonConvictionsForScript(t, vtxoToFraud.Script)
 	})
 }
 
