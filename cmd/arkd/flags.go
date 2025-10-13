@@ -33,6 +33,13 @@ const (
 	signerKeyFlagName                                 = "signer-prvkey"
 	signerUrlFlagName                                 = "signer-url"
 	tokenFlagName                                     = "token"
+	convictionIdsFlagName                             = "ids"
+	convictionFromFlagName                            = "from"
+	convictionToFlagName                              = "to"
+	convictionIdFlagName                              = "id"
+	scriptFlagName                                    = "script"
+	banDurationFlagName                               = "duration"
+	banReasonFlagName                                 = "reason"
 
 	dateFormat                 = time.DateOnly
 	scheduledSessionDateFormat = time.DateTime
@@ -156,5 +163,38 @@ var (
 	tokenFlag = &cli.StringFlag{
 		Name:  tokenFlagName,
 		Usage: "the macaroon to be revoked",
+	}
+	convictionIdsFlag = &cli.StringSliceFlag{
+		Name:     convictionIdsFlagName,
+		Usage:    "conviction IDs to retrieve",
+		Required: false,
+	}
+	convictionFromFlag = &cli.Int64Flag{
+		Name:  convictionFromFlagName,
+		Usage: "start timestamp for conviction range (Unix timestamp). If not set, defaults to 24 hours ago",
+	}
+	convictionToFlag = &cli.Int64Flag{
+		Name:  convictionToFlagName,
+		Usage: "end timestamp for conviction range (Unix timestamp). If not set, defaults to now",
+	}
+	convictionIdFlag = &cli.StringFlag{
+		Name:     convictionIdFlagName,
+		Usage:    "conviction ID to pardon",
+		Required: true,
+	}
+	scriptFlag = &cli.StringFlag{
+		Name:     scriptFlagName,
+		Usage:    "script to query or ban",
+		Required: true,
+	}
+	banDurationFlag = &cli.Int64Flag{
+		Name:  banDurationFlagName,
+		Usage: "ban duration in seconds (0 for permanent ban)",
+		Value: 0,
+	}
+	banReasonFlag = &cli.StringFlag{
+		Name:     banReasonFlagName,
+		Usage:    "reason for banning the script",
+		Required: true,
 	}
 )
