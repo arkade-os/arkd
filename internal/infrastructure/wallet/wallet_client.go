@@ -302,6 +302,11 @@ func (w *walletDaemonClient) BroadcastTransaction(
 		ctx, &arkwalletv1.BroadcastTransactionRequest{Txs: txs},
 	)
 	if err != nil {
+		// handle non-final BIP68 error and return the appropriate error
+		if strings.Contains(
+			strings.ToLower(err.Error()), "non-bip68-final") {
+			return "", ports.ErrNonFinalBIP68
+		}
 		return "", err
 	}
 	return resp.GetTxid(), nil

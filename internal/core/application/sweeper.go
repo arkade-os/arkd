@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -534,7 +535,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 
 		err = nil
 		// retry until the tx is broadcasted or the error is not BIP68 final
-		for len(txid) == 0 && (err == nil || err == ports.ErrNonFinalBIP68) {
+		for len(txid) == 0 && (err == nil || errors.Is(err, ports.ErrNonFinalBIP68)) {
 			if err != nil {
 				log.Debug("sweeper: sweep tx not BIP68 final, retrying in 5 seconds")
 				time.Sleep(5 * time.Second)
