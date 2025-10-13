@@ -162,7 +162,7 @@ var (
 	convictionIdsFlag = &cli.StringSliceFlag{
 		Name:     convictionIdsFlagName,
 		Usage:    "conviction IDs to retrieve",
-		Required: true,
+		Required: false,
 	}
 	convictionFromFlag = &cli.Int64Flag{
 		Name:  convictionFromFlagName,
