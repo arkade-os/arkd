@@ -182,3 +182,26 @@ func (s *service) banForfeitCollectionTimeout(
 		log.WithError(err).Warn("failed to ban vtxos")
 	}
 }
+
+func (s *service) banDoubleSpendAttempt(
+	ctx context.Context,
+	vtxo domain.Vtxo,
+) {
+	outputScript, err := vtxo.OutputScript()
+	if err != nil {
+		log.WithError(err).Warnf("failed to get output script for vtxo %s", vtxo.Outpoint)
+		return
+	}
+
+	convictions := make([]domain.Conviction, 0)
+	convictions = append(convictions, domain.NewScriptConviction(
+		hex.EncodeToString(outputScript),
+		domain.Crime{
+			Type:   domain.CrimeTypeDoubleSpend,
+			Reason: "double spend attempt",
+		}, &s.banDuration))
+
+	if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
+		log.WithError(err).Warn("failed to ban double spend attempt")
+	}
+}

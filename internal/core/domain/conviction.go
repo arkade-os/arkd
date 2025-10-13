@@ -18,6 +18,7 @@ const (
 	CrimeTypeForfeitInvalidSignature
 	CrimeTypeBoardingInputSubmission
 	CrimeTypeManualBan
+	CrimeTypeDoubleSpend
 )
 
 func (c CrimeType) String() string {
@@ -30,6 +31,7 @@ func (c CrimeType) String() string {
 		"ForfeitInvalidSignature",
 		"BoardingInputSubmission",
 		"ManualBan",
+		"DoubleSpend",
 	}[c]
 }
 

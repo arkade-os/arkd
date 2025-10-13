@@ -2727,6 +2727,8 @@ func (s *service) listenToScannerNotifications() {
 
 					if vtxo.Spent {
 						log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
+						go s.banDoubleSpendAttempt(ctx, vtxo)
+
 						go func() {
 							if err := s.reactToFraud(ctx, vtxo, mutx); err != nil {
 								log.WithError(err).Warnf(
