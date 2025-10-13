@@ -324,6 +324,22 @@ To compile the `arkd` binary from source, you can use the following Make command
    make docker-stop
    ```
 
+### Protobuf Breaking Change Detection
+
+To ensure API compatibility, breaking changes in protobuf definitions are automatically detected:
+
+**Local verification:**
+```sh
+./scripts/check-proto-breaking.sh
+```
+
+**GitHub Actions:**
+- Automatically runs on all pull requests that modify `api-spec/**`
+- Compares changes against the target branch
+- Fails if breaking changes are detected
+
+For detailed information about breaking changes, common issues, and best practices, see [api-spec/BREAKING_CHANGES.md](./api-spec/BREAKING_CHANGES.md).
+
 
 In the `envs/` folder you can find the several dev-mode configurations for `arkd` and `arkd-wallet`.
 

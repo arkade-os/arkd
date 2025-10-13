@@ -25,3 +25,9 @@ jobs:
       
       - name: Check proto linting
         run: buf lint
+      
+      - name: Check for breaking changes
+        if: github.event_name == 'pull_request'
+        run: |
+          # Compare against the target branch (usually master)
+          buf breaking --against "https://github.com/${{ github.repository }}.git#branch=${{ github.base_ref }},subdir=api-spec/protobuf"
