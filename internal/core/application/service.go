@@ -1041,21 +1041,47 @@ func (s *service) FinalizeOffchainTx(
 		)
 		if err != nil {
 			return errors.INVALID_PSBT_INPUT.New("missing taptree on input %d", inIndex).
-				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: inIndex})
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 		if len(taprootTreeField) <= 0 {
 			return errors.INVALID_PSBT_INPUT.New("missing taproot tree").
-				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: inIndex})
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 		taprootTree := taprootTreeField[0]
 
-		var encodedTapTree []byte
-		encodedTapTree, err = taprootTree.Encode()
+		// verify taproot tree of ark tx = script pubkey of checkpoint tx
+		vtxoScript, err := script.ParseVtxoScript(taprootTree)
 		if err != nil {
-			return errors.INVALID_PSBT_INPUT.New("failed to encode taptree: %w", err).
-				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: inIndex})
+			return errors.INVALID_PSBT_INPUT.New("invalid ark taproot tree: %w", err).
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
+		tapKey, _, err := vtxoScript.TapTree()
+		if err != nil {
+			return errors.INVALID_PSBT_INPUT.New("failed to compute taproot tree: %w", err).
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
+		}
+
+		expectedOutputScript, err := script.P2TRScript(tapKey)
+		if err != nil {
+			return errors.INVALID_PSBT_INPUT.New("failed to compute P2TR script: %w", err).
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
+		}
+
+		checkpointOutputScript := checkpointTx.UnsignedTx.TxOut[0].PkScript
+		if !bytes.Equal(checkpointOutputScript, expectedOutputScript) {
+			return errors.INVALID_PSBT_INPUT.New("invalid output script: got %x expected %x", checkpointOutputScript, expectedOutputScript).
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
+		}
+
+		encodedTapTree, err := taprootTree.Encode()
+		if err != nil {
+			return errors.INVALID_PSBT_INPUT.New("failed to encode taptree: %w", err).
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
+		}
+
+		// save the encoded taproot tree in the checkpoint tx output
+		// it will be used to compute the sweep leaf in the sweeper
 		checkpointTx.Outputs[0].TaprootTapTree = encodedTapTree
 
 		var b64checkpointTx string
