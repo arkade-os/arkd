@@ -338,9 +338,12 @@ func NewService(
 
 func (s *service) Start() errors.Error {
 	log.Debug("starting sweeper service...")
-	if err := s.sweeper.start(); err != nil {
-		return errors.INTERNAL_ERROR.Wrap(err)
-	}
+	go func() {
+		if err := s.sweeper.start(); err != nil {
+			log.WithError(err).Warn("failed to start sweeper")
+		}
+		log.Info("sweeper service started")
+	}()
 
 	log.Debug("starting app service...")
 	s.wg.Add(1)
