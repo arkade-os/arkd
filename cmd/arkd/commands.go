@@ -546,26 +546,36 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/rounds", baseURL)
-	if afterDate != "" {
-		afterTs, err := time.Parse(dateFormat, afterDate)
-		if err != nil {
-			return fmt.Errorf("invalid --after-date format, must be %s", dateFormat)
-		}
-		url = fmt.Sprintf("%s?after=%d", url, afterTs.Unix())
-	}
-	if beforeDate != "" {
-		beforeTs, err := time.Parse(dateFormat, beforeDate)
-		if err != nil {
-			return fmt.Errorf("invalid --before-date format, must be %s", dateFormat)
-		}
+
+	// Default to today's time range if no flags are provided
+	if afterDate == "" && beforeDate == "" {
+		now := time.Now()
+		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		endOfDay := startOfDay.Add(24 * time.Hour)
+
+		url = fmt.Sprintf("%s?after=%d&before=%d", url, startOfDay.Unix(), endOfDay.Unix())
+	} else {
 		if afterDate != "" {
-			url = fmt.Sprintf("%s&before=%d", url, beforeTs.Unix())
-		} else {
-			url = fmt.Sprintf("%s?before=%d", url, beforeTs.Unix())
+			afterTs, err := time.Parse(dateFormat, afterDate)
+			if err != nil {
+				return fmt.Errorf("invalid --after-date format, must be %s", dateFormat)
+			}
+			url = fmt.Sprintf("%s?after=%d", url, afterTs.Unix())
+		}
+		if beforeDate != "" {
+			beforeTs, err := time.Parse(dateFormat, beforeDate)
+			if err != nil {
+				return fmt.Errorf("invalid --before-date format, must be %s", dateFormat)
+			}
+			if afterDate != "" {
+				url = fmt.Sprintf("%s&before=%d", url, beforeTs.Unix())
+			} else {
+				url = fmt.Sprintf("%s?before=%d", url, beforeTs.Unix())
+			}
 		}
 	}
 
-	roundIds, err := get[map[string]string](url, "rounds", macaroon, tlsConfig)
+	roundIds, err := get[[]string](url, "rounds", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
