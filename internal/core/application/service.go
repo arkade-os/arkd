@@ -582,8 +582,7 @@ func (s *service) SubmitOffchainTx(
 			return nil, "", "", errors.VTXO_ALREADY_UNROLLED.New("%s already unrolled", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
-
-		if vtxo.Swept {
+		if vtxo.Swept || !s.sweeper.scheduler.AfterNow(vtxo.ExpiresAt) {
 			// if we reach this point, it means vtxo.Spent = false so the vtxo is recoverable
 			return nil, "", "", errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
