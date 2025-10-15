@@ -15,16 +15,19 @@ type intentStore struct {
 	intents       map[string]*ports.TimedIntent
 	vtxos         map[string]struct{}
 	vtxosToRemove []string
+	poppedIntents []ports.TimedIntent
 }
 
 func NewIntentStore() ports.IntentStore {
 	intentsById := make(map[string]*ports.TimedIntent)
 	vtxos := make(map[string]struct{})
 	vtxosToRemove := make([]string, 0)
+	poppedIntents := make([]ports.TimedIntent, 0)
 	return &intentStore{
 		intents:       intentsById,
 		vtxos:         vtxos,
 		vtxosToRemove: vtxosToRemove,
+		poppedIntents: poppedIntents,
 	}
 }
 
@@ -96,6 +99,7 @@ func (m *intentStore) Push(
 func (m *intentStore) Pop(num int64) []ports.TimedIntent {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+	m.poppedIntents = make([]ports.TimedIntent, 0)
 
 	intentsByTime := make([]ports.TimedIntent, 0, len(m.intents))
 	for _, p := range m.intents {
@@ -124,7 +128,14 @@ func (m *intentStore) Pop(num int64) []ports.TimedIntent {
 		delete(m.intents, p.Id)
 	}
 
+	m.poppedIntents = result
 	return result
+}
+
+func (m *intentStore) GetPoppedIntents() []ports.TimedIntent {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.poppedIntents
 }
 
 func (m *intentStore) Update(intent domain.Intent, cosignersPubkeys []string) error {
@@ -189,6 +200,7 @@ func (m *intentStore) DeleteAll() error {
 
 	m.intents = make(map[string]*ports.TimedIntent)
 	m.vtxos = make(map[string]struct{})
+	m.poppedIntents = make([]ports.TimedIntent, 0)
 	return nil
 }
 

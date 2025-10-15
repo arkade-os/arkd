@@ -2775,7 +2775,21 @@ func (s *service) propagateEvents(round *domain.Round) {
 		}
 		s.roundReportSvc.OpEnded(SendSignedTreeEventOp)
 	case domain.RoundFinalized:
-		lastEvent = RoundFinalized{lastEvent.(domain.RoundFinalized), round.CommitmentTxid}
+		lastEvent = RoundFinalized{ev, round.CommitmentTxid}
+	case domain.RoundFailed:
+		poppedIntents := s.cache.Intents().GetPoppedIntents()
+		topics := make([]string, 0, len(poppedIntents))
+		for _, intent := range poppedIntents {
+			for _, input := range intent.Inputs {
+				topics = append(topics, input.Outpoint.String())
+			}
+
+			for _, boardingInput := range intent.BoardingInputs {
+				topics = append(topics, boardingInput.String())
+			}
+		}
+
+		lastEvent = RoundFailed{ev, topics}
 	}
 
 	events = append(events, lastEvent)

@@ -3,6 +3,7 @@ package livestore_test
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -157,15 +158,28 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		ln := store.Intents().Len()
 		require.EqualValues(t, 2, ln)
 
+		// GetPoppedIntents before any pop - should return empty
+		poppedIntents := store.Intents().GetPoppedIntents()
+		require.Empty(t, poppedIntents)
+
 		// Pop
 		popped := store.Intents().Pop(2)
 		require.Len(t, popped, 2)
+
+		// GetPoppedIntents - should return the same intents that were popped
+		poppedIntents = store.Intents().GetPoppedIntents()
+		require.Len(t, poppedIntents, 2)
+		intentsEqual(t, popped, poppedIntents)
 
 		ln = store.Intents().Len()
 		require.Zero(t, ln)
 
 		popped = store.Intents().Pop(100)
 		require.Empty(t, popped)
+
+		// GetPoppedIntents after empty pop - should return empty
+		poppedIntents = store.Intents().GetPoppedIntents()
+		require.Empty(t, poppedIntents)
 
 		// Delete
 		err = store.Intents().Delete([]string{intent1.Intent.Id})
@@ -495,4 +509,19 @@ func (m *mockedTxBuilder) GetTxid(tx string) (string, error) {
 	args := m.Called(tx)
 	res0 := args.Get(0).(string)
 	return res0, args.Error(1)
+}
+
+func intentsEqual(t *testing.T, a, b []ports.TimedIntent) {
+	require.Equal(t, len(a), len(b))
+	hashesA := make(map[string]bool)
+	hashesB := make(map[string]bool)
+	for _, intent := range a {
+		hashId := intent.HashID()
+		hashesA[hex.EncodeToString(hashId[:])] = true
+	}
+	for _, intent := range b {
+		hashId := intent.HashID()
+		hashesB[hex.EncodeToString(hashId[:])] = true
+	}
+	require.Equal(t, hashesA, hashesB)
 }

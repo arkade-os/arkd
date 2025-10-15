@@ -16,12 +16,12 @@ const (
 	intentStoreIdsKey           = "intent:ids"
 	intentStoreVtxosKey         = "intent:vtxos"
 	intentStoreVtxosToRemoveKey = "intent:vtxosToRemove"
+	poppedIntentsKey            = "intent:popped"
 )
 
 type intentStore struct {
-	rdb     *redis.Client
-	intents *KVStore[ports.TimedIntent]
-
+	rdb          *redis.Client
+	intents      *KVStore[ports.TimedIntent]
 	numOfRetries int
 }
 
@@ -123,6 +123,12 @@ func (s *intentStore) Push(
 
 func (s *intentStore) Pop(num int64) []ports.TimedIntent {
 	ctx := context.Background()
+
+	// clear popped intents list
+	if err := s.rdb.Del(ctx, poppedIntentsKey).Err(); err != nil {
+		log.Warnf("pop: failed to clear popped intents: %v", err)
+	}
+
 	ids, err := s.rdb.SMembers(ctx, intentStoreIdsKey).Result()
 	if err != nil {
 		return nil
@@ -166,6 +172,27 @@ func (s *intentStore) Pop(num int64) []ports.TimedIntent {
 	if len(vtxosToRemove) > 0 {
 		s.rdb.SAdd(ctx, intentStoreVtxosToRemoveKey, vtxosToRemove)
 	}
+
+	if len(result) > 0 {
+		// push each popped intent to the list
+		for _, intent := range result {
+			if err := s.intents.ListPush(ctx, poppedIntentsKey, &intent); err != nil {
+				log.Warnf("pop: failed to push intent %s: %v", intent.Id, err)
+			}
+		}
+	}
+	return result
+}
+
+func (s *intentStore) GetPoppedIntents() []ports.TimedIntent {
+	ctx := context.Background()
+
+	result, err := s.intents.ListRange(ctx, poppedIntentsKey)
+	if err != nil {
+		log.Warnf("getPoppedIntents: failed to get popped intents from Redis: %v", err)
+		return []ports.TimedIntent{}
+	}
+
 	return result
 }
 
@@ -287,6 +314,7 @@ func (s *intentStore) DeleteAll() error {
 	s.rdb.Del(ctx, intentStoreIdsKey)
 	s.rdb.Del(ctx, intentStoreVtxosKey)
 	s.rdb.Del(ctx, intentStoreVtxosToRemoveKey)
+	s.rdb.Del(ctx, poppedIntentsKey)
 	return nil
 }
 
