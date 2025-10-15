@@ -2785,7 +2785,7 @@ func (s *service) propagateEvents(round *domain.Round) {
 			}
 
 			for _, boardingInput := range intent.BoardingInputs {
-				topics = append(topics, boardingInput.Outpoint.String())
+				topics = append(topics, boardingInput.String())
 			}
 		}
 
