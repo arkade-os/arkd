@@ -16,7 +16,7 @@ const (
 	intentStoreIdsKey           = "intent:ids"
 	intentStoreVtxosKey         = "intent:vtxos"
 	intentStoreVtxosToRemoveKey = "intent:vtxosToRemove"
-	poppedIntentsKey            = "intent:popped"
+	selectedIntentsKey          = "intent:selected"
 )
 
 type intentStore struct {
@@ -124,9 +124,9 @@ func (s *intentStore) Push(
 func (s *intentStore) Pop(num int64) []ports.TimedIntent {
 	ctx := context.Background()
 
-	// clear popped intents list
-	if err := s.rdb.Del(ctx, poppedIntentsKey).Err(); err != nil {
-		log.Warnf("pop: failed to clear popped intents: %v", err)
+	// clear selected intents list
+	if err := s.rdb.Del(ctx, selectedIntentsKey).Err(); err != nil {
+		log.Warnf("pop: failed to clear selected intents: %v", err)
 	}
 
 	ids, err := s.rdb.SMembers(ctx, intentStoreIdsKey).Result()
@@ -174,9 +174,9 @@ func (s *intentStore) Pop(num int64) []ports.TimedIntent {
 	}
 
 	if len(result) > 0 {
-		// push each popped intent to the list
+		// push each selected intent to the list
 		for _, intent := range result {
-			if err := s.intents.ListPush(ctx, poppedIntentsKey, &intent); err != nil {
+			if err := s.intents.ListPush(ctx, selectedIntentsKey, &intent); err != nil {
 				log.Warnf("pop: failed to push intent %s: %v", intent.Id, err)
 			}
 		}
@@ -184,12 +184,12 @@ func (s *intentStore) Pop(num int64) []ports.TimedIntent {
 	return result
 }
 
-func (s *intentStore) GetPoppedIntents() []ports.TimedIntent {
+func (s *intentStore) GetSelectedIntents() []ports.TimedIntent {
 	ctx := context.Background()
 
-	result, err := s.intents.ListRange(ctx, poppedIntentsKey)
+	result, err := s.intents.ListRange(ctx, selectedIntentsKey)
 	if err != nil {
-		log.Warnf("getPoppedIntents: failed to get popped intents from Redis: %v", err)
+		log.Warnf("getSelectedIntents: failed to get selected intents from Redis: %v", err)
 		return []ports.TimedIntent{}
 	}
 
@@ -314,7 +314,7 @@ func (s *intentStore) DeleteAll() error {
 	s.rdb.Del(ctx, intentStoreIdsKey)
 	s.rdb.Del(ctx, intentStoreVtxosKey)
 	s.rdb.Del(ctx, intentStoreVtxosToRemoveKey)
-	s.rdb.Del(ctx, poppedIntentsKey)
+	s.rdb.Del(ctx, selectedIntentsKey)
 	return nil
 }
 

@@ -158,28 +158,28 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		ln := store.Intents().Len()
 		require.EqualValues(t, 2, ln)
 
-		// GetPoppedIntents before any pop - should return empty
-		poppedIntents := store.Intents().GetPoppedIntents()
-		require.Empty(t, poppedIntents)
+		// GetSelectedIntents before any pop - should return empty
+		selectedIntents := store.Intents().GetSelectedIntents()
+		require.Empty(t, selectedIntents)
 
 		// Pop
-		popped := store.Intents().Pop(2)
-		require.Len(t, popped, 2)
+		selected := store.Intents().Pop(2)
+		require.Len(t, selected, 2)
 
-		// GetPoppedIntents - should return the same intents that were popped
-		poppedIntents = store.Intents().GetPoppedIntents()
-		require.Len(t, poppedIntents, 2)
-		intentsEqual(t, popped, poppedIntents)
+		// GetSelectedIntents - should return the same intents that were selected
+		selectedIntents = store.Intents().GetSelectedIntents()
+		require.Len(t, selectedIntents, 2)
+		intentsEqual(t, selected, selectedIntents)
 
 		ln = store.Intents().Len()
 		require.Zero(t, ln)
 
-		popped = store.Intents().Pop(100)
-		require.Empty(t, popped)
+		selected = store.Intents().Pop(100)
+		require.Empty(t, selected)
 
-		// GetPoppedIntents after empty pop - should return empty
-		poppedIntents = store.Intents().GetPoppedIntents()
-		require.Empty(t, poppedIntents)
+		// GetSelectedIntents after empty pop - should return empty
+		selectedIntents = store.Intents().GetSelectedIntents()
+		require.Empty(t, selectedIntents)
 
 		// Delete
 		err = store.Intents().Delete([]string{intent1.Intent.Id})
