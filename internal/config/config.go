@@ -217,7 +217,7 @@ var (
 	defaultVtxoMinAmount             = -1 // -1 means native dust limit (default)
 	defaultVtxoMaxAmount             = -1 // -1 means no limit (default)
 	defaultAllowCSVBlockType         = false
-	defaultRejectOnchainOnly         = false // disabled by default
+	defaultRejectOnchainOnly         = true // enabled
 	defaultRoundMaxParticipantsCount = 128
 	defaultRoundMinParticipantsCount = 1
 	defaultOtelPushInterval          = 10 // seconds
