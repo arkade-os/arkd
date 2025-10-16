@@ -42,6 +42,7 @@ const (
 	banReasonFlagName                                 = "reason"
 	completedFlagName                                 = "completed"
 	failedFlagName                                    = "failed"
+	withDetailsFlagName                               = "with-details"
 
 	dateFormat                 = time.DateOnly
 	scheduledSessionDateFormat = time.DateTime
@@ -207,6 +208,11 @@ var (
 	failedFlag = &cli.BoolFlag{
 		Name:  failedFlagName,
 		Usage: "include failed rounds in the results",
+		Value: false,
+	}
+	withDetailsFlag = &cli.BoolFlag{
+		Name:  withDetailsFlagName,
+		Usage: "return detailed information for each round (like round-info command)",
 		Value: false,
 	}
 )

@@ -120,9 +120,15 @@ var (
 		Action: roundInfoAction,
 	}
 	roundsInTimeRangeCmd = &cli.Command{
-		Name:   "rounds",
-		Usage:  "Get ids of rounds in the given time range",
-		Flags:  []cli.Flag{beforeDateFlag, afterDateFlag, completedFlag, failedFlag},
+		Name:  "rounds",
+		Usage: "Get ids of rounds in the given time range",
+		Flags: []cli.Flag{
+			beforeDateFlag,
+			afterDateFlag,
+			completedFlag,
+			failedFlag,
+			withDetailsFlag,
+		},
 		Action: roundsInTimeRangeAction,
 	}
 	scheduledSessionCmd = &cli.Command{
@@ -542,6 +548,7 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	afterDate := ctx.String(afterDateFlagName)
 	completed := ctx.Bool(completedFlagName)
 	failed := ctx.Bool(failedFlagName)
+	withDetails := ctx.Bool(withDetailsFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
@@ -595,6 +602,26 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 		return err
 	}
 
+	if withDetails {
+		roundDetails := make([]*roundInfo, 0, len(roundIds))
+		for _, roundId := range roundIds {
+			detailUrl := fmt.Sprintf("%s/v1/admin/round/%s", baseURL, roundId)
+			detail, err := getRoundInfo(detailUrl, macaroon, tlsConfig)
+			if err != nil {
+				return fmt.Errorf("failed to get details for round %s: %w", roundId, err)
+			}
+			roundDetails = append(roundDetails, detail)
+		}
+
+		respJson, err := json.MarshalIndent(roundDetails, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to json encode round details: %s", err)
+		}
+		fmt.Println(string(respJson))
+		return nil
+	}
+
+	// Default behavior: return just the round IDs
 	respJson, err := json.MarshalIndent(roundIds, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to json encode round ids: %s", err)
