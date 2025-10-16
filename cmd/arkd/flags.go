@@ -40,6 +40,8 @@ const (
 	scriptFlagName                                    = "script"
 	banDurationFlagName                               = "duration"
 	banReasonFlagName                                 = "reason"
+	completedFlagName                                 = "completed"
+	failedFlagName                                    = "failed"
 
 	dateFormat                 = time.DateOnly
 	scheduledSessionDateFormat = time.DateTime
@@ -196,5 +198,15 @@ var (
 		Name:     banReasonFlagName,
 		Usage:    "reason for banning the script",
 		Required: true,
+	}
+	completedFlag = &cli.BoolFlag{
+		Name:  completedFlagName,
+		Usage: "include completed rounds in the results",
+		Value: true,
+	}
+	failedFlag = &cli.BoolFlag{
+		Name:  failedFlagName,
+		Usage: "include failed rounds in the results",
+		Value: false,
 	}
 )

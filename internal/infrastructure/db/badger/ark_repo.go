@@ -148,9 +148,9 @@ func (r *arkRepository) GetSweptRoundsConnectorAddress(
 }
 
 func (r *arkRepository) GetRoundIds(
-	ctx context.Context, startedAfter, startedBefore int64,
+	ctx context.Context, startedAfter, startedBefore int64, withFailed, withCompleted bool,
 ) ([]string, error) {
-	query := badgerhold.Where("Stage.Ended").Eq(true)
+	query := badgerhold.Where("Id").Ne("") // Base query to get all rounds
 
 	if startedAfter > 0 {
 		query = query.And("StartingTimestamp").Gt(startedAfter)
@@ -158,6 +158,14 @@ func (r *arkRepository) GetRoundIds(
 
 	if startedBefore > 0 {
 		query = query.And("StartingTimestamp").Lt(startedBefore)
+	}
+
+	if !withFailed {
+		query = query.And("Stage.Failed").Eq(false)
+	}
+
+	if !withCompleted {
+		query = query.And("Stage.Ended").Eq(false)
 	}
 
 	rounds, err := r.findRound(ctx, query)

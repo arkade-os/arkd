@@ -122,7 +122,7 @@ var (
 	roundsInTimeRangeCmd = &cli.Command{
 		Name:   "rounds",
 		Usage:  "Get ids of rounds in the given time range",
-		Flags:  []cli.Flag{beforeDateFlag, afterDateFlag},
+		Flags:  []cli.Flag{beforeDateFlag, afterDateFlag, completedFlag, failedFlag},
 		Action: roundsInTimeRangeAction,
 	}
 	scheduledSessionCmd = &cli.Command{
@@ -540,6 +540,8 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	beforeDate := ctx.String(beforeDateFlagName)
 	afterDate := ctx.String(afterDateFlagName)
+	completed := ctx.Bool(completedFlagName)
+	failed := ctx.Bool(failedFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
@@ -553,25 +555,38 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		endOfDay := startOfDay.Add(24 * time.Hour)
 
-		url = fmt.Sprintf("%s?after=%d&before=%d", url, startOfDay.Unix(), endOfDay.Unix())
+		url = fmt.Sprintf(
+			"%s?after=%d&before=%d&with_completed=%t&with_failed=%t",
+			url,
+			startOfDay.Unix(),
+			endOfDay.Unix(),
+			completed,
+			failed,
+		)
 	} else {
+		queryParams := make([]string, 0)
+
 		if afterDate != "" {
 			afterTs, err := time.Parse(dateFormat, afterDate)
 			if err != nil {
 				return fmt.Errorf("invalid --after-date format, must be %s", dateFormat)
 			}
-			url = fmt.Sprintf("%s?after=%d", url, afterTs.Unix())
+			queryParams = append(queryParams, fmt.Sprintf("after=%d", afterTs.Unix()))
 		}
 		if beforeDate != "" {
 			beforeTs, err := time.Parse(dateFormat, beforeDate)
 			if err != nil {
 				return fmt.Errorf("invalid --before-date format, must be %s", dateFormat)
 			}
-			if afterDate != "" {
-				url = fmt.Sprintf("%s&before=%d", url, beforeTs.Unix())
-			} else {
-				url = fmt.Sprintf("%s?before=%d", url, beforeTs.Unix())
-			}
+			queryParams = append(queryParams, fmt.Sprintf("before=%d", beforeTs.Unix()))
+		}
+
+		// Add the filtering parameters
+		queryParams = append(queryParams, fmt.Sprintf("with_completed=%t", completed))
+		queryParams = append(queryParams, fmt.Sprintf("with_failed=%t", failed))
+
+		if len(queryParams) > 0 {
+			url = fmt.Sprintf("%s?%s", url, strings.Join(queryParams, "&"))
 		}
 	}
 
