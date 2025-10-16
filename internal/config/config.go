@@ -113,6 +113,7 @@ type Config struct {
 	UtxoMinAmount             int64
 	VtxoMaxAmount             int64
 	VtxoMinAmount             int64
+	RejectOnchainOnly         bool
 
 	repo           ports.RepoManager
 	svc            application.Service
@@ -189,33 +190,34 @@ var (
 	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
+	RejectOnchainOnly                    = "REJECT_ONCHAIN_ONLY"
 
-	defaultDatadir             = arklib.AppDataDir("arkd", false)
-	defaultSessionDuration     = 30
-	defaultBanDuration         = 10 * defaultSessionDuration
-	defaultBanThreshold        = 3
-	DefaultPort                = 7070
-	DefaultAdminPort           = 7071
-	defaultDbType              = "postgres"
-	defaultEventDbType         = "postgres"
-	defaultSchedulerType       = "gocron"
-	defaultTxBuilderType       = "covenantless"
-	defaultLiveStoreType       = "redis"
-	defaultRedisTxNumOfRetries = 10
-	defaultEsploraURL          = "https://blockstream.info/api"
-	defaultLogLevel            = 4
-	defaultVtxoTreeExpiry      = 604672  // 7 days
-	defaultUnilateralExitDelay = 86400   // 24 hours
-	defaultCheckpointExitDelay = 86400   // 24 hours
-	defaultBoardingExitDelay   = 7776000 // 3 months
-	defaultNoMacaroons         = false
-	defaultNoTLS               = true
-	defaultUtxoMaxAmount       = -1 // -1 means no limit (default), 0 means boarding not allowed
-	defaultUtxoMinAmount       = -1 // -1 means native dust limit (default)
-	defaultVtxoMinAmount       = -1 // -1 means native dust limit (default)
-	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
-	defaultAllowCSVBlockType   = false
-
+	defaultDatadir                   = arklib.AppDataDir("arkd", false)
+	defaultSessionDuration           = 30
+	defaultBanDuration               = 10 * defaultSessionDuration
+	defaultBanThreshold              = 3
+	DefaultPort                      = 7070
+	DefaultAdminPort                 = 7071
+	defaultDbType                    = "postgres"
+	defaultEventDbType               = "postgres"
+	defaultSchedulerType             = "gocron"
+	defaultTxBuilderType             = "covenantless"
+	defaultLiveStoreType             = "redis"
+	defaultRedisTxNumOfRetries       = 10
+	defaultEsploraURL                = "https://blockstream.info/api"
+	defaultLogLevel                  = 4
+	defaultVtxoTreeExpiry            = 604672  // 7 days
+	defaultUnilateralExitDelay       = 86400   // 24 hours
+	defaultCheckpointExitDelay       = 86400   // 24 hours
+	defaultBoardingExitDelay         = 7776000 // 3 months
+	defaultNoMacaroons               = false
+	defaultNoTLS                     = true
+	defaultUtxoMaxAmount             = -1 // -1 means no limit (default), 0 means boarding not allowed
+	defaultUtxoMinAmount             = -1 // -1 means native dust limit (default)
+	defaultVtxoMinAmount             = -1 // -1 means native dust limit (default)
+	defaultVtxoMaxAmount             = -1 // -1 means no limit (default)
+	defaultAllowCSVBlockType         = false
+	defaultRejectOnchainOnly         = false // disabled by default
 	defaultRoundMaxParticipantsCount = 128
 	defaultRoundMinParticipantsCount = 1
 	defaultOtelPushInterval          = 10 // seconds
@@ -254,6 +256,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(LiveStoreType, defaultLiveStoreType)
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
 	viper.SetDefault(AllowCSVBlockType, defaultAllowCSVBlockType)
+	viper.SetDefault(RejectOnchainOnly, defaultRejectOnchainOnly)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
@@ -359,6 +362,7 @@ func LoadConfig() (*Config, error) {
 		VtxoMaxAmount:             viper.GetInt64(VtxoMaxAmount),
 		VtxoMinAmount:             viper.GetInt64(VtxoMinAmount),
 		AllowCSVBlockType:         allowCSVBlockType,
+		RejectOnchainOnly:         viper.GetBool(RejectOnchainOnly),
 		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
 	}, nil
 }
@@ -752,7 +756,7 @@ func (c *Config) appService() error {
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		c.BanDuration, c.BanThreshold,
-		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
+		*c.network, c.AllowCSVBlockType, c.RejectOnchainOnly, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 	)

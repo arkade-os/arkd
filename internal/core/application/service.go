@@ -63,6 +63,7 @@ type service struct {
 	vtxoMinSettlementAmount   int64
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
+	rejectOnchainOnly         bool
 
 	// TODO: derive the key pair used for the musig2 signing session from wallet.
 	operatorPrvkey *btcec.PrivateKey
@@ -94,6 +95,7 @@ func NewService(
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	network arklib.Network,
 	allowCSVBlockType bool,
+	rejectOnchainOnly bool,
 	noteUriPrefix string,
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
@@ -187,6 +189,7 @@ func NewService(
 		banThreshold:        banThreshold,
 		unilateralExitDelay: unilateralExitDelay,
 		allowCSVBlockType:   allowCSVBlockType,
+		rejectOnchainOnly:   rejectOnchainOnly,
 		wallet:              wallet,
 		signer:              signer,
 		repoManager:         repoManager,
@@ -1438,6 +1441,11 @@ func (s *service) RegisterIntent(
 						WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
 				}
 			}
+		}
+
+		if s.rejectOnchainOnly && !hasOffChainReceiver && len(vtxoInputs) == 0 {
+			return "", errors.INVALID_INTENT_MESSAGE.New("onchain only intent is not allowed").
+				WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
 		}
 
 		if err := intent.AddReceivers(receivers); err != nil {
