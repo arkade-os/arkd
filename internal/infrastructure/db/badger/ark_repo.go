@@ -95,7 +95,7 @@ func (r *arkRepository) GetRoundWithCommitmentTxid(
 func (r *arkRepository) GetSweepableRounds(
 	ctx context.Context,
 ) ([]string, error) {
-	query := badgerhold.Where("Stage.Code").Eq(domain.RoundFinalizationStage).
+	query := badgerhold.Where("Stage.Code").Eq(int(domain.RoundFinalizationStage)).
 		And("Stage.Ended").Eq(true).And("Swept").Eq(false)
 	rounds, err := r.findRound(ctx, query)
 	if err != nil {
@@ -104,7 +104,9 @@ func (r *arkRepository) GetSweepableRounds(
 
 	txids := make([]string, 0, len(rounds))
 	for _, r := range rounds {
-		txids = append(txids, r.CommitmentTxid)
+		if len(r.VtxoTree) > 0 {
+			txids = append(txids, r.CommitmentTxid)
+		}
 	}
 	return txids, nil
 }
