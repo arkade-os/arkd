@@ -64,6 +64,8 @@ type service struct {
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 
+	settlementMinExpiryGap time.Duration
+
 	// TODO: derive the key pair used for the musig2 signing session from wallet.
 	operatorPrvkey *btcec.PrivateKey
 	operatorPubkey *btcec.PublicKey
@@ -98,6 +100,7 @@ func NewService(
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
+	settlementMinExpiryGap int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -215,6 +218,7 @@ func NewService(
 		wg:                        &sync.WaitGroup{},
 		checkpointTapscript:       checkpointTapscript,
 		roundReportSvc:            roundReportSvc,
+		settlementMinExpiryGap:    time.Duration(settlementMinExpiryGap) * time.Second,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -1238,6 +1242,16 @@ func (s *service) RegisterIntent(
 		if vtxo.Unrolled {
 			return "", errors.VTXO_ALREADY_UNROLLED.New("input %s already unrolled", vtxo.Outpoint.String()).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+		}
+
+		if s.settlementMinExpiryGap > 0 && !vtxo.Swept {
+			// reject if expires after now + settlementMinExpiryGap
+			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
+			limit := time.Now().Add(s.settlementMinExpiryGap)
+			if expiresAt.After(limit) {
+				return "", errors.INVALID_PSBT_INPUT.New("vtxo %s expires after %s (minExpiryGap: %s)", vtxo.Outpoint.String(), limit, s.settlementMinExpiryGap).
+					WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
+			}
 		}
 
 		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
