@@ -22,11 +22,9 @@ type VtxoInput struct {
 	Amount   int64
 	// Tapscript is the path used to spend the vtxo
 	Tapscript *waddrmgr.Tapscript
-	// CheckpointTapscript is the path used to craft checkpoint output script
-	// it is combined with the signer's unroll script to creaft a new "checkpoint" output script
-	// it can be nil, defaulting to Tapscript if not set
-	CheckpointTapscript *waddrmgr.Tapscript
-	RevealedTapscripts  []string
+	// RevealedTapscripts is the whole taproot tree of the vtxo
+	// it must be revealed to the ark operator in order to verify the spent paths are valid
+	RevealedTapscripts []string
 }
 
 // BuildTxs builds the ark and checkpoint txs for the given inputs and outputs.
@@ -177,15 +175,7 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 func buildCheckpointTx(
 	vtxo VtxoInput, signerUnrollScript *script.CSVMultisigClosure,
 ) (*psbt.Packet, *VtxoInput, error) {
-	// create the checkpoint vtxo script from collaborative closure
-	checkpointCollaborativeTapscript := vtxo.Tapscript
-	if vtxo.CheckpointTapscript != nil {
-		checkpointCollaborativeTapscript = vtxo.CheckpointTapscript
-	}
-
-	collaborativeClosure, err := script.DecodeClosure(
-		checkpointCollaborativeTapscript.RevealedScript,
-	)
+	collaborativeClosure, err := script.DecodeClosure(vtxo.Tapscript.RevealedScript)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -215,7 +205,7 @@ func buildCheckpointTx(
 	// Now that we have the checkpoint tx, we need to return the corresponding output that will be
 	// used as input for the ark tx.
 	tapLeafHash := txscript.NewBaseTapLeaf(
-		checkpointCollaborativeTapscript.RevealedScript,
+		vtxo.Tapscript.RevealedScript,
 	).TapHash()
 	collaborativeLeafProof, err := tapTree.GetTaprootMerkleProof(tapLeafHash)
 	if err != nil {
