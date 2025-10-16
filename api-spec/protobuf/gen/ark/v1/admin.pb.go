@@ -1596,6 +1596,7 @@ type ScheduledSweep struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RoundId       string                 `protobuf:"bytes,1,opt,name=round_id,json=roundId,proto3" json:"round_id,omitempty"`
 	Outputs       []*SweepableOutput     `protobuf:"bytes,2,rep,name=outputs,proto3" json:"outputs,omitempty"`
+	Confirmed     bool                   `protobuf:"varint,3,opt,name=confirmed,proto3" json:"confirmed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1642,6 +1643,13 @@ func (x *ScheduledSweep) GetOutputs() []*SweepableOutput {
 		return x.Outputs
 	}
 	return nil
+}
+
+func (x *ScheduledSweep) GetConfirmed() bool {
+	if x != nil {
+		return x.Confirmed
+	}
+	return false
 }
 
 type ScheduledSessionConfig struct {
@@ -2168,10 +2176,11 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x12\n" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\x12\x16\n" +
 	"\x06amount\x18\x03 \x01(\tR\x06amount\x12!\n" +
-	"\fscheduled_at\x18\x04 \x01(\x03R\vscheduledAt\"^\n" +
+	"\fscheduled_at\x18\x04 \x01(\x03R\vscheduledAt\"|\n" +
 	"\x0eScheduledSweep\x12\x19\n" +
 	"\bround_id\x18\x01 \x01(\tR\aroundId\x121\n" +
-	"\aoutputs\x18\x02 \x03(\v2\x17.ark.v1.SweepableOutputR\aoutputs\"\xad\x02\n" +
+	"\aoutputs\x18\x02 \x03(\v2\x17.ark.v1.SweepableOutputR\aoutputs\x12\x1c\n" +
+	"\tconfirmed\x18\x03 \x01(\bR\tconfirmed\"\xad\x02\n" +
 	"\x16ScheduledSessionConfig\x12\x1d\n" +
 	"\n" +
 	"start_time\x18\x01 \x01(\x03R\tstartTime\x12\x19\n" +

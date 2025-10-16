@@ -47,7 +47,7 @@ func findSweepableOutputs(
 					ctx, parentTxid,
 				)
 				if !isConfirmed || err != nil {
-					return false, fmt.Errorf("tx %s not found", parentTxid)
+					return false, fmt.Errorf("tx %s not confirmed", parentTxid)
 				}
 
 				if schedulerUnit == ports.BlockHeight {

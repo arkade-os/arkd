@@ -207,6 +207,7 @@ message SweepableOutput {
 message ScheduledSweep {
   string round_id = 1;
   repeated SweepableOutput outputs = 2;
+  bool confirmed = 3;
 }
 
 message ScheduledSessionConfig {
