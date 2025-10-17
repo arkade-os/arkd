@@ -164,6 +164,18 @@ SELECT id FROM round WHERE starting_timestamp > @start_ts AND starting_timestamp
 -- name: SelectAllRoundIds :many
 SELECT id FROM round;
 
+-- name: SelectRoundIdsWithFilters :many
+SELECT id FROM round 
+WHERE (@with_failed::boolean = true OR failed = false)
+  AND (@with_completed::boolean = true OR ended = false);
+
+-- name: SelectRoundIdsInTimeRangeWithFilters :many
+SELECT id FROM round 
+WHERE starting_timestamp > @start_ts 
+  AND starting_timestamp < @end_ts
+  AND (@with_failed::boolean = true OR failed = false)
+  AND (@with_completed::boolean = true OR ended = false);
+
 -- name: SelectRoundsWithTxids :many
 SELECT txid FROM tx WHERE type = 'commitment' AND tx.txid = ANY($1::varchar[]);
 

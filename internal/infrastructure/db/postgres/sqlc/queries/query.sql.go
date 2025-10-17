@@ -518,6 +518,83 @@ func (q *Queries) SelectRoundIdsInTimeRange(ctx context.Context, arg SelectRound
 	return items, nil
 }
 
+const selectRoundIdsInTimeRangeWithFilters = `-- name: SelectRoundIdsInTimeRangeWithFilters :many
+SELECT id FROM round 
+WHERE starting_timestamp > $1 
+  AND starting_timestamp < $2
+  AND ($3::boolean = true OR failed = false)
+  AND ($4::boolean = true OR ended = false)
+`
+
+type SelectRoundIdsInTimeRangeWithFiltersParams struct {
+	StartTs       int64
+	EndTs         int64
+	WithFailed    bool
+	WithCompleted bool
+}
+
+func (q *Queries) SelectRoundIdsInTimeRangeWithFilters(ctx context.Context, arg SelectRoundIdsInTimeRangeWithFiltersParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundIdsInTimeRangeWithFilters,
+		arg.StartTs,
+		arg.EndTs,
+		arg.WithFailed,
+		arg.WithCompleted,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRoundIdsWithFilters = `-- name: SelectRoundIdsWithFilters :many
+SELECT id FROM round 
+WHERE ($1::boolean = true OR failed = false)
+  AND ($2::boolean = true OR ended = false)
+`
+
+type SelectRoundIdsWithFiltersParams struct {
+	WithFailed    bool
+	WithCompleted bool
+}
+
+func (q *Queries) SelectRoundIdsWithFilters(ctx context.Context, arg SelectRoundIdsWithFiltersParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundIdsWithFilters, arg.WithFailed, arg.WithCompleted)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectRoundStats = `-- name: SelectRoundStats :one
 SELECT
     r.swept,

@@ -38,22 +38,32 @@ func (r *roundRepository) Close() {
 }
 
 func (r *roundRepository) GetRoundIds(
-	ctx context.Context, startedAfter int64, startedBefore int64,
+	ctx context.Context, startedAfter, startedBefore int64, withFailed, withCompleted bool,
 ) ([]string, error) {
 	var roundIDs []string
 	if startedAfter == 0 && startedBefore == 0 {
-		ids, err := r.querier.SelectAllRoundIds(ctx)
+		// Use filtering query when no time range is specified
+		ids, err := r.querier.SelectRoundIdsWithFilters(
+			ctx,
+			queries.SelectRoundIdsWithFiltersParams{
+				WithFailed:    withFailed,
+				WithCompleted: withCompleted,
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
 
 		roundIDs = ids
 	} else {
-		ids, err := r.querier.SelectRoundIdsInTimeRange(
+		// Use time range filtering query
+		ids, err := r.querier.SelectRoundIdsInTimeRangeWithFilters(
 			ctx,
-			queries.SelectRoundIdsInTimeRangeParams{
-				StartTs: startedAfter,
-				EndTs:   startedBefore,
+			queries.SelectRoundIdsInTimeRangeWithFiltersParams{
+				StartTs:       startedAfter,
+				EndTs:         startedBefore,
+				WithFailed:    withFailed,
+				WithCompleted: withCompleted,
 			},
 		)
 		if err != nil {

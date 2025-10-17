@@ -19,7 +19,12 @@ type AdminService interface {
 	Wallet() ports.WalletService
 	GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error)
 	GetRoundDetails(ctx context.Context, roundId string) (*RoundDetails, error)
-	GetRounds(ctx context.Context, after int64, before int64) ([]string, error)
+	GetRounds(
+		ctx context.Context,
+		after int64,
+		before int64,
+		withFailed, withCompleted bool,
+	) ([]string, error)
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
 	CreateNotes(ctx context.Context, amount uint32, quantity int) ([]string, error)
@@ -126,8 +131,12 @@ func (a *adminService) GetRoundDetails(
 	}, nil
 }
 
-func (a *adminService) GetRounds(ctx context.Context, after, before int64) ([]string, error) {
-	return a.repoManager.Rounds().GetRoundIds(ctx, after, before)
+func (a *adminService) GetRounds(
+	ctx context.Context,
+	after, before int64,
+	withFailed, withCompleted bool,
+) ([]string, error) {
+	return a.repoManager.Rounds().GetRoundIds(ctx, after, before, withFailed, withCompleted)
 }
 
 func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error) {

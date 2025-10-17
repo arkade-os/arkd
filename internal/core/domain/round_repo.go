@@ -15,7 +15,11 @@ type RoundRepository interface {
 	GetRoundConnectorTree(ctx context.Context, commitmentTxid string) (tree.FlatTxTree, error)
 	GetRoundVtxoTree(ctx context.Context, txid string) (tree.FlatTxTree, error)
 	GetSweepableRounds(ctx context.Context) ([]string, error)
-	GetRoundIds(ctx context.Context, startedAfter int64, startedBefore int64) ([]string, error)
+	GetRoundIds(
+		ctx context.Context,
+		startedAfter, startedBefore int64,
+		withFailed, withCompleted bool,
+	) ([]string, error)
 	GetSweptRoundsConnectorAddress(ctx context.Context) ([]string, error)
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
 	GetRoundsWithCommitmentTxids(ctx context.Context, txids []string) (map[string]any, error)
