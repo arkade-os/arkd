@@ -463,7 +463,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 				RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 				Preconfirmed:       true,
-				CreatedAt:          offchainTx.EndingTimestamp,
+				CreatedAt:          offchainTx.StartingTimestamp,
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
