@@ -1983,12 +1983,9 @@ func (s *service) startConfirmation(
 	}
 
 	if availableBalance <= totAmount {
+		log.Errorf("not enough liquidity, current balance: %d", availableBalance)
 		s.cache.CurrentRound().Fail(
-			errors.INTERNAL_ERROR.New("not enough liquidity, current balance: %d", availableBalance).
-				WithMetadata(map[string]any{
-					"available_balance": availableBalance,
-					"required_balance":  totAmount,
-				}),
+			errors.INTERNAL_ERROR.New("service temporary unavailable"),
 		)
 		return
 	}
