@@ -391,7 +391,7 @@ func (h *handler) listenToEvents() {
 				}
 
 				evs = append(evs, eventWithTopics{event: ev})
-			case domain.RoundFailed:
+			case application.RoundFailed:
 				log.WithError(errors.New(e.Reason)).Error("round failed")
 
 				ev := &arkv1.GetEventStreamResponse{
@@ -403,7 +403,7 @@ func (h *handler) listenToEvents() {
 					},
 				}
 
-				evs = append(evs, eventWithTopics{event: ev})
+				evs = append(evs, eventWithTopics{event: ev, topics: e.Topic})
 			case application.BatchStarted:
 				hashes := make([]string, 0, len(e.IntentIdsHashes))
 				for _, hash := range e.IntentIdsHashes {
@@ -434,7 +434,6 @@ func (h *handler) listenToEvents() {
 
 				evs = append(evs, eventWithTopics{event: ev})
 			case application.TreeTxNoncesEvent:
-
 				nonces := make(map[string]string)
 				for pubkey, nonce := range e.Nonces {
 					nonces[pubkey] = hex.EncodeToString(nonce.PubNonce[:])

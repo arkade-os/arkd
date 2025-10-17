@@ -11,20 +11,23 @@ import (
 )
 
 type intentStore struct {
-	lock          sync.RWMutex
-	intents       map[string]*ports.TimedIntent
-	vtxos         map[string]struct{}
-	vtxosToRemove []string
+	lock            sync.RWMutex
+	intents         map[string]*ports.TimedIntent
+	vtxos           map[string]struct{}
+	vtxosToRemove   []string
+	selectedIntents []ports.TimedIntent
 }
 
 func NewIntentStore() ports.IntentStore {
 	intentsById := make(map[string]*ports.TimedIntent)
 	vtxos := make(map[string]struct{})
 	vtxosToRemove := make([]string, 0)
+	selectedIntents := make([]ports.TimedIntent, 0)
 	return &intentStore{
-		intents:       intentsById,
-		vtxos:         vtxos,
-		vtxosToRemove: vtxosToRemove,
+		intents:         intentsById,
+		vtxos:           vtxos,
+		vtxosToRemove:   vtxosToRemove,
+		selectedIntents: selectedIntents,
 	}
 }
 
@@ -96,6 +99,7 @@ func (m *intentStore) Push(
 func (m *intentStore) Pop(num int64) []ports.TimedIntent {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+	m.selectedIntents = make([]ports.TimedIntent, 0)
 
 	intentsByTime := make([]ports.TimedIntent, 0, len(m.intents))
 	for _, p := range m.intents {
@@ -124,7 +128,14 @@ func (m *intentStore) Pop(num int64) []ports.TimedIntent {
 		delete(m.intents, p.Id)
 	}
 
+	m.selectedIntents = result
 	return result
+}
+
+func (m *intentStore) GetSelectedIntents() []ports.TimedIntent {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+	return m.selectedIntents
 }
 
 func (m *intentStore) Update(intent domain.Intent, cosignersPubkeys []string) error {
@@ -189,6 +200,7 @@ func (m *intentStore) DeleteAll() error {
 
 	m.intents = make(map[string]*ports.TimedIntent)
 	m.vtxos = make(map[string]struct{})
+	m.selectedIntents = make([]ports.TimedIntent, 0)
 	return nil
 }
 
