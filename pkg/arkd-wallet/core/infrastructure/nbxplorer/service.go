@@ -112,11 +112,15 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (*ports.BitcoinStatus,
 		return nil, fmt.Errorf("failed to unmarshal blockchain info: %w", err)
 	}
 
+	minRelayTxFee := resp.BitcoinStatus.MinRelayTxFee * 1000
+	// add 10% margin to avoid min-relay-fee-not-met errors
+	increasedMinRelayTxFee := minRelayTxFee + (minRelayTxFee * 0.1)
+
 	return &ports.BitcoinStatus{
 		ChainTipHeight: resp.BitcoinStatus.Blocks,
 		ChainTipTime:   blockchainInfo.Mediantime,
 		Synced:         resp.BitcoinStatus.IsSynced,
-		MinRelayTxFee:  chainfee.SatPerKVByte(resp.BitcoinStatus.MinRelayTxFee * 1000),
+		MinRelayTxFee:  chainfee.SatPerKVByte(increasedMinRelayTxFee),
 	}, nil
 }
 
