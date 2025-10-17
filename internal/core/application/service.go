@@ -2909,7 +2909,7 @@ func (s *service) getSpentVtxos(intents map[string]domain.Intent) []domain.Vtxo 
 }
 
 func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
-	scripts, err := s.extractVtxosScripts(vtxos)
+	scripts, err := s.extractVtxosScriptsForScanner(vtxos)
 	if err != nil {
 		return err
 	}
@@ -2918,7 +2918,7 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 }
 
 func (s *service) stopWatchingVtxos(vtxos []domain.Vtxo) {
-	scripts, err := s.extractVtxosScripts(vtxos)
+	scripts, err := s.extractVtxosScriptsForScanner(vtxos)
 	if err != nil {
 		log.WithError(err).Warn("failed to extract scripts from vtxos")
 		return
@@ -2969,43 +2969,50 @@ func (s *service) restoreWatchingVtxos() error {
 	return nil
 }
 
-func (s *service) extractVtxosScripts(vtxos []domain.Vtxo) ([]string, error) {
+// extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner
+// it excludes subdust vtxos scripts and duplicates
+// it logs errors and continues in order to not block the start/stop watching vtxos operations
+func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, error) {
 	dustLimit, err := s.wallet.GetDustAmount(context.Background())
 	if err != nil {
 		return nil, err
 	}
 
 	indexedScripts := make(map[string]struct{})
+	scripts := make([]string, 0)
 
 	for _, vtxo := range vtxos {
 		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
-			return nil, err
+			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
+			continue
 		}
 
 		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
 		if err != nil {
-			return nil, err
+			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
+			continue
 		}
-
-		var outScript []byte
 
 		if vtxo.Amount < dustLimit {
-			outScript, err = script.SubDustScript(vtxoTapKey)
-		} else {
-			outScript, err = script.P2TRScript(vtxoTapKey)
+			continue
 		}
 
+		p2trScript, err := script.P2TRScript(vtxoTapKey)
 		if err != nil {
-			return nil, err
+			log.WithError(err).
+				Warnf("failed to compute P2TR script from vtxo pubkey: %s", vtxo.PubKey)
+			continue
 		}
 
-		indexedScripts[hex.EncodeToString(outScript)] = struct{}{}
+		scriptHex := hex.EncodeToString(p2trScript)
+
+		if _, ok := indexedScripts[scriptHex]; !ok {
+			indexedScripts[scriptHex] = struct{}{}
+			scripts = append(scripts, scriptHex)
+		}
 	}
-	scripts := make([]string, 0, len(indexedScripts))
-	for script := range indexedScripts {
-		scripts = append(scripts, script)
-	}
+
 	return scripts, nil
 }
 
