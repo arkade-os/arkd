@@ -1135,6 +1135,18 @@ func (s *service) RegisterIntent(
 
 	proofTxid := proof.UnsignedTx.TxID()
 
+	encodedMessage, err := message.Encode()
+	if err != nil {
+		return "", errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
+			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
+	}
+
+	encodedProof, err := proof.B64Encode()
+	if err != nil {
+		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
 
@@ -1188,6 +1200,12 @@ func (s *service) RegisterIntent(
 				}
 
 				boardingTxs[vtxoOutpoint.Txid] = *tx
+			}
+
+			// reject if intent specifies onchain outputs and boarding inputs
+			if len(message.OnchainOutputIndexes) > 0 {
+				return "", errors.INVALID_INTENT_PROOF.New("boarding inputs can't be specified with onchain outputs").
+					WithMetadata(errors.InvalidIntentProofMetadata{Proof: encodedProof, Message: encodedMessage})
 			}
 
 			tx := boardingTxs[vtxoOutpoint.Txid]
@@ -1295,18 +1313,6 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxoInputs = append(vtxoInputs, vtxo)
-	}
-
-	encodedMessage, err := message.Encode()
-	if err != nil {
-		return "", errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
-			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
-	}
-
-	encodedProof, err := proof.B64Encode()
-	if err != nil {
-		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
-			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
