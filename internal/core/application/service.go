@@ -1215,7 +1215,7 @@ func (s *service) RegisterIntent(
 
 			// reject if intent specifies onchain outputs and boarding inputs
 			if len(message.OnchainOutputIndexes) > 0 {
-				return "", errors.INVALID_INTENT_PROOF.New("boarding inputs can't be specified with onchain outputs").
+				return "", errors.INVALID_INTENT_PROOF.New("cannot include onchain inputs and outputs").
 					WithMetadata(errors.InvalidIntentProofMetadata{Proof: encodedProof, Message: encodedMessage})
 			}
 

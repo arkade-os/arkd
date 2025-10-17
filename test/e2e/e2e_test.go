@@ -412,11 +412,17 @@ func TestCollaborativeExit(t *testing.T) {
 		err = json.Unmarshal([]byte(receiveStr), &receive)
 		require.NoError(t, err)
 
+		_, err = runCommand("nigiri", "faucet", receive.Boarding, "0.00010000")
+		require.NoError(t, err)
+
+		time.Sleep(5 * time.Second)
+
 		_, err = runArkCommand(
 			"redeem",
 			"--amount", "10000", "--address", onchainAddress, "--password", password,
 		)
 		require.Error(t, err)
+		require.ErrorContains(t, err, "include onchain inputs and outputs")
 	})
 }
 
