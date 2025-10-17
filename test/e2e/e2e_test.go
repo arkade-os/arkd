@@ -46,8 +46,9 @@ import (
 )
 
 const (
-	password      = "password"
-	redeemAddress = "bcrt1q2wrgf2hrkfegt0t97cnv4g5yvfjua9k6vua54d"
+	password       = "password"
+	redeemAddress  = "bcrt1q2wrgf2hrkfegt0t97cnv4g5yvfjua9k6vua54d"
+	onchainAddress = "bcrt1q2wrgf2hrkfegt0t97cnv4g5yvfjua9k6vua54d"
 )
 
 func TestMain(m *testing.M) {
@@ -401,6 +402,21 @@ func TestCollaborativeExit(t *testing.T) {
 			"--amount", "10000", "--address", redeemAddress, "--password", password,
 		)
 		require.NoError(t, err)
+	})
+
+	t.Run("fail with onchain inputs", func(t *testing.T) {
+		var receive arkReceive
+		receiveStr, err := runArkCommand("receive")
+		require.NoError(t, err)
+
+		err = json.Unmarshal([]byte(receiveStr), &receive)
+		require.NoError(t, err)
+
+		_, err = runArkCommand(
+			"redeem",
+			"--amount", "10000", "--address", onchainAddress, "--password", password,
+		)
+		require.Error(t, err)
 	})
 }
 
