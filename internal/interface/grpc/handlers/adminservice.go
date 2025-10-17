@@ -114,8 +114,9 @@ func (a *adminHandler) GetScheduledSweep(
 		}
 
 		sweeps = append(sweeps, &arkv1.ScheduledSweep{
-			RoundId: sweep.RoundId,
-			Outputs: outputs,
+			RoundId:   sweep.RoundId,
+			Confirmed: sweep.Confirmed,
+			Outputs:   outputs,
 		})
 	}
 
