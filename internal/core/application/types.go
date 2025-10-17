@@ -11,7 +11,7 @@ import (
 )
 
 type Service interface {
-	Start(ctx context.Context) errors.Error
+	Start() errors.Error
 	Stop()
 	RegisterIntent(
 		ctx context.Context, proof intent.Proof, message intent.RegisterMessage,

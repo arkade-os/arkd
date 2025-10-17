@@ -337,9 +337,10 @@ func NewService(
 	return svc, nil
 }
 
-func (s *service) Start(ctx context.Context) errors.Error {
+func (s *service) Start() errors.Error {
 	log.Debug("starting sweeper service...")
-	_, s.sweeperCancel = context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(context.Background())
+	s.sweeperCancel = cancel
 	go func() {
 		if err := s.sweeper.start(ctx); err != nil {
 			log.WithError(err).Warn("failed to start sweeper")
