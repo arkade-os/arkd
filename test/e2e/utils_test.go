@@ -400,6 +400,53 @@ func generateNote(t *testing.T, amount uint32) string {
 	return noteResp.Notes[0]
 }
 
+// pardonConvictionsForScript pardons all active convictions associated with the given script
+func pardonConvictionsForScript(t *testing.T, scriptHex string) {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	convictionsReq, err := http.NewRequest(
+		"GET",
+		fmt.Sprintf("http://localhost:7071/v1/admin/convictionsByScript/%s", scriptHex),
+		nil,
+	)
+	require.NoError(t, err)
+	convictionsReq.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
+
+	convictionsResp, err := adminHttpClient.Do(convictionsReq)
+	require.NoError(t, err)
+	defer func() {
+		err = convictionsResp.Body.Close()
+		require.NoError(t, err)
+	}()
+
+	var convictionsData struct {
+		Convictions []struct {
+			ID string `json:"id"`
+		} `json:"convictions"`
+	}
+	require.NoError(t, json.NewDecoder(convictionsResp.Body).Decode(&convictionsData))
+	require.NotEmpty(t, convictionsData.Convictions)
+
+	// Pardon each conviction
+	for _, conviction := range convictionsData.Convictions {
+		pardonReq, err := http.NewRequest(
+			"POST",
+			fmt.Sprintf("http://localhost:7071/v1/admin/convictions/%s/pardon", conviction.ID),
+			nil,
+		)
+		require.NoError(t, err)
+		pardonReq.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
+		pardonReq.Header.Set("Content-Type", "application/json")
+
+		pardonResp, err := adminHttpClient.Do(pardonReq)
+		require.NoError(t, err)
+		err = pardonResp.Body.Close()
+		require.NoError(t, err)
+	}
+}
+
 func faucetOnchainAddress(t *testing.T, address string) error {
 	_, err := runCommand("nigiri", "faucet", address, "0.0002")
 	require.NoError(t, err)
