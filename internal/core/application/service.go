@@ -41,6 +41,8 @@ type service struct {
 	scanner        ports.BlockchainScanner
 	cache          ports.LiveStore
 	sweeper        *sweeper
+	sweeperCtx     context.Context
+	sweeperCancel  context.CancelFunc
 	roundReportSvc RoundReportService
 
 	// config
@@ -338,8 +340,9 @@ func NewService(
 
 func (s *service) Start() errors.Error {
 	log.Debug("starting sweeper service...")
+	s.sweeperCtx, s.sweeperCancel = context.WithCancel(context.Background())
 	go func() {
-		if err := s.sweeper.start(); err != nil {
+		if err := s.sweeper.start(s.sweeperCtx); err != nil {
 			log.WithError(err).Warn("failed to start sweeper")
 		}
 		log.Info("sweeper service started")
@@ -357,6 +360,7 @@ func (s *service) Stop() {
 	s.stop()
 	s.wg.Wait()
 	s.sweeper.stop()
+	s.sweeperCancel()
 	// nolint
 	vtxos, _ := s.repoManager.Vtxos().GetAllSweepableVtxos(ctx)
 	if len(vtxos) > 0 {
