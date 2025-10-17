@@ -142,7 +142,8 @@ func (s *service) start(withAppSvc bool) error {
 
 	if withAppSvc {
 		appSvc, _ := s.appConfig.AppService()
-		if err := appSvc.Start(); err != nil {
+		ctx := context.Background()
+		if err := appSvc.Start(ctx); err != nil {
 			return fmt.Errorf("failed to start app service: %s", err)
 		}
 		log.Info("started app service")
