@@ -1194,6 +1194,9 @@
         "title": "ScheduledSweep",
         "type": "object",
         "properties": {
+          "confirmed": {
+            "type": "boolean"
+          },
           "outputs": {
             "type": "array",
             "items": {

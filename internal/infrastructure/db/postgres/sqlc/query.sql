@@ -151,7 +151,12 @@ WHERE round.id = (
 );
 
 -- name: SelectSweepableRounds :many
-SELECT txid FROM round_with_commitment_tx_vw r WHERE r.swept = false AND r.ended = true AND r.failed = false;
+SELECT txid FROM round_with_commitment_tx_vw r 
+WHERE r.swept = false AND r.ended = true AND r.failed = false
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx 
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+);
 
 -- name: SelectRoundIdsInTimeRange :many
 SELECT id FROM round WHERE starting_timestamp > @start_ts AND starting_timestamp < @end_ts;

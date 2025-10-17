@@ -41,6 +41,7 @@ type service struct {
 	scanner        ports.BlockchainScanner
 	cache          ports.LiveStore
 	sweeper        *sweeper
+	sweeperCancel  context.CancelFunc
 	roundReportSvc RoundReportService
 
 	// config
@@ -63,6 +64,8 @@ type service struct {
 	vtxoMinSettlementAmount   int64
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
+
+	settlementMinExpiryGap time.Duration
 
 	// TODO: derive the key pair used for the musig2 signing session from wallet.
 	operatorPrvkey *btcec.PrivateKey
@@ -98,6 +101,7 @@ func NewService(
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
+	settlementMinExpiryGap int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -215,6 +219,7 @@ func NewService(
 		wg:                        &sync.WaitGroup{},
 		checkpointTapscript:       checkpointTapscript,
 		roundReportSvc:            roundReportSvc,
+		settlementMinExpiryGap:    time.Duration(settlementMinExpiryGap) * time.Second,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -338,9 +343,14 @@ func NewService(
 
 func (s *service) Start() errors.Error {
 	log.Debug("starting sweeper service...")
-	if err := s.sweeper.start(); err != nil {
-		return errors.INTERNAL_ERROR.Wrap(err)
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.sweeperCancel = cancel
+	go func() {
+		if err := s.sweeper.start(ctx); err != nil {
+			log.WithError(err).Warn("failed to start sweeper")
+		}
+		log.Info("sweeper service started")
+	}()
 
 	log.Debug("starting app service...")
 	s.wg.Add(1)
@@ -353,6 +363,7 @@ func (s *service) Stop() {
 
 	s.stop()
 	s.wg.Wait()
+	s.sweeperCancel()
 	s.sweeper.stop()
 	// nolint
 	vtxos, _ := s.repoManager.Vtxos().GetAllSweepableVtxos(ctx)
@@ -1135,6 +1146,18 @@ func (s *service) RegisterIntent(
 
 	proofTxid := proof.UnsignedTx.TxID()
 
+	encodedMessage, err := message.Encode()
+	if err != nil {
+		return "", errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
+			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
+	}
+
+	encodedProof, err := proof.B64Encode()
+	if err != nil {
+		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
 
@@ -1190,6 +1213,12 @@ func (s *service) RegisterIntent(
 				boardingTxs[vtxoOutpoint.Txid] = *tx
 			}
 
+			// reject if intent specifies onchain outputs and boarding inputs
+			if len(message.OnchainOutputIndexes) > 0 {
+				return "", errors.INVALID_INTENT_PROOF.New("boarding inputs can't be specified with onchain outputs").
+					WithMetadata(errors.InvalidIntentProofMetadata{Proof: encodedProof, Message: encodedMessage})
+			}
+
 			tx := boardingTxs[vtxoOutpoint.Txid]
 			prevout := tx.TxOut[vtxoOutpoint.VOut]
 
@@ -1238,6 +1267,16 @@ func (s *service) RegisterIntent(
 		if vtxo.Unrolled {
 			return "", errors.VTXO_ALREADY_UNROLLED.New("input %s already unrolled", vtxo.Outpoint.String()).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+		}
+
+		if s.settlementMinExpiryGap > 0 && !vtxo.Swept {
+			// reject if expires after now + settlementMinExpiryGap
+			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
+			limit := time.Now().Add(s.settlementMinExpiryGap)
+			if expiresAt.After(limit) {
+				return "", errors.INVALID_PSBT_INPUT.New("vtxo %s expires after %s (minExpiryGap: %s)", vtxo.Outpoint.String(), limit, s.settlementMinExpiryGap).
+					WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
+			}
 		}
 
 		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
@@ -1295,18 +1334,6 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxoInputs = append(vtxoInputs, vtxo)
-	}
-
-	encodedMessage, err := message.Encode()
-	if err != nil {
-		return "", errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
-			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
-	}
-
-	encodedProof, err := proof.B64Encode()
-	if err != nil {
-		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
-			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
@@ -2888,7 +2915,7 @@ func (s *service) getSpentVtxos(intents map[string]domain.Intent) []domain.Vtxo 
 }
 
 func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
-	scripts, err := s.extractVtxosScripts(vtxos)
+	scripts, err := s.extractVtxosScriptsForScanner(vtxos)
 	if err != nil {
 		return err
 	}
@@ -2897,7 +2924,7 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 }
 
 func (s *service) stopWatchingVtxos(vtxos []domain.Vtxo) {
-	scripts, err := s.extractVtxosScripts(vtxos)
+	scripts, err := s.extractVtxosScriptsForScanner(vtxos)
 	if err != nil {
 		log.WithError(err).Warn("failed to extract scripts from vtxos")
 		return
@@ -2948,43 +2975,50 @@ func (s *service) restoreWatchingVtxos() error {
 	return nil
 }
 
-func (s *service) extractVtxosScripts(vtxos []domain.Vtxo) ([]string, error) {
+// extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner
+// it excludes subdust vtxos scripts and duplicates
+// it logs errors and continues in order to not block the start/stop watching vtxos operations
+func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, error) {
 	dustLimit, err := s.wallet.GetDustAmount(context.Background())
 	if err != nil {
 		return nil, err
 	}
 
 	indexedScripts := make(map[string]struct{})
+	scripts := make([]string, 0)
 
 	for _, vtxo := range vtxos {
 		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
-			return nil, err
+			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
+			continue
 		}
 
 		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
 		if err != nil {
-			return nil, err
+			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
+			continue
 		}
-
-		var outScript []byte
 
 		if vtxo.Amount < dustLimit {
-			outScript, err = script.SubDustScript(vtxoTapKey)
-		} else {
-			outScript, err = script.P2TRScript(vtxoTapKey)
+			continue
 		}
 
+		p2trScript, err := script.P2TRScript(vtxoTapKey)
 		if err != nil {
-			return nil, err
+			log.WithError(err).
+				Warnf("failed to compute P2TR script from vtxo pubkey: %s", vtxo.PubKey)
+			continue
 		}
 
-		indexedScripts[hex.EncodeToString(outScript)] = struct{}{}
+		scriptHex := hex.EncodeToString(p2trScript)
+
+		if _, ok := indexedScripts[scriptHex]; !ok {
+			indexedScripts[scriptHex] = struct{}{}
+			scripts = append(scripts, scriptHex)
+		}
 	}
-	scripts := make([]string, 0, len(indexedScripts))
-	for script := range indexedScripts {
-		scripts = append(scripts, script)
-	}
+
 	return scripts, nil
 }
 
