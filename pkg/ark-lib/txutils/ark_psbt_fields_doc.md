@@ -19,7 +19,7 @@ Ark transactions require additional metadata beyond what standard PSBT fields pr
 
 | Name | Type | Key | Description | Value |
 |------------|-----|-----|-------------|--------------|
-| `taptree` | `0xDE` | `0x74617074726565` ("taptree") | A list of tapscripts leaves | {<8-bit uint depth> <8-bit uint leaf version> }* |
+| `taptree` | `0xDE` | `0x74617074726565` ("taptree") | A list of tapscript leaves | {<8-bit uint depth> <8-bit uint leaf version> }* |
 | `expiry` | `0xDE` | `0x657870697279` ("expiry") | Relative locktime for [CSV](https://bips.dev/68/) spending condition | [BIP68](https://bips.dev/68/) sequence encoding |
 | `cosigner` | `0xDE` | `0x636F7369676E6572` ("cosigner") + `<uint32_key_index>` | Indexed musig2 cosigner public key | 33 bytes compressed public key |
 | `condition` | `0xDE` | `0x636F6E646974696F6E` ("condition") | Custom witness elements | raw witness bytes |
