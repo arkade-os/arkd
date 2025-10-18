@@ -1,6 +1,7 @@
 package nbxplorer
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -695,6 +696,210 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 	}()
 
 	return notificationsChan, nil
+}
+
+// GetTransactionsByAddress retrieves transactions for a given address using group-based approach
+func (n *nbxplorer) GetTransactionsByAddress(ctx context.Context, address string) ([]ports.ExplorerTransaction, error) {
+	if address == "" {
+		return nil, fmt.Errorf("address cannot be empty")
+	}
+
+	if len(address) < 26 || len(address) > 62 {
+		return nil, fmt.Errorf("invalid address format")
+	}
+
+	// Add address to group for tracking
+	if err := n.WatchAddresses(ctx, address); err != nil {
+		return nil, fmt.Errorf("failed to watch address: %w", err)
+	}
+
+	// Get group UTXOs and filter by address
+	groupUtxos, err := n.getGroupUtxos(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group UTXOs: %w", err)
+	}
+
+	// Filter UTXOs by address and convert to transactions
+	var transactions []ports.ExplorerTransaction
+	addressUtxos := make([]ports.Utxo, 0)
+	for _, utxo := range groupUtxos {
+		if utxo.Address == address {
+			addressUtxos = append(addressUtxos, utxo)
+		}
+	}
+
+	// Convert UTXOs to transaction format
+	for _, utxo := range addressUtxos {
+		blockTime := int64(0)
+
+		// For confirmed transactions, fetch the transaction details to get block time
+		if utxo.Confirmations > 0 {
+			txDetails, err := n.GetTransaction(ctx, utxo.Hash.String())
+			if err == nil {
+				blockTime = txDetails.Timestamp
+			}
+		}
+
+		// Create a simple transaction representation from UTXO
+		transaction := ports.ExplorerTransaction{
+			Txid: utxo.Hash.String(),
+			Vin:  []ports.ExplorerTxInput{}, // UTXOs don't have inputs
+			Vout: []ports.ExplorerTxOutput{
+				{
+					Script:  utxo.Script,
+					Address: utxo.Address,
+					Value:   utxo.Value,
+				},
+			},
+			Status: ports.ExplorerTxStatus{
+				Confirmed: utxo.Confirmations > 0,
+				BlockTime: blockTime,
+			},
+		}
+		transactions = append(transactions, transaction)
+	}
+
+	return transactions, nil
+}
+
+// GetTxOutspends checks if transaction outputs are spent using IsSpent method
+func (n *nbxplorer) GetTxOutspends(ctx context.Context, txid string) ([]ports.SpentStatus, error) {
+	if txid == "" {
+		return nil, fmt.Errorf("transaction ID cannot be empty")
+	}
+	if _, err := chainhash.NewHashFromStr(txid); err != nil {
+		return nil, fmt.Errorf("invalid txid format: %w", err)
+	}
+
+	txDetails, err := n.GetTransaction(ctx, txid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction details: %w", err)
+	}
+
+	txBytes, err := hex.DecodeString(txDetails.Hex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode transaction hex: %w", err)
+	}
+
+	var msgTx wire.MsgTx
+	if err := msgTx.Deserialize(bytes.NewReader(txBytes)); err != nil {
+		return nil, fmt.Errorf("failed to deserialize transaction: %w", err)
+	}
+
+	hash, err := chainhash.NewHashFromStr(txid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse transaction hash: %w", err)
+	}
+
+	var outspends []ports.SpentStatus
+	for i := range msgTx.TxOut {
+		outpoint := wire.OutPoint{
+			Hash:  *hash,
+			Index: uint32(i),
+		}
+
+		spent, err := n.IsSpent(ctx, outpoint)
+		if err != nil {
+			// If we can't check the spent status, assume it's not spent
+			// but log the error for debugging
+			log.Errorf("failed to check spent status for output %d: %v", i, err)
+			spent = false
+		}
+
+		spentBy := ""
+		if spent {
+			// TODO
+			spentBy = "unknown"
+		}
+
+		outspends = append(outspends, ports.SpentStatus{
+			Spent:   spent,
+			SpentBy: spentBy,
+		})
+	}
+
+	return outspends, nil
+}
+
+func (n *nbxplorer) GetUtxosByAddress(ctx context.Context, address string) ([]ports.ExplorerUtxo, error) {
+	if address == "" {
+		return nil, fmt.Errorf("address cannot be empty")
+	}
+
+	if err := n.WatchAddresses(ctx, address); err != nil {
+		return nil, fmt.Errorf("failed to watch address: %w", err)
+	}
+
+	groupUtxos, err := n.getGroupUtxos(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group UTXOs: %w", err)
+	}
+
+	var utxos []ports.ExplorerUtxo
+	for _, utxo := range groupUtxos {
+		if utxo.Address == address {
+			blockTime := int64(0)
+
+			if utxo.Confirmations > 0 {
+				txDetails, err := n.GetTransaction(ctx, utxo.Hash.String())
+				if err == nil {
+					blockTime = txDetails.Timestamp
+				}
+			}
+
+			explorerUtxo := ports.ExplorerUtxo{
+				Txid:  utxo.Hash.String(),
+				Vout:  utxo.Index,
+				Value: utxo.Value,
+				Asset: "BTC",
+				Status: ports.ExplorerUtxoStatus{
+					Confirmed: utxo.Confirmations > 0,
+					BlockTime: blockTime,
+				},
+				Script: utxo.Script,
+			}
+			utxos = append(utxos, explorerUtxo)
+		}
+	}
+
+	return utxos, nil
+}
+
+// getGroupUtxos returns current group utxos
+func (n *nbxplorer) getGroupUtxos(ctx context.Context) ([]ports.Utxo, error) {
+	if len(n.groupID) == 0 {
+		return nil, fmt.Errorf("no group ID set")
+	}
+
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/utxos", btcCryptoCode, url.PathEscape(n.groupID))
+	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group UTXOs: %w", err)
+	}
+
+	var resp utxosResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal group UTXOs response: %w", err)
+	}
+
+	// Convert to ports.Utxo format
+	var utxos []ports.Utxo
+	for _, u := range resp.Confirmed.UtxOs {
+		utxo, err := castUtxo(u)
+		if err != nil {
+			continue // Skip invalid UTXOs
+		}
+		utxos = append(utxos, utxo)
+	}
+	for _, u := range resp.Unconfirmed.UtxOs {
+		utxo, err := castUtxo(u)
+		if err != nil {
+			continue // Skip invalid UTXOs
+		}
+		utxos = append(utxos, utxo)
+	}
+
+	return utxos, nil
 }
 
 func (n *nbxplorer) Close() error {

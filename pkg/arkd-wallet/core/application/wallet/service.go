@@ -1000,3 +1000,87 @@ func (w *wallet) getBalance(ctx context.Context, derivationScheme string) (uint6
 
 	return available, locked, nil
 }
+
+func (w *wallet) GetTransactions(ctx context.Context, address string) ([]application.ExplorerTx, error) {
+	transactions, err := w.Nbxplorer.GetTransactionsByAddress(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+
+	appTransactions := make([]application.ExplorerTx, len(transactions))
+	for i, tx := range transactions {
+		vin := make([]application.ExplorerTxInput, len(tx.Vin))
+		for j, input := range tx.Vin {
+			vin[j] = application.ExplorerTxInput{
+				Txid: input.Txid,
+				Vout: input.Vout,
+				Prevout: application.ExplorerTxPrevout{
+					Address: input.Prevout.Address,
+					Value:   input.Prevout.Value,
+				},
+			}
+		}
+
+		vout := make([]application.ExplorerTxOutput, len(tx.Vout))
+		for j, output := range tx.Vout {
+			vout[j] = application.ExplorerTxOutput{
+				Script:  output.Script,
+				Address: output.Address,
+				Value:   output.Value,
+			}
+		}
+
+		appTransactions[i] = application.ExplorerTx{
+			Txid: tx.Txid,
+			Vin:  vin,
+			Vout: vout,
+			Status: application.ExplorerTxStatus{
+				Confirmed: tx.Status.Confirmed,
+				BlockTime: tx.Status.BlockTime,
+			},
+		}
+	}
+
+	return appTransactions, nil
+}
+
+func (w *wallet) GetTxOutspends(ctx context.Context, txid string) ([]application.SpentStatus, error) {
+	outspends, err := w.Nbxplorer.GetTxOutspends(ctx, txid)
+	if err != nil {
+		return nil, err
+	}
+
+	appOutspends := make([]application.SpentStatus, len(outspends))
+	for i, outspend := range outspends {
+		appOutspends[i] = application.SpentStatus{
+			Spent:   outspend.Spent,
+			SpentBy: outspend.SpentBy,
+		}
+	}
+
+	return appOutspends, nil
+}
+
+func (w *wallet) GetUtxos(ctx context.Context, address string) ([]application.ExplorerUtxo, error) {
+	utxos, err := w.Nbxplorer.GetUtxosByAddress(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+
+	appUtxos := make([]application.ExplorerUtxo, len(utxos))
+	for i, utxo := range utxos {
+		appUtxos[i] = application.ExplorerUtxo{
+			Txid:  utxo.Txid,
+			Vout:  utxo.Vout,
+			Value: utxo.Value,
+			Asset: utxo.Asset,
+			Status: application.ExplorerUtxoStatus{
+				Confirmed: utxo.Status.Confirmed,
+				BlockTime: utxo.Status.BlockTime,
+			},
+			Script: utxo.Script,
+		}
+	}
+
+	return appUtxos, nil
+}

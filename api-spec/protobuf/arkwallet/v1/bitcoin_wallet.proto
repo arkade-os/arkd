@@ -188,6 +188,23 @@ service WalletService {
       body: "*"
     };
   }
+  
+  // Explorer "mode" methods
+  rpc GetTransactions(GetTransactionsRequest) returns (GetTransactionsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/explorer/transactions"
+    };
+  }
+  rpc GetTxOutspends(GetTxOutspendsRequest) returns (GetTxOutspendsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/explorer/tx-outspends"
+    };
+  }
+  rpc GetUtxos(GetUtxosRequest) returns (GetUtxosResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/explorer/utxos"
+    };
+  }
 }
 
 message GetReadyUpdateRequest {}
@@ -364,11 +381,13 @@ message GetDustAmountResponse {
 
 message WatchScriptsRequest {
   repeated string scripts = 1;
+  repeated string addresses = 2;  // Optional Bitcoin addresses to watch
 }
 message WatchScriptsResponse {}
 
 message UnwatchScriptsRequest {
   repeated string scripts = 1;
+  repeated string addresses = 2;  // Optional Bitcoin addresses to unwatch
 }
 message UnwatchScriptsResponse {}
 
@@ -430,4 +449,85 @@ message TxOutpoint {
 message BlockTimestamp {
   uint32 height = 1;
   int64 time = 2;
+}
+
+// Explorer 
+message GetTransactionsRequest {
+  string address = 1;
+}
+message GetTransactionsResponse {
+  repeated ExplorerTx transactions = 1;
+}
+
+message GetTxOutspendsRequest {
+  string txid = 1;
+}
+message GetTxOutspendsResponse {
+  repeated SpentStatus outspends = 1;
+}
+
+message GetUtxosRequest {
+  string address = 1;
+}
+message GetUtxosResponse {
+  repeated ExplorerUtxo utxos = 1;
+}
+
+message GetRedeemedVtxosBalanceRequest {
+  string address = 1;
+  uint32 unilateral_exit_delay = 2;
+}
+message GetRedeemedVtxosBalanceResponse {
+  uint64 balance = 1;
+  map<int64, uint64> balance_by_time = 2;
+}
+
+
+
+message ExplorerTx {
+  string txid = 1;
+  repeated ExplorerTxInput vin = 2;
+  repeated ExplorerTxOutput vout = 3;
+  ExplorerTxStatus status = 4;
+}
+
+message ExplorerTxInput {
+  string txid = 1;
+  uint32 vout = 2;
+  ExplorerTxPrevout prevout = 3;
+}
+
+message ExplorerTxOutput {
+  string script = 1;
+  string address = 2;
+  uint64 value = 3;
+}
+
+message ExplorerTxPrevout {
+  string address = 1;
+  uint64 value = 2;
+}
+
+message ExplorerTxStatus {
+  bool confirmed = 1;
+  int64 block_time = 2;
+}
+
+message SpentStatus {
+  bool spent = 1;
+  string spent_by = 2;
+}
+
+message ExplorerUtxo {
+  string txid = 1;
+  uint32 vout = 2;
+  uint64 value = 3;
+  string asset = 4;
+  ExplorerUtxoStatus status = 5;
+  string script = 6;
+}
+
+message ExplorerUtxoStatus {
+  bool confirmed = 1;
+  int64 block_time = 2;
 }

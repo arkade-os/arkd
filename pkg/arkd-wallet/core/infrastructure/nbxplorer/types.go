@@ -186,3 +186,5 @@ type blockchainInfoResponse struct {
 	Time                 int64   `json:"time"`
 	Verificationprogress float64 `json:"verificationprogress"`
 }
+
+// Explorer response types

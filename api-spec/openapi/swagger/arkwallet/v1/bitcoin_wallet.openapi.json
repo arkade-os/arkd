@@ -5,6 +5,124 @@
     "version": "version not set"
   },
   "paths": {
+    "/v1/explorer/transactions": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "description": "Explorer \"mode\" methods",
+        "operationId": "WalletService_GetTransactions",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetTransactionsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/explorer/tx-outspends": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetTxOutspends",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetTxOutspendsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/explorer/utxos": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetUtxos",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetUtxosResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/wallet/block-time": {
       "get": {
         "tags": [
@@ -1355,6 +1473,127 @@
           }
         }
       },
+      "ExplorerTx": {
+        "title": "ExplorerTx",
+        "type": "object",
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ExplorerTxStatus"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "vin": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExplorerTxInput"
+            }
+          },
+          "vout": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExplorerTxOutput"
+            }
+          }
+        }
+      },
+      "ExplorerTxInput": {
+        "title": "ExplorerTxInput",
+        "type": "object",
+        "properties": {
+          "prevout": {
+            "$ref": "#/components/schemas/ExplorerTxPrevout"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "ExplorerTxOutput": {
+        "title": "ExplorerTxOutput",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "ExplorerTxPrevout": {
+        "title": "ExplorerTxPrevout",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "ExplorerTxStatus": {
+        "title": "ExplorerTxStatus",
+        "type": "object",
+        "properties": {
+          "blockTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ExplorerUtxo": {
+        "title": "ExplorerUtxo",
+        "type": "object",
+        "properties": {
+          "asset": {
+            "type": "string"
+          },
+          "script": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ExplorerUtxoStatus"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "ExplorerUtxoStatus": {
+        "title": "ExplorerUtxoStatus",
+        "type": "object",
+        "properties": {
+          "blockTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "confirmed": {
+            "type": "boolean"
+          }
+        }
+      },
       "FeeRateRequest": {
         "title": "FeeRateRequest",
         "type": "object"
@@ -1470,6 +1709,36 @@
           }
         }
       },
+      "GetRedeemedVtxosBalanceRequest": {
+        "title": "GetRedeemedVtxosBalanceRequest",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "unilateralExitDelay": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "GetRedeemedVtxosBalanceResponse": {
+        "title": "GetRedeemedVtxosBalanceResponse",
+        "type": "object",
+        "properties": {
+          "balance": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "balanceByTime": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "uint64"
+            }
+          }
+        }
+      },
       "GetTransactionRequest": {
         "title": "GetTransactionRequest",
         "type": "object",
@@ -1485,6 +1754,70 @@
         "properties": {
           "txHex": {
             "type": "string"
+          }
+        }
+      },
+      "GetTransactionsRequest": {
+        "title": "GetTransactionsRequest",
+        "type": "object",
+        "description": "Explorer",
+        "properties": {
+          "address": {
+            "type": "string"
+          }
+        }
+      },
+      "GetTransactionsResponse": {
+        "title": "GetTransactionsResponse",
+        "type": "object",
+        "properties": {
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExplorerTx"
+            }
+          }
+        }
+      },
+      "GetTxOutspendsRequest": {
+        "title": "GetTxOutspendsRequest",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "GetTxOutspendsResponse": {
+        "title": "GetTxOutspendsResponse",
+        "type": "object",
+        "properties": {
+          "outspends": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpentStatus"
+            }
+          }
+        }
+      },
+      "GetUtxosRequest": {
+        "title": "GetUtxosRequest",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          }
+        }
+      },
+      "GetUtxosResponse": {
+        "title": "GetUtxosResponse",
+        "type": "object",
+        "properties": {
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExplorerUtxo"
+            }
           }
         }
       },
@@ -1721,6 +2054,18 @@
           }
         }
       },
+      "SpentStatus": {
+        "title": "SpentStatus",
+        "type": "object",
+        "properties": {
+          "spent": {
+            "type": "boolean"
+          },
+          "spentBy": {
+            "type": "string"
+          }
+        }
+      },
       "Status": {
         "title": "Status",
         "type": "object",
@@ -1809,6 +2154,13 @@
         "title": "UnwatchScriptsRequest",
         "type": "object",
         "properties": {
+          "addresses": {
+            "type": "array",
+            "description": "Optional Bitcoin addresses to unwatch",
+            "items": {
+              "type": "string"
+            }
+          },
           "scripts": {
             "type": "array",
             "items": {
@@ -1894,6 +2246,13 @@
         "title": "WatchScriptsRequest",
         "type": "object",
         "properties": {
+          "addresses": {
+            "type": "array",
+            "description": "Optional Bitcoin addresses to watch",
+            "items": {
+              "type": "string"
+            }
+          },
           "scripts": {
             "type": "array",
             "items": {

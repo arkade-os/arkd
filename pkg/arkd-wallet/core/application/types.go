@@ -46,12 +46,16 @@ type WalletService interface {
 	// Withdraw both main and connectors account funds
 	WithdrawAll(ctx context.Context, destinationAddress string) (string, error)
 	LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) error
+	// Explorer methods
+	GetTransactions(ctx context.Context, address string) ([]ExplorerTx, error)
+	GetTxOutspends(ctx context.Context, txid string) ([]SpentStatus, error)
+	GetUtxos(ctx context.Context, address string) ([]ExplorerUtxo, error)
 	Close()
 }
 
 type BlockchainScanner interface {
-	WatchScripts(ctx context.Context, scripts []string) error
-	UnwatchScripts(ctx context.Context, scripts []string) error
+	WatchScripts(ctx context.Context, scripts []string, addresses []string) error
+	UnwatchScripts(ctx context.Context, scripts, addresses []string) error
 	GetNotificationChannel(ctx context.Context) <-chan map[string][]Utxo
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
@@ -76,6 +80,55 @@ type Utxo struct {
 type BlockTimestamp struct {
 	Height uint32
 	Time   int64
+}
+
+// Explorer types
+type ExplorerTx struct {
+	Txid   string
+	Vin    []ExplorerTxInput
+	Vout   []ExplorerTxOutput
+	Status ExplorerTxStatus
+}
+
+type ExplorerTxInput struct {
+	Txid    string
+	Vout    uint32
+	Prevout ExplorerTxPrevout
+}
+
+type ExplorerTxOutput struct {
+	Script  string
+	Address string
+	Value   uint64
+}
+
+type ExplorerTxPrevout struct {
+	Address string
+	Value   uint64
+}
+
+type ExplorerTxStatus struct {
+	Confirmed bool
+	BlockTime int64
+}
+
+type SpentStatus struct {
+	Spent   bool
+	SpentBy string
+}
+
+type ExplorerUtxo struct {
+	Txid   string
+	Vout   uint32
+	Value  uint64
+	Asset  string
+	Status ExplorerUtxoStatus
+	Script string
+}
+
+type ExplorerUtxoStatus struct {
+	Confirmed bool
+	BlockTime int64
 }
 
 var ErrTransactionNotFound = fmt.Errorf("transaction not found")

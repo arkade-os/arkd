@@ -8,8 +8,7 @@ import (
 )
 
 type signerHandler struct {
-	wallet  application.WalletService
-	scanner application.BlockchainScanner
+	wallet application.WalletService
 }
 
 func NewSignerHandler(walletSvc application.WalletService) signerv1.SignerServiceServer {

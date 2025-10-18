@@ -50,8 +50,8 @@ type WalletService interface {
 }
 
 type BlockchainScanner interface {
-	WatchScripts(ctx context.Context, scripts []string) error
-	UnwatchScripts(ctx context.Context, scripts []string) error
+	WatchScripts(ctx context.Context, scripts []string, addresses []string) error
+	UnwatchScripts(ctx context.Context, scripts []string, addresses []string) error
 	GetNotificationChannel(ctx context.Context) <-chan map[string][]VtxoWithValue
 	IsTransactionConfirmed(ctx context.Context, txid string) (isConfirmed bool, blocknumber int64, blocktime int64, err error)
 	GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)

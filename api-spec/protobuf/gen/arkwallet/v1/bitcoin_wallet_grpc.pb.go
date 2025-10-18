@@ -52,6 +52,9 @@ const (
 	WalletService_UnwatchScripts_FullMethodName           = "/arkwallet.v1.WalletService/UnwatchScripts"
 	WalletService_NotificationStream_FullMethodName       = "/arkwallet.v1.WalletService/NotificationStream"
 	WalletService_LoadSignerKey_FullMethodName            = "/arkwallet.v1.WalletService/LoadSignerKey"
+	WalletService_GetTransactions_FullMethodName          = "/arkwallet.v1.WalletService/GetTransactions"
+	WalletService_GetTxOutspends_FullMethodName           = "/arkwallet.v1.WalletService/GetTxOutspends"
+	WalletService_GetUtxos_FullMethodName                 = "/arkwallet.v1.WalletService/GetUtxos"
 )
 
 // WalletServiceClient is the client API for WalletService service.
@@ -93,6 +96,10 @@ type WalletServiceClient interface {
 	UnwatchScripts(ctx context.Context, in *UnwatchScriptsRequest, opts ...grpc.CallOption) (*UnwatchScriptsResponse, error)
 	NotificationStream(ctx context.Context, in *NotificationStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[NotificationStreamResponse], error)
 	LoadSignerKey(ctx context.Context, in *LoadSignerKeyRequest, opts ...grpc.CallOption) (*LoadSignerKeyResponse, error)
+	// Explorer "mode" methods
+	GetTransactions(ctx context.Context, in *GetTransactionsRequest, opts ...grpc.CallOption) (*GetTransactionsResponse, error)
+	GetTxOutspends(ctx context.Context, in *GetTxOutspendsRequest, opts ...grpc.CallOption) (*GetTxOutspendsResponse, error)
+	GetUtxos(ctx context.Context, in *GetUtxosRequest, opts ...grpc.CallOption) (*GetUtxosResponse, error)
 }
 
 type walletServiceClient struct {
@@ -451,6 +458,36 @@ func (c *walletServiceClient) LoadSignerKey(ctx context.Context, in *LoadSignerK
 	return out, nil
 }
 
+func (c *walletServiceClient) GetTransactions(ctx context.Context, in *GetTransactionsRequest, opts ...grpc.CallOption) (*GetTransactionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTransactionsResponse)
+	err := c.cc.Invoke(ctx, WalletService_GetTransactions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *walletServiceClient) GetTxOutspends(ctx context.Context, in *GetTxOutspendsRequest, opts ...grpc.CallOption) (*GetTxOutspendsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetTxOutspendsResponse)
+	err := c.cc.Invoke(ctx, WalletService_GetTxOutspends_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *walletServiceClient) GetUtxos(ctx context.Context, in *GetUtxosRequest, opts ...grpc.CallOption) (*GetUtxosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetUtxosResponse)
+	err := c.cc.Invoke(ctx, WalletService_GetUtxos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WalletServiceServer is the server API for WalletService service.
 // All implementations should embed UnimplementedWalletServiceServer
 // for forward compatibility.
@@ -490,6 +527,10 @@ type WalletServiceServer interface {
 	UnwatchScripts(context.Context, *UnwatchScriptsRequest) (*UnwatchScriptsResponse, error)
 	NotificationStream(*NotificationStreamRequest, grpc.ServerStreamingServer[NotificationStreamResponse]) error
 	LoadSignerKey(context.Context, *LoadSignerKeyRequest) (*LoadSignerKeyResponse, error)
+	// Explorer "mode" methods
+	GetTransactions(context.Context, *GetTransactionsRequest) (*GetTransactionsResponse, error)
+	GetTxOutspends(context.Context, *GetTxOutspendsRequest) (*GetTxOutspendsResponse, error)
+	GetUtxos(context.Context, *GetUtxosRequest) (*GetUtxosResponse, error)
 }
 
 // UnimplementedWalletServiceServer should be embedded to have
@@ -597,6 +638,15 @@ func (UnimplementedWalletServiceServer) NotificationStream(*NotificationStreamRe
 }
 func (UnimplementedWalletServiceServer) LoadSignerKey(context.Context, *LoadSignerKeyRequest) (*LoadSignerKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoadSignerKey not implemented")
+}
+func (UnimplementedWalletServiceServer) GetTransactions(context.Context, *GetTransactionsRequest) (*GetTransactionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTransactions not implemented")
+}
+func (UnimplementedWalletServiceServer) GetTxOutspends(context.Context, *GetTxOutspendsRequest) (*GetTxOutspendsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTxOutspends not implemented")
+}
+func (UnimplementedWalletServiceServer) GetUtxos(context.Context, *GetUtxosRequest) (*GetUtxosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetUtxos not implemented")
 }
 func (UnimplementedWalletServiceServer) testEmbeddedByValue() {}
 
@@ -1198,6 +1248,60 @@ func _WalletService_LoadSignerKey_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WalletService_GetTransactions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTransactionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).GetTransactions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_GetTransactions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).GetTransactions(ctx, req.(*GetTransactionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WalletService_GetTxOutspends_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTxOutspendsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).GetTxOutspends(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_GetTxOutspends_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).GetTxOutspends(ctx, req.(*GetTxOutspendsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WalletService_GetUtxos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUtxosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).GetUtxos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_GetUtxos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).GetUtxos(ctx, req.(*GetUtxosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WalletService_ServiceDesc is the grpc.ServiceDesc for WalletService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1328,6 +1432,18 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LoadSignerKey",
 			Handler:    _WalletService_LoadSignerKey_Handler,
+		},
+		{
+			MethodName: "GetTransactions",
+			Handler:    _WalletService_GetTransactions_Handler,
+		},
+		{
+			MethodName: "GetTxOutspends",
+			Handler:    _WalletService_GetTxOutspends_Handler,
+		},
+		{
+			MethodName: "GetUtxos",
+			Handler:    _WalletService_GetUtxos_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

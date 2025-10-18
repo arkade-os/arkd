@@ -533,6 +533,72 @@ func request_WalletService_LoadSignerKey_0(ctx context.Context, marshaler gatewa
 
 }
 
+var (
+	query_params_WalletService_GetTransactions_0 = gateway.QueryParameterParseOptions{
+		Filter: trie.New(),
+	}
+)
+
+func request_WalletService_GetTransactions_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client WalletServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetTransactionsRequest
+	var metadata gateway.ServerMetadata
+
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_WalletService_GetTransactions_0); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+
+	msg, err := client.GetTransactions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+var (
+	query_params_WalletService_GetTxOutspends_0 = gateway.QueryParameterParseOptions{
+		Filter: trie.New(),
+	}
+)
+
+func request_WalletService_GetTxOutspends_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client WalletServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetTxOutspendsRequest
+	var metadata gateway.ServerMetadata
+
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_WalletService_GetTxOutspends_0); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+
+	msg, err := client.GetTxOutspends(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+var (
+	query_params_WalletService_GetUtxos_0 = gateway.QueryParameterParseOptions{
+		Filter: trie.New(),
+	}
+)
+
+func request_WalletService_GetUtxos_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client WalletServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetUtxosRequest
+	var metadata gateway.ServerMetadata
+
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_WalletService_GetUtxos_0); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+
+	msg, err := client.GetUtxos(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
 // RegisterWalletServiceHandlerFromEndpoint is same as RegisterWalletServiceHandler but
 // automatically dials to "endpoint" and closes the connection when "ctx" gets done.
 func RegisterWalletServiceHandlerFromEndpoint(ctx context.Context, mux *gateway.ServeMux, endpoint string, opts []grpc.DialOption) error {
@@ -1311,6 +1377,72 @@ func RegisterWalletServiceHandlerClient(ctx context.Context, mux *gateway.ServeM
 		}
 
 		resp, md, err := request_WalletService_LoadSignerKey_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/explorer/transactions", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/arkwallet.v1.WalletService/GetTransactions", gateway.WithHTTPPathPattern("/v1/explorer/transactions"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_WalletService_GetTransactions_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/explorer/tx-outspends", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/arkwallet.v1.WalletService/GetTxOutspends", gateway.WithHTTPPathPattern("/v1/explorer/tx-outspends"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_WalletService_GetTxOutspends_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/explorer/utxos", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/arkwallet.v1.WalletService/GetUtxos", gateway.WithHTTPPathPattern("/v1/explorer/utxos"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_WalletService_GetUtxos_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)

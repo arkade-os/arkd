@@ -90,22 +90,30 @@ func (s *scanner) start(ctx context.Context) error {
 	return nil
 }
 
-func (s *scanner) WatchScripts(ctx context.Context, scripts []string) error {
-	addresses, err := scriptsToAddresses(scripts, s.chainParams)
+func (s *scanner) WatchScripts(ctx context.Context, scripts []string, addresses []string) error {
+	// Convert scripts to addresses
+	scriptAddresses, err := scriptsToAddresses(scripts, s.chainParams)
 	if err != nil {
 		return err
 	}
 
-	return s.nbxplorer.WatchAddresses(ctx, addresses...)
+	// Combine script-derived addresses with provided addresses
+	allAddresses := append(scriptAddresses, addresses...)
+
+	return s.nbxplorer.WatchAddresses(ctx, allAddresses...)
 }
 
-func (s *scanner) UnwatchScripts(ctx context.Context, scripts []string) error {
-	addresses, err := scriptsToAddresses(scripts, s.chainParams)
+func (s *scanner) UnwatchScripts(ctx context.Context, scripts []string, addresses []string) error {
+	// Convert scripts to addresses
+	scriptAddresses, err := scriptsToAddresses(scripts, s.chainParams)
 	if err != nil {
 		return err
 	}
 
-	return s.nbxplorer.UnwatchAddresses(ctx, addresses...)
+	// Combine script-derived addresses with provided addresses
+	allAddresses := append(scriptAddresses, addresses...)
+
+	return s.nbxplorer.UnwatchAddresses(ctx, allAddresses...)
 }
 
 func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan map[string][]application.Utxo {

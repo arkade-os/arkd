@@ -82,7 +82,7 @@ func (h *WalletServiceHandler) GetForfeitPubkey(
 func (h *WalletServiceHandler) WatchScripts(
 	ctx context.Context, request *arkwalletv1.WatchScriptsRequest,
 ) (*arkwalletv1.WatchScriptsResponse, error) {
-	if err := h.walletSvc.WatchScripts(ctx, request.Scripts); err != nil {
+	if err := h.walletSvc.WatchScripts(ctx, request.Scripts, request.Addresses); err != nil {
 		return nil, err
 	}
 	return &arkwalletv1.WatchScriptsResponse{}, nil
@@ -91,7 +91,7 @@ func (h *WalletServiceHandler) WatchScripts(
 func (h *WalletServiceHandler) UnwatchScripts(
 	ctx context.Context, request *arkwalletv1.UnwatchScriptsRequest,
 ) (*arkwalletv1.UnwatchScriptsResponse, error) {
-	if err := h.walletSvc.UnwatchScripts(ctx, request.Scripts); err != nil {
+	if err := h.walletSvc.UnwatchScripts(ctx, request.Scripts, request.Addresses); err != nil {
 		return nil, err
 	}
 	return &arkwalletv1.UnwatchScriptsResponse{}, nil
@@ -408,4 +408,22 @@ func (h *WalletServiceHandler) LoadSignerKey(
 	_ context.Context, _ *arkwalletv1.LoadSignerKeyRequest,
 ) (*arkwalletv1.LoadSignerKeyResponse, error) {
 	return &arkwalletv1.LoadSignerKeyResponse{}, fmt.Errorf("not implemented")
+}
+
+func (h *WalletServiceHandler) GetTxOutspends(
+	ctx context.Context, req *arkwalletv1.GetTxOutspendsRequest,
+) (*arkwalletv1.GetTxOutspendsResponse, error) {
+	return nil, fmt.Errorf("GetTxOutspends not implemented")
+}
+
+func (h *WalletServiceHandler) GetTransactions(
+	ctx context.Context, req *arkwalletv1.GetTransactionsRequest,
+) (*arkwalletv1.GetTransactionsResponse, error) {
+	return nil, fmt.Errorf("GetTransactions not implemented")
+}
+
+func (h *WalletServiceHandler) GetUtxos(
+	ctx context.Context, req *arkwalletv1.GetUtxosRequest,
+) (*arkwalletv1.GetUtxosResponse, error) {
+	return nil, fmt.Errorf("GetUtxos not implemented")
 }

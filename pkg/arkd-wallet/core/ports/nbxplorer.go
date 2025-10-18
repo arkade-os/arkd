@@ -39,6 +39,54 @@ type ScanUtxoSetProgress struct {
 	Done     bool
 }
 
+type ExplorerTransaction struct {
+	Txid   string
+	Vin    []ExplorerTxInput
+	Vout   []ExplorerTxOutput
+	Status ExplorerTxStatus
+}
+
+type ExplorerTxInput struct {
+	Txid    string
+	Vout    uint32
+	Prevout ExplorerTxPrevout
+}
+
+type ExplorerTxOutput struct {
+	Script  string
+	Address string
+	Value   uint64
+}
+
+type ExplorerTxPrevout struct {
+	Address string
+	Value   uint64
+}
+
+type ExplorerTxStatus struct {
+	Confirmed bool
+	BlockTime int64
+}
+
+type SpentStatus struct {
+	Spent   bool
+	SpentBy string
+}
+
+type ExplorerUtxo struct {
+	Txid   string
+	Vout   uint32
+	Value  uint64
+	Asset  string
+	Status ExplorerUtxoStatus
+	Script string
+}
+
+type ExplorerUtxoStatus struct {
+	Confirmed bool
+	BlockTime int64
+}
+
 // Nbxplorer acts as the "backend" for the wallet Service
 type Nbxplorer interface {
 	GetBitcoinStatus(ctx context.Context) (*BitcoinStatus, error)
@@ -55,6 +103,10 @@ type Nbxplorer interface {
 	WatchAddresses(ctx context.Context, addresses ...string) error
 	UnwatchAddresses(ctx context.Context, addresses ...string) error
 	GetAddressNotifications(ctx context.Context) (<-chan []Utxo, error)
+
+	GetTransactionsByAddress(ctx context.Context, address string) ([]ExplorerTransaction, error)
+	GetTxOutspends(ctx context.Context, txid string) ([]SpentStatus, error)
+	GetUtxosByAddress(ctx context.Context, address string) ([]ExplorerUtxo, error)
 
 	Close() error
 }

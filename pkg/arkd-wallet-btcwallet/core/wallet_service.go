@@ -664,13 +664,14 @@ func (s *service) EstimateFees(_ context.Context, partialTx string) (uint64, err
 	return uint64(math.Ceil(fee.ToUnit(btcutil.AmountSatoshi))), nil
 }
 
-func (s *service) WatchScripts(ctx context.Context, scripts []string) error {
+func (s *service) WatchScripts(ctx context.Context, scripts []string, addresses []string) error {
 	if !s.isSynced {
 		return ErrNotSynced
 	}
 
-	addresses := make([]btcutil.Address, 0, len(scripts))
+	allAddresses := make([]btcutil.Address, 0, len(scripts)+len(addresses))
 
+	// Convert scripts to addresses
 	for _, script := range scripts {
 		scriptBytes, err := hex.DecodeString(script)
 		if err != nil {
@@ -682,11 +683,20 @@ func (s *service) WatchScripts(ctx context.Context, scripts []string) error {
 			return err
 		}
 
-		addresses = append(addresses, addr)
+		allAddresses = append(allAddresses, addr)
 	}
 
-	if err := s.scanner.NotifyReceived(addresses); err != nil {
-		if err := s.UnwatchScripts(ctx, scripts); err != nil {
+	// Parse provided addresses
+	for _, addrStr := range addresses {
+		addr, err := btcutil.DecodeAddress(addrStr, s.cfg.chainParams())
+		if err != nil {
+			return fmt.Errorf("invalid address %s: %w", addrStr, err)
+		}
+		allAddresses = append(allAddresses, addr)
+	}
+
+	if err := s.scanner.NotifyReceived(allAddresses); err != nil {
+		if err := s.UnwatchScripts(ctx, scripts, addresses); err != nil {
 			return fmt.Errorf("error while unwatching scripts: %w", err)
 		}
 
@@ -703,7 +713,7 @@ func (s *service) WatchScripts(ctx context.Context, scripts []string) error {
 	return nil
 }
 
-func (s *service) UnwatchScripts(_ context.Context, scripts []string) error {
+func (s *service) UnwatchScripts(_ context.Context, scripts []string, addresses []string) error {
 	if !s.isSynced {
 		return ErrNotSynced
 	}
@@ -713,6 +723,10 @@ func (s *service) UnwatchScripts(_ context.Context, scripts []string) error {
 	for _, script := range scripts {
 		delete(s.watchedScripts, script)
 	}
+
+	// Note: For addresses, we rely on the scanner's internal tracking
+	// The btcwallet implementation doesn't maintain separate address tracking
+	// as it uses the scanner's NotifyReceived/NotifySpent methods
 
 	return nil
 }

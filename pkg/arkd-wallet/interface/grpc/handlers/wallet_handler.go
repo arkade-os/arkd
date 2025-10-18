@@ -103,7 +103,7 @@ func (h *WalletServiceHandler) GetForfeitPubkey(
 func (h *WalletServiceHandler) WatchScripts(
 	ctx context.Context, request *arkwalletv1.WatchScriptsRequest,
 ) (*arkwalletv1.WatchScriptsResponse, error) {
-	if err := h.scanner.WatchScripts(ctx, request.Scripts); err != nil {
+	if err := h.scanner.WatchScripts(ctx, request.Scripts, request.Addresses); err != nil {
 		return nil, err
 	}
 	return &arkwalletv1.WatchScriptsResponse{}, nil
@@ -112,7 +112,7 @@ func (h *WalletServiceHandler) WatchScripts(
 func (h *WalletServiceHandler) UnwatchScripts(
 	ctx context.Context, request *arkwalletv1.UnwatchScriptsRequest,
 ) (*arkwalletv1.UnwatchScriptsResponse, error) {
-	if err := h.scanner.UnwatchScripts(ctx, request.Scripts); err != nil {
+	if err := h.scanner.UnwatchScripts(ctx, request.Scripts, request.Addresses); err != nil {
 		return nil, err
 	}
 	return &arkwalletv1.UnwatchScriptsResponse{}, nil
@@ -457,6 +457,81 @@ func (h *WalletServiceHandler) LoadSignerKey(
 	return &arkwalletv1.LoadSignerKeyResponse{}, nil
 }
 
+// GetTxOutspends implements the explorer method for getting transaction outspends
+func (h *WalletServiceHandler) GetTxOutspends(
+	ctx context.Context, req *arkwalletv1.GetTxOutspendsRequest,
+) (*arkwalletv1.GetTxOutspendsResponse, error) {
+	outspends, err := h.wallet.GetTxOutspends(ctx, req.GetTxid())
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert application types to protobuf types
+	protoOutspends := make([]*arkwalletv1.SpentStatus, len(outspends))
+	for i, outspend := range outspends {
+		protoOutspends[i] = &arkwalletv1.SpentStatus{
+			Spent:   outspend.Spent,
+			SpentBy: outspend.SpentBy,
+		}
+	}
+
+	return &arkwalletv1.GetTxOutspendsResponse{Outspends: protoOutspends}, nil
+}
+
+// GetTransactions implements the explorer method for getting transactions
+func (h *WalletServiceHandler) GetTransactions(
+	ctx context.Context, req *arkwalletv1.GetTransactionsRequest,
+) (*arkwalletv1.GetTransactionsResponse, error) {
+	transactions, err := h.wallet.GetTransactions(ctx, req.GetAddress())
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert application types to protobuf types
+	protoTransactions := make([]*arkwalletv1.ExplorerTx, len(transactions))
+	for i, tx := range transactions {
+		protoTransactions[i] = &arkwalletv1.ExplorerTx{
+			Txid: tx.Txid,
+			Vin:  convertToProtoTxInputs(tx.Vin),
+			Vout: convertToProtoTxOutputs(tx.Vout),
+			Status: &arkwalletv1.ExplorerTxStatus{
+				Confirmed: tx.Status.Confirmed,
+				BlockTime: tx.Status.BlockTime,
+			},
+		}
+	}
+
+	return &arkwalletv1.GetTransactionsResponse{Transactions: protoTransactions}, nil
+}
+
+// GetUtxos implements the explorer method for getting UTXOs
+func (h *WalletServiceHandler) GetUtxos(
+	ctx context.Context, req *arkwalletv1.GetUtxosRequest,
+) (*arkwalletv1.GetUtxosResponse, error) {
+	utxos, err := h.wallet.GetUtxos(ctx, req.GetAddress())
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert application types to protobuf types
+	protoUtxos := make([]*arkwalletv1.ExplorerUtxo, len(utxos))
+	for i, utxo := range utxos {
+		protoUtxos[i] = &arkwalletv1.ExplorerUtxo{
+			Txid:   utxo.Txid,
+			Vout:   utxo.Vout,
+			Value:  utxo.Value,
+			Asset:  utxo.Asset,
+			Script: utxo.Script,
+			Status: &arkwalletv1.ExplorerUtxoStatus{
+				Confirmed: utxo.Status.Confirmed,
+				BlockTime: utxo.Status.BlockTime,
+			},
+		}
+	}
+
+	return &arkwalletv1.GetUtxosResponse{Utxos: protoUtxos}, nil
+}
+
 // toTxInput converts a UTXO to a TxInput protobuf message
 func toTxInput(u application.Utxo) *arkwalletv1.TxInput {
 	return &arkwalletv1.TxInput{
@@ -465,4 +540,33 @@ func toTxInput(u application.Utxo) *arkwalletv1.TxInput {
 		Script: u.Script,
 		Value:  u.Value,
 	}
+}
+
+// convertToProtoTxInputs converts application ExplorerTxInput to protobuf
+func convertToProtoTxInputs(inputs []application.ExplorerTxInput) []*arkwalletv1.ExplorerTxInput {
+	protoInputs := make([]*arkwalletv1.ExplorerTxInput, len(inputs))
+	for i, input := range inputs {
+		protoInputs[i] = &arkwalletv1.ExplorerTxInput{
+			Txid: input.Txid,
+			Vout: input.Vout,
+			Prevout: &arkwalletv1.ExplorerTxPrevout{
+				Address: input.Prevout.Address,
+				Value:   input.Prevout.Value,
+			},
+		}
+	}
+	return protoInputs
+}
+
+// convertToProtoTxOutputs converts application ExplorerTxOutput to protobuf
+func convertToProtoTxOutputs(outputs []application.ExplorerTxOutput) []*arkwalletv1.ExplorerTxOutput {
+	protoOutputs := make([]*arkwalletv1.ExplorerTxOutput, len(outputs))
+	for i, output := range outputs {
+		protoOutputs[i] = &arkwalletv1.ExplorerTxOutput{
+			Script:  output.Script,
+			Address: output.Address,
+			Value:   output.Value,
+		}
+	}
+	return protoOutputs
 }
