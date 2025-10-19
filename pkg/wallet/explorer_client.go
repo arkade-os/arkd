@@ -18,6 +18,7 @@ type explorerClient struct {
 	baseUrl string
 }
 
+// gRPC client for nbxplorer explorer service
 func NewExplorerClient(addr string) (*explorerClient, error) {
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
