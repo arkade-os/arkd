@@ -497,6 +497,20 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "withFailed",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withCompleted",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -934,6 +948,12 @@
           "before": {
             "type": "integer",
             "format": "int64"
+          },
+          "withCompleted": {
+            "type": "boolean"
+          },
+          "withFailed": {
+            "type": "boolean"
           }
         }
       },
@@ -1174,6 +1194,9 @@
         "title": "ScheduledSweep",
         "type": "object",
         "properties": {
+          "confirmed": {
+            "type": "boolean"
+          },
           "outputs": {
             "type": "array",
             "items": {

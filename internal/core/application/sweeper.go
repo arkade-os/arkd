@@ -53,11 +53,9 @@ func newSweeper(
 	}
 }
 
-func (s *sweeper) start() error {
+func (s *sweeper) start(ctx context.Context) error {
 	s.scheduledTasks = make(map[string]struct{})
 	s.scheduler.Start()
-
-	ctx := context.Background()
 
 	sweepableBatches, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
 	if err != nil {
@@ -79,6 +77,12 @@ func (s *sweeper) start() error {
 		progress := 0.0
 		count := 0
 		for _, txid := range sweepableBatches {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			flatVtxoTree, err := s.repoManager.Rounds().GetRoundVtxoTree(ctx, txid)
 			if err != nil {
 				log.WithError(err).Errorf("failed to get vtxo tree for batch %s", txid)

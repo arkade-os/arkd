@@ -12,13 +12,19 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	log "github.com/sirupsen/logrus"
 )
 
 type AdminService interface {
 	Wallet() ports.WalletService
 	GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error)
 	GetRoundDetails(ctx context.Context, roundId string) (*RoundDetails, error)
-	GetRounds(ctx context.Context, after int64, before int64) ([]string, error)
+	GetRounds(
+		ctx context.Context,
+		after int64,
+		before int64,
+		withFailed, withCompleted bool,
+	) ([]string, error)
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
 	CreateNotes(ctx context.Context, amount uint32, quantity int) ([]string, error)
@@ -125,8 +131,12 @@ func (a *adminService) GetRoundDetails(
 	}, nil
 }
 
-func (a *adminService) GetRounds(ctx context.Context, after, before int64) ([]string, error) {
-	return a.repoManager.Rounds().GetRoundIds(ctx, after, before)
+func (a *adminService) GetRounds(
+	ctx context.Context,
+	after, before int64,
+	withFailed, withCompleted bool,
+) ([]string, error) {
+	return a.repoManager.Rounds().GetRoundIds(ctx, after, before, withFailed, withCompleted)
 }
 
 func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error) {
@@ -137,37 +147,12 @@ func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep
 
 	scheduledSweeps := make([]ScheduledSweep, 0, len(sweepableRounds))
 	for _, commitmentTxid := range sweepableRounds {
-		round, err := a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
+		scheduledSweep, err := a.getScheduledSweep(ctx, commitmentTxid)
 		if err != nil {
-			return nil, err
+			log.WithError(err).Errorf("failed to get scheduled sweep for round %s", commitmentTxid)
+			continue
 		}
-
-		vtxoTree, err := tree.NewTxTree(round.VtxoTree)
-		if err != nil {
-			return nil, err
-		}
-
-		batchOutsByExpiration, err := findSweepableOutputs(
-			ctx, a.walletSvc, a.txBuilder, a.sweeperTimeUnit, vtxoTree,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		batchOutputs := make([]SweepableOutput, 0)
-		for expirationTime, inputs := range batchOutsByExpiration {
-			for _, input := range inputs {
-				batchOutputs = append(batchOutputs, SweepableOutput{
-					SweepableOutput: input,
-					ScheduledAt:     expirationTime,
-				})
-			}
-		}
-
-		scheduledSweeps = append(scheduledSweeps, ScheduledSweep{
-			RoundId:          round.Id,
-			SweepableOutputs: batchOutputs,
-		})
+		scheduledSweeps = append(scheduledSweeps, *scheduledSweep)
 	}
 
 	return scheduledSweeps, nil
@@ -444,6 +429,53 @@ func (s *adminService) BanScript(
 	return s.repoManager.Convictions().Add(ctx, conviction)
 }
 
+func (a *adminService) getScheduledSweep(
+	ctx context.Context,
+	commitmentTxid string,
+) (*ScheduledSweep, error) {
+	confirmed, _, _, err := a.walletSvc.IsTransactionConfirmed(ctx, commitmentTxid)
+	if !confirmed || err != nil {
+		return &ScheduledSweep{
+			RoundId:          commitmentTxid,
+			Confirmed:        false,
+			SweepableOutputs: make([]SweepableOutput, 0),
+		}, nil
+	}
+
+	round, err := a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+
+	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
+	if err != nil {
+		return nil, err
+	}
+
+	batchOutsByExpiration, err := findSweepableOutputs(
+		ctx, a.walletSvc, a.txBuilder, a.sweeperTimeUnit, vtxoTree,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	batchOutputs := make([]SweepableOutput, 0)
+	for expirationTime, inputs := range batchOutsByExpiration {
+		for _, input := range inputs {
+			batchOutputs = append(batchOutputs, SweepableOutput{
+				SweepableOutput: input,
+				ScheduledAt:     expirationTime,
+			})
+		}
+	}
+
+	return &ScheduledSweep{
+		RoundId:          round.Id,
+		SweepableOutputs: batchOutputs,
+		Confirmed:        true,
+	}, nil
+}
+
 type Balance struct {
 	Locked    uint64
 	Available uint64
@@ -461,6 +493,7 @@ type SweepableOutput struct {
 
 type ScheduledSweep struct {
 	RoundId          string
+	Confirmed        bool
 	SweepableOutputs []SweepableOutput
 }
 

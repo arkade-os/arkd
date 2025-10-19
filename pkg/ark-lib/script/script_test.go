@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -1239,4 +1241,34 @@ func TestConditionMultisigClosure(t *testing.T) {
 		require.Equal(t, 64, len(witness[0]))
 		require.Equal(t, 64, len(witness[1]))
 	})
+}
+
+func TestParseVtxoScript(t *testing.T) {
+	for _, fixture := range parseVtxoScriptFixtures(t) {
+		t.Run(fixture.Name, func(t *testing.T) {
+			vtxoScript, err := script.ParseVtxoScript(fixture.Scripts)
+			require.NoError(t, err)
+
+			tapkey, _, err := vtxoScript.TapTree()
+			require.NoError(t, err)
+			require.Equal(t, fixture.TaprootKey, hex.EncodeToString(schnorr.SerializePubKey(tapkey)))
+		})
+	}
+}
+
+type vtxoScriptFixtures struct {
+	Name       string   `json:"name"`
+	Scripts    []string `json:"scripts"`
+	TaprootKey string   `json:"taprootKey"`
+}
+
+func parseVtxoScriptFixtures(t *testing.T) []vtxoScriptFixtures {
+	file, err := os.ReadFile("testdata/vtxoscript.json")
+	require.NoError(t, err)
+
+	var fixtures []vtxoScriptFixtures
+	err = json.Unmarshal(file, &fixtures)
+	require.NoError(t, err)
+
+	return fixtures
 }

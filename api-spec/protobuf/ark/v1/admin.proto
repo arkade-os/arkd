@@ -114,6 +114,8 @@ message GetRoundDetailsResponse {
 message GetRoundsRequest {
   int64 after = 1;
   int64 before = 2;
+  bool with_failed = 3;
+  bool with_completed = 4;
 }
 message GetRoundsResponse {
   repeated string rounds = 1;
@@ -207,6 +209,7 @@ message SweepableOutput {
 message ScheduledSweep {
   string round_id = 1;
   repeated SweepableOutput outputs = 2;
+  bool confirmed = 3;
 }
 
 message ScheduledSessionConfig {

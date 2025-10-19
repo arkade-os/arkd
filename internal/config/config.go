@@ -113,6 +113,7 @@ type Config struct {
 	UtxoMinAmount             int64
 	VtxoMaxAmount             int64
 	VtxoMinAmount             int64
+	SettlementMinExpiryGap    int64
 
 	repo           ports.RepoManager
 	svc            application.Service
@@ -189,6 +190,7 @@ var (
 	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
+	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -221,6 +223,7 @@ var (
 	defaultOtelPushInterval          = 10 // seconds
 	defaultHeartbeatInterval         = 60 // seconds
 	defaultRoundReportServiceEnabled = false
+	defaultSettlementMinExpiryGap    = 0 // disabled by default
 )
 
 func LoadConfig() (*Config, error) {
@@ -257,6 +260,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
+	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -360,6 +364,7 @@ func LoadConfig() (*Config, error) {
 		VtxoMinAmount:             viper.GetInt64(VtxoMinAmount),
 		AllowCSVBlockType:         allowCSVBlockType,
 		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
+		SettlementMinExpiryGap:    viper.GetInt64(SettlementMinExpiryGap),
 	}, nil
 }
 
@@ -755,6 +760,7 @@ func (c *Config) appService() error {
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
+		c.SettlementMinExpiryGap,
 	)
 	if err != nil {
 		return err

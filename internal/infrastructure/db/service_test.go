@@ -512,7 +512,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 				},
 				ForfeitTxs:        []domain.ForfeitTx{f1Tx(), f2Tx(), f3Tx(), f4Tx()},
 				FinalCommitmentTx: emptyTx,
-				Timestamp:         now.Add(60 * time.Second).Unix(),
+				Timestamp:         now.Unix(),
 			},
 		}
 		events = append(events, newEvents...)
@@ -545,6 +545,11 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, txs)
 		require.Equal(t, 3, len(txs))
 
+		sweepableRounds, err := svc.Rounds().GetSweepableRounds(ctx)
+		require.NoError(t, err)
+		require.Len(t, sweepableRounds, 1)
+		require.Equal(t, commitmentTxid, sweepableRounds[0])
+
 		newEvents = []domain.Event{
 			domain.BatchSwept{
 				RoundEvent: domain.RoundEvent{
@@ -565,6 +570,48 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.NotNil(t, roundById)
 		roundsMatch(t, *sweptRound, *roundById)
+
+		roundsIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, false, true)
+		require.NoError(t, err)
+		require.Len(t, roundsIds, 1)
+		require.Equal(t, roundId, roundsIds[0])
+
+		failedRound := domain.NewRound()
+		failedRound.Id = uuid.New().String()
+		failedRound.Stage.Code = int(domain.RoundFinalizationStage)
+		failedRound.Stage.Ended = false
+		failedRound.Stage.Failed = true
+		err = svc.Rounds().AddOrUpdateRound(ctx, *failedRound)
+		require.NoError(t, err)
+
+		onlyFailedIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, true, false)
+		require.NoError(t, err)
+		require.Len(t, onlyFailedIds, 1)
+		require.Equal(t, failedRound.Id, onlyFailedIds[0])
+
+		onlyCompletedIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, false, true)
+		require.NoError(t, err)
+		require.Len(t, onlyCompletedIds, 1)
+		require.Equal(t, roundId, onlyCompletedIds[0])
+
+		allRoundsIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, true, true)
+		require.NoError(t, err)
+		require.Len(t, allRoundsIds, 2)
+		require.Contains(t, allRoundsIds, roundId)
+		require.Contains(t, allRoundsIds, failedRound.Id)
+		roundWithoutVtxoTree := domain.NewRound()
+		roundWithoutVtxoTree.Stage.Code = int(domain.RoundFinalizationStage)
+		roundWithoutVtxoTree.CommitmentTxid = randomString(32)
+		roundWithoutVtxoTree.Stage.Ended = true
+		err = svc.Rounds().AddOrUpdateRound(ctx, *roundWithoutVtxoTree)
+		require.NoError(t, err)
+
+		sweepableRounds, err = svc.Rounds().GetSweepableRounds(ctx)
+		require.NoError(t, err)
+		// check it is empty because:
+		// - first round has been swept
+		// - second round has no vtxo tree
+		require.Empty(t, sweepableRounds)
 	})
 }
 

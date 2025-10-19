@@ -384,6 +384,8 @@ type GetRoundsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	After         int64                  `protobuf:"varint,1,opt,name=after,proto3" json:"after,omitempty"`
 	Before        int64                  `protobuf:"varint,2,opt,name=before,proto3" json:"before,omitempty"`
+	WithFailed    bool                   `protobuf:"varint,3,opt,name=with_failed,json=withFailed,proto3" json:"with_failed,omitempty"`
+	WithCompleted bool                   `protobuf:"varint,4,opt,name=with_completed,json=withCompleted,proto3" json:"with_completed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -430,6 +432,20 @@ func (x *GetRoundsRequest) GetBefore() int64 {
 		return x.Before
 	}
 	return 0
+}
+
+func (x *GetRoundsRequest) GetWithFailed() bool {
+	if x != nil {
+		return x.WithFailed
+	}
+	return false
+}
+
+func (x *GetRoundsRequest) GetWithCompleted() bool {
+	if x != nil {
+		return x.WithCompleted
+	}
+	return false
 }
 
 type GetRoundsResponse struct {
@@ -1596,6 +1612,7 @@ type ScheduledSweep struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RoundId       string                 `protobuf:"bytes,1,opt,name=round_id,json=roundId,proto3" json:"round_id,omitempty"`
 	Outputs       []*SweepableOutput     `protobuf:"bytes,2,rep,name=outputs,proto3" json:"outputs,omitempty"`
+	Confirmed     bool                   `protobuf:"varint,3,opt,name=confirmed,proto3" json:"confirmed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1642,6 +1659,13 @@ func (x *ScheduledSweep) GetOutputs() []*SweepableOutput {
 		return x.Outputs
 	}
 	return nil
+}
+
+func (x *ScheduledSweep) GetConfirmed() bool {
+	if x != nil {
+		return x.Confirmed
+	}
+	return false
 }
 
 type ScheduledSessionConfig struct {
@@ -2109,10 +2133,13 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\finputs_vtxos\x18\t \x03(\tR\vinputsVtxos\x12#\n" +
 	"\routputs_vtxos\x18\n" +
 	" \x03(\tR\foutputsVtxos\x12%\n" +
-	"\x0eexit_addresses\x18\v \x03(\tR\rexitAddresses\"@\n" +
+	"\x0eexit_addresses\x18\v \x03(\tR\rexitAddresses\"\x88\x01\n" +
 	"\x10GetRoundsRequest\x12\x14\n" +
 	"\x05after\x18\x01 \x01(\x03R\x05after\x12\x16\n" +
-	"\x06before\x18\x02 \x01(\x03R\x06before\"+\n" +
+	"\x06before\x18\x02 \x01(\x03R\x06before\x12\x1f\n" +
+	"\vwith_failed\x18\x03 \x01(\bR\n" +
+	"withFailed\x12%\n" +
+	"\x0ewith_completed\x18\x04 \x01(\bR\rwithCompleted\"+\n" +
 	"\x11GetRoundsResponse\x12\x16\n" +
 	"\x06rounds\x18\x01 \x03(\tR\x06rounds\"G\n" +
 	"\x11CreateNoteRequest\x12\x16\n" +
@@ -2168,10 +2195,11 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x12\n" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\x12\x16\n" +
 	"\x06amount\x18\x03 \x01(\tR\x06amount\x12!\n" +
-	"\fscheduled_at\x18\x04 \x01(\x03R\vscheduledAt\"^\n" +
+	"\fscheduled_at\x18\x04 \x01(\x03R\vscheduledAt\"|\n" +
 	"\x0eScheduledSweep\x12\x19\n" +
 	"\bround_id\x18\x01 \x01(\tR\aroundId\x121\n" +
-	"\aoutputs\x18\x02 \x03(\v2\x17.ark.v1.SweepableOutputR\aoutputs\"\xad\x02\n" +
+	"\aoutputs\x18\x02 \x03(\v2\x17.ark.v1.SweepableOutputR\aoutputs\x12\x1c\n" +
+	"\tconfirmed\x18\x03 \x01(\bR\tconfirmed\"\xad\x02\n" +
 	"\x16ScheduledSessionConfig\x12\x1d\n" +
 	"\n" +
 	"start_time\x18\x01 \x01(\x03R\tstartTime\x12\x19\n" +
