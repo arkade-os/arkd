@@ -52,16 +52,16 @@ func (e *explorerClient) Broadcast(txs ...string) (string, error) {
 	return resp.GetTxid(), nil
 }
 
-func (e *explorerClient) GetTransactions(addr string) ([]tx, error) {
+func (e *explorerClient) GetTransactions(addr string) ([]Tx, error) {
 	ctx := context.Background()
 	resp, err := e.client.GetTransactions(ctx, &arkwalletv1.GetTransactionsRequest{Address: addr})
 	if err != nil {
 		return nil, err
 	}
 
-	txs := make([]tx, len(resp.Transactions))
+	txs := make([]Tx, len(resp.Transactions))
 	for i, protoTx := range resp.Transactions {
-		txs[i] = tx{
+		txs[i] = Tx{
 			Txid: protoTx.Txid,
 			Vin:  convertExplorerTxInputs(protoTx.Vin),
 			Vout: convertExplorerTxOutputs(protoTx.Vout),
@@ -77,16 +77,16 @@ func (e *explorerClient) GetTransactions(addr string) ([]tx, error) {
 	return txs, nil
 }
 
-func (e *explorerClient) GetTxOutspends(tx string) ([]spentStatus, error) {
+func (e *explorerClient) GetTxOutspends(tx string) ([]SpentStatus, error) {
 	ctx := context.Background()
 	resp, err := e.client.GetTxOutspends(ctx, &arkwalletv1.GetTxOutspendsRequest{Txid: tx})
 	if err != nil {
 		return nil, err
 	}
 
-	outspends := make([]spentStatus, len(resp.Outspends))
+	outspends := make([]SpentStatus, len(resp.Outspends))
 	for i, protoOutspend := range resp.Outspends {
-		outspends[i] = spentStatus{
+		outspends[i] = SpentStatus{
 			Spent:   protoOutspend.Spent,
 			SpentBy: protoOutspend.SpentBy,
 		}

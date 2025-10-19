@@ -6,7 +6,6 @@
 package walletclient
 
 import (
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/go-sdk/types"
 )
 
@@ -22,19 +21,13 @@ type Explorer interface {
 	Broadcast(txs ...string) (string, error)
 
 	// GetTxs retrieves all transactions associated with a given address.
-	GetTxs(addr string) ([]tx, error)
+	GetTransactions(addr string) ([]Tx, error)
 
 	// GetTxOutspends returns the spent status of all outputs for a given transaction.
-	GetTxOutspends(tx string) ([]spentStatus, error)
+	GetTxOutspends(tx string) ([]SpentStatus, error)
 
 	// GetUtxos retrieves all unspent transaction outputs (UTXOs) for a given address.
 	GetUtxos(addr string) ([]Utxo, error)
-
-	// GetRedeemedVtxosBalance calculates the redeemed virtual UTXO balance for an address
-	// considering the unilateral exit delay.
-	GetRedeemedVtxosBalance(
-		addr string, unilateralExitDelay arklib.RelativeLocktime,
-	) (uint64, map[int64]uint64, error)
 
 	// GetTxBlockTime returns whether a transaction is confirmed and its block time.
 	GetTxBlockTime(
@@ -64,12 +57,12 @@ type Explorer interface {
 	Stop()
 }
 
-type spentStatus struct {
+type SpentStatus struct {
 	Spent   bool   `json:"spent"`
 	SpentBy string `json:"txid,omitempty"`
 }
 
-type tx struct {
+type Tx struct {
 	Txid string `json:"txid"`
 	Vin  []struct {
 		Txid    string `json:"txid"`
