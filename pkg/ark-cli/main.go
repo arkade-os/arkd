@@ -72,8 +72,9 @@ var (
 		EnvVars:  []string{DatadirEnvVar},
 	}
 	explorerFlag = &cli.StringFlag{
-		Name:  "explorer",
-		Usage: "the url of the explorer to use",
+		Name:        "explorer",
+		Usage:       "the url of the explorer to use",
+		DefaultText: "localhost:6060",
 	}
 	passwordFlag = &cli.StringFlag{
 		Name:  "password",
@@ -271,7 +272,7 @@ func config(ctx *cli.Context) error {
 		return err
 	}
 
-	cfg := map[string]interface{}{
+	cfg := map[string]any{
 		"server_url":            cfgData.ServerUrl,
 		"signer_pubkey":         hex.EncodeToString(cfgData.SignerPubKey.SerializeCompressed()),
 		"wallet_type":           cfgData.WalletType,

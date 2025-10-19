@@ -213,6 +213,9 @@ func (o *orchestrator) settle(t *testing.T) string {
 	wg.Wait()
 	close(chCommitmentTx)
 
+	err := generateBlock()
+	require.NoError(t, err)
+
 	require.Len(t, commitmentTxs, 1, fmt.Sprintf(
 		"Clients did not settle in the same batch but in %d", len(commitmentTxs),
 	))

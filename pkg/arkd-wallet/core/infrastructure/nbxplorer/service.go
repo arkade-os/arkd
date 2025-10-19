@@ -868,7 +868,9 @@ func (n *nbxplorer) GetUtxosByAddress(ctx context.Context, address string) ([]po
 // getGroupUtxos returns current group utxos
 func (n *nbxplorer) getGroupUtxos(ctx context.Context) ([]ports.Utxo, error) {
 	if len(n.groupID) == 0 {
-		return nil, fmt.Errorf("no group ID set")
+		if err := n.createEmptyGroup(ctx); err != nil {
+			return nil, fmt.Errorf("failed to create empty group: %w", err)
+		}
 	}
 
 	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/utxos", btcCryptoCode, url.PathEscape(n.groupID))
@@ -887,6 +889,7 @@ func (n *nbxplorer) getGroupUtxos(ctx context.Context) ([]ports.Utxo, error) {
 	for _, u := range resp.Confirmed.UtxOs {
 		utxo, err := castUtxo(u)
 		if err != nil {
+			log.Warnf("failed to cast UTXO: %s", err)
 			continue // Skip invalid UTXOs
 		}
 		utxos = append(utxos, utxo)
@@ -894,6 +897,7 @@ func (n *nbxplorer) getGroupUtxos(ctx context.Context) ([]ports.Utxo, error) {
 	for _, u := range resp.Unconfirmed.UtxOs {
 		utxo, err := castUtxo(u)
 		if err != nil {
+			log.Warnf("failed to cast UTXO: %s", err)
 			continue // Skip invalid UTXOs
 		}
 		utxos = append(utxos, utxo)

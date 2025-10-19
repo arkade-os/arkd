@@ -22,10 +22,10 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	walletclient "github.com/arkade-os/arkd/pkg/wallet"
 	arksdk "github.com/arkade-os/go-sdk"
 	"github.com/arkade-os/go-sdk/client"
 	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
-	"github.com/arkade-os/go-sdk/explorer"
 	"github.com/arkade-os/go-sdk/indexer"
 	grpcindexer "github.com/arkade-os/go-sdk/indexer/grpc"
 	"github.com/arkade-os/go-sdk/store"
@@ -165,7 +165,7 @@ func newCommand(name string, arg ...string) *exec.Cmd {
 	return cmd
 }
 
-func bumpAndBroadcastTx(t *testing.T, tx string, explorer explorer.Explorer) {
+func bumpAndBroadcastTx(t *testing.T, tx string, explorer walletclient.Explorer) {
 	var transaction wire.MsgTx
 	err := transaction.Deserialize(hex.NewDecoder(strings.NewReader(tx)))
 	require.NoError(t, err)
@@ -181,7 +181,7 @@ func bumpAndBroadcastTx(t *testing.T, tx string, explorer explorer.Explorer) {
 
 // bumpAnchorTx is crafting and signing a transaction bumping the fees for a given tx with P2A output
 // it is using the onchain P2TR account to select UTXOs
-func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explorer) string {
+func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc walletclient.Explorer) string {
 	randomPrivKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
@@ -349,11 +349,12 @@ func setupArkSDKwithPublicKey(
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	err = client.InitWithWallet(context.Background(), arksdk.InitWithWalletArgs{
-		Wallet:     wallet,
-		ClientType: arksdk.GrpcClient,
-		ServerUrl:  "localhost:7070",
-		Password:   password,
-		Seed:       privkeyHex,
+		Wallet:      wallet,
+		ClientType:  arksdk.GrpcClient,
+		ServerUrl:   "localhost:7070",
+		Password:    password,
+		Seed:        privkeyHex,
+		ExplorerURL: "http://localhost:32838",
 	})
 	require.NoError(t, err)
 
@@ -422,6 +423,9 @@ func faucetOffchainAddress(t *testing.T, address string) (types.Vtxo, error) {
 		_, err := client.Settle(ctx)
 		require.NoError(t, err)
 	}()
+
+	err = generateBlock()
+	require.NoError(t, err)
 
 	vtxos, err := client.NotifyIncomingFunds(ctx, offchainAddr)
 	require.NoError(t, err)

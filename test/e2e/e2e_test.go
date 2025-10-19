@@ -24,9 +24,9 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	walletclient "github.com/arkade-os/arkd/pkg/wallet"
 	arksdk "github.com/arkade-os/go-sdk"
 	"github.com/arkade-os/go-sdk/client"
-	"github.com/arkade-os/go-sdk/explorer"
 	"github.com/arkade-os/go-sdk/indexer"
 	"github.com/arkade-os/go-sdk/redemption"
 	inmemorystoreconfig "github.com/arkade-os/go-sdk/store/inmemory"
@@ -133,6 +133,9 @@ func TestSettleInSameRound(t *testing.T) {
 	require.NotEmpty(t, bobRoundID)
 	require.Equal(t, aliceRoundID, bobRoundID)
 
+	err = generateBlock()
+	require.NoError(t, err)
+
 	time.Sleep(5 * time.Second)
 
 	aliceVtxos, _, err := alice.ListVtxos(ctx)
@@ -213,6 +216,9 @@ func TestSettleInSameRound(t *testing.T) {
 	require.NoError(t, bobErr)
 	require.Equal(t, aliceSecondRoundID, bobSecondRoundID, "Second settle round IDs should match")
 
+	err = generateBlock()
+	require.NoError(t, err)
+
 	time.Sleep(5 * time.Second)
 
 	aliceVtxosAfter, _, err := alice.ListVtxos(ctx)
@@ -254,7 +260,7 @@ func TestUnilateralExit(t *testing.T) {
 		_, err = runCommand("nigiri", "faucet", receive.Boarding)
 		require.NoError(t, err)
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(8 * time.Second)
 
 		_, err = runArkCommand("settle", "--password", password)
 		require.NoError(t, err)
@@ -452,6 +458,9 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	commitmentTxid, err := sdkClient.Settle(ctx)
 	require.NoError(t, err)
 
+	err = generateBlock()
+	require.NoError(t, err)
+
 	wg.Wait()
 	time.Sleep(5 * time.Second)
 
@@ -463,6 +472,9 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 		require.NotNil(t, vtxos)
 	}()
 	_, err = sdkClient.Settle(ctx)
+	require.NoError(t, err)
+
+	err = generateBlock()
 	require.NoError(t, err)
 
 	wg.Wait()
@@ -479,8 +491,8 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 		}
 	}
 
-	expl, err := explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	expl, err := walletclient.NewExplorerClient(
+		"localhost:6060",
 	)
 	require.NoError(t, err)
 
@@ -549,6 +561,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		roundId, err := sdkClient.Settle(ctx)
 		require.NoError(t, err)
 
+		err = generateBlock()
+		require.NoError(t, err)
+
 		wg.Wait()
 		time.Sleep(5 * time.Second)
 
@@ -582,6 +597,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		_, err = sdkClient.Settle(ctx)
 		require.NoError(t, err)
 
+		err = generateBlock()
+		require.NoError(t, err)
+
 		wg.Wait()
 
 		_, spentVtxos, err := sdkClient.ListVtxos(ctx)
@@ -597,8 +615,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		}
 		require.NotEmpty(t, vtxo)
 
-		expl, err := explorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		expl, err := walletclient.NewExplorerClient(
+			"localhost:6060",
 		)
 		require.NoError(t, err)
 
@@ -671,6 +689,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 			require.NotNil(t, vtxos)
 		}()
 		_, err = alice.Settle(ctx)
+		require.NoError(t, err)
+
+		err = generateBlock()
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -823,8 +844,8 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		explorer, err := explorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		explorer, err := walletclient.NewExplorerClient(
+			"localhost:6060",
 		)
 		require.NoError(t, err)
 
@@ -1461,8 +1482,8 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	explorer, err := walletclient.NewExplorerClient(
+		"localhost:6060",
 	)
 	require.NoError(t, err)
 
@@ -1560,6 +1581,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	}()
 
 	_, err = alice.Settle(ctx)
+	require.NoError(t, err)
+
+	err = generateBlock()
 	require.NoError(t, err)
 
 	wg.Wait()
@@ -1713,8 +1737,8 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	explorer, err := walletclient.NewExplorerClient(
+		"localhost:6060",
 	)
 	require.NoError(t, err)
 
@@ -1797,6 +1821,9 @@ func TestDeleteIntent(t *testing.T) {
 	}()
 
 	_, err = alice.Settle(ctx)
+	require.NoError(t, err)
+
+	err = generateBlock()
 	require.NoError(t, err)
 
 	wg.Wait()
@@ -2730,10 +2757,8 @@ func TestBan(t *testing.T) {
 		info, err := grpcAlice.GetInfo(t.Context())
 		require.NoError(t, err)
 
-		explr, err := explorer.NewExplorer(
-			"http://localhost:3000",
-			arklib.BitcoinRegTest,
-			explorer.WithPollInterval(time.Second),
+		explr, err := walletclient.NewExplorerClient(
+			"localhost:6060",
 		)
 		require.NoError(t, err)
 		boardingUtxos, err := explr.GetUtxos(boardingAddr.Address)
@@ -2741,13 +2766,6 @@ func TestBan(t *testing.T) {
 		require.NotEmpty(t, boardingUtxos)
 
 		aliceUtxo := boardingUtxos[0]
-		utxo := aliceUtxo.ToUtxo(
-			arklib.RelativeLocktime{
-				Type:  arklib.LocktimeTypeBlock,
-				Value: uint32(info.BoardingExitDelay),
-			},
-			boardingAddr.Tapscripts,
-		)
 
 		// setup a random musig2 tree signer
 		secKey, err := btcec.NewPrivateKey()
@@ -2757,7 +2775,20 @@ func TestBan(t *testing.T) {
 		intentId, err := alice.RegisterIntent(
 			t.Context(),
 			[]types.Vtxo{},
-			[]types.Utxo{utxo},
+			[]types.Utxo{
+				{
+					Outpoint: types.Outpoint{
+						Txid: aliceUtxo.Txid,
+						VOut: aliceUtxo.Vout,
+					},
+					Amount: aliceUtxo.Amount,
+					Script: aliceUtxo.Script,
+					Delay: arklib.RelativeLocktime{
+						Type:  arklib.LocktimeTypeBlock,
+						Value: uint32(info.BoardingExitDelay),
+					},
+				},
+			},
 			nil,
 			[]types.Receiver{
 				{
@@ -2770,7 +2801,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 
 		topics := arksdk.GetEventStreamTopics(
-			[]types.Outpoint{utxo.Outpoint}, []tree.SignerSession{signerSession},
+			[]types.Outpoint{types.Outpoint{Txid: aliceUtxo.Txid, VOut: aliceUtxo.Vout}}, []tree.SignerSession{signerSession},
 		)
 		stream, close, err := grpcAlice.GetEventStream(t.Context(), topics)
 		require.NoError(t, err)
@@ -2946,6 +2977,9 @@ func TestSweepBatchOutput(t *testing.T) {
 	txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos)
 	require.NoError(t, err)
 
+	err = generateBlock()
+	require.NoError(t, err)
+
 	// give some time for the server to process the recovery
 	time.Sleep(5 * time.Second)
 
@@ -2991,6 +3025,9 @@ func TestSweepCheckpointOutput(t *testing.T) {
 	_, err = alice.Settle(ctx)
 	require.NoError(t, err)
 
+	err = generateBlock()
+	require.NoError(t, err)
+
 	wg.Wait()
 
 	// self-send the VTXO to create a checkpoint output
@@ -3003,8 +3040,9 @@ func TestSweepCheckpointOutput(t *testing.T) {
 	require.NotEmpty(t, txid)
 
 	// unroll the spent VTXO to put checkpoint onchain
-	expl, err := explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false))
+	expl, err := walletclient.NewExplorerClient(
+		"localhost:6060",
+	)
 	require.NoError(t, err)
 
 	branch, err := redemption.NewRedeemBranch(ctx, expl, setupIndexer(t), vtxo)
@@ -3149,7 +3187,7 @@ func setupServerWalletAndCLI() error {
 
 	const numberOfFaucet = 15 // must cover the liquidity needed for all tests
 
-	for i := 0; i < numberOfFaucet; i++ {
+	for range numberOfFaucet {
 		_, err = runCommand("nigiri", "faucet", addr.Address)
 		if err != nil {
 			return fmt.Errorf("failed to fund wallet: %s", err)
@@ -3160,7 +3198,7 @@ func setupServerWalletAndCLI() error {
 
 	if _, err := runArkCommand(
 		"init", "--server-url", "localhost:7070", "--password", password,
-		"--explorer", "http://chopsticks:3000",
+		"--explorer", "arkd-wallet:6060",
 	); err != nil {
 		return fmt.Errorf("error initializing ark config: %s", err)
 	}

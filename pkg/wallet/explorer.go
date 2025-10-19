@@ -20,7 +20,7 @@ type Explorer interface {
 	// Returns the transaction ID of the first transaction on success.
 	Broadcast(txs ...string) (string, error)
 
-	// GetTxs retrieves all transactions associated with a given address.
+	// GetTransactions retrieves all transactions associated with a given address.
 	GetTransactions(addr string) ([]Tx, error)
 
 	// GetTxOutspends returns the spent status of all outputs for a given transaction.

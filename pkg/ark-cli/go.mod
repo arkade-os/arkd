@@ -6,9 +6,13 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
+replace github.com/arkade-os/arkd/pkg/wallet => ../wallet
+
+replace github.com/arkade-os/arkd/api-spec => ../../api-spec
+
 require (
-	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251010142325-5b2f22ddea80
-	github.com/arkade-os/go-sdk v0.7.2-0.20251010143855-3ca342862a88
+	github.com/arkade-os/arkd/pkg/ark-lib v0.8.0-rc.1
+	github.com/arkade-os/go-sdk v0.7.2-0.20251019082651-8fefb11a03d6
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.35.0
 )
@@ -17,8 +21,10 @@ require (
 	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/aead/siphash v1.0.1 // indirect
+	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000 // indirect
+	github.com/arkade-os/arkd/pkg/wallet v0.7.2-0.20251019004323-b4a2b0c2511e // indirect
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53 // indirect
-	github.com/btcsuite/btcd/btcec/v2 v2.3.4 // indirect
+	github.com/btcsuite/btcd/btcec/v2 v2.3.5 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.5 // indirect
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.9 // indirect
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
@@ -51,6 +57,7 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
+	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
@@ -85,9 +92,11 @@ require (
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
-	google.golang.org/grpc v1.71.0 // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
+	google.golang.org/genproto v0.0.0-20241118233622-e639e219e697 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20250818200422-3122310a409c // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250825161204-c5933d9347a5 // indirect
+	google.golang.org/grpc v1.76.0 // indirect
+	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/gc/v3 v3.0.0-20240801135723-a856999a2e4a // indirect
 	modernc.org/libc v1.59.3 // indirect
