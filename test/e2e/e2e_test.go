@@ -1810,11 +1810,15 @@ func TestDeleteIntent(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, aliceVtxos)
 
-	_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, nil, nil)
+	cosignerKey, err := btcec.NewPrivateKey()
+	cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
+	require.NoError(t, err)
+	outs := []types.Receiver{{To: offchainAddr, Amount: 20000}}
+	_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
 	require.NoError(t, err)
 
 	// should fail because previous intent spend same vtxos
-	_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, nil, nil)
+	_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
 	require.Error(t, err)
 
 	// should delete the intent

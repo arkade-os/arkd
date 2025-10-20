@@ -1364,115 +1364,120 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	if proof.ContainsOutputs() {
-		hasOffChainReceiver := false
-		receivers := make([]domain.Receiver, 0)
+	// reject if proof does not specify outputs
+	// TODO remove if blinded credentials are supported
+	if !proof.ContainsOutputs() {
+		return "", errors.INVALID_INTENT_PROOF.New("proof does not contain outputs").
+			WithMetadata(errors.InvalidIntentProofMetadata{Proof: signedProof, Message: encodedMessage})
+	}
 
-		for outputIndex, output := range proof.UnsignedTx.TxOut {
-			amount := uint64(output.Value)
-			rcv := domain.Receiver{
-				Amount: amount,
-			}
+	hasOffChainReceiver := false
+	receivers := make([]domain.Receiver, 0)
 
-			intentHasOnchainOuts := slices.Contains(message.OnchainOutputIndexes, outputIndex)
-			if intentHasOnchainOuts {
-				if s.utxoMaxAmount >= 0 {
-					if amount > uint64(s.utxoMaxAmount) {
-						return "", errors.AMOUNT_TOO_HIGH.New(
-							"output %d amount is higher than max utxo amount: %d",
-							outputIndex,
-							s.utxoMaxAmount,
-						).WithMetadata(errors.AmountTooHighMetadata{
-							OutputIndex: outputIndex,
-							Amount:      int(amount),
-							MaxAmount:   int(s.utxoMaxAmount),
-						})
-					}
-				}
-				if amount < uint64(s.utxoMinAmount) {
-					return "", errors.AMOUNT_TOO_LOW.New(
-						"output %d amount is lower than min utxo amount: %d",
-						outputIndex,
-						s.utxoMinAmount,
-					).WithMetadata(errors.AmountTooLowMetadata{
-						OutputIndex: outputIndex,
-						Amount:      int(amount),
-						MinAmount:   int(s.utxoMinAmount),
-					})
-				}
-
-				chainParams := s.chainParams()
-				if chainParams == nil {
-					return "", errors.INTERNAL_ERROR.New("unsupported network: %s", s.network.Name).
-						WithMetadata(map[string]any{
-							"network": s.network.Name,
-						})
-				}
-				scriptType, addrs, _, err := txscript.ExtractPkScriptAddrs(
-					output.PkScript, chainParams,
-				)
-				if err != nil {
-					return "", errors.INVALID_PKSCRIPT.New("failed to get onchain address from script of output %d: %w", outputIndex, err).
-						WithMetadata(errors.InvalidPkScriptMetadata{Script: hex.EncodeToString(output.PkScript)})
-				}
-
-				if len(addrs) == 0 {
-					return "", errors.INVALID_PKSCRIPT.New("invalid script type for output %d: %s", outputIndex, scriptType).
-						WithMetadata(errors.InvalidPkScriptMetadata{Script: hex.EncodeToString(output.PkScript)})
-				}
-
-				rcv.OnchainAddress = addrs[0].EncodeAddress()
-			} else {
-				if s.vtxoMaxAmount >= 0 {
-					if amount > uint64(s.vtxoMaxAmount) {
-						return "", errors.AMOUNT_TOO_HIGH.New(
-							"output %d amount is higher than max vtxo amount: %d", outputIndex, s.vtxoMaxAmount,
-						).WithMetadata(errors.AmountTooHighMetadata{
-							OutputIndex: outputIndex,
-							Amount:      int(amount),
-							MaxAmount:   int(s.vtxoMaxAmount),
-						})
-					}
-				}
-				if amount < uint64(s.vtxoMinSettlementAmount) {
-					return "", errors.AMOUNT_TOO_LOW.New(
-						"output %d amount is lower than min vtxo amount: %d", outputIndex, s.vtxoMinSettlementAmount,
-					).WithMetadata(errors.AmountTooLowMetadata{
-						OutputIndex: outputIndex,
-						Amount:      int(amount),
-						MinAmount:   int(s.vtxoMinSettlementAmount),
-					})
-				}
-
-				hasOffChainReceiver = true
-				rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
-			}
-
-			receivers = append(receivers, rcv)
+	for outputIndex, output := range proof.UnsignedTx.TxOut {
+		amount := uint64(output.Value)
+		rcv := domain.Receiver{
+			Amount: amount,
 		}
 
-		if hasOffChainReceiver {
-			if len(message.CosignersPublicKeys) == 0 {
-				return "", errors.INVALID_INTENT_MESSAGE.New("CosignersPublicKeys is required in intent message").
+		intentHasOnchainOuts := slices.Contains(message.OnchainOutputIndexes, outputIndex)
+		if intentHasOnchainOuts {
+			if s.utxoMaxAmount >= 0 {
+				if amount > uint64(s.utxoMaxAmount) {
+					return "", errors.AMOUNT_TOO_HIGH.New(
+						"output %d amount is higher than max utxo amount: %d",
+						outputIndex,
+						s.utxoMaxAmount,
+					).WithMetadata(errors.AmountTooHighMetadata{
+						OutputIndex: outputIndex,
+						Amount:      int(amount),
+						MaxAmount:   int(s.utxoMaxAmount),
+					})
+				}
+			}
+			if amount < uint64(s.utxoMinAmount) {
+				return "", errors.AMOUNT_TOO_LOW.New(
+					"output %d amount is lower than min utxo amount: %d",
+					outputIndex,
+					s.utxoMinAmount,
+				).WithMetadata(errors.AmountTooLowMetadata{
+					OutputIndex: outputIndex,
+					Amount:      int(amount),
+					MinAmount:   int(s.utxoMinAmount),
+				})
+			}
+
+			chainParams := s.chainParams()
+			if chainParams == nil {
+				return "", errors.INTERNAL_ERROR.New("unsupported network: %s", s.network.Name).
+					WithMetadata(map[string]any{
+						"network": s.network.Name,
+					})
+			}
+			scriptType, addrs, _, err := txscript.ExtractPkScriptAddrs(
+				output.PkScript, chainParams,
+			)
+			if err != nil {
+				return "", errors.INVALID_PKSCRIPT.New("failed to get onchain address from script of output %d: %w", outputIndex, err).
+					WithMetadata(errors.InvalidPkScriptMetadata{Script: hex.EncodeToString(output.PkScript)})
+			}
+
+			if len(addrs) == 0 {
+				return "", errors.INVALID_PKSCRIPT.New("invalid script type for output %d: %s", outputIndex, scriptType).
+					WithMetadata(errors.InvalidPkScriptMetadata{Script: hex.EncodeToString(output.PkScript)})
+			}
+
+			rcv.OnchainAddress = addrs[0].EncodeAddress()
+		} else {
+			if s.vtxoMaxAmount >= 0 {
+				if amount > uint64(s.vtxoMaxAmount) {
+					return "", errors.AMOUNT_TOO_HIGH.New(
+						"output %d amount is higher than max vtxo amount: %d", outputIndex, s.vtxoMaxAmount,
+					).WithMetadata(errors.AmountTooHighMetadata{
+						OutputIndex: outputIndex,
+						Amount:      int(amount),
+						MaxAmount:   int(s.vtxoMaxAmount),
+					})
+				}
+			}
+			if amount < uint64(s.vtxoMinSettlementAmount) {
+				return "", errors.AMOUNT_TOO_LOW.New(
+					"output %d amount is lower than min vtxo amount: %d", outputIndex, s.vtxoMinSettlementAmount,
+				).WithMetadata(errors.AmountTooLowMetadata{
+					OutputIndex: outputIndex,
+					Amount:      int(amount),
+					MinAmount:   int(s.vtxoMinSettlementAmount),
+				})
+			}
+
+			hasOffChainReceiver = true
+			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
+		}
+
+		receivers = append(receivers, rcv)
+	}
+
+	if hasOffChainReceiver {
+		if len(message.CosignersPublicKeys) == 0 {
+			return "", errors.INVALID_INTENT_MESSAGE.New("CosignersPublicKeys is required in intent message").
+				WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
+		}
+
+		// check if the operator pubkey has been set as cosigner
+		operatorPubkeyHex := hex.EncodeToString(s.operatorPubkey.SerializeCompressed())
+		for _, pubkey := range message.CosignersPublicKeys {
+			if pubkey == operatorPubkeyHex {
+				return "", errors.INVALID_INTENT_MESSAGE.New("invalid cosigner pubkeys: %x is used by us", pubkey).
 					WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
 			}
-
-			// check if the operator pubkey has been set as cosigner
-			operatorPubkeyHex := hex.EncodeToString(s.operatorPubkey.SerializeCompressed())
-			for _, pubkey := range message.CosignersPublicKeys {
-				if pubkey == operatorPubkeyHex {
-					return "", errors.INVALID_INTENT_MESSAGE.New("invalid cosigner pubkeys: %x is used by us", pubkey).
-						WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
-				}
-			}
 		}
+	}
 
-		if err := intent.AddReceivers(receivers); err != nil {
-			return "", errors.INTERNAL_ERROR.New("failed to add receivers to intent: %w", err).
-				WithMetadata(map[string]any{
-					"receivers": receivers,
-				})
-		}
+	if err := intent.AddReceivers(receivers); err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to add receivers to intent: %w", err).
+			WithMetadata(map[string]any{
+				"receivers": receivers,
+			})
 	}
 
 	if err := s.cache.Intents().Push(
