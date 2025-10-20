@@ -520,6 +520,9 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 	require.NotEmpty(t, spentStatus)
 	require.True(t, spentStatus[vtxo.VOut].Spent)
 	require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
+
+	// Unban the vtxo script or the next tests won't succeed.
+	pardonConvictionsForScript(t, vtxo.Script)
 }
 
 func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
