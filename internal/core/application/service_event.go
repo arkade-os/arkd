@@ -58,6 +58,11 @@ type TreeSignatureMessage struct {
 	Signature  string
 }
 
+type RoundFailed struct {
+	domain.RoundFailed
+	Topic []string
+}
+
 // implement domain.RoundEvent interface
 func (r RoundSigningStarted) GetTopic() string  { return domain.RoundTopic }
 func (r TreeNoncesAggregated) GetTopic() string { return domain.RoundTopic }

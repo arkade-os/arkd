@@ -23,6 +23,7 @@ type IntentStore interface {
 	Len() int64
 	Push(intent domain.Intent, boardingInputs []BoardingInput, cosignersPublicKeys []string) error
 	Pop(num int64) []TimedIntent
+	GetSelectedIntents() []TimedIntent
 	Update(intent domain.Intent, cosignersPublicKeys []string) error
 	Delete(ids []string) error
 	DeleteAll() error

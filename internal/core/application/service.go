@@ -1953,12 +1953,12 @@ func (s *service) startConfirmation(
 	}
 
 	// TODO take into account available liquidity
-	intentsPopped := s.cache.Intents().Pop(num)
-	intents := make([]ports.TimedIntent, 0, len(intentsPopped))
+	selectedIntents := s.cache.Intents().Pop(num)
+	intents := make([]ports.TimedIntent, 0, len(selectedIntents))
 
 	// for each intent, check if all boarding inputs are unspent
 	// exclude any intent with at least one spent boarding input
-	for _, intent := range intentsPopped {
+	for _, intent := range selectedIntents {
 		includeIntent := true
 
 		for _, input := range intent.BoardingInputs {
@@ -2009,12 +2009,9 @@ func (s *service) startConfirmation(
 	}
 
 	if availableBalance <= totAmount {
+		log.Errorf("not enough liquidity, current balance: %d", availableBalance)
 		s.cache.CurrentRound().Fail(
-			errors.INTERNAL_ERROR.New("not enough liquidity, current balance: %d", availableBalance).
-				WithMetadata(map[string]any{
-					"available_balance": availableBalance,
-					"required_balance":  totAmount,
-				}),
+			errors.INTERNAL_ERROR.New("service temporary unavailable"),
 		)
 		return
 	}
@@ -2801,7 +2798,21 @@ func (s *service) propagateEvents(round *domain.Round) {
 		}
 		s.roundReportSvc.OpEnded(SendSignedTreeEventOp)
 	case domain.RoundFinalized:
-		lastEvent = RoundFinalized{lastEvent.(domain.RoundFinalized), round.CommitmentTxid}
+		lastEvent = RoundFinalized{ev, round.CommitmentTxid}
+	case domain.RoundFailed:
+		intents := s.cache.Intents().GetSelectedIntents()
+		topics := make([]string, 0, len(intents))
+		for _, intent := range intents {
+			for _, input := range intent.Inputs {
+				topics = append(topics, input.Outpoint.String())
+			}
+
+			for _, boardingInput := range intent.BoardingInputs {
+				topics = append(topics, boardingInput.String())
+			}
+		}
+
+		lastEvent = RoundFailed{ev, topics}
 	}
 
 	events = append(events, lastEvent)

@@ -26,7 +26,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	arksdk "github.com/arkade-os/go-sdk"
 	"github.com/arkade-os/go-sdk/client"
-	"github.com/arkade-os/go-sdk/explorer"
+	mempool_explorer "github.com/arkade-os/go-sdk/explorer/mempool"
 	"github.com/arkade-os/go-sdk/indexer"
 	"github.com/arkade-os/go-sdk/redemption"
 	inmemorystoreconfig "github.com/arkade-os/go-sdk/store/inmemory"
@@ -479,8 +479,9 @@ func TestReactToRedemptionOfRefreshedVtxos(t *testing.T) {
 		}
 	}
 
-	expl, err := explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	expl, err := mempool_explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest,
+		mempool_explorer.WithTracker(false),
 	)
 	require.NoError(t, err)
 
@@ -597,8 +598,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		}
 		require.NotEmpty(t, vtxo)
 
-		expl, err := explorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		expl, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
 		)
 		require.NoError(t, err)
 
@@ -823,8 +825,9 @@ func TestReactToRedemptionOfVtxosSpentAsync(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		explorer, err := explorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
 		)
 		require.NoError(t, err)
 
@@ -1461,8 +1464,9 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	explorer, err := mempool_explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest,
+		mempool_explorer.WithTracker(false),
 	)
 	require.NoError(t, err)
 
@@ -1713,8 +1717,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false),
+	explorer, err := mempool_explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest,
+		mempool_explorer.WithTracker(false),
 	)
 	require.NoError(t, err)
 
@@ -2734,10 +2739,9 @@ func TestBan(t *testing.T) {
 		info, err := grpcAlice.GetInfo(t.Context())
 		require.NoError(t, err)
 
-		explr, err := explorer.NewExplorer(
-			"http://localhost:3000",
-			arklib.BitcoinRegTest,
-			explorer.WithPollInterval(time.Second),
+		explr, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithPollInterval(time.Second),
 		)
 		require.NoError(t, err)
 		boardingUtxos, err := explr.GetUtxos(boardingAddr.Address)
@@ -3007,8 +3011,9 @@ func TestSweepCheckpointOutput(t *testing.T) {
 	require.NotEmpty(t, txid)
 
 	// unroll the spent VTXO to put checkpoint onchain
-	expl, err := explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest, explorer.WithTracker(false))
+	expl, err := mempool_explorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest,
+		mempool_explorer.WithTracker(false))
 	require.NoError(t, err)
 
 	branch, err := redemption.NewRedeemBranch(ctx, expl, setupIndexer(t), vtxo)
