@@ -65,6 +65,19 @@ func New(opts WalletOptions) application.WalletService {
 }
 
 func (w *wallet) GetReadyUpdate(ctx context.Context) <-chan struct{} {
+	isUnlocked := w.keyMgr != nil
+
+	if isUnlocked {
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case w.isReady <- struct{}{}:
+				return
+			}
+		}()
+	}
+
 	return w.isReady
 }
 
