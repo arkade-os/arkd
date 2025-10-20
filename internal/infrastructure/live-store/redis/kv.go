@@ -96,3 +96,35 @@ func (s *KVStore[T]) SetPipe(
 	pipe.Set(ctx, s.prefix+key, b, 0)
 	return nil
 }
+
+// ListPush pushes a value to the front of a Redis list
+func (s *KVStore[T]) ListPush(ctx context.Context, key string, value *T) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return s.rdb.LPush(ctx, key, data).Err()
+}
+
+// ListRange gets all items from a Redis list
+func (s *KVStore[T]) ListRange(ctx context.Context, key string) ([]T, error) {
+	items, err := s.rdb.LRange(ctx, key, 0, -1).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(items) == 0 {
+		return []T{}, nil
+	}
+
+	var result []T
+	for _, item := range items {
+		var value T
+		if err := json.Unmarshal([]byte(item), &value); err != nil {
+			return nil, err
+		}
+		result = append(result, value)
+	}
+
+	return result, nil
+}
