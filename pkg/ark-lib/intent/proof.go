@@ -16,7 +16,6 @@ import (
 
 var (
 	ErrMissingInputs             = fmt.Errorf("missing inputs")
-	ErrMissingOutputs            = fmt.Errorf("missing outputs")
 	ErrMissingData               = fmt.Errorf("missing data")
 	ErrMissingWitnessUtxo        = fmt.Errorf("missing witness utxo")
 	ErrIncompletePSBT            = fmt.Errorf("incomplete psbt, missing signatures on inputs")
@@ -137,10 +136,6 @@ func Verify(proofB64, message string) error {
 func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) {
 	if len(inputs) == 0 {
 		return nil, ErrMissingInputs
-	}
-
-	if len(outputs) == 0 {
-		return nil, ErrMissingOutputs
 	}
 
 	// validate the inputs
