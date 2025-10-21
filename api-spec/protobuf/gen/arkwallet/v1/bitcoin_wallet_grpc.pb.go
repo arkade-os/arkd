@@ -52,6 +52,7 @@ const (
 	WalletService_UnwatchScripts_FullMethodName           = "/arkwallet.v1.WalletService/UnwatchScripts"
 	WalletService_NotificationStream_FullMethodName       = "/arkwallet.v1.WalletService/NotificationStream"
 	WalletService_LoadSignerKey_FullMethodName            = "/arkwallet.v1.WalletService/LoadSignerKey"
+	WalletService_RescanUtxos_FullMethodName              = "/arkwallet.v1.WalletService/RescanUtxos"
 )
 
 // WalletServiceClient is the client API for WalletService service.
@@ -93,6 +94,7 @@ type WalletServiceClient interface {
 	UnwatchScripts(ctx context.Context, in *UnwatchScriptsRequest, opts ...grpc.CallOption) (*UnwatchScriptsResponse, error)
 	NotificationStream(ctx context.Context, in *NotificationStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[NotificationStreamResponse], error)
 	LoadSignerKey(ctx context.Context, in *LoadSignerKeyRequest, opts ...grpc.CallOption) (*LoadSignerKeyResponse, error)
+	RescanUtxos(ctx context.Context, in *RescanUtxosRequest, opts ...grpc.CallOption) (*RescanUtxosResponse, error)
 }
 
 type walletServiceClient struct {
@@ -451,6 +453,16 @@ func (c *walletServiceClient) LoadSignerKey(ctx context.Context, in *LoadSignerK
 	return out, nil
 }
 
+func (c *walletServiceClient) RescanUtxos(ctx context.Context, in *RescanUtxosRequest, opts ...grpc.CallOption) (*RescanUtxosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RescanUtxosResponse)
+	err := c.cc.Invoke(ctx, WalletService_RescanUtxos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WalletServiceServer is the server API for WalletService service.
 // All implementations should embed UnimplementedWalletServiceServer
 // for forward compatibility.
@@ -490,6 +502,7 @@ type WalletServiceServer interface {
 	UnwatchScripts(context.Context, *UnwatchScriptsRequest) (*UnwatchScriptsResponse, error)
 	NotificationStream(*NotificationStreamRequest, grpc.ServerStreamingServer[NotificationStreamResponse]) error
 	LoadSignerKey(context.Context, *LoadSignerKeyRequest) (*LoadSignerKeyResponse, error)
+	RescanUtxos(context.Context, *RescanUtxosRequest) (*RescanUtxosResponse, error)
 }
 
 // UnimplementedWalletServiceServer should be embedded to have
@@ -597,6 +610,9 @@ func (UnimplementedWalletServiceServer) NotificationStream(*NotificationStreamRe
 }
 func (UnimplementedWalletServiceServer) LoadSignerKey(context.Context, *LoadSignerKeyRequest) (*LoadSignerKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoadSignerKey not implemented")
+}
+func (UnimplementedWalletServiceServer) RescanUtxos(context.Context, *RescanUtxosRequest) (*RescanUtxosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RescanUtxos not implemented")
 }
 func (UnimplementedWalletServiceServer) testEmbeddedByValue() {}
 
@@ -1198,6 +1214,24 @@ func _WalletService_LoadSignerKey_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WalletService_RescanUtxos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RescanUtxosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).RescanUtxos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_RescanUtxos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).RescanUtxos(ctx, req.(*RescanUtxosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WalletService_ServiceDesc is the grpc.ServiceDesc for WalletService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1328,6 +1362,10 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LoadSignerKey",
 			Handler:    _WalletService_LoadSignerKey_Handler,
+		},
+		{
+			MethodName: "RescanUtxos",
+			Handler:    _WalletService_RescanUtxos_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

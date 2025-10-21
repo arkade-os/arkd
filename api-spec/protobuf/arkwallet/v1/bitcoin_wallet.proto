@@ -188,6 +188,12 @@ service WalletService {
       body: "*"
     };
   }
+  rpc RescanUtxos(RescanUtxosRequest) returns (RescanUtxosResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/wallet/rescan-utxos"
+      body: "*"
+    }; 
+  }
 }
 
 message GetReadyUpdateRequest {}
@@ -398,6 +404,11 @@ message GetCurrentBlockTimeRequest {}
 message GetCurrentBlockTimeResponse {
   BlockTimestamp timestamp = 1;
 }
+
+message RescanUtxosRequest {
+  repeated string outpoints =1;
+}
+message RescanUtxosResponse {}
 
 message WithdrawRequest {
   string address = 1;

@@ -456,6 +456,22 @@ func (h *WalletServiceHandler) LoadSignerKey(
 	}
 	return &arkwalletv1.LoadSignerKeyResponse{}, nil
 }
+func (h *WalletServiceHandler) RescanUtxos(
+	ctx context.Context, req *arkwalletv1.RescanUtxosRequest,
+) (*arkwalletv1.RescanUtxosResponse, error) {
+	outs := make([]wire.OutPoint, 0, len(req.Outpoints))
+	for _, out := range req.Outpoints {
+		o, err := wire.NewOutPointFromString(out)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		outs = append(outs, *o)
+	}
+	if err := h.scanner.RescanUtxos(ctx, outs); err != nil {
+		return nil, err
+	}
+	return &arkwalletv1.RescanUtxosResponse{}, nil
+}
 
 // toTxInput converts a UTXO to a TxInput protobuf message
 func toTxInput(u application.Utxo) *arkwalletv1.TxInput {

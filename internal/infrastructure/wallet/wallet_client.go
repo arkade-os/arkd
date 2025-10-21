@@ -9,6 +9,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
@@ -449,5 +450,14 @@ func (w *walletDaemonClient) GetOutpointStatus(
 
 func (w *walletDaemonClient) LoadSignerKey(ctx context.Context, prvkey string) error {
 	_, err := w.client.LoadSignerKey(ctx, &arkwalletv1.LoadSignerKeyRequest{PrivateKey: prvkey})
+	return err
+}
+
+func (w *walletDaemonClient) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
+	outsStr := make([]string, 0, len(outs))
+	for _, out := range outs {
+		outsStr = append(outsStr, out.String())
+	}
+	_, err := w.client.RescanUtxos(ctx, &arkwalletv1.RescanUtxosRequest{Outpoints: outsStr})
 	return err
 }

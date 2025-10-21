@@ -26,6 +26,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -3070,6 +3071,35 @@ func (s *service) validateBoardingInput(
 	ctx context.Context, vtxoKey domain.Outpoint, tapscripts txutils.TapTree,
 	now time.Time, locktime *arklib.RelativeLocktime, disabled bool,
 ) (*wire.MsgTx, error) {
+	// todo: generate address from tapscripts
+	vtxoScript, err := script.ParseVtxoScript(tapscripts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
+	}
+	tapKey, _, err := vtxoScript.TapTree()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
+	}
+	boardingScript, err := script.P2TRScript(tapKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
+	}
+	boardingScriptStr := hex.EncodeToString(boardingScript)
+
+	if err := s.scanner.WatchScripts(ctx, []string{boardingScriptStr}); err != nil {
+		return nil, fmt.Errorf("failed to watch output script: %s", err)
+	}
+	txHash, err := chainhash.NewHashFromStr(vtxoKey.Txid)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.scanner.RescanUtxos(ctx, []wire.OutPoint{{
+		Hash:  *txHash,
+		Index: vtxoKey.VOut,
+	}}); err != nil {
+		return nil, err
+	}
+
 	// check if the tx exists and is confirmed
 	txhex, err := s.wallet.GetTransaction(ctx, vtxoKey.Txid)
 	if err != nil {
@@ -3088,11 +3118,6 @@ func (s *service) validateBoardingInput(
 
 	if !confirmed {
 		return nil, fmt.Errorf("tx %s not confirmed", vtxoKey.Txid)
-	}
-
-	vtxoScript, err := script.ParseVtxoScript(tapscripts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
 	}
 
 	// validate the vtxo script
