@@ -856,7 +856,9 @@ func (n *nbxplorer) rescanUTXOs(ctx context.Context, outpoints []wire.OutPoint) 
 		outs = append(outs, fmt.Sprintf("%s-%d", out.Hash.String(), out.Index))
 	}
 
-	jsonBody, err := json.Marshal(outs)
+	jsonBody, err := json.Marshal(map[string]any{
+		"UTXOs": outs,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal request body: %w", err)
 	}
