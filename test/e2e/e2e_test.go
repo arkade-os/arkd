@@ -2942,13 +2942,12 @@ func TestSweepBatchOutput(t *testing.T) {
 	// wait for server to process the sweep
 	time.Sleep(20 * time.Second)
 
-	spendable, spent, err := alice.ListVtxos(ctx)
+	spendable, _, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
-	require.Empty(t, spendable)
-	require.Len(t, spent, 1)
-	require.Equal(t, vtxo.Txid, spent[0].Txid)
-	require.True(t, spent[0].Swept)
-	require.False(t, spent[0].Spent)
+	require.Len(t, spendable, 1)
+	require.Equal(t, vtxo.Txid, spendable[0].Txid)
+	require.True(t, spendable[0].Swept)
+	require.False(t, spendable[0].Spent)
 
 	// test fund recovery
 	txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos)
@@ -2957,7 +2956,7 @@ func TestSweepBatchOutput(t *testing.T) {
 	// give some time for the server to process the recovery
 	time.Sleep(5 * time.Second)
 
-	spendable, spent, err = alice.ListVtxos(ctx)
+	spendable, spent, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, spendable)
 	require.Len(t, spendable, 1)
