@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"syscall"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	arksdk "github.com/arkade-os/go-sdk"
 	"github.com/arkade-os/go-sdk/store"
 	"github.com/arkade-os/go-sdk/types"
+	"github.com/nbd-wtf/go-nostr/nip19"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/term"
 )
@@ -43,6 +46,7 @@ func main() {
 		&redeemCommand,
 		&notesCommand,
 		&recoverCommand,
+		&vtxosCommand,
 		&versionCommand,
 	)
 	app.Flags = []cli.Flag{datadirFlag, verboseFlag}
@@ -143,6 +147,23 @@ var (
 		Value:       false,
 		DefaultText: "false",
 	}
+	outpointsFlag = &cli.StringSliceFlag{
+		Name:    "outpoints",
+		Aliases: []string{"o"},
+		Usage:   "specific outpoints to redeem (format: txid:vout, e.g., abc123:0)",
+	}
+	spendableFlag = &cli.BoolFlag{
+		Name:        "spendable",
+		Usage:       "show spendable VTXOs",
+		Value:       true,
+		DefaultText: "true",
+	}
+	spentFlag = &cli.BoolFlag{
+		Name:        "spent",
+		Usage:       "show spent VTXOs",
+		Value:       false,
+		DefaultText: "false",
+	}
 	verboseFlag = &cli.BoolFlag{
 		Name:        "verbose",
 		Usage:       "enable debug logs",
@@ -204,12 +225,26 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return send(ctx)
 		},
-		Flags: []cli.Flag{receiversFlag, toFlag, amountFlag, enableExpiryCoinselectFlag, passwordFlag, zeroFeesFlag},
+		Flags: []cli.Flag{
+			receiversFlag,
+			toFlag,
+			amountFlag,
+			enableExpiryCoinselectFlag,
+			passwordFlag,
+			zeroFeesFlag,
+		},
 	}
 	redeemCommand = cli.Command{
 		Name:  "redeem",
 		Usage: "Redeem offchain funds, collaboratively or unilaterally",
-		Flags: []cli.Flag{addressFlag, amountToRedeemFlag, forceFlag, passwordFlag, completeFlag},
+		Flags: []cli.Flag{
+			addressFlag,
+			amountToRedeemFlag,
+			forceFlag,
+			passwordFlag,
+			completeFlag,
+			outpointsFlag,
+		},
 		Action: func(ctx *cli.Context) error {
 			return redeem(ctx)
 		},
@@ -229,6 +264,15 @@ var (
 		Flags: []cli.Flag{passwordFlag},
 		Action: func(ctx *cli.Context) error {
 			return recoverVtxos(ctx)
+		},
+	}
+
+	vtxosCommand = cli.Command{
+		Name:  "vtxos",
+		Usage: "List VTXOs (coins) in the wallet",
+		Flags: []cli.Flag{passwordFlag, expiryDetailsFlag, spendableFlag, spentFlag},
+		Action: func(ctx *cli.Context) error {
+			return listVtxos(ctx)
 		},
 	}
 
@@ -253,12 +297,25 @@ func initArkSdk(ctx *cli.Context) error {
 		clientType = arksdk.RestClient
 	}
 
+	// handle nsec
+	seed := ctx.String(privateKeyFlag.Name)
+	if strings.HasPrefix(seed, "nsec") {
+		// Decode nsec using nip19 to get the raw private key
+		_, decoded, err := nip19.Decode(seed)
+		if err != nil {
+			return fmt.Errorf("failed to decode nsec: %v", err)
+		}
+
+		// The decoded value is already a hex string, so use it directly
+		seed = decoded.(string)
+	}
+
 	return arkSdkClient.Init(
 		ctx.Context, arksdk.InitArgs{
 			ClientType:  clientType,
 			WalletType:  arksdk.SingleKeyWallet,
 			ServerUrl:   ctx.String(urlFlag.Name),
-			Seed:        ctx.String(privateKeyFlag.Name),
+			Seed:        seed,
 			Password:    string(password),
 			ExplorerURL: ctx.String(explorerFlag.Name),
 		},
@@ -400,7 +457,22 @@ func redeem(ctx *cli.Context) error {
 	}
 
 	if force {
-		return arkSdkClient.Unroll(ctx.Context)
+		// Parse outpoint filters if provided
+		var outpointFilters []types.Outpoint
+		if outpointStrings := ctx.StringSlice(outpointsFlag.Name); len(outpointStrings) > 0 {
+			var err error
+			outpointFilters, err = parseOutpoints(outpointStrings)
+			if err != nil {
+				return err
+			}
+		}
+
+		outputs, err := arkSdkClient.Unroll(ctx.Context, outpointFilters)
+		if err != nil {
+			return err
+		}
+
+		return printJSON(outputs)
 	}
 
 	if complete {
@@ -565,6 +637,50 @@ func readPassword(ctx *cli.Context) ([]byte, error) {
 		}
 	}
 	return password, nil
+}
+
+func parseOutpoints(outpointStrings []string) ([]types.Outpoint, error) {
+	var outpoints []types.Outpoint
+	for _, outpointStr := range outpointStrings {
+		parts := strings.Split(outpointStr, ":")
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid outpoint format '%s': expected txid:vout", outpointStr)
+		}
+
+		txid := parts[0]
+		vout, err := strconv.ParseUint(parts[1], 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid vout in outpoint '%s': %v", outpointStr, err)
+		}
+
+		outpoints = append(outpoints, types.Outpoint{
+			Txid: txid,
+			VOut: uint32(vout),
+		})
+	}
+	return outpoints, nil
+}
+
+func listVtxos(ctx *cli.Context) error {
+	spendable, spent, err := arkSdkClient.ListVtxos(ctx.Context)
+	if err != nil {
+		return err
+	}
+
+	showSpendable := ctx.Bool(spendableFlag.Name)
+	showSpent := ctx.Bool(spentFlag.Name)
+
+	resp := map[string]any{}
+
+	if showSpendable {
+		resp["spendable"] = spendable
+	}
+
+	if showSpent {
+		resp["spent"] = spent
+	}
+
+	return printJSON(resp)
 }
 
 func printJSON(resp interface{}) error {
