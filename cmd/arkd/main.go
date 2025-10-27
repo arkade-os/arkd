@@ -23,7 +23,10 @@ const (
 	tlsCertFile  = "cert.pem"
 )
 
-func mainAction(_ *cli.Context) error {
+// startAction loads configuration, initializes logging and telemetry, constructs and starts the gRPC service,
+// then blocks until a termination signal is received and triggers a graceful shutdown.
+// It returns an error if configuration loading or service startup fails.
+func startAction(_ *cli.Context) error {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("invalid config: %s", err)
@@ -69,6 +72,10 @@ func mainAction(_ *cli.Context) error {
 	return nil
 }
 
+// main configures the arkd CLI application, registers available commands and global flags,
+// sets the default command to start the server, and runs the application.
+//
+// If app.Run returns an error the process logs the error and exits.
 func main() {
 	app := cli.NewApp()
 	app.Version = Version
@@ -77,6 +84,7 @@ func main() {
 	app.UsageText = "Run the Ark Server with:\n\tarkd\nManage the Ark Server with:\n\tarkd [global options] command [command options]"
 	app.Commands = append(
 		app.Commands,
+		startCmd,
 		versionCmd,
 		walletCmd,
 		signerCmd,
@@ -90,7 +98,8 @@ func main() {
 		revokeAuthCmd,
 		convictionsCmd,
 	)
-	app.Action = mainAction
+
+	app.DefaultCommand = startCmd.Name
 	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)
 
 	if err := app.Run(os.Args); err != nil {
