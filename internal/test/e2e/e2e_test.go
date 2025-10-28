@@ -432,8 +432,7 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
-			require.NotEmpty(t, bobBalance.OnchainBalance.LockedAmount)
-			require.Equal(t, 21000, int(bobBalance.OnchainBalance.LockedAmount[0].Amount))
+			require.Equal(t, 21000, int(bobBalance.OnchainBalance.SpendableAmount))
 		})
 	})
 
@@ -1067,17 +1066,23 @@ func TestOffchainTx(t *testing.T) {
 
 		faucetOffchain(t, alice, 0.001)
 
+		wg := &sync.WaitGroup{}
 		for range numInputs {
+			wg.Add(1)
+			var incomingErr error
+			go func() {
+				_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr)
+				wg.Done()
+			}()
 			_, err := alice.SendOffChain(t.Context(), false, []types.Receiver{{
 				To:     bobOffchainAddr,
 				Amount: amount,
 			}})
 			require.NoError(t, err)
+			wg.Wait()
+			require.NoError(t, incomingErr)
 		}
 
-		time.Sleep(time.Second)
-
-		wg := &sync.WaitGroup{}
 		wg.Add(1)
 		var incomingErr error
 		go func() {
