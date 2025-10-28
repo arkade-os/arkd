@@ -487,6 +487,7 @@ func setupArkd() error {
 		return refill(adminHttpClient)
 	}
 
+	url = fmt.Sprintf("%s/v1/admin/wallet/seed", adminUrl)
 	seed, err := get[seedResp](adminHttpClient, url, "seed")
 	if err != nil {
 		return err
