@@ -1619,7 +1619,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		NextScheduledSession: nextScheduledSession,
 		UtxoMinAmount:        s.utxoMinAmount,
 		UtxoMaxAmount:        s.utxoMaxAmount,
-		VtxoMinAmount:        s.vtxoMinSettlementAmount,
+		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 	}, nil
