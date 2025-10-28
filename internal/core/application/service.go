@@ -55,6 +55,7 @@ type service struct {
 	banDuration               time.Duration
 	banThreshold              int64
 	unilateralExitDelay       arklib.RelativeLocktime
+	publicUnilateralExitDelay arklib.RelativeLocktime
 	boardingExitDelay         arklib.RelativeLocktime
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
@@ -92,7 +93,7 @@ func NewService(
 	scheduler ports.SchedulerService,
 	cache ports.LiveStore,
 	reportSvc RoundReportService,
-	vtxoTreeExpiry, unilateralExitDelay, boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
+	vtxoTreeExpiry, unilateralExitDelay, publicUnilateralExitDelay, boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	network arklib.Network,
@@ -182,21 +183,22 @@ func NewService(
 	ctx, cancel := context.WithCancel(ctx)
 
 	svc := &service{
-		network:             network,
-		signerPubkey:        signerPubkey,
-		forfeitPubkey:       forfeitPubkey,
-		batchExpiry:         vtxoTreeExpiry,
-		sessionDuration:     time.Duration(sessionDuration) * time.Second,
-		banDuration:         time.Duration(banDuration) * time.Second,
-		banThreshold:        banThreshold,
-		unilateralExitDelay: unilateralExitDelay,
-		allowCSVBlockType:   allowCSVBlockType,
-		wallet:              wallet,
-		signer:              signer,
-		repoManager:         repoManager,
-		builder:             builder,
-		cache:               cache,
-		scanner:             scanner,
+		network:                   network,
+		signerPubkey:              signerPubkey,
+		forfeitPubkey:             forfeitPubkey,
+		batchExpiry:               vtxoTreeExpiry,
+		sessionDuration:           time.Duration(sessionDuration) * time.Second,
+		banDuration:               time.Duration(banDuration) * time.Second,
+		banThreshold:              banThreshold,
+		unilateralExitDelay:       unilateralExitDelay,
+		publicUnilateralExitDelay: publicUnilateralExitDelay,
+		allowCSVBlockType:         allowCSVBlockType,
+		wallet:                    wallet,
+		signer:                    signer,
+		repoManager:               repoManager,
+		builder:                   builder,
+		cache:                     cache,
+		scanner:                   scanner,
 		sweeper: newSweeper(
 			wallet, repoManager, builder, scheduler, noteUriPrefix,
 		),
@@ -1608,7 +1610,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
 		ForfeitPubKey:        forfeitPubkey,
-		UnilateralExitDelay:  int64(s.unilateralExitDelay.Value),
+		UnilateralExitDelay:  int64(s.publicUnilateralExitDelay.Value),
 		BoardingExitDelay:    int64(s.boardingExitDelay.Value),
 		SessionDuration:      int64(s.sessionDuration.Seconds()),
 		Network:              s.network.Name,

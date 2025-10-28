@@ -67,29 +67,30 @@ type Config struct {
 	TLSExtraIPs     []string
 	TLSExtraDomains []string
 
-	DbType              string
-	EventDbType         string
-	DbDir               string
-	DbUrl               string
-	EventDbUrl          string
-	EventDbDir          string
-	SessionDuration     int64
-	BanDuration         int64
-	BanThreshold        int64 // number of crimes to trigger a ban
-	SchedulerType       string
-	TxBuilderType       string
-	LiveStoreType       string
-	RedisUrl            string
-	RedisTxNumOfRetries int
-	WalletAddr          string
-	SignerAddr          string
-	VtxoTreeExpiry      arklib.RelativeLocktime
-	UnilateralExitDelay arklib.RelativeLocktime
-	CheckpointExitDelay arklib.RelativeLocktime
-	BoardingExitDelay   arklib.RelativeLocktime
-	NoteUriPrefix       string
-	AllowCSVBlockType   bool
-	HeartbeatInterval   int64
+	DbType                    string
+	EventDbType               string
+	DbDir                     string
+	DbUrl                     string
+	EventDbUrl                string
+	EventDbDir                string
+	SessionDuration           int64
+	BanDuration               int64
+	BanThreshold              int64 // number of crimes to trigger a ban
+	SchedulerType             string
+	TxBuilderType             string
+	LiveStoreType             string
+	RedisUrl                  string
+	RedisTxNumOfRetries       int
+	WalletAddr                string
+	SignerAddr                string
+	VtxoTreeExpiry            arklib.RelativeLocktime
+	UnilateralExitDelay       arklib.RelativeLocktime
+	PublicUnilateralExitDelay arklib.RelativeLocktime
+	CheckpointExitDelay       arklib.RelativeLocktime
+	BoardingExitDelay         arklib.RelativeLocktime
+	NoteUriPrefix             string
+	AllowCSVBlockType         bool
+	HeartbeatInterval         int64
 
 	ScheduledSessionStartTime                 int64
 	ScheduledSessionEndTime                   int64
@@ -162,6 +163,7 @@ var (
 	LogLevel                             = "LOG_LEVEL"
 	VtxoTreeExpiry                       = "VTXO_TREE_EXPIRY"
 	UnilateralExitDelay                  = "UNILATERAL_EXIT_DELAY"
+	PublicUnilateralExitDelay            = "PUBLIC_UNILATERAL_EXIT_DELAY"
 	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
 	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
 	EsploraURL                           = "ESPLORA_URL"
@@ -244,6 +246,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(EventDbType, defaultEventDbType)
 	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
 	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
+	viper.SetDefault(PublicUnilateralExitDelay, defaultUnilateralExitDelay)
 	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
@@ -332,6 +335,7 @@ func LoadConfig() (*Config, error) {
 		LogLevel:                  viper.GetInt(LogLevel),
 		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
 		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
+		PublicUnilateralExitDelay: determineLocktimeType(viper.GetInt64(PublicUnilateralExitDelay)),
 		CheckpointExitDelay:       determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
 		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
 		EsploraURL:                viper.GetString(EsploraURL),
@@ -455,6 +459,18 @@ func (c *Config) Validate() error {
 				minAllowedSequence, c.VtxoTreeExpiry,
 			)
 		}
+	}
+
+	if c.PublicUnilateralExitDelay.Type != c.UnilateralExitDelay.Type {
+		return fmt.Errorf(
+			"public unilateral exit delay and unilateral exit delay must have the same type",
+		)
+	}
+
+	if c.PublicUnilateralExitDelay.Value < c.UnilateralExitDelay.Value {
+		return fmt.Errorf(
+			"public unilateral exit delay must be greater than or equal to unilateral exit delay",
+		)
 	}
 
 	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
@@ -751,15 +767,37 @@ func (c *Config) appService() error {
 	}
 
 	svc, err := application.NewService(
-		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
-		c.scheduler, c.liveStore, roundReportSvc,
-		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay, c.CheckpointExitDelay,
-		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
-		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
-		c.BanDuration, c.BanThreshold,
-		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
-		ssStartTime, ssEndTime, ssPeriod, ssDuration,
-		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
+		c.wallet,
+		c.signer,
+		c.repo,
+		c.txBuilder,
+		c.scanner,
+		c.scheduler,
+		c.liveStore,
+		roundReportSvc,
+		c.VtxoTreeExpiry,
+		c.UnilateralExitDelay,
+		c.PublicUnilateralExitDelay,
+		c.BoardingExitDelay,
+		c.CheckpointExitDelay,
+		c.SessionDuration,
+		c.RoundMinParticipantsCount,
+		c.RoundMaxParticipantsCount,
+		c.UtxoMaxAmount,
+		c.UtxoMinAmount,
+		c.VtxoMaxAmount,
+		c.VtxoMinAmount,
+		c.BanDuration,
+		c.BanThreshold,
+		*c.network,
+		c.AllowCSVBlockType,
+		c.NoteUriPrefix,
+		ssStartTime,
+		ssEndTime,
+		ssPeriod,
+		ssDuration,
+		c.ScheduledSessionMinRoundParticipantsCount,
+		c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 	)
 	if err != nil {
