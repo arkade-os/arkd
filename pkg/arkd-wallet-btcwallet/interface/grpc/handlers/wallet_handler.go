@@ -409,3 +409,7 @@ func (h *WalletServiceHandler) LoadSignerKey(
 ) (*arkwalletv1.LoadSignerKeyResponse, error) {
 	return &arkwalletv1.LoadSignerKeyResponse{}, fmt.Errorf("not implemented")
 }
+
+func (h *WalletServiceHandler) RescanUtxos(context.Context, *arkwalletv1.RescanUtxosRequest) (*arkwalletv1.RescanUtxosResponse, error) {
+	return nil, nil
+}

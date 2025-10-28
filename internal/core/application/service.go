@@ -1124,13 +1124,11 @@ func (s *service) RegisterIntent(
 	// the vtxo to swap for new ones, require forfeit transactions
 	vtxoInputs := make([]domain.Vtxo, 0)
 	// the boarding utxos to add in the commitment tx
-	boardingInputs := make([]ports.BoardingInput, 0)
-	boardingTxs := make(map[string]wire.MsgTx, 0) // txid -> txhex
+	boardingUtxos := make([]boardingIntentInput, 0)
 
 	outpoints := proof.GetOutpoints()
 
 	now := time.Now()
-
 	if message.ValidAt > 0 {
 		validAt := time.Unix(message.ValidAt, 0)
 		if now.Before(validAt) {
@@ -1198,41 +1196,10 @@ func (s *service) RegisterIntent(
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
 		if err != nil || len(vtxosResult) == 0 {
-			// vtxo not found in db, check if it exists on-chain
-			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
-				if len(tapscripts) == 0 {
-					return "", errors.INVALID_PSBT_INPUT.New("missing taptree for input %s", outpoint).
-						WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
-				}
-
-				tx, err := s.validateBoardingInput(
-					ctx, vtxoOutpoint, tapscripts, now, locktime, disabled,
-				)
-				if err != nil {
-					return "", errors.INVALID_PSBT_INPUT.New("failed to validate boarding input: %w", err).
-						WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
-				}
-
-				boardingTxs[vtxoOutpoint.Txid] = *tx
-			}
-
 			// reject if intent specifies onchain outputs and boarding inputs
 			if len(message.OnchainOutputIndexes) > 0 {
 				return "", errors.INVALID_INTENT_PROOF.New("cannot include onchain inputs and outputs").
 					WithMetadata(errors.InvalidIntentProofMetadata{Proof: encodedProof, Message: encodedMessage})
-			}
-
-			tx := boardingTxs[vtxoOutpoint.Txid]
-			prevout := tx.TxOut[vtxoOutpoint.VOut]
-
-			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
-				return "", errors.INVALID_PSBT_INPUT.New("invalid witness utxo script: got %x expected %x", prevout.PkScript, psbtInput.WitnessUtxo.PkScript).
-					WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
-			}
-
-			if prevout.Value != int64(psbtInput.WitnessUtxo.Value) {
-				return "", errors.INVALID_PSBT_INPUT.New("invalid witness utxo value: got %d expected %d", prevout.Value, psbtInput.WitnessUtxo.Value).
-					WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
 			}
 
 			input := ports.Input{
@@ -1245,14 +1212,13 @@ func (s *service) RegisterIntent(
 					WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint.String()})
 			}
 
-			boardingInput, err := newBoardingInput(
-				tx, input, s.signerPubkey, s.boardingExitDelay, s.allowCSVBlockType,
-			)
-			if err != nil {
-				return "", err
-			}
+			boardingUtxos = append(boardingUtxos, boardingIntentInput{
+				Input:       input,
+				locktime:    locktime,
+				disabled:    disabled,
+				witnessUtxo: psbtInput.WitnessUtxo,
+			})
 
-			boardingInputs = append(boardingInputs, *boardingInput)
 			continue
 		}
 
@@ -1481,6 +1447,16 @@ func (s *service) RegisterIntent(
 			WithMetadata(map[string]any{
 				"receivers": receivers,
 			})
+	}
+
+	boardingInputs := make([]ports.BoardingInput, 0)
+
+	if len(boardingUtxos) > 0 {
+		var err errors.Error
+		boardingInputs, err = s.processBoardingInputs(ctx, intent.Id, boardingUtxos)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	if err := s.cache.Intents().Push(
@@ -3069,57 +3045,133 @@ func (s *service) chainParams() *chaincfg.Params {
 	}
 }
 
-func (s *service) validateBoardingInput(
-	ctx context.Context, vtxoKey domain.Outpoint, tapscripts txutils.TapTree,
-	now time.Time, locktime *arklib.RelativeLocktime, disabled bool,
-) (*wire.MsgTx, error) {
-	// todo: generate address from tapscripts
-	vtxoScript, err := script.ParseVtxoScript(tapscripts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
-	}
-	tapKey, _, err := vtxoScript.TapTree()
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
-	}
-	boardingScript, err := script.P2TRScript(tapKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
-	}
-	boardingScriptStr := hex.EncodeToString(boardingScript)
+func (s *service) processBoardingInputs(
+	ctx context.Context,
+	intentTxid string,
+	boardingUtxos []boardingIntentInput,
+) ([]ports.BoardingInput, errors.Error) {
+	scripts := make([]string, 0)
+	outpoints := make([]wire.OutPoint, 0)
 
-	if err := s.scanner.WatchScripts(ctx, []string{boardingScriptStr}); err != nil {
-		return nil, fmt.Errorf("failed to watch output script: %s", err)
+	// extract the scripts and outpoints from the boarding utxos
+	// in order to trigger watch and rescan operations
+	for _, input := range boardingUtxos {
+		script, err := input.OutputScript()
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New("failed to compute output script from tapscripts: %w", err).
+				WithMetadata(map[string]any{"txid": input.Txid, "vout": input.VOut, "tapscripts": input.Tapscripts})
+		}
+		scripts = append(scripts, hex.EncodeToString(script))
+
+		txHash, err := chainhash.NewHashFromStr(input.Txid)
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New("failed to parse txid: %w", err).
+				WithMetadata(map[string]any{"txid": input.Txid})
+		}
+
+		outpoints = append(outpoints, wire.OutPoint{
+			Hash:  *txHash,
+			Index: input.VOut,
+		})
 	}
-	txHash, err := chainhash.NewHashFromStr(vtxoKey.Txid)
+
+	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to watch boarding scripts: %w", err).
+			WithMetadata(map[string]any{"scripts": scripts})
+	}
+
+	defer func() {
+		if err := s.scanner.UnwatchScripts(ctx, scripts); err != nil {
+			log.WithError(err).Warnf("failed to unwatch boarding scripts for intent %s", intentTxid)
+		}
+	}()
+
+	// we must rescan the utxos to ensure nbxplorer is aware of the boarding transactions
+	if err := s.scanner.RescanUtxos(ctx, outpoints); err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to rescan boarding utxos: %w", err).
+			WithMetadata(map[string]any{"outpoints": outpoints})
+	}
+
+	boardingInputs := make([]ports.BoardingInput, 0)
+	boardingTxs := make(map[string]wire.MsgTx, 0) // txid -> txhex
+	now := time.Now()
+
+	for _, input := range boardingUtxos {
+		if _, ok := boardingTxs[input.Txid]; !ok {
+			if len(input.Tapscripts) == 0 {
+				return nil, errors.INVALID_PSBT_INPUT.New("missing taptree for input %s", input.Outpoint).
+					WithMetadata(errors.InputMetadata{Txid: intentTxid, InputIndex: int(input.VOut)})
+			}
+
+			tx, err := s.validateBoardingInput(ctx, input, now)
+			if err != nil {
+				return nil, errors.INVALID_PSBT_INPUT.New("failed to validate boarding input: %w", err).
+					WithMetadata(errors.InputMetadata{Txid: intentTxid, InputIndex: int(input.VOut)})
+			}
+
+			boardingTxs[input.Txid] = *tx
+		}
+
+		tx := boardingTxs[input.Txid]
+		prevout := tx.TxOut[input.VOut]
+
+		if !bytes.Equal(prevout.PkScript, input.witnessUtxo.PkScript) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid witness utxo script: got %x expected %x",
+				prevout.PkScript,
+				input.witnessUtxo.PkScript,
+			).
+				WithMetadata(errors.InputMetadata{Txid: intentTxid, InputIndex: int(input.VOut)})
+		}
+
+		if prevout.Value != int64(input.witnessUtxo.Value) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid witness utxo value: got %d expected %d",
+				prevout.Value,
+				input.witnessUtxo.Value,
+			).
+				WithMetadata(errors.InputMetadata{Txid: intentTxid, InputIndex: int(input.VOut)})
+		}
+
+		boardingInput, err := newBoardingInput(
+			tx, input.Input, s.signerPubkey, s.boardingExitDelay, s.allowCSVBlockType,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		boardingInputs = append(boardingInputs, *boardingInput)
+	}
+
+	return boardingInputs, nil
+}
+
+func (s *service) validateBoardingInput(
+	ctx context.Context, input boardingIntentInput, now time.Time,
+) (*wire.MsgTx, error) {
+	vtxoScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
-		return nil, err
-	}
-	if err := s.scanner.RescanUtxos(ctx, []wire.OutPoint{{
-		Hash:  *txHash,
-		Index: vtxoKey.VOut,
-	}}); err != nil {
 		return nil, err
 	}
 
 	// check if the tx exists and is confirmed
-	txhex, err := s.wallet.GetTransaction(ctx, vtxoKey.Txid)
+	txhex, err := s.wallet.GetTransaction(ctx, input.Txid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get tx %s: %s", vtxoKey.Txid, err)
+		return nil, fmt.Errorf("failed to get tx %s: %s", input.Txid, err)
 	}
 
 	var tx wire.MsgTx
 	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
-		return nil, fmt.Errorf("failed to deserialize tx %s: %s", vtxoKey.Txid, err)
+		return nil, fmt.Errorf("failed to deserialize tx %s: %s", input.Txid, err)
 	}
 
-	confirmed, _, blocktime, err := s.wallet.IsTransactionConfirmed(ctx, vtxoKey.Txid)
+	confirmed, _, blocktime, err := s.wallet.IsTransactionConfirmed(ctx, input.Txid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check tx %s: %s", vtxoKey.Txid, err)
+		return nil, fmt.Errorf("failed to check tx %s: %s", input.Txid, err)
 	}
 
 	if !confirmed {
-		return nil, fmt.Errorf("tx %s not confirmed", vtxoKey.Txid)
+		return nil, fmt.Errorf("tx %s not confirmed", input.Txid)
 	}
 
 	// validate the vtxo script
@@ -3137,15 +3189,15 @@ func (s *service) validateBoardingInput(
 
 	// if the exit path is available, forbid registering the boarding utxo
 	if time.Unix(blocktime, 0).Add(time.Duration(exitDelay.Seconds()) * time.Second).Before(now) {
-		return nil, fmt.Errorf("tx %s expired", vtxoKey.Txid)
+		return nil, fmt.Errorf("tx %s expired", input.Txid)
 	}
 
 	// If the intent is registered using a exit path that contains CSV delay, we want to verify it
 	// by shifitng the current "now" in the future of the duration of the smallest exit delay.
 	// This way, any exit order guaranteed by the exit path is maintained at intent registration
-	if !disabled {
+	if !input.disabled {
 		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).Unix() - blocktime
-		if diff := locktime.Seconds() - delta; diff > 0 {
+		if diff := input.locktime.Seconds() - delta; diff > 0 {
 			return nil, fmt.Errorf(
 				"vtxo script can be used for intent registration in %d seconds", diff,
 			)
@@ -3153,13 +3205,13 @@ func (s *service) validateBoardingInput(
 	}
 
 	if s.utxoMaxAmount >= 0 {
-		if tx.TxOut[vtxoKey.VOut].Value > s.utxoMaxAmount {
+		if tx.TxOut[input.VOut].Value > s.utxoMaxAmount {
 			return nil, fmt.Errorf(
 				"boarding input amount is higher than max utxo amount:%d", s.utxoMaxAmount,
 			)
 		}
 	}
-	if tx.TxOut[vtxoKey.VOut].Value < s.utxoMinAmount {
+	if tx.TxOut[input.VOut].Value < s.utxoMinAmount {
 		return nil, fmt.Errorf(
 			"boarding input amount is lower than min utxo amount:%d", s.utxoMinAmount,
 		)
