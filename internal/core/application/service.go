@@ -1192,7 +1192,9 @@ func (s *service) RegisterIntent(
 		}
 
 		now := time.Now()
-		locktime, disabled := arklib.BIP68DecodeSequence(proof.UnsignedTx.TxIn[i+1].Sequence)
+		locktime, locktimeDisabled := arklib.BIP68DecodeSequence(
+			proof.UnsignedTx.TxIn[i+1].Sequence,
+		)
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
 		if err != nil || len(vtxosResult) == 0 {
@@ -1213,10 +1215,10 @@ func (s *service) RegisterIntent(
 			}
 
 			boardingUtxos = append(boardingUtxos, boardingIntentInput{
-				Input:       input,
-				locktime:    locktime,
-				disabled:    disabled,
-				witnessUtxo: psbtInput.WitnessUtxo,
+				Input:            input,
+				locktime:         locktime,
+				locktimeDisabled: locktimeDisabled,
+				witnessUtxo:      psbtInput.WitnessUtxo,
 			})
 
 			continue
@@ -1296,7 +1298,7 @@ func (s *service) RegisterIntent(
 					WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
 			}
 			if err := s.validateVtxoInput(
-				tapscripts, vtxoTapKey, vtxo.CreatedAt, now, locktime, disabled, proofTxid, i+1,
+				tapscripts, vtxoTapKey, vtxo.CreatedAt, now, locktime, locktimeDisabled, proofTxid, i+1,
 			); err != nil {
 				return "", err
 			}
@@ -3195,7 +3197,7 @@ func (s *service) validateBoardingInput(
 	// If the intent is registered using a exit path that contains CSV delay, we want to verify it
 	// by shifitng the current "now" in the future of the duration of the smallest exit delay.
 	// This way, any exit order guaranteed by the exit path is maintained at intent registration
-	if !input.disabled {
+	if !input.locktimeDisabled {
 		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).Unix() - blocktime
 		if diff := input.locktime.Seconds() - delta; diff > 0 {
 			return nil, fmt.Errorf(

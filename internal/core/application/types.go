@@ -203,7 +203,7 @@ type ChainTx struct {
 
 type boardingIntentInput struct {
 	ports.Input
-	locktime    *arklib.RelativeLocktime
-	disabled    bool
-	witnessUtxo *wire.TxOut
+	locktime         *arklib.RelativeLocktime
+	locktimeDisabled bool
+	witnessUtxo      *wire.TxOut
 }
