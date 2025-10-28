@@ -1167,45 +1167,50 @@ func TestSweep(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
-		var vtxo types.Vtxo
+		var incominFunds []types.Vtxo
+		var incomingErr error
 		go func() {
-			defer wg.Done()
-			vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
-			require.NoError(t, err)
-			require.NotEmpty(t, vtxos)
-			require.Len(t, vtxos, 1)
-			vtxo = vtxos[0]
+			incominFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			wg.Done()
 		}()
 
-		// settle the boarding utxo to create a new batch output expiring in 20 blocks
+		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
 		_, err = alice.Settle(ctx)
 		require.NoError(t, err)
 
 		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.Len(t, incominFunds, 1)
+		vtxo := incominFunds[0]
 
-		// generate 30 blocks to expire the batch output
+		// Generate 30 blocks to expire the batch output
 		err = generateBlocks(30)
 		require.NoError(t, err)
 
-		// wait for server to process the sweep
+		// Wait for server to process the sweep
 		time.Sleep(20 * time.Second)
 
-		spendable, spent, err := alice.ListVtxos(ctx)
+		spendable, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
-		require.Empty(t, spendable)
-		require.Len(t, spent, 1)
-		require.Equal(t, vtxo.Txid, spent[0].Txid)
-		require.True(t, spent[0].Swept)
-		require.False(t, spent[0].Spent)
+		require.Len(t, spendable, 1)
+		require.Equal(t, vtxo.Txid, spendable[0].Txid)
+		require.True(t, spendable[0].Swept)
+		require.False(t, spendable[0].Spent)
 
-		// test fund recovery
+		wg.Add(1)
+		go func() {
+			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			wg.Done()
+		}()
+
+		// Test fund recovery
 		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos)
 		require.NoError(t, err)
 
-		// give some time for the server to process the recovery
-		time.Sleep(5 * time.Second)
+		wg.Wait()
+		require.NoError(t, incomingErr)
 
-		spendable, spent, err = alice.ListVtxos(ctx)
+		spendable, spent, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, spendable)
 		require.Len(t, spendable, 1)
