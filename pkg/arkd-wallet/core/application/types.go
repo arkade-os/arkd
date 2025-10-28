@@ -57,6 +57,7 @@ type BlockchainScanner interface {
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blockHeight, blockTime int64, err error)
 	GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
+	RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error
 	Close()
 }
 

@@ -641,6 +641,46 @@
         }
       }
     },
+    "/v1/wallet/rescan-utxos": {
+      "post": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_RescanUtxos",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RescanUtxosRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescanUtxosResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/wallet/restore": {
       "post": {
         "tags": [
@@ -1606,6 +1646,22 @@
             }
           }
         }
+      },
+      "RescanUtxosRequest": {
+        "title": "RescanUtxosRequest",
+        "type": "object",
+        "properties": {
+          "outpoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RescanUtxosResponse": {
+        "title": "RescanUtxosResponse",
+        "type": "object"
       },
       "RestoreRequest": {
         "title": "RestoreRequest",
