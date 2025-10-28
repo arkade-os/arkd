@@ -3071,7 +3071,6 @@ func (s *service) validateBoardingInput(
 	ctx context.Context, vtxoKey domain.Outpoint, tapscripts txutils.TapTree,
 	now time.Time, locktime *arklib.RelativeLocktime, disabled bool,
 ) (*wire.MsgTx, error) {
-	// todo: generate address from tapscripts
 	vtxoScript, err := script.ParseVtxoScript(tapscripts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse vtxo taproot tree: %s", err)
