@@ -448,7 +448,9 @@ func (c *Config) Validate() error {
 		}
 	} else { // seconds
 		if c.SchedulerType != "gocron" {
-			return fmt.Errorf("scheduler type must be gocron if vtxo tree expiry is expressed in seconds")
+			return fmt.Errorf(
+				"scheduler type must be gocron if vtxo tree expiry is expressed in seconds",
+			)
 		}
 
 		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
@@ -461,15 +463,10 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Make sure the public unilateral exit delay type matches the internal one
 	if c.PublicUnilateralExitDelay.Type != c.UnilateralExitDelay.Type {
 		return fmt.Errorf(
 			"public unilateral exit delay and unilateral exit delay must have the same type",
-		)
-	}
-
-	if c.PublicUnilateralExitDelay.Value < c.UnilateralExitDelay.Value {
-		return fmt.Errorf(
-			"public unilateral exit delay must be greater than or equal to unilateral exit delay",
 		)
 	}
 
@@ -503,6 +500,14 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
+		c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
+		log.Infof(
+			"public unilateral exit delay must be a multiple of %d, rounded to %d",
+			minAllowedSequence, c.PublicUnilateralExitDelay,
+		)
+	}
+
 	if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
 		c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
 		log.Infof(
@@ -513,6 +518,12 @@ func (c *Config) Validate() error {
 
 	if c.UnilateralExitDelay == c.BoardingExitDelay {
 		return fmt.Errorf("unilateral exit delay and boarding exit delay must be different")
+	}
+
+	if c.PublicUnilateralExitDelay.Value < c.UnilateralExitDelay.Value {
+		return fmt.Errorf(
+			"public unilateral exit delay must be greater than or equal to unilateral exit delay",
+		)
 	}
 
 	if c.VtxoMinAmount == 0 {
