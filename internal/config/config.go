@@ -504,7 +504,7 @@ func (c *Config) Validate() error {
 		c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
 		log.Infof(
 			"public unilateral exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.PublicUnilateralExitDelay,
+			minAllowedSequence, c.PublicUnilateralExitDelay.Value,
 		)
 	}
 
