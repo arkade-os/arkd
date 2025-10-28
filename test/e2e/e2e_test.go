@@ -293,8 +293,9 @@ func TestUnilateralExit(t *testing.T) {
 		// Alice sends to Bob
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
+		var incomingErr error
 		go func() {
-			bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
+			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
 			wg.Done()
 		}()
 		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
@@ -302,7 +303,9 @@ func TestUnilateralExit(t *testing.T) {
 			Amount: 21000,
 		}})
 		require.NoError(t, err)
+
 		wg.Wait()
+		require.NoError(t, incomingErr)
 
 		bobBalance, err = bob.Balance(t.Context(), false)
 		require.NoError(t, err)
