@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -55,7 +54,7 @@ func TestMain(m *testing.M) {
 	}
 
 	err := setupArkd()
-	if err != nil && !errors.Is(err, ErrAlreadySetup) {
+	if err != nil {
 		log.Fatalf("error setting up server wallet and CLI: %s", err)
 	}
 	time.Sleep(1 * time.Second)
@@ -1051,6 +1050,8 @@ func TestOffchainTx(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	// In this test Alice sends many times to Bob who then sends all back to Alice in a single
+	// offchain tx composed by many checkpoint txs, as the number of the inputs of the ark tx
 	t.Run("send with multiple inputs", func(t *testing.T) {
 		const numInputs = 5
 		const amount = 2100
@@ -1095,7 +1096,9 @@ func TestOffchainTx(t *testing.T) {
 		require.NoError(t, incomingErr)
 	})
 
-	// In this test Alice sends to Bob a sub-dust VTXO
+	// In this test Alice sends to Bob a sub-dust VTXO. Bob can't spend or settle his VTXO.
+	// He must receive other offchain funds to be able to settle them into a non-sub-dust that
+	// can be spent
 	t.Run("sub dust", func(t *testing.T) {
 		alice := setupArkSDK(t)
 		bob := setupArkSDK(t)
@@ -1303,10 +1306,11 @@ func TestSweep(t *testing.T) {
 	})
 }
 
-// TestCollisionBetweenInRoundAndRedeemVtxo tests for a potential collision between VTXOs that could occur
-// due to a race condition between simultaneous Settle and SubmitRedeemTx calls. The race condition doesn't
-// consistently reproduce, making the test unreliable in automated test suites. Therefore, the test is skipped
-// by default and left here as documentation for future debugging and reference.
+// TestCollisionBetweenInRoundAndRedeemVtxo tests for a potential collision between VTXOs that
+// could occur due to a race condition between simultaneous Settle and SubmitRedeemTx calls.
+// The race condition doesn't consistently reproduce, making the test unreliable in automated test
+// suites. Therefore, the test is skipped by default and left here as documentation for future
+// debugging and reference.
 func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 	t.Skip()
 
@@ -1363,11 +1367,12 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 
 }
 
+// TestSendToCLTVMultisigClosure shows how to send to an ark address that includes a closure locked
+// by an absolute delay (and therefore spendable offchain) and spend from it
 func TestSendToCLTVMultisigClosure(t *testing.T) {
 	ctx := context.Background()
 	indexerSvc := setupIndexer(t)
 	alice, grpcAlice := setupArkSDKWithTransport(t)
-	defer alice.Stop()
 	defer grpcAlice.Close()
 
 	bobPrivKey, err := btcec.NewPrivateKey()
@@ -1391,27 +1396,13 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	bobPubKey := bobPrivKey.PubKey()
 
 	// Fund Alice's account
-	_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
+	_, offchainAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
 	aliceAddr, err := arklib.DecodeAddressV0(offchainAddr)
 	require.NoError(t, err)
 
-	faucetOnchain(t, boardingAddress, 0.00021)
-	time.Sleep(5 * time.Second)
-
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
-		require.NoError(t, err)
-		require.NotNil(t, vtxos)
-	}()
-	_, err = alice.Settle(ctx)
-	require.NoError(t, err)
-
-	wg.Wait()
+	faucetOffchain(t, alice, 0.00021)
 
 	const cltvBlocks = 10
 	const sendAmount = 10000
@@ -1419,6 +1410,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	currentHeight, err := getBlockHeight()
 	require.NoError(t, err)
 
+	// Craft Bob's address including the absolute-timelocked closure
 	vtxoScript := script.TapscriptsVtxoScript{
 		Closures: []script.Closure{
 			&script.CLTVMultisigClosure{
@@ -1460,12 +1452,13 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	bobAddrStr, err := bobAddr.EncodeV0()
 	require.NoError(t, err)
 
+	// Send to Bob's address
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
+	var incomingErr error
 	go func() {
-		defer wg.Done()
-		vtxos, err := alice.NotifyIncomingFunds(ctx, bobAddrStr)
-		require.NoError(t, err)
-		require.NotNil(t, vtxos)
+		_, incomingErr = alice.NotifyIncomingFunds(ctx, bobAddrStr)
+		wg.Done()
 	}()
 	txid, err := alice.SendOffChain(
 		ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
@@ -1474,11 +1467,13 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	require.NotEmpty(t, txid)
 
 	wg.Wait()
+	require.NoError(t, incomingErr)
 
 	spendable, _, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, spendable)
 
+	// Fetch the virtual transaction to extract the taproot tree
 	var virtualTx string
 	for _, vtxo := range spendable {
 		if vtxo.Txid == txid {
@@ -1518,12 +1513,13 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		tapscripts = append(tapscripts, hex.EncodeToString(script))
 	}
 
-	infos, err := grpcAlice.GetInfo(ctx)
+	serverParams, err := grpcAlice.GetInfo(ctx)
 	require.NoError(t, err)
 
-	checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+	checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
 	require.NoError(t, err)
 
+	// Build Bob's transaction spending the VTXO after the absolute locktime expired
 	ptx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
 			{
@@ -1555,6 +1551,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	encodedVirtualTx, err := ptx.B64Encode()
 	require.NoError(t, err)
 
+	// Sign the transaction
 	signedTx, err := bobWallet.SignTransaction(
 		ctx,
 		explorer,
@@ -1569,17 +1566,15 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		checkpoints = append(checkpoints, encoded)
 	}
 
-	// should fail because the tx is not yet valid
+	// Submit the tx before the locktime expired should fail
 	_, _, _, err = grpcAlice.SubmitTx(ctx, signedTx, checkpoints)
 	require.Error(t, err)
 
 	// Generate blocks to pass the timelock
-	for range cltvBlocks {
-		err = generateBlocks(1)
-		require.NoError(t, err)
-	}
+	err = generateBlocks(cltvBlocks)
+	require.NoError(t, err)
 
-	// should succeed now
+	// Should succeed now
 	txid, _, signedCheckpoints, err := grpcAlice.SubmitTx(ctx, signedTx, checkpoints)
 	require.NoError(t, err)
 
@@ -1594,11 +1589,12 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestSendToConditionMultisigClosure shows how to send an ark address that includes a closure
+// including a custom condition like the revealing of a preimage
 func TestSendToConditionMultisigClosure(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	indexerSvc := setupIndexer(t)
 	alice, grpcAlice := setupArkSDKWithTransport(t)
-	defer alice.Stop()
 	defer grpcAlice.Close()
 
 	bobPrivKey, err := btcec.NewPrivateKey()
@@ -1625,28 +1621,13 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	bobPubKey := bobPrivKey.PubKey()
 
 	// Fund Alice's account
-	_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
+	_, offchainAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
 	aliceAddr, err := arklib.DecodeAddressV0(offchainAddr)
 	require.NoError(t, err)
 
-	faucetOnchain(t, boardingAddress, 0.00021)
-	time.Sleep(5 * time.Second)
-
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
-		require.NoError(t, err)
-		require.NotNil(t, vtxos)
-	}()
-
-	_, err = alice.Settle(ctx)
-	require.NoError(t, err)
-
-	wg.Wait()
+	faucetOffchain(t, alice, 0.00021)
 
 	const sendAmount = 10000
 
@@ -1656,7 +1637,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 
 	sha256Hash := sha256.Sum256(preimage)
 
-	// script commiting to the preimage
+	// Craft Bob's address including the revealing of a preimage to spend the coins
 	conditionScript, err := txscript.NewScriptBuilder().
 		AddOp(txscript.OP_SHA256).
 		AddData(sha256Hash[:]).
@@ -1710,12 +1691,13 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	bobAddrStr, err := bobAddr.EncodeV0()
 	require.NoError(t, err)
 
+	// Send to Bob's address
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
+	var incomingErr error
 	go func() {
+		_, incomingErr = alice.NotifyIncomingFunds(ctx, bobAddrStr)
 		defer wg.Done()
-		vtxos, err := alice.NotifyIncomingFunds(ctx, bobAddrStr)
-		require.NoError(t, err)
-		require.NotNil(t, vtxos)
 	}()
 
 	txid, err := alice.SendOffChain(
@@ -1725,11 +1707,13 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	require.NotEmpty(t, txid)
 
 	wg.Wait()
+	require.NoError(t, incomingErr)
 
 	spendable, _, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, spendable)
 
+	// Fetch the virtual transaction to extract the taproot tree
 	var virtualTx string
 	for _, vtxo := range spendable {
 		if vtxo.Txid == txid {
@@ -1769,12 +1753,13 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		tapscripts = append(tapscripts, hex.EncodeToString(script))
 	}
 
-	infos, err := grpcAlice.GetInfo(ctx)
+	serverParams, err := grpcAlice.GetInfo(ctx)
 	require.NoError(t, err)
 
-	checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
+	checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
 	require.NoError(t, err)
 
+	// Build Bob's transaction spending the VTXO by revealing the preimage
 	arkPtx, checkpointsPtx, err := offchain.BuildTxs(
 		[]offchain.VtxoInput{
 			{
@@ -1803,7 +1788,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// add condition witness to the ark ptx
+	// Add condition witness to the ark tx that reveals the preimage
 	err = txutils.SetArkPsbtField(
 		arkPtx,
 		0,
@@ -1815,6 +1800,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	encodedVirtualTx, err := arkPtx.B64Encode()
 	require.NoError(t, err)
 
+	// Sign the transaction
 	signedTx, err := bobWallet.SignTransaction(
 		ctx,
 		explorer,
@@ -1829,6 +1815,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		checkpoints = append(checkpoints, encoded)
 	}
 
+	// Submit the transaction to the server and finalize
 	bobTxid, _, signedCheckpoints, err := grpcAlice.SubmitTx(ctx, signedTx, checkpoints)
 	require.NoError(t, err)
 
@@ -1857,6 +1844,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestDeleteIntent tests deleting an already registered intent
 func TestDeleteIntent(t *testing.T) {
 	ctx := t.Context()
 	alice := setupArkSDK(t)
@@ -2167,8 +2155,9 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NotEmpty(t, commitmentTxid)
 }
 
+// TestBan tests all supported ban scenarios
 func TestBan(t *testing.T) {
-	t.Run("Musig2NonceSubmission", func(t *testing.T) {
+	t.Run("failed to submit tree nonces", func(t *testing.T) {
 		alice, grpcAlice := setupArkSDKWithTransport(t)
 		defer alice.Stop()
 		defer grpcAlice.Close()
@@ -2244,7 +2233,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("Musig2SignatureSubmission", func(t *testing.T) {
+	t.Run("failed to submit tree signatures", func(t *testing.T) {
 		alice, grpcAlice := setupArkSDKWithTransport(t)
 		defer alice.Stop()
 		defer grpcAlice.Close()
@@ -2373,7 +2362,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("Musig2InvalidSignature", func(t *testing.T) {
+	t.Run("failed to submit valid tree sigantures", func(t *testing.T) {
 		alice, grpcAlice := setupArkSDKWithTransport(t)
 		defer alice.Stop()
 		defer grpcAlice.Close()
@@ -2498,7 +2487,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("ForfeitSubmission", func(t *testing.T) {
+	t.Run("failed to submit forfeit txs signatures", func(t *testing.T) {
 		alice, grpcAlice := setupArkSDKWithTransport(t)
 		defer alice.Stop()
 		defer grpcAlice.Close()
@@ -2643,7 +2632,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("ForfeitInvalidSignature", func(t *testing.T) {
+	t.Run("failed to submit valid forfeit txs signatures", func(t *testing.T) {
 		alice, grpcAlice := setupArkSDKWithTransport(t)
 		defer alice.Stop()
 		defer grpcAlice.Close()
@@ -2839,7 +2828,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("BoardingInputSubmission", func(t *testing.T) {
+	t.Run("failed to submit boarding inputs signatures", func(t *testing.T) {
 		alice, wallet, _, grpcAlice := setupArkSDKwithPublicKey(t)
 		defer alice.Stop()
 		defer grpcAlice.Close()
@@ -3016,5 +3005,3 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 	})
 }
-
-var ErrAlreadySetup = errors.New("already setup")
