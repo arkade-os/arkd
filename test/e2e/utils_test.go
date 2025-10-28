@@ -3,15 +3,12 @@ package e2e_test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os/exec"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,8 +16,6 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/script"
-	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	arksdk "github.com/arkade-os/go-sdk"
 	"github.com/arkade-os/go-sdk/client"
@@ -44,39 +39,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type arkBalance struct {
-	Offchain struct {
-		Total int `json:"total"`
-	} `json:"offchain_balance"`
-	Onchain struct {
-		Spendable int `json:"spendable_amount"`
-		Locked    []struct {
-			Amount      int    `json:"amount"`
-			SpendableAt string `json:"spendable_at"`
-		} `json:"locked_amount"`
-	} `json:"onchain_balance"`
-}
-
-type arkReceive struct {
-	Offchain string `json:"offchain_address"`
-	Boarding string `json:"boarding_address"`
-	Onchain  string `json:"onchain_address"`
-}
-
-func generateBlock() error {
-	_, err := runCommand("nigiri", "rpc", "--generate", "1")
-	return err
-}
+const adminUrl = "http://127.0.0.1:7071"
+const serverUrl = "127.0.0.1:7070"
 
 func generateBlocks(n int) error {
-	for i := 0; i < n; i++ {
-		err := generateBlock()
-		if err != nil {
-			return err
-		}
-		time.Sleep(1 * time.Second)
-	}
-	return nil
+	_, err := runCommand("nigiri", "rpc", "--generate", fmt.Sprintf("%d", n))
+	return err
 }
 func getBlockHeight() (uint32, error) {
 	out, err := runCommand("nigiri", "rpc", "getblockcount")
@@ -289,9 +257,42 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	return hex.EncodeToString(serializedTx.Bytes())
 }
 
-func setupArkSDK(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
-	alice, _, _, grpcAlice := setupArkSDKwithPublicKey(t)
-	return alice, grpcAlice
+func setupArkSDK(t *testing.T) arksdk.ArkClient {
+	appDataStore, err := store.NewStore(store.Config{
+		ConfigStoreType:  types.InMemoryStore,
+		AppDataStoreType: types.KVStore,
+	})
+	require.NoError(t, err)
+
+	client, err := arksdk.NewArkClient(appDataStore)
+	require.NoError(t, err)
+
+	privkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	privkeyHex := hex.EncodeToString(privkey.Serialize())
+
+	err = client.Init(t.Context(), arksdk.InitArgs{
+		WalletType:           arksdk.SingleKeyWallet,
+		ClientType:           arksdk.GrpcClient,
+		ServerUrl:            serverUrl,
+		Password:             password,
+		Seed:                 privkeyHex,
+		ExplorerPollInterval: 2 * time.Second,
+	})
+	require.NoError(t, err)
+
+	err = client.Unlock(t.Context(), password)
+	require.NoError(t, err)
+
+	return client
+}
+
+func setupArkSDKWithTransport(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
+	client := setupArkSDK(t)
+	transportClient, err := grpcclient.NewClient(serverUrl)
+	require.NoError(t, err)
+	return client, transportClient
 }
 
 func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
@@ -351,7 +352,7 @@ func setupArkSDKwithPublicKey(
 	err = client.InitWithWallet(context.Background(), arksdk.InitWithWalletArgs{
 		Wallet:     wallet,
 		ClientType: arksdk.GrpcClient,
-		ServerUrl:  "localhost:7070",
+		ServerUrl:  serverUrl,
 		Password:   password,
 		Seed:       privkeyHex,
 	})
@@ -360,19 +361,30 @@ func setupArkSDKwithPublicKey(
 	err = client.Unlock(context.Background(), password)
 	require.NoError(t, err)
 
-	grpcClient, err := grpcclient.NewClient("localhost:7070")
+	grpcClient, err := grpcclient.NewClient(serverUrl)
 	require.NoError(t, err)
 
 	return client, wallet, privkey.PubKey(), grpcClient
 }
 
 func setupIndexer(t *testing.T) indexer.Indexer {
-	svc, err := grpcindexer.NewClient("localhost:7070")
+	svc, err := grpcindexer.NewClient(serverUrl)
 	require.NoError(t, err)
 	return svc
 }
 
-func generateNote(t *testing.T, amount uint32) string {
+func faucet(t *testing.T, client arksdk.ArkClient, amount float64) {
+	// Faucet offchain with note
+	faucetOffchain(t, client, amount)
+
+	onchainAddr, _, _, err := client.Receive(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, onchainAddr)
+	// Faucet onchain addr to cover network fees for the unroll.
+	faucetOnchain(t, onchainAddr, 0.00001)
+}
+
+func generateNote(t *testing.T, amount uint64) string {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
@@ -400,351 +412,37 @@ func generateNote(t *testing.T, amount uint32) string {
 	return noteResp.Notes[0]
 }
 
-func faucetOnchainAddress(t *testing.T, address string) error {
-	_, err := runCommand("nigiri", "faucet", address, "0.0002")
+func faucetOnchain(t *testing.T, address string, amount float64) {
+	_, err := runCommand("nigiri", "faucet", address, fmt.Sprintf("%.8f", amount))
 	require.NoError(t, err)
-	return nil
 }
 
-func faucetOffchainAddress(t *testing.T, address string) (types.Vtxo, error) {
-	client, _ := setupArkSDK(t)
-
-	ctx := context.Background()
-	_, offchainAddr, boardingAddr, err := client.Receive(ctx)
+func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types.Vtxo {
+	_, offchainAddr, _, err := client.Receive(t.Context())
 	require.NoError(t, err)
+	require.NotEmpty(t, offchainAddr)
 
-	_, err = runCommand("nigiri", "faucet", boardingAddr, "0.0002")
-	require.NoError(t, err)
+	note := generateNote(t, uint64(amount*1e8))
 
-	time.Sleep(5 * time.Second)
-
-	go func() {
-		_, err := client.Settle(ctx)
-		require.NoError(t, err)
-	}()
-
-	vtxos, err := client.NotifyIncomingFunds(ctx, offchainAddr)
-	require.NoError(t, err)
-	require.NotEmpty(t, vtxos)
-	require.Len(t, vtxos, 1)
-
-	wg := sync.WaitGroup{}
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
-
-	var receivedVtxo types.Vtxo
-
+	var incomingFunds []types.Vtxo
+	var incomingErr error
 	go func() {
-		defer wg.Done()
-		vtxos, err = client.NotifyIncomingFunds(ctx, address)
-		require.NoError(t, err)
-		receivedVtxo = vtxos[0]
+		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr)
+		wg.Done()
 	}()
 
-	_, err = client.SendOffChain(ctx, false, []types.Receiver{
-		{
-			To:     address,
-			Amount: vtxos[0].Amount,
-		},
-	})
+	txid, err := client.RedeemNotes(t.Context(), []string{note})
 	require.NoError(t, err)
+	require.NotEmpty(t, txid)
 
 	wg.Wait()
 
-	return receivedVtxo, nil
-}
+	require.NoError(t, incomingErr)
+	require.NotEmpty(t, incomingFunds)
 
-type delegateBatchEventsHandler struct {
-	intentId         string
-	signerSession    tree.SignerSession
-	partialForfeitTx string
-	delegatorWallet  wallet.WalletService
-	client           client.TransportClient
-	forfeitPubKey    *btcec.PublicKey
-	batchExpiry      arklib.RelativeLocktime
-
-	cacheBatchId string
-}
-
-func (h *delegateBatchEventsHandler) OnBatchStarted(
-	ctx context.Context, event client.BatchStartedEvent,
-) (bool, error) {
-	buf := sha256.Sum256([]byte(h.intentId))
-	hashedIntentId := hex.EncodeToString(buf[:])
-
-	for _, hash := range event.HashedIntentIds {
-		if hash == hashedIntentId {
-			if err := h.client.ConfirmRegistration(ctx, h.intentId); err != nil {
-				return false, err
-			}
-			h.cacheBatchId = event.Id
-			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
-			return false, nil
-		}
-	}
-
-	return true, nil
-}
-
-func (h *delegateBatchEventsHandler) OnBatchFinalized(
-	ctx context.Context, event client.BatchFinalizedEvent,
-) error {
-	return nil
-}
-
-func (h *delegateBatchEventsHandler) OnBatchFailed(
-	ctx context.Context, event client.BatchFailedEvent,
-) error {
-	if event.Id == h.cacheBatchId {
-		return fmt.Errorf("batch failed: %s", event.Reason)
-	}
-	return nil
-}
-
-func (h *delegateBatchEventsHandler) OnTreeTxEvent(
-	ctx context.Context, event client.TreeTxEvent,
-) error {
-	return nil
-}
-
-func (h *delegateBatchEventsHandler) OnTreeSignatureEvent(
-	ctx context.Context, event client.TreeSignatureEvent,
-) error {
-	return nil
-}
-
-func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
-	ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree,
-) (bool, error) {
-	myPubkey := h.signerSession.GetPublicKey()
-	if !slices.Contains(event.CosignersPubkeys, myPubkey) {
-		return true, nil
-	}
-
-	sweepClosure := script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.forfeitPubKey}},
-		Locktime:        h.batchExpiry,
-	}
-
-	script, err := sweepClosure.Script()
-	if err != nil {
-		return false, err
-	}
-
-	commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(event.UnsignedCommitmentTx), true)
-	if err != nil {
-		return false, err
-	}
-
-	batchOutput := commitmentTx.UnsignedTx.TxOut[0]
-	batchOutputAmount := batchOutput.Value
-
-	sweepTapLeaf := txscript.NewBaseTapLeaf(script)
-	sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
-	root := sweepTapTree.RootNode.TapHash()
-
-	generateAndSendNonces := func(session tree.SignerSession) error {
-		if err := session.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
-			return err
-		}
-
-		nonces, err := session.GetNonces()
-		if err != nil {
-			return err
-		}
-
-		return h.client.SubmitTreeNonces(ctx, event.Id, session.GetPublicKey(), nonces)
-	}
-
-	if err := generateAndSendNonces(h.signerSession); err != nil {
-		return false, err
-	}
-
-	return false, nil
-}
-
-func (h *delegateBatchEventsHandler) OnTreeNonces(
-	ctx context.Context,
-	event client.TreeNoncesEvent,
-) (bool, error) {
-	return false, nil
-}
-
-func (h *delegateBatchEventsHandler) OnTreeNoncesAggregated(
-	ctx context.Context,
-	event client.TreeNoncesAggregatedEvent,
-) (bool, error) {
-	h.signerSession.SetAggregatedNonces(event.Nonces)
-
-	sigs, err := h.signerSession.Sign()
-	if err != nil {
-		return false, err
-	}
-
-	err = h.client.SubmitTreeSignatures(
-		ctx,
-		event.Id,
-		h.signerSession.GetPublicKey(),
-		sigs,
-	)
-	return err == nil, err
-}
-
-func (h *delegateBatchEventsHandler) OnBatchFinalization(
-	ctx context.Context,
-	event client.BatchFinalizationEvent,
-	vtxoTree *tree.TxTree,
-	connectorTree *tree.TxTree,
-) error {
-	forfeitPtx, err := psbt.NewFromRawBytes(strings.NewReader(h.partialForfeitTx), true)
-	if err != nil {
-		return err
-	}
-
-	updater, err := psbt.NewUpdater(forfeitPtx)
-	if err != nil {
-		return err
-	}
-
-	// add the connector input to the forfeit tx
-	connectors := connectorTree.Leaves()
-	connector := connectors[0]
-	updater.Upsbt.UnsignedTx.TxIn = append(updater.Upsbt.UnsignedTx.TxIn, &wire.TxIn{
-		PreviousOutPoint: wire.OutPoint{
-			Hash:  connector.UnsignedTx.TxHash(),
-			Index: 0,
-		},
-		Sequence: wire.MaxTxInSequenceNum,
-	})
-	updater.Upsbt.Inputs = append(updater.Upsbt.Inputs, psbt.PInput{
-		WitnessUtxo: &wire.TxOut{
-			Value:    connector.UnsignedTx.TxOut[0].Value,
-			PkScript: connector.UnsignedTx.TxOut[0].PkScript,
-		},
-	})
-
-	if err := updater.AddInSighashType(txscript.SigHashDefault, 0); err != nil {
-		return err
-	}
-
-	encodedForfeitTx, err := updater.Upsbt.B64Encode()
-	if err != nil {
-		return err
-	}
-
-	// sign the forfeit tx
-	signedForfeitTx, err := h.delegatorWallet.SignTransaction(
-		context.Background(),
-		nil,
-		encodedForfeitTx,
-	)
-	if err != nil {
-		return err
-	}
-
-	return h.client.SubmitSignedForfeitTxs(
-		ctx, []string{signedForfeitTx}, "",
-	)
-}
-
-type customBatchEventsHandler struct {
-	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, error)
-	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) error
-	onBatchFinalized       func(ctx context.Context, event client.BatchFinalizedEvent) error
-	onBatchFailed          func(ctx context.Context, event client.BatchFailedEvent) error
-	onTreeTxEvent          func(ctx context.Context, event client.TreeTxEvent) error
-	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
-	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
-	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error)
-}
-
-func (h *customBatchEventsHandler) OnBatchStarted(
-	ctx context.Context,
-	event client.BatchStartedEvent,
-) (bool, error) {
-	if h.onBatchStarted != nil {
-		return h.onBatchStarted(ctx, event)
-	}
-	return false, nil
-}
-
-func (h *customBatchEventsHandler) OnBatchFinalization(
-	ctx context.Context,
-	event client.BatchFinalizationEvent,
-	vtxoTree *tree.TxTree,
-	connectorTree *tree.TxTree,
-) error {
-	if h.onBatchFinalization != nil {
-		return h.onBatchFinalization(ctx, event, vtxoTree, connectorTree)
-	}
-	return nil
-}
-
-func (h *customBatchEventsHandler) OnBatchFinalized(
-	ctx context.Context,
-	event client.BatchFinalizedEvent,
-) error {
-	if h.onBatchFinalized != nil {
-		return h.onBatchFinalized(ctx, event)
-	}
-	return nil
-}
-
-func (h *customBatchEventsHandler) OnBatchFailed(
-	ctx context.Context,
-	event client.BatchFailedEvent,
-) error {
-	if h.onBatchFailed != nil {
-		return h.onBatchFailed(ctx, event)
-	}
-	return errors.New(event.Reason)
-}
-
-func (h *customBatchEventsHandler) OnTreeTxEvent(
-	ctx context.Context,
-	event client.TreeTxEvent,
-) error {
-	if h.onTreeTxEvent != nil {
-		return h.onTreeTxEvent(ctx, event)
-	}
-	return nil
-}
-
-func (h *customBatchEventsHandler) OnTreeSignatureEvent(
-	ctx context.Context,
-	event client.TreeSignatureEvent,
-) error {
-	if h.onTreeSignatureEvent != nil {
-		return h.onTreeSignatureEvent(ctx, event)
-	}
-	return nil
-}
-
-func (h *customBatchEventsHandler) OnTreeSigningStarted(
-	ctx context.Context,
-	event client.TreeSigningStartedEvent,
-	vtxoTree *tree.TxTree,
-) (bool, error) {
-	if h.onTreeSigningStarted != nil {
-		return h.onTreeSigningStarted(ctx, event, vtxoTree)
-	}
-	return false, nil
-}
-
-func (h *customBatchEventsHandler) OnTreeNoncesAggregated(
-	ctx context.Context,
-	event client.TreeNoncesAggregatedEvent,
-) (bool, error) {
-	if h.onTreeNoncesAggregated != nil {
-		return h.onTreeNoncesAggregated(ctx, event)
-	}
-	return false, nil
-}
-
-func (h *customBatchEventsHandler) OnTreeNonces(
-	ctx context.Context,
-	event client.TreeNoncesEvent,
-) (bool, error) {
-	return false, nil
+	return incomingFunds[0]
 }
 
 func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
@@ -758,4 +456,142 @@ func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
 		Type:  arklib.LocktimeTypeBlock,
 		Value: batchExpiry,
 	}
+}
+
+func setupArkd() error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/wallet/status", adminUrl)
+	status, err := get[statusResp](adminHttpClient, url, "status")
+	if err != nil {
+		return err
+	}
+
+	if status.Initialized && !status.Unlocked {
+		url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
+		body := fmt.Sprintf(`{"password": "%s"}`, password)
+		if err := post(adminHttpClient, url, body, "unlock"); err != nil {
+			return err
+		}
+
+		if err := waitUntilReady(adminHttpClient); err != nil {
+			return err
+		}
+
+		return refill(adminHttpClient)
+	}
+
+	if status.Initialized && status.Unlocked && status.Synced {
+		return refill(adminHttpClient)
+	}
+
+	seed, err := get[seedResp](adminHttpClient, url, "seed")
+	if err != nil {
+		return err
+	}
+
+	url = fmt.Sprintf("%s/v1/admin/wallet/create", adminUrl)
+	body := fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, password)
+	if err := post(adminHttpClient, url, body, "create"); err != nil {
+		return err
+	}
+
+	url = fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
+	body = fmt.Sprintf(`{"password": "%s"}`, password)
+	if err := post(adminHttpClient, url, body, "unlock"); err != nil {
+		return err
+	}
+
+	if err := waitUntilReady(adminHttpClient); err != nil {
+		return err
+	}
+
+	return refill(adminHttpClient)
+}
+
+type statusResp struct {
+	Initialized bool `json:"initialized"`
+	Unlocked    bool `json:"unlocked"`
+	Synced      bool `json:"synced"`
+}
+type seedResp struct {
+	Seed string `json:"seed"`
+}
+type addressResp struct {
+	Address string `json:"address"`
+}
+type balanceResp struct {
+	MainAccount struct {
+		Available float64 `json:"available,string"`
+	} `json:"mainAccount"`
+}
+
+func get[T any](httpClient *http.Client, url, name string) (*T, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare %s request: %s", name, err)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get %s: %s", name, err)
+	}
+	var data T
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("failed to parse %s response: %s", name, err)
+	}
+	return &data, nil
+}
+
+func post(httpClient *http.Client, url, body, name string) error {
+	req, err := http.NewRequest("POST", url, bytes.NewReader([]byte(body)))
+	if err != nil {
+		return fmt.Errorf("failed to prepare %s request: %s", name, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if _, err := httpClient.Do(req); err != nil {
+		return fmt.Errorf("failed to %s wallet: %s", name, err)
+	}
+	return nil
+}
+
+func waitUntilReady(httpClient *http.Client) error {
+	ticker := time.NewTicker(2 * time.Second)
+	url := fmt.Sprintf("%s/v1/admin/wallet/status", adminUrl)
+	for range ticker.C {
+		status, err := get[statusResp](httpClient, url, "status")
+		if err != nil {
+			return err
+		}
+
+		if status.Initialized && status.Unlocked && status.Synced {
+			ticker.Stop()
+			break
+		}
+	}
+	return nil
+}
+
+func refill(httpClient *http.Client) error {
+	url := fmt.Sprintf("%s/v1/admin/wallet/balance", adminUrl)
+	balance, err := get[balanceResp](httpClient, url, "balance")
+	if err != nil {
+		return err
+	}
+
+	if delta := 15 - balance.MainAccount.Available; delta > 0 {
+		url = fmt.Sprintf("%s/v1/admin/wallet/address", adminUrl)
+		address, err := get[addressResp](httpClient, url, "address")
+		if err != nil {
+			return err
+		}
+
+		for range int(delta) {
+			if _, err := runCommand("nigiri", "faucet", address.Address); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
