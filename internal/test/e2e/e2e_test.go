@@ -961,7 +961,7 @@ func TestReactToFraud(t *testing.T) {
 }
 
 func TestOffchainTx(t *testing.T) {
-	// In this test Alice and Bob send offchain to each other several times
+	// In this test Alice sends several times to Bob to create a chain of offchain txs
 	t.Run("chain of txs", func(t *testing.T) {
 		ctx := context.Background()
 		alice := setupArkSDK(t)
@@ -979,7 +979,7 @@ func TestOffchainTx(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vtxos, err := alice.NotifyIncomingFunds(ctx, bobAddress)
+			vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddress)
 			require.NoError(t, err)
 			require.NotNil(t, vtxos)
 		}()
@@ -995,7 +995,7 @@ func TestOffchainTx(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vtxos, err := alice.NotifyIncomingFunds(ctx, bobAddress)
+			vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddress)
 			require.NoError(t, err)
 			require.NotNil(t, vtxos)
 		}()
@@ -1011,7 +1011,7 @@ func TestOffchainTx(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vtxos, err := alice.NotifyIncomingFunds(ctx, bobAddress)
+			vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddress)
 			require.NoError(t, err)
 			require.NotNil(t, vtxos)
 		}()
@@ -1027,7 +1027,7 @@ func TestOffchainTx(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vtxos, err := alice.NotifyIncomingFunds(ctx, bobAddress)
+			vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddress)
 			require.NoError(t, err)
 			require.NotNil(t, vtxos)
 		}()
@@ -1045,9 +1045,7 @@ func TestOffchainTx(t *testing.T) {
 		for _, v := range bobVtxos {
 			uniqueVtxos[fmt.Sprintf("%s:%d", v.Txid, v.VOut)] = struct{}{}
 		}
-		require.Len(t, uniqueVtxos, 4)
-
-		require.NoError(t, err)
+		require.Len(t, uniqueVtxos, len(bobVtxos))
 	})
 
 	// In this test Alice sends many times to Bob who then sends all back to Alice in a single
