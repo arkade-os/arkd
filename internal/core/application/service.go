@@ -1284,8 +1284,8 @@ func (s *service) RegisterIntent(
 				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: int(outpoint.Index)})
 		}
 
-		// Only in case the vtxo is a note we skip the validation of its script and the csv delay.
-		if !vtxo.IsNote() {
+		// validation is required only in case the vtxo can be unrolled = requires a forfeit transaction
+		if vtxo.RequiresForfeit() {
 			vtxoTapKey, err := vtxo.TapKey()
 			if err != nil {
 				return "", errors.INTERNAL_ERROR.New("failed to get taproot key: %w", err).
