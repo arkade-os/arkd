@@ -1256,6 +1256,12 @@ func TestParseVtxoScript(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, fixture.TaprootKey, hex.EncodeToString(schnorr.SerializePubKey(tapkey)))
 
+			for _, closure := range allClosures {
+				scriptBytes, err := closure.Script()
+				require.NoError(t, err)
+				require.Contains(t, fixture.Scripts, hex.EncodeToString(scriptBytes))
+			}
+
 			smallestExitDelay, err := vtxoScript.SmallestExitDelay()
 			require.NoError(t, err)
 			require.NotNil(t, smallestExitDelay)
