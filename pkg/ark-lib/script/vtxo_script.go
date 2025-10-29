@@ -132,8 +132,14 @@ func (v *TapscriptsVtxoScript) Validate(
 	}
 
 	for _, closure := range v.ExitClosures() {
-		c := closure.(*CSVMultisigClosure)
-		if !blockTypeAllowed && c.Locktime.Type == arklib.LocktimeTypeBlock {
+		var locktime arklib.RelativeLocktime
+		switch c := closure.(type) {
+		case *CSVMultisigClosure:
+			locktime = c.Locktime
+		case *ConditionCSVMultisigClosure:
+			locktime = c.Locktime
+		}
+		if !blockTypeAllowed && locktime.Type == arklib.LocktimeTypeBlock {
 			return fmt.Errorf("invalid exit closure, CSV block type not allowed")
 		}
 	}
