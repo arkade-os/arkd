@@ -102,6 +102,9 @@ ON CONFLICT (id) DO UPDATE SET
     round_max_participants = EXCLUDED.round_max_participants,
     updated_at = EXCLUDED.updated_at;
 
+-- name: ClearScheduledSession :exec
+DELETE FROM scheduled_session;
+
 -- name: UpdateVtxoIntentId :exec
 UPDATE vtxo SET intent_id = @intent_id WHERE txid = @txid AND vout = @vout;
 

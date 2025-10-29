@@ -132,10 +132,13 @@ var (
 		Action: roundsInTimeRangeAction,
 	}
 	scheduledSessionCmd = &cli.Command{
-		Name:        "scheduled-session",
-		Usage:       "Get or update the scheduled session configuration",
-		Subcommands: cli.Commands{updateScheduledSessionCmd},
-		Action:      getScheduledSessionAction,
+		Name:  "scheduled-session",
+		Usage: "Get or update the scheduled session configuration",
+		Subcommands: cli.Commands{
+			updateScheduledSessionCmd,
+			clearScheduledSessionCmd,
+		},
+		Action: getScheduledSessionAction,
 	}
 	updateScheduledSessionCmd = &cli.Command{
 		Name:  "update",
@@ -146,6 +149,11 @@ var (
 			scheduledSessionRoundMinParticipantsCountFlag, scheduledSessionRoundMaxParticipantsCountFlag,
 		},
 		Action: updateScheduledSessionAction,
+	}
+	clearScheduledSessionCmd = &cli.Command{
+		Name:   "clear",
+		Usage:  "Clear the scheduled session configuration",
+		Action: clearScheduledSessionAction,
 	}
 	revokeAuthCmd = &cli.Command{
 		Name:   "revoke-auth",
@@ -733,6 +741,22 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	}
 
 	fmt.Println("Successfully updated scheduled session config")
+	return nil
+}
+
+func clearScheduledSessionAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/scheduledSession/clear", baseURL)
+	if _, err := post[any](url, "", "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Println("Successfully cleared scheduled session config")
 	return nil
 }
 

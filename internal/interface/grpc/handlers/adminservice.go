@@ -208,6 +208,16 @@ func (a *adminHandler) UpdateScheduledSessionConfig(
 	return &arkv1.UpdateScheduledSessionConfigResponse{}, nil
 }
 
+func (a *adminHandler) ClearScheduledSessionConfig(
+	ctx context.Context, req *arkv1.ClearScheduledSessionConfigRequest,
+) (*arkv1.ClearScheduledSessionConfigResponse, error) {
+	if err := a.adminService.ClearScheduledSessionConfig(ctx); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &arkv1.ClearScheduledSessionConfigResponse{}, nil
+}
+
 func (a *adminHandler) ListIntents(
 	ctx context.Context, req *arkv1.ListIntentsRequest,
 ) (*arkv1.ListIntentsResponse, error) {
