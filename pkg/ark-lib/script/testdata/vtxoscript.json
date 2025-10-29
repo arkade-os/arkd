@@ -14,7 +14,8 @@
         "smallestExitDelay": {
             "type": 0,
             "value": 512
-        }
+        },
+        "serverKey": "0256f810de93e500e745b7dabfcb2b798b216a70a99de7edee79bf1791379bf62d"
     },
     {
         "name": "vtxoScript from even number of tapscripts",
@@ -30,7 +31,8 @@
         "smallestExitDelay": {
             "type": 0,
             "value": 512
-        }
+        },
+        "serverKey": "0256f810de93e500e745b7dabfcb2b798b216a70a99de7edee79bf1791379bf62d"
     },
     {
         "name": "vtxoScript with condition CSV multisig closure",
@@ -42,7 +44,8 @@
         "smallestExitDelay": {
             "type": 0,
             "value": 1024
-        }
+        },
+        "serverKey": "0208c65c69fb2bb155d81f914de7b0319a01f3ce89eaad8e212efaf835c58010a3"
     },
     {
         "name": "vtxoScript with block exit delay",
@@ -55,6 +58,7 @@
         "smallestExitDelay": {
             "type": 1,
             "value": 1
-        }
+        },
+        "serverKey": "02f97c6a02e7a3055cdb27afb51220efa99d93957a7218da17c665f183696da025"
     }
 ]

@@ -1250,7 +1250,6 @@ func TestParseVtxoScript(t *testing.T) {
 			require.NoError(t, err)
 
 			allClosures := append(vtxoScript.ExitClosures(), vtxoScript.ForfeitClosures()...)
-
 			require.Len(t, allClosures, len(fixture.Scripts))
 
 			tapkey, _, err := vtxoScript.TapTree()
@@ -1271,11 +1270,34 @@ func TestParseVtxoScript(t *testing.T) {
 	}
 }
 
+func TestTapscriptsVtxoScript(t *testing.T) {
+	for _, fixture := range parseVtxoScriptFixtures(t) {
+		t.Run(fixture.Name, func(t *testing.T) {
+			vtxoScript := &script.TapscriptsVtxoScript{}
+			err := vtxoScript.Decode(fixture.Scripts)
+			require.NoError(t, err)
+
+			buf, err := hex.DecodeString(fixture.ServerKey)
+			require.NoError(t, err)
+			serverKey, err := btcec.ParsePubKey(buf)
+			require.NoError(t, err)
+			err = vtxoScript.Validate(serverKey, fixture.SmallestExitDelay, true)
+			require.NoError(t, err)
+
+			scripts, err := vtxoScript.Encode()
+			require.NoError(t, err)
+			require.Len(t, scripts, len(fixture.Scripts))
+			require.ElementsMatch(t, fixture.Scripts, scripts)
+		})
+	}
+}
+
 type vtxoScriptFixtures struct {
 	Name              string                  `json:"name"`
 	Scripts           []string                `json:"scripts"`
 	TaprootKey        string                  `json:"taprootKey"`
 	SmallestExitDelay arklib.RelativeLocktime `json:"smallestExitDelay"`
+	ServerKey         string                  `json:"serverKey"`
 }
 
 func parseVtxoScriptFixtures(t *testing.T) []vtxoScriptFixtures {
