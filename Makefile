@@ -44,7 +44,7 @@ help:
 ## intergrationtest: runs integration tests
 integrationtest:
 	@echo "Running integration tests..."
-	@go test -v -count 1 -timeout 800s github.com/arkade-os/arkd/test/e2e
+	@go test -v -count 1 -timeout 800s github.com/arkade-os/arkd/internal/test/e2e
 
 ## lint: lint codebase
 lint:
@@ -69,7 +69,7 @@ test: pgtest redis-up
 	@sleep 2
 	@echo "Running unit tests..."
 	@failed=0; \
-	go test -v -count=1 -race ./internal/... || failed=1; \
+	go test -v -count=1 -race $(shell go list ./internal/... | grep -v '/internal/test') || failed=1; \
 	find ./pkg -name go.mod -execdir go test -v ./... \; || failed=1; \
 	$(MAKE) droppgtest && $(MAKE) redis-down; \
 	exit $$failed
