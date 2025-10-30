@@ -630,13 +630,13 @@ func (s *service) SubmitOffchainTx(
 		// smallest exit delay as the minimum allowed exit delay in validation: making the CSV
 		// check always successful.
 		if time.Unix(vtxo.CreatedAt, 0).Before(s.vtxoNoCsvValidationCutoffTime) {
-			smalletExitDelay, err := vtxoScript.SmallestExitDelay()
+			smallestExitDelay, err := vtxoScript.SmallestExitDelay()
 			if err != nil {
 				return nil, "", "", errors.INVALID_VTXO_SCRIPT.New(
 					"failed to get smallest exit delay: %w", err,
 				).WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
 			}
-			minAllowedExitDelay = *smalletExitDelay
+			minAllowedExitDelay = *smallestExitDelay
 		}
 
 		if err := vtxoScript.Validate(
