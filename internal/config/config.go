@@ -92,6 +92,8 @@ type Config struct {
 	AllowCSVBlockType         bool
 	HeartbeatInterval         int64
 
+	VtxoNoCsvValidationCutoffDate int64
+
 	ScheduledSessionStartTime                 int64
 	ScheduledSessionEndTime                   int64
 	ScheduledSessionPeriod                    int64
@@ -193,6 +195,8 @@ var (
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	// Skip CSV validation for vtxos created before this date
+	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -220,12 +224,13 @@ var (
 	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
 	defaultAllowCSVBlockType   = false
 
-	defaultRoundMaxParticipantsCount = 128
-	defaultRoundMinParticipantsCount = 1
-	defaultOtelPushInterval          = 10 // seconds
-	defaultHeartbeatInterval         = 60 // seconds
-	defaultRoundReportServiceEnabled = false
-	defaultSettlementMinExpiryGap    = 0 // disabled by default
+	defaultRoundMaxParticipantsCount     = 128
+	defaultRoundMinParticipantsCount     = 1
+	defaultOtelPushInterval              = 10 // seconds
+	defaultHeartbeatInterval             = 60 // seconds
+	defaultRoundReportServiceEnabled     = false
+	defaultSettlementMinExpiryGap        = 0 // disabled by default
+	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 )
 
 func LoadConfig() (*Config, error) {
@@ -264,6 +269,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
+	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -360,15 +366,16 @@ func LoadConfig() (*Config, error) {
 		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
 		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
 
-		RoundMaxParticipantsCount: viper.GetInt64(RoundMaxParticipantsCount),
-		RoundMinParticipantsCount: viper.GetInt64(RoundMinParticipantsCount),
-		UtxoMaxAmount:             viper.GetInt64(UtxoMaxAmount),
-		UtxoMinAmount:             viper.GetInt64(UtxoMinAmount),
-		VtxoMaxAmount:             viper.GetInt64(VtxoMaxAmount),
-		VtxoMinAmount:             viper.GetInt64(VtxoMinAmount),
-		AllowCSVBlockType:         allowCSVBlockType,
-		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
-		SettlementMinExpiryGap:    viper.GetInt64(SettlementMinExpiryGap),
+		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
+		RoundMinParticipantsCount:     viper.GetInt64(RoundMinParticipantsCount),
+		UtxoMaxAmount:                 viper.GetInt64(UtxoMaxAmount),
+		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
+		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
+		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
+		AllowCSVBlockType:             allowCSVBlockType,
+		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
+		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
+		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 	}, nil
 }
 
@@ -789,6 +796,7 @@ func (c *Config) appService() error {
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
+		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
 	)
 	if err != nil {
 		return err

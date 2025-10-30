@@ -67,6 +67,9 @@ type service struct {
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 
+	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
+	vtxoNoCsvValidationCutoffTime time.Time
+
 	settlementMinExpiryGap time.Duration
 
 	// TODO: derive the key pair used for the musig2 signing session from wallet.
@@ -104,6 +107,7 @@ func NewService(
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
+	vtxoNoCsvValidationCutoffTime time.Time,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -203,26 +207,27 @@ func NewService(
 		sweeper: newSweeper(
 			wallet, repoManager, builder, scheduler, noteUriPrefix,
 		),
-		boardingExitDelay:         boardingExitDelay,
-		operatorPrvkey:            operatorSigningKey,
-		operatorPubkey:            operatorSigningKey.PubKey(),
-		forfeitsBoardingSigsChan:  make(chan struct{}, 1),
-		roundMinParticipantsCount: roundMinParticipantsCount,
-		roundMaxParticipantsCount: roundMaxParticipantsCount,
-		utxoMaxAmount:             utxoMaxAmount,
-		utxoMinAmount:             utxoMinAmount,
-		vtxoMaxAmount:             vtxoMaxAmount,
-		vtxoMinSettlementAmount:   vtxoMinSettlementAmount,
-		vtxoMinOffchainTxAmount:   vtxoMinOffchainTxAmount,
-		eventsCh:                  make(chan []domain.Event, 64),
-		transactionEventsCh:       make(chan TransactionEvent, 64),
-		indexerTxEventsCh:         make(chan TransactionEvent, 64),
-		stop:                      cancel,
-		ctx:                       ctx,
-		wg:                        &sync.WaitGroup{},
-		checkpointTapscript:       checkpointTapscript,
-		roundReportSvc:            roundReportSvc,
-		settlementMinExpiryGap:    time.Duration(settlementMinExpiryGap) * time.Second,
+		boardingExitDelay:             boardingExitDelay,
+		operatorPrvkey:                operatorSigningKey,
+		operatorPubkey:                operatorSigningKey.PubKey(),
+		forfeitsBoardingSigsChan:      make(chan struct{}, 1),
+		roundMinParticipantsCount:     roundMinParticipantsCount,
+		roundMaxParticipantsCount:     roundMaxParticipantsCount,
+		utxoMaxAmount:                 utxoMaxAmount,
+		utxoMinAmount:                 utxoMinAmount,
+		vtxoMaxAmount:                 vtxoMaxAmount,
+		vtxoMinSettlementAmount:       vtxoMinSettlementAmount,
+		vtxoMinOffchainTxAmount:       vtxoMinOffchainTxAmount,
+		eventsCh:                      make(chan []domain.Event, 64),
+		transactionEventsCh:           make(chan TransactionEvent, 64),
+		indexerTxEventsCh:             make(chan TransactionEvent, 64),
+		stop:                          cancel,
+		ctx:                           ctx,
+		wg:                            &sync.WaitGroup{},
+		checkpointTapscript:           checkpointTapscript,
+		roundReportSvc:                roundReportSvc,
+		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
+		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -3235,17 +3240,26 @@ func (s *service) validateVtxoInput(
 			})
 	}
 
-	// validate the vtxo script
-	if err := vtxoScript.Validate(
-		s.signerPubkey, s.unilateralExitDelay, s.allowCSVBlockType,
-	); err != nil {
-		return errors.INVALID_VTXO_SCRIPT.New("invalid vtxo script: %w", err).
+	smallestExitDelay, err := vtxoScript.SmallestExitDelay()
+	if err != nil {
+		return errors.INVALID_VTXO_SCRIPT.New("failed to get smallest exit delay: %w", err).
 			WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
 	}
 
-	exitDelay, err := vtxoScript.SmallestExitDelay()
-	if err != nil {
-		return errors.INVALID_VTXO_SCRIPT.New("failed to get smallest exit delay: %w", err).
+	minAllowedExitDelay := s.unilateralExitDelay
+
+	// if the vtxo was created before the vtxoNoCsvValidationCutoffTime date, we use the smallest exit delay
+	// as the minimum allowed exit delay in validation: making the CSV check always successful.
+	if smallestExitDelay != nil &&
+		time.Unix(vtxoCreatedAt, 0).Before(s.vtxoNoCsvValidationCutoffTime) {
+		minAllowedExitDelay = *smallestExitDelay
+	}
+
+	// validate the vtxo script
+	if err := vtxoScript.Validate(
+		s.signerPubkey, minAllowedExitDelay, s.allowCSVBlockType,
+	); err != nil {
+		return errors.INVALID_VTXO_SCRIPT.New("invalid vtxo script: %w", err).
 			WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
 	}
 
@@ -3253,7 +3267,9 @@ func (s *service) validateVtxoInput(
 	// by shifitng the current "now" in the future of the duration of the smallest exit delay.
 	// This way, any exit order guaranteed by the exit path is maintained at intent registration
 	if !disabled {
-		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).Unix() - vtxoCreatedAt
+		delta := now.Add(time.Duration(smallestExitDelay.Seconds())*time.Second).
+			Unix() -
+			vtxoCreatedAt
 		if diff := locktime.Seconds() - delta; diff > 0 {
 			return errors.INVALID_VTXO_SCRIPT.New(
 				"vtxo script can be used for intent registration in %d seconds", diff,
