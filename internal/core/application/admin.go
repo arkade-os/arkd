@@ -33,6 +33,7 @@ type AdminService interface {
 		ctx context.Context, scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 		period, duration time.Duration, roundMinParticipantsCount, roundMaxParticipantsCount int64,
 	) error
+	ClearScheduledSessionConfig(ctx context.Context) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
 	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
@@ -304,6 +305,10 @@ func (s *adminService) UpdateScheduledSessionConfig(
 	}
 
 	return nil
+}
+
+func (s *adminService) ClearScheduledSessionConfig(ctx context.Context) error {
+	return s.repoManager.ScheduledSession().Clear(ctx)
 }
 
 func (s *adminService) ListIntents(

@@ -866,6 +866,17 @@ func testScheduledSessionRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.NotNil(t, got)
 		assertScheduledSessionEqual(t, expected, *got)
+
+		err = repo.Clear(ctx)
+		require.NoError(t, err)
+
+		scheduledSession, err = repo.Get(ctx)
+		require.NoError(t, err)
+		require.Nil(t, scheduledSession)
+
+		// No error if trying to clear already cleared scheduled session
+		err = repo.Clear(ctx)
+		require.NoError(t, err)
 	})
 }
 

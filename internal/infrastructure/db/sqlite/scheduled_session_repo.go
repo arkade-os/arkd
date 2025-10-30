@@ -67,6 +67,10 @@ func (r *scheduledSessionRepository) Upsert(
 	})
 }
 
+func (r *scheduledSessionRepository) Clear(ctx context.Context) error {
+	return r.querier.ClearScheduledSession(ctx)
+}
+
 func (r *scheduledSessionRepository) Close() {
 	_ = r.db.Close()
 }

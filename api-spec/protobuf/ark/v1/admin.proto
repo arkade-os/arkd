@@ -38,6 +38,12 @@ service AdminService {
       body: "*"
     };
   }
+  rpc ClearScheduledSessionConfig(ClearScheduledSessionConfigRequest) returns (ClearScheduledSessionConfigResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/scheduledSession/clear"
+      body: "*"
+    };
+  }
   rpc ListIntents(ListIntentsRequest) returns (ListIntentsResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/admin/intents"
@@ -138,6 +144,9 @@ message UpdateScheduledSessionConfigRequest {
   ScheduledSessionConfig config = 1;
 }
 message UpdateScheduledSessionConfigResponse {}
+
+message ClearScheduledSessionConfigRequest {}
+message ClearScheduledSessionConfigResponse {}
 
 message ListIntentsRequest {
   repeated string intent_ids = 1;

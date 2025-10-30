@@ -25,6 +25,7 @@ const (
 	AdminService_CreateNote_FullMethodName                   = "/ark.v1.AdminService/CreateNote"
 	AdminService_GetScheduledSessionConfig_FullMethodName    = "/ark.v1.AdminService/GetScheduledSessionConfig"
 	AdminService_UpdateScheduledSessionConfig_FullMethodName = "/ark.v1.AdminService/UpdateScheduledSessionConfig"
+	AdminService_ClearScheduledSessionConfig_FullMethodName  = "/ark.v1.AdminService/ClearScheduledSessionConfig"
 	AdminService_ListIntents_FullMethodName                  = "/ark.v1.AdminService/ListIntents"
 	AdminService_DeleteIntents_FullMethodName                = "/ark.v1.AdminService/DeleteIntents"
 	AdminService_GetConvictions_FullMethodName               = "/ark.v1.AdminService/GetConvictions"
@@ -46,6 +47,7 @@ type AdminServiceClient interface {
 	CreateNote(ctx context.Context, in *CreateNoteRequest, opts ...grpc.CallOption) (*CreateNoteResponse, error)
 	GetScheduledSessionConfig(ctx context.Context, in *GetScheduledSessionConfigRequest, opts ...grpc.CallOption) (*GetScheduledSessionConfigResponse, error)
 	UpdateScheduledSessionConfig(ctx context.Context, in *UpdateScheduledSessionConfigRequest, opts ...grpc.CallOption) (*UpdateScheduledSessionConfigResponse, error)
+	ClearScheduledSessionConfig(ctx context.Context, in *ClearScheduledSessionConfigRequest, opts ...grpc.CallOption) (*ClearScheduledSessionConfigResponse, error)
 	ListIntents(ctx context.Context, in *ListIntentsRequest, opts ...grpc.CallOption) (*ListIntentsResponse, error)
 	DeleteIntents(ctx context.Context, in *DeleteIntentsRequest, opts ...grpc.CallOption) (*DeleteIntentsResponse, error)
 	GetConvictions(ctx context.Context, in *GetConvictionsRequest, opts ...grpc.CallOption) (*GetConvictionsResponse, error)
@@ -119,6 +121,16 @@ func (c *adminServiceClient) UpdateScheduledSessionConfig(ctx context.Context, i
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateScheduledSessionConfigResponse)
 	err := c.cc.Invoke(ctx, AdminService_UpdateScheduledSessionConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ClearScheduledSessionConfig(ctx context.Context, in *ClearScheduledSessionConfigRequest, opts ...grpc.CallOption) (*ClearScheduledSessionConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClearScheduledSessionConfigResponse)
+	err := c.cc.Invoke(ctx, AdminService_ClearScheduledSessionConfig_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -225,6 +237,7 @@ type AdminServiceServer interface {
 	CreateNote(context.Context, *CreateNoteRequest) (*CreateNoteResponse, error)
 	GetScheduledSessionConfig(context.Context, *GetScheduledSessionConfigRequest) (*GetScheduledSessionConfigResponse, error)
 	UpdateScheduledSessionConfig(context.Context, *UpdateScheduledSessionConfigRequest) (*UpdateScheduledSessionConfigResponse, error)
+	ClearScheduledSessionConfig(context.Context, *ClearScheduledSessionConfigRequest) (*ClearScheduledSessionConfigResponse, error)
 	ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error)
 	DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error)
 	GetConvictions(context.Context, *GetConvictionsRequest) (*GetConvictionsResponse, error)
@@ -260,6 +273,9 @@ func (UnimplementedAdminServiceServer) GetScheduledSessionConfig(context.Context
 }
 func (UnimplementedAdminServiceServer) UpdateScheduledSessionConfig(context.Context, *UpdateScheduledSessionConfigRequest) (*UpdateScheduledSessionConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateScheduledSessionConfig not implemented")
+}
+func (UnimplementedAdminServiceServer) ClearScheduledSessionConfig(context.Context, *ClearScheduledSessionConfigRequest) (*ClearScheduledSessionConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearScheduledSessionConfig not implemented")
 }
 func (UnimplementedAdminServiceServer) ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListIntents not implemented")
@@ -412,6 +428,24 @@ func _AdminService_UpdateScheduledSessionConfig_Handler(srv interface{}, ctx con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).UpdateScheduledSessionConfig(ctx, req.(*UpdateScheduledSessionConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ClearScheduledSessionConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClearScheduledSessionConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ClearScheduledSessionConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ClearScheduledSessionConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ClearScheduledSessionConfig(ctx, req.(*ClearScheduledSessionConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -608,6 +642,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateScheduledSessionConfig",
 			Handler:    _AdminService_UpdateScheduledSessionConfig_Handler,
+		},
+		{
+			MethodName: "ClearScheduledSessionConfig",
+			Handler:    _AdminService_ClearScheduledSessionConfig_Handler,
 		},
 		{
 			MethodName: "ListIntents",
