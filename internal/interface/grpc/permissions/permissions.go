@@ -294,6 +294,12 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 				Action: "write",
 			},
 		},
+		fmt.Sprintf("/%s/ClearScheduledSessionConfig", arkv1.AdminService_ServiceDesc.ServiceName): {
+			{
+				Entity: EntityManager,
+				Action: "write",
+			},
+		},
 		fmt.Sprintf("/%s/DeleteIntents", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "write",
