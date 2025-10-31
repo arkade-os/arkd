@@ -21,17 +21,20 @@ import (
 )
 
 var (
-	Port         = "PORT"
-	Datadir      = "DATADIR"
-	LogLevel     = "LOG_LEVEL"
-	Network      = "NETWORK"
-	NbxplorerURL = "NBXPLORER_URL"
-	SignerKey    = "SIGNER_KEY"
+	Port                  = "PORT"
+	Datadir               = "DATADIR"
+	LogLevel              = "LOG_LEVEL"
+	Network               = "NETWORK"
+	NbxplorerURL          = "NBXPLORER_URL"
+	SignerKey             = "SIGNER_KEY"
+	OtelCollectorEndpoint = "OTEL_COLLECTOR_ENDPOINT"
+	OtelPushInterval      = "OTEL_PUSH_INTERVAL"
 
-	defaultPort     = 6060
-	defaultLogLevel = int(log.InfoLevel)
-	defaultDatadir  = arklib.AppDataDir("arkd-wallet", false)
-	defaultNetwork  = "bitcoin"
+	defaultPort             = 6060
+	defaultLogLevel         = int(log.InfoLevel)
+	defaultDatadir          = arklib.AppDataDir("arkd-wallet", false)
+	defaultNetwork          = "bitcoin"
+	defaultOtelPushInterval = 10 // seconds
 )
 
 func LoadConfig() (*Config, error) {
@@ -42,6 +45,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(Datadir, defaultDatadir)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(Network, defaultNetwork)
+	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 
 	net, err := getNetwork()
 	if err != nil {
@@ -58,12 +62,14 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:         viper.GetUint32(Port),
-		DbDir:        dbPath,
-		LogLevel:     viper.GetInt(LogLevel),
-		Network:      net,
-		NbxplorerURL: viper.GetString(NbxplorerURL),
-		SignerKey:    viper.GetString(SignerKey),
+		Port:                  viper.GetUint32(Port),
+		DbDir:                 dbPath,
+		LogLevel:              viper.GetInt(LogLevel),
+		Network:               net,
+		NbxplorerURL:          viper.GetString(NbxplorerURL),
+		SignerKey:             viper.GetString(SignerKey),
+		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
+		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
 	}
 
 	if err := cfg.initServices(); err != nil {
@@ -74,12 +80,14 @@ func LoadConfig() (*Config, error) {
 }
 
 type Config struct {
-	Port         uint32
-	DbDir        string
-	LogLevel     int
-	Network      arklib.Network
-	NbxplorerURL string
-	SignerKey    string
+	Port                  uint32
+	DbDir                 string
+	LogLevel              int
+	Network               arklib.Network
+	NbxplorerURL          string
+	SignerKey             string
+	OtelCollectorEndpoint string
+	OtelPushInterval      int64
 
 	WalletSvc  application.WalletService
 	ScannerSvc application.BlockchainScanner
