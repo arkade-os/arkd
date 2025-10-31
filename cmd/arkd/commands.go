@@ -17,6 +17,12 @@ const ONE_BTC = float64(1_00_000_000)
 
 // commands
 var (
+	startCmd = &cli.Command{
+		Name:   "start",
+		Usage:  "Starts the arkd server",
+		Action: startAction,
+	}
+
 	walletCmd = &cli.Command{
 		Name:  "wallet",
 		Usage: "Manage the Ark Server wallet",
