@@ -258,7 +258,7 @@ func arkdWalletMetricName(name string) string {
 	for strings.HasPrefix(clean, "_") {
 		clean = clean[1:]
 	}
-	return "arkd_wallet" + clean
+	return "arkd_wallet_" + clean
 }
 
 func initArkdWalletRuntimeInstruments(m metric.Meter) (*arkdWalletInstruments, error) {
