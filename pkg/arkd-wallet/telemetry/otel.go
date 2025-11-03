@@ -186,11 +186,13 @@ func collectGoRuntimeMetrics(ctx context.Context) {
 							metric.WithAttributes(attribute.String("rt.name", rName)),
 						)
 					case metrics.KindFloat64:
-						obs.ObserveInt64(
-							inst.counters[rName],
-							int64(val.Float64()),
-							metric.WithAttributes(attribute.String("rt.name", rName)),
-						)
+						if ctr, ok := inst.floatCounters[rName]; ok {
+							obs.ObserveFloat64(
+								ctr,
+								val.Float64(),
+								metric.WithAttributes(attribute.String("rt.name", rName)),
+							)
+						}
 					}
 
 				case asGauge:
@@ -202,11 +204,13 @@ func collectGoRuntimeMetrics(ctx context.Context) {
 							metric.WithAttributes(attribute.String("rt.name", rName)),
 						)
 					case metrics.KindFloat64:
-						obs.ObserveInt64(
-							inst.gauges[rName],
-							int64(val.Float64()),
-							metric.WithAttributes(attribute.String("rt.name", rName)),
-						)
+						if gauge, ok := inst.floatGauges[rName]; ok {
+							obs.ObserveFloat64(
+								gauge,
+								val.Float64(),
+								metric.WithAttributes(attribute.String("rt.name", rName)),
+							)
+						}
 					}
 				}
 			}
@@ -259,41 +263,74 @@ func arkdWalletMetricName(name string) string {
 
 func initArkdWalletRuntimeInstruments(m metric.Meter) (*arkdWalletInstruments, error) {
 	inst := &arkdWalletInstruments{
-		counters: make(map[string]metric.Int64ObservableCounter),
-		gauges:   make(map[string]metric.Int64ObservableGauge),
+		counters:      make(map[string]metric.Int64ObservableCounter),
+		floatCounters: make(map[string]metric.Float64ObservableCounter),
+		gauges:        make(map[string]metric.Int64ObservableGauge),
+		floatGauges:   make(map[string]metric.Float64ObservableGauge),
 	}
-	for _, rName := range arkdWalletRuntimeMetrics {
+
+	samples := make([]metrics.Sample, 0, len(arkdWalletRuntimeMetrics))
+	for _, n := range arkdWalletRuntimeMetrics {
+		samples = append(samples, metrics.Sample{Name: n})
+	}
+	metrics.Read(samples)
+
+	for _, s := range samples {
+		rName := s.Name
 		mType := typeMap[rName]
 		mName := arkdWalletMetricName(rName)
 
 		switch mType {
 		case asCounter:
-			ctr, err := m.Int64ObservableCounter(
-				mName,
-				metric.WithDescription("runtime metric for "+rName),
-			)
-			if err != nil {
-				return nil, err
+			if s.Value.Kind() == metrics.KindFloat64 {
+				ctr, err := m.Float64ObservableCounter(
+					mName,
+					metric.WithDescription("runtime metric for "+rName),
+				)
+				if err != nil {
+					return nil, err
+				}
+				inst.floatCounters[rName] = ctr
+			} else {
+				ctr, err := m.Int64ObservableCounter(
+					mName,
+					metric.WithDescription("runtime metric for "+rName),
+				)
+				if err != nil {
+					return nil, err
+				}
+				inst.counters[rName] = ctr
 			}
-			inst.counters[rName] = ctr
-
 		case asGauge:
-			g, err := m.Int64ObservableGauge(
-				mName,
-				metric.WithDescription("runtime metric for "+rName),
-			)
-			if err != nil {
-				return nil, err
+			if s.Value.Kind() == metrics.KindFloat64 {
+				g, err := m.Float64ObservableGauge(
+					mName,
+					metric.WithDescription("runtime metric for "+rName),
+				)
+				if err != nil {
+					return nil, err
+				}
+				inst.floatGauges[rName] = g
+			} else {
+				g, err := m.Int64ObservableGauge(
+					mName,
+					metric.WithDescription("runtime metric for "+rName),
+				)
+				if err != nil {
+					return nil, err
+				}
+				inst.gauges[rName] = g
 			}
-			inst.gauges[rName] = g
 		}
 	}
 	return inst, nil
 }
 
 type arkdWalletInstruments struct {
-	counters map[string]metric.Int64ObservableCounter
-	gauges   map[string]metric.Int64ObservableGauge
+	counters      map[string]metric.Int64ObservableCounter
+	floatCounters map[string]metric.Float64ObservableCounter
+	gauges        map[string]metric.Int64ObservableGauge
+	floatGauges   map[string]metric.Float64ObservableGauge
 }
 
 func collectInstruments(inst *arkdWalletInstruments) []metric.Observable {
@@ -301,7 +338,13 @@ func collectInstruments(inst *arkdWalletInstruments) []metric.Observable {
 	for _, c := range inst.counters {
 		list = append(list, c)
 	}
+	for _, c := range inst.floatCounters {
+		list = append(list, c)
+	}
 	for _, g := range inst.gauges {
+		list = append(list, g)
+	}
+	for _, g := range inst.floatGauges {
 		list = append(list, g)
 	}
 	return list
