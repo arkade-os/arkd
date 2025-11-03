@@ -134,6 +134,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 			RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 			Preconfirmed:       true,
+			Swept:              script.IsSubDustScript(out.PkScript),
 			CreatedAt:          offchainTx.StartingTimestamp,
 		})
 	}
