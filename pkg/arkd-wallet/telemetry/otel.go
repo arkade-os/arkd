@@ -7,15 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/propagation"
-
-	"github.com/arkade-os/arkd/internal/core/application"
-
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	metricExport "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	traceExport "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/log/global"
@@ -28,7 +25,13 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.17.0"
 )
 
-var arkRuntimeMetrics = []string{
+const (
+	arkdWalletServiceName = "arkd_wallet"
+	arkdWalletMeterName   = "arkd_wallet.runtime"
+	arkdWalletServiceUp   = "arkd_wallet_service_up"
+)
+
+var arkdWalletRuntimeMetrics = []string{
 	//CPU time in user Go code (not GC or idle). Compare with GC CPU to see if GC is dominating.
 	"/cpu/classes/user:cpu-seconds",
 	//CPU time spent in garbage collection. Helps detect if GC overhead is large.
@@ -53,7 +56,6 @@ func InitOtelSDK(
 	ctx context.Context,
 	otelCollectorUrl string,
 	pushInterval time.Duration,
-	rrsvc application.RoundReportService,
 ) (func(context.Context) error, error) {
 	// TODO: support secure connection in the future
 	otelCollectorUrl = strings.TrimSuffix(otelCollectorUrl, "/")
@@ -71,7 +73,7 @@ func InitOtelSDK(
 
 	res := resource.NewWithAttributes(
 		semconv.SchemaURL,
-		semconv.ServiceName("arkd"),
+		semconv.ServiceName(arkdWalletServiceName),
 	)
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(traceExp),
@@ -118,20 +120,7 @@ func InitOtelSDK(
 
 	go collectGoRuntimeMetrics(context.Background())
 
-	var rrExporter *RoundReportLogExporter
-	if rrsvc != nil {
-		rrExporter, err = newRoundReportLogExporter(ctx, rrsvc)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	shutdown := func(ctx context.Context) error {
-		if rrExporter != nil {
-			if err := rrExporter.Close(ctx); err != nil {
-				return err
-			}
-		}
 		err3 := lp.Shutdown(ctx)
 		err1 := tp.Shutdown(ctx)
 		err2 := mp.Shutdown(ctx)
@@ -152,23 +141,23 @@ func InitOtelSDK(
 // collectGoRuntimeMetrics is the main function that sets up the OTEL callback
 // to read runtime/metrics and publish them as OTel metrics.
 func collectGoRuntimeMetrics(ctx context.Context) {
-	m := otel.Meter("arkd.runtime")
-	inst, err := initArkRuntimeInstruments(m)
+	m := otel.Meter(arkdWalletMeterName)
+	inst, err := initArkdWalletRuntimeInstruments(m)
 	if err != nil {
 		return
 	}
 
-	samples := make([]metrics.Sample, 0, len(arkRuntimeMetrics))
-	for _, n := range arkRuntimeMetrics {
+	samples := make([]metrics.Sample, 0, len(arkdWalletRuntimeMetrics))
+	for _, n := range arkdWalletRuntimeMetrics {
 		samples = append(samples, metrics.Sample{Name: n})
 	}
 
 	serviceUpGauge, err := m.Int64ObservableGauge(
-		"ark_service_up",
-		metric.WithDescription("1 if arkd service is up"),
+		arkdWalletServiceUp,
+		metric.WithDescription("1 if arkd_wallet service is up"),
 	)
 	if err != nil {
-		log.WithError(err).Error("failed to create ark_service_up gauge")
+		log.WithError(err).Error("failed to create arkd_wallet_service_up gauge")
 	}
 
 	instruments := collectInstruments(inst)
@@ -262,33 +251,26 @@ var typeMap = map[string]metricType{
 
 var mu sync.Mutex
 
-// arkMetricName converts e.g. "/cpu/classes/user:cpu-seconds" to "ark_cpu_classes_user_cpu-seconds"
-func arkMetricName(name string) string {
+// arkdWalletMetricName converts e.g. "/cpu/classes/user:cpu-seconds" to "arkd_wallet_cpu_classes_user_cpu-seconds"
+func arkdWalletMetricName(name string) string {
 	clean := strings.ReplaceAll(name, "/", "_")
 	clean = strings.ReplaceAll(clean, ":", "_")
 	for strings.HasPrefix(clean, "_") {
 		clean = clean[1:]
 	}
-	return "ark_" + clean
+	return "arkd_wallet_" + clean
 }
 
-type arkInstruments struct {
-	counters      map[string]metric.Int64ObservableCounter
-	floatCounters map[string]metric.Float64ObservableCounter
-	gauges        map[string]metric.Int64ObservableGauge
-	floatGauges   map[string]metric.Float64ObservableGauge
-}
-
-func initArkRuntimeInstruments(m metric.Meter) (*arkInstruments, error) {
-	inst := &arkInstruments{
+func initArkdWalletRuntimeInstruments(m metric.Meter) (*arkdWalletInstruments, error) {
+	inst := &arkdWalletInstruments{
 		counters:      make(map[string]metric.Int64ObservableCounter),
 		floatCounters: make(map[string]metric.Float64ObservableCounter),
 		gauges:        make(map[string]metric.Int64ObservableGauge),
 		floatGauges:   make(map[string]metric.Float64ObservableGauge),
 	}
 
-	samples := make([]metrics.Sample, 0, len(arkRuntimeMetrics))
-	for _, n := range arkRuntimeMetrics {
+	samples := make([]metrics.Sample, 0, len(arkdWalletRuntimeMetrics))
+	for _, n := range arkdWalletRuntimeMetrics {
 		samples = append(samples, metrics.Sample{Name: n})
 	}
 	metrics.Read(samples)
@@ -296,7 +278,7 @@ func initArkRuntimeInstruments(m metric.Meter) (*arkInstruments, error) {
 	for _, s := range samples {
 		rName := s.Name
 		mType := typeMap[rName]
-		mName := arkMetricName(rName)
+		mName := arkdWalletMetricName(rName)
 
 		switch mType {
 		case asCounter:
@@ -344,7 +326,14 @@ func initArkRuntimeInstruments(m metric.Meter) (*arkInstruments, error) {
 	return inst, nil
 }
 
-func collectInstruments(inst *arkInstruments) []metric.Observable {
+type arkdWalletInstruments struct {
+	counters      map[string]metric.Int64ObservableCounter
+	floatCounters map[string]metric.Float64ObservableCounter
+	gauges        map[string]metric.Int64ObservableGauge
+	floatGauges   map[string]metric.Float64ObservableGauge
+}
+
+func collectInstruments(inst *arkdWalletInstruments) []metric.Observable {
 	var list []metric.Observable
 	for _, c := range inst.counters {
 		list = append(list, c)
