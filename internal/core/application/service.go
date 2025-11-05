@@ -1237,10 +1237,8 @@ func (s *service) RegisterIntent(
 	if fees < expectedFees {
 		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d expected %d", fees, expectedFees).
 			WithMetadata(errors.IntentInsufficientFeeMetadata{
-				InputExpectedFees:  map[string]int{},
-				OutputExpectedFees: map[string]int{},
-				ExpectedFee:        int(expectedFees),
-				ActualFee:          int(fees),
+				ExpectedFee: int(expectedFees),
+				ActualFee:   int(fees),
 			})
 	}
 
@@ -1744,12 +1742,8 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		Fees: FeeInfo{
 			IntentFees: IntentFeeInfo{
-				OffchainInput:  "0",
-				OffchainOutput: "0",
-				OnchainInput:   0,
-				OnchainOutput:  uint64(s.onchainOutputFee),
+				OnchainOutput: uint64(s.onchainOutputFee),
 			},
-			TxFeeRate: 0,
 		},
 	}, nil
 }
