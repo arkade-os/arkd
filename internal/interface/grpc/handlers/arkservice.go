@@ -70,6 +70,7 @@ func (h *handler) GetInfo(
 		VtxoMinAmount:       info.VtxoMinAmount,
 		VtxoMaxAmount:       info.VtxoMaxAmount,
 		CheckpointTapscript: info.CheckpointTapscript,
+		Fees:                fees(info.Fees).toProto(),
 	}
 	buf, errJSON := json.Marshal(resp)
 	if errJSON != nil {

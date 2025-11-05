@@ -67,6 +67,9 @@ type service struct {
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 
+	// fees
+	onchainOutputFee int64 // expected fee in satoshis per onchain output registered in intents
+
 	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
 	vtxoNoCsvValidationCutoffTime time.Time
 
@@ -109,6 +112,7 @@ func NewService(
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
 	vtxoNoCsvValidationCutoffTime time.Time,
+	onchainOutputFee int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -229,6 +233,7 @@ func NewService(
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
+		onchainOutputFee:              onchainOutputFee,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -1178,8 +1183,6 @@ func (s *service) RegisterIntent(
 	// the boarding utxos to add in the commitment tx
 	boardingUtxos := make([]boardingIntentInput, 0)
 
-	outpoints := proof.GetOutpoints()
-
 	now := time.Now()
 	if message.ValidAt > 0 {
 		validAt := time.Unix(message.ValidAt, 0)
@@ -1218,6 +1221,30 @@ func (s *service) RegisterIntent(
 		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
+
+	fees, err := computeIntentFees(proof)
+	if err != nil {
+		return "", errors.INVALID_INTENT_PROOF.New("failed to compute intent fees: %w", err).
+			WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+	}
+
+	countOnchainOutputs := len(message.OnchainOutputIndexes)
+	expectedFees := int64(countOnchainOutputs) * s.onchainOutputFee
+
+	if fees < expectedFees {
+		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d expected %d", fees, expectedFees).
+			WithMetadata(errors.IntentInsufficientFeeMetadata{
+				InputExpectedFees:  map[string]int{},
+				OutputExpectedFees: map[string]int{},
+				ExpectedFee:        int(expectedFees),
+				ActualFee:          int(fees),
+			})
+	}
+
+	outpoints := proof.GetOutpoints()
 
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
@@ -1715,6 +1742,15 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
+		Fees: FeeInfo{
+			IntentFees: IntentFeeInfo{
+				OffchainInput:  "0",
+				OffchainOutput: "0",
+				OnchainInput:   0,
+				OnchainOutput:  uint64(s.onchainOutputFee),
+			},
+			TxFeeRate: 0,
+		},
 	}, nil
 }
 

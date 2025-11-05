@@ -398,7 +398,7 @@ func TestCollaborativeExit(t *testing.T) {
 			bob := setupArkSDK(t)
 
 			// Faucet Alice
-			faucetOffchain(t, alice, 0.00021)
+			faucetOffchain(t, alice, 0.00021100) // 21000 + 100 satoshis (amount + fee)
 
 			aliceBalance, err := alice.Balance(t.Context(), false)
 			require.NoError(t, err)
@@ -432,6 +432,7 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
+			// 100 satoshis is the fee for the onchain output
 			require.Equal(t, 21000, int(bobBalance.OnchainBalance.SpendableAmount))
 		})
 	})

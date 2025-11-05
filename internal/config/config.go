@@ -118,6 +118,8 @@ type Config struct {
 	VtxoMinAmount             int64
 	SettlementMinExpiryGap    int64
 
+	OnchainOutputFee int64
+
 	repo           ports.RepoManager
 	svc            application.Service
 	adminSvc       application.AdminService
@@ -197,6 +199,7 @@ var (
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
+	OnchainOutputFee              = "ONCHAIN_OUTPUT_FEE"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -231,6 +234,7 @@ var (
 	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
+	defaultOnchainOutputFee              = 0 // no fee by default
 )
 
 func LoadConfig() (*Config, error) {
@@ -270,6 +274,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
+	viper.SetDefault(OnchainOutputFee, defaultOnchainOutputFee)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -376,6 +381,7 @@ func LoadConfig() (*Config, error) {
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
+		OnchainOutputFee:              viper.GetInt64(OnchainOutputFee),
 	}, nil
 }
 
@@ -539,6 +545,10 @@ func (c *Config) Validate() error {
 
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
+	}
+
+	if c.OnchainOutputFee < 0 {
+		return fmt.Errorf("onchain output fee must be greater than 0")
 	}
 
 	if err := c.repoManager(); err != nil {
@@ -797,6 +807,7 @@ func (c *Config) appService() error {
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
+		c.OnchainOutputFee,
 	)
 	if err != nil {
 		return err
