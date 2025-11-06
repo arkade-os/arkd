@@ -452,6 +452,12 @@ func (s *service) SubmitOffchainTx(
 		}
 		checkpointTxs[txid] = tx
 		checkpointPsbts[txid] = checkpointPtx
+		if _, seen := checkpointTxsByVtxoKey[vtxoKey]; seen {
+			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+				"duplicated vtxo input %s", vtxoKey.String(),
+			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: 0})
+		}
+
 		checkpointTxsByVtxoKey[vtxoKey] = txid
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
 	}
