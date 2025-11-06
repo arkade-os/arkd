@@ -1243,8 +1243,19 @@ func (s *service) RegisterIntent(
 	}
 
 	outpoints := proof.GetOutpoints()
+	seenOutpoints := make(map[wire.OutPoint]struct{})
 
 	for i, outpoint := range outpoints {
+		if _, seen := seenOutpoints[outpoint]; seen {
+			return "", errors.INVALID_INTENT_PROOF.New(
+				"duplicated input %s", outpoint.String(),
+			).WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+		}
+		seenOutpoints[outpoint] = struct{}{}
+
 		psbtInput := proof.Inputs[i+1]
 
 		if len(psbtInput.TaprootLeafScript) == 0 {
