@@ -82,7 +82,7 @@ type service struct {
 	// holds the data related to the server key used in Vtxo scripts
 	serverKeyAddr waddrmgr.ManagedPubKeyAddress
 
-	// cached forfeit addres
+	// cached forfeit address
 	forfeitAddr string
 
 	isSynced   bool
