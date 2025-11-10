@@ -54,7 +54,7 @@ func (a *Address) EncodeV0() (string, error) {
 // DecodeAddressV0 parses a bech32m encoded address string and returns an Address struct.
 func DecodeAddressV0(addr string) (*Address, error) {
 	if len(addr) == 0 {
-		return nil, fmt.Errorf("mssing address")
+		return nil, fmt.Errorf("missing address")
 	}
 
 	prefix, buf, err := bech32.DecodeNoLimit(addr)

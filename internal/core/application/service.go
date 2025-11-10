@@ -1189,6 +1189,12 @@ func (s *service) RegisterIntent(
 	// the boarding utxos to add in the commitment tx
 	boardingUtxos := make([]boardingIntentInput, 0)
 
+	outpoints := proof.GetOutpoints()
+	if len(outpoints) == 0 {
+		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
 	now := time.Now()
 	if message.ValidAt > 0 {
 		validAt := time.Unix(message.ValidAt, 0)
@@ -1248,7 +1254,6 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	outpoints := proof.GetOutpoints()
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
 	for i, outpoint := range outpoints {
@@ -2756,6 +2761,8 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		if len(boardingInputsIndexes) > 0 {
 			s.roundReportSvc.OpStarted(VerifyBoardingInputsSignaturesOp)
 
+			log.Debugf("signing boarding inputs of commitment tx for round %s\n", roundId)
+
 			txToSign, err = s.signer.SignTransactionTapscript(
 				ctx,
 				s.cache.CurrentRound().Get().CommitmentTx,
@@ -2763,7 +2770,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			)
 			if err != nil {
 				changes = s.cache.CurrentRound().Fail(
-					errors.INTERNAL_ERROR.New("failed to sign commitment tx: %s", err),
+					errors.INTERNAL_ERROR.New("failed to sign boarding inputs of commitment tx: %s", err),
 				)
 				return
 			}
