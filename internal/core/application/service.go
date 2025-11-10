@@ -1180,10 +1180,8 @@ func (s *service) RegisterIntent(
 
 	outpoints := proof.GetOutpoints()
 	if len(outpoints) == 0 {
-		return "", errors.INVALID_INTENT_PSBT.New("proof does not specify any input").
-			WithMetadata(errors.PsbtMetadata{
-				Tx: proof.UnsignedTx.TxID(),
-			})
+		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
 	now := time.Now()
