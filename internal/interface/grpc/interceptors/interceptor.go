@@ -12,6 +12,7 @@ func UnaryInterceptor(svc *macaroons.Service) grpc.ServerOption {
 		unaryLogger,
 		unaryMacaroonAuthHandler(svc),
 		errorConverter,
+		unaryPanicRecoveryInterceptor(),
 	))
 }
 
@@ -20,5 +21,6 @@ func StreamInterceptor(svc *macaroons.Service) grpc.ServerOption {
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
 		streamLogger,
 		streamMacaroonAuthHandler(svc),
+		streamPanicRecoveryInterceptor(),
 	))
 }
