@@ -986,7 +986,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// verify the tapscript signatures
-	if valid, _, err := s.builder.VerifyTapscriptPartialSigs(signedArkTx, false); err != nil ||
+	if valid, _, err := s.builder.VerifyVtxoTapscriptPartialSigs(signedArkTx, false); err != nil ||
 		!valid {
 		return nil, "", "", errors.INVALID_SIGNATURE.New("invalid signature in ark tx %s", txid).
 			WithMetadata(errors.InvalidSignatureMetadata{Tx: signedArkTx})
@@ -1079,7 +1079,7 @@ func (s *service) FinalizeOffchainTx(
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
-		valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(checkpoint, true)
+		valid, ptx, err := s.builder.VerifyVtxoTapscriptPartialSigs(checkpoint, true)
 		if err != nil || !valid {
 			return errors.INVALID_SIGNATURE.New(
 				"invalid signature in checkpoint tx %s", checkpoint,
@@ -1669,30 +1669,35 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 }
 
 func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx string) errors.Error {
-	numSignedInputs, err := s.builder.CountSignedTaprootInputs(signedCommitmentTx)
+	// we do not need to acquire the lock here because commitmentTx is only used to compute the signature hashes
+	// thus it is safe to read it without the lock because we rely ony on WitnessUtxo fields
+	commitmentTx := s.cache.CurrentRound().Get().CommitmentTx
+	signedInputs, err := s.builder.VerifyBoardingTapscriptSigs(signedCommitmentTx, commitmentTx)
 	if err != nil {
-		return errors.INTERNAL_ERROR.New(
-			"failed to count number of signed boarding inputs: %w", err,
-		).WithMetadata(map[string]any{
-			"signed_commitment_tx": signedCommitmentTx,
-		})
+		return errors.INVALID_BOARDING_INPUT_SIG.New("failed to verify boarding tapscript sigs: %w", err).
+			WithMetadata(errors.InvalidBoardingInputSigMetadata{
+				SignedCommitmentTx: signedCommitmentTx,
+			})
 	}
-	if numSignedInputs == 0 {
-		return nil
+
+	if len(signedInputs) == 0 {
+		return errors.INVALID_BOARDING_INPUT_SIG.New("no signed inputs found").
+			WithMetadata(errors.InvalidBoardingInputSigMetadata{
+				SignedCommitmentTx: signedCommitmentTx,
+			})
 	}
 
 	s.signBoardingInsMu.Lock()
 	defer s.signBoardingInsMu.Unlock()
 
 	round := s.cache.CurrentRound().Get()
-
-	combined, err := s.builder.VerifyAndCombinePartialTx(round.CommitmentTx, signedCommitmentTx)
+	combined, err := s.builder.CombineTapscriptSigs(
+		round.CommitmentTx,
+		signedCommitmentTx,
+		signedInputs,
+	)
 	if err != nil {
-		return errors.INVALID_BOARDING_INPUT_SIG.New(
-			"failed to verify and combine partial signature(s): %w", err,
-		).WithMetadata(errors.InvalidBoardingInputSigMetadata{
-			SignedCommitmentTx: signedCommitmentTx,
-		})
+		return nil
 	}
 	round.CommitmentTx = combined
 
@@ -3531,7 +3536,7 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 			defer wg.Done()
 
 			for tx := range jobs {
-				valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(tx, false)
+				valid, ptx, err := s.builder.VerifyVtxoTapscriptPartialSigs(tx, false)
 				if err == nil && !valid {
 					err = fmt.Errorf("invalid signature for forfeit tx %s", ptx.UnsignedTx.TxID())
 				}

@@ -484,7 +484,7 @@ func (m *mockedTxBuilder) FinalizeAndExtract(tx string) (txhex string, err error
 	return res0, args.Error(1)
 }
 
-func (m *mockedTxBuilder) VerifyTapscriptPartialSigs(
+func (m *mockedTxBuilder) VerifyVtxoTapscriptPartialSigs(
 	tx string, mustIncludeSignerSig bool,
 ) (valid bool, ptx *psbt.Packet, err error) {
 	args := m.Called(tx, mustIncludeSignerSig)
@@ -493,15 +493,22 @@ func (m *mockedTxBuilder) VerifyTapscriptPartialSigs(
 	return res0, res1, args.Error(2)
 }
 
-func (m *mockedTxBuilder) VerifyAndCombinePartialTx(dest string, src string) (string, error) {
-	args := m.Called(dest, src)
+func (m *mockedTxBuilder) CombineTapscriptSigs(
+	dest string,
+	src string,
+	indexes []int,
+) (string, error) {
+	args := m.Called(dest, src, indexes)
 	res0 := args.Get(0).(string)
 	return res0, args.Error(1)
 }
 
-func (m *mockedTxBuilder) CountSignedTaprootInputs(tx string) (int, error) {
-	args := m.Called(tx)
-	res0 := args.Get(0).(int)
+func (m *mockedTxBuilder) VerifyBoardingTapscriptSigs(
+	txToVerify string,
+	commitmentTx string,
+) ([]int, error) {
+	args := m.Called(txToVerify, commitmentTx)
+	res0 := args.Get(0).([]int)
 	return res0, args.Error(1)
 }
 

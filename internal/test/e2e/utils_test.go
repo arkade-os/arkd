@@ -278,7 +278,7 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 		ServerUrl:            serverUrl,
 		Password:             password,
 		Seed:                 privkeyHex,
-		ExplorerPollInterval: 2 * time.Second,
+		ExplorerPollInterval: time.Second,
 	})
 	require.NoError(t, err)
 
