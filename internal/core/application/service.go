@@ -1179,6 +1179,10 @@ func (s *service) RegisterIntent(
 	boardingUtxos := make([]boardingIntentInput, 0)
 
 	outpoints := proof.GetOutpoints()
+	if len(outpoints) == 0 {
+		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
 
 	now := time.Now()
 	if message.ValidAt > 0 {

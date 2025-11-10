@@ -162,6 +162,9 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 // GetOutpoints returns the list of inputs proving ownership of coins
 // the first input is the toSpend tx, we ignore it
 func (p Proof) GetOutpoints() []wire.OutPoint {
+	if len(p.UnsignedTx.TxIn) <= 1 {
+		return nil
+	}
 	outpoints := make([]wire.OutPoint, 0, len(p.UnsignedTx.TxIn)-1)
 	for _, input := range p.UnsignedTx.TxIn[1:] {
 		outpoints = append(outpoints, input.PreviousOutPoint)
