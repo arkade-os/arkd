@@ -86,9 +86,10 @@ type service struct {
 	indexerTxEventsCh        chan TransactionEvent
 
 	// stop and round-execution go routine handlers
-	stop func()
-	ctx  context.Context
-	wg   *sync.WaitGroup
+	stop              func()
+	ctx               context.Context
+	wg                *sync.WaitGroup
+	signBoardingInsMu *sync.Mutex
 }
 
 func NewService(
@@ -229,6 +230,7 @@ func NewService(
 		stop:                          cancel,
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
+		signBoardingInsMu:             &sync.Mutex{},
 		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
@@ -1678,6 +1680,9 @@ func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx strin
 	if numSignedInputs == 0 {
 		return nil
 	}
+
+	s.signBoardingInsMu.Lock()
+	defer s.signBoardingInsMu.Unlock()
 
 	round := s.cache.CurrentRound().Get()
 
