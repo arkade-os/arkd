@@ -92,6 +92,7 @@ services:
       - ARKD_SESSION_DURATION=${ARKD_SESSION_DURATION:-10}
       - ARKD_ROUND_REPORT_ENABLED=${ARKD_ROUND_REPORT_ENABLED:-true}
       - ARKD_BAN_THRESHOLD=1
+      - ARKD_ONCHAIN_OUTPUT_FEE=100
     volumes:
       - type: tmpfs
         target: /app/data

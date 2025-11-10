@@ -67,6 +67,9 @@ type service struct {
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 
+	// fees
+	onchainOutputFee int64 // expected fee in satoshis per onchain output registered in intents
+
 	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
 	vtxoNoCsvValidationCutoffTime time.Time
 
@@ -109,6 +112,7 @@ func NewService(
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
 	vtxoNoCsvValidationCutoffTime time.Time,
+	onchainOutputFee int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -229,6 +233,7 @@ func NewService(
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
+		onchainOutputFee:              onchainOutputFee,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -447,6 +452,12 @@ func (s *service) SubmitOffchainTx(
 		}
 		checkpointTxs[txid] = tx
 		checkpointPsbts[txid] = checkpointPtx
+		if _, seen := checkpointTxsByVtxoKey[vtxoKey]; seen {
+			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+				"duplicated vtxo input %s", vtxoKey.String(),
+			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: 0})
+		}
+
 		checkpointTxsByVtxoKey[vtxoKey] = txid
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
 	}
@@ -1183,6 +1194,10 @@ func (s *service) RegisterIntent(
 	boardingUtxos := make([]boardingIntentInput, 0)
 
 	outpoints := proof.GetOutpoints()
+	if len(outpoints) == 0 {
+		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
 
 	now := time.Now()
 	if message.ValidAt > 0 {
@@ -1223,7 +1238,39 @@ func (s *service) RegisterIntent(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
+	fees, err := computeIntentFees(proof)
+	if err != nil {
+		return "", errors.INVALID_INTENT_PROOF.New("failed to compute intent fees: %w", err).
+			WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+	}
+
+	countOnchainOutputs := len(message.OnchainOutputIndexes)
+	expectedFees := int64(countOnchainOutputs) * s.onchainOutputFee
+
+	if fees < expectedFees {
+		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d expected %d", fees, expectedFees).
+			WithMetadata(errors.IntentInsufficientFeeMetadata{
+				ExpectedFee: int(expectedFees),
+				ActualFee:   int(fees),
+			})
+	}
+
+	seenOutpoints := make(map[wire.OutPoint]struct{})
+
 	for i, outpoint := range outpoints {
+		if _, seen := seenOutpoints[outpoint]; seen {
+			return "", errors.INVALID_INTENT_PROOF.New(
+				"duplicated input %s", outpoint.String(),
+			).WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+		}
+		seenOutpoints[outpoint] = struct{}{}
+
 		psbtInput := proof.Inputs[i+1]
 
 		if len(psbtInput.TaprootLeafScript) == 0 {
@@ -1714,6 +1761,11 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
+		Fees: FeeInfo{
+			IntentFees: IntentFeeInfo{
+				OnchainOutput: uint64(s.onchainOutputFee),
+			},
+		},
 	}, nil
 }
 

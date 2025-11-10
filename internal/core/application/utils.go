@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -450,4 +451,25 @@ func waitForConfirmation(
 		}
 	}
 	return 0, 0
+}
+
+func computeIntentFees(proof intent.Proof) (int64, error) {
+	sumOfInputs := int64(0)
+	for i, input := range proof.Inputs {
+		if input.WitnessUtxo == nil {
+			return 0, fmt.Errorf("missing witness utxo for input %d", i)
+		}
+		sumOfInputs += int64(input.WitnessUtxo.Value)
+	}
+
+	sumOfOutputs := int64(0)
+	for _, output := range proof.UnsignedTx.TxOut {
+		sumOfOutputs += int64(output.Value)
+	}
+
+	fees := sumOfInputs - sumOfOutputs
+	if fees < 0 {
+		return 0, fmt.Errorf("sum of inputs is smaller than sum of outputs (diff: %d)", fees)
+	}
+	return fees, nil
 }
