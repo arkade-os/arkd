@@ -24,7 +24,8 @@ type IntentStore interface {
 	Push(intent domain.Intent, boardingInputs []BoardingInput, cosignersPublicKeys []string) error
 	Pop(num int64) []TimedIntent
 	GetSelectedIntents() []TimedIntent
-	Update(intent domain.Intent, cosignersPublicKeys []string) error
+	// TODO uncomment when we have a way to register outputs outside of intent proof
+	// Update(intent domain.Intent, cosignersPublicKeys []string) error
 	Delete(ids []string) error
 	DeleteAll() error
 	DeleteVtxos()
