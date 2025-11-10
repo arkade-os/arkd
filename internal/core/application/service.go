@@ -1125,6 +1125,10 @@ func (s *service) FinalizeOffchainTx(
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
+		if len(checkpointTx.UnsignedTx.TxOut) == 0 {
+			return errors.INVALID_PSBT_INPUT.New("checkpoint tx has no outputs").
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
+		}
 		checkpointOutputScript := checkpointTx.UnsignedTx.TxOut[0].PkScript
 		if !bytes.Equal(checkpointOutputScript, expectedOutputScript) {
 			return errors.INVALID_PSBT_INPUT.New(
@@ -1772,6 +1776,12 @@ func (s *service) DeleteIntentsByProof(
 			}
 
 			tx := boardingTxs[vtxoOutpoint.Txid]
+			if int(vtxoOutpoint.VOut) >= len(tx.TxOut) {
+				return errors.INVALID_PSBT_INPUT.New(
+					"invalid vout index %d for tx %s (tx has %d outputs)",
+					vtxoOutpoint.VOut, vtxoOutpoint.Txid, len(tx.TxOut),
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+			}
 			prevout := tx.TxOut[vtxoOutpoint.VOut]
 
 			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
@@ -2337,6 +2347,11 @@ func (s *service) startFinalization(
 			return
 		}
 
+		if len(commitmentPtx.UnsignedTx.TxOut) == 0 {
+			s.cache.CurrentRound().
+				Fail(errors.INTERNAL_ERROR.New("failed to compute valid commitment tx"))
+			return
+		}
 		batchOutputAmount := commitmentPtx.UnsignedTx.TxOut[0].Value
 
 		sweepLeaf := txscript.NewBaseTapLeaf(sweepScript)
@@ -3258,6 +3273,15 @@ func (s *service) processBoardingInputs(
 		}
 
 		tx := boardingTxs[input.Txid]
+		if int(input.VOut) >= len(tx.TxOut) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid vout index %d for tx %s (tx has %d outputs)",
+				input.VOut, input.Txid, len(tx.TxOut),
+			).WithMetadata(errors.InputMetadata{
+				Txid:       intentTxid,
+				InputIndex: int(input.VOut),
+			})
+		}
 		prevout := tx.TxOut[input.VOut]
 
 		if !bytes.Equal(prevout.PkScript, input.witnessUtxo.PkScript) {
@@ -3347,6 +3371,13 @@ func (s *service) validateBoardingInput(
 				"vtxo script can be used for intent registration in %d seconds", diff,
 			)
 		}
+	}
+
+	if int(input.VOut) >= len(tx.TxOut) {
+		return nil, fmt.Errorf(
+			"invalid vout index %d for tx %s (tx has %d outputs)",
+			input.VOut, input.Txid, len(tx.TxOut),
+		)
 	}
 
 	if s.utxoMaxAmount >= 0 {
