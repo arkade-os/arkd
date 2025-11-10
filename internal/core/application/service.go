@@ -86,9 +86,10 @@ type service struct {
 	indexerTxEventsCh        chan TransactionEvent
 
 	// stop and round-execution go routine handlers
-	stop func()
-	ctx  context.Context
-	wg   *sync.WaitGroup
+	stop              func()
+	ctx               context.Context
+	wg                *sync.WaitGroup
+	signBoardingInsMu *sync.Mutex
 }
 
 func NewService(
@@ -229,6 +230,7 @@ func NewService(
 		stop:                          cancel,
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
+		signBoardingInsMu:             &sync.Mutex{},
 		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
@@ -1136,6 +1138,10 @@ func (s *service) FinalizeOffchainTx(
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
+		if len(checkpointTx.UnsignedTx.TxOut) == 0 {
+			return errors.INVALID_PSBT_INPUT.New("checkpoint tx has no outputs").
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
+		}
 		checkpointOutputScript := checkpointTx.UnsignedTx.TxOut[0].PkScript
 		if !bytes.Equal(checkpointOutputScript, expectedOutputScript) {
 			return errors.INVALID_PSBT_INPUT.New(
@@ -1675,30 +1681,28 @@ func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx strin
 		return nil
 	}
 
-	var combineErr error
-	if err := s.cache.CurrentRound().Upsert(func(r *domain.Round) *domain.Round {
-		combined, err := s.builder.VerifyAndCombinePartialTx(r.CommitmentTx, signedCommitmentTx)
-		if err != nil {
-			combineErr = err
-			return r
-		}
+	s.signBoardingInsMu.Lock()
+	defer s.signBoardingInsMu.Unlock()
 
-		ur := *r
-		ur.CommitmentTx = combined
-		return &ur
-	}); err != nil {
-		return errors.INTERNAL_ERROR.New("failed to upsert current round: %w", err).
-			WithMetadata(map[string]any{
-				"signed_commitment_tx": signedCommitmentTx,
-			})
-	}
+	round := s.cache.CurrentRound().Get()
 
-	if combineErr != nil {
+	combined, err := s.builder.VerifyAndCombinePartialTx(round.CommitmentTx, signedCommitmentTx)
+	if err != nil {
 		return errors.INVALID_BOARDING_INPUT_SIG.New(
 			"failed to verify and combine partial signature(s): %w", err,
 		).WithMetadata(errors.InvalidBoardingInputSigMetadata{
 			SignedCommitmentTx: signedCommitmentTx,
 		})
+	}
+	round.CommitmentTx = combined
+
+	if err := s.cache.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round {
+		return round
+	}); err != nil {
+		return errors.INTERNAL_ERROR.New("failed to upsert current round: %w", err).
+			WithMetadata(map[string]any{
+				"signed_commitment_tx": signedCommitmentTx,
+			})
 	}
 
 	go s.checkForfeitsAndBoardingSigsSent()
@@ -1824,6 +1828,12 @@ func (s *service) DeleteIntentsByProof(
 			}
 
 			tx := boardingTxs[vtxoOutpoint.Txid]
+			if int(vtxoOutpoint.VOut) >= len(tx.TxOut) {
+				return errors.INVALID_PSBT_INPUT.New(
+					"invalid vout index %d for tx %s (tx has %d outputs)",
+					vtxoOutpoint.VOut, vtxoOutpoint.Txid, len(tx.TxOut),
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+			}
 			prevout := tx.TxOut[vtxoOutpoint.VOut]
 
 			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
@@ -2389,6 +2399,11 @@ func (s *service) startFinalization(
 			return
 		}
 
+		if len(commitmentPtx.UnsignedTx.TxOut) == 0 {
+			s.cache.CurrentRound().
+				Fail(errors.INTERNAL_ERROR.New("failed to compute valid commitment tx"))
+			return
+		}
 		batchOutputAmount := commitmentPtx.UnsignedTx.TxOut[0].Value
 
 		sweepLeaf := txscript.NewBaseTapLeaf(sweepScript)
@@ -3312,6 +3327,15 @@ func (s *service) processBoardingInputs(
 		}
 
 		tx := boardingTxs[input.Txid]
+		if int(input.VOut) >= len(tx.TxOut) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid vout index %d for tx %s (tx has %d outputs)",
+				input.VOut, input.Txid, len(tx.TxOut),
+			).WithMetadata(errors.InputMetadata{
+				Txid:       intentTxid,
+				InputIndex: int(input.VOut),
+			})
+		}
 		prevout := tx.TxOut[input.VOut]
 
 		if !bytes.Equal(prevout.PkScript, input.witnessUtxo.PkScript) {
@@ -3401,6 +3425,13 @@ func (s *service) validateBoardingInput(
 				"vtxo script can be used for intent registration in %d seconds", diff,
 			)
 		}
+	}
+
+	if int(input.VOut) >= len(tx.TxOut) {
+		return nil, fmt.Errorf(
+			"invalid vout index %d for tx %s (tx has %d outputs)",
+			input.VOut, input.Txid, len(tx.TxOut),
+		)
 	}
 
 	if s.utxoMaxAmount >= 0 {
