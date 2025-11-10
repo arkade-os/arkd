@@ -452,6 +452,7 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, aliceBoardingAddr)
 
+			faucetOffchain(t, alice, 0.00021)
 			faucetOnchain(t, aliceBoardingAddr, 0.001)
 			time.Sleep(5 * time.Second)
 
