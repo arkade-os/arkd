@@ -1632,30 +1632,25 @@ func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx strin
 		return nil
 	}
 
-	var combineErr error
-	if err := s.cache.CurrentRound().Upsert(func(r *domain.Round) *domain.Round {
-		combined, err := s.builder.VerifyAndCombinePartialTx(r.CommitmentTx, signedCommitmentTx)
-		if err != nil {
-			combineErr = err
-			return r
-		}
+	round := s.cache.CurrentRound().Get()
 
-		ur := *r
-		ur.CommitmentTx = combined
-		return &ur
-	}); err != nil {
-		return errors.INTERNAL_ERROR.New("failed to upsert current round: %w", err).
-			WithMetadata(map[string]any{
-				"signed_commitment_tx": signedCommitmentTx,
-			})
-	}
-
-	if combineErr != nil {
+	combined, err := s.builder.VerifyAndCombinePartialTx(round.CommitmentTx, signedCommitmentTx)
+	if err != nil {
 		return errors.INVALID_BOARDING_INPUT_SIG.New(
 			"failed to verify and combine partial signature(s): %w", err,
 		).WithMetadata(errors.InvalidBoardingInputSigMetadata{
 			SignedCommitmentTx: signedCommitmentTx,
 		})
+	}
+	round.CommitmentTx = combined
+
+	if err := s.cache.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round {
+		return round
+	}); err != nil {
+		return errors.INTERNAL_ERROR.New("failed to upsert current round: %w", err).
+			WithMetadata(map[string]any{
+				"signed_commitment_tx": signedCommitmentTx,
+			})
 	}
 
 	go s.checkForfeitsAndBoardingSigsSent()
