@@ -1046,43 +1046,60 @@ func (b *txBuilder) VerifyAndCombinePartialTx(dest string, src string) (string, 
 		return "", fmt.Errorf("txids do not match")
 	}
 
+	// rely on the commitment tx to get the prevouts
+	// it ensures that the src tx will not produce any valid signature with invalid prevouts
+	prevoutFetcher, err := b.getPrevOutputFetcher(commitmentTx)
+	if err != nil {
+		return "", err
+	}
+	txSigHashes := txscript.NewTxSigHashes(commitmentTx.UnsignedTx, prevoutFetcher)
+
 	for i, sourceInput := range sourceTx.Inputs {
-		isMultisigTaproot := len(sourceInput.TaprootLeafScript) > 0
-		if isMultisigTaproot {
-			// check if the source tx signs the leaf
-			if len(sourceInput.TaprootScriptSpendSig) == 0 {
-				continue
-			}
-
-			partialSig := sourceInput.TaprootScriptSpendSig[0]
-			preimage, err := b.getTaprootPreimage(
-				sourceTx, i, sourceInput.TaprootLeafScript[0].Script,
-			)
-			if err != nil {
-				return "", err
-			}
-
-			sig, err := schnorr.ParseSignature(partialSig.Signature)
-			if err != nil {
-				return "", err
-			}
-
-			pubkey, err := schnorr.ParsePubKey(partialSig.XOnlyPubKey)
-			if err != nil {
-				return "", err
-			}
-
-			if !sig.Verify(preimage, pubkey) {
-				return "", fmt.Errorf(
-					"invalid signature for input %s:%d",
-					sourceTx.UnsignedTx.TxIn[i].PreviousOutPoint.Hash.String(),
-					sourceTx.UnsignedTx.TxIn[i].PreviousOutPoint.Index,
-				)
-			}
-
-			commitmentTx.Inputs[i].TaprootScriptSpendSig = sourceInput.TaprootScriptSpendSig
-			commitmentTx.Inputs[i].TaprootLeafScript = sourceInput.TaprootLeafScript
+		// skip if does not specify a taproot leaf script
+		if len(sourceInput.TaprootLeafScript) != 1 {
+			continue
 		}
+
+		// skip if not signed
+		if len(sourceInput.TaprootScriptSpendSig) == 0 {
+			continue
+		}
+
+		tapscriptLeaf := sourceInput.TaprootLeafScript[0]
+		tapscriptSig := sourceInput.TaprootScriptSpendSig[0]
+
+		preimage, err := txscript.CalcTapscriptSignaturehash(
+			txSigHashes,
+			txscript.SigHashDefault,
+			commitmentTx.UnsignedTx,
+			i,
+			prevoutFetcher,
+			txscript.NewBaseTapLeaf(tapscriptLeaf.Script),
+		)
+		if err != nil {
+			return "", err
+		}
+
+		sig, err := schnorr.ParseSignature(tapscriptSig.Signature)
+		if err != nil {
+			return "", err
+		}
+
+		pubkey, err := schnorr.ParsePubKey(tapscriptSig.XOnlyPubKey)
+		if err != nil {
+			return "", err
+		}
+
+		if !sig.Verify(preimage, pubkey) {
+			return "", fmt.Errorf(
+				"invalid signature for input %s:%d",
+				sourceTx.UnsignedTx.TxIn[i].PreviousOutPoint.Hash.String(),
+				sourceTx.UnsignedTx.TxIn[i].PreviousOutPoint.Index,
+			)
+		}
+
+		commitmentTx.Inputs[i].TaprootScriptSpendSig = sourceInput.TaprootScriptSpendSig
+		commitmentTx.Inputs[i].TaprootLeafScript = sourceInput.TaprootLeafScript
 	}
 
 	return commitmentTx.B64Encode()
@@ -1146,24 +1163,6 @@ func (b *txBuilder) getPrevOutputFetcher(tx *psbt.Packet) (txscript.PrevOutputFe
 	}
 
 	return txscript.NewMultiPrevOutFetcher(prevouts), nil
-}
-
-func (b *txBuilder) getTaprootPreimage(
-	tx *psbt.Packet, inputIndex int, leafScript []byte,
-) ([]byte, error) {
-	prevoutFetcher, err := b.getPrevOutputFetcher(tx)
-	if err != nil {
-		return nil, err
-	}
-
-	return txscript.CalcTapscriptSignaturehash(
-		txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),
-		txscript.SigHashDefault,
-		tx.UnsignedTx,
-		inputIndex,
-		prevoutFetcher,
-		txscript.NewBaseTapLeaf(leafScript),
-	)
 }
 
 func (b *txBuilder) onchainNetwork() *chaincfg.Params {
