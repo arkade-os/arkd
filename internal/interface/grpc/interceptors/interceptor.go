@@ -9,18 +9,18 @@ import (
 // UnaryInterceptor returns the unary interceptor
 func UnaryInterceptor(svc *macaroons.Service) grpc.ServerOption {
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
+		unaryPanicRecoveryInterceptor(),
 		unaryLogger,
 		unaryMacaroonAuthHandler(svc),
 		errorConverter,
-		unaryPanicRecoveryInterceptor(),
 	))
 }
 
 // StreamInterceptor returns the stream interceptor with a logrus log
 func StreamInterceptor(svc *macaroons.Service) grpc.ServerOption {
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
+		streamPanicRecoveryInterceptor(),
 		streamLogger,
 		streamMacaroonAuthHandler(svc),
-		streamPanicRecoveryInterceptor(),
 	))
 }
