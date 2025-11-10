@@ -21,7 +21,7 @@ func unaryPanicRecoveryInterceptor() grpc.UnaryServerInterceptor {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Errorf("panic-recovery middleware recovered from panic: %v", r)
-				log.Debugf("stack trace: %v", string(debug.Stack()))
+				log.Errorf("stack trace: %v", string(debug.Stack()))
 				err = somethingWentWrong
 			}
 		}()
@@ -39,7 +39,7 @@ func streamPanicRecoveryInterceptor() grpc.StreamServerInterceptor {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Errorf("panic-recovery middleware recovered from panic: %v", r)
-				log.Debugf("stack trace: %v", string(debug.Stack()))
+				log.Errorf("stack trace: %v", string(debug.Stack()))
 				err = somethingWentWrong
 			}
 		}()
