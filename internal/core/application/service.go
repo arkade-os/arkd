@@ -986,7 +986,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// verify the tapscript signatures
-	if valid, _, err := s.builder.VerifyVtxoTapscriptPartialSigs(signedArkTx, false); err != nil ||
+	if valid, _, err := s.builder.VerifyVtxoTapscriptSigs(signedArkTx, false); err != nil ||
 		!valid {
 		return nil, "", "", errors.INVALID_SIGNATURE.New("invalid signature in ark tx %s", txid).
 			WithMetadata(errors.InvalidSignatureMetadata{Tx: signedArkTx})
@@ -1079,7 +1079,7 @@ func (s *service) FinalizeOffchainTx(
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
-		valid, ptx, err := s.builder.VerifyVtxoTapscriptPartialSigs(checkpoint, true)
+		valid, ptx, err := s.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
 		if err != nil || !valid {
 			return errors.INVALID_SIGNATURE.New(
 				"invalid signature in checkpoint tx %s", checkpoint,
@@ -3536,7 +3536,7 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 			defer wg.Done()
 
 			for tx := range jobs {
-				valid, ptx, err := s.builder.VerifyVtxoTapscriptPartialSigs(tx, false)
+				valid, ptx, err := s.builder.VerifyVtxoTapscriptSigs(tx, false)
 				if err == nil && !valid {
 					err = fmt.Errorf("invalid signature for forfeit tx %s", ptx.UnsignedTx.TxID())
 				}

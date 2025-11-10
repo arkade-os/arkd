@@ -74,7 +74,7 @@ type TxBuilder interface {
 		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs SweepableOutput, err error,
 	)
 	FinalizeAndExtract(tx string) (txhex string, err error)
-	VerifyVtxoTapscriptPartialSigs(
+	VerifyVtxoTapscriptSigs(
 		tx string, mustIncludeSignerSig bool,
 	) (valid bool, ptx *psbt.Packet, err error)
 	CombineTapscriptSigs(dest string, src string, inputIndexes []int) (string, error)

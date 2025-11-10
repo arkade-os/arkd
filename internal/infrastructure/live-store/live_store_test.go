@@ -484,7 +484,7 @@ func (m *mockedTxBuilder) FinalizeAndExtract(tx string) (txhex string, err error
 	return res0, args.Error(1)
 }
 
-func (m *mockedTxBuilder) VerifyVtxoTapscriptPartialSigs(
+func (m *mockedTxBuilder) VerifyVtxoTapscriptSigs(
 	tx string, mustIncludeSignerSig bool,
 ) (valid bool, ptx *psbt.Packet, err error) {
 	args := m.Called(tx, mustIncludeSignerSig)

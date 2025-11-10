@@ -49,7 +49,7 @@ func (b *txBuilder) GetTxid(tx string) (string, error) {
 	return ptx.UnsignedTx.TxID(), nil
 }
 
-func (b *txBuilder) VerifyVtxoTapscriptPartialSigs(
+func (b *txBuilder) VerifyVtxoTapscriptSigs(
 	tx string, mustIncludeSignerSig bool,
 ) (bool, *psbt.Packet, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
