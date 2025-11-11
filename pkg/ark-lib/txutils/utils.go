@@ -138,8 +138,8 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 
 			if !sig.Verify(sighash, pubkey) {
 				return nil, fmt.Errorf(
-					"invalid sig %d: for input %d (%s)",
-					i, inputIndex, tx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint.String(),
+					"invalid sig %d for input %d with prevout %s",
+					i, inputIndex, tx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint,
 				)
 			}
 		}
