@@ -66,7 +66,7 @@ func Verify(proofB64, message string) error {
 		return ErrInvalidTxNumberOfOutputs
 	}
 
-	prevoutFetcher, err := proof.getPrevoutFetcher()
+	prevoutFetcher, err := txutils.GetPrevOutputFetcher(ptx)
 	if err != nil {
 		return fmt.Errorf("failed to get prevout fetcher: %s", err)
 	}
@@ -181,17 +181,6 @@ func (p Proof) ContainsOutputs() bool {
 		return false
 	}
 	return true
-}
-
-func (p Proof) getPrevoutFetcher() (txscript.PrevOutputFetcher, error) {
-	prevouts := make(map[wire.OutPoint]*wire.TxOut)
-	for inputIndex, input := range p.Inputs {
-		if input.WitnessUtxo == nil {
-			return nil, fmt.Errorf("witness utxo not found for input %d", inputIndex)
-		}
-		prevouts[p.UnsignedTx.TxIn[inputIndex].PreviousOutPoint] = input.WitnessUtxo
-	}
-	return txscript.NewMultiPrevOutFetcher(prevouts), nil
 }
 
 // buildToSpendTx creates the initial transaction that will be spent in the proof
