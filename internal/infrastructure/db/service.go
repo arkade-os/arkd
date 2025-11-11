@@ -132,16 +132,16 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
 	case "postgres":
-		if len(config.DataStoreConfig) != 2 {
+		if len(config.EventStoreConfig) != 2 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
-		dsn, ok := config.DataStoreConfig[0].(string)
+		dsn, ok := config.EventStoreConfig[0].(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid DSN for postgres")
 		}
 
-		autoCreate, ok := config.DataStoreConfig[1].(bool)
+		autoCreate, ok := config.EventStoreConfig[1].(bool)
 		if !ok {
 			return nil, fmt.Errorf("invalid autocreate flag for postgres")
 		}
