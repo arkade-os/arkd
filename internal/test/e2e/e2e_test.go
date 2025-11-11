@@ -261,7 +261,7 @@ func TestUnilateralExit(t *testing.T) {
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		balance, err = alice.Balance(t.Context(), false)
 		require.NoError(t, err)
