@@ -115,25 +115,31 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 				leaf,
 			)
 			if err != nil {
-				return
+				return nil, fmt.Errorf(
+					"failed to compute hash for signature %d of input %d: %w", i, inputIndex, err,
+				)
 			}
 
 			var sig *schnorr.Signature
 			sig, err = schnorr.ParseSignature(tapscriptSig.Signature)
 			if err != nil {
-				return
+				return nil, fmt.Errorf(
+					"failed to parse signature %d for input %d: %w", i, inputIndex, err,
+				)
 			}
 
 			var pubkey *btcec.PublicKey
 			pubkey, err = schnorr.ParsePubKey(tapscriptSig.XOnlyPubKey)
 			if err != nil {
-				return
+				return nil, fmt.Errorf(
+					"failed to parse pubkey of sig %d for input %d: %w", i, inputIndex, err,
+				)
 			}
 
 			if !sig.Verify(sighash, pubkey) {
 				return nil, fmt.Errorf(
-					"invalid signature (%d) for input %s",
-					i, tx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint.String(),
+					"invalid sig %d: for input %d (%s)",
+					i, inputIndex, tx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint.String(),
 				)
 			}
 		}
