@@ -11,6 +11,17 @@
     "expected": "{\"type\":\"register\",\"onchain_output_indexes\":[],\"valid_at\":1762861934,\"expire_at\":1762862054,\"cosigners_public_keys\":[\"027b763fdd0d6d96d1ce6fb95e09e381fdae2bcbe3ed7d1a2bd95702524d5dcd8a\"]}"
   },
   {
+    "name": "register_with_unordered_fields",
+    "message": {
+      "valid_at": 1762861934,
+      "onchain_output_indexes": [0, 1],
+      "type": "register",
+      "expire_at": 1762862054,
+      "cosigners_public_keys": ["027b763fdd0d6d96d1ce6fb95e09e381fdae2bcbe3ed7d1a2bd95702524d5dcd8a"]
+    },
+    "expected": "{\"type\":\"register\",\"onchain_output_indexes\":[0,1],\"valid_at\":1762861934,\"expire_at\":1762862054,\"cosigners_public_keys\":[\"027b763fdd0d6d96d1ce6fb95e09e381fdae2bcbe3ed7d1a2bd95702524d5dcd8a\"]}"
+  },
+  {
     "name": "delete",
     "message": {
       "type": "delete",
