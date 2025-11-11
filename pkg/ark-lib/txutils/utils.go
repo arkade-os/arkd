@@ -76,7 +76,7 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 		var controlBlock *txscript.ControlBlock
 		controlBlock, err = txscript.ParseControlBlock(tapscriptLeaf.ControlBlock)
 		if err != nil {
-			return
+			return nil, fmt.Errorf("failed to parse control block for input %d: %s", inputIndex, err)
 		}
 
 		rootHash := controlBlock.RootHash(tapscriptLeaf.Script)
