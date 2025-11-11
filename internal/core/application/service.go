@@ -2251,7 +2251,7 @@ func (s *service) startConfirmation(
 		// make the round fail if we didn't receive enoush confirmations
 		if len(confirmedIntents) == 0 {
 			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("not enough confirmation received"))
+				Fail(errors.INTERNAL_ERROR.New("not enough intent confirmations received"))
 			return
 		}
 	}
