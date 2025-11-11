@@ -1697,7 +1697,12 @@ func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx strin
 		signedInputs,
 	)
 	if err != nil {
-		return nil
+		return errors.INTERNAL_ERROR.New("failed to combine tapscript sigs: %w", err).
+			WithMetadata(map[string]any{
+				"signed_commitment_tx": signedCommitmentTx,
+				"signed_inputs":        signedInputs,
+				"commitment_tx":        round.CommitmentTx,
+			})
 	}
 	round.CommitmentTx = combined
 

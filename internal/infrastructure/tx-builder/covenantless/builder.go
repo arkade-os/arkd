@@ -1058,6 +1058,20 @@ func (b *txBuilder) CombineTapscriptSigs(dest string, src string, indexes []int)
 	}
 
 	for _, inputIndex := range indexes {
+		if len(sourceTx.Inputs) <= inputIndex {
+			return "", fmt.Errorf(
+				"input index out of bounds %d, len(inputs)=%d",
+				inputIndex,
+				len(sourceTx.Inputs),
+			)
+		}
+		if len(destinationTx.Inputs) <= inputIndex {
+			return "", fmt.Errorf(
+				"input index out of bounds %d, len(inputs)=%d",
+				inputIndex,
+				len(destinationTx.Inputs),
+			)
+		}
 		tapscriptSig := sourceTx.Inputs[inputIndex].TaprootScriptSpendSig
 		tapscriptLeaf := sourceTx.Inputs[inputIndex].TaprootLeafScript
 		if len(tapscriptLeaf) != 1 {
