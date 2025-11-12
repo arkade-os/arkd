@@ -18,13 +18,11 @@ var (
 	ErrMissingInputs             = fmt.Errorf("missing inputs")
 	ErrMissingData               = fmt.Errorf("missing data")
 	ErrMissingWitnessUtxo        = fmt.Errorf("missing witness utxo")
-	ErrIncompletePSBT            = fmt.Errorf("incomplete psbt, missing signatures on inputs")
-	ErrInvalidTxNumberOfInputs   = fmt.Errorf("invalid tx, expected at least 2 inputs")
-	ErrInvalidTxNumberOfOutputs  = fmt.Errorf("invalid tx, expected at least 1 output")
-	ErrInvalidTxWrongTxHash      = fmt.Errorf("invalid tx, wrong tx hash in first input")
-	ErrInvalidTxWrongOutputIndex = fmt.Errorf("invalid tx, wrong output index in first input")
-	ErrPrevoutNotFound           = fmt.Errorf("prevout not found")
-	ErrMissingArkFields          = fmt.Errorf("expected at least 1 ark field, revealed taptree is required")
+	ErrInvalidTxNumberOfInputs   = fmt.Errorf("invalid intent proof: expected at least 2 inputs")
+	ErrInvalidTxNumberOfOutputs  = fmt.Errorf("invalid intent proof: expected at least 1 output")
+	ErrInvalidTxWrongTxHash      = fmt.Errorf("invalid intent proof: wrong tx hash in message input")
+	ErrInvalidTxWrongOutputIndex = fmt.Errorf("invalid intent proof: wrong output index in message input")
+	ErrPrevoutNotFound           = fmt.Errorf("invalid intent proof: missing witness utxo field")
 )
 
 var (
@@ -68,7 +66,7 @@ func Verify(proofB64, message string) error {
 
 	prevoutFetcher, err := txutils.GetPrevOutputFetcher(ptx)
 	if err != nil {
-		return fmt.Errorf("failed to get prevout fetcher: %s", err)
+		return err
 	}
 
 	// the first input of the tx is always the toSpend tx,
@@ -115,11 +113,11 @@ func Verify(proofB64, message string) error {
 			sigCache, txSigHashes, prevout.Value, prevoutFetcher,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to execute bitcoin script: %s", err)
+			return fmt.Errorf("invalid intent proof: failed to create script engine for input %d: %w", i, err)
 		}
 
 		if err := engine.Execute(); err != nil {
-			return err
+			return fmt.Errorf("invalid intent proof: failed to execute script for input %d: %w", i, err)
 		}
 
 	}
