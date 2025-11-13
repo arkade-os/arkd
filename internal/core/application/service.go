@@ -2875,12 +2875,14 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			"operator_uncomfirmed_balance": int(unComfirmedBalance),
 			"mining_fee_sats":              int(miningFee),
 			"intent_fees_sats":             int(intentFees),
-			"vtxos_spent":                  domain.Intents(intentsToSlice(round.Intents)).CountSpentVtxos(),
-			"boarding_inputs":              int(boardingInputs),
-			"intents_count":                len(round.Intents),
-			"collab_exits_count":           int(numOfCollabExists),
-			"new_vtxos_count":              len(getNewVtxosFromRound(round)),
-			"latency_seconds":              int(round.EndingTimestamp - round.StartingTimestamp),
+			"vtxos_spent": domain.Intents(
+				intentsToSlice(round.Intents),
+			).CountSpentVtxos(),
+			"boarding_inputs":    int(boardingInputs),
+			"intents_count":      len(round.Intents),
+			"collab_exits_count": int(numOfCollabExists),
+			"new_vtxos_count":    len(getNewVtxosFromRound(round)),
+			"latency_seconds":    int(round.EndingTimestamp - round.StartingTimestamp),
 		})
 	}()
 

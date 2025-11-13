@@ -43,7 +43,9 @@ func NewService(alertManagerURL string) ports.Alerts {
 func (s *service) Publish(ctx context.Context, topic ports.Topic, message interface{}) error {
 	messageData, ok := message.(map[string]interface{})
 	if !ok {
-		log.WithField("topic", topic).Warn("alert message is not a map, converting to generic format")
+		log.WithField("topic", topic).Warn(
+			"alert message is not a map, converting to generic format",
+		)
 		messageData = map[string]interface{}{
 			"event": message,
 		}
@@ -122,7 +124,8 @@ func (s *service) sendAlert(ctx context.Context, alerts Alert) error {
 		if err != nil {
 			// Network error - retry with backoff
 			if attempt < maxRetries-1 {
-				delay := baseDelay * time.Duration(1<<uint(attempt)) // exponential: 100ms, 200ms, 400ms, 800ms, 1600ms
+				// exponential: 100ms, 200ms, 400ms, 800ms, 1600ms
+				delay := baseDelay * time.Duration(1<<uint(attempt))
 
 				select {
 				case <-time.After(delay):
@@ -136,7 +139,7 @@ func (s *service) sendAlert(ctx context.Context, alerts Alert) error {
 		}
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if attempt > 0 {
 				log.WithField("attempts", attempt+1).Info("alert sent to AlertManager after retry")
 			}
@@ -144,7 +147,7 @@ func (s *service) sendAlert(ctx context.Context, alerts Alert) error {
 			return nil
 		}
 
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		// Retry on 5xx (server errors), but not on 4xx (client errors)
 		if resp.StatusCode >= 500 {
@@ -161,7 +164,11 @@ func (s *service) sendAlert(ctx context.Context, alerts Alert) error {
 		}
 
 		// 4xx error or final 5xx error
-		return fmt.Errorf("AlertManager returned non-success status %d after %d attempts", resp.StatusCode, attempt+1)
+		return fmt.Errorf(
+			"AlertManager returned non-success status %d after %d attempts",
+			resp.StatusCode,
+			attempt+1,
+		)
 	}
 
 	return fmt.Errorf("failed to send alert after %d attempts", maxRetries)
@@ -184,7 +191,14 @@ func formatBatchFinalizedAlert(data map[string]interface{}) []string {
 			hasFinancial = true
 		}
 		btc := float64(operatorInput) / 1e8
-		lines = append(lines, fmt.Sprintf("• Operator Input: %s sats (%.8f BTC)", formatNumber(operatorInput), btc))
+		lines = append(
+			lines,
+			fmt.Sprintf(
+				"• Operator Input: %s sats (%.8f BTC)",
+				formatNumber(operatorInput),
+				btc,
+			),
+		)
 	}
 	if miningFee, ok := getInt(data, "mining_fee_sats"); ok {
 		if !hasFinancial {
@@ -196,9 +210,11 @@ func formatBatchFinalizedAlert(data map[string]interface{}) []string {
 	if intentFees, ok := getInt(data, "intent_fees_sats"); ok {
 		if !hasFinancial {
 			lines = append(lines, "\n*Financial Metrics:*")
-			hasFinancial = true
 		}
-		lines = append(lines, fmt.Sprintf("• Intent Fees Earned: %s sats", formatNumber(intentFees)))
+		lines = append(
+			lines,
+			fmt.Sprintf("• Intent Fees Earned: %s sats", formatNumber(intentFees)),
+		)
 	}
 
 	hasBalances := false
@@ -212,7 +228,6 @@ func formatBatchFinalizedAlert(data map[string]interface{}) []string {
 	if unconfirmed, ok := getInt(data, "operator_uncomfirmed_balance"); ok {
 		if !hasBalances {
 			lines = append(lines, "\n*Operator Balances:*")
-			hasBalances = true
 		}
 		lines = append(lines, fmt.Sprintf("• Unconfirmed: %s sats", formatNumber(unconfirmed)))
 	}
@@ -249,7 +264,6 @@ func formatBatchFinalizedAlert(data map[string]interface{}) []string {
 	if collabExits, ok := getInt(data, "collab_exits_count"); ok && collabExits > 0 {
 		if !hasStats {
 			lines = append(lines, "\n*Statistics:*")
-			hasStats = true
 		}
 		lines = append(lines, fmt.Sprintf("• Collaborative Exits: %d", collabExits))
 	}
