@@ -90,6 +90,7 @@ type service struct {
 	ctx               context.Context
 	wg                *sync.WaitGroup
 	signBoardingInsMu *sync.Mutex
+	offchainTxMu      *sync.Mutex
 }
 
 func NewService(
@@ -231,6 +232,7 @@ func NewService(
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
 		signBoardingInsMu:             &sync.Mutex{},
+		offchainTxMu:                  &sync.Mutex{},
 		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
@@ -470,6 +472,10 @@ func (s *service) SubmitOffchainTx(
 	}
 	changes = []domain.Event{event}
 
+	// lock any concurrent offchain tx submissions until the tx is marked as Accepted
+	s.offchainTxMu.Lock()
+	defer s.offchainTxMu.Unlock()
+
 	// get all the vtxos inputs
 	spentVtxos, err := vtxoRepo.GetVtxos(ctx, spentVtxoKeys)
 	if err != nil {
@@ -497,10 +503,16 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
-	// check if any of the spent vtxos are banned
 	for _, vtxo := range spentVtxos {
+		// check if banned
 		if err := s.checkIfBanned(ctx, vtxo); err != nil {
 			return nil, "", "", errors.VTXO_BANNED.Wrap(err).
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+		}
+
+		// check if already spent by another offchain tx
+		if s.cache.OffchainTxs().Includes(vtxo.Outpoint) {
+			return nil, "", "", errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint.String()).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 		}
 	}
