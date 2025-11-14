@@ -60,6 +60,11 @@ func TestMain(m *testing.M) {
 	time.Sleep(1 * time.Second)
 
 	code := m.Run()
+	// delete the data directory
+	if err := os.RemoveAll("data/e2e"); err != nil {
+		log.WithError(err).Fatal("error deleting data directory")
+	}
+
 	os.Exit(code)
 }
 
@@ -551,7 +556,7 @@ func TestReactToFraud(t *testing.T) {
 		require.NoError(t, err)
 
 		// Give the server the time to react the fraud.
-		time.Sleep(5 * time.Second)
+		time.Sleep(8 * time.Second)
 
 		// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
 		spentStatus, err = expl.GetTxOutspends(vtxo.Txid)
@@ -1308,6 +1313,82 @@ func TestSweep(t *testing.T) {
 		require.True(t, spent[0].Swept)
 		require.True(t, spent[0].Spent)
 		require.True(t, spent[0].Unrolled)
+	})
+
+	t.Run("with arkd restart", func(t *testing.T) {
+		alice := setupArkSDK(t)
+		defer alice.Stop()
+
+		ctx := t.Context()
+
+		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		faucetOnchain(t, boardingAddr, 0.00021)
+		time.Sleep(5 * time.Second)
+
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incominFunds []types.Vtxo
+		var incomingErr error
+		go func() {
+			incominFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			wg.Done()
+		}()
+
+		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		_, err = alice.Settle(ctx)
+		require.NoError(t, err)
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.Len(t, incominFunds, 1)
+		vtxo := incominFunds[0]
+
+		// generate a block to confirm the commitment tx
+		err = generateBlocks(1)
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Second)
+
+		// lock/unlock the wallet to restart the sweeper
+		err = restartArkd()
+		require.NoError(t, err)
+
+		// Generate 30 blocks to expire the batch output
+		err = generateBlocks(30)
+		require.NoError(t, err)
+
+		// Wait for server to process the sweep
+		time.Sleep(20 * time.Second)
+
+		spendable, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, spendable, 1)
+		require.Equal(t, vtxo.Txid, spendable[0].Txid)
+		require.True(t, spendable[0].Swept)
+		require.False(t, spendable[0].Spent)
+
+		wg.Go(func() {
+			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+		})
+
+		// Test fund recovery
+		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos)
+		require.NoError(t, err)
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+
+		spendable, spent, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, spendable)
+		require.Len(t, spendable, 1)
+		require.Len(t, spent, 1)
+		require.Equal(t, txid, spent[0].SettledBy)
+		require.Equal(t, vtxo.Txid, spent[0].Txid)
+		require.True(t, spent[0].Swept)
+		require.True(t, spent[0].Spent)
 	})
 }
 

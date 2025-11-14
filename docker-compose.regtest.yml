@@ -94,8 +94,7 @@ services:
       - ARKD_BAN_THRESHOLD=1
       - ARKD_ONCHAIN_OUTPUT_FEE=100
     volumes:
-      - type: tmpfs
-        target: /app/data
+      - ./data/e2e:/app/data
 
 networks:
   default:
