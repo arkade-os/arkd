@@ -17,6 +17,6 @@ type VtxoRepository interface {
 	GetAllVtxosWithPubKeys(ctx context.Context, pubkeys []string) ([]Vtxo, error)
 	UpdateVtxosExpiration(ctx context.Context, outpoints []Outpoint, expiresAt int64) error
 	GetLeafVtxosForBatch(ctx context.Context, txid string) ([]Vtxo, error)
-	GetAllChildrenVtxos(ctx context.Context, txid string) ([]Outpoint, error)
+	GetVtxosByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]Outpoint, error)
 	Close()
 }

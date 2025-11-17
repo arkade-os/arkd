@@ -619,6 +619,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_vtxo_repository", func(t *testing.T) {
 		ctx := context.Background()
 
+		commitmentTxid := randomString(32)
+
 		userVtxos := []domain.Vtxo{
 			{
 				Outpoint: domain.Outpoint{
@@ -627,8 +629,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				},
 				PubKey:             pubkey,
 				Amount:             1000,
-				RootCommitmentTxid: "root",
-				CommitmentTxids:    []string{"root", "cmt1", "cmt2"},
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid, "cmt1", "cmt2"},
 				Preconfirmed:       true,
 			},
 			{
@@ -638,8 +640,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				},
 				PubKey:             pubkey,
 				Amount:             2000,
-				RootCommitmentTxid: "root",
-				CommitmentTxids:    []string{"root"},
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
 			},
 		}
 		newVtxos := append(userVtxos, domain.Vtxo{
@@ -649,11 +651,12 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			PubKey:             pubkey2,
 			Amount:             2000,
-			RootCommitmentTxid: "root",
-			CommitmentTxids:    []string{"root"},
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
 		})
 		arkTxid := randomString(32)
-		commitmentTxid := randomString(32)
+
+		commitmentTxid1 := randomString(32)
 
 		vtxoKeys := make([]domain.Outpoint, 0, len(userVtxos))
 		spentVtxoMap := make(map[domain.Outpoint]string)
@@ -744,8 +747,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			PubKey:             pubkey,
 			Amount:             1000,
-			RootCommitmentTxid: "root",
-			CommitmentTxids:    []string{"root"},
+			RootCommitmentTxid: commitmentTxid1,
+			CommitmentTxids:    []string{commitmentTxid1},
 			ArkTxid:            randomString(32), // Points to vtxo2
 		}
 
@@ -756,8 +759,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			PubKey:             pubkey,
 			Amount:             2000,
-			RootCommitmentTxid: "root",
-			CommitmentTxids:    []string{"root"},
+			RootCommitmentTxid: commitmentTxid1,
+			CommitmentTxids:    []string{commitmentTxid1},
 			ArkTxid:            randomString(32), // Points to vtxo3
 		}
 
@@ -768,8 +771,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			PubKey:             pubkey,
 			Amount:             3000,
-			RootCommitmentTxid: "root",
-			CommitmentTxids:    []string{"root"},
+			RootCommitmentTxid: commitmentTxid1,
+			CommitmentTxids:    []string{commitmentTxid1},
 			ArkTxid:            randomString(32), // Points to vtxo4
 		}
 
@@ -780,8 +783,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			PubKey:             pubkey,
 			Amount:             4000,
-			RootCommitmentTxid: "root",
-			CommitmentTxids:    []string{"root"},
+			RootCommitmentTxid: commitmentTxid1,
+			CommitmentTxids:    []string{commitmentTxid1},
 			ArkTxid:            "", // End of chain - null ark_txid
 		}
 
@@ -791,7 +794,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 
 		// Test recursive query starting from vtxo1
-		children, err := svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo1.Txid)
+		children, err := svc.Vtxos().GetVtxosByCommitmentTxid(ctx, vtxo1.RootCommitmentTxid)
 		require.NoError(t, err)
 		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
 
@@ -813,18 +816,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		require.Equal(t, expectedOutpoints, children)
 
-		// Test starting from middle of chain (vtxo2)
-		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo2.Txid)
-		require.NoError(t, err)
-		require.Len(t, children, 3) // Should return vtxo2, vtxo3, vtxo4
-
-		// Test starting from end of chain (vtxo4)
-		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo4.Txid)
-		require.NoError(t, err)
-		require.Len(t, children, 1) // Should return only vtxo4
-
 		// Test with non-existent txid
-		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, randomString(32))
+		children, err = svc.Vtxos().GetVtxosByCommitmentTxid(ctx, randomString(32))
 		require.NoError(t, err)
 		require.Empty(t, children)
 	})
