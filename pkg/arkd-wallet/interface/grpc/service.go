@@ -30,7 +30,6 @@ type service struct {
 	closeFn           func()
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func()
-	version           string
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -66,7 +65,6 @@ func (s *service) Start() error {
 			pyroscopeShutdown, err := telemetry.InitPyroscope(
 				context.Background(),
 				s.cfg.PyroscopeServerURL,
-				s.version,
 			)
 			if err != nil {
 				log.WithError(err).Warn("failed to initialize pyroscope, continuing without profiling")

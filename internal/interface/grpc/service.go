@@ -218,7 +218,6 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 			pyroscopeShutdown, err := telemetry.InitPyroscope(
 				ctx,
 				s.appConfig.PyroscopeServerURL,
-				s.version,
 			)
 			if err != nil {
 				return err

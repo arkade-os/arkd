@@ -50,7 +50,7 @@ func (h *OTelHook) Fire(e *logrus.Entry) error {
 
 	rec.AddAttributes(
 		log.String("log.kind", "app"),
-		log.String("logger", "rkd.wallet"),
+		log.String("logger", "arkd.wallet"),
 		log.String("level", e.Level.String()),
 	)
 

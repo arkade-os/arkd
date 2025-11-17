@@ -13,7 +13,7 @@ const arkd = "arkd"
 // InitPyroscope initializes the Pyroscope profiler for continuous profiling.
 // It returns a shutdown function that should be called on application exit.
 // If pyroscopeServerURL is empty, this function does nothing and returns a no-op shutdown function.
-func InitPyroscope(ctx context.Context, pyroscopeServerURL, version string) (func(), error) {
+func InitPyroscope(ctx context.Context, pyroscopeServerURL string) (func(), error) {
 	if pyroscopeServerURL == "" {
 		return func() {}, nil
 	}
@@ -22,9 +22,6 @@ func InitPyroscope(ctx context.Context, pyroscopeServerURL, version string) (fun
 		ApplicationName: arkd,
 		ServerAddress:   pyroscopeServerURL,
 		Logger:          pyroscope.StandardLogger,
-		Tags: map[string]string{
-			"version": version,
-		},
 		ProfileTypes: []pyroscope.ProfileType{
 			pyroscope.ProfileCPU,
 			pyroscope.ProfileInuseObjects,
@@ -46,7 +43,6 @@ func InitPyroscope(ctx context.Context, pyroscopeServerURL, version string) (fun
 	log.WithFields(log.Fields{
 		"server":  pyroscopeServerURL,
 		"service": arkd,
-		"version": version,
 	}).Info("pyroscope profiler started successfully")
 
 	shutdown := func() {
