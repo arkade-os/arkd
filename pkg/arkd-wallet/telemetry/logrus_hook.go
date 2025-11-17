@@ -50,7 +50,7 @@ func (h *OTelHook) Fire(e *logrus.Entry) error {
 
 	rec.AddAttributes(
 		log.String("log.kind", "app"),
-		log.String("logger", "ark.daemon"),
+		log.String("logger", "rkd.wallet"),
 		log.String("level", e.Level.String()),
 	)
 
@@ -61,7 +61,7 @@ func (h *OTelHook) Fire(e *logrus.Entry) error {
 
 	// observed ts (optional)
 	rec.SetObservedTimestamp(time.Now())
-	logger := global.GetLoggerProvider().Logger("arkd")
+	logger := global.GetLoggerProvider().Logger("arkd.wallet")
 	ctx := e.Context
 	if ctx == nil {
 		ctx = context.Background()

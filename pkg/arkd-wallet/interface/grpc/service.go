@@ -24,11 +24,13 @@ import (
 )
 
 type service struct {
-	cfg          *config.Config
-	server       *http.Server
-	grpcSrv      *grpc.Server
-	closeFn      func()
-	otelShutdown func(context.Context) error
+	cfg               *config.Config
+	server            *http.Server
+	grpcSrv           *grpc.Server
+	closeFn           func()
+	otelShutdown      func(context.Context) error
+	pyroscopeShutdown func()
+	version           string
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -58,6 +60,18 @@ func (s *service) Start() error {
 		)
 		if err != nil {
 			return err
+		}
+
+		if s.cfg.PyroscopeServerURL != "" {
+			pyroscopeShutdown, err := telemetry.InitPyroscope(
+				context.Background(),
+				s.cfg.PyroscopeServerURL,
+				s.version,
+			)
+			if err != nil {
+				log.WithError(err).Warn("failed to initialize pyroscope, continuing without profiling")
+			}
+			s.pyroscopeShutdown = pyroscopeShutdown
 		}
 
 		s.otelShutdown = otelShutdown
@@ -123,6 +137,9 @@ func (s *service) Stop() {
 	}
 	if s.grpcSrv != nil {
 		s.grpcSrv.GracefulStop()
+	}
+	if s.pyroscopeShutdown != nil {
+		s.pyroscopeShutdown()
 	}
 	if s.otelShutdown != nil {
 		if err := s.otelShutdown(context.Background()); err != nil {

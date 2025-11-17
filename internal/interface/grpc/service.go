@@ -40,15 +40,16 @@ const (
 )
 
 type service struct {
-	version       string
-	config        Config
-	appConfig     *config.Config
-	server        *http.Server
-	adminServer   *http.Server
-	grpcServer    *grpc.Server
-	adminGrpcSrvr *grpc.Server
-	macaroonSvc   *macaroons.Service
-	otelShutdown  func(context.Context) error
+	version           string
+	config            Config
+	appConfig         *config.Config
+	server            *http.Server
+	adminServer       *http.Server
+	grpcServer        *grpc.Server
+	adminGrpcSrvr     *grpc.Server
+	macaroonSvc       *macaroons.Service
+	otelShutdown      func(context.Context) error
+	pyroscopeShutdown func()
 }
 
 func NewService(
@@ -122,6 +123,9 @@ func (s *service) Start() error {
 func (s *service) Stop() {
 	withAppSvc := true
 	s.stop(withAppSvc)
+	if s.pyroscopeShutdown != nil {
+		s.pyroscopeShutdown()
+	}
 	if s.otelShutdown != nil {
 		if err := s.otelShutdown(context.Background()); err != nil {
 			log.Errorf("failed to shutdown otel: %s", err)
@@ -208,6 +212,18 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		)
 		if err != nil {
 			return err
+		}
+
+		if s.appConfig.PyroscopeServerURL != "" {
+			pyroscopeShutdown, err := telemetry.InitPyroscope(
+				ctx,
+				s.appConfig.PyroscopeServerURL,
+				s.version,
+			)
+			if err != nil {
+				return err
+			}
+			s.pyroscopeShutdown = pyroscopeShutdown
 		}
 
 		s.otelShutdown = otelShutdown
