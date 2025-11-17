@@ -252,6 +252,22 @@ func (t *TxTree) Leaves() []*psbt.Packet {
 	return leaves
 }
 
+// FindInput returns the subtree spending the given outpoint.
+func (t *TxTree) FindInput(txid string, vout uint32) *TxTree {
+	rootInput := t.Root.UnsignedTx.TxIn[0]
+	if rootInput.PreviousOutPoint.Hash.String() == txid && rootInput.PreviousOutPoint.Index == vout {
+		return t
+	}
+
+	for _, child := range t.Children {
+		if f := child.FindInput(txid, vout); f != nil {
+			return f
+		}
+	}
+
+	return nil
+}
+
 // Find returns the tx in the tree that matches the provided txid.
 func (t *TxTree) Find(txid string) *TxTree {
 	if t.Root.UnsignedTx.TxID() == txid {

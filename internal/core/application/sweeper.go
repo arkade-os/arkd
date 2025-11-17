@@ -413,7 +413,8 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 			return err
 		}
 
-		sweepInputs := make([]ports.SweepableOutput, 0)
+		// outputs sweepable now
+		outputsToSweep := make([]ports.SweepableOutput, 0)
 		leafVtxoKeys := make([]domain.Outpoint, 0) // vtxos associated to the sweep inputs
 
 		// inspect the vtxo tree to find onchain batch outputs
@@ -422,6 +423,11 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 		)
 		if err != nil {
 			return err
+		}
+
+		if len(batchOutputs) <= 0 {
+			log.Debugf("sweeper: no sweepable batch outputs found for batch %s", commitmentTxid)
+			return nil
 		}
 
 		for expiresAt, inputs := range batchOutputs {
@@ -436,13 +442,14 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 				for _, subTree := range subtrees {
 					if err := s.scheduleBatchSweep(expiresAt, commitmentTxid, subTree); err != nil {
 						log.WithError(err).Errorf(
-							"failed to schedule sweep for sub-tree of batch %s", commitmentTxid,
+							"failed to schedule sweep for vtxo tree %s of batch %s",
+							subTree.Root.UnsignedTx.TxID(), commitmentTxid,
 						)
 						continue
 					}
-					log.Debugf(
-						"sweeper: scheduled sweep for sub-tree of batch %s at %s",
-						commitmentTxid, fancyTime(expiresAt, s.scheduler.Unit()),
+					log.Debugf("sweeper: scheduled sweep for vtxo tree %s of batch %s at %s",
+						subTree.Root.UnsignedTx.TxID(), commitmentTxid,
+						fancyTime(expiresAt, s.scheduler.Unit()),
 					)
 				}
 				continue
@@ -495,7 +502,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 					firstVtxo, err := s.repoManager.Vtxos().GetVtxos(ctx, sweepableVtxos[:1])
 					if err != nil {
 						log.WithError(err).Errorf("failed to get vtxo %s", sweepableVtxos[0])
-						sweepInputs = append(sweepInputs, input) // add the input anyway in order to try to sweep it
+						outputsToSweep = append(outputsToSweep, input) // add the input anyway in order to try to sweep it
 						continue
 					}
 					if len(firstVtxo) <= 0 {
@@ -512,18 +519,20 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 
 				if len(sweepableVtxos) > 0 {
 					leafVtxoKeys = append(leafVtxoKeys, sweepableVtxos...)
-					sweepInputs = append(sweepInputs, input)
+					outputsToSweep = append(outputsToSweep, input)
 				}
 			}
 		}
 
-		if len(sweepInputs) <= 0 {
-			log.Debugf("sweeper: no more outputs to sweep for batch %s", commitmentTxid)
+		if len(outputsToSweep) <= 0 {
+			// no outputs to sweep now
 			return nil
 		}
 
+		log.Debugf("sweeper: sweeping %d outputs for batch %s", len(outputsToSweep), commitmentTxid)
+
 		// build the sweep transaction with all the expired non-swept batch outputs
-		sweepTxId, sweepTx, err := s.builder.BuildSweepTx(sweepInputs)
+		sweepTxId, sweepTx, err := s.builder.BuildSweepTx(outputsToSweep)
 		if err != nil {
 			return err
 		}
@@ -632,7 +641,7 @@ func computeSubTrees(
 	// for each sweepable input, create a sub vtxo tree
 	// it allows to skip the part of the tree that has been broadcasted in the next task
 	for _, input := range inputs {
-		if subTree := vtxoTree.Find(input.Hash.String()); subTree != nil {
+		if subTree := vtxoTree.FindInput(input.Hash.String(), input.Index); subTree != nil {
 			rootTxid := subTree.Root.UnsignedTx.TxID()
 			subTrees[rootTxid] = subTree
 		}
