@@ -17,7 +17,10 @@ func NewCurrentRoundStore() ports.CurrentRoundStore {
 	return &currentRoundStore{}
 }
 
-func (s *currentRoundStore) Upsert(_ context.Context, fn func(m *domain.Round) *domain.Round) error {
+func (s *currentRoundStore) Upsert(
+	_ context.Context,
+	fn func(m *domain.Round) *domain.Round,
+) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.round = fn(s.round)
