@@ -18,13 +18,11 @@ var (
 	ErrMissingInputs             = fmt.Errorf("missing inputs")
 	ErrMissingData               = fmt.Errorf("missing data")
 	ErrMissingWitnessUtxo        = fmt.Errorf("missing witness utxo")
-	ErrIncompletePSBT            = fmt.Errorf("incomplete psbt, missing signatures on inputs")
-	ErrInvalidTxNumberOfInputs   = fmt.Errorf("invalid tx, expected at least 2 inputs")
-	ErrInvalidTxNumberOfOutputs  = fmt.Errorf("invalid tx, expected at least 1 output")
-	ErrInvalidTxWrongTxHash      = fmt.Errorf("invalid tx, wrong tx hash in first input")
-	ErrInvalidTxWrongOutputIndex = fmt.Errorf("invalid tx, wrong output index in first input")
-	ErrPrevoutNotFound           = fmt.Errorf("prevout not found")
-	ErrMissingArkFields          = fmt.Errorf("expected at least 1 ark field, revealed taptree is required")
+	ErrInvalidTxNumberOfInputs   = fmt.Errorf("invalid intent proof: expected at least 2 inputs")
+	ErrInvalidTxNumberOfOutputs  = fmt.Errorf("invalid intent proof: expected at least 1 output")
+	ErrInvalidTxWrongTxHash      = fmt.Errorf("invalid intent proof: wrong tx hash in message input")
+	ErrInvalidTxWrongOutputIndex = fmt.Errorf("invalid intent proof: wrong output index in message input")
+	ErrPrevoutNotFound           = fmt.Errorf("invalid intent proof: missing witness utxo field")
 )
 
 var (
@@ -66,9 +64,9 @@ func Verify(proofB64, message string) error {
 		return ErrInvalidTxNumberOfOutputs
 	}
 
-	prevoutFetcher, err := proof.getPrevoutFetcher()
+	prevoutFetcher, err := txutils.GetPrevOutputFetcher(ptx)
 	if err != nil {
-		return fmt.Errorf("failed to get prevout fetcher: %s", err)
+		return err
 	}
 
 	// the first input of the tx is always the toSpend tx,
@@ -115,11 +113,11 @@ func Verify(proofB64, message string) error {
 			sigCache, txSigHashes, prevout.Value, prevoutFetcher,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to execute bitcoin script: %s", err)
+			return fmt.Errorf("invalid intent proof: failed to create script engine for input %d: %w", i, err)
 		}
 
 		if err := engine.Execute(); err != nil {
-			return err
+			return fmt.Errorf("invalid intent proof: failed to execute script for input %d: %w", i, err)
 		}
 
 	}
@@ -162,6 +160,9 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 // GetOutpoints returns the list of inputs proving ownership of coins
 // the first input is the toSpend tx, we ignore it
 func (p Proof) GetOutpoints() []wire.OutPoint {
+	if len(p.UnsignedTx.TxIn) <= 1 {
+		return nil
+	}
 	outpoints := make([]wire.OutPoint, 0, len(p.UnsignedTx.TxIn)-1)
 	for _, input := range p.UnsignedTx.TxIn[1:] {
 		outpoints = append(outpoints, input.PreviousOutPoint)
@@ -178,17 +179,6 @@ func (p Proof) ContainsOutputs() bool {
 		return false
 	}
 	return true
-}
-
-func (p Proof) getPrevoutFetcher() (txscript.PrevOutputFetcher, error) {
-	prevouts := make(map[wire.OutPoint]*wire.TxOut)
-	for inputIndex, input := range p.Inputs {
-		if input.WitnessUtxo == nil {
-			return nil, fmt.Errorf("witness utxo not found for input %d", inputIndex)
-		}
-		prevouts[p.UnsignedTx.TxIn[inputIndex].PreviousOutPoint] = input.WitnessUtxo
-	}
-	return txscript.NewMultiPrevOutFetcher(prevouts), nil
 }
 
 // buildToSpendTx creates the initial transaction that will be spent in the proof

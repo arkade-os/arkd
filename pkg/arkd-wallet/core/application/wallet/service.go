@@ -539,7 +539,8 @@ func (w *wallet) SignTransaction(
 			return "", err
 		}
 		if privateKey == nil {
-			return "", fmt.Errorf("private key not found for script %x (input %d)", input.WitnessUtxo.PkScript, inputIndex)
+			return "", fmt.Errorf("script %x is not a wallet script, cannot sign input %s",
+				input.WitnessUtxo.PkScript, ptx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint.String())
 		}
 
 		signature, err := txscript.RawTxInTaprootSignature(

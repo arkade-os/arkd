@@ -21,8 +21,8 @@ type TxTree struct {
 	Children map[uint32]*TxTree // output index -> sub-tree
 }
 
-// TxTreeNode is a flat represenation of a node of tx tree.
-// The purpose of this struct is to facilitate the persistance of the tx tree in storage services.
+// TxTreeNode is a flat representation of a node of tx tree.
+// The purpose of this struct is to facilitate the persistence of the tx tree in storage services.
 type TxTreeNode struct {
 	Txid string
 	// Tx is the base64 encoded root PSBT
@@ -32,7 +32,7 @@ type TxTreeNode struct {
 }
 
 // FlatTxTree is the flat representation of a tx tree.
-// The purpose of this struct is to facilitate the persistance of the tx tree in storage services.
+// The purpose of this struct is to facilitate the persistence of the tx tree in storage services.
 type FlatTxTree []TxTreeNode
 
 func (c FlatTxTree) Leaves() []TxTreeNode {

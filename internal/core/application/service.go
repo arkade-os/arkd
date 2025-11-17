@@ -67,6 +67,9 @@ type service struct {
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 
+	// fees
+	onchainOutputFee int64 // expected fee in satoshis per onchain output registered in intents
+
 	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
 	vtxoNoCsvValidationCutoffTime time.Time
 
@@ -83,9 +86,10 @@ type service struct {
 	indexerTxEventsCh        chan TransactionEvent
 
 	// stop and round-execution go routine handlers
-	stop func()
-	ctx  context.Context
-	wg   *sync.WaitGroup
+	stop              func()
+	ctx               context.Context
+	wg                *sync.WaitGroup
+	signBoardingInsMu *sync.Mutex
 }
 
 func NewService(
@@ -109,6 +113,7 @@ func NewService(
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
 	vtxoNoCsvValidationCutoffTime time.Time,
+	onchainOutputFee int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -225,10 +230,12 @@ func NewService(
 		stop:                          cancel,
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
+		signBoardingInsMu:             &sync.Mutex{},
 		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
+		onchainOutputFee:              onchainOutputFee,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -447,6 +454,12 @@ func (s *service) SubmitOffchainTx(
 		}
 		checkpointTxs[txid] = tx
 		checkpointPsbts[txid] = checkpointPtx
+		if _, seen := checkpointTxsByVtxoKey[vtxoKey]; seen {
+			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+				"duplicated vtxo input %s", vtxoKey.String(),
+			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: 0})
+		}
+
 		checkpointTxsByVtxoKey[vtxoKey] = txid
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
 	}
@@ -973,7 +986,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// verify the tapscript signatures
-	if valid, _, err := s.builder.VerifyTapscriptPartialSigs(signedArkTx, false); err != nil ||
+	if valid, _, err := s.builder.VerifyVtxoTapscriptSigs(signedArkTx, false); err != nil ||
 		!valid {
 		return nil, "", "", errors.INVALID_SIGNATURE.New("invalid signature in ark tx %s", txid).
 			WithMetadata(errors.InvalidSignatureMetadata{Tx: signedArkTx})
@@ -1066,7 +1079,7 @@ func (s *service) FinalizeOffchainTx(
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
-		valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(checkpoint, true)
+		valid, ptx, err := s.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
 		if err != nil || !valid {
 			return errors.INVALID_SIGNATURE.New(
 				"invalid signature in checkpoint tx %s", checkpoint,
@@ -1125,6 +1138,10 @@ func (s *service) FinalizeOffchainTx(
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
+		if len(checkpointTx.UnsignedTx.TxOut) == 0 {
+			return errors.INVALID_PSBT_INPUT.New("checkpoint tx has no outputs").
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
+		}
 		checkpointOutputScript := checkpointTx.UnsignedTx.TxOut[0].PkScript
 		if !bytes.Equal(checkpointOutputScript, expectedOutputScript) {
 			return errors.INVALID_PSBT_INPUT.New(
@@ -1179,6 +1196,10 @@ func (s *service) RegisterIntent(
 	boardingUtxos := make([]boardingIntentInput, 0)
 
 	outpoints := proof.GetOutpoints()
+	if len(outpoints) == 0 {
+		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
 
 	now := time.Now()
 	if message.ValidAt > 0 {
@@ -1219,7 +1240,39 @@ func (s *service) RegisterIntent(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
+	fees, err := computeIntentFees(proof)
+	if err != nil {
+		return "", errors.INVALID_INTENT_PROOF.New("failed to compute intent fees: %w", err).
+			WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+	}
+
+	countOnchainOutputs := len(message.OnchainOutputIndexes)
+	expectedFees := int64(countOnchainOutputs) * s.onchainOutputFee
+
+	if fees < expectedFees {
+		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d expected %d", fees, expectedFees).
+			WithMetadata(errors.IntentInsufficientFeeMetadata{
+				ExpectedFee: int(expectedFees),
+				ActualFee:   int(fees),
+			})
+	}
+
+	seenOutpoints := make(map[wire.OutPoint]struct{})
+
 	for i, outpoint := range outpoints {
+		if _, seen := seenOutpoints[outpoint]; seen {
+			return "", errors.INVALID_INTENT_PROOF.New(
+				"duplicated input %s", outpoint.String(),
+			).WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+		}
+		seenOutpoints[outpoint] = struct{}{}
+
 		psbtInput := proof.Inputs[i+1]
 
 		if len(psbtInput.TaprootLeafScript) == 0 {
@@ -1616,42 +1669,50 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 }
 
 func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx string) errors.Error {
-	numSignedInputs, err := s.builder.CountSignedTaprootInputs(signedCommitmentTx)
+	// we do not need to acquire the lock here because commitmentTx is only used to compute the signature hashes
+	// thus it is safe to read it without the lock because we rely ony on WitnessUtxo fields
+	commitmentTx := s.cache.CurrentRound().Get().CommitmentTx
+	signedInputs, err := s.builder.VerifyBoardingTapscriptSigs(signedCommitmentTx, commitmentTx)
 	if err != nil {
-		return errors.INTERNAL_ERROR.New(
-			"failed to count number of signed boarding inputs: %w", err,
-		).WithMetadata(map[string]any{
-			"signed_commitment_tx": signedCommitmentTx,
-		})
-	}
-	if numSignedInputs == 0 {
-		return nil
+		return errors.INVALID_BOARDING_INPUT_SIG.New("failed to verify boarding tapscript sigs: %w", err).
+			WithMetadata(errors.InvalidBoardingInputSigMetadata{
+				SignedCommitmentTx: signedCommitmentTx,
+			})
 	}
 
-	var combineErr error
-	if err := s.cache.CurrentRound().Upsert(func(r *domain.Round) *domain.Round {
-		combined, err := s.builder.VerifyAndCombinePartialTx(r.CommitmentTx, signedCommitmentTx)
-		if err != nil {
-			combineErr = err
-			return r
-		}
+	if len(signedInputs) == 0 {
+		return errors.INVALID_BOARDING_INPUT_SIG.New("no signed inputs found").
+			WithMetadata(errors.InvalidBoardingInputSigMetadata{
+				SignedCommitmentTx: signedCommitmentTx,
+			})
+	}
 
-		ur := *r
-		ur.CommitmentTx = combined
-		return &ur
+	s.signBoardingInsMu.Lock()
+	defer s.signBoardingInsMu.Unlock()
+
+	round := s.cache.CurrentRound().Get()
+	combined, err := s.builder.CombineTapscriptSigs(
+		round.CommitmentTx,
+		signedCommitmentTx,
+		signedInputs,
+	)
+	if err != nil {
+		return errors.INTERNAL_ERROR.New("failed to combine tapscript sigs: %w", err).
+			WithMetadata(map[string]any{
+				"signed_commitment_tx": signedCommitmentTx,
+				"signed_inputs":        signedInputs,
+				"commitment_tx":        round.CommitmentTx,
+			})
+	}
+	round.CommitmentTx = combined
+
+	if err := s.cache.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round {
+		return round
 	}); err != nil {
 		return errors.INTERNAL_ERROR.New("failed to upsert current round: %w", err).
 			WithMetadata(map[string]any{
 				"signed_commitment_tx": signedCommitmentTx,
 			})
-	}
-
-	if combineErr != nil {
-		return errors.INVALID_BOARDING_INPUT_SIG.New(
-			"failed to verify and combine partial signature(s): %w", err,
-		).WithMetadata(errors.InvalidBoardingInputSigMetadata{
-			SignedCommitmentTx: signedCommitmentTx,
-		})
 	}
 
 	go s.checkForfeitsAndBoardingSigsSent()
@@ -1715,6 +1776,11 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
+		Fees: FeeInfo{
+			IntentFees: IntentFeeInfo{
+				OnchainOutput: uint64(s.onchainOutputFee),
+			},
+		},
 	}, nil
 }
 
@@ -1772,6 +1838,12 @@ func (s *service) DeleteIntentsByProof(
 			}
 
 			tx := boardingTxs[vtxoOutpoint.Txid]
+			if int(vtxoOutpoint.VOut) >= len(tx.TxOut) {
+				return errors.INVALID_PSBT_INPUT.New(
+					"invalid vout index %d for tx %s (tx has %d outputs)",
+					vtxoOutpoint.VOut, vtxoOutpoint.Txid, len(tx.TxOut),
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+			}
 			prevout := tx.TxOut[vtxoOutpoint.VOut]
 
 			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
@@ -2199,7 +2271,7 @@ func (s *service) startConfirmation(
 		// make the round fail if we didn't receive enoush confirmations
 		if len(confirmedIntents) == 0 {
 			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("not enough confirmation received"))
+				Fail(errors.INTERNAL_ERROR.New("not enough intent confirmations received"))
 			return
 		}
 	}
@@ -2337,6 +2409,11 @@ func (s *service) startFinalization(
 			return
 		}
 
+		if len(commitmentPtx.UnsignedTx.TxOut) == 0 {
+			s.cache.CurrentRound().
+				Fail(errors.INTERNAL_ERROR.New("failed to compute valid commitment tx"))
+			return
+		}
 		batchOutputAmount := commitmentPtx.UnsignedTx.TxOut[0].Value
 
 		sweepLeaf := txscript.NewBaseTapLeaf(sweepScript)
@@ -2709,6 +2786,8 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		if len(boardingInputsIndexes) > 0 {
 			s.roundReportSvc.OpStarted(VerifyBoardingInputsSignaturesOp)
 
+			log.Debugf("signing boarding inputs of commitment tx for round %s\n", roundId)
+
 			txToSign, err = s.signer.SignTransactionTapscript(
 				ctx,
 				s.cache.CurrentRound().Get().CommitmentTx,
@@ -2716,7 +2795,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			)
 			if err != nil {
 				changes = s.cache.CurrentRound().Fail(
-					errors.INTERNAL_ERROR.New("failed to sign commitment tx: %s", err),
+					errors.INTERNAL_ERROR.New("failed to sign boarding inputs of commitment tx: %s", err),
 				)
 				return
 			}
@@ -3258,6 +3337,15 @@ func (s *service) processBoardingInputs(
 		}
 
 		tx := boardingTxs[input.Txid]
+		if int(input.VOut) >= len(tx.TxOut) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid vout index %d for tx %s (tx has %d outputs)",
+				input.VOut, input.Txid, len(tx.TxOut),
+			).WithMetadata(errors.InputMetadata{
+				Txid:       intentTxid,
+				InputIndex: int(input.VOut),
+			})
+		}
 		prevout := tx.TxOut[input.VOut]
 
 		if !bytes.Equal(prevout.PkScript, input.witnessUtxo.PkScript) {
@@ -3347,6 +3435,13 @@ func (s *service) validateBoardingInput(
 				"vtxo script can be used for intent registration in %d seconds", diff,
 			)
 		}
+	}
+
+	if int(input.VOut) >= len(tx.TxOut) {
+		return nil, fmt.Errorf(
+			"invalid vout index %d for tx %s (tx has %d outputs)",
+			input.VOut, input.Txid, len(tx.TxOut),
+		)
 	}
 
 	if s.utxoMaxAmount >= 0 {
@@ -3446,7 +3541,7 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 			defer wg.Done()
 
 			for tx := range jobs {
-				valid, ptx, err := s.builder.VerifyTapscriptPartialSigs(tx, false)
+				valid, ptx, err := s.builder.VerifyVtxoTapscriptSigs(tx, false)
 				if err == nil && !valid {
 					err = fmt.Errorf("invalid signature for forfeit tx %s", ptx.UnsignedTx.TxID())
 				}
