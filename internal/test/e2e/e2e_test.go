@@ -316,7 +316,7 @@ func TestUnilateralExit(t *testing.T) {
 		faucetOnchain(t, bobOnchainAddr, 0.0001)
 		time.Sleep(5 * time.Second)
 
-		// Unroll the whole chain untill the checkpoint tx
+		// Unroll the whole chain until the checkpoint tx
 		err = bob.Unroll(t.Context())
 		require.NoError(t, err)
 
@@ -536,7 +536,7 @@ func TestReactToFraud(t *testing.T) {
 
 		bumpAndBroadcastTx(t, leafTx, expl)
 
-		// Give time to the explorer to track down the braodcasted txs.
+		// Give time to the explorer to track down the broadcasted txs.
 		time.Sleep(5 * time.Second)
 
 		// The vtxo is now unrolled and unspent in the Bitcoin mempool.
@@ -1881,7 +1881,7 @@ func TestDeleteIntent(t *testing.T) {
 	err = alice.DeleteIntent(ctx, aliceVtxos, []types.Utxo{}, nil)
 	require.NoError(t, err)
 
-	// should fail becasue no intent is associated with the vtxos
+	// should fail because no intent is associated with the vtxos
 	err = alice.DeleteIntent(ctx, aliceVtxos, []types.Utxo{}, nil)
 	require.Error(t, err)
 }
@@ -2020,7 +2020,7 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 
 	// It's important the intent doesn't expire or that it does so in a reasonable time,
-	// to implement some sort of deadline for the delagate to register it if needed.
+	// to implement some sort of deadline for the delegate to register it if needed.
 	// In this test the intent never expires for the sake of demonstration
 	intentProof, err := intent.New(
 		encodedIntentMessage,
@@ -2367,7 +2367,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("failed to submit valid tree sigantures", func(t *testing.T) {
+	t.Run("failed to submit valid tree signatures", func(t *testing.T) {
 		alice, grpcAlice := setupArkSDKWithTransport(t)
 		defer alice.Stop()
 		defer grpcAlice.Close()
