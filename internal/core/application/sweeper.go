@@ -180,7 +180,7 @@ func (s *sweeper) start(ctx context.Context) error {
 				continue
 			}
 
-			// asyncronously wait for the tx to be confirmed
+			// asynchronously wait for the tx to be confirmed
 			go func() {
 				blockHeight, blockTime := waitForConfirmation(
 					ctx, checkpointTxid, s.wallet, *network,
@@ -304,7 +304,7 @@ func (s *sweeper) scheduleCheckpointSweep(
 		vtxo,
 	)
 
-	// if the sweep checkpoint tapscript is availabe, execute the task immediately
+	// if the sweep checkpoint tapscript is available, execute the task immediately
 	if !s.scheduler.AfterNow(sweepAt) {
 		return execute()
 	}

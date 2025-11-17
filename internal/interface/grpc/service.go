@@ -455,7 +455,7 @@ func (s *service) autoUnlock() error {
 		return fmt.Errorf("failed to get wallet status: %s", err)
 	}
 	if !status.IsInitialized() {
-		log.Debug("wallet not initiialized, skipping auto unlock")
+		log.Debug("wallet not initialized, skipping auto unlock")
 		return nil
 	}
 

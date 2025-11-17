@@ -374,7 +374,7 @@ func signerLoadAction(ctx *cli.Context) error {
 		return fmt.Errorf("either private key or url must be provided")
 	}
 	if signerKey != "" && signerUrl != "" {
-		return fmt.Errorf("private key and url are mutually esclusive, only one must be provided")
+		return fmt.Errorf("private key and url are mutually exclusive, only one must be provided")
 	}
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
