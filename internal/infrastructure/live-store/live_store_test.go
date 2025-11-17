@@ -261,18 +261,19 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 	})
 
 	t.Run("CurrentRoundStore", func(t *testing.T) {
+		ctx := t.Context()
 		r := domain.NewRound()
 
 		// Upsert
-		err := store.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round { return r })
+		err := store.CurrentRound().Upsert(ctx, func(_ *domain.Round) *domain.Round { return r })
 		require.NoError(t, err)
 
 		// Get
-		got := store.CurrentRound().Get()
+		got := store.CurrentRound().Get(ctx)
 		require.Equal(t, r.Id, got.Id)
 
 		// Fail
-		events := store.CurrentRound().Fail(fmt.Errorf("fail"))
+		events := store.CurrentRound().Fail(ctx, fmt.Errorf("fail"))
 		require.Len(t, events, 1)
 	})
 

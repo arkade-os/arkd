@@ -29,11 +29,12 @@ func NewCurrentRoundStore(rdb *redis.Client, numOfRetries int) ports.CurrentRoun
 	return &currentRoundStore{rdb: rdb, numOfRetries: numOfRetries}
 }
 
-func (s *currentRoundStore) Upsert(fn func(m *domain.Round) *domain.Round) error {
-	ctx := context.Background()
+func (s *currentRoundStore) Upsert(
+	ctx context.Context, fn func(m *domain.Round) *domain.Round,
+) (err error) {
 	for attempt := 0; attempt < s.numOfRetries; attempt++ {
-		if err := s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			updated := fn(s.Get())
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			updated := fn(s.Get(ctx))
 			val, err := json.Marshal(updated)
 			if err != nil {
 				return err
@@ -44,16 +45,15 @@ func (s *currentRoundStore) Upsert(fn func(m *domain.Round) *domain.Round) error
 			})
 
 			return err
-		}); err != nil {
-			return err
+		}); err == nil {
+			return nil
 		}
 	}
-
-	return nil
+	return err
 }
 
-func (s *currentRoundStore) Get() *domain.Round {
-	data, err := s.rdb.Get(context.Background(), currentRoundKey).Bytes()
+func (s *currentRoundStore) Get(ctx context.Context) *domain.Round {
+	data, err := s.rdb.Get(ctx, currentRoundKey).Bytes()
 	if err != nil {
 		return nil
 	}
@@ -146,9 +146,9 @@ func (s *currentRoundStore) Get() *domain.Round {
 	return &round
 }
 
-func (s *currentRoundStore) Fail(err error) []domain.Event {
+func (s *currentRoundStore) Fail(ctx context.Context, err error) []domain.Event {
 	var events []domain.Event
-	if err := s.Upsert(func(m *domain.Round) *domain.Round {
+	if err := s.Upsert(ctx, func(m *domain.Round) *domain.Round {
 		m.Fail(err)
 		return m
 	}); err != nil {
@@ -156,7 +156,7 @@ func (s *currentRoundStore) Fail(err error) []domain.Event {
 		return nil
 	}
 
-	round := s.Get()
+	round := s.Get(ctx)
 	if round == nil {
 		return nil
 	}
