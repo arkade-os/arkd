@@ -1188,62 +1188,25 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 	return i, err
 }
 
-const selectVtxosByArkTxidRecursive = `-- name: SelectVtxosByArkTxidRecursive :many
-WITH RECURSIVE descendants_chain AS (
-    -- seed
-    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
-           0 AS depth,
-           ARRAY[(v.txid||':'||v.vout)]::text[] AS visited
-    FROM vtxo v
-    WHERE v.txid = $1
-
-    UNION ALL
-
-    -- children: next vtxo(s) are those whose txid == current.ark_txid
-    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
-           w.depth + 1,
-           w.visited || (c.txid||':'||c.vout)
-    FROM descendants_chain w
-             JOIN vtxo c
-                  ON c.txid = w.ark_txid
-    WHERE w.ark_txid IS NOT NULL
-      AND (c.txid||':'||c.vout) <> ALL (w.visited)   -- cycle/visited guard
-),
-nodes AS (
-   SELECT DISTINCT ON (txid, vout)
-       txid, vout, preconfirmed, depth
-   FROM descendants_chain
-   ORDER BY txid, vout, depth
-)
-
-SELECT txid, vout, preconfirmed, depth
-FROM nodes
-ORDER BY depth, txid, vout
+const selectVtxoOutpointsByCommitmentTxid = `-- name: SelectVtxoOutpointsByCommitmentTxid :many
+SELECT vtxo_txid, vtxo_vout FROM vtxo_commitment_txid WHERE commitment_txid = $1
 `
 
-type SelectVtxosByArkTxidRecursiveRow struct {
-	Txid         string
-	Vout         int32
-	Preconfirmed bool
-	Depth        int32
+type SelectVtxoOutpointsByCommitmentTxidRow struct {
+	VtxoTxid string
+	VtxoVout int32
 }
 
-// keep one row per node at its MIN depth (layers)
-func (q *Queries) SelectVtxosByArkTxidRecursive(ctx context.Context, txid string) ([]SelectVtxosByArkTxidRecursiveRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosByArkTxidRecursive, txid)
+func (q *Queries) SelectVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectVtxoOutpointsByCommitmentTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxoOutpointsByCommitmentTxid, commitmentTxid)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectVtxosByArkTxidRecursiveRow
+	var items []SelectVtxoOutpointsByCommitmentTxidRow
 	for rows.Next() {
-		var i SelectVtxosByArkTxidRecursiveRow
-		if err := rows.Scan(
-			&i.Txid,
-			&i.Vout,
-			&i.Preconfirmed,
-			&i.Depth,
-		); err != nil {
+		var i SelectVtxoOutpointsByCommitmentTxidRow
+		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

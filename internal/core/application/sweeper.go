@@ -556,20 +556,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 
 			vtxoRepo := s.repoManager.Vtxos()
 			// get all vtxos that are children of the swept leaves
-			preconfirmedVtxos := make([]domain.Outpoint, 0)
-			seen := make(map[string]struct{})
-			for _, leafVtxo := range leafVtxoKeys {
-				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
-				if err != nil {
-					log.WithError(err).Error("error while getting children vtxos")
-					continue
-				}
-				for _, child := range children {
-					if _, ok := seen[child.String()]; !ok {
-						preconfirmedVtxos = append(preconfirmedVtxos, child)
-						seen[child.String()] = struct{}{}
-					}
-				}
+			preconfirmedVtxos, err := vtxoRepo.GetVtxosByCommitmentTxid(ctx, commitmentTxid)
+			if err != nil {
+				log.WithError(err).Error("error while getting children vtxos")
 			}
 
 			events, err := round.Sweep(leafVtxoKeys, preconfirmedVtxos, txid, sweepTx)

@@ -86,7 +86,7 @@ migrate:
 ## sqlc: gen sql
 sqlc:
 	@echo "gen sql..."
-	@docker run --rm -v ./internal/infrastructure/db/sqlite:/src -w /src sqlc/sqlc generate
+	@docker run --rm -v ./internal/infrastructure/db/sqlite:/src -w /src sqlc/sqlc:1.30.0 generate
 
 #### Postgres database ####
 # pg: starts postgres db inside docker container
@@ -122,7 +122,7 @@ pgmigrate:
 
 # pgsqlc: generate sql code for postgres
 pgsqlc:
-	@docker run --rm -v ./internal/infrastructure/db/postgres:/src -w /src sqlc/sqlc generate
+	@docker run --rm -v ./internal/infrastructure/db/postgres:/src -w /src sqlc/sqlc:1.30.0 generate
 
 #### Redis database ####
 # redis-up: starts redis db inside docker container

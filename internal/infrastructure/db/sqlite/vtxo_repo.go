@@ -368,11 +368,10 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	return vtxos, nil
 }
 
-func (v *vtxoRepository) GetAllChildrenVtxos(
-	ctx context.Context,
-	txid string,
-) ([]domain.Outpoint, error) {
-	res, err := v.querier.SelectVtxosByArkTxidRecursive(ctx, txid)
+func (v *vtxoRepository) GetVtxosByCommitmentTxid(ctx context.Context, commitmentTxid string) (
+	[]domain.Outpoint, error,
+) {
+	res, err := v.querier.SelectVtxoOutpointsByCommitmentTxid(ctx, commitmentTxid)
 	if err != nil {
 		return nil, err
 	}
@@ -380,8 +379,8 @@ func (v *vtxoRepository) GetAllChildrenVtxos(
 	outpoints := make([]domain.Outpoint, 0, len(res))
 	for _, row := range res {
 		outpoints = append(outpoints, domain.Outpoint{
-			Txid: row.Txid,
-			VOut: uint32(row.Vout),
+			Txid: row.VtxoTxid,
+			VOut: uint32(row.VtxoVout),
 		})
 	}
 

@@ -415,7 +415,7 @@ func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) erro
 	return nil
 }
 
-func (r *vtxoRepository) GetAllChildrenVtxos(
+func (r *vtxoRepository) GetVtxosByCommitmentTxid(
 	ctx context.Context,
 	txid string,
 ) ([]domain.Outpoint, error) {
@@ -434,7 +434,7 @@ func (r *vtxoRepository) GetAllChildrenVtxos(
 		}
 		visitedTxids[currentTxid] = true
 
-		query := badgerhold.Where("Txid").Eq(currentTxid)
+		query := badgerhold.Where("CommitmentTxids").Contains(currentTxid)
 		vtxos, err := r.findVtxos(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find vtxos for txid %s: %w", currentTxid, err)
@@ -443,8 +443,11 @@ func (r *vtxoRepository) GetAllChildrenVtxos(
 		for _, vtxo := range vtxos {
 			outpointKey := vtxo.Outpoint.String()
 			if !visited[outpointKey] {
-				visited[outpointKey] = true
-				outpoints = append(outpoints, vtxo.Outpoint)
+				if _, seen := visited[outpointKey]; !seen {
+					visited[outpointKey] = true
+					outpoints = append(outpoints, vtxo.Outpoint)
+				}
+
 				if vtxo.ArkTxid != "" {
 					queue = append(queue, vtxo.ArkTxid)
 				}
