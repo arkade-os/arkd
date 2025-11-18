@@ -2864,26 +2864,28 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 	s.roundReportSvc.RoundEnded(commitmentTxid, totalInputsVtxos, totalOutputVtxos, numOfTreeNodes)
 
 	go func() {
-		comfirmedBalance, unComfirmedBalance, _ := s.wallet.MainAccountBalance(ctx)
-		operatorInputAmount, miningFee, boardingInputs := commitmentTxStats(commitmentTx)
-		intentFees, numOfCollabExists := intentStats(round.Intents)
-		s.publishAlert(ports.BatchFinalized, map[string]interface{}{
-			"batch_id":                     round.Id,
-			"txid":                         round.CommitmentTxid,
-			"operator_input_amount_sats":   int(operatorInputAmount),
-			"operator_comfirmed_balacnce":  int(comfirmedBalance),
-			"operator_uncomfirmed_balance": int(unComfirmedBalance),
-			"mining_fee_sats":              int(miningFee),
-			"intent_fees_sats":             int(intentFees),
-			"vtxos_spent": domain.Intents(
-				intentsToSlice(round.Intents),
-			).CountSpentVtxos(),
-			"boarding_inputs":    int(boardingInputs),
-			"intents_count":      len(round.Intents),
-			"collab_exits_count": int(numOfCollabExists),
-			"new_vtxos_count":    len(getNewVtxosFromRound(round)),
-			"latency_seconds":    int(round.EndingTimestamp - round.StartingTimestamp),
-		})
+		if s.alerts != nil {
+			comfirmedBalance, unComfirmedBalance, _ := s.wallet.MainAccountBalance(ctx)
+			operatorInputAmount, miningFee, boardingInputs := commitmentTxStats(commitmentTx)
+			intentFees, numOfCollabExists := intentStats(round.Intents)
+			s.publishAlert(ports.BatchFinalized, map[string]interface{}{
+				"batch_id":                     round.Id,
+				"txid":                         round.CommitmentTxid,
+				"operator_input_amount_sats":   int(operatorInputAmount),
+				"operator_comfirmed_balacnce":  int(comfirmedBalance),
+				"operator_uncomfirmed_balance": int(unComfirmedBalance),
+				"mining_fee_sats":              int(miningFee),
+				"intent_fees_sats":             int(intentFees),
+				"vtxos_spent": domain.Intents(
+					intentsToSlice(round.Intents),
+				).CountSpentVtxos(),
+				"boarding_inputs":    int(boardingInputs),
+				"intents_count":      len(round.Intents),
+				"collab_exits_count": int(numOfCollabExists),
+				"new_vtxos_count":    len(getNewVtxosFromRound(round)),
+				"latency_seconds":    int(round.EndingTimestamp - round.StartingTimestamp),
+			})
+		}
 	}()
 
 	log.Debugf("finalized round %s with commitment tx %s", roundId, commitmentTxid)
@@ -3667,7 +3669,6 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 
 func (s *service) publishAlert(topic ports.Topic, message map[string]interface{}) {
 	if s.alerts == nil {
-		// alerts not configure	d, skip silently
 		return
 	}
 
