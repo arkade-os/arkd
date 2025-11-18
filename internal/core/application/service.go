@@ -2531,9 +2531,7 @@ func (s *service) startFinalization(
 		s.roundReportSvc.OpStarted(SendAggregatedTreeNoncesEventOp)
 
 		s.propagateRoundSigningNoncesGeneratedEvent(
-			aggregatedNonces,
-			coordinator.GetPublicNonces(),
-			vtxoTree,
+			ctx, aggregatedNonces, coordinator.GetPublicNonces(), vtxoTree,
 		)
 
 		s.roundReportSvc.OpEnded(SendAggregatedTreeNoncesEventOp)
@@ -3075,11 +3073,9 @@ func (s *service) propagateRoundSigningStartedEvent(
 }
 
 func (s *service) propagateRoundSigningNoncesGeneratedEvent(
-	combinedNonces tree.TreeNonces,
-	publicNoncesMap map[string]tree.TreeNonces,
-	vtxoTree *tree.TxTree,
+	ctx context.Context, combinedNonces tree.TreeNonces,
+	publicNoncesMap map[string]tree.TreeNonces, vtxoTree *tree.TxTree,
 ) {
-	ctx := context.Background()
 	events := treeTxNoncesEvents(vtxoTree, s.cache.CurrentRound().Get(ctx).Id, publicNoncesMap)
 	events = append(events, TreeNoncesAggregated{
 		RoundEvent: domain.RoundEvent{
