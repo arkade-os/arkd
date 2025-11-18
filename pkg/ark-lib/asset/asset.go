@@ -2,8 +2,11 @@ package asset
 
 import (
 	"bytes"
+	"errors"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
@@ -14,6 +17,11 @@ type Asset struct {
 	Inputs         []AssetInput
 	Immutable      bool
 	Metadata       []Metadata
+
+	// OP_RETURN
+	genesisTxId []byte
+	version     []byte
+	magic       byte
 }
 
 type Metadata struct {
@@ -31,7 +39,49 @@ type AssetInput struct {
 	Vout uint32
 }
 
-func (a *Asset) Encode() ([]byte, error) {
+func (a *Asset) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
+	encodedTlv, err := a.encodeTlv()
+	if err != nil {
+		return wire.TxOut{}, err
+	}
+	assetData := append([]byte{a.magic}, a.version...)
+	assetData = append(assetData, a.genesisTxId...)
+	assetData = append(assetData, batchTxId...)
+	assetData = append(assetData, encodedTlv...)
+
+	opReturnPubkey := append([]byte{txscript.OP_RETURN}, assetData...)
+
+	return wire.TxOut{
+		Value:    0,
+		PkScript: opReturnPubkey,
+	}, nil
+
+}
+
+func DecodeAssetFromOpret(opReturnData []byte) (*Asset, []byte, error) {
+	asset := &Asset{}
+
+	// Verify OP_RETURN prefix
+	if opReturnData[0] != txscript.OP_RETURN {
+		return nil, nil, errors.New("OP_RETURN not present")
+	}
+
+	// Extract and set magic, version, genesisTxId
+	asset.magic = opReturnData[1]
+	asset.version = opReturnData[2:3]
+	asset.genesisTxId = opReturnData[3 : 3+32]
+	batchTxId := opReturnData[3+32 : 3+32+32]
+
+	err := asset.decodeTlv(opReturnData[1+2+32+32:])
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return asset, batchTxId, nil
+
+}
+
+func (a *Asset) encodeTlv() ([]byte, error) {
 	var tlvRecords []tlv.Record
 
 	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
@@ -76,7 +126,7 @@ func (a *Asset) Encode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (a *Asset) Decode(data []byte) error {
+func (a *Asset) decodeTlv(data []byte) error {
 	tlvStream, err := tlv.NewStream(
 		tlv.MakePrimitiveRecord(
 			tlvTypeAssetID,
