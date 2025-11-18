@@ -1205,7 +1205,7 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 const selectVtxoTaprootKeys = `-- name: SelectVtxoTaprootKeys :many
 SELECT DISTINCT v.pubkey 
 FROM vtxo v
-WHERE v.amount > $1
+WHERE v.amount >= $1
   AND (v.commitment_txid = $2
     OR EXISTS (
       SELECT 1 FROM vtxo_commitment_txid vct

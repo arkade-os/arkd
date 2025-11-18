@@ -267,7 +267,7 @@ func (r *vtxoRepository) GetVtxoTapKeys(
 	query1 := badgerhold.Where("RootCommitmentTxid").
 		Eq(commitmentTxid).
 		And("Amount").
-		Gt(amountFilter)
+		Ge(amountFilter)
 	vtxos1, err := r.findVtxos(ctx, query1)
 	if err != nil {
 		return nil, err
@@ -276,7 +276,7 @@ func (r *vtxoRepository) GetVtxoTapKeys(
 	query2 := badgerhold.Where("CommitmentTxids").
 		Contains(commitmentTxid).
 		And("Amount").
-		Gt(amountFilter)
+		Ge(amountFilter)
 	vtxos2, err := r.findVtxos(ctx, query2)
 	if err != nil {
 		return nil, err

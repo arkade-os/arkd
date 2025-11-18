@@ -212,6 +212,11 @@ func (r *Round) Sweep(
 	}
 
 	batchAmount := r.countBatchAmount()
+	if batchAmount <= 0 {
+		// if no batch amount, a sweep event is not possible
+		// we return nil to cancel in order to avoid panic in liquiditySwept calculation
+		return nil, nil
+	}
 	liquiditySwept := float64(sweptAmount) / float64(batchAmount)
 
 	event := BatchSwept{

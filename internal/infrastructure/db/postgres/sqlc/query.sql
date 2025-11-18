@@ -262,7 +262,7 @@ SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 -- name: SelectVtxoTaprootKeys :many
 SELECT DISTINCT v.pubkey 
 FROM vtxo v
-WHERE v.amount > @min_amount
+WHERE v.amount >= @min_amount
   AND (v.commitment_txid = @commitment_txid
     OR EXISTS (
       SELECT 1 FROM vtxo_commitment_txid vct
