@@ -118,7 +118,8 @@ func (w *walletDaemonClient) GetNotificationChannel(
 			resp, err := stream.Recv()
 			if err != nil {
 				if strings.Contains(err.Error(), "EOF") {
-					log.Fatal("connection closed by wallet")
+					log.Error("connection closed by wallet")
+					return
 				}
 				if status.Code(err) == codes.Canceled {
 					return
@@ -170,7 +171,8 @@ func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{
 			resp, err := stream.Recv()
 			if err != nil {
 				if strings.Contains(err.Error(), "EOF") {
-					log.Fatal("connection closed by wallet")
+					log.Error("connection closed by wallet")
+					return
 				}
 				if status.Code(err) == codes.Canceled {
 					return
