@@ -32,7 +32,7 @@ func NewCurrentRoundStore(rdb *redis.Client, numOfRetries int) ports.CurrentRoun
 func (s *currentRoundStore) Upsert(fn func(m *domain.Round) *domain.Round) error {
 	ctx := context.Background()
 	for attempt := 0; attempt < s.numOfRetries; attempt++ {
-		if err := s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+		err := s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			updated := fn(s.Get())
 			val, err := json.Marshal(updated)
 			if err != nil {
@@ -44,7 +44,8 @@ func (s *currentRoundStore) Upsert(fn func(m *domain.Round) *domain.Round) error
 			})
 
 			return err
-		}); err != nil {
+		}, currentRoundKey)
+		if err != nil {
 			return err
 		}
 	}

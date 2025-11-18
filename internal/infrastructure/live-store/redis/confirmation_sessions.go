@@ -138,8 +138,14 @@ func (s *confirmationSessionsStore) Reset() {
 	pipe.Del(ctx, confirmationNumIntentsKey)
 	pipe.Del(ctx, confirmationNumConfirmedKey)
 	pipe.Del(ctx, confirmationInitializedKey)
-	_, _ = pipe.Exec(ctx)
+	if _, err := pipe.Exec(ctx); err != nil {
+		log.Warnf("Reset: failed to delete confirmation keys: %v", err)
+	}
 
+	// Close old channel before creating new one to prevent goroutine leak
+	if s.sessionCompleteCh != nil {
+		close(s.sessionCompleteCh)
+	}
 	s.sessionCompleteCh = make(chan struct{})
 	go s.watchSessionCompletion()
 }
@@ -157,12 +163,44 @@ func (s *confirmationSessionsStore) SessionCompleted() <-chan struct{} {
 func (s *confirmationSessionsStore) watchSessionCompletion() {
 	ctx := context.Background()
 	var chOnce sync.Once
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
-		numIntents, _ := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
-		numConfirmed, _ := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
-		if numIntents > 0 && numConfirmed == numIntents {
-			chOnce.Do(func() { s.sessionCompleteCh <- struct{}{} })
-			return
+		select {
+		case <-ticker.C:
+			numIntents, err := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
+			if err != nil {
+				// Key doesn't exist - session was reset/deleted
+				if errors.Is(err, redis.Nil) {
+					return
+				}
+				// Transient error, continue polling
+				log.Warnf("watchSessionCompletion: failed to get numIntents: %v", err)
+				continue
+			}
+
+			numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+			if err != nil {
+				if errors.Is(err, redis.Nil) {
+					return
+				}
+				log.Warnf("watchSessionCompletion: failed to get numConfirmed: %v", err)
+				continue
+			}
+
+			// Check if session is complete
+			if numIntents > 0 && numConfirmed == numIntents {
+				chOnce.Do(func() {
+					select {
+					case s.sessionCompleteCh <- struct{}{}:
+					default:
+						// Channel closed or full, ignore
+					}
+				})
+				return
+			}
 		}
 	}
 }

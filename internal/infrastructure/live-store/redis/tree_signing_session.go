@@ -1,6 +1,10 @@
 // Redis-backed implementation of treeSigningSessionsStore. All session state is stored in Redis hashes.
 // Notification channels for nonces and signatures collection are implemented via goroutines that poll Redis state.
 // For true distributed notification, consider using Redis Pub/Sub.
+//
+// NOTE: Current implementation assumes only ONE round is active at a time. Notification channels
+// are shared across rounds (nonceCh, sigsCh). For parallel round support, these must be changed
+// to per-round channels (map[roundId]chan struct{}). See TODO(parallel-rounds) comments below.
 
 package redislivestore
 
@@ -23,16 +27,17 @@ const (
 )
 
 type treeSigningSessionsStore struct {
-	rdb          *redis.Client
-	nonceCh      chan struct{}
-	sigsCh       chan struct{}
-	pollInterval time.Duration
+	rdb *redis.Client
+	// TODO(parallel-rounds): These channels are shared across all rounds.
+	// For parallel round support, change to: nonceChs map[string]chan struct{}
+	// and sigsChs map[string]chan struct{} with roundId as key.
+	nonceCh chan struct{}
+	sigsCh  chan struct{}
 }
 
 func NewTreeSigningSessionsStore(rdb *redis.Client) ports.TreeSigningSessionsStore {
 	return &treeSigningSessionsStore{
-		rdb:          rdb,
-		pollInterval: 100 * time.Millisecond,
+		rdb: rdb,
 	}
 }
 
@@ -162,21 +167,43 @@ func (s *treeSigningSessionsStore) watchNoncesCollected(roundId string) {
 	ctx := context.Background()
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
-		meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
-		if err != nil || len(meta) == 0 {
-			continue
-		}
-		nbCosigners := 0
-		if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
-			log.Warnf("watchNoncesCollected:failed to parse NbCosigners: %v", err)
-		}
-		noncesMap, _ := s.rdb.HGetAll(ctx, noncesKey).Result()
-		if len(noncesMap) == nbCosigners-1 {
-			if s.nonceCh != nil {
-				s.nonceCh <- struct{}{}
+		select {
+		case <-ticker.C:
+			// Check if session still exists (was not deleted)
+			meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
+			if err != nil || len(meta) == 0 {
+				return
 			}
-			return
+
+			nbCosigners := 0
+			if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
+				log.Warnf("watchNoncesCollected: failed to parse NbCosigners: %v", err)
+				return
+			}
+
+			noncesMap, err := s.rdb.HGetAll(ctx, noncesKey).Result()
+			if err != nil {
+				log.Warnf("watchNoncesCollected: failed to get nonces: %v", err)
+				continue
+			}
+
+			// Check if all nonces collected (nbCosigners-1 because operator doesn't submit nonces)
+			if len(noncesMap) == nbCosigners-1 {
+				// Signal completion and exit
+				if s.nonceCh != nil {
+					select {
+					case s.nonceCh <- struct{}{}:
+					default:
+						// Channel closed or full, ignore
+					}
+				}
+				return
+			}
 		}
 	}
 }
@@ -185,21 +212,43 @@ func (s *treeSigningSessionsStore) watchSigsCollected(roundId string) {
 	ctx := context.Background()
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
-		meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
-		if err != nil || len(meta) == 0 {
-			continue
-		}
-		nbCosigners := 0
-		if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
-			log.Warnf("watchSigsCollected:failed to parse NbCosigners: %v", err)
-		}
-		sigsMap, _ := s.rdb.HGetAll(ctx, sigsKey).Result()
-		if len(sigsMap) == nbCosigners-1 {
-			if s.sigsCh != nil {
-				s.sigsCh <- struct{}{}
+		select {
+		case <-ticker.C:
+			// Check if session still exists (was not deleted)
+			meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
+			if err != nil || len(meta) == 0 {
+				return
 			}
-			return
+
+			nbCosigners := 0
+			if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
+				log.Warnf("watchSigsCollected: failed to parse NbCosigners: %v", err)
+				return
+			}
+
+			sigsMap, err := s.rdb.HGetAll(ctx, sigsKey).Result()
+			if err != nil {
+				log.Warnf("watchSigsCollected: failed to get signatures: %v", err)
+				continue
+			}
+
+			// Check if all signatures collected
+			if len(sigsMap) == nbCosigners-1 {
+				// Signal completion and exit
+				if s.sigsCh != nil {
+					select {
+					case s.sigsCh <- struct{}{}:
+					default:
+						// Channel closed or full, ignore
+					}
+				}
+				return
+			}
 		}
 	}
 }
