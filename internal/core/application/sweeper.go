@@ -529,40 +529,72 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 			return nil
 		}
 
-		log.Debugf("sweeper: sweeping %d outputs for batch %s", len(outputsToSweep), commitmentTxid)
-
-		// build the sweep transaction with all the expired non-swept batch outputs
-		sweepTxId, sweepTx, err := s.builder.BuildSweepTx(outputsToSweep)
-		if err != nil {
-			return err
-		}
-
-		// check if the transaction is already onchain
-		tx, _ := s.wallet.GetTransaction(ctx, sweepTxId)
-
-		txid := ""
-
-		if len(tx) > 0 {
-			txid = sweepTxId
-		}
-
-		err = nil
-		// retry until the tx is broadcasted or the error is not BIP68 final
-		for len(txid) == 0 && (err == nil || errors.Is(err, ports.ErrNonFinalBIP68)) {
+		// keep only the unspent outputs in order to avoid including already spent outputs in the sweep transaction
+		unspentOutputsToSweep := make([]ports.SweepableOutput, 0)
+		for _, out := range outputsToSweep {
+			outpoint := domain.Outpoint{
+				Txid: out.Hash.String(),
+				VOut: out.Index,
+			}
+			spent, err := s.wallet.GetOutpointStatus(ctx, outpoint)
 			if err != nil {
-				log.Debug("sweeper: sweep tx not BIP68 final, retrying in 5 seconds")
-				time.Sleep(5 * time.Second)
+				log.WithError(err).Errorf(
+					"failed to get outpoint status %s for batch %s", outpoint, commitmentTxid,
+				)
+				continue
+			}
+			if !spent {
+				unspentOutputsToSweep = append(unspentOutputsToSweep, out)
+			}
+		}
+
+		sweepTxId := ""
+		sweepTx := ""
+
+		// if there are unspent outputs to sweep, build and broadcast a sweep transaction
+		if len(unspentOutputsToSweep) > 0 {
+			log.Debugf("sweeper: sweeping %d outputs for batch %s", len(unspentOutputsToSweep), commitmentTxid)
+
+			// build the sweep transaction with all the expired non-swept batch outputs
+			sweepTxId, sweepTx, err = s.builder.BuildSweepTx(unspentOutputsToSweep)
+			if err != nil {
+				return err
 			}
 
-			txid, err = s.wallet.BroadcastTransaction(ctx, sweepTx)
-		}
-		if err != nil {
-			return err
-		}
+			// check if the transaction is already onchain
+			tx, _ := s.wallet.GetTransaction(ctx, sweepTxId)
 
-		if len(txid) > 0 {
+			txid := ""
+
+			if len(tx) > 0 {
+				txid = sweepTxId
+			}
+
+			err = nil
+			// retry until the tx is broadcasted or the error is not BIP68 final
+			for len(txid) == 0 && (err == nil || errors.Is(err, ports.ErrNonFinalBIP68)) {
+				if err != nil {
+					log.Debug("sweeper: sweep tx not BIP68 final, retrying in 5 seconds")
+					time.Sleep(5 * time.Second)
+				}
+
+				txid, err = s.wallet.BroadcastTransaction(ctx, sweepTx)
+			}
+			if err != nil {
+				return err
+			}
 			log.Debugf("sweeper: batch %s swept by: %s", commitmentTxid, txid)
+		} else {
+			// if all outputs are spent, it means we missed to mark the batch as swept,
+			// build a sweep transaction without broadcasting it. we'll use it rebuild sweepEvent.
+			sweepTxId, sweepTx, err = s.builder.BuildSweepTx(outputsToSweep)
+			if err != nil {
+				return err
+			}
+		}
 
+		// if there are outputs to sweep raise a batch swept event to update projection store
+		if len(sweepTxId) > 0 {
 			vtxoRepo := s.repoManager.Vtxos()
 			// get all vtxos that are children of the swept leaves
 			preconfirmedVtxos, err := vtxoRepo.GetVtxosByCommitmentTxid(ctx, commitmentTxid)
@@ -570,7 +602,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 				log.WithError(err).Error("error while getting children vtxos")
 			}
 
-			events, err := round.Sweep(leafVtxoKeys, preconfirmedVtxos, txid, sweepTx)
+			events, err := round.Sweep(leafVtxoKeys, preconfirmedVtxos, sweepTxId, sweepTx)
 			if err != nil {
 				log.WithError(err).Error("failed to sweep batch")
 				return err
