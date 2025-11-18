@@ -197,21 +197,6 @@ func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error)
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) GetVtxosForRound(
-	ctx context.Context, txid string,
-) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosWithCommitmentTxid(ctx, txid)
-	if err != nil {
-		return nil, err
-	}
-	rows := make([]queries.VtxoVw, 0, len(res))
-	for _, row := range res {
-		rows = append(rows, row.VtxoVw)
-	}
-
-	return readRows(rows)
-}
-
 func (v *vtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
@@ -390,20 +375,15 @@ func (v *vtxoRepository) GetUnsweptVtxosByCommitmentTxid(
 }
 
 func (v *vtxoRepository) GetVtxoTapKeys(
-	ctx context.Context, outpoints []domain.Outpoint, withMinimumAmount uint64,
+	ctx context.Context, commitmentTxid string, withMinimumAmount uint64,
 ) ([]string, error) {
-	if len(outpoints) == 0 {
+	if commitmentTxid == "" {
 		return nil, nil
 	}
 
-	outpointStrings := make([]string, 0, len(outpoints))
-	for _, outpoint := range outpoints {
-		outpointStrings = append(outpointStrings, outpoint.String())
-	}
-
 	taprootKeys, err := v.querier.SelectVtxoTaprootKeys(ctx, queries.SelectVtxoTaprootKeysParams{
-		Outpoints: outpointStrings,
-		MinAmount: int64(withMinimumAmount),
+		MinAmount:      int64(withMinimumAmount),
+		CommitmentTxid: commitmentTxid,
 	})
 	if err != nil {
 		return nil, err

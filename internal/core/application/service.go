@@ -259,19 +259,17 @@ func NewService(
 				)
 
 				if batchSweptEvent.FullySwept {
-					vtxosToStopWatching, err := vtxoRepo.GetUnsweptVtxosByCommitmentTxid(ctx, round.CommitmentTxid)
-					if err != nil {
-						log.WithError(err).Warn("failed to get children vtxos")
-						return
-					}
-
 					dustLimit, err := svc.wallet.GetDustAmount(ctx)
 					if err != nil {
 						log.WithError(err).Warn("failed to get dust amount")
 						return
 					}
 
-					vtxoTaprootKeys, err := vtxoRepo.GetVtxoTapKeys(ctx, vtxosToStopWatching, dustLimit)
+					vtxoTaprootKeys, err := vtxoRepo.GetVtxoTapKeys(
+						ctx,
+						round.CommitmentTxid,
+						dustLimit,
+					)
 					if err != nil {
 						log.WithError(err).Warn("failed to get vtxo taproot keys")
 						return
@@ -3137,6 +3135,10 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 	scripts, err := s.extractVtxosScriptsForScanner(vtxos)
 	if err != nil {
 		return err
+	}
+
+	if len(scripts) <= 0 {
+		return nil
 	}
 
 	return s.scanner.WatchScripts(context.Background(), scripts)

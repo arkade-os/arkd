@@ -340,5 +340,5 @@ message IndexerSubscriptionEvent {
   repeated IndexerVtxo spent_vtxos = 4;
   string tx = 5;
   map<string, IndexerTxData> checkpoint_txs = 6;
-  repeated IndexerOutpoint swept_vtxos = 7;
+  repeated IndexerVtxo swept_vtxos = 7;
 }

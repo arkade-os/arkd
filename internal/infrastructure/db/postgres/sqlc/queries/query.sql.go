@@ -1203,19 +1203,25 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 }
 
 const selectVtxoTaprootKeys = `-- name: SelectVtxoTaprootKeys :many
-SELECT DISTINCT pubkey 
-FROM vtxo 
-WHERE (txid || ':' || vout::text) = ANY($1::text[])
-AND amount > $2
+SELECT DISTINCT v.pubkey 
+FROM vtxo v
+WHERE v.amount > $1
+  AND (v.commitment_txid = $2
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vct
+      WHERE vct.vtxo_txid = v.txid
+        AND vct.vtxo_vout = v.vout
+        AND vct.commitment_txid = $2
+    ))
 `
 
 type SelectVtxoTaprootKeysParams struct {
-	Outpoints []string
-	MinAmount int64
+	MinAmount      int64
+	CommitmentTxid string
 }
 
 func (q *Queries) SelectVtxoTaprootKeys(ctx context.Context, arg SelectVtxoTaprootKeysParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxoTaprootKeys, pq.Array(arg.Outpoints), arg.MinAmount)
+	rows, err := q.db.QueryContext(ctx, selectVtxoTaprootKeys, arg.MinAmount, arg.CommitmentTxid)
 	if err != nil {
 		return nil, err
 	}
@@ -1227,54 +1233,6 @@ func (q *Queries) SelectVtxoTaprootKeys(ctx context.Context, arg SelectVtxoTapro
 			return nil, err
 		}
 		items = append(items, pubkey)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectVtxosWithCommitmentTxid = `-- name: SelectVtxosWithCommitmentTxid :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE commitment_txid = $1
-`
-
-type SelectVtxosWithCommitmentTxidRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectVtxosWithCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectVtxosWithCommitmentTxidRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosWithCommitmentTxid, commitmentTxid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectVtxosWithCommitmentTxidRow
-	for rows.Next() {
-		var i SelectVtxosWithCommitmentTxidRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.ExpiresAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.CommitmentTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Unrolled,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.IntentID,
-			&i.VtxoVw.Commitments,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

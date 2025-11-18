@@ -818,6 +818,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Empty(t, children)
 
+		otherCommitmentTxid := randomString(32)
+
 		// Test GetVtxoTapKeys
 		tapKeysTestVtxos := []domain.Vtxo{
 			{
@@ -827,8 +829,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				},
 				PubKey:             "tapkey1",
 				Amount:             5000,
-				RootCommitmentTxid: commitmentTxid,
-				CommitmentTxids:    []string{commitmentTxid},
+				RootCommitmentTxid: otherCommitmentTxid,
+				CommitmentTxids:    []string{otherCommitmentTxid},
 				Unrolled:           false,
 				Swept:              false,
 			},
@@ -839,8 +841,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				},
 				PubKey:             "tapkey2",
 				Amount:             2000,
-				RootCommitmentTxid: commitmentTxid,
-				CommitmentTxids:    []string{commitmentTxid},
+				RootCommitmentTxid: otherCommitmentTxid,
+				CommitmentTxids:    []string{otherCommitmentTxid},
 				Unrolled:           false,
 				Swept:              false,
 			},
@@ -851,8 +853,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				},
 				PubKey:             "tapkey3",
 				Amount:             10000,
-				RootCommitmentTxid: commitmentTxid,
-				CommitmentTxids:    []string{commitmentTxid},
+				RootCommitmentTxid: otherCommitmentTxid,
+				CommitmentTxids:    []string{otherCommitmentTxid},
 				Unrolled:           false,
 				Swept:              false,
 			},
@@ -860,39 +862,30 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		err = svc.Vtxos().AddVtxos(ctx, tapKeysTestVtxos)
 		require.NoError(t, err)
 
-		tapKeysOutpoints := []domain.Outpoint{
-			tapKeysTestVtxos[0].Outpoint,
-			tapKeysTestVtxos[1].Outpoint,
-			tapKeysTestVtxos[2].Outpoint,
-		}
-
-		tapKeys, err := svc.Vtxos().GetVtxoTapKeys(ctx, tapKeysOutpoints, 3000)
+		tapKeys, err := svc.Vtxos().GetVtxoTapKeys(ctx, otherCommitmentTxid, 3000)
 		require.NoError(t, err)
 		require.Len(t, tapKeys, 2)
 		require.Contains(t, tapKeys, "tapkey1")
 		require.Contains(t, tapKeys, "tapkey3")
 		require.NotContains(t, tapKeys, "tapkey2")
 
-		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, tapKeysOutpoints, 0)
+		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, otherCommitmentTxid, 0)
 		require.NoError(t, err)
 		require.Len(t, tapKeys, 3)
 		require.Contains(t, tapKeys, "tapkey1")
 		require.Contains(t, tapKeys, "tapkey2")
 		require.Contains(t, tapKeys, "tapkey3")
 
-		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, tapKeysOutpoints, 20000)
+		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, otherCommitmentTxid, 20000)
 		require.NoError(t, err)
 		require.Empty(t, tapKeys)
 
-		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, []domain.Outpoint{}, 0)
+		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, "", 0)
 		require.NoError(t, err)
 		require.Empty(t, tapKeys)
 
-		nonExistentOutpoint := domain.Outpoint{
-			Txid: randomString(32),
-			VOut: 999,
-		}
-		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, []domain.Outpoint{nonExistentOutpoint}, 0)
+		nonExistentCommitmentTxid := randomString(32)
+		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, nonExistentCommitmentTxid, 0)
 		require.NoError(t, err)
 		require.Empty(t, tapKeys)
 

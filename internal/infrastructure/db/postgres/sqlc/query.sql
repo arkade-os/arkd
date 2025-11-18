@@ -260,10 +260,16 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 
 -- name: SelectVtxoTaprootKeys :many
-SELECT DISTINCT pubkey 
-FROM vtxo
-WHERE (txid || ':' || vout::text) = ANY(@outpoints::text[])
-AND amount > @min_amount;
+SELECT DISTINCT v.pubkey 
+FROM vtxo v
+WHERE v.amount > @min_amount
+  AND (v.commitment_txid = @commitment_txid
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vct
+      WHERE vct.vtxo_txid = v.txid
+        AND vct.vtxo_vout = v.vout
+        AND vct.commitment_txid = @commitment_txid
+    ));
 
 -- name: SelectUnsweptVtxoOutpointsByCommitmentTxid :many
 SELECT DISTINCT vct.vtxo_txid, vct.vtxo_vout 

@@ -261,36 +261,6 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
-const selectDistinctPubkeysByOutpoints = `-- name: SelectDistinctPubkeysByOutpoints :many
-SELECT DISTINCT pubkey
-FROM vtxo
-WHERE concat(txid, ':', CAST(vout AS TEXT)) IN (/*SLICE:outpoints*/?)
-AND amount > ?2
-`
-
-func (q *Queries) SelectDistinctPubkeysByOutpoints(ctx context.Context, minAmount int64) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectDistinctPubkeysByOutpoints, minAmount)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var pubkey string
-		if err := rows.Scan(&pubkey); err != nil {
-			return nil, err
-		}
-		items = append(items, pubkey)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectLatestScheduledSession = `-- name: SelectLatestScheduledSession :one
 SELECT id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at FROM scheduled_session ORDER BY updated_at DESC LIMIT 1
 `
@@ -1278,14 +1248,25 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 }
 
 const selectVtxoTaprootKeys = `-- name: SelectVtxoTaprootKeys :many
-SELECT DISTINCT pubkey
-FROM vtxo
-WHERE amount > ?1
-  AND concat(txid, ':', CAST(vout AS TEXT)) IN (/*SLICE:outpoints*/?)
+SELECT DISTINCT v.pubkey
+FROM vtxo v
+WHERE v.amount > ?1
+  AND (v.commitment_txid = ?2
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vct
+      WHERE vct.vtxo_txid = v.txid
+        AND vct.vtxo_vout = v.vout
+        AND vct.commitment_txid = ?2
+    ))
 `
 
-func (q *Queries) SelectVtxoTaprootKeys(ctx context.Context, minAmount int64) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxoTaprootKeys, minAmount)
+type SelectVtxoTaprootKeysParams struct {
+	MinAmount      int64  `json:"min_amount"`
+	CommitmentTxid string `json:"commitment_txid"`
+}
+
+func (q *Queries) SelectVtxoTaprootKeys(ctx context.Context, arg SelectVtxoTaprootKeysParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxoTaprootKeys, arg.MinAmount, arg.CommitmentTxid)
 	if err != nil {
 		return nil, err
 	}

@@ -373,20 +373,15 @@ func (v *vtxoRepository) GetUnsweptVtxosByCommitmentTxid(
 }
 
 func (v *vtxoRepository) GetVtxoTapKeys(
-	ctx context.Context, outpoints []domain.Outpoint, withMinimumAmount uint64,
+	ctx context.Context, commitmentTxid string, withMinimumAmount uint64,
 ) ([]string, error) {
-	if len(outpoints) == 0 {
+	if commitmentTxid == "" {
 		return nil, nil
 	}
 
-	outpointStrings := make([]string, 0, len(outpoints))
-	for _, outpoint := range outpoints {
-		outpointStrings = append(outpointStrings, outpoint.String())
-	}
-
 	taprootKeys, err := v.querier.SelectVtxoTaprootKeys(ctx, queries.SelectVtxoTaprootKeysParams{
-		Outpoints: outpointStrings,
-		MinAmount: int64(withMinimumAmount),
+		MinAmount:      int64(withMinimumAmount),
+		CommitmentTxid: commitmentTxid,
 	})
 	if err != nil {
 		return nil, err
@@ -394,6 +389,7 @@ func (v *vtxoRepository) GetVtxoTapKeys(
 
 	return taprootKeys, nil
 }
+
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 	var commitmentTxids []string
 	if commitments, ok := row.Commitments.(string); ok && commitments != "" {

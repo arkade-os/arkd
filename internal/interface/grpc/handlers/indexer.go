@@ -472,7 +472,15 @@ func (h *indexerService) listenToTxEvents() {
 
 		allSpendableVtxos := make(map[string][]*arkv1.IndexerVtxo)
 		allSpentVtxos := make(map[string][]*arkv1.IndexerVtxo)
-		allSweptVtxos := make(map[string][]*arkv1.IndexerOutpoint)
+		sweptVtxos := make([]*arkv1.IndexerVtxo, 0)
+		for _, vtxo := range event.SweptVtxos {
+			sweptVtxos = append(sweptVtxos, &arkv1.IndexerVtxo{
+				Outpoint: &arkv1.IndexerOutpoint{
+					Txid: vtxo.Txid,
+					Vout: vtxo.VOut,
+				},
+			})
+		}
 
 		for _, vtxo := range event.SpendableVtxos {
 			vtxoScript := toP2TR(vtxo.PubKey)
@@ -483,10 +491,6 @@ func (h *indexerService) listenToTxEvents() {
 		for _, vtxo := range event.SpentVtxos {
 			vtxoScript := toP2TR(vtxo.PubKey)
 			allSpentVtxos[vtxoScript] = append(allSpentVtxos[vtxoScript], newIndexerVtxo(vtxo))
-		}
-		for _, vtxo := range event.SweptVtxos {
-			vtxoScript := toP2TR(vtxo.PubKey)
-			allSweptVtxos[vtxoScript] = append(allSweptVtxos[vtxoScript], newIndexerVtxo(vtxo))
 		}
 
 		var checkpointTxs map[string]*arkv1.IndexerTxData
@@ -504,16 +508,13 @@ func (h *indexerService) listenToTxEvents() {
 		for _, l := range listenersCopy {
 			spendableVtxos := make([]*arkv1.IndexerVtxo, 0)
 			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
-			sweptVtxos := make([]*arkv1.IndexerOutpoint, 0)
 			involvedScripts := make([]string, 0)
 
 			for vtxoScript := range l.topics {
 				spendableVtxosForScript := allSpendableVtxos[vtxoScript]
 				spentVtxosForScript := allSpentVtxos[vtxoScript]
-				sweptVtxosForScript := allSweptVtxos[vtxoScript]
 				spendableVtxos = append(spendableVtxos, spendableVtxosForScript...)
 				spentVtxos = append(spentVtxos, spentVtxosForScript...)
-				sweptVtxos = append(sweptVtxos, sweptVtxosForScript...)
 				if len(spendableVtxosForScript) > 0 || len(spentVtxosForScript) > 0 {
 					involvedScripts = append(involvedScripts, vtxoScript)
 				}

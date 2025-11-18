@@ -16,7 +16,9 @@ type VtxoRepository interface {
 	UpdateVtxosExpiration(ctx context.Context, outpoints []Outpoint, expiresAt int64) error
 	GetLeafVtxosForBatch(ctx context.Context, txid string) ([]Vtxo, error)
 	GetUnsweptVtxosByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]Outpoint, error)
-	GetVtxoTapKeys(ctx context.Context, outpoints []Outpoint, withMinimumAmount uint64) ([]string, error)
+	GetVtxoTapKeys(ctx context.Context, commitmentTxid string, withMinimumAmount uint64) (
+		[]string, error,
+	)
 	GetAllSweepableVtxoTapKeys(ctx context.Context) ([]string, error)
 	Close()
 }

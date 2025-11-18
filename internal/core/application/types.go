@@ -103,11 +103,6 @@ type TxData struct {
 	Txid string
 }
 
-type outpointWithPubKey struct {
-	Outpoint domain.Outpoint
-	PubKey   string
-}
-
 type TransactionEvent struct {
 	TxData
 	Type           TransactionEventType

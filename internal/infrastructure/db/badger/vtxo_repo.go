@@ -257,22 +257,49 @@ func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 }
 
 func (r *vtxoRepository) GetVtxoTapKeys(
-	ctx context.Context, outpoints []domain.Outpoint, amountFilter uint64,
+	ctx context.Context, commitmentTxid string, amountFilter uint64,
 ) ([]string, error) {
-	taprootKeys := make([]string, 0, len(outpoints))
-	for _, outpoint := range outpoints {
-		vtxo, err := r.getVtxo(ctx, outpoint)
-		if err != nil {
-			return nil, err
-		}
-		if vtxo == nil {
-			return nil, nil
-		}
-		if vtxo.Amount <= amountFilter {
-			continue
-		}
-		taprootKeys = append(taprootKeys, vtxo.PubKey)
+	if commitmentTxid == "" {
+		return nil, nil
 	}
+
+	// Query vtxos where RootCommitmentTxid matches or CommitmentTxids contains the commitmentTxid
+	query1 := badgerhold.Where("RootCommitmentTxid").
+		Eq(commitmentTxid).
+		And("Amount").
+		Gt(amountFilter)
+	vtxos1, err := r.findVtxos(ctx, query1)
+	if err != nil {
+		return nil, err
+	}
+
+	query2 := badgerhold.Where("CommitmentTxids").
+		Contains(commitmentTxid).
+		And("Amount").
+		Gt(amountFilter)
+	vtxos2, err := r.findVtxos(ctx, query2)
+	if err != nil {
+		return nil, err
+	}
+
+	// Combine and deduplicate by pubkey
+	pubkeyMap := make(map[string]bool)
+	for _, vtxo := range vtxos1 {
+		if vtxo.Amount > amountFilter {
+			pubkeyMap[vtxo.PubKey] = true
+		}
+	}
+	for _, vtxo := range vtxos2 {
+		if vtxo.Amount > amountFilter {
+			pubkeyMap[vtxo.PubKey] = true
+		}
+	}
+
+	taprootKeys := make([]string, 0, len(pubkeyMap))
+	for pubkey := range pubkeyMap {
+		taprootKeys = append(taprootKeys, pubkey)
+	}
+
 	return taprootKeys, nil
 }
 

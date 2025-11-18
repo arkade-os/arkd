@@ -1159,7 +1159,7 @@
           "sweptVtxos": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/IndexerOutpoint"
+              "$ref": "#/components/schemas/IndexerVtxo"
             }
           },
           "tx": {

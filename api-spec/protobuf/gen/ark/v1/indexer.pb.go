@@ -2139,7 +2139,7 @@ type IndexerSubscriptionEvent struct {
 	SpentVtxos    []*IndexerVtxo            `protobuf:"bytes,4,rep,name=spent_vtxos,json=spentVtxos,proto3" json:"spent_vtxos,omitempty"`
 	Tx            string                    `protobuf:"bytes,5,opt,name=tx,proto3" json:"tx,omitempty"`
 	CheckpointTxs map[string]*IndexerTxData `protobuf:"bytes,6,rep,name=checkpoint_txs,json=checkpointTxs,proto3" json:"checkpoint_txs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	SweptVtxos    []*IndexerOutpoint        `protobuf:"bytes,7,rep,name=swept_vtxos,json=sweptVtxos,proto3" json:"swept_vtxos,omitempty"`
+	SweptVtxos    []*IndexerVtxo            `protobuf:"bytes,7,rep,name=swept_vtxos,json=sweptVtxos,proto3" json:"swept_vtxos,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2216,7 +2216,7 @@ func (x *IndexerSubscriptionEvent) GetCheckpointTxs() map[string]*IndexerTxData 
 	return nil
 }
 
-func (x *IndexerSubscriptionEvent) GetSweptVtxos() []*IndexerOutpoint {
+func (x *IndexerSubscriptionEvent) GetSweptVtxos() []*IndexerVtxo {
 	if x != nil {
 		return x.SweptVtxos
 	}
@@ -2372,7 +2372,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\rIndexerTxData\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x0e\n" +
 	"\x02tx\x18\x02 \x01(\tR\x02tx\"\x12\n" +
-	"\x10IndexerHeartbeat\"\xaf\x03\n" +
+	"\x10IndexerHeartbeat\"\xab\x03\n" +
 	"\x18IndexerSubscriptionEvent\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x18\n" +
 	"\ascripts\x18\x02 \x03(\tR\ascripts\x120\n" +
@@ -2380,8 +2380,8 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\vspent_vtxos\x18\x04 \x03(\v2\x13.ark.v1.IndexerVtxoR\n" +
 	"spentVtxos\x12\x0e\n" +
 	"\x02tx\x18\x05 \x01(\tR\x02tx\x12Z\n" +
-	"\x0echeckpoint_txs\x18\x06 \x03(\v23.ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntryR\rcheckpointTxs\x128\n" +
-	"\vswept_vtxos\x18\a \x03(\v2\x17.ark.v1.IndexerOutpointR\n" +
+	"\x0echeckpoint_txs\x18\x06 \x03(\v23.ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntryR\rcheckpointTxs\x124\n" +
+	"\vswept_vtxos\x18\a \x03(\v2\x13.ark.v1.IndexerVtxoR\n" +
 	"sweptVtxos\x1aW\n" +
 	"\x12CheckpointTxsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12+\n" +
@@ -2502,7 +2502,7 @@ var file_ark_v1_indexer_proto_depIdxs = []int32{
 	23, // 30: ark.v1.IndexerSubscriptionEvent.new_vtxos:type_name -> ark.v1.IndexerVtxo
 	23, // 31: ark.v1.IndexerSubscriptionEvent.spent_vtxos:type_name -> ark.v1.IndexerVtxo
 	39, // 32: ark.v1.IndexerSubscriptionEvent.checkpoint_txs:type_name -> ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
-	21, // 33: ark.v1.IndexerSubscriptionEvent.swept_vtxos:type_name -> ark.v1.IndexerOutpoint
+	23, // 33: ark.v1.IndexerSubscriptionEvent.swept_vtxos:type_name -> ark.v1.IndexerVtxo
 	20, // 34: ark.v1.GetCommitmentTxResponse.BatchesEntry.value:type_name -> ark.v1.IndexerBatch
 	34, // 35: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry.value:type_name -> ark.v1.IndexerTxData
 	2,  // 36: ark.v1.IndexerService.GetCommitmentTx:input_type -> ark.v1.GetCommitmentTxRequest
