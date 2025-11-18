@@ -43,8 +43,6 @@ import (
 
 const (
 	password         = "password"
-	redeemAddress    = "bcrt1q2wrgf2hrkfegt0t97cnv4g5yvfjua9k6vua54d"
-	onchainAddress   = "bcrt1q2wrgf2hrkfegt0t97cnv4g5yvfjua9k6vua54d"
 	delegateLocktime = arklib.AbsoluteLocktime(10)
 )
 
@@ -79,7 +77,7 @@ func TestBatchSession(t *testing.T) {
 		// Faucet Alice and Bob boarding addresses
 		faucetOnchain(t, aliceBoardingAddr, 0.00021)
 		faucetOnchain(t, bobBoardingAddr, 0.00021)
-		time.Sleep(5 * time.Second)
+		time.Sleep(6 * time.Second)
 
 		aliceBalance, err := alice.Balance(t.Context(), false)
 		require.NoError(t, err)
@@ -1384,6 +1382,92 @@ func TestSweep(t *testing.T) {
 		require.Equal(t, vtxo.Txid, spent[0].Txid)
 		require.True(t, spent[0].Swept)
 		require.True(t, spent[0].Spent)
+	})
+
+	//  create a batch with 3 VTXOs:
+	//   root
+	//   ├── charlie
+	//   └── .
+	//       ├── alice
+	//       └── bob
+	// then alice unroll by waiting several blocks
+	// it creates several batch outputs with different expiration times
+	t.Run("unrolled batch", func(t *testing.T) {
+		ctx := t.Context()
+
+		// first create a batch with 3 leaves
+
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+		charlie := setupArkSDK(t)
+		aliceNote := generateNote(t, 21000)
+		bobNote := generateNote(t, 21000)
+		charlieNote := generateNote(t, 21000)
+
+		wg := &sync.WaitGroup{}
+		var aliceErr, bobErr, charlieErr error
+		var aliceTxid, bobTxid, charlieTxid string
+		wg.Go(func() {
+			aliceTxid, aliceErr = alice.RedeemNotes(ctx, []string{aliceNote})
+		})
+		wg.Go(func() {
+			time.Sleep(100 * time.Millisecond)
+			bobTxid, bobErr = bob.RedeemNotes(ctx, []string{bobNote})
+		})
+		wg.Go(func() {
+			time.Sleep(200 * time.Millisecond)
+			charlieTxid, charlieErr = charlie.RedeemNotes(ctx, []string{charlieNote})
+		})
+		wg.Wait()
+		require.NoError(t, aliceErr)
+		require.NoError(t, bobErr)
+		require.NoError(t, charlieErr)
+		require.NotEmpty(t, aliceTxid)
+		require.Equal(t, aliceTxid, bobTxid)
+		require.Equal(t, aliceTxid, charlieTxid)
+
+		onchainAddr, _, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		// Faucet onchain addr to cover network fees for the unroll.
+		faucetOnchain(t, onchainAddr, 0.00001)
+		time.Sleep(5 * time.Second)
+
+		balance, err := alice.Balance(ctx, false)
+		require.NoError(t, err)
+		require.NotNil(t, balance)
+		require.NotZero(t, balance.OffchainBalance.Total)
+		require.Empty(t, balance.OnchainBalance.LockedAmount)
+
+		err = alice.Unroll(ctx)
+		require.NoError(t, err)
+
+		err = generateBlocks(10)
+		require.NoError(t, err)
+
+		err = alice.Unroll(ctx)
+		require.NoError(t, err)
+
+		time.Sleep(5 * time.Second)
+
+		// Generate 21 blocks to expire the first batch outputs
+		err = generateBlocks(30)
+		require.NoError(t, err)
+
+		// Wait for server to process the sweep
+		time.Sleep(20 * time.Second)
+
+		// charlie vtxos should be swept
+		charlieSpendable, _, err := charlie.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, charlieSpendable, 1)
+		require.True(t, charlieSpendable[0].Swept)
+
+		// bob vtxos should be swept
+		bobSpendable, _, err := bob.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, bobSpendable, 1)
+		require.True(t, bobSpendable[0].Swept)
 	})
 }
 

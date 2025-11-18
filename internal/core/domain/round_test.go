@@ -597,7 +597,20 @@ func testSweep(t *testing.T) {
 			require.False(t, round.IsFailed())
 
 			vtxos := leavesToVtxos(tree.FlatTxTree(vtxoTree).Leaves())
-			events, err = round.Sweep(vtxos, make([]domain.Outpoint, 0), "sweepTxid", emptyPtx)
+
+			// should fail if swept amount is 0
+			events, err = round.Sweep(vtxos, make([]domain.Outpoint, 0), "sweepTxid", emptyPtx, 0)
+			require.EqualError(t, err, "swept amount must be greater than 0")
+			require.Empty(t, events)
+
+			// partially sweep the batch
+			events, err = round.Sweep(
+				vtxos,
+				make([]domain.Outpoint, 0),
+				"sweepTxid",
+				emptyPtx,
+				1000,
+			)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
@@ -609,9 +622,45 @@ func testSweep(t *testing.T) {
 			require.Exactly(t, make([]domain.Outpoint, 0), event.PreconfirmedVtxos)
 			require.Equal(t, "sweepTxid", event.Txid)
 			require.Equal(t, emptyPtx, event.Tx)
+			require.False(t, event.FullySwept)
+			require.Equal(t, 0.25, event.LiquiditySwept)
+			require.False(t, round.Swept)
+			require.Equal(t, round.SweepTxs["sweepTxid"], emptyPtx)
+
+			// sweep the remaining amount
+			events, err = round.Sweep(
+				vtxos,
+				make([]domain.Outpoint, 0),
+				"sweepTxid",
+				emptyPtx,
+				3000,
+			)
+			require.NoError(t, err)
+			require.NotEmpty(t, events)
+
+			event, ok = events[0].(domain.BatchSwept)
+			require.True(t, ok)
+			require.Equal(t, domain.EventTypeBatchSwept, event.Type)
+			require.Equal(t, round.Id, event.Id)
+			require.Exactly(t, vtxos, event.LeafVtxos)
+			require.Exactly(t, make([]domain.Outpoint, 0), event.PreconfirmedVtxos)
+			require.Equal(t, "sweepTxid", event.Txid)
+			require.Equal(t, emptyPtx, event.Tx)
 			require.True(t, event.FullySwept)
+			require.Equal(t, 0.75, event.LiquiditySwept)
 			require.True(t, round.Swept)
 			require.Equal(t, round.SweepTxs["sweepTxid"], emptyPtx)
+
+			// should not create a new event if the batch is already swept
+			events, err = round.Sweep(
+				vtxos,
+				make([]domain.Outpoint, 0),
+				"sweepTxid",
+				emptyPtx,
+				1000,
+			)
+			require.NoError(t, err)
+			require.Nil(t, events)
 		})
 	})
 }

@@ -199,9 +199,7 @@ func (r *Round) EndFinalization(forfeitTxs []ForfeitTx, finalCommitmentTx string
 }
 
 func (r *Round) Sweep(
-	leafVtxos []Outpoint,
-	preconfirmedVtxos []Outpoint,
-	txid, tx string,
+	leafVtxos, preconfirmedVtxos []Outpoint, txid, tx string, sweptAmount int64,
 ) ([]Event, error) {
 	if !r.IsEnded() {
 		return nil, fmt.Errorf("not in a valid stage to sweep")
@@ -209,10 +207,12 @@ func (r *Round) Sweep(
 	if r.Swept {
 		return nil, nil
 	}
+	if sweptAmount <= 0 {
+		return nil, fmt.Errorf("swept amount must be greater than 0")
+	}
 
-	sweptVtxosCount := countSweptVtxos(r.Changes)
-	leavesCount := len(tree.FlatTxTree(r.VtxoTree).Leaves())
-	fullySwept := len(leafVtxos)+sweptVtxosCount == leavesCount
+	batchAmount := r.countBatchAmount()
+	liquiditySwept := float64(sweptAmount) / float64(batchAmount)
 
 	event := BatchSwept{
 		RoundEvent: RoundEvent{
@@ -223,7 +223,8 @@ func (r *Round) Sweep(
 		PreconfirmedVtxos: preconfirmedVtxos,
 		Txid:              txid,
 		Tx:                tx,
-		FullySwept:        fullySwept,
+		FullySwept:        r.willBeFullySwept(liquiditySwept),
+		LiquiditySwept:    liquiditySwept,
 	}
 
 	r.raise(event)
@@ -323,12 +324,27 @@ func (r *Round) raise(event Event) {
 	r.on(event, false)
 }
 
-func countSweptVtxos(events []Event) int {
-	count := 0
-	for _, event := range events {
-		if e, ok := event.(BatchSwept); ok {
-			count += len(e.LeafVtxos)
+// countBatchAmount sums the amount of Intent receivers, excluding the onchain ones.
+func (r *Round) countBatchAmount() uint64 {
+	amount := uint64(0)
+	for _, intent := range r.Intents {
+		for _, receiver := range intent.Receivers {
+			if receiver.IsOnchain() {
+				continue
+			}
+			amount += receiver.Amount
 		}
 	}
-	return count
+	return amount
+}
+
+func (r *Round) willBeFullySwept(newBatchSweptLiquiditySwept float64) bool {
+	percentageOfLiquiditySwept := 0.0
+
+	for _, event := range r.Changes {
+		if e, isBatchSwept := event.(BatchSwept); isBatchSwept {
+			percentageOfLiquiditySwept += e.LiquiditySwept
+		}
+	}
+	return percentageOfLiquiditySwept+newBatchSweptLiquiditySwept >= 1.0
 }

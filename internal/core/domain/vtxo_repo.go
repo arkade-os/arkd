@@ -9,14 +9,14 @@ type VtxoRepository interface {
 	UnrollVtxos(ctx context.Context, outpoints []Outpoint) error
 	SweepVtxos(ctx context.Context, outpoints []Outpoint) (int, error)
 	GetVtxos(ctx context.Context, outpoints []Outpoint) ([]Vtxo, error)
-	GetVtxosForRound(ctx context.Context, txid string) ([]Vtxo, error)
 	GetAllNonUnrolledVtxos(ctx context.Context, pubkey string) ([]Vtxo, []Vtxo, error)
-	GetAllSweepableVtxos(ctx context.Context) ([]Vtxo, error)
 	GetAllSweepableUnrolledVtxos(ctx context.Context) ([]Vtxo, error)
 	GetAllVtxos(ctx context.Context) ([]Vtxo, error)
 	GetAllVtxosWithPubKeys(ctx context.Context, pubkeys []string) ([]Vtxo, error)
 	UpdateVtxosExpiration(ctx context.Context, outpoints []Outpoint, expiresAt int64) error
 	GetLeafVtxosForBatch(ctx context.Context, txid string) ([]Vtxo, error)
-	GetVtxosByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]Outpoint, error)
+	GetUnsweptVtxosByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]Outpoint, error)
+	GetVtxoTapKeys(ctx context.Context, outpoints []Outpoint, withMinimumAmount uint64) ([]string, error)
+	GetAllSweepableVtxoTapKeys(ctx context.Context) ([]string, error)
 	Close()
 }

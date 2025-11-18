@@ -793,12 +793,10 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		err = svc.Vtxos().AddVtxos(ctx, chainVtxos)
 		require.NoError(t, err)
 
-		// Test recursive query starting from vtxo1
-		children, err := svc.Vtxos().GetVtxosByCommitmentTxid(ctx, vtxo1.RootCommitmentTxid)
+		children, err := svc.Vtxos().GetUnsweptVtxosByCommitmentTxid(ctx, vtxo1.RootCommitmentTxid)
 		require.NoError(t, err)
-		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
+		require.Len(t, children, 4)
 
-		// Verify all outpoints are returned
 		expectedOutpoints := []domain.Outpoint{
 			vtxo1.Outpoint,
 			vtxo2.Outpoint,
@@ -806,7 +804,6 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			vtxo4.Outpoint,
 		}
 
-		// Sort both slices for comparison
 		sort.Slice(children, func(i, j int) bool {
 			return children[i].Txid < children[j].Txid
 		})
@@ -817,9 +814,156 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, expectedOutpoints, children)
 
 		// Test with non-existent txid
-		children, err = svc.Vtxos().GetVtxosByCommitmentTxid(ctx, randomString(32))
+		children, err = svc.Vtxos().GetUnsweptVtxosByCommitmentTxid(ctx, randomString(32))
 		require.NoError(t, err)
 		require.Empty(t, children)
+
+		// Test GetVtxoTapKeys
+		tapKeysTestVtxos := []domain.Vtxo{
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 0,
+				},
+				PubKey:             "tapkey1",
+				Amount:             5000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Unrolled:           false,
+				Swept:              false,
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 1,
+				},
+				PubKey:             "tapkey2",
+				Amount:             2000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Unrolled:           false,
+				Swept:              false,
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 2,
+				},
+				PubKey:             "tapkey3",
+				Amount:             10000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Unrolled:           false,
+				Swept:              false,
+			},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, tapKeysTestVtxos)
+		require.NoError(t, err)
+
+		tapKeysOutpoints := []domain.Outpoint{
+			tapKeysTestVtxos[0].Outpoint,
+			tapKeysTestVtxos[1].Outpoint,
+			tapKeysTestVtxos[2].Outpoint,
+		}
+
+		tapKeys, err := svc.Vtxos().GetVtxoTapKeys(ctx, tapKeysOutpoints, 3000)
+		require.NoError(t, err)
+		require.Len(t, tapKeys, 2)
+		require.Contains(t, tapKeys, "tapkey1")
+		require.Contains(t, tapKeys, "tapkey3")
+		require.NotContains(t, tapKeys, "tapkey2")
+
+		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, tapKeysOutpoints, 0)
+		require.NoError(t, err)
+		require.Len(t, tapKeys, 3)
+		require.Contains(t, tapKeys, "tapkey1")
+		require.Contains(t, tapKeys, "tapkey2")
+		require.Contains(t, tapKeys, "tapkey3")
+
+		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, tapKeysOutpoints, 20000)
+		require.NoError(t, err)
+		require.Empty(t, tapKeys)
+
+		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, []domain.Outpoint{}, 0)
+		require.NoError(t, err)
+		require.Empty(t, tapKeys)
+
+		nonExistentOutpoint := domain.Outpoint{
+			Txid: randomString(32),
+			VOut: 999,
+		}
+		tapKeys, err = svc.Vtxos().GetVtxoTapKeys(ctx, []domain.Outpoint{nonExistentOutpoint}, 0)
+		require.NoError(t, err)
+		require.Empty(t, tapKeys)
+
+		// Test GetAllSweepableVtxoTapKeys
+		sweepableTestVtxos := []domain.Vtxo{
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 0,
+				},
+				PubKey:             "sweepable1",
+				Amount:             1000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Unrolled:           false,
+				Swept:              false,
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 1,
+				},
+				PubKey:             "sweepable2",
+				Amount:             2000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Unrolled:           false,
+				Swept:              false,
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 2,
+				},
+				PubKey:             "notsweepable1",
+				Amount:             3000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Unrolled:           true,
+				Swept:              false,
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 3,
+				},
+				PubKey:             "notsweepable2",
+				Amount:             4000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Unrolled:           false,
+				Swept:              true,
+			},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, sweepableTestVtxos)
+		require.NoError(t, err)
+
+		allSweepableTapKeys, err := svc.Vtxos().GetAllSweepableVtxoTapKeys(ctx)
+		require.NoError(t, err)
+		require.Contains(t, allSweepableTapKeys, "sweepable1")
+		require.Contains(t, allSweepableTapKeys, "sweepable2")
+		require.NotContains(t, allSweepableTapKeys, "notsweepable1")
+		require.NotContains(t, allSweepableTapKeys, "notsweepable2")
+
+		pubkeyCount := make(map[string]int)
+		for _, key := range allSweepableTapKeys {
+			pubkeyCount[key]++
+		}
+		for key, count := range pubkeyCount {
+			require.Equal(t, 1, count, "pubkey %s should appear only once", key)
+		}
 	})
 }
 

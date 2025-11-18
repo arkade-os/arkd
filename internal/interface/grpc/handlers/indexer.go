@@ -472,7 +472,7 @@ func (h *indexerService) listenToTxEvents() {
 
 		allSpendableVtxos := make(map[string][]*arkv1.IndexerVtxo)
 		allSpentVtxos := make(map[string][]*arkv1.IndexerVtxo)
-		allSweptVtxos := make(map[string][]*arkv1.IndexerVtxo)
+		allSweptVtxos := make(map[string][]*arkv1.IndexerOutpoint)
 
 		for _, vtxo := range event.SpendableVtxos {
 			vtxoScript := toP2TR(vtxo.PubKey)
@@ -504,7 +504,7 @@ func (h *indexerService) listenToTxEvents() {
 		for _, l := range listenersCopy {
 			spendableVtxos := make([]*arkv1.IndexerVtxo, 0)
 			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
-			sweptVtxos := make([]*arkv1.IndexerVtxo, 0)
+			sweptVtxos := make([]*arkv1.IndexerOutpoint, 0)
 			involvedScripts := make([]string, 0)
 
 			for vtxoScript := range l.topics {

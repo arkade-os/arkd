@@ -10,10 +10,8 @@ import (
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
-	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
@@ -128,13 +126,7 @@ func convertSatsToBTCStr(sats uint64) string {
 }
 
 func toP2TR(pubkey string) string {
-	// nolint
-	buf, _ := hex.DecodeString(pubkey)
-	// nolint
-	key, _ := schnorr.ParsePubKey(buf)
-	// nolint
-	outScript, _ := script.P2TRScript(key)
-	return hex.EncodeToString(outScript)
+	return "5120" + pubkey
 }
 
 // From app type to interface type

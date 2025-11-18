@@ -120,6 +120,7 @@ func (s *sweeper) start(ctx context.Context) error {
 		}
 	}()
 
+	// TODO minimize data returned by the repository
 	sweepableUnrolledVtxos, err := s.repoManager.Vtxos().GetAllSweepableUnrolledVtxos(ctx)
 	if err != nil {
 		return err
@@ -531,6 +532,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 
 		// keep only the unspent outputs in order to avoid including already spent outputs in the sweep transaction
 		unspentOutputsToSweep := make([]ports.SweepableOutput, 0)
+		sweptAmount := int64(0)
 		for _, out := range outputsToSweep {
 			outpoint := domain.Outpoint{
 				Txid: out.Hash.String(),
@@ -545,6 +547,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 			}
 			if !spent {
 				unspentOutputsToSweep = append(unspentOutputsToSweep, out)
+				sweptAmount += out.Amount
 			}
 		}
 
@@ -553,7 +556,11 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 
 		// if there are unspent outputs to sweep, build and broadcast a sweep transaction
 		if len(unspentOutputsToSweep) > 0 {
-			log.Debugf("sweeper: sweeping %d outputs for batch %s", len(unspentOutputsToSweep), commitmentTxid)
+			log.Debugf(
+				"sweeper: sweeping %d outputs for batch %s",
+				len(unspentOutputsToSweep),
+				commitmentTxid,
+			)
 
 			// build the sweep transaction with all the expired non-swept batch outputs
 			sweepTxId, sweepTx, err = s.builder.BuildSweepTx(unspentOutputsToSweep)
@@ -596,21 +603,27 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 		// if there are outputs to sweep raise a batch swept event to update projection store
 		if len(sweepTxId) > 0 {
 			vtxoRepo := s.repoManager.Vtxos()
-			// get all vtxos that are children of the swept leaves
-			preconfirmedVtxos, err := vtxoRepo.GetVtxosByCommitmentTxid(ctx, commitmentTxid)
+			eventRepo := s.repoManager.Events()
+
+			// get all vtxos related to the batch commitment txid
+			preconfirmedVtxos, err := vtxoRepo.GetUnsweptVtxosByCommitmentTxid(ctx, commitmentTxid)
 			if err != nil {
 				log.WithError(err).Error("error while getting children vtxos")
 			}
 
-			events, err := round.Sweep(leafVtxoKeys, preconfirmedVtxos, sweepTxId, sweepTx)
+			events, err := round.Sweep(
+				leafVtxoKeys,
+				preconfirmedVtxos,
+				sweepTxId,
+				sweepTx,
+				sweptAmount,
+			)
 			if err != nil {
 				log.WithError(err).Error("failed to sweep batch")
 				return err
 			}
 			if len(events) > 0 {
-				if err := s.repoManager.Events().Save(
-					ctx, domain.RoundTopic, round.Id, events,
-				); err != nil {
+				if err := eventRepo.Save(ctx, domain.RoundTopic, round.Id, events); err != nil {
 					log.WithError(err).Errorf(
 						"failed to save sweep events for round %s", commitmentTxid,
 					)

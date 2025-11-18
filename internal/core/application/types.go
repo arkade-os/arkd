@@ -103,12 +103,17 @@ type TxData struct {
 	Txid string
 }
 
+type outpointWithPubKey struct {
+	Outpoint domain.Outpoint
+	PubKey   string
+}
+
 type TransactionEvent struct {
 	TxData
 	Type           TransactionEventType
 	SpentVtxos     []domain.Vtxo
 	SpendableVtxos []domain.Vtxo
-	SweptVtxos     []domain.Vtxo
+	SweptVtxos     []domain.Outpoint
 	CheckpointTxs  map[string]TxData
 }
 

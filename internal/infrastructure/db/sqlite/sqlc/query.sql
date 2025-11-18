@@ -240,8 +240,8 @@ SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_
 UNION
 SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid IN (sqlc.slice('ids3'));
 
--- name: SelectSweepableVtxos :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND swept = false;
+-- name: SelectSweepableVtxoTapKeys :many
+SELECT DISTINCT pubkey FROM vtxo WHERE unrolled = false AND swept = false;
 
 -- name: SelectNotUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
@@ -255,9 +255,6 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 -- name: SelectAllVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
--- name: SelectVtxosWithCommitmentTxid :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE commitment_txid = @commitment_txid;
-
 -- name: SelectVtxosWithPubkeys :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkey'));
 
@@ -267,8 +264,23 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 
--- name: SelectVtxoOutpointsByCommitmentTxid :many
-SELECT DISTINCT vtxo_txid, vtxo_vout FROM vtxo_commitment_txid WHERE commitment_txid = @commitment_txid;
+-- name: SelectVtxoTaprootKeys :many
+SELECT DISTINCT pubkey
+FROM vtxo
+WHERE amount > sqlc.arg('min_amount')
+  AND concat(txid, ':', CAST(vout AS TEXT)) IN (sqlc.slice('outpoints'));
+
+-- name: SelectDistinctPubkeysByOutpoints :many
+SELECT DISTINCT pubkey
+FROM vtxo
+WHERE concat(txid, ':', CAST(vout AS TEXT)) IN (sqlc.slice('outpoints'))
+AND amount > sqlc.arg('min_amount');
+
+-- name: SelectUnsweptVtxoOutpointsByCommitmentTxid :many
+SELECT DISTINCT vct.vtxo_txid, vct.vtxo_vout 
+FROM vtxo_commitment_txid vct
+INNER JOIN vtxo v ON vct.vtxo_txid = v.txid AND vct.vtxo_vout = v.vout
+WHERE vct.commitment_txid = @commitment_txid AND v.swept = false;
 
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');

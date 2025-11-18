@@ -1039,44 +1039,23 @@ func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSwe
 	return items, nil
 }
 
-const selectSweepableVtxos = `-- name: SelectSweepableVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = false AND swept = false
+const selectSweepableVtxoTapKeys = `-- name: SelectSweepableVtxoTapKeys :many
+SELECT DISTINCT pubkey FROM vtxo WHERE unrolled = false AND swept = false
 `
 
-type SelectSweepableVtxosRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectSweepableVtxos(ctx context.Context) ([]SelectSweepableVtxosRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectSweepableVtxos)
+func (q *Queries) SelectSweepableVtxoTapKeys(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectSweepableVtxoTapKeys)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectSweepableVtxosRow
+	var items []string
 	for rows.Next() {
-		var i SelectSweepableVtxosRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.ExpiresAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.CommitmentTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Unrolled,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.IntentID,
-			&i.VtxoVw.Commitments,
-		); err != nil {
+		var pubkey string
+		if err := rows.Scan(&pubkey); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, pubkey)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1151,6 +1130,41 @@ func (q *Queries) SelectTxs(ctx context.Context, dollar_1 []string) ([]SelectTxs
 	return items, nil
 }
 
+const selectUnsweptVtxoOutpointsByCommitmentTxid = `-- name: SelectUnsweptVtxoOutpointsByCommitmentTxid :many
+SELECT DISTINCT vct.vtxo_txid, vct.vtxo_vout 
+FROM vtxo_commitment_txid vct
+INNER JOIN vtxo v ON vct.vtxo_txid = v.txid AND vct.vtxo_vout = v.vout
+WHERE vct.commitment_txid = $1 AND v.swept = false
+`
+
+type SelectUnsweptVtxoOutpointsByCommitmentTxidRow struct {
+	VtxoTxid string
+	VtxoVout int32
+}
+
+func (q *Queries) SelectUnsweptVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectUnsweptVtxoOutpointsByCommitmentTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectUnsweptVtxoOutpointsByCommitmentTxid, commitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectUnsweptVtxoOutpointsByCommitmentTxidRow
+	for rows.Next() {
+		var i SelectUnsweptVtxoOutpointsByCommitmentTxidRow
+		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxo = `-- name: SelectVtxo :one
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE txid = $1 AND vout = $2
 `
@@ -1188,28 +1202,31 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 	return i, err
 }
 
-const selectVtxoOutpointsByCommitmentTxid = `-- name: SelectVtxoOutpointsByCommitmentTxid :many
-SELECT vtxo_txid, vtxo_vout FROM vtxo_commitment_txid WHERE commitment_txid = $1
+const selectVtxoTaprootKeys = `-- name: SelectVtxoTaprootKeys :many
+SELECT DISTINCT pubkey 
+FROM vtxo 
+WHERE (txid || ':' || vout::text) = ANY($1::text[])
+AND amount > $2
 `
 
-type SelectVtxoOutpointsByCommitmentTxidRow struct {
-	VtxoTxid string
-	VtxoVout int32
+type SelectVtxoTaprootKeysParams struct {
+	Outpoints []string
+	MinAmount int64
 }
 
-func (q *Queries) SelectVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectVtxoOutpointsByCommitmentTxidRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxoOutpointsByCommitmentTxid, commitmentTxid)
+func (q *Queries) SelectVtxoTaprootKeys(ctx context.Context, arg SelectVtxoTaprootKeysParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxoTaprootKeys, pq.Array(arg.Outpoints), arg.MinAmount)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectVtxoOutpointsByCommitmentTxidRow
+	var items []string
 	for rows.Next() {
-		var i SelectVtxoOutpointsByCommitmentTxidRow
-		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
+		var pubkey string
+		if err := rows.Scan(&pubkey); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, pubkey)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

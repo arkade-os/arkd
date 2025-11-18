@@ -78,17 +78,12 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectSweepableVtxos(ctx)
+func (v *vtxoRepository) GetAllSweepableVtxoTapKeys(ctx context.Context) ([]string, error) {
+	res, err := v.querier.SelectSweepableVtxoTapKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	rows := make([]queries.VtxoVw, 0, len(res))
-	for _, row := range res {
-		rows = append(rows, row.VtxoVw)
-	}
-	return readRows(rows)
+	return res, nil
 }
 
 func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
@@ -187,19 +182,6 @@ func (v *vtxoRepository) GetVtxos(
 
 func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	res, err := v.querier.SelectAllVtxos(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rows := make([]queries.VtxoVw, 0, len(res))
-	for _, row := range res {
-		rows = append(rows, row.VtxoVw)
-	}
-
-	return readRows(rows)
-}
-
-func (v *vtxoRepository) GetVtxosForRound(ctx context.Context, txid string) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosWithCommitmentTxid(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
@@ -368,10 +350,13 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	return vtxos, nil
 }
 
-func (v *vtxoRepository) GetVtxosByCommitmentTxid(ctx context.Context, commitmentTxid string) (
+func (v *vtxoRepository) GetUnsweptVtxosByCommitmentTxid(
+	ctx context.Context,
+	commitmentTxid string,
+) (
 	[]domain.Outpoint, error,
 ) {
-	res, err := v.querier.SelectVtxoOutpointsByCommitmentTxid(ctx, commitmentTxid)
+	res, err := v.querier.SelectUnsweptVtxoOutpointsByCommitmentTxid(ctx, commitmentTxid)
 	if err != nil {
 		return nil, err
 	}
@@ -387,6 +372,28 @@ func (v *vtxoRepository) GetVtxosByCommitmentTxid(ctx context.Context, commitmen
 	return outpoints, nil
 }
 
+func (v *vtxoRepository) GetVtxoTapKeys(
+	ctx context.Context, outpoints []domain.Outpoint, withMinimumAmount uint64,
+) ([]string, error) {
+	if len(outpoints) == 0 {
+		return nil, nil
+	}
+
+	outpointStrings := make([]string, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		outpointStrings = append(outpointStrings, outpoint.String())
+	}
+
+	taprootKeys, err := v.querier.SelectVtxoTaprootKeys(ctx, queries.SelectVtxoTaprootKeysParams{
+		Outpoints: outpointStrings,
+		MinAmount: int64(withMinimumAmount),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return taprootKeys, nil
+}
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 	var commitmentTxids []string
 	if commitments, ok := row.Commitments.(string); ok && commitments != "" {

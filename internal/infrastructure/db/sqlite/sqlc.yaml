@@ -6,6 +6,8 @@ sql:
     gen:
       go:
         package: "queries"
+        emit_json_tags: true
+        query_parameter_limit: 1
         out: "sqlc/queries"
         overrides:
           - column: "round_intents_vw.id"

@@ -9,207 +9,207 @@ import (
 )
 
 type CheckpointTx struct {
-	Txid                 string
-	Tx                   string
-	CommitmentTxid       string
-	IsRootCommitmentTxid bool
-	OffchainTxid         string
+	Txid                 string `json:"txid"`
+	Tx                   string `json:"tx"`
+	CommitmentTxid       string `json:"commitment_txid"`
+	IsRootCommitmentTxid bool   `json:"is_root_commitment_txid"`
+	OffchainTxid         string `json:"offchain_txid"`
 }
 
 type Conviction struct {
-	ID           string
-	Type         int64
-	CreatedAt    int64
-	ExpiresAt    sql.NullInt64
-	CrimeType    int64
-	CrimeRoundID string
-	CrimeReason  string
-	Pardoned     bool
-	Script       sql.NullString
+	ID           string         `json:"id"`
+	Type         int64          `json:"type"`
+	CreatedAt    int64          `json:"created_at"`
+	ExpiresAt    sql.NullInt64  `json:"expires_at"`
+	CrimeType    int64          `json:"crime_type"`
+	CrimeRoundID string         `json:"crime_round_id"`
+	CrimeReason  string         `json:"crime_reason"`
+	Pardoned     bool           `json:"pardoned"`
+	Script       sql.NullString `json:"script"`
 }
 
 type Intent struct {
-	ID      sql.NullString
-	RoundID sql.NullString
-	Proof   sql.NullString
-	Message sql.NullString
+	ID      sql.NullString `json:"id"`
+	RoundID sql.NullString `json:"round_id"`
+	Proof   sql.NullString `json:"proof"`
+	Message sql.NullString `json:"message"`
 }
 
 type IntentWithInputsVw struct {
-	Txid           sql.NullString
-	Vout           sql.NullInt64
-	Pubkey         sql.NullString
-	Amount         sql.NullInt64
-	ExpiresAt      sql.NullInt64
-	CreatedAt      sql.NullInt64
-	CommitmentTxid sql.NullString
-	SpentBy        sql.NullString
-	Spent          sql.NullBool
-	Unrolled       sql.NullBool
-	Swept          sql.NullBool
-	Preconfirmed   sql.NullBool
-	SettledBy      sql.NullString
-	ArkTxid        sql.NullString
-	IntentID       sql.NullString
-	Commitments    interface{}
-	ID             sql.NullString
-	RoundID        sql.NullString
-	Proof          sql.NullString
-	Message        sql.NullString
+	Txid           sql.NullString `json:"txid"`
+	Vout           sql.NullInt64  `json:"vout"`
+	Pubkey         sql.NullString `json:"pubkey"`
+	Amount         sql.NullInt64  `json:"amount"`
+	ExpiresAt      sql.NullInt64  `json:"expires_at"`
+	CreatedAt      sql.NullInt64  `json:"created_at"`
+	CommitmentTxid sql.NullString `json:"commitment_txid"`
+	SpentBy        sql.NullString `json:"spent_by"`
+	Spent          sql.NullBool   `json:"spent"`
+	Unrolled       sql.NullBool   `json:"unrolled"`
+	Swept          sql.NullBool   `json:"swept"`
+	Preconfirmed   sql.NullBool   `json:"preconfirmed"`
+	SettledBy      sql.NullString `json:"settled_by"`
+	ArkTxid        sql.NullString `json:"ark_txid"`
+	IntentID       sql.NullString `json:"intent_id"`
+	Commitments    interface{}    `json:"commitments"`
+	ID             sql.NullString `json:"id"`
+	RoundID        sql.NullString `json:"round_id"`
+	Proof          sql.NullString `json:"proof"`
+	Message        sql.NullString `json:"message"`
 }
 
 type IntentWithReceiversVw struct {
-	IntentID       sql.NullString
-	Pubkey         sql.NullString
-	OnchainAddress sql.NullString
-	Amount         sql.NullInt64
-	ID             sql.NullString
-	RoundID        sql.NullString
-	Proof          sql.NullString
-	Message        sql.NullString
+	IntentID       sql.NullString `json:"intent_id"`
+	Pubkey         sql.NullString `json:"pubkey"`
+	OnchainAddress sql.NullString `json:"onchain_address"`
+	Amount         sql.NullInt64  `json:"amount"`
+	ID             sql.NullString `json:"id"`
+	RoundID        sql.NullString `json:"round_id"`
+	Proof          sql.NullString `json:"proof"`
+	Message        sql.NullString `json:"message"`
 }
 
 type OffchainTx struct {
-	Txid              string
-	Tx                string
-	StartingTimestamp int64
-	EndingTimestamp   int64
-	ExpiryTimestamp   int64
-	FailReason        sql.NullString
-	StageCode         int64
+	Txid              string         `json:"txid"`
+	Tx                string         `json:"tx"`
+	StartingTimestamp int64          `json:"starting_timestamp"`
+	EndingTimestamp   int64          `json:"ending_timestamp"`
+	ExpiryTimestamp   int64          `json:"expiry_timestamp"`
+	FailReason        sql.NullString `json:"fail_reason"`
+	StageCode         int64          `json:"stage_code"`
 }
 
 type OffchainTxVw struct {
-	Txid                 string
-	Tx                   string
-	StartingTimestamp    int64
-	EndingTimestamp      int64
-	ExpiryTimestamp      int64
-	FailReason           sql.NullString
-	StageCode            int64
-	CheckpointTxid       string
-	CheckpointTx         string
-	CommitmentTxid       string
-	IsRootCommitmentTxid bool
-	OffchainTxid         string
+	Txid                 string         `json:"txid"`
+	Tx                   string         `json:"tx"`
+	StartingTimestamp    int64          `json:"starting_timestamp"`
+	EndingTimestamp      int64          `json:"ending_timestamp"`
+	ExpiryTimestamp      int64          `json:"expiry_timestamp"`
+	FailReason           sql.NullString `json:"fail_reason"`
+	StageCode            int64          `json:"stage_code"`
+	CheckpointTxid       string         `json:"checkpoint_txid"`
+	CheckpointTx         string         `json:"checkpoint_tx"`
+	CommitmentTxid       string         `json:"commitment_txid"`
+	IsRootCommitmentTxid bool           `json:"is_root_commitment_txid"`
+	OffchainTxid         string         `json:"offchain_txid"`
 }
 
 type Receiver struct {
-	IntentID       string
-	Pubkey         sql.NullString
-	OnchainAddress string
-	Amount         int64
+	IntentID       string         `json:"intent_id"`
+	Pubkey         sql.NullString `json:"pubkey"`
+	OnchainAddress string         `json:"onchain_address"`
+	Amount         int64          `json:"amount"`
 }
 
 type Round struct {
-	ID                 string
-	StartingTimestamp  int64
-	EndingTimestamp    int64
-	Ended              bool
-	Failed             bool
-	StageCode          int64
-	ConnectorAddress   string
-	Version            int64
-	Swept              bool
-	VtxoTreeExpiration int64
-	FailReason         sql.NullString
+	ID                 string         `json:"id"`
+	StartingTimestamp  int64          `json:"starting_timestamp"`
+	EndingTimestamp    int64          `json:"ending_timestamp"`
+	Ended              bool           `json:"ended"`
+	Failed             bool           `json:"failed"`
+	StageCode          int64          `json:"stage_code"`
+	ConnectorAddress   string         `json:"connector_address"`
+	Version            int64          `json:"version"`
+	Swept              bool           `json:"swept"`
+	VtxoTreeExpiration int64          `json:"vtxo_tree_expiration"`
+	FailReason         sql.NullString `json:"fail_reason"`
 }
 
 type RoundIntentsVw struct {
-	ID      sql.NullString
-	RoundID sql.NullString
-	Proof   sql.NullString
-	Message sql.NullString
+	ID      sql.NullString `json:"id"`
+	RoundID sql.NullString `json:"round_id"`
+	Proof   sql.NullString `json:"proof"`
+	Message sql.NullString `json:"message"`
 }
 
 type RoundTxsVw struct {
-	Txid     sql.NullString
-	Tx       sql.NullString
-	RoundID  sql.NullString
-	Type     sql.NullString
-	Position sql.NullInt64
-	Children sql.NullString
+	Txid     sql.NullString `json:"txid"`
+	Tx       sql.NullString `json:"tx"`
+	RoundID  sql.NullString `json:"round_id"`
+	Type     sql.NullString `json:"type"`
+	Position sql.NullInt64  `json:"position"`
+	Children sql.NullString `json:"children"`
 }
 
 type RoundWithCommitmentTxVw struct {
-	ID                 string
-	StartingTimestamp  int64
-	EndingTimestamp    int64
-	Ended              bool
-	Failed             bool
-	StageCode          int64
-	ConnectorAddress   string
-	Version            int64
-	Swept              bool
-	VtxoTreeExpiration int64
-	FailReason         sql.NullString
-	Txid               string
-	Tx                 string
-	RoundID            string
-	Type               string
-	Position           int64
-	Children           sql.NullString
+	ID                 string         `json:"id"`
+	StartingTimestamp  int64          `json:"starting_timestamp"`
+	EndingTimestamp    int64          `json:"ending_timestamp"`
+	Ended              bool           `json:"ended"`
+	Failed             bool           `json:"failed"`
+	StageCode          int64          `json:"stage_code"`
+	ConnectorAddress   string         `json:"connector_address"`
+	Version            int64          `json:"version"`
+	Swept              bool           `json:"swept"`
+	VtxoTreeExpiration int64          `json:"vtxo_tree_expiration"`
+	FailReason         sql.NullString `json:"fail_reason"`
+	Txid               string         `json:"txid"`
+	Tx                 string         `json:"tx"`
+	RoundID            string         `json:"round_id"`
+	Type               string         `json:"type"`
+	Position           int64          `json:"position"`
+	Children           sql.NullString `json:"children"`
 }
 
 type ScheduledSession struct {
-	ID                   int64
-	StartTime            int64
-	EndTime              int64
-	Period               int64
-	Duration             int64
-	RoundMinParticipants int64
-	RoundMaxParticipants int64
-	UpdatedAt            int64
+	ID                   int64 `json:"id"`
+	StartTime            int64 `json:"start_time"`
+	EndTime              int64 `json:"end_time"`
+	Period               int64 `json:"period"`
+	Duration             int64 `json:"duration"`
+	RoundMinParticipants int64 `json:"round_min_participants"`
+	RoundMaxParticipants int64 `json:"round_max_participants"`
+	UpdatedAt            int64 `json:"updated_at"`
 }
 
 type Tx struct {
-	Txid     string
-	Tx       string
-	RoundID  string
-	Type     string
-	Position int64
-	Children sql.NullString
+	Txid     string         `json:"txid"`
+	Tx       string         `json:"tx"`
+	RoundID  string         `json:"round_id"`
+	Type     string         `json:"type"`
+	Position int64          `json:"position"`
+	Children sql.NullString `json:"children"`
 }
 
 type Vtxo struct {
-	Txid           string
-	Vout           int64
-	Pubkey         string
-	Amount         int64
-	ExpiresAt      int64
-	CreatedAt      int64
-	CommitmentTxid string
-	SpentBy        sql.NullString
-	Spent          bool
-	Unrolled       bool
-	Swept          bool
-	Preconfirmed   bool
-	SettledBy      sql.NullString
-	ArkTxid        sql.NullString
-	IntentID       sql.NullString
+	Txid           string         `json:"txid"`
+	Vout           int64          `json:"vout"`
+	Pubkey         string         `json:"pubkey"`
+	Amount         int64          `json:"amount"`
+	ExpiresAt      int64          `json:"expires_at"`
+	CreatedAt      int64          `json:"created_at"`
+	CommitmentTxid string         `json:"commitment_txid"`
+	SpentBy        sql.NullString `json:"spent_by"`
+	Spent          bool           `json:"spent"`
+	Unrolled       bool           `json:"unrolled"`
+	Swept          bool           `json:"swept"`
+	Preconfirmed   bool           `json:"preconfirmed"`
+	SettledBy      sql.NullString `json:"settled_by"`
+	ArkTxid        sql.NullString `json:"ark_txid"`
+	IntentID       sql.NullString `json:"intent_id"`
 }
 
 type VtxoCommitmentTxid struct {
-	VtxoTxid       string
-	VtxoVout       int64
-	CommitmentTxid string
+	VtxoTxid       string `json:"vtxo_txid"`
+	VtxoVout       int64  `json:"vtxo_vout"`
+	CommitmentTxid string `json:"commitment_txid"`
 }
 
 type VtxoVw struct {
-	Txid           string
-	Vout           int64
-	Pubkey         string
-	Amount         int64
-	ExpiresAt      int64
-	CreatedAt      int64
-	CommitmentTxid string
-	SpentBy        sql.NullString
-	Spent          bool
-	Unrolled       bool
-	Swept          bool
-	Preconfirmed   bool
-	SettledBy      sql.NullString
-	ArkTxid        sql.NullString
-	IntentID       sql.NullString
-	Commitments    interface{}
+	Txid           string         `json:"txid"`
+	Vout           int64          `json:"vout"`
+	Pubkey         string         `json:"pubkey"`
+	Amount         int64          `json:"amount"`
+	ExpiresAt      int64          `json:"expires_at"`
+	CreatedAt      int64          `json:"created_at"`
+	CommitmentTxid string         `json:"commitment_txid"`
+	SpentBy        sql.NullString `json:"spent_by"`
+	Spent          bool           `json:"spent"`
+	Unrolled       bool           `json:"unrolled"`
+	Swept          bool           `json:"swept"`
+	Preconfirmed   bool           `json:"preconfirmed"`
+	SettledBy      sql.NullString `json:"settled_by"`
+	ArkTxid        sql.NullString `json:"ark_txid"`
+	IntentID       sql.NullString `json:"intent_id"`
+	Commitments    interface{}    `json:"commitments"`
 }
