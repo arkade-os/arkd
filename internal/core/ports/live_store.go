@@ -82,6 +82,11 @@ type TreeSigningSessionsStore interface {
 type BoardingInputsStore interface {
 	Set(numOfInputs int)
 	Get() int
+	AddSignatures(
+		ctx context.Context, batchId string, inputSigs map[uint32]SignedBoardingInput,
+	) error
+	GetSignatures(ctx context.Context, batchId string) (map[uint32]SignedBoardingInput, error)
+	DeleteSignatures(ctx context.Context, batchId string) error
 }
 
 type TimedIntent struct {

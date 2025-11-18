@@ -1,6 +1,7 @@
 package livestore_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/stretchr/testify/require"
@@ -392,6 +394,107 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.Equal(t, 42, store.BoardingInputs().Get())
 		store.BoardingInputs().Set(0)
 		require.Equal(t, 0, store.BoardingInputs().Get())
+
+		batchId := "fakeCommitmentTxid"
+		sigs := map[uint32]ports.SignedBoardingInput{
+			0: {
+				Signatures: []*psbt.TaprootScriptSpendSig{
+					{
+						XOnlyPubKey: []byte{0},
+						LeafHash:    []byte{1},
+						Signature:   []byte{2},
+						SigHash:     txscript.SigHashAll,
+					},
+				},
+				LeafScript: &psbt.TaprootTapLeafScript{
+					ControlBlock: []byte{3},
+					Script:       []byte{4},
+					LeafVersion:  0,
+				},
+			},
+			1: {
+				Signatures: []*psbt.TaprootScriptSpendSig{
+					{
+						XOnlyPubKey: []byte{5},
+						LeafHash:    []byte{6},
+						Signature:   []byte{7},
+						SigHash:     txscript.SigHashAll,
+					},
+				},
+				LeafScript: &psbt.TaprootTapLeafScript{
+					ControlBlock: []byte{8},
+					Script:       []byte{9},
+					LeafVersion:  0,
+				},
+			},
+		}
+		overWrittenSigs := map[uint32]ports.SignedBoardingInput{
+			0: {
+				Signatures: []*psbt.TaprootScriptSpendSig{
+					{
+						XOnlyPubKey: []byte{5},
+						LeafHash:    []byte{6},
+						Signature:   []byte{7},
+						SigHash:     txscript.SigHashAll,
+					},
+				},
+				LeafScript: &psbt.TaprootTapLeafScript{
+					ControlBlock: []byte{8},
+					Script:       []byte{9},
+					LeafVersion:  0,
+				},
+			},
+			1: {
+				Signatures: []*psbt.TaprootScriptSpendSig{
+					{
+						XOnlyPubKey: []byte{0},
+						LeafHash:    []byte{1},
+						Signature:   []byte{2},
+						SigHash:     txscript.SigHashAll,
+					},
+				},
+				LeafScript: &psbt.TaprootTapLeafScript{
+					ControlBlock: []byte{3},
+					Script:       []byte{4},
+					LeafVersion:  0,
+				},
+			},
+		}
+		gotSigs, err := store.BoardingInputs().GetSignatures(t.Context(), batchId)
+		require.NoError(t, err)
+		require.Empty(t, gotSigs)
+
+		err = store.BoardingInputs().AddSignatures(t.Context(), batchId, sigs)
+		require.NoError(t, err)
+
+		gotSigs, err = store.BoardingInputs().GetSignatures(t.Context(), batchId)
+		require.NoError(t, err)
+		require.NotEmpty(t, gotSigs)
+		require.NoError(t, sigsMatch(sigs, gotSigs))
+
+		// Make sure overwriting is disabled.
+		err = store.BoardingInputs().AddSignatures(t.Context(), batchId, overWrittenSigs)
+		require.NoError(t, err)
+
+		gotSigs, err = store.BoardingInputs().GetSignatures(t.Context(), batchId)
+		require.NoError(t, err)
+		require.NotEmpty(t, gotSigs)
+		require.NoError(t, sigsMatch(sigs, gotSigs))
+
+		err = store.BoardingInputs().DeleteSignatures(t.Context(), batchId)
+		require.NoError(t, err)
+
+		gotSigs, err = store.BoardingInputs().GetSignatures(t.Context(), batchId)
+		require.NoError(t, err)
+		require.Empty(t, gotSigs)
+
+		// Repeat to make sure nothing breaks if cache is already empty
+		err = store.BoardingInputs().DeleteSignatures(t.Context(), batchId)
+		require.NoError(t, err)
+
+		gotSigs, err = store.BoardingInputs().GetSignatures(t.Context(), batchId)
+		require.NoError(t, err)
+		require.Empty(t, gotSigs)
 	})
 }
 
@@ -494,22 +597,11 @@ func (m *mockedTxBuilder) VerifyVtxoTapscriptSigs(
 	return res0, res1, args.Error(2)
 }
 
-func (m *mockedTxBuilder) CombineTapscriptSigs(
-	dest string,
-	src string,
-	indexes []int,
-) (string, error) {
-	args := m.Called(dest, src, indexes)
-	res0 := args.Get(0).(string)
-	return res0, args.Error(1)
-}
-
 func (m *mockedTxBuilder) VerifyBoardingTapscriptSigs(
-	txToVerify string,
-	commitmentTx string,
-) ([]int, error) {
+	txToVerify, commitmentTx string,
+) (map[uint32]ports.SignedBoardingInput, error) {
 	args := m.Called(txToVerify, commitmentTx)
-	res0 := args.Get(0).([]int)
+	res0 := args.Get(0).(map[uint32]ports.SignedBoardingInput)
 	return res0, args.Error(1)
 }
 
@@ -532,4 +624,67 @@ func intentsEqual(t *testing.T, a, b []ports.TimedIntent) {
 		hashesB[hex.EncodeToString(hashId[:])] = true
 	}
 	require.Equal(t, hashesA, hashesB)
+}
+
+func sigsMatch(sigs, gotSigs map[uint32]ports.SignedBoardingInput) error {
+	for inIndex, sig := range sigs {
+		gotSig, ok := gotSigs[inIndex]
+		if !ok {
+			return fmt.Errorf("missing sigs for input index %d", inIndex)
+		}
+		if len(sig.Signatures) != len(gotSig.Signatures) {
+			return fmt.Errorf(
+				"input %d: got %d signatures, expected %d",
+				inIndex, len(gotSig.Signatures), len(sig.Signatures),
+			)
+		}
+		for i, s := range sig.Signatures {
+			gotS := gotSig.Signatures[i]
+			if !bytes.Equal(s.XOnlyPubKey, gotS.XOnlyPubKey) {
+				return fmt.Errorf(
+					"input %d - sig %d: got %x xonly pubkey, expected %x",
+					inIndex, i, gotS.XOnlyPubKey, s.XOnlyPubKey,
+				)
+			}
+			if !bytes.Equal(s.LeafHash, gotS.LeafHash) {
+				return fmt.Errorf(
+					"input %d - sig %d: got %x leaf hash, expected %x",
+					inIndex, i, gotS.LeafHash, s.LeafHash,
+				)
+			}
+			if !bytes.Equal(s.Signature, gotS.Signature) {
+				return fmt.Errorf(
+					"input %d - sig %d: got %x signature, expected %x",
+					inIndex, i, gotS.Signature, s.Signature,
+				)
+			}
+			if s.SigHash != gotS.SigHash {
+				return fmt.Errorf(
+					"input %d - sig %d: got %d sighash type, expected %d",
+					inIndex, i, gotS.SigHash, s.SigHash,
+				)
+			}
+		}
+		ls := sig.LeafScript
+		gotLS := gotSig.LeafScript
+		if !bytes.Equal(ls.ControlBlock, gotLS.ControlBlock) {
+			return fmt.Errorf(
+				"input %d - leaf script: got %x control block, expected %x",
+				inIndex, gotLS.ControlBlock, ls.ControlBlock,
+			)
+		}
+		if !bytes.Equal(ls.Script, gotLS.Script) {
+			return fmt.Errorf(
+				"input %d - leaf script: got %x script, expected %x",
+				inIndex, gotLS.Script, ls.Script,
+			)
+		}
+		if ls.LeafVersion != gotLS.LeafVersion {
+			return fmt.Errorf(
+				"input %d - leaf script: got %d leaf version, expected %d",
+				inIndex, gotLS.LeafVersion, ls.LeafVersion,
+			)
+		}
+	}
+	return nil
 }

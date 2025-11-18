@@ -23,7 +23,7 @@ func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int) 
 		currentRoundStore:         NewCurrentRoundStore(rdb, numOfRetries),
 		confirmationSessionsStore: NewConfirmationSessionsStore(rdb, numOfRetries),
 		treeSigningSessions:       NewTreeSigningSessionsStore(rdb),
-		boardingInputsStore:       NewBoardingInputsStore(rdb),
+		boardingInputsStore:       NewBoardingInputsStore(rdb, numOfRetries),
 	}
 }
 

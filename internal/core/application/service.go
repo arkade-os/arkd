@@ -86,10 +86,9 @@ type service struct {
 	indexerTxEventsCh        chan TransactionEvent
 
 	// stop and round-execution go routine handlers
-	stop              func()
-	ctx               context.Context
-	wg                *sync.WaitGroup
-	signBoardingInsMu *sync.Mutex
+	stop func()
+	ctx  context.Context
+	wg   *sync.WaitGroup
 }
 
 func NewService(
@@ -230,7 +229,6 @@ func NewService(
 		stop:                          cancel,
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
-		signBoardingInsMu:             &sync.Mutex{},
 		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
@@ -1663,7 +1661,7 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 			WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
 	}
 
-	go s.checkForfeitsAndBoardingSigsSent()
+	go s.checkForfeitsAndBoardingSigsSent(s.cache.CurrentRound().Get(ctx).CommitmentTxid)
 
 	return nil
 }
@@ -1671,50 +1669,33 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx string) errors.Error {
 	// we do not need to acquire the lock here because commitmentTx is only used to compute the signature hashes
 	// thus it is safe to read it without the lock because we rely ony on WitnessUtxo fields
-	commitmentTx := s.cache.CurrentRound().Get(ctx).CommitmentTx
-	signedInputs, err := s.builder.VerifyBoardingTapscriptSigs(signedCommitmentTx, commitmentTx)
+	round := s.cache.CurrentRound().Get(ctx)
+	signedInputs, err := s.builder.VerifyBoardingTapscriptSigs(
+		signedCommitmentTx, round.CommitmentTx,
+	)
 	if err != nil {
-		return errors.INVALID_BOARDING_INPUT_SIG.New("failed to verify boarding tapscript sigs: %w", err).
-			WithMetadata(errors.InvalidBoardingInputSigMetadata{
-				SignedCommitmentTx: signedCommitmentTx,
-			})
+		return errors.INVALID_BOARDING_INPUT_SIG.New(
+			"failed to verify boarding tapscript sigs: %w", err,
+		).WithMetadata(errors.InvalidBoardingInputSigMetadata{
+			SignedCommitmentTx: signedCommitmentTx,
+		})
 	}
 
-	if len(signedInputs) == 0 {
+	if len(signedInputs) <= 0 {
 		return errors.INVALID_BOARDING_INPUT_SIG.New("no signed inputs found").
 			WithMetadata(errors.InvalidBoardingInputSigMetadata{
 				SignedCommitmentTx: signedCommitmentTx,
 			})
 	}
 
-	s.signBoardingInsMu.Lock()
-	defer s.signBoardingInsMu.Unlock()
-
-	round := s.cache.CurrentRound().Get(ctx)
-	combined, err := s.builder.CombineTapscriptSigs(
-		round.CommitmentTx, signedCommitmentTx, signedInputs,
-	)
-	if err != nil {
-		return errors.INTERNAL_ERROR.New("failed to combine tapscript sigs: %w", err).
-			WithMetadata(map[string]any{
-				"signed_commitment_tx": signedCommitmentTx,
-				"signed_inputs":        signedInputs,
-				"commitment_tx":        round.CommitmentTx,
-			})
+	if err := s.cache.BoardingInputs().AddSignatures(
+		context.Background(), round.CommitmentTxid, signedInputs,
+	); err != nil {
+		return errors.INTERNAL_ERROR.New("something went wrong: %w", err).
+			WithMetadata(map[string]any{"signed_commitment_tx": signedCommitmentTx})
 	}
-	round.CommitmentTx = combined
 
-	go func() {
-		if err := s.cache.CurrentRound().Upsert(ctx, func(_ *domain.Round) *domain.Round {
-			return round
-		}); err != nil {
-			log.WithError(err).WithField("signed_commitment_tx", signedCommitmentTx).
-				Errorf("failed to upsert current round: %v", err)
-			return
-		}
-
-		s.checkForfeitsAndBoardingSigsSent()
-	}()
+	go s.checkForfeitsAndBoardingSigsSent(round.CommitmentTxid)
 
 	return nil
 }
@@ -2302,16 +2283,21 @@ func (s *service) startFinalization(
 	defer func() {
 		s.wg.Add(1)
 
-		s.cache.TreeSigingSessions().Delete(roundId)
+		round := s.cache.CurrentRound().Get(ctx)
 
-		if err := s.saveEvents(
-			ctx, roundId, s.cache.CurrentRound().Get(ctx).Events(),
-		); err != nil {
+		s.cache.TreeSigingSessions().Delete(round.Id)
+
+		if err := s.saveEvents(ctx, roundId, round.Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
 		}
 
-		if s.cache.CurrentRound().Get(ctx).IsFailed() {
+		if round.IsFailed() {
 			s.cache.Intents().DeleteVtxos()
+			if err := s.cache.BoardingInputs().DeleteSignatures(
+				ctx, round.CommitmentTxid,
+			); err != nil {
+				log.WithError(err).Error("failed to delete boarding input signatures from cache")
+			}
 			go s.startRound()
 			return
 		}
@@ -2669,6 +2655,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 	var stopped bool
 	ctx := context.Background()
 	roundId := s.cache.CurrentRound().Get(ctx).Id
+	commitmentTxid := s.cache.CurrentRound().Get(ctx).CommitmentTxid
 
 	defer func() {
 		if !stopped {
@@ -2677,7 +2664,12 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 	}()
 
-	defer s.cache.Intents().DeleteVtxos()
+	defer func() {
+		s.cache.Intents().DeleteVtxos()
+		if err := s.cache.BoardingInputs().DeleteSignatures(ctx, commitmentTxid); err != nil {
+			log.WithError(err).Error("failed to delete boarding input signatures from cache")
+		}
+	}()
 
 	select {
 	case <-s.ctx.Done():
@@ -2700,17 +2692,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	s.roundReportSvc.StageStarted(ForfeitTxsCollectionStage)
 
-	commitmentTx, err := psbt.NewFromRawBytes(
-		strings.NewReader(s.cache.CurrentRound().Get(ctx).CommitmentTx), true,
-	)
-	if err != nil {
-		changes = s.cache.CurrentRound().Fail(
-			ctx, errors.INTERNAL_ERROR.New("failed to parse commitment tx: %s", err),
-		)
-		return
-	}
-
-	commitmentTxid := commitmentTx.UnsignedTx.TxID()
 	includesBoardingInputs := s.cache.BoardingInputs().Get() > 0
 	txToSign := s.cache.CurrentRound().Get(ctx).CommitmentTx
 	forfeitTxs := make([]domain.ForfeitTx, 0)
@@ -2729,7 +2710,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		s.roundReportSvc.OpEnded(WaitForForfeitTxsOp)
 
 		txToSign = s.cache.CurrentRound().Get(ctx).CommitmentTx
-		commitmentTx, err = psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
+		commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
 		if err != nil {
 			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
 				"failed to parse commitment tx: %s", err,
@@ -2771,6 +2752,45 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		s.roundReportSvc.OpEnded(VerifyForfeitsSignaturesOp)
+
+		// Get all signatures for boarding inputs we collected in the cache
+		signedInputs, err := s.cache.BoardingInputs().GetSignatures(
+			ctx, fmt.Sprintf("%s:0", commitmentTxid),
+		)
+		if err != nil {
+			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
+				"failed to get sigend boarding inputs: %s", err,
+			))
+			return
+		}
+
+		// Add boarding input signatures to the unsigned tx
+		for inIndex, sig := range signedInputs {
+			commitmentTx.Inputs[inIndex].TaprootScriptSpendSig = sig.Signatures
+			commitmentTx.Inputs[inIndex].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+				sig.LeafScript,
+			}
+		}
+
+		// Update the commitment tx stored in cache
+		commitmentTxWithSignedBoardingIns, err := commitmentTx.B64Encode()
+		if err != nil {
+			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
+				"failed to serialize commitment tx: %s", err,
+			))
+			return
+		}
+
+		round := s.cache.CurrentRound().Get(ctx)
+		round.CommitmentTx = commitmentTxWithSignedBoardingIns
+		if err := s.cache.CurrentRound().Upsert(ctx, func(_ *domain.Round) *domain.Round {
+			return round
+		}); err != nil {
+			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
+				"failed to update round in cache: %s", err,
+			))
+			return
+		}
 
 		boardingInputsIndexes := make([]int, 0)
 		convictions := make([]domain.Conviction, 0)
@@ -3114,23 +3134,21 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 	}
 }
 
-func (s *service) checkForfeitsAndBoardingSigsSent() {
-	tx := s.cache.CurrentRound().Get(context.Background()).CommitmentTx
-	commitmentTx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-	numOfInputsSigned := 0
-	for _, v := range commitmentTx.Inputs {
-		if len(v.TaprootScriptSpendSig) > 0 {
-			if len(v.TaprootScriptSpendSig[0].Signature) > 0 {
-				numOfInputsSigned++
-			}
-		}
+func (s *service) checkForfeitsAndBoardingSigsSent(commitmentTxid string) {
+	// NOTE: This assumes users submit all their signatures in one shot, and whatever
+	// we get from the cache are all required sigs to finalize the boarding inputs
+	// once we also sign them
+	sigs, err := s.cache.BoardingInputs().GetSignatures(context.Background(), commitmentTxid)
+	if err != nil {
+		log.WithError(err).Error("failed to get boarding input signatures from cache")
+		return
 	}
 
 	// Condition: all forfeit txs are signed and
 	// the number of signed boarding inputs matches
 	// numOfBoardingInputs we expect
 	numOfBoardingInputs := s.cache.BoardingInputs().Get()
-	if s.cache.ForfeitTxs().AllSigned() && numOfBoardingInputs == numOfInputsSigned {
+	if s.cache.ForfeitTxs().AllSigned() && numOfBoardingInputs == len(sigs) {
 		select {
 		case s.forfeitsBoardingSigsChan <- struct{}{}:
 		default:
