@@ -130,6 +130,8 @@ func TestBatchSession(t *testing.T) {
 		require.NotEmpty(t, bobCommitmentTx)
 		require.Equal(t, aliceCommitmentTx, bobCommitmentTx)
 
+		time.Sleep(time.Second)
+
 		aliceBalance, err = alice.Balance(t.Context(), false)
 		require.NoError(t, err)
 		require.NotNil(t, aliceBalance)
@@ -221,6 +223,8 @@ func TestBatchSession(t *testing.T) {
 		wg.Wait()
 		require.NoError(t, incomingErr)
 
+		time.Sleep(time.Second)
+
 		balance, err = alice.Balance(t.Context(), false)
 		require.NoError(t, err)
 		require.NotNil(t, balance)
@@ -303,6 +307,7 @@ func TestUnilateralExit(t *testing.T) {
 
 		wg.Wait()
 		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
 
 		bobBalance, err = bob.Balance(t.Context(), false)
 		require.NoError(t, err)
@@ -503,6 +508,7 @@ func TestReactToFraud(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+		time.Sleep(time.Second)
 
 		_, spentVtxos, err := sdkClient.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -909,6 +915,7 @@ func TestReactToFraud(t *testing.T) {
 			require.NoError(t, err)
 
 			wg.Wait()
+			time.Sleep(time.Second)
 
 			aliceVtxos, _, err := alice.ListVtxos(ctx)
 			require.NoError(t, err)
@@ -976,16 +983,19 @@ func TestOffchainTx(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
+		var incomingFunds []types.Vtxo
+		var incomingErr error
 		go func() {
-			defer wg.Done()
-			vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddress)
-			require.NoError(t, err)
-			require.NotNil(t, vtxos)
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
+			wg.Done()
 		}()
 		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 1000}})
 		require.NoError(t, err)
 
 		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotNil(t, incomingFunds)
+		time.Sleep(time.Second)
 
 		bobVtxos, _, err := bob.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -993,15 +1003,16 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddress)
-			require.NoError(t, err)
-			require.NotNil(t, vtxos)
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
+			wg.Done()
 		}()
 		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
 		require.NoError(t, err)
 
 		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotNil(t, incomingFunds)
+		time.Sleep(time.Second)
 
 		bobVtxos, _, err = bob.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -1009,15 +1020,16 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddress)
-			require.NoError(t, err)
-			require.NotNil(t, vtxos)
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
+			wg.Done()
 		}()
 		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
 		require.NoError(t, err)
 
 		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotNil(t, incomingFunds)
+		time.Sleep(time.Second)
 
 		bobVtxos, _, err = bob.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -1025,15 +1037,16 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			vtxos, err := bob.NotifyIncomingFunds(ctx, bobAddress)
-			require.NoError(t, err)
-			require.NotNil(t, vtxos)
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
+			wg.Done()
 		}()
 		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
 		require.NoError(t, err)
 
 		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotNil(t, incomingFunds)
+		time.Sleep(time.Second)
 
 		bobVtxos, _, err = bob.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -1081,6 +1094,7 @@ func TestOffchainTx(t *testing.T) {
 			require.NoError(t, err)
 			wg.Wait()
 			require.NoError(t, incomingErr)
+			time.Sleep(time.Second)
 		}
 
 		wg.Add(1)
@@ -1100,8 +1114,7 @@ func TestOffchainTx(t *testing.T) {
 	})
 
 	// In this test Alice sends to Bob a sub-dust VTXO. Bob can't spend or settle his VTXO.
-	// He must receive other offchain funds to be able to settle them into a non-sub-dust that
-	// can be spent
+	// He must receive other offchain funds to be able to settle them into a non-sub-dust
 	t.Run("sub dust", func(t *testing.T) {
 		alice := setupArkSDK(t)
 		bob := setupArkSDK(t)
@@ -1119,6 +1132,7 @@ func TestOffchainTx(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 
+		// Alice sends 100 sats to Bob
 		var incomingErr error
 		go func() {
 			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
@@ -1127,22 +1141,26 @@ func TestOffchainTx(t *testing.T) {
 
 		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
 			To:     bobOffchainAddr,
-			Amount: 100, // Sub-dust amount
+			Amount: 100,
 		}})
 		require.NoError(t, err)
 
 		wg.Wait()
 		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
 
+		// Bob can't spend his VTXO
 		_, err = bob.SendOffChain(t.Context(), false, []types.Receiver{{
 			To:     aliceOffchainAddr,
 			Amount: 100,
 		}})
 		require.Error(t, err)
 
+		// Nor he can settle
 		_, err = bob.Settle(t.Context())
 		require.Error(t, err)
 
+		// Alice sends 250 sats more to Bob, another sub-dust amount
 		wg.Add(1)
 		go func() {
 			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
@@ -1151,11 +1169,17 @@ func TestOffchainTx(t *testing.T) {
 
 		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
 			To:     bobOffchainAddr,
-			Amount: 300, // Another sub-dust amount
+			Amount: 250,
 		}})
 		require.NoError(t, err)
 
 		wg.Wait()
+		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
+
+		// Bob can now settle
+		_, err = bob.Settle(t.Context())
+		require.NoError(t, err)
 	})
 }
 
@@ -1218,6 +1242,7 @@ func TestSweep(t *testing.T) {
 
 		wg.Wait()
 		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
 
 		spendable, spent, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -1246,14 +1271,11 @@ func TestSweep(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
-		var boardedVtxo types.Vtxo
+		var incomingFunds []types.Vtxo
+		var incomingErr error
 		go func() {
-			defer wg.Done()
-			vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
-			require.NoError(t, err)
-			require.NotEmpty(t, vtxos)
-			require.Len(t, vtxos, 1)
-			boardedVtxo = vtxos[0]
+			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			wg.Done()
 		}()
 
 		// settle the boarding utxo
@@ -1261,6 +1283,11 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotEmpty(t, incomingFunds)
+		time.Sleep(time.Second)
+
+		boardedVtxo := incomingFunds[0]
 
 		// self-send the VTXO to create a checkpoint output
 		firstOffchainTxId, err := alice.SendOffChain(
@@ -1409,6 +1436,7 @@ func TestSweep(t *testing.T) {
 
 		wg.Wait()
 		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
 
 		spendable, spent, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -1751,6 +1779,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 
 	wg.Wait()
 	require.NoError(t, incomingErr)
+	time.Sleep(time.Second)
 
 	spendable, _, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
@@ -1991,6 +2020,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 
 	wg.Wait()
 	require.NoError(t, incomingErr)
+	time.Sleep(time.Second)
 
 	spendable, _, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
@@ -2524,6 +2554,7 @@ func TestBan(t *testing.T) {
 		// faucet the alice's wallet
 		_, aliceAddr, _, err := alice.Receive(t.Context())
 		require.NoError(t, err)
+
 		faucetOffchain(t, alice, 0.001)
 		require.NoError(t, err)
 
