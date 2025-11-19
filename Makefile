@@ -138,7 +138,6 @@ redis-down:
 
 proto: proto-lint
 	@echo "Compiling stubs..."
-	@docker build -q -t buf -f buf.Dockerfile . &> /dev/null
 	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace buf generate
 
 # proto-lint: lints protos
