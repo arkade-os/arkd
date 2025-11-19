@@ -1624,9 +1624,11 @@ func TestReactToFraud(t *testing.T) {
 				bumpAndBroadcastTx(t, parentTx, expl)
 			}
 
-			// give time for the server to detect and process the fraud
 			err = generateBlocks(30)
 			require.NoError(t, err)
+
+			// Give time for the server to detect and process the fraud
+			time.Sleep(5 * time.Second)
 
 			balance, err := sdkClient.Balance(ctx, false)
 			require.NoError(t, err)
