@@ -213,13 +213,14 @@ func (b *boardingInputsStore) AddSignatures(
 
 	// Transactional update with retry logic
 	for range b.numOfRetries {
-		if _, err = b.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-			for _, fv := range fields {
-				if pipe.HSetNX(ctx, key, fv.field, fv.value).Err() != nil {
-					return err
+		if err = b.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := b.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				for _, fv := range fields {
+					pipe.HSetNX(ctx, key, fv.field, fv.value)
 				}
-			}
-			return nil
+				return nil
+			})
+			return err
 		}); err == nil {
 			return nil
 		}
