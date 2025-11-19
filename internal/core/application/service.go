@@ -3201,6 +3201,10 @@ func (s *service) restoreWatchingVtxos() error {
 		}
 	}
 
+	if len(scripts) <= 0 {
+		return nil
+	}
+
 	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
 		return err
 	}
