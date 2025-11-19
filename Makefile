@@ -92,7 +92,7 @@ sqlc:
 # pg: starts postgres db inside docker container
 pg:
 	@echo "Starting postgres db..."
-	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 || true
+	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5433:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 || true
 
 # pgtest: starts postgres db inside docker container
 pgtest:
