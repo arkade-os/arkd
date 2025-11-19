@@ -116,7 +116,7 @@ func (e *eventRepository) getAllEvents(
 	}
 
 	query := fmt.Sprintf(
-		`SELECT payload FROM watermill_%s WHERE payload->>'Id' = $1 ORDER BY created_at ASC;`,
+		`SELECT payload FROM watermill_%s WHERE payload->>'Id' = $1 ORDER BY "offset" ASC;`,
 		topic,
 	)
 
