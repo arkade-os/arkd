@@ -1289,6 +1289,14 @@ func TestSweep(t *testing.T) {
 
 		boardedVtxo := incomingFunds[0]
 
+		incomingFunds = nil
+		incomingErr = nil
+		wg.Add(1)
+		go func() {
+			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			wg.Done()
+		}()
+
 		// self-send the VTXO to create a checkpoint output
 		firstOffchainTxId, err := alice.SendOffChain(
 			ctx,
@@ -1298,7 +1306,10 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, firstOffchainTxId)
 
-		time.Sleep(2 * time.Second)
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotEmpty(t, incomingFunds)
+		time.Sleep(time.Second)
 
 		// self-send again to create a second checkpoint output
 		secondOffchainTxId, err := alice.SendOffChain(
