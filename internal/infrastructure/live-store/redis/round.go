@@ -221,7 +221,7 @@ func (b *boardingInputsStore) AddSignatures(
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, key); err == nil {
 			return nil
 		}
 		<-time.After(100 * time.Millisecond)
