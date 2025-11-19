@@ -14,6 +14,8 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	var assetID [32]byte
 	copy(assetID[:], bytes.Repeat([]byte{0x2a}, 32))
 
+	controlKey := deterministicPubKey(t, 3)
+
 	asset := Asset{
 		AssetId: assetID,
 		Outputs: []AssetOutput{
@@ -28,10 +30,7 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Vout:      1,
 			},
 		},
-		ControlOutput: ControlOutput{
-			PublicKey: deterministicPubKey(t, 3),
-			Vout:      2,
-		},
+		ControlPubkey: &controlKey,
 		Inputs: []AssetInput{
 			{
 				Txid: deterministicTxid(0xaa),

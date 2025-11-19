@@ -12,7 +12,7 @@ import (
 const (
 	tlvTypeAssetID         tlv.Type = 1
 	tlvTypeOutput          tlv.Type = 2
-	tlvTypeControlOutput   tlv.Type = 3
+	tlvTypeControlPubkey   tlv.Type = 3
 	tlvTypeInput           tlv.Type = 4
 	tlvTypeMetadata        tlv.Type = 6
 	tlvTypeOutScriptPubKey tlv.Type = 7
@@ -118,44 +118,6 @@ func AssetOutputListSize(l int) tlv.SizeFunc {
 	return func() uint64 {
 		return uint64(l) * 45
 	}
-}
-
-func EControlOutput(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*ControlOutput); ok {
-		pk := &t.PublicKey
-		if err := tlv.EPubKey(w, &pk, buf); err != nil {
-			return err
-		}
-		if err := tlv.EUint32(w, &t.Vout, buf); err != nil {
-			return err
-		}
-
-		return nil
-	}
-	return tlv.NewTypeForEncodingErr(val, "controlOutput")
-}
-
-func ControlOutputSize() uint64 {
-	return 37
-}
-
-func DControlOutput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	controlOutputSize := ControlOutputSize()
-
-	if t, ok := val.(*ControlOutput); ok && l == controlOutputSize {
-		var pk *btcec.PublicKey
-		if err := tlv.DPubKey(r, &pk, buf, 33); err != nil {
-			return err
-		}
-		t.PublicKey = *pk
-
-		if err := tlv.DUint32(r, &t.Vout, buf, 4); err != nil {
-			return err
-		}
-
-		return nil
-	}
-	return tlv.NewTypeForDecodingErr(val, "controlOutput", l, l)
 }
 
 func EAssetOutputList(w io.Writer, val interface{}, buf *[8]byte) error {

@@ -13,7 +13,7 @@ import (
 type Asset struct {
 	AssetId       [32]byte
 	Outputs       []AssetOutput // 8 + 33
-	ControlOutput ControlOutput
+	ControlPubkey *btcec.PublicKey
 	Inputs        []AssetInput
 	Immutable     bool
 	Metadata      []Metadata
@@ -33,11 +33,6 @@ type AssetOutput struct {
 	PublicKey btcec.PublicKey
 	Vout      uint32
 	Amount    uint64
-}
-
-type ControlOutput struct {
-	PublicKey btcec.PublicKey
-	Vout      uint32
 }
 
 type AssetInput struct {
@@ -101,11 +96,9 @@ func (a *Asset) encodeTlv() ([]byte, error) {
 		AssetOutputListSize(len(a.Outputs)),
 		EAssetOutputList, nil))
 
-	tlvRecords = append(tlvRecords, tlv.MakeStaticRecord(
-		tlvTypeControlOutput,
-		&a.ControlOutput,
-		ControlOutputSize(),
-		EControlOutput, nil))
+	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+		tlvTypeControlPubkey,
+		&a.ControlPubkey))
 
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeInput,
@@ -145,12 +138,9 @@ func (a *Asset) decodeTlv(data []byte) error {
 			nil,
 			DAssetOutputList,
 		),
-		tlv.MakeStaticRecord(
-			tlvTypeControlOutput,
-			&a.ControlOutput,
-			ControlOutputSize(),
-			nil,
-			DControlOutput,
+		tlv.MakePrimitiveRecord(
+			tlvTypeControlPubkey,
+			&a.ControlPubkey,
 		),
 		tlv.MakeDynamicRecord(
 			tlvTypeInput,
