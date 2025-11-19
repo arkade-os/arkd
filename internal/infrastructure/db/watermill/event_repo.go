@@ -107,9 +107,7 @@ func (e *eventRepository) dispatch(topic string, id string) {
 // Messages are filtered by the Id field in the JSON payload (thanks to postgres JSONB type)
 // and ordered by created_at.
 func (e *eventRepository) getAllEvents(
-	ctx context.Context,
-	topic string,
-	id string,
+	ctx context.Context, topic, id string,
 ) ([]domain.Event, error) {
 	if e.db == nil {
 		return nil, fmt.Errorf("database not initialized")
@@ -127,29 +125,31 @@ func (e *eventRepository) getAllEvents(
 			topic, id, err,
 		)
 	}
-	//nolint:errcheck
+	// nolint
 	defer rows.Close()
 
-	events := make([]domain.Event, 0)
+	records := make([][]byte, 0)
 	for rows.Next() {
-		var payload []byte
-		if err := rows.Scan(&payload); err != nil {
+		var record []byte
+		if err := rows.Scan(&record); err != nil {
 			return nil, fmt.Errorf("failed to scan message payload: %w", err)
 		}
-
-		event, err := deserializeEvent(payload)
-		if err != nil {
-			log.WithError(err).Warnf("failed to deserialize event: %s", string(payload))
-			continue
-		}
-
-		events = append(events, event)
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf(
+			"error iterating messages for topic %s with id %s: %w", topic, id, err,
+		)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating messages for topic %s with id %s: %w",
-			topic, id, err,
-		)
+	events := make([]domain.Event, 0, len(records))
+	for _, record := range records {
+		event, err := deserializeEvent(record)
+		if err != nil {
+			log.WithError(err).Warnf("failed to deserialize event: %s", string(record))
+			continue
+		}
+		events = append(events, event)
 	}
 
 	return events, nil
