@@ -218,14 +218,14 @@ func formatBatchFinalizedAlert(data map[string]interface{}) []string {
 	}
 
 	hasBalances := false
-	if confirmed, ok := getInt(data, "operator_comfirmed_balacnce"); ok {
+	if confirmed, ok := getInt(data, "operator_confirmed_balance"); ok {
 		if !hasBalances {
 			lines = append(lines, "\n*Operator Balances:*")
 			hasBalances = true
 		}
 		lines = append(lines, fmt.Sprintf("• Confirmed: %s sats", formatNumber(confirmed)))
 	}
-	if unconfirmed, ok := getInt(data, "operator_uncomfirmed_balance"); ok {
+	if unconfirmed, ok := getInt(data, "operator_unconfirmed_balance"); ok {
 		if !hasBalances {
 			lines = append(lines, "\n*Operator Balances:*")
 		}

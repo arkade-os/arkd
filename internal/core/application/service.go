@@ -2865,15 +2865,15 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	go func() {
 		if s.alerts != nil {
-			comfirmedBalance, unComfirmedBalance, _ := s.wallet.MainAccountBalance(ctx)
+			confirmedBalance, unConfirmedBalance, _ := s.wallet.MainAccountBalance(ctx)
 			operatorInputAmount, miningFee, boardingInputs := commitmentTxStats(commitmentTx)
 			intentFees, numOfCollabExists := intentStats(round.Intents)
 			s.publishAlert(ports.BatchFinalized, map[string]interface{}{
 				"batch_id":                     round.Id,
 				"txid":                         round.CommitmentTxid,
 				"operator_input_amount_sats":   int(operatorInputAmount),
-				"operator_comfirmed_balacnce":  int(comfirmedBalance),
-				"operator_uncomfirmed_balance": int(unComfirmedBalance),
+				"operator_confirmed_balance":   int(confirmedBalance),
+				"operator_unconfirmed_balance": int(unConfirmedBalance),
 				"mining_fee_sats":              int(miningFee),
 				"intent_fees_sats":             int(intentFees),
 				"vtxos_spent": domain.Intents(
