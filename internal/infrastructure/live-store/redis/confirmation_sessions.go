@@ -167,40 +167,37 @@ func (s *confirmationSessionsStore) watchSessionCompletion() {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			numIntents, err := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
-			if err != nil {
-				// Key doesn't exist - session was reset/deleted
-				if errors.Is(err, redis.Nil) {
-					return
-				}
-				// Transient error, continue polling
-				log.Warnf("watchSessionCompletion: failed to get numIntents: %v", err)
-				continue
-			}
-
-			numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
-			if err != nil {
-				if errors.Is(err, redis.Nil) {
-					return
-				}
-				log.Warnf("watchSessionCompletion: failed to get numConfirmed: %v", err)
-				continue
-			}
-
-			// Check if session is complete
-			if numIntents > 0 && numConfirmed == numIntents {
-				chOnce.Do(func() {
-					select {
-					case s.sessionCompleteCh <- struct{}{}:
-					default:
-						// Channel closed or full, ignore
-					}
-				})
+	for range ticker.C {
+		numIntents, err := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
+		if err != nil {
+			// Key doesn't exist - session was reset/deleted
+			if errors.Is(err, redis.Nil) {
 				return
 			}
+			// Transient error, continue polling
+			log.Warnf("watchSessionCompletion: failed to get numIntents: %v", err)
+			continue
+		}
+
+		numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				return
+			}
+			log.Warnf("watchSessionCompletion: failed to get numConfirmed: %v", err)
+			continue
+		}
+
+		// Check if session is complete
+		if numIntents > 0 && numConfirmed == numIntents {
+			chOnce.Do(func() {
+				select {
+				case s.sessionCompleteCh <- struct{}{}:
+				default:
+					// Channel closed or full, ignore
+				}
+			})
+			return
 		}
 	}
 }
