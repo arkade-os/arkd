@@ -211,13 +211,9 @@ func (r *Round) Sweep(
 		return nil, fmt.Errorf("swept amount must be greater than 0")
 	}
 
-	batchAmount := r.countBatchAmount()
-	if batchAmount <= 0 {
-		// if no batch amount, a sweep event is not possible
-		// we return nil to cancel in order to avoid panic in liquiditySwept calculation
-		return nil, nil
-	}
-	liquiditySwept := float64(sweptAmount) / float64(batchAmount)
+	sweptVtxosCount := countSweptLeafVtxos(r.Changes)
+	leavesCount := len(tree.FlatTxTree(r.VtxoTree).Leaves())
+	fullySwept := len(leafVtxos)+sweptVtxosCount == leavesCount
 
 	event := BatchSwept{
 		RoundEvent: RoundEvent{
@@ -228,8 +224,7 @@ func (r *Round) Sweep(
 		PreconfirmedVtxos: preconfirmedVtxos,
 		Txid:              txid,
 		Tx:                tx,
-		FullySwept:        r.willBeFullySwept(liquiditySwept),
-		LiquiditySwept:    liquiditySwept,
+		FullySwept:        fullySwept,
 	}
 
 	r.raise(event)
@@ -329,27 +324,12 @@ func (r *Round) raise(event Event) {
 	r.on(event, false)
 }
 
-// countBatchAmount sums the amount of Intent receivers, excluding the onchain ones.
-func (r *Round) countBatchAmount() uint64 {
-	amount := uint64(0)
-	for _, intent := range r.Intents {
-		for _, receiver := range intent.Receivers {
-			if receiver.IsOnchain() {
-				continue
-			}
-			amount += receiver.Amount
+func countSweptLeafVtxos(events []Event) int {
+	count := 0
+	for _, event := range events {
+		if e, ok := event.(BatchSwept); ok {
+			count += len(e.LeafVtxos)
 		}
 	}
-	return amount
-}
-
-func (r *Round) willBeFullySwept(newBatchSweptLiquiditySwept float64) bool {
-	percentageOfLiquiditySwept := 0.0
-
-	for _, event := range r.Changes {
-		if e, isBatchSwept := event.(BatchSwept); isBatchSwept {
-			percentageOfLiquiditySwept += e.LiquiditySwept
-		}
-	}
-	return percentageOfLiquiditySwept+newBatchSweptLiquiditySwept >= 1.0
+	return count
 }

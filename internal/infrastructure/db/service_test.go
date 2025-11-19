@@ -818,6 +818,32 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Empty(t, children)
 
+		// Test recursive query starting from vtxo1
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo1.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
+
+		sort.Slice(children, func(i, j int) bool {
+			return children[i].Txid < children[j].Txid
+		})
+
+		require.Equal(t, expectedOutpoints, children)
+
+		// Test starting from middle of chain (vtxo2)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo2.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 3) // Should return vtxo2, vtxo3, vtxo4
+
+		// Test starting from end of chain (vtxo4)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo4.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 1) // Should return only vtxo4
+
+		// Test with non-existent txid
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, randomString(32))
+		require.NoError(t, err)
+		require.Empty(t, children)
+
 		otherCommitmentTxid := randomString(32)
 
 		// Test GetVtxoTapKeys

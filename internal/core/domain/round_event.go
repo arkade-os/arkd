@@ -54,6 +54,4 @@ type BatchSwept struct {
 	Txid              string
 	Tx                string
 	FullySwept        bool
-	// percentage of liquidity swept by the sweep tx
-	LiquiditySwept float64
 }

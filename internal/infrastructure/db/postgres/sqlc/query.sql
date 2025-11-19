@@ -274,6 +274,38 @@ FROM vtxo_commitment_txid vct
 INNER JOIN vtxo v ON vct.vtxo_txid = v.txid AND vct.vtxo_vout = v.vout
 WHERE vct.commitment_txid = @commitment_txid AND v.swept = false;
 
+-- name: SelectVtxosOutpointsByArkTxidRecursive :many
+WITH RECURSIVE descendants_chain AS (
+    -- seed
+    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
+           0 AS depth,
+           ARRAY[(v.txid||':'||v.vout)]::text[] AS visited
+    FROM vtxo v
+    WHERE v.txid = @txid
+
+    UNION ALL
+
+    -- children: next vtxo(s) are those whose txid == current.ark_txid
+    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
+           w.depth + 1,
+           w.visited || (c.txid||':'||c.vout)
+    FROM descendants_chain w
+             JOIN vtxo c
+                  ON c.txid = w.ark_txid
+    WHERE w.ark_txid IS NOT NULL
+      AND (c.txid||':'||c.vout) <> ALL (w.visited)   -- cycle/visited guard
+),
+-- keep one row per node at its MIN depth (layers)
+nodes AS (
+   SELECT DISTINCT ON (txid, vout)
+       txid, vout, preconfirmed, depth
+   FROM descendants_chain
+   ORDER BY txid, vout, depth
+)
+SELECT txid, vout
+FROM nodes
+ORDER BY depth, txid, vout;
+
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND COALESCE(settled_by, '') = '';
 

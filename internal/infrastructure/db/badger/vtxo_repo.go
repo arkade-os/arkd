@@ -492,3 +492,43 @@ func (r *vtxoRepository) GetUnsweptVtxosByCommitmentTxid(
 
 	return outpoints, nil
 }
+
+func (r *vtxoRepository) GetAllChildrenVtxos(
+	ctx context.Context,
+	txid string,
+) ([]domain.Outpoint, error) {
+	visited := make(map[string]bool)
+	visitedTxids := make(map[string]bool)
+	var outpoints []domain.Outpoint
+
+	queue := []string{txid}
+
+	for len(queue) > 0 {
+		currentTxid := queue[0]
+		queue = queue[1:]
+
+		if visitedTxids[currentTxid] {
+			continue
+		}
+		visitedTxids[currentTxid] = true
+
+		query := badgerhold.Where("Txid").Eq(currentTxid)
+		vtxos, err := r.findVtxos(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find vtxos for txid %s: %w", currentTxid, err)
+		}
+
+		for _, vtxo := range vtxos {
+			outpointKey := vtxo.Outpoint.String()
+			if !visited[outpointKey] {
+				visited[outpointKey] = true
+				outpoints = append(outpoints, vtxo.Outpoint)
+				if vtxo.ArkTxid != "" {
+					queue = append(queue, vtxo.ArkTxid)
+				}
+			}
+		}
+	}
+
+	return outpoints, nil
+}

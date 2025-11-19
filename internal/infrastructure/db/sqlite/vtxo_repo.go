@@ -364,6 +364,25 @@ func (v *vtxoRepository) GetUnsweptVtxosByCommitmentTxid(
 	return outpoints, nil
 }
 
+func (v *vtxoRepository) GetAllChildrenVtxos(
+	ctx context.Context, txid string,
+) ([]domain.Outpoint, error) {
+	res, err := v.querier.SelectVtxosOutpointsByArkTxidRecursive(ctx, txid)
+	if err != nil {
+		return nil, err
+	}
+
+	outpoints := make([]domain.Outpoint, 0, len(res))
+	for _, row := range res {
+		outpoints = append(outpoints, domain.Outpoint{
+			Txid: row.Txid,
+			VOut: uint32(row.Vout),
+		})
+	}
+
+	return outpoints, nil
+}
+
 func (v *vtxoRepository) GetVtxoTapKeys(
 	ctx context.Context, commitmentTxid string, withMinimumAmount uint64,
 ) ([]string, error) {

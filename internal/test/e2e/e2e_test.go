@@ -1246,14 +1246,14 @@ func TestSweep(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
-		var vtxo types.Vtxo
+		var boardedVtxo types.Vtxo
 		go func() {
 			defer wg.Done()
 			vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
 			require.NoError(t, err)
 			require.NotEmpty(t, vtxos)
 			require.Len(t, vtxos, 1)
-			vtxo = vtxos[0]
+			boardedVtxo = vtxos[0]
 		}()
 
 		// settle the boarding utxo
@@ -1263,13 +1263,24 @@ func TestSweep(t *testing.T) {
 		wg.Wait()
 
 		// self-send the VTXO to create a checkpoint output
-		txid, err := alice.SendOffChain(
+		firstOffchainTxId, err := alice.SendOffChain(
 			ctx,
 			false,
-			[]types.Receiver{{To: offchainAddr, Amount: vtxo.Amount}},
+			[]types.Receiver{{To: offchainAddr, Amount: boardedVtxo.Amount}},
 		)
 		require.NoError(t, err)
-		require.NotEmpty(t, txid)
+		require.NotEmpty(t, firstOffchainTxId)
+
+		time.Sleep(2 * time.Second)
+
+		// self-send again to create a second checkpoint output
+		secondOffchainTxId, err := alice.SendOffChain(
+			ctx,
+			false,
+			[]types.Receiver{{To: offchainAddr, Amount: boardedVtxo.Amount}},
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, secondOffchainTxId)
 
 		// unroll the spent VTXO to put checkpoint onchain
 		expl, err := mempool_explorer.NewExplorer(
@@ -1277,7 +1288,7 @@ func TestSweep(t *testing.T) {
 			mempool_explorer.WithTracker(false))
 		require.NoError(t, err)
 
-		branch, err := redemption.NewRedeemBranch(ctx, expl, setupIndexer(t), vtxo)
+		branch, err := redemption.NewRedeemBranch(ctx, expl, setupIndexer(t), boardedVtxo)
 		require.NoError(t, err)
 
 		for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
@@ -1287,8 +1298,8 @@ func TestSweep(t *testing.T) {
 		// give some time for the server to process the unroll and broadcast the checkpoint
 		time.Sleep(5 * time.Second)
 
-		// generate 20 blocks to expire the checkpoint output
-		err = generateBlocks(20)
+		// generate 10 blocks to expire the checkpoint output
+		err = generateBlocks(10)
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep
@@ -1298,14 +1309,40 @@ func TestSweep(t *testing.T) {
 		// and that the VTXO has been swept
 		spendable, spent, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
-		require.NotEmpty(t, spendable)
-		require.NotEmpty(t, spent)
-		require.Len(t, spent, 1)
-		require.Equal(t, txid, spendable[0].Txid)
-		require.Equal(t, vtxo.Txid, spent[0].Txid)
-		require.True(t, spent[0].Swept)
-		require.True(t, spent[0].Spent)
-		require.True(t, spent[0].Unrolled)
+		require.Len(t, spent, 2)
+		require.Len(t, spendable, 1)
+
+		// find first offchain tx vtxo, must be in spent
+		var firstOffchainTxVtxo *types.Vtxo
+		var unrolledVtxo *types.Vtxo
+		for _, v := range spent {
+			switch v.Txid {
+			case firstOffchainTxId:
+				firstOffchainTxVtxo = &v
+			case boardedVtxo.Txid:
+				unrolledVtxo = &v
+			}
+		}
+		// should be unrolled, swept and spent
+		require.NotNil(t, unrolledVtxo)
+		require.True(t, unrolledVtxo.Unrolled)
+		require.True(t, unrolledVtxo.Swept)
+		require.True(t, unrolledVtxo.Spent)
+
+		// should be spent, swept and not unrolled
+		require.NotNil(t, firstOffchainTxVtxo)
+		require.True(t, firstOffchainTxVtxo.Swept)
+		require.True(t, firstOffchainTxVtxo.Spent)
+		require.False(t, firstOffchainTxVtxo.Unrolled)
+
+		// find second offchain tx vtxo, must be in spendable
+		secondOffchainTxVtxo := spendable[0]
+		require.Equal(t, secondOffchainTxId, secondOffchainTxVtxo.Txid)
+
+		// should be swept but not unrolled nor spent
+		require.True(t, secondOffchainTxVtxo.Swept)
+		require.False(t, secondOffchainTxVtxo.Unrolled)
+		require.False(t, secondOffchainTxVtxo.Spent)
 	})
 
 	t.Run("with arkd restart", func(t *testing.T) {
@@ -1384,53 +1421,61 @@ func TestSweep(t *testing.T) {
 		require.True(t, spent[0].Spent)
 	})
 
-	//  create a batch with 3 VTXOs:
-	//   root
-	//   ├── charlie
+	//  create a batch with 4 VTXOs:
+	//  root
+	//   .
+	//   ├── .
+	//   |   ├── alice
+	//   |   └── bob
 	//   └── .
-	//       ├── alice
-	//       └── bob
-	// then alice unroll by waiting several blocks
+	//       ├── charlie
+	//       └── mike
+	// then alice unroll its branch
 	// it creates several batch outputs with different expiration times
+	// test that first the sweeper is sweeping half of the liquidity first
+	// then sweep the remaining liquidity
 	t.Run("unrolled batch", func(t *testing.T) {
 		ctx := t.Context()
-
-		// first create a batch with 3 leaves
 
 		alice := setupArkSDK(t)
 		bob := setupArkSDK(t)
 		charlie := setupArkSDK(t)
+		mike := setupArkSDK(t)
 		aliceNote := generateNote(t, 21000)
 		bobNote := generateNote(t, 21000)
 		charlieNote := generateNote(t, 21000)
+		mikeNote := generateNote(t, 21000)
 
 		wg := &sync.WaitGroup{}
-		var aliceErr, bobErr, charlieErr error
-		var aliceTxid, bobTxid, charlieTxid string
+		var aliceErr, bobErr, charlieErr, mikeErr error
+		var aliceTxid, bobTxid, charlieTxid, mikeTxid string
 		wg.Go(func() {
 			aliceTxid, aliceErr = alice.RedeemNotes(ctx, []string{aliceNote})
 		})
 		wg.Go(func() {
-			time.Sleep(100 * time.Millisecond)
 			bobTxid, bobErr = bob.RedeemNotes(ctx, []string{bobNote})
 		})
 		wg.Go(func() {
-			time.Sleep(200 * time.Millisecond)
 			charlieTxid, charlieErr = charlie.RedeemNotes(ctx, []string{charlieNote})
+		})
+		wg.Go(func() {
+			mikeTxid, mikeErr = mike.RedeemNotes(ctx, []string{mikeNote})
 		})
 		wg.Wait()
 		require.NoError(t, aliceErr)
 		require.NoError(t, bobErr)
 		require.NoError(t, charlieErr)
+		require.NoError(t, mikeErr)
 		require.NotEmpty(t, aliceTxid)
 		require.Equal(t, aliceTxid, bobTxid)
 		require.Equal(t, aliceTxid, charlieTxid)
+		require.Equal(t, aliceTxid, mikeTxid)
 
 		onchainAddr, _, _, err := alice.Receive(ctx)
 		require.NoError(t, err)
 
 		// Faucet onchain addr to cover network fees for the unroll.
-		faucetOnchain(t, onchainAddr, 0.00001)
+		faucetOnchain(t, onchainAddr, 0.01)
 		time.Sleep(5 * time.Second)
 
 		balance, err := alice.Balance(ctx, false)
@@ -1439,35 +1484,108 @@ func TestSweep(t *testing.T) {
 		require.NotZero(t, balance.OffchainBalance.Total)
 		require.Empty(t, balance.OnchainBalance.LockedAmount)
 
+		// confirm the commitment tx (time t)
+		// sweeper schedules a sweep task at t+20 blocks
+		err = generateBlocks(1)
+		require.NoError(t, err)
+
 		err = alice.Unroll(ctx)
 		require.NoError(t, err)
 
+		time.Sleep(2 * time.Second)
+
+		// t + 1 to confirm the first unroll tx
+		// split the root batch in two, "reset" the CSV
+		// sweeper schedules 2 sweep tasks at t+20+1 and t+20+1
+		err = generateBlocks(1)
+		require.NoError(t, err)
+
+		// give time for the server to process the unroll
+		time.Sleep(5 * time.Second)
+
+		// wait 10 blocks to unroll again
+		// at this point, batches expires in 11 blocks
 		err = generateBlocks(10)
 		require.NoError(t, err)
 
 		err = alice.Unroll(ctx)
 		require.NoError(t, err)
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(2 * time.Second)
 
-		// Generate 21 blocks to expire the first batch outputs
-		err = generateBlocks(30)
+		// split one of the batches in two, "reset" the CSV
+		// 1 expires in 10 blocks, the other in 20 blocks
+		err = generateBlocks(1)
+		require.NoError(t, err)
+
+		// give time for the server to process the unroll
+		time.Sleep(2 * time.Second)
+
+		// Generate 11 blocks to expire the first batch outputs
+		err = generateBlocks(11)
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
 		time.Sleep(20 * time.Second)
 
-		// charlie vtxos should be swept
-		charlieSpendable, _, err := charlie.ListVtxos(ctx)
+		// alice vtxos should not be swept yet
+		aliceVtxos, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
-		require.Len(t, charlieSpendable, 1)
-		require.True(t, charlieSpendable[0].Swept)
+		require.Len(t, aliceVtxos, 1)
+		require.False(t, aliceVtxos[0].Swept)
 
-		// bob vtxos should be swept
-		bobSpendable, _, err := bob.ListVtxos(ctx)
+		// half of the vtxos must be swept
+		nbOfVtxosSwept := 0
+		bobVtxos, _, err := bob.ListVtxos(ctx)
 		require.NoError(t, err)
-		require.Len(t, bobSpendable, 1)
-		require.True(t, bobSpendable[0].Swept)
+		require.Len(t, bobVtxos, 1)
+		if bobVtxos[0].Swept {
+			nbOfVtxosSwept++
+		}
+
+		charlieVtxos, _, err := charlie.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, charlieVtxos, 1)
+		if charlieVtxos[0].Swept {
+			nbOfVtxosSwept++
+		}
+
+		mikeVtxos, _, err := mike.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, mikeVtxos, 1)
+		if mikeVtxos[0].Swept {
+			nbOfVtxosSwept++
+		}
+
+		require.Equal(t, nbOfVtxosSwept, 2)
+
+		// generate other blocks to expire the remaining batch outputs
+		err = generateBlocks(25)
+		require.NoError(t, err)
+
+		// give time for the server to process the sweep
+		time.Sleep(20 * time.Second)
+
+		// verify that all vtxos have been swept
+		aliceVtxos, _, err = charlie.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, aliceVtxos, 1)
+		require.True(t, aliceVtxos[0].Swept)
+
+		bobVtxos, _, err = bob.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, bobVtxos, 1)
+		require.True(t, bobVtxos[0].Swept)
+
+		charlieVtxos, _, err = charlie.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, charlieVtxos, 1)
+		require.True(t, charlieVtxos[0].Swept)
+
+		mikeVtxos, _, err = mike.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, mikeVtxos, 1)
+		require.True(t, mikeVtxos[0].Swept)
 	})
 }
 

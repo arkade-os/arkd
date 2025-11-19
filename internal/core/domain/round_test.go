@@ -623,7 +623,6 @@ func testSweep(t *testing.T) {
 			require.Equal(t, "sweepTxid", event.Txid)
 			require.Equal(t, emptyPtx, event.Tx)
 			require.False(t, event.FullySwept)
-			require.Equal(t, 0.25, event.LiquiditySwept)
 			require.False(t, round.Swept)
 			require.Equal(t, round.SweepTxs["sweepTxid"], emptyPtx)
 
@@ -647,7 +646,6 @@ func testSweep(t *testing.T) {
 			require.Equal(t, "sweepTxid", event.Txid)
 			require.Equal(t, emptyPtx, event.Tx)
 			require.True(t, event.FullySwept)
-			require.Equal(t, 0.75, event.LiquiditySwept)
 			require.True(t, round.Swept)
 			require.Equal(t, round.SweepTxs["sweepTxid"], emptyPtx)
 

@@ -343,9 +343,9 @@ func (s *sweeper) scheduleBatchSweep(
 		return err
 	}
 
-	log.Debugf(
-		"sweeper: scheduled sweep of batch %s at %s",
-		commitmentTxid, fancyTime(expirationTimestamp, s.scheduler.Unit()),
+	log.Debugf("sweeper: scheduled sweep for vtxo tree %s of batch %s at %s",
+		vtxoTree.Root.UnsignedTx.TxID(), commitmentTxid,
+		fancyTime(expirationTimestamp, s.scheduler.Unit()),
 	)
 
 	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
@@ -406,7 +406,11 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 // if some parts of the tree have been broadcasted in the meantine, it will schedule the next taskes for the remaining parts of the tree
 func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxTree) func() error {
 	return func() error {
-		log.Debugf("sweeper: start sweeping batch %s", commitmentTxid)
+		log.Debugf(
+			"sweeper: start analyzing batch %s of commitment %s",
+			vtxoTree.Root.UnsignedTx.TxID(),
+			commitmentTxid,
+		)
 
 		ctx := context.Background()
 		round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
@@ -448,10 +452,6 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 						)
 						continue
 					}
-					log.Debugf("sweeper: scheduled sweep for vtxo tree %s of batch %s at %s",
-						subTree.Root.UnsignedTx.TxID(), commitmentTxid,
-						fancyTime(expiresAt, s.scheduler.Unit()),
-					)
 				}
 				continue
 			}
@@ -557,9 +557,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 		// if there are unspent outputs to sweep, build and broadcast a sweep transaction
 		if len(unspentOutputsToSweep) > 0 {
 			log.Debugf(
-				"sweeper: sweeping %d outputs for batch %s",
+				"sweeper: sweeping %d outputs for batch %s (%d sats)",
 				len(unspentOutputsToSweep),
-				commitmentTxid,
+				commitmentTxid, sweptAmount,
 			)
 
 			// build the sweep transaction with all the expired non-swept batch outputs
@@ -605,8 +605,40 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 			vtxoRepo := s.repoManager.Vtxos()
 			eventRepo := s.repoManager.Events()
 
-			// get all vtxos related to the batch commitment txid
-			preconfirmedVtxos, err := vtxoRepo.GetUnsweptVtxosByCommitmentTxid(ctx, commitmentTxid)
+			preconfirmedVtxos := make([]domain.Outpoint, 0)
+			var err error
+
+			commitmentRootSwept := false
+			for _, output := range outputsToSweep {
+				if output.Hash.String() == commitmentTxid {
+					commitmentRootSwept = true
+					break
+				}
+			}
+
+			if commitmentRootSwept {
+				// get all vtxos related to the batch commitment txid
+				preconfirmedVtxos, err = vtxoRepo.GetUnsweptVtxosByCommitmentTxid(
+					ctx,
+					commitmentTxid,
+				)
+			} else {
+				// get all vtxos related to the leaf swept
+				seen := make(map[string]struct{})
+				for _, leafVtxo := range leafVtxoKeys {
+					children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+					if err != nil {
+						log.WithError(err).Error("error while getting children vtxos")
+						continue
+					}
+					for _, child := range children {
+						if _, ok := seen[child.String()]; !ok {
+							preconfirmedVtxos = append(preconfirmedVtxos, child)
+							seen[child.String()] = struct{}{}
+						}
+					}
+				}
+			}
 			if err != nil {
 				log.WithError(err).Error("error while getting children vtxos")
 			}
@@ -640,6 +672,7 @@ func (s *sweeper) createCheckpointSweepTask(
 	toSweep ports.SweepableOutput, vtxo domain.Outpoint,
 ) func() error {
 	return func() error {
+		ctx := context.Background()
 		checkpointTxid := toSweep.Hash.String()
 		log.Debugf("sweeper: start sweeping checkpoint %s", checkpointTxid)
 
@@ -648,7 +681,7 @@ func (s *sweeper) createCheckpointSweepTask(
 			return err
 		}
 
-		txid, err := s.wallet.BroadcastTransaction(context.Background(), sweepTx)
+		txid, err := s.wallet.BroadcastTransaction(ctx, sweepTx)
 		if err != nil {
 			return err
 		}
@@ -657,7 +690,14 @@ func (s *sweeper) createCheckpointSweepTask(
 			log.Debugf("sweeper: checkpoint %s swept by: %s", checkpointTxid, txid)
 		}
 
-		_, err = s.repoManager.Vtxos().SweepVtxos(context.Background(), []domain.Outpoint{vtxo})
+		// mark all vtxos linked to the unrolled vtxo as swept
+		childrenVtxos, err := s.repoManager.Vtxos().GetAllChildrenVtxos(ctx, vtxo.Txid)
+		if err != nil {
+			return err
+		}
+
+		_, err = s.repoManager.Vtxos().SweepVtxos(ctx, childrenVtxos)
+		log.Debugf("swept %d vtxos", len(childrenVtxos))
 		return err
 	}
 }
