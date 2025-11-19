@@ -239,7 +239,7 @@ func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 	return allVtxos, nil
 }
 
-func (r *vtxoRepository) GetVtxoTapKeys(
+func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	ctx context.Context, commitmentTxid string, amountFilter uint64,
 ) ([]string, error) {
 	if commitmentTxid == "" {
@@ -450,7 +450,7 @@ func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) erro
 	return nil
 }
 
-func (r *vtxoRepository) GetUnsweptVtxosByCommitmentTxid(
+func (r *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	ctx context.Context,
 	txid string,
 ) ([]domain.Outpoint, error) {

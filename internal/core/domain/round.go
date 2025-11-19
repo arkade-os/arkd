@@ -199,16 +199,13 @@ func (r *Round) EndFinalization(forfeitTxs []ForfeitTx, finalCommitmentTx string
 }
 
 func (r *Round) Sweep(
-	leafVtxos, preconfirmedVtxos []Outpoint, txid, tx string, sweptAmount int64,
+	leafVtxos, preconfirmedVtxos []Outpoint, txid, tx string,
 ) ([]Event, error) {
 	if !r.IsEnded() {
 		return nil, fmt.Errorf("not in a valid stage to sweep")
 	}
 	if r.Swept {
 		return nil, nil
-	}
-	if sweptAmount <= 0 {
-		return nil, fmt.Errorf("swept amount must be greater than 0")
 	}
 
 	sweptVtxosCount := countSweptLeafVtxos(r.Changes)

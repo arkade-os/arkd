@@ -26,9 +26,9 @@ VALUES (?1, ?2, ?3)
 `
 
 type InsertVtxoCommitmentTxidParams struct {
-	VtxoTxid       string `json:"vtxo_txid"`
-	VtxoVout       int64  `json:"vtxo_vout"`
-	CommitmentTxid string `json:"commitment_txid"`
+	VtxoTxid       string
+	VtxoVout       int64
+	CommitmentTxid string
 }
 
 func (q *Queries) InsertVtxoCommitmentTxid(ctx context.Context, arg InsertVtxoCommitmentTxidParams) error {
@@ -45,8 +45,8 @@ ORDER BY created_at ASC
 `
 
 type SelectActiveScriptConvictionsParams struct {
-	Script    sql.NullString `json:"script"`
-	ExpiresAt sql.NullInt64  `json:"expires_at"`
+	Script    sql.NullString
+	ExpiresAt sql.NullInt64
 }
 
 func (q *Queries) SelectActiveScriptConvictions(ctx context.Context, arg SelectActiveScriptConvictionsParams) ([]Conviction, error) {
@@ -114,7 +114,7 @@ SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expir
 `
 
 type SelectAllVtxosRow struct {
-	VtxoVw VtxoVw `json:"vtxo_vw"`
+	VtxoVw VtxoVw
 }
 
 func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, error) {
@@ -224,8 +224,8 @@ ORDER BY created_at ASC
 `
 
 type SelectConvictionsInTimeRangeParams struct {
-	FromTime int64 `json:"from_time"`
-	ToTime   int64 `json:"to_time"`
+	FromTime int64
+	ToTime   int64
 }
 
 func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectConvictionsInTimeRangeParams) ([]Conviction, error) {
@@ -286,7 +286,7 @@ SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expir
 `
 
 type SelectNotUnrolledVtxosRow struct {
-	VtxoVw VtxoVw `json:"vtxo_vw"`
+	VtxoVw VtxoVw
 }
 
 func (q *Queries) SelectNotUnrolledVtxos(ctx context.Context) ([]SelectNotUnrolledVtxosRow, error) {
@@ -334,7 +334,7 @@ SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expir
 `
 
 type SelectNotUnrolledVtxosWithPubkeyRow struct {
-	VtxoVw VtxoVw `json:"vtxo_vw"`
+	VtxoVw VtxoVw
 }
 
 func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey string) ([]SelectNotUnrolledVtxosWithPubkeyRow, error) {
@@ -382,7 +382,7 @@ SELECT  offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestam
 `
 
 type SelectOffchainTxRow struct {
-	OffchainTxVw OffchainTxVw `json:"offchain_tx_vw"`
+	OffchainTxVw OffchainTxVw
 }
 
 func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOffchainTxRow, error) {
@@ -498,8 +498,8 @@ SELECT id FROM round WHERE starting_timestamp > ?1 AND starting_timestamp < ?2
 `
 
 type SelectRoundIdsInTimeRangeParams struct {
-	StartTs int64 `json:"start_ts"`
-	EndTs   int64 `json:"end_ts"`
+	StartTs int64
+	EndTs   int64
 }
 
 func (q *Queries) SelectRoundIdsInTimeRange(ctx context.Context, arg SelectRoundIdsInTimeRangeParams) ([]string, error) {
@@ -534,10 +534,10 @@ WHERE starting_timestamp > ?1
 `
 
 type SelectRoundIdsInTimeRangeWithFiltersParams struct {
-	StartTs       int64       `json:"start_ts"`
-	EndTs         int64       `json:"end_ts"`
-	WithFailed    interface{} `json:"with_failed"`
-	WithCompleted interface{} `json:"with_completed"`
+	StartTs       int64
+	EndTs         int64
+	WithFailed    interface{}
+	WithCompleted interface{}
 }
 
 func (q *Queries) SelectRoundIdsInTimeRangeWithFilters(ctx context.Context, arg SelectRoundIdsInTimeRangeWithFiltersParams) ([]string, error) {
@@ -575,8 +575,8 @@ WHERE (?1 = 1 OR failed = 0)
 `
 
 type SelectRoundIdsWithFiltersParams struct {
-	WithFailed    interface{} `json:"with_failed"`
-	WithCompleted interface{} `json:"with_completed"`
+	WithFailed    interface{}
+	WithCompleted interface{}
 }
 
 func (q *Queries) SelectRoundIdsWithFilters(ctx context.Context, arg SelectRoundIdsWithFiltersParams) ([]string, error) {
@@ -633,14 +633,14 @@ WHERE r.txid = ?1
 `
 
 type SelectRoundStatsRow struct {
-	Swept              bool        `json:"swept"`
-	StartingTimestamp  int64       `json:"starting_timestamp"`
-	EndingTimestamp    int64       `json:"ending_timestamp"`
-	TotalForfeitAmount interface{} `json:"total_forfeit_amount"`
-	TotalInputVtxos    interface{} `json:"total_input_vtxos"`
-	TotalBatchAmount   interface{} `json:"total_batch_amount"`
-	TotalOutputVtxos   int64       `json:"total_output_vtxos"`
-	ExpiresAt          interface{} `json:"expires_at"`
+	Swept              bool
+	StartingTimestamp  int64
+	EndingTimestamp    int64
+	TotalForfeitAmount interface{}
+	TotalInputVtxos    interface{}
+	TotalBatchAmount   interface{}
+	TotalOutputVtxos   int64
+	ExpiresAt          interface{}
 }
 
 func (q *Queries) SelectRoundStats(ctx context.Context, txid string) (SelectRoundStatsRow, error) {
@@ -700,7 +700,7 @@ SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expir
 `
 
 type SelectRoundVtxoTreeLeavesRow struct {
-	VtxoVw VtxoVw `json:"vtxo_vw"`
+	VtxoVw VtxoVw
 }
 
 func (q *Queries) SelectRoundVtxoTreeLeaves(ctx context.Context, commitmentTxid string) ([]SelectRoundVtxoTreeLeavesRow, error) {
@@ -758,11 +758,11 @@ WHERE round.id = ?1
 `
 
 type SelectRoundWithIdRow struct {
-	Round                 Round                 `json:"round"`
-	RoundIntentsVw        RoundIntentsVw        `json:"round_intents_vw"`
-	RoundTxsVw            RoundTxsVw            `json:"round_txs_vw"`
-	IntentWithReceiversVw IntentWithReceiversVw `json:"intent_with_receivers_vw"`
-	IntentWithInputsVw    IntentWithInputsVw    `json:"intent_with_inputs_vw"`
+	Round                 Round
+	RoundIntentsVw        RoundIntentsVw
+	RoundTxsVw            RoundTxsVw
+	IntentWithReceiversVw IntentWithReceiversVw
+	IntentWithInputsVw    IntentWithInputsVw
 }
 
 func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRoundWithIdRow, error) {
@@ -855,11 +855,11 @@ WHERE round.id = (
 `
 
 type SelectRoundWithTxidRow struct {
-	Round                 Round                 `json:"round"`
-	RoundIntentsVw        RoundIntentsVw        `json:"round_intents_vw"`
-	RoundTxsVw            RoundTxsVw            `json:"round_txs_vw"`
-	IntentWithReceiversVw IntentWithReceiversVw `json:"intent_with_receivers_vw"`
-	IntentWithInputsVw    IntentWithInputsVw    `json:"intent_with_inputs_vw"`
+	Round                 Round
+	RoundIntentsVw        RoundIntentsVw
+	RoundTxsVw            RoundTxsVw
+	IntentWithReceiversVw IntentWithReceiversVw
+	IntentWithInputsVw    IntentWithInputsVw
 }
 
 func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]SelectRoundWithTxidRow, error) {
@@ -1009,7 +1009,7 @@ SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expir
 `
 
 type SelectSweepableUnrolledVtxosRow struct {
-	VtxoVw VtxoVw `json:"vtxo_vw"`
+	VtxoVw VtxoVw
 }
 
 func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSweepableUnrolledVtxosRow, error) {
@@ -1039,6 +1039,42 @@ func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSwe
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectSweepableVtxoOutpointsByCommitmentTxid = `-- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
+SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+WHERE v.swept = false
+  AND (v.commitment_txid = ?1
+    OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || ?1 || ',%')
+`
+
+type SelectSweepableVtxoOutpointsByCommitmentTxidRow struct {
+	VtxoTxid string
+	VtxoVout int64
+}
+
+func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectSweepableVtxoOutpointsByCommitmentTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectSweepableVtxoOutpointsByCommitmentTxid, commitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectSweepableVtxoOutpointsByCommitmentTxidRow
+	for rows.Next() {
+		var i SelectSweepableVtxoOutpointsByCommitmentTxidRow
+		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1089,14 +1125,14 @@ SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE che
 `
 
 type SelectTxsParams struct {
-	Ids1 []string `json:"ids1"`
-	Ids2 []string `json:"ids2"`
-	Ids3 []string `json:"ids3"`
+	Ids1 []string
+	Ids2 []string
+	Ids3 []string
 }
 
 type SelectTxsRow struct {
-	Txid string `json:"txid"`
-	Data string `json:"data"`
+	Txid string
+	Data string
 }
 
 func (q *Queries) SelectTxs(ctx context.Context, arg SelectTxsParams) ([]SelectTxsRow, error) {
@@ -1148,52 +1184,17 @@ func (q *Queries) SelectTxs(ctx context.Context, arg SelectTxsParams) ([]SelectT
 	return items, nil
 }
 
-const selectUnsweptVtxoOutpointsByCommitmentTxid = `-- name: SelectUnsweptVtxoOutpointsByCommitmentTxid :many
-SELECT DISTINCT vct.vtxo_txid, vct.vtxo_vout 
-FROM vtxo_commitment_txid vct
-INNER JOIN vtxo v ON vct.vtxo_txid = v.txid AND vct.vtxo_vout = v.vout
-WHERE vct.commitment_txid = ?1 AND v.swept = false
-`
-
-type SelectUnsweptVtxoOutpointsByCommitmentTxidRow struct {
-	VtxoTxid string `json:"vtxo_txid"`
-	VtxoVout int64  `json:"vtxo_vout"`
-}
-
-func (q *Queries) SelectUnsweptVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectUnsweptVtxoOutpointsByCommitmentTxidRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectUnsweptVtxoOutpointsByCommitmentTxid, commitmentTxid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectUnsweptVtxoOutpointsByCommitmentTxidRow
-	for rows.Next() {
-		var i SelectUnsweptVtxoOutpointsByCommitmentTxidRow
-		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectVtxo = `-- name: SelectVtxo :one
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE txid = ?1 AND vout = ?2
 `
 
 type SelectVtxoParams struct {
-	Txid string `json:"txid"`
-	Vout int64  `json:"vout"`
+	Txid string
+	Vout int64
 }
 
 type SelectVtxoRow struct {
-	VtxoVw VtxoVw `json:"vtxo_vw"`
+	VtxoVw VtxoVw
 }
 
 func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectVtxoRow, error) {
@@ -1220,26 +1221,21 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 	return i, err
 }
 
-const selectVtxoTaprootKeys = `-- name: SelectVtxoTaprootKeys :many
+const selectVtxoPubKeysByCommitmentTxid = `-- name: SelectVtxoPubKeysByCommitmentTxid :many
 SELECT DISTINCT v.pubkey
-FROM vtxo v
+FROM vtxo_vw v
 WHERE v.amount >= ?1
   AND (v.commitment_txid = ?2
-    OR EXISTS (
-      SELECT 1 FROM vtxo_commitment_txid vct
-      WHERE vct.vtxo_txid = v.txid
-        AND vct.vtxo_vout = v.vout
-        AND vct.commitment_txid = ?2
-    ))
+    OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || ?2 || ',%')
 `
 
-type SelectVtxoTaprootKeysParams struct {
-	MinAmount      int64  `json:"min_amount"`
-	CommitmentTxid string `json:"commitment_txid"`
+type SelectVtxoPubKeysByCommitmentTxidParams struct {
+	MinAmount      int64
+	CommitmentTxid string
 }
 
-func (q *Queries) SelectVtxoTaprootKeys(ctx context.Context, arg SelectVtxoTaprootKeysParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxoTaprootKeys, arg.MinAmount, arg.CommitmentTxid)
+func (q *Queries) SelectVtxoPubKeysByCommitmentTxid(ctx context.Context, arg SelectVtxoPubKeysByCommitmentTxidParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxoPubKeysByCommitmentTxid, arg.MinAmount, arg.CommitmentTxid)
 	if err != nil {
 		return nil, err
 	}
@@ -1293,8 +1289,8 @@ ORDER BY depth, txid, vout
 `
 
 type SelectVtxosOutpointsByArkTxidRecursiveRow struct {
-	Txid string `json:"txid"`
-	Vout int64  `json:"vout"`
+	Txid string
+	Vout int64
 }
 
 // keep one row per node at its MIN depth (layers)
@@ -1326,7 +1322,7 @@ SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expir
 `
 
 type SelectVtxosWithPubkeysRow struct {
-	VtxoVw VtxoVw `json:"vtxo_vw"`
+	VtxoVw VtxoVw
 }
 
 func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkey []string) ([]SelectVtxosWithPubkeysRow, error) {
@@ -1393,9 +1389,9 @@ UPDATE vtxo SET expires_at = ?1 WHERE txid = ?2 AND vout = ?3
 `
 
 type UpdateVtxoExpirationParams struct {
-	ExpiresAt int64  `json:"expires_at"`
-	Txid      string `json:"txid"`
-	Vout      int64  `json:"vout"`
+	ExpiresAt int64
+	Txid      string
+	Vout      int64
 }
 
 func (q *Queries) UpdateVtxoExpiration(ctx context.Context, arg UpdateVtxoExpirationParams) error {
@@ -1408,9 +1404,9 @@ UPDATE vtxo SET intent_id = ?1 WHERE txid = ?2 AND vout = ?3
 `
 
 type UpdateVtxoIntentIdParams struct {
-	IntentID sql.NullString `json:"intent_id"`
-	Txid     string         `json:"txid"`
-	Vout     int64          `json:"vout"`
+	IntentID sql.NullString
+	Txid     string
+	Vout     int64
 }
 
 func (q *Queries) UpdateVtxoIntentId(ctx context.Context, arg UpdateVtxoIntentIdParams) error {
@@ -1424,10 +1420,10 @@ WHERE txid = ?3 AND vout = ?4
 `
 
 type UpdateVtxoSettledParams struct {
-	SpentBy   sql.NullString `json:"spent_by"`
-	SettledBy sql.NullString `json:"settled_by"`
-	Txid      string         `json:"txid"`
-	Vout      int64          `json:"vout"`
+	SpentBy   sql.NullString
+	SettledBy sql.NullString
+	Txid      string
+	Vout      int64
 }
 
 func (q *Queries) UpdateVtxoSettled(ctx context.Context, arg UpdateVtxoSettledParams) error {
@@ -1446,10 +1442,10 @@ WHERE txid = ?3 AND vout = ?4
 `
 
 type UpdateVtxoSpentParams struct {
-	SpentBy sql.NullString `json:"spent_by"`
-	ArkTxid sql.NullString `json:"ark_txid"`
-	Txid    string         `json:"txid"`
-	Vout    int64          `json:"vout"`
+	SpentBy sql.NullString
+	ArkTxid sql.NullString
+	Txid    string
+	Vout    int64
 }
 
 func (q *Queries) UpdateVtxoSpent(ctx context.Context, arg UpdateVtxoSpentParams) error {
@@ -1467,8 +1463,8 @@ UPDATE vtxo SET swept = true WHERE txid = ?1 AND vout = ?2 AND swept = false
 `
 
 type UpdateVtxoSweptIfNotSweptParams struct {
-	Txid string `json:"txid"`
-	Vout int64  `json:"vout"`
+	Txid string
+	Vout int64
 }
 
 func (q *Queries) UpdateVtxoSweptIfNotSwept(ctx context.Context, arg UpdateVtxoSweptIfNotSweptParams) (int64, error) {
@@ -1484,8 +1480,8 @@ UPDATE vtxo SET unrolled = true WHERE txid = ?1 AND vout = ?2
 `
 
 type UpdateVtxoUnrolledParams struct {
-	Txid string `json:"txid"`
-	Vout int64  `json:"vout"`
+	Txid string
+	Vout int64
 }
 
 func (q *Queries) UpdateVtxoUnrolled(ctx context.Context, arg UpdateVtxoUnrolledParams) error {
@@ -1504,11 +1500,11 @@ ON CONFLICT(txid) DO UPDATE SET
 `
 
 type UpsertCheckpointTxParams struct {
-	Txid                 string `json:"txid"`
-	Tx                   string `json:"tx"`
-	CommitmentTxid       string `json:"commitment_txid"`
-	IsRootCommitmentTxid bool   `json:"is_root_commitment_txid"`
-	OffchainTxid         string `json:"offchain_txid"`
+	Txid                 string
+	Tx                   string
+	CommitmentTxid       string
+	IsRootCommitmentTxid bool
+	OffchainTxid         string
 }
 
 func (q *Queries) UpsertCheckpointTx(ctx context.Context, arg UpsertCheckpointTxParams) error {
@@ -1533,15 +1529,15 @@ ON CONFLICT(id) DO UPDATE SET
 `
 
 type UpsertConvictionParams struct {
-	ID           string         `json:"id"`
-	Type         int64          `json:"type"`
-	CreatedAt    int64          `json:"created_at"`
-	ExpiresAt    sql.NullInt64  `json:"expires_at"`
-	CrimeType    int64          `json:"crime_type"`
-	CrimeRoundID string         `json:"crime_round_id"`
-	CrimeReason  string         `json:"crime_reason"`
-	Pardoned     bool           `json:"pardoned"`
-	Script       sql.NullString `json:"script"`
+	ID           string
+	Type         int64
+	CreatedAt    int64
+	ExpiresAt    sql.NullInt64
+	CrimeType    int64
+	CrimeRoundID string
+	CrimeReason  string
+	Pardoned     bool
+	Script       sql.NullString
 }
 
 func (q *Queries) UpsertConviction(ctx context.Context, arg UpsertConvictionParams) error {
@@ -1568,10 +1564,10 @@ ON CONFLICT(id) DO UPDATE SET
 `
 
 type UpsertIntentParams struct {
-	ID      sql.NullString `json:"id"`
-	RoundID sql.NullString `json:"round_id"`
-	Proof   sql.NullString `json:"proof"`
-	Message sql.NullString `json:"message"`
+	ID      sql.NullString
+	RoundID sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
 }
 
 func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) error {
@@ -1597,13 +1593,13 @@ ON CONFLICT(txid) DO UPDATE SET
 `
 
 type UpsertOffchainTxParams struct {
-	Txid              string         `json:"txid"`
-	Tx                string         `json:"tx"`
-	StartingTimestamp int64          `json:"starting_timestamp"`
-	EndingTimestamp   int64          `json:"ending_timestamp"`
-	ExpiryTimestamp   int64          `json:"expiry_timestamp"`
-	FailReason        sql.NullString `json:"fail_reason"`
-	StageCode         int64          `json:"stage_code"`
+	Txid              string
+	Tx                string
+	StartingTimestamp int64
+	EndingTimestamp   int64
+	ExpiryTimestamp   int64
+	FailReason        sql.NullString
+	StageCode         int64
 }
 
 func (q *Queries) UpsertOffchainTx(ctx context.Context, arg UpsertOffchainTxParams) error {
@@ -1629,10 +1625,10 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 `
 
 type UpsertReceiverParams struct {
-	IntentID       string         `json:"intent_id"`
-	Pubkey         sql.NullString `json:"pubkey"`
-	OnchainAddress string         `json:"onchain_address"`
-	Amount         int64          `json:"amount"`
+	IntentID       string
+	Pubkey         sql.NullString
+	OnchainAddress string
+	Amount         int64
 }
 
 func (q *Queries) UpsertReceiver(ctx context.Context, arg UpsertReceiverParams) error {
@@ -1667,17 +1663,17 @@ ON CONFLICT(id) DO UPDATE SET
 `
 
 type UpsertRoundParams struct {
-	ID                 string         `json:"id"`
-	StartingTimestamp  int64          `json:"starting_timestamp"`
-	EndingTimestamp    int64          `json:"ending_timestamp"`
-	Ended              bool           `json:"ended"`
-	Failed             bool           `json:"failed"`
-	FailReason         sql.NullString `json:"fail_reason"`
-	StageCode          int64          `json:"stage_code"`
-	ConnectorAddress   string         `json:"connector_address"`
-	Version            int64          `json:"version"`
-	Swept              bool           `json:"swept"`
-	VtxoTreeExpiration int64          `json:"vtxo_tree_expiration"`
+	ID                 string
+	StartingTimestamp  int64
+	EndingTimestamp    int64
+	Ended              bool
+	Failed             bool
+	FailReason         sql.NullString
+	StageCode          int64
+	ConnectorAddress   string
+	Version            int64
+	Swept              bool
+	VtxoTreeExpiration int64
 }
 
 func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error {
@@ -1711,14 +1707,14 @@ ON CONFLICT (id) DO UPDATE SET
 `
 
 type UpsertScheduledSessionParams struct {
-	ID                   int64 `json:"id"`
-	StartTime            int64 `json:"start_time"`
-	EndTime              int64 `json:"end_time"`
-	Period               int64 `json:"period"`
-	Duration             int64 `json:"duration"`
-	RoundMinParticipants int64 `json:"round_min_participants"`
-	RoundMaxParticipants int64 `json:"round_max_participants"`
-	UpdatedAt            int64 `json:"updated_at"`
+	ID                   int64
+	StartTime            int64
+	EndTime              int64
+	Period               int64
+	Duration             int64
+	RoundMinParticipants int64
+	RoundMaxParticipants int64
+	UpdatedAt            int64
 }
 
 func (q *Queries) UpsertScheduledSession(ctx context.Context, arg UpsertScheduledSessionParams) error {
@@ -1748,12 +1744,12 @@ ON CONFLICT(txid) DO UPDATE SET
 `
 
 type UpsertTxParams struct {
-	Tx       string         `json:"tx"`
-	RoundID  string         `json:"round_id"`
-	Type     string         `json:"type"`
-	Position int64          `json:"position"`
-	Txid     string         `json:"txid"`
-	Children sql.NullString `json:"children"`
+	Tx       string
+	RoundID  string
+	Type     string
+	Position int64
+	Txid     string
+	Children sql.NullString
 }
 
 func (q *Queries) UpsertTx(ctx context.Context, arg UpsertTxParams) error {
@@ -1792,20 +1788,20 @@ VALUES (
 `
 
 type UpsertVtxoParams struct {
-	Txid           string         `json:"txid"`
-	Vout           int64          `json:"vout"`
-	Pubkey         string         `json:"pubkey"`
-	Amount         int64          `json:"amount"`
-	CommitmentTxid string         `json:"commitment_txid"`
-	SettledBy      sql.NullString `json:"settled_by"`
-	ArkTxid        sql.NullString `json:"ark_txid"`
-	SpentBy        sql.NullString `json:"spent_by"`
-	Spent          bool           `json:"spent"`
-	Unrolled       bool           `json:"unrolled"`
-	Swept          bool           `json:"swept"`
-	Preconfirmed   bool           `json:"preconfirmed"`
-	ExpiresAt      int64          `json:"expires_at"`
-	CreatedAt      int64          `json:"created_at"`
+	Txid           string
+	Vout           int64
+	Pubkey         string
+	Amount         int64
+	CommitmentTxid string
+	SettledBy      sql.NullString
+	ArkTxid        sql.NullString
+	SpentBy        sql.NullString
+	Spent          bool
+	Unrolled       bool
+	Swept          bool
+	Preconfirmed   bool
+	ExpiresAt      int64
+	CreatedAt      int64
 }
 
 func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {

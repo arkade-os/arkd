@@ -126,7 +126,7 @@ func convertSatsToBTCStr(sats uint64) string {
 }
 
 func toP2TR(pubkey string) string {
-	return "5120" + pubkey
+	return fmt.Sprintf("5120%s", pubkey)
 }
 
 // From app type to interface type

@@ -618,7 +618,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 
 			if commitmentRootSwept {
 				// get all vtxos related to the batch commitment txid
-				preconfirmedVtxos, err = vtxoRepo.GetUnsweptVtxosByCommitmentTxid(
+				preconfirmedVtxos, err = vtxoRepo.GetSweepableVtxosByCommitmentTxid(
 					ctx,
 					commitmentTxid,
 				)
@@ -648,7 +648,6 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 				preconfirmedVtxos,
 				sweepTxId,
 				sweepTx,
-				sweptAmount,
 			)
 			if err != nil {
 				log.WithError(err).Error("failed to sweep batch")

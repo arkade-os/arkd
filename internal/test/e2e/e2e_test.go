@@ -1567,7 +1567,7 @@ func TestSweep(t *testing.T) {
 		time.Sleep(20 * time.Second)
 
 		// verify that all vtxos have been swept
-		aliceVtxos, _, err = charlie.ListVtxos(ctx)
+		aliceVtxos, _, err = alice.ListVtxos(ctx)
 		require.NoError(t, err)
 		require.Len(t, aliceVtxos, 1)
 		require.True(t, aliceVtxos[0].Swept)

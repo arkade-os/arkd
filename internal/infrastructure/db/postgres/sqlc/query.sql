@@ -256,23 +256,19 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 
--- name: SelectVtxoTaprootKeys :many
+-- name: SelectVtxoPubKeysByCommitmentTxid :many
 SELECT DISTINCT v.pubkey 
-FROM vtxo v
+FROM vtxo_vw v
 WHERE v.amount >= @min_amount
   AND (v.commitment_txid = @commitment_txid
-    OR EXISTS (
-      SELECT 1 FROM vtxo_commitment_txid vct
-      WHERE vct.vtxo_txid = v.txid
-        AND vct.vtxo_vout = v.vout
-        AND vct.commitment_txid = @commitment_txid
-    ));
+    OR (',' || COALESCE(v.commitments::text, '') || ',') LIKE '%,' || @commitment_txid || ',%');
 
--- name: SelectUnsweptVtxoOutpointsByCommitmentTxid :many
-SELECT DISTINCT vct.vtxo_txid, vct.vtxo_vout 
-FROM vtxo_commitment_txid vct
-INNER JOIN vtxo v ON vct.vtxo_txid = v.txid AND vct.vtxo_vout = v.vout
-WHERE vct.commitment_txid = @commitment_txid AND v.swept = false;
+-- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
+SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+WHERE v.swept = false
+  AND (v.commitment_txid = @commitment_txid
+    OR (',' || COALESCE(v.commitments::text, '') || ',') LIKE '%,' || @commitment_txid || ',%');
 
 -- name: SelectVtxosOutpointsByArkTxidRecursive :many
 WITH RECURSIVE descendants_chain AS (

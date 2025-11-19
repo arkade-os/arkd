@@ -265,7 +265,7 @@ func NewService(
 						return
 					}
 
-					vtxoTaprootKeys, err := vtxoRepo.GetVtxoTapKeys(
+					vtxoTaprootKeys, err := vtxoRepo.GetVtxoPubKeysByCommitmentTxid(
 						ctx,
 						round.CommitmentTxid,
 						dustLimit,
@@ -398,13 +398,14 @@ func (s *service) Stop() {
 	s.wg.Wait()
 	s.sweeperCancel()
 	s.sweeper.stop()
-	// nolint
+
 	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
 	if err == nil {
 		tapkeys := make([]string, 0)
 
 		for _, commitmentTxId := range commitmentTxIds {
-			keys, err := s.repoManager.Vtxos().GetVtxoTapKeys(ctx, commitmentTxId, 0)
+			keys, err := s.repoManager.Vtxos().
+				GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
 			if err != nil {
 				log.WithError(err).Warn("failed to get vtxo tap keys")
 				continue
@@ -3162,7 +3163,7 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 	scripts := make([]string, 0, len(tapkeys))
 	for _, key := range tapkeys {
 		// script = OP_1 OP_PUSHBYTES_32 <key>
-		scripts = append(scripts, "5120"+key)
+		scripts = append(scripts, fmt.Sprintf("5120%s", key))
 	}
 
 	if len(scripts) <= 0 {
@@ -3191,13 +3192,13 @@ func (s *service) restoreWatchingVtxos() error {
 	scripts := make([]string, 0)
 
 	for _, commitmentTxId := range commitmentTxIds {
-		tapKeys, err := s.repoManager.Vtxos().GetVtxoTapKeys(ctx, commitmentTxId, 0)
+		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
 		if err != nil {
 			return err
 		}
 
 		for _, key := range tapKeys {
-			scripts = append(scripts, "5120"+key)
+			scripts = append(scripts, fmt.Sprintf("5120%s", key))
 		}
 	}
 
