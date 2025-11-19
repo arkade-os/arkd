@@ -1,9 +1,11 @@
 package offchain
 
 import (
+	"bytes"
 	"fmt"
 
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -44,15 +46,61 @@ func BuildTxs(
 		return nil, nil, fmt.Errorf("invalid signer unroll script")
 	}
 
-	for _, vtxo := range vtxos {
-		checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScriptClosure)
+	var assetData *asset.Asset
+	var batchId []byte
+	var assetOpretIndex int
+
+	newAssetInputs := make([]asset.AssetInput, 0, len(outputs))
+
+	for i, out := range outputs {
+		assetData, batchId, err = asset.DecodeAssetFromOpret(out.PkScript)
+		if err == nil {
+			assetOpretIndex = i
+			break
+		}
+	}
+
+	if assetData != nil {
+		for _, vtxo := range vtxos {
+			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, assetData, batchId, signerUnrollScriptClosure)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if assetOutput != nil {
+				txId := checkpointPtx.UnsignedTx.TxHash()
+				newAssetInputs = append(newAssetInputs, asset.AssetInput{
+					Txid:   txId[:],
+					Vout:   0,
+					Amount: assetOutput.Amount,
+				})
+			}
+
+			checkpointInputs = append(checkpointInputs, *checkpointInput)
+			checkpointTxs = append(checkpointTxs, checkpointPtx)
+			inputAmount += vtxo.Amount
+		}
+
+		newAsset := *assetData
+		newAsset.Inputs = newAssetInputs
+
+		newOpretOutput, err := newAsset.EncodeOpret(batchId)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		checkpointInputs = append(checkpointInputs, *checkpointInput)
-		checkpointTxs = append(checkpointTxs, checkpointPtx)
-		inputAmount += vtxo.Amount
+		outputs[assetOpretIndex] = &newOpretOutput
+	} else {
+		for _, vtxo := range vtxos {
+			checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScriptClosure)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			checkpointInputs = append(checkpointInputs, *checkpointInput)
+			checkpointTxs = append(checkpointTxs, checkpointPtx)
+			inputAmount += vtxo.Amount
+		}
 	}
 
 	outputAmount := int64(0)
@@ -236,4 +284,115 @@ func buildCheckpointTx(
 	}
 
 	return checkpointPtx, checkpointInput, nil
+}
+
+func buildAssetCheckpointTx(
+	vtxo VtxoInput, arkAsset *asset.Asset, batchId []byte, signerUnrollScript *script.CSVMultisigClosure,
+) (*psbt.Packet, *VtxoInput, *asset.AssetOutput, error) {
+	collaborativeClosure, err := script.DecodeClosure(vtxo.Tapscript.RevealedScript)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	checkpointVtxoScript := script.TapscriptsVtxoScript{
+		Closures: []script.Closure{signerUnrollScript, collaborativeClosure},
+	}
+
+	tapKey, tapTree, err := checkpointVtxoScript.TapTree()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	checkpointPkScript, err := script.P2TRScript(tapKey)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	newAsset := *arkAsset
+
+	var isSeal bool
+
+	for _, input := range newAsset.Inputs {
+		if bytes.Equal(input.Txid, vtxo.Outpoint.Hash[:]) && input.Vout == vtxo.Outpoint.Index {
+			isSeal = true
+			newAsset.Inputs = []asset.AssetInput{
+				{
+					Txid: vtxo.Outpoint.Hash[:],
+					Vout: vtxo.Outpoint.Index,
+				},
+			}
+			newAsset.Outputs = []asset.AssetOutput{
+				{
+					PublicKey: *tapKey,
+					Amount:    input.Amount,
+					Vout:      0,
+				},
+			}
+			break
+		}
+	}
+
+	var checkpointPtx *psbt.Packet
+
+	if !isSeal {
+		checkpointPtx, err = buildArkTx(
+			[]VtxoInput{vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}},
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+	} else {
+		assetOpret, err := newAsset.EncodeOpret(batchId[:])
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		checkpointPtx, err = buildArkTx(
+			[]VtxoInput{vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}, &assetOpret},
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+
+	// Now that we have the checkpoint tx, we need to return the corresponding output that will be
+	// used as input for the ark tx.
+	tapLeafHash := txscript.NewBaseTapLeaf(
+		vtxo.Tapscript.RevealedScript,
+	).TapHash()
+	collaborativeLeafProof, err := tapTree.GetTaprootMerkleProof(tapLeafHash)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	ctrlBlock, err := txscript.ParseControlBlock(collaborativeLeafProof.ControlBlock)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	revealedTapscripts, err := checkpointVtxoScript.Encode()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	checkpointInput := &VtxoInput{
+		Outpoint: &wire.OutPoint{
+			Hash:  checkpointPtx.UnsignedTx.TxHash(),
+			Index: 0,
+		},
+		Amount: vtxo.Amount,
+		Tapscript: &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: collaborativeLeafProof.Script,
+		},
+		RevealedTapscripts: revealedTapscripts,
+	}
+
+	if isSeal {
+		return checkpointPtx, checkpointInput, &newAsset.Outputs[0], nil
+	}
+
+	return checkpointPtx, checkpointInput, nil, nil
+
 }

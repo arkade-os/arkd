@@ -36,8 +36,9 @@ type AssetOutput struct {
 }
 
 type AssetInput struct {
-	Txid []byte
-	Vout uint32
+	Txid   []byte
+	Vout   uint32
+	Amount uint64
 }
 
 func (a *Asset) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
