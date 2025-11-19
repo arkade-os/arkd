@@ -86,10 +86,9 @@ type service struct {
 	indexerTxEventsCh        chan TransactionEvent
 
 	// stop and round-execution go routine handlers
-	stop              func()
-	ctx               context.Context
-	wg                *sync.WaitGroup
-	signBoardingInsMu *sync.Mutex
+	stop func()
+	ctx  context.Context
+	wg   *sync.WaitGroup
 }
 
 func NewService(
@@ -230,7 +229,6 @@ func NewService(
 		stop:                          cancel,
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
-		signBoardingInsMu:             &sync.Mutex{},
 		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
@@ -1663,7 +1661,7 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 			WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
 	}
 
-	go s.checkForfeitsAndBoardingSigsSent()
+	go s.checkForfeitsAndBoardingSigsSent(s.cache.CurrentRound().Get(ctx).CommitmentTxid)
 
 	return nil
 }
@@ -1671,51 +1669,33 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx string) errors.Error {
 	// we do not need to acquire the lock here because commitmentTx is only used to compute the signature hashes
 	// thus it is safe to read it without the lock because we rely ony on WitnessUtxo fields
-	commitmentTx := s.cache.CurrentRound().Get().CommitmentTx
-	signedInputs, err := s.builder.VerifyBoardingTapscriptSigs(signedCommitmentTx, commitmentTx)
+	round := s.cache.CurrentRound().Get(ctx)
+	signedInputs, err := s.builder.VerifyBoardingTapscriptSigs(
+		signedCommitmentTx, round.CommitmentTx,
+	)
 	if err != nil {
-		return errors.INVALID_BOARDING_INPUT_SIG.New("failed to verify boarding tapscript sigs: %w", err).
-			WithMetadata(errors.InvalidBoardingInputSigMetadata{
-				SignedCommitmentTx: signedCommitmentTx,
-			})
+		return errors.INVALID_BOARDING_INPUT_SIG.New(
+			"failed to verify boarding tapscript sigs: %w", err,
+		).WithMetadata(errors.InvalidBoardingInputSigMetadata{
+			SignedCommitmentTx: signedCommitmentTx,
+		})
 	}
 
-	if len(signedInputs) == 0 {
+	if len(signedInputs) <= 0 {
 		return errors.INVALID_BOARDING_INPUT_SIG.New("no signed inputs found").
 			WithMetadata(errors.InvalidBoardingInputSigMetadata{
 				SignedCommitmentTx: signedCommitmentTx,
 			})
 	}
 
-	s.signBoardingInsMu.Lock()
-	defer s.signBoardingInsMu.Unlock()
-
-	round := s.cache.CurrentRound().Get()
-	combined, err := s.builder.CombineTapscriptSigs(
-		round.CommitmentTx,
-		signedCommitmentTx,
-		signedInputs,
-	)
-	if err != nil {
-		return errors.INTERNAL_ERROR.New("failed to combine tapscript sigs: %w", err).
-			WithMetadata(map[string]any{
-				"signed_commitment_tx": signedCommitmentTx,
-				"signed_inputs":        signedInputs,
-				"commitment_tx":        round.CommitmentTx,
-			})
-	}
-	round.CommitmentTx = combined
-
-	if err := s.cache.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round {
-		return round
-	}); err != nil {
-		return errors.INTERNAL_ERROR.New("failed to upsert current round: %w", err).
-			WithMetadata(map[string]any{
-				"signed_commitment_tx": signedCommitmentTx,
-			})
+	if err := s.cache.BoardingInputs().AddSignatures(
+		context.Background(), round.CommitmentTxid, signedInputs,
+	); err != nil {
+		return errors.INTERNAL_ERROR.New("something went wrong: %w", err).
+			WithMetadata(map[string]any{"signed_commitment_tx": signedCommitmentTx})
 	}
 
-	go s.checkForfeitsAndBoardingSigsSent()
+	go s.checkForfeitsAndBoardingSigsSent(round.CommitmentTxid)
 
 	return nil
 }
@@ -2019,14 +1999,30 @@ func (s *service) startRound() {
 	default:
 	}
 
-	// reset the forfeit txs map to avoid polluting the next batch of forfeits transactions
+	ctx := context.Background()
+	existingRound := s.cache.CurrentRound().Get(ctx)
+
+	// Reset the cache for the new batch
 	s.cache.ForfeitTxs().Reset()
+	s.cache.Intents().DeleteVtxos()
+	s.cache.ConfirmationSessions().Reset()
+	if existingRound != nil {
+		if existingRound.Id != "" {
+			s.cache.TreeSigingSessions().Delete(existingRound.Id)
+		}
+		if existingRound.CommitmentTxid != "" {
+			if err := s.cache.BoardingInputs().DeleteSignatures(
+				context.Background(), existingRound.CommitmentTxid,
+			); err != nil {
+				log.WithError(err).Error("failed to delete boarding input signatures from cache")
+			}
+		}
+	}
 
 	round := domain.NewRound()
-
 	// nolint
 	round.StartRegistration()
-	if err := s.cache.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round {
+	if err := s.cache.CurrentRound().Upsert(ctx, func(_ *domain.Round) *domain.Round {
 		return round
 	}); err != nil {
 		log.Errorf("failed to upsert round: %s", err)
@@ -2045,7 +2041,7 @@ func (s *service) startRound() {
 	sessionDuration := s.sessionDuration
 	roundMinParticipants := s.roundMinParticipantsCount
 	roundMaxParticipants := s.roundMaxParticipantsCount
-	scheduledSession, _ := s.repoManager.ScheduledSession().Get(context.Background())
+	scheduledSession, _ := s.repoManager.ScheduledSession().Get(ctx)
 	if scheduledSession != nil {
 		nextStartTime, nextEndTime := calcNextScheduledSession(
 			time.Now(),
@@ -2081,7 +2077,7 @@ func (s *service) startConfirmation(
 	}
 
 	ctx := context.Background()
-	roundId := s.cache.CurrentRound().Get().Id
+	roundId := s.cache.CurrentRound().Get(ctx).Id
 	var registeredIntents []ports.TimedIntent
 	roundAborted := false
 
@@ -2095,14 +2091,11 @@ func (s *service) startConfirmation(
 			return
 		}
 
-		s.cache.ConfirmationSessions().Reset()
-
-		if err := s.saveEvents(ctx, roundId, s.cache.CurrentRound().Get().Events()); err != nil {
+		if err := s.saveEvents(ctx, roundId, s.cache.CurrentRound().Get(ctx).Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
 		}
 
-		if s.cache.CurrentRound().Get().IsFailed() {
-			s.cache.Intents().DeleteVtxos()
+		if s.cache.CurrentRound().Get(ctx).IsFailed() {
 			go s.startRound()
 			return
 		}
@@ -2123,8 +2116,9 @@ func (s *service) startConfirmation(
 
 	availableBalance, _, err := s.wallet.MainAccountBalance(ctx)
 	if err != nil {
-		s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to get main account balance: %s", err))
+		s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to get main account balance: %s", err),
+		)
 		return
 	}
 
@@ -2189,7 +2183,7 @@ func (s *service) startConfirmation(
 	if availableBalance <= totAmount {
 		log.Errorf("not enough liquidity, current balance: %d", availableBalance)
 		s.cache.CurrentRound().Fail(
-			errors.INTERNAL_ERROR.New("service temporary unavailable"),
+			ctx, errors.INTERNAL_ERROR.New("service temporary unavailable"),
 		)
 		return
 	}
@@ -2241,17 +2235,19 @@ func (s *service) startConfirmation(
 
 		s.cache.BoardingInputs().Set(numOfBoardingInputs)
 
-		round := s.cache.CurrentRound().Get()
+		round := s.cache.CurrentRound().Get(ctx)
 		if _, err := round.RegisterIntents(intents); err != nil {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to register intents: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to register intents: %s", err),
+			)
 			return
 		}
-		if err := s.cache.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round {
+		if err := s.cache.CurrentRound().Upsert(ctx, func(_ *domain.Round) *domain.Round {
 			return round
 		}); err != nil {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to upsert round: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to upsert round: %s", err),
+			)
 			return
 		}
 
@@ -2270,8 +2266,9 @@ func (s *service) startConfirmation(
 
 		// make the round fail if we didn't receive enoush confirmations
 		if len(confirmedIntents) == 0 {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("not enough intent confirmations received"))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("not enough intent confirmations received"),
+			)
 			return
 		}
 	}
@@ -2291,7 +2288,7 @@ func (s *service) startFinalization(
 	}
 
 	ctx := context.Background()
-	roundId := s.cache.CurrentRound().Get().Id
+	roundId := s.cache.CurrentRound().Get(ctx).Id
 	thirdOfRemainingDuration := roundTiming.finalizationDuration()
 
 	log.Debugf("started finalization stage for round: %s", roundId)
@@ -2299,14 +2296,13 @@ func (s *service) startFinalization(
 	defer func() {
 		s.wg.Add(1)
 
-		s.cache.TreeSigingSessions().Delete(roundId)
+		round := s.cache.CurrentRound().Get(ctx)
 
-		if err := s.saveEvents(ctx, roundId, s.cache.CurrentRound().Get().Events()); err != nil {
+		if err := s.saveEvents(ctx, roundId, round.Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
 		}
 
-		if s.cache.CurrentRound().Get().IsFailed() {
-			s.cache.Intents().DeleteVtxos()
+		if round.IsFailed() {
 			go s.startRound()
 			return
 		}
@@ -2314,7 +2310,7 @@ func (s *service) startFinalization(
 		go s.finalizeRound(roundTiming)
 	}()
 
-	if s.cache.CurrentRound().Get().IsFailed() {
+	if s.cache.CurrentRound().Get(ctx).IsFailed() {
 		return
 	}
 
@@ -2322,8 +2318,9 @@ func (s *service) startFinalization(
 
 	connectorAddresses, err := s.repoManager.Rounds().GetSweptRoundsConnectorAddress(ctx)
 	if err != nil {
-		s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to retrieve swept rounds: %s", err))
+		s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to retrieve swept rounds: %s", err),
+		)
 		return
 	}
 
@@ -2354,8 +2351,9 @@ func (s *service) startFinalization(
 		s.forfeitPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
 	)
 	if err != nil {
-		s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err))
+		s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err),
+		)
 		return
 	}
 
@@ -2365,31 +2363,36 @@ func (s *service) startFinalization(
 
 	flatConnectors, err := connectors.Serialize()
 	if err != nil {
-		s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to serialize connectors: %s", err))
+		s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to serialize connectors: %s", err),
+		)
 		return
 	}
 
 	if err := s.cache.ForfeitTxs().Init(flatConnectors, intents); err != nil {
-		s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to initialize forfeit txs: %s", err))
+		s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to initialize forfeit txs: %s", err),
+		)
 		return
 	}
 
 	commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
 	if err != nil {
-		s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to parse commitment tx: %s", err))
+		s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to parse commitment tx: %s", err),
+		)
 		return
 	}
 
-	if err := s.cache.CurrentRound().Upsert(func(r *domain.Round) *domain.Round {
+	if err := s.cache.CurrentRound().Upsert(ctx, func(r *domain.Round) *domain.Round {
 		ur := *r
 		ur.CommitmentTxid = commitmentPtx.UnsignedTx.TxID()
 		ur.CommitmentTx = commitmentTx
 		return &ur
 	}); err != nil {
-		s.cache.CurrentRound().Fail(errors.INTERNAL_ERROR.New("failed to update round: %s", err))
+		s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to update round: %s", err),
+		)
 		return
 	}
 
@@ -2410,8 +2413,9 @@ func (s *service) startFinalization(
 		}
 
 		if len(commitmentPtx.UnsignedTx.TxOut) == 0 {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to compute valid commitment tx"))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to compute valid commitment tx"),
+			)
 			return
 		}
 		batchOutputAmount := commitmentPtx.UnsignedTx.TxOut[0].Value
@@ -2424,9 +2428,9 @@ func (s *service) startFinalization(
 			root.CloneBytes(), batchOutputAmount, vtxoTree,
 		)
 		if err != nil {
-			s.cache.CurrentRound().Fail(errors.INTERNAL_ERROR.New(
-				"failed to create coordinator session: %s", err,
-			))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to create coordinator session: %s", err),
+			)
 			return
 		}
 
@@ -2434,8 +2438,9 @@ func (s *service) startFinalization(
 		if err := operatorSignerSession.Init(
 			root.CloneBytes(), batchOutputAmount, vtxoTree,
 		); err != nil {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to create signer session: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to create signer session: %s", err),
+			)
 			return
 		}
 
@@ -2443,8 +2448,9 @@ func (s *service) startFinalization(
 
 		nonces, err := operatorSignerSession.GetNonces()
 		if err != nil {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to generate musig2 nonces: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to generate musig2 nonces: %s", err),
+			)
 			return
 		}
 
@@ -2478,7 +2484,7 @@ func (s *service) startFinalization(
 		select {
 		case <-time.After(thirdOfRemainingDuration):
 			signingSession, _ := s.cache.TreeSigingSessions().Get(roundId)
-			s.cache.CurrentRound().Fail(errors.SIGNING_SESSION_TIMED_OUT.New(
+			s.cache.CurrentRound().Fail(ctx, errors.SIGNING_SESSION_TIMED_OUT.New(
 				"musig2 signing session timed out (nonce collection), collected %d/%d nonces",
 				len(signingSession.Nonces), len(uniqueSignerPubkeys),
 			))
@@ -2502,8 +2508,9 @@ func (s *service) startFinalization(
 
 		aggregatedNonces, err := coordinator.AggregateNonces()
 		if err != nil {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to aggregate nonces: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to aggregate nonces: %s", err),
+			)
 			return
 		}
 		operatorSignerSession.SetAggregatedNonces(aggregatedNonces)
@@ -2515,9 +2522,7 @@ func (s *service) startFinalization(
 		s.roundReportSvc.OpStarted(SendAggregatedTreeNoncesEventOp)
 
 		s.propagateRoundSigningNoncesGeneratedEvent(
-			aggregatedNonces,
-			coordinator.GetPublicNonces(),
-			vtxoTree,
+			ctx, aggregatedNonces, coordinator.GetPublicNonces(), vtxoTree,
 		)
 
 		s.roundReportSvc.OpEnded(SendAggregatedTreeNoncesEventOp)
@@ -2526,13 +2531,16 @@ func (s *service) startFinalization(
 
 		operatorSignatures, err := operatorSignerSession.Sign()
 		if err != nil {
-			s.cache.CurrentRound().Fail(errors.INTERNAL_ERROR.New("failed to sign tree: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to sign tree: %s", err),
+			)
 			return
 		}
 		_, err = coordinator.AddSignatures(s.operatorPubkey, operatorSignatures)
 		if err != nil {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("invalid operator tree signature: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("invalid operator tree signature: %s", err),
+			)
 			return
 		}
 
@@ -2547,7 +2555,7 @@ func (s *service) startFinalization(
 		select {
 		case <-time.After(thirdOfRemainingDuration):
 			signingSession, _ := s.cache.TreeSigingSessions().Get(roundId)
-			s.cache.CurrentRound().Fail(errors.SIGNING_SESSION_TIMED_OUT.New(
+			s.cache.CurrentRound().Fail(ctx, errors.SIGNING_SESSION_TIMED_OUT.New(
 				"musig2 signing session timed out (signatures collection), "+
 					"collected %d/%d signatures",
 				len(signingSession.Signatures), len(uniqueSignerPubkeys),
@@ -2566,8 +2574,9 @@ func (s *service) startFinalization(
 				shouldBan, err := coordinator.AddSignatures(pk, sig)
 				if err != nil && !shouldBan {
 					// an unexpected error occurred during the signature validation, batch fails
-					s.cache.CurrentRound().
-						Fail(errors.INTERNAL_ERROR.New("failed to validate signatures: %s", err))
+					s.cache.CurrentRound().Fail(
+						ctx, errors.INTERNAL_ERROR.New("failed to validate signatures: %s", err),
+					)
 					return
 				}
 
@@ -2588,8 +2597,9 @@ func (s *service) startFinalization(
 			// if some cosigners have to be banned, it means invalid signatures occured
 			// the round fails and those cosigners are banned
 			if len(cosignersToBan) > 0 {
-				s.cache.CurrentRound().
-					Fail(errors.INTERNAL_ERROR.New("some musig2 signatures are invalid"))
+				s.cache.CurrentRound().Fail(
+					ctx, errors.INTERNAL_ERROR.New("some musig2 signatures are invalid"),
+				)
 				go s.banCosignerInputs(ctx, cosignersToBan, registeredIntents)
 				return
 			}
@@ -2603,8 +2613,9 @@ func (s *service) startFinalization(
 
 		signedTree, err := coordinator.SignTree()
 		if err != nil {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to aggregate tree signatures: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to aggregate tree signatures: %s", err),
+			)
 			return
 		}
 
@@ -2615,25 +2626,27 @@ func (s *service) startFinalization(
 		vtxoTree = signedTree
 		flatVtxoTree, err = vtxoTree.Serialize()
 		if err != nil {
-			s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to serialize vtxo tree: %s", err))
+			s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to serialize vtxo tree: %s", err),
+			)
 			return
 		}
 
 		s.roundReportSvc.StageEnded(TreeSigningStage)
 	}
 
-	round := s.cache.CurrentRound().Get()
+	round := s.cache.CurrentRound().Get(ctx)
 	_, err = round.StartFinalization(
 		connectorAddress, flatConnectors, flatVtxoTree,
 		round.CommitmentTxid, round.CommitmentTx, s.batchExpiry.Seconds(),
 	)
 	if err != nil {
-		s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to start finalization: %s", err))
+		s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to start finalization: %s", err),
+		)
 		return
 	}
-	if err := s.cache.CurrentRound().Upsert(func(_ *domain.Round) *domain.Round {
+	if err := s.cache.CurrentRound().Upsert(ctx, func(_ *domain.Round) *domain.Round {
 		return round
 	}); err != nil {
 		log.Errorf("failed to upsert round: %s", err)
@@ -2646,16 +2659,8 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	var stopped bool
 	ctx := context.Background()
-	roundId := s.cache.CurrentRound().Get().Id
-
-	defer func() {
-		if !stopped {
-			s.wg.Add(1)
-			go s.startRound()
-		}
-	}()
-
-	defer s.cache.Intents().DeleteVtxos()
+	roundId := s.cache.CurrentRound().Get(ctx).Id
+	commitmentTxid := s.cache.CurrentRound().Get(ctx).CommitmentTxid
 
 	select {
 	case <-s.ctx.Done():
@@ -2664,32 +2669,27 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 	default:
 	}
 
-	if s.cache.CurrentRound().Get().IsFailed() {
-		return
-	}
-
 	var changes []domain.Event
 	defer func() {
-		if err := s.saveEvents(ctx, roundId, changes); err != nil {
-			log.WithError(err).Warn("failed to store new round events")
+		if stopped {
 			return
 		}
+
+		if err := s.saveEvents(ctx, roundId, changes); err != nil {
+			log.WithError(err).Error("failed to store new round events")
+		}
+		s.wg.Add(1)
+		go s.startRound()
 	}()
+
+	if s.cache.CurrentRound().Get(ctx).IsFailed() {
+		return
+	}
 
 	s.roundReportSvc.StageStarted(ForfeitTxsCollectionStage)
 
-	commitmentTx, err := psbt.NewFromRawBytes(
-		strings.NewReader(s.cache.CurrentRound().Get().CommitmentTx), true,
-	)
-	if err != nil {
-		changes = s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to parse commitment tx: %s", err))
-		return
-	}
-
-	commitmentTxid := commitmentTx.UnsignedTx.TxID()
 	includesBoardingInputs := s.cache.BoardingInputs().Get() > 0
-	txToSign := s.cache.CurrentRound().Get().CommitmentTx
+	txToSign := s.cache.CurrentRound().Get(ctx).CommitmentTx
 	forfeitTxs := make([]domain.ForfeitTx, 0)
 
 	if s.cache.ForfeitTxs().Len() > 0 || includesBoardingInputs {
@@ -2705,10 +2705,10 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 		s.roundReportSvc.OpEnded(WaitForForfeitTxsOp)
 
-		txToSign = s.cache.CurrentRound().Get().CommitmentTx
-		commitmentTx, err = psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
+		txToSign = s.cache.CurrentRound().Get(ctx).CommitmentTx
+		commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
 		if err != nil {
-			changes = s.cache.CurrentRound().Fail(errors.INTERNAL_ERROR.New(
+			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
 				"failed to parse commitment tx: %s", err,
 			))
 			return
@@ -2716,8 +2716,9 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 		forfeitTxList, err := s.cache.ForfeitTxs().Pop()
 		if err != nil {
-			changes = s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
+			changes = s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("failed to finalize round: %s", err),
+			)
 			return
 		}
 
@@ -2725,8 +2726,9 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		if !s.cache.ForfeitTxs().AllSigned() {
 			go s.banForfeitCollectionTimeout(ctx, roundId)
 
-			changes = s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("missing forfeit transactions"))
+			changes = s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("missing forfeit transactions"),
+			)
 			return
 		}
 
@@ -2734,8 +2736,9 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 		// verify is forfeit tx signatures are valid, if not we ban the associated scripts
 		if convictions := s.verifyForfeitTxsSigs(roundId, forfeitTxList); len(convictions) > 0 {
-			changes = s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("invalid forfeit txs signature"))
+			changes = s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("invalid forfeit txs signature"),
+			)
 			go func() {
 				if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
 					log.WithError(err).Warn("failed to ban vtxos")
@@ -2745,6 +2748,43 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		s.roundReportSvc.OpEnded(VerifyForfeitsSignaturesOp)
+
+		// Get all signatures for boarding inputs we collected in the cache
+		signedInputs, err := s.cache.BoardingInputs().GetSignatures(ctx, commitmentTxid)
+		if err != nil {
+			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
+				"failed to get sigend boarding inputs: %s", err,
+			))
+			return
+		}
+
+		// Add boarding input signatures to the unsigned tx
+		for inIndex, sig := range signedInputs {
+			commitmentTx.Inputs[inIndex].TaprootScriptSpendSig = sig.Signatures
+			commitmentTx.Inputs[inIndex].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+				sig.LeafScript,
+			}
+		}
+
+		// Update the commitment tx stored in cache
+		commitmentTxWithSignedBoardingIns, err := commitmentTx.B64Encode()
+		if err != nil {
+			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
+				"failed to serialize commitment tx: %s", err,
+			))
+			return
+		}
+
+		round := s.cache.CurrentRound().Get(ctx)
+		round.CommitmentTx = commitmentTxWithSignedBoardingIns
+		if err := s.cache.CurrentRound().Upsert(ctx, func(_ *domain.Round) *domain.Round {
+			return round
+		}); err != nil {
+			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
+				"failed to update round in cache: %s", err,
+			))
+			return
+		}
 
 		boardingInputsIndexes := make([]int, 0)
 		convictions := make([]domain.Conviction, 0)
@@ -2773,8 +2813,9 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		if len(convictions) > 0 {
-			changes = s.cache.CurrentRound().
-				Fail(errors.INTERNAL_ERROR.New("missing boarding inputs signatures"))
+			changes = s.cache.CurrentRound().Fail(
+				ctx, errors.INTERNAL_ERROR.New("missing boarding inputs signatures"),
+			)
 			go func() {
 				if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
 					log.WithError(err).Warn("failed to ban boarding inputs")
@@ -2789,14 +2830,12 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 			log.Debugf("signing boarding inputs of commitment tx for round %s\n", roundId)
 
 			txToSign, err = s.signer.SignTransactionTapscript(
-				ctx,
-				s.cache.CurrentRound().Get().CommitmentTx,
-				boardingInputsIndexes,
+				ctx, s.cache.CurrentRound().Get(ctx).CommitmentTx, boardingInputsIndexes,
 			)
 			if err != nil {
-				changes = s.cache.CurrentRound().Fail(
-					errors.INTERNAL_ERROR.New("failed to sign boarding inputs of commitment tx: %s", err),
-				)
+				changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
+					"failed to sign boarding inputs of commitment tx: %s", err,
+				))
 				return
 			}
 
@@ -2825,7 +2864,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 	signedCommitmentTx, err := s.wallet.SignTransaction(ctx, txToSign, true)
 	if err != nil {
 		changes = s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to sign commitment tx: %s", err))
+			Fail(ctx, errors.INTERNAL_ERROR.New("failed to sign commitment tx: %s", err))
 		return
 	}
 
@@ -2834,31 +2873,33 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	if _, err := s.wallet.BroadcastTransaction(ctx, signedCommitmentTx); err != nil {
 		changes = s.cache.CurrentRound().Fail(
-			errors.INTERNAL_ERROR.New("failed to broadcast commitment tx: %s", err),
+			ctx, errors.INTERNAL_ERROR.New("failed to broadcast commitment tx: %s", err),
 		)
 		return
 	}
 
 	s.roundReportSvc.OpEnded(PublishCommitmentTxOp)
 
-	round := s.cache.CurrentRound().Get()
+	round := s.cache.CurrentRound().Get(ctx)
 	changes, err = round.EndFinalization(forfeitTxs, signedCommitmentTx)
 	if err != nil {
-		changes = s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
+		changes = s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to finalize round: %s", err),
+		)
 		return
 	}
-	if err := s.cache.CurrentRound().Upsert(func(m *domain.Round) *domain.Round {
+	if err := s.cache.CurrentRound().Upsert(ctx, func(m *domain.Round) *domain.Round {
 		return round
 	}); err != nil {
-		changes = s.cache.CurrentRound().
-			Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
+		changes = s.cache.CurrentRound().Fail(
+			ctx, errors.INTERNAL_ERROR.New("failed to finalize round: %s", err),
+		)
 		return
 	}
 
 	totalInputsVtxos := s.cache.ForfeitTxs().Len()
-	totalOutputVtxos := len(s.cache.CurrentRound().Get().VtxoTree.Leaves())
-	numOfTreeNodes := len(s.cache.CurrentRound().Get().VtxoTree)
+	totalOutputVtxos := len(s.cache.CurrentRound().Get(ctx).VtxoTree.Leaves())
+	numOfTreeNodes := len(s.cache.CurrentRound().Get(ctx).VtxoTree)
 
 	s.roundReportSvc.StageEnded(SignAndPublishCommitmentTxStage)
 
@@ -3016,7 +3057,7 @@ func (s *service) propagateBatchStartedEvent(intents []ports.TimedIntent) {
 
 	ev := BatchStarted{
 		RoundEvent: domain.RoundEvent{
-			Id:   s.cache.CurrentRound().Get().Id,
+			Id:   s.cache.CurrentRound().Get(context.Background()).Id,
 			Type: domain.EventTypeUndefined,
 		},
 		IntentIdsHashes: hashedIntentIds,
@@ -3028,7 +3069,7 @@ func (s *service) propagateBatchStartedEvent(intents []ports.TimedIntent) {
 func (s *service) propagateRoundSigningStartedEvent(
 	vtxoTree *tree.TxTree, cosignersPubkeys []string,
 ) {
-	round := s.cache.CurrentRound().Get()
+	round := s.cache.CurrentRound().Get(context.Background())
 
 	events := append(
 		treeTxEvents(vtxoTree, 0, round.Id, getVtxoTreeTopic),
@@ -3046,14 +3087,13 @@ func (s *service) propagateRoundSigningStartedEvent(
 }
 
 func (s *service) propagateRoundSigningNoncesGeneratedEvent(
-	combinedNonces tree.TreeNonces,
-	publicNoncesMap map[string]tree.TreeNonces,
-	vtxoTree *tree.TxTree,
+	ctx context.Context, combinedNonces tree.TreeNonces,
+	publicNoncesMap map[string]tree.TreeNonces, vtxoTree *tree.TxTree,
 ) {
-	events := treeTxNoncesEvents(vtxoTree, s.cache.CurrentRound().Get().Id, publicNoncesMap)
+	events := treeTxNoncesEvents(vtxoTree, s.cache.CurrentRound().Get(ctx).Id, publicNoncesMap)
 	events = append(events, TreeNoncesAggregated{
 		RoundEvent: domain.RoundEvent{
-			Id:   s.cache.CurrentRound().Get().Id,
+			Id:   s.cache.CurrentRound().Get(ctx).Id,
 			Type: domain.EventTypeUndefined,
 		},
 		Nonces: combinedNonces,
@@ -3088,23 +3128,21 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 	}
 }
 
-func (s *service) checkForfeitsAndBoardingSigsSent() {
-	tx := s.cache.CurrentRound().Get().CommitmentTx
-	commitmentTx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-	numOfInputsSigned := 0
-	for _, v := range commitmentTx.Inputs {
-		if len(v.TaprootScriptSpendSig) > 0 {
-			if len(v.TaprootScriptSpendSig[0].Signature) > 0 {
-				numOfInputsSigned++
-			}
-		}
+func (s *service) checkForfeitsAndBoardingSigsSent(commitmentTxid string) {
+	// NOTE: This assumes users submit all their signatures in one shot, and whatever
+	// we get from the cache are all required sigs to finalize the boarding inputs
+	// once we also sign them
+	sigs, err := s.cache.BoardingInputs().GetSignatures(context.Background(), commitmentTxid)
+	if err != nil {
+		log.WithError(err).Error("failed to get boarding input signatures from cache")
+		return
 	}
 
 	// Condition: all forfeit txs are signed and
 	// the number of signed boarding inputs matches
 	// numOfBoardingInputs we expect
 	numOfBoardingInputs := s.cache.BoardingInputs().Get()
-	if s.cache.ForfeitTxs().AllSigned() && numOfBoardingInputs == numOfInputsSigned {
+	if s.cache.ForfeitTxs().AllSigned() && numOfBoardingInputs == len(sigs) {
 		select {
 		case s.forfeitsBoardingSigsChan <- struct{}{}:
 		default:

@@ -2,18 +2,24 @@ package redislivestore
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	currentRoundKey   = "currentRoundStore:round"
-	boardingInputsKey = "boardingInputsStore:numOfInputs"
+	currentRoundKey      = "currentRoundStore:round"
+	boardingInputsKey    = "boardingInputsStore:numOfInputs"
+	boardingInputSigsKey = "boardingInputsStore:signatures"
 )
 
 type currentRoundStore struct {
@@ -22,18 +28,20 @@ type currentRoundStore struct {
 }
 
 type boardingInputsStore struct {
-	rdb *redis.Client
+	rdb          *redis.Client
+	numOfRetries int
 }
 
 func NewCurrentRoundStore(rdb *redis.Client, numOfRetries int) ports.CurrentRoundStore {
 	return &currentRoundStore{rdb: rdb, numOfRetries: numOfRetries}
 }
 
-func (s *currentRoundStore) Upsert(fn func(m *domain.Round) *domain.Round) error {
-	ctx := context.Background()
+func (s *currentRoundStore) Upsert(
+	ctx context.Context, fn func(m *domain.Round) *domain.Round,
+) (err error) {
 	for attempt := 0; attempt < s.numOfRetries; attempt++ {
-		if err := s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			updated := fn(s.Get())
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			updated := fn(s.Get(ctx))
 			val, err := json.Marshal(updated)
 			if err != nil {
 				return err
@@ -44,16 +52,15 @@ func (s *currentRoundStore) Upsert(fn func(m *domain.Round) *domain.Round) error
 			})
 
 			return err
-		}); err != nil {
-			return err
+		}); err == nil {
+			return nil
 		}
 	}
-
-	return nil
+	return err
 }
 
-func (s *currentRoundStore) Get() *domain.Round {
-	data, err := s.rdb.Get(context.Background(), currentRoundKey).Bytes()
+func (s *currentRoundStore) Get(ctx context.Context) *domain.Round {
+	data, err := s.rdb.Get(ctx, currentRoundKey).Bytes()
 	if err != nil {
 		return nil
 	}
@@ -146,9 +153,9 @@ func (s *currentRoundStore) Get() *domain.Round {
 	return &round
 }
 
-func (s *currentRoundStore) Fail(err error) []domain.Event {
+func (s *currentRoundStore) Fail(ctx context.Context, err error) []domain.Event {
 	var events []domain.Event
-	if err := s.Upsert(func(m *domain.Round) *domain.Round {
+	if err := s.Upsert(ctx, func(m *domain.Round) *domain.Round {
 		m.Fail(err)
 		return m
 	}); err != nil {
@@ -156,7 +163,7 @@ func (s *currentRoundStore) Fail(err error) []domain.Event {
 		return nil
 	}
 
-	round := s.Get()
+	round := s.Get(ctx)
 	if round == nil {
 		return nil
 	}
@@ -165,8 +172,8 @@ func (s *currentRoundStore) Fail(err error) []domain.Event {
 	return events
 }
 
-func NewBoardingInputsStore(rdb *redis.Client) ports.BoardingInputsStore {
-	return &boardingInputsStore{rdb: rdb}
+func NewBoardingInputsStore(rdb *redis.Client, numOfRetries int) ports.BoardingInputsStore {
+	return &boardingInputsStore{rdb: rdb, numOfRetries: numOfRetries}
 }
 
 func (b *boardingInputsStore) Set(numOfInputs int) {
@@ -181,4 +188,161 @@ func (b *boardingInputsStore) Get() int {
 		return 0
 	}
 	return num
+}
+
+func (b *boardingInputsStore) AddSignatures(
+	ctx context.Context, batchId string, inputSigs map[uint32]ports.SignedBoardingInput,
+) (err error) {
+	key := fmt.Sprintf("%s:%s", boardingInputSigsKey, batchId)
+
+	// Prepare arguments first so serialization errors happen before the transaction
+	type fieldVal struct {
+		field string
+		value string
+	}
+	fields := make([]fieldVal, 0, len(inputSigs))
+
+	for inIndex, sig := range inputSigs {
+		field := fmt.Sprintf("%d", inIndex)
+		value, err := newSigsDTO(sig).serialize()
+		if err != nil {
+			return err
+		}
+		fields = append(fields, fieldVal{field, string(value)})
+	}
+
+	// Transactional update with retry logic
+	for range b.numOfRetries {
+		if err = b.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				for _, fv := range fields {
+					pipe.HSetNX(ctx, key, fv.field, fv.value)
+				}
+				return nil
+			})
+			return err
+		}, key); err == nil {
+			return nil
+		}
+		<-time.After(100 * time.Millisecond)
+	}
+
+	return err
+}
+
+func (b *boardingInputsStore) GetSignatures(
+	ctx context.Context, batchId string,
+) (map[uint32]ports.SignedBoardingInput, error) {
+	key := fmt.Sprintf("%s:%s", boardingInputSigsKey, batchId)
+	values, err := b.rdb.HGetAll(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[uint32]ports.SignedBoardingInput)
+	for key, value := range values {
+		rawSig := &sigsDTO{}
+		sig, err := rawSig.deserialize([]byte(value))
+		if err != nil {
+			return nil, err
+		}
+		inIndex, err := strconv.Atoi(key)
+		if err != nil {
+			return nil, err
+		}
+
+		m[uint32(inIndex)] = *sig
+	}
+	return m, nil
+}
+
+func (b *boardingInputsStore) DeleteSignatures(ctx context.Context, batchId string) error {
+	key := fmt.Sprintf("%s:%s", boardingInputSigsKey, batchId)
+	return b.rdb.Del(ctx, key).Err()
+}
+
+type sigDTO struct {
+	XOnlyPubKey string `json:"xOnlyPubkey"`
+	LeafHash    string `json:"leafHash"`
+	Signature   string `json:"signature"`
+	SigHash     uint32 `json:"sighash"`
+}
+
+type leafScriptDTO struct {
+	ControlBlock string `json:"controlBlock"`
+	Script       string `json:"script"`
+	LeafVersion  uint32 `json:"leafVersion"`
+}
+
+type sigsDTO struct {
+	Signatures []sigDTO      `json:"signatures"`
+	LeafScript leafScriptDTO `json:"leafScript"`
+}
+
+func newSigsDTO(in ports.SignedBoardingInput) sigsDTO {
+	sigs := make([]sigDTO, 0, len(in.Signatures))
+	for _, s := range in.Signatures {
+		sigs = append(sigs, sigDTO{
+			XOnlyPubKey: hex.EncodeToString(s.XOnlyPubKey),
+			LeafHash:    hex.EncodeToString(s.LeafHash),
+			Signature:   hex.EncodeToString(s.Signature),
+			SigHash:     uint32(s.SigHash),
+		})
+	}
+	leafScript := leafScriptDTO{
+		ControlBlock: hex.EncodeToString(in.LeafScript.ControlBlock),
+		Script:       hex.EncodeToString(in.LeafScript.Script),
+		LeafVersion:  uint32(in.LeafScript.LeafVersion),
+	}
+	return sigsDTO{
+		Signatures: sigs,
+		LeafScript: leafScript,
+	}
+}
+
+func (s sigsDTO) serialize() ([]byte, error) {
+	return json.Marshal(s)
+}
+
+func (s sigsDTO) deserialize(buf []byte) (*ports.SignedBoardingInput, error) {
+	if err := json.Unmarshal(buf, &s); err != nil {
+		return nil, err
+	}
+
+	sigs := make([]*psbt.TaprootScriptSpendSig, 0, len(s.Signatures))
+	for _, rawSig := range s.Signatures {
+		xOnlyPubkey, err := hex.DecodeString(rawSig.XOnlyPubKey)
+		if err != nil {
+			return nil, err
+		}
+		leafHash, err := hex.DecodeString(rawSig.LeafHash)
+		if err != nil {
+			return nil, err
+		}
+		sig, err := hex.DecodeString(rawSig.Signature)
+		if err != nil {
+			return nil, err
+		}
+		sigs = append(sigs, &psbt.TaprootScriptSpendSig{
+			XOnlyPubKey: xOnlyPubkey,
+			LeafHash:    leafHash,
+			Signature:   sig,
+			SigHash:     txscript.SigHashType(rawSig.SigHash),
+		})
+	}
+	cb, err := hex.DecodeString(s.LeafScript.ControlBlock)
+	if err != nil {
+		return nil, err
+	}
+	script, err := hex.DecodeString(s.LeafScript.Script)
+	if err != nil {
+		return nil, err
+	}
+	return &ports.SignedBoardingInput{
+		Signatures: sigs,
+		LeafScript: &psbt.TaprootTapLeafScript{
+			ControlBlock: cb,
+			Script:       script,
+			LeafVersion:  txscript.TapscriptLeafVersion(s.LeafScript.LeafVersion),
+		},
+	}, nil
 }
