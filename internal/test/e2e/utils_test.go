@@ -442,6 +442,7 @@ func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types
 	require.NoError(t, incomingErr)
 	require.NotEmpty(t, incomingFunds)
 
+	time.Sleep(time.Second)
 	return incomingFunds[0]
 }
 

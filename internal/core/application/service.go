@@ -1999,10 +1999,26 @@ func (s *service) startRound() {
 	default:
 	}
 
-	// reset the forfeit txs map to avoid polluting the next batch of forfeits transactions
-	s.cache.ForfeitTxs().Reset()
-
 	ctx := context.Background()
+	existingRound := s.cache.CurrentRound().Get(ctx)
+
+	// Reset the cache for the new batch
+	s.cache.ForfeitTxs().Reset()
+	s.cache.Intents().DeleteVtxos()
+	s.cache.ConfirmationSessions().Reset()
+	if existingRound != nil {
+		if existingRound.Id != "" {
+			s.cache.TreeSigingSessions().Delete(existingRound.Id)
+		}
+		if existingRound.CommitmentTxid != "" {
+			if err := s.cache.BoardingInputs().DeleteSignatures(
+				context.Background(), existingRound.CommitmentTxid,
+			); err != nil {
+				log.WithError(err).Error("failed to delete boarding input signatures from cache")
+			}
+		}
+	}
+
 	round := domain.NewRound()
 	// nolint
 	round.StartRegistration()
@@ -2075,14 +2091,11 @@ func (s *service) startConfirmation(
 			return
 		}
 
-		s.cache.ConfirmationSessions().Reset()
-
 		if err := s.saveEvents(ctx, roundId, s.cache.CurrentRound().Get(ctx).Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
 		}
 
 		if s.cache.CurrentRound().Get(ctx).IsFailed() {
-			s.cache.Intents().DeleteVtxos()
 			go s.startRound()
 			return
 		}
@@ -2285,19 +2298,11 @@ func (s *service) startFinalization(
 
 		round := s.cache.CurrentRound().Get(ctx)
 
-		s.cache.TreeSigingSessions().Delete(round.Id)
-
 		if err := s.saveEvents(ctx, roundId, round.Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
 		}
 
 		if round.IsFailed() {
-			s.cache.Intents().DeleteVtxos()
-			if err := s.cache.BoardingInputs().DeleteSignatures(
-				ctx, round.CommitmentTxid,
-			); err != nil {
-				log.WithError(err).Error("failed to delete boarding input signatures from cache")
-			}
 			go s.startRound()
 			return
 		}
@@ -2657,20 +2662,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 	roundId := s.cache.CurrentRound().Get(ctx).Id
 	commitmentTxid := s.cache.CurrentRound().Get(ctx).CommitmentTxid
 
-	defer func() {
-		if !stopped {
-			s.wg.Add(1)
-			go s.startRound()
-		}
-	}()
-
-	defer func() {
-		s.cache.Intents().DeleteVtxos()
-		if err := s.cache.BoardingInputs().DeleteSignatures(ctx, commitmentTxid); err != nil {
-			log.WithError(err).Error("failed to delete boarding input signatures from cache")
-		}
-	}()
-
 	select {
 	case <-s.ctx.Done():
 		stopped = true
@@ -2678,17 +2669,22 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 	default:
 	}
 
+	var changes []domain.Event
+	defer func() {
+		if stopped {
+			return
+		}
+
+		if err := s.saveEvents(ctx, roundId, changes); err != nil {
+			log.WithError(err).Error("failed to store new round events")
+		}
+		s.wg.Add(1)
+		go s.startRound()
+	}()
+
 	if s.cache.CurrentRound().Get(ctx).IsFailed() {
 		return
 	}
-
-	var changes []domain.Event
-	defer func() {
-		if err := s.saveEvents(ctx, roundId, changes); err != nil {
-			log.WithError(err).Warn("failed to store new round events")
-			return
-		}
-	}()
 
 	s.roundReportSvc.StageStarted(ForfeitTxsCollectionStage)
 

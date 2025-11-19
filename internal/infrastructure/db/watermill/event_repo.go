@@ -110,7 +110,7 @@ func (e *eventRepository) dispatch(topic string, id string) {
 
 	// remove the cached events for this id if the last event is a final one
 	lastEvent := events[len(events)-1]
-	if noMoreEventsAfter(lastEvent.GetType()) {
+	if noMoreEventsAfter(lastEvent) {
 		e.caches[topic].remove(id)
 	}
 }
@@ -137,9 +137,20 @@ func toWatermillMessages(events []domain.Event) []*message.Message {
 	return watermillMessages
 }
 
-func noMoreEventsAfter(eventType domain.EventType) bool {
-	return eventType == domain.EventTypeOffchainTxFailed ||
-		eventType == domain.EventTypeOffchainTxFinalized ||
-		eventType == domain.EventTypeRoundFailed ||
-		eventType == domain.EventTypeRoundFinalized
+// noMoreEventsAfter this function returns whether it is expected to receive other events after
+// the provided one. No more events are expected in case the current is a failing or a
+// succeeding one:
+//   - fail: OffchainTxFailed | RoundFailed
+//   - success: OffchainTxFinalized | BatchSwept and must contain FullySwept true
+func noMoreEventsAfter(event domain.Event) bool {
+	eventType := event.GetType()
+	if eventType == domain.EventTypeOffchainTxFailed ||
+		eventType == domain.EventTypeOffchainTxFinalized {
+		return true
+	}
+	if eventType == domain.EventTypeRoundFailed {
+		return true
+	}
+	e, ok := event.(domain.BatchSwept)
+	return ok && e.FullySwept
 }
