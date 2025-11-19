@@ -600,6 +600,18 @@ func testSweep(t *testing.T) {
 			events, err = round.Sweep(vtxos, make([]domain.Outpoint, 0), "sweepTxid", emptyPtx)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
+
+			event, ok := events[0].(domain.BatchSwept)
+			require.True(t, ok)
+			require.Equal(t, domain.EventTypeBatchSwept, event.Type)
+			require.Equal(t, round.Id, event.Id)
+			require.Exactly(t, vtxos, event.LeafVtxos)
+			require.Exactly(t, make([]domain.Outpoint, 0), event.PreconfirmedVtxos)
+			require.Equal(t, "sweepTxid", event.Txid)
+			require.Equal(t, emptyPtx, event.Tx)
+			require.True(t, event.FullySwept)
+			require.True(t, round.Swept)
+			require.Equal(t, round.SweepTxs["sweepTxid"], emptyPtx)
 		})
 	})
 }

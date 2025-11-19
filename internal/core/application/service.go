@@ -250,31 +250,10 @@ func NewService(
 
 			lastEvent := events[len(events)-1]
 			if lastEvent.GetType() == domain.EventTypeBatchSwept {
-				vtxoRepo := svc.repoManager.Vtxos()
 				batchSweptEvent := lastEvent.(domain.BatchSwept)
 				sweptVtxosOutpoints := append(
 					batchSweptEvent.LeafVtxos, batchSweptEvent.PreconfirmedVtxos...,
 				)
-
-				if batchSweptEvent.FullySwept {
-					dustLimit, err := svc.wallet.GetDustAmount(ctx)
-					if err != nil {
-						log.WithError(err).Warn("failed to get dust amount")
-						return
-					}
-
-					vtxoTaprootKeys, err := vtxoRepo.GetVtxoPubKeysByCommitmentTxid(
-						ctx,
-						round.CommitmentTxid,
-						dustLimit,
-					)
-					if err != nil {
-						log.WithError(err).Warn("failed to get vtxo taproot keys")
-						return
-					}
-
-					go svc.stopWatchingVtxos(vtxoTaprootKeys)
-				}
 
 				// sweep tx event
 				txEvent := TransactionEvent{

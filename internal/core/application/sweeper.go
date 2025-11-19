@@ -343,10 +343,9 @@ func (s *sweeper) scheduleBatchSweep(
 		return err
 	}
 
-	log.Debugf("sweeper: scheduled sweep for vtxo tree %s of batch %s at %s",
-		vtxoTree.Root.UnsignedTx.TxID(), commitmentTxid,
-		fancyTime(expirationTimestamp, s.scheduler.Unit()),
-	)
+	log.WithField("root", vtxoTree.Root.UnsignedTx.TxID()).
+		Debugf("sweeper: scheduled sweep for batch %s at %s",
+			commitmentTxid, fancyTime(expirationTimestamp, s.scheduler.Unit()))
 
 	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
 		log.WithError(err).Warnf(
@@ -406,11 +405,8 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 // if some parts of the tree have been broadcasted in the meantine, it will schedule the next taskes for the remaining parts of the tree
 func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxTree) func() error {
 	return func() error {
-		log.Debugf(
-			"sweeper: start analyzing batch %s of commitment %s",
-			vtxoTree.Root.UnsignedTx.TxID(),
-			commitmentTxid,
-		)
+		log.WithField("root", vtxoTree.Root.UnsignedTx.TxID()).Debugf(
+			"sweeper: start analyzing batch %s", commitmentTxid)
 
 		ctx := context.Background()
 		round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
