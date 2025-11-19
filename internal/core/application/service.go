@@ -423,7 +423,7 @@ func (s *service) SubmitOffchainTx(
 		if err := s.repoManager.Events().Save(
 			ctx, domain.OffchainTxTopic, txid, changes,
 		); err != nil {
-			log.WithError(err).Fatal("failed to save offchain tx events")
+			log.WithError(err).Error("failed to save offchain tx events")
 		}
 	}()
 
@@ -1072,7 +1072,7 @@ func (s *service) FinalizeOffchainTx(
 		if err = s.repoManager.Events().Save(
 			ctx, domain.OffchainTxTopic, txid, changes,
 		); err != nil {
-			log.WithError(err).Fatal("failed to save offchain tx events")
+			log.WithError(err).Error("failed to save offchain tx events")
 		}
 	}()
 
