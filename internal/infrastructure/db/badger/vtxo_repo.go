@@ -108,13 +108,6 @@ func (r *vtxoRepository) GetVtxos(
 	return vtxos, nil
 }
 
-func (r *vtxoRepository) GetVtxosForRound(
-	ctx context.Context, txid string,
-) ([]domain.Vtxo, error) {
-	query := badgerhold.Where("RootCommitmentTxid").Eq(txid)
-	return r.findVtxos(ctx, query)
-}
-
 func (r *vtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
@@ -157,11 +150,6 @@ func (r *vtxoRepository) GetAllSweepableUnrolledVtxos(
 		Eq("").
 		And("Spent").
 		Eq(true)
-	return r.findVtxos(ctx, query)
-}
-
-func (r *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtxo, error) {
-	query := badgerhold.Where("Unrolled").Eq(false).And("Swept").Eq(false)
 	return r.findVtxos(ctx, query)
 }
 
@@ -249,6 +237,53 @@ func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 		allVtxos = append(allVtxos, vtxos...)
 	}
 	return allVtxos, nil
+}
+
+func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
+	ctx context.Context, commitmentTxid string, amountFilter uint64,
+) ([]string, error) {
+	if commitmentTxid == "" {
+		return nil, nil
+	}
+
+	// Query vtxos where RootCommitmentTxid matches or CommitmentTxids contains the commitmentTxid
+	query1 := badgerhold.Where("RootCommitmentTxid").
+		Eq(commitmentTxid).
+		And("Amount").
+		Ge(amountFilter)
+	vtxos1, err := r.findVtxos(ctx, query1)
+	if err != nil {
+		return nil, err
+	}
+
+	query2 := badgerhold.Where("CommitmentTxids").
+		Contains(commitmentTxid).
+		And("Amount").
+		Ge(amountFilter)
+	vtxos2, err := r.findVtxos(ctx, query2)
+	if err != nil {
+		return nil, err
+	}
+
+	// Combine and deduplicate by pubkey
+	pubkeyMap := make(map[string]bool)
+	for _, vtxo := range vtxos1 {
+		if vtxo.Amount > amountFilter {
+			pubkeyMap[vtxo.PubKey] = true
+		}
+	}
+	for _, vtxo := range vtxos2 {
+		if vtxo.Amount > amountFilter {
+			pubkeyMap[vtxo.PubKey] = true
+		}
+	}
+
+	taprootKeys := make([]string, 0, len(pubkeyMap))
+	for pubkey := range pubkeyMap {
+		taprootKeys = append(taprootKeys, pubkey)
+	}
+
+	return taprootKeys, nil
 }
 
 func (r *vtxoRepository) Close() {
@@ -415,7 +450,7 @@ func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) erro
 	return nil
 }
 
-func (r *vtxoRepository) GetVtxosByCommitmentTxid(
+func (r *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	ctx context.Context,
 	txid string,
 ) ([]domain.Outpoint, error) {
@@ -434,7 +469,7 @@ func (r *vtxoRepository) GetVtxosByCommitmentTxid(
 		}
 		visitedTxids[currentTxid] = true
 
-		query := badgerhold.Where("CommitmentTxids").Contains(currentTxid)
+		query := badgerhold.Where("CommitmentTxids").Contains(currentTxid).And("Swept").Eq(false)
 		vtxos, err := r.findVtxos(ctx, query)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find vtxos for txid %s: %w", currentTxid, err)
@@ -448,6 +483,46 @@ func (r *vtxoRepository) GetVtxosByCommitmentTxid(
 					outpoints = append(outpoints, vtxo.Outpoint)
 				}
 
+				if vtxo.ArkTxid != "" {
+					queue = append(queue, vtxo.ArkTxid)
+				}
+			}
+		}
+	}
+
+	return outpoints, nil
+}
+
+func (r *vtxoRepository) GetAllChildrenVtxos(
+	ctx context.Context,
+	txid string,
+) ([]domain.Outpoint, error) {
+	visited := make(map[string]bool)
+	visitedTxids := make(map[string]bool)
+	var outpoints []domain.Outpoint
+
+	queue := []string{txid}
+
+	for len(queue) > 0 {
+		currentTxid := queue[0]
+		queue = queue[1:]
+
+		if visitedTxids[currentTxid] {
+			continue
+		}
+		visitedTxids[currentTxid] = true
+
+		query := badgerhold.Where("Txid").Eq(currentTxid)
+		vtxos, err := r.findVtxos(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find vtxos for txid %s: %w", currentTxid, err)
+		}
+
+		for _, vtxo := range vtxos {
+			outpointKey := vtxo.Outpoint.String()
+			if !visited[outpointKey] {
+				visited[outpointKey] = true
+				outpoints = append(outpoints, vtxo.Outpoint)
 				if vtxo.ArkTxid != "" {
 					queue = append(queue, vtxo.ArkTxid)
 				}

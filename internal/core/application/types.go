@@ -108,7 +108,7 @@ type TransactionEvent struct {
 	Type           TransactionEventType
 	SpentVtxos     []domain.Vtxo
 	SpendableVtxos []domain.Vtxo
-	SweptVtxos     []domain.Vtxo
+	SweptVtxos     []domain.Outpoint
 	CheckpointTxs  map[string]TxData
 }
 

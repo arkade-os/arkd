@@ -349,7 +349,8 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	round := domain.NewRoundFromEvents(events)
 
 	if err := s.roundStore.AddOrUpdateRound(ctx, *round); err != nil {
-		log.WithError(err).Fatalf("failed to add or update round %s", round.Id)
+		log.WithError(err).Errorf("failed to add or update round %s", round.Id)
+		return
 	}
 	log.Debugf("added or updated round %s", round.Id)
 
@@ -409,7 +410,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	offchainTx := domain.NewOffchainTxFromEvents(events)
 
 	if err := s.offchainTxStore.AddOrUpdateOffchainTx(ctx, offchainTx); err != nil {
-		log.WithError(err).Fatalf("failed to add or update offchain tx %s", offchainTx.ArkTxid)
+		log.WithError(err).Errorf("failed to add or update offchain tx %s", offchainTx.ArkTxid)
+		return
 	}
 	log.Debugf("added or updated offchain tx %s", offchainTx.ArkTxid)
 

@@ -433,7 +433,7 @@ func (s *service) onReady() {
 
 	withAppSvc := true
 	if err := s.start(withAppSvc); err != nil {
-		log.WithError(err).Fatal("failed to start service")
+		log.WithError(err).Error("failed to start service")
 		withAppSvc := true
 		withoutAppSvc := !withAppSvc
 		s.stop(withoutAppSvc)
