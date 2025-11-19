@@ -214,7 +214,7 @@ func (b *boardingInputsStore) AddSignatures(
 	// Transactional update with retry logic
 	for range b.numOfRetries {
 		if err = b.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			_, err := b.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				for _, fv := range fields {
 					pipe.HSetNX(ctx, key, fv.field, fv.value)
 				}
