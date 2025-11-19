@@ -2,12 +2,15 @@ package watermilldb
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"sync"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/arkade-os/arkd/internal/core/domain"
+	log "github.com/sirupsen/logrus"
 )
 
 type subscriber struct {
@@ -17,20 +20,18 @@ type subscriber struct {
 
 type eventRepository struct {
 	publisher message.Publisher
+	db        *sql.DB
 
 	subscribers    map[string][]subscriber // topic -> subscribers
 	subscriberLock *sync.Mutex
-	caches         map[string]*eventCache // topic -> cache
-	cacheLock      *sync.Mutex
 }
 
-func NewWatermillEventRepository(publisher message.Publisher) domain.EventRepository {
+func NewWatermillEventRepository(publisher message.Publisher, db *sql.DB) domain.EventRepository {
 	return &eventRepository{
 		publisher:      publisher,
+		db:             db,
 		subscribers:    make(map[string][]subscriber),
 		subscriberLock: &sync.Mutex{},
-		caches:         make(map[string]*eventCache),
-		cacheLock:      &sync.Mutex{},
 	}
 }
 
@@ -76,18 +77,6 @@ func (e *eventRepository) Save(
 	if err != nil {
 		return err
 	}
-
-	e.cacheLock.Lock()
-	defer e.cacheLock.Unlock()
-
-	// create cache if it doesn't exist
-	if _, ok := e.caches[topic]; !ok {
-		e.caches[topic] = newEventCache()
-	}
-
-	// push events to cache
-	e.caches[topic].add(id, events)
-
 	// dispatch events to subscribers
 	e.dispatch(topic, id)
 
@@ -95,24 +84,75 @@ func (e *eventRepository) Save(
 }
 
 func (e *eventRepository) dispatch(topic string, id string) {
-	// get events from cache
-	events := e.caches[topic].get(id)
+	// get all events for the topic from the database
+	events, err := e.getAllEvents(context.Background(), topic, id)
+	if err != nil {
+		return
+	}
+
 	if len(events) == 0 {
 		return
 	}
 
 	// run the handlers in go routines
 	e.subscriberLock.Lock()
+	defer e.subscriberLock.Unlock()
 	for _, subscriber := range e.subscribers[topic] {
 		go subscriber.handler(events)
 	}
-	e.subscriberLock.Unlock()
+}
 
-	// remove the cached events for this id if the last event is a final one
-	lastEvent := events[len(events)-1]
-	if noMoreEventsAfter(lastEvent.GetType()) {
-		e.caches[topic].remove(id)
+// getAllEvents queries the database for all historical messages in a topic filtered by id.
+// Watermill table name is (watermill_<topic>).
+// Messages are filtered by the Id field in the JSON payload (thanks to postgres JSONB type)
+// and ordered by created_at.
+func (e *eventRepository) getAllEvents(
+	ctx context.Context,
+	topic string,
+	id string,
+) ([]domain.Event, error) {
+	if e.db == nil {
+		return nil, fmt.Errorf("database not initialized")
 	}
+
+	query := fmt.Sprintf(
+		`SELECT payload FROM watermill_%s WHERE payload->>'Id' = $1 ORDER BY created_at ASC;`,
+		topic,
+	)
+
+	rows, err := e.db.QueryContext(ctx, query, id)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to query messages for topic %s with id %s: %w",
+			topic, id, err,
+		)
+	}
+	//nolint:errcheck
+	defer rows.Close()
+
+	events := make([]domain.Event, 0)
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, fmt.Errorf("failed to scan message payload: %w", err)
+		}
+
+		event, err := deserializeEvent(payload)
+		if err != nil {
+			log.WithError(err).Warnf("failed to deserialize event: %s", string(payload))
+			continue
+		}
+
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating messages for topic %s with id %s: %w",
+			topic, id, err,
+		)
+	}
+
+	return events, nil
 }
 
 func (e *eventRepository) publish(topic string, events []domain.Event) error {
@@ -137,9 +177,62 @@ func toWatermillMessages(events []domain.Event) []*message.Message {
 	return watermillMessages
 }
 
-func noMoreEventsAfter(eventType domain.EventType) bool {
-	return eventType == domain.EventTypeOffchainTxFailed ||
-		eventType == domain.EventTypeOffchainTxFinalized ||
-		eventType == domain.EventTypeRoundFailed ||
-		eventType == domain.EventTypeRoundFinalized
+func deserializeEvent(buf []byte) (domain.Event, error) {
+	var eventType struct {
+		Type domain.EventType
+	}
+
+	if err := json.Unmarshal(buf, &eventType); err != nil {
+		return nil, err
+	}
+
+	switch eventType.Type {
+	case domain.EventTypeRoundStarted:
+		var event = domain.RoundStarted{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeRoundFinalizationStarted:
+		var event = domain.RoundFinalizationStarted{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeRoundFinalized:
+		var event = domain.RoundFinalized{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeRoundFailed:
+		var event = domain.RoundFailed{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeIntentsRegistered:
+		var event = domain.IntentsRegistered{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeOffchainTxRequested:
+		var event = domain.OffchainTxRequested{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeOffchainTxAccepted:
+		var event = domain.OffchainTxAccepted{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeOffchainTxFinalized:
+		var event = domain.OffchainTxFinalized{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeOffchainTxFailed:
+		var event = domain.OffchainTxFailed{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	}
+
+	return nil, fmt.Errorf("unknown event")
 }
