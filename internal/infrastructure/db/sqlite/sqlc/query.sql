@@ -240,9 +240,6 @@ SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_
 UNION
 SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid IN (sqlc.slice('ids3'));
 
--- name: SelectSweepableVtxos :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND swept = false;
-
 -- name: SelectNotUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 
@@ -255,9 +252,6 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 -- name: SelectAllVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
--- name: SelectVtxosWithCommitmentTxid :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE commitment_txid = @commitment_txid;
-
 -- name: SelectVtxosWithPubkeys :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkey'));
 
@@ -267,8 +261,51 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 
--- name: SelectVtxoOutpointsByCommitmentTxid :many
-SELECT DISTINCT vtxo_txid, vtxo_vout FROM vtxo_commitment_txid WHERE commitment_txid = @commitment_txid;
+-- name: SelectVtxoPubKeysByCommitmentTxid :many
+SELECT DISTINCT v.pubkey
+FROM vtxo_vw v
+WHERE v.amount >= sqlc.arg('min_amount')
+  AND (v.commitment_txid = sqlc.arg('commitment_txid')
+    OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || sqlc.arg('commitment_txid') || ',%');
+
+-- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
+SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+WHERE v.swept = false
+  AND (v.commitment_txid = @commitment_txid
+    OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || @commitment_txid || ',%');
+
+-- name: SelectVtxosOutpointsByArkTxidRecursive :many
+WITH RECURSIVE descendants_chain AS (
+    -- seed
+    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
+           0 AS depth,
+           v.txid||':'||v.vout AS visited
+    FROM vtxo v
+    WHERE v.txid = @txid
+
+    UNION ALL
+
+    -- children: next vtxo(s) are those whose txid == current.ark_txid
+    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
+           w.depth + 1,
+           w.visited || ',' || (c.txid||':'||c.vout)
+    FROM descendants_chain w
+             JOIN vtxo c
+                  ON c.txid = w.ark_txid
+    WHERE w.ark_txid IS NOT NULL
+      AND w.visited NOT LIKE '%' || (c.txid||':'||c.vout) || '%'   -- cycle/visited guard
+),
+-- keep one row per node at its MIN depth (layers)
+nodes AS (
+   SELECT txid, vout, preconfirmed, MIN(depth) as depth
+   FROM descendants_chain
+   GROUP BY txid, vout, preconfirmed
+)
+SELECT txid, vout
+FROM nodes
+ORDER BY depth, txid, vout;
+
 
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');

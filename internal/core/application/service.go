@@ -252,20 +252,14 @@ func NewService(
 			if lastEvent.GetType() == domain.EventTypeBatchSwept {
 				batchSweptEvent := lastEvent.(domain.BatchSwept)
 				sweptVtxosOutpoints := append(
-					batchSweptEvent.LeafVtxos,
-					batchSweptEvent.PreconfirmedVtxos...)
-				sweptVtxos, err := svc.repoManager.Vtxos().GetVtxos(ctx, sweptVtxosOutpoints)
-				if err != nil {
-					log.WithError(err).Warn("failed to get swept vtxos")
-					return
-				}
-				go svc.stopWatchingVtxos(sweptVtxos)
+					batchSweptEvent.LeafVtxos, batchSweptEvent.PreconfirmedVtxos...,
+				)
 
 				// sweep tx event
 				txEvent := TransactionEvent{
 					TxData:     TxData{Tx: batchSweptEvent.Tx, Txid: batchSweptEvent.Txid},
 					Type:       SweepTxType,
-					SweptVtxos: sweptVtxos,
+					SweptVtxos: sweptVtxosOutpoints,
 				}
 				svc.propagateTransactionEvent(txEvent)
 				return
@@ -381,10 +375,23 @@ func (s *service) Stop() {
 	s.wg.Wait()
 	s.sweeperCancel()
 	s.sweeper.stop()
-	// nolint
-	vtxos, _ := s.repoManager.Vtxos().GetAllSweepableVtxos(ctx)
-	if len(vtxos) > 0 {
-		s.stopWatchingVtxos(vtxos)
+
+	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
+	if err == nil {
+		tapkeys := make([]string, 0)
+
+		for _, commitmentTxId := range commitmentTxIds {
+			keys, err := s.repoManager.Vtxos().
+				GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
+			if err != nil {
+				log.WithError(err).Warn("failed to get vtxo tap keys")
+				continue
+			}
+
+			tapkeys = append(tapkeys, keys...)
+		}
+
+		s.stopWatchingVtxos(tapkeys)
 	}
 
 	// nolint
@@ -3162,13 +3169,21 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 		return err
 	}
 
+	if len(scripts) <= 0 {
+		return nil
+	}
+
 	return s.scanner.WatchScripts(context.Background(), scripts)
 }
 
-func (s *service) stopWatchingVtxos(vtxos []domain.Vtxo) {
-	scripts, err := s.extractVtxosScriptsForScanner(vtxos)
-	if err != nil {
-		log.WithError(err).Warn("failed to extract scripts from vtxos")
+func (s *service) stopWatchingVtxos(tapkeys []string) {
+	scripts := make([]string, 0, len(tapkeys))
+	for _, key := range tapkeys {
+		// script = OP_1 OP_PUSHBYTES_32 <key>
+		scripts = append(scripts, fmt.Sprintf("5120%s", key))
+	}
+
+	if len(scripts) <= 0 {
 		return
 	}
 
@@ -3178,7 +3193,7 @@ func (s *service) stopWatchingVtxos(vtxos []domain.Vtxo) {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		log.Debugf("stopped watching %d vtxos", len(vtxos))
+		log.Debugf("stopped watching %d vtxo scripts", len(tapkeys))
 		break
 	}
 }
@@ -3186,34 +3201,33 @@ func (s *service) stopWatchingVtxos(vtxos []domain.Vtxo) {
 func (s *service) restoreWatchingVtxos() error {
 	ctx := context.Background()
 
-	sweepableBatches, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
+	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
 	if err != nil {
 		return err
 	}
 
-	vtxos := make([]domain.Vtxo, 0)
-	for _, txid := range sweepableBatches {
-		fromRound, err := s.repoManager.Vtxos().GetVtxosForRound(ctx, txid)
+	scripts := make([]string, 0)
+
+	for _, commitmentTxId := range commitmentTxIds {
+		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
 		if err != nil {
-			log.WithError(err).Warnf("failed to retrieve vtxos for round %s", txid)
-			continue
+			return err
 		}
-		for _, v := range fromRound {
-			if !v.Swept && !v.Unrolled {
-				vtxos = append(vtxos, v)
-			}
+
+		for _, key := range tapKeys {
+			scripts = append(scripts, fmt.Sprintf("5120%s", key))
 		}
 	}
 
-	if len(vtxos) <= 0 {
+	if len(scripts) <= 0 {
 		return nil
 	}
 
-	if err := s.startWatchingVtxos(vtxos); err != nil {
+	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
 		return err
 	}
 
-	log.Debugf("restored watching %d vtxos", len(vtxos))
+	log.Debugf("restored watching %d vtxo scripts", len(scripts))
 	return nil
 }
 
