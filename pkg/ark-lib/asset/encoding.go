@@ -37,6 +37,7 @@ func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {
 		if err := tlv.EUint32(w, &t.Vout, buf); err != nil {
 			return err
 		}
+
 		return nil
 	}
 	return tlv.NewTypeForEncodingErr(val, "assetInput")
@@ -72,6 +73,7 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		if err := tlv.DUint32(r, &t.Vout, buf, 4); err != nil {
 			return err
 		}
+
 		return nil
 	}
 	return tlv.NewTypeForDecodingErr(val, "assetInput", l, 36)
@@ -100,6 +102,10 @@ func EAssetOutput(w io.Writer, val interface{}, buf *[8]byte) error {
 		if err := tlv.EPubKey(w, &pk, buf); err != nil {
 			return err
 		}
+		if err := tlv.EUint32(w, &t.Vout, buf); err != nil {
+			return err
+		}
+
 		if err := tlv.EUint64(w, &t.Amount, buf); err != nil {
 			return err
 		}
@@ -110,8 +116,46 @@ func EAssetOutput(w io.Writer, val interface{}, buf *[8]byte) error {
 
 func AssetOutputListSize(l int) tlv.SizeFunc {
 	return func() uint64 {
-		return uint64(l) * 41
+		return uint64(l) * 45
 	}
+}
+
+func EControlOutput(w io.Writer, val interface{}, buf *[8]byte) error {
+	if t, ok := val.(*ControlOutput); ok {
+		pk := &t.PublicKey
+		if err := tlv.EPubKey(w, &pk, buf); err != nil {
+			return err
+		}
+		if err := tlv.EUint32(w, &t.Vout, buf); err != nil {
+			return err
+		}
+
+		return nil
+	}
+	return tlv.NewTypeForEncodingErr(val, "controlOutput")
+}
+
+func ControlOutputSize() uint64 {
+	return 37
+}
+
+func DControlOutput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
+	controlOutputSize := ControlOutputSize()
+
+	if t, ok := val.(*ControlOutput); ok && l == controlOutputSize {
+		var pk *btcec.PublicKey
+		if err := tlv.DPubKey(r, &pk, buf, 33); err != nil {
+			return err
+		}
+		t.PublicKey = *pk
+
+		if err := tlv.DUint32(r, &t.Vout, buf, 4); err != nil {
+			return err
+		}
+
+		return nil
+	}
+	return tlv.NewTypeForDecodingErr(val, "controlOutput", l, l)
 }
 
 func EAssetOutputList(w io.Writer, val interface{}, buf *[8]byte) error {
@@ -127,12 +171,16 @@ func EAssetOutputList(w io.Writer, val interface{}, buf *[8]byte) error {
 }
 
 func DAssetOutput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*AssetOutput); ok && l == 41 {
+	if t, ok := val.(*AssetOutput); ok && l == 45 {
 		var pk *btcec.PublicKey
 		if err := tlv.DPubKey(r, &pk, buf, 33); err != nil {
 			return err
 		}
 		t.PublicKey = *pk
+
+		if err := tlv.DUint32(r, &t.Vout, buf, 4); err != nil {
+			return err
+		}
 
 		if err := tlv.DUint64(r, &t.Amount, buf, 8); err != nil {
 			return err
@@ -144,13 +192,13 @@ func DAssetOutput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 
 func DAssetOutputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 	if t, ok := val.(*[]AssetOutput); ok {
-		if l%41 != 0 {
-			return tlv.NewTypeForDecodingErr(val, "assetOutputList", l, 41)
+		if l%45 != 0 {
+			return tlv.NewTypeForDecodingErr(val, "assetOutputList", l, 45)
 		}
-		numOutputs := int(l / 41)
+		numOutputs := int(l / 45)
 		*t = make([]AssetOutput, numOutputs)
 		for i := 0; i < numOutputs; i++ {
-			if err := DAssetOutput(r, &(*t)[i], buf, 41); err != nil {
+			if err := DAssetOutput(r, &(*t)[i], buf, 45); err != nil {
 				return err
 			}
 		}

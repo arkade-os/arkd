@@ -20,17 +20,17 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 			{
 				PublicKey: deterministicPubKey(t, 1),
 				Amount:    11,
+				Vout:      0,
 			},
 			{
 				PublicKey: deterministicPubKey(t, 2),
 				Amount:    22,
+				Vout:      1,
 			},
 		},
-		ControlOutputs: []AssetOutput{
-			{
-				PublicKey: deterministicPubKey(t, 3),
-				Amount:    33,
-			},
+		ControlOutput: ControlOutput{
+			PublicKey: deterministicPubKey(t, 3),
+			Vout:      2,
 		},
 		Inputs: []AssetInput{
 			{
@@ -54,7 +54,7 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	require.NotEmpty(t, encoded)
 
 	var decoded Asset
-	require.NoError(t, decoded.Decode(encoded))
+	require.NoError(t, decoded.decodeTlv(encoded))
 	require.Equal(t, asset, decoded)
 }
 
