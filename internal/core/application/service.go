@@ -2754,9 +2754,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		s.roundReportSvc.OpEnded(VerifyForfeitsSignaturesOp)
 
 		// Get all signatures for boarding inputs we collected in the cache
-		signedInputs, err := s.cache.BoardingInputs().GetSignatures(
-			ctx, fmt.Sprintf("%s:0", commitmentTxid),
-		)
+		signedInputs, err := s.cache.BoardingInputs().GetSignatures(ctx, commitmentTxid)
 		if err != nil {
 			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
 				"failed to get sigend boarding inputs: %s", err,
