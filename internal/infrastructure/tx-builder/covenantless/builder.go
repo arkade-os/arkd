@@ -1049,56 +1049,6 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 	return m, nil
 }
 
-// func (b *txBuilder) CombineTapscriptSigs(dest string, src string, indexes []int) (string, error) {
-// 	destinationTx, err := psbt.NewFromRawBytes(strings.NewReader(dest), true)
-// 	if err != nil {
-// 		return "", fmt.Errorf("failed to parse tx: %w", err)
-// 	}
-
-// 	sourceTx, err := psbt.NewFromRawBytes(strings.NewReader(src), true)
-// 	if err != nil {
-// 		return "", fmt.Errorf("failed to parse tx: %w", err)
-// 	}
-
-// 	if sourceTx.UnsignedTx.TxID() != destinationTx.UnsignedTx.TxID() {
-// 		return "", fmt.Errorf(
-// 			"failed to combine partial tx: txid mismatch (%s != %s)",
-// 			sourceTx.UnsignedTx.TxID(),
-// 			destinationTx.UnsignedTx.TxID(),
-// 		)
-// 	}
-
-// 	for _, inputIndex := range indexes {
-// 		if len(sourceTx.Inputs) <= inputIndex {
-// 			return "", fmt.Errorf(
-// 				"input index out of bounds %d, len(inputs)=%d",
-// 				inputIndex,
-// 				len(sourceTx.Inputs),
-// 			)
-// 		}
-// 		if len(destinationTx.Inputs) <= inputIndex {
-// 			return "", fmt.Errorf(
-// 				"input index out of bounds %d, len(inputs)=%d",
-// 				inputIndex,
-// 				len(destinationTx.Inputs),
-// 			)
-// 		}
-// 		tapscriptSig := sourceTx.Inputs[inputIndex].TaprootScriptSpendSig
-// 		tapscriptLeaf := sourceTx.Inputs[inputIndex].TaprootLeafScript
-// 		if len(tapscriptLeaf) != 1 {
-// 			continue
-// 		}
-// 		if len(tapscriptSig) == 0 {
-// 			continue
-// 		}
-
-// 		destinationTx.Inputs[inputIndex].TaprootScriptSpendSig = tapscriptSig
-// 		destinationTx.Inputs[inputIndex].TaprootLeafScript = tapscriptLeaf
-// 	}
-
-// 	return destinationTx.B64Encode()
-// }
-
 func (b *txBuilder) selectUtxos(
 	ctx context.Context, connectorAddresses []string, amount uint64,
 ) ([]ports.TxInput, uint64, error) {
