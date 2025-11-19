@@ -399,8 +399,22 @@ func (s *service) Stop() {
 	s.sweeperCancel()
 	s.sweeper.stop()
 	// nolint
-	tapkeys, _ := s.repoManager.Vtxos().GetAllSweepableVtxoTapKeys(ctx)
-	s.stopWatchingVtxos(tapkeys)
+	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
+	if err == nil {
+		tapkeys := make([]string, 0)
+
+		for _, commitmentTxId := range commitmentTxIds {
+			keys, err := s.repoManager.Vtxos().GetVtxoTapKeys(ctx, commitmentTxId, 0)
+			if err != nil {
+				log.WithError(err).Warn("failed to get vtxo tap keys")
+				continue
+			}
+
+			tapkeys = append(tapkeys, keys...)
+		}
+
+		s.stopWatchingVtxos(tapkeys)
+	}
 
 	// nolint
 	s.wallet.Lock(ctx)
@@ -3169,18 +3183,22 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 func (s *service) restoreWatchingVtxos() error {
 	ctx := context.Background()
 
-	tapKeys, err := s.repoManager.Vtxos().GetAllSweepableVtxoTapKeys(ctx)
+	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
 	if err != nil {
 		return err
 	}
 
-	if len(tapKeys) <= 0 {
-		return nil
-	}
+	scripts := make([]string, 0)
 
-	scripts := make([]string, 0, len(tapKeys))
-	for _, key := range tapKeys {
-		scripts = append(scripts, "5120"+key)
+	for _, commitmentTxId := range commitmentTxIds {
+		tapKeys, err := s.repoManager.Vtxos().GetVtxoTapKeys(ctx, commitmentTxId, 0)
+		if err != nil {
+			return err
+		}
+
+		for _, key := range tapKeys {
+			scripts = append(scripts, "5120"+key)
+		}
 	}
 
 	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {

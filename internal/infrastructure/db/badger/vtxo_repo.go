@@ -153,23 +153,6 @@ func (r *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	return r.findVtxos(ctx, query)
 }
 
-func (r *vtxoRepository) GetAllSweepableVtxoTapKeys(ctx context.Context) ([]string, error) {
-	query := badgerhold.Where("Unrolled").Eq(false).And("Swept").Eq(false)
-	vtxos, err := r.findVtxos(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	tapkeysMap := make(map[string]bool)
-	for _, vtxo := range vtxos {
-		tapkeysMap[vtxo.PubKey] = true
-	}
-	tapkeys := make([]string, 0, len(tapkeysMap))
-	for key := range tapkeysMap {
-		tapkeys = append(tapkeys, key)
-	}
-	return tapkeys, nil
-}
-
 func (r *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	return r.findVtxos(ctx, &badgerhold.Query{})
 }

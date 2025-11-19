@@ -78,14 +78,6 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) GetAllSweepableVtxoTapKeys(ctx context.Context) ([]string, error) {
-	res, err := v.querier.SelectSweepableVtxoTapKeys(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
-}
-
 func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {

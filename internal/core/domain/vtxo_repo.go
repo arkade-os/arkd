@@ -19,6 +19,5 @@ type VtxoRepository interface {
 	GetVtxoTapKeys(ctx context.Context, commitmentTxid string, withMinimumAmount uint64) (
 		[]string, error,
 	)
-	GetAllSweepableVtxoTapKeys(ctx context.Context) ([]string, error)
 	Close()
 }

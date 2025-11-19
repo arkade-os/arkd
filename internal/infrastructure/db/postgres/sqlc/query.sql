@@ -235,9 +235,6 @@ SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_
 UNION
 SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid = ANY($1::varchar[]);
 
--- name: SelectSweepableVtxoTapKeys :many
-SELECT DISTINCT pubkey FROM vtxo WHERE unrolled = false AND swept = false;
-
 -- name: SelectNotUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 

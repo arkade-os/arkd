@@ -100,15 +100,6 @@ func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) GetAllSweepableVtxoTapKeys(ctx context.Context) ([]string, error) {
-	res, err := v.querier.SelectSweepableVtxoTapKeys(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
-}
-
 func (v *vtxoRepository) GetAllNonUnrolledVtxos(
 	ctx context.Context, pubkey string,
 ) ([]domain.Vtxo, []domain.Vtxo, error) {
