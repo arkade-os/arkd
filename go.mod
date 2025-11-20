@@ -41,6 +41,7 @@ require (
 	github.com/meshapi/grpc-api-gateway v0.1.0
 	github.com/nbd-wtf/go-nostr v0.40.1
 	github.com/redis/go-redis/v9 v9.10.0
+	github.com/shopspring/decimal v1.2.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.20.1
 	github.com/sqlc-dev/pqtype v0.3.0

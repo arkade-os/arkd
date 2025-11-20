@@ -875,7 +875,6 @@ func (c *Config) alertsService() error {
 	}
 
 	c.alerts = alertsmanager.NewService(c.AlertManagerURL)
-	log.WithField("url", c.AlertManagerURL).Info("AlertManager client initialized")
 	return nil
 }
 

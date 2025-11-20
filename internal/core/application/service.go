@@ -327,12 +327,6 @@ func NewService(
 				return
 			}
 
-			go svc.publishAlert(ports.ArkTx, map[string]interface{}{
-				"txid":            txid,
-				"spent_vtxos":     len(spentVtxos),
-				"new_vtxos_count": len(newVtxos),
-			})
-
 			checkpointTxsByOutpoint := make(map[string]TxData)
 			for txid, tx := range offchainTx.CheckpointTxs {
 				// nolint
@@ -2863,30 +2857,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	s.roundReportSvc.RoundEnded(commitmentTxid, totalInputsVtxos, totalOutputVtxos, numOfTreeNodes)
 
-	go func() {
-		if s.alerts != nil {
-			confirmedBalance, unConfirmedBalance, _ := s.wallet.MainAccountBalance(ctx)
-			operatorInputAmount, miningFee, boardingInputs := commitmentTxStats(commitmentTx)
-			intentFees, numOfCollabExists := intentStats(round.Intents)
-			s.publishAlert(ports.BatchFinalized, map[string]interface{}{
-				"batch_id":                     round.Id,
-				"txid":                         round.CommitmentTxid,
-				"operator_input_amount_sats":   int(operatorInputAmount),
-				"operator_confirmed_balance":   int(confirmedBalance),
-				"operator_unconfirmed_balance": int(unConfirmedBalance),
-				"mining_fee_sats":              int(miningFee),
-				"intent_fees_sats":             int(intentFees),
-				"vtxos_spent": domain.Intents(
-					intentsToSlice(round.Intents),
-				).CountSpentVtxos(),
-				"boarding_inputs":    int(boardingInputs),
-				"intents_count":      len(round.Intents),
-				"collab_exits_count": int(numOfCollabExists),
-				"new_vtxos_count":    len(getNewVtxosFromRound(round)),
-				"latency_seconds":    int(round.EndingTimestamp - round.StartingTimestamp),
-			})
-		}
-	}()
+	go s.sendBatchAlert(ctx, s.cache.CurrentRound().Get(), commitmentTx)
 
 	log.Debugf("finalized round %s with commitment tx %s", roundId, commitmentTxid)
 }
@@ -3665,70 +3636,4 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
-}
-
-func (s *service) publishAlert(topic ports.Topic, message map[string]interface{}) {
-	if s.alerts == nil {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := s.alerts.Publish(ctx, topic, message); err != nil {
-		log.WithError(err).WithField("topic", topic).Warn("failed to publish alert")
-	}
-}
-
-func commitmentTxStats(ptx *psbt.Packet) (operatorInputAmount, miningFee, boardingInputs uint64) {
-	totalIn := uint64(0)
-	for _, input := range ptx.Inputs {
-		if input.WitnessUtxo != nil {
-			inputValue := uint64(input.WitnessUtxo.Value)
-			totalIn += inputValue
-
-			if len(input.TaprootLeafScript) > 0 {
-				boardingInputs++
-			} else {
-				operatorInputAmount += inputValue
-			}
-		}
-	}
-
-	totalOut := uint64(0)
-	for _, output := range ptx.UnsignedTx.TxOut {
-		totalOut += uint64(output.Value)
-	}
-
-	if totalIn > totalOut {
-		miningFee = totalIn - totalOut
-	}
-
-	return
-}
-
-func intentStats(intents map[string]domain.Intent) (intentFees, numOfCollabExists uint64) {
-	for _, intent := range intents {
-		inputAmount := intent.TotalInputAmount()
-		outputAmount := intent.TotalOutputAmount()
-		if inputAmount > outputAmount {
-			intentFees += inputAmount - outputAmount
-		}
-
-		for _, receiver := range intent.Receivers {
-			if receiver.IsOnchain() {
-				numOfCollabExists++
-			}
-		}
-	}
-
-	return
-}
-
-func intentsToSlice(intents map[string]domain.Intent) []domain.Intent {
-	slice := make([]domain.Intent, 0, len(intents))
-	for _, intent := range intents {
-		slice = append(slice, intent)
-	}
-	return slice
 }
