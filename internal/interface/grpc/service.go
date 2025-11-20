@@ -330,20 +330,6 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bo
 	handler := router(grpcServer, grpcGateway)
 	mux := http.NewServeMux()
 
-	if withPprof {
-		mux.HandleFunc("/debug/pprof/", pprof.Index)
-		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-		mux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
-		mux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
-		mux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
-		mux.Handle("/debug/pprof/block", pprof.Handler("block"))
-		mux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
-		log.Info("pprof enabled at /debug/pprof/")
-	}
-
 	mux.Handle("/", handler)
 
 	httpServerHandler := http.Handler(mux)
@@ -383,6 +369,21 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bo
 		adminGrpcGateway := http.Handler(adminGwmux)
 		adminHandler := router(adminGrpcServer, adminGrpcGateway)
 		adminMux := http.NewServeMux()
+
+		if withPprof {
+			adminMux.HandleFunc("/debug/pprof/", pprof.Index)
+			adminMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+			adminMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+			adminMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+			adminMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+			adminMux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+			adminMux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+			adminMux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+			adminMux.Handle("/debug/pprof/block", pprof.Handler("block"))
+			adminMux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+			log.Info("pprof enabled on admin port at /debug/pprof/")
+		}
+
 		adminMux.Handle("/", adminHandler)
 
 		adminHttpServerHandler := http.Handler(adminMux)

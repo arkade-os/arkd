@@ -1,4 +1,4 @@
-.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner run-simulation run-simulation-and-setup run-large-simulation run-simulation-exact-batch run-simulation-min-batch run-simulation-custom sqlc test vet
+.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate pprof psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner run-simulation run-simulation-and-setup run-large-simulation run-simulation-exact-batch run-simulation-min-batch run-simulation-custom sqlc test vet
 
 define setup_env
     $(eval include $(1))
@@ -210,6 +210,7 @@ run-simulation:
 	@echo "Test completed. Docker environment will remain running."
 	@echo "Run 'make docker-stop' to shut down the environment when finished."
 
+## pprof: run pprof tool (e.g. make pprof PROFILE=heap)
 pprof:
 	@echo "Running pprof..."
-	@go tool pprof -http=:8080 http://localhost:7070/debug/pprof/heap
+	@go tool pprof -http=:8080 http://localhost:7071/debug/pprof/$(PROFILE)
