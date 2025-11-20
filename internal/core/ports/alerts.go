@@ -14,14 +14,12 @@ type Topic string
 type BatchFinalizedAlert struct {
 	Id                                 string
 	CommitmentTxid                     string
-	CreatedAt                          string
-	EndedAt                            string
 	Duration                           string
-	LiquidityProviderInputCount        int
 	LiquidityProviderInputAmount       uint64
 	LiqudityProviderConfirmedBalance   uint64
 	LiqudityProviderUnconfirmedBalance uint64
 	LiquidityCost                      string
+	LiquidityProvided                  uint64
 	BoardingInputCount                 int
 	BoardingInputAmount                uint64
 	IntentsCount                       int

@@ -874,7 +874,7 @@ func (c *Config) alertsService() error {
 		return nil
 	}
 
-	c.alerts = alertsmanager.NewService(c.AlertManagerURL)
+	c.alerts = alertsmanager.NewService(c.AlertManagerURL, c.EsploraURL)
 	return nil
 }
 

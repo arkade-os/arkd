@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
-	"github.com/shopspring/decimal"
 )
 
 const (
@@ -27,13 +26,15 @@ type Alert struct {
 }
 
 type service struct {
-	baseURL    string
+	baseUrl    string
+	esploraUrl string
 	httpClient *http.Client
 }
 
-func NewService(alertManagerURL string) ports.Alerts {
+func NewService(alertManagerURL, esploraURL string) ports.Alerts {
 	return &service{
-		baseURL: alertManagerURL,
+		baseUrl:    alertManagerURL,
+		esploraUrl: esploraURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -51,12 +52,12 @@ func (s *service) Publish(ctx context.Context, topic ports.Topic, message any) e
 	annotations := map[string]string{}
 	switch topic {
 	case ports.BatchFinalized:
-		annotations["firing_title"] = "🗳 Batch Finalized"
+		annotations["firing_title"] = "🎯 Batch Finalized"
 		m, ok := message.(ports.BatchFinalizedAlert)
 		if !ok {
 			return fmt.Errorf("invalid message type: %T", message)
 		}
-		desc = formatBatchFinalizedAlert(m)
+		desc = formatBatchFinalizedAlert(s.esploraUrl, m)
 		labels["batch_id"] = m.Id
 		labels["txid"] = m.CommitmentTxid
 	default:
@@ -87,7 +88,7 @@ func (s *service) sendAlert(ctx context.Context, alerts Alert) error {
 	baseDelay := 100 * time.Millisecond
 
 	for attempt := range maxRetries {
-		req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL, bytes.NewReader(payload))
+		req, err := http.NewRequestWithContext(ctx, "POST", s.baseUrl, bytes.NewReader(payload))
 		if err != nil {
 			return fmt.Errorf("failed to create request: %w", err)
 		}
@@ -140,22 +141,17 @@ func (s *service) sendAlert(ctx context.Context, alerts Alert) error {
 	return fmt.Errorf("failed to send alert after %d attempts", maxRetries)
 }
 
-func formatBatchFinalizedAlert(data ports.BatchFinalizedAlert) string {
+func formatBatchFinalizedAlert(esploraUrl string, data ports.BatchFinalizedAlert) string {
 	lines := make([]string, 0)
-	lines = append(lines, fmt.Sprintf("*ID:* `%s`", data.Id))
-	lines = append(lines, fmt.Sprintf("*TX ID:* `%s`", data.CommitmentTxid))
+	lines = append(lines, fmt.Sprintf("%s/tx/%s", esploraUrl, data.CommitmentTxid))
+	lines = append(lines, fmt.Sprintf("\n*ID:* `%s`", data.Id))
 
-	outAmount := data.LeafAmount + data.ExitAmount + data.ConnectorsAmount
 	totBalance := data.LiqudityProviderConfirmedBalance + data.LiqudityProviderUnconfirmedBalance
-	lines = append(lines, "\n*TLDR:*")
-	lines = append(lines, fmt.Sprintf("• Total output amount: %s", formatBTC(outAmount)))
-	lines = append(lines, fmt.Sprintf("• Boarding input amount: %s", formatBTC(data.BoardingInputAmount)))
-	lines = append(lines, fmt.Sprintf("• Liquidity provided: %s", formatBTC(data.LiquidityProviderInputAmount-outAmount)))
-	lines = append(lines, fmt.Sprintf("• LP Balance: %s", formatBTC(totBalance)))
-	lines = append(lines, fmt.Sprintf("• Liquidity cost: %s", data.LiquidityCost))
+	lines = append(lines, "\n*Liquidity Metrics:*")
+	lines = append(lines, fmt.Sprintf("• Liquidity provided: %s", formatBTC(data.LiquidityProvided)))
+	lines = append(lines, fmt.Sprintf("• Liquidity Provider Balance: %s (-%s)", formatBTC(totBalance), data.LiquidityCost))
 
 	lines = append(lines, "\n*Liquidity Provider Balance:*")
-	lines = append(lines, fmt.Sprintf("• Total: %s", formatBTC(totBalance)))
 	lines = append(lines, fmt.Sprintf("• Confirmed: %s", formatBTC(data.LiqudityProviderConfirmedBalance)))
 	lines = append(lines, fmt.Sprintf("• Unconfirmed: %s", formatBTC(data.LiqudityProviderUnconfirmedBalance)))
 
@@ -167,16 +163,16 @@ func formatBatchFinalizedAlert(data ports.BatchFinalizedAlert) string {
 	lines = append(lines, fmt.Sprintf("• Duration: %s", data.Duration))
 	lines = append(lines, fmt.Sprintf("• Intents: %d", data.IntentsCount))
 	lines = append(lines, fmt.Sprintf("• Boarding UTXOs: %d", data.BoardingInputCount))
+	lines = append(lines, fmt.Sprintf("• Boarding UTXOs amount: %s", formatBTC(data.BoardingInputAmount)))
 	lines = append(lines, fmt.Sprintf("• Spent VTXOs: %d", data.ForfeitCount))
+	lines = append(lines, fmt.Sprintf("• Spent VTXOs amount (forfeited): %s", formatBTC(data.ForfeitAmount)))
 	lines = append(lines, fmt.Sprintf("• New VTXOs: %d", data.LeafCount))
-	lines = append(lines, fmt.Sprintf("• Boarding amount: %s", formatBTC(data.BoardingInputAmount)))
-	lines = append(lines, fmt.Sprintf("• Batch amount: %s", formatBTC(data.LeafAmount)))
-	lines = append(lines, fmt.Sprintf("• Exit amount: %s", formatBTC(data.ExitAmount)))
-	lines = append(lines, fmt.Sprintf("• Forfeit amount: %s", formatBTC(data.ForfeitAmount)))
+	lines = append(lines, fmt.Sprintf("• New VTXOs amount (batched): %s", formatBTC(data.LeafAmount)))
+	lines = append(lines, fmt.Sprintf("• New UTXOs amount (exited): %s", formatBTC(data.ExitAmount)))
 	return strings.Join(lines, "\n")
 }
 
-func formatGenericAlert(data map[string]interface{}) string {
+func formatGenericAlert(data map[string]any) string {
 	lines := make([]string, 0)
 	for key, value := range data {
 		lines = append(lines, fmt.Sprintf("• %s: %v", key, value))
@@ -184,9 +180,21 @@ func formatGenericAlert(data map[string]interface{}) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatBTC(val uint64) string {
-	if val == 0 {
-		return "0 BTC"
+func formatBTC(sats uint64) string {
+	const satsPerBTC = 100_000_000
+
+	whole := sats / satsPerBTC
+	frac := sats % satsPerBTC
+
+	if frac == 0 {
+		return fmt.Sprintf("%d BTC", whole)
 	}
-	return fmt.Sprintf("%s BTC", decimal.NewFromInt(int64(val)).Div(decimal.NewFromInt(100000000)).StringFixed(8))
+
+	// Format fractional part as 8-digit zero-padded
+	f := fmt.Sprintf("%08d", frac)
+
+	// Trim trailing zeros
+	f = strings.TrimRight(f, "0")
+
+	return fmt.Sprintf("%d.%s BTC", whole, f)
 }

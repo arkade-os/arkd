@@ -62,7 +62,6 @@ func (s *service) getBatchStats(
 			a.BoardingInputCount++
 			a.BoardingInputAmount += inputValue
 		} else {
-			a.LiquidityProviderInputCount++
 			a.LiquidityProviderInputAmount += inputValue
 		}
 	}
@@ -76,7 +75,7 @@ func (s *service) getBatchStats(
 	}
 
 	for _, intent := range round.Intents {
-		a.CollectedFees += intent.TotalInputAmount() - intent.TotalOutputAmount()
+		a.CollectedFees += (intent.TotalInputAmount() + a.BoardingInputAmount) - intent.TotalOutputAmount()
 		a.ForfeitCount += len(intent.Inputs)
 		a.ForfeitAmount += intent.TotalInputAmount()
 		for _, receiver := range intent.Receivers {
@@ -92,22 +91,22 @@ func (s *service) getBatchStats(
 
 	confirmedBalance, unconfirmedBalance, _ := s.wallet.MainAccountBalance(ctx)
 	liquidityCost := "N/A"
+	outAmount := a.LeafAmount + a.ExitAmount + a.ConnectorsAmount + a.OnchainFees
 	if confirmedBalance > 0 || unconfirmedBalance > 0 {
-		totSpentAmount := a.LeafAmount + a.ExitAmount + a.ConnectorsAmount + a.OnchainFees
-		totLiquidity := decimal.NewFromInt(int64(confirmedBalance + unconfirmedBalance + totSpentAmount))
+		totLiquidity := decimal.NewFromInt(int64(confirmedBalance + unconfirmedBalance))
 		totBatchAmount := decimal.NewFromInt(int64(a.LeafAmount + a.ExitAmount - a.BoardingInputAmount))
-		liquidityCost = fmt.Sprintf("%s%%", totBatchAmount.Div(totLiquidity).StringFixed(2))
+		liquidityCost = fmt.Sprintf("%s%%", totBatchAmount.Div(totLiquidity).Mul(decimal.NewFromInt(100)).StringFixed(2))
+
 		a.LiqudityProviderConfirmedBalance = confirmedBalance
 		a.LiqudityProviderUnconfirmedBalance = unconfirmedBalance
 	}
+	a.LiquidityProvided = outAmount - a.BoardingInputAmount
 	a.LiquidityCost = liquidityCost
 	a.Id = round.Id
 	a.CommitmentTxid = round.CommitmentTxid
-	a.CreatedAt = createdAt
-	a.EndedAt = endedAt
 	a.Duration = duration
 	a.IntentsCount = len(round.Intents)
 	a.ConnectorsCount = a.ForfeitCount
-	a.ConnectorsAmount = uint64(a.ForfeitCount * 300)
+	a.ConnectorsAmount = uint64(a.ForfeitCount * 330)
 	return
 }
