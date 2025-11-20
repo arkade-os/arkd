@@ -9,6 +9,8 @@ import (
 
 	signerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/signer/v1"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -19,9 +21,21 @@ type signerClient struct {
 }
 
 // New creates a ports.WalletService backed by a gRPC client.
-func New(addr string) (ports.SignerService, error) {
+func New(addr, otelCollectorEndpoint string) (ports.SignerService, error) {
 	// TODO: support TLS.
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	if otelCollectorEndpoint != "" {
+		otelHandler := otelgrpc.NewClientHandler(
+			otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
+		)
+		opts = append(opts, grpc.WithStatsHandler(otelHandler))
+	}
+	conn, err := grpc.NewClient(
+		addr,
+		opts...,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to signer: %w", err)
 	}

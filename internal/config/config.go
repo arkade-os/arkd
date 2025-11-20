@@ -674,7 +674,7 @@ func (c *Config) walletService() error {
 		return fmt.Errorf("missing ark wallet address")
 	}
 
-	walletSvc, network, err := walletclient.New(arkWallet)
+	walletSvc, network, err := walletclient.New(arkWallet, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}
@@ -690,7 +690,7 @@ func (c *Config) signerService() error {
 		return fmt.Errorf("missing signer address")
 	}
 
-	signerSvc, err := signerclient.New(signer)
+	signerSvc, err := signerclient.New(signer, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}

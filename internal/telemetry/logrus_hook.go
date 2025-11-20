@@ -74,14 +74,6 @@ func (h *OTelHook) Fire(e *logrus.Entry) error {
 		rec.AddAttributes(log.String(k, toString(v)))
 	}
 
-	// add trace_id and span_id from context if available
-	if spanCtx.IsValid() {
-		rec.AddAttributes(
-			log.String("trace_id", spanCtx.TraceID().String()),
-			log.String("span_id", spanCtx.SpanID().String()),
-		)
-	}
-
 	// observed ts (optional)
 	rec.SetObservedTimestamp(time.Now())
 	logger := global.GetLoggerProvider().Logger("arkd")

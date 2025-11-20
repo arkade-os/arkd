@@ -49,7 +49,7 @@ type service struct {
 	adminGrpcSrvr     *grpc.Server
 	macaroonSvc       *macaroons.Service
 	otelShutdown      func(context.Context) error
-	pyroscopeShutdown func()
+	pyroscopeShutdown func() error
 }
 
 func NewService(
@@ -124,7 +124,11 @@ func (s *service) Stop() {
 	withAppSvc := true
 	s.stop(withAppSvc)
 	if s.pyroscopeShutdown != nil {
-		s.pyroscopeShutdown()
+		if err := s.pyroscopeShutdown(); err != nil {
+			log.Errorf("failed to shutdown pyroscope: %s", err)
+		}
+		
+		log.Info("shutdown pyroscope")
 	}
 	if s.otelShutdown != nil {
 		if err := s.otelShutdown(context.Background()); err != nil {
@@ -216,7 +220,6 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 
 		if s.appConfig.PyroscopeServerURL != "" {
 			pyroscopeShutdown, err := telemetry.InitPyroscope(
-				ctx,
 				s.appConfig.PyroscopeServerURL,
 			)
 			if err != nil {
