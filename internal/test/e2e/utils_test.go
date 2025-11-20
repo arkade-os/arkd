@@ -421,6 +421,14 @@ func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types
 	_, offchainAddr, _, err := client.Receive(t.Context())
 	require.NoError(t, err)
 	require.NotEmpty(t, offchainAddr)
+	return faucetOffchainWithAddress(t, offchainAddr, amount)
+}
+
+func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.Vtxo {
+	client := setupArkSDK(t)
+
+	_, offchainAddr, _, err := client.Receive(t.Context())
+	require.NoError(t, err)
 
 	note := generateNote(t, uint64(amount*1e8))
 
@@ -443,6 +451,23 @@ func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types
 	require.NotEmpty(t, incomingFunds)
 
 	time.Sleep(time.Second)
+
+	wg.Add(1)
+	incomingFunds = nil
+	incomingErr = nil
+	go func() {
+		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), addr)
+		wg.Done()
+	}()
+
+	txid, err = client.SendOffChain(t.Context(), false, []types.Receiver{{To: addr, Amount: uint64(amount * 1e8)}})
+	require.NoError(t, err)
+	require.NotEmpty(t, txid)
+
+	wg.Wait()
+	require.NoError(t, incomingErr)
+	require.NotEmpty(t, incomingFunds)
+
 	return incomingFunds[0]
 }
 

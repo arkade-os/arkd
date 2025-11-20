@@ -682,6 +682,194 @@ func TestOffchainTx(t *testing.T) {
 		_, err = bob.Settle(t.Context())
 		require.NoError(t, err)
 	})
+
+	// In this test, we submit several valid transactions in parallel spending the same vtxo.
+	// The server should accept only one of them and reject the others.
+	t.Run("concurrent submit txs", func(t *testing.T) {
+		ctx := context.Background()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		_, arkSvc := setupArkSDKWithTransport(t)
+		t.Cleanup(func() { arkSvc.Close() })
+
+		privkey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		configStore, err := inmemorystoreconfig.NewConfigStore()
+		require.NoError(t, err)
+
+		walletStore, err := inmemorystore.NewWalletStore()
+		require.NoError(t, err)
+
+		wallet, err := singlekeywallet.NewBitcoinWallet(configStore, walletStore)
+		require.NoError(t, err)
+
+		_, err = wallet.Create(ctx, password, hex.EncodeToString(privkey.Serialize()))
+		require.NoError(t, err)
+
+		_, err = wallet.Unlock(ctx, password)
+		require.NoError(t, err)
+
+		publicKey := privkey.PubKey()
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		signerPubKeyBytes, err := hex.DecodeString(serverParams.SignerPubKey)
+		require.NoError(t, err)
+
+		signerPubKey, err := btcec.ParsePubKey(signerPubKeyBytes)
+		require.NoError(t, err)
+
+		// Craft address = a simple forfeit closure (A + S)
+		vtxoScript := script.TapscriptsVtxoScript{
+			Closures: []script.Closure{
+				&script.MultisigClosure{
+					PubKeys: []*btcec.PublicKey{publicKey, signerPubKey},
+				},
+			},
+		}
+
+		vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		closure := vtxoScript.ForfeitClosures()[0]
+
+		address := arklib.Address{
+			HRP:        "tark",
+			VtxoTapKey: vtxoTapKey,
+			Signer:     signerPubKey,
+		}
+
+		bobAddrStr, err := address.EncodeV0()
+		require.NoError(t, err)
+
+		// faucet the address 21000 sats
+		vtxo := faucetOffchainWithAddress(t, bobAddrStr, 0.00021)
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+		revealedTapscripts := []string{hex.EncodeToString(merkleProof.Script)}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		destinations := []string{
+			"5120b9dfec0c7700fbdaa5379941391628e033a62dd17521cac0f9a6d83b3e54e6da",
+			"5120b9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e54e6d",
+			"5120b9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
+		}
+
+		type tx struct {
+			ark         string
+			checkpoints []string
+		}
+
+		txs := make([]tx, 0, len(destinations))
+
+		t.Logf("building %d txs", len(destinations))
+
+		// for each destination, build the associated ark transaction (sending the vtxo to the destination)
+		for _, receiver := range destinations {
+			pkscript, err := hex.DecodeString(receiver)
+			require.NoError(t, err)
+
+			ptx, checkpointsPtx, err := offchain.BuildTxs(
+				[]offchain.VtxoInput{
+					{
+						Outpoint: &wire.OutPoint{
+							Hash:  *vtxoHash,
+							Index: vtxo.VOut,
+						},
+						Tapscript:          tapscript,
+						Amount:             int64(vtxo.Amount),
+						RevealedTapscripts: revealedTapscripts,
+					},
+				},
+				[]*wire.TxOut{
+					{
+						Value:    int64(vtxo.Amount),
+						PkScript: pkscript,
+					},
+				},
+				checkpointTapscript,
+			)
+			require.NoError(t, err)
+
+			encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+			for _, checkpoint := range checkpointsPtx {
+				encoded, err := checkpoint.B64Encode()
+				require.NoError(t, err)
+				encodedCheckpoints = append(encodedCheckpoints, encoded)
+			}
+
+			// sign the ark transaction
+			encodedArkTx, err := ptx.B64Encode()
+			require.NoError(t, err)
+			signedArkTx, err := wallet.SignTransaction(
+				ctx,
+				explorer,
+				encodedArkTx,
+			)
+			require.NoError(t, err)
+
+			txs = append(txs, tx{
+				ark:         signedArkTx,
+				checkpoints: encodedCheckpoints,
+			})
+		}
+
+		doSubmit := func(ctx context.Context, wg *sync.WaitGroup, errChan chan error, ark string, checkpoints []string) {
+			defer wg.Done()
+			_, _, _, err := arkSvc.SubmitTx(ctx, ark, checkpoints)
+			errChan <- err
+		}
+
+		// submit all transactions in parallel
+		wg := &sync.WaitGroup{}
+		wg.Add(len(txs))
+
+		errChan := make(chan error, len(txs))
+		for _, tx := range txs {
+			go doSubmit(ctx, wg, errChan, tx.ark, tx.checkpoints)
+		}
+
+		wg.Wait()
+
+		close(errChan)
+		errCount := 0
+		successCount := 0
+		for err := range errChan {
+			if err != nil {
+				errCount++
+				continue
+			}
+
+			successCount++
+		}
+		require.Equal(t, 1, successCount, fmt.Sprintf("expected 1 success, got %d", successCount))
+		require.Equal(t, len(destinations)-1, errCount, fmt.Sprintf("expected %d errors, got %d", len(destinations)-1, errCount))
+	})
 }
 
 // TestDelegateRefresh tests the case where Alice owns a vtxo and delegates Bob to refresh it.
@@ -2443,40 +2631,95 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 }
 
 // TestDeleteIntent tests deleting an already registered intent
-func TestDeleteIntent(t *testing.T) {
-	ctx := t.Context()
-	alice := setupArkSDK(t)
+func TestIntent(t *testing.T) {
+	t.Run("register and delete", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupArkSDK(t)
 
-	// faucet offchain address
-	faucetOffchain(t, alice, 0.00021)
+		// faucet offchain address
+		faucetOffchain(t, alice, 0.00021)
 
-	_, offchainAddr, _, err := alice.Receive(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, offchainAddr)
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddr)
 
-	aliceVtxos, _, err := alice.ListVtxos(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, aliceVtxos)
+		aliceVtxos, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, aliceVtxos)
 
-	cosignerKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
+		cosignerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
 
-	cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
-	outs := []types.Receiver{{To: offchainAddr, Amount: 20000}}
-	_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
-	require.NoError(t, err)
+		cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
+		outs := []types.Receiver{{To: offchainAddr, Amount: 20000}}
+		_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
+		require.NoError(t, err)
 
-	// should fail because previous intent spend same vtxos
-	_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
-	require.Error(t, err)
+		// should fail because previous intent spend same vtxos
+		_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
+		require.Error(t, err)
 
-	// should delete the intent
-	err = alice.DeleteIntent(ctx, aliceVtxos, []types.Utxo{}, nil)
-	require.NoError(t, err)
+		// should delete the intent
+		err = alice.DeleteIntent(ctx, aliceVtxos, []types.Utxo{}, nil)
+		require.NoError(t, err)
 
-	// should fail because no intent is associated with the vtxos
-	err = alice.DeleteIntent(ctx, aliceVtxos, []types.Utxo{}, nil)
-	require.Error(t, err)
+		// should fail because no intent is associated with the vtxos
+		err = alice.DeleteIntent(ctx, aliceVtxos, []types.Utxo{}, nil)
+		require.Error(t, err)
+	})
+
+	t.Run("concurrent register", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupArkSDK(t)
+
+		// faucet offchain address
+		faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddr)
+
+		aliceVtxos, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, aliceVtxos)
+
+		cosignerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
+		outs := []types.Receiver{{To: offchainAddr, Amount: 20000}}
+		outsBis := []types.Receiver{{To: offchainAddr, Amount: 10000}, {To: offchainAddr, Amount: 10000}}
+
+		wg := &sync.WaitGroup{}
+		wg.Add(2)
+
+		errChan := make(chan error, 2)
+
+		doRegister := func(ctx context.Context, wg *sync.WaitGroup, errChan chan error, aliceVtxos []types.Vtxo, outs []types.Receiver, cosigners []string) {
+			_, err := alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
+			errChan <- err
+			wg.Done()
+		}
+
+		go doRegister(ctx, wg, errChan, aliceVtxos, outs, cosigners)
+		go doRegister(ctx, wg, errChan, aliceVtxos, outsBis, cosigners)
+
+		wg.Wait()
+
+		close(errChan)
+		errCount := 0
+		successCount := 0
+		for err := range errChan {
+			if err != nil {
+				errCount++
+				continue
+			}
+
+			successCount++
+		}
+		require.Equal(t, 1, successCount, fmt.Sprintf("expected 1 success, got %d", successCount))
+		require.Equal(t, 1, errCount, fmt.Sprintf("expected 1 error, got %d", errCount))
+	})
 }
 
 // TestBan tests all supported ban scenarios
