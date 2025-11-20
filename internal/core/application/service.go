@@ -2701,6 +2701,13 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 	includesBoardingInputs := s.cache.BoardingInputs().Get() > 0
 	txToSign := s.cache.CurrentRound().Get(ctx).CommitmentTx
 	forfeitTxs := make([]domain.ForfeitTx, 0)
+	commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
+	if err != nil {
+		changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
+			"failed to parse commitment tx: %s", err,
+		))
+		return
+	}
 
 	if s.cache.ForfeitTxs().Len() > 0 || includesBoardingInputs {
 		s.roundReportSvc.OpStarted(WaitForForfeitTxsOp)
@@ -2714,15 +2721,6 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 		}
 
 		s.roundReportSvc.OpEnded(WaitForForfeitTxsOp)
-
-		txToSign = s.cache.CurrentRound().Get(ctx).CommitmentTx
-		commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(txToSign), true)
-		if err != nil {
-			changes = s.cache.CurrentRound().Fail(ctx, errors.INTERNAL_ERROR.New(
-				"failed to parse commitment tx: %s", err,
-			))
-			return
-		}
 
 		forfeitTxList, err := s.cache.ForfeitTxs().Pop()
 		if err != nil {
@@ -2915,7 +2913,7 @@ func (s *service) finalizeRound(roundTiming roundTiming) {
 
 	s.roundReportSvc.RoundEnded(commitmentTxid, totalInputsVtxos, totalOutputVtxos, numOfTreeNodes)
 
-	go s.sendBatchAlert(ctx, s.cache.CurrentRound().Get(), commitmentTx)
+	go s.sendBatchAlert(ctx, s.cache.CurrentRound().Get(ctx), commitmentTx)
 
 	log.Debugf("finalized round %s with commitment tx %s", roundId, commitmentTxid)
 }
