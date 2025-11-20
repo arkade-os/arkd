@@ -19,6 +19,7 @@ type Config struct {
 	TLSExtraIPs       []string
 	TLSExtraDomains   []string
 	HeartbeatInterval int64
+	EnablePprof       bool
 }
 
 func (c Config) Validate() error {

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"path/filepath"
 	"strings"
 	"time"
@@ -136,7 +137,7 @@ func (s *service) start(withAppSvc bool) error {
 		return err
 	}
 
-	if err := s.newServer(tlsConfig, withAppSvc); err != nil {
+	if err := s.newServer(tlsConfig, withAppSvc, s.config.EnablePprof); err != nil {
 		return err
 	}
 
@@ -191,7 +192,7 @@ func (s *service) stop(withAppSvc bool) {
 	}
 }
 
-func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
+func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bool) error {
 	ctx := context.Background()
 	if s.appConfig.OtelCollectorEndpoint != "" {
 		pushInteval := time.Duration(s.appConfig.OtelPushInterval) * time.Second
@@ -328,6 +329,21 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcServer, grpcGateway)
 	mux := http.NewServeMux()
+
+	if withPprof {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		mux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+		mux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+		mux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+		mux.Handle("/debug/pprof/block", pprof.Handler("block"))
+		mux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+		log.Info("pprof enabled at /debug/pprof/")
+	}
+
 	mux.Handle("/", handler)
 
 	httpServerHandler := http.Handler(mux)

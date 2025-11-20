@@ -209,3 +209,7 @@ run-simulation:
 	'
 	@echo "Test completed. Docker environment will remain running."
 	@echo "Run 'make docker-stop' to shut down the environment when finished."
+
+pprof:
+	@echo "Running pprof..."
+	@go tool pprof -http=:8080 http://localhost:7070/debug/pprof/heap
