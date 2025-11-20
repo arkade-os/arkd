@@ -188,5 +188,5 @@ func formatBTC(val uint64) string {
 	if val == 0 {
 		return "0 BTC"
 	}
-	return fmt.Sprintf("%s BTC", decimal.NewFromInt(int64(val)).StringFixed(8))
+	return fmt.Sprintf("%s BTC", decimal.NewFromInt(int64(val)).Div(decimal.NewFromInt(100000000)).StringFixed(8))
 }
