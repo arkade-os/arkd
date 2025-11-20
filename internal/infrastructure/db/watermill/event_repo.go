@@ -78,20 +78,22 @@ func (e *eventRepository) Save(
 		return err
 	}
 	// dispatch events to subscribers
-	e.dispatch(topic, id)
+	if err := e.dispatch(topic, id); err != nil {
+		log.WithError(err).Error("failed to dispatch saved events")
+	}
 
 	return nil
 }
 
-func (e *eventRepository) dispatch(topic string, id string) {
+func (e *eventRepository) dispatch(topic string, id string) error {
 	// get all events for the topic from the database
 	events, err := e.getAllEvents(context.Background(), topic, id)
 	if err != nil {
-		return
+		return err
 	}
 
 	if len(events) == 0 {
-		return
+		return nil
 	}
 
 	// run the handlers in go routines
@@ -100,6 +102,7 @@ func (e *eventRepository) dispatch(topic string, id string) {
 	for _, subscriber := range e.subscribers[topic] {
 		go subscriber.handler(events)
 	}
+	return nil
 }
 
 // getAllEvents queries the database for all historical messages in a topic filtered by id.
