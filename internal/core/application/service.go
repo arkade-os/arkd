@@ -86,9 +86,10 @@ type service struct {
 	indexerTxEventsCh        chan TransactionEvent
 
 	// stop and round-execution go routine handlers
-	stop func()
-	ctx  context.Context
-	wg   *sync.WaitGroup
+	stop         func()
+	ctx          context.Context
+	wg           *sync.WaitGroup
+	offchainTxMu *sync.Mutex
 }
 
 func NewService(
@@ -229,6 +230,7 @@ func NewService(
 		stop:                          cancel,
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
+		offchainTxMu:                  &sync.Mutex{},
 		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
@@ -502,10 +504,16 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
-	// check if any of the spent vtxos are banned
 	for _, vtxo := range spentVtxos {
+		// check if banned
 		if err := s.checkIfBanned(ctx, vtxo); err != nil {
 			return nil, "", "", errors.VTXO_BANNED.Wrap(err).
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+		}
+
+		// check if already spent by another offchain tx
+		if s.cache.OffchainTxs().Includes(vtxo.Outpoint) {
+			return nil, "", "", errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint.String()).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 		}
 	}
@@ -1043,13 +1051,29 @@ func (s *service) SubmitOffchainTx(
 				"expiration":            expiration,
 			})
 	}
-	changes = append(changes, change)
-	s.cache.OffchainTxs().Add(*offchainTx)
 
 	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
 		signedCheckpointTxs = append(signedCheckpointTxs, tx)
 	}
+
+	s.offchainTxMu.Lock()
+	defer s.offchainTxMu.Unlock()
+
+	// before pushing to the cache, check if any of the spent vtxos are already spent by another offchain tx
+	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
+	for _, spentVtxo := range spentVtxos {
+		if s.cache.OffchainTxs().Includes(spentVtxo.Outpoint) {
+			errr := errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
+			err = errr
+			return nil, "", "", errr
+		}
+	}
+	s.cache.OffchainTxs().Add(*offchainTx)
+
+	// apply Accepted event only after verifying the spent vtxos
+	changes = append(changes, change)
 
 	return signedCheckpointTxs, finalArkTx, txid, nil
 }

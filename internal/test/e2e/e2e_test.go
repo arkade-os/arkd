@@ -338,7 +338,7 @@ func TestUnilateralExit(t *testing.T) {
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(8 * time.Second)
 
 		// Bob now just needs to wait for the unilateral exit delay to spend the unrolled VTXOs
 		bobBalance, err = bob.Balance(t.Context(), false)
@@ -778,6 +778,10 @@ func TestOffchainTx(t *testing.T) {
 			"5120b9dfec0c7700fbdaa5379941391628e033a62dd17521cac0f9a6d83b3e54e6da",
 			"5120b9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e54e6d",
 			"5120b9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
+			"5120c9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
+			"5120c9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
+			"5120c9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
+			"5120c9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e7d",
 		}
 
 		type tx struct {
@@ -786,8 +790,6 @@ func TestOffchainTx(t *testing.T) {
 		}
 
 		txs := make([]tx, 0, len(destinations))
-
-		t.Logf("building %d txs", len(destinations))
 
 		// for each destination, build the associated ark transaction (sending the vtxo to the destination)
 		for _, receiver := range destinations {
@@ -868,7 +870,12 @@ func TestOffchainTx(t *testing.T) {
 			successCount++
 		}
 		require.Equal(t, 1, successCount, fmt.Sprintf("expected 1 success, got %d", successCount))
-		require.Equal(t, len(destinations)-1, errCount, fmt.Sprintf("expected %d errors, got %d", len(destinations)-1, errCount))
+		require.Equal(
+			t,
+			len(destinations)-1,
+			errCount,
+			fmt.Sprintf("expected %d errors, got %d", len(destinations)-1, errCount),
+		)
 	})
 }
 
@@ -1952,6 +1959,7 @@ func TestReactToFraud(t *testing.T) {
 
 			wg.Wait()
 
+			time.Sleep(2 * time.Second)
 			spendable, _, err := alice.ListVtxos(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, spendable)
@@ -2688,7 +2696,10 @@ func TestIntent(t *testing.T) {
 
 		cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
 		outs := []types.Receiver{{To: offchainAddr, Amount: 20000}}
-		outsBis := []types.Receiver{{To: offchainAddr, Amount: 10000}, {To: offchainAddr, Amount: 10000}}
+		outsBis := []types.Receiver{
+			{To: offchainAddr, Amount: 10000},
+			{To: offchainAddr, Amount: 10000},
+		}
 
 		wg := &sync.WaitGroup{}
 		wg.Add(2)

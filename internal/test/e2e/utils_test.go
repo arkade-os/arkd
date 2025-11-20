@@ -420,8 +420,29 @@ func faucetOnchain(t *testing.T, address string, amount float64) {
 func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types.Vtxo {
 	_, offchainAddr, _, err := client.Receive(t.Context())
 	require.NoError(t, err)
-	require.NotEmpty(t, offchainAddr)
-	return faucetOffchainWithAddress(t, offchainAddr, amount)
+
+	note := generateNote(t, uint64(amount*1e8))
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var incomingFunds []types.Vtxo
+	var incomingErr error
+	go func() {
+		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr)
+		wg.Done()
+	}()
+
+	txid, err := client.RedeemNotes(t.Context(), []string{note})
+	require.NoError(t, err)
+	require.NotEmpty(t, txid)
+
+	wg.Wait()
+
+	require.NoError(t, incomingErr)
+	require.NotEmpty(t, incomingFunds)
+
+	time.Sleep(time.Second)
+	return incomingFunds[0]
 }
 
 func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.Vtxo {
@@ -460,7 +481,11 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 		wg.Done()
 	}()
 
-	txid, err = client.SendOffChain(t.Context(), false, []types.Receiver{{To: addr, Amount: uint64(amount * 1e8)}})
+	txid, err = client.SendOffChain(
+		t.Context(),
+		false,
+		[]types.Receiver{{To: addr, Amount: uint64(amount * 1e8)}},
+	)
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
