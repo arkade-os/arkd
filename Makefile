@@ -86,13 +86,13 @@ migrate:
 ## sqlc: gen sql
 sqlc:
 	@echo "gen sql..."
-	@docker run --rm -v ./internal/infrastructure/db/sqlite:/src -w /src sqlc/sqlc generate
+	@docker run --rm -v ./internal/infrastructure/db/sqlite:/src -w /src sqlc/sqlc:1.30.0 generate
 
 #### Postgres database ####
 # pg: starts postgres db inside docker container
 pg:
 	@echo "Starting postgres db..."
-	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 || true
+	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5433:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 || true
 
 # pgtest: starts postgres db inside docker container
 pgtest:
@@ -122,7 +122,7 @@ pgmigrate:
 
 # pgsqlc: generate sql code for postgres
 pgsqlc:
-	@docker run --rm -v ./internal/infrastructure/db/postgres:/src -w /src sqlc/sqlc generate
+	@docker run --rm -v ./internal/infrastructure/db/postgres:/src -w /src sqlc/sqlc:1.30.0 generate
 
 #### Redis database ####
 # redis-up: starts redis db inside docker container

@@ -199,9 +199,7 @@ func (r *Round) EndFinalization(forfeitTxs []ForfeitTx, finalCommitmentTx string
 }
 
 func (r *Round) Sweep(
-	leafVtxos []Outpoint,
-	preconfirmedVtxos []Outpoint,
-	txid, tx string,
+	leafVtxos, preconfirmedVtxos []Outpoint, txid, tx string,
 ) ([]Event, error) {
 	if !r.IsEnded() {
 		return nil, fmt.Errorf("not in a valid stage to sweep")
@@ -210,7 +208,7 @@ func (r *Round) Sweep(
 		return nil, nil
 	}
 
-	sweptVtxosCount := countSweptVtxos(r.Changes)
+	sweptVtxosCount := countSweptLeafVtxos(r.Changes)
 	leavesCount := len(tree.FlatTxTree(r.VtxoTree).Leaves())
 	fullySwept := len(leafVtxos)+sweptVtxosCount == leavesCount
 
@@ -323,7 +321,7 @@ func (r *Round) raise(event Event) {
 	r.on(event, false)
 }
 
-func countSweptVtxos(events []Event) int {
+func countSweptLeafVtxos(events []Event) int {
 	count := 0
 	for _, event := range events {
 		if e, ok := event.(BatchSwept); ok {

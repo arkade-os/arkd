@@ -278,7 +278,7 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 		ServerUrl:            serverUrl,
 		Password:             password,
 		Seed:                 privkeyHex,
-		ExplorerPollInterval: 2 * time.Second,
+		ExplorerPollInterval: time.Second,
 	})
 	require.NoError(t, err)
 
@@ -442,6 +442,7 @@ func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types
 	require.NoError(t, incomingErr)
 	require.NotEmpty(t, incomingFunds)
 
+	time.Sleep(time.Second)
 	return incomingFunds[0]
 }
 
@@ -456,6 +457,34 @@ func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
 		Type:  arklib.LocktimeTypeBlock,
 		Value: batchExpiry,
 	}
+}
+
+// lock the wallet, wait 10s and unlock it
+func restartArkd() error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	// down arkd container
+	if _, err := runCommand("docker", "container", "stop", "arkd"); err != nil {
+		return err
+	}
+
+	time.Sleep(5 * time.Second)
+
+	if _, err := runCommand("docker", "container", "start", "arkd"); err != nil {
+		return err
+	}
+
+	time.Sleep(5 * time.Second)
+
+	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
+	body := fmt.Sprintf(`{"password": "%s"}`, password)
+	if err := post(adminHttpClient, url, body, "unlock"); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func setupArkd() error {

@@ -124,7 +124,7 @@ func testBucketDeletion(t *testing.T, db walletdb.DB) {
 			require.NoError(t, cherry.Put([]byte(kv.key), []byte(kv.val)))
 		}
 
-		// Read back values in "apple/pear/cherry" trough a read bucket.
+		// Read back values in "apple/pear/cherry" through a read bucket.
 		cherryReadBucket := pear.NestedReadBucket([]byte("cherry"))
 		for _, kv := range kvs {
 			require.Equal(
