@@ -127,7 +127,7 @@ func (s *service) Stop() {
 		if err := s.pyroscopeShutdown(); err != nil {
 			log.Errorf("failed to shutdown pyroscope: %s", err)
 		}
-		
+
 		log.Info("shutdown pyroscope")
 	}
 	if s.otelShutdown != nil {
