@@ -372,7 +372,9 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		}
 
 		if event.FullySwept {
-			log.Debugf("round %s fully swept", round.Id)
+			log.WithField("commitment_txid", round.CommitmentTxid).Debugf(
+				"round %s fully swept", round.Id,
+			)
 		}
 		return
 	}

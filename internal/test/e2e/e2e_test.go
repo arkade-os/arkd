@@ -166,6 +166,7 @@ func TestBatchSession(t *testing.T) {
 		}()
 
 		wg.Wait()
+		time.Sleep(time.Second)
 
 		require.NoError(t, aliceIncomingErr)
 		require.NoError(t, bobIncomingErr)
@@ -1624,9 +1625,11 @@ func TestReactToFraud(t *testing.T) {
 				bumpAndBroadcastTx(t, parentTx, expl)
 			}
 
-			// give time for the server to detect and process the fraud
 			err = generateBlocks(30)
 			require.NoError(t, err)
+
+			// Give time for the server to detect and process the fraud
+			time.Sleep(5 * time.Second)
 
 			balance, err := sdkClient.Balance(ctx, false)
 			require.NoError(t, err)
@@ -1763,6 +1766,7 @@ func TestReactToFraud(t *testing.T) {
 			require.NotEmpty(t, txid)
 
 			wg.Wait()
+			time.Sleep(time.Second)
 
 			spendable, _, err := alice.ListVtxos(ctx)
 			require.NoError(t, err)

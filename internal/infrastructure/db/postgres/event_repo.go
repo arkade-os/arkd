@@ -31,5 +31,5 @@ func NewEventRepository(config ...interface{}) (domain.EventRepository, error) {
 		return nil, fmt.Errorf("cannot open event repository: %w", err)
 	}
 
-	return watermilldb.NewWatermillEventRepository(publisher), nil
+	return watermilldb.NewWatermillEventRepository(publisher, db), nil
 }
