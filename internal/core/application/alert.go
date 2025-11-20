@@ -94,8 +94,12 @@ func (s *service) getBatchStats(
 	outAmount := a.LeafAmount + a.ExitAmount + a.ConnectorsAmount + a.OnchainFees
 	if confirmedBalance > 0 || unconfirmedBalance > 0 {
 		totLiquidity := decimal.NewFromInt(int64(confirmedBalance + unconfirmedBalance))
-		totBatchAmount := decimal.NewFromInt(int64(a.LeafAmount + a.ExitAmount - a.BoardingInputAmount))
-		liquidityCost = fmt.Sprintf("%s%%", totBatchAmount.Div(totLiquidity).Mul(decimal.NewFromInt(100)).StringFixed(2))
+		totBatchAmount := decimal.NewFromInt(
+			int64(a.LeafAmount + a.ExitAmount - a.BoardingInputAmount),
+		)
+		liquidityCost = fmt.Sprintf(
+			"%s%%", totBatchAmount.Div(totLiquidity).Mul(decimal.NewFromInt(100)).StringFixed(2),
+		)
 
 		a.LiqudityProviderConfirmedBalance = confirmedBalance
 		a.LiqudityProviderUnconfirmedBalance = unconfirmedBalance

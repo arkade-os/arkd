@@ -148,12 +148,20 @@ func formatBatchFinalizedAlert(esploraUrl string, data ports.BatchFinalizedAlert
 
 	totBalance := data.LiqudityProviderConfirmedBalance + data.LiqudityProviderUnconfirmedBalance
 	lines = append(lines, "\n*Liquidity Metrics:*")
-	lines = append(lines, fmt.Sprintf("• Liquidity provided: %s", formatBTC(data.LiquidityProvided)))
-	lines = append(lines, fmt.Sprintf("• Liquidity Provider Balance: %s (-%s)", formatBTC(totBalance), data.LiquidityCost))
+	lines = append(lines, fmt.Sprintf(
+		"• Liquidity provided: %s", formatBTC(data.LiquidityProvided),
+	))
+	lines = append(lines, fmt.Sprintf(
+		"• Liquidity Provider Balance: %s (-%s)", formatBTC(totBalance), data.LiquidityCost,
+	))
 
 	lines = append(lines, "\n*Liquidity Provider Balance:*")
-	lines = append(lines, fmt.Sprintf("• Confirmed: %s", formatBTC(data.LiqudityProviderConfirmedBalance)))
-	lines = append(lines, fmt.Sprintf("• Unconfirmed: %s", formatBTC(data.LiqudityProviderUnconfirmedBalance)))
+	lines = append(lines, fmt.Sprintf(
+		"• Confirmed: %s", formatBTC(data.LiqudityProviderConfirmedBalance),
+	))
+	lines = append(lines, fmt.Sprintf(
+		"• Unconfirmed: %s", formatBTC(data.LiqudityProviderUnconfirmedBalance),
+	))
 
 	lines = append(lines, "\n*Fees:*")
 	lines = append(lines, fmt.Sprintf("• Network fees (spent): %d sats", data.OnchainFees))
@@ -163,12 +171,20 @@ func formatBatchFinalizedAlert(esploraUrl string, data ports.BatchFinalizedAlert
 	lines = append(lines, fmt.Sprintf("• Duration: %s", data.Duration))
 	lines = append(lines, fmt.Sprintf("• Intents: %d", data.IntentsCount))
 	lines = append(lines, fmt.Sprintf("• Boarding UTXOs: %d", data.BoardingInputCount))
-	lines = append(lines, fmt.Sprintf("• Boarding UTXOs amount: %s", formatBTC(data.BoardingInputAmount)))
+	lines = append(lines, fmt.Sprintf(
+		"• Boarding UTXOs amount: %s", formatBTC(data.BoardingInputAmount),
+	))
 	lines = append(lines, fmt.Sprintf("• Spent VTXOs: %d", data.ForfeitCount))
-	lines = append(lines, fmt.Sprintf("• Spent VTXOs amount (forfeited): %s", formatBTC(data.ForfeitAmount)))
+	lines = append(lines, fmt.Sprintf(
+		"• Spent VTXOs amount (forfeited): %s", formatBTC(data.ForfeitAmount),
+	))
 	lines = append(lines, fmt.Sprintf("• New VTXOs: %d", data.LeafCount))
-	lines = append(lines, fmt.Sprintf("• New VTXOs amount (batched): %s", formatBTC(data.LeafAmount)))
-	lines = append(lines, fmt.Sprintf("• New UTXOs amount (exited): %s", formatBTC(data.ExitAmount)))
+	lines = append(lines, fmt.Sprintf(
+		"• New VTXOs amount (batched): %s", formatBTC(data.LeafAmount),
+	))
+	lines = append(lines, fmt.Sprintf(
+		"• New UTXOs amount (exited): %s", formatBTC(data.ExitAmount),
+	))
 	return strings.Join(lines, "\n")
 }
 
