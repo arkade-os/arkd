@@ -29,6 +29,7 @@ var (
 	SignerKey             = "SIGNER_KEY"
 	OtelCollectorEndpoint = "OTEL_COLLECTOR_ENDPOINT"
 	OtelPushInterval      = "OTEL_PUSH_INTERVAL"
+	PyroscopeServerURL    = "PYROSCOPE_SERVER_URL"
 
 	defaultPort             = 6060
 	defaultLogLevel         = int(log.InfoLevel)
@@ -70,6 +71,7 @@ func LoadConfig() (*Config, error) {
 		SignerKey:             viper.GetString(SignerKey),
 		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
 		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
+		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
 	}
 
 	if err := cfg.initServices(); err != nil {
@@ -88,6 +90,7 @@ type Config struct {
 	SignerKey             string
 	OtelCollectorEndpoint string
 	OtelPushInterval      int64
+	PyroscopeServerURL    string
 
 	WalletSvc  application.WalletService
 	ScannerSvc application.BlockchainScanner

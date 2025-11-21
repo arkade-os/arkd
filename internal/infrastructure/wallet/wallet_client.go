@@ -14,6 +14,8 @@ import (
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -26,8 +28,20 @@ type walletDaemonClient struct {
 }
 
 // New creates a ports.WalletService backed by a gRPC client.
-func New(addr string) (ports.WalletService, *arklib.Network, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func New(addr, otelCollectorEndpoint string) (ports.WalletService, *arklib.Network, error) {
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	if otelCollectorEndpoint != "" {
+		otelHandler := otelgrpc.NewClientHandler(
+			otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
+		)
+		opts = append(opts, grpc.WithStatsHandler(otelHandler))
+	}
+	conn, err := grpc.NewClient(
+		addr,
+		opts...,
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to wallet: %w", err)
 	}
@@ -118,7 +132,8 @@ func (w *walletDaemonClient) GetNotificationChannel(
 			resp, err := stream.Recv()
 			if err != nil {
 				if strings.Contains(err.Error(), "EOF") {
-					log.Fatal("connection closed by wallet")
+					log.Error("connection closed by wallet")
+					return
 				}
 				if status.Code(err) == codes.Canceled {
 					return
@@ -170,7 +185,8 @@ func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{
 			resp, err := stream.Recv()
 			if err != nil {
 				if strings.Contains(err.Error(), "EOF") {
-					log.Fatal("connection closed by wallet")
+					log.Error("connection closed by wallet")
+					return
 				}
 				if status.Code(err) == codes.Canceled {
 					return

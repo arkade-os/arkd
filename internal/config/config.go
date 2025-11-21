@@ -10,6 +10,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
 	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
@@ -102,9 +103,11 @@ type Config struct {
 	ScheduledSessionMaxRoundParticipantsCount int64
 	OtelCollectorEndpoint                     string
 	OtelPushInterval                          int64
+	PyroscopeServerURL                        string
 	RoundReportServiceEnabled                 bool
 
-	EsploraURL string
+	EsploraURL      string
+	AlertManagerURL string
 
 	UnlockerType     string
 	UnlockerFilePath string // file unlocker
@@ -132,6 +135,7 @@ type Config struct {
 	liveStore      ports.LiveStore
 	network        *arklib.Network
 	roundReportSvc application.RoundReportService
+	alerts         ports.Alerts
 }
 
 func (c *Config) String() string {
@@ -171,6 +175,7 @@ var (
 	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
 	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
 	EsploraURL                           = "ESPLORA_URL"
+	AlertManagerURL                      = "ALERT_MANAGER_URL"
 	NoMacaroons                          = "NO_MACAROONS"
 	NoTLS                                = "NO_TLS"
 	TLSExtraIP                           = "TLS_EXTRA_IP"
@@ -187,6 +192,7 @@ var (
 	ScheduledSessionMaxRoundParticipants = "SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT"
 	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
 	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
+	PyroscopeServerURL                   = "PYROSCOPE_SERVER_URL"
 	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
 	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
 	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
@@ -350,6 +356,7 @@ func LoadConfig() (*Config, error) {
 		CheckpointExitDelay:       determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
 		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
 		EsploraURL:                viper.GetString(EsploraURL),
+		AlertManagerURL:           viper.GetString(AlertManagerURL),
 		NoMacaroons:               viper.GetBool(NoMacaroons),
 		TLSExtraIPs:               viper.GetStringSlice(TLSExtraIP),
 		TLSExtraDomains:           viper.GetStringSlice(TLSExtraDomain),
@@ -369,6 +376,7 @@ func LoadConfig() (*Config, error) {
 		),
 		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
 		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
+		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
 		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
 
 		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
@@ -578,6 +586,9 @@ func (c *Config) Validate() error {
 	if err := c.unlockerService(); err != nil {
 		return err
 	}
+	if err := c.alertsService(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -671,7 +682,7 @@ func (c *Config) walletService() error {
 		return fmt.Errorf("missing ark wallet address")
 	}
 
-	walletSvc, network, err := walletclient.New(arkWallet)
+	walletSvc, network, err := walletclient.New(arkWallet, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}
@@ -687,7 +698,7 @@ func (c *Config) signerService() error {
 		return fmt.Errorf("missing signer address")
 	}
 
-	signerSvc, err := signerclient.New(signer)
+	signerSvc, err := signerclient.New(signer, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}
@@ -796,7 +807,7 @@ func (c *Config) appService() error {
 
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
-		c.scheduler, c.liveStore, roundReportSvc,
+		c.scheduler, c.liveStore, roundReportSvc, c.alerts,
 		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.PublicUnilateralExitDelay,
 		c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
@@ -858,6 +869,15 @@ func (c *Config) roundReportService() error {
 	}
 
 	c.roundReportSvc = application.NewRoundReportService()
+	return nil
+}
+
+func (c *Config) alertsService() error {
+	if c.AlertManagerURL == "" {
+		return nil
+	}
+
+	c.alerts = alertsmanager.NewService(c.AlertManagerURL, c.EsploraURL)
 	return nil
 }
 

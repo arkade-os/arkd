@@ -309,7 +309,6 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 							Id:   "arkTxid",
 							Type: domain.EventTypeOffchainTxAccepted,
 						},
-						Id: "arkTxid",
 						CommitmentTxids: map[string]string{
 							"0": randomString(32),
 							"1": randomString(32),
@@ -338,7 +337,6 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 							Id:   "arkTxid 2",
 							Type: domain.EventTypeOffchainTxAccepted,
 						},
-						Id: "arkTxid 2",
 						CommitmentTxids: map[string]string{
 							"0": randomString(32),
 							"1": randomString(32),
@@ -793,12 +791,11 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		err = svc.Vtxos().AddVtxos(ctx, chainVtxos)
 		require.NoError(t, err)
 
-		// Test recursive query starting from vtxo1
-		children, err := svc.Vtxos().GetVtxosByCommitmentTxid(ctx, vtxo1.RootCommitmentTxid)
+		children, err := svc.Vtxos().
+			GetSweepableVtxosByCommitmentTxid(ctx, vtxo1.RootCommitmentTxid)
 		require.NoError(t, err)
-		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
+		require.Len(t, children, 4)
 
-		// Verify all outpoints are returned
 		expectedOutpoints := []domain.Outpoint{
 			vtxo1.Outpoint,
 			vtxo2.Outpoint,
@@ -806,7 +803,6 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			vtxo4.Outpoint,
 		}
 
-		// Sort both slices for comparison
 		sort.Slice(children, func(i, j int) bool {
 			return children[i].Txid < children[j].Txid
 		})
@@ -817,9 +813,106 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, expectedOutpoints, children)
 
 		// Test with non-existent txid
-		children, err = svc.Vtxos().GetVtxosByCommitmentTxid(ctx, randomString(32))
+		children, err = svc.Vtxos().GetSweepableVtxosByCommitmentTxid(ctx, randomString(32))
 		require.NoError(t, err)
 		require.Empty(t, children)
+
+		// Test recursive query starting from vtxo1
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo1.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
+
+		sort.Slice(children, func(i, j int) bool {
+			return children[i].Txid < children[j].Txid
+		})
+
+		require.Equal(t, expectedOutpoints, children)
+
+		// Test starting from middle of chain (vtxo2)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo2.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 3) // Should return vtxo2, vtxo3, vtxo4
+
+		// Test starting from end of chain (vtxo4)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo4.Txid)
+		require.NoError(t, err)
+		require.Len(t, children, 1) // Should return only vtxo4
+
+		// Test with non-existent txid
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, randomString(32))
+		require.NoError(t, err)
+		require.Empty(t, children)
+
+		otherCommitmentTxid := randomString(32)
+
+		// Test GetVtxoPubKeysByCommitmentTxid
+		tapKeysTestVtxos := []domain.Vtxo{
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 0,
+				},
+				PubKey:             "tapkey1",
+				Amount:             5000,
+				RootCommitmentTxid: otherCommitmentTxid,
+				CommitmentTxids:    []string{otherCommitmentTxid},
+				Unrolled:           false,
+				Swept:              false,
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 1,
+				},
+				PubKey:             "tapkey2",
+				Amount:             2000,
+				RootCommitmentTxid: otherCommitmentTxid,
+				CommitmentTxids:    []string{otherCommitmentTxid},
+				Unrolled:           false,
+				Swept:              false,
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 2,
+				},
+				PubKey:             "tapkey3",
+				Amount:             10000,
+				RootCommitmentTxid: otherCommitmentTxid,
+				CommitmentTxids:    []string{otherCommitmentTxid},
+				Unrolled:           false,
+				Swept:              false,
+			},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, tapKeysTestVtxos)
+		require.NoError(t, err)
+
+		tapKeys, err := svc.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, otherCommitmentTxid, 3000)
+		require.NoError(t, err)
+		require.Len(t, tapKeys, 2)
+		require.Contains(t, tapKeys, "tapkey1")
+		require.Contains(t, tapKeys, "tapkey3")
+		require.NotContains(t, tapKeys, "tapkey2")
+
+		tapKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, otherCommitmentTxid, 0)
+		require.NoError(t, err)
+		require.Len(t, tapKeys, 3)
+		require.Contains(t, tapKeys, "tapkey1")
+		require.Contains(t, tapKeys, "tapkey2")
+		require.Contains(t, tapKeys, "tapkey3")
+
+		tapKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, otherCommitmentTxid, 20000)
+		require.NoError(t, err)
+		require.Empty(t, tapKeys)
+
+		tapKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, "", 0)
+		require.NoError(t, err)
+		require.Empty(t, tapKeys)
+
+		nonExistentCommitmentTxid := randomString(32)
+		tapKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, nonExistentCommitmentTxid, 0)
+		require.NoError(t, err)
+		require.Empty(t, tapKeys)
 	})
 }
 
@@ -903,7 +996,6 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 					Id:   arkTxid,
 					Type: domain.EventTypeOffchainTxAccepted,
 				},
-				Id: arkTxid,
 				CommitmentTxids: map[string]string{
 					checkpointTxid1: rootCommitmentTxid,
 					checkpointTxid2: commitmentTxid,
