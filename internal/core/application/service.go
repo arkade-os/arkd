@@ -892,7 +892,7 @@ func (s *service) SubmitOffchainTx(
 		if isAssetOutput {
 			if foundOpReturn {
 				return nil, "", "", errors.MALFORMED_ARK_TX.New(
-					"tx %s has multiple op return outputs", txid,
+					"tx %s has multiple op return outputs, not allowed for assets", txid,
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
 			foundOpReturn = true
@@ -902,6 +902,10 @@ func (s *service) SubmitOffchainTx(
 				log.WithError(err).Warn("asset transaction validation failed")
 				return nil, "", "", errors.ASSET_VALIDATION_FAILED.Wrap(err)
 			}
+
+			outputs = append(outputs, out)
+
+			continue
 		}
 
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
@@ -3743,7 +3747,8 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 		totalInputAmount += uint64(in.Amount)
 	}
 
-	if totalInputAmount != totalOuputAmount {
+	// Verify If Asset Creation Or Not
+	if len(ins) > 0 && totalInputAmount != totalOuputAmount {
 		return fmt.Errorf("asset input amount %d does not match output amount %d",
 			totalInputAmount, totalOuputAmount,
 		)
