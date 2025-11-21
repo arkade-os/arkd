@@ -152,8 +152,49 @@ func formatBatchFinalizedAlert(esploraUrl string, data ports.BatchFinalizedAlert
 		"• Liquidity provided: %s", formatBTC(data.LiquidityProvided),
 	))
 	lines = append(lines, fmt.Sprintf(
-		"• Liquidity Provider Balance: %s (-%s)", formatBTC(totBalance), data.LiquidityCost,
+		"• Liquidity Provider Balance: %s (%s)", formatBTC(totBalance), data.LiquidityCost,
 	))
+
+	lines = append(lines, "\n*Details:*")
+	if data.ExitAmount > 0 {
+		l := "utxo"
+		if data.ExitCount > 1 {
+			l = "utxos"
+		}
+		lines = append(lines, fmt.Sprintf(
+			"• Exit amount (%d %s): %s", data.ExitCount, l, formatBTC(data.ExitAmount),
+		))
+	}
+	if data.BoardingInputAmount > 0 {
+		l := "utxo"
+		if data.BoardingInputCount > 1 {
+			l = "utxos"
+		}
+		lines = append(lines, fmt.Sprintf(
+			"• Boarding amount (%d %s): %s",
+			data.BoardingInputCount, l, formatBTC(data.BoardingInputAmount),
+		))
+	}
+	if data.LeafAmount > 0 {
+		l := "leaf"
+		if data.LeafCount > 1 {
+			l = "leaves"
+		}
+		lines = append(lines, fmt.Sprintf(
+			"• Batch amount (%d %s): %s", data.LeafCount, l, formatBTC(data.LeafAmount),
+		))
+	}
+	if data.ForfeitAmount > 0 {
+		l := "vtxo"
+		if data.ForfeitCount > 1 {
+			l = "vtxos"
+		}
+		lines = append(lines, fmt.Sprintf(
+			"• Forfeit amount (%d %s): %s", data.ForfeitCount, l, formatBTC(data.ForfeitAmount),
+		))
+	}
+	lines = append(lines, fmt.Sprintf("• Intents: %d", data.IntentsCount))
+	lines = append(lines, fmt.Sprintf("• Duration: %s", data.Duration))
 
 	lines = append(lines, "\n*Liquidity Provider Balance:*")
 	lines = append(lines, fmt.Sprintf(
@@ -164,27 +205,12 @@ func formatBatchFinalizedAlert(esploraUrl string, data ports.BatchFinalizedAlert
 	))
 
 	lines = append(lines, "\n*Fees:*")
-	lines = append(lines, fmt.Sprintf("• Network fees (spent): %d sats", data.OnchainFees))
-	lines = append(lines, fmt.Sprintf("• Collected fees (earned): %d sats", data.CollectedFees))
-
-	lines = append(lines, "\n*Breakdown:*")
-	lines = append(lines, fmt.Sprintf("• Duration: %s", data.Duration))
-	lines = append(lines, fmt.Sprintf("• Intents: %d", data.IntentsCount))
-	lines = append(lines, fmt.Sprintf("• Boarding UTXOs: %d", data.BoardingInputCount))
-	lines = append(lines, fmt.Sprintf(
-		"• Boarding UTXOs amount: %s", formatBTC(data.BoardingInputAmount),
-	))
-	lines = append(lines, fmt.Sprintf("• Spent VTXOs: %d", data.ForfeitCount))
-	lines = append(lines, fmt.Sprintf(
-		"• Spent VTXOs amount (forfeited): %s", formatBTC(data.ForfeitAmount),
-	))
-	lines = append(lines, fmt.Sprintf("• New VTXOs: %d", data.LeafCount))
-	lines = append(lines, fmt.Sprintf(
-		"• New VTXOs amount (batched): %s", formatBTC(data.LeafAmount),
-	))
-	lines = append(lines, fmt.Sprintf(
-		"• New UTXOs amount (exited): %s", formatBTC(data.ExitAmount),
-	))
+	lines = append(lines, fmt.Sprintf("• Network fees: -%d sats", data.OnchainFees))
+	sign := ""
+	if data.CollectedFees > 0 {
+		sign = "+"
+	}
+	lines = append(lines, fmt.Sprintf("• Collected fees: %s%d sats", sign, data.CollectedFees))
 	return strings.Join(lines, "\n")
 }
 
