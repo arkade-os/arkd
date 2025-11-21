@@ -103,6 +103,7 @@ type Config struct {
 	ScheduledSessionMaxRoundParticipantsCount int64
 	OtelCollectorEndpoint                     string
 	OtelPushInterval                          int64
+	PyroscopeServerURL                        string
 	RoundReportServiceEnabled                 bool
 
 	EsploraURL      string
@@ -191,6 +192,7 @@ var (
 	ScheduledSessionMaxRoundParticipants = "SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT"
 	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
 	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
+	PyroscopeServerURL                   = "PYROSCOPE_SERVER_URL"
 	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
 	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
 	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
@@ -374,6 +376,7 @@ func LoadConfig() (*Config, error) {
 		),
 		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
 		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
+		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
 		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
 
 		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
@@ -679,7 +682,7 @@ func (c *Config) walletService() error {
 		return fmt.Errorf("missing ark wallet address")
 	}
 
-	walletSvc, network, err := walletclient.New(arkWallet)
+	walletSvc, network, err := walletclient.New(arkWallet, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}
@@ -695,7 +698,7 @@ func (c *Config) signerService() error {
 		return fmt.Errorf("missing signer address")
 	}
 
-	signerSvc, err := signerclient.New(signer)
+	signerSvc, err := signerclient.New(signer, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/global"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type OTelHook struct {
@@ -43,6 +44,20 @@ func mapLevel(l logrus.Level) log.Severity {
 }
 
 func (h *OTelHook) Fire(e *logrus.Entry) error {
+	// extract trace context for correlation
+	ctx := e.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// add trace_id and span_id to Logrus entry fields for Docker stdout logs
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanCtx.IsValid() {
+		e.Data["trace_id"] = spanCtx.TraceID().String()
+		e.Data["span_id"] = spanCtx.SpanID().String()
+	}
+
+	// Create OTel log record
 	rec := log.Record{}
 	rec.SetTimestamp(e.Time)
 	rec.SetSeverity(mapLevel(e.Level))
@@ -62,10 +77,6 @@ func (h *OTelHook) Fire(e *logrus.Entry) error {
 	// observed ts (optional)
 	rec.SetObservedTimestamp(time.Now())
 	logger := global.GetLoggerProvider().Logger("arkd")
-	ctx := e.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	logger.Emit(ctx, rec)
 
 	return nil
