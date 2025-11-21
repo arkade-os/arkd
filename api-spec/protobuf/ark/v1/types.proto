@@ -5,149 +5,225 @@ package ark.v1;
 /* Types */
 
 message Outpoint {
+  // The transaction ID (hex-encoded) of the transaction containing the output.
   string txid = 1;
+  // The output index (vout) within the transaction.
   uint32 vout = 2;
 }
 
 message Input {
+  // The outpoint being spent as an input.
   Outpoint outpoint = 1;
+  // The taproot script tree containing the tapscripts for this input.
   Tapscripts taproot_tree = 2;
 }
 
 message Vtxo {
+  // The outpoint identifying this vtxo (virtual transaction output).
   Outpoint outpoint = 1;
+  // The amount in satoshis locked in this vtxo.
   uint64 amount = 2;
+  // The hex-encoded taproot script (P2TR pubkey) for this vtxo.
   string script = 3;
+  // Unix timestamp when this vtxo was created.
   int64 created_at = 4;
+  // Unix timestamp when this vtxo expires and can be swept by the server.
   int64 expires_at = 5;
+  // List of commitment transaction IDs that created this vtxo. Multiple txids indicate the vtxo
+  // has been refreshed across multiple rounds.
   repeated string commitment_txids = 6;
+  // True if this vtxo is preconfirmed (0-conf) and not yet included in a confirmed commitment tx.
   bool is_preconfirmed = 7;
+  // True if this vtxo has been swept by the server after expiration.
   bool is_swept = 8;
+  // True if this vtxo has been unrolled onchain (broadcast to the Bitcoin network).
   bool is_unrolled = 9;
+  // True if this vtxo has been spent in an offchain or onchain transaction.
   bool is_spent = 10;
+  // The transaction ID (hex-encoded) that spent this vtxo, if spent.
   string spent_by = 11;
+  // The onchain transaction ID (hex-encoded) that settled this vtxo, if applicable.
   string settled_by = 12;
+  // The Ark transaction ID (hex-encoded) that created this vtxo in an offchain transfer.
   string ark_txid = 13;
 }
 
 message TxData {
+  // The transaction ID (hex-encoded).
   string txid = 1;
+  // The full transaction (hex-encoded).
   string tx = 2;
 }
 
 message TxNotification {
+  // The transaction ID (hex-encoded) of the commitment tx or ark tx.
   string txid = 1;
+  // The full transaction (hex-encoded).
   string tx = 2;
+  // List of vtxos that were spent in this transaction.
   repeated Vtxo spent_vtxos = 3;
+  // List of new spendable vtxos created by this transaction.
   repeated Vtxo spendable_vtxos = 4;
-  // This field is set only in case of offchain tx.
-  map<string, TxData> checkpoint_txs = 5; // key: outpoint, value: checkpoint txid
+  // Checkpoint transactions for offchain transfers. Only set for ark txs (offchain transfers).
+  // Key is the outpoint string (txid:vout), value is the checkpoint transaction data.
+  map<string, TxData> checkpoint_txs = 5;
 }
 
 message Tapscripts {
+  // List of hex-encoded tapscripts in the taproot script tree.
   repeated string scripts = 1;
 }
 
 message Intent {
+  // The BIP-322 proof (PSBT base64 or raw bytes) containing signatures and witness data proving
+  // ownership of the inputs.
   string proof = 1;
+  // The intent message as a JSON string containing RegisterMessage or DeleteMessage with fields:
+  // - type: "register" or "delete"
+  // - RegisterMessage: onchain_output_indexes, valid_at, expire_at, cosigners_public_keys
+  // - DeleteMessage: expire_at
   string message = 2;
 }
 
-message ScheduledSession {
+message MarketHour {
+  // Unix timestamp of the next market hour start time.
   int64 next_start_time = 1;
+  // Unix timestamp of the next market hour end time.
   int64 next_end_time = 2;
+  // The period in seconds between market hour windows (e.g., 86400 for daily).
   int64 period = 3;
-  int64 duration = 4;
+  // The round interval in seconds during market hours (may differ from normal round_interval).
+  int64 round_interval = 4;
+  // Fee schedule applied during market hours.
   FeeInfo fees = 5;
 }
 
 message FeeInfo {
+  // Fee information for different types of intent inputs and outputs.
   IntentFeeInfo intent_fee = 1;
+  // The transaction fee rate in satoshis per vbyte (virtual byte) as a string.
   string tx_fee_rate = 2;
 }
 
 message IntentFeeInfo  {
+  // Fee in BTC (as decimal string, e.g., "0.00001000") for each offchain input (vtxo) in an intent.
   string offchain_input = 1;
+  // Fee in BTC (as decimal string, e.g., "0.00001000") for each offchain output (vtxo) in an intent.
   string offchain_output = 2;
+  // Fee in BTC (as decimal string, e.g., "0.00001000") for each onchain input (boarding UTXO) in an intent.
   string onchain_input = 3;
+  // Fee in BTC (as decimal string, e.g., "0.00001000") for each onchain output (exit address) in an intent.
   string onchain_output = 4;
 }
 
 message PendingTx {
+  // The transaction ID (hex-encoded) of the pending Ark transaction.
   string ark_txid = 1;
+  // The hex-encoded fully signed Ark transaction (with server signature).
   string final_ark_tx = 2;
+  // List of hex-encoded checkpoint transactions signed by the server, awaiting client signatures
+  // to finalize the offchain transfer.
   repeated string signed_checkpoint_txs = 3;
 }
 
 message DeprecatedSigner {
+  // The hex-encoded compressed public key of the deprecated signer.
   string pubkey = 1;
+  // Unix timestamp after which this signer is no longer valid. Vtxos signed by this key
+  // before this date remain valid.
   int64 cutoff_date = 2;
 }
 
 /* Events */
 
 message BatchStartedEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
+  // List of SHA256 hashes of intent IDs selected for this batch. Clients should hash their
+  // intent_id and check if it's included to confirm participation.
   repeated string intent_id_hashes = 2;
+  // The CSV (CheckSequenceVerify) relative locktime value for the vtxo tree sweep. This is the
+  // number of blocks (if < 512) or seconds (if >= 512, must be multiple of 512) that must pass
+  // before the server can sweep expired vtxos. Matches vtxo_tree_expiry from GetInfo.
   int64 batch_expiry = 3;
 }
 
 message BatchFinalizationEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
+  // The hex-encoded unsigned commitment transaction for this batch.
   string commitment_tx = 2;
 }
 
 message BatchFinalizedEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
+  // The transaction ID (hex-encoded) of the finalized commitment transaction.
   string commitment_txid = 2;
 }
 
 message BatchFailedEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
+  // Human-readable reason why the batch failed.
   string reason = 2;
 }
 
 message TreeSigningStartedEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
+  // List of hex-encoded compressed public keys of cosigners participating in MuSig2 signing.
   repeated string cosigners_pubkeys = 2;
+  // The hex-encoded unsigned commitment transaction that needs to be signed.
   string unsigned_commitment_tx = 3;
 }
 
 message TreeNoncesAggregatedEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
-  map<string,string> tree_nonces = 2;
+  // JSON-encoded map of transaction IDs to aggregated MuSig2 public nonces (66 bytes, hex-encoded).
+  // Format: {"txid1": "hex_nonce1", "txid2": "hex_nonce2", ...}
+  string tree_nonces = 2;
 }
 
 message TreeNoncesEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
+  // List of topic strings for event filtering.
   repeated string topic = 2;
+  // The transaction ID (hex-encoded) of the tree transaction.
   string txid = 3;
-  map<string, string> nonces = 4; // pubkey -> musig2 public nonce
+  // Map of cosigner public keys to their MuSig2 public nonces (both hex-encoded).
+  map<string, string> nonces = 4;
 }
 
 message TreeTxEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
+  // List of topic strings for event filtering.
   repeated string topic = 2;
+  // The index of this batch output in the commitment transaction.
   int32 batch_index = 3;
+  // The transaction ID (hex-encoded) of the tree transaction.
   string txid = 4;
+  // The full transaction (hex-encoded) of the tree transaction.
   string tx = 5;
-  map<uint32, string> children = 6; // output index -> child txid
+  // Map of output indices to child transaction IDs in the vtxo tree.
+  map<uint32, string> children = 6;
 }
 
 message TreeSignatureEvent {
+  // The unique identifier (batch/round ID) for this batch.
   string id = 1;
+  // List of topic strings for event filtering.
   repeated string topic = 2;
+  // The index of this batch output in the commitment transaction.
   int32 batch_index = 3;
+  // The transaction ID (hex-encoded) of the tree transaction being signed.
   string txid = 4;
+  // The hex-encoded MuSig2 aggregated signature for this tree transaction.
   string signature = 5;
 }
 
 message Heartbeat {
-}
-
-message ErrorDetails {
-  int32 code = 1;
-  string name = 2;
-  string message = 3;
-  map<string, string> metadata = 4;
 }
