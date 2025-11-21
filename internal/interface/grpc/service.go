@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"path/filepath"
 	"strings"
 	"time"
@@ -40,15 +41,16 @@ const (
 )
 
 type service struct {
-	version       string
-	config        Config
-	appConfig     *config.Config
-	server        *http.Server
-	adminServer   *http.Server
-	grpcServer    *grpc.Server
-	adminGrpcSrvr *grpc.Server
-	macaroonSvc   *macaroons.Service
-	otelShutdown  func(context.Context) error
+	version           string
+	config            Config
+	appConfig         *config.Config
+	server            *http.Server
+	adminServer       *http.Server
+	grpcServer        *grpc.Server
+	adminGrpcSrvr     *grpc.Server
+	macaroonSvc       *macaroons.Service
+	otelShutdown      func(context.Context) error
+	pyroscopeShutdown func() error
 }
 
 func NewService(
@@ -122,6 +124,13 @@ func (s *service) Start() error {
 func (s *service) Stop() {
 	withAppSvc := true
 	s.stop(withAppSvc)
+	if s.pyroscopeShutdown != nil {
+		if err := s.pyroscopeShutdown(); err != nil {
+			log.Errorf("failed to shutdown pyroscope: %s", err)
+		}
+
+		log.Info("shutdown pyroscope")
+	}
 	if s.otelShutdown != nil {
 		if err := s.otelShutdown(context.Background()); err != nil {
 			log.Errorf("failed to shutdown otel: %s", err)
@@ -136,7 +145,7 @@ func (s *service) start(withAppSvc bool) error {
 		return err
 	}
 
-	if err := s.newServer(tlsConfig, withAppSvc); err != nil {
+	if err := s.newServer(tlsConfig, withAppSvc, s.config.EnablePprof); err != nil {
 		return err
 	}
 
@@ -191,7 +200,7 @@ func (s *service) stop(withAppSvc bool) {
 	}
 }
 
-func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
+func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bool) error {
 	ctx := context.Background()
 	if s.appConfig.OtelCollectorEndpoint != "" {
 		pushInteval := time.Duration(s.appConfig.OtelPushInterval) * time.Second
@@ -208,6 +217,16 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		)
 		if err != nil {
 			return err
+		}
+
+		if s.appConfig.PyroscopeServerURL != "" {
+			pyroscopeShutdown, err := telemetry.InitPyroscope(
+				s.appConfig.PyroscopeServerURL,
+			)
+			if err != nil {
+				return err
+			}
+			s.pyroscopeShutdown = pyroscopeShutdown
 		}
 
 		s.otelShutdown = otelShutdown
@@ -328,6 +347,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcServer, grpcGateway)
 	mux := http.NewServeMux()
+
 	mux.Handle("/", handler)
 
 	httpServerHandler := http.Handler(mux)
@@ -367,6 +387,21 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool) error {
 		adminGrpcGateway := http.Handler(adminGwmux)
 		adminHandler := router(adminGrpcServer, adminGrpcGateway)
 		adminMux := http.NewServeMux()
+
+		if withPprof {
+			adminMux.HandleFunc("/debug/pprof/", pprof.Index)
+			adminMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+			adminMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+			adminMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+			adminMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+			adminMux.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+			adminMux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+			adminMux.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+			adminMux.Handle("/debug/pprof/block", pprof.Handler("block"))
+			adminMux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+			log.Info("pprof enabled on admin port at /debug/pprof/")
+		}
+
 		adminMux.Handle("/", adminHandler)
 
 		adminHttpServerHandler := http.Handler(adminMux)

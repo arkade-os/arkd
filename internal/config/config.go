@@ -103,6 +103,7 @@ type Config struct {
 	ScheduledSessionMaxRoundParticipantsCount int64
 	OtelCollectorEndpoint                     string
 	OtelPushInterval                          int64
+	PyroscopeServerURL                        string
 	RoundReportServiceEnabled                 bool
 
 	EsploraURL      string
@@ -121,6 +122,7 @@ type Config struct {
 	SettlementMinExpiryGap    int64
 
 	OnchainOutputFee int64
+	EnablePprof      bool
 
 	repo           ports.RepoManager
 	svc            application.Service
@@ -191,6 +193,7 @@ var (
 	ScheduledSessionMaxRoundParticipants = "SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT"
 	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
 	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
+	PyroscopeServerURL                   = "PYROSCOPE_SERVER_URL"
 	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
 	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
 	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
@@ -204,6 +207,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	OnchainOutputFee              = "ONCHAIN_OUTPUT_FEE"
+	EnablePprof                   = "ENABLE_PPROF"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -239,6 +243,7 @@ var (
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultOnchainOutputFee              = 0 // no fee by default
+	defaultEnablePprof                   = false
 )
 
 func LoadConfig() (*Config, error) {
@@ -279,6 +284,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(OnchainOutputFee, defaultOnchainOutputFee)
+	viper.SetDefault(EnablePprof, defaultEnablePprof)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -374,6 +380,7 @@ func LoadConfig() (*Config, error) {
 		),
 		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
 		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
+		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
 		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
 
 		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
@@ -387,6 +394,7 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		OnchainOutputFee:              viper.GetInt64(OnchainOutputFee),
+		EnablePprof:                   viper.GetBool(EnablePprof),
 	}, nil
 }
 
@@ -679,7 +687,7 @@ func (c *Config) walletService() error {
 		return fmt.Errorf("missing ark wallet address")
 	}
 
-	walletSvc, network, err := walletclient.New(arkWallet)
+	walletSvc, network, err := walletclient.New(arkWallet, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}
@@ -695,7 +703,7 @@ func (c *Config) signerService() error {
 		return fmt.Errorf("missing signer address")
 	}
 
-	signerSvc, err := signerclient.New(signer)
+	signerSvc, err := signerclient.New(signer, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}
