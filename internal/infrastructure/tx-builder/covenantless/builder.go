@@ -49,7 +49,7 @@ func (b *txBuilder) GetTxid(tx string) (string, error) {
 	return ptx.UnsignedTx.TxID(), nil
 }
 
-func (b *txBuilder) VerifyTapscriptPartialSigs(
+func (b *txBuilder) VerifyVtxoTapscriptSigs(
 	tx string, mustIncludeSignerSig bool,
 ) (bool, *psbt.Packet, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
@@ -69,7 +69,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 	}
 	signerPubkeyHex := hex.EncodeToString(schnorr.SerializePubKey(signerPubkey))
 
-	prevoutFetcher, err := b.getPrevOutputFetcher(ptx)
+	prevoutFetcher, err := txutils.GetPrevOutputFetcher(ptx)
 	if err != nil {
 		return false, nil, err
 	}
@@ -1014,78 +1014,39 @@ func (b *txBuilder) createCommitmentTx(
 	return ptx, nil
 }
 
-func (b *txBuilder) CountSignedTaprootInputs(tx string) (int, error) {
-	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+func (b *txBuilder) VerifyBoardingTapscriptSigs(
+	txToVerify, commitmentTx string,
+) (map[uint32]ports.SignedBoardingInput, error) {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(txToVerify), true)
 	if err != nil {
-		return -1, err
+		return nil, err
 	}
 
-	signedInputsCount := 0
-	for _, in := range ptx.Inputs {
-		if len(in.TaprootScriptSpendSig) == 0 || len(in.TaprootLeafScript) == 0 {
-			continue
-		}
-
-		signedInputsCount++
-	}
-	return signedInputsCount, nil
-}
-
-func (b *txBuilder) VerifyAndCombinePartialTx(dest string, src string) (string, error) {
-	commitmentTx, err := psbt.NewFromRawBytes(strings.NewReader(dest), true)
+	commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	sourceTx, err := psbt.NewFromRawBytes(strings.NewReader(src), true)
+	// rely on the commitment tx (built by the builder) to get the prevouts
+	// it ensures that txToVerify is not modifying the prevouts in order to produce "fake" but valid signatures
+	prevoutFetcher, err := txutils.GetPrevOutputFetcher(commitmentPtx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	if sourceTx.UnsignedTx.TxID() != commitmentTx.UnsignedTx.TxID() {
-		return "", fmt.Errorf("txids do not match")
+	ins, err := txutils.VerifyTapscriptSigs(ptx, prevoutFetcher)
+	if err != nil {
+		return nil, err
 	}
-
-	for i, sourceInput := range sourceTx.Inputs {
-		isMultisigTaproot := len(sourceInput.TaprootLeafScript) > 0
-		if isMultisigTaproot {
-			// check if the source tx signs the leaf
-			if len(sourceInput.TaprootScriptSpendSig) == 0 {
-				continue
-			}
-
-			partialSig := sourceInput.TaprootScriptSpendSig[0]
-			preimage, err := b.getTaprootPreimage(
-				sourceTx, i, sourceInput.TaprootLeafScript[0].Script,
-			)
-			if err != nil {
-				return "", err
-			}
-
-			sig, err := schnorr.ParseSignature(partialSig.Signature)
-			if err != nil {
-				return "", err
-			}
-
-			pubkey, err := schnorr.ParsePubKey(partialSig.XOnlyPubKey)
-			if err != nil {
-				return "", err
-			}
-
-			if !sig.Verify(preimage, pubkey) {
-				return "", fmt.Errorf(
-					"invalid signature for input %s:%d",
-					sourceTx.UnsignedTx.TxIn[i].PreviousOutPoint.Hash.String(),
-					sourceTx.UnsignedTx.TxIn[i].PreviousOutPoint.Index,
-				)
-			}
-
-			commitmentTx.Inputs[i].TaprootScriptSpendSig = sourceInput.TaprootScriptSpendSig
-			commitmentTx.Inputs[i].TaprootLeafScript = sourceInput.TaprootLeafScript
+	m := make(map[uint32]ports.SignedBoardingInput)
+	for _, inIndex := range ins {
+		in := ptx.Inputs[inIndex]
+		m[uint32(inIndex)] = ports.SignedBoardingInput{
+			Signatures: in.TaprootScriptSpendSig,
+			LeafScript: in.TaprootLeafScript[0],
 		}
 	}
-
-	return commitmentTx.B64Encode()
+	return m, nil
 }
 
 func (b *txBuilder) selectUtxos(
@@ -1131,39 +1092,6 @@ func (b *txBuilder) selectUtxos(
 	}
 
 	return append(selectedConnectorsUtxos, utxos...), change, nil
-}
-
-func (b *txBuilder) getPrevOutputFetcher(tx *psbt.Packet) (txscript.PrevOutputFetcher, error) {
-	prevouts := make(map[wire.OutPoint]*wire.TxOut)
-
-	for i, input := range tx.Inputs {
-		if input.WitnessUtxo == nil {
-			return nil, fmt.Errorf("missing witness utxo on input #%d", i)
-		}
-
-		outpoint := tx.UnsignedTx.TxIn[i].PreviousOutPoint
-		prevouts[outpoint] = input.WitnessUtxo
-	}
-
-	return txscript.NewMultiPrevOutFetcher(prevouts), nil
-}
-
-func (b *txBuilder) getTaprootPreimage(
-	tx *psbt.Packet, inputIndex int, leafScript []byte,
-) ([]byte, error) {
-	prevoutFetcher, err := b.getPrevOutputFetcher(tx)
-	if err != nil {
-		return nil, err
-	}
-
-	return txscript.CalcTapscriptSignaturehash(
-		txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),
-		txscript.SigHashDefault,
-		tx.UnsignedTx,
-		inputIndex,
-		prevoutFetcher,
-		txscript.NewBaseTapLeaf(leafScript),
-	)
 }
 
 func (b *txBuilder) onchainNetwork() *chaincfg.Params {

@@ -23,7 +23,7 @@ const (
 	tlsCertFile  = "cert.pem"
 )
 
-func mainAction(_ *cli.Context) error {
+func startAction(_ *cli.Context) error {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("invalid config: %s", err)
@@ -77,6 +77,7 @@ func main() {
 	app.UsageText = "Run the Ark Server with:\n\tarkd\nManage the Ark Server with:\n\tarkd [global options] command [command options]"
 	app.Commands = append(
 		app.Commands,
+		startCmd,
 		versionCmd,
 		walletCmd,
 		signerCmd,
@@ -88,8 +89,10 @@ func main() {
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,
 		revokeAuthCmd,
+		convictionsCmd,
 	)
-	app.Action = mainAction
+
+	app.DefaultCommand = startCmd.Name
 	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)
 
 	if err := app.Run(os.Args); err != nil {

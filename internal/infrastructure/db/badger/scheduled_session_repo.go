@@ -78,6 +78,17 @@ func (r *scheduledSessionRepository) Upsert(
 	return nil
 }
 
+func (r *scheduledSessionRepository) Clear(ctx context.Context) error {
+	var scheduledSession domain.ScheduledSession
+	if err := r.store.Delete(scheduledSessionKey, &scheduledSession); err != nil {
+		if errors.Is(err, badgerhold.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *scheduledSessionRepository) Close() {
 	// nolint:all
 	r.store.Close()

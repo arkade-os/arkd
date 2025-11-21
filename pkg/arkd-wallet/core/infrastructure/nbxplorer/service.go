@@ -112,11 +112,15 @@ func (n *nbxplorer) GetBitcoinStatus(ctx context.Context) (*ports.BitcoinStatus,
 		return nil, fmt.Errorf("failed to unmarshal blockchain info: %w", err)
 	}
 
+	minRelayTxFee := resp.BitcoinStatus.MinRelayTxFee * 1000
+	// add 10% margin to avoid min-relay-fee-not-met errors
+	increasedMinRelayTxFee := minRelayTxFee + (minRelayTxFee * 0.1)
+
 	return &ports.BitcoinStatus{
 		ChainTipHeight: resp.BitcoinStatus.Blocks,
 		ChainTipTime:   blockchainInfo.Mediantime,
 		Synced:         resp.BitcoinStatus.IsSynced,
-		MinRelayTxFee:  chainfee.SatPerKVByte(resp.BitcoinStatus.MinRelayTxFee * 1000),
+		MinRelayTxFee:  chainfee.SatPerKVByte(increasedMinRelayTxFee),
 	}, nil
 }
 
@@ -693,6 +697,10 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 	return notificationsChan, nil
 }
 
+func (n *nbxplorer) RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error {
+	return n.rescanUTXOs(ctx, outpoints)
+}
+
 func (n *nbxplorer) Close() error {
 	n.wsMutex.Lock()
 	defer n.wsMutex.Unlock()
@@ -836,6 +844,34 @@ func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.
 	}
 
 	return utxos, nil
+}
+
+func (n *nbxplorer) rescanUTXOs(ctx context.Context, outpoints []wire.OutPoint) error {
+	if len(outpoints) <= 0 {
+		return nil
+	}
+
+	outs := make([]string, 0, len(outpoints))
+	for _, out := range outpoints {
+		outs = append(outs, fmt.Sprintf("%s-%d", out.Hash.String(), out.Index))
+	}
+
+	jsonBody, err := json.Marshal(map[string]any{
+		"UTXOs": outs,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	cryptoCode := btcCryptoCode
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/rescan-utxos", cryptoCode)
+
+	if _, err := n.makeRequest(
+		ctx, "POST", endpoint, strings.NewReader(string(jsonBody)),
+	); err != nil {
+		return fmt.Errorf("failed to rescan UTXOs: %w", err)
+	}
+	return nil
 }
 
 func castUtxo(u utxoResponse) (ports.Utxo, error) {

@@ -370,7 +370,7 @@ func (s *service) waitForConfirmation(
 // list of forfeit txs.
 //
 // It works by iterating over all the inputs of all the forfeit txs and checking if the input
-// matches the given vtxo outpoint. If successfull, it returns the forfeit tx and the connector
+// matches the given vtxo outpoint. If successful, it returns the forfeit tx and the connector
 // outpoint. If it can't find the forfeit tx, it returns an error.
 //
 // If the input spending the vtxo is at index 0, the connector outpoint is at index 1

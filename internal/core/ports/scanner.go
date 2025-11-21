@@ -2,6 +2,7 @@ package ports
 
 import (
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/btcsuite/btcd/wire"
 	"golang.org/x/net/context"
 )
 
@@ -17,4 +18,5 @@ type BlockchainScanner interface {
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blocknumber int64, blocktime int64, err error)
+	RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error
 }

@@ -51,6 +51,11 @@ type ValidForfeitTx struct {
 	Connector domain.Outpoint
 }
 
+type SignedBoardingInput struct {
+	Signatures []*psbt.TaprootScriptSpendSig
+	LeafScript *psbt.TaprootTapLeafScript
+}
+
 type TxBuilder interface {
 	// BuildCommitmentTx builds a commitment tx for the given intents and boarding inputs
 	// It expects an optional list of connector addresses of expired batches from which selecting
@@ -74,9 +79,10 @@ type TxBuilder interface {
 		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs SweepableOutput, err error,
 	)
 	FinalizeAndExtract(tx string) (txhex string, err error)
-	VerifyTapscriptPartialSigs(
+	VerifyVtxoTapscriptSigs(
 		tx string, mustIncludeSignerSig bool,
 	) (valid bool, ptx *psbt.Packet, err error)
-	VerifyAndCombinePartialTx(dest string, src string) (string, error)
-	CountSignedTaprootInputs(tx string) (int, error)
+	VerifyBoardingTapscriptSigs(
+		signedTx string, commitmentTx string,
+	) (map[uint32]SignedBoardingInput, error)
 }

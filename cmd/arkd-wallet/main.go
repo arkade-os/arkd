@@ -7,6 +7,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/config"
 	grpcservice "github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/telemetry"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -17,6 +18,9 @@ func main() {
 	}
 
 	log.SetLevel(log.Level(cfg.LogLevel))
+	if cfg.OtelCollectorEndpoint != "" {
+		log.AddHook(telemetry.NewOTelHook())
+	}
 
 	svc, err := grpcservice.NewService(cfg)
 	if err != nil {

@@ -114,7 +114,8 @@ func (v *TapscriptsVtxoScript) Validate(
 
 		if len(keys) == 0 {
 			return fmt.Errorf(
-				"invalid forfeit closure, expected MultisigClosure, CLTVMultisigClosure or ConditionMultisigClosure",
+				"invalid forfeit closure, expected MultisigClosure, " +
+					"CLTVMultisigClosure or ConditionMultisigClosure",
 			)
 		}
 
@@ -132,8 +133,18 @@ func (v *TapscriptsVtxoScript) Validate(
 	}
 
 	for _, closure := range v.ExitClosures() {
-		c := closure.(*CSVMultisigClosure)
-		if !blockTypeAllowed && c.Locktime.Type == arklib.LocktimeTypeBlock {
+		var locktime arklib.RelativeLocktime
+		switch c := closure.(type) {
+		case *CSVMultisigClosure:
+			locktime = c.Locktime
+		case *ConditionCSVMultisigClosure:
+			locktime = c.Locktime
+		default:
+			return fmt.Errorf(
+				"invalid exit closure, expected CSVMultisigClosure or ConditionCSVMultisigClosure",
+			)
+		}
+		if !blockTypeAllowed && locktime.Type == arklib.LocktimeTypeBlock {
 			return fmt.Errorf("invalid exit closure, CSV block type not allowed")
 		}
 	}
@@ -156,11 +167,30 @@ func (v *TapscriptsVtxoScript) Validate(
 func (v *TapscriptsVtxoScript) SmallestExitDelay() (*arklib.RelativeLocktime, error) {
 	var smallest *arklib.RelativeLocktime
 
-	for _, closure := range v.Closures {
-		if csvClosure, ok := closure.(*CSVMultisigClosure); ok {
-			if smallest == nil || csvClosure.Locktime.LessThan(*smallest) {
-				smallest = &csvClosure.Locktime
-			}
+	for _, closure := range v.ExitClosures() {
+		var closureExitLocktime *arklib.RelativeLocktime
+
+		switch c := closure.(type) {
+		case *CSVMultisigClosure:
+			closureExitLocktime = &c.Locktime
+		case *ConditionCSVMultisigClosure:
+			closureExitLocktime = &c.Locktime
+		default:
+			return nil, fmt.Errorf(
+				"invalid exit closure, expected CSVMultisigClosure or ConditionCSVMultisigClosure",
+			)
+
+		}
+
+		if closureExitLocktime == nil {
+			return nil, fmt.Errorf(
+				"invalid exit closure, expected CSVMultisigClosure or " +
+					"ConditionCSVMultisigClosure with non-empty CSV locktime",
+			)
+		}
+
+		if smallest == nil || closureExitLocktime.LessThan(*smallest) {
+			smallest = closureExitLocktime
 		}
 	}
 
@@ -186,7 +216,7 @@ func (v *TapscriptsVtxoScript) ExitClosures() []Closure {
 	exits := make([]Closure, 0)
 	for _, closure := range v.Closures {
 		switch closure.(type) {
-		case *CSVMultisigClosure:
+		case *CSVMultisigClosure, *ConditionCSVMultisigClosure:
 			exits = append(exits, closure)
 		}
 	}

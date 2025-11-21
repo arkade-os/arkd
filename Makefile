@@ -44,7 +44,7 @@ help:
 ## intergrationtest: runs integration tests
 integrationtest:
 	@echo "Running integration tests..."
-	@go test -v -count 1 -timeout 800s github.com/arkade-os/arkd/test/e2e
+	@go test -v -count 1 -timeout 800s github.com/arkade-os/arkd/internal/test/e2e
 
 ## lint: lint codebase
 lint:
@@ -69,7 +69,7 @@ test: pgtest redis-up
 	@sleep 2
 	@echo "Running unit tests..."
 	@failed=0; \
-	go test -v -count=1 -race ./internal/... || failed=1; \
+	go test -v -count=1 -race $(shell go list ./internal/... | grep -v '/internal/test') || failed=1; \
 	find ./pkg -name go.mod -execdir go test -v ./... \; || failed=1; \
 	$(MAKE) droppgtest && $(MAKE) redis-down; \
 	exit $$failed
@@ -86,13 +86,13 @@ migrate:
 ## sqlc: gen sql
 sqlc:
 	@echo "gen sql..."
-	@docker run --rm -v ./internal/infrastructure/db/sqlite:/src -w /src sqlc/sqlc generate
+	@docker run --rm -v ./internal/infrastructure/db/sqlite:/src -w /src sqlc/sqlc:1.30.0 generate
 
 #### Postgres database ####
 # pg: starts postgres db inside docker container
 pg:
 	@echo "Starting postgres db..."
-	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5432:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 || true
+	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5433:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 || true
 
 # pgtest: starts postgres db inside docker container
 pgtest:
@@ -122,7 +122,7 @@ pgmigrate:
 
 # pgsqlc: generate sql code for postgres
 pgsqlc:
-	@docker run --rm -v ./internal/infrastructure/db/postgres:/src -w /src sqlc/sqlc generate
+	@docker run --rm -v ./internal/infrastructure/db/postgres:/src -w /src sqlc/sqlc:1.30.0 generate
 
 #### Redis database ####
 # redis-up: starts redis db inside docker container

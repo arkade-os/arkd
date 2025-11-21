@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
-	common "github.com/arkade-os/arkd/pkg/ark-lib"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -436,7 +438,7 @@ func TestRoundTripCSV(t *testing.T) {
 		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*btcec.PublicKey{seckey.PubKey()},
 		},
-		Locktime: common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 1024},
+		Locktime: arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1024},
 	}
 
 	leaf, err := csvSig.Script()
@@ -598,7 +600,7 @@ func TestCSVMultisigClosure(t *testing.T) {
 			MultisigClosure: script.MultisigClosure{
 				PubKeys: []*btcec.PublicKey{pubkey1},
 			},
-			Locktime: common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 1024},
+			Locktime: arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1024},
 		}
 
 		scriptBytes, err := csvSig.Script()
@@ -621,8 +623,8 @@ func TestCSVMultisigClosure(t *testing.T) {
 			MultisigClosure: script.MultisigClosure{
 				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 			},
-			Locktime: common.RelativeLocktime{
-				Type:  common.LocktimeTypeSecond,
+			Locktime: arklib.RelativeLocktime{
+				Type:  arklib.LocktimeTypeSecond,
 				Value: 512 * 4,
 			}, // ~2 weeks
 		}
@@ -672,9 +674,9 @@ func TestCSVMultisigClosure(t *testing.T) {
 			MultisigClosure: script.MultisigClosure{
 				PubKeys: []*btcec.PublicKey{pubkey1},
 			},
-			Locktime: common.RelativeLocktime{
-				Type:  common.LocktimeTypeSecond,
-				Value: common.SECONDS_MAX,
+			Locktime: arklib.RelativeLocktime{
+				Type:  arklib.LocktimeTypeSecond,
+				Value: arklib.SECONDS_MAX,
 			}, // Maximum allowed value
 		}
 
@@ -685,7 +687,7 @@ func TestCSVMultisigClosure(t *testing.T) {
 		valid, err := decodedCSV.Decode(scriptBytes)
 		require.NoError(t, err)
 		require.True(t, valid)
-		require.Equal(t, uint32(common.SECONDS_MAX), decodedCSV.Locktime.Value)
+		require.Equal(t, uint32(arklib.SECONDS_MAX), decodedCSV.Locktime.Value)
 	})
 }
 
@@ -791,7 +793,7 @@ func TestCSVMultisigClosureWitness(t *testing.T) {
 		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*btcec.PublicKey{pub1},
 		},
-		Locktime: common.RelativeLocktime{Type: common.LocktimeTypeBlock, Value: 144},
+		Locktime: arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144},
 	}
 
 	witness, err := closure.Witness(controlBlock, signatures)
@@ -866,7 +868,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 				PubKeys: []*btcec.PublicKey{pubkey1},
 				Type:    script.MultisigTypeChecksig,
 			},
-			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
+			Locktime: arklib.AbsoluteLocktime(time.Now().Unix()),
 		}
 
 		scriptBytes, err := closure.Script()
@@ -891,7 +893,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 				PubKeys: []*btcec.PublicKey{pubkey1},
 				Type:    script.MultisigTypeChecksig,
 			},
-			Locktime: common.AbsoluteLocktime(3000),
+			Locktime: arklib.AbsoluteLocktime(3000),
 		}
 
 		scriptBytes, err := closure.Script()
@@ -916,7 +918,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 				Type:    script.MultisigTypeChecksig,
 			},
-			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
+			Locktime: arklib.AbsoluteLocktime(time.Now().Unix()),
 		}
 
 		scriptBytes, err := closure.Script()
@@ -936,7 +938,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 				Type:    script.MultisigTypeChecksigAdd,
 			},
-			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
+			Locktime: arklib.AbsoluteLocktime(time.Now().Unix()),
 		}
 
 		scriptBytes, err := closure.Script()
@@ -957,7 +959,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 				PubKeys: []*btcec.PublicKey{pubkey1, pubkey2},
 				Type:    script.MultisigTypeChecksig,
 			},
-			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
+			Locktime: arklib.AbsoluteLocktime(time.Now().Unix()),
 		}
 
 		controlBlock := bytes.Repeat([]byte{0x00}, 32)
@@ -982,7 +984,7 @@ func TestCLTVMultisigClosure(t *testing.T) {
 				PubKeys: []*btcec.PublicKey{pubkey1},
 				Type:    script.MultisigTypeChecksig,
 			},
-			Locktime: common.AbsoluteLocktime(time.Now().Unix()),
+			Locktime: arklib.AbsoluteLocktime(time.Now().Unix()),
 		}
 		scriptBytes, err := validClosure.Script()
 		require.NoError(t, err)
@@ -1239,4 +1241,72 @@ func TestConditionMultisigClosure(t *testing.T) {
 		require.Equal(t, 64, len(witness[0]))
 		require.Equal(t, 64, len(witness[1]))
 	})
+}
+
+func TestParseVtxoScript(t *testing.T) {
+	for _, fixture := range parseVtxoScriptFixtures(t) {
+		t.Run(fixture.Name, func(t *testing.T) {
+			vtxoScript, err := script.ParseVtxoScript(fixture.Scripts)
+			require.NoError(t, err)
+
+			allClosures := append(vtxoScript.ExitClosures(), vtxoScript.ForfeitClosures()...)
+			require.Len(t, allClosures, len(fixture.Scripts))
+
+			tapkey, _, err := vtxoScript.TapTree()
+			require.NoError(t, err)
+			require.Equal(t, fixture.TaprootKey, hex.EncodeToString(schnorr.SerializePubKey(tapkey)))
+
+			for _, closure := range allClosures {
+				scriptBytes, err := closure.Script()
+				require.NoError(t, err)
+				require.Contains(t, fixture.Scripts, hex.EncodeToString(scriptBytes))
+			}
+
+			smallestExitDelay, err := vtxoScript.SmallestExitDelay()
+			require.NoError(t, err)
+			require.NotNil(t, smallestExitDelay)
+			require.Equal(t, fixture.SmallestExitDelay, *smallestExitDelay)
+		})
+	}
+}
+
+func TestTapscriptsVtxoScript(t *testing.T) {
+	for _, fixture := range parseVtxoScriptFixtures(t) {
+		t.Run(fixture.Name, func(t *testing.T) {
+			vtxoScript := &script.TapscriptsVtxoScript{}
+			err := vtxoScript.Decode(fixture.Scripts)
+			require.NoError(t, err)
+
+			buf, err := hex.DecodeString(fixture.ServerKey)
+			require.NoError(t, err)
+			serverKey, err := btcec.ParsePubKey(buf)
+			require.NoError(t, err)
+			err = vtxoScript.Validate(serverKey, fixture.SmallestExitDelay, true)
+			require.NoError(t, err)
+
+			scripts, err := vtxoScript.Encode()
+			require.NoError(t, err)
+			require.Len(t, scripts, len(fixture.Scripts))
+			require.ElementsMatch(t, fixture.Scripts, scripts)
+		})
+	}
+}
+
+type vtxoScriptFixtures struct {
+	Name              string                  `json:"name"`
+	Scripts           []string                `json:"scripts"`
+	TaprootKey        string                  `json:"taprootKey"`
+	SmallestExitDelay arklib.RelativeLocktime `json:"smallestExitDelay"`
+	ServerKey         string                  `json:"serverKey"`
+}
+
+func parseVtxoScriptFixtures(t *testing.T) []vtxoScriptFixtures {
+	file, err := os.ReadFile("testdata/vtxoscript.json")
+	require.NoError(t, err)
+
+	var fixtures []vtxoScriptFixtures
+	err = json.Unmarshal(file, &fixtures)
+	require.NoError(t, err)
+
+	return fixtures
 }

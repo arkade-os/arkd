@@ -10,6 +10,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
 	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
@@ -67,29 +68,32 @@ type Config struct {
 	TLSExtraIPs     []string
 	TLSExtraDomains []string
 
-	DbType              string
-	EventDbType         string
-	DbDir               string
-	DbUrl               string
-	EventDbUrl          string
-	EventDbDir          string
-	SessionDuration     int64
-	BanDuration         int64
-	BanThreshold        int64 // number of crimes to trigger a ban
-	SchedulerType       string
-	TxBuilderType       string
-	LiveStoreType       string
-	RedisUrl            string
-	RedisTxNumOfRetries int
-	WalletAddr          string
-	SignerAddr          string
-	VtxoTreeExpiry      arklib.RelativeLocktime
-	UnilateralExitDelay arklib.RelativeLocktime
-	CheckpointExitDelay arklib.RelativeLocktime
-	BoardingExitDelay   arklib.RelativeLocktime
-	NoteUriPrefix       string
-	AllowCSVBlockType   bool
-	HeartbeatInterval   int64
+	DbType                    string
+	EventDbType               string
+	DbDir                     string
+	DbUrl                     string
+	EventDbUrl                string
+	EventDbDir                string
+	SessionDuration           int64
+	BanDuration               int64
+	BanThreshold              int64 // number of crimes to trigger a ban
+	SchedulerType             string
+	TxBuilderType             string
+	LiveStoreType             string
+	RedisUrl                  string
+	RedisTxNumOfRetries       int
+	WalletAddr                string
+	SignerAddr                string
+	VtxoTreeExpiry            arklib.RelativeLocktime
+	UnilateralExitDelay       arklib.RelativeLocktime
+	PublicUnilateralExitDelay arklib.RelativeLocktime
+	CheckpointExitDelay       arklib.RelativeLocktime
+	BoardingExitDelay         arklib.RelativeLocktime
+	NoteUriPrefix             string
+	AllowCSVBlockType         bool
+	HeartbeatInterval         int64
+
+	VtxoNoCsvValidationCutoffDate int64
 
 	ScheduledSessionStartTime                 int64
 	ScheduledSessionEndTime                   int64
@@ -101,7 +105,8 @@ type Config struct {
 	OtelPushInterval                          int64
 	RoundReportServiceEnabled                 bool
 
-	EsploraURL string
+	EsploraURL      string
+	AlertManagerURL string
 
 	UnlockerType     string
 	UnlockerFilePath string // file unlocker
@@ -113,6 +118,9 @@ type Config struct {
 	UtxoMinAmount             int64
 	VtxoMaxAmount             int64
 	VtxoMinAmount             int64
+	SettlementMinExpiryGap    int64
+
+	OnchainOutputFee int64
 
 	repo           ports.RepoManager
 	svc            application.Service
@@ -126,6 +134,7 @@ type Config struct {
 	liveStore      ports.LiveStore
 	network        *arklib.Network
 	roundReportSvc application.RoundReportService
+	alerts         ports.Alerts
 }
 
 func (c *Config) String() string {
@@ -161,9 +170,11 @@ var (
 	LogLevel                             = "LOG_LEVEL"
 	VtxoTreeExpiry                       = "VTXO_TREE_EXPIRY"
 	UnilateralExitDelay                  = "UNILATERAL_EXIT_DELAY"
+	PublicUnilateralExitDelay            = "PUBLIC_UNILATERAL_EXIT_DELAY"
 	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
 	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
 	EsploraURL                           = "ESPLORA_URL"
+	AlertManagerURL                      = "ALERT_MANAGER_URL"
 	NoMacaroons                          = "NO_MACAROONS"
 	NoTLS                                = "NO_TLS"
 	TLSExtraIP                           = "TLS_EXTRA_IP"
@@ -189,6 +200,10 @@ var (
 	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
+	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	// Skip CSV validation for vtxos created before this date
+	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
+	OnchainOutputFee              = "ONCHAIN_OUTPUT_FEE"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -216,11 +231,14 @@ var (
 	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
 	defaultAllowCSVBlockType   = false
 
-	defaultRoundMaxParticipantsCount = 128
-	defaultRoundMinParticipantsCount = 1
-	defaultOtelPushInterval          = 10 // seconds
-	defaultHeartbeatInterval         = 60 // seconds
-	defaultRoundReportServiceEnabled = false
+	defaultRoundMaxParticipantsCount     = 128
+	defaultRoundMinParticipantsCount     = 1
+	defaultOtelPushInterval              = 10 // seconds
+	defaultHeartbeatInterval             = 60 // seconds
+	defaultRoundReportServiceEnabled     = false
+	defaultSettlementMinExpiryGap        = 0 // disabled by default
+	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
+	defaultOnchainOutputFee              = 0 // no fee by default
 )
 
 func LoadConfig() (*Config, error) {
@@ -241,6 +259,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(EventDbType, defaultEventDbType)
 	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
 	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
+	viper.SetDefault(PublicUnilateralExitDelay, defaultUnilateralExitDelay)
 	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
@@ -257,6 +276,9 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
+	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
+	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
+	viper.SetDefault(OnchainOutputFee, defaultOnchainOutputFee)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -328,9 +350,11 @@ func LoadConfig() (*Config, error) {
 		LogLevel:                  viper.GetInt(LogLevel),
 		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
 		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
+		PublicUnilateralExitDelay: determineLocktimeType(viper.GetInt64(PublicUnilateralExitDelay)),
 		CheckpointExitDelay:       determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
 		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
 		EsploraURL:                viper.GetString(EsploraURL),
+		AlertManagerURL:           viper.GetString(AlertManagerURL),
 		NoMacaroons:               viper.GetBool(NoMacaroons),
 		TLSExtraIPs:               viper.GetStringSlice(TLSExtraIP),
 		TLSExtraDomains:           viper.GetStringSlice(TLSExtraDomain),
@@ -352,14 +376,17 @@ func LoadConfig() (*Config, error) {
 		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
 		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
 
-		RoundMaxParticipantsCount: viper.GetInt64(RoundMaxParticipantsCount),
-		RoundMinParticipantsCount: viper.GetInt64(RoundMinParticipantsCount),
-		UtxoMaxAmount:             viper.GetInt64(UtxoMaxAmount),
-		UtxoMinAmount:             viper.GetInt64(UtxoMinAmount),
-		VtxoMaxAmount:             viper.GetInt64(VtxoMaxAmount),
-		VtxoMinAmount:             viper.GetInt64(VtxoMinAmount),
-		AllowCSVBlockType:         allowCSVBlockType,
-		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
+		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
+		RoundMinParticipantsCount:     viper.GetInt64(RoundMinParticipantsCount),
+		UtxoMaxAmount:                 viper.GetInt64(UtxoMaxAmount),
+		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
+		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
+		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
+		AllowCSVBlockType:             allowCSVBlockType,
+		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
+		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
+		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
+		OnchainOutputFee:              viper.GetInt64(OnchainOutputFee),
 	}, nil
 }
 
@@ -439,7 +466,9 @@ func (c *Config) Validate() error {
 		}
 	} else { // seconds
 		if c.SchedulerType != "gocron" {
-			return fmt.Errorf("scheduler type must be gocron if vtxo tree expiry is expressed in seconds")
+			return fmt.Errorf(
+				"scheduler type must be gocron if vtxo tree expiry is expressed in seconds",
+			)
 		}
 
 		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
@@ -450,6 +479,13 @@ func (c *Config) Validate() error {
 				minAllowedSequence, c.VtxoTreeExpiry,
 			)
 		}
+	}
+
+	// Make sure the public unilateral exit delay type matches the internal one
+	if c.PublicUnilateralExitDelay.Type != c.UnilateralExitDelay.Type {
+		return fmt.Errorf(
+			"public unilateral exit delay and unilateral exit delay must have the same type",
+		)
 	}
 
 	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
@@ -482,6 +518,14 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
+		c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
+		log.Infof(
+			"public unilateral exit delay must be a multiple of %d, rounded to %d",
+			minAllowedSequence, c.PublicUnilateralExitDelay.Value,
+		)
+	}
+
 	if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
 		c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
 		log.Infof(
@@ -494,12 +538,22 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("unilateral exit delay and boarding exit delay must be different")
 	}
 
+	if c.PublicUnilateralExitDelay.Value < c.UnilateralExitDelay.Value {
+		return fmt.Errorf(
+			"public unilateral exit delay must be greater than or equal to unilateral exit delay",
+		)
+	}
+
 	if c.VtxoMinAmount == 0 {
 		return fmt.Errorf("vtxo min amount must be greater than 0")
 	}
 
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
+	}
+
+	if c.OnchainOutputFee < 0 {
+		return fmt.Errorf("onchain output fee must be greater than 0")
 	}
 
 	if err := c.repoManager(); err != nil {
@@ -527,6 +581,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.unlockerService(); err != nil {
+		return err
+	}
+	if err := c.alertsService(); err != nil {
 		return err
 	}
 	return nil
@@ -747,14 +804,18 @@ func (c *Config) appService() error {
 
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
-		c.scheduler, c.liveStore, roundReportSvc,
-		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.BoardingExitDelay, c.CheckpointExitDelay,
+		c.scheduler, c.liveStore, roundReportSvc, c.alerts,
+		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.PublicUnilateralExitDelay,
+		c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		c.BanDuration, c.BanThreshold,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
+		c.SettlementMinExpiryGap,
+		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
+		c.OnchainOutputFee,
 	)
 	if err != nil {
 		return err
@@ -805,6 +866,15 @@ func (c *Config) roundReportService() error {
 	}
 
 	c.roundReportSvc = application.NewRoundReportService()
+	return nil
+}
+
+func (c *Config) alertsService() error {
+	if c.AlertManagerURL == "" {
+		return nil
+	}
+
+	c.alerts = alertsmanager.NewService(c.AlertManagerURL, c.EsploraURL)
 	return nil
 }
 

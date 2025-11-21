@@ -9,6 +9,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
@@ -117,7 +118,8 @@ func (w *walletDaemonClient) GetNotificationChannel(
 			resp, err := stream.Recv()
 			if err != nil {
 				if strings.Contains(err.Error(), "EOF") {
-					log.Fatal("connection closed by wallet")
+					log.Error("connection closed by wallet")
+					return
 				}
 				if status.Code(err) == codes.Canceled {
 					return
@@ -169,7 +171,8 @@ func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{
 			resp, err := stream.Recv()
 			if err != nil {
 				if strings.Contains(err.Error(), "EOF") {
-					log.Fatal("connection closed by wallet")
+					log.Error("connection closed by wallet")
+					return
 				}
 				if status.Code(err) == codes.Canceled {
 					return
@@ -302,6 +305,11 @@ func (w *walletDaemonClient) BroadcastTransaction(
 		ctx, &arkwalletv1.BroadcastTransactionRequest{Txs: txs},
 	)
 	if err != nil {
+		// handle non-final BIP68 error and return the appropriate error
+		if strings.Contains(
+			strings.ToLower(err.Error()), "non-bip68-final") {
+			return "", ports.ErrNonFinalBIP68
+		}
 		return "", err
 	}
 	return resp.GetTxid(), nil
@@ -444,5 +452,14 @@ func (w *walletDaemonClient) GetOutpointStatus(
 
 func (w *walletDaemonClient) LoadSignerKey(ctx context.Context, prvkey string) error {
 	_, err := w.client.LoadSignerKey(ctx, &arkwalletv1.LoadSignerKeyRequest{PrivateKey: prvkey})
+	return err
+}
+
+func (w *walletDaemonClient) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
+	outsStr := make([]string, 0, len(outs))
+	for _, out := range outs {
+		outsStr = append(outsStr, out.String())
+	}
+	_, err := w.client.RescanUtxos(ctx, &arkwalletv1.RescanUtxosRequest{Outpoints: outsStr})
 	return err
 }

@@ -102,6 +102,9 @@ ON CONFLICT (id) DO UPDATE SET
     round_max_participants = EXCLUDED.round_max_participants,
     updated_at = EXCLUDED.updated_at;
 
+-- name: ClearScheduledSession :exec
+DELETE FROM scheduled_session;
+
 -- name: UpdateVtxoIntentId :exec
 UPDATE vtxo SET intent_id = @intent_id WHERE txid = @txid AND vout = @vout;
 
@@ -151,13 +154,30 @@ WHERE round.id = (
 );
 
 -- name: SelectSweepableRounds :many
-SELECT txid FROM round_with_commitment_tx_vw r WHERE r.swept = false AND r.ended = true AND r.failed = false;
+SELECT txid FROM round_with_commitment_tx_vw r 
+WHERE r.swept = false AND r.ended = true AND r.failed = false
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx 
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+);
 
 -- name: SelectRoundIdsInTimeRange :many
 SELECT id FROM round WHERE starting_timestamp > @start_ts AND starting_timestamp < @end_ts;
 
 -- name: SelectAllRoundIds :many
 SELECT id FROM round;
+
+-- name: SelectRoundIdsWithFilters :many
+SELECT id FROM round 
+WHERE (@with_failed = 1 OR failed = 0)
+  AND (@with_completed = 1 OR ended = 0);
+
+-- name: SelectRoundIdsInTimeRangeWithFilters :many
+SELECT id FROM round 
+WHERE starting_timestamp > @start_ts 
+  AND starting_timestamp < @end_ts
+  AND (@with_failed = 1 OR failed = 0)
+  AND (@with_completed = 1 OR ended = 0);
 
 -- name: SelectRoundsWithTxids :many
 SELECT txid FROM tx WHERE type = 'commitment' AND tx.txid IN (sqlc.slice('txids'));
@@ -220,9 +240,6 @@ SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_
 UNION
 SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid IN (sqlc.slice('ids3'));
 
--- name: SelectSweepableVtxos :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND swept = false;
-
 -- name: SelectNotUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 
@@ -235,9 +252,6 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 -- name: SelectAllVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
--- name: SelectVtxosWithCommitmentTxid :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE commitment_txid = @commitment_txid;
-
 -- name: SelectVtxosWithPubkeys :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkey'));
 
@@ -247,7 +261,21 @@ SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 
--- name: SelectVtxosByArkTxidRecursive :many
+-- name: SelectVtxoPubKeysByCommitmentTxid :many
+SELECT DISTINCT v.pubkey
+FROM vtxo_vw v
+WHERE v.amount >= sqlc.arg('min_amount')
+  AND (v.commitment_txid = sqlc.arg('commitment_txid')
+    OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || sqlc.arg('commitment_txid') || ',%');
+
+-- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
+SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+WHERE v.swept = false
+  AND (v.commitment_txid = @commitment_txid
+    OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || @commitment_txid || ',%');
+
+-- name: SelectVtxosOutpointsByArkTxidRecursive :many
 WITH RECURSIVE descendants_chain AS (
     -- seed
     SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
@@ -274,10 +302,10 @@ nodes AS (
    FROM descendants_chain
    GROUP BY txid, vout, preconfirmed
 )
-
-SELECT *
+SELECT txid, vout
 FROM nodes
 ORDER BY depth, txid, vout;
+
 
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');

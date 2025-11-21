@@ -50,6 +50,7 @@ type Nbxplorer interface {
 	GetNewUnusedAddress(ctx context.Context, derivationScheme string, change bool, skip int) (string, error)
 	EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error)
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
+	RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error
 
 	IsSpent(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 	WatchAddresses(ctx context.Context, addresses ...string) error

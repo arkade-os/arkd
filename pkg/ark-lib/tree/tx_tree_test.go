@@ -154,7 +154,7 @@ func TestTxTreeSubTree(t *testing.T) {
 				checkTxTree(t, subTree, deserialized)
 			}
 
-			// Test 5: SubTree(allLeaves) whould return the whole tree.
+			// Test 5: SubTree(allLeaves) would return the whole tree.
 			leavesTxids := make([]string, 0)
 			for _, leaf := range leaves {
 				leavesTxids = append(leavesTxids, leaf.UnsignedTx.TxID())

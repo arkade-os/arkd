@@ -71,6 +71,8 @@ func (a *adminHandler) GetRounds(
 ) (*arkv1.GetRoundsResponse, error) {
 	startAfter := req.GetAfter()
 	startBefore := req.GetBefore()
+	withFailed := req.GetWithFailed()
+	withCompleted := req.GetWithCompleted()
 
 	if startAfter < 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid after (must be >= 0)")
@@ -84,7 +86,7 @@ func (a *adminHandler) GetRounds(
 		return nil, status.Error(codes.InvalidArgument, "invalid range")
 	}
 
-	rounds, err := a.adminService.GetRounds(ctx, startAfter, startBefore)
+	rounds, err := a.adminService.GetRounds(ctx, startAfter, startBefore, withFailed, withCompleted)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
@@ -114,8 +116,9 @@ func (a *adminHandler) GetScheduledSweep(
 		}
 
 		sweeps = append(sweeps, &arkv1.ScheduledSweep{
-			RoundId: sweep.RoundId,
-			Outputs: outputs,
+			RoundId:   sweep.RoundId,
+			Confirmed: sweep.Confirmed,
+			Outputs:   outputs,
 		})
 	}
 
@@ -203,6 +206,16 @@ func (a *adminHandler) UpdateScheduledSessionConfig(
 	}
 
 	return &arkv1.UpdateScheduledSessionConfigResponse{}, nil
+}
+
+func (a *adminHandler) ClearScheduledSessionConfig(
+	ctx context.Context, req *arkv1.ClearScheduledSessionConfigRequest,
+) (*arkv1.ClearScheduledSessionConfigResponse, error) {
+	if err := a.adminService.ClearScheduledSessionConfig(ctx); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &arkv1.ClearScheduledSessionConfigResponse{}, nil
 }
 
 func (a *adminHandler) ListIntents(

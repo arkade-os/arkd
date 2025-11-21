@@ -17,6 +17,12 @@ const ONE_BTC = float64(1_00_000_000)
 
 // commands
 var (
+	startCmd = &cli.Command{
+		Name:   "start",
+		Usage:  "Starts the arkd server",
+		Action: startAction,
+	}
+
 	walletCmd = &cli.Command{
 		Name:  "wallet",
 		Usage: "Manage the Ark Server wallet",
@@ -120,16 +126,25 @@ var (
 		Action: roundInfoAction,
 	}
 	roundsInTimeRangeCmd = &cli.Command{
-		Name:   "rounds",
-		Usage:  "Get ids of rounds in the given time range",
-		Flags:  []cli.Flag{beforeDateFlag, afterDateFlag},
+		Name:  "rounds",
+		Usage: "Get ids of rounds in the given time range",
+		Flags: []cli.Flag{
+			beforeDateFlag,
+			afterDateFlag,
+			completedFlag,
+			failedFlag,
+			withDetailsFlag,
+		},
 		Action: roundsInTimeRangeAction,
 	}
 	scheduledSessionCmd = &cli.Command{
-		Name:        "scheduled-session",
-		Usage:       "Get or update the scheduled session configuration",
-		Subcommands: cli.Commands{updateScheduledSessionCmd},
-		Action:      getScheduledSessionAction,
+		Name:  "scheduled-session",
+		Usage: "Get or update the scheduled session configuration",
+		Subcommands: cli.Commands{
+			updateScheduledSessionCmd,
+			clearScheduledSessionCmd,
+		},
+		Action: getScheduledSessionAction,
 	}
 	updateScheduledSessionCmd = &cli.Command{
 		Name:  "update",
@@ -141,11 +156,59 @@ var (
 		},
 		Action: updateScheduledSessionAction,
 	}
+	clearScheduledSessionCmd = &cli.Command{
+		Name:   "clear",
+		Usage:  "Clear the scheduled session configuration",
+		Action: clearScheduledSessionAction,
+	}
 	revokeAuthCmd = &cli.Command{
 		Name:   "revoke-auth",
 		Usage:  "Revoke auth token",
 		Flags:  []cli.Flag{tokenFlag},
 		Action: revokeTokenAction,
+	}
+	convictionsCmd = &cli.Command{
+		Name:   "convictions",
+		Usage:  "Get convictions by IDs",
+		Flags:  []cli.Flag{convictionIdsFlag},
+		Action: getConvictionsAction,
+		Subcommands: cli.Commands{
+			getConvictionsInRangeCmd,
+			getConvictionsByRoundCmd,
+			getActiveScriptConvictionsCmd,
+			pardonConvictionCmd,
+			addConvictionCmd,
+		},
+	}
+	getConvictionsInRangeCmd = &cli.Command{
+		Name:   "range",
+		Usage:  "Get convictions in time range",
+		Flags:  []cli.Flag{convictionFromFlag, convictionToFlag},
+		Action: getConvictionsInRangeAction,
+	}
+	getConvictionsByRoundCmd = &cli.Command{
+		Name:   "by-round",
+		Usage:  "Get convictions by round ID",
+		Flags:  []cli.Flag{roundIdFlag},
+		Action: getConvictionsByRoundAction,
+	}
+	getActiveScriptConvictionsCmd = &cli.Command{
+		Name:   "active",
+		Usage:  "Get active script convictions",
+		Flags:  []cli.Flag{scriptFlag},
+		Action: getActiveScriptConvictionsAction,
+	}
+	pardonConvictionCmd = &cli.Command{
+		Name:   "pardon",
+		Usage:  "Pardon a conviction",
+		Flags:  []cli.Flag{convictionIdFlag},
+		Action: pardonConvictionAction,
+	}
+	addConvictionCmd = &cli.Command{
+		Name:   "add",
+		Usage:  "Add a conviction",
+		Flags:  []cli.Flag{scriptFlag, banDurationFlag, banReasonFlag},
+		Action: banScriptAction,
 	}
 )
 
@@ -317,7 +380,7 @@ func signerLoadAction(ctx *cli.Context) error {
 		return fmt.Errorf("either private key or url must be provided")
 	}
 	if signerKey != "" && signerUrl != "" {
-		return fmt.Errorf("private key and url are mutually esclusive, only one must be provided")
+		return fmt.Errorf("private key and url are mutually exclusive, only one must be provided")
 	}
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
@@ -497,36 +560,82 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	beforeDate := ctx.String(beforeDateFlagName)
 	afterDate := ctx.String(afterDateFlagName)
+	completed := ctx.Bool(completedFlagName)
+	failed := ctx.Bool(failedFlagName)
+	withDetails := ctx.Bool(withDetailsFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
 	url := fmt.Sprintf("%s/v1/admin/rounds", baseURL)
-	if afterDate != "" {
-		afterTs, err := time.Parse(dateFormat, afterDate)
-		if err != nil {
-			return fmt.Errorf("invalid --after-date format, must be %s", dateFormat)
-		}
-		url = fmt.Sprintf("%s?after=%d", url, afterTs.Unix())
-	}
-	if beforeDate != "" {
-		beforeTs, err := time.Parse(dateFormat, beforeDate)
-		if err != nil {
-			return fmt.Errorf("invalid --before-date format, must be %s", dateFormat)
-		}
+
+	// Default to today's time range if no flags are provided
+	if afterDate == "" && beforeDate == "" {
+		now := time.Now()
+		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		endOfDay := startOfDay.Add(24 * time.Hour)
+
+		url = fmt.Sprintf(
+			"%s?after=%d&before=%d&with_completed=%t&with_failed=%t",
+			url,
+			startOfDay.Unix(),
+			endOfDay.Unix(),
+			completed,
+			failed,
+		)
+	} else {
+		queryParams := make([]string, 0)
+
 		if afterDate != "" {
-			url = fmt.Sprintf("%s&before=%d", url, beforeTs.Unix())
-		} else {
-			url = fmt.Sprintf("%s?before=%d", url, beforeTs.Unix())
+			afterTs, err := time.Parse(dateFormat, afterDate)
+			if err != nil {
+				return fmt.Errorf("invalid --after-date format, must be %s", dateFormat)
+			}
+			queryParams = append(queryParams, fmt.Sprintf("after=%d", afterTs.Unix()))
+		}
+		if beforeDate != "" {
+			beforeTs, err := time.Parse(dateFormat, beforeDate)
+			if err != nil {
+				return fmt.Errorf("invalid --before-date format, must be %s", dateFormat)
+			}
+			queryParams = append(queryParams, fmt.Sprintf("before=%d", beforeTs.Unix()))
+		}
+
+		// Add the filtering parameters
+		queryParams = append(queryParams, fmt.Sprintf("with_completed=%t", completed))
+		queryParams = append(queryParams, fmt.Sprintf("with_failed=%t", failed))
+
+		if len(queryParams) > 0 {
+			url = fmt.Sprintf("%s?%s", url, strings.Join(queryParams, "&"))
 		}
 	}
 
-	roundIds, err := get[map[string]string](url, "rounds", macaroon, tlsConfig)
+	roundIds, err := get[[]string](url, "rounds", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
 
+	if withDetails {
+		roundDetails := make([]*roundInfo, 0, len(roundIds))
+		for _, roundId := range roundIds {
+			detailUrl := fmt.Sprintf("%s/v1/admin/round/%s", baseURL, roundId)
+			detail, err := getRoundInfo(detailUrl, macaroon, tlsConfig)
+			if err != nil {
+				return fmt.Errorf("failed to get details for round %s: %w", roundId, err)
+			}
+			roundDetails = append(roundDetails, detail)
+		}
+
+		respJson, err := json.MarshalIndent(roundDetails, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to json encode round details: %s", err)
+		}
+		fmt.Println(string(respJson))
+		return nil
+	}
+
+	// Default behavior: return just the round IDs
 	respJson, err := json.MarshalIndent(roundIds, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to json encode round ids: %s", err)
@@ -641,6 +750,22 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	return nil
 }
 
+func clearScheduledSessionAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/scheduledSession/clear", baseURL)
+	if _, err := post[any](url, "", "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Println("Successfully cleared scheduled session config")
+	return nil
+}
+
 func revokeTokenAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	token := ctx.String(tokenFlagName)
@@ -663,5 +788,152 @@ func revokeTokenAction(ctx *cli.Context) error {
 		return fmt.Errorf("failed to json encode response: %s", err)
 	}
 	fmt.Println(string(respJson))
+	return nil
+}
+
+func getConvictionsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	convictionIds := ctx.StringSlice(convictionIdsFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf(
+		"%s/v1/admin/convictions/%s",
+		baseURL,
+		url.PathEscape(strings.Join(convictionIds, ",")),
+	)
+	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func getConvictionsInRangeAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Default to last 24 hours if flags are not set
+	now := time.Now()
+	from := ctx.Int64(convictionFromFlagName)
+	to := ctx.Int64(convictionToFlagName)
+
+	if !ctx.IsSet(convictionFromFlagName) {
+		from = now.Add(-24 * time.Hour).Unix()
+	}
+	if !ctx.IsSet(convictionToFlagName) {
+		to = now.Unix()
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/convictionsInRange?from=%d&to=%d", baseURL, from, to)
+	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func getConvictionsByRoundAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	roundId := ctx.String(roundIdFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/convictionsByRound/%s", baseURL, url.PathEscape(roundId))
+	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func getActiveScriptConvictionsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	script := ctx.String(scriptFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/convictionsByScript/%s", baseURL, url.PathEscape(script))
+	resp, err := get[[]map[string]any](url, "convictions", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func pardonConvictionAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	convictionId := ctx.String(convictionIdFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/convictions/%s/pardon", baseURL, url.PathEscape(convictionId))
+
+	if _, err := post[struct{}](url, "", "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully pardoned conviction: %s\n", convictionId)
+	return nil
+}
+
+func banScriptAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	script := ctx.String(scriptFlagName)
+	banDuration := ctx.Int64(banDurationFlagName)
+	banReason := ctx.String(banReasonFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/conviction/ban", baseURL)
+	body := fmt.Sprintf(
+		`{"script": "%s", "ban_duration": %d, "reason": "%s"}`,
+		script,
+		banDuration,
+		banReason,
+	)
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Printf("Successfully banned script: %s\n", script)
 	return nil
 }

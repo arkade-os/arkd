@@ -349,7 +349,8 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	round := domain.NewRoundFromEvents(events)
 
 	if err := s.roundStore.AddOrUpdateRound(ctx, *round); err != nil {
-		log.WithError(err).Fatalf("failed to add or update round %s", round.Id)
+		log.WithError(err).Errorf("failed to add or update round %s", round.Id)
+		return
 	}
 	log.Debugf("added or updated round %s", round.Id)
 
@@ -371,7 +372,9 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		}
 
 		if event.FullySwept {
-			log.Debugf("round %s fully swept", round.Id)
+			log.WithField("commitment_txid", round.CommitmentTxid).Debugf(
+				"round %s fully swept", round.Id,
+			)
 		}
 		return
 	}
@@ -409,7 +412,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	offchainTx := domain.NewOffchainTxFromEvents(events)
 
 	if err := s.offchainTxStore.AddOrUpdateOffchainTx(ctx, offchainTx); err != nil {
-		log.WithError(err).Fatalf("failed to add or update offchain tx %s", offchainTx.ArkTxid)
+		log.WithError(err).Errorf("failed to add or update offchain tx %s", offchainTx.ArkTxid)
+		return
 	}
 	log.Debugf("added or updated offchain tx %s", offchainTx.ArkTxid)
 
@@ -463,7 +467,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 				RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 				Preconfirmed:       true,
-				CreatedAt:          offchainTx.EndingTimestamp,
+				CreatedAt:          offchainTx.StartingTimestamp,
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.

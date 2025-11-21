@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	signerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/signer/v1"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/config"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/interceptors"
+	"github.com/arkade-os/arkd/pkg/arkd-wallet/telemetry"
 	"github.com/meshapi/grpc-api-gateway/gateway"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -21,10 +24,11 @@ import (
 )
 
 type service struct {
-	cfg     *config.Config
-	server  *http.Server
-	grpcSrv *grpc.Server
-	closeFn func()
+	cfg          *config.Config
+	server       *http.Server
+	grpcSrv      *grpc.Server
+	closeFn      func()
+	otelShutdown func(context.Context) error
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -43,6 +47,20 @@ func (s *service) Start() error {
 	s.closeFn = func() {
 		s.cfg.WalletSvc.Close()
 		s.cfg.ScannerSvc.Close()
+	}
+
+	if s.cfg.OtelCollectorEndpoint != "" {
+		pushInteval := time.Duration(s.cfg.OtelPushInterval) * time.Second
+		otelShutdown, err := telemetry.InitOtelSDK(
+			context.Background(),
+			s.cfg.OtelCollectorEndpoint,
+			pushInteval,
+		)
+		if err != nil {
+			return err
+		}
+
+		s.otelShutdown = otelShutdown
 	}
 
 	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc, s.cfg.ScannerSvc)
@@ -105,6 +123,13 @@ func (s *service) Stop() {
 	}
 	if s.grpcSrv != nil {
 		s.grpcSrv.GracefulStop()
+	}
+	if s.otelShutdown != nil {
+		if err := s.otelShutdown(context.Background()); err != nil {
+			log.Errorf("failed to shutdown otel: %s", err)
+		}
+
+		log.Infof("otel shutdown")
 	}
 }
 

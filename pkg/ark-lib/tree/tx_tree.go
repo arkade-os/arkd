@@ -21,8 +21,8 @@ type TxTree struct {
 	Children map[uint32]*TxTree // output index -> sub-tree
 }
 
-// TxTreeNode is a flat represenation of a node of tx tree.
-// The purpose of this struct is to facilitate the persistance of the tx tree in storage services.
+// TxTreeNode is a flat representation of a node of tx tree.
+// The purpose of this struct is to facilitate the persistence of the tx tree in storage services.
 type TxTreeNode struct {
 	Txid string
 	// Tx is the base64 encoded root PSBT
@@ -32,7 +32,7 @@ type TxTreeNode struct {
 }
 
 // FlatTxTree is the flat representation of a tx tree.
-// The purpose of this struct is to facilitate the persistance of the tx tree in storage services.
+// The purpose of this struct is to facilitate the persistence of the tx tree in storage services.
 type FlatTxTree []TxTreeNode
 
 func (c FlatTxTree) Leaves() []TxTreeNode {
@@ -250,6 +250,22 @@ func (t *TxTree) Leaves() []*psbt.Packet {
 	}
 
 	return leaves
+}
+
+// FindInput returns the subtree spending the given outpoint.
+func (t *TxTree) FindInput(txid string, vout uint32) *TxTree {
+	rootInput := t.Root.UnsignedTx.TxIn[0]
+	if rootInput.PreviousOutPoint.Hash.String() == txid && rootInput.PreviousOutPoint.Index == vout {
+		return t
+	}
+
+	for _, child := range t.Children {
+		if f := child.FindInput(txid, vout); f != nil {
+			return f
+		}
+	}
+
+	return nil
 }
 
 // Find returns the tx in the tree that matches the provided txid.

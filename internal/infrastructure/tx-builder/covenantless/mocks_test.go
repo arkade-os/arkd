@@ -8,6 +8,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -369,6 +370,11 @@ func (m *mockedWallet) GetOutpointStatus(
 
 func (m *mockedWallet) LoadSignerKey(ctx context.Context, privateKey string) error {
 	args := m.Called(ctx, privateKey)
+	return args.Error(0)
+}
+
+func (m *mockedWallet) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
+	args := m.Called(ctx, outs)
 	return args.Error(0)
 }
 

@@ -23,7 +23,9 @@ type IntentStore interface {
 	Len() int64
 	Push(intent domain.Intent, boardingInputs []BoardingInput, cosignersPublicKeys []string) error
 	Pop(num int64) []TimedIntent
-	Update(intent domain.Intent, cosignersPublicKeys []string) error
+	GetSelectedIntents() []TimedIntent
+	// TODO uncomment when we have a way to register outputs outside of intent proof
+	// Update(intent domain.Intent, cosignersPublicKeys []string) error
 	Delete(ids []string) error
 	DeleteAll() error
 	DeleteVtxos()
@@ -51,9 +53,9 @@ type OffChainTxStore interface {
 }
 
 type CurrentRoundStore interface {
-	Upsert(fn func(m *domain.Round) *domain.Round) error
-	Get() *domain.Round
-	Fail(err error) []domain.Event
+	Upsert(ctx context.Context, fn func(m *domain.Round) *domain.Round) error
+	Get(ctx context.Context) *domain.Round
+	Fail(ctx context.Context, err error) []domain.Event
 }
 
 type ConfirmationSessionsStore interface {
@@ -80,6 +82,11 @@ type TreeSigningSessionsStore interface {
 type BoardingInputsStore interface {
 	Set(numOfInputs int)
 	Get() int
+	AddSignatures(
+		ctx context.Context, batchId string, inputSigs map[uint32]SignedBoardingInput,
+	) error
+	GetSignatures(ctx context.Context, batchId string) (map[uint32]SignedBoardingInput, error)
+	DeleteSignatures(ctx context.Context, batchId string) error
 }
 
 type TimedIntent struct {

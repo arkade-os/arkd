@@ -497,6 +497,20 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "withFailed",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "withCompleted",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -591,6 +605,46 @@
         }
       }
     },
+    "/v1/admin/scheduledSession/clear": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_ClearScheduledSessionConfig",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearScheduledSessionConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearScheduledSessionConfigResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/sweeps": {
       "get": {
         "tags": [
@@ -653,6 +707,14 @@
       },
       "BanScriptResponse": {
         "title": "BanScriptResponse",
+        "type": "object"
+      },
+      "ClearScheduledSessionConfigRequest": {
+        "title": "ClearScheduledSessionConfigRequest",
+        "type": "object"
+      },
+      "ClearScheduledSessionConfigResponse": {
+        "title": "ClearScheduledSessionConfigResponse",
         "type": "object"
       },
       "Conviction": {
@@ -934,6 +996,12 @@
           "before": {
             "type": "integer",
             "format": "int64"
+          },
+          "withCompleted": {
+            "type": "boolean"
+          },
+          "withFailed": {
+            "type": "boolean"
           }
         }
       },
@@ -1174,6 +1242,9 @@
         "title": "ScheduledSweep",
         "type": "object",
         "properties": {
+          "confirmed": {
+            "type": "boolean"
+          },
           "outputs": {
             "type": "array",
             "items": {
