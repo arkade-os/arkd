@@ -330,7 +330,7 @@ To ensure API compatibility, breaking changes in protobuf definitions are automa
 
 **Local verification:**
 ```sh
-./scripts/check-proto-breaking.sh
+./scripts/check-proto-breaking
 ```
 
 **GitHub Actions:**
