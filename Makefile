@@ -136,14 +136,18 @@ redis-down:
 	@docker stop ark-redis > /dev/null 2>&1 || true
 	@docker rm ark-redis > /dev/null 2>&1 || true
 
+buf:
+	@if ! docker image inspect buf >/dev/null 2>&1; then \
+		docker build -q -t buf -f buf.Dockerfile . &> /dev/null; \
+	fi
+
 proto: proto-lint
 	@echo "Compiling stubs..."
 	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace buf generate
 
 # proto-lint: lints protos
-proto-lint:
+proto-lint: buf
 	@echo "Linting protos..."
-	@docker build -q -t buf -f buf.Dockerfile . &> /dev/null
 	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace buf lint
 
 # docker-run: starts docker test environment
