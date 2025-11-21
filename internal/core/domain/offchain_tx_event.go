@@ -19,7 +19,6 @@ type OffchainTxRequested struct {
 
 type OffchainTxAccepted struct {
 	OffchainTxEvent
-	Id                  string
 	CommitmentTxids     map[string]string
 	RootCommitmentTxid  string
 	FinalArkTx          string
