@@ -43,6 +43,7 @@ func startAction(_ *cli.Context) error {
 		TLSExtraIPs:       cfg.TLSExtraIPs,
 		TLSExtraDomains:   cfg.TLSExtraDomains,
 		HeartbeatInterval: cfg.HeartbeatInterval,
+		EnablePprof:       cfg.EnablePprof,
 	}
 
 	svc, err := grpcservice.NewService(Version, svcConfig, cfg)

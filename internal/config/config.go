@@ -122,6 +122,7 @@ type Config struct {
 	SettlementMinExpiryGap    int64
 
 	OnchainOutputFee int64
+	EnablePprof      bool
 
 	repo           ports.RepoManager
 	svc            application.Service
@@ -206,6 +207,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	OnchainOutputFee              = "ONCHAIN_OUTPUT_FEE"
+	EnablePprof                   = "ENABLE_PPROF"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -241,6 +243,7 @@ var (
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultOnchainOutputFee              = 0 // no fee by default
+	defaultEnablePprof                   = false
 )
 
 func LoadConfig() (*Config, error) {
@@ -281,6 +284,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(OnchainOutputFee, defaultOnchainOutputFee)
+	viper.SetDefault(EnablePprof, defaultEnablePprof)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -390,6 +394,7 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		OnchainOutputFee:              viper.GetInt64(OnchainOutputFee),
+		EnablePprof:                   viper.GetBool(EnablePprof),
 	}, nil
 }
 
