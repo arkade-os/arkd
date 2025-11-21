@@ -37,6 +37,9 @@ func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {
 		if err := tlv.EUint32(w, &t.Vout, buf); err != nil {
 			return err
 		}
+		if err := tlv.EUint64(w, &t.Amount, buf); err != nil {
+			return err
+		}
 
 		return nil
 	}
@@ -57,12 +60,12 @@ func EAssetInputList(w io.Writer, val interface{}, buf *[8]byte) error {
 
 func AssetInputListSize(l int) tlv.SizeFunc {
 	return func() uint64 {
-		return uint64(l) * 36
+		return uint64(l) * 44
 	}
 }
 
 func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*AssetInput); ok && l == 36 {
+	if t, ok := val.(*AssetInput); ok && l == 44 {
 		var txid [32]byte
 		if err := tlv.DBytes32(r, &txid, buf, 32); err != nil {
 			return err
@@ -73,27 +76,30 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		if err := tlv.DUint32(r, &t.Vout, buf, 4); err != nil {
 			return err
 		}
+		if err := tlv.DUint64(r, &t.Amount, buf, 8); err != nil {
+			return err
+		}
 
 		return nil
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetInput", l, 36)
+	return tlv.NewTypeForDecodingErr(val, "assetInput", l, 44)
 }
 
 func DAssetInputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 	if t, ok := val.(*[]AssetInput); ok {
-		if l%36 != 0 {
-			return tlv.NewTypeForDecodingErr(val, "assetInputList", l, 36)
+		if l%44 != 0 {
+			return tlv.NewTypeForDecodingErr(val, "assetInputList", l, 44)
 		}
-		numInputs := int(l / 36)
+		numInputs := int(l / 44)
 		*t = make([]AssetInput, numInputs)
 		for i := 0; i < numInputs; i++ {
-			if err := DAssetInput(r, &(*t)[i], buf, 36); err != nil {
+			if err := DAssetInput(r, &(*t)[i], buf, 44); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetInputList", l, 36)
+	return tlv.NewTypeForDecodingErr(val, "assetInputList", l, 44)
 }
 
 func EAssetOutput(w io.Writer, val interface{}, buf *[8]byte) error {

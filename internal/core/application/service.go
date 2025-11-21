@@ -899,6 +899,7 @@ func (s *service) SubmitOffchainTx(
 
 			err := s.validateAssetTransaction(ctx, *arkPtx.UnsignedTx, out.PkScript)
 			if err != nil {
+				log.WithError(err).Warn("asset transaction validation failed")
 				return nil, "", "", errors.ASSET_VALIDATION_FAILED.Wrap(err)
 			}
 		}
@@ -3718,18 +3719,18 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, assetOutput []byte) error {
 	decodedAsset, _, err := asset.DecodeAssetFromOpret(assetOutput)
 	if err != nil {
-		return err
+		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
 
 	ins := decodedAsset.Inputs
 	outs := decodedAsset.Outputs
 
 	if err := asset.VerifyAssetInputs(tx.TxIn, ins); err != nil {
-		return err
+		return fmt.Errorf("failed to verify asset inputs: %s", err)
 	}
 
 	if err := asset.VerifyAssetOutputs(tx.TxOut, outs); err != nil {
-		return err
+		return fmt.Errorf("failed to verify asset outputs: %s", err)
 	}
 
 	totalOuputAmount := uint64(0)
@@ -3753,7 +3754,8 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, hex.EncodeToString(input.Txid))
 
 		if err != nil {
-			return err
+			return fmt.Errorf("error retrieving offchain tx %s: %s",
+				hex.EncodeToString(input.Txid), err)
 		}
 
 		if offchainTx == nil {
@@ -3766,7 +3768,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 
 		decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
 		if err != nil {
-			return err
+			return fmt.Errorf("error decoding Ark Tx: %s", err)
 		}
 
 		var assetData *asset.Asset
@@ -3774,7 +3776,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 			if asset.IsAsset(output.PkScript) {
 				assetData, _, err = asset.DecodeAssetFromOpret(output.PkScript)
 				if err != nil {
-					return err
+					return fmt.Errorf("error decoding asset Opreturn: %s", err)
 				}
 				break
 			}

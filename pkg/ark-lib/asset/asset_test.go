@@ -8,6 +8,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestEncodeOpretAndDecodeAsset(t *testing.T) {
+	t.Parallel()
+
+	var assetID [32]byte
+	copy(assetID[:], bytes.Repeat([]byte{0x3c}, 32))
+
+	controlKey := deterministicPubKey(t, 7)
+
+	genesisTxID := deterministicTxid(0xee)
+	batchTxID := deterministicTxid(0xdd)
+
+	asset := Asset{
+		AssetId:       assetID,
+		Outputs:       []AssetOutput{{PublicKey: deterministicPubKey(t, 8), Amount: 50, Vout: 0}},
+		ControlPubkey: &controlKey,
+		Inputs:        []AssetInput{{Txid: deterministicTxid(0x0a), Vout: 2, Amount: 80}},
+		Immutable:     true,
+		Metadata:      []Metadata{{Key: "note", Value: "opret"}},
+		version:       []byte{0x01},
+		genesisTxId:   genesisTxID,
+		magic:         AssetMagic,
+	}
+
+	txOut, err := asset.EncodeOpret(batchTxID)
+	require.NoError(t, err)
+	require.True(t, IsAsset(txOut.PkScript))
+
+	decoded, decodedBatchTxID, err := DecodeAssetFromOpret(txOut.PkScript)
+	require.NoError(t, err)
+	require.Equal(t, batchTxID, decodedBatchTxID)
+	require.Equal(t, asset, *decoded)
+}
+
 func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -63,10 +96,12 @@ func TestAssetOutputListEncodeDecode(t *testing.T) {
 	outputs := []AssetOutput{
 		{
 			PublicKey: deterministicPubKey(t, 4),
+			Vout:      0,
 			Amount:    100,
 		},
 		{
 			PublicKey: deterministicPubKey(t, 5),
+			Vout:      1,
 			Amount:    200,
 		},
 	}
@@ -86,12 +121,14 @@ func TestAssetInputListEncodeDecode(t *testing.T) {
 
 	inputs := []AssetInput{
 		{
-			Txid: deterministicTxid(0x01),
-			Vout: 1,
+			Txid:   deterministicTxid(0x01),
+			Amount: 80,
+			Vout:   1,
 		},
 		{
-			Txid: deterministicTxid(0x02),
-			Vout: 2,
+			Txid:   deterministicTxid(0x02),
+			Amount: 20,
+			Vout:   2,
 		},
 	}
 
