@@ -411,10 +411,8 @@ func (s *service) Stop() {
 
 func (s *service) SubmitOffchainTx(
 	ctx context.Context, unsignedCheckpointTxs []string, signedArkTx string,
-) ([]string, string, string, errors.Error) {
-	var err error
-	var arkPtx *psbt.Packet
-	arkPtx, err = psbt.NewFromRawBytes(strings.NewReader(signedArkTx), true)
+) (signedCheckpointTxs []string, finalArkTx, finalArkTxid string, structErr errors.Error) {
+	arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedArkTx), true)
 	if err != nil {
 		return nil, "", "", errors.INVALID_ARK_PSBT.New("failed to parse tx: %w", err).
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
@@ -425,15 +423,15 @@ func (s *service) SubmitOffchainTx(
 	var changes []domain.Event
 
 	defer func() {
-		if err != nil {
-			change := offchainTx.Fail(err)
+		if structErr != nil {
+			change := offchainTx.Fail(structErr)
 			changes = append(changes, change)
 		}
 
 		if err := s.repoManager.Events().Save(
 			ctx, domain.OffchainTxTopic, txid, changes,
 		); err != nil {
-			log.WithError(err).Error("failed to save offchain tx events")
+			log.WithError(err).Errorf("failed to save events for offchain tx %s", txid)
 		}
 	}()
 
@@ -1009,7 +1007,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// sign the ark tx
-	finalArkTx, err := s.signer.SignTransactionTapscript(ctx, signedArkTx, nil)
+	fullySignedArkTx, err := s.signer.SignTransactionTapscript(ctx, signedArkTx, nil)
 	if err != nil {
 		return nil, "", "", errors.INTERNAL_ERROR.New("failed to sign ark tx: %w", err).
 			WithMetadata(map[string]any{
@@ -1041,23 +1039,18 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	change, err := offchainTx.Accept(
-		finalArkTx, signedCheckpointTxsMap,
+		fullySignedArkTx, signedCheckpointTxsMap,
 		commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiration,
 	)
 	if err != nil {
 		return nil, "", "", errors.INTERNAL_ERROR.New("failed to accept offchain tx: %w", err).
 			WithMetadata(map[string]any{
-				"ark_tx":                finalArkTx,
+				"ark_tx":                fullySignedArkTx,
 				"signed_checkpoint_txs": signedCheckpointTxsMap,
 				"commitment_txids":      commitmentTxsByCheckpointTxid,
 				"root_commitment_txid":  rootCommitmentTxid,
 				"expiration":            expiration,
 			})
-	}
-
-	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
-	for _, tx := range signedCheckpointTxsMap {
-		signedCheckpointTxs = append(signedCheckpointTxs, tx)
 	}
 
 	s.offchainTxMu.Lock()
@@ -1078,15 +1071,18 @@ func (s *service) SubmitOffchainTx(
 	// apply Accepted event only after verifying the spent vtxos
 	changes = append(changes, change)
 
-	return signedCheckpointTxs, finalArkTx, txid, nil
+	for _, tx := range signedCheckpointTxsMap {
+		signedCheckpointTxs = append(signedCheckpointTxs, tx)
+	}
+
+	return signedCheckpointTxs, fullySignedArkTx, txid, nil
 }
 
 func (s *service) FinalizeOffchainTx(
 	ctx context.Context, txid string, finalCheckpointTxs []string,
-) errors.Error {
+) (structErr errors.Error) {
 	var (
 		changes []domain.Event
-		err     error
 	)
 
 	offchainTx, exists := s.cache.OffchainTxs().Get(txid)
@@ -1096,15 +1092,15 @@ func (s *service) FinalizeOffchainTx(
 	}
 
 	defer func() {
-		if err != nil {
-			change := offchainTx.Fail(err)
+		if structErr != nil {
+			change := offchainTx.Fail(structErr)
 			changes = append(changes, change)
 		}
 
-		if err = s.repoManager.Events().Save(
+		if err := s.repoManager.Events().Save(
 			ctx, domain.OffchainTxTopic, txid, changes,
 		); err != nil {
-			log.WithError(err).Error("failed to save offchain tx events")
+			log.WithError(err).Errorf("failed to save finalization event for offchain tx %s", txid)
 		}
 	}()
 
@@ -1123,8 +1119,7 @@ func (s *service) FinalizeOffchainTx(
 
 	finalCheckpointTxsMap := make(map[string]string)
 
-	var arkTx *psbt.Packet
-	arkTx, err = psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
+	arkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
 	if err != nil {
 		return errors.INVALID_ARK_PSBT.New("failed to parse ark tx: %w", err).
 			WithMetadata(errors.PsbtMetadata{Tx: offchainTx.ArkTx})
