@@ -1060,10 +1060,8 @@ func (s *service) SubmitOffchainTx(
 	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
 	for _, spentVtxo := range spentVtxos {
 		if s.cache.OffchainTxs().Includes(spentVtxo.Outpoint) {
-			errr := errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
+			return nil, "", "", errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
-			err = errr
-			return nil, "", "", errr
 		}
 	}
 	s.cache.OffchainTxs().Add(*offchainTx)
