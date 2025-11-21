@@ -100,19 +100,6 @@ func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	return readRows(rows)
 }
 
-func (v *vtxoRepository) GetAllSweepableVtxos(ctx context.Context) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectSweepableVtxos(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	rows := make([]queries.VtxoVw, 0, len(res))
-	for _, row := range res {
-		rows = append(rows, row.VtxoVw)
-	}
-	return readRows(rows)
-}
-
 func (v *vtxoRepository) GetAllNonUnrolledVtxos(
 	ctx context.Context, pubkey string,
 ) ([]domain.Vtxo, []domain.Vtxo, error) {
@@ -190,21 +177,6 @@ func (v *vtxoRepository) GetVtxos(
 
 func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	res, err := v.querier.SelectAllVtxos(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rows := make([]queries.VtxoVw, 0, len(res))
-	for _, row := range res {
-		rows = append(rows, row.VtxoVw)
-	}
-
-	return readRows(rows)
-}
-
-func (v *vtxoRepository) GetVtxosForRound(
-	ctx context.Context, txid string,
-) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosWithCommitmentTxid(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
@@ -373,11 +345,30 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	return vtxos, nil
 }
 
-func (v *vtxoRepository) GetAllChildrenVtxos(
+func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	ctx context.Context,
-	txid string,
+	commitmentTxid string,
 ) ([]domain.Outpoint, error) {
-	res, err := v.querier.SelectVtxosByArkTxidRecursive(ctx, txid)
+	res, err := v.querier.SelectSweepableVtxoOutpointsByCommitmentTxid(ctx, commitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+
+	outpoints := make([]domain.Outpoint, 0, len(res))
+	for _, row := range res {
+		outpoints = append(outpoints, domain.Outpoint{
+			Txid: row.VtxoTxid,
+			VOut: uint32(row.VtxoVout),
+		})
+	}
+
+	return outpoints, nil
+}
+
+func (v *vtxoRepository) GetAllChildrenVtxos(
+	ctx context.Context, txid string,
+) ([]domain.Outpoint, error) {
+	res, err := v.querier.SelectVtxosOutpointsByArkTxidRecursive(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
@@ -391,6 +382,25 @@ func (v *vtxoRepository) GetAllChildrenVtxos(
 	}
 
 	return outpoints, nil
+}
+
+func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
+	ctx context.Context, commitmentTxid string, withMinimumAmount uint64,
+) ([]string, error) {
+	if commitmentTxid == "" {
+		return nil, nil
+	}
+
+	taprootKeys, err := v.querier.SelectVtxoPubKeysByCommitmentTxid(ctx,
+		queries.SelectVtxoPubKeysByCommitmentTxidParams{
+			MinAmount:      int64(withMinimumAmount),
+			CommitmentTxid: commitmentTxid,
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	return taprootKeys, nil
 }
 
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
