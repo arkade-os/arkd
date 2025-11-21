@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arkade-os/arkd/internal/config"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/urfave/cli/v2"
 )
@@ -20,6 +21,7 @@ var (
 	startCmd = &cli.Command{
 		Name:   "start",
 		Usage:  "Starts the arkd server",
+		Flags:  config.Flags,
 		Action: startAction,
 	}
 

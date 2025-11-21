@@ -175,7 +175,7 @@ export ARKD_SIGNER_ADDR=localhost:7071
 
 2. Start arkd:
    ```sh
-   arkd
+   arkd start
    ```
 
 3. Create a new wallet:

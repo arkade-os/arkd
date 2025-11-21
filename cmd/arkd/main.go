@@ -23,8 +23,8 @@ const (
 	tlsCertFile  = "cert.pem"
 )
 
-func startAction(_ *cli.Context) error {
-	cfg, err := config.LoadConfig()
+func startAction(c *cli.Context) error {
+	cfg, err := config.LoadConfig(c)
 	if err != nil {
 		return fmt.Errorf("invalid config: %s", err)
 	}
