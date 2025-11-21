@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/tlv"
@@ -23,6 +24,8 @@ type Asset struct {
 	version     []byte
 	magic       byte
 }
+
+const AssetMagic byte = 0x41 // 'A'
 
 type Metadata struct {
 	Key   string
@@ -46,7 +49,7 @@ func (a *Asset) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
 	if err != nil {
 		return wire.TxOut{}, err
 	}
-	assetData := append([]byte{a.magic}, a.version...)
+	assetData := append([]byte{AssetMagic}, a.version...)
 	assetData = append(assetData, a.genesisTxId...)
 	assetData = append(assetData, batchTxId...)
 	assetData = append(assetData, encodedTlv...)
@@ -70,6 +73,11 @@ func DecodeAssetFromOpret(opReturnData []byte) (*Asset, []byte, error) {
 
 	// Extract and set magic, version, genesisTxId
 	asset.magic = opReturnData[1]
+
+	if asset.magic != AssetMagic {
+		return nil, nil, errors.New("invalid asset magic")
+	}
+
 	asset.version = opReturnData[2:3]
 	asset.genesisTxId = opReturnData[3 : 3+32]
 	batchTxId := opReturnData[3+32 : 3+32+32]
@@ -81,6 +89,13 @@ func DecodeAssetFromOpret(opReturnData []byte) (*Asset, []byte, error) {
 
 	return asset, batchTxId, nil
 
+}
+
+func IsAsset(opReturnData []byte) bool {
+	if len(opReturnData) < 1 {
+		return false
+	}
+	return opReturnData[0] == txscript.OP_RETURN && len(opReturnData) > 1 && opReturnData[1] == AssetMagic
 }
 
 func (a *Asset) encodeTlv() ([]byte, error) {
@@ -169,3 +184,49 @@ func (a *Asset) decodeTlv(data []byte) error {
 	buf := bytes.NewReader(data)
 	return tlvStream.Decode(buf)
 }
+
+func VerifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
+
+	processedOutputs := 0
+
+	for _, out := range outs {
+		// Asset Output comes after Seal Outputs
+		if IsAsset(out.PkScript) {
+			break
+		}
+		for _, assetOut := range assetOutputs {
+			pkScript, err := schnorr.ParsePubKey(out.PkScript[2:])
+			if err != nil {
+				return err
+			}
+			if pkScript.IsEqual(&assetOut.PublicKey) {
+				processedOutputs++
+			}
+		}
+	}
+
+	if processedOutputs != len(assetOutputs) {
+		return errors.New("not all asset outputs found in transaction outputs")
+	}
+
+	return nil
+}
+
+func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
+	processedInputs := 0
+
+	for _, assetIn := range assetInputs {
+		for _, in := range ins {
+			if bytes.Equal(in.PreviousOutPoint.Hash[:], assetIn.Txid) && in.PreviousOutPoint.Index == assetIn.Vout {
+				processedInputs++
+			}
+		}
+	}
+
+	if processedInputs != len(assetInputs) {
+		return errors.New("not all asset inputs found in transaction inputs")
+	}
+
+	return nil
+}
+

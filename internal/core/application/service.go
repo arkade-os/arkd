@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -878,6 +879,22 @@ func (s *service) SubmitOffchainTx(
 	foundOpReturn := false
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
+		isAssetOutput := asset.IsAsset(out.PkScript)
+
+		if isAssetOutput {
+			if foundOpReturn {
+				return nil, "", "", errors.MALFORMED_ARK_TX.New(
+					"tx %s has multiple op return outputs", txid,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			foundOpReturn = true
+
+			err := s.validateAssetTransaction(ctx, *arkPtx.UnsignedTx, out.PkScript)
+			if err != nil {
+				return nil, "", "", errors.ASSET_VALIDATION_FAILED.Wrap(err)
+			}
+		}
+
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
 				return nil, "", "", errors.MALFORMED_ARK_TX.New(
@@ -3641,4 +3658,83 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
+}
+
+func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, assetOutput []byte) error {
+	decodedAsset, _, err := asset.DecodeAssetFromOpret(assetOutput)
+	if err != nil {
+		return err
+	}
+
+	ins := decodedAsset.Inputs
+	outs := decodedAsset.Outputs
+
+	if err := asset.VerifyAssetInputs(tx.TxIn, ins); err != nil {
+		return err
+	}
+
+	if err := asset.VerifyAssetOutputs(tx.TxOut, outs); err != nil {
+		return err
+	}
+
+	totalOuputAmount := uint64(0)
+	for _, assetOut := range outs {
+		totalOuputAmount += assetOut.Amount
+	}
+
+	totalInputAmount := uint64(0)
+	for _, in := range ins {
+		totalInputAmount += uint64(in.Amount)
+	}
+
+	if totalInputAmount != totalOuputAmount {
+		return fmt.Errorf("asset input amount %d does not match output amount %d",
+			totalInputAmount, totalOuputAmount,
+		)
+	}
+
+	// verify that each asset input corresponds to a finalized asset output
+	for _, input := range decodedAsset.Inputs {
+		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, hex.EncodeToString(input.Txid))
+
+		if err != nil {
+			return err
+		}
+
+		if offchainTx == nil {
+			return fmt.Errorf("offchain tx %s not found", hex.EncodeToString(input.Txid))
+		}
+
+		if !offchainTx.IsFinalized() {
+			return fmt.Errorf("offchain tx %s is failed", hex.EncodeToString(input.Txid))
+		}
+
+		decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
+		if err != nil {
+			return err
+		}
+
+		var assetData *asset.Asset
+		for _, output := range decodedArkTx.UnsignedTx.TxOut {
+			if asset.IsAsset(output.PkScript) {
+				assetData, _, err = asset.DecodeAssetFromOpret(output.PkScript)
+				if err != nil {
+					return err
+				}
+				break
+			}
+		}
+
+		if assetData == nil {
+			return fmt.Errorf("no asset data found in offchain tx %s", hex.EncodeToString(input.Txid))
+		}
+
+		for _, out := range assetData.Outputs {
+			if out.Vout == input.Vout && out.Amount == input.Amount {
+				continue
+			}
+		}
+		return fmt.Errorf("asset input %d in offchain tx %s does not match", input.Vout, hex.EncodeToString(input.Txid))
+	}
+	return nil
 }

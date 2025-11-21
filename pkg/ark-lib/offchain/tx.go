@@ -310,6 +310,7 @@ func buildAssetCheckpointTx(
 
 	newAsset := *arkAsset
 
+	// Check if the vtxo is an asset seal or normal vtxo
 	var isSeal bool
 
 	for _, input := range newAsset.Inputs {
