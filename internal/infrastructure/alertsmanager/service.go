@@ -146,7 +146,7 @@ func formatBatchFinalizedAlert(esploraUrl string, data ports.BatchFinalizedAlert
 	lines = append(lines, fmt.Sprintf("%s/tx/%s", esploraUrl, data.CommitmentTxid))
 	lines = append(lines, fmt.Sprintf("\n*ID:* `%s`", data.Id))
 
-	totBalance := data.LiqudityProviderConfirmedBalance + data.LiqudityProviderUnconfirmedBalance
+	totBalance := data.LiquidityProviderConfirmedBalance + data.LiquidityProviderUnconfirmedBalance
 	lines = append(lines, "\n*Liquidity Metrics:*")
 	lines = append(lines, fmt.Sprintf(
 		"• Liquidity provided: %s", formatBTC(data.LiquidityProvided),
@@ -157,10 +157,10 @@ func formatBatchFinalizedAlert(esploraUrl string, data ports.BatchFinalizedAlert
 
 	lines = append(lines, "\n*Liquidity Provider Balance:*")
 	lines = append(lines, fmt.Sprintf(
-		"• Confirmed: %s", formatBTC(data.LiqudityProviderConfirmedBalance),
+		"• Confirmed: %s", formatBTC(data.LiquidityProviderConfirmedBalance),
 	))
 	lines = append(lines, fmt.Sprintf(
-		"• Unconfirmed: %s", formatBTC(data.LiqudityProviderUnconfirmedBalance),
+		"• Unconfirmed: %s", formatBTC(data.LiquidityProviderUnconfirmedBalance),
 	))
 
 	lines = append(lines, "\n*Fees:*")

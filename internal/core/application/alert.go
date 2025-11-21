@@ -75,7 +75,7 @@ func (s *service) getBatchStats(
 	}
 
 	for _, intent := range round.Intents {
-		a.CollectedFees += (intent.TotalInputAmount() + a.BoardingInputAmount) - intent.TotalOutputAmount()
+		a.CollectedFees += intent.TotalInputAmount() + a.BoardingInputAmount - intent.TotalOutputAmount()
 		a.ForfeitCount += len(intent.Inputs)
 		a.ForfeitAmount += intent.TotalInputAmount()
 		for _, receiver := range intent.Receivers {
@@ -89,6 +89,9 @@ func (s *service) getBatchStats(
 		}
 	}
 
+	a.ConnectorsCount = a.ForfeitCount
+	a.ConnectorsAmount = uint64(a.ForfeitCount * 330)
+
 	confirmedBalance, unconfirmedBalance, _ := s.wallet.MainAccountBalance(ctx)
 	liquidityCost := "N/A"
 	outAmount := a.LeafAmount + a.ExitAmount + a.ConnectorsAmount + a.OnchainFees
@@ -101,8 +104,8 @@ func (s *service) getBatchStats(
 			"%s%%", totBatchAmount.Div(totLiquidity).Mul(decimal.NewFromInt(100)).StringFixed(2),
 		)
 
-		a.LiqudityProviderConfirmedBalance = confirmedBalance
-		a.LiqudityProviderUnconfirmedBalance = unconfirmedBalance
+		a.LiquidityProviderConfirmedBalance = confirmedBalance
+		a.LiquidityProviderUnconfirmedBalance = unconfirmedBalance
 	}
 	a.LiquidityProvided = outAmount - a.BoardingInputAmount
 	a.LiquidityCost = liquidityCost
@@ -110,7 +113,5 @@ func (s *service) getBatchStats(
 	a.CommitmentTxid = round.CommitmentTxid
 	a.Duration = duration
 	a.IntentsCount = len(round.Intents)
-	a.ConnectorsCount = a.ForfeitCount
-	a.ConnectorsAmount = uint64(a.ForfeitCount * 330)
 	return
 }
