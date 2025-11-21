@@ -44,7 +44,6 @@ require (
 	github.com/redis/go-redis/v9 v9.10.0
 	github.com/shopspring/decimal v1.2.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/spf13/viper v1.20.1
 	github.com/sqlc-dev/pqtype v0.3.0
 	github.com/stretchr/testify v1.11.1
 	github.com/timshannon/badgerhold/v4 v4.0.3
@@ -181,6 +180,7 @@ require (
 	github.com/rogpeppe/fastuuid v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
+	github.com/spf13/viper v1.20.1 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tidwall/gjson v1.17.3 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
