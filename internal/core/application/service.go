@@ -1079,9 +1079,7 @@ func (s *service) SubmitOffchainTx(
 func (s *service) FinalizeOffchainTx(
 	ctx context.Context, txid string, finalCheckpointTxs []string,
 ) (structErr errors.Error) {
-	var (
-		changes []domain.Event
-	)
+	var changes []domain.Event
 
 	offchainTx, exists := s.cache.OffchainTxs().Get(txid)
 	if !exists {
