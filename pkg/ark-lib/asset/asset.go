@@ -11,6 +11,8 @@ import (
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
+const AssetVersion byte = 0x01
+
 type Asset struct {
 	AssetId       [32]byte
 	Outputs       []AssetOutput // 8 + 33
@@ -20,9 +22,8 @@ type Asset struct {
 	Metadata      []Metadata
 
 	// OP_RETURN
-	genesisTxId []byte
-	version     []byte
-	magic       byte
+	Version byte
+	Magic   byte
 }
 
 const AssetMagic byte = 0x41 // 'A'
@@ -49,8 +50,7 @@ func (a *Asset) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
 	if err != nil {
 		return wire.TxOut{}, err
 	}
-	assetData := append([]byte{AssetMagic}, a.version...)
-	assetData = append(assetData, a.genesisTxId...)
+	assetData := append([]byte{AssetMagic, a.Version})
 	assetData = append(assetData, batchTxId...)
 	assetData = append(assetData, encodedTlv...)
 
@@ -72,17 +72,16 @@ func DecodeAssetFromOpret(opReturnData []byte) (*Asset, []byte, error) {
 	}
 
 	// Extract and set magic, version, genesisTxId
-	asset.magic = opReturnData[1]
+	asset.Magic = opReturnData[1]
 
-	if asset.magic != AssetMagic {
+	if asset.Magic != AssetMagic {
 		return nil, nil, errors.New("invalid asset magic")
 	}
 
-	asset.version = opReturnData[2:3]
-	asset.genesisTxId = opReturnData[3 : 3+32]
-	batchTxId := opReturnData[3+32 : 3+32+32]
+	asset.Version = opReturnData[2]
+	batchTxId := opReturnData[3 : 3+32]
 
-	err := asset.decodeTlv(opReturnData[1+2+32+32:])
+	err := asset.decodeTlv(opReturnData[3+32:])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -229,4 +228,3 @@ func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
 
 	return nil
 }
-

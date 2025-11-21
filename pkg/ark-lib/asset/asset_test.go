@@ -16,7 +16,6 @@ func TestEncodeOpretAndDecodeAsset(t *testing.T) {
 
 	controlKey := deterministicPubKey(t, 7)
 
-	genesisTxID := deterministicTxid(0xee)
 	batchTxID := deterministicTxid(0xdd)
 
 	asset := Asset{
@@ -26,9 +25,8 @@ func TestEncodeOpretAndDecodeAsset(t *testing.T) {
 		Inputs:        []AssetInput{{Txid: deterministicTxid(0x0a), Vout: 2, Amount: 80}},
 		Immutable:     true,
 		Metadata:      []Metadata{{Key: "note", Value: "opret"}},
-		version:       []byte{0x01},
-		genesisTxId:   genesisTxID,
-		magic:         AssetMagic,
+		Version:       AssetVersion,
+		Magic:         AssetMagic,
 	}
 
 	txOut, err := asset.EncodeOpret(batchTxID)
