@@ -46,11 +46,11 @@ type AssetInput struct {
 }
 
 func (a *Asset) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
-	encodedTlv, err := a.encodeTlv()
+	encodedTlv, err := a.EncodeTlv()
 	if err != nil {
 		return wire.TxOut{}, err
 	}
-	assetData := append([]byte{AssetMagic, a.Version})
+	assetData := []byte{AssetMagic, a.Version}
 	assetData = append(assetData, batchTxId...)
 	assetData = append(assetData, encodedTlv...)
 
@@ -81,7 +81,7 @@ func DecodeAssetFromOpret(opReturnData []byte) (*Asset, []byte, error) {
 	asset.Version = opReturnData[2]
 	batchTxId := opReturnData[3 : 3+32]
 
-	err := asset.decodeTlv(opReturnData[3+32:])
+	err := asset.DecodeTlv(opReturnData[3+32:])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -97,7 +97,7 @@ func IsAsset(opReturnData []byte) bool {
 	return opReturnData[0] == txscript.OP_RETURN && len(opReturnData) > 1 && opReturnData[1] == AssetMagic
 }
 
-func (a *Asset) encodeTlv() ([]byte, error) {
+func (a *Asset) EncodeTlv() ([]byte, error) {
 	var tlvRecords []tlv.Record
 
 	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
@@ -140,7 +140,7 @@ func (a *Asset) encodeTlv() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (a *Asset) decodeTlv(data []byte) error {
+func (a *Asset) DecodeTlv(data []byte) error {
 	tlvStream, err := tlv.NewStream(
 		tlv.MakePrimitiveRecord(
 			tlvTypeAssetID,

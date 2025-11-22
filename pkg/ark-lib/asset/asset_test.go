@@ -79,12 +79,12 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 		},
 	}
 
-	encoded, err := asset.encodeTlv()
+	encoded, err := asset.EncodeTlv()
 	require.NoError(t, err)
 	require.NotEmpty(t, encoded)
 
 	var decoded Asset
-	require.NoError(t, decoded.decodeTlv(encoded))
+	require.NoError(t, decoded.DecodeTlv(encoded))
 	require.Equal(t, asset, decoded)
 }
 

@@ -350,9 +350,9 @@ func NewService(
 		},
 	)
 
-	if err := svc.restoreWatchingVtxos(); err != nil {
-		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	}
+	// if err := svc.restoreWatchingVtxos(); err != nil {
+	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	// }
 	go svc.listenToScannerNotifications()
 	return svc, nil
 }
@@ -3284,6 +3284,11 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 	scripts := make([]string, 0)
 
 	for _, vtxo := range vtxos {
+		// skip OP_RETURN outputs
+		if vtxo.Amount < dustLimit {
+			continue
+		}
+
 		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
 			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
@@ -3293,10 +3298,6 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
 		if err != nil {
 			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		if vtxo.Amount < dustLimit {
 			continue
 		}
 
