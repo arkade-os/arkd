@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -24,14 +25,19 @@ const (
 
 type treeSigningSessionsStore struct {
 	rdb          *redis.Client
-	nonceCh      chan struct{}
-	sigsCh       chan struct{}
+	lock         sync.RWMutex
+	nonceChs     map[string]chan struct{}
+	sigsChs      map[string]chan struct{}
+	ctxs         map[string]context.CancelFunc
 	pollInterval time.Duration
 }
 
 func NewTreeSigningSessionsStore(rdb *redis.Client) ports.TreeSigningSessionsStore {
 	return &treeSigningSessionsStore{
 		rdb:          rdb,
+		nonceChs:     make(map[string]chan struct{}),
+		sigsChs:      make(map[string]chan struct{}),
+		ctxs:         make(map[string]context.CancelFunc),
 		pollInterval: 100 * time.Millisecond,
 	}
 }
@@ -39,6 +45,9 @@ func NewTreeSigningSessionsStore(rdb *redis.Client) ports.TreeSigningSessionsSto
 func (s *treeSigningSessionsStore) New(
 	roundId string, uniqueSignersPubKeys map[string]struct{},
 ) *ports.MusigSigningSession {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	ctx := context.Background()
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	cosignersBytes, _ := json.Marshal(uniqueSignersPubKeys)
@@ -48,10 +57,13 @@ func (s *treeSigningSessionsStore) New(
 	}
 	s.rdb.HSet(ctx, metaKey, meta)
 
-	s.nonceCh = make(chan struct{})
-	s.sigsCh = make(chan struct{})
-	go s.watchNoncesCollected(roundId)
-	go s.watchSigsCollected(roundId)
+	watchCtx, cancel := context.WithCancel(context.Background())
+	s.ctxs[roundId] = cancel
+	s.nonceChs[roundId] = make(chan struct{})
+	s.sigsChs[roundId] = make(chan struct{})
+
+	go s.watchNoncesCollected(watchCtx, roundId)
+	go s.watchSigsCollected(watchCtx, roundId)
 
 	return &ports.MusigSigningSession{
 		Cosigners:   uniqueSignersPubKeys,
@@ -113,18 +125,27 @@ func (s *treeSigningSessionsStore) Get(roundId string) (*ports.MusigSigningSessi
 }
 
 func (s *treeSigningSessionsStore) Delete(roundId string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	ctx := context.Background()
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
 	s.rdb.Del(ctx, metaKey, noncesKey, sigsKey)
-	if s.nonceCh != nil {
-		close(s.nonceCh)
-		s.nonceCh = nil
+
+	if cancel, exists := s.ctxs[roundId]; exists {
+		cancel()
+		delete(s.ctxs, roundId)
 	}
-	if s.sigsCh != nil {
-		close(s.sigsCh)
-		s.sigsCh = nil
+
+	if ch, exists := s.nonceChs[roundId]; exists {
+		close(ch)
+		delete(s.nonceChs, roundId)
+	}
+	if ch, exists := s.sigsChs[roundId]; exists {
+		close(ch)
+		delete(s.sigsChs, roundId)
 	}
 }
 
@@ -151,55 +172,107 @@ func (s *treeSigningSessionsStore) AddSignatures(
 }
 
 func (s *treeSigningSessionsStore) NoncesCollected(roundId string) <-chan struct{} {
-	return s.nonceCh
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.nonceChs[roundId]
 }
 
 func (s *treeSigningSessionsStore) SignaturesCollected(roundId string) <-chan struct{} {
-	return s.sigsCh
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+	return s.sigsChs[roundId]
 }
 
-func (s *treeSigningSessionsStore) watchNoncesCollected(roundId string) {
-	ctx := context.Background()
+func (s *treeSigningSessionsStore) watchNoncesCollected(ctx context.Context, roundId string) {
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
 	for {
-		meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
-		if err != nil || len(meta) == 0 {
-			continue
-		}
-		nbCosigners := 0
-		if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
-			log.Warnf("watchNoncesCollected:failed to parse NbCosigners: %v", err)
-		}
-		noncesMap, _ := s.rdb.HGetAll(ctx, noncesKey).Result()
-		if len(noncesMap) == nbCosigners-1 {
-			if s.nonceCh != nil {
-				s.nonceCh <- struct{}{}
-			}
+		select {
+		case <-ctx.Done():
 			return
+		default:
+			meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
+			if err != nil || len(meta) == 0 {
+				continue
+			}
+			nbCosigners := 0
+			if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
+				log.Warnf("watchNoncesCollected:failed to parse NbCosigners: %v", err)
+				continue
+			}
+			noncesMap, _ := s.rdb.HGetAll(ctx, noncesKey).Result()
+			if len(noncesMap) == nbCosigners-1 {
+				s.lock.RLock()
+				ch := s.nonceChs[roundId]
+				s.lock.RUnlock()
+				if ch != nil {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Warnf("watchNoncesCollected:recovered from panic: %v", r)
+								}
+							}()
+							select {
+							case ch <- struct{}{}:
+							case <-ctx.Done():
+								return
+							}
+						}()
+					}
+				}
+				return
+			}
 		}
 	}
 }
 
-func (s *treeSigningSessionsStore) watchSigsCollected(roundId string) {
-	ctx := context.Background()
+func (s *treeSigningSessionsStore) watchSigsCollected(ctx context.Context, roundId string) {
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
 	for {
-		meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
-		if err != nil || len(meta) == 0 {
-			continue
-		}
-		nbCosigners := 0
-		if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
-			log.Warnf("watchSigsCollected:failed to parse NbCosigners: %v", err)
-		}
-		sigsMap, _ := s.rdb.HGetAll(ctx, sigsKey).Result()
-		if len(sigsMap) == nbCosigners-1 {
-			if s.sigsCh != nil {
-				s.sigsCh <- struct{}{}
-			}
+		select {
+		case <-ctx.Done():
 			return
+		default:
+			meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
+			if err != nil || len(meta) == 0 {
+				continue
+			}
+			nbCosigners := 0
+			if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
+				log.Warnf("watchSigsCollected:failed to parse NbCosigners: %v", err)
+				continue
+			}
+			sigsMap, _ := s.rdb.HGetAll(ctx, sigsKey).Result()
+			if len(sigsMap) == nbCosigners-1 {
+				s.lock.RLock()
+				ch := s.sigsChs[roundId]
+				s.lock.RUnlock()
+				if ch != nil {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Warnf("watchSigsCollected:recovered from panic: %v", r)
+								}
+							}()
+							select {
+							case ch <- struct{}{}:
+							case <-ctx.Done():
+								return
+							}
+						}()
+					}
+				}
+				return
+			}
 		}
 	}
 }
