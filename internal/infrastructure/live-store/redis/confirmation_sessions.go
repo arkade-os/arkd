@@ -161,7 +161,11 @@ func (s *confirmationSessionsStore) watchSessionCompletion() {
 		numIntents, _ := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
 		numConfirmed, _ := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
 		if numIntents > 0 && numConfirmed == numIntents {
-			chOnce.Do(func() { s.sessionCompleteCh <- struct{}{} })
+			chOnce.Do(
+				func() {
+					safeSend(s.sessionCompleteCh)
+				},
+			)
 			return
 		}
 	}

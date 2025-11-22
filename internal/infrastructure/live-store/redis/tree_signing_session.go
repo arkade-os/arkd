@@ -173,9 +173,7 @@ func (s *treeSigningSessionsStore) watchNoncesCollected(roundId string) {
 		}
 		noncesMap, _ := s.rdb.HGetAll(ctx, noncesKey).Result()
 		if len(noncesMap) == nbCosigners-1 {
-			if s.nonceCh != nil {
-				s.nonceCh <- struct{}{}
-			}
+			safeSend(s.nonceCh)
 			return
 		}
 	}
@@ -196,9 +194,7 @@ func (s *treeSigningSessionsStore) watchSigsCollected(roundId string) {
 		}
 		sigsMap, _ := s.rdb.HGetAll(ctx, sigsKey).Result()
 		if len(sigsMap) == nbCosigners-1 {
-			if s.sigsCh != nil {
-				s.sigsCh <- struct{}{}
-			}
+			safeSend(s.sigsCh)
 			return
 		}
 	}
