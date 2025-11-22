@@ -176,11 +176,14 @@ func (s *confirmationSessionsStore) SessionCompleted() <-chan struct{} {
 
 func (s *confirmationSessionsStore) watchSessionCompletion(ctx context.Context) {
 	var chOnce sync.Once
+	ticker := time.NewTicker(s.pollInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
+		case <-ticker.C:
 			numIntents, _ := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
 			numConfirmed, _ := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
 			if numIntents > 0 && numConfirmed == numIntents {
