@@ -27,6 +27,7 @@ const (
 	ArkService_SubmitTreeSignatures_FullMethodName   = "/ark.v1.ArkService/SubmitTreeSignatures"
 	ArkService_SubmitSignedForfeitTxs_FullMethodName = "/ark.v1.ArkService/SubmitSignedForfeitTxs"
 	ArkService_GetEventStream_FullMethodName         = "/ark.v1.ArkService/GetEventStream"
+	ArkService_UpdateStreamTopics_FullMethodName     = "/ark.v1.ArkService/UpdateStreamTopics"
 	ArkService_SubmitTx_FullMethodName               = "/ark.v1.ArkService/SubmitTx"
 	ArkService_FinalizeTx_FullMethodName             = "/ark.v1.ArkService/FinalizeTx"
 	ArkService_GetPendingTx_FullMethodName           = "/ark.v1.ArkService/GetPendingTx"
@@ -75,6 +76,10 @@ type ArkServiceClient interface {
 	// The server pushes these events to the client in real-time as soon as its ready to move to the
 	// next phase of the batch processing.
 	GetEventStream(ctx context.Context, in *GetEventStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetEventStreamResponse], error)
+	// UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,
+	// remove, or specify a list of topics, providing them control over the events received on the
+	// event stream.
+	UpdateStreamTopics(ctx context.Context, in *UpdateStreamTopicsRequest, opts ...grpc.CallOption) (*UpdateStreamTopicsResponse, error)
 	// SubmitTx is the first leg of the process of spending vtxos offchain and allows a client to
 	// submit a signed Ark transaction and the unsigned checkpoint transactions.
 	// The server should verify the signed transactions and return the fully signed Ark tx and the
@@ -193,6 +198,16 @@ func (c *arkServiceClient) GetEventStream(ctx context.Context, in *GetEventStrea
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ArkService_GetEventStreamClient = grpc.ServerStreamingClient[GetEventStreamResponse]
 
+func (c *arkServiceClient) UpdateStreamTopics(ctx context.Context, in *UpdateStreamTopicsRequest, opts ...grpc.CallOption) (*UpdateStreamTopicsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateStreamTopicsResponse)
+	err := c.cc.Invoke(ctx, ArkService_UpdateStreamTopics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *arkServiceClient) SubmitTx(ctx context.Context, in *SubmitTxRequest, opts ...grpc.CallOption) (*SubmitTxResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SubmitTxResponse)
@@ -284,6 +299,10 @@ type ArkServiceServer interface {
 	// The server pushes these events to the client in real-time as soon as its ready to move to the
 	// next phase of the batch processing.
 	GetEventStream(*GetEventStreamRequest, grpc.ServerStreamingServer[GetEventStreamResponse]) error
+	// UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,
+	// remove, or specify a list of topics, providing them control over the events received on the
+	// event stream.
+	UpdateStreamTopics(context.Context, *UpdateStreamTopicsRequest) (*UpdateStreamTopicsResponse, error)
 	// SubmitTx is the first leg of the process of spending vtxos offchain and allows a client to
 	// submit a signed Ark transaction and the unsigned checkpoint transactions.
 	// The server should verify the signed transactions and return the fully signed Ark tx and the
@@ -335,6 +354,9 @@ func (UnimplementedArkServiceServer) SubmitSignedForfeitTxs(context.Context, *Su
 }
 func (UnimplementedArkServiceServer) GetEventStream(*GetEventStreamRequest, grpc.ServerStreamingServer[GetEventStreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method GetEventStream not implemented")
+}
+func (UnimplementedArkServiceServer) UpdateStreamTopics(context.Context, *UpdateStreamTopicsRequest) (*UpdateStreamTopicsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateStreamTopics not implemented")
 }
 func (UnimplementedArkServiceServer) SubmitTx(context.Context, *SubmitTxRequest) (*SubmitTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitTx not implemented")
@@ -505,6 +527,24 @@ func _ArkService_GetEventStream_Handler(srv interface{}, stream grpc.ServerStrea
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ArkService_GetEventStreamServer = grpc.ServerStreamingServer[GetEventStreamResponse]
 
+func _ArkService_UpdateStreamTopics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateStreamTopicsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArkServiceServer).UpdateStreamTopics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArkService_UpdateStreamTopics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArkServiceServer).UpdateStreamTopics(ctx, req.(*UpdateStreamTopicsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ArkService_SubmitTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SubmitTxRequest)
 	if err := dec(in); err != nil {
@@ -604,6 +644,10 @@ var ArkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SubmitSignedForfeitTxs",
 			Handler:    _ArkService_SubmitSignedForfeitTxs_Handler,
+		},
+		{
+			MethodName: "UpdateStreamTopics",
+			Handler:    _ArkService_UpdateStreamTopics_Handler,
 		},
 		{
 			MethodName: "SubmitTx",

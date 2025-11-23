@@ -296,6 +296,47 @@
         }
       }
     },
+    "/v1/batch/updateTopics": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,\nremove, or specify a list of topics, providing them control over the events received on the\nevent stream.",
+        "operationId": "ArkService_UpdateStreamTopics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStreamTopicsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStreamTopicsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/info": {
       "get": {
         "tags": [
@@ -651,6 +692,9 @@
           "heartbeat": {
             "$ref": "#/components/schemas/Heartbeat"
           },
+          "streamStarted": {
+            "$ref": "#/components/schemas/StreamStartedEvent"
+          },
           "treeNonces": {
             "$ref": "#/components/schemas/TreeNoncesEvent"
           },
@@ -919,6 +963,15 @@
           }
         }
       },
+      "StreamStartedEvent": {
+        "title": "StreamStartedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "SubmitSignedForfeitTxsRequest": {
         "title": "SubmitSignedForfeitTxsRequest",
         "type": "object",
@@ -1172,6 +1225,57 @@
           },
           "txid": {
             "type": "string"
+          }
+        }
+      },
+      "UpdateStreamTopicsRequest": {
+        "title": "UpdateStreamTopicsRequest",
+        "type": "object",
+        "properties": {
+          "addTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "overwriteTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removeTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "streamId": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateStreamTopicsResponse": {
+        "title": "UpdateStreamTopicsResponse",
+        "type": "object",
+        "properties": {
+          "allTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "topicsAdded": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "topicsRemoved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

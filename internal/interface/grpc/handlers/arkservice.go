@@ -219,6 +219,18 @@ func (h *handler) GetEventStream(
 	defer h.eventsListenerHandler.removeListener(listener.id)
 	defer close(listener.ch)
 
+	// immediately send a stream started event
+	startedEvt := &arkv1.GetEventStreamResponse{
+		Event: &arkv1.GetEventStreamResponse_StreamStarted{
+			StreamStarted: &arkv1.StreamStartedEvent{
+				Id: listener.id,
+			},
+		},
+	}
+	if err := stream.Send(startedEvt); err != nil {
+		return err
+	}
+
 	// create a Timer that will fire after one heartbeat interval
 	timer := time.NewTimer(h.heartbeat)
 	defer timer.Stop()
@@ -256,6 +268,51 @@ func (h *handler) GetEventStream(
 			resetTimer()
 		}
 	}
+}
+
+func (h *handler) UpdateStreamTopics(
+	ctx context.Context,
+	req *arkv1.UpdateStreamTopicsRequest,
+) (*arkv1.UpdateStreamTopicsResponse, error) {
+	if req.GetStreamId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing stream id")
+	}
+
+	switch {
+	// when overwrite topics is provided, it takes precedence, we will not
+	// process add/remove topics in this case
+	case len(req.GetOverwriteTopics()) > 0:
+		if err := h.eventsListenerHandler.overwriteTopics(
+			req.GetStreamId(), req.GetOverwriteTopics(),
+		); err != nil {
+			return nil, err
+		}
+		return &arkv1.UpdateStreamTopicsResponse{
+			AllTopics: h.eventsListenerHandler.getTopics(req.GetStreamId()),
+		}, nil
+	case len(req.GetAddTopics()) > 0:
+		if err := h.eventsListenerHandler.addTopics(
+			req.GetStreamId(), req.GetAddTopics(),
+		); err != nil {
+			return nil, err
+		}
+		// allow topics to be both added and removed in the same request
+		fallthrough
+	case len(req.GetRemoveTopics()) > 0:
+		if err := h.eventsListenerHandler.removeTopics(
+			req.GetStreamId(), req.GetRemoveTopics(),
+		); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, status.Error(codes.InvalidArgument, "no topics provided")
+	}
+
+	return &arkv1.UpdateStreamTopicsResponse{
+		TopicsAdded:   req.GetAddTopics(),
+		TopicsRemoved: req.GetRemoveTopics(),
+		AllTopics:     h.eventsListenerHandler.getTopics(req.GetStreamId()),
+	}, nil
 }
 
 func (h *handler) SubmitTx(

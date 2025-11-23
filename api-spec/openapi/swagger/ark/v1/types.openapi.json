@@ -210,6 +210,15 @@
           }
         }
       },
+      "StreamStartedEvent": {
+        "title": "StreamStartedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
       "Tapscripts": {
         "title": "Tapscripts",
         "type": "object",

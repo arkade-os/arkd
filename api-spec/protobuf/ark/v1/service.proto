@@ -94,6 +94,16 @@ service ArkService {
     };
   };
 
+  // UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,
+  // remove, or specify a list of topics, providing them control over the events received on the
+  // event stream.
+  rpc UpdateStreamTopics(UpdateStreamTopicsRequest) returns (UpdateStreamTopicsResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/batch/updateTopics"
+      body: "*"
+    };
+  }
+
   // SubmitTx is the first leg of the process of spending vtxos offchain and allows a client to
   // submit a signed Ark transaction and the unsigned checkpoint transactions.
   // The server should verify the signed transactions and return the fully signed Ark tx and the
@@ -222,7 +232,21 @@ message GetEventStreamResponse {
     TreeSignatureEvent tree_signature = 8;
     TreeNoncesEvent tree_nonces = 9;
     Heartbeat heartbeat = 10;
+    StreamStartedEvent stream_started = 11;
   }
+}
+
+message UpdateStreamTopicsRequest {
+  string stream_id = 1;
+  repeated string add_topics = 2;
+  repeated string remove_topics = 3;
+  repeated string overwrite_topics = 4;
+}
+
+message UpdateStreamTopicsResponse {
+  repeated string topics_added = 1;
+  repeated string topics_removed = 2;
+  repeated string all_topics = 3;
 }
 
 message SubmitTxRequest {
