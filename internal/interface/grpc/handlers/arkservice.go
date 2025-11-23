@@ -284,6 +284,9 @@ func (h *handler) UpdateStreamTopics(
 	// when overwrite topics is provided, it takes precedence, we will not
 	// process add/remove topics in this case
 	case req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Overwrite):
+		if req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Overwrite).Overwrite == nil {
+			return nil, status.Error(codes.InvalidArgument, "overwrite topics is nil")
+		}
 		if err := h.eventsListenerHandler.overwriteTopics(
 			req.GetStreamId(), req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Overwrite).Overwrite.Topics,
 		); err != nil {
@@ -297,6 +300,9 @@ func (h *handler) UpdateStreamTopics(
 	// allow adding/removing topics simultaneously
 	case req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Modify):
 		modify := req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Modify).Modify
+		if modify == nil {
+			return nil, status.Error(codes.InvalidArgument, "modify topics is nil")
+		}
 		if len(modify.AddTopics) > 0 {
 			if err := h.eventsListenerHandler.addTopics(
 				req.GetStreamId(), modify.AddTopics,
@@ -315,9 +321,10 @@ func (h *handler) UpdateStreamTopics(
 		return nil, status.Error(codes.InvalidArgument, "no topics provided")
 	}
 
+	modify := req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Modify).Modify
 	return &arkv1.UpdateStreamTopicsResponse{
-		TopicsAdded:   req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Modify).Modify.AddTopics,
-		TopicsRemoved: req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Modify).Modify.RemoveTopics,
+		TopicsAdded:   modify.AddTopics,
+		TopicsRemoved: modify.RemoveTopics,
 		AllTopics:     h.eventsListenerHandler.getTopics(req.GetStreamId()),
 	}, nil
 
