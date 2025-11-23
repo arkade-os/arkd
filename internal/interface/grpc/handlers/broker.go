@@ -13,6 +13,7 @@ type listener[T any] struct {
 	topics       map[string]struct{}
 	ch           chan T
 	timeoutTimer *time.Timer
+	lock         *sync.RWMutex
 }
 
 func newListener[T any](id string, topics []string) *listener[T] {
@@ -24,10 +25,13 @@ func newListener[T any](id string, topics []string) *listener[T] {
 		id:     id,
 		topics: topicsMap,
 		ch:     make(chan T, 100),
+		lock:   &sync.RWMutex{},
 	}
 }
 
 func (l *listener[T]) includesAny(topics []string) bool {
+	l.lock.Lock()
+	defer l.lock.Unlock()
 	if len(topics) == 0 {
 		return true
 	}
@@ -96,6 +100,8 @@ func (h *broker[T]) getTopics(id string) []string {
 	if !ok {
 		return nil
 	}
+	listener.lock.Lock()
+	defer listener.lock.Unlock()
 
 	topics := make([]string, 0, len(listener.topics))
 	for topic := range listener.topics {
@@ -112,8 +118,12 @@ func (h *broker[T]) addTopics(id string, topics []string) error {
 		return fmt.Errorf("subscription %s not found", id)
 	}
 
+	listener := h.listeners[id]
+	listener.lock.Lock()
+	defer listener.lock.Unlock()
+
 	for _, topic := range topics {
-		h.listeners[id].topics[formatTopic(topic)] = struct{}{}
+		listener.topics[formatTopic(topic)] = struct{}{}
 	}
 	return nil
 }
@@ -126,8 +136,12 @@ func (h *broker[T]) removeTopics(id string, topics []string) error {
 		return fmt.Errorf("subscription %s not found", id)
 	}
 
+	listener := h.listeners[id]
+	listener.lock.Lock()
+	defer listener.lock.Unlock()
+
 	for _, topic := range topics {
-		delete(h.listeners[id].topics, formatTopic(topic))
+		delete(listener.topics, formatTopic(topic))
 	}
 	return nil
 }
@@ -140,7 +154,11 @@ func (h *broker[T]) removeAllTopics(id string) error {
 		return fmt.Errorf("subscription %s not found", id)
 	}
 
-	h.listeners[id].topics = make(map[string]struct{})
+	listener := h.listeners[id]
+	listener.lock.Lock()
+	defer listener.lock.Unlock()
+
+	listener.topics = make(map[string]struct{})
 	return nil
 }
 
@@ -152,12 +170,16 @@ func (h *broker[T]) overwriteTopics(id string, topics []string) error {
 		return fmt.Errorf("subscription %s not found", id)
 	}
 
+	listener := h.listeners[id]
+	listener.lock.Lock()
+	defer listener.lock.Unlock()
+
 	newTopics := make(map[string]struct{}, len(topics))
 	for _, topic := range topics {
 		newTopics[formatTopic(topic)] = struct{}{}
 	}
 
-	h.listeners[id].topics = newTopics
+	listener.topics = newTopics
 	return nil
 }
 
