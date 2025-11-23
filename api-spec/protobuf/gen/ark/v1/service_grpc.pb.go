@@ -74,7 +74,9 @@ type ArkServiceClient interface {
 	// Clients should use this stream as soon as they are ready to join a batch and can listen for
 	// various events such as batch start, batch finalization, and other related activities.
 	// The server pushes these events to the client in real-time as soon as its ready to move to the
-	// next phase of the batch processing.
+	// next phase of the batch processing. Upon creation of the stream, the event StreamStartedEvent
+	// is immediately sent, which passes along the stream id, to be used by the client for future
+	// calls to UpdateStreamTopics.
 	GetEventStream(ctx context.Context, in *GetEventStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetEventStreamResponse], error)
 	// UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,
 	// remove, or specify a list of topics, providing them control over the events received on the
@@ -297,7 +299,9 @@ type ArkServiceServer interface {
 	// Clients should use this stream as soon as they are ready to join a batch and can listen for
 	// various events such as batch start, batch finalization, and other related activities.
 	// The server pushes these events to the client in real-time as soon as its ready to move to the
-	// next phase of the batch processing.
+	// next phase of the batch processing. Upon creation of the stream, the event StreamStartedEvent
+	// is immediately sent, which passes along the stream id, to be used by the client for future
+	// calls to UpdateStreamTopics.
 	GetEventStream(*GetEventStreamRequest, grpc.ServerStreamingServer[GetEventStreamResponse]) error
 	// UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,
 	// remove, or specify a list of topics, providing them control over the events received on the

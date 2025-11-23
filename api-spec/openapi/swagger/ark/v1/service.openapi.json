@@ -92,7 +92,7 @@
         "tags": [
           "ArkService"
         ],
-        "description": "GetEventStream is a server-side streaming RPC that allows clients to receive a stream of\nevents related to batch processing.\nClients should use this stream as soon as they are ready to join a batch and can listen for\nvarious events such as batch start, batch finalization, and other related activities.\nThe server pushes these events to the client in real-time as soon as its ready to move to the\nnext phase of the batch processing.",
+        "description": "GetEventStream is a server-side streaming RPC that allows clients to receive a stream of\nevents related to batch processing.\nClients should use this stream as soon as they are ready to join a batch and can listen for\nvarious events such as batch start, batch finalization, and other related activities.\nThe server pushes these events to the client in real-time as soon as its ready to move to the\nnext phase of the batch processing. Upon creation of the stream, the event StreamStartedEvent\nis immediately sent, which passes along the stream id, to be used by the client for future\ncalls to UpdateStreamTopics.",
         "operationId": "ArkService_GetEventStream",
         "parameters": [
           {
@@ -869,6 +869,24 @@
           }
         }
       },
+      "ModifyTopics": {
+        "title": "ModifyTopics",
+        "type": "object",
+        "properties": {
+          "addTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removeTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "Outpoint": {
         "title": "Outpoint",
         "type": "object",
@@ -879,6 +897,18 @@
           "vout": {
             "type": "integer",
             "format": "uint32"
+          }
+        }
+      },
+      "OverwriteTopics": {
+        "title": "OverwriteTopics",
+        "type": "object",
+        "properties": {
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -1231,24 +1261,13 @@
       "UpdateStreamTopicsRequest": {
         "title": "UpdateStreamTopicsRequest",
         "type": "object",
+        "description": "Adding and removing topics can both be supplied in the same request,\nallowing for simultaneous changes.\noverwrite_topics will take precedence, and if set, then the add/remove\ntopics are ignored. The stream_id is required.",
         "properties": {
-          "addTopics": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "modify": {
+            "$ref": "#/components/schemas/ModifyTopics"
           },
-          "overwriteTopics": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "removeTopics": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "overwrite": {
+            "$ref": "#/components/schemas/OverwriteTopics"
           },
           "streamId": {
             "type": "string"

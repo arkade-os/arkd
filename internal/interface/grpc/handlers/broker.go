@@ -45,6 +45,55 @@ func (l *listener[T]) includesAny(topics []string) bool {
 	return false
 }
 
+func (l *listener[T]) AddTopics(topics []string) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	if l.topics == nil {
+		l.topics = make(map[string]struct{}, len(topics))
+	}
+	for _, topic := range topics {
+		l.topics[formatTopic(topic)] = struct{}{}
+	}
+}
+
+func (l *listener[T]) RemoveTopics(topics []string) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	if l.topics == nil {
+		return
+	}
+	for _, topic := range topics {
+		delete(l.topics, formatTopic(topic))
+	}
+}
+
+func (l *listener[T]) OverwriteTopics(topics []string) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	newTopics := make(map[string]struct{}, len(topics))
+	for _, topic := range topics {
+		newTopics[formatTopic(topic)] = struct{}{}
+	}
+	l.topics = newTopics
+}
+
+func (l *listener[T]) GetTopics() []string {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	out := make([]string, 0, len(l.topics))
+	for t := range l.topics {
+		out = append(out, t)
+	}
+	return out
+}
+
+func (l *listener[T]) Channel() chan T {
+	// no strong reason to lock here, but keep RLock to be safe if ch could be replaced
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	return l.ch
+}
+
 // broker is a simple utility struct to manage subscriptions.
 // it is used to send events to multiple listeners.
 // it is thread safe and can be used to send events to multiple listeners.
@@ -83,103 +132,65 @@ func (h *broker[T]) removeListener(id string) {
 
 func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
 	h.lock.RLock()
-	defer h.lock.RUnlock()
-
 	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("subscription %s not found", id)
 	}
-	return listener.ch, nil
+	return listener.Channel(), nil
 }
 
 func (h *broker[T]) getTopics(id string) []string {
 	h.lock.RLock()
-	defer h.lock.RUnlock()
-
 	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
 	if !ok {
 		return nil
 	}
-	listener.lock.Lock()
-	defer listener.lock.Unlock()
-
-	topics := make([]string, 0, len(listener.topics))
-	for topic := range listener.topics {
-		topics = append(topics, topic)
-	}
-	return topics
+	return listener.GetTopics()
 }
 
 func (h *broker[T]) addTopics(id string, topics []string) error {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-
+	h.lock.RLock()
 	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
 	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
-
-	listener.lock.Lock()
-	defer listener.lock.Unlock()
-
-	for _, topic := range topics {
-		listener.topics[formatTopic(topic)] = struct{}{}
-	}
+	listener.AddTopics(topics)
 	return nil
 }
 
 func (h *broker[T]) removeTopics(id string, topics []string) error {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-
+	h.lock.RLock()
 	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
 	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
-
-	listener.lock.Lock()
-	defer listener.lock.Unlock()
-
-	for _, topic := range topics {
-		delete(listener.topics, formatTopic(topic))
-	}
+	listener.RemoveTopics(topics)
 	return nil
 }
 
 func (h *broker[T]) removeAllTopics(id string) error {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-
+	h.lock.RLock()
 	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
 	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
-
-	listener.lock.Lock()
-	defer listener.lock.Unlock()
-
-	listener.topics = make(map[string]struct{})
+	listener.OverwriteTopics([]string{})
 	return nil
 }
 
 func (h *broker[T]) overwriteTopics(id string, topics []string) error {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-
+	h.lock.RLock()
 	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
 	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
-
-	listener.lock.Lock()
-	defer listener.lock.Unlock()
-
-	newTopics := make(map[string]struct{}, len(topics))
-	for _, topic := range topics {
-		newTopics[formatTopic(topic)] = struct{}{}
-	}
-
-	listener.topics = newTopics
+	listener.OverwriteTopics(topics)
 	return nil
 }
 
