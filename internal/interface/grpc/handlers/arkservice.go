@@ -288,7 +288,9 @@ func (h *handler) UpdateStreamTopics(
 			return nil, err
 		}
 		return &arkv1.UpdateStreamTopicsResponse{
-			AllTopics: h.eventsListenerHandler.getTopics(req.GetStreamId()),
+			AllTopics:     h.eventsListenerHandler.getTopics(req.GetStreamId()),
+			TopicsAdded:   []string{},
+			TopicsRemoved: []string{},
 		}, nil
 	case len(req.GetAddTopics()) > 0:
 		if err := h.eventsListenerHandler.addTopics(
