@@ -238,15 +238,26 @@ message GetEventStreamResponse {
   }
 }
 
+message ModifyTopics {
+  repeated string add_topics = 1;
+  repeated string remove_topics = 2;
+}
+
+message OverwriteTopics {
+  repeated string topics = 1;
+}
+
 // Adding and removing topics can both be supplied in the same request,
 // allowing for simultaneous changes.
 // overwrite_topics will take precedence, and if set, then the add/remove
 // topics are ignored. The stream_id is required.
 message UpdateStreamTopicsRequest {
   string stream_id = 1;
-  repeated string add_topics = 2;
-  repeated string remove_topics = 3;
-  repeated string overwrite_topics = 4;
+
+  oneof topics_change {
+    ModifyTopics modify = 2;
+    OverwriteTopics overwrite = 3;
+  }
 }
 
 message UpdateStreamTopicsResponse {
