@@ -144,6 +144,23 @@ func (h *broker[T]) removeAllTopics(id string) error {
 	return nil
 }
 
+func (h *broker[T]) overwriteTopics(id string, topics []string) error {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	if _, ok := h.listeners[id]; !ok {
+		return fmt.Errorf("subscription %s not found", id)
+	}
+
+	newTopics := make(map[string]struct{}, len(topics))
+	for _, topic := range topics {
+		newTopics[formatTopic(topic)] = struct{}{}
+	}
+
+	h.listeners[id].topics = newTopics
+	return nil
+}
+
 func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 	// stop any existing timeout on this listener
 	h.stopTimeout(id)
