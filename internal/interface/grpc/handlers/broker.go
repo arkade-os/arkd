@@ -30,8 +30,8 @@ func newListener[T any](id string, topics []string) *listener[T] {
 }
 
 func (l *listener[T]) includesAny(topics []string) bool {
-	l.lock.Lock()
-	defer l.lock.Unlock()
+	l.lock.RLock()
+	defer l.lock.RUnlock()
 	if len(topics) == 0 {
 		return true
 	}
@@ -114,11 +114,11 @@ func (h *broker[T]) addTopics(id string, topics []string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	if _, ok := h.listeners[id]; !ok {
+	listener, ok := h.listeners[id]
+	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
 
-	listener := h.listeners[id]
 	listener.lock.Lock()
 	defer listener.lock.Unlock()
 
@@ -132,11 +132,11 @@ func (h *broker[T]) removeTopics(id string, topics []string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	if _, ok := h.listeners[id]; !ok {
+	listener, ok := h.listeners[id]
+	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
 
-	listener := h.listeners[id]
 	listener.lock.Lock()
 	defer listener.lock.Unlock()
 
@@ -150,11 +150,11 @@ func (h *broker[T]) removeAllTopics(id string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	if _, ok := h.listeners[id]; !ok {
+	listener, ok := h.listeners[id]
+	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
 
-	listener := h.listeners[id]
 	listener.lock.Lock()
 	defer listener.lock.Unlock()
 
@@ -166,11 +166,11 @@ func (h *broker[T]) overwriteTopics(id string, topics []string) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	if _, ok := h.listeners[id]; !ok {
+	listener, ok := h.listeners[id]
+	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
 
-	listener := h.listeners[id]
 	listener.lock.Lock()
 	defer listener.lock.Unlock()
 
