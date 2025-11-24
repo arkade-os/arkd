@@ -13,6 +13,12 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+type AcceptedOffchainTx struct {
+	TxId                string
+	FinalArkTx          string
+	SignedCheckpointTxs []string
+}
+
 type Service interface {
 	Start() errors.Error
 	Stop()
@@ -26,8 +32,13 @@ type Service interface {
 	GetInfo(ctx context.Context) (*ServiceInfo, errors.Error)
 	SubmitOffchainTx(
 		ctx context.Context, checkpointTxs []string, signedArkTx string,
-	) (signedCheckpoints []string, finalArkTx string, arkTxid string, err errors.Error)
+	) (tx *AcceptedOffchainTx, err errors.Error)
 	FinalizeOffchainTx(ctx context.Context, txid string, finalCheckpoints []string) errors.Error
+	GetPendingOffchainTxs(
+		ctx context.Context,
+		proof intent.Proof,
+		message intent.GetPendingTxMessage,
+	) ([]AcceptedOffchainTx, errors.Error)
 	// Tree signing methods
 	RegisterCosignerNonces(
 		ctx context.Context, roundId, pubkey string, nonces tree.TreeNonces,

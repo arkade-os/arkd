@@ -687,7 +687,7 @@ func TestOffchainTx(t *testing.T) {
 	// In this test, we submit several valid transactions in parallel spending the same vtxo.
 	// The server should accept only one of them and reject the others.
 	t.Run("concurrent submit txs", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		explorer, err := mempool_explorer.NewExplorer(
 			"http://localhost:3000", arklib.BitcoinRegTest,
 			mempool_explorer.WithTracker(false),
@@ -877,6 +877,133 @@ func TestOffchainTx(t *testing.T) {
 			errCount,
 			fmt.Sprintf("expected %d errors, got %d", len(destinations)-1, errCount),
 		)
+	})
+
+	t.Run("finalize pending tx", func(t *testing.T) {
+		ctx := t.Context()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(func() { arkSvc.Close() })
+
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		finalizedPendingTxs, err := alice.FinalizePendingTxs(ctx, nil)
+		require.NoError(t, err)
+		require.Empty(t, finalizedPendingTxs)
+
+		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		pkscript, err := addr.GetPkScript()
+		require.NoError(t, err)
+
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			[]*wire.TxOut{
+				{
+					Value:    int64(vtxo.Amount),
+					PkScript: pkscript,
+				},
+			},
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		// sign the ark transaction
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := aliceWallet.SignTransaction(
+			ctx,
+			explorer,
+			encodedArkTx,
+		)
+		require.NoError(t, err)
+
+		txid, _, _, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
+
+		time.Sleep(time.Second)
+
+		var incomingFunds []types.Vtxo
+		var incomingErr error
+		wg := &sync.WaitGroup{}
+		wg.Go(func() {
+			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddress.Address)
+		})
+
+		finalizedTxIds, err := alice.FinalizePendingTxs(ctx, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, finalizedTxIds)
+		require.Equal(t, 1, len(finalizedTxIds))
+		require.Equal(t, txid, finalizedTxIds[0])
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotEmpty(t, incomingFunds)
+		require.Len(t, incomingFunds, 1)
+		require.Equal(t, txid, incomingFunds[0].Txid)
 	})
 }
 

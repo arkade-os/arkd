@@ -242,7 +242,9 @@ message FinalizeTxRequest {
 message FinalizeTxResponse {}
 
 message GetPendingTxRequest {
-  Intent intent = 1;
+  oneof identifier {
+    Intent intent = 1;
+  }
 }
 message GetPendingTxResponse {
   repeated PendingTx pending_txs = 1;
