@@ -1381,7 +1381,7 @@ func (s *service) GetPendingOffchainTxs(
 			continue
 		}
 
-		if _, seen := seen[vtxo.ArkTxid]; seen {
+		if _, ok := seen[vtxo.ArkTxid]; ok {
 			continue
 		}
 
