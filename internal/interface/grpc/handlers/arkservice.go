@@ -290,7 +290,7 @@ func (h *handler) UpdateStreamTopics(
 		if err := h.eventsListenerHandler.overwriteTopics(
 			req.GetStreamId(), req.GetTopicsChange().(*arkv1.UpdateStreamTopicsRequest_Overwrite).Overwrite.Topics,
 		); err != nil {
-			return nil, status.Errorf(codes.Internal, "overwrite topics error: %s", err.Error())
+			return nil, status.Errorf(codes.NotFound, "overwrite topics error: %s", err.Error())
 		}
 		return &arkv1.UpdateStreamTopicsResponse{
 			AllTopics:     h.eventsListenerHandler.getTopics(req.GetStreamId()),
@@ -307,14 +307,14 @@ func (h *handler) UpdateStreamTopics(
 			if err := h.eventsListenerHandler.addTopics(
 				req.GetStreamId(), modify.AddTopics,
 			); err != nil {
-				return nil, status.Errorf(codes.Internal, "add topics error: %s", err.Error())
+				return nil, status.Errorf(codes.NotFound, "add topics error: %s", err.Error())
 			}
 		}
 		if len(modify.RemoveTopics) > 0 {
 			if err := h.eventsListenerHandler.removeTopics(
 				req.GetStreamId(), modify.RemoveTopics,
 			); err != nil {
-				return nil, status.Errorf(codes.Internal, "remove topics error: %s", err.Error())
+				return nil, status.Errorf(codes.NotFound, "remove topics error: %s", err.Error())
 			}
 		}
 	default:
