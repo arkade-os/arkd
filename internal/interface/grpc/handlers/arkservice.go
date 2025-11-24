@@ -306,7 +306,16 @@ func (h *handler) FinalizeTx(
 func (h *handler) GetPendingTx(
 	ctx context.Context, req *arkv1.GetPendingTxRequest,
 ) (*arkv1.GetPendingTxResponse, error) {
-	proof, message, err := parseGetPendingTxIntent(req.GetIntent())
+	if req.GetIdentifier() == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing identifier")
+	}
+
+	intent := req.GetIntent()
+	if intent == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing intent")
+	}
+
+	proof, message, err := parseGetPendingTxIntent(intent)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}

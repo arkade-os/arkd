@@ -1235,8 +1235,11 @@ func (*FinalizeTxResponse) Descriptor() ([]byte, []int) {
 }
 
 type GetPendingTxRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Intent        *Intent                `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Identifier:
+	//
+	//	*GetPendingTxRequest_Intent
+	Identifier    isGetPendingTxRequest_Identifier `protobuf_oneof:"identifier"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1271,12 +1274,31 @@ func (*GetPendingTxRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_service_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *GetPendingTxRequest) GetIntent() *Intent {
+func (x *GetPendingTxRequest) GetIdentifier() isGetPendingTxRequest_Identifier {
 	if x != nil {
-		return x.Intent
+		return x.Identifier
 	}
 	return nil
 }
+
+func (x *GetPendingTxRequest) GetIntent() *Intent {
+	if x != nil {
+		if x, ok := x.Identifier.(*GetPendingTxRequest_Intent); ok {
+			return x.Intent
+		}
+	}
+	return nil
+}
+
+type isGetPendingTxRequest_Identifier interface {
+	isGetPendingTxRequest_Identifier()
+}
+
+type GetPendingTxRequest_Intent struct {
+	Intent *Intent `protobuf:"bytes,1,opt,name=intent,proto3,oneof"`
+}
+
+func (*GetPendingTxRequest_Intent) isGetPendingTxRequest_Identifier() {}
 
 type GetPendingTxResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1544,9 +1566,11 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x11FinalizeTxRequest\x12\x19\n" +
 	"\bark_txid\x18\x01 \x01(\tR\aarkTxid\x120\n" +
 	"\x14final_checkpoint_txs\x18\x02 \x03(\tR\x12finalCheckpointTxs\"\x14\n" +
-	"\x12FinalizeTxResponse\"=\n" +
-	"\x13GetPendingTxRequest\x12&\n" +
-	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"J\n" +
+	"\x12FinalizeTxResponse\"M\n" +
+	"\x13GetPendingTxRequest\x12(\n" +
+	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentH\x00R\x06intentB\f\n" +
+	"\n" +
+	"identifier\"J\n" +
 	"\x14GetPendingTxResponse\x122\n" +
 	"\vpending_txs\x18\x01 \x03(\v2\x11.ark.v1.PendingTxR\n" +
 	"pendingTxs\"\x1e\n" +
@@ -1706,6 +1730,9 @@ func file_ark_v1_service_proto_init() {
 		(*GetEventStreamResponse_TreeSignature)(nil),
 		(*GetEventStreamResponse_TreeNonces)(nil),
 		(*GetEventStreamResponse_Heartbeat)(nil),
+	}
+	file_ark_v1_service_proto_msgTypes[20].OneofWrappers = []any{
+		(*GetPendingTxRequest_Intent)(nil),
 	}
 	file_ark_v1_service_proto_msgTypes[23].OneofWrappers = []any{
 		(*GetTransactionsStreamResponse_CommitmentTx)(nil),
