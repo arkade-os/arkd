@@ -45,7 +45,7 @@ func (l *listener[T]) includesAny(topics []string) bool {
 	return false
 }
 
-func (l *listener[T]) AddTopics(topics []string) {
+func (l *listener[T]) addTopics(topics []string) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	if l.topics == nil {
@@ -56,7 +56,7 @@ func (l *listener[T]) AddTopics(topics []string) {
 	}
 }
 
-func (l *listener[T]) RemoveTopics(topics []string) {
+func (l *listener[T]) removeTopics(topics []string) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	if l.topics == nil {
@@ -67,7 +67,7 @@ func (l *listener[T]) RemoveTopics(topics []string) {
 	}
 }
 
-func (l *listener[T]) OverwriteTopics(topics []string) {
+func (l *listener[T]) overwriteTopics(topics []string) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	newTopics := make(map[string]struct{}, len(topics))
@@ -77,7 +77,7 @@ func (l *listener[T]) OverwriteTopics(topics []string) {
 	l.topics = newTopics
 }
 
-func (l *listener[T]) GetTopics() []string {
+func (l *listener[T]) getTopics() []string {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	out := make([]string, 0, len(l.topics))
@@ -87,7 +87,7 @@ func (l *listener[T]) GetTopics() []string {
 	return out
 }
 
-func (l *listener[T]) Channel() chan T {
+func (l *listener[T]) channel() chan T {
 	// no strong reason to lock here, but keep RLock to be safe if ch could be replaced
 	l.lock.RLock()
 	defer l.lock.RUnlock()
@@ -137,7 +137,7 @@ func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
 	if !ok {
 		return nil, fmt.Errorf("subscription %s not found", id)
 	}
-	return listener.Channel(), nil
+	return listener.channel(), nil
 }
 
 func (h *broker[T]) getTopics(id string) []string {
@@ -147,7 +147,7 @@ func (h *broker[T]) getTopics(id string) []string {
 	if !ok {
 		return nil
 	}
-	return listener.GetTopics()
+	return listener.getTopics()
 }
 
 func (h *broker[T]) addTopics(id string, topics []string) error {
@@ -157,7 +157,7 @@ func (h *broker[T]) addTopics(id string, topics []string) error {
 	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
-	listener.AddTopics(topics)
+	listener.addTopics(topics)
 	return nil
 }
 
@@ -168,7 +168,7 @@ func (h *broker[T]) removeTopics(id string, topics []string) error {
 	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
-	listener.RemoveTopics(topics)
+	listener.removeTopics(topics)
 	return nil
 }
 
@@ -179,7 +179,7 @@ func (h *broker[T]) removeAllTopics(id string) error {
 	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
-	listener.OverwriteTopics([]string{})
+	listener.overwriteTopics([]string{})
 	return nil
 }
 
@@ -190,7 +190,7 @@ func (h *broker[T]) overwriteTopics(id string, topics []string) error {
 	if !ok {
 		return fmt.Errorf("subscription %s not found", id)
 	}
-	listener.OverwriteTopics(topics)
+	listener.overwriteTopics(topics)
 	return nil
 }
 
