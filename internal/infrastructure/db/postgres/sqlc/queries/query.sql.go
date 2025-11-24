@@ -423,6 +423,95 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 	return items, nil
 }
 
+const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :one
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.commitments
+FROM vtxo_vw v
+WHERE v.txid = $1 AND v.vout = $2
+    AND v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+`
+
+type SelectPendingSpentVtxoParams struct {
+	Txid string
+	Vout int32
+}
+
+func (q *Queries) SelectPendingSpentVtxo(ctx context.Context, arg SelectPendingSpentVtxoParams) (VtxoVw, error) {
+	row := q.db.QueryRowContext(ctx, selectPendingSpentVtxo, arg.Txid, arg.Vout)
+	var i VtxoVw
+	err := row.Scan(
+		&i.Txid,
+		&i.Vout,
+		&i.Pubkey,
+		&i.Amount,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.CommitmentTxid,
+		&i.SpentBy,
+		&i.Spent,
+		&i.Unrolled,
+		&i.Swept,
+		&i.Preconfirmed,
+		&i.SettledBy,
+		&i.ArkTxid,
+		&i.IntentID,
+		&i.Commitments,
+	)
+	return i, err
+}
+
+const selectPendingSpentVtxosWithPubkeys = `-- name: SelectPendingSpentVtxosWithPubkeys :many
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.commitments
+FROM vtxo_vw v
+WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
+    AND v.pubkey = ANY($1::varchar[])
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+`
+
+func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, dollar_1 []string) ([]VtxoVw, error) {
+	rows, err := q.db.QueryContext(ctx, selectPendingSpentVtxosWithPubkeys, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VtxoVw
+	for rows.Next() {
+		var i VtxoVw
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.CommitmentTxid,
+			&i.SpentBy,
+			&i.Spent,
+			&i.Unrolled,
+			&i.Swept,
+			&i.Preconfirmed,
+			&i.SettledBy,
+			&i.ArkTxid,
+			&i.IntentID,
+			&i.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectRoundConnectors = `-- name: SelectRoundConnectors :many
 SELECT t.txid, t.tx, t.round_id, t.type, t.position, t.children FROM tx t WHERE t.round_id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = $1 AND type = 'commitment'

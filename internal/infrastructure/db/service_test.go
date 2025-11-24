@@ -913,6 +913,135 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		tapKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, nonExistentCommitmentTxid, 0)
 		require.NoError(t, err)
 		require.Empty(t, tapKeys)
+
+		t.Run("test_get_pending_spent_vtxos", func(t *testing.T) {
+			ctx := t.Context()
+
+			vtxos := []domain.Vtxo{
+				{
+					Outpoint: domain.Outpoint{
+						Txid: randomString(32),
+						VOut: 2,
+					},
+					PubKey:  "aaaa",
+					Amount:  10000,
+					Spent:   true,
+					ArkTxid: "test",
+					SpentBy: "checkpoint_test",
+				},
+				{
+					Outpoint: domain.Outpoint{
+						Txid: randomString(32),
+						VOut: 2,
+					},
+					PubKey:  "aaaa",
+					Amount:  10000,
+					Spent:   true,
+					ArkTxid: "test",
+					SpentBy: "checkpoint_test",
+				},
+				{
+					Outpoint: domain.Outpoint{
+						Txid: randomString(32),
+						VOut: 2,
+					},
+					PubKey:  "bbbb",
+					Amount:  10000,
+					Spent:   true,
+					ArkTxid: "test2",
+					SpentBy: "checkpoint_test",
+				},
+			}
+			outpoints := make([]domain.Outpoint, 0, len(vtxos))
+			for _, vtxo := range vtxos {
+				outpoints = append(outpoints, vtxo.Outpoint)
+			}
+
+			pendingSpentVtxos, err := svc.Vtxos().GetPendingSpentVtxosWithOutpoints(ctx, outpoints)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxos)
+
+			pendingSpentVtxosByPubkey, err := svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"aaaa"},
+			)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			err = svc.Vtxos().AddVtxos(ctx, vtxos)
+			require.NoError(t, err)
+
+			pendingSpentVtxos, err = svc.Vtxos().GetPendingSpentVtxosWithOutpoints(ctx, outpoints)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxos, 3)
+
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"aaaa"},
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 2)
+
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"},
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Simulate finalization of a send by adding a change vtxo to the "user" set
+			spendingVtxos := []domain.Vtxo{
+				{
+					Outpoint: domain.Outpoint{
+						Txid: "test",
+						VOut: 0,
+					},
+					PubKey: "aaaa",
+					Amount: 3000,
+				},
+			}
+			err = svc.Vtxos().AddVtxos(ctx, spendingVtxos)
+			require.NoError(t, err)
+
+			pendingSpentVtxos, err = svc.Vtxos().GetPendingSpentVtxosWithOutpoints(ctx, outpoints)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxos, 1)
+			require.Equal(t, "bbbb", pendingSpentVtxos[0].PubKey)
+
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"aaaa"},
+			)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"},
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Simulate finalization of a send-all by adding a new vtxo spending the pending one
+			// with same amount and different pubkey
+			spendingVtxos = []domain.Vtxo{
+				{
+					Outpoint: domain.Outpoint{
+						Txid: "test2",
+						VOut: 0,
+					},
+					PubKey: "cccc",
+					Amount: 10000,
+				},
+			}
+			err = svc.Vtxos().AddVtxos(ctx, spendingVtxos)
+			require.NoError(t, err)
+
+			pendingSpentVtxos, err = svc.Vtxos().GetPendingSpentVtxosWithOutpoints(ctx, outpoints)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxos)
+
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"},
+			)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxosByPubkey)
+		})
 	})
 }
 
