@@ -1088,7 +1088,8 @@ func (s *service) FinalizeOffchainTx(
 
 	offchainTx, err := s.getOffchainTx(ctx, txid)
 	if err != nil {
-		return errors.INTERNAL_ERROR.New("failed to get offchain tx: %w", err)
+		return errors.TX_NOT_FOUND.New("offchain tx %s not found", txid).
+			WithMetadata(errors.TxNotFoundMetadata{Txid: txid})
 	}
 
 	defer func() {
