@@ -216,6 +216,14 @@ func (s *OffchainTx) CommitmentTxidsList() []string {
 	return list
 }
 
+func (s *OffchainTx) CheckpointTxsList() []string {
+	list := make([]string, 0, len(s.CheckpointTxs))
+	for _, tx := range s.CheckpointTxs {
+		list = append(list, tx)
+	}
+	return list
+}
+
 func (s *OffchainTx) on(event Event, replayed bool) {
 	switch e := event.(type) {
 	case OffchainTxRequested:

@@ -269,7 +269,7 @@ func (h *handler) SubmitTx(
 		return nil, status.Error(codes.InvalidArgument, "missing checkpoint txs")
 	}
 
-	signedCheckpoints, finalArkTx, arkTxid, err := h.svc.SubmitOffchainTx(
+	tx, err := h.svc.SubmitOffchainTx(
 		ctx, req.GetCheckpointTxs(), req.GetSignedArkTx(),
 	)
 	if err != nil {
@@ -277,9 +277,9 @@ func (h *handler) SubmitTx(
 	}
 
 	return &arkv1.SubmitTxResponse{
-		FinalArkTx:          finalArkTx,
-		ArkTxid:             arkTxid,
-		SignedCheckpointTxs: signedCheckpoints,
+		ArkTxid:             tx.TxId,
+		FinalArkTx:          tx.FinalArkTx,
+		SignedCheckpointTxs: tx.SignedCheckpointTxs,
 	}, nil
 }
 
@@ -306,7 +306,26 @@ func (h *handler) FinalizeTx(
 func (h *handler) GetPendingTx(
 	ctx context.Context, req *arkv1.GetPendingTxRequest,
 ) (*arkv1.GetPendingTxResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "not implemented")
+	proof, message, err := parseGetPendingTxIntent(req.GetIntent())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	pendingTxs, err := h.svc.GetPendingOffchainTxs(ctx, *proof, *message)
+	if err != nil {
+		return nil, err
+	}
+
+	pendingTxsProto := make([]*arkv1.PendingTx, 0, len(pendingTxs))
+	for _, tx := range pendingTxs {
+		pendingTxsProto = append(pendingTxsProto, &arkv1.PendingTx{
+			ArkTxid:             tx.TxId,
+			FinalArkTx:          tx.FinalArkTx,
+			SignedCheckpointTxs: tx.SignedCheckpointTxs,
+		})
+	}
+
+	return &arkv1.GetPendingTxResponse{PendingTxs: pendingTxsProto}, nil
 }
 
 func (h *handler) GetTransactionsStream(
