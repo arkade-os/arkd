@@ -1365,6 +1365,7 @@ func (s *service) GetPendingOffchainTxs(
 	// intent is valid, we can retrieve the pending offchain transactions for each outpoints
 
 	acceptedOffchainTxs := make([]AcceptedOffchainTx, 0, len(vtxos))
+	seen := make(map[string]struct{})
 	offchainTxRepo := s.repoManager.OffchainTxs()
 
 	// TODO optimization: filter the vtxos where vtxo.ArkTxid outputs does not exist in DB
@@ -1380,6 +1381,10 @@ func (s *service) GetPendingOffchainTxs(
 			continue
 		}
 
+		if _, seen := seen[vtxo.ArkTxid]; seen {
+			continue
+		}
+
 		offchainTx, err := offchainTxRepo.GetOffchainTx(ctx, vtxo.ArkTxid)
 		if err != nil {
 			log.WithError(err).Errorf("failed to get offchain tx %s", vtxo.ArkTxid)
@@ -1391,6 +1396,7 @@ func (s *service) GetPendingOffchainTxs(
 			continue
 		}
 
+		seen[vtxo.ArkTxid] = struct{}{}
 		acceptedOffchainTxs = append(acceptedOffchainTxs, AcceptedOffchainTx{
 			TxId:                offchainTx.ArkTxid,
 			FinalArkTx:          offchainTx.ArkTx,
