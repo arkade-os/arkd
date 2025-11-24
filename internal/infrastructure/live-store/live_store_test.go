@@ -257,6 +257,11 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		// Remove
 		store.OffchainTxs().Remove(tx.ArkTxid)
 
+		// Remove non-existent should not panic
+		require.NotPanics(t, func() {
+			store.OffchainTxs().Remove("nonexistent")
+		})
+
 		// Get
 		_, exists = store.OffchainTxs().Get(tx.ArkTxid)
 		require.False(t, exists)

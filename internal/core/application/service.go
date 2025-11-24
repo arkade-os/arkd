@@ -1086,10 +1086,9 @@ func (s *service) FinalizeOffchainTx(
 ) (structErr errors.Error) {
 	var changes []domain.Event
 
-	offchainTx, exists := s.cache.OffchainTxs().Get(txid)
-	if !exists {
-		return errors.TX_NOT_FOUND.New("offchain tx %s not found", txid).
-			WithMetadata(errors.TxNotFoundMetadata{Txid: txid})
+	offchainTx, err := s.getOffchainTx(ctx, txid)
+	if err != nil {
+		return errors.INTERNAL_ERROR.New("failed to get offchain tx: %w", err)
 	}
 
 	defer func() {
@@ -3855,6 +3854,14 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 	}
 
 	return convictions
+}
+
+func (s *service) getOffchainTx(ctx context.Context, txid string) (*domain.OffchainTx, error) {
+	offchainTxFromCache, exists := s.cache.OffchainTxs().Get(txid)
+	if !exists {
+		return s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
+	}
+	return &offchainTxFromCache, nil
 }
 
 func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {
