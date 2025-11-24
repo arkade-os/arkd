@@ -2025,10 +2025,14 @@ func file_ark_v1_service_proto_init() {
 		(*GetEventStreamResponse_Heartbeat)(nil),
 		(*GetEventStreamResponse_StreamStarted)(nil),
 	}
-	file_ark_v1_service_proto_msgTypes[20].OneofWrappers = []any{
+	file_ark_v1_service_proto_msgTypes[18].OneofWrappers = []any{
+		(*UpdateStreamTopicsRequest_Modify)(nil),
+		(*UpdateStreamTopicsRequest_Overwrite)(nil),
+	}
+	file_ark_v1_service_proto_msgTypes[24].OneofWrappers = []any{
 		(*GetPendingTxRequest_Intent)(nil),
 	}
-	file_ark_v1_service_proto_msgTypes[23].OneofWrappers = []any{
+	file_ark_v1_service_proto_msgTypes[27].OneofWrappers = []any{
 		(*GetTransactionsStreamResponse_CommitmentTx)(nil),
 		(*GetTransactionsStreamResponse_ArkTx)(nil),
 		(*GetTransactionsStreamResponse_Heartbeat)(nil),
