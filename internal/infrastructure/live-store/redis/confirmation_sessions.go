@@ -38,19 +38,27 @@ const (
 
 type confirmationSessionsStore struct {
 	rdb               *redis.Client
+	lock              sync.RWMutex
 	sessionCompleteCh chan struct{}
+	ctx               context.Context
+	cancel            context.CancelFunc
+	pollInterval      time.Duration
 	numOfRetries      int
 }
 
 func NewConfirmationSessionsStore(
 	rdb *redis.Client, numOfRetries int,
 ) ports.ConfirmationSessionsStore {
+	ctx, cancel := context.WithCancel(context.Background())
 	store := &confirmationSessionsStore{
 		rdb:               rdb,
 		sessionCompleteCh: make(chan struct{}),
+		ctx:               ctx,
+		cancel:            cancel,
+		pollInterval:      100 * time.Millisecond,
 		numOfRetries:      numOfRetries,
 	}
-	go store.watchSessionCompletion()
+	go store.watchSessionCompletion(ctx)
 	return store
 }
 
@@ -132,6 +140,9 @@ func (s *confirmationSessionsStore) Get() *ports.ConfirmationSessions {
 }
 
 func (s *confirmationSessionsStore) Reset() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	ctx := context.Background()
 	pipe := s.rdb.TxPipeline()
 	pipe.Del(ctx, confirmationIntentsKey)
@@ -140,8 +151,15 @@ func (s *confirmationSessionsStore) Reset() {
 	pipe.Del(ctx, confirmationInitializedKey)
 	_, _ = pipe.Exec(ctx)
 
+	if s.cancel != nil {
+		s.cancel()
+	}
+
+	watchCtx, cancel := context.WithCancel(context.Background())
+	s.ctx = watchCtx
+	s.cancel = cancel
 	s.sessionCompleteCh = make(chan struct{})
-	go s.watchSessionCompletion()
+	go s.watchSessionCompletion(watchCtx)
 }
 
 func (s *confirmationSessionsStore) Initialized() bool {
@@ -151,18 +169,53 @@ func (s *confirmationSessionsStore) Initialized() bool {
 }
 
 func (s *confirmationSessionsStore) SessionCompleted() <-chan struct{} {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	return s.sessionCompleteCh
 }
 
-func (s *confirmationSessionsStore) watchSessionCompletion() {
-	ctx := context.Background()
+func (s *confirmationSessionsStore) watchSessionCompletion(ctx context.Context) {
 	var chOnce sync.Once
+	ticker := time.NewTicker(s.pollInterval)
+	defer ticker.Stop()
+
 	for {
-		numIntents, _ := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
-		numConfirmed, _ := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
-		if numIntents > 0 && numConfirmed == numIntents {
-			chOnce.Do(func() { s.sessionCompleteCh <- struct{}{} })
+		select {
+		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			numIntents, _ := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
+			numConfirmed, _ := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+			if numIntents > 0 && numConfirmed == numIntents {
+				s.lock.RLock()
+				ch := s.sessionCompleteCh
+				s.lock.RUnlock()
+				if ch != nil {
+					chOnce.Do(func() {
+						select {
+						case <-ctx.Done():
+							return
+						default:
+							func() {
+								defer func() {
+									if r := recover(); r != nil {
+										log.Warnf(
+											"watchSessionCompletion:recovered from panic: %v",
+											r,
+										)
+									}
+								}()
+								select {
+								case ch <- struct{}{}:
+								case <-ctx.Done():
+									return
+								}
+							}()
+						}
+					})
+				}
+				return
+			}
 		}
 	}
 }
