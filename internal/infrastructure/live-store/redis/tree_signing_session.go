@@ -7,6 +7,7 @@ package redislivestore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -30,32 +31,53 @@ type treeSigningSessionsStore struct {
 	sigsChs      map[string]chan struct{}
 	ctxs         map[string]context.CancelFunc
 	pollInterval time.Duration
+	numOfRetries int
+	retryDelay   time.Duration
 }
 
-func NewTreeSigningSessionsStore(rdb *redis.Client) ports.TreeSigningSessionsStore {
+func NewTreeSigningSessionsStore(
+	rdb *redis.Client, numOfRetries int,
+) ports.TreeSigningSessionsStore {
 	return &treeSigningSessionsStore{
 		rdb:          rdb,
 		nonceChs:     make(map[string]chan struct{}),
 		sigsChs:      make(map[string]chan struct{}),
 		ctxs:         make(map[string]context.CancelFunc),
 		pollInterval: 100 * time.Millisecond,
+		numOfRetries: numOfRetries,
+		retryDelay:   10 * time.Millisecond,
 	}
 }
 
 func (s *treeSigningSessionsStore) New(
-	roundId string, uniqueSignersPubKeys map[string]struct{},
-) *ports.MusigSigningSession {
+	ctx context.Context, roundId string, uniqueSignersPubKeys map[string]struct{},
+) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	ctx := context.Background()
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	cosignersBytes, _ := json.Marshal(uniqueSignersPubKeys)
 	meta := map[string]interface{}{
 		"Cosigners":   cosignersBytes,
 		"NbCosigners": len(uniqueSignersPubKeys) + 1, // operator included
 	}
-	s.rdb.HSet(ctx, metaKey, meta)
+
+	var err error
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.HSet(ctx, metaKey, meta)
+				return nil
+			})
+			return err
+		}, metaKey); err == nil {
+			break
+		}
+		time.Sleep(s.retryDelay)
+	}
+	if err != nil {
+		return err
+	}
 
 	watchCtx, cancel := context.WithCancel(context.Background())
 	s.ctxs[roundId] = cancel
@@ -65,110 +87,167 @@ func (s *treeSigningSessionsStore) New(
 	go s.watchNoncesCollected(watchCtx, roundId)
 	go s.watchSigsCollected(watchCtx, roundId)
 
-	return &ports.MusigSigningSession{
-		Cosigners:   uniqueSignersPubKeys,
-		NbCosigners: len(uniqueSignersPubKeys) + 1,
-		Nonces:      make(map[string]tree.TreeNonces),
-		Signatures:  make(map[string]tree.TreePartialSigs),
-	}
+	return nil
 }
 
-func (s *treeSigningSessionsStore) Get(roundId string) (*ports.MusigSigningSession, bool) {
-	ctx := context.Background()
-
+func (s *treeSigningSessionsStore) Get(
+	ctx context.Context, roundId string,
+) (*ports.MusigSigningSession, error) {
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
-	if err != nil || len(meta) == 0 {
-		return nil, false
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(meta) == 0 {
+		return nil, nil
 	}
 
 	var cosigners map[string]struct{}
 	if err := json.Unmarshal([]byte(meta["Cosigners"]), &cosigners); err != nil {
-		return nil, false
+		return nil, fmt.Errorf("malformed cosigners in storage: %v", err)
 	}
 	nbCosigners := 0
 	if _, err := fmt.Sscanf(meta["NbCosigners"], "%d", &nbCosigners); err != nil {
-		log.Warnf("get:failed to parse NbCosigners: %v", err)
+		return nil, fmt.Errorf("malformed number of cosigners in storage: %v", err)
 	}
 
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
-	noncesMap, _ := s.rdb.HGetAll(ctx, noncesKey).Result()
+	noncesMap, err := s.rdb.HGetAll(ctx, noncesKey).Result()
+	if err != nil {
+		return nil, err
+	}
+
 	nonces := make(map[string]tree.TreeNonces)
 	for pub, val := range noncesMap {
 		var n tree.TreeNonces
 		if err := json.Unmarshal([]byte(val), &n); err != nil {
-			log.Warnf("get:failed to unmarshal nonces for %s: %v", pub, err)
-			return nil, false
+			return nil, fmt.Errorf("malformed nonces in storage for cosigner %s: %v", pub, err)
 		}
 		nonces[pub] = n
 	}
 
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
-	sigsMap, _ := s.rdb.HGetAll(ctx, sigsKey).Result()
+	sigsMap, err := s.rdb.HGetAll(ctx, sigsKey).Result()
+	if err != nil {
+		return nil, err
+	}
+
 	sigs := make(map[string]tree.TreePartialSigs)
 	for pub, val := range sigsMap {
 		signatures := make(tree.TreePartialSigs)
 		if err := json.Unmarshal([]byte(val), &signatures); err != nil {
-			log.Warnf("get:failed to unmarshal signatures for %s: %v", pub, err)
-			return nil, false
+			return nil, fmt.Errorf("malformed signatures in storage for cosigner %s: %v", pub, err)
 		}
 		sigs[pub] = signatures
 	}
 
-	sess := &ports.MusigSigningSession{
+	return &ports.MusigSigningSession{
 		Cosigners:   cosigners,
 		NbCosigners: nbCosigners,
 		Nonces:      nonces,
 		Signatures:  sigs,
-	}
-	return sess, true
+	}, nil
 }
 
-func (s *treeSigningSessionsStore) Delete(roundId string) {
+func (s *treeSigningSessionsStore) Delete(ctx context.Context, roundId string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	ctx := context.Background()
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
-	s.rdb.Del(ctx, metaKey, noncesKey, sigsKey)
 
-	if cancel, exists := s.ctxs[roundId]; exists {
+	var err error
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Del(ctx, metaKey, noncesKey, sigsKey)
+				return nil
+			})
+			return err
+		}, metaKey, noncesKey, sigsKey); err == nil {
+			break
+		}
+		time.Sleep(s.retryDelay)
+	}
+	if err != nil {
+		return err
+	}
+
+	if cancel, ok := s.ctxs[roundId]; ok {
 		cancel()
 		delete(s.ctxs, roundId)
 	}
 
-	if ch, exists := s.nonceChs[roundId]; exists {
+	if ch, ok := s.nonceChs[roundId]; ok {
 		close(ch)
 		delete(s.nonceChs, roundId)
 	}
-	if ch, exists := s.sigsChs[roundId]; exists {
+	if ch, ok := s.sigsChs[roundId]; ok {
 		close(ch)
 		delete(s.sigsChs, roundId)
 	}
+
+	return nil
 }
 
 func (s *treeSigningSessionsStore) AddNonces(
 	ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces,
 ) error {
-	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
-	val, _ := json.Marshal(nonces)
-	if err := s.rdb.HSet(ctx, noncesKey, pubkey, val).Err(); err != nil {
+	if err := s.checkSessionExists(ctx, roundId); err != nil {
 		return err
 	}
-	return nil
+
+	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
+	val, err := json.Marshal(nonces)
+	if err != nil {
+		return fmt.Errorf("failed to marshal nonces: %v", err)
+	}
+
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.HSet(ctx, noncesKey, pubkey, val)
+				return nil
+			})
+			return err
+		}, noncesKey); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
+	}
+	return err
 }
 
 func (s *treeSigningSessionsStore) AddSignatures(
 	ctx context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs,
 ) error {
-	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
-	val, _ := json.Marshal(sigs)
-	if err := s.rdb.HSet(ctx, sigsKey, pubkey, val).Err(); err != nil {
+	if err := s.checkSessionExists(ctx, roundId); err != nil {
 		return err
 	}
-	return nil
+
+	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
+	val, err := json.Marshal(sigs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal signatures: %v", err)
+	}
+
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.HSet(ctx, sigsKey, pubkey, val)
+				return nil
+			})
+			return err
+		}, sigsKey); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
+	}
+	return err
 }
 
 func (s *treeSigningSessionsStore) NoncesCollected(roundId string) <-chan struct{} {
@@ -186,11 +265,15 @@ func (s *treeSigningSessionsStore) SignaturesCollected(roundId string) <-chan st
 func (s *treeSigningSessionsStore) watchNoncesCollected(ctx context.Context, roundId string) {
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
+
+	ticker := time.NewTicker(s.pollInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
+		case <-ticker.C:
 			meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
 			if err != nil || len(meta) == 0 {
 				continue
@@ -233,11 +316,15 @@ func (s *treeSigningSessionsStore) watchNoncesCollected(ctx context.Context, rou
 func (s *treeSigningSessionsStore) watchSigsCollected(ctx context.Context, roundId string) {
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
+
+	ticker := time.NewTicker(s.pollInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
+		case <-ticker.C:
 			meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
 			if err != nil || len(meta) == 0 {
 				continue
@@ -275,4 +362,17 @@ func (s *treeSigningSessionsStore) watchSigsCollected(ctx context.Context, round
 			}
 		}
 	}
+}
+
+func (s *treeSigningSessionsStore) checkSessionExists(ctx context.Context, roundId string) error {
+	// check if metadata exists
+	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
+	meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
+	if err != nil {
+		return err
+	}
+	if len(meta) == 0 {
+		return fmt.Errorf("signing session not found for round %s", roundId)
+	}
+	return nil
 }

@@ -314,7 +314,7 @@ func (s *adminService) ClearScheduledSessionConfig(ctx context.Context) error {
 func (s *adminService) ListIntents(
 	ctx context.Context, intentIds ...string,
 ) ([]IntentInfo, error) {
-	intents, err := s.liveStore.Intents().ViewAll(intentIds)
+	intents, err := s.liveStore.Intents().ViewAll(ctx, intentIds)
 	if err != nil {
 		return nil, err
 	}
@@ -369,9 +369,9 @@ func (s *adminService) ListIntents(
 
 func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) error {
 	if len(intentIds) == 0 {
-		return s.liveStore.Intents().DeleteAll()
+		return s.liveStore.Intents().DeleteAll(ctx)
 	}
-	return s.liveStore.Intents().Delete(intentIds)
+	return s.liveStore.Intents().Delete(ctx, intentIds)
 }
 
 // Conviction management methods

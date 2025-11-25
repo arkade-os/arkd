@@ -241,12 +241,13 @@ func (s *OffchainTx) on(event Event, replayed bool) {
 		s.ExpiryTimestamp = e.ExpiryTimestamp
 	case OffchainTxFinalized:
 		s.Stage.Code = int(OffchainTxFinalizedStage)
+		s.Stage.Failed = false
+		s.FailReason = ""
 		s.CheckpointTxs = e.FinalCheckpointTxs
 		s.EndingTimestamp = e.Timestamp
 	case OffchainTxFailed:
 		s.Stage.Failed = true
 		s.FailReason = e.Reason
-		s.EndingTimestamp = e.Timestamp
 	}
 
 	if replayed {

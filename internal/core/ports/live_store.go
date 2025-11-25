@@ -20,57 +20,57 @@ type LiveStore interface {
 }
 
 type IntentStore interface {
-	Len() int64
-	Push(intent domain.Intent, boardingInputs []BoardingInput, cosignersPublicKeys []string) error
-	Pop(num int64) []TimedIntent
-	GetSelectedIntents() []TimedIntent
+	Len(ctx context.Context) (int64, error)
+	Push(
+		ctx context.Context, intent domain.Intent, boardingInputs []BoardingInput, cosignersPublicKeys []string,
+	) error
+	Pop(ctx context.Context, num int64) ([]TimedIntent, error)
+	GetSelectedIntents(ctx context.Context) ([]TimedIntent, error)
 	// TODO uncomment when we have a way to register outputs outside of intent proof
 	// Update(intent domain.Intent, cosignersPublicKeys []string) error
-	Delete(ids []string) error
-	DeleteAll() error
-	DeleteVtxos()
-	ViewAll(ids []string) ([]TimedIntent, error)
-	View(id string) (*domain.Intent, bool)
-	IncludesAny(outpoints []domain.Outpoint) (bool, string)
+	Delete(ctx context.Context, ids []string) error
+	DeleteAll(ctx context.Context) error
+	DeleteVtxos(ctx context.Context) error
+	ViewAll(ctx context.Context, ids []string) ([]TimedIntent, error)
+	IncludesAny(ctx context.Context, outpoints []domain.Outpoint) (bool, string)
 }
 
 type ForfeitTxsStore interface {
-	Init(connectors tree.FlatTxTree, intents []domain.Intent) error
-	Sign(txs []string) error
-	Reset()
-	Pop() ([]string, error)
-	AllSigned() bool
-	GetUnsignedInputs() []domain.Outpoint
-	Len() int
-	GetConnectorsIndexes() map[string]domain.Outpoint
+	Init(ctx context.Context, connectors tree.FlatTxTree, intents []domain.Intent) error
+	Sign(ctx context.Context, txs []string) error
+	Reset(ctx context.Context) error
+	Pop(ctx context.Context) ([]string, error)
+	AllSigned(ctx context.Context) (bool, error)
+	GetUnsignedInputs(ctx context.Context) ([]domain.Outpoint, error)
+	Len(ctx context.Context) (int, error)
+	GetConnectorsIndexes(ctx context.Context) (map[string]domain.Outpoint, error)
 }
 
 type OffChainTxStore interface {
-	Add(offchainTx domain.OffchainTx)
-	Remove(arkTxid string)
-	Get(arkTxid string) (domain.OffchainTx, bool)
-	Includes(outpoint domain.Outpoint) bool
+	Add(ctx context.Context, offchainTx domain.OffchainTx) error
+	Remove(ctx context.Context, arkTxid string) error
+	Get(ctx context.Context, arkTxid string) (*domain.OffchainTx, error)
+	Includes(ctx context.Context, outpoint domain.Outpoint) (bool, error)
 }
 
 type CurrentRoundStore interface {
 	Upsert(ctx context.Context, fn func(m *domain.Round) *domain.Round) error
-	Get(ctx context.Context) *domain.Round
-	Fail(ctx context.Context, err error) []domain.Event
+	Get(ctx context.Context) (*domain.Round, error)
 }
 
 type ConfirmationSessionsStore interface {
-	Init(intentIDsHashes [][32]byte)
-	Confirm(intentId string) error
-	Get() *ConfirmationSessions
-	Reset()
-	Initialized() bool
+	Init(ctx context.Context, intentIDsHashes [][32]byte) error
+	Confirm(ctx context.Context, intentId string) error
+	Get(ctx context.Context) (*ConfirmationSessions, error)
+	Reset(ctx context.Context) error
+	Initialized(ctx context.Context) bool
 	SessionCompleted() <-chan struct{}
 }
 
 type TreeSigningSessionsStore interface {
-	New(roundId string, uniqueSignersPubKeys map[string]struct{}) *MusigSigningSession
-	Get(roundId string) (*MusigSigningSession, bool)
-	Delete(roundId string)
+	New(ctx context.Context, roundId string, uniqueSignersPubKeys map[string]struct{}) error
+	Get(ctx context.Context, roundId string) (*MusigSigningSession, error)
+	Delete(ctx context.Context, roundId string) error
 	AddNonces(ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces) error
 	AddSignatures(
 		ctx context.Context, roundId, pubkey string, nonces tree.TreePartialSigs,
@@ -80,8 +80,8 @@ type TreeSigningSessionsStore interface {
 }
 
 type BoardingInputsStore interface {
-	Set(numOfInputs int)
-	Get() int
+	Set(ctx context.Context, numOfInputs int) error
+	Get(ctx context.Context) (int, error)
 	AddSignatures(
 		ctx context.Context, batchId string, inputSigs map[uint32]SignedBoardingInput,
 	) error

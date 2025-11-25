@@ -1,7 +1,9 @@
 package inmemorylivestore
 
 import (
+	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -31,7 +33,7 @@ func NewIntentStore() ports.IntentStore {
 	}
 }
 
-func (m *intentStore) Len() int64 {
+func (m *intentStore) Len(_ context.Context) (int64, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
@@ -41,11 +43,12 @@ func (m *intentStore) Len() int64 {
 			count++
 		}
 	}
-	return count
+	return count, nil
 }
 
 func (m *intentStore) Push(
-	intent domain.Intent, boardingInputs []ports.BoardingInput, cosignersPubkeys []string,
+	_ context.Context, intent domain.Intent,
+	boardingInputs []ports.BoardingInput, cosignersPubkeys []string,
 ) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
@@ -96,7 +99,7 @@ func (m *intentStore) Push(
 	return nil
 }
 
-func (m *intentStore) Pop(num int64) []ports.TimedIntent {
+func (m *intentStore) Pop(_ context.Context, num int64) ([]ports.TimedIntent, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	m.selectedIntents = make([]ports.TimedIntent, 0)
@@ -129,16 +132,18 @@ func (m *intentStore) Pop(num int64) []ports.TimedIntent {
 	}
 
 	m.selectedIntents = result
-	return result
+	return result, nil
 }
 
-func (m *intentStore) GetSelectedIntents() []ports.TimedIntent {
+func (m *intentStore) GetSelectedIntents(_ context.Context) ([]ports.TimedIntent, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	return m.selectedIntents
+	return slices.Clone(m.selectedIntents), nil
 }
 
-func (m *intentStore) Update(intent domain.Intent, cosignersPubkeys []string) error {
+func (m *intentStore) Update(
+	_ context.Context, intent domain.Intent, cosignersPubkeys []string,
+) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -177,7 +182,7 @@ func (m *intentStore) Update(intent domain.Intent, cosignersPubkeys []string) er
 	return nil
 }
 
-func (m *intentStore) Delete(ids []string) error {
+func (m *intentStore) Delete(_ context.Context, ids []string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -194,7 +199,7 @@ func (m *intentStore) Delete(ids []string) error {
 	return nil
 }
 
-func (m *intentStore) DeleteAll() error {
+func (m *intentStore) DeleteAll(_ context.Context) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -204,16 +209,18 @@ func (m *intentStore) DeleteAll() error {
 	return nil
 }
 
-func (m *intentStore) DeleteVtxos() {
+func (m *intentStore) DeleteVtxos(_ context.Context) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+
 	for _, vtxo := range m.vtxosToRemove {
 		delete(m.vtxos, vtxo)
 	}
 	m.vtxosToRemove = make([]string, 0)
+	return nil
 }
 
-func (m *intentStore) ViewAll(ids []string) ([]ports.TimedIntent, error) {
+func (m *intentStore) ViewAll(_ context.Context, ids []string) ([]ports.TimedIntent, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
@@ -233,23 +240,7 @@ func (m *intentStore) ViewAll(ids []string) ([]ports.TimedIntent, error) {
 	return intents, nil
 }
 
-func (m *intentStore) View(id string) (*domain.Intent, bool) {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
-
-	intent, ok := m.intents[id]
-	if !ok {
-		return nil, false
-	}
-
-	return &domain.Intent{
-		Id:        intent.Id,
-		Inputs:    intent.Inputs,
-		Receivers: intent.Receivers,
-	}, true
-}
-
-func (m *intentStore) IncludesAny(outpoints []domain.Outpoint) (bool, string) {
+func (m *intentStore) IncludesAny(_ context.Context, outpoints []domain.Outpoint) (bool, string) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
