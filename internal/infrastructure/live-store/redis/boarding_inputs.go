@@ -37,7 +37,7 @@ func (b *boardingInputsStore) Set(ctx context.Context, numOfInputs int) error {
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, boardingInputsKey); err == nil {
 			return nil
 		}
 		time.Sleep(b.retryDelay)
