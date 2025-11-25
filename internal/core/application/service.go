@@ -411,10 +411,10 @@ func (s *service) Stop() {
 
 func (s *service) SubmitOffchainTx(
 	ctx context.Context, unsignedCheckpointTxs []string, signedArkTx string,
-) (signedCheckpointTxs []string, finalArkTx, finalArkTxid string, structErr errors.Error) {
+) (acceptedTx *AcceptedOffchainTx, structErr errors.Error) {
 	arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedArkTx), true)
 	if err != nil {
-		return nil, "", "", errors.INVALID_ARK_PSBT.New("failed to parse tx: %w", err).
+		return nil, errors.INVALID_ARK_PSBT.New("failed to parse tx: %w", err).
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 	txid := arkPtx.UnsignedTx.TxID()
@@ -445,13 +445,13 @@ func (s *service) SubmitOffchainTx(
 	for _, tx := range unsignedCheckpointTxs {
 		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 		if err != nil {
-			return nil, "", "", errors.INVALID_CHECKPOINT_PSBT.New("failed to parse tx: %w", err).
+			return nil, errors.INVALID_CHECKPOINT_PSBT.New("failed to parse tx: %w", err).
 				WithMetadata(errors.PsbtMetadata{Tx: tx})
 		}
 
 		txid := checkpointPtx.UnsignedTx.TxID()
 		if len(checkpointPtx.UnsignedTx.TxIn) < 1 {
-			return nil, "", "", errors.INVALID_PSBT_MISSING_INPUT.New(
+			return nil, errors.INVALID_PSBT_MISSING_INPUT.New(
 				"invalid checkpoint tx %s", txid,
 			).WithMetadata(errors.PsbtInputMetadata{Txid: txid})
 		}
@@ -463,7 +463,7 @@ func (s *service) SubmitOffchainTx(
 		checkpointTxs[txid] = tx
 		checkpointPsbts[txid] = checkpointPtx
 		if _, seen := checkpointTxsByVtxoKey[vtxoKey]; seen {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"duplicated vtxo input %s", vtxoKey.String(),
 			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: 0})
 		}
@@ -474,14 +474,14 @@ func (s *service) SubmitOffchainTx(
 
 	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs)
 	if err != nil {
-		return nil, "", "", errors.INTERNAL_ERROR.Wrap(err)
+		return nil, errors.INTERNAL_ERROR.Wrap(err)
 	}
 	changes = []domain.Event{event}
 
 	// get all the vtxos inputs
 	spentVtxos, err := vtxoRepo.GetVtxos(ctx, spentVtxoKeys)
 	if err != nil {
-		return nil, "", "", errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
+		return nil, errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
 			WithMetadata(
 				map[string]any{"vtxos": spentVtxoKeys},
 			)
@@ -498,7 +498,7 @@ func (s *service) SubmitOffchainTx(
 			gotVtxos = append(gotVtxos, vtxo.Outpoint.String())
 		}
 
-		return nil, "", "", errors.VTXO_NOT_FOUND.New("some vtxos not found").
+		return nil, errors.VTXO_NOT_FOUND.New("some vtxos not found").
 			WithMetadata(errors.VtxoNotFoundMetadata{
 				VtxoOutpoints: vtxoOutpoints,
 				GotVtxos:      gotVtxos,
@@ -508,7 +508,7 @@ func (s *service) SubmitOffchainTx(
 	for _, vtxo := range spentVtxos {
 		// check if banned
 		if err := s.checkIfBanned(ctx, vtxo); err != nil {
-			return nil, "", "", errors.VTXO_BANNED.Wrap(err).
+			return nil, errors.VTXO_BANNED.Wrap(err).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 		}
 
@@ -516,18 +516,18 @@ func (s *service) SubmitOffchainTx(
 		isSpent, err := s.cache.OffchainTxs().Includes(ctx, vtxo.Outpoint)
 		if err != nil {
 			log.WithError(err).Errorf("failed to check spent status of inputs against tx in cache")
-			return nil, "", "", errors.INTERNAL_ERROR.New("something went wrong").
+			return nil, errors.INTERNAL_ERROR.New("something went wrong").
 				WithMetadata(map[string]any{"vtxos": vtxo.Outpoint.String()})
 		}
 
 		if isSpent {
-			return nil, "", "", errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint.String()).
+			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint.String()).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 		}
 	}
 
 	if exists, vtxo := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys); exists {
-		return nil, "", "", errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
+		return nil, errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
 			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
 	}
 
@@ -552,7 +552,7 @@ func (s *service) SubmitOffchainTx(
 		input := checkpointPsbt.Inputs[0]
 
 		if input.WitnessUtxo == nil {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"missing witness utxo on input %d", inputIndex,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       checkpointTxid,
@@ -561,7 +561,7 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if len(input.TaprootLeafScript) == 0 {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"missing tapscript leaf on input %d", inputIndex,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       checkpointTxid,
@@ -569,7 +569,7 @@ func (s *service) SubmitOffchainTx(
 			})
 		}
 		if len(input.TaprootLeafScript) != 1 {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"expected exactly one taproot leaf script on input %d, got %d",
 				inputIndex,
 				len(input.TaprootLeafScript),
@@ -581,7 +581,7 @@ func (s *service) SubmitOffchainTx(
 		}
 		spendingTapscript := input.TaprootLeafScript[0]
 		if spendingTapscript == nil {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"missing tapscript leaf on input %d", inputIndex,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       checkpointTxid,
@@ -595,7 +595,7 @@ func (s *service) SubmitOffchainTx(
 			txutils.VtxoTaprootTreeField,
 		)
 		if err != nil || len(taptreeFields) == 0 {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"missing taptree on input %d", inputIndex,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       checkpointTxid,
@@ -607,7 +607,7 @@ func (s *service) SubmitOffchainTx(
 
 		vtxoScript, err := script.ParseVtxoScript(taptree)
 		if err != nil {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"failed to parse taptree field in tx %s: %s", checkpointTxid, err,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       checkpointTxid,
@@ -622,7 +622,7 @@ func (s *service) SubmitOffchainTx(
 
 		vtxo, exists := indexedSpentVtxos[outpoint]
 		if !exists {
-			return nil, "", "", errors.INTERNAL_ERROR.New(
+			return nil, errors.INTERNAL_ERROR.New(
 				"can't find vtxo associated with checkpoint input %s", outpoint,
 			).WithMetadata(map[string]any{
 				"vtxo":          outpoint,
@@ -636,23 +636,23 @@ func (s *service) SubmitOffchainTx(
 		vtxoOutpoint := vtxo.Outpoint.String()
 
 		if vtxo.Spent {
-			return nil, "", "", errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint).
+			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
 
 		if vtxo.Unrolled {
-			return nil, "", "", errors.VTXO_ALREADY_UNROLLED.New(
+			return nil, errors.VTXO_ALREADY_UNROLLED.New(
 				"%s already unrolled", vtxo.Outpoint,
 			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
 		if vtxo.Swept || !s.sweeper.scheduler.AfterNow(vtxo.ExpiresAt) {
 			// if we reach this point, it means vtxo.Spent = false so the vtxo is recoverable
-			return nil, "", "", errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
+			return nil, errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
 
 		if vtxo.IsNote() {
-			return nil, "", "", errors.OFFCHAIN_TX_SPENDING_NOTE.New(
+			return nil, errors.OFFCHAIN_TX_SPENDING_NOTE.New(
 				"%s is a note", vtxo.Outpoint,
 			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
@@ -666,7 +666,7 @@ func (s *service) SubmitOffchainTx(
 		if time.Unix(vtxo.CreatedAt, 0).Before(s.vtxoNoCsvValidationCutoffTime) {
 			smallestExitDelay, err := vtxoScript.SmallestExitDelay()
 			if err != nil {
-				return nil, "", "", errors.INVALID_VTXO_SCRIPT.New(
+				return nil, errors.INVALID_VTXO_SCRIPT.New(
 					"failed to get smallest exit delay: %w", err,
 				).WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
 			}
@@ -676,7 +676,7 @@ func (s *service) SubmitOffchainTx(
 		if err := vtxoScript.Validate(
 			s.signerPubkey, minAllowedExitDelay, s.allowCSVBlockType,
 		); err != nil {
-			return nil, "", "", errors.INVALID_VTXO_SCRIPT.Wrap(err).
+			return nil, errors.INVALID_VTXO_SCRIPT.Wrap(err).
 				WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
 		}
 
@@ -684,13 +684,13 @@ func (s *service) SubmitOffchainTx(
 
 		tapKeyFromTapscripts, _, err := vtxoScript.TapTree()
 		if err != nil {
-			return nil, "", "", errors.INVALID_VTXO_SCRIPT.New("failed to compute taproot tree").
+			return nil, errors.INVALID_VTXO_SCRIPT.New("failed to compute taproot tree").
 				WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
 		}
 
 		serializedTapKey := hex.EncodeToString(schnorr.SerializePubKey(tapKeyFromTapscripts))
 		if vtxo.PubKey != serializedTapKey {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"expected %s, got %s", vtxo.PubKey, serializedTapKey,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       checkpointTxid,
@@ -700,13 +700,13 @@ func (s *service) SubmitOffchainTx(
 
 		pkScriptFromTapscripts, err := script.P2TRScript(tapKeyFromTapscripts)
 		if err != nil {
-			return nil, "", "", errors.INVALID_VTXO_SCRIPT.New(
+			return nil, errors.INVALID_VTXO_SCRIPT.New(
 				"failed to compute P2TR script from tapkey",
 			).WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
 		}
 
 		if !bytes.Equal(witnessUtxoScript, pkScriptFromTapscripts) {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"witness utxo script mismatch: expected %x, got %x",
 				witnessUtxoScript, pkScriptFromTapscripts,
 			).WithMetadata(errors.InputMetadata{
@@ -717,7 +717,7 @@ func (s *service) SubmitOffchainTx(
 
 		vtxoPubkeyBuf, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
-			return nil, "", "", errors.INTERNAL_ERROR.New("failed to decode vtxo pubkey").
+			return nil, errors.INTERNAL_ERROR.New("failed to decode vtxo pubkey").
 				WithMetadata(map[string]any{
 					"vtxo_pubkey": vtxo.PubKey,
 				})
@@ -725,7 +725,7 @@ func (s *service) SubmitOffchainTx(
 
 		vtxoPubkey, err := schnorr.ParsePubKey(vtxoPubkeyBuf)
 		if err != nil {
-			return nil, "", "", errors.INTERNAL_ERROR.New("failed to parse vtxo pubkey").
+			return nil, errors.INTERNAL_ERROR.New("failed to parse vtxo pubkey").
 				WithMetadata(map[string]any{
 					"vtxo_pubkey": vtxo.PubKey,
 				})
@@ -734,7 +734,7 @@ func (s *service) SubmitOffchainTx(
 		// verify witness utxo
 		pkscript, err := script.P2TRScript(vtxoPubkey)
 		if err != nil {
-			return nil, "", "", errors.INTERNAL_ERROR.New(
+			return nil, errors.INTERNAL_ERROR.New(
 				"failed to compute P2TR script from vtxo pubkey",
 			).WithMetadata(map[string]any{
 				"vtxo_pubkey": vtxo.PubKey,
@@ -742,7 +742,7 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if !bytes.Equal(input.WitnessUtxo.PkScript, pkscript) {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"witness utxo script mismatch: expected %x, got %x",
 				input.WitnessUtxo.PkScript, pkscript,
 			).WithMetadata(errors.InputMetadata{
@@ -752,7 +752,7 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if input.WitnessUtxo.Value != int64(vtxo.Amount) {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"witness utxo value mismatch: expected %d, got %d",
 				vtxo.Amount, input.WitnessUtxo.Value,
 			).WithMetadata(errors.InputMetadata{
@@ -764,7 +764,7 @@ func (s *service) SubmitOffchainTx(
 		// verify forfeit closure script
 		closure, err := script.DecodeClosure(spendingTapscript.Script)
 		if err != nil {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.Wrap(err).
+			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
 				WithMetadata(errors.InputMetadata{
 					Txid:       checkpointTxid,
 					InputIndex: inputIndex,
@@ -777,7 +777,7 @@ func (s *service) SubmitOffchainTx(
 			locktime = &c.Locktime
 		case *script.MultisigClosure, *script.ConditionMultisigClosure:
 		default:
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"invalid spending tapscript on input %d: %x", inputIndex, spendingTapscript.Script,
 			).
 				WithMetadata(errors.InputMetadata{
@@ -789,14 +789,14 @@ func (s *service) SubmitOffchainTx(
 		if locktime != nil {
 			blocktimestamp, err := s.wallet.GetCurrentBlockTime(ctx)
 			if err != nil {
-				return nil, "", "", errors.INTERNAL_ERROR.New(
+				return nil, errors.INTERNAL_ERROR.New(
 					"get current block time failed: %w",
 					err,
 				)
 			}
 			if !locktime.IsSeconds() {
 				if *locktime > arklib.AbsoluteLocktime(blocktimestamp.Height) {
-					return nil, "", "", errors.FORFEIT_CLOSURE_LOCKED.New(
+					return nil, errors.FORFEIT_CLOSURE_LOCKED.New(
 						"%d > %d (blockheight)",
 						*locktime, blocktimestamp.Time,
 					).WithMetadata(errors.ForfeitClosureLockedMetadata{
@@ -807,7 +807,7 @@ func (s *service) SubmitOffchainTx(
 				}
 			} else {
 				if *locktime > arklib.AbsoluteLocktime(blocktimestamp.Time) {
-					return nil, "", "", errors.FORFEIT_CLOSURE_LOCKED.New(
+					return nil, errors.FORFEIT_CLOSURE_LOCKED.New(
 						"%d > %d (blocktime)",
 						*locktime, blocktimestamp.Time,
 					).WithMetadata(errors.ForfeitClosureLockedMetadata{
@@ -821,7 +821,7 @@ func (s *service) SubmitOffchainTx(
 
 		ctrlBlock, err := txscript.ParseControlBlock(spendingTapscript.ControlBlock)
 		if err != nil {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"failed to parse control block %x", spendingTapscript.ControlBlock,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       checkpointTxid,
@@ -835,7 +835,7 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if len(arkPtx.Inputs[inputIndex].TaprootLeafScript) == 0 {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"missing taproot leaf script in ark tx input %d", inputIndex,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       txid,
@@ -855,7 +855,7 @@ func (s *service) SubmitOffchainTx(
 	signerXOnlyPubkey := schnorr.SerializePubKey(s.signerPubkey)
 	for inputIndex, input := range arkPtx.Inputs {
 		if len(input.TaprootScriptSpendSig) == 0 {
-			return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"missing tapscript spend sig in ark tx input %d", inputIndex,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       txid,
@@ -868,7 +868,7 @@ func (s *service) SubmitOffchainTx(
 		for _, sig := range input.TaprootScriptSpendSig {
 			if !bytes.Equal(sig.XOnlyPubKey, signerXOnlyPubkey) {
 				if _, err := schnorr.ParsePubKey(sig.XOnlyPubKey); err != nil {
-					return nil, "", "", errors.INVALID_PSBT_INPUT.New(
+					return nil, errors.INVALID_PSBT_INPUT.New(
 						"invalid xonly pubkey in tx input signature %d", inputIndex,
 					).WithMetadata(errors.InputMetadata{
 						Txid:       txid,
@@ -881,7 +881,7 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if !hasSig {
-			return nil, "", "", errors.ARK_TX_INPUT_NOT_SIGNED.New("tx %s is not signed", txid).
+			return nil, errors.ARK_TX_INPUT_NOT_SIGNED.New("tx %s is not signed", txid).
 				WithMetadata(errors.InputMetadata{
 					Txid:       txid,
 					InputIndex: inputIndex,
@@ -891,7 +891,7 @@ func (s *service) SubmitOffchainTx(
 
 	dust, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
-		return nil, "", "", errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
+		return nil, errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
 	}
 
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
@@ -901,7 +901,7 @@ func (s *service) SubmitOffchainTx(
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
-				return nil, "", "", errors.MALFORMED_ARK_TX.New(
+				return nil, errors.MALFORMED_ARK_TX.New(
 					"tx %s has multiple anchor outputs", txid,
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
@@ -912,7 +912,7 @@ func (s *service) SubmitOffchainTx(
 		// verify we don't have multiple OP_RETURN outputs
 		if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
 			if foundOpReturn {
-				return nil, "", "", errors.MALFORMED_ARK_TX.New(
+				return nil, errors.MALFORMED_ARK_TX.New(
 					"tx %s has multiple op return outputs", txid,
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
@@ -921,7 +921,7 @@ func (s *service) SubmitOffchainTx(
 
 		if s.vtxoMaxAmount >= 0 {
 			if out.Value > s.vtxoMaxAmount {
-				return nil, "", "", errors.AMOUNT_TOO_HIGH.New(
+				return nil, errors.AMOUNT_TOO_HIGH.New(
 					"output #%d amount (%d) is higher than max vtxo amount: %d",
 					outIndex, out.Value, s.vtxoMaxAmount,
 				).WithMetadata(errors.AmountTooHighMetadata{
@@ -932,7 +932,7 @@ func (s *service) SubmitOffchainTx(
 			}
 		}
 		if out.Value < s.vtxoMinOffchainTxAmount {
-			return nil, "", "", errors.AMOUNT_TOO_LOW.New(
+			return nil, errors.AMOUNT_TOO_LOW.New(
 				"output #%d amount is lower than min vtxo amount: %d",
 				outIndex, s.vtxoMinOffchainTxAmount,
 			).WithMetadata(errors.AmountTooLowMetadata{
@@ -945,7 +945,7 @@ func (s *service) SubmitOffchainTx(
 		if out.Value < int64(dust) {
 			// if the output is below dust limit, it must be using OP_RETURN-style vtxo pkscript
 			if !script.IsSubDustScript(out.PkScript) {
-				return nil, "", "", errors.AMOUNT_TOO_LOW.New(
+				return nil, errors.AMOUNT_TOO_LOW.New(
 					"output #%d amount is below dust limit (%d < %d) but is not using "+
 						"OP_RETURN output script", outIndex, out.Value, dust,
 				).WithMetadata(errors.AmountTooLowMetadata{
@@ -960,7 +960,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	if !foundAnchor {
-		return nil, "", "", errors.MALFORMED_ARK_TX.New("missing anchor output in ark tx %s", txid).
+		return nil, errors.MALFORMED_ARK_TX.New("missing anchor output in ark tx %s", txid).
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
@@ -969,7 +969,7 @@ func (s *service) SubmitOffchainTx(
 		ins, outputs, s.checkpointTapscript,
 	)
 	if err != nil {
-		return nil, "", "", errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
+		return nil, errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
 			WithMetadata(map[string]any{
 				"ark_tx":               signedArkTx,
 				"outputs":              outputs,
@@ -980,7 +980,7 @@ func (s *service) SubmitOffchainTx(
 
 	// verify the checkpoints txs integrity
 	if len(rebuiltCheckpointTxs) != len(checkpointPsbts) {
-		return nil, "", "", errors.CHECKPOINT_MISMATCH.New(
+		return nil, errors.CHECKPOINT_MISMATCH.New(
 			"invalid number of checkpoint txs, expected %d got %d",
 			len(rebuiltCheckpointTxs), len(checkpointPsbts),
 		)
@@ -989,7 +989,7 @@ func (s *service) SubmitOffchainTx(
 	for _, rebuiltCheckpointTx := range rebuiltCheckpointTxs {
 		rebuiltTxid := rebuiltCheckpointTx.UnsignedTx.TxID()
 		if _, ok := checkpointPsbts[rebuiltTxid]; !ok {
-			return nil, "", "", errors.CHECKPOINT_MISMATCH.New(
+			return nil, errors.CHECKPOINT_MISMATCH.New(
 				"invalid checkpoint txs: %s not found", rebuiltTxid,
 			).WithMetadata(errors.CheckpointMismatchMetadata{ExpectedTxid: txid})
 		}
@@ -998,7 +998,7 @@ func (s *service) SubmitOffchainTx(
 	// verify the ark tx integrity
 	rebuiltTxid := rebuiltArkTx.UnsignedTx.TxID()
 	if rebuiltTxid != txid {
-		return nil, "", "", errors.ARK_TX_MISMATCH.New(
+		return nil, errors.ARK_TX_MISMATCH.New(
 			"expected tx %s, got %s", rebuiltTxid, txid,
 		).WithMetadata(errors.ArkTxMismatchMetadata{
 			ExpectedTxid: txid,
@@ -1009,14 +1009,14 @@ func (s *service) SubmitOffchainTx(
 	// verify the tapscript signatures
 	if valid, _, err := s.builder.VerifyVtxoTapscriptSigs(signedArkTx, false); err != nil ||
 		!valid {
-		return nil, "", "", errors.INVALID_SIGNATURE.New("invalid signature in ark tx %s", txid).
+		return nil, errors.INVALID_SIGNATURE.New("invalid signature in ark tx %s", txid).
 			WithMetadata(errors.InvalidSignatureMetadata{Tx: signedArkTx})
 	}
 
 	// sign the ark tx
 	fullySignedArkTx, err := s.signer.SignTransactionTapscript(ctx, signedArkTx, nil)
 	if err != nil {
-		return nil, "", "", errors.INTERNAL_ERROR.New("failed to sign ark tx: %w", err).
+		return nil, errors.INTERNAL_ERROR.New("failed to sign ark tx: %w", err).
 			WithMetadata(map[string]any{
 				"ark_tx": signedArkTx,
 			})
@@ -1027,7 +1027,7 @@ func (s *service) SubmitOffchainTx(
 	for _, rebuiltCheckpointTx := range rebuiltCheckpointTxs {
 		unsignedCheckpointTx, err := rebuiltCheckpointTx.B64Encode()
 		if err != nil {
-			return nil, "", "", errors.INTERNAL_ERROR.New(
+			return nil, errors.INTERNAL_ERROR.New(
 				"failed to encode checkpoint tx: %w", err,
 			).WithMetadata(map[string]any{
 				"checkpoint_tx": rebuiltCheckpointTx,
@@ -1037,7 +1037,7 @@ func (s *service) SubmitOffchainTx(
 			ctx, unsignedCheckpointTx, nil,
 		)
 		if err != nil {
-			return nil, "", "", errors.INTERNAL_ERROR.New("failed to sign checkpoint tx: %w", err).
+			return nil, errors.INTERNAL_ERROR.New("failed to sign checkpoint tx: %w", err).
 				WithMetadata(map[string]any{
 					"checkpoint_tx": rebuiltCheckpointTx,
 				})
@@ -1050,7 +1050,7 @@ func (s *service) SubmitOffchainTx(
 		commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiration,
 	)
 	if err != nil {
-		return nil, "", "", errors.INTERNAL_ERROR.New("failed to accept offchain tx: %w", err).
+		return nil, errors.INTERNAL_ERROR.New("failed to accept offchain tx: %w", err).
 			WithMetadata(map[string]any{
 				"ark_tx":                fullySignedArkTx,
 				"signed_checkpoint_txs": signedCheckpointTxsMap,
@@ -1071,27 +1071,32 @@ func (s *service) SubmitOffchainTx(
 			log.WithError(err).Errorf(
 				"failed to check again spent status of inputs against tx in cache",
 			)
-			return nil, "", "", errors.INTERNAL_ERROR.New("something went wrong").
+			return nil, errors.INTERNAL_ERROR.New("something went wrong").
 				WithMetadata(map[string]any{"vtxo": spentVtxo.Outpoint.String()})
 		}
 		if isSpent {
-			return nil, "", "", errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
+			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
 		}
 	}
 	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
-		return nil, "", "", errors.INTERNAL_ERROR.New("something went wrong").
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
 			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
 	}
 
 	// apply Accepted event only after verifying the spent vtxos
 	changes = append(changes, change)
 
+	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
 		signedCheckpointTxs = append(signedCheckpointTxs, tx)
 	}
 
-	return signedCheckpointTxs, fullySignedArkTx, txid, nil
+	return &AcceptedOffchainTx{
+		TxId:                txid,
+		FinalArkTx:          fullySignedArkTx,
+		SignedCheckpointTxs: signedCheckpointTxs,
+	}, nil
 }
 
 func (s *service) FinalizeOffchainTx(
@@ -1234,6 +1239,198 @@ func (s *service) FinalizeOffchainTx(
 	}
 
 	return nil
+}
+
+func (s *service) GetPendingOffchainTxs(
+	ctx context.Context, proof intent.Proof, message intent.GetPendingTxMessage,
+) ([]AcceptedOffchainTx, errors.Error) {
+	if message.ExpireAt > 0 {
+		expireAt := time.Unix(message.ExpireAt, 0)
+		if time.Now().After(expireAt) {
+			return nil, errors.INVALID_INTENT_TIMERANGE.New("proof of ownership expired").
+				WithMetadata(errors.IntentTimeRangeMetadata{
+					ValidAt:  0,
+					ExpireAt: message.ExpireAt,
+					Now:      time.Now().Unix(),
+				})
+		}
+	}
+
+	outpoints := proof.GetOutpoints()
+	proofTxid := proof.UnsignedTx.TxID()
+
+	vtxoOutpoints := make([]domain.Outpoint, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		vtxoOutpoints = append(vtxoOutpoints, domain.Outpoint{
+			Txid: outpoint.Hash.String(),
+			VOut: outpoint.Index,
+		})
+	}
+
+	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, vtxoOutpoints)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get vtxos: %w", err)
+	}
+
+	if len(vtxos) != len(vtxoOutpoints) {
+		vtxoOutpointsStr := make([]string, 0, len(vtxoOutpoints))
+		for _, outpoint := range vtxoOutpoints {
+			vtxoOutpointsStr = append(vtxoOutpointsStr, outpoint.String())
+		}
+		vtxosResultStr := make([]string, 0, len(vtxos))
+		for _, vtxo := range vtxos {
+			vtxosResultStr = append(vtxosResultStr, vtxo.Outpoint.String())
+		}
+		return nil, errors.VTXO_NOT_FOUND.New("some vtxos not found").
+			WithMetadata(errors.VtxoNotFoundMetadata{
+				VtxoOutpoints: vtxoOutpointsStr,
+				GotVtxos:      vtxosResultStr,
+			})
+	}
+
+	vtxosMap := make(map[string]domain.Vtxo)
+	for _, vtxo := range vtxos {
+		vtxosMap[vtxo.Outpoint.String()] = vtxo
+	}
+
+	for i, outpoint := range outpoints {
+		psbtInput := proof.Inputs[i+1]
+
+		if len(psbtInput.TaprootLeafScript) == 0 {
+			return nil, errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", i+1).
+				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
+		vtxoOutpoint := domain.Outpoint{
+			Txid: outpoint.Hash.String(),
+			VOut: outpoint.Index,
+		}
+
+		vtxo, ok := vtxosMap[vtxoOutpoint.String()]
+		if !ok {
+			return nil, errors.TX_NOT_FOUND.New(
+				"vtxo not found for outpoint %s:%d", vtxoOutpoint.Txid, vtxoOutpoint.VOut,
+			).WithMetadata(errors.TxNotFoundMetadata{Txid: vtxoOutpoint.Txid})
+		}
+
+		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid witness utxo value: got %d expected %d",
+				psbtInput.WitnessUtxo.Value,
+				vtxo.Amount,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
+		pubkeyBytes, err := hex.DecodeString(vtxo.PubKey)
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New("failed to decode vtxo pubkey: %w", err).
+				WithMetadata(map[string]any{
+					"vtxo_pubkey": vtxo.PubKey,
+				})
+		}
+
+		pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New("failed to parse vtxo pubkey: %w", err).
+				WithMetadata(map[string]any{
+					"vtxo_pubkey": vtxo.PubKey,
+				})
+		}
+
+		pkScript, err := script.P2TRScript(pubkey)
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New(
+				"failed to compute P2TR script from vtxo pubkey: %w", err,
+			).WithMetadata(map[string]any{
+				"vtxo_pubkey": vtxo.PubKey,
+			})
+		}
+
+		if !bytes.Equal(pkScript, psbtInput.WitnessUtxo.PkScript) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid witness utxo script: got %x expected %x",
+				psbtInput.WitnessUtxo.PkScript,
+				pkScript,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+	}
+
+	encodedMessage, err := message.Encode()
+	if err != nil {
+		return nil, errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
+			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
+	}
+
+	encodedProof, err := proof.B64Encode()
+	if err != nil {
+		return nil, errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
+	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
+			WithMetadata(map[string]any{
+				"proof": proof.UnsignedTx.TxID(),
+			})
+	}
+
+	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+		log.
+			WithField("unsignedProof", encodedProof).
+			WithField("signedProof", signedProof).
+			WithField("encodedMessage", encodedMessage).
+			Tracef("failed to verify intent proof: %s", err)
+		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
+			WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   signedProof,
+				Message: encodedMessage,
+			})
+	}
+
+	// intent is valid, we can retrieve the pending offchain transactions for each outpoints
+
+	acceptedOffchainTxs := make([]AcceptedOffchainTx, 0, len(vtxos))
+	seen := make(map[string]struct{})
+	offchainTxRepo := s.repoManager.OffchainTxs()
+
+	// TODO optimization: filter the vtxos where vtxo.ArkTxid outputs does not exist in DB
+	for _, vtxo := range vtxos {
+		if !vtxo.Spent || vtxo.Unrolled || vtxo.Swept || vtxo.IsSettled() {
+			// skip if the vtxo is unspent: no pending tx for it
+			// if unrolled or swept: no need for the ark tx to be signed
+			// if settled: spent by a commitment tx
+			continue
+		}
+
+		if len(vtxo.ArkTxid) == 0 {
+			continue
+		}
+
+		if _, ok := seen[vtxo.ArkTxid]; ok {
+			continue
+		}
+
+		offchainTx, err := offchainTxRepo.GetOffchainTx(ctx, vtxo.ArkTxid)
+		if err != nil {
+			log.WithError(err).Errorf("failed to get offchain tx %s", vtxo.ArkTxid)
+			continue
+		}
+
+		if !offchainTx.IsAccepted() {
+			// the tx must be in the "accepted" stage to be considered as pending
+			continue
+		}
+
+		seen[vtxo.ArkTxid] = struct{}{}
+		acceptedOffchainTxs = append(acceptedOffchainTxs, AcceptedOffchainTx{
+			TxId:                offchainTx.ArkTxid,
+			FinalArkTx:          offchainTx.ArkTx,
+			SignedCheckpointTxs: offchainTx.CheckpointTxsList(),
+		})
+	}
+
+	return acceptedOffchainTxs, nil
 }
 
 func (s *service) RegisterIntent(
@@ -2628,7 +2825,7 @@ func (s *service) startFinalization(
 		s.roundReportSvc.OpStarted(SendAggregatedTreeNoncesEventOp)
 
 		s.propagateRoundSigningNoncesGeneratedEvent(
-			ctx, roundId, aggregatedNonces, coordinator.GetPublicNonces(), vtxoTree,
+			roundId, aggregatedNonces, coordinator.GetPublicNonces(), vtxoTree,
 		)
 
 		s.roundReportSvc.OpEnded(SendAggregatedTreeNoncesEventOp)
@@ -3209,7 +3406,7 @@ func (s *service) propagateRoundSigningStartedEvent(
 }
 
 func (s *service) propagateRoundSigningNoncesGeneratedEvent(
-	ctx context.Context, roundId string, combinedNonces tree.TreeNonces,
+	roundId string, combinedNonces tree.TreeNonces,
 	publicNoncesMap map[string]tree.TreeNonces, vtxoTree *tree.TxTree,
 ) {
 	events := treeTxNoncesEvents(vtxoTree, roundId, publicNoncesMap)

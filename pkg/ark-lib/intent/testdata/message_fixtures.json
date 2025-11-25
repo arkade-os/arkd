@@ -28,5 +28,13 @@
       "expire_at": 1762862054
     },
     "expected": "{\"type\":\"delete\",\"expire_at\":1762862054}"
+  },
+  {
+    "name": "pending_tx",
+    "message": {
+      "type": "get-pending-tx",
+      "expire_at": 1762862054
+    },
+    "expected": "{\"type\":\"get-pending-tx\",\"expire_at\":1762862054}"
   }
 ]
