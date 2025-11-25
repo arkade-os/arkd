@@ -403,6 +403,61 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	return taprootKeys, nil
 }
 
+func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Vtxo, error) {
+	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(ctx, pubkeys)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	vtxos, err := readRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+	})
+
+	return vtxos, nil
+}
+
+func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
+	ctx context.Context, outpoints []domain.Outpoint,
+) ([]domain.Vtxo, error) {
+	var vtxos []domain.Vtxo
+	for _, outpoint := range outpoints {
+		res, err := v.querier.SelectPendingSpentVtxo(
+			ctx, queries.SelectPendingSpentVtxoParams{
+				Txid: outpoint.Txid,
+				Vout: int32(outpoint.VOut),
+			},
+		)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return nil, err
+		}
+
+		result, err := readRows([]queries.VtxoVw{res})
+		if err != nil {
+			return nil, err
+		}
+
+		vtxos = append(vtxos, result...)
+	}
+
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+	})
+
+	return vtxos, nil
+}
+
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 	return domain.Vtxo{
 		Outpoint: domain.Outpoint{

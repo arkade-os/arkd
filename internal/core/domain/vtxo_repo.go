@@ -16,16 +16,15 @@ type VtxoRepository interface {
 	UpdateVtxosExpiration(ctx context.Context, outpoints []Outpoint, expiresAt int64) error
 	GetLeafVtxosForBatch(ctx context.Context, txid string) ([]Vtxo, error)
 	GetSweepableVtxosByCommitmentTxid(
-		ctx context.Context,
-		commitmentTxid string,
+		ctx context.Context, commitmentTxid string,
 	) ([]Outpoint, error)
 	GetAllChildrenVtxos(ctx context.Context, txid string) ([]Outpoint, error)
 	GetVtxoPubKeysByCommitmentTxid(
-		ctx context.Context,
-		commitmentTxid string,
-		withMinimumAmount uint64,
+		ctx context.Context, commitmentTxid string, withMinimumAmount uint64,
 	) (
 		[]string, error,
 	)
+	GetPendingSpentVtxosWithPubKeys(ctx context.Context, pubkeys []string) ([]Vtxo, error)
+	GetPendingSpentVtxosWithOutpoints(ctx context.Context, outpoints []Outpoint) ([]Vtxo, error)
 	Close()
 }

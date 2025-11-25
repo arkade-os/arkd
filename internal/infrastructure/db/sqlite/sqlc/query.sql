@@ -253,7 +253,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
 -- name: SelectVtxosWithPubkeys :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkey'));
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkeys'));
 
 -- name: SelectOffchainTx :many
 SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
@@ -309,6 +309,24 @@ ORDER BY depth, txid, vout;
 
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');
+
+-- name: SelectPendingSpentVtxosWithPubkeys :many
+SELECT v.*
+FROM vtxo_vw v
+WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
+    AND v.pubkey IN (sqlc.slice('pubkeys'))
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    );
+
+-- name: SelectPendingSpentVtxo :one
+SELECT v.*
+FROM vtxo_vw v
+WHERE v.txid = @txid AND v.vout = @vout
+    AND v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    );
 
 -- name: UpsertConviction :exec
 INSERT INTO conviction (

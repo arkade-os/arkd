@@ -1269,25 +1269,13 @@ func (s *service) GetPendingOffchainTxs(
 		})
 	}
 
-	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, vtxoOutpoints)
+	vtxos, err := s.repoManager.Vtxos().GetPendingSpentVtxosWithOutpoints(ctx, vtxoOutpoints)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to get vtxos: %w", err)
 	}
 
-	if len(vtxos) != len(vtxoOutpoints) {
-		vtxoOutpointsStr := make([]string, 0, len(vtxoOutpoints))
-		for _, outpoint := range vtxoOutpoints {
-			vtxoOutpointsStr = append(vtxoOutpointsStr, outpoint.String())
-		}
-		vtxosResultStr := make([]string, 0, len(vtxos))
-		for _, vtxo := range vtxos {
-			vtxosResultStr = append(vtxosResultStr, vtxo.Outpoint.String())
-		}
-		return nil, errors.VTXO_NOT_FOUND.New("some vtxos not found").
-			WithMetadata(errors.VtxoNotFoundMetadata{
-				VtxoOutpoints: vtxoOutpointsStr,
-				GotVtxos:      vtxosResultStr,
-			})
+	if len(vtxos) <= 0 {
+		return nil, nil
 	}
 
 	vtxosMap := make(map[string]domain.Vtxo)
@@ -1310,9 +1298,7 @@ func (s *service) GetPendingOffchainTxs(
 
 		vtxo, ok := vtxosMap[vtxoOutpoint.String()]
 		if !ok {
-			return nil, errors.TX_NOT_FOUND.New(
-				"vtxo not found for outpoint %s:%d", vtxoOutpoint.Txid, vtxoOutpoint.VOut,
-			).WithMetadata(errors.TxNotFoundMetadata{Txid: vtxoOutpoint.Txid})
+			continue
 		}
 
 		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
@@ -1398,13 +1384,6 @@ func (s *service) GetPendingOffchainTxs(
 
 	// TODO optimization: filter the vtxos where vtxo.ArkTxid outputs does not exist in DB
 	for _, vtxo := range vtxos {
-		if !vtxo.Spent || vtxo.Unrolled || vtxo.Swept || vtxo.IsSettled() {
-			// skip if the vtxo is unspent: no pending tx for it
-			// if unrolled or swept: no need for the ark tx to be signed
-			// if settled: spent by a commitment tx
-			continue
-		}
-
 		if len(vtxo.ArkTxid) == 0 {
 			continue
 		}

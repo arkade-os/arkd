@@ -421,6 +421,105 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 	return items, nil
 }
 
+const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :one
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.commitments
+FROM vtxo_vw v
+WHERE v.txid = ?1 AND v.vout = ?2
+    AND v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+`
+
+type SelectPendingSpentVtxoParams struct {
+	Txid string
+	Vout int64
+}
+
+func (q *Queries) SelectPendingSpentVtxo(ctx context.Context, arg SelectPendingSpentVtxoParams) (VtxoVw, error) {
+	row := q.db.QueryRowContext(ctx, selectPendingSpentVtxo, arg.Txid, arg.Vout)
+	var i VtxoVw
+	err := row.Scan(
+		&i.Txid,
+		&i.Vout,
+		&i.Pubkey,
+		&i.Amount,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.CommitmentTxid,
+		&i.SpentBy,
+		&i.Spent,
+		&i.Unrolled,
+		&i.Swept,
+		&i.Preconfirmed,
+		&i.SettledBy,
+		&i.ArkTxid,
+		&i.IntentID,
+		&i.Commitments,
+	)
+	return i, err
+}
+
+const selectPendingSpentVtxosWithPubkeys = `-- name: SelectPendingSpentVtxosWithPubkeys :many
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.commitments
+FROM vtxo_vw v
+WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
+    AND v.pubkey IN (/*SLICE:pubkeys*/?)
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+`
+
+func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, pubkeys []string) ([]VtxoVw, error) {
+	query := selectPendingSpentVtxosWithPubkeys
+	var queryParams []interface{}
+	if len(pubkeys) > 0 {
+		for _, v := range pubkeys {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(pubkeys))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VtxoVw
+	for rows.Next() {
+		var i VtxoVw
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.CommitmentTxid,
+			&i.SpentBy,
+			&i.Spent,
+			&i.Unrolled,
+			&i.Swept,
+			&i.Preconfirmed,
+			&i.SettledBy,
+			&i.ArkTxid,
+			&i.IntentID,
+			&i.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectRoundConnectors = `-- name: SelectRoundConnectors :many
 SELECT t.txid, t.tx, t.round_id, t.type, t.position, t.children FROM tx t WHERE t.round_id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = ?1 AND type = 'commitment'
@@ -1318,23 +1417,23 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 }
 
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkey*/?)
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkeys*/?)
 `
 
 type SelectVtxosWithPubkeysRow struct {
 	VtxoVw VtxoVw
 }
 
-func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkey []string) ([]SelectVtxosWithPubkeysRow, error) {
+func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkeys []string) ([]SelectVtxosWithPubkeysRow, error) {
 	query := selectVtxosWithPubkeys
 	var queryParams []interface{}
-	if len(pubkey) > 0 {
-		for _, v := range pubkey {
+	if len(pubkeys) > 0 {
+		for _, v := range pubkeys {
 			queryParams = append(queryParams, v)
 		}
-		query = strings.Replace(query, "/*SLICE:pubkey*/?", strings.Repeat(",?", len(pubkey))[1:], 1)
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(pubkeys))[1:], 1)
 	} else {
-		query = strings.Replace(query, "/*SLICE:pubkey*/?", "NULL", 1)
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
 	}
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
