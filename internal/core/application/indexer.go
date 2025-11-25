@@ -14,10 +14,8 @@ import (
 
 const (
 	maxPageSizeVtxoTree       = 300
-	maxPageSizeConnector      = 300
 	maxPageSizeForfeitTxs     = 500
 	maxPageSizeSpendableVtxos = 100
-	maxPageSizeTxHistory      = 200
 	maxPageSizeVtxoChain      = 100
 	maxPageSizeVirtualTxs     = 100
 )
@@ -158,7 +156,9 @@ func (i *indexerService) GetVtxos(
 		}
 	}
 	if count != 1 {
-		return nil, fmt.Errorf("spendable, spent and recoverable filters are mutually exclusive")
+		return nil, fmt.Errorf(
+			"spendable, spent, recoverable and pending filters are mutually exclusive",
+		)
 	}
 
 	var allVtxos []domain.Vtxo

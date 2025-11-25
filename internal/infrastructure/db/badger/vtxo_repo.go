@@ -346,6 +346,9 @@ func (r *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 		if !vtxo.Spent || vtxo.Unrolled || vtxo.SettledBy != "" {
 			continue
 		}
+		if vtxo.ArkTxid == "" {
+			continue
+		}
 		indexedCandidates[vtxo.ArkTxid] = append(indexedCandidates[vtxo.ArkTxid], *vtxo)
 	}
 
