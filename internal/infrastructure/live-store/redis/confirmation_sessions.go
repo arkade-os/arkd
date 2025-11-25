@@ -40,10 +40,10 @@ type confirmationSessionsStore struct {
 	rdb               *redis.Client
 	lock              sync.RWMutex
 	sessionCompleteCh chan struct{}
-	ctx               context.Context
 	cancel            context.CancelFunc
 	pollInterval      time.Duration
 	numOfRetries      int
+	retryDelay        time.Duration
 }
 
 func NewConfirmationSessionsStore(
@@ -53,79 +53,94 @@ func NewConfirmationSessionsStore(
 	store := &confirmationSessionsStore{
 		rdb:               rdb,
 		sessionCompleteCh: make(chan struct{}),
-		ctx:               ctx,
 		cancel:            cancel,
 		pollInterval:      100 * time.Millisecond,
 		numOfRetries:      numOfRetries,
+		retryDelay:        10 * time.Millisecond,
 	}
 	go store.watchSessionCompletion(ctx)
 	return store
 }
 
-func (s *confirmationSessionsStore) Init(intentIDsHashes [][32]byte) {
-	ctx := context.Background()
-	pipe := s.rdb.TxPipeline()
+func (s *confirmationSessionsStore) Init(ctx context.Context, intentIDsHashes [][32]byte) error {
 	intents := make(map[string]interface{})
 	for _, hash := range intentIDsHashes {
 		intents[string(hash[:])] = 0
 	}
 
-	if len(intents) > 0 {
-		pipe.Del(ctx, confirmationIntentsKey)
-		pipe.HSet(ctx, confirmationIntentsKey, intents)
-	}
+	var err error
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				if len(intents) > 0 {
+					pipe.Del(ctx, confirmationIntentsKey)
+					pipe.HSet(ctx, confirmationIntentsKey, intents)
+				}
 
-	pipe.Set(ctx, confirmationNumIntentsKey, len(intentIDsHashes), 0)
-	pipe.Set(ctx, confirmationNumConfirmedKey, 0, 0)
-	pipe.Set(ctx, confirmationInitializedKey, 1, 0)
-	if _, err := pipe.Exec(ctx); err != nil {
-		log.Warnf("failed to initialize confirmation store: %v", err)
+				pipe.Set(ctx, confirmationNumIntentsKey, len(intentIDsHashes), 0)
+				pipe.Set(ctx, confirmationNumConfirmedKey, 0, 0)
+				pipe.Set(ctx, confirmationInitializedKey, 1, 0)
+				return nil
+			})
+			return err
+		}); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
 	}
+	return fmt.Errorf("failed to init confirmation session after max num of retries: %v", err)
 }
 
-func (s *confirmationSessionsStore) Confirm(intentId string) error {
-	ctx := context.Background()
+func (s *confirmationSessionsStore) Confirm(ctx context.Context, intentId string) error {
 	hash := sha256.Sum256([]byte(intentId))
 	hashKey := string(hash[:])
-	for attempt := 0; attempt < s.numOfRetries; attempt++ {
-		err := s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			confirmed, err := tx.HGet(ctx, confirmationIntentsKey, hashKey).Int()
-			if errors.Is(err, redis.Nil) {
-				return fmt.Errorf("intent hash not found")
-			} else if err != nil {
-				return err
-			}
 
-			if confirmed == 1 {
-				return nil
-			}
+	confirmed, err := s.rdb.HGet(ctx, confirmationIntentsKey, hashKey).Int()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return fmt.Errorf("intent hash not found")
+		}
+		return fmt.Errorf("failed to get intent %s: %v", intentId, err)
+	}
+	if confirmed == 1 {
+		return nil
+	}
 
-			numConfirmed, err := tx.Get(ctx, confirmationNumConfirmedKey).Int()
-			if err != nil && !errors.Is(err, redis.Nil) {
-				return err
-			}
+	numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return fmt.Errorf("failed to get number of confirmed intents: %v", err)
+	}
 
-			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.HSet(ctx, confirmationIntentsKey, hashKey, 1)
 				pipe.Set(ctx, confirmationNumConfirmedKey, numConfirmed+1, 0)
 
 				return nil
 			})
 			return err
-		})
-		if err == nil {
+		}); err == nil {
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(s.retryDelay)
 	}
-	return fmt.Errorf("failed to confirm intent after retries")
+	return fmt.Errorf("failed to confirm intent after retries: %v", err)
 }
 
-func (s *confirmationSessionsStore) Get() *ports.ConfirmationSessions {
-	ctx := context.Background()
-	intents, _ := s.rdb.HGetAll(ctx, confirmationIntentsKey).Result()
-	numIntents, _ := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
-	numConfirmed, _ := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+func (s *confirmationSessionsStore) Get(ctx context.Context) (*ports.ConfirmationSessions, error) {
+	intents, err := s.rdb.HGetAll(ctx, confirmationIntentsKey).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get intents: %v", err)
+	}
+	numIntents, err := s.rdb.Get(ctx, confirmationNumIntentsKey).Int()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get number of intents: %v", err)
+	}
+	numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get number of confirmed intents: %v", err)
+	}
 	intentsHashes := make(map[[32]byte]bool)
 	for k, v := range intents {
 		var hash [32]byte
@@ -136,34 +151,46 @@ func (s *confirmationSessionsStore) Get() *ports.ConfirmationSessions {
 		IntentsHashes:       intentsHashes,
 		NumIntents:          numIntents,
 		NumConfirmedIntents: numConfirmed,
-	}
+	}, nil
 }
 
-func (s *confirmationSessionsStore) Reset() {
+func (s *confirmationSessionsStore) Reset(ctx context.Context) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	ctx := context.Background()
-	pipe := s.rdb.TxPipeline()
-	pipe.Del(ctx, confirmationIntentsKey)
-	pipe.Del(ctx, confirmationNumIntentsKey)
-	pipe.Del(ctx, confirmationNumConfirmedKey)
-	pipe.Del(ctx, confirmationInitializedKey)
-	_, _ = pipe.Exec(ctx)
+	var err error
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Del(ctx, confirmationIntentsKey)
+				pipe.Del(ctx, confirmationNumIntentsKey)
+				pipe.Del(ctx, confirmationNumConfirmedKey)
+				pipe.Del(ctx, confirmationInitializedKey)
+				return nil
+			})
+			return err
+		}); err == nil {
+			break
+		}
+	}
+	if err != nil {
+		return fmt.Errorf(
+			"failed to reset confirmation session after max number of retries: %v", err,
+		)
+	}
 
 	if s.cancel != nil {
 		s.cancel()
 	}
 
 	watchCtx, cancel := context.WithCancel(context.Background())
-	s.ctx = watchCtx
 	s.cancel = cancel
 	s.sessionCompleteCh = make(chan struct{})
 	go s.watchSessionCompletion(watchCtx)
+	return nil
 }
 
-func (s *confirmationSessionsStore) Initialized() bool {
-	ctx := context.Background()
+func (s *confirmationSessionsStore) Initialized(ctx context.Context) bool {
 	val, err := s.rdb.Get(ctx, confirmationInitializedKey).Int()
 	return err == nil && val == 1
 }
@@ -200,8 +227,7 @@ func (s *confirmationSessionsStore) watchSessionCompletion(ctx context.Context) 
 								defer func() {
 									if r := recover(); r != nil {
 										log.Warnf(
-											"watchSessionCompletion:recovered from panic: %v",
-											r,
+											"watchSessionCompletion:recovered from panic: %v", r,
 										)
 									}
 								}()

@@ -99,6 +99,8 @@ func TestLiveStoreImplementations(t *testing.T) {
 
 func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 	t.Run("IntentStore", func(t *testing.T) {
+		ctx := t.Context()
+
 		intent1, err := parseIntentFixtures(intentFixture1)
 		require.NoError(t, err)
 		intent2, err := parseIntentFixtures(intentFixture2)
@@ -108,35 +110,28 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 		// Push
 		err = store.Intents().Push(
-			intent1.Intent, intent1.BoardingInputs, intent1.CosignersPublicKeys,
+			ctx, intent1.Intent, intent1.BoardingInputs, intent1.CosignersPublicKeys,
 		)
 		require.NoError(t, err)
 
 		err = store.Intents().Push(
-			intent1.Intent, intent1.BoardingInputs, intent1.CosignersPublicKeys,
+			ctx, intent1.Intent, intent1.BoardingInputs, intent1.CosignersPublicKeys,
 		)
 		require.Contains(t, err.Error(), "duplicated intent")
 
 		err = store.Intents().Push(
-			intent3.Intent, intent3.BoardingInputs, intent3.CosignersPublicKeys,
+			ctx, intent3.Intent, intent3.BoardingInputs, intent3.CosignersPublicKeys,
 		)
 		require.Contains(t, err.Error(), "duplicated input")
 
 		err = store.Intents().Push(
-			intent2.Intent, intent2.BoardingInputs, intent2.CosignersPublicKeys,
+			ctx, intent2.Intent, intent2.BoardingInputs, intent2.CosignersPublicKeys,
 		)
 		require.NoError(t, err)
 
-		// View
-		got, ok := store.Intents().View(intent1.Intent.Id)
-		require.True(t, ok)
-		require.Equal(t, intent1.Intent.Id, got.Id)
-		_, ok = store.Intents().View("nonexistent")
-		require.False(t, ok)
-
 		// ViewAll
 		all, err := store.Intents().ViewAll(
-			[]string{intent1.Intent.Id, intent2.Intent.Id, "nonexistent"},
+			ctx, []string{intent1.Intent.Id, intent2.Intent.Id, "nonexistent"},
 		)
 		require.NoError(t, err)
 		foundIds := map[string]bool{intent1.Intent.Id: false, intent2.Intent.Id: false}
@@ -148,118 +143,154 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		}
 
 		// IncludesAny
-		found, _ := store.Intents().IncludesAny([]domain.Outpoint{})
+		found, res := store.Intents().IncludesAny(ctx, []domain.Outpoint{})
 		require.False(t, found)
+		require.Empty(t, res)
 
-		found, _ = store.Intents().IncludesAny([]domain.Outpoint{{
+		found, res = store.Intents().IncludesAny(ctx, []domain.Outpoint{{
 			Txid: "24de502601c21cf7b227c0667ffe1175841cdd4f6e5b20d3063387333d0b10da", VOut: 0,
 		}})
 		require.True(t, found)
+		require.NotEmpty(t, res)
 
 		// Len
-		ln := store.Intents().Len()
+		ln, err := store.Intents().Len(ctx)
+		require.NoError(t, err)
 		require.EqualValues(t, 2, ln)
 
 		// GetSelectedIntents before any pop - should return empty
-		selectedIntents := store.Intents().GetSelectedIntents()
+		selectedIntents, err := store.Intents().GetSelectedIntents(ctx)
+		require.NoError(t, err)
 		require.Empty(t, selectedIntents)
 
 		// Pop
-		selected := store.Intents().Pop(2)
+		selected, err := store.Intents().Pop(ctx, 2)
+		require.NoError(t, err)
 		require.Len(t, selected, 2)
 
 		// GetSelectedIntents - should return the same intents that were selected
-		selectedIntents = store.Intents().GetSelectedIntents()
+		selectedIntents, err = store.Intents().GetSelectedIntents(ctx)
+		require.NoError(t, err)
 		require.Len(t, selectedIntents, 2)
 		intentsEqual(t, selected, selectedIntents)
 
-		ln = store.Intents().Len()
+		ln, err = store.Intents().Len(ctx)
+		require.NoError(t, err)
 		require.Zero(t, ln)
 
-		selected = store.Intents().Pop(100)
+		selected, err = store.Intents().Pop(ctx, 100)
+		require.NoError(t, err)
 		require.Empty(t, selected)
 
 		// GetSelectedIntents after empty pop - should return empty
-		selectedIntents = store.Intents().GetSelectedIntents()
+		selectedIntents, err = store.Intents().GetSelectedIntents(ctx)
+		require.NoError(t, err)
 		require.Empty(t, selectedIntents)
 
 		// Delete
-		err = store.Intents().Delete([]string{intent1.Intent.Id})
+		err = store.Intents().Delete(ctx, []string{intent1.Intent.Id})
 		require.NoError(t, err)
 
 		// Delete non-existent
-		err = store.Intents().Delete([]string{"doesnotexist"})
+		err = store.Intents().Delete(ctx, []string{"doesnotexist"})
 		require.NoError(t, err)
 
 		// DeleteAll
-		err = store.Intents().DeleteAll()
+		err = store.Intents().DeleteAll(ctx)
 		require.NoError(t, err)
 
 		// Make sure DeleteVtxos doesn't panic
-		store.Intents().DeleteVtxos()
+		err = store.Intents().DeleteVtxos(ctx)
+		require.NoError(t, err)
 	})
 
 	t.Run("ForfeitTxsStore", func(t *testing.T) {
+		ctx := t.Context()
+
 		connectors, intents, err := parseForfeitTxsFixture(connectorsJSON, intentsJSON)
 		require.NoError(t, err)
 
 		// Init
-		err = store.ForfeitTxs().Init(connectors, intents)
+		err = store.ForfeitTxs().Init(ctx, connectors, intents)
 		require.NoError(t, err)
 
+		allSigned, err := store.ForfeitTxs().AllSigned(ctx)
+		require.NoError(t, err)
+		require.False(t, allSigned)
+
 		// Sign
-		err = store.ForfeitTxs().Sign([]string{tx1, tx2, tx3, tx4})
+		err = store.ForfeitTxs().Sign(ctx, []string{tx1, tx2, tx3, tx4})
 		require.NoError(t, err)
 
 		// AllSigned
-		allSigned := store.ForfeitTxs().AllSigned()
+		allSigned, err = store.ForfeitTxs().AllSigned(ctx)
+		require.NoError(t, err)
 		require.True(t, allSigned)
-		unsigned := store.ForfeitTxs().GetUnsignedInputs()
+		unsigned, err := store.ForfeitTxs().GetUnsignedInputs(ctx)
+		require.NoError(t, err)
 		require.Empty(t, unsigned)
 
-		require.True(t, store.ForfeitTxs().Len() == 4)
+		forfeitsLen, err := store.ForfeitTxs().Len(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 4, forfeitsLen)
 
-		forfeits, err := store.ForfeitTxs().Pop()
+		forfeits, err := store.ForfeitTxs().Pop(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 4, len(forfeits))
 
 		// Len
-		require.True(t, store.ForfeitTxs().Len() == 0)
+		forfeitsLen, err = store.ForfeitTxs().Len(ctx)
+		require.NoError(t, err)
+		require.Zero(t, forfeitsLen)
 
-		store.ForfeitTxs().Reset()
+		err = store.ForfeitTxs().Reset(ctx)
+		require.NoError(t, err)
 
-		require.Equal(t, 0, store.ForfeitTxs().Len())
+		forfeitsLen, err = store.ForfeitTxs().Len(ctx)
+		require.NoError(t, err)
+		require.Zero(t, forfeitsLen)
 	})
 
 	t.Run("OffChainTxStore", func(t *testing.T) {
+		ctx := t.Context()
+
 		tx, err := parseOffchainTxFixture(offchainTxJSON)
 		require.NoError(t, err)
 
 		// Add
-		store.OffchainTxs().Add(tx)
+		err = store.OffchainTxs().Add(ctx, tx)
+		require.NoError(t, err)
 
 		// Get
-		_, exists := store.OffchainTxs().Get("nonexistent")
-		require.False(t, exists)
+		offchainTx, err := store.OffchainTxs().Get(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Nil(t, offchainTx)
 
 		// Get
-		_, exists = store.OffchainTxs().Get(tx.ArkTxid)
-		require.True(t, exists)
+		offchainTx, err = store.OffchainTxs().Get(ctx, tx.ArkTxid)
+		require.NoError(t, err)
+		require.NotNil(t, offchainTx)
 
 		// Includes
 		outpointJSON := `{"Txid":"fefcc1d90510aa15a77b3bac88a745f7cc58a02a1d4ebe631901bff7f327c51a","VOut":0}`
 		var outpoint domain.Outpoint
 		err = json.Unmarshal([]byte(outpointJSON), &outpoint)
 		require.NoError(t, err)
-		exists = store.OffchainTxs().Includes(outpoint)
+		exists, err := store.OffchainTxs().Includes(ctx, outpoint)
+		require.NoError(t, err)
 		require.True(t, exists)
 
 		// Remove
-		store.OffchainTxs().Remove(tx.ArkTxid)
+		err = store.OffchainTxs().Remove(ctx, tx.ArkTxid)
+		require.NoError(t, err)
+
+		err = store.OffchainTxs().Remove(ctx, "nonexistent")
+		require.NoError(t, err)
 
 		// Get
-		_, exists = store.OffchainTxs().Get(tx.ArkTxid)
-		require.False(t, exists)
+		offchainTx, err = store.OffchainTxs().Get(ctx, tx.ArkTxid)
+		require.NoError(t, err)
+		require.Nil(t, offchainTx)
 	})
 
 	t.Run("CurrentRoundStore", func(t *testing.T) {
@@ -271,22 +302,21 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 
 		// Get
-		got := store.CurrentRound().Get(ctx)
+		got, err := store.CurrentRound().Get(ctx)
+		require.NoError(t, err)
 		require.Equal(t, r.Id, got.Id)
-
-		// Fail
-		events := store.CurrentRound().Fail(ctx, fmt.Errorf("fail"))
-		require.Len(t, events, 1)
 	})
 
 	t.Run("ConfirmationSessionsStore", func(t *testing.T) {
+		ctx := t.Context()
 		hashes := [][32]byte{h1, h2}
 
 		// Init
-		store.ConfirmationSessions().Init(hashes)
+		err := store.ConfirmationSessions().Init(ctx, hashes)
+		require.NoError(t, err)
 
 		// IsInit
-		require.True(t, store.ConfirmationSessions().Initialized())
+		require.True(t, store.ConfirmationSessions().Initialized(ctx))
 
 		doneCh := make(chan struct{})
 		sessionCompleteCh := store.ConfirmationSessions().SessionCompleted()
@@ -299,12 +329,12 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		go func() {
 			time.Sleep(1 * time.Second)
 			err := store.ConfirmationSessions().Confirm(
-				"fdbc502adf42a40dc7c0b2d3b50b9c0b01f9c386dc9bef5233bc9f39acdf48ae",
+				ctx, "fdbc502adf42a40dc7c0b2d3b50b9c0b01f9c386dc9bef5233bc9f39acdf48ae",
 			)
 			require.NoError(t, err)
 
 			err = store.ConfirmationSessions().Confirm(
-				"340f30bc56d8de1364120aaf8734f684a28084bc9fbb17029584378d1422beff",
+				ctx, "340f30bc56d8de1364120aaf8734f684a28084bc9fbb17029584378d1422beff",
 			)
 			require.NoError(t, err)
 		}()
@@ -316,23 +346,33 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		}
 
 		// Get
-		got := store.ConfirmationSessions().Get()
-		require.Equal(t, 2, len(got.IntentsHashes))
+		got, err := store.ConfirmationSessions().Get(ctx)
+		require.NoError(t, err)
+		require.Len(t, got.IntentsHashes, 2)
 		require.Equal(t, 2, got.NumIntents)
 
 		// Reset
-		store.ConfirmationSessions().Reset()
+		err = store.ConfirmationSessions().Reset(ctx)
+		require.NoError(t, err)
 
 		// IsInit
-		require.False(t, store.ConfirmationSessions().Initialized())
+		require.False(t, store.ConfirmationSessions().Initialized(ctx))
 	})
 
 	t.Run("TreeSigningSessionsStore", func(t *testing.T) {
+		ctx := t.Context()
+
 		// New
 		var uniqueSigners map[string]struct{}
 		err := json.Unmarshal([]byte(uniqueSignersJSON), &uniqueSigners)
 		require.NoError(t, err)
-		sigSession := store.TreeSigingSessions().New(roundId, uniqueSigners)
+		err = store.TreeSigingSessions().New(ctx, roundId, uniqueSigners)
+		require.NoError(t, err)
+
+		// Get
+		sigSession, err := store.TreeSigingSessions().Get(ctx, roundId)
+		require.NoError(t, err)
+		require.NotNil(t, sigSession)
 		require.Equal(t, 2+1, sigSession.NbCosigners)
 
 		noncesCollectedCh := store.TreeSigingSessions().NoncesCollected(roundId)
@@ -350,7 +390,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			pubkey2 := "039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67"
 			// Collect nonces
 			var nonce1, nonce2 tree.TreeNonces
-			err = json.Unmarshal([]byte(n1), &nonce1)
+			err := json.Unmarshal([]byte(n1), &nonce1)
 			require.NoError(t, err)
 			err = json.Unmarshal([]byte(n2), &nonce2)
 			require.NoError(t, err)
@@ -381,19 +421,31 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		}
 
 		// Delete
-		store.TreeSigingSessions().Delete(roundId)
+		err = store.TreeSigingSessions().Delete(ctx, roundId)
+		require.NoError(t, err)
 
 		// Get
-		sigSession, exists := store.TreeSigingSessions().Get(roundId)
-		require.False(t, exists)
+		sigSession, err = store.TreeSigingSessions().Get(ctx, roundId)
+		require.NoError(t, err)
 		require.Nil(t, sigSession)
 	})
 
 	t.Run("BoardingInputsStore", func(t *testing.T) {
-		store.BoardingInputs().Set(42)
-		require.Equal(t, 42, store.BoardingInputs().Get())
-		store.BoardingInputs().Set(0)
-		require.Equal(t, 0, store.BoardingInputs().Get())
+		ctx := t.Context()
+
+		err := store.BoardingInputs().Set(ctx, 42)
+		require.NoError(t, err)
+
+		numBoardingIns, err := store.BoardingInputs().Get(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 42, numBoardingIns)
+
+		err = store.BoardingInputs().Set(ctx, 0)
+		require.NoError(t, err)
+
+		numBoardingIns, err = store.BoardingInputs().Get(ctx)
+		require.NoError(t, err)
+		require.Zero(t, numBoardingIns)
 
 		batchId := "fakeCommitmentTxid"
 		sigs := map[uint32]ports.SignedBoardingInput{

@@ -23,6 +23,7 @@ type intentStore struct {
 	rdb          *redis.Client
 	intents      *KVStore[ports.TimedIntent]
 	numOfRetries int
+	retryDelay   time.Duration
 }
 
 func NewIntentStore(rdb *redis.Client, numOfRetries int) ports.IntentStore {
@@ -30,19 +31,19 @@ func NewIntentStore(rdb *redis.Client, numOfRetries int) ports.IntentStore {
 		rdb:          rdb,
 		intents:      NewRedisKVStore[ports.TimedIntent](rdb, "intent:"),
 		numOfRetries: numOfRetries,
+		retryDelay:   10 * time.Millisecond,
 	}
 }
 
-func (s *intentStore) Len() int64 {
-	ctx := context.Background()
+func (s *intentStore) Len(ctx context.Context) (int64, error) {
 	ids, err := s.rdb.SMembers(ctx, intentStoreIdsKey).Result()
 	if err != nil {
-		return 0
+		return -1, fmt.Errorf("failed to get intent ids: %v", err)
 	}
 
 	intents, err := s.intents.GetMulti(ctx, ids)
 	if err != nil {
-		return 0
+		return -1, fmt.Errorf("failed to get intents: %v", err)
 	}
 
 	count := int64(0)
@@ -51,50 +52,51 @@ func (s *intentStore) Len() int64 {
 			count++
 		}
 	}
-
-	return count
+	return count, nil
 }
 
 func (s *intentStore) Push(
-	intent domain.Intent, boardingInputs []ports.BoardingInput, cosignerPubkeys []string,
+	ctx context.Context, intent domain.Intent,
+	boardingInputs []ports.BoardingInput, cosignerPubkeys []string,
 ) error {
-	ctx := context.Background()
-	var err error
-	for attempt := 0; attempt < s.numOfRetries; attempt++ {
+	exists, err := s.rdb.SIsMember(ctx, intentStoreIdsKey, intent.Id).Result()
+	if err != nil {
+		return fmt.Errorf("failed to check existence of intent: %v", err)
+	}
+	if exists {
+		return fmt.Errorf("duplicated intent %s", intent.Id)
+	}
+	// Check input duplicates directly in Redis set
+	for _, input := range intent.Inputs {
+		if input.IsNote() {
+			continue
+		}
+		key := input.Outpoint.String()
+		exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, key).Result()
+		if err != nil {
+			return fmt.Errorf(
+				"failed to check existence of intent input %s: %v", input.Outpoint, err,
+			)
+		}
+		if exists {
+			return fmt.Errorf(
+				"duplicated input, %s already registered by another intent", key,
+			)
+		}
+	}
+
+	// Check boarding inputs similarly if you store them
+
+	now := time.Now()
+	timedIntent := &ports.TimedIntent{
+		Intent:              intent,
+		BoardingInputs:      boardingInputs,
+		Timestamp:           now,
+		CosignersPublicKeys: cosignerPubkeys,
+	}
+
+	for range s.numOfRetries {
 		err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			exists, err := tx.SIsMember(ctx, intentStoreIdsKey, intent.Id).Result()
-			if err != nil {
-				return err
-			}
-			if exists {
-				return fmt.Errorf("duplicated intent %s", intent.Id)
-			}
-			// Check input duplicates directly in Redis set
-			for _, input := range intent.Inputs {
-				if input.IsNote() {
-					continue
-				}
-				key := input.Outpoint.String()
-				exists, err := tx.SIsMember(ctx, intentStoreVtxosKey, key).Result()
-				if err != nil {
-					return err
-				}
-				if exists {
-					return fmt.Errorf(
-						"duplicated input, %s already registered by another intent", key,
-					)
-				}
-			}
-
-			// Check boarding inputs similarly if you store them
-
-			now := time.Now()
-			timedIntent := &ports.TimedIntent{
-				Intent:              intent,
-				BoardingInputs:      boardingInputs,
-				Timestamp:           now,
-				CosignersPublicKeys: cosignerPubkeys,
-			}
 			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				if err := s.intents.SetPipe(ctx, pipe, intent.Id, timedIntent); err != nil {
 					return err
@@ -116,30 +118,27 @@ func (s *intentStore) Push(
 		if err == nil {
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(s.retryDelay)
 	}
-	return err
+	return fmt.Errorf("failed to push intent after max number of retries: %v", err)
 }
 
-func (s *intentStore) Pop(num int64) []ports.TimedIntent {
-	ctx := context.Background()
-
+func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, error) {
 	// clear selected intents list
 	if err := s.rdb.Del(ctx, selectedIntentsKey).Err(); err != nil {
-		log.Warnf("pop: failed to clear selected intents: %v", err)
+		return nil, fmt.Errorf("failed to clear selected intents: %v", err)
 	}
 
 	ids, err := s.rdb.SMembers(ctx, intentStoreIdsKey).Result()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to get intent ids: %v", err)
 	}
 
 	var intentsByTime []ports.TimedIntent
 	for _, id := range ids {
 		intent, err := s.intents.Get(ctx, id)
-		if err != nil || intent == nil {
-			log.Debugf("pop: intent %s not found", id)
-			continue
+		if err != nil {
+			return nil, fmt.Errorf("failed to get intent %s: %v", id, err)
 		}
 
 		if len(intent.Receivers) > 0 {
@@ -163,7 +162,7 @@ func (s *intentStore) Pop(num int64) []ports.TimedIntent {
 		}
 
 		if err := s.intents.Delete(ctx, intent.Id); err != nil {
-			log.Warnf("pop:failed to delete intent %s: %v", intent.Id, err)
+			return nil, fmt.Errorf("failed to delete intent %s: %v", intent.Id, err)
 		}
 
 		s.rdb.SRem(ctx, intentStoreIdsKey, intent.Id)
@@ -177,43 +176,29 @@ func (s *intentStore) Pop(num int64) []ports.TimedIntent {
 		// push each selected intent to the list
 		for _, intent := range result {
 			if err := s.intents.ListPush(ctx, selectedIntentsKey, &intent); err != nil {
-				log.Warnf("pop: failed to push intent %s: %v", intent.Id, err)
+				return nil, fmt.Errorf(
+					"failed to add intent to list of selected %s: %v", intent.Id, err,
+				)
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
-func (s *intentStore) GetSelectedIntents() []ports.TimedIntent {
-	ctx := context.Background()
-
+func (s *intentStore) GetSelectedIntents(ctx context.Context) ([]ports.TimedIntent, error) {
 	result, err := s.intents.ListRange(ctx, selectedIntentsKey)
 	if err != nil {
-		log.Warnf("getSelectedIntents: failed to get selected intents from Redis: %v", err)
-		return []ports.TimedIntent{}
+		return nil, fmt.Errorf("failed to get selected intents: %v", err)
 	}
-
-	return result
+	return result, nil
 }
 
-func (s *intentStore) View(id string) (*domain.Intent, bool) {
-	ctx := context.Background()
-	intent, err := s.intents.Get(ctx, id)
-	if err != nil || intent == nil {
-		log.Debugf("view: intent %s not found", id)
-		return nil, false
-	}
-
-	return &intent.Intent, true
-}
-
-func (s *intentStore) ViewAll(ids []string) ([]ports.TimedIntent, error) {
-	ctx := context.Background()
+func (s *intentStore) ViewAll(ctx context.Context, ids []string) ([]ports.TimedIntent, error) {
 	var result []ports.TimedIntent
 	if len(ids) > 0 {
 		intents, err := s.intents.GetMulti(ctx, ids)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get requested intents: %v", err)
 		}
 		for _, t := range intents {
 			if t != nil {
@@ -225,12 +210,12 @@ func (s *intentStore) ViewAll(ids []string) ([]ports.TimedIntent, error) {
 
 	allIDs, err := s.rdb.SMembers(ctx, intentStoreIdsKey).Result()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("faile to get all intent ids: %v", err)
 	}
 
 	txs, err := s.intents.GetMulti(ctx, allIDs)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get get all intents: %v", err)
 	}
 
 	for _, t := range txs {
@@ -238,15 +223,18 @@ func (s *intentStore) ViewAll(ids []string) ([]ports.TimedIntent, error) {
 			result = append(result, *t)
 		}
 	}
-
 	return result, nil
 }
 
-func (s *intentStore) Update(intent domain.Intent, cosignerPubkeys []string) error {
-	ctx := context.Background()
+func (s *intentStore) Update(
+	ctx context.Context, intent domain.Intent, cosignerPubkeys []string,
+) error {
 	gotIntent, err := s.intents.Get(ctx, intent.Id)
-	if err != nil || gotIntent == nil {
-		return err
+	if err != nil {
+		return fmt.Errorf("failed to get intent %s: %v", intent.Id, err)
+	}
+	if gotIntent == nil {
+		return fmt.Errorf("intent %s not found", intent.Id)
 	}
 
 	// Sum of inputs = vtxos + boarding utxos + notes + recovered vtxos
@@ -275,15 +263,19 @@ func (s *intentStore) Update(intent domain.Intent, cosignerPubkeys []string) err
 		gotIntent.CosignersPublicKeys = cosignerPubkeys
 	}
 
-	return s.intents.Set(ctx, intent.Id, gotIntent)
+	if err := s.intents.Set(ctx, intent.Id, gotIntent); err != nil {
+		return fmt.Errorf("failed to update intent %s: %v", intent.Id, err)
+	}
+	return nil
 }
 
-func (s *intentStore) Delete(ids []string) error {
-	ctx := context.Background()
+func (s *intentStore) Delete(ctx context.Context, ids []string) error {
 	for _, id := range ids {
 		intent, err := s.intents.Get(ctx, id)
-		if err != nil || intent == nil {
-			log.Debugf("delete: intent %s not found", id)
+		if err != nil {
+			return fmt.Errorf("failed to get intent %s: %v", id, err)
+		}
+		if intent == nil {
 			continue
 		}
 
@@ -300,46 +292,66 @@ func (s *intentStore) Delete(ids []string) error {
 	return nil
 }
 
-func (s *intentStore) DeleteAll() error {
-	ctx := context.Background()
+func (s *intentStore) DeleteAll(ctx context.Context) error {
 	ids, err := s.rdb.SMembers(ctx, intentStoreIdsKey).Result()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get all intent ids: %v", err)
 	}
 	for _, id := range ids {
 		if err := s.intents.Delete(ctx, id); err != nil {
 			log.Warnf("delete:failed to delete intent %s: %v", id, err)
 		}
 	}
-	s.rdb.Del(ctx, intentStoreIdsKey)
-	s.rdb.Del(ctx, intentStoreVtxosKey)
-	s.rdb.Del(ctx, intentStoreVtxosToRemoveKey)
-	s.rdb.Del(ctx, selectedIntentsKey)
-	return nil
+
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Del(ctx, intentStoreIdsKey)
+				pipe.Del(ctx, intentStoreVtxosKey)
+				pipe.Del(ctx, intentStoreVtxosToRemoveKey)
+				pipe.Del(ctx, selectedIntentsKey)
+				return nil
+			})
+			return err
+		}); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
+	}
+	return fmt.Errorf("failed to delete all intents after max number of retries: %v", err)
 }
 
-func (s *intentStore) DeleteVtxos() {
-	ctx := context.Background()
+func (s *intentStore) DeleteVtxos(ctx context.Context) error {
 	vtxosToRemove, err := s.rdb.SMembers(ctx, intentStoreVtxosToRemoveKey).Result()
 	if err != nil {
-		return
+		return fmt.Errorf("failed to get vtxos to remove: %v", err)
 	}
 
-	if len(vtxosToRemove) > 0 {
-		s.rdb.SRem(ctx, intentStoreVtxosKey, vtxosToRemove)
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				if len(vtxosToRemove) > 0 {
+					pipe.SRem(ctx, intentStoreVtxosKey, vtxosToRemove)
+				}
+				pipe.Del(ctx, intentStoreVtxosToRemoveKey)
+				return nil
+			})
+			return err
+		}); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
 	}
-
-	s.rdb.Del(ctx, intentStoreVtxosToRemoveKey)
+	return fmt.Errorf("failed to delete vtxos after max number of retries: %v", err)
 }
 
-func (s *intentStore) IncludesAny(outpoints []domain.Outpoint) (bool, string) {
-	ctx := context.Background()
+func (s *intentStore) IncludesAny(ctx context.Context, outpoints []domain.Outpoint) (bool, string) {
 	for _, out := range outpoints {
 		exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, out.String()).Result()
 		if err == nil && exists {
 			return true, out.String()
 		} else if err != nil {
-			log.Warnf("includesAny:failed to check vtxo %s: %v", out.String(), err)
+			log.Warnf("includesAny: failed to check vtxo %s: %v", out.String(), err)
 		}
 	}
 	return false, ""

@@ -26,30 +26,32 @@ func NewTreeSigningSessionsStore() ports.TreeSigningSessionsStore {
 }
 
 func (s *treeSigningSessionsStore) New(
-	roundId string, uniqueSignersPubKeys map[string]struct{},
-) *ports.MusigSigningSession {
+	_ context.Context, roundId string, uniqueSignersPubKeys map[string]struct{},
+) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	sess := &ports.MusigSigningSession{
+	session := &ports.MusigSigningSession{
 		Cosigners:   uniqueSignersPubKeys,
 		NbCosigners: len(uniqueSignersPubKeys) + 1, // operator included
 		Nonces:      make(map[string]tree.TreeNonces),
 		Signatures:  make(map[string]tree.TreePartialSigs),
 	}
-	s.sessions[roundId] = sess
+	s.sessions[roundId] = session
 	s.nonceCollectedCh[roundId] = make(chan struct{})
 	s.sigsCollectedCh[roundId] = make(chan struct{})
-	return sess
+	return nil
 }
 
-func (s *treeSigningSessionsStore) Get(roundId string) (*ports.MusigSigningSession, bool) {
+func (s *treeSigningSessionsStore) Get(
+	_ context.Context, roundId string,
+) (*ports.MusigSigningSession, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	sess, ok := s.sessions[roundId]
-	return sess, ok
+	session := s.sessions[roundId]
+	return session, nil
 }
-func (s *treeSigningSessionsStore) Delete(roundId string) {
+func (s *treeSigningSessionsStore) Delete(_ context.Context, roundId string) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -63,10 +65,11 @@ func (s *treeSigningSessionsStore) Delete(roundId string) {
 	delete(s.nonceCollectedCh, roundId)
 	delete(s.sigsCollectedCh, roundId)
 	delete(s.sessions, roundId)
+	return nil
 }
 
 func (s *treeSigningSessionsStore) AddNonces(
-	ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces,
+	_ context.Context, roundId string, pubkey string, nonces tree.TreeNonces,
 ) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -91,7 +94,7 @@ func (s *treeSigningSessionsStore) AddNonces(
 }
 
 func (s *treeSigningSessionsStore) AddSignatures(
-	ctx context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs,
+	_ context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs,
 ) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()

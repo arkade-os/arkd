@@ -1,6 +1,7 @@
 package inmemorylivestore
 
 import (
+	"context"
 	"strings"
 	"sync"
 
@@ -22,9 +23,10 @@ func NewOffChainTxStore() ports.OffChainTxStore {
 	}
 }
 
-func (m *offChainTxStore) Add(offchainTx domain.OffchainTx) {
+func (m *offChainTxStore) Add(_ context.Context, offchainTx domain.OffchainTx) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+
 	m.offchainTxs[offchainTx.ArkTxid] = offchainTx
 	for _, tx := range offchainTx.CheckpointTxs {
 		ptx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
@@ -32,15 +34,16 @@ func (m *offChainTxStore) Add(offchainTx domain.OffchainTx) {
 			m.inputs[in.PreviousOutPoint.String()] = struct{}{}
 		}
 	}
+	return nil
 }
 
-func (m *offChainTxStore) Remove(arkTxid string) {
+func (m *offChainTxStore) Remove(_ context.Context, arkTxid string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
 	offchainTx, ok := m.offchainTxs[arkTxid]
 	if !ok {
-		return
+		return nil
 	}
 
 	for _, tx := range offchainTx.CheckpointTxs {
@@ -50,18 +53,24 @@ func (m *offChainTxStore) Remove(arkTxid string) {
 		}
 	}
 	delete(m.offchainTxs, arkTxid)
+	return nil
 }
 
-func (m *offChainTxStore) Get(arkTxid string) (domain.OffchainTx, bool) {
+func (m *offChainTxStore) Get(_ context.Context, arkTxid string) (*domain.OffchainTx, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
+
 	offchainTx, ok := m.offchainTxs[arkTxid]
-	return offchainTx, ok
+	if !ok {
+		return nil, nil
+	}
+	return &offchainTx, nil
 }
 
-func (m *offChainTxStore) Includes(outpoint domain.Outpoint) bool {
+func (m *offChainTxStore) Includes(_ context.Context, outpoint domain.Outpoint) (bool, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
+
 	_, exists := m.inputs[outpoint.String()]
-	return exists
+	return exists, nil
 }
