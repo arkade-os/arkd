@@ -81,7 +81,9 @@ func (c *confirmationSessionsStore) Reset(_ context.Context) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	close(c.sessionCompleteCh)
+	if c.sessionCompleteCh != nil {
+		close(c.sessionCompleteCh)
+	}
 	c.intentsHashes = make(map[[32]byte]bool)
 	c.numIntents = 0
 	c.numConfirmedIntents = 0
