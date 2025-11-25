@@ -291,14 +291,14 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 		allSigned, err = store.ForfeitTxs().AllSigned(ctx)
 		require.NoError(t, err)
-		require.False(t, allSigned)
+		require.True(t, allSigned)
 
 		// sign after the session is deleted
 		require.Error(t, store.ForfeitTxs().Sign(ctx, []string{txs[0]}))
 
 		allSigned, err = store.ForfeitTxs().AllSigned(ctx)
 		require.NoError(t, err)
-		require.False(t, allSigned)
+		require.True(t, allSigned)
 
 		forfeitsLen, err = store.ForfeitTxs().Len(ctx)
 		require.NoError(t, err)

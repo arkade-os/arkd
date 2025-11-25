@@ -154,10 +154,6 @@ func (m *forfeitTxsStore) AllSigned(_ context.Context) (bool, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	if len(m.forfeitTxs) == 0 {
-		return false, nil
-	}
-
 	for _, forfeit := range m.forfeitTxs {
 		if len(forfeit.Tx) == 0 {
 			return false, nil
