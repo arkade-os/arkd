@@ -1124,6 +1124,10 @@ func (s *service) FinalizeOffchainTx(
 			changes = append(changes, change)
 		}
 
+		if err := s.cache.OffchainTxs().Remove(ctx, txid); err != nil {
+			log.WithError(err).Warnf("failed to remove offchain tx %s from the cache", txid)
+		}
+
 		if err := s.repoManager.Events().Save(
 			ctx, domain.OffchainTxTopic, txid, changes,
 		); err != nil {
@@ -1234,12 +1238,7 @@ func (s *service) FinalizeOffchainTx(
 				"final_checkpoint_txs": finalCheckpointTxsMap,
 			})
 	}
-
 	changes = []domain.Event{event}
-
-	if err := s.cache.OffchainTxs().Remove(ctx, txid); err != nil {
-		log.WithError(err).Warn("failed to remove offchain tx from cache")
-	}
 
 	return nil
 }
@@ -2274,39 +2273,41 @@ func (s *service) startRound() {
 		return
 	}
 
-	// Reset the cache for the new batch
-	if err := s.cache.ForfeitTxs().Reset(ctx); err != nil {
-		log.WithError(err).Warnf(
-			"failed to delete forfeit txs from cache for round %s", existingRound.Id,
-		)
-	}
-	if err := s.cache.Intents().DeleteVtxos(ctx); err != nil {
-		log.WithError(err).Warnf(
-			"failed to delete spent vtxos from cache after round %s", existingRound.Id,
-		)
-	}
-	if err := s.cache.ConfirmationSessions().Reset(ctx); err != nil {
-		log.WithError(err).Errorf(
-			"failed to reset confirmation session from cache for round %s", existingRound.Id,
-		)
-	}
 	if existingRound != nil {
-		if existingRound.Id != "" {
-			if err := s.cache.TreeSigingSessions().Delete(ctx, existingRound.Id); err != nil {
-				log.WithError(err).Errorf(
-					"failed to delete tree signing sessions for round from cache %s",
-					existingRound.Id,
-				)
-			}
+		// Reset the cache for the new batch
+		if err := s.cache.ForfeitTxs().Reset(ctx); err != nil {
+			log.WithError(err).Warnf(
+				"failed to delete forfeit txs from cache for round %s", existingRound.Id,
+			)
 		}
-		if existingRound.CommitmentTxid != "" {
-			if err := s.cache.BoardingInputs().DeleteSignatures(
-				ctx, existingRound.CommitmentTxid,
-			); err != nil {
-				log.WithError(err).Errorf(
-					"failed to delete boarding input signatures from cache for round %s",
-					existingRound.Id,
-				)
+		if err := s.cache.Intents().DeleteVtxos(ctx); err != nil {
+			log.WithError(err).Warnf(
+				"failed to delete spent vtxos from cache after round %s", existingRound.Id,
+			)
+		}
+		if err := s.cache.ConfirmationSessions().Reset(ctx); err != nil {
+			log.WithError(err).Errorf(
+				"failed to reset confirmation session from cache for round %s", existingRound.Id,
+			)
+		}
+		if existingRound != nil {
+			if existingRound.Id != "" {
+				if err := s.cache.TreeSigingSessions().Delete(ctx, existingRound.Id); err != nil {
+					log.WithError(err).Errorf(
+						"failed to delete tree signing sessions for round from cache %s",
+						existingRound.Id,
+					)
+				}
+			}
+			if existingRound.CommitmentTxid != "" {
+				if err := s.cache.BoardingInputs().DeleteSignatures(
+					ctx, existingRound.CommitmentTxid,
+				); err != nil {
+					log.WithError(err).Errorf(
+						"failed to delete boarding input signatures from cache for round %s",
+						existingRound.Id,
+					)
+				}
 			}
 		}
 	}

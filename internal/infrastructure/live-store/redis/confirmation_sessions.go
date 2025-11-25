@@ -113,7 +113,7 @@ func (s *confirmationSessionsStore) Confirm(ctx context.Context, intentId string
 	keys := []string{confirmationIntentsKey, confirmationNumConfirmedKey}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+			numConfirmed, err := tx.Get(ctx, confirmationNumConfirmedKey).Int()
 			if err != nil && !errors.Is(err, redis.Nil) {
 				return fmt.Errorf("failed to get number of confirmed intents: %v", err)
 			}
@@ -180,6 +180,7 @@ func (s *confirmationSessionsStore) Reset(ctx context.Context) error {
 		}, keys...); err == nil {
 			break
 		}
+		time.Sleep(s.retryDelay)
 	}
 	if err != nil {
 		return fmt.Errorf(

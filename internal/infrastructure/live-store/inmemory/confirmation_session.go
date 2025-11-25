@@ -84,6 +84,7 @@ func (c *confirmationSessionsStore) Reset(_ context.Context) error {
 	if c.sessionCompleteCh != nil {
 		close(c.sessionCompleteCh)
 	}
+	c.sessionCompleteCh = make(chan struct{})
 	c.intentsHashes = make(map[[32]byte]bool)
 	c.numIntents = 0
 	c.numConfirmedIntents = 0
