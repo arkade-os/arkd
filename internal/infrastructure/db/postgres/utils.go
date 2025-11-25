@@ -95,6 +95,8 @@ func createDB(ctx context.Context, dsn string) error {
 	if err != nil {
 		return err
 	}
+
+	// nolint:errcheck
 	defer rootDB.Close()
 
 	query := fmt.Sprintf("CREATE DATABASE %s", pq.QuoteIdentifier(dbName))
