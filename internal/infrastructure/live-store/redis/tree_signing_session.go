@@ -139,7 +139,7 @@ func (s *treeSigningSessionsStore) Get(
 	for pub, val := range sigsMap {
 		signatures := make(tree.TreePartialSigs)
 		if err := json.Unmarshal([]byte(val), &signatures); err != nil {
-			return nil, fmt.Errorf("malformed signatures in storage for cosgienr %s: %v", pub, err)
+			return nil, fmt.Errorf("malformed signatures in storage for cosigner %s: %v", pub, err)
 		}
 		sigs[pub] = signatures
 	}

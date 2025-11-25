@@ -2513,7 +2513,11 @@ func (s *service) startConfirmation(
 	case <-time.After(roundTiming.confirmationDuration()):
 		session, err := s.cache.ConfirmationSessions().Get(ctx)
 		if err != nil {
-			log.WithError(err).Warn("failed to get confirmation session from cache")
+			log.WithError(err).Error("failed to get confirmation session from cache")
+			round.Fail(errors.INTERNAL_ERROR.New(
+				"failed to get confirmation session from cache: %s", err,
+			))
+			return
 		}
 		for _, intent := range intents {
 			if session.IntentsHashes[intent.HashID()] {

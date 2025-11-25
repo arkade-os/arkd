@@ -3,6 +3,7 @@ package inmemorylivestore
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -57,7 +58,7 @@ func (b *boardingInputsStore) GetSignatures(
 ) (map[uint32]ports.SignedBoardingInput, error) {
 	b.lock.RLock()
 	defer b.lock.RUnlock()
-	return b.sigs, nil
+	return maps.Clone(b.sigs), nil
 }
 
 func (b *boardingInputsStore) DeleteSignatures(_ context.Context, _ string) error {

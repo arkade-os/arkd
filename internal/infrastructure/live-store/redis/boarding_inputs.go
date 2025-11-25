@@ -89,7 +89,7 @@ func (b *boardingInputsStore) AddSignatures(
 		}, key); err == nil {
 			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(b.retryDelay)
 	}
 	return err
 }

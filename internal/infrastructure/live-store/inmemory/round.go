@@ -30,8 +30,3 @@ func (s *currentRoundStore) Get(_ context.Context) (*domain.Round, error) {
 	defer s.lock.RUnlock()
 	return s.round, nil
 }
-func (s *currentRoundStore) Fail(_ context.Context, err error) ([]domain.Event, error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	return s.round.Fail(err), nil
-}

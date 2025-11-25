@@ -95,23 +95,24 @@ func (s *confirmationSessionsStore) Confirm(ctx context.Context, intentId string
 	hash := sha256.Sum256([]byte(intentId))
 	hashKey := string(hash[:])
 
-	confirmed, err := s.rdb.HGet(ctx, confirmationIntentsKey, hashKey).Int()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return fmt.Errorf("intent hash not found")
-		}
-		return fmt.Errorf("failed to get intent %s: %v", intentId, err)
-	}
-	if confirmed == 1 {
-		return nil
-	}
-
-	numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return fmt.Errorf("failed to get number of confirmed intents: %v", err)
-	}
-
+	var err error
 	for range s.numOfRetries {
+		confirmed, err := s.rdb.HGet(ctx, confirmationIntentsKey, hashKey).Int()
+		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				return fmt.Errorf("intent hash not found")
+			}
+			return fmt.Errorf("failed to get intent %s: %v", intentId, err)
+		}
+		if confirmed == 1 {
+			return nil
+		}
+
+		numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			return fmt.Errorf("failed to get number of confirmed intents: %v", err)
+		}
+
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.HSet(ctx, confirmationIntentsKey, hashKey, 1)

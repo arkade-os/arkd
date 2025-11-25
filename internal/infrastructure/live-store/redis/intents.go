@@ -209,12 +209,12 @@ func (s *intentStore) ViewAll(ctx context.Context, ids []string) ([]ports.TimedI
 
 	allIDs, err := s.rdb.SMembers(ctx, intentStoreIdsKey).Result()
 	if err != nil {
-		return nil, fmt.Errorf("faile to get all intent ids: %v", err)
+		return nil, fmt.Errorf("failed to get all intent ids: %v", err)
 	}
 
 	txs, err := s.intents.GetMulti(ctx, allIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get get all intents: %v", err)
+		return nil, fmt.Errorf("failed to get all intents: %v", err)
 	}
 
 	for _, t := range txs {

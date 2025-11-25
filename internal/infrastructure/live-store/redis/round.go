@@ -171,21 +171,3 @@ func (s *currentRoundStore) Get(ctx context.Context) (*domain.Round, error) {
 
 	return &round, nil
 }
-
-func (s *currentRoundStore) Fail(ctx context.Context, err error) ([]domain.Event, error) {
-	var events []domain.Event
-	if err := s.Upsert(ctx, func(m *domain.Round) *domain.Round {
-		m.Fail(err)
-		return m
-	}); err != nil {
-		return nil, fmt.Errorf("failed to update round to failed: %v", err)
-	}
-
-	round, err := s.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	events = append(events, round.Events()...)
-	return events, nil
-}

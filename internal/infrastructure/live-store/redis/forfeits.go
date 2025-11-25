@@ -188,6 +188,7 @@ func (s *forfeitTxsStore) Reset(ctx context.Context) error {
 		}); err == nil {
 			return nil
 		}
+		time.Sleep(s.retryDelay)
 	}
 	return fmt.Errorf("failed to reset forfeit txs after max number of retries: %v", err)
 }
@@ -286,7 +287,7 @@ func (s *forfeitTxsStore) GetConnectorsIndexes(
 ) (map[string]domain.Outpoint, error) {
 	idxBytes, err := s.rdb.Get(ctx, forfeitTxsStoreConnIdxKey).Bytes()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fet connector indexes: %v", err)
+		return nil, fmt.Errorf("failed to get connector indexes: %v", err)
 	}
 	connIndex := make(map[string]domain.Outpoint)
 	if err := json.Unmarshal(idxBytes, &connIndex); err != nil {

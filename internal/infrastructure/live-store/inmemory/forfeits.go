@@ -150,6 +150,9 @@ func (m *forfeitTxsStore) Pop(ctx context.Context) ([]string, error) {
 	return txs, nil
 }
 func (m *forfeitTxsStore) AllSigned(_ context.Context) (bool, error) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
 	for _, forfeit := range m.forfeitTxs {
 		if len(forfeit.Tx) == 0 {
 			return false, nil
