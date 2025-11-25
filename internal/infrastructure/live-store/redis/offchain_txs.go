@@ -56,7 +56,7 @@ func (s *offChainTxStore) Add(ctx context.Context, offchainTx domain.OffchainTx)
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, offChainTxsHashKey, offChainInputsSetKey); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)
@@ -101,7 +101,7 @@ func (s *offChainTxStore) Remove(ctx context.Context, arkTxid string) error {
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, offChainTxsHashKey, offChainInputsSetKey); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)

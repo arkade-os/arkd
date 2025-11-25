@@ -91,6 +91,10 @@ func (s *forfeitTxsStore) Init(
 		return fmt.Errorf("failed to marshal connector index: %v", err)
 	}
 
+	keys := []string{
+		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
+		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+	}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
@@ -103,7 +107,7 @@ func (s *forfeitTxsStore) Init(
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, keys...); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)
@@ -152,6 +156,10 @@ func (s *forfeitTxsStore) Sign(ctx context.Context, txs []string) error {
 		return err
 	}
 
+	keys := []string{
+		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
+		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+	}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
@@ -165,7 +173,7 @@ func (s *forfeitTxsStore) Sign(ctx context.Context, txs []string) error {
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, keys...); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)
@@ -175,17 +183,21 @@ func (s *forfeitTxsStore) Sign(ctx context.Context, txs []string) error {
 
 func (s *forfeitTxsStore) Reset(ctx context.Context) error {
 	var err error
+	keys := []string{
+		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
+		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+	}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.Del(ctx, forfeitTxsStoreTxsKey)
-				pipe.Del(ctx, forfeitTxsStoreConnsKey)
-				pipe.Del(ctx, forfeitTxsStoreVtxosKey)
-				pipe.Del(ctx, forfeitTxsStoreConnIdxKey)
+				pipe.Del(
+					ctx, forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
+					forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+				)
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, keys...); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)

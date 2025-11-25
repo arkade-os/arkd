@@ -70,7 +70,7 @@ func (s *treeSigningSessionsStore) New(
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, metaKey); err == nil {
 			break
 		}
 		time.Sleep(s.retryDelay)
@@ -168,7 +168,7 @@ func (s *treeSigningSessionsStore) Delete(ctx context.Context, roundId string) e
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, metaKey, noncesKey, sigsKey); err == nil {
 			break
 		}
 		time.Sleep(s.retryDelay)
@@ -210,7 +210,7 @@ func (s *treeSigningSessionsStore) AddNonces(
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, noncesKey); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)
@@ -234,7 +234,7 @@ func (s *treeSigningSessionsStore) AddSignatures(
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, sigsKey); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)

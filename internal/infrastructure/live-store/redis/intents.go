@@ -302,17 +302,20 @@ func (s *intentStore) DeleteAll(ctx context.Context) error {
 		}
 	}
 
+	keys := []string{
+		intentStoreIdsKey, intentStoreVtxosKey, intentStoreVtxosToRemoveKey, selectedIntentsKey,
+	}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.Del(ctx, intentStoreIdsKey)
-				pipe.Del(ctx, intentStoreVtxosKey)
-				pipe.Del(ctx, intentStoreVtxosToRemoveKey)
-				pipe.Del(ctx, selectedIntentsKey)
+				pipe.Del(
+					ctx, intentStoreIdsKey, intentStoreVtxosKey,
+					intentStoreVtxosToRemoveKey, selectedIntentsKey,
+				)
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, keys...); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)
@@ -330,13 +333,17 @@ func (s *intentStore) DeleteVtxos(ctx context.Context) error {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				if len(vtxosToRemove) > 0 {
-					pipe.SRem(ctx, intentStoreVtxosKey, vtxosToRemove)
+					members := make([]interface{}, len(vtxosToRemove))
+					for i, v := range vtxosToRemove {
+						members[i] = v
+					}
+					pipe.SRem(ctx, intentStoreVtxosKey, members...)
 				}
 				pipe.Del(ctx, intentStoreVtxosToRemoveKey)
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, intentStoreVtxosKey, intentStoreVtxosToRemoveKey); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)

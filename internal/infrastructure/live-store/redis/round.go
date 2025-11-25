@@ -57,7 +57,7 @@ func (s *currentRoundStore) Upsert(
 			})
 
 			return err
-		}); err == nil {
+		}, currentRoundKey); err == nil {
 			return nil
 		}
 		time.Sleep(s.retryDelay)
