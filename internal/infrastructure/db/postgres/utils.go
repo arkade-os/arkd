@@ -84,8 +84,9 @@ func createDB(ctx context.Context, dsn string) error {
 		return fmt.Errorf("cannot auto-create when database name is empty")
 	}
 
-	// Clear the path to connect to the default db.
-	parsedURL.Path = ""
+	// Set the path to the default "postgres" DB to be able to connect.
+	// This DB is created by default in PostgreSQL installations.
+	parsedURL.Path = "postgres"
 
 	// Encode the new URL (without the DB name) and connect as we need a new connection to create
 	// the DB.
