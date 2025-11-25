@@ -59,44 +59,43 @@ func (s *intentStore) Push(
 	ctx context.Context, intent domain.Intent,
 	boardingInputs []ports.BoardingInput, cosignerPubkeys []string,
 ) error {
-	exists, err := s.rdb.SIsMember(ctx, intentStoreIdsKey, intent.Id).Result()
-	if err != nil {
-		return fmt.Errorf("failed to check existence of intent: %v", err)
-	}
-	if exists {
-		return fmt.Errorf("duplicated intent %s", intent.Id)
-	}
-	// Check input duplicates directly in Redis set
-	for _, input := range intent.Inputs {
-		if input.IsNote() {
-			continue
-		}
-		key := input.Outpoint.String()
-		exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, key).Result()
-		if err != nil {
-			return fmt.Errorf(
-				"failed to check existence of intent input %s: %v", input.Outpoint, err,
-			)
-		}
-		if exists {
-			return fmt.Errorf(
-				"duplicated input, %s already registered by another intent", key,
-			)
-		}
-	}
-
-	// Check boarding inputs similarly if you store them
-
-	now := time.Now()
-	timedIntent := &ports.TimedIntent{
-		Intent:              intent,
-		BoardingInputs:      boardingInputs,
-		Timestamp:           now,
-		CosignersPublicKeys: cosignerPubkeys,
-	}
-
+	var err error
 	for range s.numOfRetries {
 		err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			exists, err := s.rdb.SIsMember(ctx, intentStoreIdsKey, intent.Id).Result()
+			if err != nil {
+				return fmt.Errorf("failed to check existence of intent: %v", err)
+			}
+			if exists {
+				return fmt.Errorf("duplicated intent %s", intent.Id)
+			}
+			// Check input duplicates directly in Redis set
+			for _, input := range intent.Inputs {
+				if input.IsNote() {
+					continue
+				}
+				key := input.Outpoint.String()
+				exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, key).Result()
+				if err != nil {
+					return fmt.Errorf(
+						"failed to check existence of intent input %s: %v", input.Outpoint, err,
+					)
+				}
+				if exists {
+					return fmt.Errorf(
+						"duplicated input, %s already registered by another intent", key,
+					)
+				}
+			}
+
+			now := time.Now()
+			timedIntent := &ports.TimedIntent{
+				Intent:              intent,
+				BoardingInputs:      boardingInputs,
+				Timestamp:           now,
+				CosignersPublicKeys: cosignerPubkeys,
+			}
+
 			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				if err := s.intents.SetPipe(ctx, pipe, intent.Id, timedIntent); err != nil {
 					return err
