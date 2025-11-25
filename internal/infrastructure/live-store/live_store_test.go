@@ -2,11 +2,11 @@ package livestore_test
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/stretchr/testify/require"
@@ -41,17 +42,26 @@ var (
 
 	offchainTxJSON = `{"Stage":{"Code":2,"Ended":false,"Failed":false},"StartingTimestamp":1749818677,"EndingTimestamp":0,"ArkTxid":"79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab","ArkTx":"cHNidP8BAJYDAAAAAeB4gUdsoDHu7o2F4IkLICEbEt0y9MejPi5mWzdZtxBBAAAAAAD/////A4gTAAAAAAAAIlEgcIbXKo3azJ5uBFHZITPvWD1nSKRya2MqlPJt+MgCrCR4zfUFAAAAACJRIHWUyazZlsz2Z0MXabtLI4spqe0ytz85GFwSHPdwqgpjAAAAAAAAAAAEUQJOcwAAAAAAAQErAOH1BQAAAAAiUSDTwlo9WBKfqLWlkkznHmITfQzQEU37+YWWyqn5B2dyGEEU+oyaCbRsXuhY4jloSwu3Ipx9OPH8BbPj7wTd/21OWk4MjR6TYePp/0T4p433ieP80aFTXXPgoCOHPjELdrL+AUDpuqwgR4YEuiemShPyiNdDm0AX1aj0sm1E5JUWApXGIahSpPpWhImz2GlO+PMJHdVNXEKXoDePj91v6H6PK1a0QRQ2ludJ8SU0fYLywKFzpgpu+hF9rsZUyqT3jBeUyP0PIwyNHpNh4+n/RPinjfeJ4/zRoVNdc+CgI4c+MQt2sv4BQInUzArzkE6X+bP/eCF7F1PzaedGuM4wtX5roc9fOZ1Ja0XTErh5GUWMdZUGaqIDBlbggnPZjidgCFpV1DlEry5CFcFQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wOlm8s7rZPsauycdJTy6UH8o1nvcz68gOYxt8V80njVkRSD6jJoJtGxe6FjiOWhLC7cinH048fwFs+PvBN3/bU5aTq0gNpbnSfElNH2C8sChc6YKbvoRfa7GVMqk94wXlMj9DyOswAd0YXB0cmVlcwIBwCgDAgBAsnUgNpbnSfElNH2C8sChc6YKbvoRfa7GVMqk94wXlMj9DyOsAcBEIPqMmgm0bF7oWOI5aEsLtyKcfTjx/AWz4+8E3f9tTlpOrSA2ludJ8SU0fYLywKFzpgpu+hF9rsZUyqT3jBeUyP0PI6wAAAAA","CheckpointTxs":{"4110b759375b662e3ea3c7f432dd121b21200b89e0858deeee31a06c478178e0":"cHNidP8BAGsDAAAAARrFJ/P3vwEZY75OHSqgWMz3RaeIrDt7pxWqEAXZwfz+AAAAAAD/////AgDh9QUAAAAAIlEg08JaPVgSn6i1pZJM5x5iE30M0BFN+/mFlsqp+QdnchgAAAAAAAAAAARRAk5zAAAAAAABASsA4fUFAAAAACJRIHWUyazZlsz2Z0MXabtLI4spqe0ytz85GFwSHPdwqgpjQRQ2ludJ8SU0fYLywKFzpgpu+hF9rsZUyqT3jBeUyP0PIwyNHpNh4+n/RPinjfeJ4/zRoVNdc+CgI4c+MQt2sv4BQCgwEdt3LF/ub7J1hnF3+kbMvbo0Wqt3VpGDsto8wiqy6KL6zHMxKYEZAn1z3SLCo7wKZFsWk1gdx65rINE5JM5CFcBQkpt0waBJVLeLS2A16XpeB4paDyjsltVHv+6azoA6wHYMhmDVZUYnxrCdnty+DMhKJTmw60ZDqTPzCAavjN5ERSD6jJoJtGxe6FjiOWhLC7cinH048fwFs+PvBN3/bU5aTq0gNpbnSfElNH2C8sChc6YKbvoRfa7GVMqk94wXlMj9DyOswAd0YXB0cmVlcwIBwCgDAgBAsnUg+oyaCbRsXuhY4jloSwu3Ipx9OPH8BbPj7wTd/21OWk6sAcBEIPqMmgm0bF7oWOI5aEsLtyKcfTjx/AWz4+8E3f9tTlpOrSA2ludJ8SU0fYLywKFzpgpu+hF9rsZUyqT3jBeUyP0PI6wAAAA="},"CommitmentTxids":{"4110b759375b662e3ea3c7f432dd121b21200b89e0858deeee31a06c478178e0":"2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96"},"RootCommitmentTxId":"2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96","ExpiryTimestamp":199,"FailReason":"","Version":0}`
 
-	h1 = sha256.Sum256([]byte("fdbc502adf42a40dc7c0b2d3b50b9c0b01f9c386dc9bef5233bc9f39acdf48ae"))
-	h2 = sha256.Sum256([]byte("340f30bc56d8de1364120aaf8734f684a28084bc9fbb17029584378d1422beff"))
+	intentId1 = "fdbc502adf42a40dc7c0b2d3b50b9c0b01f9c386dc9bef5233bc9f39acdf48ae"
+	intentId2 = "340f30bc56d8de1364120aaf8734f684a28084bc9fbb17029584378d1422beff"
+	intentId3 = "550f30bc56d8de1364120aaf8734f684a28084bc9fbb17029584378d1422beff"
+	intentId4 = "660f30bc56d8de1364120aaf8734f684a28084bc9fbb17029584378d1422beff"
+	intentId5 = "770f30bc56d8de1364120aaf8734f684a28084bc9fbb17029584378d1422beff"
+	h1        = sha256.Sum256([]byte(intentId1))
+	h2        = sha256.Sum256([]byte(intentId2))
+	h3        = sha256.Sum256([]byte(intentId3))
+	h4        = sha256.Sum256([]byte(intentId4))
+	h5        = sha256.Sum256([]byte(intentId5))
 
-	roundId           = "218767a7-bceb-4f79-90e7-ad07ddccf246"
-	uniqueSignersJSON = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":{},"039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":{}}`
+	uniqueSignersJSON = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":{},"039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":{},"037f2214791b94cd517ccd561e739ebb73cecacdc41b387beb460dda197c2b7c67":{}}`
 
 	n1 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"025232ea8243113a0cf3a70369f1ca785da06302268a9cab7d20864faf2b892b03234f9f4155bc2d8c4ee7c7e0989dc7a4a4d3a680f352ed05d1091188647c46c101","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"0379d69fa1c63ae8cf9026420fca3fc2728d20fcae5597bfeca6c63884feadcbb4028eb4eaa685ca3ee6fdbd949374a98a505c5c0774f8d410ece28c11572396819d"}`
 	n2 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"03489a9e200420f9ae1bb96731cf6d4ecdaa694d816abbbdaa671ac4786f9e79c6403f9361c16a0ad701eb0ee814d9d52928acb1624f38c3b3e89fa35acdb8c6e490","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"03707efe23bc97f17969a5d18c0ddf7223f38dab4b043dbe56a8a9e5b5dc709be3022627414c8c036aafc683ba00a3435b11fb6bda5b4a582e271c7deadfafe0abda"}`
+	n3 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"03489a9e200420f9ae1bb96731cf6d4ecdaa694d816abbbdaa671ac4786f9e79c6403f9361c16a0ad701eb0ee814d9d52928acb1624f38c3b3e89fa35acdb8c6e490","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"03707efe23bc97f17969a5d18c0ddf7223f38dab4b043dbe56a8a9e5b5dc709be3022627414c8c036aafc683ba00a3435b11fb6bda5b4a582e271c7deadfafe0abda"}`
 
 	s1 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"74df3c018f86c004e9ecc6bbfe58a958753579f5a5feb3a8ed8dc5c9d4dba5c2","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"2cf641ff3a26702fc0a01bc9fb500b6ca9e79bfd88a31f0569c4767203a75707"}`
 	s2 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"c1d480aff75d86460a6f8864782222d05d39b83e4c413c76280e52a09922fe15","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"89c6cbcab945d54f345513338278734c66f94d38016dc1c9842c8a7a2e32d829"}`
+	s3 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"c1d480aff75d86460a6f8864782222d05d39b83e4c413c76280e52a09922fe15","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"89c6cbcab945d54f345513338278734c66f94d38016dc1c9842c8a7a2e32d829"}`
 
 	validTx = map[domain.Outpoint]ports.ValidForfeitTx{
 		{Txid: "79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab", VOut: 0}: {
@@ -218,9 +228,19 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.False(t, allSigned)
 
-		// Sign
-		err = store.ForfeitTxs().Sign(ctx, []string{tx1, tx2, tx3, tx4})
-		require.NoError(t, err)
+		txs := []string{tx1, tx2, tx3, tx4}
+
+		// Concurrent Sign
+		var wg sync.WaitGroup
+		for _, tx := range txs {
+			wg.Add(1)
+			go func(txStr string) {
+				defer wg.Done()
+				err := store.ForfeitTxs().Sign(ctx, []string{txStr})
+				require.NoError(t, err)
+			}(tx)
+		}
+		wg.Wait()
 
 		// AllSigned
 		allSigned, err = store.ForfeitTxs().AllSigned(ctx)
@@ -245,6 +265,40 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 		err = store.ForfeitTxs().Reset(ctx)
 		require.NoError(t, err)
+
+		forfeitsLen, err = store.ForfeitTxs().Len(ctx)
+		require.NoError(t, err)
+		require.Zero(t, forfeitsLen)
+
+		// redo the signing process but with delete in the middle
+		err = store.ForfeitTxs().Init(ctx, connectors, intents)
+		require.NoError(t, err)
+
+		// all txs except the first
+		var wg2 sync.WaitGroup
+		for _, tx := range txs[1:] {
+			wg2.Add(1)
+			go func(txStr string) {
+				defer wg2.Done()
+				err := store.ForfeitTxs().Sign(ctx, []string{txStr})
+				require.NoError(t, err)
+			}(tx)
+		}
+		wg2.Wait()
+
+		err = store.ForfeitTxs().Reset(ctx)
+		require.NoError(t, err)
+
+		allSigned, err = store.ForfeitTxs().AllSigned(ctx)
+		require.NoError(t, err)
+		require.False(t, allSigned)
+
+		// sign after the session is deleted
+		require.Error(t, store.ForfeitTxs().Sign(ctx, []string{txs[0]}))
+
+		allSigned, err = store.ForfeitTxs().AllSigned(ctx)
+		require.NoError(t, err)
+		require.False(t, allSigned)
 
 		forfeitsLen, err = store.ForfeitTxs().Len(ctx)
 		require.NoError(t, err)
@@ -309,74 +363,94 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 	t.Run("ConfirmationSessionsStore", func(t *testing.T) {
 		ctx := t.Context()
-		hashes := [][32]byte{h1, h2}
+		hashes := [][32]byte{h1, h2, h3, h4, h5}
+		intentIds := []string{intentId1, intentId2, intentId3, intentId4, intentId5}
 
-		// Init
 		err := store.ConfirmationSessions().Init(ctx, hashes)
 		require.NoError(t, err)
 
-		// IsInit
-		require.True(t, store.ConfirmationSessions().Initialized(ctx))
-
-		doneCh := make(chan struct{})
 		sessionCompleteCh := store.ConfirmationSessions().SessionCompleted()
-		go func() {
-			<-sessionCompleteCh
-			doneCh <- struct{}{}
-		}()
 
-		// Confirm
-		go func() {
-			time.Sleep(1 * time.Second)
-			err := store.ConfirmationSessions().Confirm(
-				ctx, "fdbc502adf42a40dc7c0b2d3b50b9c0b01f9c386dc9bef5233bc9f39acdf48ae",
-			)
-			require.NoError(t, err)
-
-			err = store.ConfirmationSessions().Confirm(
-				ctx, "340f30bc56d8de1364120aaf8734f684a28084bc9fbb17029584378d1422beff",
-			)
-			require.NoError(t, err)
-		}()
+		var wg sync.WaitGroup
+		for _, intentId := range intentIds {
+			wg.Add(1)
+			go func(id string) {
+				defer wg.Done()
+				err := store.ConfirmationSessions().Confirm(ctx, id)
+				require.NoError(t, err)
+			}(intentId)
+		}
+		wg.Wait()
 
 		select {
 		case <-time.After(5 * time.Second):
 			require.Fail(t, "Confirmation session not completed")
-		case <-doneCh:
+		case <-sessionCompleteCh:
 		}
 
-		// Get
 		got, err := store.ConfirmationSessions().Get(ctx)
 		require.NoError(t, err)
-		require.Len(t, got.IntentsHashes, 2)
-		require.Equal(t, 2, got.NumIntents)
+		require.Len(t, got.IntentsHashes, 5)
+		require.Equal(t, 5, got.NumIntents)
+		require.Equal(t, 5, got.NumConfirmedIntents)
 
-		// Reset
+		for _, hash := range hashes {
+			confirmed, ok := got.IntentsHashes[hash]
+			require.True(t, ok)
+			require.True(t, confirmed)
+		}
+
 		err = store.ConfirmationSessions().Reset(ctx)
 		require.NoError(t, err)
 
-		// IsInit
-		require.False(t, store.ConfirmationSessions().Initialized(ctx))
+		// redo the confirmation process but with delete in the middle
+		err = store.ConfirmationSessions().Init(ctx, hashes)
+		require.NoError(t, err)
+
+		sessionCompleteCh = store.ConfirmationSessions().SessionCompleted()
+
+		// all confirmations except the first
+		var wg2 sync.WaitGroup
+		for _, intentId := range intentIds[1:] {
+			wg2.Add(1)
+			go func(id string) {
+				defer wg2.Done()
+				err := store.ConfirmationSessions().Confirm(ctx, id)
+				require.NoError(t, err)
+			}(intentId)
+		}
+		wg2.Wait()
+
+		err = store.ConfirmationSessions().Reset(ctx)
+		require.NoError(t, err)
+
+		// confirm after the session is deleted
+		require.Error(t, store.ConfirmationSessions().Confirm(ctx, intentIds[0]))
+
+		event, ok := <-sessionCompleteCh
+		require.False(t, ok)
+		require.Empty(t, event)
 	})
 
 	t.Run("TreeSigningSessionsStore", func(t *testing.T) {
 		ctx := t.Context()
 
+		roundId1 := uuid.New().String()
 		// New
 		var uniqueSigners map[string]struct{}
 		err := json.Unmarshal([]byte(uniqueSignersJSON), &uniqueSigners)
 		require.NoError(t, err)
-		err = store.TreeSigingSessions().New(ctx, roundId, uniqueSigners)
+		err = store.TreeSigingSessions().New(ctx, roundId1, uniqueSigners)
 		require.NoError(t, err)
 
 		// Get
-		sigSession, err := store.TreeSigingSessions().Get(ctx, roundId)
+		sigSession, err := store.TreeSigingSessions().Get(ctx, roundId1)
 		require.NoError(t, err)
 		require.NotNil(t, sigSession)
-		require.Equal(t, 2+1, sigSession.NbCosigners)
+		require.Equal(t, len(uniqueSigners)+1, sigSession.NbCosigners)
 
-		noncesCollectedCh := store.TreeSigingSessions().NoncesCollected(roundId)
-		signaturesCollectedCh := store.TreeSigingSessions().SignaturesCollected(roundId)
+		noncesCollectedCh := store.TreeSigingSessions().NoncesCollected(roundId1)
+		signaturesCollectedCh := store.TreeSigingSessions().SignaturesCollected(roundId1)
 		doneCh := make(chan struct{})
 		go func() {
 			<-noncesCollectedCh
@@ -384,50 +458,104 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			doneCh <- struct{}{}
 		}()
 
-		go func() {
-			ctx := context.Background()
-			pubkey1 := "021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096"
-			pubkey2 := "039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67"
-			// Collect nonces
-			var nonce1, nonce2 tree.TreeNonces
-			err := json.Unmarshal([]byte(n1), &nonce1)
-			require.NoError(t, err)
-			err = json.Unmarshal([]byte(n2), &nonce2)
-			require.NoError(t, err)
-			err = store.TreeSigingSessions().AddNonces(ctx, roundId, pubkey1, nonce1)
-			require.NoError(t, err)
-			err = store.TreeSigingSessions().AddNonces(ctx, roundId, pubkey2, nonce2)
-			require.NoError(t, err)
+		type signer struct {
+			pubkey string
+			nonce  string
+			sig    string
+		}
 
-			// Collect signatures
-			sig1 := make(tree.TreePartialSigs)
-			err = json.Unmarshal([]byte(s1), &sig1)
-			require.NoError(t, err)
-			sig2 := make(tree.TreePartialSigs)
-			err = json.Unmarshal([]byte(s2), &sig2)
-			require.NoError(t, err)
+		signers := []signer{
+			{
+				pubkey: "021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096",
+				nonce:  n1,
+				sig:    s1,
+			},
+			{
+				pubkey: "039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67",
+				nonce:  n2,
+				sig:    s2,
+			},
+			{
+				pubkey: "037f2214791b94cd517ccd561e739ebb73cecacdc41b387beb460dda197c2b7c67",
+				nonce:  n3,
+				sig:    s3,
+			},
+		}
 
-			err = store.TreeSigingSessions().AddSignatures(ctx, roundId, pubkey1, sig1)
+		doSubmitNonces := func(signer signer, roundId string) error {
+			nonces := make(tree.TreeNonces)
+			err := json.Unmarshal([]byte(signer.nonce), &nonces)
 			require.NoError(t, err)
+			return store.TreeSigingSessions().AddNonces(ctx, roundId, signer.pubkey, nonces)
+		}
 
-			err = store.TreeSigingSessions().AddSignatures(ctx, roundId, pubkey2, sig2)
+		doSubmitSigs := func(signer signer, roundId string) error {
+			sigs := make(tree.TreePartialSigs)
+			err := json.Unmarshal([]byte(signer.sig), &sigs)
 			require.NoError(t, err)
-		}()
+			return store.TreeSigingSessions().AddSignatures(ctx, roundId, signer.pubkey, sigs)
+		}
+
+		for _, signer := range signers {
+			go func() {
+				err := doSubmitNonces(signer, roundId1)
+				require.NoError(t, err)
+				err = doSubmitSigs(signer, roundId1)
+				require.NoError(t, err)
+			}()
+		}
 
 		select {
 		case <-time.After(5 * time.Second):
-			t.Fatal("timeout")
+			require.Fail(t, "signing session not completed")
 		case <-doneCh:
 		}
 
 		// Delete
-		err = store.TreeSigingSessions().Delete(ctx, roundId)
+		err = store.TreeSigingSessions().Delete(ctx, roundId1)
 		require.NoError(t, err)
 
 		// Get
-		sigSession, err = store.TreeSigingSessions().Get(ctx, roundId)
+		sigSession, err = store.TreeSigingSessions().Get(ctx, roundId1)
 		require.NoError(t, err)
 		require.Nil(t, sigSession)
+
+		roundId2 := uuid.New().String()
+
+		// redo the signing process but with delete in the middle
+		err = store.TreeSigingSessions().New(ctx, roundId2, uniqueSigners)
+		require.NoError(t, err)
+		noncesCollectedCh = store.TreeSigingSessions().NoncesCollected(roundId2)
+		signaturesCollectedCh = store.TreeSigingSessions().SignaturesCollected(roundId2)
+		doneCh = make(chan struct{})
+
+		// all signers except the first
+		var wg sync.WaitGroup
+		for _, signer := range signers[1:] {
+			wg.Go(func() {
+				err := doSubmitNonces(signer, roundId2)
+				require.NoError(t, err)
+				err = doSubmitSigs(signer, roundId2)
+				require.NoError(t, err)
+			})
+		}
+		wg.Wait()
+
+		err = store.TreeSigingSessions().Delete(ctx, roundId2)
+		require.NoError(t, err)
+
+		// submit nonces and signatures after the session is deleted
+		require.Error(t, doSubmitNonces(signers[0], roundId2))
+		require.Error(t, doSubmitSigs(signers[0], roundId2))
+
+		// channels should never return
+		event, ok := <-noncesCollectedCh
+		require.False(t, ok)
+		require.Empty(t, event)
+
+		event, ok = <-signaturesCollectedCh
+		require.False(t, ok)
+		require.Empty(t, event)
 	})
 
 	t.Run("BoardingInputsStore", func(t *testing.T) {
@@ -448,7 +576,75 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.Zero(t, numBoardingIns)
 
 		batchId := "fakeCommitmentTxid"
-		sigs := map[uint32]ports.SignedBoardingInput{
+		type signerSigs struct {
+			inputIndex uint32
+			sigs       map[uint32]ports.SignedBoardingInput
+		}
+
+		signers := []signerSigs{
+			{
+				inputIndex: 0,
+				sigs: map[uint32]ports.SignedBoardingInput{
+					0: {
+						Signatures: []*psbt.TaprootScriptSpendSig{
+							{
+								XOnlyPubKey: []byte{0},
+								LeafHash:    []byte{1},
+								Signature:   []byte{2},
+								SigHash:     txscript.SigHashAll,
+							},
+						},
+						LeafScript: &psbt.TaprootTapLeafScript{
+							ControlBlock: []byte{3},
+							Script:       []byte{4},
+							LeafVersion:  0,
+						},
+					},
+				},
+			},
+			{
+				inputIndex: 1,
+				sigs: map[uint32]ports.SignedBoardingInput{
+					1: {
+						Signatures: []*psbt.TaprootScriptSpendSig{
+							{
+								XOnlyPubKey: []byte{5},
+								LeafHash:    []byte{6},
+								Signature:   []byte{7},
+								SigHash:     txscript.SigHashAll,
+							},
+						},
+						LeafScript: &psbt.TaprootTapLeafScript{
+							ControlBlock: []byte{8},
+							Script:       []byte{9},
+							LeafVersion:  0,
+						},
+					},
+				},
+			},
+			{
+				inputIndex: 2,
+				sigs: map[uint32]ports.SignedBoardingInput{
+					2: {
+						Signatures: []*psbt.TaprootScriptSpendSig{
+							{
+								XOnlyPubKey: []byte{10},
+								LeafHash:    []byte{11},
+								Signature:   []byte{12},
+								SigHash:     txscript.SigHashAll,
+							},
+						},
+						LeafScript: &psbt.TaprootTapLeafScript{
+							ControlBlock: []byte{13},
+							Script:       []byte{14},
+							LeafVersion:  0,
+						},
+					},
+				},
+			},
+		}
+
+		expectedSigs := map[uint32]ports.SignedBoardingInput{
 			0: {
 				Signatures: []*psbt.TaprootScriptSpendSig{
 					{
@@ -479,72 +675,83 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 					LeafVersion:  0,
 				},
 			},
+			2: {
+				Signatures: []*psbt.TaprootScriptSpendSig{
+					{
+						XOnlyPubKey: []byte{10},
+						LeafHash:    []byte{11},
+						Signature:   []byte{12},
+						SigHash:     txscript.SigHashAll,
+					},
+				},
+				LeafScript: &psbt.TaprootTapLeafScript{
+					ControlBlock: []byte{13},
+					Script:       []byte{14},
+					LeafVersion:  0,
+				},
+			},
 		}
+
 		overWrittenSigs := map[uint32]ports.SignedBoardingInput{
 			0: {
 				Signatures: []*psbt.TaprootScriptSpendSig{
 					{
-						XOnlyPubKey: []byte{5},
-						LeafHash:    []byte{6},
-						Signature:   []byte{7},
+						XOnlyPubKey: []byte{99},
+						LeafHash:    []byte{99},
+						Signature:   []byte{99},
 						SigHash:     txscript.SigHashAll,
 					},
 				},
 				LeafScript: &psbt.TaprootTapLeafScript{
-					ControlBlock: []byte{8},
-					Script:       []byte{9},
-					LeafVersion:  0,
-				},
-			},
-			1: {
-				Signatures: []*psbt.TaprootScriptSpendSig{
-					{
-						XOnlyPubKey: []byte{0},
-						LeafHash:    []byte{1},
-						Signature:   []byte{2},
-						SigHash:     txscript.SigHashAll,
-					},
-				},
-				LeafScript: &psbt.TaprootTapLeafScript{
-					ControlBlock: []byte{3},
-					Script:       []byte{4},
+					ControlBlock: []byte{99},
+					Script:       []byte{99},
 					LeafVersion:  0,
 				},
 			},
 		}
-		gotSigs, err := store.BoardingInputs().GetSignatures(t.Context(), batchId)
+
+		gotSigs, err := store.BoardingInputs().GetSignatures(ctx, batchId)
 		require.NoError(t, err)
 		require.Empty(t, gotSigs)
 
-		err = store.BoardingInputs().AddSignatures(t.Context(), batchId, sigs)
-		require.NoError(t, err)
+		// multiple signers submit at the same time
+		var wg sync.WaitGroup
+		for _, signer := range signers {
+			wg.Add(1)
+			go func(signer signerSigs) {
+				defer wg.Done()
+				err := store.BoardingInputs().AddSignatures(ctx, batchId, signer.sigs)
+				require.NoError(t, err)
+			}(signer)
+		}
+		wg.Wait()
 
-		gotSigs, err = store.BoardingInputs().GetSignatures(t.Context(), batchId)
+		// verify all signatures were collected correctly
+		gotSigs, err = store.BoardingInputs().GetSignatures(ctx, batchId)
 		require.NoError(t, err)
 		require.NotEmpty(t, gotSigs)
-		require.NoError(t, sigsMatch(sigs, gotSigs))
+		require.NoError(t, sigsMatch(expectedSigs, gotSigs))
 
-		// Make sure overwriting is disabled.
-		err = store.BoardingInputs().AddSignatures(t.Context(), batchId, overWrittenSigs)
-		require.NoError(t, err)
+		// try to overwrite concurrently
+		var overwriteWg sync.WaitGroup
+		for range 3 {
+			overwriteWg.Go(func() {
+				err := store.BoardingInputs().AddSignatures(ctx, batchId, overWrittenSigs)
+				require.NoError(t, err)
+			})
+		}
+		overwriteWg.Wait()
 
-		gotSigs, err = store.BoardingInputs().GetSignatures(t.Context(), batchId)
+		// verify original signatures are still there (not overwritten)
+		gotSigs, err = store.BoardingInputs().GetSignatures(ctx, batchId)
 		require.NoError(t, err)
 		require.NotEmpty(t, gotSigs)
-		require.NoError(t, sigsMatch(sigs, gotSigs))
+		require.NoError(t, sigsMatch(expectedSigs, gotSigs))
 
-		err = store.BoardingInputs().DeleteSignatures(t.Context(), batchId)
+		err = store.BoardingInputs().DeleteSignatures(ctx, batchId)
 		require.NoError(t, err)
 
-		gotSigs, err = store.BoardingInputs().GetSignatures(t.Context(), batchId)
-		require.NoError(t, err)
-		require.Empty(t, gotSigs)
-
-		// Repeat to make sure nothing breaks if cache is already empty
-		err = store.BoardingInputs().DeleteSignatures(t.Context(), batchId)
-		require.NoError(t, err)
-
-		gotSigs, err = store.BoardingInputs().GetSignatures(t.Context(), batchId)
+		gotSigs, err = store.BoardingInputs().GetSignatures(ctx, batchId)
 		require.NoError(t, err)
 		require.Empty(t, gotSigs)
 	})

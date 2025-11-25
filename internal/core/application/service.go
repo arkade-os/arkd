@@ -2803,12 +2803,14 @@ func (s *service) startFinalization(
 			// ban all the scripts that didn't submitted their nonces
 			go s.banNoncesCollectionTimeout(ctx, roundId, signingSession, registeredIntents)
 			return
-		case <-s.cache.TreeSigingSessions().NoncesCollected(roundId):
-			signingSession, _ := s.cache.TreeSigingSessions().Get(ctx, roundId)
-			for pubkey, nonce := range signingSession.Nonces {
-				buf, _ := hex.DecodeString(pubkey)
-				pk, _ := btcec.ParsePubKey(buf)
-				coordinator.AddNonce(pk, nonce)
+		case _, ok := <-s.cache.TreeSigingSessions().NoncesCollected(roundId):
+			if ok {
+				signingSession, _ := s.cache.TreeSigingSessions().Get(ctx, roundId)
+				for pubkey, nonce := range signingSession.Nonces {
+					buf, _ := hex.DecodeString(pubkey)
+					pk, _ := btcec.ParsePubKey(buf)
+					coordinator.AddNonce(pk, nonce)
+				}
 			}
 		}
 
@@ -2870,40 +2872,45 @@ func (s *service) startFinalization(
 			// ban all the scripts that didn't submitted their signatures
 			go s.banSignaturesCollectionTimeout(ctx, roundId, signingSession, registeredIntents)
 			return
-		case <-s.cache.TreeSigingSessions().SignaturesCollected(roundId):
-			signingSession, _ := s.cache.TreeSigingSessions().Get(ctx, roundId)
-			cosignersToBan := make(map[string]domain.Crime)
+		case _, ok := <-s.cache.TreeSigingSessions().SignaturesCollected(roundId):
+			if ok {
+				signingSession, _ := s.cache.TreeSigingSessions().Get(ctx, roundId)
+				cosignersToBan := make(map[string]domain.Crime)
 
-			for pubkey, sig := range signingSession.Signatures {
-				buf, _ := hex.DecodeString(pubkey)
-				pk, _ := btcec.ParsePubKey(buf)
-				shouldBan, err := coordinator.AddSignatures(pk, sig)
-				if err != nil && !shouldBan {
-					// an unexpected error occurred during the signature validation, batch fails
-					round.Fail(errors.INTERNAL_ERROR.New("failed to validate signatures: %s", err))
+				for pubkey, sig := range signingSession.Signatures {
+					buf, _ := hex.DecodeString(pubkey)
+					pk, _ := btcec.ParsePubKey(buf)
+					shouldBan, err := coordinator.AddSignatures(pk, sig)
+					if err != nil && !shouldBan {
+						// an unexpected error occurred during the signature validation, batch fails
+						round.Fail(
+							errors.INTERNAL_ERROR.New("failed to validate signatures: %s", err),
+						)
+						return
+					}
+
+					if shouldBan {
+						reason := fmt.Sprintf("invalid signature for cosigner pubkey %s", pubkey)
+						if err != nil {
+							reason = err.Error()
+						}
+
+						cosignersToBan[pubkey] = domain.Crime{
+							Type:    domain.CrimeTypeMusig2InvalidSignature,
+							RoundID: roundId,
+							Reason:  reason,
+						}
+					}
+
+				}
+
+				// if some cosigners have to be banned, it means invalid signatures occured
+				// the round fails and those cosigners are banned
+				if len(cosignersToBan) > 0 {
+					round.Fail(errors.INTERNAL_ERROR.New("some musig2 signatures are invalid"))
+					go s.banCosignerInputs(ctx, cosignersToBan, registeredIntents)
 					return
 				}
-
-				if shouldBan {
-					reason := fmt.Sprintf("invalid signature for cosigner pubkey %s", pubkey)
-					if err != nil {
-						reason = err.Error()
-					}
-
-					cosignersToBan[pubkey] = domain.Crime{
-						Type:    domain.CrimeTypeMusig2InvalidSignature,
-						RoundID: roundId,
-						Reason:  reason,
-					}
-				}
-			}
-
-			// if some cosigners have to be banned, it means invalid signatures occured
-			// the round fails and those cosigners are banned
-			if len(cosignersToBan) > 0 {
-				round.Fail(errors.INTERNAL_ERROR.New("some musig2 signatures are invalid"))
-				go s.banCosignerInputs(ctx, cosignersToBan, registeredIntents)
-				return
 			}
 		}
 

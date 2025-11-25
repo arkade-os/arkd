@@ -34,6 +34,7 @@ func (c *confirmationSessionsStore) Init(_ context.Context, intentIDsHashes [][3
 		hashes[hash] = false
 	}
 
+	c.sessionCompleteCh = make(chan struct{})
 	c.intentsHashes = hashes
 	c.numIntents = len(intentIDsHashes)
 	c.initialized = true
@@ -57,10 +58,9 @@ func (c *confirmationSessionsStore) Confirm(_ context.Context, intentId string) 
 	c.intentsHashes[hash] = true
 
 	if c.numConfirmedIntents == c.numIntents {
-		select {
-		case c.sessionCompleteCh <- struct{}{}:
-		default:
-		}
+		go func() {
+			c.sessionCompleteCh <- struct{}{}
+		}()
 	}
 
 	return nil
@@ -81,6 +81,7 @@ func (c *confirmationSessionsStore) Reset(_ context.Context) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	close(c.sessionCompleteCh)
 	c.intentsHashes = make(map[[32]byte]bool)
 	c.numIntents = 0
 	c.numConfirmedIntents = 0

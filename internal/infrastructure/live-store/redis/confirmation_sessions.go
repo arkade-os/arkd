@@ -110,15 +110,14 @@ func (s *confirmationSessionsStore) Confirm(ctx context.Context, intentId string
 		return nil
 	}
 
-	numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return fmt.Errorf("failed to get number of confirmed intents: %v", err)
-	}
-
 	keys := []string{confirmationIntentsKey, confirmationNumConfirmedKey}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			numConfirmed, err := s.rdb.Get(ctx, confirmationNumConfirmedKey).Int()
+			if err != nil && !errors.Is(err, redis.Nil) {
+				return fmt.Errorf("failed to get number of confirmed intents: %v", err)
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.HSet(ctx, confirmationIntentsKey, hashKey, 1)
 				pipe.Set(ctx, confirmationNumConfirmedKey, numConfirmed+1, 0)
 
@@ -214,6 +213,7 @@ func (s *confirmationSessionsStore) watchSessionCompletion(ctx context.Context) 
 	var chOnce sync.Once
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
+	defer close(s.sessionCompleteCh)
 
 	for {
 		select {

@@ -241,6 +241,11 @@ func (s *forfeitTxsStore) AllSigned(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
+	if len(hash) == 0 {
+		return false, nil
+	}
+
 	for _, forfeitJSON := range hash {
 		if len(forfeitJSON) == 0 {
 			return false, nil

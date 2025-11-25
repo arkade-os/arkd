@@ -197,6 +197,10 @@ func (s *treeSigningSessionsStore) Delete(ctx context.Context, roundId string) e
 func (s *treeSigningSessionsStore) AddNonces(
 	ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces,
 ) error {
+	if err := s.checkSessionExists(ctx, roundId); err != nil {
+		return err
+	}
+
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
 	val, err := json.Marshal(nonces)
 	if err != nil {
@@ -221,6 +225,10 @@ func (s *treeSigningSessionsStore) AddNonces(
 func (s *treeSigningSessionsStore) AddSignatures(
 	ctx context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs,
 ) error {
+	if err := s.checkSessionExists(ctx, roundId); err != nil {
+		return err
+	}
+
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
 	val, err := json.Marshal(sigs)
 	if err != nil {
@@ -354,4 +362,17 @@ func (s *treeSigningSessionsStore) watchSigsCollected(ctx context.Context, round
 			}
 		}
 	}
+}
+
+func (s *treeSigningSessionsStore) checkSessionExists(ctx context.Context, roundId string) error {
+	// check if metadata exists
+	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
+	meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
+	if err != nil {
+		return err
+	}
+	if len(meta) == 0 {
+		return fmt.Errorf("signing session not found for round %s", roundId)
+	}
+	return nil
 }
