@@ -1106,9 +1106,12 @@ func (s *service) FinalizeOffchainTx(
 
 	offchainTx, err := s.cache.OffchainTxs().Get(ctx, txid)
 	if err != nil {
-		log.WithError(err).Error("failed to get offchain tx from cache")
-		return errors.INTERNAL_ERROR.New("something went wrong").
-			WithMetadata(map[string]any{"txid": txid})
+		offchainTx, err = s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
+		if err != nil {
+			log.WithError(err).Error("failed to get offchain tx from storage")
+			return errors.INTERNAL_ERROR.New("something went wrong").
+				WithMetadata(map[string]any{"txid": txid})
+		}
 	}
 	if offchainTx == nil {
 		return errors.TX_NOT_FOUND.New("offchain tx %s not found", txid).
