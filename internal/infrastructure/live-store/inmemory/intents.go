@@ -3,6 +3,7 @@ package inmemorylivestore
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -137,7 +138,7 @@ func (m *intentStore) Pop(_ context.Context, num int64) ([]ports.TimedIntent, er
 func (m *intentStore) GetSelectedIntents(_ context.Context) ([]ports.TimedIntent, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	return m.selectedIntents, nil
+	return slices.Clone(m.selectedIntents), nil
 }
 
 func (m *intentStore) Update(

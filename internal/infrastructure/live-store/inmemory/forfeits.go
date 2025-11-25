@@ -3,6 +3,7 @@ package inmemorylivestore
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -189,5 +190,5 @@ func (m *forfeitTxsStore) GetConnectorsIndexes(
 ) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	return m.connectorsIndex, nil
+	return maps.Clone(m.connectorsIndex), nil
 }

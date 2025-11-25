@@ -37,7 +37,7 @@ func (b *boardingInputsStore) Set(ctx context.Context, numOfInputs int) error {
 				return nil
 			})
 			return err
-		}); err == nil {
+		}, boardingInputsKey); err == nil {
 			return nil
 		}
 		time.Sleep(b.retryDelay)
@@ -152,10 +152,13 @@ func newSigsDTO(in ports.SignedBoardingInput) sigsDTO {
 			SigHash:     uint32(s.SigHash),
 		})
 	}
-	leafScript := leafScriptDTO{
-		ControlBlock: hex.EncodeToString(in.LeafScript.ControlBlock),
-		Script:       hex.EncodeToString(in.LeafScript.Script),
-		LeafVersion:  uint32(in.LeafScript.LeafVersion),
+	var leafScript leafScriptDTO
+	if in.LeafScript != nil {
+		leafScript = leafScriptDTO{
+			ControlBlock: hex.EncodeToString(in.LeafScript.ControlBlock),
+			Script:       hex.EncodeToString(in.LeafScript.Script),
+			LeafVersion:  uint32(in.LeafScript.LeafVersion),
+		}
 	}
 	return sigsDTO{
 		Signatures: sigs,

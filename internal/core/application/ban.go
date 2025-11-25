@@ -153,6 +153,7 @@ func (s *service) banForfeitCollectionTimeout(
 	unsignedVtxoKeys, err := s.cache.ForfeitTxs().GetUnsignedInputs(ctx)
 	if err != nil {
 		log.WithError(err).Warn("failed to get unsigned inputs from cache")
+		return
 	}
 	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, unsignedVtxoKeys)
 	if err != nil {

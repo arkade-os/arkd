@@ -2863,11 +2863,14 @@ func (s *service) startFinalization(
 		select {
 		case <-time.After(thirdOfRemainingDuration):
 			signingSession, _ := s.cache.TreeSigingSessions().Get(ctx, roundId)
-			round.Fail(errors.SIGNING_SESSION_TIMED_OUT.New(
-				"musig2 signing session timed out (signatures collection), "+
-					"collected %d/%d signatures",
-				len(signingSession.Signatures), len(uniqueSignerPubkeys),
-			))
+			msg := "musig2 signing session timed out (signatures collection)"
+			if signingSession != nil {
+				msg = fmt.Sprintf(
+					"%s, collected %d/%d signatures", msg,
+					len(signingSession.Signatures), len(uniqueSignerPubkeys),
+				)
+			}
+			round.Fail(errors.SIGNING_SESSION_TIMED_OUT.New("%s", msg))
 
 			// ban all the scripts that didn't submitted their signatures
 			go s.banSignaturesCollectionTimeout(ctx, roundId, signingSession, registeredIntents)
