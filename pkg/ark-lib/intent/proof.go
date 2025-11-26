@@ -160,28 +160,13 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 
 // GetOutpoints returns the list of inputs proving ownership of coins
 // the first input is the toSpend tx, we ignore it
-func (p Proof) GetOutpoints() []IntentOutpoint {
+func (p Proof) GetOutpoints() []wire.OutPoint {
 	if len(p.UnsignedTx.TxIn) <= 1 {
 		return nil
 	}
-	outpoints := make([]IntentOutpoint, 0, len(p.UnsignedTx.TxIn)-1)
-	for i, input := range p.UnsignedTx.TxIn[1:] {
-		sealsOutputs, err := txutils.GetArkPsbtFields(&p.Packet, i+1, txutils.AssetSealVtxoField)
-		if err != nil || len(sealsOutputs) == 0 {
-			outpoints = append(outpoints, IntentOutpoint{
-				OutPoint: input.PreviousOutPoint,
-				IsSeal:   false,
-			})
-			continue
-		}
-		isSeal := sealsOutputs[0]
-		if isSeal {
-			outpoints = append(outpoints, IntentOutpoint{
-				OutPoint: input.PreviousOutPoint,
-				IsSeal:   true,
-			})
-			continue
-		}
+	outpoints := make([]wire.OutPoint, 0, len(p.UnsignedTx.TxIn)-1)
+	for _, input := range p.UnsignedTx.TxIn[1:] {
+		outpoints = append(outpoints, input.PreviousOutPoint)
 	}
 	return outpoints
 }
@@ -268,14 +253,6 @@ func buildToSignTx(
 		}
 
 		if err := updater.AddInSighashType(txscript.SigHashAll, i+1); err != nil {
-			return nil, err
-		}
-	}
-
-	for i, input := range inputs {
-		if err := txutils.SetArkPsbtField(
-			toSign, i+1, txutils.AssetSealVtxoField, input.IsSeal,
-		); err != nil {
 			return nil, err
 		}
 	}

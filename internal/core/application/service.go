@@ -1241,6 +1241,8 @@ func (s *service) RegisterIntent(
 	boardingUtxos := make([]boardingIntentInput, 0)
 
 	outpoints := proof.GetOutpoints()
+
+	log.Printf("these are the outpoints %+v", outpoints)
 	if len(outpoints) == 0 {
 		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
@@ -1305,7 +1307,7 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	seenOutpoints := make(map[intent.IntentOutpoint]struct{})
+	seenOutpoints := make(map[wire.OutPoint]struct{})
 
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
@@ -1350,6 +1352,14 @@ func (s *service) RegisterIntent(
 		taptreeFields, _ := txutils.GetArkPsbtFields(
 			&proof.Packet, i+1, txutils.VtxoTaprootTreeField,
 		)
+
+		sealsOutputs, err := txutils.GetArkPsbtFields(&proof.Packet, i+1, txutils.AssetSealVtxoField)
+		if err != nil {
+			return "", errors.INVALID_PSBT_INPUT.New(
+				"failed to get asset seal field for input %d: %w", i+1, err,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
 		tapscripts := make([]string, 0)
 		if len(taptreeFields) > 0 {
 			tapscripts = taptreeFields[0]
@@ -1394,8 +1404,9 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
+		isSeal := sealsOutputs[0]
 		// check if seal and fetch txID
-		if outpoint.IsSeal {
+		if isSeal {
 			log.Printf("seal found here")
 			virtualTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, outpoint.Hash.String())
 			if err != nil {
@@ -1524,7 +1535,7 @@ func (s *service) RegisterIntent(
 					})
 			}
 			if len(tapscripts) == 0 {
-				return "", errors.INVALID_PSBT_INPUT.New("missing taptree for input %d", outpoint.OutPoint).
+				return "", errors.INVALID_PSBT_INPUT.New("missing taptree for input %d", outpoint).
 					WithMetadata(errors.InputMetadata{
 						Txid:       proofTxid,
 						InputIndex: int(outpoint.Index),
