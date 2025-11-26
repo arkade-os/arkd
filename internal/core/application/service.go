@@ -1305,7 +1305,7 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	seenOutpoints := make(map[wire.OutPoint]struct{})
+	seenOutpoints := make(map[intent.IntentOutpoint]struct{})
 
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
@@ -1361,6 +1361,7 @@ func (s *service) RegisterIntent(
 		)
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
+
 		if err != nil || len(vtxosResult) == 0 {
 			// reject if intent specifies onchain outputs and boarding inputs
 			if len(message.OnchainOutputIndexes) > 0 {
@@ -1393,6 +1394,51 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
+		// check if seal and fetch txID
+		if outpoint.IsSeal {
+			log.Printf("seal found here")
+			virtualTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, outpoint.Hash.String())
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"failed to fetch virtual tx for seal input %s: %w",
+					outpoint.String(), err,
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+
+			if virtualTx == nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"virtual tx not found for seal input %s",
+					outpoint.String(),
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+
+			decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTx.ArkTx), true)
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"failed to decode ark tx for seal input %s: %w",
+					outpoint.String(), err,
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+
+			for _, output := range decodedArkTx.UnsignedTx.TxOut {
+				if asset.IsAsset(output.PkScript) {
+					log.Println("this is where the asset is included")
+					vtxo.Asset = output.PkScript
+					break
+				}
+			}
+
+		}
+
 		if err := s.checkIfBanned(ctx, vtxo); err != nil {
 			return "", errors.VTXO_BANNED.Wrap(err).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
@@ -1478,7 +1524,7 @@ func (s *service) RegisterIntent(
 					})
 			}
 			if len(tapscripts) == 0 {
-				return "", errors.INVALID_PSBT_INPUT.New("missing taptree for input %d", outpoint).
+				return "", errors.INVALID_PSBT_INPUT.New("missing taptree for input %d", outpoint.OutPoint).
 					WithMetadata(errors.InputMetadata{
 						Txid:       proofTxid,
 						InputIndex: int(outpoint.Index),
@@ -1625,6 +1671,15 @@ func (s *service) RegisterIntent(
 
 			hasOffChainReceiver = true
 			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
+		}
+
+		// Verify if asset outputs exist for this output
+		for _, assetOutput := range message.AssetOutputIndexes {
+			if assetOutput.AssetOutputIndex == outputIndex {
+				rcv.AssetAmount = assetOutput.Amount
+				rcv.AssetId = assetOutput.AssetId
+
+			}
 		}
 
 		receivers = append(receivers, rcv)

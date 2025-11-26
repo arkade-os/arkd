@@ -87,6 +87,9 @@ func (i Intent) validate(ignoreOuts bool) error {
 
 type Receiver struct {
 	Amount         uint64
+	AssetAmount    uint64 // asset output amount
+	AssetId        string // asset output id
+	AssetTeleport  string // asset teleport hash
 	OnchainAddress string // onchain
 	PubKey         string // offchain
 }
