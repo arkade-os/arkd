@@ -45,6 +45,7 @@ type Input struct {
 	OutPoint    *wire.OutPoint
 	Sequence    uint32
 	WitnessUtxo *wire.TxOut
+	IsSeal      bool
 }
 
 // Verify takes an encoded b64 proof tx and a message to validate the proof
