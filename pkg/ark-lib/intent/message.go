@@ -25,6 +25,8 @@ type RegisterMessage struct {
 	// OnchainOutputIndexes specifies what are the outputs in the proof tx
 	// that should be considered as onchain by the Ark operator
 	OnchainOutputIndexes []int `json:"onchain_output_indexes"`
+	// AssetOUtputIndexes specifies the assets outputs in the proof tx with the asset Index and Teleport Hash
+	AssetOutputIndexes []AssetOutput `json:"asset_output_indexes"`
 	// ValidAt is the timestamp (in seconds) at which the proof should be considered valid
 	// if set to 0, the proof will be considered valid indefinitely or until ExpireAt is reached
 	ValidAt int64 `json:"valid_at"`
@@ -35,6 +37,13 @@ type RegisterMessage struct {
 	// if the outputs are not registered in the proof or all the outputs are onchain, this field is not required
 	// it is required only if one of the outputs is offchain
 	CosignersPublicKeys []string `json:"cosigners_public_keys"`
+}
+
+type AssetOutput struct {
+	AssetId          string `json:"asset_id"`
+	TeleportHash     string `json:"teleport_hash"`
+	Amount           uint64 `json:"amount"`
+	AssetOutputIndex int    `json:"asset_output_index"`
 }
 
 func (m RegisterMessage) Encode() (string, error) {
