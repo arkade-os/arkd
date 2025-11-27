@@ -126,11 +126,6 @@ func (s *sweeper) start(ctx context.Context) error {
 		return err
 	}
 
-	network, err := s.wallet.GetNetwork(ctx)
-	if err != nil {
-		return err
-	}
-
 	go func() {
 		if len(sweepableUnrolledVtxos) <= 0 {
 			return
@@ -184,7 +179,7 @@ func (s *sweeper) start(ctx context.Context) error {
 			// asynchronously wait for the tx to be confirmed
 			go func() {
 				blockHeight, blockTime := waitForConfirmation(
-					ctx, checkpointTxid, s.wallet, *network,
+					ctx, checkpointTxid, s.wallet,
 				)
 
 				if err := s.scheduleCheckpointSweep(
@@ -334,6 +329,9 @@ func (s *sweeper) scheduleBatchSweep(
 		log.Debugf("sweeper: batch %s has empty vtxo tree, skip scheduling sweep", commitmentTxid)
 		return nil
 	}
+
+	// schedule AFTER the batch commitment tx is confirmed
+	_, _ = waitForConfirmation(context.Background(), commitmentTxid, s.wallet)
 
 	if err := s.scheduleTask(sweeperTask{
 		execute: s.createBatchSweepTask(commitmentTxid, vtxoTree),

@@ -430,8 +430,13 @@ func waitForConfirmation(
 	ctx context.Context,
 	txid string,
 	wallet ports.WalletService,
-	network arklib.Network,
 ) (blockheight int64, blocktime int64) {
+	network, err := wallet.GetNetwork(ctx)
+	if err != nil {
+		log.WithError(err).Error("failed to get network, cannot wait for confirmation")
+		return
+	}
+
 	tickerInterval := mainnetTickerInterval
 	if network.Name == arklib.BitcoinRegTest.Name {
 		tickerInterval = regtestTickerInterval
