@@ -450,6 +450,16 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 			return nil
 		}
 
+		scheduleForSubTree := func(txid string, tree *tree.TxTree) {
+			if err := s.scheduleBatchSweep(txid, tree); err != nil {
+				log.WithError(err).Errorf(
+					"failed to schedule sweep for vtxo tree %s of batch %s",
+					tree.Root.UnsignedTx.TxID(), commitmentTxid,
+				)
+				return
+			}
+		}
+
 		for expiresAt, inputs := range batchOutputs {
 			// if the batch outputs are not expired, schedule a sweep task for it
 			if s.scheduler.AfterNow(expiresAt) {
@@ -460,14 +470,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 				}
 
 				for _, subTree := range subtrees {
-					if err := s.scheduleBatchSweep(commitmentTxid, subTree); err != nil {
-						log.WithError(err).Errorf(
-							"failed to schedule sweep for vtxo tree %s of batch %s",
-							subTree.Root.UnsignedTx.TxID(), commitmentTxid,
-						)
-						continue
-					}
+					go scheduleForSubTree(commitmentTxid, subTree)
 				}
+
 				continue
 			}
 
