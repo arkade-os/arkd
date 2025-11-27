@@ -334,19 +334,11 @@ func (s *sweeper) scheduleBatchSweep(commitmentTxid string, vtxoTree *tree.TxTre
 		return err
 	}
 
-	expirationTimestamp := s.scheduler.AddNow(int64(vtxoTreeExpiry.Value))
-	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
-		log.WithError(err).Warnf(
-			"failed to update vtxo tree expiration time for batch %s", commitmentTxid,
-		)
-	}
-
 	// schedule AFTER the root input is confirmed
 	rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
 	waitForConfirmation(context.Background(), rootInput, s.wallet)
 
-	// update the expiration timestamp with a more accurate value according to tx confirmation
-	expirationTimestamp = s.scheduler.AddNow(int64(vtxoTreeExpiry.Value))
+	expirationTimestamp := s.scheduler.AddNow(int64(vtxoTreeExpiry.Value))
 
 	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
 		log.WithError(err).Warnf(
