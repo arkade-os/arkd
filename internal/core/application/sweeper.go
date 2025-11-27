@@ -41,6 +41,7 @@ type sweeper struct {
 	locker *sync.Mutex
 	// TODO move the scheduled task map to LiveStore port
 	scheduledTasks map[string]struct{}
+	ctx            context.Context
 }
 
 func newSweeper(
@@ -49,13 +50,15 @@ func newSweeper(
 ) *sweeper {
 	return &sweeper{
 		wallet, repoManager, builder, scheduler,
-		noteUriPrefix, &sync.Mutex{}, make(map[string]struct{}),
+		noteUriPrefix, &sync.Mutex{}, make(map[string]struct{}), nil,
 	}
 }
 
 func (s *sweeper) start(ctx context.Context) error {
 	s.scheduledTasks = make(map[string]struct{})
 	s.scheduler.Start()
+
+	s.ctx = ctx
 
 	sweepableBatches, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
 	if err != nil {
@@ -576,6 +579,11 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 			err = nil
 			// retry until the tx is broadcasted or the error is not BIP68 final
 			for len(txid) == 0 && (err == nil || errors.Is(err, ports.ErrNonFinalBIP68)) {
+				select {
+				case <-s.ctx.Done():
+					return nil
+				default:
+				}
 				if err != nil {
 					log.Debug("sweeper: sweep tx not BIP68 final, retrying in 5 seconds")
 					time.Sleep(5 * time.Second)
