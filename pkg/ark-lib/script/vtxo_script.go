@@ -34,6 +34,37 @@ func NewDefaultVtxoScript(
 	}
 }
 
+func NewTeleportVtxoScript(
+	owner, signer *btcec.PublicKey, teleportPreimageHash []byte, exitDelay arklib.RelativeLocktime,
+) *TapscriptsVtxoScript {
+
+	preimageCondition, _ := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_HASH160).
+		AddData(teleportPreimageHash).
+		AddOp(txscript.OP_EQUAL).
+		Script()
+
+	claimConditionClosure := &ConditionMultisigClosure{
+		Condition: preimageCondition,
+		MultisigClosure: MultisigClosure{
+			PubKeys: []*btcec.PublicKey{owner, signer},
+		},
+	}
+
+	unilateralDelayCLosure := &CSVMultisigClosure{
+		MultisigClosure: MultisigClosure{PubKeys: []*btcec.PublicKey{owner}},
+		Locktime:        exitDelay,
+	}
+
+	return &TapscriptsVtxoScript{
+		[]Closure{
+			claimConditionClosure,
+			unilateralDelayCLosure,
+		},
+	}
+
+}
+
 func ParseVtxoScript(scripts []string) (VtxoScript, error) {
 	if len(scripts) == 0 {
 		return nil, fmt.Errorf("empty tapscripts array")
