@@ -358,12 +358,6 @@ func (s *sweeper) scheduleBatchSweep(commitmentTxid string, vtxoTree *tree.TxTre
 		Debugf("sweeper: scheduled sweep for batch %s at %s",
 			commitmentTxid, fancyTime(expirationTimestamp, s.scheduler.Unit()))
 
-	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
-		log.WithError(err).Warnf(
-			"failed to update vtxo tree expiration time for batch %s", commitmentTxid,
-		)
-	}
-
 	return nil
 }
 
