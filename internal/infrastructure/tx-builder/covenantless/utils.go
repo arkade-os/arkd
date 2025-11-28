@@ -1,11 +1,13 @@
 package txbuilder
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"log"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -45,7 +47,7 @@ func getOnchainOutputs(
 }
 
 func getOutputVtxosLeaves(
-	intents []domain.Intent, cosignersPublicKeys [][]string,
+	intents []domain.Intent, forfeitPubkey *btcec.PublicKey, signingPubkey *btcec.PublicKey, unilateralExitDelay arklib.RelativeLocktime, cosignersPublicKeys [][]string,
 ) ([]tree.Leaf, error) {
 	if len(cosignersPublicKeys) != len(intents) {
 		return nil, fmt.Errorf(
@@ -65,9 +67,34 @@ func getOutputVtxosLeaves(
 						return nil, fmt.Errorf("failed to decode pubkey: %s", err)
 					}
 
-					pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+					// reconstruct the asset teleport pubkey and ensure they match
+					hash, err := hex.DecodeString(receiver.AssetTeleportHash)
 					if err != nil {
-						return nil, fmt.Errorf("failed to parse pubkey: %s", err)
+						return nil, fmt.Errorf("failed to decode teleport hash: %s", err)
+					}
+
+					ownerPubkeyBytes, err := hex.DecodeString(receiver.AssetTeleportPubkey)
+					if err != nil {
+						return nil, fmt.Errorf("failed to decode teleport pubkey: %s", err)
+					}
+
+					ownerPubkey, err := schnorr.ParsePubKey(ownerPubkeyBytes)
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse teleport pubkey: %s", err)
+					}
+
+					teleportScript := script.NewTeleportVtxoScript(ownerPubkey, signingPubkey, hash, unilateralExitDelay)
+
+					teleportKey, _, err := teleportScript.TapTree()
+					if err != nil {
+						return nil, fmt.Errorf("failed to get teleport taproot key: %s", err)
+					}
+
+					encodedTeleportPubkey := schnorr.SerializePubKey(teleportKey)
+
+					// compare the reconstructed teleport pubkey with the provided pubkey
+					if !bytes.Equal(encodedTeleportPubkey, pubkeyBytes) {
+						return nil, fmt.Errorf("asset teleport pubkey does not match reconstructed pubkey")
 					}
 
 					assetIdBytes, err := hex.DecodeString(receiver.AssetId)
@@ -84,7 +111,7 @@ func getOutputVtxosLeaves(
 					}
 
 					assetDetails.Outputs = []asset.AssetOutput{{
-						PublicKey: *pubkey,
+						PublicKey: *teleportKey,
 						Vout:      0,
 						Amount:    receiver.AssetAmount,
 					}}
@@ -97,7 +124,7 @@ func getOutputVtxosLeaves(
 						return nil, fmt.Errorf("failed to encode asset opreturn: %s", err)
 					}
 
-					vtxoScript, err := script.P2TRScript(pubkey)
+					vtxoScript, err := script.P2TRScript(teleportKey)
 					if err != nil {
 						return nil, fmt.Errorf("failed to create script: %s", err)
 					}

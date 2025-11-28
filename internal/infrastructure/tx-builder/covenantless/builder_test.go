@@ -80,7 +80,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				}
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
-					pubkey, f.Intents, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
+					pubkey, pubkey, arklib.RelativeLocktime{}, f.Intents, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
 				)
 				require.NoError(t, err)
 				require.NotEmpty(t, commitmentTx)
@@ -111,7 +111,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				}
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
-					pubkey, f.Intents, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
+					pubkey, pubkey, arklib.RelativeLocktime{}, f.Intents, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
 				)
 				require.EqualError(t, err, f.ExpectedErr)
 				require.Empty(t, commitmentTx)

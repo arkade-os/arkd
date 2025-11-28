@@ -1689,7 +1689,8 @@ func (s *service) RegisterIntent(
 			if assetOutput.AssetOutputIndex == outputIndex {
 				rcv.AssetAmount = assetOutput.Amount
 				rcv.AssetId = assetOutput.AssetId
-
+				rcv.AssetTeleportHash = assetOutput.TeleportHash
+				rcv.AssetTeleportPubkey = assetOutput.TeleportPubkey
 			}
 		}
 
@@ -2461,7 +2462,7 @@ func (s *service) startFinalization(
 	s.roundReportSvc.OpStarted(BuildCommitmentTxOp)
 
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		s.forfeitPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
+		s.forfeitPubkey, s.signerPubkey, s.unilateralExitDelay, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
 	)
 	if err != nil {
 		s.cache.CurrentRound().Fail(
