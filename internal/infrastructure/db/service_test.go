@@ -170,8 +170,8 @@ func TestService(t *testing.T) {
 			config: db.ServiceConfig{
 				EventStoreType:   "postgres",
 				DataStoreType:    "postgres",
-				EventStoreConfig: []interface{}{pgEventDns},
-				DataStoreConfig:  []interface{}{pgDns},
+				EventStoreConfig: []interface{}{pgEventDns, false},
+				DataStoreConfig:  []interface{}{pgDns, false},
 			},
 		},
 	}
@@ -452,7 +452,6 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 						Proof:   "proof",
 						Message: "message",
 						Inputs: []domain.Vtxo{
-
 							{
 								Outpoint: domain.Outpoint{
 									Txid: randomString(32),
