@@ -660,9 +660,14 @@ func (b *txBuilder) BuildCommitmentTx(
 		return commitmentTx, vtxoTree, nextConnectorAddress, nil, nil
 	}
 
+	connectorVout := uint32(0)
+	if batchOutputAmount > 0 {
+		connectorVout = 1
+	}
+
 	rootConnectorsOutpoint := &wire.OutPoint{
 		Hash:  ptx.UnsignedTx.TxHash(),
-		Index: 1,
+		Index: connectorVout,
 	}
 
 	connectors, err := tree.BuildConnectorTree(
