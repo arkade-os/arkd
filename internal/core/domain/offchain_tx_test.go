@@ -489,7 +489,7 @@ func testReplayOffchainTxEvents(t *testing.T) {
 					domain.OffchainTxFinalized{
 						OffchainTxEvent: domain.OffchainTxEvent{
 							Id:   "1",
-							Type: domain.EventTypeOffchainTxFailed,
+							Type: domain.EventTypeOffchainTxFinalized,
 						},
 					},
 				},
@@ -518,7 +518,13 @@ func testReplayOffchainTxEvents(t *testing.T) {
 					domain.OffchainTxFinalized{
 						OffchainTxEvent: domain.OffchainTxEvent{
 							Id:   "1",
-							Type: domain.EventTypeOffchainTxFailed,
+							Type: domain.EventTypeOffchainTxFinalized,
+						},
+					},
+					domain.OffchainTxFinalized{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFinalized,
 						},
 					},
 					domain.OffchainTxRequested{
