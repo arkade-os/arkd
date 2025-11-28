@@ -36,6 +36,8 @@ func TestOffchainTx(t *testing.T) {
 	testFinalizeOffchainTx(t)
 
 	testFailOffchainTx(t)
+
+	testReplayOffchainTxEvents(t)
 }
 
 func testRequestOffchainTx(t *testing.T) {
@@ -366,5 +368,202 @@ func testFailOffchainTx(t *testing.T) {
 			require.Len(t, events, 3)
 			require.Equal(t, event, events[2])
 		})
+	})
+}
+
+func testReplayOffchainTxEvents(t *testing.T) {
+	t.Run("replay", func(t *testing.T) {
+		fixtures := []struct {
+			name               string
+			events             []domain.Event
+			expectedVersion    int
+			expectedStage      domain.Stage
+			expectedFailReason string
+		}{
+			{
+				name: "duplicated request event",
+				events: []domain.Event{
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+				},
+				expectedVersion: 1,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxRequestedStage),
+					Ended:  false,
+					Failed: false,
+				},
+			},
+			{
+				name: "duplicated failed event",
+				events: []domain.Event{
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "fail",
+						Timestamp: 1735689601,
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "override",
+						Timestamp: 1735689601,
+					},
+				},
+				expectedVersion: 1,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxUndefinedStage),
+					Ended:  false,
+					Failed: true,
+				},
+				expectedFailReason: "fail",
+			},
+			{
+				name: "accept after fail",
+				events: []domain.Event{
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "fail",
+						Timestamp: 1735689601,
+					},
+					domain.OffchainTxAccepted{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxAccepted,
+						},
+					},
+				},
+				expectedVersion: 2,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxRequestedStage),
+					Ended:  false,
+					Failed: true,
+				},
+				expectedFailReason: "fail",
+			},
+			{
+				name: "finalize after fail",
+				events: []domain.Event{
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxAccepted{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxAccepted,
+						},
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "fail",
+						Timestamp: 1735689601,
+					},
+					domain.OffchainTxFinalized{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+					},
+				},
+				expectedVersion: 4,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxFinalizedStage),
+					Ended:  true,
+					Failed: false,
+				},
+			},
+			{
+				name: "duplicated events after finalization",
+				events: []domain.Event{
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxAccepted{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxAccepted,
+						},
+					},
+					domain.OffchainTxFinalized{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+					},
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxAccepted{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxAccepted,
+						},
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "fail",
+						Timestamp: 1735689601,
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "override",
+						Timestamp: 1735689601,
+					},
+				},
+				expectedVersion: 3,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxFinalizedStage),
+					Ended:  true,
+					Failed: false,
+				},
+			},
+		}
+		for _, f := range fixtures {
+			offchainTx := domain.NewOffchainTxFromEvents(f.events)
+			require.NotNil(t, offchainTx)
+			require.Equal(t, f.expectedVersion, int(offchainTx.Version))
+			require.Equal(t, f.expectedStage, offchainTx.Stage)
+			require.Equal(t, f.expectedFailReason, offchainTx.FailReason)
+		}
 	})
 }

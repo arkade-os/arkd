@@ -227,12 +227,18 @@ func (s *OffchainTx) CheckpointTxsList() []string {
 func (s *OffchainTx) on(event Event, replayed bool) {
 	switch e := event.(type) {
 	case OffchainTxRequested:
+		if s.Stage.Code != int(OffchainTxUndefinedStage) || s.Stage.Failed {
+			return
+		}
 		s.Stage.Code = int(OffchainTxRequestedStage)
 		s.ArkTxid = e.Id
 		s.ArkTx = e.ArkTx
 		s.CheckpointTxs = e.UnsignedCheckpointTxs
 		s.StartingTimestamp = e.StartingTimestamp
 	case OffchainTxAccepted:
+		if s.Stage.Code != int(OffchainTxRequestedStage) || s.Stage.Failed {
+			return
+		}
 		s.Stage.Code = int(OffchainTxAcceptedStage)
 		s.ArkTx = e.FinalArkTx
 		s.CheckpointTxs = e.SignedCheckpointTxs
@@ -240,12 +246,19 @@ func (s *OffchainTx) on(event Event, replayed bool) {
 		s.RootCommitmentTxId = e.RootCommitmentTxid
 		s.ExpiryTimestamp = e.ExpiryTimestamp
 	case OffchainTxFinalized:
+		if s.Stage.Code != int(OffchainTxAcceptedStage) {
+			return
+		}
 		s.Stage.Code = int(OffchainTxFinalizedStage)
 		s.Stage.Failed = false
+		s.Stage.Ended = true
 		s.FailReason = ""
 		s.CheckpointTxs = e.FinalCheckpointTxs
 		s.EndingTimestamp = e.Timestamp
 	case OffchainTxFailed:
+		if s.Stage.Code == int(OffchainTxFinalizedStage) || s.Stage.Failed {
+			return
+		}
 		s.Stage.Failed = true
 		s.FailReason = e.Reason
 	}
