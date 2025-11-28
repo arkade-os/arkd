@@ -476,8 +476,7 @@ func (s *service) SubmitOffchainTx(
 
 	existingOffchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
 	if err != nil && !strings.Contains(err.Error(), "not found") {
-		log.WithError(err).Errorf("failed to fetch offchain tx %s", txid)
-		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+		return nil, errors.INTERNAL_ERROR.New("failed to fetch offchain tx").
 			WithMetadata(map[string]any{"txid": txid})
 	}
 
