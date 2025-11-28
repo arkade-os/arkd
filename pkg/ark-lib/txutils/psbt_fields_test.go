@@ -113,6 +113,35 @@ func TestPsbtCustomUnknownFields(t *testing.T) {
 		}
 	})
 
+	t.Run("asset seal vtxo", func(t *testing.T) {
+		// Create a new PSBT
+		ptx, err := psbt.New(nil, nil, 2, 0, nil)
+		require.NoError(t, err)
+
+		// Add an empty input
+		ptx.UnsignedTx.TxIn = []*wire.TxIn{{
+			PreviousOutPoint: wire.OutPoint{},
+			Sequence:         0,
+		}}
+		ptx.Inputs = []psbt.PInput{{}, {}}
+
+		// Verify both seal states round trip
+		for i, isSeal := range []bool{true, false} {
+			err = txutils.SetArkPsbtField(ptx, i, txutils.AssetSealVtxoField, isSeal)
+			require.NoError(t, err)
+
+		}
+
+		// Get asset seal vtxo back and verify
+		for i, expectedIsSeal := range []bool{true, false} {
+			fields, err := txutils.GetArkPsbtFields(ptx, i, txutils.AssetSealVtxoField)
+			require.NotNil(t, fields)
+			require.NoError(t, err)
+			require.Equal(t, expectedIsSeal, fields[0])
+		}
+
+	})
+
 	t.Run("tapscripts", func(t *testing.T) {
 		// Create a new PSBT
 		ptx, err := psbt.New(nil, nil, 2, 0, nil)

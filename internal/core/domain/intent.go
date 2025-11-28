@@ -86,9 +86,13 @@ func (i Intent) validate(ignoreOuts bool) error {
 }
 
 type Receiver struct {
-	Amount         uint64
-	OnchainAddress string // onchain
-	PubKey         string // offchain
+	Amount              uint64
+	AssetAmount         uint64 // asset output amount
+	AssetId             string // asset output id
+	AssetTeleportHash   string // asset teleport hash
+	AssetTeleportPubkey string // asset teleport pubkey
+	OnchainAddress      string // onchain
+	PubKey              string // offchain
 }
 
 func (r Receiver) IsOnchain() bool {

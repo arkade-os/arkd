@@ -103,7 +103,7 @@ type node interface {
 }
 
 type leaf struct {
-	output      *wire.TxOut
+	outputs     []*wire.TxOut
 	inputScript []byte
 	cosigners   []*btcec.PublicKey
 }
@@ -121,11 +121,17 @@ func (l *leaf) getChildren() []node {
 }
 
 func (l *leaf) getAmount() int64 {
-	return l.output.Value
+	totalAmount := int64(0)
+	for _, output := range l.outputs {
+		totalAmount += output.Value
+	}
+	return totalAmount
 }
 
 func (l *leaf) getOutputs() ([]*wire.TxOut, error) {
-	return []*wire.TxOut{l.output, txutils.AnchorOutput()}, nil
+	outputs := l.outputs
+	outputs = append(outputs, txutils.AnchorOutput())
+	return outputs, nil
 }
 
 func (l *leaf) tree(
@@ -292,8 +298,14 @@ func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, e
 			return nil, fmt.Errorf("failed to create script pubkey: %w", err)
 		}
 
+		outputs := make([]*wire.TxOut, 0)
+		outputs = append(outputs, &wire.TxOut{Value: int64(r.Amount), PkScript: pkScript})
+		if len(r.AssetScript) > 0 {
+			outputs = append(outputs, &wire.TxOut{Value: 0, PkScript: []byte(r.AssetScript)})
+		}
+
 		leafNode := &leaf{
-			output:      &wire.TxOut{Value: int64(r.Amount), PkScript: pkScript},
+			outputs:     outputs,
 			inputScript: inputScript,
 			cosigners:   cosigners,
 		}

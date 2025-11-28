@@ -533,21 +533,21 @@ func (b *txBuilder) VerifyForfeitTxs(
 }
 
 func (b *txBuilder) BuildCommitmentTx(
-	signerPubkey *btcec.PublicKey, intents domain.Intents,
+	forfeitPubkey *btcec.PublicKey, signingPubkey *btcec.PublicKey, unilateralExitDelay arklib.RelativeLocktime, intents domain.Intents,
 	boardingInputs []ports.BoardingInput, connectorAddresses []string,
 	cosignersPublicKeys [][]string,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	var batchOutputScript []byte
 	var batchOutputAmount int64
 
-	receivers, err := getOutputVtxosLeaves(intents, cosignersPublicKeys)
+	receivers, err := getOutputVtxosLeaves(intents, forfeitPubkey, signingPubkey, unilateralExitDelay, cosignersPublicKeys)
 	if err != nil {
 		return "", nil, "", nil, err
 	}
 
 	sweepScript, err := (&script.CSVMultisigClosure{
 		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{signerPubkey},
+			PubKeys: []*btcec.PublicKey{forfeitPubkey},
 		},
 		Locktime: b.vtxoTreeExpiry,
 	}).Script()

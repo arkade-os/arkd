@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -349,9 +350,9 @@ func NewService(
 		},
 	)
 
-	if err := svc.restoreWatchingVtxos(); err != nil {
-		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	}
+	// if err := svc.restoreWatchingVtxos(); err != nil {
+	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	// }
 	go svc.listenToScannerNotifications()
 	return svc, nil
 }
@@ -899,6 +900,27 @@ func (s *service) SubmitOffchainTx(
 	foundOpReturn := false
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
+		isAssetOutput := asset.IsAsset(out.PkScript)
+
+		if isAssetOutput {
+			if foundOpReturn {
+				return nil, "", "", errors.MALFORMED_ARK_TX.New(
+					"tx %s has multiple op return outputs, not allowed for assets", txid,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			foundOpReturn = true
+
+			err := s.validateAssetTransaction(ctx, *arkPtx.UnsignedTx, out.PkScript)
+			if err != nil {
+				log.WithError(err).Warn("asset transaction validation failed")
+				return nil, "", "", errors.ASSET_VALIDATION_FAILED.Wrap(err)
+			}
+
+			outputs = append(outputs, out)
+
+			continue
+		}
+
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
 				return nil, errors.MALFORMED_ARK_TX.New(
@@ -1423,6 +1445,8 @@ func (s *service) RegisterIntent(
 	boardingUtxos := make([]boardingIntentInput, 0)
 
 	outpoints := proof.GetOutpoints()
+
+	log.Printf("these are the outpoints %+v", outpoints)
 	if len(outpoints) == 0 {
 		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
@@ -1538,6 +1562,14 @@ func (s *service) RegisterIntent(
 		taptreeFields, _ := txutils.GetArkPsbtFields(
 			&proof.Packet, i+1, txutils.VtxoTaprootTreeField,
 		)
+
+		sealsOutputs, err := txutils.GetArkPsbtFields(&proof.Packet, i+1, txutils.AssetSealVtxoField)
+		if err != nil {
+			return "", errors.INVALID_PSBT_INPUT.New(
+				"failed to get asset seal field for input %d: %w", i+1, err,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
 		tapscripts := make([]string, 0)
 		if len(taptreeFields) > 0 {
 			tapscripts = taptreeFields[0]
@@ -1549,6 +1581,7 @@ func (s *service) RegisterIntent(
 		)
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
+
 		if err != nil || len(vtxosResult) == 0 {
 			// reject if intent specifies onchain outputs and boarding inputs
 			if len(message.OnchainOutputIndexes) > 0 {
@@ -1581,6 +1614,52 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
+		isSeal := sealsOutputs[0]
+		// check if seal and fetch txID
+		if isSeal {
+			log.Printf("seal found here")
+			virtualTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, outpoint.Hash.String())
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"failed to fetch virtual tx for seal input %s: %w",
+					outpoint.String(), err,
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+
+			if virtualTx == nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"virtual tx not found for seal input %s",
+					outpoint.String(),
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+
+			decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTx.ArkTx), true)
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"failed to decode ark tx for seal input %s: %w",
+					outpoint.String(), err,
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+
+			for _, output := range decodedArkTx.UnsignedTx.TxOut {
+				if asset.IsAsset(output.PkScript) {
+					log.Println("this is where the asset is included")
+					vtxo.Asset = output.PkScript
+					break
+				}
+			}
+
+		}
+
 		if err := s.checkIfBanned(ctx, vtxo); err != nil {
 			return "", errors.VTXO_BANNED.Wrap(err).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
@@ -1813,6 +1892,16 @@ func (s *service) RegisterIntent(
 
 			hasOffChainReceiver = true
 			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
+		}
+
+		// Verify if asset outputs exist for this output
+		for _, assetOutput := range message.AssetOutputIndexes {
+			if assetOutput.AssetOutputIndex == outputIndex {
+				rcv.AssetAmount = assetOutput.Amount
+				rcv.AssetId = assetOutput.AssetId
+				rcv.AssetTeleportHash = assetOutput.TeleportHash
+				rcv.AssetTeleportPubkey = assetOutput.TeleportPubkey
+			}
 		}
 
 		receivers = append(receivers, rcv)
@@ -2655,7 +2744,7 @@ func (s *service) startFinalization(
 	s.roundReportSvc.OpStarted(BuildCommitmentTxOp)
 
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		s.forfeitPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
+		s.forfeitPubkey, s.signerPubkey, s.unilateralExitDelay, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
 	)
 	if err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err))
@@ -3565,6 +3654,11 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 	scripts := make([]string, 0)
 
 	for _, vtxo := range vtxos {
+		// skip OP_RETURN outputs
+		if vtxo.Amount < dustLimit {
+			continue
+		}
+
 		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
 			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
@@ -3574,10 +3668,6 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
 		if err != nil {
 			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		if vtxo.Amount < dustLimit {
 			continue
 		}
 
@@ -4014,4 +4104,85 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
+}
+
+func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, assetOutput []byte) error {
+	decodedAsset, _, err := asset.DecodeAssetFromOpret(assetOutput)
+	if err != nil {
+		return fmt.Errorf("error decoding asset from opreturn: %s", err)
+	}
+
+	ins := decodedAsset.Inputs
+	outs := decodedAsset.Outputs
+
+	if err := asset.VerifyAssetInputs(tx.TxIn, ins); err != nil {
+		return fmt.Errorf("failed to verify asset inputs: %s", err)
+	}
+
+	if err := asset.VerifyAssetOutputs(tx.TxOut, outs); err != nil {
+		return fmt.Errorf("failed to verify asset outputs: %s", err)
+	}
+
+	totalOuputAmount := uint64(0)
+	for _, assetOut := range outs {
+		totalOuputAmount += assetOut.Amount
+	}
+
+	totalInputAmount := uint64(0)
+	for _, in := range ins {
+		totalInputAmount += uint64(in.Amount)
+	}
+
+	// Verify If Asset Creation Or Not
+	if len(ins) > 0 && totalInputAmount != totalOuputAmount {
+		return fmt.Errorf("asset input amount %d does not match output amount %d",
+			totalInputAmount, totalOuputAmount,
+		)
+	}
+
+	// verify that each asset input corresponds to a finalized asset output
+	for _, input := range decodedAsset.Inputs {
+		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, hex.EncodeToString(input.Txid))
+
+		if err != nil {
+			return fmt.Errorf("error retrieving offchain tx %s: %s",
+				hex.EncodeToString(input.Txid), err)
+		}
+
+		if offchainTx == nil {
+			return fmt.Errorf("offchain tx %s not found", hex.EncodeToString(input.Txid))
+		}
+
+		if !offchainTx.IsFinalized() {
+			return fmt.Errorf("offchain tx %s is failed", hex.EncodeToString(input.Txid))
+		}
+
+		decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
+		if err != nil {
+			return fmt.Errorf("error decoding Ark Tx: %s", err)
+		}
+
+		var assetData *asset.Asset
+		for _, output := range decodedArkTx.UnsignedTx.TxOut {
+			if asset.IsAsset(output.PkScript) {
+				assetData, _, err = asset.DecodeAssetFromOpret(output.PkScript)
+				if err != nil {
+					return fmt.Errorf("error decoding asset Opreturn: %s", err)
+				}
+				break
+			}
+		}
+
+		if assetData == nil {
+			return fmt.Errorf("no asset data found in offchain tx %s", hex.EncodeToString(input.Txid))
+		}
+
+		for _, out := range assetData.Outputs {
+			if out.Vout == input.Vout && out.Amount == input.Amount {
+				continue
+			}
+		}
+		return fmt.Errorf("asset input %d in offchain tx %s does not match", input.Vout, hex.EncodeToString(input.Txid))
+	}
+	return nil
 }

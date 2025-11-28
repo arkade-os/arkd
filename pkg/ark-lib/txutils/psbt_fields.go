@@ -22,6 +22,8 @@ var (
 	ArkFieldCosigner = []byte("cosigner")
 	// ArkFieldConditionWitness allows to set extra witness elements used to sign custom script inputs
 	ArkFieldConditionWitness = []byte("condition")
+	// ArkAssetSealVtxoField marks an input as an asset seal input
+	ArkAssetSealVtxoField = []byte("asset_seal")
 )
 
 // Singletons instances for each field type
@@ -29,6 +31,7 @@ var VtxoTaprootTreeField ArkPsbtFieldCoder[TapTree] = arkPsbtFieldCoderTaprootTr
 var VtxoTreeExpiryField ArkPsbtFieldCoder[arklib.RelativeLocktime] = arkPsbtFieldCoderTreeExpiry{}
 var CosignerPublicKeyField ArkPsbtFieldCoder[IndexedCosignerPublicKey] = arkPsbtFieldCoderCosignerPublicKey{}
 var ConditionWitnessField ArkPsbtFieldCoder[wire.TxWitness] = arkPsbtFieldCoderConditionWitness{}
+var AssetSealVtxoField ArkPsbtFieldCoder[bool] = arkPsbtFieldCoderAssetSealVtxo{}
 
 type ArkPsbtFieldCoder[T any] interface {
 	Encode(T) (*psbt.Unknown, error)
@@ -197,6 +200,34 @@ func (c arkPsbtFieldCoderConditionWitness) Decode(unknown *psbt.Unknown) (*wire.
 	}
 
 	return &witness, nil
+}
+
+type arkPsbtFieldCoderAssetSealVtxo struct{}
+
+func (c arkPsbtFieldCoderAssetSealVtxo) Encode(isSeal bool) (*psbt.Unknown, error) {
+	var value byte
+	if isSeal {
+		value = 1
+	} else {
+		value = 0
+	}
+	return &psbt.Unknown{
+		Key:   makeArkPsbtKey(ArkAssetSealVtxoField),
+		Value: []byte{value},
+	}, nil
+}
+
+func (c arkPsbtFieldCoderAssetSealVtxo) Decode(unknown *psbt.Unknown) (*bool, error) {
+	if !containsArkPsbtKey(unknown, ArkAssetSealVtxoField) {
+		return nil, nil
+	}
+
+	if len(unknown.Value) != 1 {
+		return nil, fmt.Errorf("invalid asset seal vtxo field length: %d", len(unknown.Value))
+	}
+
+	isSeal := unknown.Value[0] != 0
+	return &isSeal, nil
 }
 
 func makeArkPsbtKey(keyData []byte) []byte {
