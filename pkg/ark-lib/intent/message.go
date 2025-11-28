@@ -44,6 +44,7 @@ type AssetOutput struct {
 	TeleportHash     string `json:"teleport_hash"`
 	Amount           uint64 `json:"amount"`
 	AssetOutputIndex int    `json:"asset_output_index"`
+	TeleportPubkey   string `json:"teleport_pubkey"`
 }
 
 func (m RegisterMessage) Encode() (string, error) {
