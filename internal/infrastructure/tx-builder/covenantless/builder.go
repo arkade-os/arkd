@@ -745,18 +745,38 @@ func (b *txBuilder) createCommitmentTx(
 		})
 	}
 
+	onchainOutputs, err := getOnchainOutputs(intents, b.onchainNetwork())
+	if err != nil {
+		return nil, err
+	}
+
 	if connectorOutputScript != nil && connectorOutputAmount > 0 {
+		// if no outputs = no batch
+		if len(outputs) == 0 {
+			if len(onchainOutputs) == 0 {
+				// this case should never happen
+				// = no onchain outputs and no batch output
+				// we check it to avoid panics
+				return nil, fmt.Errorf("onchain outputs required")
+			}
+
+			// if no batch output, we use the first onchain output at index 0
+			// in order to ensure the connector output is always at index 1
+			outputs = append(outputs, onchainOutputs[0])
+			onchainOutputs = onchainOutputs[1:] // remove the first onchain output
+		}
+
 		targetAmount += uint64(connectorOutputAmount)
+
+		// add the connector output (index 1)
+		if len(outputs) != 1 {
+			return nil, fmt.Errorf("connector output must be at index 1")
+		}
 
 		outputs = append(outputs, &wire.TxOut{
 			Value:    connectorOutputAmount,
 			PkScript: connectorOutputScript,
 		})
-	}
-
-	onchainOutputs, err := getOnchainOutputs(intents, b.onchainNetwork())
-	if err != nil {
-		return nil, err
 	}
 
 	for _, output := range onchainOutputs {
