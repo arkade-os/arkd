@@ -2283,24 +2283,22 @@ func (s *service) startRound() {
 				"failed to reset confirmation session from cache for round %s", existingRound.Id,
 			)
 		}
-		if existingRound != nil {
-			if existingRound.Id != "" {
-				if err := s.cache.TreeSigingSessions().Delete(ctx, existingRound.Id); err != nil {
-					log.WithError(err).Errorf(
-						"failed to delete tree signing sessions for round from cache %s",
-						existingRound.Id,
-					)
-				}
+		if existingRound.Id != "" {
+			if err := s.cache.TreeSigingSessions().Delete(ctx, existingRound.Id); err != nil {
+				log.WithError(err).Errorf(
+					"failed to delete tree signing sessions for round from cache %s",
+					existingRound.Id,
+				)
 			}
-			if existingRound.CommitmentTxid != "" {
-				if err := s.cache.BoardingInputs().DeleteSignatures(
-					ctx, existingRound.CommitmentTxid,
-				); err != nil {
-					log.WithError(err).Errorf(
-						"failed to delete boarding input signatures from cache for round %s",
-						existingRound.Id,
-					)
-				}
+		}
+		if existingRound.CommitmentTxid != "" {
+			if err := s.cache.BoardingInputs().DeleteSignatures(
+				ctx, existingRound.CommitmentTxid,
+			); err != nil {
+				log.WithError(err).Errorf(
+					"failed to delete boarding input signatures from cache for round %s",
+					existingRound.Id,
+				)
 			}
 		}
 	}
@@ -3443,17 +3441,13 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 		return
 	}
 
-	expirationTimestamp := s.sweeper.scheduler.AddNow(int64(s.batchExpiry.Value))
-
 	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
 	if err != nil {
 		log.WithError(err).Warn("failed to create vtxo tree")
 		return
 	}
 
-	if err := s.sweeper.scheduleBatchSweep(
-		expirationTimestamp, round.CommitmentTxid, vtxoTree,
-	); err != nil {
+	if err := s.sweeper.scheduleBatchSweep(round.CommitmentTxid, vtxoTree); err != nil {
 		log.WithError(err).Warn("failed to schedule sweep tx")
 	}
 }

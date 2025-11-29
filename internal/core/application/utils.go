@@ -430,8 +430,13 @@ func waitForConfirmation(
 	ctx context.Context,
 	txid string,
 	wallet ports.WalletService,
-	network arklib.Network,
-) (blockheight int64, blocktime int64) {
+) (blockheight int64, blocktime int64, err error) {
+	network, err := wallet.GetNetwork(ctx)
+	if err != nil {
+		log.WithError(err).Error("failed to get network, cannot wait for confirmation")
+		return 0, 0, err
+	}
+
 	tickerInterval := mainnetTickerInterval
 	if network.Name == arklib.BitcoinRegTest.Name {
 		tickerInterval = regtestTickerInterval
@@ -439,18 +444,26 @@ func waitForConfirmation(
 	ticker := time.NewTicker(tickerInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if confirmed, blockHeight, blockTime, _ := wallet.IsTransactionConfirmed(ctx, txid); confirmed {
+	select {
+	case <-ctx.Done():
+		return 0, 0, ctx.Err()
+	case <-ticker.C:
+		if confirmed, blockHeight, blockTime, err := wallet.IsTransactionConfirmed(ctx, txid); confirmed && err == nil {
 			log.Debugf(
 				"tx %s confirmed at block height %d, block time %d",
 				txid,
 				blockHeight,
 				blockTime,
 			)
-			return blockHeight, blockTime
+			return blockHeight, blockTime, nil
+		}
+
+		if err != nil {
+			return 0, 0, err
 		}
 	}
-	return 0, 0
+
+	return 0, 0, fmt.Errorf("something went wrong while waiting for confirmation of tx %s", txid)
 }
 
 func computeIntentFees(proof intent.Proof) (int64, error) {

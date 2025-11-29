@@ -11,6 +11,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -129,11 +130,6 @@ func (s *sweeper) start(ctx context.Context) error {
 		return err
 	}
 
-	network, err := s.wallet.GetNetwork(ctx)
-	if err != nil {
-		return err
-	}
-
 	go func() {
 		if len(sweepableUnrolledVtxos) <= 0 {
 			return
@@ -186,9 +182,16 @@ func (s *sweeper) start(ctx context.Context) error {
 
 			// asynchronously wait for the tx to be confirmed
 			go func() {
-				blockHeight, blockTime := waitForConfirmation(
-					ctx, checkpointTxid, s.wallet, *network,
+				blockHeight, blockTime, err := waitForConfirmation(
+					ctx, checkpointTxid, s.wallet,
 				)
+				if err != nil {
+					log.WithError(err).Errorf(
+						"cannot schedule sweept task, failed to wait for confirmation of checkpoint tx %s",
+						checkpointTxid,
+					)
+					return
+				}
 
 				if err := s.scheduleCheckpointSweep(
 					vtxo.Outpoint, checkpointTx, blockHeight, blockTime,
@@ -330,12 +333,33 @@ func (s *sweeper) scheduleCheckpointSweep(
 }
 
 // scheduleBatchSweep set up a task to be executed once at the given timestamp
-func (s *sweeper) scheduleBatchSweep(
-	expirationTimestamp int64, commitmentTxid string, vtxoTree *tree.TxTree,
-) error {
+func (s *sweeper) scheduleBatchSweep(commitmentTxid string, vtxoTree *tree.TxTree) error {
 	if vtxoTree == nil { // skip
 		log.Debugf("sweeper: batch %s has empty vtxo tree, skip scheduling sweep", commitmentTxid)
 		return nil
+	}
+
+	vtxoTreeExpiry, err := s.getVtxoTreeExpiry(vtxoTree)
+	if err != nil {
+		return err
+	}
+
+	// schedule AFTER the root input is confirmed
+	rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
+	_, _, err = waitForConfirmation(context.Background(), rootInput, s.wallet)
+	if err != nil {
+		log.WithError(err).Warnf(
+			"failed to wait for confirmation of batch input tx %s, schedule task time may be inaccurate",
+			rootInput,
+		)
+	}
+
+	expirationTimestamp := s.scheduler.AddNow(int64(vtxoTreeExpiry.Value))
+
+	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
+		log.WithError(err).Warnf(
+			"failed to update vtxo tree expiration time for batch %s", commitmentTxid,
+		)
 	}
 
 	if err := s.scheduleTask(sweeperTask{
@@ -349,12 +373,6 @@ func (s *sweeper) scheduleBatchSweep(
 	log.WithField("root", vtxoTree.Root.UnsignedTx.TxID()).
 		Debugf("sweeper: scheduled sweep for batch %s at %s",
 			commitmentTxid, fancyTime(expirationTimestamp, s.scheduler.Unit()))
-
-	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
-		log.WithError(err).Warnf(
-			"failed to update vtxo tree expiration time for batch %s", commitmentTxid,
-		)
-	}
 
 	return nil
 }
@@ -434,6 +452,16 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 			return nil
 		}
 
+		scheduleForSubTree := func(txid string, tree *tree.TxTree) {
+			if err := s.scheduleBatchSweep(txid, tree); err != nil {
+				log.WithError(err).Errorf(
+					"failed to schedule sweep for vtxo tree %s of batch %s",
+					tree.Root.UnsignedTx.TxID(), commitmentTxid,
+				)
+				return
+			}
+		}
+
 		for expiresAt, inputs := range batchOutputs {
 			// if the batch outputs are not expired, schedule a sweep task for it
 			if s.scheduler.AfterNow(expiresAt) {
@@ -444,14 +472,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 				}
 
 				for _, subTree := range subtrees {
-					if err := s.scheduleBatchSweep(expiresAt, commitmentTxid, subTree); err != nil {
-						log.WithError(err).Errorf(
-							"failed to schedule sweep for vtxo tree %s of batch %s",
-							subTree.Root.UnsignedTx.TxID(), commitmentTxid,
-						)
-						continue
-					}
+					go scheduleForSubTree(commitmentTxid, subTree)
 				}
+
 				continue
 			}
 
@@ -719,6 +742,25 @@ func (s *sweeper) updateVtxoExpirationTime(tree *tree.TxTree, expirationTime int
 	}
 
 	return s.repoManager.Vtxos().UpdateVtxosExpiration(context.Background(), vtxos, expirationTime)
+}
+
+func (s *sweeper) getVtxoTreeExpiry(vtxoTree *tree.TxTree) (*arklib.RelativeLocktime, error) {
+	// get expiry relative locktime from the psbt ark fields
+	vtxoTreeExpiryFields, err := txutils.GetArkPsbtFields(
+		vtxoTree.Root,
+		0,
+		txutils.VtxoTreeExpiryField,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(vtxoTreeExpiryFields) <= 0 {
+		return nil, fmt.Errorf(
+			"no vtxo tree expiry field found in vtxo tree, cannot schedule sweep",
+		)
+	}
+	vtxoTreeExpiry := vtxoTreeExpiryFields[0]
+	return &vtxoTreeExpiry, nil
 }
 
 func computeSubTrees(
