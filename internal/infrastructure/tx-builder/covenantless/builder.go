@@ -750,6 +750,10 @@ func (b *txBuilder) createCommitmentTx(
 		return nil, err
 	}
 
+	for _, output := range onchainOutputs {
+		targetAmount += uint64(output.Value)
+	}
+
 	if connectorOutputScript != nil && connectorOutputAmount > 0 {
 		// if no outputs = no batch
 		if len(outputs) == 0 {
@@ -777,10 +781,6 @@ func (b *txBuilder) createCommitmentTx(
 			Value:    connectorOutputAmount,
 			PkScript: connectorOutputScript,
 		})
-	}
-
-	for _, output := range onchainOutputs {
-		targetAmount += uint64(output.Value)
 	}
 
 	outputs = append(outputs, onchainOutputs...)
