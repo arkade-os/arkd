@@ -444,7 +444,10 @@ func waitForConfirmation(
 	ticker := time.NewTicker(tickerInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	select {
+	case <-ctx.Done():
+		return 0, 0, ctx.Err()
+	case <-ticker.C:
 		if confirmed, blockHeight, blockTime, err := wallet.IsTransactionConfirmed(ctx, txid); confirmed && err == nil {
 			log.Debugf(
 				"tx %s confirmed at block height %d, block time %d",
