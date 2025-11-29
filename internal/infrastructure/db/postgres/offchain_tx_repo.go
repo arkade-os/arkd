@@ -93,6 +93,13 @@ func (v *offchainTxRepository) GetOffchainTx(
 			}
 		}
 	}
+	stage := domain.Stage{Code: int(vt.StageCode)}
+	if vt.FailReason.String != "" {
+		stage.Failed = true
+	}
+	if domain.OffchainTxStage(vt.StageCode) == domain.OffchainTxFinalizedStage {
+		stage.Ended = true
+	}
 	return &domain.OffchainTx{
 		ArkTxid:            vt.Txid,
 		ArkTx:              vt.Tx,
@@ -100,7 +107,7 @@ func (v *offchainTxRepository) GetOffchainTx(
 		EndingTimestamp:    vt.EndingTimestamp,
 		ExpiryTimestamp:    vt.ExpiryTimestamp,
 		FailReason:         vt.FailReason.String,
-		Stage:              domain.Stage{Code: int(vt.StageCode)},
+		Stage:              stage,
 		CheckpointTxs:      checkpointTxs,
 		CommitmentTxids:    commitmentTxids,
 		RootCommitmentTxId: rootCommitmentTxId,

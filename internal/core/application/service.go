@@ -428,10 +428,12 @@ func (s *service) SubmitOffchainTx(
 			changes = append(changes, change)
 		}
 
-		if err := s.repoManager.Events().Save(
-			ctx, domain.OffchainTxTopic, txid, changes,
-		); err != nil {
-			log.WithError(err).Errorf("failed to save events for offchain tx %s", txid)
+		if len(changes) > 0 {
+			if err := s.repoManager.Events().Save(
+				ctx, domain.OffchainTxTopic, txid, changes,
+			); err != nil {
+				log.WithError(err).Errorf("failed to save events for offchain tx %s", txid)
+			}
 		}
 	}()
 
@@ -470,6 +472,18 @@ func (s *service) SubmitOffchainTx(
 
 		checkpointTxsByVtxoKey[vtxoKey] = txid
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
+	}
+
+	existingOffchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return nil, errors.INTERNAL_ERROR.New("failed to fetch offchain tx").
+			WithMetadata(map[string]any{"txid": txid})
+	}
+
+	if existingOffchainTx != nil {
+		return nil, errors.INVALID_ARK_PSBT.New(
+			"duplicated offchain tx %s", txid,
+		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
 	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs)
