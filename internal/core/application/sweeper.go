@@ -179,9 +179,16 @@ func (s *sweeper) start(ctx context.Context) error {
 
 			// asynchronously wait for the tx to be confirmed
 			go func() {
-				blockHeight, blockTime := waitForConfirmation(
+				blockHeight, blockTime, err := waitForConfirmation(
 					ctx, checkpointTxid, s.wallet,
 				)
+				if err != nil {
+					log.WithError(err).Errorf(
+						"cannot schedule sweept task, failed to wait for confirmation of checkpoint tx %s",
+						checkpointTxid,
+					)
+					return
+				}
 
 				if err := s.scheduleCheckpointSweep(
 					vtxo.Outpoint, checkpointTx, blockHeight, blockTime,
@@ -336,7 +343,13 @@ func (s *sweeper) scheduleBatchSweep(commitmentTxid string, vtxoTree *tree.TxTre
 
 	// schedule AFTER the root input is confirmed
 	rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
-	waitForConfirmation(context.Background(), rootInput, s.wallet)
+	_, _, err = waitForConfirmation(context.Background(), rootInput, s.wallet)
+	if err != nil {
+		log.WithError(err).Warnf(
+			"failed to wait for confirmation of batch input tx %s, schedule task time may be inaccurate",
+			rootInput,
+		)
+	}
 
 	expirationTimestamp := s.scheduler.AddNow(int64(vtxoTreeExpiry.Value))
 
