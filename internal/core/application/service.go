@@ -1435,6 +1435,9 @@ func (s *service) RegisterIntent(
 	vtxoInputs := make([]domain.Vtxo, 0)
 	// the boarding utxos to add in the commitment tx
 	boardingUtxos := make([]boardingIntentInput, 0)
+	// deferred minExpiryGap error to check after determining if all outputs are onchain
+	// (collaborative exits to onchain addresses bypass the minExpiryGap restriction)
+	var deferredMinExpiryGapError errors.Error
 
 	outpoints := proof.GetOutpoints()
 	if len(outpoints) == 0 {
@@ -1613,11 +1616,13 @@ func (s *service) RegisterIntent(
 		}
 
 		if s.settlementMinExpiryGap > 0 && !vtxo.Swept {
-			// reject if expires after now + settlementMinExpiryGap
+			// Defer the minExpiryGap check - collaborative exits (all onchain outputs)
+			// bypass this restriction since they don't create new VTXOs to manage.
 			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
 			limit := time.Now().Add(s.settlementMinExpiryGap)
-			if expiresAt.After(limit) {
-				return "", errors.INVALID_PSBT_INPUT.New(
+			if expiresAt.After(limit) && deferredMinExpiryGapError == nil {
+				// Store only the first minExpiryGap error to check after outputs are processed
+				deferredMinExpiryGapError = errors.INVALID_PSBT_INPUT.New(
 					"vtxo %s expires after %s (minExpiryGap: %s)",
 					vtxo.Outpoint.String(), limit, s.settlementMinExpiryGap,
 				).WithMetadata(errors.InputMetadata{
@@ -1830,6 +1835,13 @@ func (s *service) RegisterIntent(
 		}
 
 		receivers = append(receivers, rcv)
+	}
+
+	// Apply deferred minExpiryGap error only if there are offchain receivers.
+	// Collaborative exits (all onchain outputs) bypass minExpiryGap restriction
+	// since they don't create new VTXOs that the operator needs to manage long-term.
+	if deferredMinExpiryGapError != nil && hasOffChainReceiver {
+		return "", deferredMinExpiryGapError
 	}
 
 	if hasOffChainReceiver {
