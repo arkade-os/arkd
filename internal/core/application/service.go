@@ -1024,7 +1024,7 @@ func (s *service) SubmitOffchainTx(
 	// verify the tapscript signatures
 	if valid, _, err := s.builder.VerifyVtxoTapscriptSigs(signedArkTx, false); err != nil ||
 		!valid {
-		return nil, "", "", errors.INVALID_SIGNATURE.New("invalid signature in ark tx %s", txid).
+		return nil, "", "", errors.INVALID_SIGNATURE.New("invalid signature in ark tx %w", err).
 			WithMetadata(errors.InvalidSignatureMetadata{Tx: signedArkTx})
 	}
 

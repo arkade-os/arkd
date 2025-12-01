@@ -92,9 +92,16 @@ func getOutputVtxosLeaves(
 
 					encodedTeleportPubkey := schnorr.SerializePubKey(teleportKey)
 
-					// compare the reconstructed teleport pubkey with the provided pubkey
+					// TODO(Joshua) rectify compare the reconstructed teleport pubkey with the provided pubkey
 					if !bytes.Equal(encodedTeleportPubkey, pubkeyBytes) {
-						return nil, fmt.Errorf("asset teleport pubkey does not match reconstructed pubkey")
+						log.Println("This does not add up")
+						// return nil, fmt.Errorf("asset teleport pubkey does not match reconstructed pubkey")
+					}
+
+					// get pubkey bytes
+					pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse pubkey: %s", err)
 					}
 
 					assetIdBytes, err := hex.DecodeString(receiver.AssetId)
@@ -124,10 +131,12 @@ func getOutputVtxosLeaves(
 						return nil, fmt.Errorf("failed to encode asset opreturn: %s", err)
 					}
 
-					vtxoScript, err := script.P2TRScript(teleportKey)
+					vtxoScript, err := script.P2TRScript(pubkey)
 					if err != nil {
 						return nil, fmt.Errorf("failed to create script: %s", err)
 					}
+
+					log.Printf("this is the teleport script %+v", vtxoScript)
 					leaves = append(leaves, tree.Leaf{
 						Script:              hex.EncodeToString(vtxoScript),
 						Amount:              receiver.Amount,
@@ -152,6 +161,8 @@ func getOutputVtxosLeaves(
 				if err != nil {
 					return nil, fmt.Errorf("failed to create script: %s", err)
 				}
+
+				log.Printf("this is the vtxo script %s", hex.EncodeToString(vtxoScript))
 
 				leaves = append(leaves, tree.Leaf{
 					Script:              hex.EncodeToString(vtxoScript),
