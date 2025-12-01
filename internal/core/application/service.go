@@ -3870,23 +3870,33 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 			return fmt.Errorf("no asset data found in offchain tx %s", hex.EncodeToString(input.Txid))
 		}
 
+		foundOutput := false
+
 		for _, out := range assetData.Outputs {
 			if out.Vout == input.Vout && out.Amount == input.Amount {
 				vout := int(input.Vout)
 				key := hex.EncodeToString(input.Txid) + ":" + strconv.Itoa(vout)
 				txInputsMap[key] = decodedArkTx.UnsignedTx.TxOut[vout]
 
-				continue
+				foundOutput = true
+				break
 			}
 		}
-		return fmt.Errorf("asset input %d in offchain tx %s does not match", input.Vout, hex.EncodeToString(input.Txid))
+
+		if !foundOutput {
+			return fmt.Errorf("asset input %d in offchain tx %s not found in asset outputs",
+				input.Vout, hex.EncodeToString(input.Txid))
+		}
 	}
 
 	// Verify If Asset Reissuance or Burning
 	if len(ins) > 0 {
 		// ensure controlKey is present for reissuing
 		if totalOuputAmount > totalInputAmount {
-			controlInput := tx.TxIn[0].PreviousOutPoint.String()
+			txId := tx.TxIn[0].PreviousOutPoint.Hash[:]
+			index := tx.TxIn[0].PreviousOutPoint.Index
+			slices.Reverse(txId)
+			controlInput := fmt.Sprintf("%s:%d", hex.EncodeToString(txId), index)
 			if _, ok := txInputsMap[controlInput]; !ok {
 				return fmt.Errorf("control input is missing for asset reissuance")
 			}
