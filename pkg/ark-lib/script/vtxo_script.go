@@ -39,7 +39,7 @@ func NewTeleportVtxoScript(
 ) *TapscriptsVtxoScript {
 
 	preimageCondition, _ := txscript.NewScriptBuilder().
-		AddOp(txscript.OP_HASH160).
+		AddOp(txscript.OP_SHA256).
 		AddData(teleportPreimageHash).
 		AddOp(txscript.OP_EQUAL).
 		Script()

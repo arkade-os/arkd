@@ -8,6 +8,7 @@ import (
 	"math"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -3830,12 +3831,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 		totalInputAmount += uint64(in.Amount)
 	}
 
-	// Verify If Asset Creation Or Not
-	if len(ins) > 0 && totalInputAmount != totalOuputAmount {
-		return fmt.Errorf("asset input amount %d does not match output amount %d",
-			totalInputAmount, totalOuputAmount,
-		)
-	}
+	txInputsMap := make(map[string]*wire.TxOut)
 
 	// verify that each asset input corresponds to a finalized asset output
 	for _, input := range decodedAsset.Inputs {
@@ -3876,10 +3872,61 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 
 		for _, out := range assetData.Outputs {
 			if out.Vout == input.Vout && out.Amount == input.Amount {
+				vout := int(input.Vout)
+				key := hex.EncodeToString(input.Txid) + ":" + strconv.Itoa(vout)
+				txInputsMap[key] = decodedArkTx.UnsignedTx.TxOut[vout]
+
 				continue
 			}
 		}
 		return fmt.Errorf("asset input %d in offchain tx %s does not match", input.Vout, hex.EncodeToString(input.Txid))
 	}
+
+	// Verify If Asset Reissuance or Burning
+	if len(ins) > 0 {
+		// ensure controlKey is present for reissuing
+		if totalOuputAmount > totalInputAmount {
+			controlInput := tx.TxIn[0].PreviousOutPoint.String()
+			if _, ok := txInputsMap[controlInput]; !ok {
+				return fmt.Errorf("control input is missing for asset reissuance")
+			}
+			pkScript := txInputsMap[controlInput].PkScript
+			pubkeyBytes := pkScript[2:]
+
+			pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+			if err != nil {
+				return err
+			}
+			if !pubkey.IsEqual(decodedAsset.ControlPubkey) {
+				return fmt.Errorf("invalid control key for asset reissuance")
+			}
+		}
+
+		// ensure burning is done to a valid burn address
+		if totalOuputAmount < totalInputAmount {
+			controlKeyFound := false
+			for _, in := range tx.TxIn {
+				prevout := in.PreviousOutPoint.String()
+				if _, ok := txInputsMap[prevout]; !ok {
+					continue
+				}
+				pkScript := txInputsMap[prevout].PkScript
+				pubkeyBytes := pkScript[2:]
+
+				pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+				if err != nil {
+					return err
+				}
+				if pubkey.IsEqual(decodedAsset.ControlPubkey) {
+					controlKeyFound = true
+					break
+				}
+			}
+			if !controlKeyFound {
+				return fmt.Errorf("asset burning must be done to a valid burn address")
+			}
+		}
+	}
+
 	return nil
 }

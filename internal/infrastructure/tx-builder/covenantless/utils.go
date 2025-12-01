@@ -92,7 +92,7 @@ func getOutputVtxosLeaves(
 
 					encodedTeleportPubkey := schnorr.SerializePubKey(teleportKey)
 
-					// TODO(Joshua) rectify compare the reconstructed teleport pubkey with the provided pubkey
+					// TODO (Joshua) rectify compare the reconstructed teleport pubkey with the provided pubkey
 					if !bytes.Equal(encodedTeleportPubkey, pubkeyBytes) {
 						log.Println("This does not add up")
 						// return nil, fmt.Errorf("asset teleport pubkey does not match reconstructed pubkey")
