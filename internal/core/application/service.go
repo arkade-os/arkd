@@ -8,7 +8,6 @@ import (
 	"math"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -894,9 +893,8 @@ func (s *service) SubmitOffchainTx(
 	foundOpReturn := false
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
-		isAssetOutput := asset.IsAsset(out.PkScript)
-
-		if isAssetOutput {
+		// validate asset output if present
+		if asset.IsAssetGroup(out.PkScript) {
 			if foundOpReturn {
 				return nil, "", "", errors.MALFORMED_ARK_TX.New(
 					"tx %s has multiple op return outputs, not allowed for assets", txid,
@@ -911,7 +909,6 @@ func (s *service) SubmitOffchainTx(
 			}
 
 			outputs = append(outputs, out)
-
 			continue
 		}
 
@@ -1442,7 +1439,7 @@ func (s *service) RegisterIntent(
 			}
 
 			for _, output := range decodedArkTx.UnsignedTx.TxOut {
-				if asset.IsAsset(output.PkScript) {
+				if asset.IsAssetGroup(output.PkScript) {
 					log.Println("this is where the asset is included")
 					vtxo.Asset = output.PkScript
 					break
@@ -3805,21 +3802,16 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 }
 
 func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, assetOutput []byte) error {
-	decodedAsset, _, err := asset.DecodeAssetFromOpret(assetOutput)
+	decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(assetOutput)
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
 
-	ins := decodedAsset.Inputs
-	outs := decodedAsset.Outputs
+	controlAsset := decodedAssetGroup.ControlAsset
+	normalAsset := decodedAssetGroup.NormalAsset
 
-	if err := asset.VerifyAssetInputs(tx.TxIn, ins); err != nil {
-		return fmt.Errorf("failed to verify asset inputs: %s", err)
-	}
-
-	if err := asset.VerifyAssetOutputs(tx.TxOut, outs); err != nil {
-		return fmt.Errorf("failed to verify asset outputs: %s", err)
-	}
+	ins := normalAsset.Inputs
+	outs := controlAsset.Outputs
 
 	totalOuputAmount := uint64(0)
 	for _, assetOut := range outs {
@@ -3831,10 +3823,36 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 		totalInputAmount += uint64(in.Amount)
 	}
 
-	txInputsMap := make(map[string]*wire.TxOut)
+	// verify Asset Reissuance / buring
+	if totalInputAmount != totalOuputAmount {
+		if controlAsset == nil {
+			return fmt.Errorf("control asset is required for asset modification")
+		}
 
-	// verify that each asset input corresponds to a finalized asset output
-	for _, input := range decodedAsset.Inputs {
+		if !bytes.Equal(controlAsset.AssetId[:], normalAsset.AssetId[:]) {
+			return fmt.Errorf("invalid control key for asset modification")
+		}
+
+		if err := s.verifyAsset(ctx, tx, *controlAsset); err != nil {
+			return fmt.Errorf("invalid control key for asset reissuance")
+		}
+
+	}
+
+	return s.verifyAsset(ctx, tx, normalAsset)
+}
+
+func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, assetDetails asset.Asset) error {
+	txins := txMsg.TxIn
+	txouts := txMsg.TxOut
+
+	if err := asset.ValidateAsset(txins, txouts, assetDetails); err != nil {
+		return err
+	}
+
+	assetInputs := assetDetails.Inputs
+
+	for _, input := range assetInputs {
 		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, hex.EncodeToString(input.Txid))
 
 		if err != nil {
@@ -3855,10 +3873,10 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 			return fmt.Errorf("error decoding Ark Tx: %s", err)
 		}
 
-		var assetData *asset.Asset
+		var assetGroup *asset.AssetGroup
 		for _, output := range decodedArkTx.UnsignedTx.TxOut {
-			if asset.IsAsset(output.PkScript) {
-				assetData, _, err = asset.DecodeAssetFromOpret(output.PkScript)
+			if asset.IsAssetGroup(output.PkScript) {
+				assetGroup, _, err = asset.DecodeAssetGroupFromOpret(output.PkScript)
 				if err != nil {
 					return fmt.Errorf("error decoding asset Opreturn: %s", err)
 				}
@@ -3866,18 +3884,18 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 			}
 		}
 
-		if assetData == nil {
+		if assetGroup == nil {
 			return fmt.Errorf("no asset data found in offchain tx %s", hex.EncodeToString(input.Txid))
 		}
 
+		assets := []asset.Asset{assetGroup.NormalAsset}
+		if assetGroup.ControlAsset != nil {
+			assets = append(assets, *assetGroup.ControlAsset)
+		}
+
 		foundOutput := false
-
-		for _, out := range assetData.Outputs {
-			if out.Vout == input.Vout && out.Amount == input.Amount {
-				vout := int(input.Vout)
-				key := hex.EncodeToString(input.Txid) + ":" + strconv.Itoa(vout)
-				txInputsMap[key] = decodedArkTx.UnsignedTx.TxOut[vout]
-
+		for _, asset := range assets {
+			if asset.Outputs[input.Vout].Amount == input.Amount {
 				foundOutput = true
 				break
 			}
@@ -3888,55 +3906,5 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 				input.Vout, hex.EncodeToString(input.Txid))
 		}
 	}
-
-	// Verify If Asset Reissuance or Burning
-	if len(ins) > 0 {
-		// ensure controlKey is present for reissuing
-		if totalOuputAmount > totalInputAmount {
-			txId := tx.TxIn[0].PreviousOutPoint.Hash[:]
-			index := tx.TxIn[0].PreviousOutPoint.Index
-			slices.Reverse(txId)
-			controlInput := fmt.Sprintf("%s:%d", hex.EncodeToString(txId), index)
-			if _, ok := txInputsMap[controlInput]; !ok {
-				return fmt.Errorf("control input is missing for asset reissuance")
-			}
-			pkScript := txInputsMap[controlInput].PkScript
-			pubkeyBytes := pkScript[2:]
-
-			pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
-			if err != nil {
-				return err
-			}
-			if !pubkey.IsEqual(decodedAsset.ControlPubkey) {
-				return fmt.Errorf("invalid control key for asset reissuance")
-			}
-		}
-
-		// ensure burning is done to a valid burn address
-		if totalOuputAmount < totalInputAmount {
-			controlKeyFound := false
-			for _, in := range tx.TxIn {
-				prevout := in.PreviousOutPoint.String()
-				if _, ok := txInputsMap[prevout]; !ok {
-					continue
-				}
-				pkScript := txInputsMap[prevout].PkScript
-				pubkeyBytes := pkScript[2:]
-
-				pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
-				if err != nil {
-					return err
-				}
-				if pubkey.IsEqual(decodedAsset.ControlPubkey) {
-					controlKeyFound = true
-					break
-				}
-			}
-			if !controlKeyFound {
-				return fmt.Errorf("asset burning must be done to a valid burn address")
-			}
-		}
-	}
-
 	return nil
 }

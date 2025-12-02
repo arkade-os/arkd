@@ -3,6 +3,8 @@ package asset
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -14,16 +16,20 @@ import (
 const AssetVersion byte = 0x01
 
 type Asset struct {
-	AssetId       [32]byte
-	Outputs       []AssetOutput // 8 + 33
-	ControlPubkey *btcec.PublicKey
-	Inputs        []AssetInput
-	Immutable     bool
-	Metadata      []Metadata
+	AssetId        [32]byte
+	Outputs        []AssetOutput // 8 + 33
+	ControlAssetId [32]byte
+	Inputs         []AssetInput
+	Metadata       []Metadata
 
 	// OP_RETURN
 	Version byte
 	Magic   byte
+}
+
+type AssetGroup struct {
+	ControlAsset *Asset
+	NormalAsset  Asset
 }
 
 const AssetMagic byte = 0x41 // 'A'
@@ -45,14 +51,26 @@ type AssetInput struct {
 	Amount uint64
 }
 
-func (a *Asset) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
-	encodedTlv, err := a.EncodeTlv()
+func (g *AssetGroup) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
+	assets := make([]Asset, 0, 2)
+	if g.ControlAsset != nil {
+		assets = append(assets, *g.ControlAsset)
+	}
+	assets = append(assets, g.NormalAsset)
+
+	encodedAssets, err := encodeAssetGroupPayload(assets)
 	if err != nil {
 		return wire.TxOut{}, err
 	}
-	assetData := []byte{AssetMagic, a.Version}
+
+	version := g.NormalAsset.Version
+	if version == 0 {
+		version = AssetVersion
+	}
+
+	assetData := []byte{AssetMagic, version}
 	assetData = append(assetData, batchTxId...)
-	assetData = append(assetData, encodedTlv...)
+	assetData = append(assetData, encodedAssets...)
 
 	opReturnPubkey := append([]byte{txscript.OP_RETURN}, assetData...)
 
@@ -60,37 +78,127 @@ func (a *Asset) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
 		Value:    0,
 		PkScript: opReturnPubkey,
 	}, nil
-
 }
 
-func DecodeAssetFromOpret(opReturnData []byte) (*Asset, []byte, error) {
-	asset := &Asset{}
+func encodeAssetGroupPayload(assets []Asset) ([]byte, error) {
+	var scratch [8]byte
+	var buf bytes.Buffer
+
+	if err := tlv.WriteVarInt(&buf, uint64(len(assets)), &scratch); err != nil {
+		return nil, err
+	}
+
+	for _, asset := range assets {
+		encodedAsset, err := asset.EncodeTlv()
+		if err != nil {
+			return nil, err
+		}
+
+		if err := tlv.WriteVarInt(&buf, uint64(len(encodedAsset)), &scratch); err != nil {
+			return nil, err
+		}
+
+		if _, err := buf.Write(encodedAsset); err != nil {
+			return nil, err
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) {
+	reader := bytes.NewReader(payload)
+	var scratch [8]byte
+
+	assetCount, err := tlv.ReadVarInt(reader, &scratch)
+	if err != nil || assetCount == 0 {
+		return nil, fmt.Errorf("invalid asset group count: %w", err)
+	}
+
+	assets := make([]Asset, 0, int(assetCount))
+	for i := uint64(0); i < assetCount; i++ {
+		length, err := tlv.ReadVarInt(reader, &scratch)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read asset length: %w", err)
+		}
+
+		if length == 0 || length > uint64(reader.Len()) {
+			return nil, errors.New("asset length exceeds payload")
+		}
+
+		assetData := make([]byte, length)
+		if _, err := io.ReadFull(reader, assetData); err != nil {
+			return nil, fmt.Errorf("failed to read asset payload: %w", err)
+		}
+
+		var decoded Asset
+		decoded.Magic = AssetMagic
+		decoded.Version = version
+		if err := decoded.DecodeTlv(assetData); err != nil {
+			return nil, fmt.Errorf("failed to decode asset: %w", err)
+		}
+
+		assets = append(assets, decoded)
+	}
+
+	if reader.Len() != 0 {
+		return nil, errors.New("unexpected trailing bytes in asset group payload")
+	}
+
+	group := &AssetGroup{}
+	switch len(assets) {
+	case 0:
+		return nil, errors.New("empty asset group")
+	case 1:
+		group.NormalAsset = assets[0]
+	default:
+		group.ControlAsset = &assets[0]
+		group.NormalAsset = assets[len(assets)-1]
+	}
+
+	return group, nil
+}
+
+func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, []byte, error) {
+	if len(opReturnData) < 3 {
+		return nil, nil, errors.New("op_return data too short")
+	}
 
 	// Verify OP_RETURN prefix
 	if opReturnData[0] != txscript.OP_RETURN {
 		return nil, nil, errors.New("OP_RETURN not present")
 	}
 
-	// Extract and set magic, version, genesisTxId
-	asset.Magic = opReturnData[1]
-
-	if asset.Magic != AssetMagic {
+	if opReturnData[1] != AssetMagic {
 		return nil, nil, errors.New("invalid asset magic")
 	}
 
-	asset.Version = opReturnData[2]
-	batchTxId := opReturnData[3 : 3+32]
-
-	err := asset.DecodeTlv(opReturnData[3+32:])
-	if err != nil {
-		return nil, nil, err
+	if len(opReturnData) < 3+32 {
+		return nil, nil, errors.New("op_return data missing batch txid")
 	}
 
-	return asset, batchTxId, nil
+	version := opReturnData[2]
+	batchTxId := opReturnData[3 : 3+32]
+
+	group, err := decodeAssetGroupPayload(opReturnData[3+32:], version)
+	if err == nil {
+		return group, batchTxId, nil
+	}
+
+	// Fallback to legacy single-asset layout.
+	var asset Asset
+	asset.Magic = AssetMagic
+	asset.Version = version
+
+	if err := asset.DecodeTlv(opReturnData[3+32:]); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode asset data: %w", err)
+	}
+
+	return &AssetGroup{NormalAsset: asset}, batchTxId, nil
 
 }
 
-func IsAsset(opReturnData []byte) bool {
+func IsAssetGroup(opReturnData []byte) bool {
 	if len(opReturnData) < 1 {
 		return false
 	}
@@ -112,8 +220,8 @@ func (a *Asset) EncodeTlv() ([]byte, error) {
 		EAssetOutputList, nil))
 
 	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
-		tlvTypeControlPubkey,
-		&a.ControlPubkey))
+		tlvTypeControlAssetId,
+		&a.ControlAssetId))
 
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeInput,
@@ -123,8 +231,6 @@ func (a *Asset) EncodeTlv() ([]byte, error) {
 
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeMetadata, &a.Metadata, MetadataListSize(a.Metadata), EMetadataList, nil))
-
-	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(tlvTypeImmutable, &a.Immutable))
 
 	tlvStream, err := tlv.NewStream(tlvRecords...)
 	if err != nil {
@@ -154,8 +260,8 @@ func (a *Asset) DecodeTlv(data []byte) error {
 			DAssetOutputList,
 		),
 		tlv.MakePrimitiveRecord(
-			tlvTypeControlPubkey,
-			&a.ControlPubkey,
+			tlvTypeControlAssetId,
+			&a.ControlAssetId,
 		),
 		tlv.MakeDynamicRecord(
 			tlvTypeInput,
@@ -171,10 +277,6 @@ func (a *Asset) DecodeTlv(data []byte) error {
 			nil,
 			DMetadataList,
 		),
-		tlv.MakePrimitiveRecord(
-			tlvTypeImmutable,
-			&a.Immutable,
-		),
 	)
 	if err != nil {
 		return err
@@ -184,13 +286,13 @@ func (a *Asset) DecodeTlv(data []byte) error {
 	return tlvStream.Decode(buf)
 }
 
-func VerifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
+func verifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
 
 	processedOutputs := 0
 
 	for _, out := range outs {
 		// Asset Output comes after Seal Outputs
-		if IsAsset(out.PkScript) {
+		if IsAssetGroup(out.PkScript) {
 			break
 		}
 		for _, assetOut := range assetOutputs {
@@ -211,7 +313,7 @@ func VerifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
 	return nil
 }
 
-func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
+func verifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
 	processedInputs := 0
 
 	for _, assetIn := range assetInputs {
@@ -224,6 +326,18 @@ func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
 
 	if processedInputs != len(assetInputs) {
 		return errors.New("not all asset inputs found in transaction inputs")
+	}
+
+	return nil
+}
+
+func ValidateAsset(ins []*wire.TxIn, outs []*wire.TxOut, asset Asset) error {
+	if err := verifyAssetInputs(ins, asset.Inputs); err != nil {
+		return fmt.Errorf("asset input verification failed: %w", err)
+	}
+
+	if err := verifyAssetOutputs(outs, asset.Outputs); err != nil {
+		return fmt.Errorf("asset output verification failed: %w", err)
 	}
 
 	return nil

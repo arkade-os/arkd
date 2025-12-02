@@ -12,7 +12,7 @@ import (
 const (
 	tlvTypeAssetID         tlv.Type = 1
 	tlvTypeOutput          tlv.Type = 2
-	tlvTypeControlPubkey   tlv.Type = 3
+	tlvTypeControlAssetId  tlv.Type = 3
 	tlvTypeInput           tlv.Type = 4
 	tlvTypeMetadata        tlv.Type = 6
 	tlvTypeOutScriptPubKey tlv.Type = 7

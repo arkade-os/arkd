@@ -8,44 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEncodeOpretAndDecodeAsset(t *testing.T) {
-	t.Parallel()
-
-	var assetID [32]byte
-	copy(assetID[:], bytes.Repeat([]byte{0x3c}, 32))
-
-	controlKey := deterministicPubKey(t, 7)
-
-	batchTxID := deterministicTxid(0xdd)
-
-	asset := Asset{
-		AssetId:       assetID,
-		Outputs:       []AssetOutput{{PublicKey: deterministicPubKey(t, 8), Amount: 50, Vout: 0}},
-		ControlPubkey: &controlKey,
-		Inputs:        []AssetInput{{Txid: deterministicTxid(0x0a), Vout: 2, Amount: 80}},
-		Immutable:     true,
-		Metadata:      []Metadata{{Key: "note", Value: "opret"}},
-		Version:       AssetVersion,
-		Magic:         AssetMagic,
-	}
-
-	txOut, err := asset.EncodeOpret(batchTxID)
-	require.NoError(t, err)
-	require.True(t, IsAsset(txOut.PkScript))
-
-	decoded, decodedBatchTxID, err := DecodeAssetFromOpret(txOut.PkScript)
-	require.NoError(t, err)
-	require.Equal(t, batchTxID, decodedBatchTxID)
-	require.Equal(t, asset, *decoded)
-}
-
 func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	var assetID [32]byte
 	copy(assetID[:], bytes.Repeat([]byte{0x2a}, 32))
 
-	controlKey := deterministicPubKey(t, 3)
+	var controlAssetId [32]byte
+	copy(controlAssetId[:], bytes.Repeat([]byte{0x3c}, 32))
 
 	asset := Asset{
 		AssetId: assetID,
@@ -61,7 +31,7 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Vout:      1,
 			},
 		},
-		ControlPubkey: &controlKey,
+		ControlAssetId: controlAssetId,
 		Inputs: []AssetInput{
 			{
 				Txid: deterministicTxid(0xaa),
@@ -72,7 +42,6 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Vout: 9,
 			},
 		},
-		Immutable: true,
 		Metadata: []Metadata{
 			{Key: "purpose", Value: "roundtrip"},
 			{Key: "owner", Value: "arkade"},
@@ -86,6 +55,48 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	var decoded Asset
 	require.NoError(t, decoded.DecodeTlv(encoded))
 	require.Equal(t, asset, decoded)
+}
+
+func TestAssetGroupEncodeDecode(t *testing.T) {
+	t.Parallel()
+
+	var controlAssetId [32]byte
+	copy(controlAssetId[:], bytes.Repeat([]byte{0x3c}, 32))
+
+	controlAsset := Asset{
+		AssetId:        deterministicBytesArray(0x11),
+		Outputs:        []AssetOutput{{PublicKey: deterministicPubKey(t, 9), Amount: 1, Vout: 0}},
+		ControlAssetId: controlAssetId,
+		Metadata:       []Metadata{{Key: "kind", Value: "control"}},
+		Version:        AssetVersion,
+		Magic:          AssetMagic,
+	}
+
+	normalAsset := Asset{
+		AssetId:        deterministicBytesArray(0x12),
+		Outputs:        []AssetOutput{{PublicKey: deterministicPubKey(t, 10), Amount: 10, Vout: 1}},
+		ControlAssetId: controlAssetId,
+		Inputs:         []AssetInput{{Txid: deterministicTxid(0xcc), Vout: 1, Amount: 5}},
+		Metadata:       []Metadata{{Key: "kind", Value: "normal"}},
+		Version:        AssetVersion,
+		Magic:          AssetMagic,
+	}
+
+	group := AssetGroup{
+		ControlAsset: &controlAsset,
+		NormalAsset:  normalAsset,
+	}
+
+	batchTxID := deterministicTxid(0xee)
+	txOut, err := group.EncodeOpret(batchTxID)
+	require.NoError(t, err)
+
+	decodedGroup, decodedBatchTxID, err := DecodeAssetGroupFromOpret(txOut.PkScript)
+	require.NoError(t, err)
+	require.Equal(t, batchTxID, decodedBatchTxID)
+	require.NotNil(t, decodedGroup.ControlAsset)
+	require.Equal(t, controlAsset, *decodedGroup.ControlAsset)
+	require.Equal(t, normalAsset, decodedGroup.NormalAsset)
 }
 
 func TestAssetOutputListEncodeDecode(t *testing.T) {
@@ -153,4 +164,10 @@ func deterministicPubKey(t *testing.T, seed byte) btcec.PublicKey {
 
 func deterministicTxid(seed byte) []byte {
 	return bytes.Repeat([]byte{seed}, 32)
+}
+
+func deterministicBytesArray(seed byte) [32]byte {
+	var arr [32]byte
+	copy(arr[:], deterministicTxid(seed))
+	return arr
 }
