@@ -26,9 +26,9 @@ func TestScheduleTask(t *testing.T) {
 
 	for _, svc := range svcs {
 		t.Run(svc.name, func(t *testing.T) {
-			handlerFuncCalled := false
+			handlerFuncCalled := int32(0)
 			handlerFunc := func() {
-				handlerFuncCalled = true
+				atomic.StoreInt32(&handlerFuncCalled, 1)
 			}
 
 			err := svc.scheduler.ScheduleTaskOnce(svc.scheduler.AddNow(2), handlerFunc)
@@ -36,7 +36,7 @@ func TestScheduleTask(t *testing.T) {
 
 			time.Sleep(3 * time.Second)
 
-			require.True(t, handlerFuncCalled)
+			require.True(t, atomic.LoadInt32(&handlerFuncCalled) == 1)
 		})
 	}
 }
