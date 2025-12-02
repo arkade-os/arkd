@@ -438,7 +438,7 @@ func (a *adminService) getScheduledSweep(
 	ctx context.Context,
 	commitmentTxid string,
 ) (*ScheduledSweep, error) {
-	confirmed, _, _, err := a.walletSvc.IsTransactionConfirmed(ctx, commitmentTxid)
+	confirmed, _, err := a.walletSvc.IsTransactionConfirmed(ctx, commitmentTxid)
 	if !confirmed || err != nil {
 		return &ScheduledSweep{
 			RoundId:          commitmentTxid,

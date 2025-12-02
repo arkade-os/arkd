@@ -2283,24 +2283,22 @@ func (s *service) startRound() {
 				"failed to reset confirmation session from cache for round %s", existingRound.Id,
 			)
 		}
-		if existingRound != nil {
-			if existingRound.Id != "" {
-				if err := s.cache.TreeSigingSessions().Delete(ctx, existingRound.Id); err != nil {
-					log.WithError(err).Errorf(
-						"failed to delete tree signing sessions for round from cache %s",
-						existingRound.Id,
-					)
-				}
+		if existingRound.Id != "" {
+			if err := s.cache.TreeSigingSessions().Delete(ctx, existingRound.Id); err != nil {
+				log.WithError(err).Errorf(
+					"failed to delete tree signing sessions for round from cache %s",
+					existingRound.Id,
+				)
 			}
-			if existingRound.CommitmentTxid != "" {
-				if err := s.cache.BoardingInputs().DeleteSignatures(
-					ctx, existingRound.CommitmentTxid,
-				); err != nil {
-					log.WithError(err).Errorf(
-						"failed to delete boarding input signatures from cache for round %s",
-						existingRound.Id,
-					)
-				}
+		}
+		if existingRound.CommitmentTxid != "" {
+			if err := s.cache.BoardingInputs().DeleteSignatures(
+				ctx, existingRound.CommitmentTxid,
+			); err != nil {
+				log.WithError(err).Errorf(
+					"failed to delete boarding input signatures from cache for round %s",
+					existingRound.Id,
+				)
 			}
 		}
 	}
@@ -3443,17 +3441,13 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 		return
 	}
 
-	expirationTimestamp := s.sweeper.scheduler.AddNow(int64(s.batchExpiry.Value))
-
 	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
 	if err != nil {
 		log.WithError(err).Warn("failed to create vtxo tree")
 		return
 	}
 
-	if err := s.sweeper.scheduleBatchSweep(
-		expirationTimestamp, round.CommitmentTxid, vtxoTree,
-	); err != nil {
+	if err := s.sweeper.scheduleBatchSweep(round.CommitmentTxid, vtxoTree); err != nil {
 		log.WithError(err).Warn("failed to schedule sweep tx")
 	}
 }
@@ -3785,7 +3779,7 @@ func (s *service) validateBoardingInput(
 		return nil, fmt.Errorf("failed to deserialize tx %s: %s", input.Txid, err)
 	}
 
-	confirmed, _, blocktime, err := s.wallet.IsTransactionConfirmed(ctx, input.Txid)
+	confirmed, blockTimestamp, err := s.wallet.IsTransactionConfirmed(ctx, input.Txid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check tx %s: %s", input.Txid, err)
 	}
@@ -3808,7 +3802,9 @@ func (s *service) validateBoardingInput(
 	}
 
 	// if the exit path is available, forbid registering the boarding utxo
-	if time.Unix(blocktime, 0).Add(time.Duration(exitDelay.Seconds()) * time.Second).Before(now) {
+	if time.Unix(blockTimestamp.Time, 0).
+		Add(time.Duration(exitDelay.Seconds()) * time.Second).
+		Before(now) {
 		return nil, fmt.Errorf("tx %s expired", input.Txid)
 	}
 
@@ -3816,7 +3812,9 @@ func (s *service) validateBoardingInput(
 	// by shifitng the current "now" in the future of the duration of the smallest exit delay.
 	// This way, any exit order guaranteed by the exit path is maintained at intent registration
 	if !input.locktimeDisabled {
-		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).Unix() - blocktime
+		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).
+			Unix() -
+			blockTimestamp.Time
 		if diff := input.locktime.Seconds() - delta; diff > 0 {
 			return nil, fmt.Errorf(
 				"vtxo script can be used for intent registration in %d seconds", diff,

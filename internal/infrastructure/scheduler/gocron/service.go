@@ -21,11 +21,8 @@ func (s *service) Unit() ports.TimeUnit {
 	return ports.UnixTime
 }
 
-func (s *service) AddNow(expiry int64) int64 {
-	return time.Now().Add(time.Duration(expiry) * time.Second).Unix()
-}
-
 func (s *service) AfterNow(expiry int64) bool {
+	// TODO use chain mediantime instead of system time
 	return time.Unix(expiry, 0).After(time.Now())
 }
 
