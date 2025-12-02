@@ -2871,7 +2871,7 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 
 }
 
-// TestDeleteIntent tests deleting an already registered intent
+// TestIntent tests intent registration and deletion functionality
 func TestIntent(t *testing.T) {
 	t.Run("register and delete", func(t *testing.T) {
 		ctx := t.Context()
