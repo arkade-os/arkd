@@ -155,7 +155,7 @@ func (s *sweeper) start(ctx context.Context) error {
 				continue
 			}
 
-			confirmed, blockHeight, blockTime, err := s.wallet.IsTransactionConfirmed(
+			confirmed, blockTimestamp, err := s.wallet.IsTransactionConfirmed(
 				ctx, checkpointTxid,
 			)
 			if err != nil {
@@ -168,7 +168,7 @@ func (s *sweeper) start(ctx context.Context) error {
 
 			if confirmed {
 				if err := s.scheduleCheckpointSweep(
-					vtxo.Outpoint, checkpointTx, blockHeight, blockTime,
+					vtxo.Outpoint, checkpointTx, blockTimestamp,
 				); err != nil {
 					log.WithError(err).Errorf(
 						"failed to schedule sweep task for checkpoint %s", checkpointTxid,
@@ -179,7 +179,7 @@ func (s *sweeper) start(ctx context.Context) error {
 
 			// asynchronously wait for the tx to be confirmed
 			go func() {
-				blockHeight, blockTime, err := waitForConfirmation(
+				blockTimestamp, err := waitForConfirmation(
 					ctx, checkpointTxid, s.wallet,
 				)
 				if err != nil {
@@ -190,9 +190,7 @@ func (s *sweeper) start(ctx context.Context) error {
 					return
 				}
 
-				if err := s.scheduleCheckpointSweep(
-					vtxo.Outpoint, checkpointTx, blockHeight, blockTime,
-				); err != nil {
+				if err := s.scheduleCheckpointSweep(vtxo.Outpoint, checkpointTx, blockTimestamp); err != nil {
 					log.WithError(err).Errorf(
 						"failed to schedule sweep task for checkpoint %s", checkpointTxid,
 					)
@@ -220,7 +218,7 @@ func (s *sweeper) removeTask(id string) {
 }
 
 func (s *sweeper) scheduleCheckpointSweep(
-	vtxo domain.Outpoint, checkpointTx *psbt.Packet, blockHeight, blockTime int64,
+	vtxo domain.Outpoint, checkpointTx *psbt.Packet, blockTimestamp *ports.BlockTimestamp,
 ) error {
 	checkpointTxid := checkpointTx.UnsignedTx.TxHash()
 	checkpointVOut := uint32(0)
@@ -274,9 +272,9 @@ func (s *sweeper) scheduleCheckpointSweep(
 
 	sweepAt := int64(0)
 	if s.scheduler.Unit() == ports.BlockHeight {
-		sweepAt = blockHeight + int64(sweepClosure.Locktime.Value)
+		sweepAt = int64(blockTimestamp.Height) + int64(sweepClosure.Locktime.Value)
 	} else {
-		sweepAt = blockTime + sweepClosure.Locktime.Seconds()
+		sweepAt = blockTimestamp.Time + sweepClosure.Locktime.Seconds()
 	}
 
 	_, tapTree, err := checkpointVtxoScript.TapTree()
@@ -343,7 +341,7 @@ func (s *sweeper) scheduleBatchSweep(commitmentTxid string, vtxoTree *tree.TxTre
 
 	// schedule AFTER the root input is confirmed
 	rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
-	_, _, err = waitForConfirmation(context.Background(), rootInput, s.wallet)
+	blockTimestamp, err := waitForConfirmation(context.Background(), rootInput, s.wallet)
 	if err != nil {
 		log.WithError(err).Warnf(
 			"failed to wait for confirmation of batch input tx %s, schedule task time may be inaccurate",
@@ -351,7 +349,12 @@ func (s *sweeper) scheduleBatchSweep(commitmentTxid string, vtxoTree *tree.TxTre
 		)
 	}
 
-	expirationTimestamp := s.scheduler.AddNow(int64(vtxoTreeExpiry.Value))
+	var expirationTimestamp int64
+	if s.scheduler.Unit() == ports.BlockHeight {
+		expirationTimestamp = int64(blockTimestamp.Height) + int64(vtxoTreeExpiry.Value)
+	} else {
+		expirationTimestamp = blockTimestamp.Time + vtxoTreeExpiry.Seconds()
+	}
 
 	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
 		log.WithError(err).Warnf(
