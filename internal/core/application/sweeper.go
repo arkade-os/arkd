@@ -96,13 +96,7 @@ func (s *sweeper) start(ctx context.Context) error {
 				continue
 			}
 
-			vtxoTree, err := tree.NewTxTree(flatVtxoTree)
-			if err != nil {
-				log.WithError(err).Errorf("failed to parse vtxo tree for batch %s", txid)
-				continue
-			}
-
-			task := s.createBatchSweepTask(txid, vtxoTree)
+			task := s.createBatchSweepTask(txid, flatVtxoTree.RootTxid())
 			if err := task(); err != nil {
 				log.WithError(err).Errorf("failed to create sweep task for batch %s", txid)
 				continue
@@ -331,26 +325,21 @@ func (s *sweeper) scheduleCheckpointSweep(
 
 // scheduleBatchSweep set up a task to be executed once at the given timestamp
 func (s *sweeper) scheduleBatchSweep(
-	expirationTimestamp int64, commitmentTxid string, vtxoTree *tree.TxTree,
+	expirationTimestamp int64, commitmentTxid string, vtxoTreeRootTxid string,
 ) error {
-	if vtxoTree == nil { // skip
-		log.Debugf("sweeper: batch %s has empty vtxo tree, skip scheduling sweep", commitmentTxid)
-		return nil
-	}
-
 	if err := s.scheduleTask(sweeperTask{
-		execute: s.createBatchSweepTask(commitmentTxid, vtxoTree),
-		id:      vtxoTree.Root.UnsignedTx.TxID(),
+		execute: s.createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid),
+		id:      vtxoTreeRootTxid,
 		at:      expirationTimestamp,
 	}); err != nil {
 		return err
 	}
 
-	log.WithField("root", vtxoTree.Root.UnsignedTx.TxID()).
+	log.WithField("root", vtxoTreeRootTxid).
 		Debugf("sweeper: scheduled sweep for batch %s at %s",
 			commitmentTxid, fancyTime(expirationTimestamp, s.scheduler.Unit()))
 
-	if err := s.updateVtxoExpirationTime(vtxoTree, expirationTimestamp); err != nil {
+	if err := s.updateVtxoExpirationTime(commitmentTxid, vtxoTreeRootTxid, expirationTimestamp); err != nil {
 		log.WithError(err).Warnf(
 			"failed to update vtxo tree expiration time for batch %s", commitmentTxid,
 		)
@@ -406,15 +395,32 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 // createBatchSweepTask returns a function passed as handler in the scheduler
 // it tries to craft a sweep tx containing the onchain outputs of the given vtxo tree
 // if some parts of the tree have been broadcasted in the meantine, it will schedule the next taskes for the remaining parts of the tree
-func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxTree) func() error {
+func (s *sweeper) createBatchSweepTask(
+	commitmentTxid string,
+	vtxoTreeRootTxid string,
+) func() error {
 	return func() error {
-		log.WithField("root", vtxoTree.Root.UnsignedTx.TxID()).Debugf(
+		log.WithField("root", vtxoTreeRootTxid).Debugf(
 			"sweeper: start analyzing batch %s", commitmentTxid)
 
 		ctx := context.Background()
 		round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
 		if err != nil {
 			return err
+		}
+
+		roundVtxoTree, err := tree.NewTxTree(round.VtxoTree)
+		if err != nil {
+			return err
+		}
+
+		vtxoTree := roundVtxoTree.Find(vtxoTreeRootTxid)
+		if vtxoTree == nil {
+			return fmt.Errorf(
+				"vtxo tree %s not found in round %s",
+				vtxoTreeRootTxid,
+				commitmentTxid,
+			)
 		}
 
 		// outputs sweepable now
@@ -444,10 +450,11 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid string, vtxoTree *tree.TxT
 				}
 
 				for _, subTree := range subtrees {
-					if err := s.scheduleBatchSweep(expiresAt, commitmentTxid, subTree); err != nil {
+					subTreeRootTxid := subTree.Root.UnsignedTx.TxID()
+					if err := s.scheduleBatchSweep(expiresAt, commitmentTxid, subTreeRootTxid); err != nil {
 						log.WithError(err).Errorf(
 							"failed to schedule sweep for vtxo tree %s of batch %s",
-							subTree.Root.UnsignedTx.TxID(), commitmentTxid,
+							subTreeRootTxid, commitmentTxid,
 						)
 						continue
 					}
@@ -705,8 +712,27 @@ func (s *sweeper) createCheckpointSweepTask(
 	}
 }
 
-func (s *sweeper) updateVtxoExpirationTime(tree *tree.TxTree, expirationTime int64) error {
-	leaves := tree.Leaves()
+func (s *sweeper) updateVtxoExpirationTime(
+	commitmentTxid, vtxoTreeRootTxid string,
+	expirationTime int64,
+) error {
+	flatRoundVtxoTree, err := s.repoManager.Rounds().
+		GetRoundVtxoTree(context.Background(), commitmentTxid)
+	if err != nil {
+		return err
+	}
+
+	roundVtxoTree, err := tree.NewTxTree(flatRoundVtxoTree)
+	if err != nil {
+		return err
+	}
+
+	vtxoTree := roundVtxoTree.Find(vtxoTreeRootTxid)
+	if vtxoTree == nil {
+		return fmt.Errorf("vtxo tree %s not found in round %s", vtxoTreeRootTxid, commitmentTxid)
+	}
+
+	leaves := vtxoTree.Leaves()
 	vtxos := make([]domain.Outpoint, 0)
 
 	for _, leaf := range leaves {
