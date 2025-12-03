@@ -25,7 +25,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
+	"github.com/urfave/cli/v2"
 )
 
 const minAllowedSequence = 512
@@ -152,63 +152,6 @@ func (c *Config) String() string {
 }
 
 var (
-	Datadir                              = "DATADIR"
-	WalletAddr                           = "WALLET_ADDR"
-	SignerAddr                           = "SIGNER_ADDR"
-	SessionDuration                      = "SESSION_DURATION"
-	BanDuration                          = "BAN_DURATION"
-	BanThreshold                         = "BAN_THRESHOLD"
-	Port                                 = "PORT"
-	AdminPort                            = "ADMIN_PORT"
-	EventDbType                          = "EVENT_DB_TYPE"
-	DbType                               = "DB_TYPE"
-	DbUrl                                = "PG_DB_URL"
-	EventDbUrl                           = "PG_EVENT_DB_URL"
-	SchedulerType                        = "SCHEDULER_TYPE"
-	TxBuilderType                        = "TX_BUILDER_TYPE"
-	LiveStoreType                        = "LIVE_STORE_TYPE"
-	RedisUrl                             = "REDIS_URL"
-	RedisTxNumOfRetries                  = "REDIS_NUM_OF_RETRIES"
-	LogLevel                             = "LOG_LEVEL"
-	VtxoTreeExpiry                       = "VTXO_TREE_EXPIRY"
-	UnilateralExitDelay                  = "UNILATERAL_EXIT_DELAY"
-	PublicUnilateralExitDelay            = "PUBLIC_UNILATERAL_EXIT_DELAY"
-	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
-	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
-	EsploraURL                           = "ESPLORA_URL"
-	AlertManagerURL                      = "ALERT_MANAGER_URL"
-	NoMacaroons                          = "NO_MACAROONS"
-	NoTLS                                = "NO_TLS"
-	TLSExtraIP                           = "TLS_EXTRA_IP"
-	TLSExtraDomain                       = "TLS_EXTRA_DOMAIN"
-	UnlockerType                         = "UNLOCKER_TYPE"
-	UnlockerFilePath                     = "UNLOCKER_FILE_PATH"
-	UnlockerPassword                     = "UNLOCKER_PASSWORD"
-	NoteUriPrefix                        = "NOTE_URI_PREFIX"
-	ScheduledSessionStartTime            = "SCHEDULED_SESSION_START_TIME"
-	ScheduledSessionEndTime              = "SCHEDULED_SESSION_END_TIME"
-	ScheduledSessionPeriod               = "SCHEDULED_SESSION_PERIOD"
-	ScheduledSessionDuration             = "SCHEDULED_SESSION_DURATION"
-	ScheduledSessionMinRoundParticipants = "SCHEDULED_SESSION_MIN_ROUND_PARTICIPANTS_COUNT"
-	ScheduledSessionMaxRoundParticipants = "SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT"
-	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
-	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
-	PyroscopeServerURL                   = "PYROSCOPE_SERVER_URL"
-	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
-	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
-	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
-	VtxoMaxAmount                        = "VTXO_MAX_AMOUNT"
-	UtxoMinAmount                        = "UTXO_MIN_AMOUNT"
-	VtxoMinAmount                        = "VTXO_MIN_AMOUNT"
-	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
-	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
-	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
-	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
-	// Skip CSV validation for vtxos created before this date
-	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
-	OnchainOutputFee              = "ONCHAIN_OUTPUT_FEE"
-	EnablePprof                   = "ENABLE_PPROF"
-
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
 	defaultBanDuration         = 10 * defaultSessionDuration
@@ -246,166 +189,548 @@ var (
 	defaultEnablePprof                   = false
 )
 
-func LoadConfig() (*Config, error) {
-	viper.SetEnvPrefix("ARKD")
-	viper.AutomaticEnv()
+// env returns a list of strings prefixed with `ARKD_`.
+// This is used as a syntax sugar for defining env vars.
+func env(values ...string) []string {
+	envs := make([]string, len(values))
 
-	viper.SetDefault(Datadir, defaultDatadir)
-	viper.SetDefault(Port, DefaultPort)
-	viper.SetDefault(AdminPort, DefaultAdminPort)
-	viper.SetDefault(DbType, defaultDbType)
-	viper.SetDefault(NoTLS, defaultNoTLS)
-	viper.SetDefault(LogLevel, defaultLogLevel)
-	viper.SetDefault(SessionDuration, defaultSessionDuration)
-	viper.SetDefault(BanDuration, defaultBanDuration)
-	viper.SetDefault(BanThreshold, defaultBanThreshold)
-	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
-	viper.SetDefault(SchedulerType, defaultSchedulerType)
-	viper.SetDefault(EventDbType, defaultEventDbType)
-	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
-	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
-	viper.SetDefault(PublicUnilateralExitDelay, defaultUnilateralExitDelay)
-	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
-	viper.SetDefault(EsploraURL, defaultEsploraURL)
-	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
-	viper.SetDefault(BoardingExitDelay, defaultBoardingExitDelay)
-	viper.SetDefault(RoundMaxParticipantsCount, defaultRoundMaxParticipantsCount)
-	viper.SetDefault(RoundMinParticipantsCount, defaultRoundMinParticipantsCount)
-	viper.SetDefault(UtxoMaxAmount, defaultUtxoMaxAmount)
-	viper.SetDefault(UtxoMinAmount, defaultUtxoMinAmount)
-	viper.SetDefault(VtxoMaxAmount, defaultVtxoMaxAmount)
-	viper.SetDefault(VtxoMinAmount, defaultVtxoMinAmount)
-	viper.SetDefault(LiveStoreType, defaultLiveStoreType)
-	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
-	viper.SetDefault(AllowCSVBlockType, defaultAllowCSVBlockType)
-	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
-	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
-	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
-	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
-	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
-	viper.SetDefault(OnchainOutputFee, defaultOnchainOutputFee)
-	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	for i, value := range values {
+		envs[i] = fmt.Sprintf("ARKD_%s", value)
+	}
 
-	if err := initDatadir(); err != nil {
+	return envs
+}
+
+var (
+	Datadir = &cli.StringFlag{
+		Usage: "Directory to store data",
+		Name:  "datadir", EnvVars: env("DATADIR"),
+		Value: defaultDatadir,
+	}
+
+	Port = &cli.UintFlag{
+		Usage: "Port (public) to listen on",
+		Name:  "port", EnvVars: env("PORT"),
+		Value: uint(DefaultPort),
+	}
+
+	AdminPort = &cli.UintFlag{
+		Usage: "Admin port (private) to listen on, fallback to service port if 0",
+		Name:  "admin-port", EnvVars: env("ADMIN_PORT"),
+		Value: uint(DefaultAdminPort),
+	}
+
+	LogLevel = &cli.IntFlag{
+		Usage: "Logging level (0-6, where 6 is trace)",
+		Name:  "log-level", EnvVars: env("LOG_LEVEL"),
+		Value: defaultLogLevel,
+	}
+
+	SessionDuration = &cli.Int64Flag{
+		Usage: "How long a batch session lasts (in seconds) before timing out once it started",
+		Name:  "session-duration", EnvVars: env("SESSION_DURATION"),
+		Value: int64(defaultSessionDuration),
+	}
+
+	DbType = &cli.StringFlag{
+		Usage: "Database type (postgres, sqlite, badger)",
+		Name:  "db-type", EnvVars: env("DB_TYPE"),
+		Value: defaultDbType,
+	}
+
+	DbUrl = &cli.StringFlag{
+		Usage: "Postgres connection url if ARKD_DB_TYPE is set to postgres",
+		Name:  "pg-db-url", EnvVars: env("PG_DB_URL"),
+	}
+
+	EventDbType = &cli.StringFlag{
+		Usage: "Event database type (postgres, badger)",
+		Name:  "event-db-type", EnvVars: env("EVENT_DB_TYPE"),
+		Value: defaultEventDbType,
+	}
+
+	EventDbUrl = &cli.StringFlag{
+		Usage: "Postgres connection url if ARKD_EVENT_DB_TYPE is set to postgres",
+		Name:  "pg-event-db-url", EnvVars: env("PG_EVENT_DB_URL"),
+	}
+
+	TxBuilderType = &cli.StringFlag{
+		Usage: "Transaction builder type",
+		Name:  "tx-builder-type", EnvVars: env("TX_BUILDER_TYPE"),
+		Value: defaultTxBuilderType,
+	}
+
+	LiveStoreType = &cli.StringFlag{
+		Usage: "Cache service type (redis, inmemory)",
+		Name:  "live-store-type", EnvVars: env("LIVE_STORE_TYPE"),
+		Value: defaultLiveStoreType,
+	}
+
+	RedisUrl = &cli.StringFlag{
+		Usage: "Redis db connection url if ARKD_LIVE_STORE_TYPE is set to redis",
+		Name:  "redis-url", EnvVars: env("REDIS_URL"),
+	}
+
+	RedisTxNumOfRetries = &cli.IntFlag{
+		Usage: "Maximum number of retries for Redis write operations in case of conflicts",
+		Name:  "redis-num-of-retries", EnvVars: env("REDIS_NUM_OF_RETRIES"),
+		Value: defaultRedisTxNumOfRetries,
+	}
+
+	// TODO: Make this a cli.DurationFlag.
+	VtxoTreeExpiry = &cli.IntFlag{
+		Usage: "VTXO tree expiry in seconds",
+		Name:  "vtxo-tree-expiry", EnvVars: env("VTXO_TREE_EXPIRY"),
+		Value: defaultVtxoTreeExpiry,
+
+		// We could just print 7 days, but it's best to let time.Duration to format it in case we
+		// update the value.
+		DefaultText: fmt.Sprintf("%d (~%0.f days)", defaultVtxoTreeExpiry,
+			(time.Duration(defaultVtxoTreeExpiry)*time.Second).Hours()/24),
+	}
+
+	// TODO: Make this a cli.DurationFlag.
+	UnilateralExitDelay = &cli.IntFlag{
+		Usage: "Unilateral exit delay in seconds",
+		Name:  "unilateral-exit-delay", EnvVars: env("UNILATERAL_EXIT_DELAY"),
+		Value: defaultUnilateralExitDelay,
+
+		// We could just print 24 hours, but it's best to let time.Duration to format it in case we
+		// update the value.
+		DefaultText: fmt.Sprintf("%d (~%0.f hours)", defaultUnilateralExitDelay,
+			(time.Duration(defaultUnilateralExitDelay) * time.Second).Hours()),
+	}
+
+	// TODO: Make this a cli.DurationFlag.
+	// TODO: Not documented in README.
+	PublicUnilateralExitDelay = &cli.IntFlag{
+		Usage: "Public unilateral exit delay in seconds",
+		Name:  "public-unilateral-exit-delay", EnvVars: env("PUBLIC_UNILATERAL_EXIT_DELAY"),
+		Value: defaultUnilateralExitDelay,
+
+		// We could just print 24 hours, but it's best to let time.Duration to format it in case we
+		// update the value.
+		DefaultText: fmt.Sprintf("%d (~%0.f hours)", defaultUnilateralExitDelay,
+			(time.Duration(defaultUnilateralExitDelay) * time.Second).Hours()),
+	}
+
+	// TODO: Make this a cli.DurationFlag.
+	BoardingExitDelay = &cli.IntFlag{
+		Usage: "Boarding exit delay in seconds",
+		Name:  "boarding-exit-delay", EnvVars: env("BOARDING_EXIT_DELAY"),
+		Value: defaultBoardingExitDelay,
+
+		DefaultText: fmt.Sprintf("%d (~%0.f months)", defaultBoardingExitDelay,
+			(time.Duration(defaultBoardingExitDelay)*time.Second).Hours()/24/30),
+	}
+
+	EsploraURL = &cli.StringFlag{
+		Usage: "Esplora API URL",
+		Name:  "esplora-url", EnvVars: env("ESPLORA_URL"),
+		Value: defaultEsploraURL,
+	}
+
+	WalletAddr = &cli.StringFlag{
+		Usage: "The arkd wallet address to connect to in the form host:port",
+		Name:  "wallet-addr", EnvVars: env("WALLET_ADDR"),
+	}
+
+	SignerAddr = &cli.StringFlag{
+		Usage: "The signer address to connect to in the form host:port",
+		Name:  "signer-addr", EnvVars: env("SIGNER_ADDR"),
+		DefaultText: "value of `ARKD_WALLET_ADDR`",
+	}
+
+	NoMacaroons = &cli.BoolFlag{
+		Usage: "Disable Macaroons authentication",
+		Name:  "no-macaroons", EnvVars: env("NO_MACAROONS"),
+		Value: defaultNoMacaroons,
+	}
+
+	NoTLS = &cli.BoolFlag{
+		Usage: "Disable TLS",
+		Name:  "no-tls", EnvVars: env("NO_TLS"),
+		Value: defaultNoTLS,
+	}
+
+	UnlockerType = &cli.StringFlag{
+		Usage: "Wallet unlocker type (env, file) to enable auto-unlock",
+		Name:  "unlocker-type", EnvVars: env("UNLOCKER_TYPE"),
+	}
+
+	UnlockerFilePath = &cli.StringFlag{
+		Usage: "Path to unlocker file",
+		Name:  "unlocker-file-path", EnvVars: env("UNLOCKER_FILE_PATH"),
+	}
+
+	UnlockerPassword = &cli.StringFlag{
+		Usage: "Wallet unlocker password",
+		Name:  "unlocker-password", EnvVars: env("UNLOCKER_PASSWORD"),
+	}
+
+	RoundMaxParticipantsCount = &cli.IntFlag{
+		Usage: "Maximum number of participants per round",
+		Name:  "round-max-participants-count", EnvVars: env("ROUND_MAX_PARTICIPANTS_COUNT"),
+		Value: defaultRoundMaxParticipantsCount,
+	}
+
+	RoundMinParticipantsCount = &cli.IntFlag{
+		Usage: "Minimum number of participants per round",
+		Name:  "round-min-participants-count", EnvVars: env("ROUND_MIN_PARTICIPANTS_COUNT"),
+		Value: defaultRoundMinParticipantsCount,
+	}
+
+	UtxoMaxAmount = &cli.IntFlag{
+		Usage: "The maximum allowed amount for boarding or collaborative exit",
+		Name:  "utxo-max-amount", EnvVars: env("UTXO_MAX_AMOUNT"),
+		Value:       defaultUtxoMaxAmount,
+		DefaultText: "-1 unset",
+	}
+
+	UtxoMinAmount = &cli.IntFlag{
+		Usage: "The minimum allowed amount for boarding or collaborative exit",
+		Name:  "utxo-min-amount", EnvVars: env("UTXO_MIN_AMOUNT"),
+		Value:       defaultUtxoMinAmount,
+		DefaultText: "-1 dust",
+	}
+
+	VtxoMaxAmount = &cli.IntFlag{
+		Usage: "The maximum allowed amount for vtxos",
+		Name:  "vtxo-max-amount", EnvVars: env("VTXO_MAX_AMOUNT"),
+		Value:       defaultVtxoMaxAmount,
+		DefaultText: "-1 unset",
+	}
+
+	VtxoMinAmount = &cli.IntFlag{
+		Usage: "The minimum allowed amount for vtxos",
+		Name:  "vtxo-min-amount", EnvVars: env("VTXO_MIN_AMOUNT"),
+		Value:       defaultVtxoMinAmount,
+		DefaultText: "-1 dust",
+	}
+
+	// TODO: Make this a cli.DurationFlag.
+	BanDuration = &cli.Int64Flag{
+		Usage: "Ban duration in seconds",
+		Name:  "ban-duration", EnvVars: env("BAN_DURATION"),
+		Value: int64(defaultBanDuration),
+	}
+
+	BanThreshold = &cli.Int64Flag{
+		Usage: "Number of crimes to trigger a ban",
+		Name:  "ban-threshold", EnvVars: env("BAN_THRESHOLD"),
+		Value: int64(defaultBanThreshold),
+	}
+
+	SchedulerType = &cli.StringFlag{
+		Usage: "Scheduler type (gocron, block)",
+		Name:  "scheduler-type", EnvVars: env("SCHEDULER_TYPE"),
+		Value: defaultSchedulerType,
+	}
+
+	// TODO: Make this a cli.DurationFlag.
+	CheckpointExitDelay = &cli.IntFlag{
+		Usage: "Checkpoint exit delay in seconds",
+		Name:  "checkpoint-exit-delay", EnvVars: env("CHECKPOINT_EXIT_DELAY"),
+		Value: defaultCheckpointExitDelay,
+	}
+
+	TLSExtraIP = &cli.StringSliceFlag{
+		Usage: "Extra IP addresses for TLS (comma-separated)",
+		Name:  "tls-extra-ip", EnvVars: env("TLS_EXTRA_IP"),
+	}
+
+	TLSExtraDomain = &cli.StringSliceFlag{
+		Usage: "Extra domains for TLS (comma-separated)",
+		Name:  "tls-extra-domain", EnvVars: env("TLS_EXTRA_DOMAIN"),
+	}
+
+	NoteUriPrefix = &cli.StringFlag{
+		Usage: "Note URI prefix",
+		Name:  "note-uri-prefix", EnvVars: env("NOTE_URI_PREFIX"),
+	}
+
+	// TODO: Make this a cli.TimestampFlag.
+	ScheduledSessionStartTime = &cli.IntFlag{
+		Usage: "Scheduled session start time (Unix timestamp)",
+		Name:  "scheduled-session-start-time", EnvVars: env("SCHEDULED_SESSION_START_TIME"),
+	}
+
+	// TODO: Make this a cli.TimestampFlag.
+	ScheduledSessionEndTime = &cli.IntFlag{
+		Usage: "Scheduled session end time (Unix timestamp)",
+		Name:  "scheduled-session-end-time", EnvVars: env("SCHEDULED_SESSION_END_TIME"),
+	}
+
+	// TODO: Make this a cli.DurationFlag.
+	ScheduledSessionPeriod = &cli.IntFlag{
+		Usage: "Scheduled session period in minutes",
+		Name:  "scheduled-session-period", EnvVars: env("SCHEDULED_SESSION_PERIOD"),
+	}
+
+	// TODO: Make this a cli.DurationFlag.
+	ScheduledSessionDuration = &cli.IntFlag{
+		Usage: "Scheduled session duration in seconds",
+		Name:  "scheduled-session-duration", EnvVars: env("SCHEDULED_SESSION_DURATION"),
+	}
+
+	ScheduledSessionMinRoundParticipantsCount = &cli.Int64Flag{
+		Usage:   "Min participants for scheduled sessions",
+		Name:    "scheduled-session-min-round-participants-count",
+		EnvVars: env("SCHEDULED_SESSION_MIN_ROUND_PARTICIPANTS_COUNT"),
+	}
+
+	ScheduledSessionMaxRoundParticipantsCount = &cli.Int64Flag{
+		Usage:   "Max participants for scheduled sessions",
+		Name:    "scheduled-session-max-round-participants-count",
+		EnvVars: env("SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT"),
+	}
+
+	OtelCollectorEndpoint = &cli.StringFlag{
+		Usage: "OpenTelemetry collector endpoint",
+		Name:  "collector-endpoint", EnvVars: env("COLLECTOR_ENDPOINT"),
+	}
+
+	OtelPushInterval = &cli.IntFlag{
+		Usage: "OpenTelemetry push interval in seconds",
+		Name:  "otel-push-interval", EnvVars: env("OTEL_PUSH_INTERVAL"),
+		Value: defaultOtelPushInterval,
+	}
+
+	AllowCSVBlockType = &cli.BoolFlag{
+		Usage: "Allow CSV block type",
+		Name:  "allow-csv-block-type", EnvVars: env("ALLOW_CSV_BLOCK_TYPE"),
+		Value: defaultAllowCSVBlockType,
+	}
+
+	HeartbeatInterval = &cli.IntFlag{
+		Usage: "Heartbeat interval in seconds",
+		Name:  "heartbeat-interval", EnvVars: env("HEARTBEAT_INTERVAL"),
+		Value: defaultHeartbeatInterval,
+	}
+
+	RoundReportServiceEnabled = &cli.BoolFlag{
+		Usage: "Enable round report service",
+		Name:  "round-report-enabled", EnvVars: env("ROUND_REPORT_ENABLED"),
+		Value: defaultRoundReportServiceEnabled,
+	}
+
+	// TODO: The following are not documented on README so I left `Usage: ""` on purpose.
+	SettlementMinExpiryGap = &cli.IntFlag{
+		Usage: "",
+		Name:  "settlement-min-expiry-gap", EnvVars: env("SETTLEMENT_MIN_EXPIRY_GAP"),
+		Value:       defaultSettlementMinExpiryGap,
+		DefaultText: "0 disabled",
+	}
+
+	VtxoNoCsvValidationCutoffDate = &cli.IntFlag{
+		Usage: "",
+		Name:  "vtxo-no-csv-validation-cutoff-date", EnvVars: env("VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"),
+		Value:       defaultVtxoNoCsvValidationCutoffDate,
+		DefaultText: "0 disabled",
+	}
+
+	OnchainOutputFee = &cli.IntFlag{
+		Usage: "",
+		Name:  "onchain-output-fee", EnvVars: env("ONCHAIN_OUTPUT_FEE"),
+		Value: defaultOnchainOutputFee,
+	}
+
+	AlertManagerURL = &cli.StringFlag{
+		Usage: "",
+		Name:  "alert-manager-url", EnvVars: env("ALERT_MANAGER_URL"),
+	}
+
+	PyroscopeServerURL = &cli.StringFlag{
+		Usage: "",
+		Name:  "pyroscope-server-url", EnvVars: env("PYROSCOPE_SERVER_URL"),
+	}
+
+	EnablePprof = &cli.BoolFlag{
+		Usage: "",
+		Name:  "enable-pprof", EnvVars: env("ENABLE_PPROF"),
+		Value: defaultEnablePprof,
+	}
+)
+
+var Flags = []cli.Flag{
+	Datadir,
+	Port,
+	AdminPort,
+	LogLevel,
+	SessionDuration,
+	DbType,
+	DbUrl,
+	EventDbType,
+	EventDbUrl,
+	TxBuilderType,
+	LiveStoreType,
+	RedisUrl,
+	RedisTxNumOfRetries,
+	VtxoTreeExpiry,
+	UnilateralExitDelay,
+	PublicUnilateralExitDelay,
+	BoardingExitDelay,
+	EsploraURL,
+	WalletAddr,
+	SignerAddr,
+	NoMacaroons,
+	NoTLS,
+	UnlockerType,
+	UnlockerFilePath,
+	UnlockerPassword,
+	RoundMaxParticipantsCount,
+	RoundMinParticipantsCount,
+	UtxoMaxAmount,
+	UtxoMinAmount,
+	VtxoMaxAmount,
+	VtxoMinAmount,
+	BanDuration,
+	BanThreshold,
+	SchedulerType,
+	CheckpointExitDelay,
+	TLSExtraIP,
+	TLSExtraDomain,
+	NoteUriPrefix,
+	ScheduledSessionStartTime,
+	ScheduledSessionEndTime,
+	ScheduledSessionPeriod,
+	ScheduledSessionDuration,
+	ScheduledSessionMinRoundParticipantsCount,
+	ScheduledSessionMaxRoundParticipantsCount,
+	OtelCollectorEndpoint,
+	OtelPushInterval,
+	AllowCSVBlockType,
+	HeartbeatInterval,
+	RoundReportServiceEnabled,
+	SettlementMinExpiryGap,
+	VtxoNoCsvValidationCutoffDate,
+	OnchainOutputFee,
+	AlertManagerURL,
+	PyroscopeServerURL,
+	EnablePprof,
+}
+
+func LoadConfig(c *cli.Context) (*Config, error) {
+	if err := initDatadir(c); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
 	}
 
-	dbPath := filepath.Join(viper.GetString(Datadir), "db")
+	dbPath := filepath.Join(c.String(Datadir.Name), "db")
 
 	var eventDbUrl string
-	if viper.GetString(EventDbType) == "postgres" {
-		eventDbUrl = viper.GetString(EventDbUrl)
+	if c.String(EventDbType.Name) == "postgres" {
+		eventDbUrl = c.String(EventDbUrl.Name)
 		if eventDbUrl == "" {
 			return nil, fmt.Errorf("event db type set to 'postgres' but event db url is missing")
 		}
 	}
 
 	var dbUrl string
-	if viper.GetString(DbType) == "postgres" {
-		dbUrl = viper.GetString(DbUrl)
+	if c.String(DbType.Name) == "postgres" {
+		dbUrl = c.String(DbUrl.Name)
 		if dbUrl == "" {
 			return nil, fmt.Errorf("db type set to 'postgres' but db url is missing")
 		}
 	}
 
 	var redisUrl string
-	if viper.GetString(LiveStoreType) == "redis" {
-		redisUrl = viper.GetString(RedisUrl)
+	if c.String(LiveStoreType.Name) == "redis" {
+		redisUrl = c.String(RedisUrl.Name)
 		if redisUrl == "" {
 			return nil, fmt.Errorf("live store type set to 'redis' but redis url is missing")
 		}
 	}
 
-	allowCSVBlockType := viper.GetBool(AllowCSVBlockType)
-	if viper.GetString(SchedulerType) == "block" {
+	allowCSVBlockType := c.Bool(AllowCSVBlockType.Name)
+	if c.String(SchedulerType.Name) == "block" {
 		allowCSVBlockType = true
 	}
 
-	signerAddr := viper.GetString(SignerAddr)
+	signerAddr := c.String(SignerAddr.Name)
 	if signerAddr == "" {
-		signerAddr = viper.GetString(WalletAddr)
+		signerAddr = c.String(WalletAddr.Name)
 	}
 
 	// In case the admin port is unset, fallback to service port.
-	adminPort := viper.GetUint32(AdminPort)
+	adminPort := c.Uint(AdminPort.Name)
 	if adminPort == 0 {
-		adminPort = viper.GetUint32(Port)
+		adminPort = c.Uint(Port.Name)
 	}
 
 	return &Config{
-		Datadir:                   viper.GetString(Datadir),
-		WalletAddr:                viper.GetString(WalletAddr),
+		Datadir:                   c.String(Datadir.Name),
+		WalletAddr:                c.String(WalletAddr.Name),
 		SignerAddr:                signerAddr,
-		SessionDuration:           viper.GetInt64(SessionDuration),
-		BanDuration:               viper.GetInt64(BanDuration),
-		BanThreshold:              viper.GetInt64(BanThreshold),
-		Port:                      viper.GetUint32(Port),
-		AdminPort:                 adminPort,
-		EventDbType:               viper.GetString(EventDbType),
-		DbType:                    viper.GetString(DbType),
-		SchedulerType:             viper.GetString(SchedulerType),
-		TxBuilderType:             viper.GetString(TxBuilderType),
-		LiveStoreType:             viper.GetString(LiveStoreType),
+		SessionDuration:           c.Int64(SessionDuration.Name),
+		BanDuration:               c.Int64(BanDuration.Name),
+		BanThreshold:              c.Int64(BanThreshold.Name),
+		Port:                      uint32(c.Uint(Port.Name)),
+		AdminPort:                 uint32(adminPort),
+		EventDbType:               c.String(EventDbType.Name),
+		DbType:                    c.String(DbType.Name),
+		SchedulerType:             c.String(SchedulerType.Name),
+		TxBuilderType:             c.String(TxBuilderType.Name),
+		LiveStoreType:             c.String(LiveStoreType.Name),
 		RedisUrl:                  redisUrl,
-		RedisTxNumOfRetries:       viper.GetInt(RedisTxNumOfRetries),
-		NoTLS:                     viper.GetBool(NoTLS),
+		RedisTxNumOfRetries:       c.Int(RedisTxNumOfRetries.Name),
+		NoTLS:                     c.Bool(NoTLS.Name),
 		DbDir:                     dbPath,
 		DbUrl:                     dbUrl,
 		EventDbDir:                dbPath,
 		EventDbUrl:                eventDbUrl,
-		LogLevel:                  viper.GetInt(LogLevel),
-		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
-		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
-		PublicUnilateralExitDelay: determineLocktimeType(viper.GetInt64(PublicUnilateralExitDelay)),
-		CheckpointExitDelay:       determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
-		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
-		EsploraURL:                viper.GetString(EsploraURL),
-		AlertManagerURL:           viper.GetString(AlertManagerURL),
-		NoMacaroons:               viper.GetBool(NoMacaroons),
-		TLSExtraIPs:               viper.GetStringSlice(TLSExtraIP),
-		TLSExtraDomains:           viper.GetStringSlice(TLSExtraDomain),
-		UnlockerType:              viper.GetString(UnlockerType),
-		UnlockerFilePath:          viper.GetString(UnlockerFilePath),
-		UnlockerPassword:          viper.GetString(UnlockerPassword),
-		NoteUriPrefix:             viper.GetString(NoteUriPrefix),
-		ScheduledSessionStartTime: viper.GetInt64(ScheduledSessionStartTime),
-		ScheduledSessionEndTime:   viper.GetInt64(ScheduledSessionEndTime),
-		ScheduledSessionPeriod:    viper.GetInt64(ScheduledSessionPeriod),
-		ScheduledSessionDuration:  viper.GetInt64(ScheduledSessionDuration),
-		ScheduledSessionMinRoundParticipantsCount: viper.GetInt64(
-			ScheduledSessionMinRoundParticipants,
+		LogLevel:                  c.Int(LogLevel.Name),
+		VtxoTreeExpiry:            determineLocktimeType(c.Int64(VtxoTreeExpiry.Name)),
+		UnilateralExitDelay:       determineLocktimeType(c.Int64(UnilateralExitDelay.Name)),
+		PublicUnilateralExitDelay: determineLocktimeType(c.Int64(PublicUnilateralExitDelay.Name)),
+		CheckpointExitDelay:       determineLocktimeType(c.Int64(CheckpointExitDelay.Name)),
+		BoardingExitDelay:         determineLocktimeType(c.Int64(BoardingExitDelay.Name)),
+		EsploraURL:                c.String(EsploraURL.Name),
+		AlertManagerURL:           c.String(AlertManagerURL.Name),
+		NoMacaroons:               c.Bool(NoMacaroons.Name),
+		TLSExtraIPs:               c.StringSlice(TLSExtraIP.Name),
+		TLSExtraDomains:           c.StringSlice(TLSExtraDomain.Name),
+		UnlockerType:              c.String(UnlockerType.Name),
+		UnlockerFilePath:          c.String(UnlockerFilePath.Name),
+		UnlockerPassword:          c.String(UnlockerPassword.Name),
+		NoteUriPrefix:             c.String(NoteUriPrefix.Name),
+		ScheduledSessionStartTime: c.Int64(ScheduledSessionStartTime.Name),
+		ScheduledSessionEndTime:   c.Int64(ScheduledSessionEndTime.Name),
+		ScheduledSessionPeriod:    c.Int64(ScheduledSessionPeriod.Name),
+		ScheduledSessionDuration:  c.Int64(ScheduledSessionDuration.Name),
+		ScheduledSessionMinRoundParticipantsCount: c.Int64(
+			ScheduledSessionMinRoundParticipantsCount.Name,
 		),
-		ScheduledSessionMaxRoundParticipantsCount: viper.GetInt64(
-			ScheduledSessionMaxRoundParticipants,
+		ScheduledSessionMaxRoundParticipantsCount: c.Int64(
+			ScheduledSessionMaxRoundParticipantsCount.Name,
 		),
-		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
-		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
-		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
-		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
+		OtelCollectorEndpoint: c.String(OtelCollectorEndpoint.Name),
+		OtelPushInterval:      c.Int64(OtelPushInterval.Name),
+		PyroscopeServerURL:    c.String(PyroscopeServerURL.Name),
+		HeartbeatInterval:     c.Int64(HeartbeatInterval.Name),
 
-		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
-		RoundMinParticipantsCount:     viper.GetInt64(RoundMinParticipantsCount),
-		UtxoMaxAmount:                 viper.GetInt64(UtxoMaxAmount),
-		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
-		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
-		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
+		RoundMaxParticipantsCount:     c.Int64(RoundMaxParticipantsCount.Name),
+		RoundMinParticipantsCount:     c.Int64(RoundMinParticipantsCount.Name),
+		UtxoMaxAmount:                 c.Int64(UtxoMaxAmount.Name),
+		UtxoMinAmount:                 c.Int64(UtxoMinAmount.Name),
+		VtxoMaxAmount:                 c.Int64(VtxoMaxAmount.Name),
+		VtxoMinAmount:                 c.Int64(VtxoMinAmount.Name),
 		AllowCSVBlockType:             allowCSVBlockType,
-		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
-		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
-		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
-		OnchainOutputFee:              viper.GetInt64(OnchainOutputFee),
-		EnablePprof:                   viper.GetBool(EnablePprof),
+		RoundReportServiceEnabled:     c.Bool(RoundReportServiceEnabled.Name),
+		SettlementMinExpiryGap:        c.Int64(SettlementMinExpiryGap.Name),
+		VtxoNoCsvValidationCutoffDate: c.Int64(VtxoNoCsvValidationCutoffDate.Name),
+		OnchainOutputFee:              c.Int64(OnchainOutputFee.Name),
+		EnablePprof:                   c.Bool(EnablePprof.Name),
 	}, nil
 }
 
-func initDatadir() error {
-	datadir := viper.GetString(Datadir)
+func initDatadir(c *cli.Context) error {
+	datadir := c.String(Datadir.Name)
 	return makeDirectoryIfNotExists(datadir)
 }
 
 func makeDirectoryIfNotExists(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return os.MkdirAll(path, os.ModeDir|0755)
+		return os.MkdirAll(path, os.ModeDir|0o755)
 	}
 	return nil
 }
