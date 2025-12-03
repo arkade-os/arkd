@@ -891,6 +891,10 @@ func (s *service) SubmitOffchainTx(
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	foundOpReturn := false
+	var rebuiltArkTx *psbt.Packet
+	var rebuiltCheckpointTxs []*psbt.Packet
+
+	assetGroupIndex := -1
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		// validate asset output if present
@@ -909,6 +913,8 @@ func (s *service) SubmitOffchainTx(
 			}
 
 			outputs = append(outputs, out)
+
+			assetGroupIndex = outIndex
 			continue
 		}
 
@@ -977,18 +983,36 @@ func (s *service) SubmitOffchainTx(
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
-	// recompute all txs (checkpoint txs + ark tx)
-	rebuiltArkTx, rebuiltCheckpointTxs, err := offchain.BuildTxs(
-		ins, outputs, s.checkpointTapscript,
-	)
-	if err != nil {
-		return nil, "", "", errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
-			WithMetadata(map[string]any{
+	if assetGroupIndex >= 0 {
+		rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildAssetTxs(
+			outputs, assetGroupIndex, ins, s.checkpointTapscript,
+		)
+
+		if err != nil {
+			return nil, "", "", errors.INTERNAL_ERROR.New(
+				"failed to rebuild asset ark transaction: %w", err,
+			).WithMetadata(map[string]any{
 				"ark_tx":               signedArkTx,
 				"outputs":              outputs,
 				"ins":                  ins,
 				"checkpoint_tapscript": s.checkpointTapscript,
 			})
+		}
+	} else {
+		// recompute all txs (checkpoint txs + ark tx)
+		rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
+			ins, outputs, s.checkpointTapscript,
+		)
+
+		if err != nil {
+			return nil, "", "", errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
+				WithMetadata(map[string]any{
+					"ark_tx":               signedArkTx,
+					"outputs":              outputs,
+					"ins":                  ins,
+					"checkpoint_tapscript": s.checkpointTapscript,
+				})
+		}
 	}
 
 	// verify the checkpoints txs integrity

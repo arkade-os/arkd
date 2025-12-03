@@ -46,61 +46,15 @@ func BuildTxs(
 		return nil, nil, fmt.Errorf("invalid signer unroll script")
 	}
 
-	var assetData *asset.Asset
-	var batchId []byte
-	var assetOpretIndex int
-
-	newAssetInputs := make([]asset.AssetInput, 0, len(outputs))
-
-	for i, out := range outputs {
-		assetData, batchId, err = asset.DecodeAssetFromOpret(out.PkScript)
-		if err == nil {
-			assetOpretIndex = i
-			break
-		}
-	}
-
-	if assetData != nil {
-		for _, vtxo := range vtxos {
-			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, assetData, batchId, signerUnrollScriptClosure)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			if assetOutput != nil {
-				txId := checkpointPtx.UnsignedTx.TxHash()
-				newAssetInputs = append(newAssetInputs, asset.AssetInput{
-					Txid:   txId[:],
-					Vout:   0,
-					Amount: assetOutput.Amount,
-				})
-			}
-
-			checkpointInputs = append(checkpointInputs, *checkpointInput)
-			checkpointTxs = append(checkpointTxs, checkpointPtx)
-			inputAmount += vtxo.Amount
-		}
-
-		newAsset := *assetData
-		newAsset.Inputs = newAssetInputs
-
-		newOpretOutput, err := newAsset.EncodeOpret(batchId)
+	for _, vtxo := range vtxos {
+		checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScriptClosure)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		outputs[assetOpretIndex] = &newOpretOutput
-	} else {
-		for _, vtxo := range vtxos {
-			checkpointPtx, checkpointInput, err := buildCheckpointTx(vtxo, signerUnrollScriptClosure)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			checkpointInputs = append(checkpointInputs, *checkpointInput)
-			checkpointTxs = append(checkpointTxs, checkpointPtx)
-			inputAmount += vtxo.Amount
-		}
+		checkpointInputs = append(checkpointInputs, *checkpointInput)
+		checkpointTxs = append(checkpointTxs, checkpointPtx)
+		inputAmount += vtxo.Amount
 	}
 
 	outputAmount := int64(0)
@@ -118,6 +72,104 @@ func BuildTxs(
 	}
 
 	return arkTx, checkpointTxs, nil
+}
+
+func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput, signerUnrollScript []byte) (*psbt.Packet, []*psbt.Packet, error) {
+	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
+	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
+
+	assetGroup, batchIndex, err := asset.DecodeAssetGroupFromOpret(outputs[assetGroupIndex].PkScript)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	signerUnrollScriptClosure := &script.CSVMultisigClosure{}
+	valid, err := signerUnrollScriptClosure.Decode(signerUnrollScript)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !valid {
+		return nil, nil, fmt.Errorf("invalid signer unroll script")
+	}
+
+	controlAsset := assetGroup.ControlAsset
+	normalAsset := assetGroup.NormalAsset
+
+	// If control input is present it is the first input
+	if controlAsset != nil {
+		controlVtxo := &vtxos[0]
+		vtxos = vtxos[1:]
+
+		checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(*controlVtxo, controlAsset, batchIndex, signerUnrollScriptClosure)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if assetOutput == nil {
+			return nil, nil, fmt.Errorf("expected asset output for control input")
+		}
+
+		txId := checkpointPtx.UnsignedTx.TxHash()
+		controlInput := asset.AssetInput{
+			Txid:   txId[:],
+			Vout:   0,
+			Amount: assetOutput.Amount,
+		}
+
+		controlAsset.Inputs = []asset.AssetInput{controlInput}
+
+		checkpointInputs = append(checkpointInputs, *checkpointInput)
+		checkpointTxs = append(checkpointTxs, checkpointPtx)
+
+	}
+
+	normalAssetInputs := make([]asset.AssetInput, 0, len(vtxos))
+
+	for _, vtxo := range vtxos {
+		checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, &normalAsset, batchIndex, signerUnrollScriptClosure)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if assetOutput != nil {
+			txId := checkpointPtx.UnsignedTx.TxHash()
+			normalAssetInputs = append(normalAssetInputs, asset.AssetInput{
+				Txid:   txId[:],
+				Vout:   0,
+				Amount: assetOutput.Amount,
+			})
+		}
+
+		checkpointInputs = append(checkpointInputs, *checkpointInput)
+		checkpointTxs = append(checkpointTxs, checkpointPtx)
+	}
+
+	normalAsset.Inputs = normalAssetInputs
+
+	newAssetGroup := &asset.AssetGroup{
+		ControlAsset: controlAsset,
+		NormalAsset:  normalAsset,
+	}
+
+	newOpretOutput, err := newAssetGroup.EncodeOpret(batchIndex[:])
+	if err != nil {
+		return nil, nil, err
+	}
+
+	outputs[assetGroupIndex] = &newOpretOutput
+
+	outputAmount := int64(0)
+	for _, output := range outputs {
+		outputAmount += output.Value
+	}
+
+	arkTx, err := buildArkTx(checkpointInputs, outputs)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return arkTx, checkpointTxs, nil
+
 }
 
 // buildArkTx builds an ark tx for the given vtxos and outputs.
@@ -287,7 +339,7 @@ func buildCheckpointTx(
 }
 
 func buildAssetCheckpointTx(
-	vtxo VtxoInput, arkAsset *asset.Asset, batchId []byte, signerUnrollScript *script.CSVMultisigClosure,
+	vtxo VtxoInput, assetData *asset.Asset, batchId []byte, signerUnrollScript *script.CSVMultisigClosure,
 ) (*psbt.Packet, *VtxoInput, *asset.AssetOutput, error) {
 	collaborativeClosure, err := script.DecodeClosure(vtxo.Tapscript.RevealedScript)
 	if err != nil {
@@ -308,7 +360,7 @@ func buildAssetCheckpointTx(
 		return nil, nil, nil, err
 	}
 
-	newAsset := *arkAsset
+	newAsset := *assetData
 
 	// Check if the vtxo is an asset seal or normal vtxo
 	var isSeal bool
@@ -344,7 +396,13 @@ func buildAssetCheckpointTx(
 		}
 
 	} else {
-		assetOpret, err := newAsset.EncodeOpret(batchId[:])
+
+		newAssetGroup := &asset.AssetGroup{
+			ControlAsset: nil,
+			NormalAsset:  newAsset,
+		}
+
+		assetOpret, err := newAssetGroup.EncodeOpret(batchId[:])
 		if err != nil {
 			return nil, nil, nil, err
 		}
