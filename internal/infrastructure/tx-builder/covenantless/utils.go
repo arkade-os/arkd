@@ -125,8 +125,13 @@ func getOutputVtxosLeaves(
 
 					assetDetails.Inputs = []asset.AssetInput{}
 
+					assetGroup := &asset.AssetGroup{
+						ControlAsset: nil,
+						NormalAsset:  *assetDetails,
+					}
+
 					emptyBatchId := make([]byte, 32)
-					assetOpretrun, err := assetDetails.EncodeOpret(emptyBatchId)
+					assetOpretrun, err := assetGroup.EncodeOpret(emptyBatchId)
 					if err != nil {
 						return nil, fmt.Errorf("failed to encode asset opreturn: %s", err)
 					}
@@ -185,15 +190,14 @@ func getAssetFromIntents(
 ) (*asset.Asset, error) {
 
 	for _, intent := range intents {
-		log.Printf("intents decoded %+v", intent)
 		for _, input := range intent.Inputs {
 			if input.Asset != nil {
-				decodedAsset, _, err := asset.DecodeAssetFromOpret(input.Asset)
+				decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(input.Asset)
 				if err != nil {
 					return nil, fmt.Errorf("failed to decode asset from input: %s", err)
 				}
 
-				log.Printf("asset %+v", decodedAsset)
+				decodedAsset := &decodedAssetGroup.NormalAsset
 
 				if decodedAsset.AssetId == assetId {
 					return decodedAsset, nil

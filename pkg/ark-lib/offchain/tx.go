@@ -9,6 +9,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -337,6 +338,17 @@ func buildCheckpointTx(
 
 	return checkpointPtx, checkpointInput, nil
 }
+func reverseBytes(b []byte) {
+	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
+		b[i], b[j] = b[j], b[i]
+	}
+}
+
+func deriveTxId(hash chainhash.Hash) []byte {
+	txid := hash.CloneBytes()
+	reverseBytes(txid)
+	return txid
+}
 
 func buildAssetCheckpointTx(
 	vtxo VtxoInput, assetData *asset.Asset, batchId []byte, signerUnrollScript *script.CSVMultisigClosure,
@@ -366,7 +378,7 @@ func buildAssetCheckpointTx(
 	var isSeal bool
 
 	for _, input := range newAsset.Inputs {
-		if bytes.Equal(input.Txid, vtxo.Outpoint.Hash[:]) && input.Vout == vtxo.Outpoint.Index {
+		if bytes.Equal(input.Txid, deriveTxId(vtxo.Outpoint.Hash)) && input.Vout == vtxo.Outpoint.Index {
 			isSeal = true
 			newAsset.Inputs = []asset.AssetInput{
 				{

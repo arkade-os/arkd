@@ -3835,7 +3835,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 	normalAsset := decodedAssetGroup.NormalAsset
 
 	ins := normalAsset.Inputs
-	outs := controlAsset.Outputs
+	outs := normalAsset.Outputs
 
 	totalOuputAmount := uint64(0)
 	for _, assetOut := range outs {
@@ -3848,11 +3848,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 	}
 
 	// verify Asset Reissuance / buring
-	if totalInputAmount != totalOuputAmount {
-		if controlAsset == nil {
-			return fmt.Errorf("control asset is required for asset modification")
-		}
-
+	if controlAsset != nil && totalInputAmount != totalOuputAmount {
 		if !bytes.Equal(controlAsset.AssetId[:], normalAsset.AssetId[:]) {
 			return fmt.Errorf("invalid control key for asset modification")
 		}
