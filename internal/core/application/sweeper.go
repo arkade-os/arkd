@@ -395,7 +395,7 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 
 // createBatchSweepTask returns a function passed as handler in the scheduler
 // it tries to craft a sweep tx containing the onchain outputs of the given vtxo tree
-// if some parts of the tree have been broadcasted in the meantine, it will schedule the next
+// if some parts of the tree have been broadcasted in the meantime, it will schedule the next
 // tasks for the remaining parts of the tree
 func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) func() error {
 	return func() error {
