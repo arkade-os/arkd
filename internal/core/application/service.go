@@ -3445,14 +3445,8 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 
 	expirationTimestamp := s.sweeper.scheduler.AddNow(int64(s.batchExpiry.Value))
 
-	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
-	if err != nil {
-		log.WithError(err).Warn("failed to create vtxo tree")
-		return
-	}
-
 	if err := s.sweeper.scheduleBatchSweep(
-		expirationTimestamp, round.CommitmentTxid, vtxoTree,
+		expirationTimestamp, round.CommitmentTxid, round.VtxoTree.RootTxid(),
 	); err != nil {
 		log.WithError(err).Warn("failed to schedule sweep tx")
 	}
