@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -28,13 +27,7 @@ import (
 // If the vtxo wasn't settled, we broadcast the checkpoint tx signed by both parties when the vtxo
 // was spent offchain. Otherwise, the forfeit tx created and signed during the batch execution is
 // broadcasted.
-//
-// The function takes a mutex to ensure that only one goroutine can react to a fraud at the same
-// time.
-func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync.Mutex) error {
-	mutx.Lock()
-	defer mutx.Unlock()
-
+func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo) error {
 	// If the vtxo wasn't settled we must broadcast a checkpoint tx.
 	if !vtxo.IsSettled() {
 		ptx, err := s.broadcastCheckpointTx(ctx, vtxo)

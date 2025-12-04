@@ -6,7 +6,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-type VtxoWithValue struct {
+type OutpointWithValue struct {
 	domain.Outpoint
 	Value uint64
 }
@@ -14,7 +14,7 @@ type VtxoWithValue struct {
 type BlockchainScanner interface {
 	WatchScripts(ctx context.Context, scripts []string) error
 	UnwatchScripts(ctx context.Context, scripts []string) error
-	GetNotificationChannel(ctx context.Context) <-chan map[string][]VtxoWithValue
+	GetNotificationChannel(ctx context.Context) <-chan map[string][]OutpointWithValue
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blocknumber int64, blocktime int64, err error)

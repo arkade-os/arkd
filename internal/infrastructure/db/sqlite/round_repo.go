@@ -453,6 +453,10 @@ func (r *roundRepository) GetRoundsWithCommitmentTxids(
 	return resp, nil
 }
 
+func (r *roundRepository) GetChildrenTxs(ctx context.Context, txid string) ([]string, error) {
+	return r.querier.SelectChildrenTxs(ctx, txid)
+}
+
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),

@@ -27,11 +27,6 @@ func (s OffchainTxStage) String() string {
 	}
 }
 
-type Tx struct {
-	Txid string
-	Str  string
-}
-
 type OffchainTx struct {
 	Stage              Stage
 	StartingTimestamp  int64

@@ -228,6 +228,37 @@ func (r *arkRepository) GetOffchainTx(
 	return r.getOffchainTx(ctx, txid)
 }
 
+func (r *arkRepository) GetChildrenTxs(ctx context.Context, txid string,
+) ([]string, error) {
+	rounds, err := r.findRound(ctx, badgerhold.Where("Stage.Code").Eq(int(domain.RoundFinalizationStage)).
+		And("Stage.Ended").Eq(true))
+	if err != nil {
+		return nil, err
+	}
+	for _, round := range rounds {
+		foundNode, err := findInVtxoTree(round.VtxoTree, txid)
+		if err != nil {
+			continue
+		}
+
+		if foundNode != nil {
+			txs := make([]string, 0, len(foundNode.Children))
+			for _, child := range foundNode.Children {
+				childNode, err := findInVtxoTree(round.VtxoTree, child)
+				if err != nil {
+					return nil, err
+				}
+				if childNode != nil {
+					txs = append(txs, childNode.Tx)
+				}
+			}
+			return txs, nil
+		}
+	}
+
+	return nil, nil
+}
+
 func (r *arkRepository) Close() {
 	// nolint
 	r.store.Close()
@@ -525,4 +556,13 @@ func (r arkRepository) findOffchainTxs(ctx context.Context, txids []string) ([]s
 		txs = append(txs, checkpointTxs...)
 	}
 	return txs, nil
+}
+
+func findInVtxoTree(tree tree.FlatTxTree, txid string) (*tree.TxTreeNode, error) {
+	for _, node := range tree {
+		if node.Txid == txid {
+			return &node, nil
+		}
+	}
+	return nil, fmt.Errorf("node not found in tree")
 }
