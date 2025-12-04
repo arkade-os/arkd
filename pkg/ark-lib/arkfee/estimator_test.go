@@ -65,8 +65,6 @@ func TestEvalInput(t *testing.T) {
 					name: "not recoverable",
 					input: arkfee.Input{
 						Amount: 20000,
-						Birth:  time.Now().Add(-10 * time.Minute),
-						Expiry: time.Now().Add(2 * time.Minute),
 						Type:   arkfee.InputTypeBoarding,
 						Weight: 1.0,
 					},
@@ -108,9 +106,8 @@ func TestEvalInput(t *testing.T) {
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
-			intentInputProgram, err := arkfee.ParseIntentInputProgram(fixture.program)
+			estimator, err := arkfee.New(fixture.program, "")
 			require.NoError(t, err)
-			estimator := arkfee.NewEstimator(intentInputProgram, nil)
 			require.NotNil(t, estimator)
 
 			for _, testCase := range fixture.cases {
@@ -177,9 +174,8 @@ func TestEvalOutput(t *testing.T) {
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
-			intentOutputProgram, err := arkfee.ParseIntentOutputProgram(fixture.program)
+			estimator, err := arkfee.New("", fixture.program)
 			require.NoError(t, err)
-			estimator := arkfee.NewEstimator(nil, intentOutputProgram)
 			require.NotNil(t, estimator)
 
 			for _, testCase := range fixture.cases {
@@ -254,11 +250,8 @@ func TestEval(t *testing.T) {
 
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
-			inputProgram, err := arkfee.ParseIntentInputProgram(fixture.inputProgram)
+			estimator, err := arkfee.New(fixture.inputProgram, fixture.outputProgram)
 			require.NoError(t, err)
-			outputProgram, err := arkfee.ParseIntentOutputProgram(fixture.outputProgram)
-			require.NoError(t, err)
-			estimator := arkfee.NewEstimator(inputProgram, outputProgram)
 			require.NotNil(t, estimator)
 
 			for _, testCase := range fixture.cases {

@@ -9,8 +9,8 @@ import (
 
 type FeeAmount float64
 
-func (f FeeAmount) ToSatoshis() int {
-	return int(math.Ceil(float64(f)))
+func (f FeeAmount) ToSatoshis() int64 {
+	return int64(math.Ceil(float64(f)))
 }
 
 type InputType string
@@ -31,13 +31,18 @@ type Input struct {
 }
 
 func (i Input) toArgs() map[string]any {
-	return map[string]any{
+	args := map[string]any{
 		celenv.AmountVariableName:    float64(i.Amount),
-		celenv.ExpiryVariableName:    float64(i.Expiry.Unix()),
-		celenv.BirthVariableName:     float64(i.Birth.Unix()),
 		celenv.InputTypeVariableName: string(i.Type),
 		celenv.WeightVariableName:    i.Weight,
 	}
+	if !i.Expiry.IsZero() {
+		args[celenv.ExpiryVariableName] = float64(i.Expiry.Unix())
+	}
+	if !i.Birth.IsZero() {
+		args[celenv.BirthVariableName] = float64(i.Birth.Unix())
+	}
+	return args
 }
 
 type OutputType string

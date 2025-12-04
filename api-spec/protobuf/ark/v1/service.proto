@@ -23,6 +23,16 @@ service ArkService {
       body: "*"
     };
   };
+
+  // EstimateFee allows to estimate the fees for a given intent.
+  // The client should provide a BIP-322 message with the same data as the register intent message, and the server should
+  // respond with the estimated fees in satoshis.
+  rpc EstimateFee(EstimateFeeRequest) returns (EstimateFeeResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/batch/estimateFee"
+      body: "*"
+    };
+  }
   
   // DeleteIntent removes a previously registered intent from the server.
   // The client should provide the BIP-322 signature and message including any of the vtxos used in
@@ -171,6 +181,13 @@ message RegisterIntentRequest {
 }
 message RegisterIntentResponse {
   string intent_id = 1;
+}
+
+message EstimateFeeRequest {
+  Intent intent = 1;
+}
+message EstimateFeeResponse {
+  int64 fee = 1;
 }
 
 message DeleteIntentRequest {
