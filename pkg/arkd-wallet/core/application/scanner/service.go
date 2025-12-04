@@ -108,6 +108,10 @@ func (s *scanner) UnwatchScripts(ctx context.Context, scripts []string) error {
 	return s.nbxplorer.UnwatchAddresses(ctx, addresses...)
 }
 
+func (s *scanner) UnwatchAllScripts(ctx context.Context) error {
+	return s.nbxplorer.UnwatchAllAddresses(ctx)
+}
+
 func (s *scanner) RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error {
 	return s.nbxplorer.RescanUtxos(ctx, outpoints)
 }

@@ -35,9 +35,9 @@ type TxTreeNode struct {
 // The purpose of this struct is to facilitate the persistence of the tx tree in storage services.
 type FlatTxTree []TxTreeNode
 
-func (c FlatTxTree) RootTxid() string {
+func (c FlatTxTree) Root() *TxTreeNode {
 	if len(c) == 1 {
-		return c[0].Txid
+		return &c[0]
 	}
 
 	// the root is the node not being a child of another one
@@ -50,11 +50,19 @@ func (c FlatTxTree) RootTxid() string {
 
 	for _, node := range c {
 		if _, ok := allchildren[node.Txid]; !ok {
-			return node.Txid
+			return &node
 		}
 	}
 
-	return ""
+	return nil
+}
+
+func (c FlatTxTree) RootTxid() string {
+	root := c.Root()
+	if root == nil {
+		return ""
+	}
+	return root.Txid
 }
 
 func (c FlatTxTree) Leaves() []TxTreeNode {

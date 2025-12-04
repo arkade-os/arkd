@@ -159,6 +159,39 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 	return items, nil
 }
 
+const selectChildrenTxs = `-- name: SelectChildrenTxs :many
+SELECT t1.tx FROM tx t1
+WHERE t1.txid = ANY (
+  SELECT jsonb_array_elements_text(jsonb_path_query_array(children, '$.*'))
+  FROM tx t2
+  WHERE t2.type = 'tree'
+    AND t2.txid = $1
+)
+`
+
+func (q *Queries) SelectChildrenTxs(ctx context.Context, txid string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectChildrenTxs, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var tx string
+		if err := rows.Scan(&tx); err != nil {
+			return nil, err
+		}
+		items = append(items, tx)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectConviction = `-- name: SelectConviction :one
 SELECT id, type, created_at, expires_at, crime_type, crime_round_id, crime_reason, pardoned, script FROM conviction WHERE id = $1
 `

@@ -177,6 +177,12 @@ service WalletService {
       body: "*"
     };
   }
+  rpc UnwatchAllScripts(UnwatchAllScriptsRequest) returns (UnwatchAllScriptsResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/wallet/unwatch-all-scripts"
+      body: "*"
+    };
+  }
   rpc NotificationStream(NotificationStreamRequest) returns (stream NotificationStreamResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/wallet/notifications"
@@ -377,6 +383,9 @@ message UnwatchScriptsRequest {
   repeated string scripts = 1;
 }
 message UnwatchScriptsResponse {}
+
+message UnwatchAllScriptsRequest {}
+message UnwatchAllScriptsResponse {}
 
 message GetTransactionRequest {
   string txid = 1;

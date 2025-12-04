@@ -97,6 +97,12 @@ func (h *WalletServiceHandler) UnwatchScripts(
 	return &arkwalletv1.UnwatchScriptsResponse{}, nil
 }
 
+func (h *WalletServiceHandler) UnwatchAllScripts(
+	ctx context.Context, request *arkwalletv1.UnwatchAllScriptsRequest,
+) (*arkwalletv1.UnwatchAllScriptsResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (h *WalletServiceHandler) DeriveConnectorAddress(
 	ctx context.Context, _ *arkwalletv1.DeriveConnectorAddressRequest,
 ) (*arkwalletv1.DeriveConnectorAddressResponse, error) {

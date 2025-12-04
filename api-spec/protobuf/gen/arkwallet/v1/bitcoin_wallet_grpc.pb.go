@@ -50,6 +50,7 @@ const (
 	WalletService_Withdraw_FullMethodName                 = "/arkwallet.v1.WalletService/Withdraw"
 	WalletService_WatchScripts_FullMethodName             = "/arkwallet.v1.WalletService/WatchScripts"
 	WalletService_UnwatchScripts_FullMethodName           = "/arkwallet.v1.WalletService/UnwatchScripts"
+	WalletService_UnwatchAllScripts_FullMethodName        = "/arkwallet.v1.WalletService/UnwatchAllScripts"
 	WalletService_NotificationStream_FullMethodName       = "/arkwallet.v1.WalletService/NotificationStream"
 	WalletService_LoadSignerKey_FullMethodName            = "/arkwallet.v1.WalletService/LoadSignerKey"
 	WalletService_RescanUtxos_FullMethodName              = "/arkwallet.v1.WalletService/RescanUtxos"
@@ -92,6 +93,7 @@ type WalletServiceClient interface {
 	Withdraw(ctx context.Context, in *WithdrawRequest, opts ...grpc.CallOption) (*WithdrawResponse, error)
 	WatchScripts(ctx context.Context, in *WatchScriptsRequest, opts ...grpc.CallOption) (*WatchScriptsResponse, error)
 	UnwatchScripts(ctx context.Context, in *UnwatchScriptsRequest, opts ...grpc.CallOption) (*UnwatchScriptsResponse, error)
+	UnwatchAllScripts(ctx context.Context, in *UnwatchAllScriptsRequest, opts ...grpc.CallOption) (*UnwatchAllScriptsResponse, error)
 	NotificationStream(ctx context.Context, in *NotificationStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[NotificationStreamResponse], error)
 	LoadSignerKey(ctx context.Context, in *LoadSignerKeyRequest, opts ...grpc.CallOption) (*LoadSignerKeyResponse, error)
 	RescanUtxos(ctx context.Context, in *RescanUtxosRequest, opts ...grpc.CallOption) (*RescanUtxosResponse, error)
@@ -424,6 +426,16 @@ func (c *walletServiceClient) UnwatchScripts(ctx context.Context, in *UnwatchScr
 	return out, nil
 }
 
+func (c *walletServiceClient) UnwatchAllScripts(ctx context.Context, in *UnwatchAllScriptsRequest, opts ...grpc.CallOption) (*UnwatchAllScriptsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnwatchAllScriptsResponse)
+	err := c.cc.Invoke(ctx, WalletService_UnwatchAllScripts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *walletServiceClient) NotificationStream(ctx context.Context, in *NotificationStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[NotificationStreamResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &WalletService_ServiceDesc.Streams[1], WalletService_NotificationStream_FullMethodName, cOpts...)
@@ -500,6 +512,7 @@ type WalletServiceServer interface {
 	Withdraw(context.Context, *WithdrawRequest) (*WithdrawResponse, error)
 	WatchScripts(context.Context, *WatchScriptsRequest) (*WatchScriptsResponse, error)
 	UnwatchScripts(context.Context, *UnwatchScriptsRequest) (*UnwatchScriptsResponse, error)
+	UnwatchAllScripts(context.Context, *UnwatchAllScriptsRequest) (*UnwatchAllScriptsResponse, error)
 	NotificationStream(*NotificationStreamRequest, grpc.ServerStreamingServer[NotificationStreamResponse]) error
 	LoadSignerKey(context.Context, *LoadSignerKeyRequest) (*LoadSignerKeyResponse, error)
 	RescanUtxos(context.Context, *RescanUtxosRequest) (*RescanUtxosResponse, error)
@@ -604,6 +617,9 @@ func (UnimplementedWalletServiceServer) WatchScripts(context.Context, *WatchScri
 }
 func (UnimplementedWalletServiceServer) UnwatchScripts(context.Context, *UnwatchScriptsRequest) (*UnwatchScriptsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnwatchScripts not implemented")
+}
+func (UnimplementedWalletServiceServer) UnwatchAllScripts(context.Context, *UnwatchAllScriptsRequest) (*UnwatchAllScriptsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnwatchAllScripts not implemented")
 }
 func (UnimplementedWalletServiceServer) NotificationStream(*NotificationStreamRequest, grpc.ServerStreamingServer[NotificationStreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method NotificationStream not implemented")
@@ -1185,6 +1201,24 @@ func _WalletService_UnwatchScripts_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WalletService_UnwatchAllScripts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnwatchAllScriptsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).UnwatchAllScripts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_UnwatchAllScripts_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).UnwatchAllScripts(ctx, req.(*UnwatchAllScriptsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WalletService_NotificationStream_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(NotificationStreamRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -1358,6 +1392,10 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UnwatchScripts",
 			Handler:    _WalletService_UnwatchScripts_Handler,
+		},
+		{
+			MethodName: "UnwatchAllScripts",
+			Handler:    _WalletService_UnwatchAllScripts_Handler,
 		},
 		{
 			MethodName: "LoadSignerKey",

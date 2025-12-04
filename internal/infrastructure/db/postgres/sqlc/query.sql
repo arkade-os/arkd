@@ -235,6 +235,15 @@ SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_
 UNION
 SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid = ANY($1::varchar[]);
 
+-- name: SelectChildrenTxs :many
+SELECT t1.tx FROM tx t1
+WHERE t1.txid = ANY (
+  SELECT jsonb_array_elements_text(jsonb_path_query_array(children, '$.*'))
+  FROM tx t2
+  WHERE t2.type = 'tree'
+    AND t2.txid = @txid
+);
+
 -- name: SelectNotUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 
