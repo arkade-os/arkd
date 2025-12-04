@@ -8,14 +8,14 @@ import (
 	"github.com/google/cel-go/cel"
 )
 
-type CelProgram struct {
+type program struct {
 	cel.Program
 	txt string
 }
 
 type Estimator struct {
-	intentInput  *CelProgram
-	intentOutput *CelProgram
+	intentInput  *program
+	intentOutput *program
 }
 
 // New parses the intent input and output programs if not empty and returns a new Estimator
@@ -27,7 +27,7 @@ func New(intentInputProgram, intentOutputProgram string) (*Estimator, error) {
 		if err != nil {
 			return nil, err
 		}
-		estimator.intentInput = &CelProgram{txt: intentInputProgram, Program: prg}
+		estimator.intentInput = &program{txt: intentInputProgram, Program: prg}
 	}
 
 	if len(intentOutputProgram) > 0 {
@@ -35,7 +35,7 @@ func New(intentInputProgram, intentOutputProgram string) (*Estimator, error) {
 		if err != nil {
 			return nil, err
 		}
-		estimator.intentOutput = &CelProgram{txt: intentOutputProgram, Program: prg}
+		estimator.intentOutput = &program{txt: intentOutputProgram, Program: prg}
 	}
 
 	return estimator, nil
