@@ -14,6 +14,7 @@ type OutpointWithValue struct {
 type BlockchainScanner interface {
 	WatchScripts(ctx context.Context, scripts []string) error
 	UnwatchScripts(ctx context.Context, scripts []string) error
+	UnwatchAllScripts(ctx context.Context) error
 	GetNotificationChannel(ctx context.Context) <-chan map[string][]OutpointWithValue
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,

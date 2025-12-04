@@ -230,8 +230,11 @@ func (r *arkRepository) GetOffchainTx(
 
 func (r *arkRepository) GetChildrenTxs(ctx context.Context, txid string,
 ) ([]string, error) {
-	rounds, err := r.findRound(ctx, badgerhold.Where("Stage.Code").Eq(int(domain.RoundFinalizationStage)).
-		And("Stage.Ended").Eq(true))
+	rounds, err := r.findRound(
+		ctx,
+		badgerhold.Where("Stage.Code").Eq(int(domain.RoundFinalizationStage)).
+			And("Stage.Ended").Eq(true),
+	)
 	if err != nil {
 		return nil, err
 	}

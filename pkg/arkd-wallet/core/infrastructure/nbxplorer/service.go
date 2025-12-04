@@ -631,6 +631,20 @@ func (n *nbxplorer) UnwatchAddresses(ctx context.Context, addresses ...string) e
 	return nil
 }
 
+// UnwatchAllAddresses removes all addresses from group via DELETE /v1/groups/{groupID}/children/delete endpoint.
+func (n *nbxplorer) UnwatchAllAddresses(ctx context.Context) error {
+	if len(n.groupID) == 0 {
+		return fmt.Errorf("group ID is not set")
+	}
+
+	endpoint := fmt.Sprintf("/v1/groups/%s", url.PathEscape(n.groupID))
+	_, err := n.makeRequest(ctx, "DELETE", endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete group: %w", err)
+	}
+	return nil
+}
+
 // GetGroupNotifications monitors group UTXOs using WebSocket events and triggers UTXO rescanning
 // only when receiving "newtransaction" events. Returns only UTXOs from the specific new transaction.
 func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports.Utxo, error) {

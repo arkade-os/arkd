@@ -601,7 +601,11 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		}
 		require.Len(t, expectedChildTxs, len(childrenTxs))
 		for _, childTx := range childrenTxs {
-			require.True(t, expectedChildTxs[childTx], "Child transaction not found in expected transactions")
+			require.True(
+				t,
+				expectedChildTxs[childTx],
+				"Child transaction not found in expected transactions",
+			)
 		}
 
 		// Test GetChildrenTxs with a tree node that has no children

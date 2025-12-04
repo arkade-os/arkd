@@ -28,7 +28,8 @@ func (s *service) listenToScannerNotifications(ctx context.Context) {
 						go func() {
 							defer func() {
 								if r := recover(); r != nil {
-									log.WithError(fmt.Errorf("panic: %v", r)).Error("panic while processing notification")
+									log.WithError(fmt.Errorf("panic: %v", r)).
+										Error("panic while processing notification")
 								}
 							}()
 							if err := s.onNotification(ctx, outpoint.Outpoint); err != nil {

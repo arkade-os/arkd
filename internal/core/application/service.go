@@ -287,11 +287,33 @@ func NewService(
 
 			svc.propagateTransactionEvent(txEvent)
 
-			go func() {
-				if err := svc.startWatchingVtxos(newVtxos); err != nil {
-					log.WithError(err).Warn("failed to start watching vtxos")
-				}
-			}()
+			root := round.VtxoTree.Root()
+			if root != nil {
+				go func(rootNode *tree.TxTreeNode) {
+					rootPtx, err := psbt.NewFromRawBytes(strings.NewReader(rootNode.Tx), true)
+					if err != nil {
+						log.WithError(err).Warn("failed to parse root tx")
+						return
+					}
+					scripts := make([]string, 0, len(rootPtx.UnsignedTx.TxOut))
+					for _, out := range rootPtx.UnsignedTx.TxOut {
+						if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+							continue
+						}
+						if script.IsSubDustScript(out.PkScript) {
+							continue
+						}
+						scripts = append(scripts, hex.EncodeToString(out.PkScript))
+					}
+					if len(scripts) > 0 {
+						if err := svc.scanner.WatchScripts(context.Background(), scripts); err != nil {
+							log.WithError(err).Warn("failed to watch scripts")
+							return
+						}
+						log.Debugf("watching %d scripts", len(scripts))
+					}
+				}(root)
+			}
 
 			if lastEvent := events[len(events)-1]; lastEvent.GetType() != domain.EventTypeBatchSwept {
 				go svc.scheduleSweepBatchOutput(round)
@@ -375,7 +397,9 @@ func (s *service) Stop() {
 	s.sweeperCancel()
 	s.sweeper.stop()
 
-	// TODO stop watching scripts ?
+	if err := s.scanner.UnwatchAllScripts(ctx); err != nil {
+		log.WithError(err).Warn("failed to unwatch scripts")
+	}
 
 	// nolint
 	s.wallet.Lock(ctx)
@@ -3386,19 +3410,6 @@ func (s *service) getSpentVtxos(intents map[string]domain.Intent) []domain.Vtxo 
 	return vtxos
 }
 
-func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
-	scripts, err := s.extractVtxosScriptsForScanner(vtxos)
-	if err != nil {
-		return err
-	}
-
-	if len(scripts) <= 0 {
-		return nil
-	}
-
-	return s.scanner.WatchScripts(context.Background(), scripts)
-}
-
 func (s *service) restoreWatchingScripts() error {
 	ctx := context.Background()
 
@@ -3422,7 +3433,13 @@ func (s *service) restoreWatchingScripts() error {
 			continue
 		}
 
-		sweepableOutputs, err := findSweepableOutputs(ctx, s.wallet, s.builder, s.sweeper.scheduler.Unit(), vtxoTree)
+		sweepableOutputs, err := findSweepableOutputs(
+			ctx,
+			s.wallet,
+			s.builder,
+			s.sweeper.scheduler.Unit(),
+			vtxoTree,
+		)
 		if err != nil {
 			log.WithError(err).Warn("failed to find sweepable outputs")
 			continue
@@ -3432,7 +3449,8 @@ func (s *service) restoreWatchingScripts() error {
 		if len(sweepableOutputs) > 0 {
 			for _, outputs := range sweepableOutputs {
 				for _, output := range outputs {
-					childrenTxs, err := s.repoManager.Rounds().GetChildrenTxs(ctx, output.Hash.String())
+					childrenTxs, err := s.repoManager.Rounds().
+						GetChildrenTxs(ctx, output.Hash.String())
 					if err != nil {
 						log.WithError(err).Warn("failed to get children txs")
 						continue
@@ -3480,53 +3498,6 @@ func (s *service) restoreWatchingScripts() error {
 
 	log.Debugf("restored watching %d vtxo scripts", len(scripts))
 	return nil
-}
-
-// extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner
-// it excludes subdust vtxos scripts and duplicates
-// it logs errors and continues in order to not block the start/stop watching vtxos operations
-func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, error) {
-	dustLimit, err := s.wallet.GetDustAmount(context.Background())
-	if err != nil {
-		return nil, err
-	}
-
-	indexedScripts := make(map[string]struct{})
-	scripts := make([]string, 0)
-
-	for _, vtxo := range vtxos {
-		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
-		if err != nil {
-			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
-		if err != nil {
-			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		if vtxo.Amount < dustLimit {
-			continue
-		}
-
-		p2trScript, err := script.P2TRScript(vtxoTapKey)
-		if err != nil {
-			log.WithError(err).
-				Warnf("failed to compute P2TR script from vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		scriptHex := hex.EncodeToString(p2trScript)
-
-		if _, ok := indexedScripts[scriptHex]; !ok {
-			indexedScripts[scriptHex] = struct{}{}
-			scripts = append(scripts, scriptHex)
-		}
-	}
-
-	return scripts, nil
 }
 
 func (s *service) saveEvents(

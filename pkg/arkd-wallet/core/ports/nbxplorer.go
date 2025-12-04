@@ -55,6 +55,7 @@ type Nbxplorer interface {
 	IsSpent(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 	WatchAddresses(ctx context.Context, addresses ...string) error
 	UnwatchAddresses(ctx context.Context, addresses ...string) error
+	UnwatchAllAddresses(ctx context.Context) error
 	GetAddressNotifications(ctx context.Context) (<-chan []Utxo, error)
 
 	Close() error

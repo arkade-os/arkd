@@ -109,6 +109,11 @@ func (w *walletDaemonClient) UnwatchScripts(ctx context.Context, scripts []strin
 	return err
 }
 
+func (w *walletDaemonClient) UnwatchAllScripts(ctx context.Context) error {
+	_, err := w.client.UnwatchAllScripts(ctx, &arkwalletv1.UnwatchAllScriptsRequest{})
+	return err
+}
+
 func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([]byte, error) {
 	resp, err := w.client.SignMessage(ctx, &arkwalletv1.SignMessageRequest{Message: message})
 	if err != nil {
