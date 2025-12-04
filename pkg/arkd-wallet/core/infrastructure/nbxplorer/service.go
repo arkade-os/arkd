@@ -642,6 +642,7 @@ func (n *nbxplorer) UnwatchAllAddresses(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete group: %w", err)
 	}
+	n.groupID = ""
 	return nil
 }
 
