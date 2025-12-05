@@ -96,13 +96,14 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	controlAsset := assetGroup.ControlAsset
 	normalAsset := assetGroup.NormalAsset
 
-	// If control input is present it is the first input
+	// If control inputs are present, find the corresponding vtxos
 	if controlAsset != nil {
+
+		controlAssetInputs := make([]asset.AssetInput, 0)
 
 		fmt.Printf("This is the control asset %+v", *controlAsset)
 
-		controlVtxoFound := false
-		for _, vtxo := range vtxos {
+		for i, vtxo := range vtxos {
 			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, controlAsset, batchIndex, signerUnrollScriptClosure)
 			if err != nil {
 				return nil, nil, err
@@ -117,16 +118,19 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 					Amount: assetOutput.Amount,
 				}
 
-				controlAsset.Inputs = []asset.AssetInput{controlInput}
+				controlAssetInputs = append(controlAssetInputs, controlInput)
 				checkpointInputs = append(checkpointInputs, *checkpointInput)
 				checkpointTxs = append(checkpointTxs, checkpointPtx)
-				controlVtxoFound = true
+
+				// Remove the used vtxo from the list
+				vtxos = append(vtxos[:i], vtxos[i+1:]...)
 			}
 
 		}
-		if !controlVtxoFound {
+		if len(controlAssetInputs) == 0 {
 			return nil, nil, fmt.Errorf("control asset vtxo not found")
 		}
+		controlAsset.Inputs = controlAssetInputs
 
 	}
 
