@@ -1,7 +1,6 @@
 package offchain
 
 import (
-	"bytes"
 	"fmt"
 
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -381,7 +380,7 @@ func buildAssetCheckpointTx(
 	var isSeal bool
 
 	for _, input := range newAsset.Inputs {
-		if bytes.Equal(input.Txhash, vtxo.Outpoint.Hash[:]) && input.Vout == vtxo.Outpoint.Index {
+		if input.Vout == vtxo.Outpoint.Index {
 			isSeal = true
 			newAsset.Inputs = []asset.AssetInput{
 				{
