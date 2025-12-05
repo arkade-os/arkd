@@ -98,29 +98,34 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 	// If control input is present it is the first input
 	if controlAsset != nil {
-		controlVtxo := &vtxos[0]
-		vtxos = vtxos[1:]
 
-		checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(*controlVtxo, controlAsset, batchIndex, signerUnrollScriptClosure)
-		if err != nil {
-			return nil, nil, err
+		fmt.Printf("This is the control asset %+v", *controlAsset)
+
+		controlVtxoFound := false
+		for _, vtxo := range vtxos {
+			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, controlAsset, batchIndex, signerUnrollScriptClosure)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if assetOutput != nil {
+				txId := checkpointPtx.UnsignedTx.TxHash()
+				controlInput := asset.AssetInput{
+					Txid:   txId[:],
+					Vout:   0,
+					Amount: assetOutput.Amount,
+				}
+
+				controlAsset.Inputs = []asset.AssetInput{controlInput}
+				controlVtxoFound = true
+			}
+
+			checkpointInputs = append(checkpointInputs, *checkpointInput)
+			checkpointTxs = append(checkpointTxs, checkpointPtx)
 		}
-
-		if assetOutput == nil {
-			return nil, nil, fmt.Errorf("expected asset output for control input")
+		if !controlVtxoFound {
+			return nil, nil, fmt.Errorf("control asset vtxo not found")
 		}
-
-		txId := checkpointPtx.UnsignedTx.TxHash()
-		controlInput := asset.AssetInput{
-			Txid:   txId[:],
-			Vout:   0,
-			Amount: assetOutput.Amount,
-		}
-
-		controlAsset.Inputs = []asset.AssetInput{controlInput}
-
-		checkpointInputs = append(checkpointInputs, *checkpointInput)
-		checkpointTxs = append(checkpointTxs, checkpointPtx)
 
 	}
 
