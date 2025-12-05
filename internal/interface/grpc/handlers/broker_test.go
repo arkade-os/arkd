@@ -173,6 +173,38 @@ func TestBroker(t *testing.T) {
 		require.ErrorContains(t, err, "subscription non-existent not found")
 	})
 
+	t.Run("overwriteTopics", func(t *testing.T) {
+		broker := newBroker[string]()
+		topics := []string{"topic1", "topic2", "topic3"}
+		listener := newListener[string]("test-id", topics)
+		broker.pushListener(listener)
+
+		err := broker.overwriteTopics("test-id", []string{"topic4", "topic5"})
+		require.NoError(t, err)
+
+		result := broker.getTopics("test-id")
+		require.Len(t, result, 2)
+		require.Contains(t, result, "topic4")
+		require.Contains(t, result, "topic5")
+		require.NotContains(t, result, "topic1")
+		require.NotContains(t, result, "topic2")
+		require.NotContains(t, result, "topic3")
+
+		err = broker.overwriteTopics("test-id", []string{})
+		require.NoError(t, err)
+		result = broker.getTopics("test-id")
+		require.Len(t, result, 0)
+		require.NotContains(t, result, "topic1")
+		require.NotContains(t, result, "topic2")
+		require.NotContains(t, result, "topic3")
+		require.NotContains(t, result, "topic4")
+		require.NotContains(t, result, "topic5")
+
+		err = broker.overwriteTopics("non-existent", []string{"topic4", "topic5"})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "subscription non-existent not found")
+	})
+
 	t.Run("timeout management", func(t *testing.T) {
 		t.Run("startTimeout", func(t *testing.T) {
 			broker := newBroker[string]()

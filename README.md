@@ -123,7 +123,7 @@ You can specify a custom data directory using the `ARKD_DATADIR` environment var
 
 ### Connect to Bitcoin
 
-`arkd-wallet` is the wallet used by `arkd` as liqudiity provider.
+`arkd-wallet` is the wallet used by `arkd` as liquidity provider.
 
 It is based on [NBXplorer](https://docs.btcpayserver.org/NBXplorer) and requires a running instance to connect to. You can check the [example](https://github.com/dgarage/NBXplorer/blob/master/docker-compose.regtest.yml) in the official repository, or our Docker Compose [file](./docker-compose.regtest.yml), to see how to start one.
 
