@@ -204,7 +204,14 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return send(ctx)
 		},
-		Flags: []cli.Flag{receiversFlag, toFlag, amountFlag, enableExpiryCoinselectFlag, passwordFlag, zeroFeesFlag},
+		Flags: []cli.Flag{
+			receiversFlag,
+			toFlag,
+			amountFlag,
+			enableExpiryCoinselectFlag,
+			passwordFlag,
+			zeroFeesFlag,
+		},
 	}
 	redeemCommand = cli.Command{
 		Name:  "redeem",
@@ -372,8 +379,7 @@ func send(ctx *cli.Context) error {
 }
 
 func balance(ctx *cli.Context) error {
-	computeExpiration := ctx.Bool(expiryDetailsFlag.Name)
-	bal, err := arkSdkClient.Balance(ctx.Context, computeExpiration)
+	bal, err := arkSdkClient.Balance(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -393,7 +399,6 @@ func redeem(ctx *cli.Context) error {
 	complete := ctx.Bool(completeFlag.Name)
 	address := ctx.String(addressFlag.Name)
 	amount := ctx.Uint64(amountToRedeemFlag.Name)
-	computeExpiration := ctx.Bool(expiryDetailsFlag.Name)
 
 	if force && complete {
 		return fmt.Errorf("cannot use --force and --complete at the same time")
@@ -417,7 +422,7 @@ func redeem(ctx *cli.Context) error {
 		return fmt.Errorf("missing amount")
 	}
 	txID, err := arkSdkClient.CollaborativeExit(
-		ctx.Context, address, amount, computeExpiration,
+		ctx.Context, address, amount,
 	)
 	if err != nil {
 		return err
@@ -538,7 +543,7 @@ func sendCovenantLess(ctx *cli.Context, receivers []types.Receiver, withZeroFees
 	computeExpiration := ctx.Bool(enableExpiryCoinselectFlag.Name)
 	if len(onchainReceivers) > 0 {
 		txid, err := arkSdkClient.CollaborativeExit(
-			ctx.Context, onchainReceivers[0].To, onchainReceivers[0].Amount, computeExpiration,
+			ctx.Context, onchainReceivers[0].To, onchainReceivers[0].Amount,
 		)
 		if err != nil {
 			return err
