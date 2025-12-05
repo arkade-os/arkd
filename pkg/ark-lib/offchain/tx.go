@@ -2,12 +2,14 @@ package offchain
 
 import (
 	"fmt"
+	"strings"
 
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -99,9 +101,11 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 		controlAssetInputs := make([]asset.AssetInput, 0)
 
-		fmt.Printf("This is the control asset %+v", *controlAsset)
+		fmt.Printf("This is the control asset %+v", controlAsset.Inputs[0].Vout)
 
 		for i, vtxo := range vtxos {
+
+			fmt.Printf("This is vtxo %+v", vtxo.Outpoint.Index)
 			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, controlAsset, batchIndex, signerUnrollScriptClosure)
 			if err != nil {
 				return nil, nil, err
@@ -184,6 +188,84 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 	return arkTx, checkpointTxs, nil
 
+}
+
+func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap map[string]string, vtxos []VtxoInput, signerUnrollScript []byte) (*psbt.Packet, []*psbt.Packet, error) {
+
+	assetGroup, batchIndex, err := asset.DecodeAssetGroupFromOpret(outputs[assetGroupIndex].PkScript)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	signerUnrollScriptClosure := &script.CSVMultisigClosure{}
+	valid, err := signerUnrollScriptClosure.Decode(signerUnrollScript)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !valid {
+		return nil, nil, fmt.Errorf("invalid signer unroll script")
+	}
+
+	controlAsset := assetGroup.ControlAsset
+	normalAsset := assetGroup.NormalAsset
+
+	// If control inputs are present, find the corresponding vtxos
+	if controlAsset != nil {
+		for i, input := range controlAsset.Inputs {
+			inputTxId, err := chainhash.NewHash(input.Txhash)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			checkpointTxHex, ok := checkpointTxMap[inputTxId.String()]
+			if !ok {
+				return nil, nil, fmt.Errorf("checkpoint tx not found for control asset input %s", input.Txhash)
+			}
+
+			checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			controlAsset.Inputs[i].Txhash = checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash[:]
+			controlAsset.Inputs[i].Vout = checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index
+		}
+
+	}
+
+	for i, input := range normalAsset.Inputs {
+		inputTxId, err := chainhash.NewHash(input.Txhash)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		checkpointTxHex, ok := checkpointTxMap[inputTxId.String()]
+		if !ok {
+			return nil, nil, fmt.Errorf("checkpoint tx not found for normal asset input %s", input.Txhash)
+		}
+
+		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		normalAsset.Inputs[i].Txhash = checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash[:]
+		normalAsset.Inputs[i].Vout = checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index
+	}
+
+	newAssetGroup := &asset.AssetGroup{
+		ControlAsset: controlAsset,
+		NormalAsset:  normalAsset,
+	}
+
+	newOpretOutput, err := newAssetGroup.EncodeOpret(batchIndex[:])
+	if err != nil {
+		return nil, nil, err
+	}
+
+	outputs[assetGroupIndex] = &newOpretOutput
+
+	return BuildAssetTxs(outputs, assetGroupIndex, vtxos, signerUnrollScript)
 }
 
 // buildArkTx builds an ark tx for the given vtxos and outputs.

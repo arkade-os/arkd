@@ -906,7 +906,7 @@ func (s *service) SubmitOffchainTx(
 			}
 			foundOpReturn = true
 
-			err := s.validateAssetTransaction(ctx, *arkPtx.UnsignedTx, out.PkScript)
+			err := s.validateAssetTransaction(ctx, *arkPtx.UnsignedTx, checkpointTxs, out.PkScript)
 			if err != nil {
 				log.WithError(err).Warn("asset transaction validation failed")
 				return nil, "", "", errors.ASSET_VALIDATION_FAILED.Wrap(err)
@@ -984,8 +984,8 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	if assetGroupIndex >= 0 {
-		rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildAssetTxs(
-			outputs, assetGroupIndex, ins, s.checkpointTapscript,
+		rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.RebuildAssetTxs(
+			outputs, assetGroupIndex, checkpointTxs, ins, s.checkpointTapscript,
 		)
 
 		if err != nil {
@@ -3825,7 +3825,7 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	}()
 }
 
-func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, assetOutput []byte) error {
+func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx, checkpointTxMap map[string]string, assetOutput []byte) error {
 	decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(assetOutput)
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
@@ -3849,20 +3849,20 @@ func (s *service) validateAssetTransaction(ctx context.Context, tx wire.MsgTx, a
 
 	// verify Asset Reissuance / buring
 	if controlAsset != nil && totalInputAmount != totalOuputAmount {
-		if !bytes.Equal(controlAsset.AssetId[:], normalAsset.AssetId[:]) {
+		if !bytes.Equal(controlAsset.AssetId[:], normalAsset.ControlAssetId[:]) {
 			return fmt.Errorf("invalid control key for asset modification")
 		}
 
-		if err := s.verifyAsset(ctx, tx, *controlAsset); err != nil {
-			return fmt.Errorf("invalid control key for asset reissuance")
+		if err := s.verifyAsset(ctx, arkTx, checkpointTxMap, *controlAsset); err != nil {
+			return fmt.Errorf("invalid control key for asset reissuance / burning: %s", err)
 		}
 
 	}
 
-	return s.verifyAsset(ctx, tx, normalAsset)
+	return s.verifyAsset(ctx, arkTx, checkpointTxMap, normalAsset)
 }
 
-func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, assetDetails asset.Asset) error {
+func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, checkpointTxMap map[string]string, assetDetails asset.Asset) error {
 	txins := txMsg.TxIn
 	txouts := txMsg.TxOut
 
@@ -3873,20 +3873,41 @@ func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, assetDetail
 	assetInputs := assetDetails.Inputs
 
 	for _, input := range assetInputs {
-		txid := hex.EncodeToString(deriveTxId(input.Txhash))
-		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
+		hash, err := chainhash.NewHash(input.Txhash)
+		if err != nil {
+			return fmt.Errorf("error parsing asset input txhash: %s", err)
+		}
+
+		checkpointId := hash.String()
+
+		// fetch the checkpoint txid from the map
+		if _, ok := checkpointTxMap[checkpointId]; !ok {
+			return fmt.Errorf("asset input %s is a checkpoint tx, cannot verify offchain tx", checkpointId)
+		}
+
+		checkpointTx := checkpointTxMap[checkpointId]
+
+		checkPointPsbt, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTx), true)
+		if err != nil {
+			return fmt.Errorf("error decoding checkpoint psbt: %s", err)
+		}
+
+		checkpointInput := checkPointPsbt.UnsignedTx.TxIn[0]
+		arkTxid := checkpointInput.PreviousOutPoint.Hash.String()
+
+		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxid)
 
 		if err != nil {
 			return fmt.Errorf("error retrieving offchain tx %s: %s",
-				txid, err)
+				arkTxid, err)
 		}
 
 		if offchainTx == nil {
-			return fmt.Errorf("offchain tx %s not found", txid)
+			return fmt.Errorf("offchain tx %s not found", arkTxid)
 		}
 
 		if !offchainTx.IsFinalized() {
-			return fmt.Errorf("offchain tx %s is failed", txid)
+			return fmt.Errorf("offchain tx %s is failed", arkTxid)
 		}
 
 		decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
@@ -3906,7 +3927,7 @@ func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, assetDetail
 		}
 
 		if assetGroup == nil {
-			return fmt.Errorf("no asset data found in offchain tx %s", txid)
+			return fmt.Errorf("no asset data found in offchain tx %s", arkTxid)
 		}
 
 		assets := []asset.Asset{assetGroup.NormalAsset}
@@ -3916,15 +3937,17 @@ func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, assetDetail
 
 		foundOutput := false
 		for _, asset := range assets {
-			if asset.Outputs[input.Vout].Amount == input.Amount {
-				foundOutput = true
-				break
+			for _, assetOut := range asset.Outputs {
+				if assetOut.Vout == input.Vout {
+					foundOutput = true
+					break
+				}
 			}
 		}
 
 		if !foundOutput {
 			return fmt.Errorf("asset input %d in offchain tx %s not found in asset outputs",
-				input.Vout, txid)
+				input.Vout, arkTxid)
 		}
 	}
 	return nil

@@ -290,24 +290,29 @@ func verifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
 
 	processedOutputs := 0
 
-	for _, out := range outs {
-		// Asset Output comes after Seal Outputs
-		if IsAssetGroup(out.PkScript) {
-			break
-		}
-		for _, assetOut := range assetOutputs {
+	for _, assetOut := range assetOutputs {
+
+		for i, out := range outs {
+			// Asset Output comes after Seal Outputs
+			if IsAssetGroup(out.PkScript) {
+				break
+			}
+
 			pkScript, err := schnorr.ParsePubKey(out.PkScript[2:])
 			if err != nil {
 				return err
 			}
-			if pkScript.IsEqual(&assetOut.PublicKey) {
+			if pkScript.IsEqual(&assetOut.PublicKey) && uint32(i) == assetOut.Vout {
 				processedOutputs++
 			}
 		}
 	}
 
 	if processedOutputs != len(assetOutputs) {
-		return errors.New("not all asset outputs found in transaction outputs")
+		// also error out processedOutputs and len(assetOutputs) for easier debugging
+		errors := fmt.Errorf("not all asset outputs found in transaction outputs: processed %d of %d",
+			processedOutputs, len(assetOutputs))
+		return errors
 	}
 
 	return nil
