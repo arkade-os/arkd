@@ -48,6 +48,24 @@ func parseRegisterIntent(
 	return proof, &message, nil
 }
 
+func parseEstimateFeeIntent(
+	intentProof *arkv1.Intent,
+) (*intent.Proof, *intent.EstimateFeeMessage, error) {
+	proof, err := parseIntentProofTx(intentProof)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(intentProof.GetMessage()) <= 0 {
+		return nil, nil, fmt.Errorf("missing message")
+	}
+	var message intent.EstimateFeeMessage
+	if err := message.Decode(intentProof.GetMessage()); err != nil {
+		return nil, nil, fmt.Errorf("invalid intent message")
+	}
+	return proof, &message, nil
+}
+
 func parseDeleteIntent(
 	intentProof *arkv1.Intent,
 ) (*intent.Proof, *intent.DeleteMessage, error) {

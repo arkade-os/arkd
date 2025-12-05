@@ -79,7 +79,7 @@ func TestBatchSession(t *testing.T) {
 		faucetOnchain(t, bobBoardingAddr, 0.00021)
 		time.Sleep(6 * time.Second)
 
-		aliceBalance, err := alice.Balance(t.Context(), false)
+		aliceBalance, err := alice.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, aliceBalance)
 		require.Zero(t, int(aliceBalance.OffchainBalance.Total))
@@ -87,7 +87,7 @@ func TestBatchSession(t *testing.T) {
 		require.NotEmpty(t, aliceBalance.OnchainBalance.LockedAmount)
 		require.NotZero(t, int(aliceBalance.OnchainBalance.LockedAmount[0].Amount))
 
-		bobBalance, err := bob.Balance(t.Context(), false)
+		bobBalance, err := bob.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, bobBalance)
 		require.Zero(t, int(bobBalance.OffchainBalance.Total))
@@ -132,12 +132,12 @@ func TestBatchSession(t *testing.T) {
 
 		time.Sleep(time.Second)
 
-		aliceBalance, err = alice.Balance(t.Context(), false)
+		aliceBalance, err = alice.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, aliceBalance)
 		require.NotZero(t, int(aliceBalance.OffchainBalance.Total))
 
-		bobBalance, err = bob.Balance(t.Context(), false)
+		bobBalance, err = bob.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, bobBalance)
 		require.NotZero(t, int(bobBalance.OffchainBalance.Total))
@@ -176,14 +176,14 @@ func TestBatchSession(t *testing.T) {
 		require.NotEmpty(t, bobCommitmentTx)
 		require.Equal(t, aliceCommitmentTx, bobCommitmentTx)
 
-		aliceBalance, err = alice.Balance(t.Context(), false)
+		aliceBalance, err = alice.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, aliceBalance)
 		require.NotZero(t, int(aliceBalance.OffchainBalance.Total))
 		require.Zero(t, int(aliceBalance.OnchainBalance.SpendableAmount))
 		require.Empty(t, aliceBalance.OnchainBalance.LockedAmount)
 
-		bobBalance, err = bob.Balance(t.Context(), false)
+		bobBalance, err = bob.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, bobBalance)
 		require.NotZero(t, int(bobBalance.OffchainBalance.Total))
@@ -199,7 +199,7 @@ func TestBatchSession(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, offchainAddr)
 
-		balance, err := alice.Balance(t.Context(), false)
+		balance, err := alice.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, balance)
 		require.Zero(t, balance.OffchainBalance.Total)
@@ -226,7 +226,7 @@ func TestBatchSession(t *testing.T) {
 
 		time.Sleep(time.Second)
 
-		balance, err = alice.Balance(t.Context(), false)
+		balance, err = alice.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, balance)
 		require.Greater(t, int(balance.OffchainBalance.Total), 21000)
@@ -252,7 +252,7 @@ func TestUnilateralExit(t *testing.T) {
 		faucet(t, alice, 0.00021)
 		time.Sleep(5 * time.Second)
 
-		balance, err := alice.Balance(t.Context(), false)
+		balance, err := alice.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, balance)
 		require.NotZero(t, balance.OffchainBalance.Total)
@@ -266,7 +266,7 @@ func TestUnilateralExit(t *testing.T) {
 
 		time.Sleep(10 * time.Second)
 
-		balance, err = alice.Balance(t.Context(), false)
+		balance, err = alice.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, balance)
 		require.Zero(t, balance.OffchainBalance.Total)
@@ -286,7 +286,7 @@ func TestUnilateralExit(t *testing.T) {
 		require.NotEmpty(t, bobOnchainAddr)
 		require.NotEmpty(t, bobOffchainAddr)
 
-		bobBalance, err := bob.Balance(t.Context(), false)
+		bobBalance, err := bob.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, bobBalance)
 		require.Zero(t, bobBalance.OffchainBalance.Total)
@@ -310,7 +310,7 @@ func TestUnilateralExit(t *testing.T) {
 		require.NoError(t, incomingErr)
 		time.Sleep(time.Second)
 
-		bobBalance, err = bob.Balance(t.Context(), false)
+		bobBalance, err = bob.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, bobBalance)
 		require.NotZero(t, bobBalance.OffchainBalance.Total)
@@ -342,7 +342,7 @@ func TestUnilateralExit(t *testing.T) {
 		time.Sleep(8 * time.Second)
 
 		// Bob now just needs to wait for the unilateral exit delay to spend the unrolled VTXOs
-		bobBalance, err = bob.Balance(t.Context(), false)
+		bobBalance, err = bob.Balance(t.Context())
 		require.NoError(t, err)
 		require.Zero(t, bobBalance.OffchainBalance.Total)
 		require.NotEmpty(t, bobBalance.OnchainBalance.LockedAmount)
@@ -360,12 +360,12 @@ func TestCollaborativeExit(t *testing.T) {
 			// Faucet Alice
 			faucetOffchain(t, alice, 0.001)
 
-			aliceBalance, err := alice.Balance(t.Context(), false)
+			aliceBalance, err := alice.Balance(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, aliceBalance)
 			require.Greater(t, int(aliceBalance.OffchainBalance.Total), 0)
 
-			bobBalance, err := bob.Balance(t.Context(), false)
+			bobBalance, err := bob.Balance(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
@@ -376,19 +376,19 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NotEmpty(t, bobOnchainAddr)
 
 			// Send to Bob's onchain address
-			_, err = alice.CollaborativeExit(t.Context(), bobOnchainAddr, 21000, false)
+			_, err = alice.CollaborativeExit(t.Context(), bobOnchainAddr, 21000)
 			require.NoError(t, err)
 
 			time.Sleep(5 * time.Second)
 
 			prevTotalBalance := int(aliceBalance.OffchainBalance.Total)
-			aliceBalance, err = alice.Balance(t.Context(), false)
+			aliceBalance, err = alice.Balance(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, aliceBalance)
 			require.Greater(t, int(aliceBalance.OffchainBalance.Total), 0)
 			require.Less(t, int(aliceBalance.OffchainBalance.Total), prevTotalBalance)
 
-			bobBalance, err = bob.Balance(t.Context(), false)
+			bobBalance, err = bob.Balance(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
@@ -404,13 +404,13 @@ func TestCollaborativeExit(t *testing.T) {
 			// Faucet Alice
 			faucetOffchain(t, alice, 0.00021100) // 21000 + 100 satoshis (amount + fee)
 
-			aliceBalance, err := alice.Balance(t.Context(), false)
+			aliceBalance, err := alice.Balance(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, aliceBalance)
 			require.Greater(t, int(aliceBalance.OffchainBalance.Total), 0)
 			require.Empty(t, aliceBalance.OnchainBalance.LockedAmount)
 
-			bobBalance, err := bob.Balance(t.Context(), false)
+			bobBalance, err := bob.Balance(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
@@ -421,18 +421,18 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NotEmpty(t, bobOnchainAddr)
 
 			// Send all to Bob's onchain address
-			_, err = alice.CollaborativeExit(t.Context(), bobOnchainAddr, 21000, false)
+			_, err = alice.CollaborativeExit(t.Context(), bobOnchainAddr, 21000)
 			require.NoError(t, err)
 
 			time.Sleep(5 * time.Second)
 
-			aliceBalance, err = alice.Balance(t.Context(), false)
+			aliceBalance, err = alice.Balance(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, aliceBalance)
 			require.Zero(t, int(aliceBalance.OffchainBalance.Total))
 			require.Empty(t, aliceBalance.OnchainBalance.LockedAmount)
 
-			bobBalance, err = bob.Balance(t.Context(), false)
+			bobBalance, err = bob.Balance(t.Context())
 			require.NoError(t, err)
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
@@ -460,7 +460,7 @@ func TestCollaborativeExit(t *testing.T) {
 			faucetOnchain(t, aliceBoardingAddr, 0.001)
 			time.Sleep(5 * time.Second)
 
-			_, err = alice.CollaborativeExit(t.Context(), bobOnchainAddr, 21000, false)
+			_, err = alice.CollaborativeExit(t.Context(), bobOnchainAddr, 21000)
 			require.Error(t, err)
 
 			require.ErrorContains(t, err, "include onchain inputs and outputs")
@@ -1898,7 +1898,7 @@ func TestReactToFraud(t *testing.T) {
 				require.NotNil(t, vtxos)
 			}()
 			// Exit all without any change, so that no batch output is created in the commitment tx
-			_, err = sdkClient.CollaborativeExit(ctx, onchainAddr, 21000, false)
+			_, err = sdkClient.CollaborativeExit(ctx, onchainAddr, 21000)
 			require.NoError(t, err)
 
 			wg.Wait()
@@ -2055,7 +2055,7 @@ func TestReactToFraud(t *testing.T) {
 			// Give time for the server to detect and process the fraud
 			time.Sleep(5 * time.Second)
 
-			balance, err := sdkClient.Balance(ctx, false)
+			balance, err := sdkClient.Balance(ctx)
 			require.NoError(t, err)
 
 			require.Empty(t, balance.OnchainBalance.LockedAmount)
@@ -2699,7 +2699,7 @@ func TestSweep(t *testing.T) {
 		faucetOnchain(t, onchainAddr, 0.01)
 		time.Sleep(5 * time.Second)
 
-		balance, err := alice.Balance(ctx, false)
+		balance, err := alice.Balance(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, balance)
 		require.NotZero(t, balance.OffchainBalance.Total)

@@ -25,6 +25,9 @@ type Service interface {
 	RegisterIntent(
 		ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
 	) (string, errors.Error)
+	EstimateFee(
+		ctx context.Context, proof intent.Proof, message intent.EstimateFeeMessage,
+	) (int64, errors.Error)
 	ConfirmRegistration(ctx context.Context, intentId string) errors.Error
 	SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) errors.Error
 	SignCommitmentTx(ctx context.Context, commitmentTx string) errors.Error
