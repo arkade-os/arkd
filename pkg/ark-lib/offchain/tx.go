@@ -111,7 +111,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 			if assetOutput != nil {
 				fmt.Printf("Found control asset output %+v", *assetOutput)
-				txId := checkpointPtx.UnsignedTx.TxHash()
+				txId := deriveTxId(checkpointPtx.UnsignedTx.TxHash())
 				controlInput := asset.AssetInput{
 					Txid:   txId[:],
 					Vout:   0,
@@ -143,7 +143,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 		}
 
 		if assetOutput != nil {
-			txId := checkpointPtx.UnsignedTx.TxHash()
+			txId := deriveTxId(checkpointPtx.UnsignedTx.TxHash())
 			normalAssetInputs = append(normalAssetInputs, asset.AssetInput{
 				Txid:   txId[:],
 				Vout:   0,
