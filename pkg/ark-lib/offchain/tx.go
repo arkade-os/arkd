@@ -117,11 +117,11 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 				}
 
 				controlAsset.Inputs = []asset.AssetInput{controlInput}
+				checkpointInputs = append(checkpointInputs, *checkpointInput)
+				checkpointTxs = append(checkpointTxs, checkpointPtx)
 				controlVtxoFound = true
 			}
 
-			checkpointInputs = append(checkpointInputs, *checkpointInput)
-			checkpointTxs = append(checkpointTxs, checkpointPtx)
 		}
 		if !controlVtxoFound {
 			return nil, nil, fmt.Errorf("control asset vtxo not found")
