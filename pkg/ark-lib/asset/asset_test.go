@@ -34,12 +34,12 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 		ControlAssetId: controlAssetId,
 		Inputs: []AssetInput{
 			{
-				Txid: deterministicTxid(0xaa),
-				Vout: 7,
+				Txhash: deterministicTxhash(0xaa),
+				Vout:   7,
 			},
 			{
-				Txid: deterministicTxid(0xbb),
-				Vout: 9,
+				Txhash: deterministicTxhash(0xbb),
+				Vout:   9,
 			},
 		},
 		Metadata: []Metadata{
@@ -76,7 +76,7 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 		AssetId:        deterministicBytesArray(0x12),
 		Outputs:        []AssetOutput{{PublicKey: deterministicPubKey(t, 10), Amount: 10, Vout: 1}},
 		ControlAssetId: controlAssetId,
-		Inputs:         []AssetInput{{Txid: deterministicTxid(0xcc), Vout: 1, Amount: 5}},
+		Inputs:         []AssetInput{{Txhash: deterministicTxhash(0xcc), Vout: 1, Amount: 5}},
 		Metadata:       []Metadata{{Key: "kind", Value: "normal"}},
 		Version:        AssetVersion,
 		Magic:          AssetMagic,
@@ -87,7 +87,7 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 		NormalAsset:  normalAsset,
 	}
 
-	batchTxID := deterministicTxid(0xee)
+	batchTxID := deterministicTxhash(0xee)
 	txOut, err := group.EncodeOpret(batchTxID)
 	require.NoError(t, err)
 
@@ -130,12 +130,12 @@ func TestAssetInputListEncodeDecode(t *testing.T) {
 
 	inputs := []AssetInput{
 		{
-			Txid:   deterministicTxid(0x01),
+			Txhash: deterministicTxhash(0x01),
 			Amount: 80,
 			Vout:   1,
 		},
 		{
-			Txid:   deterministicTxid(0x02),
+			Txhash: deterministicTxhash(0x02),
 			Amount: 20,
 			Vout:   2,
 		},
@@ -162,12 +162,12 @@ func deterministicPubKey(t *testing.T, seed byte) btcec.PublicKey {
 	return *pub
 }
 
-func deterministicTxid(seed byte) []byte {
+func deterministicTxhash(seed byte) []byte {
 	return bytes.Repeat([]byte{seed}, 32)
 }
 
 func deterministicBytesArray(seed byte) [32]byte {
 	var arr [32]byte
-	copy(arr[:], deterministicTxid(seed))
+	copy(arr[:], deterministicTxhash(seed))
 	return arr
 }

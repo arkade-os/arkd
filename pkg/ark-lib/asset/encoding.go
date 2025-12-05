@@ -24,14 +24,14 @@ const (
 
 func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {
 	if t, ok := val.(*AssetInput); ok {
-		if len(t.Txid) != 32 {
-			return fmt.Errorf("txid must be 32 bytes, got %d", len(t.Txid))
+		if len(t.Txhash) != 32 {
+			return fmt.Errorf("txhash must be 32 bytes, got %d", len(t.Txhash))
 		}
 
-		var txid [32]byte
-		copy(txid[:], t.Txid)
+		var txhash [32]byte
+		copy(txhash[:], t.Txhash)
 
-		if err := tlv.EBytes32(w, &txid, buf); err != nil {
+		if err := tlv.EBytes32(w, &txhash, buf); err != nil {
 			return err
 		}
 		if err := tlv.EUint32(w, &t.Vout, buf); err != nil {
@@ -66,12 +66,12 @@ func AssetInputListSize(l int) tlv.SizeFunc {
 
 func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 	if t, ok := val.(*AssetInput); ok && l == 44 {
-		var txid [32]byte
-		if err := tlv.DBytes32(r, &txid, buf, 32); err != nil {
+		var txhash [32]byte
+		if err := tlv.DBytes32(r, &txhash, buf, 32); err != nil {
 			return err
 		}
-		t.Txid = make([]byte, 32)
-		copy(t.Txid, txid[:])
+		t.Txhash = make([]byte, 32)
+		copy(t.Txhash, txhash[:])
 
 		if err := tlv.DUint32(r, &t.Vout, buf, 4); err != nil {
 			return err

@@ -3873,19 +3873,20 @@ func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, assetDetail
 	assetInputs := assetDetails.Inputs
 
 	for _, input := range assetInputs {
-		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, hex.EncodeToString(input.Txid))
+		txid := hex.EncodeToString(deriveTxId(input.Txhash))
+		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
 
 		if err != nil {
 			return fmt.Errorf("error retrieving offchain tx %s: %s",
-				hex.EncodeToString(input.Txid), err)
+				txid, err)
 		}
 
 		if offchainTx == nil {
-			return fmt.Errorf("offchain tx %s not found", hex.EncodeToString(input.Txid))
+			return fmt.Errorf("offchain tx %s not found", txid)
 		}
 
 		if !offchainTx.IsFinalized() {
-			return fmt.Errorf("offchain tx %s is failed", hex.EncodeToString(input.Txid))
+			return fmt.Errorf("offchain tx %s is failed", txid)
 		}
 
 		decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
@@ -3905,7 +3906,7 @@ func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, assetDetail
 		}
 
 		if assetGroup == nil {
-			return fmt.Errorf("no asset data found in offchain tx %s", hex.EncodeToString(input.Txid))
+			return fmt.Errorf("no asset data found in offchain tx %s", txid)
 		}
 
 		assets := []asset.Asset{assetGroup.NormalAsset}
@@ -3923,7 +3924,7 @@ func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, assetDetail
 
 		if !foundOutput {
 			return fmt.Errorf("asset input %d in offchain tx %s not found in asset outputs",
-				input.Vout, hex.EncodeToString(input.Txid))
+				input.Vout, txid)
 		}
 	}
 	return nil

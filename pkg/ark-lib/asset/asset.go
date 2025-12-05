@@ -46,7 +46,7 @@ type AssetOutput struct {
 }
 
 type AssetInput struct {
-	Txid   []byte
+	Txhash []byte
 	Vout   uint32
 	Amount uint64
 }
@@ -318,7 +318,7 @@ func verifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
 
 	for _, assetIn := range assetInputs {
 		for _, in := range ins {
-			if bytes.Equal(in.PreviousOutPoint.Hash[:], assetIn.Txid) && in.PreviousOutPoint.Index == assetIn.Vout {
+			if bytes.Equal(in.PreviousOutPoint.Hash[:], assetIn.Txhash) && in.PreviousOutPoint.Index == assetIn.Vout {
 				processedInputs++
 			}
 		}

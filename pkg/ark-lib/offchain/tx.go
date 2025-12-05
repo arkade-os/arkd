@@ -9,7 +9,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -111,9 +110,9 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 			if assetOutput != nil {
 				fmt.Printf("Found control asset output %+v", *assetOutput)
-				txId := deriveTxId(checkpointPtx.UnsignedTx.TxHash())
+				txHash := checkpointPtx.UnsignedTx.TxHash()
 				controlInput := asset.AssetInput{
-					Txid:   txId[:],
+					Txhash: txHash[:],
 					Vout:   0,
 					Amount: assetOutput.Amount,
 				}
@@ -143,9 +142,9 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 		}
 
 		if assetOutput != nil {
-			txId := deriveTxId(checkpointPtx.UnsignedTx.TxHash())
+			txHash := checkpointPtx.UnsignedTx.TxHash()
 			normalAssetInputs = append(normalAssetInputs, asset.AssetInput{
-				Txid:   txId[:],
+				Txhash: txHash[:],
 				Vout:   0,
 				Amount: assetOutput.Amount,
 			})
@@ -166,6 +165,11 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// copy old outputs, necessaty to modify the asset output
+	copiedOutputs := make([]*wire.TxOut, len(outputs))
+	copy(copiedOutputs, outputs)
+	outputs = copiedOutputs
 
 	outputs[assetGroupIndex] = &newOpretOutput
 
@@ -348,17 +352,6 @@ func buildCheckpointTx(
 
 	return checkpointPtx, checkpointInput, nil
 }
-func reverseBytes(b []byte) {
-	for i, j := 0, len(b)-1; i < j; i, j = i+1, j-1 {
-		b[i], b[j] = b[j], b[i]
-	}
-}
-
-func deriveTxId(hash chainhash.Hash) []byte {
-	txid := hash.CloneBytes()
-	reverseBytes(txid)
-	return txid
-}
 
 func buildAssetCheckpointTx(
 	vtxo VtxoInput, assetData *asset.Asset, batchId []byte, signerUnrollScript *script.CSVMultisigClosure,
@@ -388,12 +381,12 @@ func buildAssetCheckpointTx(
 	var isSeal bool
 
 	for _, input := range newAsset.Inputs {
-		if bytes.Equal(input.Txid, deriveTxId(vtxo.Outpoint.Hash)) && input.Vout == vtxo.Outpoint.Index {
+		if bytes.Equal(input.Txhash, vtxo.Outpoint.Hash[:]) && input.Vout == vtxo.Outpoint.Index {
 			isSeal = true
 			newAsset.Inputs = []asset.AssetInput{
 				{
-					Txid: vtxo.Outpoint.Hash[:],
-					Vout: vtxo.Outpoint.Index,
+					Txhash: vtxo.Outpoint.Hash[:],
+					Vout:   vtxo.Outpoint.Index,
 				},
 			}
 			newAsset.Outputs = []asset.AssetOutput{
