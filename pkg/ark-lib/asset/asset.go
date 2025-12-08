@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/tlv"
@@ -336,7 +338,7 @@ func verifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
 	return nil
 }
 
-func ValidateAsset(ins []*wire.TxIn, outs []*wire.TxOut, asset Asset) error {
+func ValidateAssetInputOutputs(ins []*wire.TxIn, outs []*wire.TxOut, asset Asset) error {
 	if err := verifyAssetInputs(ins, asset.Inputs); err != nil {
 		return fmt.Errorf("asset input verification failed: %w", err)
 	}
@@ -346,4 +348,28 @@ func ValidateAsset(ins []*wire.TxIn, outs []*wire.TxOut, asset Asset) error {
 	}
 
 	return nil
+}
+
+func IsAssetCreation(asset Asset) bool {
+	return len(asset.Inputs) == 0
+}
+
+func DeriveAssetGroupFromTx(arkTx string) (*AssetGroup, error) {
+	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding Ark Tx: %s", err)
+	}
+
+	for _, output := range decodedArkTx.UnsignedTx.TxOut {
+		if IsAssetGroup(output.PkScript) {
+			assetGroup, _, err := DecodeAssetGroupFromOpret(output.PkScript)
+			if err != nil {
+				return nil, fmt.Errorf("error decoding asset Opreturn: %s", err)
+			}
+			return assetGroup, nil
+		}
+	}
+
+	return nil, errors.New("no asset opreturn found in transaction")
+
 }

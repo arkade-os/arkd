@@ -1110,6 +1110,17 @@ func (s *service) SubmitOffchainTx(
 	}
 	s.cache.OffchainTxs().Add(*offchainTx)
 
+	// Store Asset Details If Present
+	if assetGroupIndex >= 0 {
+		if err := s.storeAssetDetailsFromArkTx(
+			ctx, *arkPtx.UnsignedTx, assetGroupIndex,
+		); err != nil {
+			log.WithError(err).Errorf(
+				"failed to store asset details for offchain tx %s", txid,
+			)
+		}
+	}
+
 	// apply Accepted event only after verifying the spent vtxos
 	changes = append(changes, change)
 
@@ -3847,108 +3858,211 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 		totalInputAmount += uint64(in.Amount)
 	}
 
+	txins := arkTx.TxIn
+	txouts := arkTx.TxOut
+
+	totalAssets := []asset.Asset{normalAsset}
+
 	// verify Asset Reissuance / buring
-	if controlAsset != nil && totalInputAmount != totalOuputAmount {
+	if !asset.IsAssetCreation(normalAsset) && totalInputAmount != totalOuputAmount {
+		if controlAsset == nil {
+			return fmt.Errorf("missing control asset for asset reissuance / burning")
+		}
+	}
+
+	if controlAsset != nil {
 		if !bytes.Equal(controlAsset.AssetId[:], normalAsset.ControlAssetId[:]) {
 			return fmt.Errorf("invalid control key for asset modification")
 		}
 
-		if err := s.verifyAsset(ctx, arkTx, checkpointTxMap, *controlAsset); err != nil {
-			return fmt.Errorf("invalid control key for asset reissuance / burning: %s", err)
+		totalAssets = append(totalAssets, *controlAsset)
+	}
+
+	for _, grpAsset := range totalAssets {
+
+		if err := asset.ValidateAssetInputOutputs(txins, txouts, grpAsset); err != nil {
+			return err
+		}
+
+		// Validate that each asset input refers to a valid offchain transaction
+		for _, input := range grpAsset.Inputs {
+			hash, err := chainhash.NewHash(input.Txhash)
+			if err != nil {
+				return fmt.Errorf("error parsing asset input txhash: %s", err)
+			}
+
+			checkpointId := hash.String()
+
+			// fetch the checkpoint txid from the map
+			if _, ok := checkpointTxMap[checkpointId]; !ok {
+				return fmt.Errorf("asset input %s is a checkpoint tx, cannot verify offchain tx", checkpointId)
+			}
+
+			checkpointTx := checkpointTxMap[checkpointId]
+
+			checkPointPsbt, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTx), true)
+			if err != nil {
+				return fmt.Errorf("error decoding checkpoint psbt: %s", err)
+			}
+
+			checkpointInput := checkPointPsbt.UnsignedTx.TxIn[0]
+			arkTxid := checkpointInput.PreviousOutPoint.Hash.String()
+
+			offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxid)
+
+			if err != nil {
+				return fmt.Errorf("error retrieving offchain tx %s: %s",
+					arkTxid, err)
+			}
+
+			if offchainTx == nil {
+				return fmt.Errorf("offchain tx %s not found", arkTxid)
+			}
+
+			if !offchainTx.IsFinalized() {
+				return fmt.Errorf("offchain tx %s is failed", arkTxid)
+			}
+
+			assetGroup, err := asset.DeriveAssetGroupFromTx(offchainTx.ArkTx)
+			if err != nil {
+				return fmt.Errorf("error deriving asset from offchain tx %s: %s",
+					arkTxid, err)
+			}
+
+			if assetGroup == nil {
+				return fmt.Errorf("no asset data found in offchain tx %s", arkTxid)
+			}
+
+			assets := []*asset.Asset{&assetGroup.NormalAsset, assetGroup.ControlAsset}
+
+			foundOutput := false
+			for _, asset := range assets {
+				if asset == nil {
+					continue
+				}
+
+				for _, assetOut := range asset.Outputs {
+					if assetOut.Vout == input.Vout {
+						foundOutput = true
+						break
+					}
+				}
+			}
+
+			if !foundOutput {
+				return fmt.Errorf("asset input %d in offchain tx %s not found in asset outputs",
+					input.Vout, arkTxid)
+			}
 		}
 
 	}
-
-	return s.verifyAsset(ctx, arkTx, checkpointTxMap, normalAsset)
+	return nil
 }
 
-func (s *service) verifyAsset(ctx context.Context, txMsg wire.MsgTx, checkpointTxMap map[string]string, assetDetails asset.Asset) error {
-	txins := txMsg.TxIn
-	txouts := txMsg.TxOut
+func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.MsgTx, assetGroupIndex int) error {
+	assetGroupPkScript := arkTx.TxOut[assetGroupIndex].PkScript
 
-	if err := asset.ValidateAsset(txins, txouts, assetDetails); err != nil {
-		return err
+	assetGroup, _, err := asset.DecodeAssetGroupFromOpret(assetGroupPkScript)
+	if err != nil {
+		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
 
-	assetInputs := assetDetails.Inputs
+	normalAsset := assetGroup.NormalAsset
+	normalAssetId := hex.EncodeToString(assetGroup.NormalAsset.AssetId[:])
+	totalOut := uint64(0)
+	totalIn := uint64(0)
 
-	for _, input := range assetInputs {
-		hash, err := chainhash.NewHash(input.Txhash)
-		if err != nil {
-			return fmt.Errorf("error parsing asset input txhash: %s", err)
-		}
+	for _, in := range normalAsset.Inputs {
+		totalIn += in.Amount
+	}
 
-		checkpointId := hash.String()
+	for _, out := range normalAsset.Outputs {
+		totalOut += out.Amount
+	}
 
-		// fetch the checkpoint txid from the map
-		if _, ok := checkpointTxMap[checkpointId]; !ok {
-			return fmt.Errorf("asset input %s is a checkpoint tx, cannot verify offchain tx", checkpointId)
-		}
+	metadataList := make([]domain.AssetMetadata, 0)
+	for _, meta := range assetGroup.ControlAsset.Metadata {
+		metadataList = append(metadataList, domain.AssetMetadata{
+			Key:   meta.Key,
+			Value: meta.Value,
+		})
+	}
 
-		checkpointTx := checkpointTxMap[checkpointId]
+	// create new asset If ControlAsset is absent and there are no inputs for normal asset
+	if assetGroup.ControlAsset == nil {
+		if len(normalAsset.Inputs) == 0 {
+			err = s.repoManager.Assets().InsertAsset(ctx, domain.Asset{
+				ID:       normalAssetId,
+				Quantity: totalOut,
+				Metadata: metadataList,
+			})
 
-		checkPointPsbt, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTx), true)
-		if err != nil {
-			return fmt.Errorf("error decoding checkpoint psbt: %s", err)
-		}
-
-		checkpointInput := checkPointPsbt.UnsignedTx.TxIn[0]
-		arkTxid := checkpointInput.PreviousOutPoint.Hash.String()
-
-		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxid)
-
-		if err != nil {
-			return fmt.Errorf("error retrieving offchain tx %s: %s",
-				arkTxid, err)
-		}
-
-		if offchainTx == nil {
-			return fmt.Errorf("offchain tx %s not found", arkTxid)
-		}
-
-		if !offchainTx.IsFinalized() {
-			return fmt.Errorf("offchain tx %s is failed", arkTxid)
-		}
-
-		decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
-		if err != nil {
-			return fmt.Errorf("error decoding Ark Tx: %s", err)
-		}
-
-		var assetGroup *asset.AssetGroup
-		for _, output := range decodedArkTx.UnsignedTx.TxOut {
-			if asset.IsAssetGroup(output.PkScript) {
-				assetGroup, _, err = asset.DecodeAssetGroupFromOpret(output.PkScript)
-				if err != nil {
-					return fmt.Errorf("error decoding asset Opreturn: %s", err)
-				}
-				break
+			if err != nil {
+				return fmt.Errorf("error storing new asset: %s", err)
 			}
+
+			log.Infof("stored new asset with id %s and total quantity %d",
+				hex.EncodeToString(assetGroup.NormalAsset.AssetId[:]),
+				totalOut,
+			)
+		}
+	} else {
+		// try to update the metadata of the existing asset
+		err = s.repoManager.Assets().UpdateAssetMetadataList(ctx, normalAssetId, metadataList)
+		if err != nil {
+			return fmt.Errorf("error updating asset metadata: %s", err)
 		}
 
-		if assetGroup == nil {
-			return fmt.Errorf("no asset data found in offchain tx %s", arkTxid)
-		}
+		log.Infof("updated asset metadata for asset id %s",
+			hex.EncodeToString(assetGroup.NormalAsset.AssetId[:]),
+		)
 
-		assets := []asset.Asset{assetGroup.NormalAsset}
-		if assetGroup.ControlAsset != nil {
-			assets = append(assets, *assetGroup.ControlAsset)
-		}
+		if totalOut > totalIn {
+			delta := totalOut - totalIn
+			err = s.repoManager.Assets().IncreaseAssetQuantity(ctx, normalAssetId, delta)
 
-		foundOutput := false
-		for _, asset := range assets {
-			for _, assetOut := range asset.Outputs {
-				if assetOut.Vout == input.Vout {
-					foundOutput = true
-					break
-				}
+			if err != nil {
+				return fmt.Errorf("error updating asset quantity: %s", err)
 			}
-		}
+		} else if totalIn > totalOut {
+			delta := totalIn - totalOut
+			err = s.repoManager.Assets().DecreaseAssetQuantity(ctx, normalAssetId, delta)
 
-		if !foundOutput {
-			return fmt.Errorf("asset input %d in offchain tx %s not found in asset outputs",
-				input.Vout, arkTxid)
+			if err != nil {
+				return fmt.Errorf("error updating asset quantity: %s", err)
+			}
 		}
 	}
+
+	anchorPoint := domain.Outpoint{
+		Txid: arkTx.TxID(),
+		VOut: uint32(assetGroupIndex),
+	}
+
+	for _, grpAsset := range []*asset.Asset{assetGroup.ControlAsset, &normalAsset} {
+		if grpAsset == nil {
+			continue
+		}
+
+		anchorVtxos := make([]domain.AnchorVtxo, 0)
+		// store asset outputs
+		for _, out := range grpAsset.Outputs {
+			assetVtxo := domain.AnchorVtxo{
+				Vout:   out.Vout,
+				Amount: out.Amount,
+			}
+			anchorVtxos = append(anchorVtxos, assetVtxo)
+		}
+
+		err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
+			AnchorPoint: anchorPoint,
+			AssetID:     hex.EncodeToString(grpAsset.AssetId[:]),
+			Vtxos:       anchorVtxos,
+		})
+		if err != nil {
+			return fmt.Errorf("error storing asset anchor: %s", err)
+		}
+	}
+
 	return nil
 }

@@ -67,6 +67,9 @@ var (
 		"sqlite":   sqlitedb.NewConvictionRepository,
 		"postgres": pgdb.NewConvictionRepository,
 	}
+	assetStoreTypes = map[string]func(...interface{}) (domain.AssetRepository, error){
+		"sqlite": sqlitedb.NewAssetRepository,
+	}
 )
 
 const (
@@ -88,6 +91,7 @@ type service struct {
 	scheduledSessionStore domain.ScheduledSessionRepo
 	offchainTxStore       domain.OffchainTxRepository
 	convictionStore       domain.ConvictionRepository
+	assetStore            domain.AssetRepository
 	txDecoder             ports.TxDecoder
 }
 
@@ -116,6 +120,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
+	assetStoreFactory, ok := assetStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
 
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
@@ -123,6 +131,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var scheduledSessionStore domain.ScheduledSessionRepo
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
+	var assetStore domain.AssetRepository
 	var err error
 
 	switch config.EventStoreType {
@@ -150,6 +159,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
+
 	default:
 		return nil, fmt.Errorf("unknown event store db type")
 	}
@@ -175,6 +185,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		convictionStore, err = convictionStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
+		}
+
+		assetStore, err = assetStoreFactory(config.DataStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
 	case "postgres":
 		if len(config.DataStoreConfig) != 1 {
@@ -288,6 +303,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
+		assetStore, err = assetStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
+		}
 	}
 
 	svc := &service{
@@ -298,6 +317,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		offchainTxStore:       offchainTxStore,
 		txDecoder:             txDecoder,
 		convictionStore:       convictionStore,
+		assetStore:            assetStore,
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -317,6 +337,10 @@ func (s *service) Events() domain.EventRepository {
 
 func (s *service) Rounds() domain.RoundRepository {
 	return s.roundStore
+}
+
+func (s *service) Assets() domain.AssetRepository {
+	return s.assetStore
 }
 
 func (s *service) Vtxos() domain.VtxoRepository {

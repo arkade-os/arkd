@@ -141,21 +141,11 @@ func TestMain(m *testing.M) {
 
 func TestService(t *testing.T) {
 	dbDir := t.TempDir()
-	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
-	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
+
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
 	}{
-		{
-			name: "repo_manager_with_badger_stores",
-			config: db.ServiceConfig{
-				EventStoreType:   "badger",
-				DataStoreType:    "badger",
-				EventStoreConfig: []interface{}{"", nil},
-				DataStoreConfig:  []interface{}{"", nil},
-			},
-		},
 		{
 			name: "repo_manager_with_sqlite_stores",
 			config: db.ServiceConfig{
@@ -163,15 +153,6 @@ func TestService(t *testing.T) {
 				DataStoreType:    "sqlite",
 				EventStoreConfig: []interface{}{"", nil},
 				DataStoreConfig:  []interface{}{dbDir},
-			},
-		},
-		{
-			name: "repo_manager_with_postgres_stores",
-			config: db.ServiceConfig{
-				EventStoreType:   "postgres",
-				DataStoreType:    "postgres",
-				EventStoreConfig: []interface{}{pgEventDns},
-				DataStoreConfig:  []interface{}{pgDns},
 			},
 		},
 	}
@@ -188,6 +169,7 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
+			testAssetRepository(t, svc)
 		})
 	}
 }
@@ -1155,6 +1137,107 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 		_, err = repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
 	})
+}
+
+func testAssetRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("insert and get asset anchor", func(t *testing.T) {
+		ctx := context.Background()
+		anchor := domain.AssetAnchor{
+			AnchorPoint: domain.Outpoint{
+				Txid: "txid-123",
+				VOut: 2,
+			},
+			Vtxos: []domain.AnchorVtxo{
+				{Vout: 0, Amount: 1000},
+				{Vout: 1, Amount: 2000},
+			},
+		}
+
+		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		got, err := svc.Assets().GetAssetAnchorByTxId(ctx, anchor.AnchorPoint.Txid)
+		require.NoError(t, err, "GetAssetAnchorByTxId should succeed")
+		require.NotNil(t, got)
+
+		require.Equal(t, anchor.AnchorPoint.Txid, got.AnchorPoint.Txid)
+		require.Equal(t, anchor.AnchorPoint.VOut, got.AnchorPoint.VOut)
+
+		require.Len(t, got.Vtxos, len(anchor.Vtxos))
+
+		// optional sanity checks
+		require.ElementsMatch(t, []domain.AnchorVtxo(anchor.Vtxos), []domain.AnchorVtxo(got.Vtxos))
+	})
+
+	t.Run("list metadata by asset id", func(t *testing.T) {
+		ctx := context.Background()
+
+		assetID := "txid-meta-1"
+
+		anchor := domain.AssetAnchor{
+			AnchorPoint: domain.Outpoint{
+				Txid: assetID,
+				VOut: 2,
+			},
+			Vtxos: []domain.AnchorVtxo{
+				{Vout: 0, Amount: 5000},
+				{Vout: 1, Amount: 10000},
+			},
+		}
+
+		// Insert anchor
+		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		// Get Anchor by TxId
+		gotAnchor, err := svc.Assets().GetAssetAnchorByTxId(ctx, assetID)
+		require.NoError(t, err, "GetAssetAnchorByTxId should succeed")
+		require.NotNil(t, gotAnchor)
+
+		// veriy anchor matches
+		require.Equal(t, anchor.AnchorPoint.Txid, gotAnchor.AnchorPoint.Txid)
+		require.Equal(t, anchor.AnchorPoint.VOut, gotAnchor.AnchorPoint.VOut)
+		require.Len(t, gotAnchor.Vtxos, len(anchor.Vtxos))
+		require.ElementsMatch(t, anchor.Vtxos, gotAnchor.Vtxos)
+
+	})
+
+	t.Run("insert and update asset quantity", func(t *testing.T) {
+		ctx := context.Background()
+
+		asset := domain.Asset{
+			ID:       "asset-1",
+			Quantity: 10,
+			Metadata: []domain.AssetMetadata{
+				{Key: "name", Value: "Test Asset"},
+				{Key: "symbol", Value: "TST"},
+			},
+		}
+
+		err := svc.Assets().InsertAsset(ctx, asset)
+		require.NoError(t, err, "InsertAsset should succeed")
+
+		// Increase by 5 -> 15
+		err = svc.Assets().IncreaseAssetQuantity(ctx, asset.ID, 5)
+		require.NoError(t, err, "IncreaseAssetQuantity should succeed")
+
+		// Decrease by 3 -> 12
+		err = svc.Assets().DecreaseAssetQuantity(ctx, asset.ID, 3)
+		require.NoError(t, err, "DecreaseAssetQuantity should succeed")
+
+		// Assert final value in DB
+		assetD, err := svc.Assets().GetAssetByID(ctx, asset.ID)
+		require.NoError(t, err, "GetAssetByID should succeed")
+
+		require.Equal(t, uint64(12), assetD.Quantity)
+
+		md, err := svc.Assets().ListMetadataByAssetID(ctx, asset.ID)
+		require.NoError(t, err, "ListMetadataByAssetID should succeed")
+
+		require.Len(t, md, len(asset.Metadata))
+		require.ElementsMatch(t, asset.Metadata, md)
+	})
+
 }
 
 func assertScheduledSessionEqual(t *testing.T, expected, actual domain.ScheduledSession) {

@@ -163,6 +163,13 @@ type VirtualTxsResp struct {
 	Page PageResp
 }
 
+type AssetMetadataResp struct {
+	AssetID string
+	Asset   Asset
+}
+
+type Asset = domain.Asset
+
 type Outpoint = domain.Outpoint
 
 type TxType int
