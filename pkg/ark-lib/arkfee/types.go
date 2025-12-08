@@ -23,7 +23,7 @@ const (
 )
 
 type Input struct {
-	Amount int
+	Amount uint64
 	Expiry time.Time
 	Birth  time.Time
 	Type   InputType
@@ -53,7 +53,7 @@ const (
 )
 
 type Output struct {
-	Amount int
+	Amount uint64
 	Type   OutputType
 }
 

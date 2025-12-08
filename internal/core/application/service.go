@@ -1568,7 +1568,7 @@ func (s *service) RegisterIntent(
 			}
 
 			arkFeeInputs = append(arkFeeInputs, arkfee.Input{
-				Amount: int(psbtInput.WitnessUtxo.Value),
+				Amount: uint64(psbtInput.WitnessUtxo.Value),
 				Type:   arkfee.InputTypeBoarding,
 				Weight: 0, // TODO compute weight
 			})
@@ -1690,7 +1690,7 @@ func (s *service) RegisterIntent(
 			inputType = arkfee.InputTypeNote
 		}
 		arkFeeInputs = append(arkFeeInputs, arkfee.Input{
-			Amount: int(vtxo.Amount),
+			Amount: vtxo.Amount,
 			Expiry: time.Unix(vtxo.ExpiresAt, 0),
 			Birth:  time.Unix(vtxo.CreatedAt, 0),
 			Type:   inputType,
@@ -1837,7 +1837,7 @@ func (s *service) RegisterIntent(
 		}
 
 		arkFeeOutputs = append(arkFeeOutputs, arkfee.Output{
-			Amount: int(amount),
+			Amount: amount,
 			Type:   outputType,
 		})
 
@@ -2338,7 +2338,7 @@ func (s *service) EstimateFee(
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
 		if err != nil || len(vtxosResult) == 0 {
 			arkFeeInputs = append(arkFeeInputs, arkfee.Input{
-				Amount: int(psbtInput.WitnessUtxo.Value),
+				Amount: uint64(psbtInput.WitnessUtxo.Value),
 				Type:   arkfee.InputTypeBoarding,
 				Weight: 0,
 			})
@@ -2354,7 +2354,7 @@ func (s *service) EstimateFee(
 		}
 
 		arkFeeInputs = append(arkFeeInputs, arkfee.Input{
-			Amount: int(vtxo.Amount),
+			Amount: vtxo.Amount,
 			Expiry: time.Unix(vtxo.ExpiresAt, 0),
 			Birth:  time.Unix(vtxo.CreatedAt, 0),
 			Type:   inputType,
@@ -2374,7 +2374,7 @@ func (s *service) EstimateFee(
 		}
 
 		arkFeeOutputs = append(arkFeeOutputs, arkfee.Output{
-			Amount: int(amount),
+			Amount: amount,
 			Type:   outputType,
 		})
 	}
@@ -2428,24 +2428,22 @@ func (s *service) startRound() {
 				"failed to reset confirmation session from cache for round %s", existingRound.Id,
 			)
 		}
-		if existingRound != nil {
-			if existingRound.Id != "" {
-				if err := s.cache.TreeSigingSessions().Delete(ctx, existingRound.Id); err != nil {
-					log.WithError(err).Errorf(
-						"failed to delete tree signing sessions for round from cache %s",
-						existingRound.Id,
-					)
-				}
+		if existingRound.Id != "" {
+			if err := s.cache.TreeSigingSessions().Delete(ctx, existingRound.Id); err != nil {
+				log.WithError(err).Errorf(
+					"failed to delete tree signing sessions for round from cache %s",
+					existingRound.Id,
+				)
 			}
-			if existingRound.CommitmentTxid != "" {
-				if err := s.cache.BoardingInputs().DeleteSignatures(
-					ctx, existingRound.CommitmentTxid,
-				); err != nil {
-					log.WithError(err).Errorf(
-						"failed to delete boarding input signatures from cache for round %s",
-						existingRound.Id,
-					)
-				}
+		}
+		if existingRound.CommitmentTxid != "" {
+			if err := s.cache.BoardingInputs().DeleteSignatures(
+				ctx, existingRound.CommitmentTxid,
+			); err != nil {
+				log.WithError(err).Errorf(
+					"failed to delete boarding input signatures from cache for round %s",
+					existingRound.Id,
+				)
 			}
 		}
 	}
