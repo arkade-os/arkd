@@ -48,18 +48,6 @@ Returns the current Unix timestamp in seconds.
 expiry - now() < double(duration('5m').getSeconds()) ? 0.0 : amount / 2.0
 ```
 
-### `clamp(value, min, max) -> double`
-
-Clamps a value between `min` and `max`. Supports multiple overloads:
-- `clamp(double, double, double) -> double`
-- `clamp(int, int, int) -> double`
-- `clamp(double, int, int) -> double`
-
-**Example:**
-```cel
-clamp(amount * 0.01, 100.0, 1000.0)
-```
-
 ## Usage
 
 ### Creating an Estimator

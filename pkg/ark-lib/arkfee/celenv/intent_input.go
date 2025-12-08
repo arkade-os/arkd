@@ -17,7 +17,6 @@ func init() {
 		inputType,
 		// functions
 		nowFunction,
-		clampFunction,
 	)
 	if err != nil {
 		panic(err)
