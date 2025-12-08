@@ -441,7 +441,8 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 		scheduleForSubTree := func(txid string, tree *tree.TxTree) {
 			vtxoTreeExpiry, err := s.getVtxoTreeExpiry(vtxoTree)
 			if err != nil {
-				log.WithError(err).Errorf("failed to get vtxo tree expiry for batch %s", commitmentTxid)
+				log.WithError(err).
+					Errorf("failed to get vtxo tree expiry for batch %s", commitmentTxid)
 				return
 			}
 
