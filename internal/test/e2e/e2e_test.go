@@ -1761,101 +1761,203 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 }
 
 func TestReactToFraud(t *testing.T) {
-	// In this test Alice refreshes a VTXO and tries to unroll the one just forfeited.
-	// The server should react by broadcasting the forfeit tx and claiming the unrolled VTXO before
-	// Alice's timelock expires
 	t.Run("react to unroll of forfeited vtxos", func(t *testing.T) {
-		ctx := t.Context()
+		// In this test Alice refreshes a VTXO and tries to unroll the one just forfeited.
+		// The server should react by broadcasting the forfeit tx and claiming the unrolled VTXO before
+		// Alice's timelock expires
+		t.Run("with batch output", func(t *testing.T) {
+			ctx := t.Context()
 
-		indexerSvc := setupIndexer(t)
-		sdkClient := setupArkSDK(t)
+			indexerSvc := setupIndexer(t)
+			sdkClient := setupArkSDK(t)
 
-		_, arkAddr, boardingAddress, err := sdkClient.Receive(ctx)
-		require.NoError(t, err)
-
-		faucetOnchain(t, boardingAddress, 0.00021)
-		time.Sleep(5 * time.Second)
-
-		wg := &sync.WaitGroup{}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+			_, arkAddr, boardingAddress, err := sdkClient.Receive(ctx)
 			require.NoError(t, err)
-			require.NotNil(t, vtxos)
-		}()
-		commitmentTxid, err := sdkClient.Settle(ctx)
-		require.NoError(t, err)
 
-		wg.Wait()
-		time.Sleep(5 * time.Second)
+			faucetOnchain(t, boardingAddress, 0.00021)
+			time.Sleep(5 * time.Second)
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+				require.NoError(t, err)
+				require.NotNil(t, vtxos)
+			}()
+			commitmentTxid, err := sdkClient.Settle(ctx)
 			require.NoError(t, err)
-			require.NotNil(t, vtxos)
-		}()
-		_, err = sdkClient.Settle(ctx)
-		require.NoError(t, err)
 
-		wg.Wait()
-		time.Sleep(time.Second)
+			wg.Wait()
+			time.Sleep(5 * time.Second)
 
-		_, spentVtxos, err := sdkClient.ListVtxos(ctx)
-		require.NoError(t, err)
-		require.NotEmpty(t, spentVtxos)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+				require.NoError(t, err)
+				require.NotNil(t, vtxos)
+			}()
+			_, err = sdkClient.Settle(ctx)
+			require.NoError(t, err)
 
-		var vtxo types.Vtxo
-		for _, v := range spentVtxos {
-			if !v.Preconfirmed && v.CommitmentTxids[0] == commitmentTxid {
-				vtxo = v
-				break
+			wg.Wait()
+			time.Sleep(time.Second)
+
+			_, spentVtxos, err := sdkClient.ListVtxos(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, spentVtxos)
+
+			var vtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if !v.Preconfirmed && v.CommitmentTxids[0] == commitmentTxid {
+					vtxo = v
+					break
+				}
 			}
-		}
 
-		expl, err := mempool_explorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest,
-			mempool_explorer.WithTracker(false),
-		)
-		require.NoError(t, err)
+			expl, err := mempool_explorer.NewExplorer(
+				"http://localhost:3000", arklib.BitcoinRegTest,
+				mempool_explorer.WithTracker(false),
+			)
+			require.NoError(t, err)
 
-		branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
-		require.NoError(t, err)
+			branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
+			require.NoError(t, err)
 
-		// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
-		// Ideally, there should be a (long) branch of txs to be broadcasted and a loop should be used
-		// to publish them from the root of the tree down to the leaf.
-		leafTx, err := branch.NextRedeemTx()
-		require.NoError(t, err)
-		require.NotEmpty(t, leafTx)
+			// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
+			// Ideally, there should be a (long) branch of txs to be broadcasted and a loop should be used
+			// to publish them from the root of the tree down to the leaf.
+			leafTx, err := branch.NextRedeemTx()
+			require.NoError(t, err)
+			require.NotEmpty(t, leafTx)
 
-		bumpAndBroadcastTx(t, leafTx, expl)
+			bumpAndBroadcastTx(t, leafTx, expl)
 
-		// Give time to the explorer to track down the broadcasted txs.
-		time.Sleep(5 * time.Second)
+			// Give time to the explorer to track down the broadcasted txs.
+			time.Sleep(5 * time.Second)
 
-		// The vtxo is now unrolled and unspent in the Bitcoin mempool.
-		spentStatus, err := expl.GetTxOutspends(vtxo.Txid)
-		require.NoError(t, err)
-		require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
-		require.False(t, spentStatus[vtxo.VOut].Spent)
-		require.Empty(t, spentStatus[vtxo.VOut].SpentBy)
+			// The vtxo is now unrolled and unspent in the Bitcoin mempool.
+			spentStatus, err := expl.GetTxOutspends(vtxo.Txid)
+			require.NoError(t, err)
+			require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
+			require.False(t, spentStatus[vtxo.VOut].Spent)
+			require.Empty(t, spentStatus[vtxo.VOut].SpentBy)
 
-		// Include the tx in a block.
-		err = generateBlocks(1)
-		require.NoError(t, err)
+			// Include the tx in a block.
+			err = generateBlocks(1)
+			require.NoError(t, err)
 
-		// Give the server the time to react the fraud.
-		time.Sleep(8 * time.Second)
+			// Give the server the time to react the fraud.
+			time.Sleep(8 * time.Second)
 
-		// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
-		spentStatus, err = expl.GetTxOutspends(vtxo.Txid)
-		require.NoError(t, err)
-		require.NotEmpty(t, spentStatus)
-		require.True(t, spentStatus[vtxo.VOut].Spent)
-		require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
+			// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
+			spentStatus, err = expl.GetTxOutspends(vtxo.Txid)
+			require.NoError(t, err)
+			require.NotEmpty(t, spentStatus)
+			require.True(t, spentStatus[vtxo.VOut].Spent)
+			require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
+		})
+		// In this test Alice onboards, settles, then exits all, and finally tries to unroll the
+		// tree of the forfeited VTXO.
+		// The server should react by broadcasting the forfeit tx and claiming the unrolled VTXO before
+		// Alice's timelock expires.
+		// This test differs from the previous one as here, the commitment tx of the very last
+		// settlement doesn't contain any batch output, but just connector and exit outs.
+		t.Run("without batch output", func(t *testing.T) {
+			ctx := t.Context()
+
+			indexerSvc := setupIndexer(t)
+			sdkClient := setupArkSDK(t)
+
+			onchainAddr, arkAddr, boardingAddress, err := sdkClient.Receive(ctx)
+			require.NoError(t, err)
+
+			faucetOnchain(t, boardingAddress, 0.00021)
+			time.Sleep(5 * time.Second)
+
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+				require.NoError(t, err)
+				require.NotNil(t, vtxos)
+			}()
+			commitmentTxid, err := sdkClient.Settle(ctx)
+			require.NoError(t, err)
+
+			wg.Wait()
+			time.Sleep(5 * time.Second)
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+				require.NoError(t, err)
+				require.NotNil(t, vtxos)
+			}()
+			// Exit all without any change, so that no batch output is created in the commitment tx
+			_, err = sdkClient.CollaborativeExit(ctx, onchainAddr, 21000, false)
+			require.NoError(t, err)
+
+			wg.Wait()
+			time.Sleep(time.Second)
+
+			_, spentVtxos, err := sdkClient.ListVtxos(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, spentVtxos)
+
+			var vtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if !v.Preconfirmed && v.CommitmentTxids[0] == commitmentTxid {
+					vtxo = v
+					break
+				}
+			}
+
+			expl, err := mempool_explorer.NewExplorer(
+				"http://localhost:3000", arklib.BitcoinRegTest,
+				mempool_explorer.WithTracker(false),
+			)
+			require.NoError(t, err)
+
+			branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
+			require.NoError(t, err)
+
+			// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
+			// Ideally, there should be a (long) branch of txs to be broadcasted and a loop should be used
+			// to publish them from the root of the tree down to the leaf.
+			leafTx, err := branch.NextRedeemTx()
+			require.NoError(t, err)
+			require.NotEmpty(t, leafTx)
+
+			bumpAndBroadcastTx(t, leafTx, expl)
+
+			// Give time to the explorer to track down the broadcasted txs.
+			time.Sleep(5 * time.Second)
+
+			// The vtxo is now unrolled and unspent in the Bitcoin mempool.
+			spentStatus, err := expl.GetTxOutspends(vtxo.Txid)
+			require.NoError(t, err)
+			require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
+			require.False(t, spentStatus[vtxo.VOut].Spent)
+			require.Empty(t, spentStatus[vtxo.VOut].SpentBy)
+
+			// Include the tx in a block.
+			err = generateBlocks(1)
+			require.NoError(t, err)
+
+			// Give the server the time to react the fraud.
+			time.Sleep(8 * time.Second)
+
+			// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
+			spentStatus, err = expl.GetTxOutspends(vtxo.Txid)
+			require.NoError(t, err)
+			require.NotEmpty(t, spentStatus)
+			require.True(t, spentStatus[vtxo.VOut].Spent)
+			require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
+		})
 	})
 
 	// In these tests Alice spends a VTXO and then tries to unroll it onchain.
@@ -2769,7 +2871,7 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 
 }
 
-// TestDeleteIntent tests deleting an already registered intent
+// TestIntent tests intent registration and deletion functionality
 func TestIntent(t *testing.T) {
 	t.Run("register and delete", func(t *testing.T) {
 		ctx := t.Context()

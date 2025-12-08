@@ -204,7 +204,14 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return send(ctx)
 		},
-		Flags: []cli.Flag{receiversFlag, toFlag, amountFlag, enableExpiryCoinselectFlag, passwordFlag, zeroFeesFlag},
+		Flags: []cli.Flag{
+			receiversFlag,
+			toFlag,
+			amountFlag,
+			enableExpiryCoinselectFlag,
+			passwordFlag,
+			zeroFeesFlag,
+		},
 	}
 	redeemCommand = cli.Command{
 		Name:  "redeem",
