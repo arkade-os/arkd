@@ -75,6 +75,7 @@ type Config struct {
 	DbUrl                     string
 	EventDbUrl                string
 	EventDbDir                string
+	PostgresAutoCreateDB      bool
 	SessionDuration           int64
 	BanDuration               int64
 	BanThreshold              int64 // number of crimes to trigger a ban
@@ -167,6 +168,7 @@ var (
 	EventDbType                          = "EVENT_DB_TYPE"
 	DbType                               = "DB_TYPE"
 	DbUrl                                = "PG_DB_URL"
+	PostgresAutoCreateDB                 = "PG_DB_AUTOCREATE"
 	EventDbUrl                           = "PG_EVENT_DB_URL"
 	SchedulerType                        = "SCHEDULER_TYPE"
 	TxBuilderType                        = "TX_BUILDER_TYPE"
@@ -360,6 +362,7 @@ func LoadConfig() (*Config, error) {
 		DbUrl:                     dbUrl,
 		EventDbDir:                dbPath,
 		EventDbUrl:                eventDbUrl,
+		PostgresAutoCreateDB:      viper.GetBool(PostgresAutoCreateDB),
 		LogLevel:                  viper.GetInt(LogLevel),
 		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
 		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
@@ -664,7 +667,7 @@ func (c *Config) repoManager() error {
 	case "badger":
 		eventStoreConfig = []interface{}{c.EventDbDir, logger}
 	case "postgres":
-		eventStoreConfig = []interface{}{c.EventDbUrl}
+		eventStoreConfig = []interface{}{c.EventDbUrl, c.PostgresAutoCreateDB}
 	default:
 		return fmt.Errorf("unknown event db type")
 	}
@@ -675,7 +678,7 @@ func (c *Config) repoManager() error {
 	case "sqlite":
 		dataStoreConfig = []interface{}{c.DbDir}
 	case "postgres":
-		dataStoreConfig = []interface{}{c.DbUrl}
+		dataStoreConfig = []interface{}{c.DbUrl, c.PostgresAutoCreateDB}
 	default:
 		return fmt.Errorf("unknown db type")
 	}
