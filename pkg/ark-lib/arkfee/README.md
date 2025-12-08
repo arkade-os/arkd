@@ -2,6 +2,9 @@
 
 The `arkfee` package provides fee estimation for Ark intents using CEL (Common Expression Language) expressions. It allows you to define custom fee calculation logic for both input and output operations.
 
+CEL language definition:
+https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-definitions
+
 ## Overview
 
 The package provides an `Estimator` that can evaluate CEL expressions to calculate fees based on input and output characteristics. Each estimator can have two separate programs:
