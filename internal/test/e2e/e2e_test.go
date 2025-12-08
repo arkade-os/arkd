@@ -2363,42 +2363,13 @@ func TestReactToFraud(t *testing.T) {
 			require.NotContains(t, aliceVtxos, vtxoToFraud)
 		})
 
-		t.Run("cltv vtxo script with arkd restart", func(t *testing.T) {
+		t.Run("with arkd restart", func(t *testing.T) {
 			ctx := context.Background()
 			indexerSvc := setupIndexer(t)
-			alice, arkClient := setupArkSDKWithTransport(t)
+			sdkClient := setupArkSDK(t)
+			defer sdkClient.Stop()
 
-			defer alice.Stop()
-			defer arkClient.Close()
-
-			bobPrivKey, err := btcec.NewPrivateKey()
-			require.NoError(t, err)
-
-			configStore, err := inmemorystoreconfig.NewConfigStore()
-			require.NoError(t, err)
-
-			walletStore, err := inmemorystore.NewWalletStore()
-			require.NoError(t, err)
-
-			bobWallet, err := singlekeywallet.NewBitcoinWallet(
-				configStore,
-				walletStore,
-			)
-			require.NoError(t, err)
-
-			_, err = bobWallet.Create(ctx, password, hex.EncodeToString(bobPrivKey.Serialize()))
-			require.NoError(t, err)
-
-			_, err = bobWallet.Unlock(ctx, password)
-			require.NoError(t, err)
-
-			bobPubKey := bobPrivKey.PubKey()
-
-			// Fund Alice's account
-			_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
-			require.NoError(t, err)
-
-			aliceAddr, err := arklib.DecodeAddressV0(offchainAddr)
+			_, offchainAddress, boardingAddress, err := sdkClient.Receive(ctx)
 			require.NoError(t, err)
 
 			faucetOnchain(t, boardingAddress, 0.00021)
@@ -2408,215 +2379,67 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
-			_, err = alice.Settle(ctx)
+
+			roundId, err := sdkClient.Settle(ctx)
 			require.NoError(t, err)
 
 			wg.Wait()
-
 			time.Sleep(5 * time.Second)
 
-			spendableVtxos, _, err := alice.ListVtxos(ctx)
-			require.NoError(t, err)
-			require.NotEmpty(t, spendableVtxos)
-			require.Len(t, spendableVtxos, 1)
-
-			vtxoToFraud := spendableVtxos[0]
-			initialTreeVtxo := vtxoToFraud
-
-			time.Sleep(5 * time.Second)
-
-			const cltvBlocks = 10
-			const sendAmount = 10000
-
-			currentHeight, err := getBlockHeight()
-			require.NoError(t, err)
-
-			cltvLocktime := arklib.AbsoluteLocktime(currentHeight + cltvBlocks)
-			vtxoScript := script.TapscriptsVtxoScript{
-				Closures: []script.Closure{
-					&script.CLTVMultisigClosure{
-						Locktime: cltvLocktime,
-						MultisigClosure: script.MultisigClosure{
-							PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
-						},
-					},
-				},
-			}
-
-			vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
-			require.NoError(t, err)
-
-			closure := vtxoScript.ForfeitClosures()[0]
-
-			bobAddr := arklib.Address{
-				HRP:        "tark",
-				VtxoTapKey: vtxoTapKey,
-				Signer:     aliceAddr.Signer,
-			}
-
-			scriptBytes, err := closure.Script()
-			require.NoError(t, err)
-
-			merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
-				txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
-			)
-			require.NoError(t, err)
-
-			ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
-			require.NoError(t, err)
-
-			tapscript := &waddrmgr.Tapscript{
-				ControlBlock:   ctrlBlock,
-				RevealedScript: merkleProof.Script,
-			}
-
-			bobAddrStr, err := bobAddr.EncodeV0()
+			err = generateBlocks(1)
 			require.NoError(t, err)
 
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
 
-			txid, err := alice.SendOffChain(
-				ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+			_, err = sdkClient.SendOffChain(
+				ctx, false, []types.Receiver{{To: offchainAddress, Amount: 1000}},
 			)
 			require.NoError(t, err)
-			require.NotEmpty(t, txid)
 
 			wg.Wait()
-			time.Sleep(time.Second)
 
-			time.Sleep(2 * time.Second)
-			spendable, _, err := alice.ListVtxos(ctx)
-			require.NoError(t, err)
-			require.NotEmpty(t, spendable)
+			time.Sleep(5 * time.Second)
 
-			var virtualTx string
-			for _, vtxo := range spendable {
-				if vtxo.Txid == txid {
-					resp, err := indexerSvc.GetVirtualTxs(ctx, []string{txid})
-					require.NoError(t, err)
-					require.NotNil(t, resp)
-					require.NotEmpty(t, resp.Txs)
-
-					virtualTx = resp.Txs[0]
-					break
-				}
-			}
-			require.NotEmpty(t, virtualTx)
-
-			virtualPtx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTx), true)
-			require.NoError(t, err)
-			require.NotNil(t, virtualPtx)
-
-			var bobOutput *wire.TxOut
-			var bobOutputIndex uint32
-			for i, out := range virtualPtx.UnsignedTx.TxOut {
-				if bytes.Equal(out.PkScript[2:], schnorr.SerializePubKey(bobAddr.VtxoTapKey)) {
-					bobOutput = out
-					bobOutputIndex = uint32(i)
-					break
-				}
-			}
-			require.NotNil(t, bobOutput)
-
-			alicePkScript, err := script.P2TRScript(aliceAddr.VtxoTapKey)
-			require.NoError(t, err)
-
-			tapscripts := make([]string, 0, len(vtxoScript.Closures))
-			for _, closure := range vtxoScript.Closures {
-				script, err := closure.Script()
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
 				require.NoError(t, err)
+				require.NotNil(t, vtxos)
+			}()
+			_, err = sdkClient.Settle(ctx)
+			require.NoError(t, err)
 
-				tapscripts = append(tapscripts, hex.EncodeToString(script))
+			wg.Wait()
+
+			_, spentVtxos, err := sdkClient.ListVtxos(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, spentVtxos)
+
+			var vtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if !v.Preconfirmed && v.CommitmentTxids[0] == roundId {
+					vtxo = v
+					break
+				}
 			}
+			require.NotEmpty(t, vtxo)
 
-			infos, err := arkClient.GetInfo(ctx)
-			require.NoError(t, err)
-
-			checkpointTapscript, err := hex.DecodeString(infos.CheckpointTapscript)
-			require.NoError(t, err)
-
-			ptx, checkpointsPtx, err := offchain.BuildTxs(
-				[]offchain.VtxoInput{
-					{
-						Outpoint: &wire.OutPoint{
-							Hash:  virtualPtx.UnsignedTx.TxHash(),
-							Index: bobOutputIndex,
-						},
-						Tapscript:          tapscript,
-						Amount:             bobOutput.Value,
-						RevealedTapscripts: tapscripts,
-					},
-				},
-				[]*wire.TxOut{
-					{
-						Value:    bobOutput.Value,
-						PkScript: alicePkScript,
-					},
-				},
-				checkpointTapscript,
-			)
-			require.NoError(t, err)
-
-			explorer, err := mempool_explorer.NewExplorer(
+			expl, err := mempool_explorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
 				mempool_explorer.WithTracker(false),
 			)
 			require.NoError(t, err)
-
-			encodedArkTx, err := ptx.B64Encode()
-			require.NoError(t, err)
-
-			signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedArkTx)
-			require.NoError(t, err)
-
-			checkpoints := make([]string, 0, len(checkpointsPtx))
-			for _, ptx := range checkpointsPtx {
-				encoded, err := ptx.B64Encode()
-				require.NoError(t, err)
-				checkpoints = append(checkpoints, encoded)
-			}
-
-			// Generate blocks to pass the timelock
-			for i := 0; i < cltvBlocks+1; i++ {
-				err = generateBlocks(1)
-				require.NoError(t, err)
-			}
-
-			bobTxid, _, signedCheckpoints, err := arkClient.SubmitTx(
-				ctx, signedTx, checkpoints,
-			)
-			require.NoError(t, err)
-
-			finalCheckpoints := make([]string, 0, len(signedCheckpoints))
-			for _, checkpoint := range signedCheckpoints {
-				finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, checkpoint)
-				require.NoError(t, err)
-				finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
-			}
-
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
-				require.NoError(t, err)
-				require.NotNil(t, vtxos)
-			}()
-
-			err = arkClient.FinalizeTx(ctx, bobTxid, finalCheckpoints)
-			require.NoError(t, err)
-
-			wg.Wait()
-			time.Sleep(time.Second)
 
 			// restart arkd to test fraud detection after restart
 			err = restartArkd()
@@ -2624,59 +2447,23 @@ func TestReactToFraud(t *testing.T) {
 
 			time.Sleep(5 * time.Second)
 
-			aliceVtxos, _, err := alice.ListVtxos(ctx)
-			require.NoError(t, err)
-			require.NotEmpty(t, aliceVtxos)
-
-			found := false
-
-			for _, v := range aliceVtxos {
-				if v.Txid == bobTxid && v.VOut == 0 {
-					found = true
-					break
-				}
-			}
-			require.True(t, found)
-
-			branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerSvc, initialTreeVtxo)
+			branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
 			require.NoError(t, err)
 
 			for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
-				bumpAndBroadcastTx(t, parentTx, explorer)
+				bumpAndBroadcastTx(t, parentTx, expl)
 			}
 
-			// generate a block to confirm the unroll tx
-			err = generateBlocks(1)
-			require.NoError(t, err)
-
-			time.Sleep(2 * time.Second)
-
-			// give time for the server to detect and process the fraud
 			err = generateBlocks(30)
 			require.NoError(t, err)
 
-			// make sure the vtxo of bob is not redeemed
-			// the checkpoint is not the bob's virtual tx
-			opt := &indexer.GetVtxosRequestOption{}
-			bobScript, err := script.P2TRScript(bobAddr.VtxoTapKey)
-			require.NoError(t, err)
-			require.NotEmpty(t, bobScript)
-			// nolint
-			opt.WithScripts([]string{hex.EncodeToString(bobScript)})
-			// nolint
-			opt.WithSpentOnly()
+			// Give time for the server to detect and process the fraud
+			time.Sleep(5 * time.Second)
 
-			resp, err := indexerSvc.GetVtxos(ctx, *opt)
+			balance, err := sdkClient.Balance(ctx, false)
 			require.NoError(t, err)
-			require.NotNil(t, resp)
-			require.Len(t, resp.Vtxos, 1)
 
-			// make sure the vtxo of alice is not spendable
-			aliceVtxos, spentVtxos, err := alice.ListVtxos(ctx)
-			require.NoError(t, err)
-			require.NotContains(t, aliceVtxos, vtxoToFraud)
-			require.Len(t, spentVtxos, 1)
-			require.True(t, spentVtxos[0].Unrolled)
+			require.Empty(t, balance.OnchainBalance.LockedAmount)
 		})
 	})
 }

@@ -210,6 +210,7 @@ func (s *sweeper) removeTask(id string) {
 	s.locker.Lock()
 	defer s.locker.Unlock()
 	delete(s.scheduledTasks, id)
+	log.Debugf("sweeper: unscheduled task for tx %s", id)
 }
 
 func (s *sweeper) scheduleCheckpointSweep(

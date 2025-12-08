@@ -151,11 +151,11 @@ func (s *service) onVtxoOnchain(ctx context.Context, vtxo domain.Vtxo) error {
 				return
 			}
 
-			// remove sweeper task for the associated checkpoint outputs
+			// An ark tx hit the chain, the related checkpoint txs were previously scheduled for the sweep
+			// and we can now remove those tasks.
 			for _, in := range ptx.UnsignedTx.TxIn {
 				taskId := in.PreviousOutPoint.Hash.String()
 				s.sweeper.removeTask(taskId)
-				log.Debugf("sweeper: unscheduled task for tx %s", taskId)
 			}
 		}()
 	}

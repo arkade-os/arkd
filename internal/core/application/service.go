@@ -3496,7 +3496,7 @@ func (s *service) restoreWatchingScripts() error {
 		return err
 	}
 
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
+	log.Debugf("restored watching %d scripts", len(scripts))
 	return nil
 }
 
