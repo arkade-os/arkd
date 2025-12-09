@@ -3908,22 +3908,31 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 			checkpointInput := checkPointPsbt.UnsignedTx.TxIn[0]
 			arkTxid := checkpointInput.PreviousOutPoint.Hash.String()
 
-			offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxid)
+			var offchainArkTx string
 
-			if err != nil {
-				return fmt.Errorf("error retrieving offchain tx %s: %s",
-					arkTxid, err)
+			// First try teleport / rounds storage
+			roundTxs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{arkTxid})
+			if err == nil && len(roundTxs) > 0 {
+				offchainArkTx = roundTxs[0]
+			} else {
+				// Fallback to normal offchain storage
+				offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxid)
+				if err != nil {
+					return fmt.Errorf("error retrieving offchain tx %s: %w", arkTxid, err)
+				}
+
+				if offchainTx == nil {
+					return fmt.Errorf("offchain tx %s not found in rounds or offchain storage", arkTxid)
+				}
+
+				if !offchainTx.IsFinalized() {
+					return fmt.Errorf("offchain tx %s is failed", arkTxid)
+				}
+
+				offchainArkTx = offchainTx.ArkTx
 			}
 
-			if offchainTx == nil {
-				return fmt.Errorf("offchain tx %s not found", arkTxid)
-			}
-
-			if !offchainTx.IsFinalized() {
-				return fmt.Errorf("offchain tx %s is failed", arkTxid)
-			}
-
-			assetGroup, err := asset.DeriveAssetGroupFromTx(offchainTx.ArkTx)
+			assetGroup, err := asset.DeriveAssetGroupFromTx(offchainArkTx)
 			if err != nil {
 				return fmt.Errorf("error deriving asset from offchain tx %s: %s",
 					arkTxid, err)
@@ -3981,7 +3990,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 	}
 
 	metadataList := make([]domain.AssetMetadata, 0)
-	for _, meta := range assetGroup.ControlAsset.Metadata {
+	for _, meta := range assetGroup.NormalAsset.Metadata {
 		metadataList = append(metadataList, domain.AssetMetadata{
 			Key:   meta.Key,
 			Value: meta.Value,

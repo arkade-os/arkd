@@ -45,6 +45,36 @@ func NewIndexerService(
 	return svc
 }
 
+func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRequest,
+) (*arkv1.GetAssetResponse, error) {
+	assetId, err := parseTxid(request.GetAssetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	resp, err := e.indexerSvc.GetAsset(ctx, assetId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	assetMetadata := make([]*arkv1.AssetMetadata, 0)
+	for _, metadata := range resp.Asset.Metadata {
+		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
+			Key:   metadata.Key,
+			Value: metadata.Value,
+		})
+	}
+
+	return &arkv1.GetAssetResponse{
+		AssetId: assetId,
+		Asset: &arkv1.Asset{
+			Id:       resp.Asset.ID,
+			Quantity: resp.Asset.Quantity,
+			Metadata: assetMetadata,
+		},
+	}, nil
+}
+
 func (e *indexerService) GetCommitmentTx(
 	ctx context.Context, request *arkv1.GetCommitmentTxRequest,
 ) (*arkv1.GetCommitmentTxResponse, error) {
