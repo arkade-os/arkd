@@ -529,6 +529,7 @@ func buildAssetCheckpointTx(
 				Vout:      0,
 			},
 		}
+		assetOutput = &newAsset.Outputs[0]
 
 		newAssetGroup := &asset.AssetGroup{
 			ControlAsset: nil,
