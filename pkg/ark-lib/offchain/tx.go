@@ -1,6 +1,7 @@
 package offchain
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
@@ -96,37 +97,38 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	controlAsset := assetGroup.ControlAsset
 	normalAsset := assetGroup.NormalAsset
 
-	// If control inputs are present, find the corresponding vtxos
+	// Track which vtxos we used for the control asset so we don't reuse them for the normal asset.
+	usedForControl := make([]bool, len(vtxos))
+
+	// -------------------------
+	// 1. Control asset handling
+	// -------------------------
 	if controlAsset != nil {
 
 		controlAssetInputs := make([]asset.AssetInput, 0)
 
-		fmt.Printf("This is the control asset %+v", controlAsset.Inputs[0].Vout)
-
 		for i, vtxo := range vtxos {
 
-			fmt.Printf("This is vtxo %+v", vtxo.Outpoint.Index)
 			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, controlAsset, batchIndex, signerUnrollScriptClosure)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			if assetOutput != nil {
-				fmt.Printf("Found control asset output %+v", *assetOutput)
-				txHash := checkpointPtx.UnsignedTx.TxHash()
-				controlInput := asset.AssetInput{
-					Txhash: txHash[:],
-					Vout:   0,
-					Amount: assetOutput.Amount,
-				}
-
-				controlAssetInputs = append(controlAssetInputs, controlInput)
-				checkpointInputs = append(checkpointInputs, *checkpointInput)
-				checkpointTxs = append(checkpointTxs, checkpointPtx)
-
-				// Remove the used vtxo from the list
-				vtxos = append(vtxos[:i], vtxos[i+1:]...)
+			if assetOutput == nil {
+				continue
 			}
+
+			txHash := checkpointPtx.UnsignedTx.TxHash()
+			controlInput := asset.AssetInput{
+				Txhash: txHash[:],
+				Vout:   0,
+				Amount: assetOutput.Amount,
+			}
+
+			controlAssetInputs = append(controlAssetInputs, controlInput)
+			checkpointInputs = append(checkpointInputs, *checkpointInput)
+			checkpointTxs = append(checkpointTxs, checkpointPtx)
+			usedForControl[i] = true
 
 		}
 		if len(controlAssetInputs) == 0 {
@@ -136,9 +138,17 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 	}
 
-	normalAssetInputs := make([]asset.AssetInput, 0, len(vtxos))
+	// ------------------------
+	// 2. Normal asset handling
+	// ------------------------
+	normalAssetInputs := make([]asset.AssetInput, 0)
 
-	for _, vtxo := range vtxos {
+	for i, vtxo := range vtxos {
+		// Don't reuse any vtxo that was already consumed as control asset input.
+		if usedForControl[i] {
+			continue
+		}
+
 		checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, &normalAsset, batchIndex, signerUnrollScriptClosure)
 		if err != nil {
 			return nil, nil, err
@@ -169,19 +179,17 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 		return nil, nil, err
 	}
 
-	// copy old outputs, necessaty to modify the asset output
+	// Do NOT mutate caller's slice; work on a copy.
 	copiedOutputs := make([]*wire.TxOut, len(outputs))
 	copy(copiedOutputs, outputs)
-	outputs = copiedOutputs
-
-	outputs[assetGroupIndex] = &newOpretOutput
+	copiedOutputs[assetGroupIndex] = &newOpretOutput
 
 	outputAmount := int64(0)
 	for _, output := range outputs {
 		outputAmount += output.Value
 	}
 
-	arkTx, err := buildArkTx(checkpointInputs, outputs)
+	arkTx, err := buildArkTx(checkpointInputs, copiedOutputs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -212,6 +220,8 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 	// If control inputs are present, find the corresponding vtxos
 	if controlAsset != nil {
 		for i, input := range controlAsset.Inputs {
+			in := &controlAsset.Inputs[i]
+
 			inputTxId, err := chainhash.NewHash(input.Txhash)
 			if err != nil {
 				return nil, nil, err
@@ -227,13 +237,21 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 				return nil, nil, err
 			}
 
-			controlAsset.Inputs[i].Txhash = checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash[:]
-			controlAsset.Inputs[i].Vout = checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index
+			prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
+
+			// Update the asset input to point to the underlying UTXO
+			in.Txhash = prev.Hash[:]
+			in.Vout = prev.Index
 		}
 
 	}
 
+	// -------------------------
+	// 2. Normal asset inputs
+	// -------------------------
 	for i, input := range normalAsset.Inputs {
+		in := &normalAsset.Inputs[i]
+
 		inputTxId, err := chainhash.NewHash(input.Txhash)
 		if err != nil {
 			return nil, nil, err
@@ -249,10 +267,16 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 			return nil, nil, err
 		}
 
-		normalAsset.Inputs[i].Txhash = checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash[:]
-		normalAsset.Inputs[i].Vout = checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index
+		prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
+
+		// Update the asset input to point to the underlying UTXO
+		in.Txhash = prev.Hash[:]
+		in.Vout = prev.Index
 	}
 
+	// -------------------------
+	// 3. Encode updated assetGroup and build Asset Ark tx
+	// -------------------------
 	newAssetGroup := &asset.AssetGroup{
 		ControlAsset: controlAsset,
 		NormalAsset:  normalAsset,
@@ -437,6 +461,10 @@ func buildCheckpointTx(
 func buildAssetCheckpointTx(
 	vtxo VtxoInput, assetData *asset.Asset, batchId []byte, signerUnrollScript *script.CSVMultisigClosure,
 ) (*psbt.Packet, *VtxoInput, *asset.AssetOutput, error) {
+	if vtxo.Tapscript == nil {
+		return nil, nil, nil, fmt.Errorf("vtxo tapscript is nil")
+	}
+
 	collaborativeClosure, err := script.DecodeClosure(vtxo.Tapscript.RevealedScript)
 	if err != nil {
 		return nil, nil, nil, err
@@ -456,42 +484,51 @@ func buildAssetCheckpointTx(
 		return nil, nil, nil, err
 	}
 
-	newAsset := *assetData
+	var (
+		isSeal       bool
+		matchedInput asset.AssetInput
+	)
 
-	// Check if the vtxo is an asset seal or normal vtxo
-	var isSeal bool
-
-	for _, input := range newAsset.Inputs {
-		if input.Vout == vtxo.Outpoint.Index {
-			isSeal = true
-			newAsset.Inputs = []asset.AssetInput{
-				{
-					Txhash: vtxo.Outpoint.Hash[:],
-					Vout:   vtxo.Outpoint.Index,
-				},
+	if assetData != nil {
+		for _, in := range assetData.Inputs {
+			if bytes.Equal(in.Txhash, vtxo.Outpoint.Hash[:]) && in.Vout == vtxo.Outpoint.Index {
+				isSeal = true
+				matchedInput = in
+				break
 			}
-			newAsset.Outputs = []asset.AssetOutput{
-				{
-					PublicKey: *tapKey,
-					Amount:    input.Amount,
-					Vout:      0,
-				},
-			}
-			break
 		}
 	}
 
-	var checkpointPtx *psbt.Packet
+	var (
+		checkpointPtx *psbt.Packet
+		assetOutput   *asset.AssetOutput
+	)
 
 	if !isSeal {
 		checkpointPtx, err = buildArkTx(
 			[]VtxoInput{vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}},
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, fmt.Errorf("build plain checkpoint tx: %w", err)
 		}
 
 	} else {
+
+		newAsset := *assetData
+		newAsset.Inputs = []asset.AssetInput{
+			{
+				Txhash: matchedInput.Txhash,
+				Vout:   vtxo.Outpoint.Index,
+				Amount: matchedInput.Amount,
+			},
+		}
+		newAsset.Outputs = []asset.AssetOutput{
+			{
+				PublicKey: *tapKey,
+				Amount:    matchedInput.Amount,
+				Vout:      0,
+			},
+		}
 
 		newAssetGroup := &asset.AssetGroup{
 			ControlAsset: nil,
@@ -544,10 +581,6 @@ func buildAssetCheckpointTx(
 		RevealedTapscripts: revealedTapscripts,
 	}
 
-	if isSeal {
-		return checkpointPtx, checkpointInput, &newAsset.Outputs[0], nil
-	}
-
-	return checkpointPtx, checkpointInput, nil, nil
+	return checkpointPtx, checkpointInput, assetOutput, nil
 
 }
