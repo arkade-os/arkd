@@ -296,8 +296,8 @@ func (f fees) toProto() *arkv1.FeeInfo {
 		IntentFee: &arkv1.IntentFeeInfo{
 			OffchainInput:  f.IntentFees.OffchainInput,
 			OffchainOutput: f.IntentFees.OffchainOutput,
-			OnchainInput:   fmt.Sprintf("%d", f.IntentFees.OnchainInput),
-			OnchainOutput:  fmt.Sprintf("%d", f.IntentFees.OnchainOutput),
+			OnchainInput:   f.IntentFees.OnchainInput,
+			OnchainOutput:  f.IntentFees.OnchainOutput,
 		},
 	}
 }

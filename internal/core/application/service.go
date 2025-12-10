@@ -1437,6 +1437,8 @@ func (s *service) RegisterIntent(
 	// the boarding utxos to add in the commitment tx
 	boardingUtxos := make([]boardingIntentInput, 0)
 
+	expectedFees := arkfee.FeeAmount(0)
+
 	outpoints := proof.GetOutpoints()
 	if len(outpoints) == 0 {
 		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
@@ -1481,8 +1483,6 @@ func (s *service) RegisterIntent(
 		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
-
-	arkFeeInputs := make([]arkfee.Input, 0, len(outpoints))
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
@@ -1567,11 +1567,17 @@ func (s *service) RegisterIntent(
 					WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint.String()})
 			}
 
-			arkFeeInputs = append(arkFeeInputs, arkfee.Input{
+			inputFees, err := s.feeEstimator.EvalOnchainInput(arkfee.OnchainInput{
 				Amount: uint64(psbtInput.WitnessUtxo.Value),
-				Type:   arkfee.InputTypeBoarding,
-				Weight: 0, // TODO compute weight
 			})
+			if err != nil {
+				return "", errors.INTERNAL_ERROR.New("failed to evaluate onchain input fees: %w", err).
+					WithMetadata(map[string]any{
+						"input": input,
+					})
+			}
+
+			expectedFees += inputFees
 
 			boardingUtxos = append(boardingUtxos, boardingIntentInput{
 				Input:            input,
@@ -1683,19 +1689,29 @@ func (s *service) RegisterIntent(
 			}
 		}
 
-		inputType := arkfee.InputTypeVtxo
+		inputType := arkfee.VtxoTypeVtxo
 		if vtxo.Swept {
-			inputType = arkfee.InputTypeRecoverable
+			inputType = arkfee.VtxoTypeRecoverable
 		} else if vtxo.IsNote() {
-			inputType = arkfee.InputTypeNote
+			inputType = arkfee.VtxoTypeNote
 		}
-		arkFeeInputs = append(arkFeeInputs, arkfee.Input{
+		inputArkFee := arkfee.OffchainInput{
 			Amount: vtxo.Amount,
 			Expiry: time.Unix(vtxo.ExpiresAt, 0),
 			Birth:  time.Unix(vtxo.CreatedAt, 0),
 			Type:   inputType,
 			Weight: 0, // TODO compute weight
-		})
+		}
+
+		inputFees, err := s.feeEstimator.EvalOffchainInput(inputArkFee)
+		if err != nil {
+			return "", errors.INTERNAL_ERROR.New("failed to evaluate offchain input fees: %w", err).
+				WithMetadata(map[string]any{
+					"input": inputArkFee,
+				})
+		}
+		expectedFees += inputFees
+
 		vtxoInputs = append(vtxoInputs, vtxo)
 	}
 
@@ -1742,7 +1758,6 @@ func (s *service) RegisterIntent(
 
 	hasOffChainReceiver := false
 	receivers := make([]domain.Receiver, 0)
-	arkFeeOutputs := make([]arkfee.Output, 0)
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
 		amount := uint64(output.Value)
@@ -1750,12 +1765,13 @@ func (s *service) RegisterIntent(
 			Amount: amount,
 		}
 
-		outputType := arkfee.OutputTypeVtxo
+		arkFeeOutput := arkfee.Output{
+			Amount: amount,
+			Script: hex.EncodeToString(output.PkScript),
+		}
 
 		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
 		if isOnchainOutput {
-			outputType = arkfee.OutputTypeOnchain
-
 			if s.utxoMaxAmount >= 0 {
 				if amount > uint64(s.utxoMaxAmount) {
 					return "", errors.AMOUNT_TOO_HIGH.New(
@@ -1807,6 +1823,15 @@ func (s *service) RegisterIntent(
 				})
 			}
 
+			outputFees, err := s.feeEstimator.EvalOnchainOutput(arkFeeOutput)
+			if err != nil {
+				return "", errors.INTERNAL_ERROR.New("failed to evaluate onchain output fees: %w", err).
+					WithMetadata(map[string]any{
+						"output": arkFeeOutput,
+					})
+			}
+			expectedFees += outputFees
+
 			rcv.OnchainAddress = addrs[0].EncodeAddress()
 		} else {
 			if s.vtxoMaxAmount >= 0 {
@@ -1834,12 +1859,16 @@ func (s *service) RegisterIntent(
 
 			hasOffChainReceiver = true
 			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
-		}
 
-		arkFeeOutputs = append(arkFeeOutputs, arkfee.Output{
-			Amount: amount,
-			Type:   outputType,
-		})
+			outputFees, err := s.feeEstimator.EvalOffchainOutput(arkFeeOutput)
+			if err != nil {
+				return "", errors.INTERNAL_ERROR.New("failed to evaluate offchain output fees: %w", err).
+					WithMetadata(map[string]any{
+						"output": arkFeeOutput,
+					})
+			}
+			expectedFees += outputFees
+		}
 
 		receivers = append(receivers, rcv)
 	}
@@ -1866,7 +1895,7 @@ func (s *service) RegisterIntent(
 		}
 	}
 
-	fees, err := computeIntentFees(proof)
+	fees, err := proof.Fees()
 	if err != nil {
 		return "", errors.INVALID_INTENT_PROOF.New("failed to compute intent fees: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
@@ -1875,21 +1904,10 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	expectedFees, err := s.feeEstimator.Eval(arkFeeInputs, arkFeeOutputs)
-	if err != nil {
-		return "", errors.INTERNAL_ERROR.New("failed to evaluate fees: %w", err).
-			WithMetadata(map[string]any{
-				"ark_fee_inputs":  arkFeeInputs,
-				"ark_fee_outputs": arkFeeOutputs,
-			})
-	}
-
-	expectedFeesSats := expectedFees.ToSatoshis()
-
-	if fees < expectedFeesSats {
-		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d expected %d", fees, expectedFeesSats).
+	if fees < expectedFees.ToSatoshis() {
+		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d expected %d", fees, expectedFees.ToSatoshis()).
 			WithMetadata(errors.IntentInsufficientFeeMetadata{
-				ExpectedFee: int(expectedFeesSats),
+				ExpectedFee: int(expectedFees.ToSatoshis()),
 				ActualFee:   int(fees),
 			})
 	}
@@ -2058,8 +2076,10 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		Fees: FeeInfo{
 			IntentFees: IntentFeeInfo{
-				OffchainInput:  s.feeEstimator.IntentInputProgram(),
-				OffchainOutput: s.feeEstimator.IntentOutputProgram(),
+				OffchainInput:  s.feeEstimator.Config.IntentOffchainInputProgram,
+				OffchainOutput: s.feeEstimator.Config.IntentOffchainOutputProgram,
+				OnchainInput:   s.feeEstimator.Config.IntentOnchainInputProgram,
+				OnchainOutput:  s.feeEstimator.Config.IntentOnchainOutputProgram,
 			},
 		},
 	}, nil
@@ -2322,7 +2342,8 @@ func (s *service) EstimateFee(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	arkFeeInputs := make([]arkfee.Input, 0, len(outpoints))
+	offchainInputs := make([]arkfee.OffchainInput, 0, len(outpoints))
+	onchainInputs := make([]arkfee.OnchainInput, 0, len(outpoints))
 
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
@@ -2337,23 +2358,21 @@ func (s *service) EstimateFee(
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
 		if err != nil || len(vtxosResult) == 0 {
-			arkFeeInputs = append(arkFeeInputs, arkfee.Input{
+			onchainInputs = append(onchainInputs, arkfee.OnchainInput{
 				Amount: uint64(psbtInput.WitnessUtxo.Value),
-				Type:   arkfee.InputTypeBoarding,
-				Weight: 0,
 			})
 			continue
 		}
 
 		vtxo := vtxosResult[0]
-		inputType := arkfee.InputTypeVtxo
+		inputType := arkfee.VtxoTypeVtxo
 		if vtxo.Swept {
-			inputType = arkfee.InputTypeRecoverable
+			inputType = arkfee.VtxoTypeRecoverable
 		} else if vtxo.IsNote() {
-			inputType = arkfee.InputTypeNote
+			inputType = arkfee.VtxoTypeNote
 		}
 
-		arkFeeInputs = append(arkFeeInputs, arkfee.Input{
+		offchainInputs = append(offchainInputs, arkfee.OffchainInput{
 			Amount: vtxo.Amount,
 			Expiry: time.Unix(vtxo.ExpiresAt, 0),
 			Birth:  time.Unix(vtxo.CreatedAt, 0),
@@ -2362,29 +2381,40 @@ func (s *service) EstimateFee(
 		})
 	}
 
-	arkFeeOutputs := make([]arkfee.Output, 0)
+	offchainOutputs := make([]arkfee.Output, 0)
+	onchainOutputs := make([]arkfee.Output, 0)
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
 		amount := uint64(output.Value)
-		outputType := arkfee.OutputTypeVtxo
+		script := hex.EncodeToString(output.PkScript)
 
 		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
 		if isOnchainOutput {
-			outputType = arkfee.OutputTypeOnchain
+			onchainOutputs = append(onchainOutputs, arkfee.Output{
+				Amount: amount,
+				Script: script,
+			})
+		} else {
+			offchainOutputs = append(offchainOutputs, arkfee.Output{
+				Amount: amount,
+				Script: script,
+			})
 		}
-
-		arkFeeOutputs = append(arkFeeOutputs, arkfee.Output{
-			Amount: amount,
-			Type:   outputType,
-		})
 	}
 
-	expectedFees, err := s.feeEstimator.Eval(arkFeeInputs, arkFeeOutputs)
+	expectedFees, err := s.feeEstimator.Eval(
+		offchainInputs,
+		onchainInputs,
+		offchainOutputs,
+		onchainOutputs,
+	)
 	if err != nil {
 		return 0, errors.INTERNAL_ERROR.New("failed to evaluate fees: %w", err).
 			WithMetadata(map[string]any{
-				"ark_fee_inputs":  arkFeeInputs,
-				"ark_fee_outputs": arkFeeOutputs,
+				"offchain_inputs":  offchainInputs,
+				"onchain_inputs":   onchainInputs,
+				"offchain_outputs": offchainOutputs,
+				"onchain_outputs":  onchainOutputs,
 			})
 	}
 

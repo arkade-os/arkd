@@ -574,8 +574,10 @@ func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
 }
 
 type arkdEnv struct {
-	intentInputFeeProgram  string
-	intentOutputFeeProgram string
+	intentOffchainInputFeeProgram  string
+	intentOnchainInputFeeProgram   string
+	intentOffchainOutputFeeProgram string
+	intentOnchainOutputFeeProgram  string
 }
 
 func restartArkdWithNewConfig(env arkdEnv) error {
@@ -591,8 +593,10 @@ func restartArkdWithNewConfig(env arkdEnv) error {
 	time.Sleep(5 * time.Second)
 
 	envVars := map[string]string{
-		"ARKD_INTENT_INPUT_FEE_PROGRAM":  env.intentInputFeeProgram,
-		"ARKD_INTENT_OUTPUT_FEE_PROGRAM": env.intentOutputFeeProgram,
+		"ARKD_INTENT_OFFCHAIN_INPUT_FEE_PROGRAM":  env.intentOffchainInputFeeProgram,
+		"ARKD_INTENT_ONCHAIN_INPUT_FEE_PROGRAM":   env.intentOnchainInputFeeProgram,
+		"ARKD_INTENT_OFFCHAIN_OUTPUT_FEE_PROGRAM": env.intentOffchainOutputFeeProgram,
+		"ARKD_INTENT_ONCHAIN_OUTPUT_FEE_PROGRAM":  env.intentOnchainOutputFeeProgram,
 	}
 	if _, err := runCommandWithEnv(envVars, "docker", "compose", "-f", "../../../docker-compose.regtest.yml", "up", "-d", "arkd"); err != nil {
 		return err

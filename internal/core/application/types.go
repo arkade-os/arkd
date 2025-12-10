@@ -100,8 +100,8 @@ type FeeInfo struct {
 type IntentFeeInfo struct {
 	OffchainInput  string
 	OffchainOutput string
-	OnchainInput   uint64
-	OnchainOutput  uint64
+	OnchainInput   string
+	OnchainOutput  string
 }
 
 const (

@@ -7,19 +7,21 @@ https://github.com/google/cel-spec/blob/master/doc/langdef.md#list-of-standard-d
 
 ## Overview
 
-The package provides an `Estimator` that can evaluate CEL expressions to calculate fees based on input and output characteristics. Each estimator can have two separate programs:
-- **Intent Input Program**: Evaluated for each input in an intent
-- **Intent Output Program**: Evaluated for each output in an intent
+The package provides an `Estimator` that can evaluate CEL expressions to calculate fees based on input and output characteristics. Each estimator can have four separate programs:
+- **Intent Offchain Input Program**: Evaluated for each offchain input (vtxo) in an intent
+- **Intent Onchain Input Program**: Evaluated for each onchain input (boarding) in an intent
+- **Intent Offchain Output Program**: Evaluated for each offchain output (vtxo) in an intent
+- **Intent Onchain Output Program**: Evaluated for each onchain output (collaborative exit) in an intent
 
 The total fee is the sum of all input fees plus all output fees.
 
 ## CEL Environments
 
-The package provides two CEL environments, each with their own set of available variables and functions.
+The package provides three CEL environments, each with their own set of available variables and functions.
 
-### IntentInputEnv
+### IntentOffchainInputEnv
 
-Used for evaluating input fee calculations. Available variables:
+Used for evaluating offchain input (vtxo) fee calculations. Available variables:
 
 | Variable | Type | Description |
 |----------|------|-------------|
@@ -27,7 +29,15 @@ Used for evaluating input fee calculations. Available variables:
 | `expiry` | `double` | Expiry date in Unix timestamp seconds (only available if input has an expiry) |
 | `birth` | `double` | Birth date in Unix timestamp seconds (only available if input has a birth time) |
 | `weight` | `double` | Weighted liquidity lockup ratio of a vtxo |
-| `inputType` | `string` | Type of the input: `'vtxo'`, `'boarding'`, `'recoverable'`, or `'note'` |
+| `inputType` | `string` | Type of the input: `'vtxo'`, `'recoverable'`, or `'note'` |
+
+### IntentOnchainInputEnv
+
+Used for evaluating onchain input (boarding) fee calculations. Available variables:
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `amount` | `double` | Amount in satoshis |
 
 ### IntentOutputEnv
 
@@ -36,11 +46,11 @@ Used for evaluating output fee calculations. Available variables:
 | Variable | Type | Description |
 |----------|------|-------------|
 | `amount` | `double` | Amount in satoshis |
-| `outputType` | `string` | Type of the output: `'vtxo'` or `'onchain'` |
+| `script` | `string` | Hex encoded pkscript |
 
 ## Available Functions
 
-Both environments provide the following functions:
+All environments provide the following functions:
 
 ### `now() -> double`
 
@@ -56,39 +66,59 @@ expiry - now() < double(duration('5m').getSeconds()) ? 0.0 : amount / 2.0
 ### Creating an Estimator
 
 ```go
-estimator, err := arkfee.New(intentInputProgram, intentOutputProgram)
+config := arkfee.Config{
+    IntentOffchainInputProgram:  "inputProgram",
+    IntentOnchainInputProgram:   "onchainInputProgram",
+    IntentOffchainOutputProgram: "offchainOutputProgram",
+    IntentOnchainOutputProgram:  "onchainOutputProgram",
+}
+estimator, err := arkfee.New(config)
 if err != nil {
     // handle error
 }
 ```
 
-Both programs are optional. If a program is empty, the corresponding fee evaluation will return 0.
+All programs are optional. If a program is empty, the corresponding fee evaluation will return 0.
 
 ### Evaluating Fees
 
 ```go
-// Evaluate fee for a single input
-inputFee, err := estimator.EvalInput(arkfee.Input{
+// Evaluate fee for a single offchain input
+offchainInputFee, err := estimator.EvalOffchainInput(arkfee.OffchainInput{
     Amount: 10000,
     Expiry: time.Now().Add(time.Hour),
     Birth:  time.Now().Add(-10 * time.Minute),
-    Type:   arkfee.InputTypeVtxo,
+    Type:   arkfee.VtxoTypeVtxo,
     Weight: 1.0,
 })
 
-// Evaluate fee for a single output
-outputFee, err := estimator.EvalOutput(arkfee.Output{
+// Evaluate fee for a single onchain input
+onchainInputFee, err := estimator.EvalOnchainInput(arkfee.OnchainInput{
     Amount: 5000,
-    Type:   arkfee.OutputTypeOnchain,
+})
+
+// Evaluate fee for a single offchain output
+offchainOutputFee, err := estimator.EvalOffchainOutput(arkfee.Output{
+    Amount: 3000,
+    Script: "0014...",
+})
+
+// Evaluate fee for a single onchain output
+onchainOutputFee, err := estimator.EvalOnchainOutput(arkfee.Output{
+    Amount: 2000,
+    Script: "0014...",
 })
 
 // Evaluate total fee for multiple inputs and outputs
-totalFee, err := estimator.Eval(inputs, outputs)
+totalFee, err := estimator.Eval(
+    offchainInputs, onchainInputs,
+    offchainOutputs, onchainOutputs,
+)
 ```
 
 ## Example Programs
 
-### Input Program Examples
+### Offchain Input Program Examples
 
 **Free for recoverable inputs:**
 ```cel
@@ -105,16 +135,33 @@ weight * 0.01 * amount
 expiry - now() < double(duration('5m').getSeconds()) ? 0.0 : amount / 2.0
 ```
 
-### Output Program Examples
+### Onchain Input Program Examples
 
-**Free for vtxo outputs:**
+**Fixed fee per boarding input:**
 ```cel
-outputType == 'vtxo' ? 0.0 : 200.0
+200.0
 ```
 
-**Percentage fee for onchain outputs:**
+**Percentage fee (0.1% of amount):**
 ```cel
-outputType == 'onchain' ? amount * 0.2 : 0.0
+amount * 0.001
+```
+
+### Output Program Examples
+
+**Fixed fee per output:**
+```cel
+100.0
+```
+
+**Percentage fee:**
+```cel
+amount * 0.002
+```
+
+**Fee based on script type (example using script length):**
+```cel
+size(script) > 50 ? amount * 0.01 : amount * 0.005
 ```
 
 ## Return Type

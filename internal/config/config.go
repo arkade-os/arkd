@@ -125,8 +125,10 @@ type Config struct {
 
 	EnablePprof bool
 
-	IntentInputFeeProgram  string
-	IntentOutputFeeProgram string
+	IntentOffchainInputProgram  string
+	IntentOnchainInputProgram   string
+	IntentOffchainOutputProgram string
+	IntentOnchainOutputProgram  string
 
 	fee            *arkfee.Estimator
 	repo           ports.RepoManager
@@ -211,10 +213,12 @@ var (
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Skip CSV validation for vtxos created before this date
-	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
-	IntentInputFeeProgram         = "INTENT_INPUT_FEE_PROGRAM"
-	IntentOutputFeeProgram        = "INTENT_OUTPUT_FEE_PROGRAM"
-	EnablePprof                   = "ENABLE_PPROF"
+	VtxoNoCsvValidationCutoffDate  = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
+	IntentOffchainInputFeeProgram  = "INTENT_OFFCHAIN_INPUT_FEE_PROGRAM"
+	IntentOnchainInputFeeProgram   = "INTENT_ONCHAIN_INPUT_FEE_PROGRAM"
+	IntentOffchainOutputFeeProgram = "INTENT_OFFCHAIN_OUTPUT_FEE_PROGRAM"
+	IntentOnchainOutputFeeProgram  = "INTENT_ONCHAIN_OUTPUT_FEE_PROGRAM"
+	EnablePprof                    = "ENABLE_PPROF"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -242,16 +246,18 @@ var (
 	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
 	defaultAllowCSVBlockType   = false
 
-	defaultRoundMaxParticipantsCount     = 128
-	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10 // seconds
-	defaultHeartbeatInterval             = 60 // seconds
-	defaultRoundReportServiceEnabled     = false
-	defaultSettlementMinExpiryGap        = 0 // disabled by default
-	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
-	defaultEnablePprof                   = false
-	defaultIntentInputFeeProgram         = ""
-	defaultIntentOutputFeeProgram        = ""
+	defaultRoundMaxParticipantsCount      = 128
+	defaultRoundMinParticipantsCount      = 1
+	defaultOtelPushInterval               = 10 // seconds
+	defaultHeartbeatInterval              = 60 // seconds
+	defaultRoundReportServiceEnabled      = false
+	defaultSettlementMinExpiryGap         = 0 // disabled by default
+	defaultVtxoNoCsvValidationCutoffDate  = 0 // disabled by default
+	defaultEnablePprof                    = false
+	defaultIntentOffchainInputFeeProgram  = ""
+	defaultIntentOnchainInputFeeProgram   = ""
+	defaultIntentOffchainOutputFeeProgram = ""
+	defaultIntentOnchainOutputFeeProgram  = ""
 )
 
 func LoadConfig() (*Config, error) {
@@ -291,8 +297,10 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
-	viper.SetDefault(IntentInputFeeProgram, defaultIntentInputFeeProgram)
-	viper.SetDefault(IntentOutputFeeProgram, defaultIntentOutputFeeProgram)
+	viper.SetDefault(IntentOffchainInputFeeProgram, defaultIntentOffchainInputFeeProgram)
+	viper.SetDefault(IntentOnchainInputFeeProgram, defaultIntentOnchainInputFeeProgram)
+	viper.SetDefault(IntentOffchainOutputFeeProgram, defaultIntentOffchainOutputFeeProgram)
+	viper.SetDefault(IntentOnchainOutputFeeProgram, defaultIntentOnchainOutputFeeProgram)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 
 	if err := initDatadir(); err != nil {
@@ -404,8 +412,10 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
-		IntentInputFeeProgram:         viper.GetString(IntentInputFeeProgram),
-		IntentOutputFeeProgram:        viper.GetString(IntentOutputFeeProgram),
+		IntentOffchainInputProgram:    viper.GetString(IntentOffchainInputFeeProgram),
+		IntentOnchainInputProgram:     viper.GetString(IntentOnchainInputFeeProgram),
+		IntentOffchainOutputProgram:   viper.GetString(IntentOffchainOutputFeeProgram),
+		IntentOnchainOutputProgram:    viper.GetString(IntentOnchainOutputFeeProgram),
 	}, nil
 }
 
@@ -649,7 +659,12 @@ func (c *Config) RoundReportService() (application.RoundReportService, error) {
 }
 
 func (c *Config) feeEstimator() (err error) {
-	c.fee, err = arkfee.New(c.IntentInputFeeProgram, c.IntentOutputFeeProgram)
+	c.fee, err = arkfee.New(arkfee.Config{
+		IntentOffchainInputProgram:  c.IntentOffchainInputProgram,
+		IntentOnchainInputProgram:   c.IntentOnchainInputProgram,
+		IntentOffchainOutputProgram: c.IntentOffchainOutputProgram,
+		IntentOnchainOutputProgram:  c.IntentOnchainOutputProgram,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create fee estimator: %w", err)
 	}
