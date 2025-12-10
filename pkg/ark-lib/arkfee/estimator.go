@@ -139,6 +139,14 @@ func (e *Estimator) Eval(
 		fee += outputFee
 	}
 
+	for _, output := range onchainOutputs {
+		outputFee, err := e.EvalOnchainOutput(output)
+		if err != nil {
+			return 0, err
+		}
+		fee += outputFee
+	}
+
 	return fee, nil
 }
 

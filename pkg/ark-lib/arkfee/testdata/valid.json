@@ -228,7 +228,7 @@
               "script": "0020deadbeef"
             }
           ],
-          "expected": 250
+          "expected": 400
         }
       ]
     },
@@ -274,7 +274,7 @@
               "script": "0020deadbeef"
             }
           ],
-          "expected": 100
+          "expected": 3100
         }
       ]
     }
