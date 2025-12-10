@@ -1,0 +1,283 @@
+{
+  "evalOffchainInput": [
+    {
+      "name": "pay zero fee if expires in less than 5 minutes",
+      "program": "expiry - now() < double(duration('5m').getSeconds()) ? 0.0 : amount / 2.0",
+      "cases": [
+        {
+          "name": "far expiry",
+          "input": {
+            "amount": 10000,
+            "birthOffsetSeconds": -600,
+            "expiryOffsetSeconds": 3600,
+            "type": "vtxo",
+            "weight": 1.0
+          },
+          "expected": 5000
+        },
+        {
+          "name": "close expiry",
+          "input": {
+            "amount": 20000,
+            "birthOffsetSeconds": -600,
+            "expiryOffsetSeconds": 120,
+            "type": "vtxo",
+            "weight": 1.0
+          },
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "name": "free for recoverable",
+      "program": "inputType == 'recoverable' ? 0.0 : 200.0",
+      "cases": [
+        {
+          "name": "recoverable",
+          "input": {
+            "type": "recoverable"
+          },
+          "expected": 0
+        },
+        {
+          "name": "not recoverable",
+          "input": {
+            "amount": 20000,
+            "type": "vtxo",
+            "weight": 1.0
+          },
+          "expected": 200
+        }
+      ]
+    },
+    {
+      "name": "weighted fee (1% of the amount)",
+      "program": "weight * 0.01 * amount",
+      "cases": [
+        {
+          "name": "with 56.3% weight",
+          "input": {
+            "amount": 10000,
+            "weight": 0.563
+          },
+          "expected": 56.3
+        },
+        {
+          "name": "with 100% weight",
+          "input": {
+            "amount": 10000,
+            "weight": 1.0
+          },
+          "expected": 100
+        },
+        {
+          "name": "with 0% weight",
+          "input": {
+            "amount": 10000,
+            "weight": 0.0
+          },
+          "expected": 0
+        }
+      ]
+    }
+  ],
+  "evalOnchainInput": [
+    {
+      "name": "fixed fee for onchain input",
+      "program": "100.0",
+      "cases": [
+        {
+          "name": "small amount",
+          "input": {
+            "amount": 5000
+          },
+          "expected": 100
+        },
+        {
+          "name": "large amount",
+          "input": {
+            "amount": 100000
+          },
+          "expected": 100
+        }
+      ]
+    },
+    {
+      "name": "percentage fee for onchain input",
+      "program": "amount * 0.01",
+      "cases": [
+        {
+          "name": "1% of 10000",
+          "input": {
+            "amount": 10000
+          },
+          "expected": 100
+        },
+        {
+          "name": "1% of 50000",
+          "input": {
+            "amount": 50000
+          },
+          "expected": 500
+        }
+      ]
+    }
+  ],
+  "evalOffchainOutput": [
+    {
+      "name": "fixed fee",
+      "program": "200.0",
+      "cases": [
+        {
+          "name": "vtxo output",
+          "output": {},
+          "expected": 200
+        }
+      ]
+    },
+    {
+      "name": "based on script size",
+      "program": "double(size(script)) * 0.01",
+      "cases": [
+        {
+          "name": "collab exit",
+          "output": {
+            "script": "0020deadbeefeeeeeeffff"
+          },
+          "expected": 0.22
+        }
+      ]
+    },
+    {
+      "name": "percentage fee",
+      "program": "amount * 0.01",
+      "cases": [
+        {
+          "name": "1% of 10000",
+          "output": {
+            "amount": 10000
+          },
+          "expected": 100
+        }
+      ]
+    }
+  ],
+  "evalOnchainOutput": [
+    {
+      "name": "fixed fee",
+      "program": "200.0",
+      "cases": [
+        {
+          "name": "vtxo output",
+          "output": {},
+          "expected": 200
+        }
+      ]
+    },
+    {
+      "name": "based on script size",
+      "program": "double(size(script)) * 0.01",
+      "cases": [
+        {
+          "name": "collab exit",
+          "output": {
+            "script": "0020deadbeefeeeeeeffff"
+          },
+          "expected": 0.22
+        }
+      ]
+    },
+    {
+      "name": "percentage fee",
+      "program": "amount * 0.01",
+      "cases": [
+        {
+          "name": "1% of 10000",
+          "output": {
+            "amount": 10000
+          },
+          "expected": 100
+        }
+      ]
+    }
+  ],
+  "eval": [
+    {
+      "name": "fixed fee",
+      "offchainInputProgram": "100.0",
+      "onchainInputProgram": "50.0",
+      "offchainOutputProgram": "100.0",
+      "onchainOutputProgram": "150.0",
+      "cases": [
+        {
+          "name": "mixed inputs and outputs",
+          "offchainInputs": [
+            {}
+          ],
+          "onchainInputs": [
+            {
+              "amount": 5000
+            }
+          ],
+          "offchainOutputs": [
+            {}
+          ],
+          "onchainOutputs": [
+            {
+              "amount": 10000,
+              "script": "0020deadbeef"
+            }
+          ],
+          "expected": 250
+        }
+      ]
+    },
+    {
+      "name": "free for vtxo input",
+      "offchainInputProgram": "inputType == 'vtxo' ? 0.0 : 100.0",
+      "offchainOutputProgram": "script == '' ? 0.0 : 100.0",
+      "cases": [
+        {
+          "name": "vtxo input",
+          "offchainInputs": [
+            {
+              "type": "vtxo"
+            }
+          ],
+          "offchainOutputs": [
+            {
+              "script": ""
+            },
+            {
+              "script": "0020deadbeef"
+            }
+          ],
+          "expected": 100
+        }
+      ]
+    },
+    {
+      "name": "onchain only",
+      "onchainInputProgram": "amount * 0.01",
+      "onchainOutputProgram": "amount * 0.15",
+      "cases": [
+        {
+          "name": "onchain inputs and outputs",
+          "onchainInputs": [
+            {
+              "amount": 10000
+            }
+          ],
+          "onchainOutputs": [
+            {
+              "amount": 20000,
+              "script": "0020deadbeef"
+            }
+          ],
+          "expected": 100
+        }
+      ]
+    }
+  ]
+}
+

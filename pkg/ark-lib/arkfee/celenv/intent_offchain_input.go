@@ -4,14 +4,17 @@ import (
 	"github.com/google/cel-go/cel"
 )
 
-var IntentOutputEnv *cel.Env
+var IntentOffchainInputEnv *cel.Env
 
 func init() {
 	var err error
-	IntentOutputEnv, err = cel.NewEnv(
+	IntentOffchainInputEnv, err = cel.NewEnv(
 		// variables
 		amount,
-		outputScript,
+		expiry,
+		birth,
+		weight,
+		inputType,
 		// functions
 		nowFunction,
 	)

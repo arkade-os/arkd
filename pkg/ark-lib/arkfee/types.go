@@ -13,24 +13,23 @@ func (f FeeAmount) ToSatoshis() int64 {
 	return int64(math.Ceil(float64(f)))
 }
 
-type InputType string
+type VtxoType string
 
 const (
-	InputTypeRecoverable InputType = "recoverable"
-	InputTypeVtxo        InputType = "vtxo"
-	InputTypeBoarding    InputType = "boarding"
-	InputTypeNote        InputType = "note"
+	VtxoTypeRecoverable VtxoType = "recoverable"
+	VtxoTypeVtxo        VtxoType = "vtxo"
+	VtxoTypeNote        VtxoType = "note"
 )
 
-type Input struct {
+type OffchainInput struct {
 	Amount uint64
 	Expiry time.Time
 	Birth  time.Time
-	Type   InputType
+	Type   VtxoType
 	Weight float64
 }
 
-func (i Input) toArgs() map[string]any {
+func (i OffchainInput) toArgs() map[string]any {
 	args := map[string]any{
 		celenv.AmountVariableName:    float64(i.Amount),
 		celenv.InputTypeVariableName: string(i.Type),
@@ -45,21 +44,24 @@ func (i Input) toArgs() map[string]any {
 	return args
 }
 
-type OutputType string
+type OnchainInput struct {
+	Amount uint64
+}
 
-const (
-	OutputTypeVtxo    OutputType = "vtxo"
-	OutputTypeOnchain OutputType = "onchain"
-)
+func (i OnchainInput) toArgs() map[string]any {
+	return map[string]any{
+		celenv.AmountVariableName: float64(i.Amount),
+	}
+}
 
 type Output struct {
 	Amount uint64
-	Type   OutputType
+	Script string
 }
 
 func (o Output) toArgs() map[string]any {
 	return map[string]any{
-		celenv.AmountVariableName:     float64(o.Amount),
-		celenv.OutputTypeVariableName: string(o.Type),
+		celenv.AmountVariableName:       float64(o.Amount),
+		celenv.OutputScriptVariableName: o.Script,
 	}
 }
