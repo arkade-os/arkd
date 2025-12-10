@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	"github.com/arkade-os/arkd/internal/infrastructure/feemanager"
 	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
 	blockscheduler "github.com/arkade-os/arkd/internal/infrastructure/scheduler/block"
@@ -130,7 +131,7 @@ type Config struct {
 	IntentOffchainOutputProgram string
 	IntentOnchainOutputProgram  string
 
-	fee            *arkfee.Estimator
+	fee            ports.FeeManager
 	repo           ports.RepoManager
 	svc            application.Service
 	adminSvc       application.AdminService
@@ -573,7 +574,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
 
-	if err := c.feeEstimator(); err != nil {
+	if err := c.feeManager(); err != nil {
 		return err
 	}
 	if err := c.repoManager(); err != nil {
@@ -650,15 +651,15 @@ func (c *Config) RoundReportService() (application.RoundReportService, error) {
 	return c.roundReportSvc, nil
 }
 
-func (c *Config) feeEstimator() (err error) {
-	c.fee, err = arkfee.New(arkfee.Config{
+func (c *Config) feeManager() (err error) {
+	c.fee, err = feemanager.NewArkFeeManager(arkfee.Config{
 		IntentOffchainInputProgram:  c.IntentOffchainInputProgram,
 		IntentOnchainInputProgram:   c.IntentOnchainInputProgram,
 		IntentOffchainOutputProgram: c.IntentOffchainOutputProgram,
 		IntentOnchainOutputProgram:  c.IntentOnchainOutputProgram,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create fee estimator: %w", err)
+		return fmt.Errorf("failed to create fee manager: %w", err)
 	}
 	return nil
 }
@@ -837,7 +838,7 @@ func (c *Config) appService() error {
 
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
-		c.scheduler, c.liveStore, roundReportSvc, c.alerts,
+		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
 		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.PublicUnilateralExitDelay,
 		c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
@@ -848,7 +849,12 @@ func (c *Config) appService() error {
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
-		c.fee,
+		application.IntentFeeInfo{
+			OffchainInput:  c.IntentOffchainInputProgram,
+			OnchainInput:   c.IntentOnchainInputProgram,
+			OffchainOutput: c.IntentOffchainOutputProgram,
+			OnchainOutput:  c.IntentOnchainOutputProgram,
+		},
 	)
 	if err != nil {
 		return err

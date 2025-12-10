@@ -73,7 +73,7 @@ func New(config Config) (estimator *Estimator, err error) {
 }
 
 // EvalOffchainInput evalutes the fee for a given vtxo input
-func (e *Estimator) EvalOffchainInput(input OffchainInput) (FeeAmount, error) {
+func (e Estimator) EvalOffchainInput(input OffchainInput) (FeeAmount, error) {
 	if e.intentOffchainInput == nil {
 		return 0, nil
 	}
@@ -82,7 +82,7 @@ func (e *Estimator) EvalOffchainInput(input OffchainInput) (FeeAmount, error) {
 }
 
 // EvalOnchainInput evalutes the fee for a given boarding input
-func (e *Estimator) EvalOnchainInput(input OnchainInput) (FeeAmount, error) {
+func (e Estimator) EvalOnchainInput(input OnchainInput) (FeeAmount, error) {
 	if e.intentOnchainInput == nil {
 		return 0, nil
 	}
@@ -91,7 +91,7 @@ func (e *Estimator) EvalOnchainInput(input OnchainInput) (FeeAmount, error) {
 }
 
 // EvalOffchainOutput evalutes the fee for a given vtxo output
-func (e *Estimator) EvalOffchainOutput(output Output) (FeeAmount, error) {
+func (e Estimator) EvalOffchainOutput(output Output) (FeeAmount, error) {
 	if e.intentOffchainOutput == nil {
 		return 0, nil
 	}
@@ -100,7 +100,7 @@ func (e *Estimator) EvalOffchainOutput(output Output) (FeeAmount, error) {
 }
 
 // EvalOnchainOutput evalutes the fee for a given collaborative exit output
-func (e *Estimator) EvalOnchainOutput(output Output) (FeeAmount, error) {
+func (e Estimator) EvalOnchainOutput(output Output) (FeeAmount, error) {
 	if e.intentOnchainOutput == nil {
 		return 0, nil
 	}
@@ -109,7 +109,7 @@ func (e *Estimator) EvalOnchainOutput(output Output) (FeeAmount, error) {
 }
 
 // Eval evaluates the fee for a given set of inputs and outputs
-func (e *Estimator) Eval(
+func (e Estimator) Eval(
 	offchainInputs []OffchainInput, onchainInputs []OnchainInput,
 	offchainOutputs, onchainOutputs []Output,
 ) (FeeAmount, error) {
