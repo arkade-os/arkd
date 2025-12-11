@@ -7,19 +7,21 @@ import (
 )
 
 type Intent struct {
-	Id        string
-	Inputs    []Vtxo
-	Receivers []Receiver
-	Proof     string
-	Message   string
+	Id             string
+	Inputs         []Vtxo
+	Receivers      []Receiver
+	AssetGroupList [][]byte
+	Proof          string
+	Message        string
 }
 
-func NewIntent(proof, message string, inputs []Vtxo) (*Intent, error) {
+func NewIntent(proof, message string, inputs []Vtxo, assetGroupList [][]byte) (*Intent, error) {
 	intent := &Intent{
-		Id:      uuid.New().String(),
-		Inputs:  inputs,
-		Proof:   proof,
-		Message: message,
+		Id:             uuid.New().String(),
+		Inputs:         inputs,
+		AssetGroupList: assetGroupList,
+		Proof:          proof,
+		Message:        message,
 	}
 	if err := intent.validate(true); err != nil {
 		return nil, err

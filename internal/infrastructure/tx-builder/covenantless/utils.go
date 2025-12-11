@@ -127,26 +127,24 @@ func getAssetFromIntents(
 ) (*asset.Asset, error) {
 
 	for _, intent := range intents {
-		for _, input := range intent.Inputs {
-			if input.Asset != nil {
-				decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(input.Asset)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode asset from input: %s", err)
-				}
-
-				if decodedAssetGroup.ControlAsset != nil {
-					decodedControlAsset := decodedAssetGroup.ControlAsset
-					if decodedControlAsset.AssetId == assetId {
-						return decodedControlAsset, nil
-					}
-				}
-				decodedAsset := decodedAssetGroup.NormalAsset
-				if decodedAsset.AssetId == assetId {
-					return &decodedAsset, nil
-				}
+		for _, assetGroup := range intent.AssetGroupList {
+			decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(assetGroup)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode asset from input: %s", err)
 			}
 
+			if decodedAssetGroup.ControlAsset != nil {
+				decodedControlAsset := decodedAssetGroup.ControlAsset
+				if decodedControlAsset.AssetId == assetId {
+					return decodedControlAsset, nil
+				}
+			}
+			decodedAsset := decodedAssetGroup.NormalAsset
+			if decodedAsset.AssetId == assetId {
+				return &decodedAsset, nil
+			}
 		}
+
 	}
 	return nil, fmt.Errorf("asset with id %x not found in intents", assetId)
 }

@@ -204,6 +204,16 @@ func (i *indexerService) GetVtxos(
 	}
 
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
+
+	for j, v := range vtxos {
+		// add asset anchor if present
+		assetAnchor, err := i.repoManager.Assets().GetAssetAnchorByTxId(ctx, v.Txid)
+		if err == nil {
+			vtxos[j].AssetAnchor = assetAnchor
+		}
+
+	}
+
 	return &GetVtxosResp{
 		Vtxos: vtxos,
 		Page:  pageResp,
@@ -216,6 +226,15 @@ func (i *indexerService) GetVtxosByOutpoint(
 	allVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, outpoints)
 	if err != nil {
 		return nil, err
+	}
+
+	for j, v := range allVtxos {
+		// add asset anchor if present
+		assetAnchor, err := i.repoManager.Assets().GetAssetAnchorByTxId(ctx, v.Txid)
+		if err == nil {
+			allVtxos[j].AssetAnchor = assetAnchor
+		}
+
 	}
 
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)

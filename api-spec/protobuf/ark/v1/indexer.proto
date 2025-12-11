@@ -277,6 +277,14 @@ message IndexerVtxo {
   repeated string commitment_txids = 11;
   string settled_by = 12;
   string ark_txid = 13;
+  IndexerVtxoAssetAnchor asset_anchor = 14;
+}
+
+
+message IndexerVtxoAssetAnchor {
+  string asset_id = 1;
+  uint32 vout = 4;
+  uint64 amount = 5;
 }
 
 message IndexerChain {

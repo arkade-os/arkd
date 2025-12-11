@@ -1325,6 +1325,9 @@
           "arkTxid": {
             "type": "string"
           },
+          "assetAnchor": {
+            "$ref": "#/components/schemas/IndexerVtxoAssetAnchor"
+          },
           "commitmentTxids": {
             "type": "array",
             "items": {
@@ -1362,6 +1365,23 @@
           },
           "spentBy": {
             "type": "string"
+          }
+        }
+      },
+      "IndexerVtxoAssetAnchor": {
+        "title": "IndexerVtxoAssetAnchor",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "assetId": {
+            "type": "string"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
           }
         }
       },

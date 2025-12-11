@@ -1342,6 +1342,8 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
+	assetGroupList := make([][]byte, 0)
+
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
 			return "", errors.INVALID_INTENT_PROOF.New(
@@ -1475,8 +1477,7 @@ func (s *service) RegisterIntent(
 
 			for _, output := range decodedArkTx.UnsignedTx.TxOut {
 				if asset.IsAssetGroup(output.PkScript) {
-					log.Println("this is where the asset is included")
-					vtxo.Asset = output.PkScript
+					assetGroupList = append(assetGroupList, output.PkScript)
 					break
 				}
 			}
@@ -1606,7 +1607,7 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	intent, err := domain.NewIntent(signedProof, encodedMessage, vtxoInputs)
+	intent, err := domain.NewIntent(signedProof, encodedMessage, vtxoInputs, assetGroupList)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
 			WithMetadata(map[string]any{

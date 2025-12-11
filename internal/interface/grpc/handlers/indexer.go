@@ -697,6 +697,18 @@ func parseScript(script string) (string, error) {
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
+	var assetAnchor *arkv1.IndexerVtxoAssetAnchor
+	if vtxo.AssetAnchor != nil {
+		for _, out := range vtxo.AssetAnchor.Vtxos {
+			if out.Vout == vtxo.VOut {
+				assetAnchor = &arkv1.IndexerVtxoAssetAnchor{
+					AssetId: vtxo.AssetAnchor.AssetID,
+					Vout:    out.Vout,
+					Amount:  out.Amount,
+				}
+			}
+		}
+	}
 	return &arkv1.IndexerVtxo{
 		Outpoint: &arkv1.IndexerOutpoint{
 			Txid: vtxo.Txid,
@@ -714,5 +726,6 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
+		AssetAnchor:     assetAnchor,
 	}
 }
