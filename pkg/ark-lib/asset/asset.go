@@ -19,6 +19,7 @@ const AssetVersion byte = 0x01
 
 type Asset struct {
 	AssetId        [32]byte
+	Immutable      bool
 	Outputs        []AssetOutput // 8 + 33
 	ControlAssetId [32]byte
 	Inputs         []AssetInput
@@ -215,6 +216,10 @@ func (a *Asset) EncodeTlv() ([]byte, error) {
 		&a.AssetId,
 	))
 
+	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+		tlvTypeImmutable,
+		&a.Immutable))
+
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeOutput,
 		&a.Outputs,
@@ -254,6 +259,12 @@ func (a *Asset) DecodeTlv(data []byte) error {
 			tlvTypeAssetID,
 			&a.AssetId,
 		),
+
+		tlv.MakePrimitiveRecord(
+			tlvTypeImmutable,
+			&a.Immutable,
+		),
+
 		tlv.MakeDynamicRecord(
 			tlvTypeOutput,
 			&a.Outputs,

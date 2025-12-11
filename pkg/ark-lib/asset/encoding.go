@@ -10,16 +10,17 @@ import (
 )
 
 const (
-	tlvTypeAssetID         tlv.Type = 1
-	tlvTypeOutput          tlv.Type = 2
-	tlvTypeControlAssetId  tlv.Type = 3
-	tlvTypeInput           tlv.Type = 4
-	tlvTypeMetadata        tlv.Type = 6
+	tlvTypeAssetID        tlv.Type = 1
+	tlvTypeImmutable      tlv.Type = 2
+	tlvTypeOutput         tlv.Type = 3
+	tlvTypeControlAssetId tlv.Type = 4
+	tlvTypeInput          tlv.Type = 5
+	tlvTypeMetadata       tlv.Type = 6
+
 	tlvTypeOutScriptPubKey tlv.Type = 7
 	tlvTypeInTxid          tlv.Type = 8
 	tlvTypeOutAmount       tlv.Type = 9
 	tlvTypeInVout          tlv.Type = 10
-	tlvTypeImmutable       tlv.Type = 11
 )
 
 func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {

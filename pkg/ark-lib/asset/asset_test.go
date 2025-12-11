@@ -36,16 +36,19 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 			{
 				Txhash: deterministicTxhash(0xaa),
 				Vout:   7,
+				Amount: 20,
 			},
 			{
 				Txhash: deterministicTxhash(0xbb),
 				Vout:   9,
+				Amount: 40,
 			},
 		},
 		Metadata: []Metadata{
 			{Key: "purpose", Value: "roundtrip"},
 			{Key: "owner", Value: "arkade"},
 		},
+		Immutable: true,
 	}
 
 	encoded, err := asset.EncodeTlv()
@@ -53,6 +56,7 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	require.NotEmpty(t, encoded)
 
 	var decoded Asset
+
 	require.NoError(t, decoded.DecodeTlv(encoded))
 	require.Equal(t, asset, decoded)
 }
