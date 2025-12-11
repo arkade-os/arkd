@@ -25,6 +25,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
@@ -153,63 +154,63 @@ func (c *Config) String() string {
 }
 
 var (
-	Datadir                              = "DATADIR"
-	WalletAddr                           = "WALLET_ADDR"
-	SignerAddr                           = "SIGNER_ADDR"
-	SessionDuration                      = "SESSION_DURATION"
-	BanDuration                          = "BAN_DURATION"
-	BanThreshold                         = "BAN_THRESHOLD"
-	Port                                 = "PORT"
-	AdminPort                            = "ADMIN_PORT"
-	EventDbType                          = "EVENT_DB_TYPE"
-	DbType                               = "DB_TYPE"
-	DbUrl                                = "PG_DB_URL"
-	PostgresAutoCreateDB                 = "PG_DB_AUTOCREATE"
-	EventDbUrl                           = "PG_EVENT_DB_URL"
-	SchedulerType                        = "SCHEDULER_TYPE"
-	TxBuilderType                        = "TX_BUILDER_TYPE"
-	LiveStoreType                        = "LIVE_STORE_TYPE"
-	RedisUrl                             = "REDIS_URL"
-	RedisTxNumOfRetries                  = "REDIS_NUM_OF_RETRIES"
-	LogLevel                             = "LOG_LEVEL"
-	VtxoTreeExpiry                       = "VTXO_TREE_EXPIRY"
-	UnilateralExitDelay                  = "UNILATERAL_EXIT_DELAY"
-	PublicUnilateralExitDelay            = "PUBLIC_UNILATERAL_EXIT_DELAY"
-	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
-	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
-	EsploraURL                           = "ESPLORA_URL"
-	AlertManagerURL                      = "ALERT_MANAGER_URL"
-	NoMacaroons                          = "NO_MACAROONS"
-	NoTLS                                = "NO_TLS"
-	TLSExtraIP                           = "TLS_EXTRA_IP"
-	TLSExtraDomain                       = "TLS_EXTRA_DOMAIN"
-	UnlockerType                         = "UNLOCKER_TYPE"
-	UnlockerFilePath                     = "UNLOCKER_FILE_PATH"
-	UnlockerPassword                     = "UNLOCKER_PASSWORD"
-	NoteUriPrefix                        = "NOTE_URI_PREFIX"
-	ScheduledSessionStartTime            = "SCHEDULED_SESSION_START_TIME"
-	ScheduledSessionEndTime              = "SCHEDULED_SESSION_END_TIME"
-	ScheduledSessionPeriod               = "SCHEDULED_SESSION_PERIOD"
-	ScheduledSessionDuration             = "SCHEDULED_SESSION_DURATION"
-	ScheduledSessionMinRoundParticipants = "SCHEDULED_SESSION_MIN_ROUND_PARTICIPANTS_COUNT"
-	ScheduledSessionMaxRoundParticipants = "SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT"
-	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
-	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
-	PyroscopeServerURL                   = "PYROSCOPE_SERVER_URL"
-	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
-	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
-	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
-	VtxoMaxAmount                        = "VTXO_MAX_AMOUNT"
-	UtxoMinAmount                        = "UTXO_MIN_AMOUNT"
-	VtxoMinAmount                        = "VTXO_MIN_AMOUNT"
-	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
-	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
-	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
-	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	Datadir                              = "datadir"
+	WalletAddr                           = "wallet-addr"
+	SignerAddr                           = "signer-addr"
+	SessionDuration                      = "session-duration"
+	BanDuration                          = "ban-duration"
+	BanThreshold                         = "ban-threshold"
+	Port                                 = "port"
+	AdminPort                            = "admin-port"
+	EventDbType                          = "event-db-type"
+	DbType                               = "db-type"
+	DbUrl                                = "pg-db-url"
+	PostgresAutoCreateDB                 = "pg-db-autocreate"
+	EventDbUrl                           = "pg-event-db-url"
+	SchedulerType                        = "scheduler-type"
+	TxBuilderType                        = "tx-builder-type"
+	LiveStoreType                        = "live-store-type"
+	RedisUrl                             = "redis-url"
+	RedisTxNumOfRetries                  = "redis-num-of-retries"
+	LogLevel                             = "log-level"
+	VtxoTreeExpiry                       = "vtxo-tree-expiry"
+	UnilateralExitDelay                  = "unilateral-exit-delay"
+	PublicUnilateralExitDelay            = "public-unilateral-exit-delay"
+	CheckpointExitDelay                  = "checkpoint-exit-delay"
+	BoardingExitDelay                    = "boarding-exit-delay"
+	EsploraURL                           = "esplora-url"
+	AlertManagerURL                      = "alert-manager-url"
+	NoMacaroons                          = "no-macaroons"
+	NoTLS                                = "no-tls"
+	TLSExtraIP                           = "tls-extra-ip"
+	TLSExtraDomain                       = "tls-extra-domain"
+	UnlockerType                         = "unlocker-type"
+	UnlockerFilePath                     = "unlocker-file-path"
+	UnlockerPassword                     = "unlocker-password"
+	NoteUriPrefix                        = "note-uri-prefix"
+	ScheduledSessionStartTime            = "scheduled-session-start-time"
+	ScheduledSessionEndTime              = "scheduled-session-end-time"
+	ScheduledSessionPeriod               = "scheduled-session-period"
+	ScheduledSessionDuration             = "scheduled-session-duration"
+	ScheduledSessionMinRoundParticipants = "scheduled-session-min-round-participants-count"
+	ScheduledSessionMaxRoundParticipants = "scheduled-session-max-round-participants-count"
+	OtelCollectorEndpoint                = "otel-collector-endpoint"
+	OtelPushInterval                     = "otel-push-interval"
+	PyroscopeServerURL                   = "pyroscope-server-url"
+	RoundMaxParticipantsCount            = "round-max-participants-count"
+	RoundMinParticipantsCount            = "round-min-participants-count"
+	UtxoMaxAmount                        = "utxo-max-amount"
+	VtxoMaxAmount                        = "vtxo-max-amount"
+	UtxoMinAmount                        = "utxo-min-amount"
+	VtxoMinAmount                        = "vtxo-min-amount"
+	AllowCSVBlockType                    = "allow-csv-block-type"
+	HeartbeatInterval                    = "heartbeat-interval"
+	RoundReportServiceEnabled            = "round-report-enabled"
+	SettlementMinExpiryGap               = "settlement-min-expiry-gap"
 	// Skip CSV validation for vtxos created before this date
-	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
-	OnchainOutputFee              = "ONCHAIN_OUTPUT_FEE"
-	EnablePprof                   = "ENABLE_PPROF"
+	VtxoNoCsvValidationCutoffDate = "vtxo-no-csv-validation-cutoff-date"
+	OnchainOutputFee              = "onchain-output-fee"
+	EnablePprof                   = "enable-pprof"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -248,46 +249,90 @@ var (
 	defaultEnablePprof                   = false
 )
 
+func SetupFlags(cmd *cobra.Command) {
+	cmd.Flags().String(Datadir, defaultDatadir, "Directory to store data")
+	cmd.Flags().Int(Port, DefaultPort, "Port (public) to listen on")
+	cmd.Flags().Int(AdminPort, DefaultAdminPort,
+		"Admin port (private) to listen on, fallback to service port if 0")
+	cmd.Flags().String(DbType, defaultDbType, "Database type (postgres, sqlite, badger)")
+	cmd.Flags().Bool(NoTLS, defaultNoTLS, "Disable TLS")
+	cmd.Flags().Int(LogLevel, defaultLogLevel, "Logging level (0-6, where 6 is trace)")
+	cmd.Flags().Int64(SessionDuration, int64(defaultSessionDuration),
+		"How long a batch session lasts (in seconds) before timing out once it started")
+	cmd.Flags().Int64(BanDuration, int64(defaultBanDuration), "Ban duration in seconds")
+	cmd.Flags().Int64(BanThreshold, int64(defaultBanThreshold), "Number of crimes to trigger a ban")
+	cmd.Flags().Int64(VtxoTreeExpiry, int64(defaultVtxoTreeExpiry), "VTXO tree expiry in seconds")
+	cmd.Flags().String(SchedulerType, defaultSchedulerType, "Scheduler type (gocron, block)")
+	cmd.Flags().String(EventDbType, defaultEventDbType, "Event database type (postgres, badger)")
+	cmd.Flags().String(TxBuilderType, defaultTxBuilderType,
+		"Transaction builder type (covenantless)")
+	cmd.Flags().Int(UnilateralExitDelay, defaultUnilateralExitDelay,
+		"Unilateral exit delay in seconds")
+	cmd.Flags().Int(PublicUnilateralExitDelay, defaultUnilateralExitDelay,
+		"Public unilateral exit delay in seconds")
+	cmd.Flags().Int(CheckpointExitDelay, defaultCheckpointExitDelay,
+		"Checkpoint exit delay in seconds")
+	cmd.Flags().String(EsploraURL, defaultEsploraURL, "Esplora API URL")
+	cmd.Flags().Bool(NoMacaroons, defaultNoMacaroons, "Disable macaroon authentication")
+	cmd.Flags().Int(BoardingExitDelay, defaultBoardingExitDelay, "Boarding exit delay in seconds")
+	cmd.Flags().Int(RoundMaxParticipantsCount, defaultRoundMaxParticipantsCount,
+		"Maximum number of participants per round")
+	cmd.Flags().Int(RoundMinParticipantsCount, defaultRoundMinParticipantsCount,
+		"Minimum number of participants per round")
+	cmd.Flags().Int64(UtxoMaxAmount, int64(defaultUtxoMaxAmount),
+		"The maximum allowed amount for boarding or collaborative exit")
+	cmd.Flags().Int64(UtxoMinAmount, int64(defaultUtxoMinAmount),
+		"The minimum allowed amount for boarding or collaborative exit")
+	cmd.Flags().Int64(VtxoMaxAmount, int64(defaultVtxoMaxAmount),
+		"The maximum allowed amount for vtxos")
+	cmd.Flags().Int64(VtxoMinAmount, int64(defaultVtxoMinAmount),
+		"The minimum allowed amount for vtxos")
+	cmd.Flags().String(LiveStoreType, defaultLiveStoreType, "Cache service type (redis, inmemory)")
+	cmd.Flags().Int(RedisTxNumOfRetries, defaultRedisTxNumOfRetries,
+		"Maximum number of retries for Redis write operations in case of conflicts")
+	cmd.Flags().Bool(AllowCSVBlockType, defaultAllowCSVBlockType, "Allow CSV block type")
+	cmd.Flags().Int64(HeartbeatInterval, int64(defaultHeartbeatInterval),
+		"Heartbeat interval in seconds")
+	cmd.Flags().Bool(RoundReportServiceEnabled, defaultRoundReportServiceEnabled,
+		"Enable round report service")
+	cmd.Flags().Int64(SettlementMinExpiryGap, int64(defaultSettlementMinExpiryGap), "")
+	cmd.Flags().
+		Int64(VtxoNoCsvValidationCutoffDate, int64(defaultVtxoNoCsvValidationCutoffDate), "")
+	cmd.Flags().Int64(OnchainOutputFee, int64(defaultOnchainOutputFee), "")
+	cmd.Flags().Bool(EnablePprof, defaultEnablePprof, "")
+
+	cmd.Flags().
+		String(WalletAddr, "", "The arkd wallet address to connect to in the form host:port")
+	cmd.Flags().String(SignerAddr, "", "The signer address to connect to in the form host:port")
+	cmd.Flags().String(DbUrl, "", "Postgres connection url if ARKD_DB_TYPE is set to postgres")
+	cmd.Flags().
+		String(EventDbUrl, "", "Event database url if ARKD_EVENT_DB_TYPE is set to postgres")
+	cmd.Flags().Bool(PostgresAutoCreateDB, false,
+		"Toggles postgres database creation when it does not exist")
+	cmd.Flags().String(RedisUrl, "",
+		"Redis db connection url if ARKD_LIVE_STORE_TYPE is set to redis")
+	cmd.Flags().String(AlertManagerURL, "", "")
+	cmd.Flags().StringSlice(TLSExtraIP, nil, "Extra IP addresses for TLS (comma-separated)")
+	cmd.Flags().StringSlice(TLSExtraDomain, nil, "Extra domains for TLS (comma-separated)")
+	cmd.Flags().String(UnlockerType, "", "Wallet unlocker type (env, file) to enable auto-unlock")
+	cmd.Flags().String(UnlockerFilePath, "", "Path to unlocker file")
+	cmd.Flags().String(UnlockerPassword, "", "Wallet unlocker password")
+	cmd.Flags().String(NoteUriPrefix, "", "Note URI prefix")
+	cmd.Flags().Int64(ScheduledSessionStartTime, 0, "Scheduled session start time (Unix timestamp)")
+	cmd.Flags().Int64(ScheduledSessionEndTime, 0, "Scheduled session end time (Unix timestamp)")
+	cmd.Flags().Int64(ScheduledSessionPeriod, 0, "Scheduled session period in minutes")
+	cmd.Flags().Int64(ScheduledSessionDuration, 0, "Scheduled session duration in seconds")
+	cmd.Flags().Int64(ScheduledSessionMinRoundParticipants, 0,
+		"Min participants for scheduled sessions")
+	cmd.Flags().Int64(ScheduledSessionMaxRoundParticipants, 0,
+		"Max participants for scheduled sessions")
+	cmd.Flags().String(OtelCollectorEndpoint, "", "OpenTelemetry collector endpoint")
+	cmd.Flags().Int64(OtelPushInterval, int64(defaultOtelPushInterval),
+		"OpenTelemetry push interval in seconds")
+	cmd.Flags().String(PyroscopeServerURL, "", "")
+}
+
 func LoadConfig() (*Config, error) {
-	viper.SetEnvPrefix("ARKD")
-	viper.AutomaticEnv()
-
-	viper.SetDefault(Datadir, defaultDatadir)
-	viper.SetDefault(Port, DefaultPort)
-	viper.SetDefault(AdminPort, DefaultAdminPort)
-	viper.SetDefault(DbType, defaultDbType)
-	viper.SetDefault(NoTLS, defaultNoTLS)
-	viper.SetDefault(LogLevel, defaultLogLevel)
-	viper.SetDefault(SessionDuration, defaultSessionDuration)
-	viper.SetDefault(BanDuration, defaultBanDuration)
-	viper.SetDefault(BanThreshold, defaultBanThreshold)
-	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
-	viper.SetDefault(SchedulerType, defaultSchedulerType)
-	viper.SetDefault(EventDbType, defaultEventDbType)
-	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
-	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
-	viper.SetDefault(PublicUnilateralExitDelay, defaultUnilateralExitDelay)
-	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
-	viper.SetDefault(EsploraURL, defaultEsploraURL)
-	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
-	viper.SetDefault(BoardingExitDelay, defaultBoardingExitDelay)
-	viper.SetDefault(RoundMaxParticipantsCount, defaultRoundMaxParticipantsCount)
-	viper.SetDefault(RoundMinParticipantsCount, defaultRoundMinParticipantsCount)
-	viper.SetDefault(UtxoMaxAmount, defaultUtxoMaxAmount)
-	viper.SetDefault(UtxoMinAmount, defaultUtxoMinAmount)
-	viper.SetDefault(VtxoMaxAmount, defaultVtxoMaxAmount)
-	viper.SetDefault(VtxoMinAmount, defaultVtxoMinAmount)
-	viper.SetDefault(LiveStoreType, defaultLiveStoreType)
-	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
-	viper.SetDefault(AllowCSVBlockType, defaultAllowCSVBlockType)
-	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
-	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
-	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
-	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
-	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
-	viper.SetDefault(OnchainOutputFee, defaultOnchainOutputFee)
-	viper.SetDefault(EnablePprof, defaultEnablePprof)
-
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
 	}

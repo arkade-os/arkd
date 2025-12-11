@@ -17,10 +17,15 @@ const ONE_BTC = float64(1_00_000_000)
 
 // commands
 var (
-	startCmd = &cli.Command{
-		Name:   "start",
-		Usage:  "Starts the arkd server",
-		Action: startAction,
+	// startCmdWrapper is a wrapper around the start command defined in start.go
+	// TODO: This should disappear when we migrate all sub-commands from urfave/cli to spf13/cobra.
+	startCmdWrapper = &cli.Command{
+		Name:            "start",
+		Usage:           "Starts the arkd server",
+		SkipFlagParsing: true,
+		Action: func(_ *cli.Context) error {
+			return startCmd.Execute()
+		},
 	}
 
 	walletCmd = &cli.Command{
