@@ -141,11 +141,21 @@ func TestMain(m *testing.M) {
 
 func TestService(t *testing.T) {
 	dbDir := t.TempDir()
-
+	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
+	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
 	}{
+		{
+			name: "repo_manager_with_badger_stores",
+			config: db.ServiceConfig{
+				EventStoreType:   "badger",
+				DataStoreType:    "badger",
+				EventStoreConfig: []interface{}{"", nil},
+				DataStoreConfig:  []interface{}{"", nil},
+			},
+		},
 		{
 			name: "repo_manager_with_sqlite_stores",
 			config: db.ServiceConfig{
@@ -153,6 +163,15 @@ func TestService(t *testing.T) {
 				DataStoreType:    "sqlite",
 				EventStoreConfig: []interface{}{"", nil},
 				DataStoreConfig:  []interface{}{dbDir},
+			},
+		},
+		{
+			name: "repo_manager_with_postgres_stores",
+			config: db.ServiceConfig{
+				EventStoreType:   "postgres",
+				DataStoreType:    "postgres",
+				EventStoreConfig: []interface{}{pgEventDns},
+				DataStoreConfig:  []interface{}{pgDns},
 			},
 		},
 	}

@@ -68,7 +68,9 @@ var (
 		"postgres": pgdb.NewConvictionRepository,
 	}
 	assetStoreTypes = map[string]func(...interface{}) (domain.AssetRepository, error){
-		"sqlite": sqlitedb.NewAssetRepository,
+		"sqlite":   sqlitedb.NewAssetRepository,
+		"badger":   badgerdb.NewAssetRepository,
+		"postgres": pgdb.NewAssetRepository,
 	}
 )
 

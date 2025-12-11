@@ -336,3 +336,74 @@ ORDER BY created_at ASC;
 SELECT * FROM conviction 
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
+
+
+-- name: CreateAssetAnchor :exec
+INSERT INTO asset_anchors (anchor_txid, anchor_vout, asset_id)
+VALUES (@anchor_txid, @anchor_vout, @asset_id);
+
+-- name: GetAssetAnchor :one
+SELECT anchor_txid, anchor_vout
+FROM asset_anchors
+WHERE anchor_txid = @anchor_txid;
+
+-- name: DeleteAssetAnchor :exec
+DELETE FROM asset_anchors
+WHERE anchor_txid = @anchor_txid;
+
+-- name: UpsertAssetMetadata :exec
+INSERT INTO asset_metadata (asset_id, meta_key, meta_value)
+VALUES (@asset_id, @meta_key, @meta_value)
+ON CONFLICT (asset_id, meta_key)
+DO UPDATE SET meta_value = EXCLUDED.meta_value;
+
+-- name: GetAssetMetadata :one
+SELECT asset_id, meta_key, meta_value
+FROM asset_metadata
+WHERE asset_id = @asset_id AND meta_key = @meta_key;
+
+-- name: ListAssetMetadata :many
+SELECT asset_id, meta_key, meta_value
+FROM asset_metadata
+WHERE asset_id = @asset_id
+ORDER BY meta_key;
+
+-- name: AddAnchorVtxo :exec
+INSERT INTO anchor_vtxos (anchor_id, vout, amount)
+VALUES (@anchor_id, @vout, @amount)
+ON CONFLICT (anchor_id, vout)
+DO UPDATE SET amount = EXCLUDED.amount;
+
+-- name: DeleteAnchorVtxo :exec
+DELETE FROM anchor_vtxos
+WHERE anchor_id = @anchor_id AND vout = @vout;
+
+-- name: ListAnchorVtxos :many
+SELECT anchor_id, vout, amount
+FROM anchor_vtxos
+WHERE anchor_id = @anchor_id
+ORDER BY vout;
+
+-- name: GetAsset :one
+SELECT id, quantity
+FROM assets
+WHERE id = @id;
+
+-- name: ListAssets :many
+SELECT id, quantity
+FROM assets
+ORDER BY id;
+
+-- name: AddToAssetQuantity :exec
+UPDATE assets
+SET quantity = quantity + @delta
+WHERE id = @id;
+
+-- name: SubtractFromAssetQuantity :exec
+UPDATE assets
+SET quantity = quantity - @delta
+WHERE id = @id AND quantity >= @min_required;
+
+-- name: CreateAsset :exec
+INSERT INTO assets (id, quantity)
+VALUES (@id, @quantity);

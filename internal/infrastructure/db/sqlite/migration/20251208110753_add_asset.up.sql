@@ -12,7 +12,7 @@ CREATE TABLE anchor_vtxos (
     vout        INTEGER NOT NULL,
     amount      INTEGER NOT NULL,
     PRIMARY KEY (anchor_id, vout),
-    FOREIGN KEY (anchor_id) REFERENCES asset_anchors(id) ON DELETE CASCADE
+    FOREIGN KEY (anchor_id) REFERENCES asset_anchors(anchor_txid) ON DELETE CASCADE
 );
 
 CREATE TABLE asset_metadata (
