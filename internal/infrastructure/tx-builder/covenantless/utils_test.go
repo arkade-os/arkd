@@ -53,7 +53,7 @@ func newTestAssetGroup(t *testing.T, idHex string) (asset.Asset, []byte) {
 		SubDustKey:  privKey.PubKey(),
 	}
 
-	opret, err := group.EncodeOpret(make([]byte, 32), 0)
+	opret, err := group.EncodeOpret(0)
 	require.NoError(t, err)
 
 	return testAsset, opret.PkScript

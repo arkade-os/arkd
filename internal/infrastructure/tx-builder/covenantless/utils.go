@@ -57,7 +57,6 @@ func getOutputVtxosLeaves(
 	}
 
 	leaves := make([]tree.Leaf, 0)
-	emptyBatchID := make([]byte, 32)
 
 	for i, intent := range intents {
 		cosigners := cosignersPublicKeys[i]
@@ -88,7 +87,6 @@ func getOutputVtxosLeaves(
 					signingPubkey,
 					unilateralExitDelay,
 					cosigners,
-					emptyBatchID,
 					pubkeyBytes,
 				)
 				if err != nil {
@@ -128,7 +126,7 @@ func getAssetFromIntents(
 
 	for _, intent := range intents {
 		for _, assetGroup := range intent.AssetGroupList {
-			decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(assetGroup)
+			decodedAssetGroup, err := asset.DecodeAssetGroupFromOpret(assetGroup)
 			if err != nil {
 				return nil, fmt.Errorf("failed to decode asset from input: %s", err)
 			}
@@ -157,7 +155,6 @@ func buildTeleportAssetLeaf(
 	signingPubkey *btcec.PublicKey,
 	unilateralExitDelay arklib.RelativeLocktime,
 	cosigners []string,
-	batchID []byte,
 	receiverPubkeyBytes []byte,
 ) (tree.Leaf, error) {
 	// Decode teleport hash
@@ -221,7 +218,7 @@ func buildTeleportAssetLeaf(
 		NormalAsset:  assetCopy,
 	}
 
-	assetOpret, err := assetGroup.EncodeOpret(batchID, 0)
+	assetOpret, err := assetGroup.EncodeOpret(0)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to encode asset opreturn: %w", err)
 	}

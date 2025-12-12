@@ -55,7 +55,7 @@ type AssetInput struct {
 	Amount uint64
 }
 
-func (g *AssetGroup) EncodeOpret(batchTxId []byte, amount int64) (wire.TxOut, error) {
+func (g *AssetGroup) EncodeOpret(amount int64) (wire.TxOut, error) {
 	assets := make([]Asset, 0, 2)
 	if g.ControlAsset != nil {
 		assets = append(assets, *g.ControlAsset)
@@ -73,7 +73,6 @@ func (g *AssetGroup) EncodeOpret(batchTxId []byte, amount int64) (wire.TxOut, er
 	}
 
 	assetData := []byte{AssetMagic, version}
-	assetData = append(assetData, batchTxId...)
 	assetData = append(assetData, encodedAssets...)
 
 	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
@@ -235,15 +234,15 @@ func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) 
 	return group, nil
 }
 
-func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, []byte, error) {
+func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, error) {
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
-		return nil, nil, errors.New("OP_RETURN not present")
+		return nil, errors.New("OP_RETURN not present")
 	}
 
 	assetPayload, subDustKey, err := parseAssetOpReturn(opReturnData)
-	if err == nil && len(assetPayload) >= 34 && assetPayload[0] == AssetMagic {
+	if err == nil && len(assetPayload) >= 2 && assetPayload[0] == AssetMagic {
 		version := assetPayload[1]
-		batchTxId := assetPayload[2 : 2+32]
+		payload := assetPayload[2:]
 
 		setSubDustKey := func(g *AssetGroup) {
 			if len(subDustKey) == 0 {
@@ -255,35 +254,43 @@ func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, []byte, error)
 			}
 		}
 
-		group, decodeErr := decodeAssetGroupPayload(assetPayload[2+32:], version)
+		group, decodeErr := decodeAssetGroupPayload(payload, version)
 		if decodeErr == nil {
 			setSubDustKey(group)
-			return group, batchTxId, nil
+			return group, nil
 		}
 
-		var single Asset
-		single.Magic = AssetMagic
-		single.Version = version
-		if err := single.DecodeTlv(assetPayload[2+32:]); err == nil {
-			normalizeAssetSlices(&single)
-			group := &AssetGroup{NormalAsset: single}
-			setSubDustKey(group)
-			return group, batchTxId, nil
+		if len(payload) >= 32 {
+			legacyPayload := payload[32:]
+
+			if groupLegacy, legacyErr := decodeAssetGroupPayload(legacyPayload, version); legacyErr == nil {
+				setSubDustKey(groupLegacy)
+				return groupLegacy, nil
+			}
+
+			var single Asset
+			single.Magic = AssetMagic
+			single.Version = version
+			if err := single.DecodeTlv(legacyPayload); err == nil {
+				normalizeAssetSlices(&single)
+				group := &AssetGroup{NormalAsset: single}
+				setSubDustKey(group)
+				return group, nil
+			}
 		}
 	}
 
 	// Fallback to legacy single-asset layout where asset payload starts
 	// immediately after OP_RETURN.
-	if len(opReturnData) < 3+32 || opReturnData[1] != AssetMagic {
-		return nil, nil, errors.New("invalid asset op_return payload")
+	if len(opReturnData) < 3 || opReturnData[1] != AssetMagic {
+		return nil, errors.New("invalid asset op_return payload")
 	}
 
 	version := opReturnData[2]
-	batchTxId := opReturnData[3 : 3+32]
 
-	group, err := decodeAssetGroupPayload(opReturnData[3+32:], version)
+	group, err := decodeAssetGroupPayload(opReturnData[3:], version)
 	if err == nil {
-		return group, batchTxId, nil
+		return group, nil
 	}
 
 	// Fallback to legacy single-asset layout.
@@ -292,11 +299,11 @@ func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, []byte, error)
 	asset.Version = version
 
 	if err := asset.DecodeTlv(opReturnData[3+32:]); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode asset data: %w", err)
+		return nil, fmt.Errorf("failed to decode asset data: %w", err)
 	}
 
 	normalizeAssetSlices(&asset)
-	return &AssetGroup{NormalAsset: asset}, batchTxId, nil
+	return &AssetGroup{NormalAsset: asset}, nil
 
 }
 
@@ -477,7 +484,7 @@ func DeriveAssetGroupFromTx(arkTx string) (*AssetGroup, error) {
 
 	for _, output := range decodedArkTx.UnsignedTx.TxOut {
 		if IsAssetGroup(output.PkScript) {
-			assetGroup, _, err := DecodeAssetGroupFromOpret(output.PkScript)
+			assetGroup, err := DecodeAssetGroupFromOpret(output.PkScript)
 			if err != nil {
 				return nil, fmt.Errorf("error decoding asset Opreturn: %s", err)
 			}

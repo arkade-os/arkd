@@ -126,7 +126,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		var isSubDust bool
 
 		if asset.IsAssetGroup(out.PkScript) {
-			decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
+			decodedAssetGroup, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf("failed to decode asset group from opreturn: %s", err)
 			}

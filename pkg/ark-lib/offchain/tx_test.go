@@ -45,7 +45,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 		},
 		SubDustKey: tapKey,
 	}
-	opret, err := assetGroup.EncodeOpret(batchID[:], 200)
+	opret, err := assetGroup.EncodeOpret(200)
 	require.NoError(t, err)
 
 	outputs := []*wire.TxOut{
@@ -125,7 +125,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 			continue
 		}
 		foundAsset = true
-		decoded, _, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
+		decoded, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
 		require.NoError(t, err)
 		require.Len(t, decoded.NormalAsset.Inputs, 1)
 		require.Equal(t, rebuiltCheckpoints[0].UnsignedTx.TxHash().String(),
@@ -182,7 +182,7 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		NormalAsset:  normalAsset,
 		SubDustKey:   normalTapKey,
 	}
-	opret, err := assetGroup.EncodeOpret(batchID[:], 0)
+	opret, err := assetGroup.EncodeOpret(0)
 	require.NoError(t, err)
 
 	outputs := []*wire.TxOut{
@@ -249,9 +249,9 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	require.Equal(t, arkTx.UnsignedTx.TxID(), rebuiltArk.UnsignedTx.TxID())
 
 	// Verify asset group matches and points to rebuilt checkpoints.
-	origGroup, _, err := asset.DecodeAssetGroupFromOpret(outputsNoAnchor[assetGroupIndex].PkScript)
+	origGroup, err := asset.DecodeAssetGroupFromOpret(outputsNoAnchor[assetGroupIndex].PkScript)
 	require.NoError(t, err)
-	rebuiltGroup, _, err := asset.DecodeAssetGroupFromOpret(rebuiltArk.UnsignedTx.TxOut[assetGroupIndex].PkScript)
+	rebuiltGroup, err := asset.DecodeAssetGroupFromOpret(rebuiltArk.UnsignedTx.TxOut[assetGroupIndex].PkScript)
 	require.NoError(t, err)
 
 	require.NotNil(t, rebuiltGroup.ControlAsset)

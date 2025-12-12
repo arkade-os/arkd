@@ -93,13 +93,11 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 		NormalAsset:  normalAsset,
 	}
 
-	batchTxID := deterministicTxhash(0xee)
-	txOut, err := group.EncodeOpret(batchTxID, 0)
+	txOut, err := group.EncodeOpret(0)
 	require.NoError(t, err)
 
-	decodedGroup, decodedBatchTxID, err := DecodeAssetGroupFromOpret(txOut.PkScript)
+	decodedGroup, err := DecodeAssetGroupFromOpret(txOut.PkScript)
 	require.NoError(t, err)
-	require.Equal(t, batchTxID, decodedBatchTxID)
 	require.NotNil(t, decodedGroup.ControlAsset)
 	require.Equal(t, controlAsset, *decodedGroup.ControlAsset)
 	require.Equal(t, normalAsset, decodedGroup.NormalAsset)
@@ -109,8 +107,6 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	t.Parallel()
 
 	subDustKey := deterministicPubKey(t, 0x55)
-	batchTxID := deterministicTxhash(0xee)
-
 	normalAsset := Asset{
 		AssetId:        deterministicBytesArray(0x12),
 		Outputs:        []AssetOutput{{PublicKey: deterministicPubKey(t, 10), Amount: 10, Vout: 1}},
@@ -125,7 +121,7 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 		SubDustKey:   &subDustKey,
 	}
 
-	txOut, err := group.EncodeOpret(batchTxID, 0)
+	txOut, err := group.EncodeOpret(0)
 	require.NoError(t, err)
 	require.True(t, IsAssetGroup(txOut.PkScript))
 
@@ -135,9 +131,8 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	require.True(t, tokenizer.Next())
 	require.Equal(t, schnorr.SerializePubKey(&subDustKey), tokenizer.Data())
 
-	decodedGroup, decodedBatchTxID, err := DecodeAssetGroupFromOpret(txOut.PkScript)
+	decodedGroup, err := DecodeAssetGroupFromOpret(txOut.PkScript)
 	require.NoError(t, err)
-	require.Equal(t, batchTxID, decodedBatchTxID)
 	require.NotNil(t, decodedGroup.SubDustKey)
 	require.True(t, subDustKey.IsEqual(decodedGroup.SubDustKey))
 	require.Equal(t, normalAsset, decodedGroup.NormalAsset)

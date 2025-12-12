@@ -3838,7 +3838,7 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 }
 
 func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx, checkpointTxMap map[string]string, assetOutput []byte) error {
-	decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(assetOutput)
+	decodedAssetGroup, err := asset.DecodeAssetGroupFromOpret(assetOutput)
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
@@ -3972,7 +3972,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.MsgTx, assetGroupIndex int) error {
 	assetGroupPkScript := arkTx.TxOut[assetGroupIndex].PkScript
 
-	assetGroup, _, err := asset.DecodeAssetGroupFromOpret(assetGroupPkScript)
+	assetGroup, err := asset.DecodeAssetGroupFromOpret(assetGroupPkScript)
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}

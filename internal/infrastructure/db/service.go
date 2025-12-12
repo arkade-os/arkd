@@ -486,7 +486,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 			// ignore asset anchor
 			if asset.IsAssetGroup(out.PkScript) {
-				assetGroup, _, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
+				assetGroup, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
