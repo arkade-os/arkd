@@ -9,6 +9,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -109,7 +110,9 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 		for i, vtxo := range vtxos {
 
-			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, controlAsset, batchIndex, signerUnrollScriptClosure)
+			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(
+				vtxo, controlAsset, batchIndex, signerUnrollScriptClosure, assetGroup.SubDustKey,
+			)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -149,7 +152,9 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 			continue
 		}
 
-		checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(vtxo, &normalAsset, batchIndex, signerUnrollScriptClosure)
+		checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(
+			vtxo, &normalAsset, batchIndex, signerUnrollScriptClosure, assetGroup.SubDustKey,
+		)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -172,6 +177,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	newAssetGroup := &asset.AssetGroup{
 		ControlAsset: controlAsset,
 		NormalAsset:  normalAsset,
+		SubDustKey:   assetGroup.SubDustKey,
 	}
 
 	newOpretOutput, err := newAssetGroup.EncodeOpret(batchIndex[:])
@@ -280,6 +286,7 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 	newAssetGroup := &asset.AssetGroup{
 		ControlAsset: controlAsset,
 		NormalAsset:  normalAsset,
+		SubDustKey:   assetGroup.SubDustKey,
 	}
 
 	newOpretOutput, err := newAssetGroup.EncodeOpret(batchIndex[:])
@@ -459,7 +466,7 @@ func buildCheckpointTx(
 }
 
 func buildAssetCheckpointTx(
-	vtxo VtxoInput, assetData *asset.Asset, batchId []byte, signerUnrollScript *script.CSVMultisigClosure,
+	vtxo VtxoInput, assetData *asset.Asset, batchId []byte, signerUnrollScript *script.CSVMultisigClosure, subDustKey *btcec.PublicKey,
 ) (*psbt.Packet, *VtxoInput, *asset.AssetOutput, error) {
 	if vtxo.Tapscript == nil {
 		return nil, nil, nil, fmt.Errorf("vtxo tapscript is nil")
@@ -534,6 +541,7 @@ func buildAssetCheckpointTx(
 		newAssetGroup := &asset.AssetGroup{
 			ControlAsset: nil,
 			NormalAsset:  newAsset,
+			SubDustKey:   subDustKey,
 		}
 
 		assetOpret, err := newAssetGroup.EncodeOpret(batchId[:])

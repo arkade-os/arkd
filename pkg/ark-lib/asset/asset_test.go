@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,6 +102,44 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 	require.Equal(t, batchTxID, decodedBatchTxID)
 	require.NotNil(t, decodedGroup.ControlAsset)
 	require.Equal(t, controlAsset, *decodedGroup.ControlAsset)
+	require.Equal(t, normalAsset, decodedGroup.NormalAsset)
+}
+
+func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
+	t.Parallel()
+
+	subDustKey := deterministicPubKey(t, 0x55)
+	batchTxID := deterministicTxhash(0xee)
+
+	normalAsset := Asset{
+		AssetId:        deterministicBytesArray(0x12),
+		Outputs:        []AssetOutput{{PublicKey: deterministicPubKey(t, 10), Amount: 10, Vout: 1}},
+		ControlAssetId: deterministicBytesArray(0xaa),
+		Version:        AssetVersion,
+		Magic:          AssetMagic,
+	}
+
+	group := AssetGroup{
+		ControlAsset: nil,
+		NormalAsset:  normalAsset,
+		SubDustKey:   &subDustKey,
+	}
+
+	txOut, err := group.EncodeOpret(batchTxID)
+	require.NoError(t, err)
+	require.True(t, IsAssetGroup(txOut.PkScript))
+
+	tokenizer := txscript.MakeScriptTokenizer(0, txOut.PkScript)
+	require.True(t, tokenizer.Next())
+	require.Equal(t, txscript.OP_RETURN, int(tokenizer.Opcode()))
+	require.True(t, tokenizer.Next())
+	require.Equal(t, schnorr.SerializePubKey(&subDustKey), tokenizer.Data())
+
+	decodedGroup, decodedBatchTxID, err := DecodeAssetGroupFromOpret(txOut.PkScript)
+	require.NoError(t, err)
+	require.Equal(t, batchTxID, decodedBatchTxID)
+	require.NotNil(t, decodedGroup.SubDustKey)
+	require.True(t, subDustKey.IsEqual(decodedGroup.SubDustKey))
 	require.Equal(t, normalAsset, decodedGroup.NormalAsset)
 }
 

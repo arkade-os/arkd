@@ -16,6 +16,7 @@ import (
 	badgerdb "github.com/arkade-os/arkd/internal/infrastructure/db/badger"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -475,19 +476,39 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
 		for outIndex, out := range outs {
+			var isSubDust bool
+			var pubKey []byte
+
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
 
-			isDust := script.IsSubDustScript(out.PkScript)
+			// ignore asset anchor
+			if asset.IsAssetGroup(out.PkScript) {
+				assetGroup, _, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode asset group from opret")
+					continue
+				}
+
+				if assetGroup.SubDustKey == nil {
+					continue
+				}
+				isSubDust = true
+				pubKey = schnorr.SerializePubKey(assetGroup.SubDustKey)
+
+			} else {
+				isSubDust = script.IsSubDustScript(out.PkScript)
+				pubKey = out.PkScript[2:]
+			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
 				Outpoint: domain.Outpoint{
 					Txid: txid,
 					VOut: uint32(outIndex),
 				},
-				PubKey:             hex.EncodeToString(out.PkScript[2:]),
+				PubKey:             hex.EncodeToString(pubKey),
 				Amount:             uint64(out.Amount),
 				ExpiresAt:          offchainTx.ExpiryTimestamp,
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
@@ -497,7 +518,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-				Swept: isDust,
+				Swept: isSubDust,
 			})
 		}
 

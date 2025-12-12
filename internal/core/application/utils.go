@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -121,6 +122,26 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
+		var pubKey string
+		var isSubDust bool
+
+		if asset.IsAssetGroup(out.PkScript) {
+			decodedAssetGroup, _, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
+			if err != nil {
+				return "", nil, nil, fmt.Errorf("failed to decode asset group from opreturn: %s", err)
+			}
+
+			if decodedAssetGroup.SubDustKey == nil {
+				continue
+			}
+
+			pubKey = hex.EncodeToString(schnorr.SerializePubKey(decodedAssetGroup.SubDustKey))
+			isSubDust = true
+		} else {
+			pubKey = hex.EncodeToString(out.PkScript[2:])
+			isSubDust = script.IsSubDustScript(out.PkScript)
+		}
+
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			continue
 		}
@@ -129,13 +150,13 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				Txid: txid,
 				VOut: uint32(outIndex),
 			},
-			PubKey:             hex.EncodeToString(out.PkScript[2:]),
+			PubKey:             pubKey,
 			Amount:             uint64(out.Value),
 			ExpiresAt:          offchainTx.ExpiryTimestamp,
 			CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 			RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 			Preconfirmed:       true,
-			Swept:              script.IsSubDustScript(out.PkScript),
+			Swept:              isSubDust,
 			CreatedAt:          offchainTx.StartingTimestamp,
 		})
 	}

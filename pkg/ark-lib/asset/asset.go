@@ -33,6 +33,7 @@ type Asset struct {
 type AssetGroup struct {
 	ControlAsset *Asset
 	NormalAsset  Asset
+	SubDustKey   *btcec.PublicKey
 }
 
 const AssetMagic byte = 0x41 // 'A'
@@ -75,7 +76,16 @@ func (g *AssetGroup) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
 	assetData = append(assetData, batchTxId...)
 	assetData = append(assetData, encodedAssets...)
 
-	opReturnPubkey := append([]byte{txscript.OP_RETURN}, assetData...)
+	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
+	if g.SubDustKey != nil {
+		builder.AddData(schnorr.SerializePubKey(g.SubDustKey))
+	}
+	builder.AddData(assetData)
+
+	opReturnPubkey, err := builder.Script()
+	if err != nil {
+		return wire.TxOut{}, err
+	}
 
 	return wire.TxOut{
 		Value:    0,
@@ -107,6 +117,65 @@ func encodeAssetGroupPayload(assets []Asset) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// parseAssetOpReturn extracts the asset payload and optional sub-dust pubkey
+// from an OP_RETURN script. It expects scripts built with pushdata elements
+// (OP_RETURN <subdust_pubkey?> <asset_payload>).
+func parseAssetOpReturn(opReturnData []byte) ([]byte, []byte, error) {
+	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
+		return nil, nil, errors.New("OP_RETURN not present")
+	}
+
+	tokenizer := txscript.MakeScriptTokenizer(0, opReturnData)
+	if !tokenizer.Next() || tokenizer.Opcode() != txscript.OP_RETURN {
+		if err := tokenizer.Err(); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, errors.New("invalid OP_RETURN script")
+	}
+
+	var dataPushes [][]byte
+
+	for tokenizer.Next() {
+		data := tokenizer.Data()
+		if data == nil {
+			return nil, nil, errors.New("unexpected opcode in OP_RETURN")
+		}
+
+		pushCopy := make([]byte, len(data))
+		copy(pushCopy, data)
+		dataPushes = append(dataPushes, pushCopy)
+	}
+
+	if err := tokenizer.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	if len(dataPushes) == 0 {
+		return nil, nil, errors.New("missing OP_RETURN payload")
+	}
+
+	assetPayload := dataPushes[len(dataPushes)-1]
+	var subDustKey []byte
+
+	if len(dataPushes) >= 2 && len(dataPushes[0]) == schnorr.PubKeyBytesLen {
+		subDustKey = dataPushes[0]
+	}
+
+	return assetPayload, subDustKey, nil
+}
+
+func normalizeAssetSlices(a *Asset) {
+	if len(a.Inputs) == 0 {
+		a.Inputs = nil
+	}
+	if len(a.Outputs) == 0 {
+		a.Outputs = nil
+	}
+	if len(a.Metadata) == 0 {
+		a.Metadata = nil
+	}
 }
 
 func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) {
@@ -144,6 +213,10 @@ func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) 
 		assets = append(assets, decoded)
 	}
 
+	for i := range assets {
+		normalizeAssetSlices(&assets[i])
+	}
+
 	if reader.Len() != 0 {
 		return nil, errors.New("unexpected trailing bytes in asset group payload")
 	}
@@ -163,21 +236,46 @@ func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) 
 }
 
 func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, []byte, error) {
-	if len(opReturnData) < 3 {
-		return nil, nil, errors.New("op_return data too short")
-	}
-
-	// Verify OP_RETURN prefix
-	if opReturnData[0] != txscript.OP_RETURN {
+	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
 		return nil, nil, errors.New("OP_RETURN not present")
 	}
 
-	if opReturnData[1] != AssetMagic {
-		return nil, nil, errors.New("invalid asset magic")
+	assetPayload, subDustKey, err := parseAssetOpReturn(opReturnData)
+	if err == nil && len(assetPayload) >= 34 && assetPayload[0] == AssetMagic {
+		version := assetPayload[1]
+		batchTxId := assetPayload[2 : 2+32]
+
+		setSubDustKey := func(g *AssetGroup) {
+			if len(subDustKey) == 0 {
+				return
+			}
+			key, keyErr := schnorr.ParsePubKey(subDustKey)
+			if keyErr == nil {
+				g.SubDustKey = key
+			}
+		}
+
+		group, decodeErr := decodeAssetGroupPayload(assetPayload[2+32:], version)
+		if decodeErr == nil {
+			setSubDustKey(group)
+			return group, batchTxId, nil
+		}
+
+		var single Asset
+		single.Magic = AssetMagic
+		single.Version = version
+		if err := single.DecodeTlv(assetPayload[2+32:]); err == nil {
+			normalizeAssetSlices(&single)
+			group := &AssetGroup{NormalAsset: single}
+			setSubDustKey(group)
+			return group, batchTxId, nil
+		}
 	}
 
-	if len(opReturnData) < 3+32 {
-		return nil, nil, errors.New("op_return data missing batch txid")
+	// Fallback to legacy single-asset layout where asset payload starts
+	// immediately after OP_RETURN.
+	if len(opReturnData) < 3+32 || opReturnData[1] != AssetMagic {
+		return nil, nil, errors.New("invalid asset op_return payload")
 	}
 
 	version := opReturnData[2]
@@ -197,15 +295,21 @@ func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, []byte, error)
 		return nil, nil, fmt.Errorf("failed to decode asset data: %w", err)
 	}
 
+	normalizeAssetSlices(&asset)
 	return &AssetGroup{NormalAsset: asset}, batchTxId, nil
 
 }
 
 func IsAssetGroup(opReturnData []byte) bool {
-	if len(opReturnData) < 1 {
-		return false
+	payload, _, err := parseAssetOpReturn(opReturnData)
+	if err == nil && len(payload) > 0 {
+		return payload[0] == AssetMagic
 	}
-	return opReturnData[0] == txscript.OP_RETURN && len(opReturnData) > 1 && opReturnData[1] == AssetMagic
+
+	// Legacy layout: OP_RETURN <AssetMagic> <Version> ...
+	return len(opReturnData) > 1 &&
+		opReturnData[0] == txscript.OP_RETURN &&
+		opReturnData[1] == AssetMagic
 }
 
 func (a *Asset) EncodeTlv() ([]byte, error) {
