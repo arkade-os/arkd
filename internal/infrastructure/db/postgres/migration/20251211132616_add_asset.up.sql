@@ -1,5 +1,6 @@
 CREATE TABLE assets (
     id        TEXT PRIMARY KEY,
+    immutable BOOLEAN NOT NULL DEFAULT FALSE,
     quantity  BIGINT NOT NULL
 );
 

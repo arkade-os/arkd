@@ -17,7 +17,8 @@ type AnchorVtxo struct {
 }
 
 type Asset struct {
-	ID       string
-	Quantity uint64
-	Metadata []AssetMetadata
+	ID         string
+	Quantity   uint64
+	Immutable  bool
+	Metadata   []AssetMetadata
 }

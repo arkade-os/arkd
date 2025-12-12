@@ -105,8 +105,9 @@ func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string)
 
 func (r *assetRepository) InsertAsset(ctx context.Context, asset domain.Asset) error {
 	err := r.querier.CreateAsset(ctx, queries.CreateAssetParams{
-		ID:       asset.ID,
-		Quantity: int64(asset.Quantity),
+		ID:        asset.ID,
+		Quantity:  int64(asset.Quantity),
+		Immutable: asset.Immutable,
 	})
 
 	if err != nil {
@@ -149,9 +150,10 @@ func (r *assetRepository) GetAssetByID(ctx context.Context, assetID string) (*do
 	}
 
 	return &domain.Asset{
-		ID:       assetDB.ID,
-		Quantity: uint64(assetDB.Quantity),
-		Metadata: metadata,
+		ID:        assetDB.ID,
+		Quantity:  uint64(assetDB.Quantity),
+		Immutable: assetDB.Immutable,
+		Metadata:  metadata,
 	}, nil
 }
 

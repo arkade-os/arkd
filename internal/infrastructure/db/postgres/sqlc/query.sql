@@ -385,12 +385,12 @@ WHERE anchor_id = @anchor_id
 ORDER BY vout;
 
 -- name: GetAsset :one
-SELECT id, quantity
+SELECT id, quantity, immutable
 FROM assets
 WHERE id = @id;
 
 -- name: ListAssets :many
-SELECT id, quantity
+SELECT id, quantity, immutable
 FROM assets
 ORDER BY id;
 
@@ -405,5 +405,5 @@ SET quantity = quantity - @delta
 WHERE id = @id AND quantity >= @min_required;
 
 -- name: CreateAsset :exec
-INSERT INTO assets (id, quantity)
-VALUES (@id, @quantity);
+INSERT INTO assets (id, quantity, immutable)
+VALUES (@id, @quantity, @immutable);

@@ -390,12 +390,12 @@ WHERE anchor_id = ?
 ORDER BY vout;
 
 -- name: GetAsset :one
-SELECT id, quantity
+SELECT id, quantity, immutable
 FROM assets
 WHERE id = ?;
 
 -- name: ListAssets :many
-SELECT id, quantity
+SELECT id, quantity, immutable
 FROM assets
 ORDER BY id;
 
@@ -410,5 +410,5 @@ SET quantity = quantity - ?
 WHERE id = ? AND quantity >= ?;
 
 -- name: CreateAsset :exec
-INSERT INTO assets (id, quantity)
-VALUES (?, ?);
+INSERT INTO assets (id, quantity, immutable)
+VALUES (?, ?, ?);

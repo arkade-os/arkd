@@ -25,6 +25,7 @@ CREATE TABLE asset_metadata (
 
 CREATE TABLE assets (
     id           TEXT PRIMARY KEY,
+    immutable    BOOLEAN NOT NULL DEFAULT 0,
     quantity     INTEGER NOT NULL
 );
 

@@ -15,8 +15,9 @@ type AnchorVtxo struct {
 }
 
 type Asset struct {
-	ID       string
-	Quantity int64
+	ID        string
+	Immutable bool
+	Quantity  int64
 }
 
 type AssetAnchor struct {

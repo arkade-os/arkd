@@ -57,17 +57,18 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 }
 
 const createAsset = `-- name: CreateAsset :exec
-INSERT INTO assets (id, quantity)
-VALUES ($1, $2)
+INSERT INTO assets (id, quantity, immutable)
+VALUES ($1, $2, $3)
 `
 
 type CreateAssetParams struct {
-	ID       string
-	Quantity int64
+	ID        string
+	Quantity  int64
+	Immutable bool
 }
 
 func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) error {
-	_, err := q.db.ExecContext(ctx, createAsset, arg.ID, arg.Quantity)
+	_, err := q.db.ExecContext(ctx, createAsset, arg.ID, arg.Quantity, arg.Immutable)
 	return err
 }
 
@@ -113,15 +114,21 @@ func (q *Queries) DeleteAssetAnchor(ctx context.Context, anchorTxid string) erro
 }
 
 const getAsset = `-- name: GetAsset :one
-SELECT id, quantity
+SELECT id, quantity, immutable
 FROM assets
 WHERE id = $1
 `
 
-func (q *Queries) GetAsset(ctx context.Context, id string) (Asset, error) {
+type GetAssetRow struct {
+	ID        string
+	Quantity  int64
+	Immutable bool
+}
+
+func (q *Queries) GetAsset(ctx context.Context, id string) (GetAssetRow, error) {
 	row := q.db.QueryRowContext(ctx, getAsset, id)
-	var i Asset
-	err := row.Scan(&i.ID, &i.Quantity)
+	var i GetAssetRow
+	err := row.Scan(&i.ID, &i.Quantity, &i.Immutable)
 	return i, err
 }
 
@@ -238,21 +245,27 @@ func (q *Queries) ListAssetMetadata(ctx context.Context, assetID string) ([]Asse
 }
 
 const listAssets = `-- name: ListAssets :many
-SELECT id, quantity
+SELECT id, quantity, immutable
 FROM assets
 ORDER BY id
 `
 
-func (q *Queries) ListAssets(ctx context.Context) ([]Asset, error) {
+type ListAssetsRow struct {
+	ID        string
+	Quantity  int64
+	Immutable bool
+}
+
+func (q *Queries) ListAssets(ctx context.Context) ([]ListAssetsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAssets)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Asset
+	var items []ListAssetsRow
 	for rows.Next() {
-		var i Asset
-		if err := rows.Scan(&i.ID, &i.Quantity); err != nil {
+		var i ListAssetsRow
+		if err := rows.Scan(&i.ID, &i.Quantity, &i.Immutable); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

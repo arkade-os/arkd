@@ -20,8 +20,9 @@ type assetRepository struct {
 }
 
 type asset struct {
-	ID       string `badgerhold:"key"`
-	Quantity uint64
+	ID        string `badgerhold:"key"`
+	Quantity  uint64
+	Immutable bool
 }
 
 type assetMetadata struct {
@@ -176,8 +177,9 @@ func (r *assetRepository) GetAssetAnchorByTxId(
 
 func (r *assetRepository) InsertAsset(ctx context.Context, a domain.Asset) error {
 	record := asset{
-		ID:       a.ID,
-		Quantity: a.Quantity,
+		ID:        a.ID,
+		Quantity:  a.Quantity,
+		Immutable: a.Immutable,
 	}
 
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
@@ -216,9 +218,10 @@ func (r *assetRepository) GetAssetByID(
 	}
 
 	return &domain.Asset{
-		ID:       dbAsset.ID,
-		Quantity: dbAsset.Quantity,
-		Metadata: metadata,
+		ID:        dbAsset.ID,
+		Quantity:  dbAsset.Quantity,
+		Immutable: dbAsset.Immutable,
+		Metadata:  metadata,
 	}, nil
 }
 

@@ -4002,9 +4002,10 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 	if assetGroup.ControlAsset == nil {
 		if len(normalAsset.Inputs) == 0 {
 			err = s.repoManager.Assets().InsertAsset(ctx, domain.Asset{
-				ID:       normalAssetId,
-				Quantity: totalOut,
-				Metadata: metadataList,
+				ID:        normalAssetId,
+				Quantity:  totalOut,
+				Immutable: assetGroup.NormalAsset.Immutable,
+				Metadata:  metadataList,
 			})
 
 			if err != nil {
@@ -4018,9 +4019,21 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 		}
 	} else {
 		// try to update the metadata of the existing asset
-		err = s.repoManager.Assets().UpdateAssetMetadataList(ctx, normalAssetId, metadataList)
+
+		assetData, err := s.repoManager.Assets().GetAssetByID(ctx, normalAssetId)
 		if err != nil {
-			return fmt.Errorf("error updating asset metadata: %s", err)
+			return fmt.Errorf("error retrieving asset data: %s", err)
+		}
+
+		if assetData == nil {
+			return fmt.Errorf("asset with id %s not found for update", normalAssetId)
+		}
+
+		if !assetData.Immutable {
+			err = s.repoManager.Assets().UpdateAssetMetadataList(ctx, normalAssetId, metadataList)
+			if err != nil {
+				return fmt.Errorf("error updating asset metadata: %s", err)
+			}
 		}
 
 		log.Infof("updated asset metadata for asset id %s",
