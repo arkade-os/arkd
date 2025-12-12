@@ -55,7 +55,7 @@ type AssetInput struct {
 	Amount uint64
 }
 
-func (g *AssetGroup) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
+func (g *AssetGroup) EncodeOpret(batchTxId []byte, amount int64) (wire.TxOut, error) {
 	assets := make([]Asset, 0, 2)
 	if g.ControlAsset != nil {
 		assets = append(assets, *g.ControlAsset)
@@ -88,7 +88,7 @@ func (g *AssetGroup) EncodeOpret(batchTxId []byte) (wire.TxOut, error) {
 	}
 
 	return wire.TxOut{
-		Value:    0,
+		Value:    amount,
 		PkScript: opReturnPubkey,
 	}, nil
 }

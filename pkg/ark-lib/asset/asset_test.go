@@ -94,7 +94,7 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 	}
 
 	batchTxID := deterministicTxhash(0xee)
-	txOut, err := group.EncodeOpret(batchTxID)
+	txOut, err := group.EncodeOpret(batchTxID, 0)
 	require.NoError(t, err)
 
 	decodedGroup, decodedBatchTxID, err := DecodeAssetGroupFromOpret(txOut.PkScript)
@@ -125,7 +125,7 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 		SubDustKey:   &subDustKey,
 	}
 
-	txOut, err := group.EncodeOpret(batchTxID)
+	txOut, err := group.EncodeOpret(batchTxID, 0)
 	require.NoError(t, err)
 	require.True(t, IsAssetGroup(txOut.PkScript))
 

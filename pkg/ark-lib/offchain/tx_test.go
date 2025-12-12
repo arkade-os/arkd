@@ -45,7 +45,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 		},
 		SubDustKey: tapKey,
 	}
-	opret, err := assetGroup.EncodeOpret(batchID[:])
+	opret, err := assetGroup.EncodeOpret(batchID[:], 200)
 	require.NoError(t, err)
 
 	outputs := []*wire.TxOut{
@@ -182,7 +182,7 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		NormalAsset:  normalAsset,
 		SubDustKey:   normalTapKey,
 	}
-	opret, err := assetGroup.EncodeOpret(batchID[:])
+	opret, err := assetGroup.EncodeOpret(batchID[:], 0)
 	require.NoError(t, err)
 
 	outputs := []*wire.TxOut{

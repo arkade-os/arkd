@@ -81,7 +81,9 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
 	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 
-	assetGroup, batchIndex, err := asset.DecodeAssetGroupFromOpret(outputs[assetGroupIndex].PkScript)
+	assetAnchor := outputs[assetGroupIndex]
+
+	assetGroup, batchIndex, err := asset.DecodeAssetGroupFromOpret(assetAnchor.PkScript)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -180,7 +182,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 		SubDustKey:   assetGroup.SubDustKey,
 	}
 
-	newOpretOutput, err := newAssetGroup.EncodeOpret(batchIndex[:])
+	newOpretOutput, err := newAssetGroup.EncodeOpret(batchIndex[:], assetAnchor.Value)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -206,7 +208,8 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap map[string]string, vtxos []VtxoInput, signerUnrollScript []byte) (*psbt.Packet, []*psbt.Packet, error) {
 
-	assetGroup, batchIndex, err := asset.DecodeAssetGroupFromOpret(outputs[assetGroupIndex].PkScript)
+	assetAnchor := outputs[assetGroupIndex]
+	assetGroup, batchIndex, err := asset.DecodeAssetGroupFromOpret(assetAnchor.PkScript)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -289,7 +292,7 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 		SubDustKey:   assetGroup.SubDustKey,
 	}
 
-	newOpretOutput, err := newAssetGroup.EncodeOpret(batchIndex[:])
+	newOpretOutput, err := newAssetGroup.EncodeOpret(batchIndex[:], assetAnchor.Value)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -544,7 +547,7 @@ func buildAssetCheckpointTx(
 			SubDustKey:   subDustKey,
 		}
 
-		assetOpret, err := newAssetGroup.EncodeOpret(batchId[:])
+		assetOpret, err := newAssetGroup.EncodeOpret(batchId[:], 0)
 		if err != nil {
 			return nil, nil, nil, err
 		}

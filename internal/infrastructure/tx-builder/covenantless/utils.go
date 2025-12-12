@@ -221,7 +221,7 @@ func buildTeleportAssetLeaf(
 		NormalAsset:  assetCopy,
 	}
 
-	assetOpret, err := assetGroup.EncodeOpret(batchID)
+	assetOpret, err := assetGroup.EncodeOpret(batchID, 0)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to encode asset opreturn: %w", err)
 	}
