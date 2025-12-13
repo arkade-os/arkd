@@ -30,11 +30,11 @@ const (
 
 type grpcClient struct {
 	conn             *grpc.ClientConn
-	connMu           sync.RWMutex
+	connMu           *sync.RWMutex
 	monitoringCancel context.CancelFunc
 }
 
-func NewClient(serverUrl string) (indexer.Indexer, error) {
+func NewClient(serverUrl string, withMonitorConn bool) (indexer.Indexer, error) {
 	if len(serverUrl) <= 0 {
 		return nil, fmt.Errorf("missing server url")
 	}
@@ -58,71 +58,30 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 		return nil, err
 	}
 
-	monitorCtx, monitoringCancel := context.WithCancel(context.Background())
 	client := &grpcClient{
-		conn:             conn,
-		connMu:           sync.RWMutex{},
-		monitoringCancel: monitoringCancel,
+		conn:   conn,
+		connMu: &sync.RWMutex{},
 	}
 
-	// Monitor the same connection - gRPC will handle reconnection internally
-	go utils.MonitorGrpcConn(monitorCtx, conn, func(ctx context.Context) error {
-		// Wait for the server to be actually ready for requests
-		if err := client.waitForServerReady(ctx); err != nil {
-			return fmt.Errorf("server not ready after reconnection: %w", err)
-		}
+	if withMonitorConn {
+		monitorCtx, monitoringCancel := context.WithCancel(context.Background())
+		client.monitoringCancel = monitoringCancel
 
-		// TODO: trigger any application-level state refresh here
-		// e.g., resubscribe to streams, refresh cache, etc.
+		// Monitor the same connection - gRPC will handle reconnection internally
+		go utils.MonitorGrpcConn(monitorCtx, conn, func(ctx context.Context) error {
+			// Wait for the server to be actually ready for requests
+			if err := client.waitForServerReady(ctx); err != nil {
+				return fmt.Errorf("server not ready after reconnection: %w", err)
+			}
 
-		return nil
-	})
+			// TODO: trigger any application-level state refresh here
+			// e.g., resubscribe to streams, refresh cache, etc.
+
+			return nil
+		})
+	}
 
 	return client, nil
-}
-
-func (c *grpcClient) waitForServerReady(ctx context.Context) error {
-	delay := initialDelay
-	attempt := 0
-
-	// Create a temporary client to test the server
-	testClient := arkv1.NewIndexerServiceClient(c.conn)
-
-	for {
-		attempt++
-
-		// Use a short timeout for each ping attempt
-		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_, err := testClient.GetVirtualTxs(pingCtx, &arkv1.GetVirtualTxsRequest{
-			Txids: []string{
-				"0000000000000000000000000000000000000000000000000000000000000000",
-			},
-		})
-		cancel()
-
-		if err == nil {
-			// Server responded successfully
-			log.Debugf("connection restored after %d attempt(s)", attempt)
-			return nil
-		}
-
-		log.Debugf("connection not ready (attempt %d), retrying in %v: %v\n", attempt, delay, err)
-
-		// Wait with exponential backoff before retrying
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-			// Increase delay for next attempt
-			delay = min(time.Duration(float64(delay)*multiplier), maxDelay)
-		}
-	}
-}
-
-func (a *grpcClient) svc() arkv1.IndexerServiceClient {
-	a.connMu.RLock()
-	defer a.connMu.RUnlock()
-	return arkv1.NewIndexerServiceClient(a.conn)
 }
 
 func (a *grpcClient) GetCommitmentTx(
@@ -609,6 +568,50 @@ func (a *grpcClient) Close() {
 	defer a.connMu.Unlock()
 	// nolint:errcheck
 	a.conn.Close()
+}
+
+func (a *grpcClient) svc() arkv1.IndexerServiceClient {
+	a.connMu.RLock()
+	defer a.connMu.RUnlock()
+	return arkv1.NewIndexerServiceClient(a.conn)
+}
+
+func (c *grpcClient) waitForServerReady(ctx context.Context) error {
+	delay := initialDelay
+	attempt := 0
+
+	// Create a temporary client to test the server
+	testClient := arkv1.NewIndexerServiceClient(c.conn)
+
+	for {
+		attempt++
+
+		// Use a short timeout for each ping attempt
+		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_, err := testClient.GetVirtualTxs(pingCtx, &arkv1.GetVirtualTxsRequest{
+			Txids: []string{
+				"0000000000000000000000000000000000000000000000000000000000000000",
+			},
+		})
+		cancel()
+
+		if err == nil {
+			// Server responded successfully
+			log.Debugf("connection restored after %d attempt(s)", attempt)
+			return nil
+		}
+
+		log.Debugf("connection not ready (attempt %d), retrying in %v: %v\n", attempt, delay, err)
+
+		// Wait with exponential backoff before retrying
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			// Increase delay for next attempt
+			delay = min(time.Duration(float64(delay)*multiplier), maxDelay)
+		}
+	}
 }
 
 func parsePage(page *arkv1.IndexerPageResponse) *indexer.PageResponse {

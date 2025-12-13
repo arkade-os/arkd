@@ -22,7 +22,7 @@ type restClient struct {
 }
 
 // NewClient creates a new REST client for the Indexer service
-func NewClient(serverURL string) (indexer.Indexer, error) {
+func NewClient(serverURL string, _ bool) (indexer.Indexer, error) {
 	if len(serverURL) <= 0 {
 		return nil, fmt.Errorf("missing server url")
 	}

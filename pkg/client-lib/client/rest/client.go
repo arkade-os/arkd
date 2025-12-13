@@ -26,7 +26,7 @@ type restClient struct {
 }
 
 // NewClient creates a new REST client for the Ark service
-func NewClient(serverURL string) (client.TransportClient, error) {
+func NewClient(serverURL string, _ bool) (client.TransportClient, error) {
 	if len(serverURL) <= 0 {
 		return nil, fmt.Errorf("missing server url")
 	}

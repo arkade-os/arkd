@@ -32,11 +32,11 @@ const (
 
 type grpcClient struct {
 	conn             *grpc.ClientConn
-	connMu           sync.RWMutex
+	connMu           *sync.RWMutex
 	monitoringCancel context.CancelFunc
 }
 
-func NewClient(serverUrl string) (client.TransportClient, error) {
+func NewClient(serverUrl string, withMonitorConn bool) (client.TransportClient, error) {
 	if len(serverUrl) <= 0 {
 		return nil, fmt.Errorf("missing server url")
 	}
@@ -60,63 +60,29 @@ func NewClient(serverUrl string) (client.TransportClient, error) {
 		return nil, err
 	}
 
-	monitorCtx, monitoringCancel := context.WithCancel(context.Background())
-	client := &grpcClient{conn, sync.RWMutex{}, monitoringCancel}
+	client := &grpcClient{
+		conn:   conn,
+		connMu: &sync.RWMutex{},
+	}
 
-	go utils.MonitorGrpcConn(monitorCtx, conn, func(ctx context.Context) error {
-		// Wait for the server to be actually ready for requests
-		if err := client.waitForServerReady(ctx); err != nil {
-			return fmt.Errorf("server not ready after reconnection: %w", err)
-		}
+	if withMonitorConn {
+		ctx, cancel := context.WithCancel(context.Background())
+		client.monitoringCancel = cancel
 
-		// TODO: trigger any application-level state refresh here
-		// e.g., resubscribe to streams, refresh cache, etc.
+		go utils.MonitorGrpcConn(ctx, conn, func(ctx context.Context) error {
+			// Wait for the server to be actually ready for requests
+			if err := client.waitForServerReady(ctx); err != nil {
+				return fmt.Errorf("server not ready after reconnection: %w", err)
+			}
 
-		return nil
-	})
+			// TODO: trigger any application-level state refresh here
+			// e.g., resubscribe to streams, refresh cache, etc.
+
+			return nil
+		})
+	}
 
 	return client, nil
-}
-
-func (c *grpcClient) waitForServerReady(ctx context.Context) error {
-	delay := initialDelay
-	attempt := 0
-
-	// Create a temporary client to test the server
-	testClient := arkv1.NewArkServiceClient(c.conn)
-
-	for {
-		attempt++
-
-		// Use a short timeout for each ping attempt
-		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_, err := testClient.GetInfo(pingCtx, &arkv1.GetInfoRequest{})
-		cancel()
-
-		if err == nil {
-			// Server responded successfully
-			log.Debugf("connection restored after %d attempt(s)", attempt)
-			return nil
-		}
-
-		log.Debugf("connection not ready (attempt %d), retrying in %v: %v\n", attempt, delay, err)
-
-		// Wait with exponential backoff before retrying
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-			// Increase delay for next attempt
-			delay = min(time.Duration(float64(delay)*multiplier), maxDelay)
-		}
-	}
-}
-
-func (a *grpcClient) svc() arkv1.ArkServiceClient {
-	a.connMu.RLock()
-	defer a.connMu.RUnlock()
-
-	return arkv1.NewArkServiceClient(a.conn)
 }
 
 func (a *grpcClient) GetInfo(ctx context.Context) (*client.Info, error) {
@@ -509,6 +475,47 @@ func (c *grpcClient) Close() {
 	defer c.connMu.Unlock()
 	// nolint:errcheck
 	c.conn.Close()
+}
+
+func (a *grpcClient) svc() arkv1.ArkServiceClient {
+	a.connMu.RLock()
+	defer a.connMu.RUnlock()
+
+	return arkv1.NewArkServiceClient(a.conn)
+}
+
+func (c *grpcClient) waitForServerReady(ctx context.Context) error {
+	delay := initialDelay
+	attempt := 0
+
+	// Create a temporary client to test the server
+	testClient := arkv1.NewArkServiceClient(c.conn)
+
+	for {
+		attempt++
+
+		// Use a short timeout for each ping attempt
+		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_, err := testClient.GetInfo(pingCtx, &arkv1.GetInfoRequest{})
+		cancel()
+
+		if err == nil {
+			// Server responded successfully
+			log.Debugf("connection restored after %d attempt(s)", attempt)
+			return nil
+		}
+
+		log.Debugf("connection not ready (attempt %d), retrying in %v: %v\n", attempt, delay, err)
+
+		// Wait with exponential backoff before retrying
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			// Increase delay for next attempt
+			delay = min(time.Duration(float64(delay)*multiplier), maxDelay)
+		}
+	}
 }
 
 func parseFees(fees *arkv1.FeeInfo) (types.FeeInfo, error) {

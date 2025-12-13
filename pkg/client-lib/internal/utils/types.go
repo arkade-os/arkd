@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 )
 
 type SupportedType[V any] map[string]V
@@ -22,7 +23,9 @@ func (t SupportedType[V]) Supports(typeStr string) bool {
 	return ok
 }
 
-type ClientFactory func(string) (client.TransportClient, error)
+type ClientFactory func(string, bool) (client.TransportClient, error)
+
+type IndexerFactory func(string, bool) (indexer.Indexer, error)
 
 type Cache[V any] struct {
 	mapping map[string]V
