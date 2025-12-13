@@ -102,7 +102,7 @@ func filterByOutpoints(vtxos []types.Vtxo, outpoints []types.Outpoint) []types.V
 }
 
 type arkTxInput struct {
-	client.TapscriptsVtxo
+	types.VtxoWithTapTree
 	ForfeitLeafHash chainhash.Hash
 }
 
@@ -378,7 +378,7 @@ func extractCollaborativePath(tapscripts []string) ([]byte, *arklib.TaprootMerkl
 // convert regular coins (boarding, vtxos or notes) to intent proof inputs
 // it also returns the necessary data used to sign the proof PSBT
 func toIntentInputs(
-	boardingUtxos []types.Utxo, vtxos []client.TapscriptsVtxo, notes []string,
+	boardingUtxos []types.Utxo, vtxos []types.VtxoWithTapTree, notes []string,
 ) ([]intent.Input, []*arklib.TaprootMerkleProof, [][]*psbt.Unknown, error) {
 	inputs := make([]intent.Input, 0, len(boardingUtxos)+len(vtxos))
 	signingLeaves := make([]*arklib.TaprootMerkleProof, 0, len(boardingUtxos)+len(vtxos))

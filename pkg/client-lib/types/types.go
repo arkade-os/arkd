@@ -122,6 +122,11 @@ func (v Vtxo) Address(server *btcec.PublicKey, net arklib.Network) (string, erro
 	return a.EncodeV0()
 }
 
+type VtxoWithTapTree struct {
+	Vtxo
+	Tapscripts []string
+}
+
 type UtxoEventType int
 
 const (

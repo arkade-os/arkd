@@ -328,7 +328,7 @@ type defaultBatchEventsHandler struct {
 	*service
 
 	intentId       string
-	vtxos          []client.TapscriptsVtxo
+	vtxos          []types.VtxoWithTapTree
 	boardingUtxos  []types.Utxo
 	receivers      []types.Receiver
 	signerSessions []tree.SignerSession
@@ -342,12 +342,12 @@ type defaultBatchEventsHandler struct {
 func newBatchEventsHandler(
 	arkClient *service,
 	intentId string,
-	vtxos []client.TapscriptsVtxo,
+	vtxos []types.VtxoWithTapTree,
 	boardingUtxos []types.Utxo,
 	receivers []types.Receiver,
 	signerSessions []tree.SignerSession,
 ) *defaultBatchEventsHandler {
-	vtxosToSign := make([]client.TapscriptsVtxo, 0, len(vtxos))
+	vtxosToSign := make([]types.VtxoWithTapTree, 0, len(vtxos))
 	for _, vtxo := range vtxos {
 		// exclude recoverable vtxos as they don't need any signing step
 		if vtxo.IsRecoverable() {
@@ -678,8 +678,8 @@ func (h *defaultBatchEventsHandler) OnBatchFinalization(
 	return nil
 }
 
-func (h *defaultBatchEventsHandler) vtxosToForfeit() []client.TapscriptsVtxo {
-	withoutRecoverable := make([]client.TapscriptsVtxo, 0, len(h.vtxos))
+func (h *defaultBatchEventsHandler) vtxosToForfeit() []types.VtxoWithTapTree {
+	withoutRecoverable := make([]types.VtxoWithTapTree, 0, len(h.vtxos))
 	for _, vtxo := range h.vtxos {
 		if !vtxo.IsRecoverable() {
 			withoutRecoverable = append(withoutRecoverable, vtxo)
@@ -756,7 +756,7 @@ func (h *defaultBatchEventsHandler) validateVtxoTree(
 }
 
 func (h *defaultBatchEventsHandler) createAndSignForfeits(
-	ctx context.Context, vtxosToSign []client.TapscriptsVtxo, connectorsLeaves []*psbt.Packet,
+	ctx context.Context, vtxosToSign []types.VtxoWithTapTree, connectorsLeaves []*psbt.Packet,
 ) ([]string, error) {
 	parsedForfeitAddr, err := btcutil.DecodeAddress(h.ForfeitAddress, nil)
 	if err != nil {

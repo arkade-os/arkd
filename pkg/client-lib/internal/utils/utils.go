@@ -25,10 +25,10 @@ import (
 )
 
 func CoinSelect(
-	boardingUtxos []types.Utxo, vtxos []client.TapscriptsVtxo,
+	boardingUtxos []types.Utxo, vtxos []types.VtxoWithTapTree,
 	amount, dust uint64, withoutExpirySorting bool,
-) ([]types.Utxo, []client.TapscriptsVtxo, uint64, error) {
-	selected, notSelected := make([]client.TapscriptsVtxo, 0), make([]client.TapscriptsVtxo, 0)
+) ([]types.Utxo, []types.VtxoWithTapTree, uint64, error) {
+	selected, notSelected := make([]types.VtxoWithTapTree, 0), make([]types.VtxoWithTapTree, 0)
 	selectedBoarding, notSelectedBoarding := make([]types.Utxo, 0), make([]types.Utxo, 0)
 	selectedAmount := uint64(0)
 

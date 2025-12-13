@@ -1,8 +1,6 @@
 package arksdk
 
-import (
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
-)
+import "github.com/arkade-os/arkd/pkg/client-lib/types"
 
 type Balance struct {
 	OnchainBalance  OnchainBalance  `json:"onchain_balance"`
@@ -49,4 +47,8 @@ type getVtxosFilter struct {
 	expiryThreshold int64
 	// If true, will recompute the expiration of all vtxos from their anchestor batch outputs
 	recomputeExpiry bool
+	// If set, the provided vtxo set is used and won't be fetched from network
+	vtxos []types.VtxoWithTapTree
+	// If set, the provided boarding utxo set is used and won't be fetched from network
+	utxos []types.Utxo
 }

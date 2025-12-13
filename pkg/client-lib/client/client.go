@@ -90,16 +90,6 @@ type BatchEventChannel struct {
 	Err   error
 }
 
-type Input struct {
-	types.Outpoint
-	Tapscripts []string
-}
-
-type TapscriptsVtxo struct {
-	types.Vtxo
-	Tapscripts []string
-}
-
 type BatchFinalizationEvent struct {
 	Id string
 	Tx string

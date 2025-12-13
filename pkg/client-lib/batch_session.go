@@ -13,7 +13,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
@@ -197,6 +196,8 @@ func (a *service) settle(
 		ctx, sumOfReceivers, getVtxosFilter{
 			withRecoverableVtxos: options.withRecoverableVtxos,
 			expiryThreshold:      options.expiryThreshold,
+			vtxos:                options.vtxos,
+			utxos:                options.boardingUtxos,
 		},
 	)
 	if err != nil {
@@ -237,7 +238,7 @@ func (a *service) settle(
 
 func (a *service) getFundsToSettle(
 	ctx context.Context, amount uint64, opts getVtxosFilter,
-) ([]types.Utxo, []client.TapscriptsVtxo, uint64, error) {
+) ([]types.Utxo, []types.VtxoWithTapTree, uint64, error) {
 	_, offchainAddrs, boardingAddrs, _, err := a.wallet.GetAddresses(ctx)
 	if err != nil {
 		return nil, nil, 0, err
@@ -246,41 +247,40 @@ func (a *service) getFundsToSettle(
 		return nil, nil, 0, fmt.Errorf("no offchain addresses found")
 	}
 
-	vtxos := make([]client.TapscriptsVtxo, 0)
-	spendableVtxos, err := a.getSpendableVtxos(ctx, &opts)
-	if err != nil {
-		return nil, nil, 0, err
-	}
+	vtxos := opts.vtxos
+	if len(vtxos) <= 0 {
+		spendableVtxos, err := a.getSpendableVtxos(ctx, &opts)
+		if err != nil {
+			return nil, nil, 0, err
+		}
 
-	for _, offchainAddr := range offchainAddrs {
-		for _, v := range spendableVtxos {
-			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
-			if err != nil {
-				return nil, nil, 0, err
-			}
+		for _, offchainAddr := range offchainAddrs {
+			for _, v := range spendableVtxos {
+				vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
+				if err != nil {
+					return nil, nil, 0, err
+				}
 
-			if vtxoAddr == offchainAddr.Address {
-				vtxos = append(vtxos, client.TapscriptsVtxo{
-					Vtxo:       v,
-					Tapscripts: offchainAddr.Tapscripts,
-				})
+				if vtxoAddr == offchainAddr.Address {
+					vtxos = append(vtxos, types.VtxoWithTapTree{
+						Vtxo:       v,
+						Tapscripts: offchainAddr.Tapscripts,
+					})
+				}
 			}
 		}
 	}
 
-	boardingUtxos, err := a.getClaimableBoardingUtxos(ctx, boardingAddrs, nil)
-	if err != nil {
-		return nil, nil, 0, err
+	boardingUtxos := opts.utxos
+	if len(boardingUtxos) <= 0 {
+		boardingUtxos, err = a.getClaimableBoardingUtxos(ctx, boardingAddrs, nil)
+		if err != nil {
+			return nil, nil, 0, err
+		}
 	}
-
-	var selectedBoardingCoins []types.Utxo
-	var selectedCoins []client.TapscriptsVtxo
 
 	// if no receivers, self send all selected coins
 	if amount <= 0 {
-		selectedBoardingCoins = boardingUtxos
-		selectedCoins = vtxos
-
 		amount := uint64(0)
 		for _, utxo := range boardingUtxos {
 			amount += utxo.Amount
@@ -289,12 +289,10 @@ func (a *service) getFundsToSettle(
 			amount += utxo.Amount
 		}
 
-		return selectedBoardingCoins, selectedCoins, 0, nil
+		return boardingUtxos, vtxos, 0, nil
 	}
 
-	return utils.CoinSelect(
-		boardingUtxos, vtxos, amount, a.Dust, opts.withoutExpirySorting,
-	)
+	return utils.CoinSelect(boardingUtxos, vtxos, amount, a.Dust, opts.withoutExpirySorting)
 }
 
 func (a *service) getClaimableBoardingUtxos(
@@ -352,7 +350,7 @@ func (a *service) getClaimableBoardingUtxos(
 
 func (a *service) joinBatchWithRetry(
 	ctx context.Context, notes []string, outputs []types.Receiver, options settleOptions,
-	selectedCoins []client.TapscriptsVtxo, selectedBoardingCoins []types.Utxo,
+	selectedCoins []types.VtxoWithTapTree, selectedBoardingCoins []types.Utxo,
 ) (string, error) {
 	inputs, exitLeaves, arkFields, err := toIntentInputs(
 		selectedBoardingCoins, selectedCoins, notes,
@@ -456,7 +454,7 @@ func (a *service) handleOptions(
 
 func (a *service) handleBatchEvents(
 	ctx context.Context,
-	intentId string, vtxos []client.TapscriptsVtxo, notes []string, boardingUtxos []types.Utxo,
+	intentId string, vtxos []types.VtxoWithTapTree, notes []string, boardingUtxos []types.Utxo,
 	receivers []types.Receiver, signerSessions []tree.SignerSession,
 	replayEventsCh chan<- any, cancelCh <-chan struct{},
 ) (string, error) {

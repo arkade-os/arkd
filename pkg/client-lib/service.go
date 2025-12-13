@@ -440,7 +440,7 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 
 func (a *service) populateVtxosWithTapscripts(
 	ctx context.Context, vtxos []types.Vtxo,
-) ([]client.TapscriptsVtxo, error) {
+) ([]types.VtxoWithTapTree, error) {
 	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
 	if err != nil {
 		return nil, err
@@ -449,7 +449,7 @@ func (a *service) populateVtxosWithTapscripts(
 		return nil, fmt.Errorf("no offchain addresses found")
 	}
 
-	vtxosWithTapscripts := make([]client.TapscriptsVtxo, 0)
+	vtxosWithTapscripts := make([]types.VtxoWithTapTree, 0)
 
 	for _, v := range vtxos {
 		found := false
@@ -460,7 +460,7 @@ func (a *service) populateVtxosWithTapscripts(
 			}
 
 			if vtxoAddr == offchainAddr.Address {
-				vtxosWithTapscripts = append(vtxosWithTapscripts, client.TapscriptsVtxo{
+				vtxosWithTapscripts = append(vtxosWithTapscripts, types.VtxoWithTapTree{
 					Vtxo:       v,
 					Tapscripts: offchainAddr.Tapscripts,
 				})

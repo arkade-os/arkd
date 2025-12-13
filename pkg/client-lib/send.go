@@ -66,30 +66,32 @@ func (a *service) SendOffChain(
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
-	vtxos := make([]client.TapscriptsVtxo, 0)
-	spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
-		withoutExpirySorting: options.withoutExpirySorting,
-	})
-	if err != nil {
-		return "", err
-	}
+	vtxos := options.vtxos
+	if len(vtxos) <= 0 {
+		spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
+			withoutExpirySorting: options.withoutExpirySorting,
+		})
+		if err != nil {
+			return "", err
+		}
 
-	for _, offchainAddr := range offchainAddrs {
-		for _, v := range spendableVtxos {
-			if v.IsRecoverable() {
-				continue
-			}
+		for _, offchainAddr := range offchainAddrs {
+			for _, v := range spendableVtxos {
+				if v.IsRecoverable() {
+					continue
+				}
 
-			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
-			if err != nil {
-				return "", err
-			}
+				vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
+				if err != nil {
+					return "", err
+				}
 
-			if vtxoAddr == offchainAddr.Address {
-				vtxos = append(vtxos, client.TapscriptsVtxo{
-					Vtxo:       v,
-					Tapscripts: offchainAddr.Tapscripts,
-				})
+				if vtxoAddr == offchainAddr.Address {
+					vtxos = append(vtxos, types.VtxoWithTapTree{
+						Vtxo:       v,
+						Tapscripts: offchainAddr.Tapscripts,
+					})
+				}
 			}
 		}
 	}
