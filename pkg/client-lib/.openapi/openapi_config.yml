@@ -1,0 +1,23 @@
+openapi:
+  messages:
+    - selector: "ark.v1.GetInfoResponse"
+      fields:
+        dust: { extra: { x-go-json-string: true } }
+        utxo_min_amount: { extra: { x-go-json-string: true } }
+        utxo_max_amount: { extra: { x-go-json-string: true } }
+        round_interval: { extra: { x-go-json-string: true } }
+        unilateral_exit_delay: { extra: { x-go-json-string: true } }
+        vtxo_min_amount: { extra: { x-go-json-string: true } }
+        vtxo_max_amount: { extra: { x-go-json-string: true } }
+        vtxo_tree_expiry: { extra: { x-go-json-string: true } }
+        boarding_exit_delay: { extra: { x-go-json-string: true } }
+    - selector: "ark.v1.Vtxo"
+      fields:
+        amount: { extra: { x-go-json-string: true } }
+        created_at: { extra: { x-go-json-string: true } }
+        expires_at: { extra: { x-go-json-string: true } }
+    - selector: "ark.v1.IndexerVtxo"
+      fields:
+        amount: { extra: { x-go-json-string: true } }
+        created_at: { extra: { x-go-json-string: true } }
+        expires_at: { extra: { x-go-json-string: true } }

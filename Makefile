@@ -1,4 +1,8 @@
-.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate pprof psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner run-simulation run-simulation-and-setup run-large-simulation run-simulation-exact-batch run-simulation-min-batch run-simulation-custom sqlc test vet
+.PHONY: \
+	buf build build-all build-wallet clean cov docker-run docker-stop droppg droppgtest \
+	help integrationtest lint migrate pg pgsqlc pgtest pgmigrate pprof proto proto-lint psql \
+	redis-up redis-down run run-light run-signer run-wallet run-wallet-nosigner run-simulation \
+	sqlc test test-pkg vet
 
 define setup_env
     $(eval include $(1))
@@ -70,9 +74,12 @@ test: pgtest redis-up
 	@echo "Running unit tests..."
 	@failed=0; \
 	go test -v -count=1 -race $(shell go list ./internal/... | grep -v '/internal/test') || failed=1; \
-	find ./pkg -name go.mod -execdir go test -v ./... \; || failed=1; \
 	$(MAKE) droppgtest && $(MAKE) redis-down; \
 	exit $$failed
+
+## test-pkg: runs unit tests for all packages in pkg/
+test-pkg:
+	@find ./pkg -name go.mod -execdir go test -v ./... \;
 
 ## vet: code analysis
 vet:

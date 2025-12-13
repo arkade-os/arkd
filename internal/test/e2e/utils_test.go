@@ -17,17 +17,17 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/client"
-	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
-	"github.com/arkade-os/go-sdk/explorer"
-	"github.com/arkade-os/go-sdk/indexer"
-	grpcindexer "github.com/arkade-os/go-sdk/indexer/grpc"
-	"github.com/arkade-os/go-sdk/store"
-	"github.com/arkade-os/go-sdk/types"
-	"github.com/arkade-os/go-sdk/wallet"
-	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
-	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
+	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
+	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
+	"github.com/arkade-os/arkd/pkg/client-lib/store"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
+	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
+	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -481,11 +481,10 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 		wg.Done()
 	}()
 
-	txid, err = client.SendOffChain(
-		t.Context(),
-		false,
-		[]types.Receiver{{To: addr, Amount: uint64(amount * 1e8)}},
-	)
+	txid, err = client.SendOffChain(t.Context(), []types.Receiver{{
+		To:     addr,
+		Amount: uint64(amount * 1e8),
+	}})
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
