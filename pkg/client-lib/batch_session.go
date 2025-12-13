@@ -1,7 +1,6 @@
 package arksdk
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,7 +15,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -28,7 +27,51 @@ func (a *service) Settle(ctx context.Context, opts ...SettleOption) (string, err
 		return "", err
 	}
 
-	return a.settle(ctx, nil, opts...)
+	options := newDefaultSettleOptions()
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return "", err
+		}
+	}
+	if options.expiryThreshold <= 0 {
+		options.expiryThreshold = defaultExpiryThreshold
+	}
+
+	a.txLock.Lock()
+	defer a.txLock.Unlock()
+
+	// coinselect all avialble boarding utxos and vtxos
+	boardingUtxos, vtxos, _, err := a.getFundsToSettle(
+		ctx, 0, getVtxosFilter{
+			withRecoverableVtxos: options.withRecoverableVtxos,
+			expiryThreshold:      options.expiryThreshold,
+			vtxos:                options.vtxos,
+			utxos:                options.boardingUtxos,
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	_, offchainAddr, _, err := a.wallet.NewAddress(ctx, false)
+	if err != nil {
+		return "", err
+	}
+
+	amount := uint64(0)
+	for _, utxo := range boardingUtxos {
+		amount += utxo.Amount
+	}
+	for _, utxo := range vtxos {
+		amount += utxo.Amount
+	}
+
+	outputs := []types.Receiver{{
+		To:     offchainAddr.Address,
+		Amount: amount,
+	}}
+
+	return a.joinBatchWithRetry(ctx, nil, outputs, *options, vtxos, boardingUtxos)
 }
 
 func (a *service) RedeemNotes(
@@ -78,11 +121,82 @@ func (a *service) CollaborativeExit(
 		return "", err
 	}
 
-	receivers := []types.Receiver{{
-		To:     addr,
-		Amount: amount,
-	}}
-	return a.settle(ctx, receivers, opts...)
+	info, err := a.client.GetInfo(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// only 1 output
+	fees := info.Fees.IntentFees.OnchainOutput
+
+	if a.UtxoMaxAmount == 0 {
+		return "", fmt.Errorf("operation not allowed by the server")
+	}
+
+	options := newDefaultSettleOptions()
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return "", err
+		}
+	}
+	if options.expiryThreshold <= 0 {
+		options.expiryThreshold = defaultExpiryThreshold
+	}
+
+	netParams := utils.ToBitcoinNetwork(a.Network)
+	if _, err := btcutil.DecodeAddress(addr, &netParams); err != nil {
+		return "", fmt.Errorf("invalid onchain address")
+	}
+
+	a.txLock.Lock()
+	defer a.txLock.Unlock()
+
+	getVtxosOpts := &getVtxosFilter{
+		withRecoverableVtxos: options.withRecoverableVtxos,
+	}
+	spendableVtxos, err := a.getSpendableVtxos(ctx, getVtxosOpts)
+	if err != nil {
+		return "", err
+	}
+	balance := uint64(0)
+	for _, vtxo := range spendableVtxos {
+		balance += vtxo.Amount
+	}
+	if balance < amount {
+		return "", fmt.Errorf("not enough funds to cover amount %d", amount)
+	}
+	// send all case: substract fees from exited amount
+	if amount == balance {
+		amount -= fees
+	}
+
+	boardingUtxos, vtxos, changeAmount, err := a.getFundsToSettle(
+		ctx, amount+fees, getVtxosFilter{
+			withRecoverableVtxos: options.withRecoverableVtxos,
+			expiryThreshold:      options.expiryThreshold,
+			vtxos:                options.vtxos,
+			utxos:                options.boardingUtxos,
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	receivers := []types.Receiver{{To: addr, Amount: amount}}
+
+	if changeAmount > 0 {
+		_, offchainAddr, _, err := a.wallet.NewAddress(ctx, true)
+		if err != nil {
+			return "", err
+		}
+
+		receivers = append(receivers, types.Receiver{
+			To:     offchainAddr.Address,
+			Amount: changeAmount,
+		})
+	}
+
+	return a.joinBatchWithRetry(ctx, nil, receivers, *options, vtxos, boardingUtxos)
 }
 
 func (a *service) RegisterIntent(
@@ -140,100 +254,6 @@ func (a *service) DeleteIntent(
 	}
 
 	return a.client.DeleteIntent(ctx, proofTx, message)
-}
-
-func (a *service) settle(
-	ctx context.Context, receivers []types.Receiver, settleOpts ...SettleOption,
-) (string, error) {
-	options := newDefaultSettleOptions()
-	for _, opt := range settleOpts {
-		if err := opt(options); err != nil {
-			return "", err
-		}
-	}
-	if options.expiryThreshold <= 0 {
-		options.expiryThreshold = defaultExpiryThreshold
-	}
-
-	expectedSignerPubkey := schnorr.SerializePubKey(a.SignerPubKey)
-	outputs := make([]types.Receiver, 0)
-	sumOfReceivers := uint64(0)
-
-	// validate receivers and create outputs
-	for _, receiver := range receivers {
-		rcvAddr, err := arklib.DecodeAddressV0(receiver.To)
-		if err != nil {
-			return "", fmt.Errorf("invalid receiver address: %s", err)
-		}
-
-		rcvSignerPubkey := schnorr.SerializePubKey(rcvAddr.Signer)
-
-		if !bytes.Equal(expectedSignerPubkey, rcvSignerPubkey) {
-			return "", fmt.Errorf(
-				"invalid receiver address '%s': expected signer pubkey %x, got %x",
-				receiver.To, expectedSignerPubkey, rcvSignerPubkey,
-			)
-		}
-
-		if receiver.Amount < a.Dust {
-			return "", fmt.Errorf(
-				"invalid amount (%d), must be greater than dust %d", receiver.Amount, a.Dust,
-			)
-		}
-
-		outputs = append(outputs, types.Receiver{
-			To:     receiver.To,
-			Amount: receiver.Amount,
-		})
-		sumOfReceivers += receiver.Amount
-	}
-
-	a.txLock.Lock()
-	defer a.txLock.Unlock()
-
-	// coinselect boarding utxos and vtxos
-	boardingUtxos, vtxos, changeAmount, err := a.getFundsToSettle(
-		ctx, sumOfReceivers, getVtxosFilter{
-			withRecoverableVtxos: options.withRecoverableVtxos,
-			expiryThreshold:      options.expiryThreshold,
-			vtxos:                options.vtxos,
-			utxos:                options.boardingUtxos,
-		},
-	)
-	if err != nil {
-		return "", err
-	}
-
-	_, offchainAddr, _, err := a.wallet.NewAddress(ctx, false)
-	if err != nil {
-		return "", err
-	}
-
-	// if no outputs, self send all selected coins
-	if len(outputs) <= 0 {
-		amount := uint64(0)
-		for _, utxo := range boardingUtxos {
-			amount += utxo.Amount
-		}
-		for _, utxo := range vtxos {
-			amount += utxo.Amount
-		}
-
-		outputs = append(outputs, types.Receiver{
-			To:     offchainAddr.Address,
-			Amount: amount,
-		})
-	}
-
-	// add change output if any
-	if changeAmount > 0 {
-		outputs = append(outputs, types.Receiver{
-			To:     offchainAddr.Address,
-			Amount: changeAmount,
-		})
-	}
-
-	return a.joinBatchWithRetry(ctx, nil, outputs, *options, vtxos, boardingUtxos)
 }
 
 func (a *service) getFundsToSettle(
