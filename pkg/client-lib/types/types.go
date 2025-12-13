@@ -23,26 +23,24 @@ const (
 )
 
 type Config struct {
-	ServerUrl                    string
-	SignerPubKey                 *btcec.PublicKey
-	ForfeitPubKey                *btcec.PublicKey
-	WalletType                   string
-	ClientType                   string
-	Network                      arklib.Network
-	SessionDuration              int64
-	UnilateralExitDelay          arklib.RelativeLocktime
-	Dust                         uint64
-	BoardingExitDelay            arklib.RelativeLocktime
-	ExplorerURL                  string
-	ExplorerTrackingPollInterval time.Duration
-	ForfeitAddress               string
-	WithTransactionFeed          bool
-	UtxoMinAmount                int64
-	UtxoMaxAmount                int64
-	VtxoMinAmount                int64
-	VtxoMaxAmount                int64
-	CheckpointTapscript          string
-	Fees                         FeeInfo
+	ServerUrl           string
+	SignerPubKey        *btcec.PublicKey
+	ForfeitPubKey       *btcec.PublicKey
+	WalletType          string
+	ClientType          string
+	Network             arklib.Network
+	SessionDuration     int64
+	UnilateralExitDelay arklib.RelativeLocktime
+	Dust                uint64
+	BoardingExitDelay   arklib.RelativeLocktime
+	ExplorerURL         string
+	ForfeitAddress      string
+	UtxoMinAmount       int64
+	UtxoMaxAmount       int64
+	VtxoMinAmount       int64
+	VtxoMaxAmount       int64
+	CheckpointTapscript string
+	Fees                FeeInfo
 }
 
 func (c Config) CheckpointExitPath() []byte {

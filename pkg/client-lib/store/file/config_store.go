@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
@@ -63,11 +62,7 @@ func (s *configStore) AddData(ctx context.Context, data types.Config) error {
 		BoardingExitDelay:   fmt.Sprintf("%d", data.BoardingExitDelay.Value),
 		Dust:                fmt.Sprintf("%d", data.Dust),
 		ExplorerURL:         data.ExplorerURL,
-		ExplorerTrackingPollInterval: fmt.Sprintf(
-			"%.0f", data.ExplorerTrackingPollInterval.Seconds(),
-		),
 		ForfeitAddress:      data.ForfeitAddress,
-		WithTransactionFeed: strconv.FormatBool(data.WithTransactionFeed),
 		UtxoMinAmount:       fmt.Sprintf("%d", data.UtxoMinAmount),
 		UtxoMaxAmount:       fmt.Sprintf("%d", data.UtxoMaxAmount),
 		VtxoMinAmount:       fmt.Sprintf("%d", data.VtxoMinAmount),

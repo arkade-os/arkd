@@ -1,4 +1,4 @@
-.PHONY: proto genrest test vet lint migrate sqlc
+.PHONY: genrest test vet lint
 
 ark_client_dir = $(or $(REST_DIR),client/rest/service)
 indexer_client_dir = $(or $(REST_DIR),indexer/rest/service)
@@ -41,12 +41,3 @@ vet:
 lint:
 	@echo "Linting code..."
 	@$(GOLANGCI_LINT) run --timeout 5m
-
-## migrate: creates sqlite migration file(eg. make FILE=init migrate)
-migrate:
-	@docker run --rm -v ./store/sql/migration:/migration migrate/migrate create -ext sql -dir /migration $(FILE)
-
-## sqlc: gen sql
-sqlc:
-	@echo "gen sql..."
-	@docker run --rm -v ./store/sql:/src -w /src sqlc/sqlc generate
