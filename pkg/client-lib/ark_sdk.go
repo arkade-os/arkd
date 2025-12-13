@@ -36,7 +36,7 @@ type ArkClient interface {
 		ctx context.Context, receivers []types.Receiver, opts ...SendOption,
 	) (string, error)
 	FinalizePendingTxs(ctx context.Context, createdAfter *time.Time) ([]string, error)
-	// ** Batch session *+
+	// ** Batch session **
 	Settle(ctx context.Context, opts ...SettleOption) (string, error)
 	CollaborativeExit(
 		ctx context.Context, addr string, amount uint64, opts ...SettleOption,

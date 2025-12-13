@@ -279,15 +279,6 @@ func (c *restClient) GetEventStream(
 						Children: children,
 					},
 				}
-			case !ark_service.IsNil(event.GetTreeSignature()):
-				e := event.GetTreeSignature()
-				batchEvent = client.TreeSignatureEvent{
-					Id:         e.GetId(),
-					Topic:      e.GetTopic(),
-					BatchIndex: e.GetBatchIndex(),
-					Txid:       e.GetTxid(),
-					Signature:  e.GetSignature(),
-				}
 			case !ark_service.IsNil(event.GetTreeNonces()):
 				e := event.GetTreeNonces()
 				nonces := make(map[string]*tree.Musig2Nonce)

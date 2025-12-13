@@ -522,13 +522,13 @@ func (a *service) handleBatchEvents(
 	}
 
 	eventsCh, close, err := a.client.GetEventStream(ctx, topics)
-	defer close()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return "", fmt.Errorf("connection closed by server")
 		}
 		return "", err
 	}
+	defer close()
 
 	batchEventsHandler := newBatchEventsHandler(
 		a, intentId, vtxos, boardingUtxos, receivers, signerSessions,
