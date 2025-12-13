@@ -20,10 +20,17 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
+	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
+	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
+	filestore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/file"
+	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -31,6 +38,68 @@ import (
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
+
+func getClient(
+	supportedClients utils.SupportedType[utils.ClientFactory],
+	clientType, serverUrl string, withMonitorConn bool,
+) (client.TransportClient, error) {
+	factory := supportedClients[clientType]
+	return factory(serverUrl, withMonitorConn)
+}
+
+func getIndexer(
+	supportedIndexers utils.SupportedType[utils.IndexerFactory],
+	clientType, serverUrl string, withMonitorConn bool,
+) (indexer.Indexer, error) {
+	factory := supportedIndexers[clientType]
+	return factory(serverUrl, withMonitorConn)
+}
+
+func getWallet(
+	configStore types.ConfigStore, walletType string,
+	supportedWallets utils.SupportedType[struct{}],
+) (wallet.WalletService, error) {
+	switch walletType {
+	case wallet.SingleKeyWallet:
+		return getSingleKeyWallet(configStore)
+	default:
+		return nil, fmt.Errorf(
+			"unsupported wallet type '%s', please select one of: %s", walletType, supportedWallets,
+		)
+	}
+}
+
+func getSingleKeyWallet(configStore types.ConfigStore) (wallet.WalletService, error) {
+	walletStore, err := getWalletStore(configStore.GetType(), configStore.GetDatadir())
+	if err != nil {
+		return nil, err
+	}
+
+	return singlekeywallet.NewBitcoinWallet(configStore, walletStore)
+}
+
+func getWalletStore(storeType, datadir string) (walletstore.WalletStore, error) {
+	switch storeType {
+	case types.InMemoryStore:
+		return inmemorystore.NewWalletStore()
+	case types.FileStore:
+		return filestore.NewWalletStore(datadir)
+	default:
+		return nil, fmt.Errorf("unknown wallet store type")
+	}
+}
+
+func filterByOutpoints(vtxos []types.Vtxo, outpoints []types.Outpoint) []types.Vtxo {
+	filtered := make([]types.Vtxo, 0, len(vtxos))
+	for _, vtxo := range vtxos {
+		for _, outpoint := range outpoints {
+			if vtxo.Outpoint == outpoint {
+				filtered = append(filtered, vtxo)
+			}
+		}
+	}
+	return filtered
+}
 
 type arkTxInput struct {
 	client.TapscriptsVtxo
@@ -489,25 +558,9 @@ func computeVSize(tx *wire.MsgTx) lntypes.VByte {
 	return lntypes.WeightUnit(uint64(weight)).ToVB()
 }
 
-func checkSettleOptionsType(o interface{}) (*settleOptions, error) {
-	opts, ok := o.(*settleOptions)
-	if !ok {
-		return nil, fmt.Errorf("invalid options type")
-	}
-	return opts, nil
-}
-
-func checkSendOffChainOptionsType(o interface{}) (*sendOffChainOptions, error) {
-	opts, ok := o.(*sendOffChainOptions)
-	if !ok {
-		return nil, fmt.Errorf("invalid options type")
-	}
-	return opts, nil
-}
-
-func registerIntentMessage(outputs []types.Receiver, cosignersPublicKeys []string) (
-	string, []*wire.TxOut, error,
-) {
+func registerIntentMessage(
+	outputs []types.Receiver, cosignersPublicKeys []string,
+) (string, []*wire.TxOut, error) {
 	validAt := time.Now()
 	expireAt := validAt.Add(2 * time.Minute).Unix()
 	outputsTxOut := make([]*wire.TxOut, 0)
@@ -623,4 +676,170 @@ func getBatchExpiryLocktime(expiry uint32) arklib.RelativeLocktime {
 		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: expiry}
 	}
 	return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: expiry}
+}
+
+func toOutputScript(onchainAddress string, network arklib.Network) ([]byte, error) {
+	netParams := utils.ToBitcoinNetwork(network)
+	rcvAddr, err := btcutil.DecodeAddress(onchainAddress, &netParams)
+	if err != nil {
+		return nil, err
+	}
+
+	return txscript.PayToAddrScript(rcvAddr)
+}
+
+func toOnchainAddress(arkAddress string, network arklib.Network) (string, error) {
+	netParams := utils.ToBitcoinNetwork(network)
+
+	decodedAddr, err := arklib.DecodeAddressV0(arkAddress)
+	if err != nil {
+		return "", err
+	}
+
+	witnessProgram := schnorr.SerializePubKey(decodedAddr.VtxoTapKey)
+
+	addr, err := btcutil.NewAddressTaproot(witnessProgram, &netParams)
+	if err != nil {
+		return "", err
+	}
+
+	return addr.String(), nil
+}
+
+func verifySignedCheckpoints(
+	originalCheckpoints, signedCheckpoints []string, signerpubkey *btcec.PublicKey,
+) error {
+	// index by txid
+	indexedOriginalCheckpoints := make(map[string]*psbt.Packet)
+	indexedSignedCheckpoints := make(map[string]*psbt.Packet)
+
+	for _, cp := range originalCheckpoints {
+		originalPtx, err := psbt.NewFromRawBytes(strings.NewReader(cp), true)
+		if err != nil {
+			return err
+		}
+		indexedOriginalCheckpoints[originalPtx.UnsignedTx.TxID()] = originalPtx
+	}
+
+	for _, cp := range signedCheckpoints {
+		signedPtx, err := psbt.NewFromRawBytes(strings.NewReader(cp), true)
+		if err != nil {
+			return err
+		}
+		indexedSignedCheckpoints[signedPtx.UnsignedTx.TxID()] = signedPtx
+	}
+
+	for txid, originalPtx := range indexedOriginalCheckpoints {
+		signedPtx, ok := indexedSignedCheckpoints[txid]
+		if !ok {
+			return fmt.Errorf("signed checkpoint %s not found", txid)
+		}
+		if err := verifyOffchainPsbt(originalPtx, signedPtx, signerpubkey); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func verifySignedArk(original, signed string, signerPubKey *btcec.PublicKey) error {
+	originalPtx, err := psbt.NewFromRawBytes(strings.NewReader(original), true)
+	if err != nil {
+		return err
+	}
+
+	signedPtx, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)
+	if err != nil {
+		return err
+	}
+
+	return verifyOffchainPsbt(originalPtx, signedPtx, signerPubKey)
+}
+
+func verifyOffchainPsbt(original, signed *psbt.Packet, signerpubkey *btcec.PublicKey) error {
+	xonlySigner := schnorr.SerializePubKey(signerpubkey)
+
+	if original.UnsignedTx.TxID() != signed.UnsignedTx.TxID() {
+		return fmt.Errorf("invalid offchain tx : txids mismatch")
+	}
+
+	if len(original.Inputs) != len(signed.Inputs) {
+		return fmt.Errorf(
+			"input count mismatch: expected %d, got %d",
+			len(original.Inputs),
+			len(signed.Inputs),
+		)
+	}
+
+	if len(original.UnsignedTx.TxIn) != len(signed.UnsignedTx.TxIn) {
+		return fmt.Errorf(
+			"transaction input count mismatch: expected %d, got %d",
+			len(original.UnsignedTx.TxIn),
+			len(signed.UnsignedTx.TxIn),
+		)
+	}
+
+	prevouts := make(map[wire.OutPoint]*wire.TxOut)
+
+	for inputIndex, signedInput := range signed.Inputs {
+
+		if signedInput.WitnessUtxo == nil {
+			return fmt.Errorf("witness utxo not found for input %d", inputIndex)
+		}
+
+		// fill prevouts map with the original witness data
+		previousOutpoint := original.UnsignedTx.TxIn[inputIndex].PreviousOutPoint
+		prevouts[previousOutpoint] = original.Inputs[inputIndex].WitnessUtxo
+	}
+
+	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
+	txsigHashes := txscript.NewTxSigHashes(original.UnsignedTx, prevoutFetcher)
+
+	// loop over every input and check that the signer's signature is present and valid
+	for inputIndex, signedInput := range signed.Inputs {
+		orignalInput := original.Inputs[inputIndex]
+		if len(orignalInput.TaprootLeafScript) == 0 {
+			return fmt.Errorf(
+				"original input %d has no taproot leaf script, cannot verify signature",
+				inputIndex,
+			)
+		}
+
+		// check that every input has the signer's signature
+		var signerSig *psbt.TaprootScriptSpendSig
+
+		for _, sig := range signedInput.TaprootScriptSpendSig {
+			if bytes.Equal(sig.XOnlyPubKey, xonlySigner) {
+				signerSig = sig
+				break
+			}
+		}
+
+		if signerSig == nil {
+			return fmt.Errorf("signer signature not found for input %d", inputIndex)
+		}
+
+		sig, err := schnorr.ParseSignature(signerSig.Signature)
+		if err != nil {
+			return fmt.Errorf("failed to parse signer signature for input %d: %s", inputIndex, err)
+		}
+
+		// verify the signature
+		message, err := txscript.CalcTapscriptSignaturehash(
+			txsigHashes,
+			signedInput.SighashType,
+			original.UnsignedTx,
+			inputIndex,
+			prevoutFetcher,
+			txscript.NewBaseTapLeaf(orignalInput.TaprootLeafScript[0].Script),
+		)
+		if err != nil {
+			return err
+		}
+
+		if !sig.Verify(message, signerpubkey) {
+			return fmt.Errorf("invalid signer signature for input %d", inputIndex)
+		}
+	}
+	return nil
 }

@@ -1,101 +1,8 @@
 package arksdk
 
 import (
-	"fmt"
-	"time"
-
-	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
-	restclient "github.com/arkade-os/arkd/pkg/client-lib/client/rest"
-	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 )
-
-var (
-	supportedWallets = utils.SupportedType[struct{}]{
-		SingleKeyWallet: struct{}{},
-	}
-	supportedClients = utils.SupportedType[utils.ClientFactory]{
-		GrpcClient: grpcclient.NewClient,
-		RestClient: restclient.NewClient,
-	}
-)
-
-type InitArgs struct {
-	ClientType           string
-	WalletType           string
-	ServerUrl            string
-	Seed                 string
-	Password             string
-	ExplorerURL          string
-	ExplorerPollInterval time.Duration
-	WithTransactionFeed  bool
-}
-
-func (a InitArgs) validate() error {
-	if len(a.WalletType) <= 0 {
-		return fmt.Errorf("missing wallet")
-	}
-	if !supportedWallets.Supports(a.WalletType) {
-		return fmt.Errorf(
-			"wallet type '%s' not supported, please select one of: %s",
-			a.WalletType, supportedClients,
-		)
-	}
-
-	if len(a.ClientType) <= 0 {
-		return fmt.Errorf("missing client type")
-	}
-	if !supportedClients.Supports(a.ClientType) {
-		return fmt.Errorf(
-			"client type '%s' not supported, please select one of: %s",
-			a.ClientType, supportedClients,
-		)
-	}
-
-	if len(a.ServerUrl) <= 0 {
-		return fmt.Errorf("missing server url")
-	}
-	if len(a.Password) <= 0 {
-		return fmt.Errorf("missing password")
-	}
-
-	return nil
-}
-
-type InitWithWalletArgs struct {
-	ClientType           string
-	Wallet               wallet.WalletService
-	ServerUrl            string
-	Seed                 string
-	Password             string
-	ExplorerURL          string
-	ExplorerPollInterval time.Duration
-	ExplorerBatchSize    uint32
-	ExplorerBatchDelay   time.Duration
-	WithTransactionFeed  bool
-}
-
-func (a InitWithWalletArgs) validate() error {
-	if a.Wallet == nil {
-		return fmt.Errorf("missing wallet")
-	}
-
-	if len(a.ClientType) <= 0 {
-		return fmt.Errorf("missing client type")
-	}
-	if !supportedClients.Supports(a.ClientType) {
-		return fmt.Errorf("client type not supported, please select one of: %s", supportedClients)
-	}
-
-	if len(a.ServerUrl) <= 0 {
-		return fmt.Errorf("missing server url")
-	}
-	if len(a.Password) <= 0 {
-		return fmt.Errorf("missing password")
-	}
-	return nil
-}
 
 type Balance struct {
 	OnchainBalance  OnchainBalance  `json:"onchain_balance"`
@@ -131,15 +38,15 @@ type balanceRes struct {
 	err                         error
 }
 
-type CoinSelectOptions struct {
-	// If true, coin selector won't select coins closest to expiryirst
-	WithoutExpirySorting bool
-	// If specified, coin selector will select only coins in the list
-	OutpointsFilter []types.Outpoint
-	// If true, coin selector will select recoverable (swept but unspent) vtxos first
-	WithRecoverableVtxos bool
-	// If specified coin selector will select only vtxos below the given expiration threshold (seconds)
-	ExpiryThreshold int64
-	// If specified, coin selector will recompute the expiration of all vtxos from their anchestor leaves
-	RecomputeExpiry bool
+type getVtxosFilter struct {
+	// If true, will sort coins by expiration (oldest first)
+	withoutExpirySorting bool
+	// If specified, will select only coins in the list
+	outpoints []types.Outpoint
+	// If true, will select recoverable (swept but unspent) vtxos first
+	withRecoverableVtxos bool
+	// If specified, will select only vtxos below the given expiration threshold (seconds)
+	expiryThreshold int64
+	// If true, will recompute the expiration of all vtxos from their anchestor batch outputs
+	recomputeExpiry bool
 }
