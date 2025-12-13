@@ -301,14 +301,6 @@ func (a *service) getFundsToSettle(
 
 	// if no receivers, self send all selected coins
 	if amount <= 0 {
-		amount := uint64(0)
-		for _, utxo := range boardingUtxos {
-			amount += utxo.Amount
-		}
-		for _, utxo := range vtxos {
-			amount += utxo.Amount
-		}
-
 		return boardingUtxos, vtxos, 0, nil
 	}
 
@@ -432,7 +424,7 @@ func (a *service) joinBatchWithRetry(
 		return commitmentTxid, nil
 	}
 
-	return "", fmt.Errorf("reached max atttempt of retries, last batch error: %s", batchErr)
+	return "", fmt.Errorf("reached max attempt of retries, last batch error: %s", batchErr)
 }
 
 func (a *service) handleOptions(
