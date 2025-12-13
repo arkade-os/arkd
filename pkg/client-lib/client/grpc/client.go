@@ -470,7 +470,9 @@ func (c *grpcClient) GetTransactionsStream(
 }
 
 func (c *grpcClient) Close() {
-	c.monitoringCancel()
+	if c.monitoringCancel != nil {
+		c.monitoringCancel()
+	}
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 	// nolint:errcheck
@@ -535,6 +537,10 @@ func parseFees(fees *arkv1.FeeInfo) (types.FeeInfo, error) {
 		}
 	}
 	intentFees := fees.GetIntentFee()
+	if intentFees == nil {
+		return types.FeeInfo{}, nil
+	}
+
 	if intentFees.GetOnchainInput() != "" {
 		onchainInputFee, err = strconv.ParseUint(intentFees.GetOnchainInput(), 10, 64)
 		if err != nil {

@@ -152,7 +152,7 @@ func main() {
 				if ev.Error != nil {
 					errorCount++
 					fmt.Printf("⚠️ new error detected\n")
-					fmt.Printf("   Error: %v\n", err)
+					fmt.Printf("   Error: %v\n", ev.Error)
 				} else {
 					buf, _ := json.MarshalIndent(ev, "", "  ")
 					fmt.Printf("🎯 Listener %d receveived event #%d: %s\n", i, eventCount, string(buf))

@@ -308,9 +308,9 @@ func (c *restClient) GetEventStream(
 						mustBreak = true
 						break
 					}
-					nonces[pubkey] = &tree.Musig2Nonce{
-						PubNonce: [66]byte(pubnonce),
-					}
+					var buf [66]byte
+					copy(buf[:], pubnonce)
+					nonces[pubkey] = &tree.Musig2Nonce{PubNonce: buf}
 				}
 				if mustBreak {
 					err = _err

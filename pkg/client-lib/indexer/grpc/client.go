@@ -563,7 +563,9 @@ func (a *grpcClient) UnsubscribeForScripts(
 }
 
 func (a *grpcClient) Close() {
-	a.monitoringCancel()
+	if a.monitoringCancel != nil {
+		a.monitoringCancel()
+	}
 	a.connMu.Lock()
 	defer a.connMu.Unlock()
 	// nolint:errcheck
