@@ -50,7 +50,7 @@ type ArkClient interface {
 		ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
 	) error
 	// ** Unroll **
-	Unroll(ctx context.Context) error
+	Unroll(ctx context.Context, opts ...UnrollOption) error
 	CompleteUnroll(ctx context.Context, to string) (string, error)
 	OnboardAgainAllExpiredBoardings(ctx context.Context) (string, error)
 	WithdrawFromAllExpiredBoardings(ctx context.Context, to string) (string, error)

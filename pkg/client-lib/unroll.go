@@ -24,17 +24,26 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (a *service) Unroll(ctx context.Context) error {
+func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) (err error) {
 	if err := a.safeCheck(); err != nil {
 		return err
+	}
+	options := newDefaultUnrollOptions()
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return err
+		}
 	}
 
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
-	vtxos, err := a.getSpendableVtxos(ctx, nil)
-	if err != nil {
-		return err
+	vtxos := options.vtxos
+	if len(vtxos) <= 0 {
+		vtxos, err = a.getSpendableVtxos(ctx, nil)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(vtxos) == 0 {
