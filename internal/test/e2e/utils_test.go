@@ -259,8 +259,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 
 func setupArkSDK(t *testing.T) arksdk.ArkClient {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -273,12 +272,11 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	err = client.Init(t.Context(), arksdk.InitArgs{
-		WalletType:           arksdk.SingleKeyWallet,
-		ClientType:           arksdk.GrpcClient,
-		ServerUrl:            serverUrl,
-		Password:             password,
-		Seed:                 privkeyHex,
-		ExplorerPollInterval: time.Second,
+		WalletType: arksdk.SingleKeyWallet,
+		ClientType: arksdk.GrpcClient,
+		ServerUrl:  serverUrl,
+		Password:   password,
+		Seed:       privkeyHex,
 	})
 	require.NoError(t, err)
 
@@ -290,15 +288,14 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 
 func setupArkSDKWithTransport(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
 	client := setupArkSDK(t)
-	transportClient, err := grpcclient.NewClient(serverUrl)
+	transportClient, err := grpcclient.NewClient(serverUrl, false)
 	require.NoError(t, err)
 	return client, transportClient
 }
 
 func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -329,8 +326,7 @@ func setupArkSDKwithPublicKey(
 	t *testing.T,
 ) (arksdk.ArkClient, wallet.WalletService, *btcec.PublicKey, client.TransportClient) {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -361,14 +357,14 @@ func setupArkSDKwithPublicKey(
 	err = client.Unlock(context.Background(), password)
 	require.NoError(t, err)
 
-	grpcClient, err := grpcclient.NewClient(serverUrl)
+	grpcClient, err := grpcclient.NewClient(serverUrl, false)
 	require.NoError(t, err)
 
 	return client, wallet, privkey.PubKey(), grpcClient
 }
 
 func setupIndexer(t *testing.T) indexer.Indexer {
-	svc, err := grpcindexer.NewClient(serverUrl)
+	svc, err := grpcindexer.NewClient(serverUrl, false)
 	require.NoError(t, err)
 	return svc
 }

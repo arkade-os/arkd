@@ -47,8 +47,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	logTxEvents("alice", aliceArkClient)
-
 	if err := aliceArkClient.Unlock(ctx, password); err != nil {
 		log.Fatal(err)
 	}
@@ -92,8 +90,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	logTxEvents("bob", bobArkClient)
 
 	if err := bobArkClient.Unlock(ctx, password); err != nil {
 		log.Fatal(err)
@@ -163,8 +159,7 @@ func main() {
 
 func setupArkClient() (arksdk.ArkClient, error) {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup app data store: %s", err)
@@ -176,11 +171,10 @@ func setupArkClient() (arksdk.ArkClient, error) {
 	}
 
 	if err := client.Init(context.Background(), arksdk.InitArgs{
-		WalletType:          walletType,
-		ClientType:          clientType,
-		ServerUrl:           serverUrl,
-		Password:            password,
-		WithTransactionFeed: true,
+		WalletType: walletType,
+		ClientType: clientType,
+		ServerUrl:  serverUrl,
+		Password:   password,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to initialize wallet: %s", err)
 	}
@@ -257,20 +251,4 @@ func generateBlock() error {
 
 	time.Sleep(6 * time.Second)
 	return nil
-}
-
-func logTxEvents(wallet string, client arksdk.ArkClient) {
-	txsChan := client.GetTransactionEventChannel(context.Background())
-	go func() {
-		for txEvent := range txsChan {
-			for _, tx := range txEvent.Txs {
-				msg := fmt.Sprintf(
-					"[EVENT]%s: tx %s type: %s, amount: %d",
-					wallet, tx.TransactionKey.String(), tx.Type, tx.Amount,
-				)
-				log.Infoln(msg)
-			}
-		}
-	}()
-	log.Infof("%s tx event listener started", wallet)
 }
