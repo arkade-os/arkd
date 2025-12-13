@@ -688,24 +688,6 @@ func toOutputScript(onchainAddress string, network arklib.Network) ([]byte, erro
 	return txscript.PayToAddrScript(rcvAddr)
 }
 
-func toOnchainAddress(arkAddress string, network arklib.Network) (string, error) {
-	netParams := utils.ToBitcoinNetwork(network)
-
-	decodedAddr, err := arklib.DecodeAddressV0(arkAddress)
-	if err != nil {
-		return "", err
-	}
-
-	witnessProgram := schnorr.SerializePubKey(decodedAddr.VtxoTapKey)
-
-	addr, err := btcutil.NewAddressTaproot(witnessProgram, &netParams)
-	if err != nil {
-		return "", err
-	}
-
-	return addr.String(), nil
-}
-
 func verifySignedCheckpoints(
 	originalCheckpoints, signedCheckpoints []string, signerpubkey *btcec.PublicKey,
 ) error {

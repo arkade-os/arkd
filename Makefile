@@ -52,8 +52,14 @@ integrationtest:
 
 ## lint: lint codebase
 lint:
-	@echo "Linting code..."
-	@golangci-lint run --fix
+	@echo "Linting..."
+	@golangci-lint run ./... --fix
+	@echo "Linting submodules..."
+	@cd pkg/client-lib && golangci-lint run --config ../../.golangci.yml --fix
+# 	TODO: uncomment, this way all submodules are linted as well
+# 	@find pkg -mindepth 2 -maxdepth 2 -name go.mod -print0 \
+# 	| xargs -0 -n1 dirname \
+# 	| xargs -I{} sh -c 'echo "→ {}" && cd {} && golangci-lint run ./... --config ../../.golangci.yml --fix'
 
 ## run: run arkd in regtest
 run: clean pg redis-up

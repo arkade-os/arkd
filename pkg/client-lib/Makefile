@@ -1,11 +1,7 @@
-.PHONY: genrest test vet lint
+.PHONY: genrest
 
 ark_client_dir = $(or $(REST_DIR),client/rest/service)
 indexer_client_dir = $(or $(REST_DIR),indexer/rest/service)
-
-GOLANGCI_LINT ?= $(shell \
-	echo "docker run --rm -v $$(pwd):/app -w /app golangci/golangci-lint:v2.5.0 golangci-lint"; \
-)
 
 SWAGGER = $(shell \
 	echo "docker run --rm \
@@ -26,18 +22,3 @@ genrest:
 	@mkdir -p $(ark_client_dir) $(indexer_client_dir)
 	@$(SWAGGER) generate -i api-spec/openapi/swagger/ark/v1/service.openapi.json --skip-validate-spec -g go -o pkg/client-lib/$(ark_client_dir) --global-property apis,models,apiDocs=false,apiTests=false,modelDocs=false,modelTests=false,supportingFiles=utils.go:configuration.go:client.go -t pkg/client-lib/.openapi/templates
 	@$(SWAGGER) generate -i api-spec/openapi/swagger/ark/v1/indexer.openapi.json --skip-validate-spec -g go -o pkg/client-lib/$(indexer_client_dir) --global-property apis,models,apiDocs=false,apiTests=false,modelDocs=false,modelTests=false,supportingFiles=utils.go:configuration.go:client.go -t pkg/client-lib/.openapi/templates
-
-## test: runs unit tests
-test:
-	@echo "Running unit tests..."
-	@go test -v -count=1 -race $$(go list ./... | grep -v '/test/e2e')
-
-## vet: code analysis
-vet:
-	@echo "Running code analysis..."
-	@go vet ./...
-
-## lint: lint codebase
-lint:
-	@echo "Linting code..."
-	@$(GOLANGCI_LINT) run --timeout 5m
