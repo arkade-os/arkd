@@ -13,7 +13,7 @@ const (
 	IntentMessageTypeRegister     IntentMessageType = "register"
 	IntentMessageTypeDelete       IntentMessageType = "delete"
 	IntentMessageTypeGetPendingTx IntentMessageType = "get-pending-tx"
-	IntentMessageTypeEstimateFee  IntentMessageType = "estimate-fee"
+	IntentMessageTypeEstimateFee  IntentMessageType = "estimate-intent-fee"
 )
 
 var tagHashMessage = []byte("ark-intent-proof-message")
@@ -59,9 +59,9 @@ func (m *RegisterMessage) Decode(data string) error {
 	return nil
 }
 
-type EstimateFeeMessage RegisterMessage
+type EstimateIntentFeeMessage RegisterMessage
 
-func (m EstimateFeeMessage) Encode() (string, error) {
+func (m EstimateIntentFeeMessage) Encode() (string, error) {
 	encoded, err := json.Marshal(m)
 	if err != nil {
 		return "", err
@@ -69,7 +69,7 @@ func (m EstimateFeeMessage) Encode() (string, error) {
 	return string(encoded), nil
 }
 
-func (m *EstimateFeeMessage) Decode(data string) error {
+func (m *EstimateIntentFeeMessage) Decode(data string) error {
 	if err := json.Unmarshal([]byte(data), m); err != nil {
 		return err
 	}

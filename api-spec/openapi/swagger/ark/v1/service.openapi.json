@@ -92,13 +92,13 @@
         "tags": [
           "ArkService"
         ],
-        "description": "EstimateFee allows to estimate the fees for a given intent.\nThe client should provide a BIP-322 message with the same data as the register intent message, and the server should\nrespond with the estimated fees in satoshis.",
-        "operationId": "ArkService_EstimateFee",
+        "description": "EstimateIntentFee allows to estimate the fees for a given intent.\nThe client should provide a BIP-322 message with the same data as the register intent message,\nand the server should respond with the estimated fees in satoshis.",
+        "operationId": "ArkService_EstimateIntentFee",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EstimateFeeRequest"
+                "$ref": "#/components/schemas/EstimateIntentFeeRequest"
               }
             }
           },
@@ -110,7 +110,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EstimateFeeResponse"
+                  "$ref": "#/components/schemas/EstimateIntentFeeResponse"
                 }
               }
             }
@@ -630,8 +630,8 @@
           }
         }
       },
-      "EstimateFeeRequest": {
-        "title": "EstimateFeeRequest",
+      "EstimateIntentFeeRequest": {
+        "title": "EstimateIntentFeeRequest",
         "type": "object",
         "properties": {
           "intent": {
@@ -639,8 +639,8 @@
           }
         }
       },
-      "EstimateFeeResponse": {
-        "title": "EstimateFeeResponse",
+      "EstimateIntentFeeResponse": {
+        "title": "EstimateIntentFeeResponse",
         "type": "object",
         "properties": {
           "fee": {

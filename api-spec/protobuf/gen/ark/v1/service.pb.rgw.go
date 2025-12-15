@@ -42,15 +42,15 @@ func request_ArkService_RegisterIntent_0(ctx context.Context, marshaler gateway.
 
 }
 
-func request_ArkService_EstimateFee_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client ArkServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
-	var protoReq EstimateFeeRequest
+func request_ArkService_EstimateIntentFee_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client ArkServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq EstimateIntentFeeRequest
 	var metadata gateway.ServerMetadata
 
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
 		return nil, metadata, gateway.ErrMarshal{Err: err, Inbound: true}
 	}
 
-	msg, err := client.EstimateFee(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	msg, err := client.EstimateIntentFee(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 
 }
@@ -295,13 +295,13 @@ func RegisterArkServiceHandlerClient(ctx context.Context, mux *gateway.ServeMux,
 		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
 		var err error
 		var annotatedContext context.Context
-		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.ArkService/EstimateFee", gateway.WithHTTPPathPattern("/v1/batch/estimateFee"))
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.ArkService/EstimateIntentFee", gateway.WithHTTPPathPattern("/v1/batch/estimateFee"))
 		if err != nil {
 			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
 			return
 		}
 
-		resp, md, err := request_ArkService_EstimateFee_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		resp, md, err := request_ArkService_EstimateIntentFee_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
