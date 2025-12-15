@@ -17,17 +17,17 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/client"
-	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
-	"github.com/arkade-os/go-sdk/explorer"
-	"github.com/arkade-os/go-sdk/indexer"
-	grpcindexer "github.com/arkade-os/go-sdk/indexer/grpc"
-	"github.com/arkade-os/go-sdk/store"
-	"github.com/arkade-os/go-sdk/types"
-	"github.com/arkade-os/go-sdk/wallet"
-	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
-	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
+	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
+	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
+	"github.com/arkade-os/arkd/pkg/client-lib/store"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
+	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
+	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -259,8 +259,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 
 func setupArkSDK(t *testing.T) arksdk.ArkClient {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -273,12 +272,11 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	err = client.Init(t.Context(), arksdk.InitArgs{
-		WalletType:           arksdk.SingleKeyWallet,
-		ClientType:           arksdk.GrpcClient,
-		ServerUrl:            serverUrl,
-		Password:             password,
-		Seed:                 privkeyHex,
-		ExplorerPollInterval: time.Second,
+		WalletType: arksdk.SingleKeyWallet,
+		ClientType: arksdk.GrpcClient,
+		ServerUrl:  serverUrl,
+		Password:   password,
+		Seed:       privkeyHex,
 	})
 	require.NoError(t, err)
 
@@ -290,15 +288,14 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 
 func setupArkSDKWithTransport(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
 	client := setupArkSDK(t)
-	transportClient, err := grpcclient.NewClient(serverUrl)
+	transportClient, err := grpcclient.NewClient(serverUrl, false)
 	require.NoError(t, err)
 	return client, transportClient
 }
 
 func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -329,8 +326,7 @@ func setupArkSDKwithPublicKey(
 	t *testing.T,
 ) (arksdk.ArkClient, wallet.WalletService, *btcec.PublicKey, client.TransportClient) {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -361,14 +357,14 @@ func setupArkSDKwithPublicKey(
 	err = client.Unlock(context.Background(), password)
 	require.NoError(t, err)
 
-	grpcClient, err := grpcclient.NewClient(serverUrl)
+	grpcClient, err := grpcclient.NewClient(serverUrl, false)
 	require.NoError(t, err)
 
 	return client, wallet, privkey.PubKey(), grpcClient
 }
 
 func setupIndexer(t *testing.T) indexer.Indexer {
-	svc, err := grpcindexer.NewClient(serverUrl)
+	svc, err := grpcindexer.NewClient(serverUrl, false)
 	require.NoError(t, err)
 	return svc
 }
@@ -481,11 +477,10 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 		wg.Done()
 	}()
 
-	txid, err = client.SendOffChain(
-		t.Context(),
-		false,
-		[]types.Receiver{{To: addr, Amount: uint64(amount * 1e8)}},
-	)
+	txid, err = client.SendOffChain(t.Context(), []types.Receiver{{
+		To:     addr,
+		Amount: uint64(amount * 1e8),
+	}})
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
