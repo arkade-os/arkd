@@ -40,7 +40,7 @@ func (a *service) Settle(ctx context.Context, opts ...SettleOption) (string, err
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
-	// coinselect all avialble boarding utxos and vtxos
+	// coinselect all available boarding utxos and vtxos
 	boardingUtxos, vtxos, _, err := a.getFundsToSettle(
 		ctx, 0, getVtxosFilter{
 			withRecoverableVtxos: options.withRecoverableVtxos,
