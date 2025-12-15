@@ -87,13 +87,6 @@ func (l *listener[T]) getTopics() []string {
 	return out
 }
 
-func (l *listener[T]) channel() chan T {
-	// no strong reason to lock here, but keep RLock to be safe if ch could be replaced
-	l.lock.RLock()
-	defer l.lock.RUnlock()
-	return l.ch
-}
-
 // broker is a simple utility struct to manage subscriptions.
 // it is used to send events to multiple listeners.
 // it is thread safe and can be used to send events to multiple listeners.
@@ -137,7 +130,7 @@ func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
 	if !ok {
 		return nil, fmt.Errorf("subscription %s not found", id)
 	}
-	return listener.channel(), nil
+	return listener.ch, nil
 }
 
 func (h *broker[T]) getTopics(id string) []string {

@@ -205,6 +205,52 @@ func TestBroker(t *testing.T) {
 		require.ErrorContains(t, err, "subscription non-existent not found")
 	})
 
+	t.Run("concurrent topic modifications", func(t *testing.T) {
+		broker := newBroker[string]()
+		listenerId := "concurrent-test-id"
+		listener := newListener[string](listenerId, []string{})
+		broker.pushListener(listener)
+
+		topics := []string{"t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t10"}
+
+		const goroutines = 50
+		const iterations = 100
+
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+		// do a mix of add, remove, overwrite operations concurrently
+		for g := 0; g < goroutines; g++ {
+			go func(id int) {
+				defer wg.Done()
+				for i := 0; i < iterations; i++ {
+					switch (id + i) % 3 {
+					case 0:
+						_ = broker.addTopics(listenerId, []string{topics[(id+i)%len(topics)]})
+					case 1:
+						_ = broker.removeTopics(listenerId, []string{topics[(id+i)%len(topics)]})
+					case 2:
+						_ = broker.overwriteTopics(listenerId, []string{topics[(id+i)%len(topics)]})
+					}
+					// also exercise read path
+					_ = broker.getTopics(listenerId)
+				}
+			}(g)
+		}
+		wg.Wait()
+
+		// check all returned topics must be from the expected set
+		final := broker.getTopics(listenerId)
+		require.NotNil(t, final)
+		allowed := make(map[string]struct{}, len(topics))
+		for _, t := range topics {
+			allowed[formatTopic(t)] = struct{}{}
+		}
+		for _, ft := range final {
+			_, ok := allowed[ft]
+			require.True(t, ok, "unexpected topic: %s", ft)
+		}
+	})
+
 	t.Run("timeout management", func(t *testing.T) {
 		t.Run("startTimeout", func(t *testing.T) {
 			broker := newBroker[string]()

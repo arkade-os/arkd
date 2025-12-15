@@ -278,17 +278,17 @@ func (h *handler) UpdateStreamTopics(
 		return nil, status.Error(codes.InvalidArgument, "missing stream id")
 	}
 
-	switch topicsChange := req.GetTopicsChange().(type) {
+	switch req.GetTopicsChange().(type) {
 	case nil:
 		return nil, status.Error(codes.InvalidArgument, "no topics provided")
 	// when overwrite topics is provided, it takes precedence, we will not
 	// process add/remove topics in this case
 	case *arkv1.UpdateStreamTopicsRequest_Overwrite:
-		if topicsChange.Overwrite == nil {
+		if req.GetOverwrite() == nil {
 			return nil, status.Error(codes.InvalidArgument, "overwrite topics is nil")
 		}
 		if err := h.eventsListenerHandler.overwriteTopics(
-			req.GetStreamId(), topicsChange.Overwrite.Topics,
+			req.GetStreamId(), req.GetOverwrite().GetTopics(),
 		); err != nil {
 			return nil, status.Errorf(codes.NotFound, "overwrite topics error: %s", err.Error())
 		}
@@ -299,26 +299,26 @@ func (h *handler) UpdateStreamTopics(
 		}, nil
 	// allow adding/removing topics simultaneously
 	case *arkv1.UpdateStreamTopicsRequest_Modify:
-		if topicsChange.Modify == nil {
+		if req.GetModify() == nil {
 			return nil, status.Error(codes.InvalidArgument, "modify topics is nil")
 		}
-		if len(topicsChange.Modify.AddTopics) > 0 {
+		if len(req.GetModify().GetAddTopics()) > 0 {
 			if err := h.eventsListenerHandler.addTopics(
-				req.GetStreamId(), topicsChange.Modify.AddTopics,
+				req.GetStreamId(), req.GetModify().GetAddTopics(),
 			); err != nil {
 				return nil, status.Errorf(codes.NotFound, "add topics error: %s", err.Error())
 			}
 		}
-		if len(topicsChange.Modify.RemoveTopics) > 0 {
+		if len(req.GetModify().GetRemoveTopics()) > 0 {
 			if err := h.eventsListenerHandler.removeTopics(
-				req.GetStreamId(), topicsChange.Modify.RemoveTopics,
+				req.GetStreamId(), req.GetModify().GetRemoveTopics(),
 			); err != nil {
 				return nil, status.Errorf(codes.NotFound, "remove topics error: %s", err.Error())
 			}
 		}
 		return &arkv1.UpdateStreamTopicsResponse{
-			TopicsAdded:   topicsChange.Modify.AddTopics,
-			TopicsRemoved: topicsChange.Modify.RemoveTopics,
+			TopicsAdded:   req.GetModify().GetAddTopics(),
+			TopicsRemoved: req.GetModify().GetRemoveTopics(),
 			AllTopics:     h.eventsListenerHandler.getTopics(req.GetStreamId()),
 		}, nil
 	default:
