@@ -181,6 +181,10 @@ func (a *adminService) Sweep(
 		}
 	}
 
+	if len(inputs) == 0 {
+		return "", "", fmt.Errorf("no inputs to sweep")
+	}
+
 	txid, txhex, err = a.txBuilder.BuildSweepTx(inputs)
 	if err != nil {
 		return

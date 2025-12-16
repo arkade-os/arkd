@@ -119,6 +119,12 @@ var (
 		Usage:  "List all scheduled batches sweepings",
 		Action: scheduledSweepAction,
 	}
+	sweepCmd = &cli.Command{
+		Name:   "sweep",
+		Usage:  "Trigger a sweep transaction",
+		Flags:  []cli.Flag{sweepConnectorsFlag, sweepCommitmentTxidsFlag},
+		Action: sweepAction,
+	}
 	roundInfoCmd = &cli.Command{
 		Name:   "round-info",
 		Usage:  "Get round info",
@@ -935,5 +941,37 @@ func banScriptAction(ctx *cli.Context) error {
 	}
 
 	fmt.Printf("Successfully banned script: %s\n", script)
+	return nil
+}
+
+func sweepAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	withConnectors := ctx.Bool(sweepConnectorsFlagName)
+	commitmentTxids := ctx.StringSlice(sweepCommitmentTxidsFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/sweep", baseURL)
+
+	commitmentTxidsJSON, err := json.Marshal(commitmentTxids)
+	if err != nil {
+		return fmt.Errorf("failed to marshal commitment txids: %s", err)
+	}
+
+	body := fmt.Sprintf(
+		`{"connectors": %t, "commitment_txids": %s}`,
+		withConnectors,
+		commitmentTxidsJSON,
+	)
+
+	sweepTxHex, err := post[string](url, body, "hex", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Sweep transaction broadcasted: %s\n", sweepTxHex)
+
 	return nil
 }
