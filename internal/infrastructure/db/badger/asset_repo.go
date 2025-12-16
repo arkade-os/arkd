@@ -44,6 +44,13 @@ type anchorVtxo struct {
 	Amount   uint64
 }
 
+type teleportAsset struct {
+	Hash     string `badgerhold:"key"`
+	AssetID  string `badgerhold:"index"`
+	Amount   uint64
+	OwnerKey string
+}
+
 func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 	if len(config) != 2 {
 		return nil, fmt.Errorf("invalid config")
@@ -134,6 +141,18 @@ func (r *assetRepository) InsertAssetAnchor(
 		}
 
 		return nil
+	})
+}
+
+func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport domain.TeleportAsset) error {
+	record := teleportAsset{
+		Hash:    teleport.Hash,
+		AssetID: teleport.AssetID,
+		Amount:  teleport.Amount,
+	}
+
+	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
+		return r.store.TxInsert(tx, record.Hash, record)
 	})
 }
 

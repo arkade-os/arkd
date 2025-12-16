@@ -29,3 +29,12 @@ CREATE TABLE assets (
     quantity     INTEGER NOT NULL
 );
 
+CREATE TABLE teleport_assets (
+    teleport_hash         TEXT PRIMARY KEY,
+    asset_id     TEXT    NOT NULL,
+    amount       INTEGER NOT NULL,
+    is_claimed   BOOLEAN NOT NULL DEFAULT 0,
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE
+);
+
+

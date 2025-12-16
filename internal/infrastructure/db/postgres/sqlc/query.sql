@@ -407,3 +407,17 @@ WHERE id = @id AND quantity >= @min_required;
 -- name: CreateAsset :exec
 INSERT INTO assets (id, quantity, immutable)
 VALUES (@id, @quantity, @immutable);
+
+-- name: CreateTeleportAsset :exec
+INSERT INTO teleport_assets (teleport_hash, asset_id, amount, is_claimed)
+VALUES (@teleport_hash, @asset_id, @amount, @is_claimed);
+
+-- name: GetTeleportAsset :one
+SELECT teleport_hash, asset_id, amount, is_claimed
+FROM teleport_assets
+WHERE teleport_hash = @teleport_hash;
+
+-- name: UpdateTeleportAsset :exec
+UPDATE teleport_assets
+SET is_claimed = @is_claimed
+WHERE teleport_hash = @teleport_hash;

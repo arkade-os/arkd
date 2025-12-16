@@ -88,6 +88,28 @@ func (q *Queries) CreateAssetAnchor(ctx context.Context, arg CreateAssetAnchorPa
 	return err
 }
 
+const createTeleportAsset = `-- name: CreateTeleportAsset :exec
+INSERT INTO teleport_assets (teleport_hash, asset_id, amount, is_claimed)
+VALUES ($1, $2, $3, $4)
+`
+
+type CreateTeleportAssetParams struct {
+	TeleportHash string
+	AssetID      string
+	Amount       int64
+	IsClaimed    bool
+}
+
+func (q *Queries) CreateTeleportAsset(ctx context.Context, arg CreateTeleportAssetParams) error {
+	_, err := q.db.ExecContext(ctx, createTeleportAsset,
+		arg.TeleportHash,
+		arg.AssetID,
+		arg.Amount,
+		arg.IsClaimed,
+	)
+	return err
+}
+
 const deleteAnchorVtxo = `-- name: DeleteAnchorVtxo :exec
 DELETE FROM anchor_vtxos
 WHERE anchor_id = $1 AND vout = $2
@@ -165,6 +187,24 @@ func (q *Queries) GetAssetMetadata(ctx context.Context, arg GetAssetMetadataPara
 	row := q.db.QueryRowContext(ctx, getAssetMetadata, arg.AssetID, arg.MetaKey)
 	var i AssetMetadatum
 	err := row.Scan(&i.AssetID, &i.MetaKey, &i.MetaValue)
+	return i, err
+}
+
+const getTeleportAsset = `-- name: GetTeleportAsset :one
+SELECT teleport_hash, asset_id, amount, is_claimed
+FROM teleport_assets
+WHERE teleport_hash = $1
+`
+
+func (q *Queries) GetTeleportAsset(ctx context.Context, teleportHash string) (TeleportAsset, error) {
+	row := q.db.QueryRowContext(ctx, getTeleportAsset, teleportHash)
+	var i TeleportAsset
+	err := row.Scan(
+		&i.TeleportHash,
+		&i.AssetID,
+		&i.Amount,
+		&i.IsClaimed,
+	)
 	return i, err
 }
 
@@ -1585,6 +1625,22 @@ UPDATE conviction SET pardoned = true WHERE id = $1
 
 func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, updateConvictionPardoned, id)
+	return err
+}
+
+const updateTeleportAsset = `-- name: UpdateTeleportAsset :exec
+UPDATE teleport_assets
+SET is_claimed = $1
+WHERE teleport_hash = $2
+`
+
+type UpdateTeleportAssetParams struct {
+	IsClaimed    bool
+	TeleportHash string
+}
+
+func (q *Queries) UpdateTeleportAsset(ctx context.Context, arg UpdateTeleportAssetParams) error {
+	_, err := q.db.ExecContext(ctx, updateTeleportAsset, arg.IsClaimed, arg.TeleportHash)
 	return err
 }
 

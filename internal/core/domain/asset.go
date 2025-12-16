@@ -17,8 +17,15 @@ type AnchorVtxo struct {
 }
 
 type Asset struct {
-	ID         string
-	Quantity   uint64
-	Immutable  bool
-	Metadata   []AssetMetadata
+	ID        string
+	Quantity  uint64
+	Immutable bool
+	Metadata  []AssetMetadata
+}
+
+type TeleportAsset struct {
+	Hash      string
+	AssetID   string
+	Amount    uint64
+	IsClaimed bool
 }

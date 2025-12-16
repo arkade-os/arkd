@@ -394,6 +394,7 @@ SELECT id, quantity, immutable
 FROM assets
 WHERE id = ?;
 
+
 -- name: ListAssets :many
 SELECT id, quantity, immutable
 FROM assets
@@ -412,3 +413,17 @@ WHERE id = ? AND quantity >= ?;
 -- name: CreateAsset :exec
 INSERT INTO assets (id, quantity, immutable)
 VALUES (?, ?, ?);
+
+-- name: CreateTeleportAsset :exec
+INSERT INTO teleport_assets (teleport_hash, asset_id, amount, is_claimed)
+VALUES (?, ?, ?, ?);
+
+-- name: GetTeleportAsset :one
+SELECT teleport_hash, asset_id, amount, is_claimed
+FROM teleport_assets
+WHERE teleport_hash = ?;
+
+-- name: UpdateTeleportAsset :exec
+UPDATE teleport_assets
+SET is_claimed = ?
+WHERE teleport_hash = ?;

@@ -2,6 +2,7 @@ package asset
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,33 @@ const AssetVersion byte = 0x01
 type AssetId struct {
 	TxId  [32]byte
 	Index uint32
+}
+
+func (a AssetId) ToString() string {
+	var buf [36]byte
+	copy(buf[:32], a.TxId[:])
+	// Big endian encoding for index
+	buf[32] = byte(a.Index >> 24)
+	buf[33] = byte(a.Index >> 16)
+	buf[34] = byte(a.Index >> 8)
+	buf[35] = byte(a.Index)
+	return hex.EncodeToString(buf[:])
+}
+
+func AssetIdFromString(s string) (AssetId, error) {
+	buf, err := hex.DecodeString(s)
+	if err != nil {
+		return AssetId{}, err
+	}
+	if len(buf) != 36 {
+		return AssetId{}, fmt.Errorf("invalid asset id length: %d", len(buf))
+	}
+
+	var assetId AssetId
+	copy(assetId.TxId[:], buf[:32])
+	// Big endian decoding for index
+	assetId.Index = uint32(buf[32])<<24 | uint32(buf[33])<<16 | uint32(buf[34])<<8 | uint32(buf[35])
+	return assetId, nil
 }
 
 type Asset struct {

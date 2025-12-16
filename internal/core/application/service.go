@@ -1727,6 +1727,18 @@ func (s *service) RegisterIntent(
 			}
 		}
 
+		if len(rcv.AssetTeleportHash) > 0 {
+			if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
+				Hash:      rcv.AssetTeleportHash,
+				AssetID:   rcv.AssetId,
+				Amount:    rcv.AssetAmount,
+				IsClaimed: false,
+			}); err != nil {
+				return "", errors.INTERNAL_ERROR.New("failed to insert teleport asset: %w", err)
+			}
+			continue
+		}
+
 		receivers = append(receivers, rcv)
 	}
 

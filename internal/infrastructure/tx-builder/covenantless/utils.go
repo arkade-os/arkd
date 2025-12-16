@@ -1,13 +1,11 @@
 package txbuilder
 
 import (
-	"bytes"
 	"encoding/hex"
 	"fmt"
 	"log"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -47,7 +45,7 @@ func getOnchainOutputs(
 }
 
 func getOutputVtxosLeaves(
-	intents []domain.Intent, signingPubkey *btcec.PublicKey, unilateralExitDelay arklib.RelativeLocktime, cosignersPublicKeys [][]string,
+	intents []domain.Intent, cosignersPublicKeys [][]string,
 ) ([]tree.Leaf, error) {
 	if len(cosignersPublicKeys) != len(intents) {
 		return nil, fmt.Errorf(
@@ -83,11 +81,7 @@ func getOutputVtxosLeaves(
 				leaf, err := buildTeleportAssetLeaf(
 					receiver,
 					intents,
-					pubkey,
-					signingPubkey,
-					unilateralExitDelay,
 					cosigners,
-					pubkeyBytes,
 				)
 				if err != nil {
 					return nil, err
@@ -153,79 +147,21 @@ func getAssetFromIntents(
 func buildTeleportAssetLeaf(
 	receiver domain.Receiver,
 	intents []domain.Intent,
-	receiverPubKey *btcec.PublicKey,
-	signingPubkey *btcec.PublicKey,
-	unilateralExitDelay arklib.RelativeLocktime,
 	cosigners []string,
-	receiverPubkeyBytes []byte,
 ) (tree.Leaf, error) {
 	// Decode teleport hash
 	hash, err := hex.DecodeString(receiver.AssetTeleportHash)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to decode teleport hash: %w", err)
 	}
-	var commitment [32]byte
-	copy(commitment[:], hash)
 
-	// Decode teleport owner pubkey
-	// ownerPubkeyBytes, err := hex.DecodeString(receiver.AssetTeleportPubkey)
-	// if err != nil {
-	// 	return tree.Leaf{}, fmt.Errorf("failed to decode teleport pubkey: %w", err)
-	// }
-
-	// ownerPubkey, err := schnorr.ParsePubKey(ownerPubkeyBytes)
-	// if err != nil {
-	// 	return tree.Leaf{}, fmt.Errorf("failed to parse teleport pubkey: %w", err)
-	// }
-	ownerPubkey := receiverPubKey
-
-	// Build teleport script/taptree
-	teleportScript := script.NewTeleportVtxoScript(ownerPubkey, signingPubkey, hash, unilateralExitDelay)
-
-	teleportKey, _, err := teleportScript.TapTree()
-	if err != nil {
-		return tree.Leaf{}, fmt.Errorf("failed to get teleport taproot key: %w", err)
-	}
-
-	encodedTeleportPubkey := schnorr.SerializePubKey(teleportKey)
-
-	// TODO(Joshua): decide whether to make this a hard failure.
-	if !bytes.Equal(encodedTeleportPubkey, receiverPubkeyBytes) {
-		log.Println("asset teleport pubkey does not match reconstructed teleport pubkey")
-	}
-
-	// Decode asset ID
-	assetIdBytes, err := hex.DecodeString(receiver.AssetId)
+	assetId, err := asset.AssetIdFromString(receiver.AssetId)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to decode asset id: %w", err)
 	}
 
-	// Handle 32-byte or 36-byte asset ID. If 32, assume Index 0.
-	var assetID asset.AssetId
-	if len(assetIdBytes) == 32 {
-		copy(assetID.TxId[:], assetIdBytes)
-		assetID.Index = 0
-	} else if len(assetIdBytes) == 36 {
-		copy(assetID.TxId[:], assetIdBytes[:32])
-		// Assuming LittleEndian for Index in byte stream if appended
-		// But usually string is hex. Let's assume the bytes are raw 36 bytes.
-		// We'll manual decode the uint32?
-		// Or assume big endian?
-		// Since we don't have standard, let's assume BigEndian as it prints nicer in hex?
-		// Actually btcd often uses LittleEndian.
-		// Let's use binary.BigEndian for now as it's common in network protocols, but Bitcoin uses LE for TxID.
-		// I will just copy the bytes to be safe if I can't query order.
-		// Actually, I'll assume 4 bytes at end are index.
-		// assetID.Index = binary.BigEndian.Uint32(assetIdBytes[32:])
-		// I'll skip complexity and just copy to [4]byte and cast? No, endianness matters.
-		// Default to BigEndian (network order).
-		assetID.Index = uint32(assetIdBytes[32])<<24 | uint32(assetIdBytes[33])<<16 | uint32(assetIdBytes[34])<<8 | uint32(assetIdBytes[35])
-	} else {
-		return tree.Leaf{}, fmt.Errorf("invalid asset id length: %d", len(assetIdBytes))
-	}
-
 	// Get base asset details from intents
-	assetDetails, err := getAssetFromIntents(intents, assetID)
+	assetDetails, err := getAssetFromIntents(intents, assetId)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to get asset from intents: %w", err)
 	}
@@ -234,7 +170,7 @@ func buildTeleportAssetLeaf(
 	assetCopy := *assetDetails
 	assetCopy.Outputs = []asset.AssetOutput{{
 		Type:       asset.AssetOutputTypeTeleport,
-		Commitment: commitment,
+		Commitment: [32]byte(hash),
 		Amount:     receiver.AssetAmount,
 	}}
 	assetCopy.Inputs = nil
@@ -249,13 +185,8 @@ func buildTeleportAssetLeaf(
 		return tree.Leaf{}, fmt.Errorf("failed to encode asset opreturn: %w", err)
 	}
 
-	vtxoScript, err := script.P2TRScript(receiverPubKey)
-	if err != nil {
-		return tree.Leaf{}, fmt.Errorf("failed to create teleport P2TR script: %w", err)
-	}
-
 	return tree.Leaf{
-		Script:              hex.EncodeToString(vtxoScript),
+		Script:              "",
 		Amount:              receiver.Amount,
 		CosignersPublicKeys: cosigners,
 		AssetScript:         string(assetOpret.PkScript),

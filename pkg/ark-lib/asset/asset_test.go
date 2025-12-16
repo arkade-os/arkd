@@ -2,6 +2,7 @@ package asset
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -101,6 +102,25 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 	decodedGroup, err := DecodeAssetGroupFromOpret(txOut.PkScript)
 	require.NoError(t, err)
 	require.Equal(t, group, *decodedGroup)
+}
+
+func TestAssetIdStringConversion(t *testing.T) {
+	txid := deterministicBytesArray(0x01)
+	index := uint32(12345)
+	assetId := AssetId{TxId: txid, Index: index}
+
+	s := assetId.ToString()
+	decoded, err := AssetIdFromString(s)
+	require.NoError(t, err)
+	require.Equal(t, assetId, decoded)
+
+	// Test invalid hex
+	_, err = AssetIdFromString("invalid")
+	require.Error(t, err)
+
+	// Test invalid length
+	_, err = AssetIdFromString(hex.EncodeToString(make([]byte, 35)))
+	require.Error(t, err)
 }
 
 func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {

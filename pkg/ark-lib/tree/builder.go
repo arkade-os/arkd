@@ -298,10 +298,11 @@ func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, e
 			return nil, fmt.Errorf("failed to create script pubkey: %w", err)
 		}
 
-		outputs := make([]*wire.TxOut, 0)
-		outputs = append(outputs, &wire.TxOut{Value: int64(r.Amount), PkScript: pkScript})
+		var outputs []*wire.TxOut
 		if len(r.AssetScript) > 0 {
-			outputs = append(outputs, &wire.TxOut{Value: 0, PkScript: []byte(r.AssetScript)})
+			outputs = []*wire.TxOut{{Value: 0, PkScript: []byte(r.AssetScript)}}
+		} else {
+			outputs = []*wire.TxOut{{Value: int64(r.Amount), PkScript: pkScript}}
 		}
 
 		leafNode := &leaf{

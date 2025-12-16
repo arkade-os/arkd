@@ -540,7 +540,7 @@ func (b *txBuilder) BuildCommitmentTx(
 	var batchOutputScript []byte
 	var batchOutputAmount int64
 
-	receivers, err := getOutputVtxosLeaves(intents, signingPubkey, unilateralExitDelay, cosignersPublicKeys)
+	receivers, err := getOutputVtxosLeaves(intents, cosignersPublicKeys)
 	if err != nil {
 		return "", nil, "", nil, err
 	}

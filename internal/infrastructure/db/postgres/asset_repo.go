@@ -75,6 +75,28 @@ func (r *assetRepository) InsertAssetAnchor(ctx context.Context, anchor domain.A
 	return nil
 }
 
+func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport domain.TeleportAsset) error {
+	return r.querier.CreateTeleportAsset(ctx, queries.CreateTeleportAssetParams{
+		TeleportHash: teleport.Hash,
+		AssetID:      teleport.AssetID,
+		Amount:       int64(teleport.Amount),
+		IsClaimed:    teleport.IsClaimed,
+	})
+}
+
+func (r *assetRepository) GetTeleportAsset(ctx context.Context, teleportHash string) (*domain.TeleportAsset, error) {
+	teleportDB, err := r.querier.GetTeleportAsset(ctx, teleportHash)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.TeleportAsset{
+		Hash:      teleportDB.TeleportHash,
+		AssetID:   teleportDB.AssetID,
+		Amount:    uint64(teleportDB.Amount),
+		IsClaimed: teleportDB.IsClaimed,
+	}, nil
+}
+
 func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string) (*domain.AssetAnchor, error) {
 	anchor, err := r.querier.GetAssetAnchor(ctx, txId)
 	if err != nil {
@@ -185,4 +207,11 @@ func (r *assetRepository) UpdateAssetMetadataList(ctx context.Context, assetId s
 	}
 
 	return nil
+}
+
+func (r *assetRepository) UpdateTeleportAsset(ctx context.Context, teleportHash string, isClaimed bool) error {
+	return r.querier.UpdateTeleportAsset(ctx, queries.UpdateTeleportAssetParams{
+		TeleportHash: teleportHash,
+		IsClaimed:    isClaimed,
+	})
 }

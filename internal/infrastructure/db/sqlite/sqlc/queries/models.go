@@ -186,6 +186,13 @@ type ScheduledSession struct {
 	UpdatedAt            int64
 }
 
+type TeleportAsset struct {
+	TeleportHash string
+	AssetID      string
+	Amount       int64
+	IsClaimed    bool
+}
+
 type Tx struct {
 	Txid     string
 	Tx       string
