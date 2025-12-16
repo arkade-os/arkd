@@ -160,7 +160,7 @@ func sweepTransaction(
 		return "", "", err
 	}
 
-	dustLimit, err := wallet.GetDustAmount(context.Background())
+	dustLimit, err := wallet.GetDustAmount(ctx)
 	if err != nil {
 		return "", "", err
 	}
