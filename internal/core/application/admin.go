@@ -135,7 +135,10 @@ func (a *adminService) Sweep(
 			)
 		}
 
-		// Create vtxo tree from round's VtxoTree
+		if round.Swept {
+			return "", "", fmt.Errorf("commitment txid %s already swept", commitmentTxid)
+		}
+
 		vtxoTree, err := tree.NewTxTree(round.VtxoTree)
 		if err != nil {
 			return "", "", fmt.Errorf(
@@ -145,7 +148,6 @@ func (a *adminService) Sweep(
 			)
 		}
 
-		// Store round and tree for later use
 		batchRounds[commitmentTxid] = round
 		batchVtxoTrees[commitmentTxid] = vtxoTree
 
