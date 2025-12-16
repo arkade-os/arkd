@@ -1259,6 +1259,41 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.ElementsMatch(t, asset.Metadata, md)
 	})
 
+	t.Run("insert get and update teleport asset", func(t *testing.T) {
+		ctx := context.Background()
+		hash := randomString(32)
+		assetID := randomString(32)
+		amount := uint64(5000)
+
+		asset := domain.TeleportAsset{
+			Hash:      hash,
+			AssetID:   assetID,
+			Amount:    amount,
+			IsClaimed: false,
+		}
+
+		err := svc.Assets().InsertTeleportAsset(ctx, asset)
+		require.NoError(t, err, "InsertTeleportAsset should succeed")
+
+		got, err := svc.Assets().GetTeleportAsset(ctx, hash)
+		require.NoError(t, err, "GetTeleportAsset should succeed")
+		require.NotNil(t, got)
+		require.Equal(t, hash, got.Hash)
+		require.Equal(t, assetID, got.AssetID)
+		require.Equal(t, amount, got.Amount)
+		require.False(t, got.IsClaimed)
+
+		err = svc.Assets().UpdateTeleportAsset(ctx, hash, true)
+		require.NoError(t, err, "UpdateTeleportAsset should succeed")
+
+		gotUpdated, err := svc.Assets().GetTeleportAsset(ctx, hash)
+		require.NoError(t, err, "GetTeleportAsset after update should succeed")
+		require.NotNil(t, gotUpdated)
+		require.Equal(t, hash, gotUpdated.Hash)
+		require.Equal(t, assetID, gotUpdated.AssetID)
+		require.Equal(t, amount, gotUpdated.Amount)
+		require.True(t, gotUpdated.IsClaimed)
+	})
 }
 
 func assertScheduledSessionEqual(t *testing.T, expected, actual domain.ScheduledSession) {

@@ -45,10 +45,10 @@ type anchorVtxo struct {
 }
 
 type teleportAsset struct {
-	Hash     string `badgerhold:"key"`
-	AssetID  string `badgerhold:"index"`
-	Amount   uint64
-	OwnerKey string
+	Hash      string `badgerhold:"key"`
+	AssetID   string `badgerhold:"index"`
+	Amount    uint64
+	IsClaimed bool
 }
 
 func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
@@ -146,14 +146,63 @@ func (r *assetRepository) InsertAssetAnchor(
 
 func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport domain.TeleportAsset) error {
 	record := teleportAsset{
-		Hash:    teleport.Hash,
-		AssetID: teleport.AssetID,
-		Amount:  teleport.Amount,
+		Hash:      teleport.Hash,
+		AssetID:   teleport.AssetID,
+		Amount:    teleport.Amount,
+		IsClaimed: teleport.IsClaimed,
 	}
 
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
 		return r.store.TxInsert(tx, record.Hash, record)
 	})
+}
+
+func (r *assetRepository) UpdateTeleportAsset(ctx context.Context, hash string, isClaimed bool) error {
+	var teleport teleportAsset
+
+	var err error
+	if tx := getTxFromContext(ctx); tx != nil {
+		err = r.store.TxGet(tx, hash, &teleport)
+	} else {
+		err = r.store.Get(hash, &teleport)
+	}
+	if err != nil {
+		return err
+	}
+
+	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
+		record := teleportAsset{
+			Hash:      hash,
+			AssetID:   teleport.AssetID,
+			Amount:    teleport.Amount,
+			IsClaimed: isClaimed,
+		}
+
+		return r.store.TxUpsert(tx, hash, record)
+	})
+}
+
+func (r *assetRepository) GetTeleportAsset(
+	ctx context.Context, hash string,
+) (*domain.TeleportAsset, error) {
+	var teleport teleportAsset
+
+	var err error
+	if tx := getTxFromContext(ctx); tx != nil {
+		err = r.store.TxGet(tx, hash, &teleport)
+	} else {
+		err = r.store.Get(hash, &teleport)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &domain.TeleportAsset{
+		Hash:      teleport.Hash,
+		AssetID:   teleport.AssetID,
+		Amount:    teleport.Amount,
+		IsClaimed: teleport.IsClaimed,
+	}, nil
 }
 
 func (r *assetRepository) GetAssetAnchorByTxId(

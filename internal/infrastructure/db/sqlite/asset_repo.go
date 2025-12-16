@@ -34,6 +34,7 @@ func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport doma
 		TeleportHash: teleport.Hash,
 		AssetID:      teleport.AssetID,
 		Amount:       int64(teleport.Amount),
+		IsClaimed:    teleport.IsClaimed,
 	})
 }
 
@@ -43,9 +44,10 @@ func (r *assetRepository) GetTeleportAsset(ctx context.Context, teleportHash str
 		return nil, err
 	}
 	return &domain.TeleportAsset{
-		Hash:    teleportDB.TeleportHash,
-		AssetID: teleportDB.AssetID,
-		Amount:  uint64(teleportDB.Amount),
+		Hash:      teleportDB.TeleportHash,
+		AssetID:   teleportDB.AssetID,
+		Amount:    uint64(teleportDB.Amount),
+		IsClaimed: teleportDB.IsClaimed,
 	}, nil
 }
 
