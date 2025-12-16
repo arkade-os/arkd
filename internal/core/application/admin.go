@@ -39,7 +39,6 @@ type AdminService interface {
 	GetIntentFees(ctx context.Context) (*domain.IntentFees, error)
 	UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error
 	ClearIntentFees(ctx context.Context) error
-	// Conviction management methods
 	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
 	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
 	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
