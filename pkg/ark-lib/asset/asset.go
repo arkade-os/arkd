@@ -2,6 +2,7 @@ package asset
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -103,8 +104,15 @@ const (
 )
 
 type TeleportWitness struct {
-	PublicKey *btcec.PublicKey
-	Nonce     [32]byte
+	Script []byte
+	Nonce  [32]byte
+}
+
+func CalculateTeleportHash(script []byte, nonce [32]byte) [32]byte {
+	var buf bytes.Buffer
+	buf.Write(script)
+	buf.Write(nonce[:])
+	return sha256.Sum256(buf.Bytes())
 }
 
 type AssetInput struct {

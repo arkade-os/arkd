@@ -11,7 +11,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -124,16 +123,17 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 				continue
 			}
 
-			txHash := checkpointPtx.UnsignedTx.TxHash()
+			pkScript := checkpointPtx.UnsignedTx.TxOut[0].PkScript
+			teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
 			var commitment [32]byte
-			copy(commitment[:], txHash[:])
+			copy(commitment[:], teleportHash[:])
 
 			controlInput := asset.AssetInput{
 				Type:       asset.AssetInputTypeTeleport,
 				Commitment: commitment,
 				Witness: asset.TeleportWitness{
-					PublicKey: vtxo.Tapscript.ControlBlock.InternalKey,
-					Nonce:     [32]byte{},
+					Script: pkScript,
+					Nonce:  [32]byte{},
 				},
 				Amount: assetOutput.Amount,
 			}
@@ -174,16 +174,17 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 			}
 
 			if assetOutput != nil {
-				txHash := checkpointPtx.UnsignedTx.TxHash()
+				pkScript := checkpointPtx.UnsignedTx.TxOut[0].PkScript
+				teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
 				var commitment [32]byte
-				copy(commitment[:], txHash[:])
+				copy(commitment[:], teleportHash[:])
 
 				normalAssetInputs = append(normalAssetInputs, asset.AssetInput{
 					Type:       asset.AssetInputTypeTeleport,
 					Commitment: commitment,
 					Witness: asset.TeleportWitness{
-						PublicKey: vtxo.Tapscript.ControlBlock.InternalKey,
-						Nonce:     [32]byte{},
+						Script: pkScript,
+						Nonce:  [32]byte{},
 					},
 					Amount: assetOutput.Amount,
 				})
@@ -256,26 +257,67 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 				return fmt.Errorf("rebuild expects Teleport inputs (Checkpoint Hash), got %d", input.Type)
 			}
 
-			checkpointTxId, err := chainhash.NewHash(input.Commitment[:])
-			if err != nil {
-				return err
+			// We need to find the checkpoint tx that matches the commitment (which is the TeleportHash)
+			var matchedCheckpointTx *psbt.Packet
+			var found bool
+
+			for _, txHex := range checkpointTxMap {
+				ptx, err := psbt.NewFromRawBytes(strings.NewReader(txHex), true)
+				if err != nil {
+					continue
+				}
+
+				if len(ptx.UnsignedTx.TxOut) == 0 {
+					continue
+				}
+
+				// Calculate TeleportHash for this candidate
+				// Assuming Nonce is zero for control assets as in BuildAssetTxs
+				candidateHash := asset.CalculateTeleportHash(ptx.UnsignedTx.TxOut[0].PkScript, [32]byte{})
+				if bytes.Equal(candidateHash[:], input.Commitment[:]) {
+					matchedCheckpointTx = ptx
+					found = true
+					break
+				}
 			}
 
-			checkpointTxHex, ok := checkpointTxMap[checkpointTxId.String()]
-			if !ok {
-				return fmt.Errorf("checkpoint tx not found for asset input %s", checkpointTxId)
+			if !found {
+				return fmt.Errorf("checkpoint tx not found for asset input commitment %x", input.Commitment)
 			}
 
-			checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
-			if err != nil {
-				return err
-			}
-
-			prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
+			prev := matchedCheckpointTx.UnsignedTx.TxIn[0].PreviousOutPoint
 
 			// Update the asset input to point to the underlying VTXO
 			// We iterate through inputs slice pointer
 			inputs[i].Type = asset.AssetInputTypeTeleport
+
+			// For rebuilding, we regenerate the Teleport Input.
+			// The Commitment remains the same (TeleportHash).
+			// Wait, RebuildAssetTxs calls BuildAssetTxs.
+			// BuildAssetTxs expects VTXOs.
+			// Wait! RebuildAssetTxs receives `vtxos` as argument.
+			// RebuildAssetTxs resolves inputs to find WHICH vtxo corresponds to which input?
+			// No, `vtxos` are passed in.
+			// The `resolveInputs` function inside `RebuildAssetTxs` seems to updates the `inputs` of the ASSET structure.
+			// But `BuildAssetTxs` REGENERATES `inputs` from `vtxos`.
+			// `resolveInputs` in `RebuildAssetTxs` was seemingly trying to "fix" inputs to point to VTXO commitment before calling `BuildAssetTxs`?
+			// Actually `RebuildAssetTxs` passes `vtxos` to `BuildAssetTxs`.
+			// `BuildAssetTxs` iterates `vtxos` and tries to find matching inputs?
+			// `buildAssetCheckpointTx` in `BuildAssetTxs` checks:
+			// `if bytes.Equal(in.Commitment[:], vtxo.Outpoint.Hash[:])`.
+			// THIS IS CRITICAL.
+			// If `BuildAssetTxs` expects `Commitment` to be `VTXO TxHash`.
+			// But now `Commitment` is `TeleportHash`.
+			// Then `buildAssetCheckpointTx` logic checking `Commitment == vtxo.Outpoint.Hash` WILL FAIL.
+
+			// So `RebuildAssetTxs` MUST map the `TeleportHash` commitment back to `VTXO TxHash`
+			// so that `buildAssetCheckpointTx` can match it!
+			// Yes! That's what `RebuildAssetTxs` did!
+			// It mapped `Commitment` (Checkpoint TxID) -> `Checkpoint Tx` -> `PreviousOutPoint.Hash` (VTXO Hash).
+			// And UPDATED `inputs[i].Commitment` to `VTXO Hash`.
+
+			// So my update to `RebuildAssetTxs` is right: find checkpoint by hash, get VTXO hash, update commitment.
+
 			var vtxoHash [32]byte
 			copy(vtxoHash[:], prev.Hash[:])
 			inputs[i].Commitment = vtxoHash

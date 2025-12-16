@@ -3909,38 +3909,60 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 
 			// Validate that each asset input refers to a valid offchain transaction
 			for _, input := range grpAsset.Inputs {
-				var txHash []byte
 				var vout uint32
+
+				var checkpointTx string
+				var foundCheckpoint bool
 
 				switch input.Type {
 				case asset.AssetInputTypeLocal:
 					if int(input.Vin) >= len(arkTx.TxIn) {
 						return fmt.Errorf("asset input refers to invalid vin %d", input.Vin)
 					}
-					txHash = arkTx.TxIn[input.Vin].PreviousOutPoint.Hash.CloneBytes()
+					// For local, we get previous outpoint hash
+					txHashBytes := arkTx.TxIn[input.Vin].PreviousOutPoint.Hash.CloneBytes()
+					txHash, err := chainhash.NewHash(txHashBytes)
+					if err != nil {
+						return fmt.Errorf("error parsing local input txhash: %s", err)
+					}
+
+					checkpointId := txHash.String()
+					if cp, ok := checkpointTxMap[checkpointId]; ok {
+						checkpointTx = cp
+						foundCheckpoint = true
+					}
 					vout = arkTx.TxIn[input.Vin].PreviousOutPoint.Index
+
 				case asset.AssetInputTypeTeleport:
-					txHash = input.Commitment[:]
-					// Teleport inputs refer to the Checkpoint Tx itself.
-					// We might not have a specific Vout index to check against unless we enforce one.
-					// For now, we will handle finding the output differently or skip index check.
+					// Verify commitment matches hash of witness
+					expectedHash := asset.CalculateTeleportHash(input.Witness.Script, input.Witness.Nonce)
+					if !bytes.Equal(input.Commitment[:], expectedHash[:]) {
+						return fmt.Errorf("asset input commitment does not match teleport hash witness")
+					}
+
+					// Find checkpoint tx that has the first output script matching the witness script
+					for _, cp := range checkpointTxMap {
+						ptx, err := psbt.NewFromRawBytes(strings.NewReader(cp), true)
+						if err != nil {
+							continue
+						}
+						if len(ptx.UnsignedTx.TxOut) > 0 {
+							if bytes.Equal(ptx.UnsignedTx.TxOut[0].PkScript, input.Witness.Script) {
+								checkpointTx = cp
+								foundCheckpoint = true
+								break
+							}
+						}
+					}
+					// For Teleport inputs, we treat the VTXO as the source (Vout 0)
+					vout = 0
 				default:
 					return fmt.Errorf("unknown asset input type %d", input.Type)
 				}
 
-				hash, err := chainhash.NewHash(txHash)
-				if err != nil {
-					return fmt.Errorf("error parsing asset input txhash: %s", err)
+				if !foundCheckpoint {
+					return fmt.Errorf("checkpoint tx not found for asset input")
 				}
-
-				checkpointId := hash.String()
-
-				// fetch the checkpoint txid from the map
-				if _, ok := checkpointTxMap[checkpointId]; !ok {
-					return fmt.Errorf("asset input %s is a checkpoint tx, cannot verify offchain tx", checkpointId)
-				}
-
-				checkpointTx := checkpointTxMap[checkpointId]
 
 				checkPointPsbt, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTx), true)
 				if err != nil {
@@ -4034,22 +4056,16 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 	controlAssets := assetGroup.ControlAssets
 
 	for _, normalAsset := range normalAssets {
-		// Serialize AssetId (36 bytes) -> Hex
-		assetIdBytes := make([]byte, 36)
-		copy(assetIdBytes, normalAsset.AssetId.TxId[:])
-		// Use BigEndian for index in ID serialization
-		assetIdBytes[32] = byte(normalAsset.AssetId.Index >> 24)
-		assetIdBytes[33] = byte(normalAsset.AssetId.Index >> 16)
-		assetIdBytes[34] = byte(normalAsset.AssetId.Index >> 8)
-		assetIdBytes[35] = byte(normalAsset.AssetId.Index)
-
-		normalAssetId := hex.EncodeToString(assetIdBytes)
-
+		normalAssetId := normalAsset.AssetId.ToString()
 		totalOut := uint64(0)
 		totalIn := uint64(0)
 
 		for _, in := range normalAsset.Inputs {
 			totalIn += in.Amount
+
+			if in.Type == asset.AssetInputTypeTeleport {
+				s.repoManager.Assets().UpdateTeleportAsset(ctx, hex.EncodeToString(in.Commitment[:]), true)
+			}
 		}
 
 		for _, out := range normalAsset.Outputs {
@@ -4156,17 +4172,9 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 				anchorVtxos = append(anchorVtxos, assetVtxo)
 			}
 
-			// Re-serialize struct ID
-			idBytes := make([]byte, 36)
-			copy(idBytes, grpAsset.AssetId.TxId[:])
-			idBytes[32] = byte(grpAsset.AssetId.Index >> 24)
-			idBytes[33] = byte(grpAsset.AssetId.Index >> 16)
-			idBytes[34] = byte(grpAsset.AssetId.Index >> 8)
-			idBytes[35] = byte(grpAsset.AssetId.Index)
-
 			err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
 				AnchorPoint: anchorPoint,
-				AssetID:     hex.EncodeToString(idBytes),
+				AssetID:     grpAsset.AssetId.ToString(),
 				Vtxos:       anchorVtxos,
 			})
 			if err != nil {

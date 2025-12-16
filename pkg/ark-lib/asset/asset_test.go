@@ -14,7 +14,6 @@ import (
 func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	pubKey := deterministicPubKey(t, 0x01)
 	asset := Asset{
 		AssetId: AssetId{
 			TxId:  deterministicBytesArray(0x2a),
@@ -46,8 +45,8 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Type:       AssetInputTypeTeleport,
 				Commitment: deterministicBytesArray(0xbb),
 				Witness: TeleportWitness{
-					PublicKey: &pubKey,
-					Nonce:     deterministicBytesArray(0x99),
+					Script: []byte{0x00, 0x01, 0x02, 0x03},
+					Nonce:  deterministicBytesArray(0x99),
 				},
 				Amount: 40,
 			},
@@ -190,7 +189,6 @@ func TestAssetOutputListEncodeDecode(t *testing.T) {
 func TestAssetInputListEncodeDecode(t *testing.T) {
 	t.Parallel()
 
-	pubKey := deterministicPubKey(t, 0x02)
 	inputs := []AssetInput{
 		{
 			Type:   AssetInputTypeLocal,
@@ -202,8 +200,8 @@ func TestAssetInputListEncodeDecode(t *testing.T) {
 			Amount:     20,
 			Commitment: deterministicBytesArray(0x02),
 			Witness: TeleportWitness{
-				PublicKey: &pubKey,
-				Nonce:     deterministicBytesArray(0x88),
+				Script: []byte{0xde, 0xad, 0xbe, 0xef},
+				Nonce:  deterministicBytesArray(0x88),
 			},
 		},
 	}
