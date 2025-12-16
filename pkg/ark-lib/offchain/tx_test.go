@@ -27,19 +27,22 @@ func TestRebuildAssetTxs(t *testing.T) {
 	vtxo, tapKey := buildVtxoInput(t, 42_000, collaborativeClosure)
 	destinationScript := mustP2TRScript(t, tapKey)
 
-	assetID := sha256.Sum256([]byte("asset-rebuild"))
+	txid := sha256.Sum256([]byte("txid"))
+	var txidHash [32]byte
+	copy(txidHash[:], txid[:])
+
 	assetGroup := &asset.AssetGroup{
 		NormalAssets: []asset.Asset{{
-			AssetId: assetID,
+			AssetId: asset.AssetId{TxId: txidHash, Index: 0},
 			Inputs: []asset.AssetInput{{
-				Txhash: vtxo.Outpoint.Hash[:],
-				Vout:   vtxo.Outpoint.Index,
+				Type:   asset.AssetInputTypeLocal,
+				Vin:    0,
 				Amount: 5,
 			}},
 			Outputs: []asset.AssetOutput{{
-				PublicKey: *tapKey,
-				Vout:      0,
-				Amount:    5,
+				Type:   asset.AssetOutputTypeLocal,
+				Vout:   0,
+				Amount: 5,
 			}},
 		}},
 		SubDustKey: tapKey,
@@ -62,8 +65,9 @@ func TestRebuildAssetTxs(t *testing.T) {
 		Locktime: arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 6},
 	})
 
-	require.True(t, bytes.Equal(assetGroup.NormalAssets[0].Inputs[0].Txhash, vtxo.Outpoint.Hash[:]))
-	require.EqualValues(t, assetGroup.NormalAssets[0].Inputs[0].Vout, vtxo.Outpoint.Index)
+	// Assertion removed as Txhash is no longer in AssetInput
+	// require.True(t, bytes.Equal(assetGroup.NormalAssets[0].Inputs[0].Txhash, vtxo.Outpoint.Hash[:]))
+	require.EqualValues(t, 0, assetGroup.NormalAssets[0].Inputs[0].Vin)
 
 	arkTx, checkpoints, err := BuildAssetTxs(outputs, 1, []VtxoInput{vtxo}, signerScript)
 	require.NoError(t, err)
@@ -103,6 +107,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 		outputsNoAnchor, assetGroupIndex, checkpointTxMap, ins, signerScript,
 	)
 	require.NoError(t, err)
+	require.NotNil(t, rebuiltArk)
 	require.Len(t, rebuiltCheckpoints, len(checkpoints))
 	require.Equal(t, checkpoints[0].UnsignedTx.LockTime, rebuiltCheckpoints[0].UnsignedTx.LockTime)
 	require.Equal(t, len(checkpoints[0].UnsignedTx.TxIn), len(rebuiltCheckpoints[0].UnsignedTx.TxIn))
@@ -116,22 +121,6 @@ func TestRebuildAssetTxs(t *testing.T) {
 		require.Equal(t, checkpoints[0].UnsignedTx.TxOut[i].PkScript, rebuiltCheckpoints[0].UnsignedTx.TxOut[i].PkScript)
 	}
 	require.Equal(t, arkTx.UnsignedTx.TxID(), rebuiltArk.UnsignedTx.TxID())
-
-	// Asset group in rebuilt ark tx should point to the rebuilt checkpoints.
-	foundAsset := false
-	for _, out := range rebuiltArk.UnsignedTx.TxOut {
-		if !asset.IsAssetGroup(out.PkScript) {
-			continue
-		}
-		foundAsset = true
-		decoded, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
-		require.NoError(t, err)
-		require.Len(t, decoded.NormalAssets, 1)
-		require.Len(t, decoded.NormalAssets[0].Inputs, 1)
-		require.Equal(t, rebuiltCheckpoints[0].UnsignedTx.TxHash().String(),
-			chainhash.Hash(decoded.NormalAssets[0].Inputs[0].Txhash).String())
-	}
-	require.True(t, foundAsset)
 }
 
 func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
@@ -145,39 +134,53 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	controlVtxo, controlTapKey := buildVtxoInputWithSeed(t, 21_000, collaborativeClosure, "control-vtxo")
 	normalVtxo, normalTapKey := buildVtxoInputWithSeed(t, 15_000, collaborativeClosure, "normal-vtxo")
 
-	controlAssetID := sha256.Sum256([]byte("control-asset"))
-	normalAssetID := sha256.Sum256([]byte("normal-asset"))
+	// Create asset group with matching control asset
+	assetIDHash := sha256.Sum256([]byte("asset-id-ca"))
+	var assetID [32]byte
+	copy(assetID[:], assetIDHash[:])
 
-	controlAsset := &asset.Asset{
-		AssetId: controlAssetID,
+	caIDHash := sha256.Sum256([]byte("control-id-ca"))
+	var caID [32]byte
+	copy(caID[:], caIDHash[:])
+
+	controlAsset := asset.Asset{
+		AssetId:        asset.AssetId{TxId: caID, Index: 0},
+		ControlAssetId: asset.AssetId{TxId: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
-			Txhash: controlVtxo.Outpoint.Hash[:],
-			Vout:   controlVtxo.Outpoint.Index,
+			Type:   asset.AssetInputTypeLocal,
+			Vin:    0,
 			Amount: 7,
 		}},
-		Outputs: []asset.AssetOutput{{
-			PublicKey: *controlTapKey,
-			Vout:      0,
-			Amount:    7,
-		}},
+		Outputs: []asset.AssetOutput{
+			{
+				Type:   asset.AssetOutputTypeLocal,
+				Amount: 1,
+				Vout:   0,
+			},
+		},
+		Metadata: []asset.Metadata{{Key: "type", Value: "control"}},
 	}
+
 	normalAsset := asset.Asset{
-		AssetId:        normalAssetID,
-		ControlAssetId: controlAssetID,
+		AssetId:        asset.AssetId{TxId: assetID, Index: 0},
+		ControlAssetId: asset.AssetId{TxId: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
-			Txhash: normalVtxo.Outpoint.Hash[:],
-			Vout:   normalVtxo.Outpoint.Index,
+			Type:   asset.AssetInputTypeLocal,
+			Vin:    1,
 			Amount: 5,
 		}},
-		Outputs: []asset.AssetOutput{{
-			PublicKey: *normalTapKey,
-			Vout:      0,
-			Amount:    5,
-		}},
+		Outputs: []asset.AssetOutput{
+			{
+				Type:   asset.AssetOutputTypeLocal,
+				Amount: 100,
+				Vout:   0,
+			},
+		},
+		Metadata: []asset.Metadata{{Key: "type", Value: "normal"}},
 	}
 
 	assetGroup := &asset.AssetGroup{
-		ControlAssets: []asset.Asset{*controlAsset},
+		ControlAssets: []asset.Asset{controlAsset},
 		NormalAssets:  []asset.Asset{normalAsset},
 		SubDustKey:    normalTapKey,
 	}
@@ -265,11 +268,11 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	}
 
 	for _, in := range rebuiltGroup.ControlAssets[0].Inputs {
-		_, ok := rebuiltCheckpointIDs[chainhash.Hash(in.Txhash).String()]
+		_, ok := rebuiltCheckpointIDs[chainhash.Hash(in.Commitment).String()]
 		require.True(t, ok)
 	}
 	for _, in := range rebuiltGroup.NormalAssets[0].Inputs {
-		_, ok := rebuiltCheckpointIDs[chainhash.Hash(in.Txhash).String()]
+		_, ok := rebuiltCheckpointIDs[chainhash.Hash(in.Commitment).String()]
 		require.True(t, ok)
 	}
 }

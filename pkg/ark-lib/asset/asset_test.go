@@ -13,37 +13,37 @@ import (
 func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	var assetID [32]byte
-	copy(assetID[:], bytes.Repeat([]byte{0x2a}, 32))
-
-	var controlAssetId [32]byte
-	copy(controlAssetId[:], bytes.Repeat([]byte{0x3c}, 32))
-
 	asset := Asset{
-		AssetId: assetID,
+		AssetId: AssetId{
+			TxId:  deterministicBytesArray(0x2a),
+			Index: 0,
+		},
 		Outputs: []AssetOutput{
 			{
-				PublicKey: deterministicPubKey(t, 1),
-				Amount:    11,
-				Vout:      0,
+				Type:   AssetOutputTypeLocal,
+				Amount: 11,
+				Vout:   0,
 			},
 			{
-				PublicKey: deterministicPubKey(t, 2),
-				Amount:    22,
-				Vout:      1,
+				Type:       AssetOutputTypeTeleport,
+				Commitment: deterministicBytesArray(0xcc),
+				Amount:     22,
 			},
 		},
-		ControlAssetId: controlAssetId,
+		ControlAssetId: AssetId{
+			TxId:  deterministicBytesArray(0x3c),
+			Index: 1,
+		},
 		Inputs: []AssetInput{
 			{
-				Txhash: deterministicTxhash(0xaa),
-				Vout:   7,
+				Type:   AssetInputTypeLocal,
+				Vin:    7,
 				Amount: 20,
 			},
 			{
-				Txhash: deterministicTxhash(0xbb),
-				Vout:   9,
-				Amount: 40,
+				Type:       AssetInputTypeTeleport,
+				Commitment: deterministicBytesArray(0xbb),
+				Amount:     40,
 			},
 		},
 		Metadata: []Metadata{
@@ -66,23 +66,20 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 func TestAssetGroupEncodeDecode(t *testing.T) {
 	t.Parallel()
 
-	var controlAssetId [32]byte
-	copy(controlAssetId[:], bytes.Repeat([]byte{0x3c}, 32))
-
 	controlAsset := Asset{
-		AssetId:        deterministicBytesArray(0x11),
-		Outputs:        []AssetOutput{{PublicKey: deterministicPubKey(t, 9), Amount: 1, Vout: 0}},
-		ControlAssetId: controlAssetId,
+		AssetId:        deterministicAssetId(0x11),
+		Outputs:        []AssetOutput{{Type: AssetOutputTypeTeleport, Commitment: deterministicBytesArray(0xdd), Amount: 1}},
+		ControlAssetId: deterministicAssetId(0x3c),
 		Metadata:       []Metadata{{Key: "kind", Value: "control"}},
 		Version:        AssetVersion,
 		Magic:          AssetMagic,
 	}
 
 	normalAsset := Asset{
-		AssetId:        deterministicBytesArray(0x12),
-		Outputs:        []AssetOutput{{PublicKey: deterministicPubKey(t, 10), Amount: 10, Vout: 1}},
-		ControlAssetId: controlAssetId,
-		Inputs:         []AssetInput{{Txhash: deterministicTxhash(0xcc), Vout: 1, Amount: 5}},
+		AssetId:        deterministicAssetId(0x12),
+		Outputs:        []AssetOutput{{Type: AssetOutputTypeLocal, Amount: 10, Vout: 1}},
+		ControlAssetId: deterministicAssetId(0x3c),
+		Inputs:         []AssetInput{{Type: AssetInputTypeLocal, Vin: 1, Amount: 5}},
 		Metadata:       []Metadata{{Key: "kind", Value: "normal"}},
 		Version:        AssetVersion,
 		Magic:          AssetMagic,
@@ -98,10 +95,7 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 
 	decodedGroup, err := DecodeAssetGroupFromOpret(txOut.PkScript)
 	require.NoError(t, err)
-	require.Len(t, decodedGroup.ControlAssets, 1)
-	require.Equal(t, controlAsset, decodedGroup.ControlAssets[0])
-	require.Len(t, decodedGroup.NormalAssets, 1)
-	require.Equal(t, normalAsset, decodedGroup.NormalAssets[0])
+	require.Equal(t, group, *decodedGroup)
 }
 
 func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
@@ -109,9 +103,9 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 
 	subDustKey := deterministicPubKey(t, 0x55)
 	normalAsset := Asset{
-		AssetId:        deterministicBytesArray(0x12),
-		Outputs:        []AssetOutput{{PublicKey: deterministicPubKey(t, 10), Amount: 10, Vout: 1}},
-		ControlAssetId: deterministicBytesArray(0xaa),
+		AssetId:        deterministicAssetId(0x12),
+		Outputs:        []AssetOutput{{Type: AssetOutputTypeLocal, Amount: 10, Vout: 1}},
+		ControlAssetId: deterministicAssetId(0xaa),
 		Version:        AssetVersion,
 		Magic:          AssetMagic,
 	}
@@ -147,14 +141,14 @@ func TestAssetOutputListEncodeDecode(t *testing.T) {
 
 	outputs := []AssetOutput{
 		{
-			PublicKey: deterministicPubKey(t, 4),
-			Vout:      0,
-			Amount:    100,
+			Type:   AssetOutputTypeLocal,
+			Vout:   0,
+			Amount: 100,
 		},
 		{
-			PublicKey: deterministicPubKey(t, 5),
-			Vout:      1,
-			Amount:    200,
+			Type:       AssetOutputTypeTeleport,
+			Commitment: deterministicBytesArray(0xEE),
+			Amount:     200,
 		},
 	}
 
@@ -173,14 +167,14 @@ func TestAssetInputListEncodeDecode(t *testing.T) {
 
 	inputs := []AssetInput{
 		{
-			Txhash: deterministicTxhash(0x01),
+			Type:   AssetInputTypeLocal,
 			Amount: 80,
-			Vout:   1,
+			Vin:    1,
 		},
 		{
-			Txhash: deterministicTxhash(0x02),
-			Amount: 20,
-			Vout:   2,
+			Type:       AssetInputTypeTeleport,
+			Amount:     20,
+			Commitment: deterministicBytesArray(0x02),
 		},
 	}
 
@@ -213,4 +207,11 @@ func deterministicBytesArray(seed byte) [32]byte {
 	var arr [32]byte
 	copy(arr[:], deterministicTxhash(seed))
 	return arr
+}
+
+func deterministicAssetId(seed byte) AssetId {
+	return AssetId{
+		TxId:  deterministicBytesArray(seed),
+		Index: 0,
+	}
 }

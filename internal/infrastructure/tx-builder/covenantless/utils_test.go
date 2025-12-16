@@ -40,11 +40,14 @@ func newTestAssetGroup(t *testing.T, idHex string) (asset.Asset, []byte) {
 	require.NoError(t, err)
 
 	testAsset := asset.Asset{
-		AssetId: id,
+		AssetId: asset.AssetId{
+			TxId:  id,
+			Index: 0,
+		},
 		Outputs: []asset.AssetOutput{{
-			PublicKey: *privKey.PubKey(),
-			Vout:      0,
-			Amount:    100,
+			Type:   asset.AssetOutputTypeLocal,
+			Vout:   0,
+			Amount: 100,
 		}},
 	}
 

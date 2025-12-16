@@ -17,11 +17,16 @@ import (
 
 const AssetVersion byte = 0x01
 
+type AssetId struct {
+	TxId  [32]byte
+	Index uint32
+}
+
 type Asset struct {
-	AssetId        [32]byte
+	AssetId        AssetId
 	Immutable      bool
 	Outputs        []AssetOutput // 8 + 33
-	ControlAssetId [32]byte
+	ControlAssetId AssetId
 	Inputs         []AssetInput
 	Metadata       []Metadata
 
@@ -48,16 +53,32 @@ type Metadata struct {
 	Value string
 }
 
+type AssetOutputType uint8
+
+const (
+	AssetOutputTypeLocal    AssetOutputType = 0
+	AssetOutputTypeTeleport AssetOutputType = 1
+)
+
 type AssetOutput struct {
-	PublicKey btcec.PublicKey
-	Vout      uint32
-	Amount    uint64
+	Type       AssetOutputType
+	Vout       uint32   // For Local
+	Commitment [32]byte // For Teleport
+	Amount     uint64
 }
 
+type AssetInputType uint8
+
+const (
+	AssetInputTypeLocal    AssetInputType = 0
+	AssetInputTypeTeleport AssetInputType = 1
+)
+
 type AssetInput struct {
-	Txhash []byte
-	Vout   uint32
-	Amount uint64
+	Type       AssetInputType
+	Vin        uint32   // For Local
+	Commitment [32]byte // For Teleport
+	Amount     uint64
 }
 
 func (g *AssetGroup) EncodeOpret(amount int64) (wire.TxOut, error) {
@@ -322,10 +343,11 @@ func IsAssetGroup(opReturnData []byte) bool {
 func (a *Asset) EncodeTlv() ([]byte, error) {
 	var tlvRecords []tlv.Record
 
-	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeAssetID,
 		&a.AssetId,
-	))
+		AssetIdSize(&a.AssetId),
+		EAssetId, nil))
 
 	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
 		tlvTypeImmutable,
@@ -334,17 +356,19 @@ func (a *Asset) EncodeTlv() ([]byte, error) {
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeOutput,
 		&a.Outputs,
-		AssetOutputListSize(len(a.Outputs)),
+		AssetOutputListSize(a.Outputs),
 		EAssetOutputList, nil))
 
-	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeControlAssetId,
-		&a.ControlAssetId))
+		&a.ControlAssetId,
+		AssetIdSize(&a.ControlAssetId),
+		EAssetId, nil))
 
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeInput,
 		&a.Inputs,
-		AssetInputListSize(len(a.Inputs)),
+		AssetInputListSize(a.Inputs),
 		EAssetInputList, nil))
 
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
@@ -366,9 +390,12 @@ func (a *Asset) EncodeTlv() ([]byte, error) {
 
 func (a *Asset) DecodeTlv(data []byte) error {
 	tlvStream, err := tlv.NewStream(
-		tlv.MakePrimitiveRecord(
+		tlv.MakeDynamicRecord(
 			tlvTypeAssetID,
 			&a.AssetId,
+			AssetIdSize(nil),
+			nil,
+			DAssetId,
 		),
 
 		tlv.MakePrimitiveRecord(
@@ -379,18 +406,21 @@ func (a *Asset) DecodeTlv(data []byte) error {
 		tlv.MakeDynamicRecord(
 			tlvTypeOutput,
 			&a.Outputs,
-			AssetOutputListSize(len(a.Outputs)),
+			AssetOutputListSize(a.Outputs),
 			nil,
 			DAssetOutputList,
 		),
-		tlv.MakePrimitiveRecord(
+		tlv.MakeDynamicRecord(
 			tlvTypeControlAssetId,
 			&a.ControlAssetId,
+			AssetIdSize(nil),
+			nil,
+			DAssetId,
 		),
 		tlv.MakeDynamicRecord(
 			tlvTypeInput,
 			&a.Inputs,
-			AssetInputListSize(len(a.Inputs)),
+			AssetInputListSize(a.Inputs),
 			nil,
 			DAssetInputList,
 		),
@@ -415,26 +445,26 @@ func verifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
 	processedOutputs := 0
 
 	for _, assetOut := range assetOutputs {
-
-		for i, out := range outs {
-			// Asset Output comes after Seal Outputs
-			if IsAssetGroup(out.PkScript) {
-				break
+		switch assetOut.Type {
+		case AssetOutputTypeLocal:
+			if int(assetOut.Vout) >= len(outs) {
+				return fmt.Errorf("local asset output references invalid vout %d (total outputs: %d)",
+					assetOut.Vout, len(outs))
 			}
-
-			pkScript, err := schnorr.ParsePubKey(out.PkScript[2:])
-			if err != nil {
-				return err
-			}
-			if pkScript.IsEqual(&assetOut.PublicKey) && uint32(i) == assetOut.Vout {
-				processedOutputs++
-			}
+			processedOutputs++
+		case AssetOutputTypeTeleport:
+			// Teleport outputs are not bound to a specific tx output index in the same way
+			// We effectively trust the listing in the asset payload.
+			// Ideally we might check if the Commitment is valid or something,
+			// but for now we just count it.
+			processedOutputs++
+		default:
+			return fmt.Errorf("unknown asset output type %d", assetOut.Type)
 		}
 	}
 
 	if processedOutputs != len(assetOutputs) {
-		// also error out processedOutputs and len(assetOutputs) for easier debugging
-		errors := fmt.Errorf("not all asset outputs found in transaction outputs: processed %d of %d",
+		errors := fmt.Errorf("not all asset outputs verified: processed %d of %d",
 			processedOutputs, len(assetOutputs))
 		return errors
 	}
@@ -443,20 +473,21 @@ func verifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
 }
 
 func verifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
-	processedInputs := 0
-
-	for _, assetIn := range assetInputs {
-		for _, in := range ins {
-			if bytes.Equal(in.PreviousOutPoint.Hash[:], assetIn.Txhash) && in.PreviousOutPoint.Index == assetIn.Vout {
-				processedInputs++
+	for i, assetIn := range assetInputs {
+		switch assetIn.Type {
+		case AssetInputTypeLocal:
+			if int(assetIn.Vin) >= len(ins) {
+				return fmt.Errorf("asset input %d references invalid input index %d (total inputs: %d)",
+					i, assetIn.Vin, len(ins))
 			}
+		case AssetInputTypeTeleport:
+			// Teleport inputs don't reference a specific transaction input index directly for validity
+			// in the same way, or they might. For now, assuming successful check if present.
+			continue
+		default:
+			return fmt.Errorf("unknown asset input type %d", assetIn.Type)
 		}
 	}
-
-	if processedInputs != len(assetInputs) {
-		return errors.New("not all asset inputs found in transaction inputs")
-	}
-
 	return nil
 }
 

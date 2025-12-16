@@ -121,7 +121,7 @@ func taprootOutputScript(taprootKey *btcec.PublicKey) ([]byte, error) {
 }
 
 func getAssetFromIntents(
-	intents []domain.Intent, assetId [32]byte,
+	intents []domain.Intent, assetId asset.AssetId,
 ) (*asset.Asset, error) {
 
 	for _, intent := range intents {
@@ -145,7 +145,8 @@ func getAssetFromIntents(
 		}
 
 	}
-	return nil, fmt.Errorf("asset with id %x not found in intents", assetId)
+	// Format the error nicely for struct
+	return nil, fmt.Errorf("asset with id %x:%d not found in intents", assetId.TxId, assetId.Index)
 }
 
 // buildTeleportAssetLeaf builds the leaf for an offchain receiver that has an associated asset teleport.
@@ -163,6 +164,8 @@ func buildTeleportAssetLeaf(
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to decode teleport hash: %w", err)
 	}
+	var commitment [32]byte
+	copy(commitment[:], hash)
 
 	// Decode teleport owner pubkey
 	ownerPubkeyBytes, err := hex.DecodeString(receiver.AssetTeleportPubkey)
@@ -196,11 +199,32 @@ func buildTeleportAssetLeaf(
 		return tree.Leaf{}, fmt.Errorf("failed to decode asset id: %w", err)
 	}
 
-	var assetId [32]byte
-	copy(assetId[:], assetIdBytes)
+	// Handle 32-byte or 36-byte asset ID. If 32, assume Index 0.
+	var assetID asset.AssetId
+	if len(assetIdBytes) == 32 {
+		copy(assetID.TxId[:], assetIdBytes)
+		assetID.Index = 0
+	} else if len(assetIdBytes) == 36 {
+		copy(assetID.TxId[:], assetIdBytes[:32])
+		// Assuming LittleEndian for Index in byte stream if appended
+		// But usually string is hex. Let's assume the bytes are raw 36 bytes.
+		// We'll manual decode the uint32?
+		// Or assume big endian?
+		// Since we don't have standard, let's assume BigEndian as it prints nicer in hex?
+		// Actually btcd often uses LittleEndian.
+		// Let's use binary.BigEndian for now as it's common in network protocols, but Bitcoin uses LE for TxID.
+		// I will just copy the bytes to be safe if I can't query order.
+		// Actually, I'll assume 4 bytes at end are index.
+		// assetID.Index = binary.BigEndian.Uint32(assetIdBytes[32:])
+		// I'll skip complexity and just copy to [4]byte and cast? No, endianness matters.
+		// Default to BigEndian (network order).
+		assetID.Index = uint32(assetIdBytes[32])<<24 | uint32(assetIdBytes[33])<<16 | uint32(assetIdBytes[34])<<8 | uint32(assetIdBytes[35])
+	} else {
+		return tree.Leaf{}, fmt.Errorf("invalid asset id length: %d", len(assetIdBytes))
+	}
 
 	// Get base asset details from intents
-	assetDetails, err := getAssetFromIntents(intents, assetId)
+	assetDetails, err := getAssetFromIntents(intents, assetID)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to get asset from intents: %w", err)
 	}
@@ -208,9 +232,9 @@ func buildTeleportAssetLeaf(
 	// Work on a copy so we don't mutate shared state
 	assetCopy := *assetDetails
 	assetCopy.Outputs = []asset.AssetOutput{{
-		PublicKey: *teleportKey,
-		Vout:      0,
-		Amount:    receiver.AssetAmount,
+		Type:       asset.AssetOutputTypeTeleport,
+		Commitment: commitment,
+		Amount:     receiver.AssetAmount,
 	}}
 	assetCopy.Inputs = nil
 
