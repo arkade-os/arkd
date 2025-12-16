@@ -11,7 +11,7 @@ import (
 
 var coinSelector = coinset.MinNumberCoinSelector{
 	MaxInputs:       50,
-	MinChangeAmount: 8000,
+	MinChangeAmount: 800,
 }
 
 // coin implements coinset.Coin interface
