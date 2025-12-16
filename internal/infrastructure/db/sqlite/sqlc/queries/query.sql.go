@@ -11,6 +11,30 @@ import (
 	"strings"
 )
 
+const clearIntentFees = `-- name: ClearIntentFees :exec
+INSERT INTO intent_fees (
+    id, created_at, offchain_input_fee_program, onchain_input_fee_program,
+    offchain_output_fee_program, onchain_output_fee_program
+) VALUES (
+    ?1, ?2, '0', '0', '0', '0'
+) ON CONFLICT(id) DO UPDATE SET
+    created_at = EXCLUDED.created_at,
+    offchain_input_fee_program = EXCLUDED.offchain_input_fee_program,
+    onchain_input_fee_program = EXCLUDED.onchain_input_fee_program,
+    offchain_output_fee_program = EXCLUDED.offchain_output_fee_program,
+    onchain_output_fee_program = EXCLUDED.onchain_output_fee_program
+`
+
+type ClearIntentFeesParams struct {
+	ID        string
+	CreatedAt int64
+}
+
+func (q *Queries) ClearIntentFees(ctx context.Context, arg ClearIntentFeesParams) error {
+	_, err := q.db.ExecContext(ctx, clearIntentFees, arg.ID, arg.CreatedAt)
+	return err
+}
+
 const clearScheduledSession = `-- name: ClearScheduledSession :exec
 DELETE FROM scheduled_session
 `
@@ -259,6 +283,42 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 		return nil, err
 	}
 	return items, nil
+}
+
+const selectIntentFees = `-- name: SelectIntentFees :one
+SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees WHERE id = ?1
+`
+
+func (q *Queries) SelectIntentFees(ctx context.Context, id string) (IntentFee, error) {
+	row := q.db.QueryRowContext(ctx, selectIntentFees, id)
+	var i IntentFee
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.OffchainInputFeeProgram,
+		&i.OnchainInputFeeProgram,
+		&i.OffchainOutputFeeProgram,
+		&i.OnchainOutputFeeProgram,
+	)
+	return i, err
+}
+
+const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
+SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1
+`
+
+func (q *Queries) SelectLatestIntentFees(ctx context.Context) (IntentFee, error) {
+	row := q.db.QueryRowContext(ctx, selectLatestIntentFees)
+	var i IntentFee
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.OffchainInputFeeProgram,
+		&i.OnchainInputFeeProgram,
+		&i.OffchainOutputFeeProgram,
+		&i.OnchainOutputFeeProgram,
+	)
+	return i, err
 }
 
 const selectLatestScheduledSession = `-- name: SelectLatestScheduledSession :one
@@ -1675,6 +1735,42 @@ func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) erro
 		arg.RoundID,
 		arg.Proof,
 		arg.Message,
+	)
+	return err
+}
+
+const upsertIntentFees = `-- name: UpsertIntentFees :exec
+INSERT INTO intent_fees (
+    id, created_at, offchain_input_fee_program, onchain_input_fee_program,
+    offchain_output_fee_program, onchain_output_fee_program
+) VALUES (
+    ?1, ?2, ?3, ?4,
+    ?5, ?6
+) ON CONFLICT(id) DO UPDATE SET
+    created_at = EXCLUDED.created_at,
+    offchain_input_fee_program = EXCLUDED.offchain_input_fee_program,
+    onchain_input_fee_program = EXCLUDED.onchain_input_fee_program,
+    offchain_output_fee_program = EXCLUDED.offchain_output_fee_program,
+    onchain_output_fee_program = EXCLUDED.onchain_output_fee_program
+`
+
+type UpsertIntentFeesParams struct {
+	ID                       string
+	CreatedAt                int64
+	OffchainInputFeeProgram  string
+	OnchainInputFeeProgram   string
+	OffchainOutputFeeProgram string
+	OnchainOutputFeeProgram  string
+}
+
+func (q *Queries) UpsertIntentFees(ctx context.Context, arg UpsertIntentFeesParams) error {
+	_, err := q.db.ExecContext(ctx, upsertIntentFees,
+		arg.ID,
+		arg.CreatedAt,
+		arg.OffchainInputFeeProgram,
+		arg.OnchainInputFeeProgram,
+		arg.OffchainOutputFeeProgram,
+		arg.OnchainOutputFeeProgram,
 	)
 	return err
 }

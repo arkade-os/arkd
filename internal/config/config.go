@@ -247,14 +247,18 @@ var (
 	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
 	defaultAllowCSVBlockType   = false
 
-	defaultRoundMaxParticipantsCount     = 128
-	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10 // seconds
-	defaultHeartbeatInterval             = 60 // seconds
-	defaultRoundReportServiceEnabled     = false
-	defaultSettlementMinExpiryGap        = 0 // disabled by default
-	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
-	defaultEnablePprof                   = false
+	defaultRoundMaxParticipantsCount      = 128
+	defaultRoundMinParticipantsCount      = 1
+	defaultOtelPushInterval               = 10 // seconds
+	defaultHeartbeatInterval              = 60 // seconds
+	defaultRoundReportServiceEnabled      = false
+	defaultSettlementMinExpiryGap         = 0 // disabled by default
+	defaultVtxoNoCsvValidationCutoffDate  = 0 // disabled by default
+	defaultEnablePprof                    = false
+	defaultIntentOffchainInputFeeProgram  = "0"
+	defaultIntentOnchainInputFeeProgram   = "0"
+	defaultIntentOffchainOutputFeeProgram = "0"
+	defaultIntentOnchainOutputFeeProgram  = "0"
 )
 
 func LoadConfig() (*Config, error) {
@@ -295,6 +299,10 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(IntentOffchainInputFeeProgram, defaultIntentOffchainInputFeeProgram)
+	viper.SetDefault(IntentOnchainInputFeeProgram, defaultIntentOnchainInputFeeProgram)
+	viper.SetDefault(IntentOffchainOutputFeeProgram, defaultIntentOffchainOutputFeeProgram)
+	viper.SetDefault(IntentOnchainOutputFeeProgram, defaultIntentOnchainOutputFeeProgram)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)

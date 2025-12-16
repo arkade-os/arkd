@@ -311,6 +311,114 @@
         }
       }
     },
+    "/v1/admin/intentFees": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetIntentFees",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIntentFeesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_UpdateIntentFees",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIntentFeesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateIntentFeesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/intentFees/clear": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_ClearIntentFees",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearIntentFeesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearIntentFeesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/intents": {
       "get": {
         "tags": [
@@ -709,6 +817,14 @@
         "title": "BanScriptResponse",
         "type": "object"
       },
+      "ClearIntentFeesRequest": {
+        "title": "ClearIntentFeesRequest",
+        "type": "object"
+      },
+      "ClearIntentFeesResponse": {
+        "title": "ClearIntentFeesResponse",
+        "type": "object"
+      },
       "ClearScheduledSessionConfigRequest": {
         "title": "ClearScheduledSessionConfigRequest",
         "type": "object"
@@ -926,6 +1042,19 @@
           }
         }
       },
+      "GetIntentFeesRequest": {
+        "title": "GetIntentFeesRequest",
+        "type": "object"
+      },
+      "GetIntentFeesResponse": {
+        "title": "GetIntentFeesResponse",
+        "type": "object",
+        "properties": {
+          "fees": {
+            "$ref": "#/components/schemas/IntentFees"
+          }
+        }
+      },
       "GetRoundDetailsRequest": {
         "title": "GetRoundDetailsRequest",
         "type": "object",
@@ -1072,6 +1201,24 @@
             "type": "string"
           },
           "onchainOutput": {
+            "type": "string"
+          }
+        }
+      },
+      "IntentFees": {
+        "title": "IntentFees",
+        "type": "object",
+        "properties": {
+          "offchainInputFee": {
+            "type": "string"
+          },
+          "offchainOutputFee": {
+            "type": "string"
+          },
+          "onchainInputFee": {
+            "type": "string"
+          },
+          "onchainOutputFee": {
             "type": "string"
           }
         }
@@ -1294,6 +1441,19 @@
             "format": "uint32"
           }
         }
+      },
+      "UpdateIntentFeesRequest": {
+        "title": "UpdateIntentFeesRequest",
+        "type": "object",
+        "properties": {
+          "fees": {
+            "$ref": "#/components/schemas/IntentFees"
+          }
+        }
+      },
+      "UpdateIntentFeesResponse": {
+        "title": "UpdateIntentFeesResponse",
+        "type": "object"
       },
       "UpdateScheduledSessionConfigRequest": {
         "title": "UpdateScheduledSessionConfigRequest",

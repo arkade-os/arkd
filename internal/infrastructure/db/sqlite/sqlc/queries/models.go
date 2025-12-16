@@ -35,6 +35,15 @@ type Intent struct {
 	Message sql.NullString
 }
 
+type IntentFee struct {
+	ID                       string
+	CreatedAt                int64
+	OffchainInputFeeProgram  string
+	OnchainInputFeeProgram   string
+	OffchainOutputFeeProgram string
+	OnchainOutputFeeProgram  string
+}
+
 type IntentWithInputsVw struct {
 	Txid           sql.NullString
 	Vout           sql.NullInt64

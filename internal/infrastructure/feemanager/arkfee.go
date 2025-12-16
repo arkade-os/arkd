@@ -24,7 +24,7 @@ func NewArkFeeManager(config arkfee.Config) (ports.FeeManager, error) {
 	return arkFeeManager{Estimator: *estimator}, nil
 }
 
-func (a arkFeeManager) GetIntentFees(
+func (a arkFeeManager) GetFeesFromIntent(
 	ctx context.Context,
 	boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 	onchainOutputs []wire.TxOut, offchainOutputs []wire.TxOut,
@@ -55,6 +55,54 @@ func (a arkFeeManager) GetIntentFees(
 	}
 
 	return fee.ToSatoshis(), nil
+}
+
+func (a arkFeeManager) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
+	return &domain.IntentFees{
+		OffchainInputFee:  a.Config.IntentOffchainInputProgram,
+		OnchainInputFee:   a.Config.IntentOnchainInputProgram,
+		OffchainOutputFee: a.Config.IntentOffchainOutputProgram,
+		OnchainOutputFee:  a.Config.IntentOnchainOutputProgram,
+	}, nil
+}
+
+func (a arkFeeManager) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
+	// Only update if non-empty to allow partial updates
+	if fees.OffchainInputFee != "" {
+		a.Config.IntentOffchainInputProgram = fees.OffchainInputFee
+	}
+	if fees.OnchainInputFee != "" {
+		a.Config.IntentOnchainInputProgram = fees.OnchainInputFee
+	}
+	if fees.OffchainOutputFee != "" {
+		a.Config.IntentOffchainOutputProgram = fees.OffchainOutputFee
+	}
+	if fees.OnchainOutputFee != "" {
+		a.Config.IntentOnchainOutputProgram = fees.OnchainOutputFee
+	}
+
+	estimator, err := arkfee.New(a.Config)
+	if err != nil {
+		return err
+	}
+	a.Estimator = *estimator
+
+	return nil
+}
+
+func (a arkFeeManager) ClearIntentFees(ctx context.Context) error {
+	a.Config.IntentOffchainInputProgram = "0"
+	a.Config.IntentOnchainInputProgram = "0"
+	a.Config.IntentOffchainOutputProgram = "0"
+	a.Config.IntentOnchainOutputProgram = "0"
+
+	estimator, err := arkfee.New(a.Config)
+	if err != nil {
+		return err
+	}
+	a.Estimator = *estimator
+
+	return nil
 }
 
 func toArkFeeOffchainOutput(output wire.TxOut) arkfee.Output {

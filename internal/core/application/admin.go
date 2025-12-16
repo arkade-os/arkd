@@ -36,6 +36,10 @@ type AdminService interface {
 	ClearScheduledSessionConfig(ctx context.Context) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
+	GetIntentFees(ctx context.Context) (*domain.IntentFees, error)
+	UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error
+	ClearIntentFees(ctx context.Context) error
+	// Conviction management methods
 	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
 	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
 	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
@@ -372,6 +376,44 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 		return s.liveStore.Intents().DeleteAll(ctx)
 	}
 	return s.liveStore.Intents().Delete(ctx, intentIds)
+}
+
+func (s *adminService) GetIntentFees(
+	ctx context.Context,
+) (*domain.IntentFees, error) {
+	return s.repoManager.Fees().GetIntentFees(ctx)
+}
+
+func (s *adminService) UpdateIntentFees(
+	ctx context.Context,
+	fees domain.IntentFees,
+) error {
+	// if not all fees are set, get the existing ones to allow partial updates
+	if fees.OffchainInputFee == "" || fees.OnchainInputFee == "" ||
+		fees.OffchainOutputFee == "" || fees.OnchainOutputFee == "" {
+		existingFees, err := s.repoManager.Fees().GetIntentFees(ctx)
+		if err != nil {
+			return err
+		}
+		if fees.OffchainInputFee == "" {
+			fees.OffchainInputFee = existingFees.OffchainInputFee
+		}
+		if fees.OnchainInputFee == "" {
+			fees.OnchainInputFee = existingFees.OnchainInputFee
+		}
+		if fees.OffchainOutputFee == "" {
+			fees.OffchainOutputFee = existingFees.OffchainOutputFee
+		}
+		if fees.OnchainOutputFee == "" {
+			fees.OnchainOutputFee = existingFees.OnchainOutputFee
+		}
+	}
+	return s.repoManager.Fees().UpsertIntentFees(ctx, fees)
+}
+
+// Zeroes out fees
+func (s *adminService) ClearIntentFees(ctx context.Context) error {
+	return s.repoManager.Fees().ClearIntentFees(ctx)
 }
 
 // Conviction management methods
