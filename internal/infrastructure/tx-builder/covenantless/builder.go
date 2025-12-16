@@ -917,7 +917,21 @@ func (b *txBuilder) createCommitmentTx(
 		return nil, err
 	}
 
+	const maxIterations = 5
+	iteration := 0
+
 	for feeAmount > exceedingValue {
+		iteration++
+		if iteration > maxIterations {
+			// avoid infinite loop
+			return nil, fmt.Errorf(
+				"fee adjustment loop exceeded maximum iterations (%d), feeAmount: %d, exceedingValue: %d",
+				maxIterations,
+				feeAmount,
+				exceedingValue,
+			)
+		}
+
 		feesToPay := feeAmount - exceedingValue
 
 		// change is able to cover the remaining fees
