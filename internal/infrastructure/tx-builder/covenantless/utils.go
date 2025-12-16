@@ -168,15 +168,16 @@ func buildTeleportAssetLeaf(
 	copy(commitment[:], hash)
 
 	// Decode teleport owner pubkey
-	ownerPubkeyBytes, err := hex.DecodeString(receiver.AssetTeleportPubkey)
-	if err != nil {
-		return tree.Leaf{}, fmt.Errorf("failed to decode teleport pubkey: %w", err)
-	}
+	// ownerPubkeyBytes, err := hex.DecodeString(receiver.AssetTeleportPubkey)
+	// if err != nil {
+	// 	return tree.Leaf{}, fmt.Errorf("failed to decode teleport pubkey: %w", err)
+	// }
 
-	ownerPubkey, err := schnorr.ParsePubKey(ownerPubkeyBytes)
-	if err != nil {
-		return tree.Leaf{}, fmt.Errorf("failed to parse teleport pubkey: %w", err)
-	}
+	// ownerPubkey, err := schnorr.ParsePubKey(ownerPubkeyBytes)
+	// if err != nil {
+	// 	return tree.Leaf{}, fmt.Errorf("failed to parse teleport pubkey: %w", err)
+	// }
+	ownerPubkey := receiverPubKey
 
 	// Build teleport script/taptree
 	teleportScript := script.NewTeleportVtxoScript(ownerPubkey, signingPubkey, hash, unilateralExitDelay)

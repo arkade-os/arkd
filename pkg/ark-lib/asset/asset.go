@@ -74,10 +74,16 @@ const (
 	AssetInputTypeTeleport AssetInputType = 1
 )
 
+type TeleportWitness struct {
+	PublicKey *btcec.PublicKey
+	Nonce     [32]byte
+}
+
 type AssetInput struct {
 	Type       AssetInputType
-	Vin        uint32   // For Local
-	Commitment [32]byte // For Teleport
+	Vin        uint32          // For Local
+	Commitment [32]byte        // For Teleport
+	Witness    TeleportWitness // For Teleport
 	Amount     uint64
 }
 

@@ -1724,7 +1724,6 @@ func (s *service) RegisterIntent(
 				rcv.AssetAmount = assetOutput.Amount
 				rcv.AssetId = assetOutput.AssetId
 				rcv.AssetTeleportHash = assetOutput.TeleportHash
-				rcv.AssetTeleportPubkey = assetOutput.TeleportPubkey
 			}
 		}
 

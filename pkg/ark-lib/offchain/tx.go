@@ -131,7 +131,11 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 			controlInput := asset.AssetInput{
 				Type:       asset.AssetInputTypeTeleport,
 				Commitment: commitment,
-				Amount:     assetOutput.Amount,
+				Witness: asset.TeleportWitness{
+					PublicKey: vtxo.Tapscript.ControlBlock.InternalKey,
+					Nonce:     [32]byte{},
+				},
+				Amount: assetOutput.Amount,
 			}
 
 			controlAssetInputs = append(controlAssetInputs, controlInput)
@@ -177,7 +181,11 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 				normalAssetInputs = append(normalAssetInputs, asset.AssetInput{
 					Type:       asset.AssetInputTypeTeleport,
 					Commitment: commitment,
-					Amount:     assetOutput.Amount,
+					Witness: asset.TeleportWitness{
+						PublicKey: vtxo.Tapscript.ControlBlock.InternalKey,
+						Nonce:     [32]byte{},
+					},
+					Amount: assetOutput.Amount,
 				})
 
 				// We must add the checkpoint tx/input to the lists
@@ -271,6 +279,7 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 			var vtxoHash [32]byte
 			copy(vtxoHash[:], prev.Hash[:])
 			inputs[i].Commitment = vtxoHash
+			// Witness is preserved from original input
 		}
 		return nil
 	}

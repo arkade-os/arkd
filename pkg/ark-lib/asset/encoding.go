@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
@@ -64,6 +65,19 @@ func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {
 			if err := tlv.EBytes32(w, &t.Commitment, buf); err != nil {
 				return err
 			}
+
+			if t.Witness.PublicKey == nil {
+				return fmt.Errorf("missing public key for teleport input")
+			}
+			pubKey := t.Witness.PublicKey.SerializeCompressed()
+			var pubKeyArray [33]byte
+			copy(pubKeyArray[:], pubKey)
+			if err := tlv.EBytes33(w, &pubKeyArray, buf); err != nil {
+				return err
+			}
+			if err := tlv.EBytes32(w, &t.Witness.Nonce, buf); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown asset input type: %d", t.Type)
 		}
@@ -99,6 +113,8 @@ func AssetInputListSize(inputs []AssetInput) tlv.SizeFunc {
 				size += 4 // Vin
 			case AssetInputTypeTeleport:
 				size += 32 // Commitment
+				size += 33 // Public Key
+				size += 32 // Nonce
 			}
 			size += 8 // Amount
 		}
@@ -119,7 +135,7 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		case AssetInputTypeLocal:
 			expectedLen = 1 + 4 + 8 // Type + Vin + Amount
 		case AssetInputTypeTeleport:
-			expectedLen = 1 + 32 + 8 // Type + Commitment + Amount
+			expectedLen = 1 + 32 + 33 + 32 + 8 // Type + Commitment + Witness(Pk+Nonce) + Amount
 		default:
 			return fmt.Errorf("unknown asset input type: %d", t.Type)
 		}
@@ -135,6 +151,20 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 			}
 		case AssetInputTypeTeleport:
 			if err := tlv.DBytes32(r, &t.Commitment, buf, 32); err != nil {
+				return err
+			}
+
+			var pubKeyBytes [33]byte
+			if err := tlv.DBytes33(r, &pubKeyBytes, buf, 33); err != nil {
+				return err
+			}
+			pubKey, err := btcec.ParsePubKey(pubKeyBytes[:])
+			if err != nil {
+				return err
+			}
+			t.Witness.PublicKey = pubKey
+
+			if err := tlv.DBytes32(r, &t.Witness.Nonce, buf, 32); err != nil {
 				return err
 			}
 		}
@@ -178,7 +208,7 @@ func DAssetInputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error
 			case AssetInputTypeLocal:
 				itemLen = 1 + 4 + 8
 			case AssetInputTypeTeleport:
-				itemLen = 1 + 32 + 8
+				itemLen = 1 + 32 + 33 + 32 + 8
 			default:
 				return fmt.Errorf("unknown asset input type: %d", typesByte)
 			}
