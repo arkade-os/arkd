@@ -72,7 +72,7 @@ func parseMessageFixtures(t *testing.T) []messageFixture {
 			require.NoError(t, err)
 			msg = &pendingTxMsg
 		case intent.IntentMessageTypeEstimateFee:
-			var estimateFeeMsg intent.EstimateFeeMessage
+			var estimateFeeMsg intent.EstimateIntentFeeMessage
 			err := estimateFeeMsg.Decode(string(jsonFixture.Message))
 			require.NoError(t, err)
 			msg = &estimateFeeMsg

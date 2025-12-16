@@ -193,10 +193,8 @@ type VtxoNotFoundMetadata struct {
 }
 
 type IntentInsufficientFeeMetadata struct {
-	InputExpectedFees  map[string]int `json:"input_expected_fees"`
-	OutputExpectedFees map[string]int `json:"output_expected_fees"`
-	ExpectedFee        int            `json:"expected_fee"`
-	ActualFee          int            `json:"actual_fee"`
+	MinFee    int `json:"min_fee"`
+	ActualFee int `json:"actual_fee"`
 }
 
 type OffchainTxInsufficientFeeMetadata struct {

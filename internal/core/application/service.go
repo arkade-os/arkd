@@ -1862,7 +1862,7 @@ func (s *service) RegisterIntent(
 		onchainInputs = append(onchainInputs, *boardingInput.witnessUtxo)
 	}
 
-	expectedFees, err := s.feeManager.GetFeesFromIntent(
+	minFees, err := s.feeManager.GetFeesFromIntent(
 		ctx, onchainInputs, vtxoInputs, onchainOutputs, offchainOutputs,
 	)
 	if err != nil {
@@ -1875,11 +1875,11 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	if fees < expectedFees {
-		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d expected %d", fees, expectedFees).
+	if fees < minFees {
+		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d min expected %d", fees, minFees).
 			WithMetadata(errors.IntentInsufficientFeeMetadata{
-				ExpectedFee: int(expectedFees),
-				ActualFee:   int(fees),
+				MinFee:    int(minFees),
+				ActualFee: int(fees),
 			})
 	}
 
@@ -2266,8 +2266,8 @@ func (s *service) RegisterCosignerSignatures(
 	return nil
 }
 
-func (s *service) EstimateFee(
-	ctx context.Context, proof intent.Proof, message intent.EstimateFeeMessage,
+func (s *service) EstimateIntentFee(
+	ctx context.Context, proof intent.Proof, message intent.EstimateIntentFeeMessage,
 ) (int64, errors.Error) {
 	now := time.Now()
 

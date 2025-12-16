@@ -336,27 +336,27 @@ func (x *RegisterIntentResponse) GetIntentId() string {
 	return ""
 }
 
-type EstimateFeeRequest struct {
+type EstimateIntentFeeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Intent        *Intent                `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *EstimateFeeRequest) Reset() {
-	*x = EstimateFeeRequest{}
+func (x *EstimateIntentFeeRequest) Reset() {
+	*x = EstimateIntentFeeRequest{}
 	mi := &file_ark_v1_service_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *EstimateFeeRequest) String() string {
+func (x *EstimateIntentFeeRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*EstimateFeeRequest) ProtoMessage() {}
+func (*EstimateIntentFeeRequest) ProtoMessage() {}
 
-func (x *EstimateFeeRequest) ProtoReflect() protoreflect.Message {
+func (x *EstimateIntentFeeRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_ark_v1_service_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -368,39 +368,39 @@ func (x *EstimateFeeRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EstimateFeeRequest.ProtoReflect.Descriptor instead.
-func (*EstimateFeeRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use EstimateIntentFeeRequest.ProtoReflect.Descriptor instead.
+func (*EstimateIntentFeeRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_service_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *EstimateFeeRequest) GetIntent() *Intent {
+func (x *EstimateIntentFeeRequest) GetIntent() *Intent {
 	if x != nil {
 		return x.Intent
 	}
 	return nil
 }
 
-type EstimateFeeResponse struct {
+type EstimateIntentFeeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Fee           int64                  `protobuf:"varint,1,opt,name=fee,proto3" json:"fee,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *EstimateFeeResponse) Reset() {
-	*x = EstimateFeeResponse{}
+func (x *EstimateIntentFeeResponse) Reset() {
+	*x = EstimateIntentFeeResponse{}
 	mi := &file_ark_v1_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *EstimateFeeResponse) String() string {
+func (x *EstimateIntentFeeResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*EstimateFeeResponse) ProtoMessage() {}
+func (*EstimateIntentFeeResponse) ProtoMessage() {}
 
-func (x *EstimateFeeResponse) ProtoReflect() protoreflect.Message {
+func (x *EstimateIntentFeeResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_ark_v1_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -412,12 +412,12 @@ func (x *EstimateFeeResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EstimateFeeResponse.ProtoReflect.Descriptor instead.
-func (*EstimateFeeResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use EstimateIntentFeeResponse.ProtoReflect.Descriptor instead.
+func (*EstimateIntentFeeResponse) Descriptor() ([]byte, []int) {
 	return file_ark_v1_service_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *EstimateFeeResponse) GetFee() int64 {
+func (x *EstimateIntentFeeResponse) GetFee() int64 {
 	if x != nil {
 		return x.Fee
 	}
@@ -1599,10 +1599,10 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x15RegisterIntentRequest\x12&\n" +
 	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"5\n" +
 	"\x16RegisterIntentResponse\x12\x1b\n" +
-	"\tintent_id\x18\x01 \x01(\tR\bintentId\"<\n" +
-	"\x12EstimateFeeRequest\x12&\n" +
-	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"'\n" +
-	"\x13EstimateFeeResponse\x12\x10\n" +
+	"\tintent_id\x18\x01 \x01(\tR\bintentId\"B\n" +
+	"\x18EstimateIntentFeeRequest\x12&\n" +
+	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"-\n" +
+	"\x19EstimateIntentFeeResponse\x12\x10\n" +
 	"\x03fee\x18\x01 \x01(\x03R\x03fee\"=\n" +
 	"\x13DeleteIntentRequest\x12&\n" +
 	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"\x16\n" +
@@ -1671,13 +1671,13 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\rcommitment_tx\x18\x01 \x01(\v2\x16.ark.v1.TxNotificationH\x00R\fcommitmentTx\x12/\n" +
 	"\x06ark_tx\x18\x02 \x01(\v2\x16.ark.v1.TxNotificationH\x00R\x05arkTx\x121\n" +
 	"\theartbeat\x18\x03 \x01(\v2\x11.ark.v1.HeartbeatH\x00R\theartbeatB\x06\n" +
-	"\x04data2\xad\v\n" +
+	"\x04data2\xbf\v\n" +
 	"\n" +
 	"ArkService\x12I\n" +
 	"\aGetInfo\x12\x16.ark.v1.GetInfoRequest\x1a\x17.ark.v1.GetInfoResponse\"\r\xb2J\n" +
 	"\x12\b/v1/info\x12q\n" +
-	"\x0eRegisterIntent\x12\x1d.ark.v1.RegisterIntentRequest\x1a\x1e.ark.v1.RegisterIntentResponse\" \xb2J\x1dB\x01*\"\x18/v1/batch/registerIntent\x12e\n" +
-	"\vEstimateFee\x12\x1a.ark.v1.EstimateFeeRequest\x1a\x1b.ark.v1.EstimateFeeResponse\"\x1d\xb2J\x1aB\x01*\"\x15/v1/batch/estimateFee\x12i\n" +
+	"\x0eRegisterIntent\x12\x1d.ark.v1.RegisterIntentRequest\x1a\x1e.ark.v1.RegisterIntentResponse\" \xb2J\x1dB\x01*\"\x18/v1/batch/registerIntent\x12w\n" +
+	"\x11EstimateIntentFee\x12 .ark.v1.EstimateIntentFeeRequest\x1a!.ark.v1.EstimateIntentFeeResponse\"\x1d\xb2J\x1aB\x01*\"\x15/v1/batch/estimateFee\x12i\n" +
 	"\fDeleteIntent\x12\x1b.ark.v1.DeleteIntentRequest\x1a\x1c.ark.v1.DeleteIntentResponse\"\x1e\xb2J\x1bB\x01*\"\x16/v1/batch/deleteIntent\x12u\n" +
 	"\x13ConfirmRegistration\x12\".ark.v1.ConfirmRegistrationRequest\x1a#.ark.v1.ConfirmRegistrationResponse\"\x15\xb2J\x12B\x01*\"\r/v1/batch/ack\x12z\n" +
 	"\x10SubmitTreeNonces\x12\x1f.ark.v1.SubmitTreeNoncesRequest\x1a .ark.v1.SubmitTreeNoncesResponse\"#\xb2J B\x01*\"\x1b/v1/batch/tree/submitNonces\x12\x8a\x01\n" +
@@ -1710,8 +1710,8 @@ var file_ark_v1_service_proto_goTypes = []any{
 	(*GetInfoResponse)(nil),                // 1: ark.v1.GetInfoResponse
 	(*RegisterIntentRequest)(nil),          // 2: ark.v1.RegisterIntentRequest
 	(*RegisterIntentResponse)(nil),         // 3: ark.v1.RegisterIntentResponse
-	(*EstimateFeeRequest)(nil),             // 4: ark.v1.EstimateFeeRequest
-	(*EstimateFeeResponse)(nil),            // 5: ark.v1.EstimateFeeResponse
+	(*EstimateIntentFeeRequest)(nil),       // 4: ark.v1.EstimateIntentFeeRequest
+	(*EstimateIntentFeeResponse)(nil),      // 5: ark.v1.EstimateIntentFeeResponse
 	(*DeleteIntentRequest)(nil),            // 6: ark.v1.DeleteIntentRequest
 	(*DeleteIntentResponse)(nil),           // 7: ark.v1.DeleteIntentResponse
 	(*ConfirmRegistrationRequest)(nil),     // 8: ark.v1.ConfirmRegistrationRequest
@@ -1758,7 +1758,7 @@ var file_ark_v1_service_proto_depIdxs = []int32{
 	31, // 2: ark.v1.GetInfoResponse.deprecated_signers:type_name -> ark.v1.DeprecatedSigner
 	26, // 3: ark.v1.GetInfoResponse.service_status:type_name -> ark.v1.GetInfoResponse.ServiceStatusEntry
 	32, // 4: ark.v1.RegisterIntentRequest.intent:type_name -> ark.v1.Intent
-	32, // 5: ark.v1.EstimateFeeRequest.intent:type_name -> ark.v1.Intent
+	32, // 5: ark.v1.EstimateIntentFeeRequest.intent:type_name -> ark.v1.Intent
 	32, // 6: ark.v1.DeleteIntentRequest.intent:type_name -> ark.v1.Intent
 	27, // 7: ark.v1.SubmitTreeNoncesRequest.tree_nonces:type_name -> ark.v1.SubmitTreeNoncesRequest.TreeNoncesEntry
 	28, // 8: ark.v1.SubmitTreeSignaturesRequest.tree_signatures:type_name -> ark.v1.SubmitTreeSignaturesRequest.TreeSignaturesEntry
@@ -1779,7 +1779,7 @@ var file_ark_v1_service_proto_depIdxs = []int32{
 	42, // 23: ark.v1.GetTransactionsStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
 	0,  // 24: ark.v1.ArkService.GetInfo:input_type -> ark.v1.GetInfoRequest
 	2,  // 25: ark.v1.ArkService.RegisterIntent:input_type -> ark.v1.RegisterIntentRequest
-	4,  // 26: ark.v1.ArkService.EstimateFee:input_type -> ark.v1.EstimateFeeRequest
+	4,  // 26: ark.v1.ArkService.EstimateIntentFee:input_type -> ark.v1.EstimateIntentFeeRequest
 	6,  // 27: ark.v1.ArkService.DeleteIntent:input_type -> ark.v1.DeleteIntentRequest
 	8,  // 28: ark.v1.ArkService.ConfirmRegistration:input_type -> ark.v1.ConfirmRegistrationRequest
 	10, // 29: ark.v1.ArkService.SubmitTreeNonces:input_type -> ark.v1.SubmitTreeNoncesRequest
@@ -1792,7 +1792,7 @@ var file_ark_v1_service_proto_depIdxs = []int32{
 	24, // 36: ark.v1.ArkService.GetTransactionsStream:input_type -> ark.v1.GetTransactionsStreamRequest
 	1,  // 37: ark.v1.ArkService.GetInfo:output_type -> ark.v1.GetInfoResponse
 	3,  // 38: ark.v1.ArkService.RegisterIntent:output_type -> ark.v1.RegisterIntentResponse
-	5,  // 39: ark.v1.ArkService.EstimateFee:output_type -> ark.v1.EstimateFeeResponse
+	5,  // 39: ark.v1.ArkService.EstimateIntentFee:output_type -> ark.v1.EstimateIntentFeeResponse
 	7,  // 40: ark.v1.ArkService.DeleteIntent:output_type -> ark.v1.DeleteIntentResponse
 	9,  // 41: ark.v1.ArkService.ConfirmRegistration:output_type -> ark.v1.ConfirmRegistrationResponse
 	11, // 42: ark.v1.ArkService.SubmitTreeNonces:output_type -> ark.v1.SubmitTreeNoncesResponse
