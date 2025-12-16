@@ -3,7 +3,7 @@ name: ci_integration
 on:
   push:
     branches:
-      - master
+      - arkfee
   pull_request:
     branches:
       - '*'

@@ -2,7 +2,7 @@ name: Trivy Security Scan
 
 on:
   push:
-    branches: ["master"]
+    branches: ["arkfee"]
   pull_request:
     branches: ["*"]
 

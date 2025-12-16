@@ -3,7 +3,7 @@ name: API Spec Changes
 on:
   push:
     branches: 
-      - master
+      - arkfee
     paths:
       - "api-spec/**"
   pull_request:
