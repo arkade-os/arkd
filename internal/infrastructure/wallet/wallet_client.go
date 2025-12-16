@@ -302,11 +302,11 @@ func (w *walletDaemonClient) SelectUtxos(
 	}
 	inputs := make([]ports.TxInput, len(resp.Utxos))
 	for i, utxo := range resp.Utxos {
-		inputs[i] = &txInput{
-			txId:   utxo.GetTxid(),
-			index:  utxo.GetIndex(),
-			script: utxo.GetScript(),
-			value:  utxo.GetValue(),
+		inputs[i] = ports.TxInput{
+			Txid:   utxo.GetTxid(),
+			Index:  utxo.GetIndex(),
+			Script: utxo.GetScript(),
+			Value:  utxo.GetValue(),
 		}
 	}
 	return inputs, resp.GetTotalAmount(), nil
@@ -356,11 +356,11 @@ func (w *walletDaemonClient) ListConnectorUtxos(
 	}
 	inputs := make([]ports.TxInput, len(resp.Utxos))
 	for i, utxo := range resp.Utxos {
-		inputs[i] = &txInput{
-			txId:   utxo.GetTxid(),
-			index:  utxo.GetIndex(),
-			script: utxo.GetScript(),
-			value:  utxo.GetValue(),
+		inputs[i] = ports.TxInput{
+			Txid:   utxo.GetTxid(),
+			Index:  utxo.GetIndex(),
+			Script: utxo.GetScript(),
+			Value:  utxo.GetValue(),
 		}
 	}
 	return inputs, nil

@@ -7,20 +7,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
-
-type SweepableOutput struct {
-	Amount int64
-	Hash   chainhash.Hash
-	Index  uint32
-	// Script is the tapscript that should be used to sweep the output
-	Script []byte
-	// ControlBlock is the control block associated with leaf script
-	ControlBlock []byte
-	// InternalKey is the internal key used to compute the control block
-	InternalKey *btcec.PublicKey
-}
 
 type Input struct {
 	domain.Outpoint
@@ -63,8 +50,7 @@ type TxBuilder interface {
 	// Returns the commitment tx, the vtxo tree, the connector tree and its root address.
 	BuildCommitmentTx(
 		signerPubkey *btcec.PublicKey, intents domain.Intents,
-		boardingInputs []BoardingInput, connectorAddresses []string,
-		cosigners [][]string,
+		boardingInputs []BoardingInput, cosigners [][]string,
 	) (
 		commitmentTx string, vtxoTree *tree.TxTree,
 		connectorAddress string, connectors *tree.TxTree, err error,
@@ -74,9 +60,9 @@ type TxBuilder interface {
 	VerifyForfeitTxs(
 		vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
-	BuildSweepTx(inputs []SweepableOutput) (txid string, signedSweepTx string, err error)
+	BuildSweepTx(inputs []TxInput) (txid string, signedSweepTx string, err error)
 	GetSweepableBatchOutputs(vtxoTree *tree.TxTree) (
-		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs SweepableOutput, err error,
+		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs TxInput, err error,
 	)
 	FinalizeAndExtract(tx string) (txhex string, err error)
 	VerifyVtxoTapscriptSigs(

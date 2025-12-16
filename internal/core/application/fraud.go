@@ -301,13 +301,13 @@ func (s *service) bumpAnchorTx(
 	}
 
 	for _, utxo := range selectedCoins {
-		txid, err := chainhash.NewHashFromStr(utxo.GetTxid())
+		txid, err := chainhash.NewHashFromStr(utxo.Txid)
 		if err != nil {
 			return "", err
 		}
 		inputs = append(inputs, &wire.OutPoint{
 			Hash:  *txid,
-			Index: utxo.GetIndex(),
+			Index: utxo.Index,
 		})
 		sequences = append(sequences, wire.MaxTxInSequenceNum)
 	}
