@@ -21,7 +21,7 @@ func NewArkFeeManager(config arkfee.Config) (ports.FeeManager, error) {
 		return nil, err
 	}
 
-	return arkFeeManager{Estimator: *estimator}, nil
+	return &arkFeeManager{Estimator: *estimator}, nil
 }
 
 func (a arkFeeManager) GetFeesFromIntent(
@@ -66,7 +66,7 @@ func (a arkFeeManager) GetIntentFees(ctx context.Context) (*domain.IntentFees, e
 	}, nil
 }
 
-func (a arkFeeManager) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
+func (a *arkFeeManager) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
 	// Only update if non-empty to allow partial updates
 	if fees.OffchainInputFee != "" {
 		a.Config.IntentOffchainInputProgram = fees.OffchainInputFee
@@ -90,7 +90,7 @@ func (a arkFeeManager) UpsertIntentFees(ctx context.Context, fees domain.IntentF
 	return nil
 }
 
-func (a arkFeeManager) ClearIntentFees(ctx context.Context) error {
+func (a *arkFeeManager) ClearIntentFees(ctx context.Context) error {
 	a.Config.IntentOffchainInputProgram = "0"
 	a.Config.IntentOnchainInputProgram = "0"
 	a.Config.IntentOffchainOutputProgram = "0"
