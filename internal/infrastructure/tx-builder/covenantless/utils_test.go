@@ -49,8 +49,8 @@ func newTestAssetGroup(t *testing.T, idHex string) (asset.Asset, []byte) {
 	}
 
 	group := asset.AssetGroup{
-		NormalAsset: testAsset,
-		SubDustKey:  privKey.PubKey(),
+		NormalAssets: []asset.Asset{testAsset},
+		SubDustKey:   privKey.PubKey(),
 	}
 
 	opret, err := group.EncodeOpret(0)

@@ -28,9 +28,8 @@ func TestRebuildAssetTxs(t *testing.T) {
 	destinationScript := mustP2TRScript(t, tapKey)
 
 	assetID := sha256.Sum256([]byte("asset-rebuild"))
-	batchID := sha256.Sum256([]byte("batch-rebuild"))
 	assetGroup := &asset.AssetGroup{
-		NormalAsset: asset.Asset{
+		NormalAssets: []asset.Asset{{
 			AssetId: assetID,
 			Inputs: []asset.AssetInput{{
 				Txhash: vtxo.Outpoint.Hash[:],
@@ -42,7 +41,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 				Vout:      0,
 				Amount:    5,
 			}},
-		},
+		}},
 		SubDustKey: tapKey,
 	}
 	opret, err := assetGroup.EncodeOpret(200)
@@ -63,8 +62,8 @@ func TestRebuildAssetTxs(t *testing.T) {
 		Locktime: arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 6},
 	})
 
-	require.True(t, bytes.Equal(assetGroup.NormalAsset.Inputs[0].Txhash, vtxo.Outpoint.Hash[:]))
-	require.EqualValues(t, assetGroup.NormalAsset.Inputs[0].Vout, vtxo.Outpoint.Index)
+	require.True(t, bytes.Equal(assetGroup.NormalAssets[0].Inputs[0].Txhash, vtxo.Outpoint.Hash[:]))
+	require.EqualValues(t, assetGroup.NormalAssets[0].Inputs[0].Vout, vtxo.Outpoint.Index)
 
 	arkTx, checkpoints, err := BuildAssetTxs(outputs, 1, []VtxoInput{vtxo}, signerScript)
 	require.NoError(t, err)
@@ -127,9 +126,10 @@ func TestRebuildAssetTxs(t *testing.T) {
 		foundAsset = true
 		decoded, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
 		require.NoError(t, err)
-		require.Len(t, decoded.NormalAsset.Inputs, 1)
+		require.Len(t, decoded.NormalAssets, 1)
+		require.Len(t, decoded.NormalAssets[0].Inputs, 1)
 		require.Equal(t, rebuiltCheckpoints[0].UnsignedTx.TxHash().String(),
-			chainhash.Hash(decoded.NormalAsset.Inputs[0].Txhash).String())
+			chainhash.Hash(decoded.NormalAssets[0].Inputs[0].Txhash).String())
 	}
 	require.True(t, foundAsset)
 }
@@ -147,7 +147,6 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 
 	controlAssetID := sha256.Sum256([]byte("control-asset"))
 	normalAssetID := sha256.Sum256([]byte("normal-asset"))
-	batchID := sha256.Sum256([]byte("batch-rebuild-control"))
 
 	controlAsset := &asset.Asset{
 		AssetId: controlAssetID,
@@ -178,9 +177,9 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	}
 
 	assetGroup := &asset.AssetGroup{
-		ControlAsset: controlAsset,
-		NormalAsset:  normalAsset,
-		SubDustKey:   normalTapKey,
+		ControlAssets: []asset.Asset{*controlAsset},
+		NormalAssets:  []asset.Asset{normalAsset},
+		SubDustKey:    normalTapKey,
 	}
 	opret, err := assetGroup.EncodeOpret(0)
 	require.NoError(t, err)
@@ -254,9 +253,10 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	rebuiltGroup, err := asset.DecodeAssetGroupFromOpret(rebuiltArk.UnsignedTx.TxOut[assetGroupIndex].PkScript)
 	require.NoError(t, err)
 
-	require.NotNil(t, rebuiltGroup.ControlAsset)
-	require.Equal(t, len(origGroup.ControlAsset.Inputs), len(rebuiltGroup.ControlAsset.Inputs))
-	require.Equal(t, len(origGroup.NormalAsset.Inputs), len(rebuiltGroup.NormalAsset.Inputs))
+	require.NotNil(t, rebuiltGroup.ControlAssets)
+	require.Len(t, rebuiltGroup.ControlAssets, 1)
+	require.Equal(t, len(origGroup.ControlAssets[0].Inputs), len(rebuiltGroup.ControlAssets[0].Inputs))
+	require.Equal(t, len(origGroup.NormalAssets[0].Inputs), len(rebuiltGroup.NormalAssets[0].Inputs))
 
 	// Map rebuilt checkpoint txids for quick lookup.
 	rebuiltCheckpointIDs := make(map[string]struct{})
@@ -264,11 +264,11 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		rebuiltCheckpointIDs[cp.UnsignedTx.TxHash().String()] = struct{}{}
 	}
 
-	for _, in := range rebuiltGroup.ControlAsset.Inputs {
+	for _, in := range rebuiltGroup.ControlAssets[0].Inputs {
 		_, ok := rebuiltCheckpointIDs[chainhash.Hash(in.Txhash).String()]
 		require.True(t, ok)
 	}
-	for _, in := range rebuiltGroup.NormalAsset.Inputs {
+	for _, in := range rebuiltGroup.NormalAssets[0].Inputs {
 		_, ok := rebuiltCheckpointIDs[chainhash.Hash(in.Txhash).String()]
 		require.True(t, ok)
 	}

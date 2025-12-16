@@ -3843,132 +3843,144 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
 
-	controlAsset := decodedAssetGroup.ControlAsset
-	normalAsset := decodedAssetGroup.NormalAsset
-
-	ins := normalAsset.Inputs
-	outs := normalAsset.Outputs
-
-	totalOuputAmount := uint64(0)
-	for _, assetOut := range outs {
-		totalOuputAmount += assetOut.Amount
-	}
-
-	totalInputAmount := uint64(0)
-	for _, in := range ins {
-		totalInputAmount += uint64(in.Amount)
-	}
+	controlAssets := decodedAssetGroup.ControlAssets
+	normalAssets := decodedAssetGroup.NormalAssets
 
 	txins := arkTx.TxIn
 	txouts := arkTx.TxOut
 
-	totalAssets := []asset.Asset{normalAsset}
+	// We need to validate each normal asset
+	for _, normalAsset := range normalAssets {
 
-	// verify Asset Reissuance / buring
-	if !asset.IsAssetCreation(normalAsset) && totalInputAmount != totalOuputAmount {
-		if controlAsset == nil {
-			return fmt.Errorf("missing control asset for asset reissuance / burning")
-		}
-	}
+		ins := normalAsset.Inputs
+		outs := normalAsset.Outputs
 
-	if controlAsset != nil {
-		if !bytes.Equal(controlAsset.AssetId[:], normalAsset.ControlAssetId[:]) {
-			return fmt.Errorf("invalid control key for asset modification")
+		totalOuputAmount := uint64(0)
+		for _, assetOut := range outs {
+			totalOuputAmount += assetOut.Amount
 		}
 
-		totalAssets = append(totalAssets, *controlAsset)
-	}
-
-	for _, grpAsset := range totalAssets {
-
-		if err := asset.ValidateAssetInputOutputs(txins, txouts, grpAsset); err != nil {
-			return err
+		totalInputAmount := uint64(0)
+		for _, in := range ins {
+			totalInputAmount += uint64(in.Amount)
 		}
 
-		// Validate that each asset input refers to a valid offchain transaction
-		for _, input := range grpAsset.Inputs {
-			hash, err := chainhash.NewHash(input.Txhash)
-			if err != nil {
-				return fmt.Errorf("error parsing asset input txhash: %s", err)
+		totalAssets := []asset.Asset{normalAsset}
+		var matchedControlAsset *asset.Asset
+
+		// verify Asset Reissuance / buring
+		if !asset.IsAssetCreation(normalAsset) && totalInputAmount != totalOuputAmount {
+			// Find the control asset matching the Normal Asset's ControlAssetId
+			for _, ca := range controlAssets {
+				if bytes.Equal(ca.AssetId[:], normalAsset.ControlAssetId[:]) {
+					matchedControlAsset = &ca
+					break
+				}
 			}
 
-			checkpointId := hash.String()
+			if matchedControlAsset == nil {
+				return fmt.Errorf("missing control asset for asset reissuance / burning of asset %x", normalAsset.AssetId)
+			}
+		}
 
-			// fetch the checkpoint txid from the map
-			if _, ok := checkpointTxMap[checkpointId]; !ok {
-				return fmt.Errorf("asset input %s is a checkpoint tx, cannot verify offchain tx", checkpointId)
+		if matchedControlAsset != nil {
+			if !bytes.Equal(matchedControlAsset.AssetId[:], normalAsset.ControlAssetId[:]) {
+				// This should be redundant if loop above is correct, but good for sanity
+				return fmt.Errorf("invalid control key for asset modification")
+			}
+			totalAssets = append(totalAssets, *matchedControlAsset)
+		}
+
+		for _, grpAsset := range totalAssets {
+			if err := asset.ValidateAssetInputOutputs(txins, txouts, grpAsset); err != nil {
+				return err
 			}
 
-			checkpointTx := checkpointTxMap[checkpointId]
-
-			checkPointPsbt, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTx), true)
-			if err != nil {
-				return fmt.Errorf("error decoding checkpoint psbt: %s", err)
-			}
-
-			checkpointInput := checkPointPsbt.UnsignedTx.TxIn[0]
-			arkTxid := checkpointInput.PreviousOutPoint.Hash.String()
-
-			var offchainArkTx string
-
-			// First try teleport / rounds storage
-			roundTxs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{arkTxid})
-			if err == nil && len(roundTxs) > 0 {
-				offchainArkTx = roundTxs[0]
-			} else {
-				// Fallback to normal offchain storage
-				offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxid)
+			// Validate that each asset input refers to a valid offchain transaction
+			for _, input := range grpAsset.Inputs {
+				hash, err := chainhash.NewHash(input.Txhash)
 				if err != nil {
-					return fmt.Errorf("error retrieving offchain tx %s: %w", arkTxid, err)
+					return fmt.Errorf("error parsing asset input txhash: %s", err)
 				}
 
-				if offchainTx == nil {
-					return fmt.Errorf("offchain tx %s not found in rounds or offchain storage", arkTxid)
+				checkpointId := hash.String()
+
+				// fetch the checkpoint txid from the map
+				if _, ok := checkpointTxMap[checkpointId]; !ok {
+					return fmt.Errorf("asset input %s is a checkpoint tx, cannot verify offchain tx", checkpointId)
 				}
 
-				if !offchainTx.IsFinalized() {
-					return fmt.Errorf("offchain tx %s is failed", arkTxid)
+				checkpointTx := checkpointTxMap[checkpointId]
+
+				checkPointPsbt, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTx), true)
+				if err != nil {
+					return fmt.Errorf("error decoding checkpoint psbt: %s", err)
 				}
 
-				offchainArkTx = offchainTx.ArkTx
-			}
+				checkpointInput := checkPointPsbt.UnsignedTx.TxIn[0]
+				arkTxid := checkpointInput.PreviousOutPoint.Hash.String()
 
-			assetGroup, err := asset.DeriveAssetGroupFromTx(offchainArkTx)
-			if err != nil {
-				return fmt.Errorf("error deriving asset from offchain tx %s: %s",
-					arkTxid, err)
-			}
+				var offchainArkTx string
 
-			if assetGroup == nil {
-				return fmt.Errorf("no asset data found in offchain tx %s", arkTxid)
-			}
+				// First try teleport / rounds storage
+				roundTxs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{arkTxid})
+				if err == nil && len(roundTxs) > 0 {
+					offchainArkTx = roundTxs[0]
+				} else {
+					// Fallback to normal offchain storage
+					offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxid)
+					if err != nil {
+						return fmt.Errorf("error retrieving offchain tx %s: %w", arkTxid, err)
+					}
 
-			assets := []*asset.Asset{&assetGroup.NormalAsset, assetGroup.ControlAsset}
+					if offchainTx == nil {
+						return fmt.Errorf("offchain tx %s not found in rounds or offchain storage", arkTxid)
+					}
 
-			foundOutput := false
-			for _, asset := range assets {
-				if asset == nil {
-					continue
+					if !offchainTx.IsFinalized() {
+						return fmt.Errorf("offchain tx %s is failed", arkTxid)
+					}
+
+					offchainArkTx = offchainTx.ArkTx
 				}
 
-				for _, assetOut := range asset.Outputs {
-					if assetOut.Vout == input.Vout {
-						foundOutput = true
+				assetGroup, err := asset.DeriveAssetGroupFromTx(offchainArkTx)
+				if err != nil {
+					return fmt.Errorf("error deriving asset from offchain tx %s: %s",
+						arkTxid, err)
+				}
+
+				if assetGroup == nil {
+					return fmt.Errorf("no asset data found in offchain tx %s", arkTxid)
+				}
+
+				// Check if the input exists in ANY of the assets in the previous tx's asset group
+				foundOutput := false
+
+				// Flatten all assets from the previous group to search for the output
+				allPrevAssets := append(assetGroup.ControlAssets, assetGroup.NormalAssets...)
+
+				for _, prevAsset := range allPrevAssets {
+					for _, assetOut := range prevAsset.Outputs {
+						if assetOut.Vout == input.Vout {
+							foundOutput = true
+							break
+						}
+					}
+					if foundOutput {
 						break
 					}
 				}
-			}
 
-			if !foundOutput {
-				return fmt.Errorf("asset input %d in offchain tx %s not found in asset outputs",
-					input.Vout, arkTxid)
+				if !foundOutput {
+					return fmt.Errorf("asset input %d in offchain tx %s not found in asset outputs",
+						input.Vout, arkTxid)
+				}
 			}
 		}
-
 	}
 	return nil
 }
-
 func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.MsgTx, assetGroupIndex int) error {
 	assetGroupPkScript := arkTx.TxOut[assetGroupIndex].PkScript
 
@@ -3977,113 +3989,130 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
 
-	normalAsset := assetGroup.NormalAsset
-	normalAssetId := hex.EncodeToString(assetGroup.NormalAsset.AssetId[:])
-	totalOut := uint64(0)
-	totalIn := uint64(0)
+	normalAssets := assetGroup.NormalAssets
+	controlAssets := assetGroup.ControlAssets
 
-	for _, in := range normalAsset.Inputs {
-		totalIn += in.Amount
-	}
+	for _, normalAsset := range normalAssets {
+		normalAssetId := hex.EncodeToString(normalAsset.AssetId[:])
+		totalOut := uint64(0)
+		totalIn := uint64(0)
 
-	for _, out := range normalAsset.Outputs {
-		totalOut += out.Amount
-	}
+		for _, in := range normalAsset.Inputs {
+			totalIn += in.Amount
+		}
 
-	metadataList := make([]domain.AssetMetadata, 0)
-	for _, meta := range assetGroup.NormalAsset.Metadata {
-		metadataList = append(metadataList, domain.AssetMetadata{
-			Key:   meta.Key,
-			Value: meta.Value,
-		})
-	}
+		for _, out := range normalAsset.Outputs {
+			totalOut += out.Amount
+		}
 
-	// create new asset If ControlAsset is absent and there are no inputs for normal asset
-	if assetGroup.ControlAsset == nil {
-		if len(normalAsset.Inputs) == 0 {
-			err = s.repoManager.Assets().InsertAsset(ctx, domain.Asset{
-				ID:        normalAssetId,
-				Quantity:  totalOut,
-				Immutable: assetGroup.NormalAsset.Immutable,
-				Metadata:  metadataList,
+		metadataList := make([]domain.AssetMetadata, 0)
+		for _, meta := range normalAsset.Metadata {
+			metadataList = append(metadataList, domain.AssetMetadata{
+				Key:   meta.Key,
+				Value: meta.Value,
 			})
+		}
 
+		var matchedControlAsset *asset.Asset
+		for _, ca := range controlAssets {
+			if bytes.Equal(ca.AssetId[:], normalAsset.ControlAssetId[:]) {
+				matchedControlAsset = &ca
+				break
+			}
+		}
+
+		// create new asset If ControlAsset is absent and there are no inputs for normal asset
+		if matchedControlAsset == nil {
+			if len(normalAsset.Inputs) == 0 {
+				err = s.repoManager.Assets().InsertAsset(ctx, domain.Asset{
+					ID:        normalAssetId,
+					Quantity:  totalOut,
+					Immutable: normalAsset.Immutable,
+					Metadata:  metadataList,
+				})
+
+				if err != nil {
+					return fmt.Errorf("error storing new asset: %s", err)
+				}
+
+				log.Infof("stored new asset with id %s and total quantity %d",
+					hex.EncodeToString(normalAsset.AssetId[:]),
+					totalOut,
+				)
+			}
+		} else {
+			// try to update the metadata of the existing asset
+
+			assetData, err := s.repoManager.Assets().GetAssetByID(ctx, normalAssetId)
 			if err != nil {
-				return fmt.Errorf("error storing new asset: %s", err)
+				return fmt.Errorf("error retrieving asset data: %s", err)
 			}
 
-			log.Infof("stored new asset with id %s and total quantity %d",
-				hex.EncodeToString(assetGroup.NormalAsset.AssetId[:]),
-				totalOut,
+			if assetData == nil {
+				return fmt.Errorf("asset with id %s not found for update", normalAssetId)
+			}
+
+			if !assetData.Immutable {
+				err = s.repoManager.Assets().UpdateAssetMetadataList(ctx, normalAssetId, metadataList)
+				if err != nil {
+					return fmt.Errorf("error updating asset metadata: %s", err)
+				}
+			}
+
+			log.Infof("updated asset metadata for asset id %s",
+				hex.EncodeToString(normalAsset.AssetId[:]),
 			)
-		}
-	} else {
-		// try to update the metadata of the existing asset
 
-		assetData, err := s.repoManager.Assets().GetAssetByID(ctx, normalAssetId)
-		if err != nil {
-			return fmt.Errorf("error retrieving asset data: %s", err)
+			if totalOut > totalIn {
+				delta := totalOut - totalIn
+				err = s.repoManager.Assets().IncreaseAssetQuantity(ctx, normalAssetId, delta)
+
+				if err != nil {
+					return fmt.Errorf("error updating asset quantity: %s", err)
+				}
+			} else if totalIn > totalOut {
+				delta := totalIn - totalOut
+				err = s.repoManager.Assets().DecreaseAssetQuantity(ctx, normalAssetId, delta)
+
+				if err != nil {
+					return fmt.Errorf("error updating asset quantity: %s", err)
+				}
+			}
 		}
 
-		if assetData == nil {
-			return fmt.Errorf("asset with id %s not found for update", normalAssetId)
+		anchorPoint := domain.Outpoint{
+			Txid: arkTx.TxID(),
+			VOut: uint32(assetGroupIndex),
 		}
 
-		if !assetData.Immutable {
-			err = s.repoManager.Assets().UpdateAssetMetadataList(ctx, normalAssetId, metadataList)
+		assetsToStore := []*asset.Asset{&normalAsset}
+		if matchedControlAsset != nil {
+			assetsToStore = append(assetsToStore, matchedControlAsset)
+		}
+
+		for _, grpAsset := range assetsToStore {
+			if grpAsset == nil {
+				continue
+			}
+
+			anchorVtxos := make([]domain.AnchorVtxo, 0)
+			// store asset outputs
+			for _, out := range grpAsset.Outputs {
+				assetVtxo := domain.AnchorVtxo{
+					Vout:   out.Vout,
+					Amount: out.Amount,
+				}
+				anchorVtxos = append(anchorVtxos, assetVtxo)
+			}
+
+			err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
+				AnchorPoint: anchorPoint,
+				AssetID:     hex.EncodeToString(grpAsset.AssetId[:]),
+				Vtxos:       anchorVtxos,
+			})
 			if err != nil {
-				return fmt.Errorf("error updating asset metadata: %s", err)
+				return fmt.Errorf("error storing asset anchor: %s", err)
 			}
-		}
-
-		log.Infof("updated asset metadata for asset id %s",
-			hex.EncodeToString(assetGroup.NormalAsset.AssetId[:]),
-		)
-
-		if totalOut > totalIn {
-			delta := totalOut - totalIn
-			err = s.repoManager.Assets().IncreaseAssetQuantity(ctx, normalAssetId, delta)
-
-			if err != nil {
-				return fmt.Errorf("error updating asset quantity: %s", err)
-			}
-		} else if totalIn > totalOut {
-			delta := totalIn - totalOut
-			err = s.repoManager.Assets().DecreaseAssetQuantity(ctx, normalAssetId, delta)
-
-			if err != nil {
-				return fmt.Errorf("error updating asset quantity: %s", err)
-			}
-		}
-	}
-
-	anchorPoint := domain.Outpoint{
-		Txid: arkTx.TxID(),
-		VOut: uint32(assetGroupIndex),
-	}
-
-	for _, grpAsset := range []*asset.Asset{assetGroup.ControlAsset, &normalAsset} {
-		if grpAsset == nil {
-			continue
-		}
-
-		anchorVtxos := make([]domain.AnchorVtxo, 0)
-		// store asset outputs
-		for _, out := range grpAsset.Outputs {
-			assetVtxo := domain.AnchorVtxo{
-				Vout:   out.Vout,
-				Amount: out.Amount,
-			}
-			anchorVtxos = append(anchorVtxos, assetVtxo)
-		}
-
-		err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
-			AnchorPoint: anchorPoint,
-			AssetID:     hex.EncodeToString(grpAsset.AssetId[:]),
-			Vtxos:       anchorVtxos,
-		})
-		if err != nil {
-			return fmt.Errorf("error storing asset anchor: %s", err)
 		}
 	}
 

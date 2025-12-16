@@ -97,23 +97,24 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 		return nil, nil, fmt.Errorf("invalid signer unroll script")
 	}
 
-	controlAsset := assetGroup.ControlAsset
-	normalAsset := assetGroup.NormalAsset
-
 	// Track which vtxos we used for the control asset so we don't reuse them for the normal asset.
 	usedForControl := make([]bool, len(vtxos))
 
 	// -------------------------
 	// 1. Control asset handling
 	// -------------------------
-	if controlAsset != nil {
+	updatedControlAssets := make([]asset.Asset, 0, len(assetGroup.ControlAssets))
 
+	for _, controlAsset := range assetGroup.ControlAssets {
 		controlAssetInputs := make([]asset.AssetInput, 0)
 
 		for i, vtxo := range vtxos {
+			if usedForControl[i] {
+				continue
+			}
 
 			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(
-				vtxo, controlAsset, signerUnrollScriptClosure, assetGroup.SubDustKey,
+				vtxo, &controlAsset, signerUnrollScriptClosure, assetGroup.SubDustKey,
 			)
 			if err != nil {
 				return nil, nil, err
@@ -134,52 +135,69 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 			checkpointInputs = append(checkpointInputs, *checkpointInput)
 			checkpointTxs = append(checkpointTxs, checkpointPtx)
 			usedForControl[i] = true
-
 		}
+
 		if len(controlAssetInputs) == 0 {
-			return nil, nil, fmt.Errorf("control asset vtxo not found")
+			return nil, nil, fmt.Errorf("control asset vtxo not found for asset %x", controlAsset.AssetId)
 		}
 		controlAsset.Inputs = controlAssetInputs
-
+		updatedControlAssets = append(updatedControlAssets, controlAsset)
 	}
 
 	// ------------------------
 	// 2. Normal asset handling
 	// ------------------------
-	normalAssetInputs := make([]asset.AssetInput, 0)
+	updatedNormalAssets := make([]asset.Asset, 0, len(assetGroup.NormalAssets))
 
-	for i, vtxo := range vtxos {
-		// Don't reuse any vtxo that was already consumed as control asset input.
-		if usedForControl[i] {
-			continue
+	for _, normalAsset := range assetGroup.NormalAssets {
+		normalAssetInputs := make([]asset.AssetInput, 0)
+
+		for i, vtxo := range vtxos {
+			// Don't reuse any vtxo that was already consumed
+			if usedForControl[i] {
+				continue
+			}
+
+			// Check if this vtxo carries this specific normal asset (optimization/check inside buildAssetCheckpointTx?)
+			// existing logic iterated all vtxos for the single normal asset.
+			// now we have multiple normal assets. A vtxo likely only carries ONE type of asset or we need logic to split.
+			// buildAssetCheckpointTx checks `bytes.Equal(in.Txhash, vtxo.Outpoint.Hash[:])` so it filters by input.
+
+			currentNormalAsset := normalAsset
+			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(
+				vtxo, &currentNormalAsset, signerUnrollScriptClosure, assetGroup.SubDustKey,
+			)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			if assetOutput != nil {
+				txHash := checkpointPtx.UnsignedTx.TxHash()
+				normalAssetInputs = append(normalAssetInputs, asset.AssetInput{
+					Txhash: txHash[:],
+					Vout:   0,
+					Amount: assetOutput.Amount,
+				})
+
+				// We must add the checkpoint tx/input to the lists
+				checkpointInputs = append(checkpointInputs, *checkpointInput)
+				checkpointTxs = append(checkpointTxs, checkpointPtx)
+
+				// Mark as used to prevent re-use for other assets if exclusive?
+				// Actually buildAssetCheckpointTx creates a whole checkpoint tx.
+				// If a vtxo has multiple assets, can we spend it multiple times? No.
+				// So we should mark usedForControl[i] = true (or usedForNormal)
+				usedForControl[i] = true
+			}
 		}
-
-		checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(
-			vtxo, &normalAsset, signerUnrollScriptClosure, assetGroup.SubDustKey,
-		)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if assetOutput != nil {
-			txHash := checkpointPtx.UnsignedTx.TxHash()
-			normalAssetInputs = append(normalAssetInputs, asset.AssetInput{
-				Txhash: txHash[:],
-				Vout:   0,
-				Amount: assetOutput.Amount,
-			})
-		}
-
-		checkpointInputs = append(checkpointInputs, *checkpointInput)
-		checkpointTxs = append(checkpointTxs, checkpointPtx)
+		normalAsset.Inputs = normalAssetInputs
+		updatedNormalAssets = append(updatedNormalAssets, normalAsset)
 	}
 
-	normalAsset.Inputs = normalAssetInputs
-
 	newAssetGroup := &asset.AssetGroup{
-		ControlAsset: controlAsset,
-		NormalAsset:  normalAsset,
-		SubDustKey:   assetGroup.SubDustKey,
+		ControlAssets: updatedControlAssets,
+		NormalAssets:  updatedNormalAssets,
+		SubDustKey:    assetGroup.SubDustKey,
 	}
 
 	newOpretOutput, err := newAssetGroup.EncodeOpret(assetAnchor.Value)
@@ -223,13 +241,13 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 		return nil, nil, fmt.Errorf("invalid signer unroll script")
 	}
 
-	controlAsset := assetGroup.ControlAsset
-	normalAsset := assetGroup.NormalAsset
+	controlAssets := assetGroup.ControlAssets
+	normalAssets := assetGroup.NormalAssets
 
 	// If control inputs are present, find the corresponding vtxos
-	if controlAsset != nil {
+	for aIdx, controlAsset := range controlAssets {
 		for i, input := range controlAsset.Inputs {
-			in := &controlAsset.Inputs[i]
+			in := &controlAssets[aIdx].Inputs[i]
 
 			inputTxId, err := chainhash.NewHash(input.Txhash)
 			if err != nil {
@@ -252,44 +270,45 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 			in.Txhash = prev.Hash[:]
 			in.Vout = prev.Index
 		}
-
 	}
 
 	// -------------------------
 	// 2. Normal asset inputs
 	// -------------------------
-	for i, input := range normalAsset.Inputs {
-		in := &normalAsset.Inputs[i]
+	for aIdx, normalAsset := range normalAssets {
+		for i, input := range normalAsset.Inputs {
+			in := &normalAssets[aIdx].Inputs[i]
 
-		inputTxId, err := chainhash.NewHash(input.Txhash)
-		if err != nil {
-			return nil, nil, err
+			inputTxId, err := chainhash.NewHash(input.Txhash)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			checkpointTxHex, ok := checkpointTxMap[inputTxId.String()]
+			if !ok {
+				return nil, nil, fmt.Errorf("checkpoint tx not found for normal asset input %s", input.Txhash)
+			}
+
+			checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
+
+			// Update the asset input to point to the underlying UTXO
+			in.Txhash = prev.Hash[:]
+			in.Vout = prev.Index
 		}
-
-		checkpointTxHex, ok := checkpointTxMap[inputTxId.String()]
-		if !ok {
-			return nil, nil, fmt.Errorf("checkpoint tx not found for normal asset input %s", input.Txhash)
-		}
-
-		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
-
-		// Update the asset input to point to the underlying UTXO
-		in.Txhash = prev.Hash[:]
-		in.Vout = prev.Index
 	}
 
 	// -------------------------
 	// 3. Encode updated assetGroup and build Asset Ark tx
 	// -------------------------
 	newAssetGroup := &asset.AssetGroup{
-		ControlAsset: controlAsset,
-		NormalAsset:  normalAsset,
-		SubDustKey:   assetGroup.SubDustKey,
+		ControlAssets: controlAssets,
+		NormalAssets:  normalAssets,
+		SubDustKey:    assetGroup.SubDustKey,
 	}
 
 	newOpretOutput, err := newAssetGroup.EncodeOpret(assetAnchor.Value)
@@ -542,9 +561,9 @@ func buildAssetCheckpointTx(
 		assetOutput = &newAsset.Outputs[0]
 
 		newAssetGroup := &asset.AssetGroup{
-			ControlAsset: nil,
-			NormalAsset:  newAsset,
-			SubDustKey:   subDustKey,
+			ControlAssets: nil,
+			NormalAssets:  []asset.Asset{newAsset},
+			SubDustKey:    subDustKey,
 		}
 
 		assetOpret, err := newAssetGroup.EncodeOpret(0)

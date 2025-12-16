@@ -31,12 +31,17 @@ type Asset struct {
 }
 
 type AssetGroup struct {
-	ControlAsset *Asset
-	NormalAsset  Asset
-	SubDustKey   *btcec.PublicKey
+	ControlAssets []Asset
+	NormalAssets  []Asset
+	SubDustKey    *btcec.PublicKey
 }
 
 const AssetMagic byte = 0x41 // 'A'
+
+const (
+	MarkerSubDustKey   byte = 0x4B // 'K' for Key (avoid OP_1 optimization)
+	MarkerAssetPayload byte = 0x50 // 'P' for Payload (avoid OP_2 optimization)
+)
 
 type Metadata struct {
 	Key   string
@@ -56,20 +61,15 @@ type AssetInput struct {
 }
 
 func (g *AssetGroup) EncodeOpret(amount int64) (wire.TxOut, error) {
-	assets := make([]Asset, 0, 2)
-	if g.ControlAsset != nil {
-		assets = append(assets, *g.ControlAsset)
-	}
-	assets = append(assets, g.NormalAsset)
-
-	encodedAssets, err := encodeAssetGroupPayload(assets)
+	encodedAssets, err := encodeAssetGroupPayload(g.ControlAssets, g.NormalAssets)
 	if err != nil {
 		return wire.TxOut{}, err
 	}
 
-	version := g.NormalAsset.Version
-	if version == 0 {
-		version = AssetVersion
+	version := AssetVersion
+	// Use version from first normal asset if available, else default
+	if len(g.NormalAssets) > 0 && g.NormalAssets[0].Version != 0 {
+		version = g.NormalAssets[0].Version
 	}
 
 	assetData := []byte{AssetMagic, version}
@@ -77,9 +77,21 @@ func (g *AssetGroup) EncodeOpret(amount int64) (wire.TxOut, error) {
 
 	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
 	if g.SubDustKey != nil {
+		builder.AddData([]byte{MarkerSubDustKey})
 		builder.AddData(schnorr.SerializePubKey(g.SubDustKey))
 	}
-	builder.AddData(assetData)
+
+	builder.AddData([]byte{MarkerAssetPayload})
+
+	// Split assetData into chunks of max MAX_SCRIPT_ELEMENT_SIZE (520)
+	const maxChunkSize = txscript.MaxScriptElementSize
+	for i := 0; i < len(assetData); i += maxChunkSize {
+		end := i + maxChunkSize
+		if end > len(assetData) {
+			end = len(assetData)
+		}
+		builder.AddData(assetData[i:end])
+	}
 
 	opReturnPubkey, err := builder.Script()
 	if err != nil {
@@ -92,15 +104,24 @@ func (g *AssetGroup) EncodeOpret(amount int64) (wire.TxOut, error) {
 	}, nil
 }
 
-func encodeAssetGroupPayload(assets []Asset) ([]byte, error) {
+func encodeAssetGroupPayload(controlAssets, normalAssets []Asset) ([]byte, error) {
 	var scratch [8]byte
 	var buf bytes.Buffer
 
-	if err := tlv.WriteVarInt(&buf, uint64(len(assets)), &scratch); err != nil {
+	totalCount := uint64(len(controlAssets) + len(normalAssets))
+	controlCount := uint64(len(controlAssets))
+
+	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
 		return nil, err
 	}
 
-	for _, asset := range assets {
+	if err := tlv.WriteVarInt(&buf, controlCount, &scratch); err != nil {
+		return nil, err
+	}
+
+	allAssets := append(controlAssets, normalAssets...)
+
+	for _, asset := range allAssets {
 		encodedAsset, err := asset.EncodeTlv()
 		if err != nil {
 			return nil, err
@@ -120,7 +141,7 @@ func encodeAssetGroupPayload(assets []Asset) ([]byte, error) {
 
 // parseAssetOpReturn extracts the asset payload and optional sub-dust pubkey
 // from an OP_RETURN script. It expects scripts built with pushdata elements
-// (OP_RETURN <subdust_pubkey?> <asset_payload>).
+// (OP_RETURN <MarkerSubDustKey> <subdust_pubkey> <MarkerAssetPayload> <asset_payload_chunk1> <asset_payload_chunk2> ...).
 func parseAssetOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
 		return nil, nil, errors.New("OP_RETURN not present")
@@ -155,11 +176,28 @@ func parseAssetOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 		return nil, nil, errors.New("missing OP_RETURN payload")
 	}
 
-	assetPayload := dataPushes[len(dataPushes)-1]
 	var subDustKey []byte
+	var assetPayload []byte
+	var currentMarker byte
 
-	if len(dataPushes) >= 2 && len(dataPushes[0]) == schnorr.PubKeyBytesLen {
-		subDustKey = dataPushes[0]
+	for _, push := range dataPushes {
+		if len(push) == 1 && (push[0] == MarkerSubDustKey || push[0] == MarkerAssetPayload) {
+			currentMarker = push[0]
+			continue
+		}
+
+		switch currentMarker {
+		case MarkerSubDustKey:
+			if len(push) == schnorr.PubKeyBytesLen {
+				subDustKey = push
+			}
+		case MarkerAssetPayload:
+			assetPayload = append(assetPayload, push...)
+		}
+	}
+
+	if len(assetPayload) == 0 {
+		return nil, subDustKey, errors.New("missing asset payload")
 	}
 
 	return assetPayload, subDustKey, nil
@@ -182,8 +220,21 @@ func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) 
 	var scratch [8]byte
 
 	assetCount, err := tlv.ReadVarInt(reader, &scratch)
-	if err != nil || assetCount == 0 {
+	if err != nil {
 		return nil, fmt.Errorf("invalid asset group count: %w", err)
+	}
+
+	if assetCount == 0 {
+		return nil, errors.New("empty asset group")
+	}
+
+	controlCount, err := tlv.ReadVarInt(reader, &scratch)
+	if err != nil {
+		return nil, fmt.Errorf("invalid control asset count: %w", err)
+	}
+
+	if controlCount > assetCount {
+		return nil, fmt.Errorf("control asset count %d exceeds total asset count %d", controlCount, assetCount)
 	}
 
 	assets := make([]Asset, 0, int(assetCount))
@@ -220,15 +271,9 @@ func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) 
 		return nil, errors.New("unexpected trailing bytes in asset group payload")
 	}
 
-	group := &AssetGroup{}
-	switch len(assets) {
-	case 0:
-		return nil, errors.New("empty asset group")
-	case 1:
-		group.NormalAsset = assets[0]
-	default:
-		group.ControlAsset = &assets[0]
-		group.NormalAsset = assets[len(assets)-1]
+	group := &AssetGroup{
+		ControlAssets: assets[:controlCount],
+		NormalAssets:  assets[controlCount:],
 	}
 
 	return group, nil
@@ -240,71 +285,30 @@ func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, error) {
 	}
 
 	assetPayload, subDustKey, err := parseAssetOpReturn(opReturnData)
-	if err == nil && len(assetPayload) >= 2 && assetPayload[0] == AssetMagic {
-		version := assetPayload[1]
-		payload := assetPayload[2:]
-
-		setSubDustKey := func(g *AssetGroup) {
-			if len(subDustKey) == 0 {
-				return
-			}
-			key, keyErr := schnorr.ParsePubKey(subDustKey)
-			if keyErr == nil {
-				g.SubDustKey = key
-			}
-		}
-
-		group, decodeErr := decodeAssetGroupPayload(payload, version)
-		if decodeErr == nil {
-			setSubDustKey(group)
-			return group, nil
-		}
-
-		if len(payload) >= 32 {
-			legacyPayload := payload[32:]
-
-			if groupLegacy, legacyErr := decodeAssetGroupPayload(legacyPayload, version); legacyErr == nil {
-				setSubDustKey(groupLegacy)
-				return groupLegacy, nil
-			}
-
-			var single Asset
-			single.Magic = AssetMagic
-			single.Version = version
-			if err := single.DecodeTlv(legacyPayload); err == nil {
-				normalizeAssetSlices(&single)
-				group := &AssetGroup{NormalAsset: single}
-				setSubDustKey(group)
-				return group, nil
-			}
-		}
+	if err != nil {
+		return nil, err
 	}
 
-	// Fallback to legacy single-asset layout where asset payload starts
-	// immediately after OP_RETURN.
-	if len(opReturnData) < 3 || opReturnData[1] != AssetMagic {
+	if len(assetPayload) < 2 || assetPayload[0] != AssetMagic {
 		return nil, errors.New("invalid asset op_return payload")
 	}
 
-	version := opReturnData[2]
+	version := assetPayload[1]
+	payload := assetPayload[2:]
 
-	group, err := decodeAssetGroupPayload(opReturnData[3:], version)
-	if err == nil {
-		return group, nil
+	group, err := decodeAssetGroupPayload(payload, version)
+	if err != nil {
+		return nil, err
 	}
 
-	// Fallback to legacy single-asset layout.
-	var asset Asset
-	asset.Magic = AssetMagic
-	asset.Version = version
-
-	if err := asset.DecodeTlv(opReturnData[3+32:]); err != nil {
-		return nil, fmt.Errorf("failed to decode asset data: %w", err)
+	if len(subDustKey) > 0 {
+		key, keyErr := schnorr.ParsePubKey(subDustKey)
+		if keyErr == nil {
+			group.SubDustKey = key
+		}
 	}
 
-	normalizeAssetSlices(&asset)
-	return &AssetGroup{NormalAsset: asset}, nil
-
+	return group, nil
 }
 
 func IsAssetGroup(opReturnData []byte) bool {
@@ -312,11 +316,7 @@ func IsAssetGroup(opReturnData []byte) bool {
 	if err == nil && len(payload) > 0 {
 		return payload[0] == AssetMagic
 	}
-
-	// Legacy layout: OP_RETURN <AssetMagic> <Version> ...
-	return len(opReturnData) > 1 &&
-		opReturnData[0] == txscript.OP_RETURN &&
-		opReturnData[1] == AssetMagic
+	return false
 }
 
 func (a *Asset) EncodeTlv() ([]byte, error) {

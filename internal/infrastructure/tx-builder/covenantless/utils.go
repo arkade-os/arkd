@@ -131,15 +131,16 @@ func getAssetFromIntents(
 				return nil, fmt.Errorf("failed to decode asset from input: %s", err)
 			}
 
-			if decodedAssetGroup.ControlAsset != nil {
-				decodedControlAsset := decodedAssetGroup.ControlAsset
-				if decodedControlAsset.AssetId == assetId {
-					return decodedControlAsset, nil
+			for _, controlAsset := range decodedAssetGroup.ControlAssets {
+				if controlAsset.AssetId == assetId {
+					return &controlAsset, nil
 				}
 			}
-			decodedAsset := decodedAssetGroup.NormalAsset
-			if decodedAsset.AssetId == assetId {
-				return &decodedAsset, nil
+
+			for _, normalAsset := range decodedAssetGroup.NormalAssets {
+				if normalAsset.AssetId == assetId {
+					return &normalAsset, nil
+				}
 			}
 		}
 
@@ -214,8 +215,8 @@ func buildTeleportAssetLeaf(
 	assetCopy.Inputs = nil
 
 	assetGroup := &asset.AssetGroup{
-		ControlAsset: nil,
-		NormalAsset:  assetCopy,
+		ControlAssets: nil,
+		NormalAssets:  []asset.Asset{assetCopy},
 	}
 
 	assetOpret, err := assetGroup.EncodeOpret(0)
