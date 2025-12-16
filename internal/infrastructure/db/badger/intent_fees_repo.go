@@ -103,10 +103,10 @@ func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
 	intentFees := IntentFees{
 		ID:                       "intent_fees",
 		CreatedAt:                time.Now().Unix(),
-		OnchainInputFeeProgram:   "0",
-		OffchainInputFeeProgram:  "0",
-		OnchainOutputFeeProgram:  "0",
-		OffchainOutputFeeProgram: "0",
+		OnchainInputFeeProgram:   "0.0",
+		OffchainInputFeeProgram:  "0.0",
+		OnchainOutputFeeProgram:  "0.0",
+		OffchainOutputFeeProgram: "0.0",
 	}
 
 	if err := r.store.Upsert("intent_fees", &intentFees); err != nil {

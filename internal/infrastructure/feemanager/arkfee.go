@@ -91,10 +91,10 @@ func (a *arkFeeManager) UpsertIntentFees(ctx context.Context, fees domain.Intent
 }
 
 func (a *arkFeeManager) ClearIntentFees(ctx context.Context) error {
-	a.Config.IntentOffchainInputProgram = "0"
-	a.Config.IntentOnchainInputProgram = "0"
-	a.Config.IntentOffchainOutputProgram = "0"
-	a.Config.IntentOnchainOutputProgram = "0"
+	a.Config.IntentOffchainInputProgram = "0.0"
+	a.Config.IntentOnchainInputProgram = "0.0"
+	a.Config.IntentOffchainOutputProgram = "0.0"
+	a.Config.IntentOnchainOutputProgram = "0.0"
 
 	estimator, err := arkfee.New(a.Config)
 	if err != nil {

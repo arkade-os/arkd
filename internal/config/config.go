@@ -255,10 +255,10 @@ var (
 	defaultSettlementMinExpiryGap         = 0 // disabled by default
 	defaultVtxoNoCsvValidationCutoffDate  = 0 // disabled by default
 	defaultEnablePprof                    = false
-	defaultIntentOffchainInputFeeProgram  = ""
-	defaultIntentOnchainInputFeeProgram   = ""
-	defaultIntentOffchainOutputFeeProgram = ""
-	defaultIntentOnchainOutputFeeProgram  = ""
+	defaultIntentOffchainInputFeeProgram  = "0.0"
+	defaultIntentOnchainInputFeeProgram   = "0.0"
+	defaultIntentOffchainOutputFeeProgram = "0.0"
+	defaultIntentOnchainOutputFeeProgram  = "0.0"
 )
 
 func LoadConfig() (*Config, error) {
