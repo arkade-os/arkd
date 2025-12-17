@@ -4045,7 +4045,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 				return fmt.Errorf("asset with id %s not found for update", normalAssetId)
 			}
 
-			if !assetData.Immutable {
+			if !assetData.Immutable && len(metadataList) > 0 {
 				err = s.repoManager.Assets().UpdateAssetMetadataList(ctx, normalAssetId, metadataList)
 				if err != nil {
 					return fmt.Errorf("error updating asset metadata: %s", err)
