@@ -199,112 +199,124 @@ func (a *adminService) Sweep(
 	log.Infof("sweep transaction %s broadcasted", txid)
 
 	if len(batchInputs) > 0 {
-		for commitmentTxid, batchInputsList := range batchInputs {
-			round := batchRounds[commitmentTxid]
-
-			leafVtxos := make([]domain.Outpoint, 0)
-			vtxoRepo := a.repoManager.Vtxos()
-
-			commitmentRootSwept := false
-			for _, input := range batchInputsList {
-				if input.Txid == commitmentTxid {
-					commitmentRootSwept = true
-					break
-				}
-			}
-
-			// find leaf vtxos for each input
-			for _, input := range batchInputsList {
-				vtxos, _ := vtxoRepo.GetVtxos(
-					ctx,
-					[]domain.Outpoint{
-						{
-							Txid: input.Txid,
-							VOut: input.Index,
-						},
-					},
-				)
-				if len(vtxos) > 0 {
-					if !vtxos[0].Swept && !vtxos[0].Unrolled {
-						leafVtxos = append(leafVtxos, vtxos[0].Outpoint)
-					}
-				} else {
-					vtxoTree, ok := batchVtxoTrees[commitmentTxid]
-					if !ok {
-						log.Errorf("vtxo tree for batch %s not found", commitmentTxid)
-						continue
-					}
-
-					vtxosLeaves, err := findLeaves(vtxoTree, input.Txid, input.Index)
-					if err != nil {
-						log.WithError(err).Errorf(
-							"failed to get leaves from vtxo tree of batch %s", commitmentTxid,
-						)
-						continue
-					}
-
-					for _, leaf := range vtxosLeaves {
-						vtxo := domain.Outpoint{
-							Txid: leaf.UnsignedTx.TxID(),
-							VOut: 0,
-						}
-						leafVtxos = append(leafVtxos, vtxo)
-					}
-				}
-			}
-
-			// get preconfirmed vtxos
-			preconfirmedVtxos := make([]domain.Outpoint, 0)
-			if commitmentRootSwept {
-				preconfirmedVtxos, err = vtxoRepo.GetSweepableVtxosByCommitmentTxid(
-					ctx,
-					commitmentTxid,
-				)
-				if err != nil {
-					log.WithError(err).
-						Error("error while getting sweepable vtxos by commitment txid")
-				}
-			} else {
-				seen := make(map[string]struct{})
-				for _, leafVtxo := range leafVtxos {
-					children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
-					if err != nil {
-						log.WithError(err).Error("error while getting children vtxos")
-						continue
-					}
-					for _, child := range children {
-						if _, ok := seen[child.String()]; !ok {
-							preconfirmedVtxos = append(preconfirmedVtxos, child)
-							seen[child.String()] = struct{}{}
-						}
-					}
-				}
-			}
-
-			events, err := round.Sweep(
-				leafVtxos,
-				preconfirmedVtxos,
-				txid,
-				txhex,
-			)
-			if err != nil {
-				log.WithError(err).Errorf("failed to sweep batch %s", commitmentTxid)
-				continue
-			}
-
-			if len(events) > 0 {
-				eventRepo := a.repoManager.Events()
-				if err := eventRepo.Save(ctx, domain.RoundTopic, round.Id, events); err != nil {
-					log.WithError(err).Errorf(
-						"failed to save sweep events for batch %s", commitmentTxid,
-					)
-					continue
-				}
-			}
-		}
+		go a.saveBatchSweptEvents(batchInputs, batchRounds, batchVtxoTrees, txid, txhex)
 	}
 
 	return
+}
+
+func (a *adminService) saveBatchSweptEvents(
+	batchInputs map[string][]ports.TxInput,
+	batchRounds map[string]*domain.Round,
+	batchVtxoTrees map[string]*tree.TxTree,
+	txid, txhex string,
+) {
+	ctx := context.Background()
+
+	for commitmentTxid, batchInputsList := range batchInputs {
+		round := batchRounds[commitmentTxid]
+
+		leafVtxos := make([]domain.Outpoint, 0)
+		vtxoRepo := a.repoManager.Vtxos()
+
+		commitmentRootSwept := false
+		for _, input := range batchInputsList {
+			if input.Txid == commitmentTxid {
+				commitmentRootSwept = true
+				break
+			}
+		}
+
+		// find leaf vtxos for each input
+		for _, input := range batchInputsList {
+			vtxos, _ := vtxoRepo.GetVtxos(
+				ctx,
+				[]domain.Outpoint{
+					{
+						Txid: input.Txid,
+						VOut: input.Index,
+					},
+				},
+			)
+			if len(vtxos) > 0 {
+				if !vtxos[0].Swept && !vtxos[0].Unrolled {
+					leafVtxos = append(leafVtxos, vtxos[0].Outpoint)
+				}
+			} else {
+				vtxoTree, ok := batchVtxoTrees[commitmentTxid]
+				if !ok {
+					log.Errorf("vtxo tree for batch %s not found", commitmentTxid)
+					continue
+				}
+
+				vtxosLeaves, err := findLeaves(vtxoTree, input.Txid, input.Index)
+				if err != nil {
+					log.WithError(err).Errorf(
+						"failed to get leaves from vtxo tree of batch %s", commitmentTxid,
+					)
+					continue
+				}
+
+				for _, leaf := range vtxosLeaves {
+					vtxo := domain.Outpoint{
+						Txid: leaf.UnsignedTx.TxID(),
+						VOut: 0,
+					}
+					leafVtxos = append(leafVtxos, vtxo)
+				}
+			}
+		}
+
+		// get preconfirmed vtxos
+		preconfirmedVtxos := make([]domain.Outpoint, 0)
+		if commitmentRootSwept {
+			var err error
+			preconfirmedVtxos, err = vtxoRepo.GetSweepableVtxosByCommitmentTxid(
+				ctx,
+				commitmentTxid,
+			)
+			if err != nil {
+				log.WithError(err).
+					Error("error while getting sweepable vtxos by commitment txid")
+			}
+		} else {
+			seen := make(map[string]struct{})
+			for _, leafVtxo := range leafVtxos {
+				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+				if err != nil {
+					log.WithError(err).Error("error while getting children vtxos")
+					continue
+				}
+				for _, child := range children {
+					if _, ok := seen[child.String()]; !ok {
+						preconfirmedVtxos = append(preconfirmedVtxos, child)
+						seen[child.String()] = struct{}{}
+					}
+				}
+			}
+		}
+
+		events, err := round.Sweep(
+			leafVtxos,
+			preconfirmedVtxos,
+			txid,
+			txhex,
+		)
+		if err != nil {
+			log.WithError(err).Errorf("failed to sweep batch %s", commitmentTxid)
+			continue
+		}
+
+		if len(events) > 0 {
+			eventRepo := a.repoManager.Events()
+			if err := eventRepo.Save(ctx, domain.RoundTopic, round.Id, events); err != nil {
+				log.WithError(err).Errorf(
+					"failed to save sweep events for batch %s", commitmentTxid,
+				)
+				continue
+			}
+		}
+	}
 }
 
 func (a *adminService) Wallet() ports.WalletService {
