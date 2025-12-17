@@ -261,6 +261,7 @@ message FinalizeTxResponse {}
 message GetPendingTxRequest {
   oneof identifier {
     Intent intent = 1;
+    string txid = 2;
   }
 }
 message GetPendingTxResponse {
