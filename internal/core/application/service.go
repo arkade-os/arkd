@@ -3940,6 +3940,20 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 						return fmt.Errorf("asset input commitment does not match teleport hash witness")
 					}
 
+					// verify that theteleport hash exists
+					teleportAsset, err := s.repoManager.Assets().GetTeleportAsset(ctx, checkpointTx)
+					if err != nil {
+						return fmt.Errorf("asset input teleport hash does not exist")
+					}
+
+					if teleportAsset == nil {
+						return fmt.Errorf("asset input teleport hash does not exist")
+					}
+
+					if teleportAsset.IsClaimed {
+						return fmt.Errorf("asset input teleport hash is already claimed")
+					}
+
 					// Find checkpoint tx that has the first output script matching the witness script
 					for _, cp := range checkpointTxMap {
 						ptx, err := psbt.NewFromRawBytes(strings.NewReader(cp), true)
