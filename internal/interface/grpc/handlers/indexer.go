@@ -47,9 +47,9 @@ func NewIndexerService(
 
 func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRequest,
 ) (*arkv1.GetAssetResponse, error) {
-	assetId, err := parseTxid(request.GetAssetId())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	assetId := request.GetAssetId()
+	if assetId == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "missing asset id")
 	}
 
 	resp, err := e.indexerSvc.GetAsset(ctx, assetId)

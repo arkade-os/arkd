@@ -284,33 +284,12 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 		modifiedInputs := make([]asset.AssetInput, 0, len(inputs))
 		for _, input := range inputs {
 
-			if input.Type == asset.AssetInputTypeTeleport {
-				modifiedInputs = append(modifiedInputs, input)
-			}
-
-			moodifiedInput := input
-
-			inputTxId, err := chainhash.NewHash(input.Hash)
+			modifiedInput, err := ReconstructAssetInput(input, checkpointTxMap)
 			if err != nil {
 				return nil, err
 			}
 
-			checkpointTxHex, ok := checkpointTxMap[inputTxId.String()]
-			if !ok {
-				return nil, fmt.Errorf("checkpoint tx not found for asset input reference %x", inputTxId)
-			}
-
-			ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
-			if err != nil {
-				return nil, err
-			}
-
-			prev := ptx.UnsignedTx.TxIn[0].PreviousOutPoint
-
-			moodifiedInput.Hash = prev.Hash.CloneBytes()
-			moodifiedInput.Vin = prev.Index
-
-			modifiedInputs = append(modifiedInputs, moodifiedInput)
+			modifiedInputs = append(modifiedInputs, modifiedInput)
 		}
 		return modifiedInputs, nil
 	}
@@ -354,6 +333,41 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 	outputs[assetGroupIndex] = &newOpretOutput
 
 	return BuildAssetTxs(outputs, assetGroupIndex, checkpointInputs, signerUnrollScript)
+}
+
+func ReconstructAssetInput(assetInput asset.AssetInput, checkpointTxMap map[string]string) (asset.AssetInput, error) {
+	if assetInput.Type == asset.AssetInputTypeTeleport {
+		return assetInput, nil
+	}
+
+	moodifiedInput := assetInput
+
+	inputTxId, err := chainhash.NewHash(assetInput.Hash)
+	if err != nil {
+		return asset.AssetInput{}, err
+	}
+
+	checkpointTxHex, ok := checkpointTxMap[inputTxId.String()]
+	if !ok {
+		return asset.AssetInput{}, fmt.Errorf("checkpoint tx not found for asset input reference %x", inputTxId)
+	}
+
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
+	if err != nil {
+		return asset.AssetInput{}, err
+	}
+
+	txHash := ptx.UnsignedTx.TxHash()
+	if !bytes.Equal(txHash[:], assetInput.Hash) {
+		return asset.AssetInput{}, fmt.Errorf("checkpoint tx hash mismatch for asset input reference %x", inputTxId)
+	}
+
+	prev := ptx.UnsignedTx.TxIn[0].PreviousOutPoint
+
+	moodifiedInput.Hash = prev.Hash.CloneBytes()
+	moodifiedInput.Vin = prev.Index
+
+	return moodifiedInput, nil
 }
 
 // buildArkTx builds an ark tx for the given vtxos and outputs.

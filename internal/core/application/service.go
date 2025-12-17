@@ -3857,10 +3857,13 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 	controlAssets := decodedAssetGroup.ControlAssets
 	normalAssets := decodedAssetGroup.NormalAssets
 
-	txins := arkTx.TxIn
 	txouts := arkTx.TxOut
 
-	// We need to validate each normal asset
+	totalAssets := make([]asset.Asset, 0)
+
+	uniqueControlAssetsIndex := make(map[int]struct{})
+
+	// verify the presence of control assets for each normal asset
 	for _, normalAsset := range normalAssets {
 
 		ins := normalAsset.Inputs
@@ -3876,186 +3879,95 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 			totalInputAmount += uint64(in.Amount)
 		}
 
-		totalAssets := []asset.Asset{normalAsset}
-		var matchedControlAsset *asset.Asset
-
 		// verify Asset Reissuance / buring
 		if !asset.IsAssetCreation(normalAsset) && totalInputAmount != totalOuputAmount {
 			// Find the control asset matching the Normal Asset's ControlAssetId
-			for _, ca := range controlAssets {
+			foundControlAsset := false
+			for i, ca := range controlAssets {
 				if normalAsset.ControlAssetId != nil && ca.AssetId == *normalAsset.ControlAssetId {
-					matchedControlAsset = &ca
+					uniqueControlAssetsIndex[i] = struct{}{}
+					foundControlAsset = true
 					break
 				}
 			}
 
-			if matchedControlAsset == nil {
-				return fmt.Errorf("missing control asset for asset reissuance / burning of asset %x:%d", normalAsset.AssetId.TxId, normalAsset.AssetId.Index)
-			}
-		}
-
-		if matchedControlAsset != nil {
-			if normalAsset.ControlAssetId == nil || matchedControlAsset.AssetId != *normalAsset.ControlAssetId {
-				// This should be redundant if loop above is correct, but good for sanity
+			if !foundControlAsset {
 				return fmt.Errorf("invalid control key for asset modification")
-			}
-			totalAssets = append(totalAssets, *matchedControlAsset)
-		}
-
-		for _, grpAsset := range totalAssets {
-			if err := asset.ValidateAssetInputOutputs(txins, txouts, grpAsset); err != nil {
-				return err
-			}
-
-			// Validate that each asset input refers to a valid offchain transaction
-			for _, input := range grpAsset.Inputs {
-				var vout uint32
-
-				var checkpointTx string
-				var foundCheckpoint bool
-
-				switch input.Type {
-				case asset.AssetInputTypeLocal:
-					if int(input.Vin) >= len(arkTx.TxIn) {
-						return fmt.Errorf("asset input refers to invalid vin %d", input.Vin)
-					}
-					// For local, we get previous outpoint hash
-					txHashBytes := arkTx.TxIn[input.Vin].PreviousOutPoint.Hash.CloneBytes()
-					txHash, err := chainhash.NewHash(txHashBytes)
-					if err != nil {
-						return fmt.Errorf("error parsing local input txhash: %s", err)
-					}
-
-					checkpointId := txHash.String()
-					if cp, ok := checkpointTxMap[checkpointId]; ok {
-						checkpointTx = cp
-						foundCheckpoint = true
-					}
-					vout = arkTx.TxIn[input.Vin].PreviousOutPoint.Index
-
-				case asset.AssetInputTypeTeleport:
-					// Verify commitment matches hash of witness
-					expectedHash := asset.CalculateTeleportHash(input.Witness.Script, input.Witness.Nonce)
-					if !bytes.Equal(input.Commitment[:], expectedHash[:]) {
-						return fmt.Errorf("asset input commitment does not match teleport hash witness")
-					}
-
-					// verify that theteleport hash exists
-					teleportAsset, err := s.repoManager.Assets().GetTeleportAsset(ctx, checkpointTx)
-					if err != nil {
-						return fmt.Errorf("asset input teleport hash does not exist")
-					}
-
-					if teleportAsset == nil {
-						return fmt.Errorf("asset input teleport hash does not exist")
-					}
-
-					if teleportAsset.IsClaimed {
-						return fmt.Errorf("asset input teleport hash is already claimed")
-					}
-
-					// Find checkpoint tx that has the first output script matching the witness script
-					for _, cp := range checkpointTxMap {
-						ptx, err := psbt.NewFromRawBytes(strings.NewReader(cp), true)
-						if err != nil {
-							continue
-						}
-						if len(ptx.UnsignedTx.TxOut) > 0 {
-							if bytes.Equal(ptx.UnsignedTx.TxOut[0].PkScript, input.Witness.Script) {
-								checkpointTx = cp
-								foundCheckpoint = true
-								break
-							}
-						}
-					}
-					// For Teleport inputs, we treat the VTXO as the source (Vout 0)
-					vout = 0
-				default:
-					return fmt.Errorf("unknown asset input type %d", input.Type)
-				}
-
-				if !foundCheckpoint {
-					return fmt.Errorf("checkpoint tx not found for asset input")
-				}
-
-				checkPointPsbt, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTx), true)
-				if err != nil {
-					return fmt.Errorf("error decoding checkpoint psbt: %s", err)
-				}
-
-				checkpointInput := checkPointPsbt.UnsignedTx.TxIn[0]
-				arkTxid := checkpointInput.PreviousOutPoint.Hash.String()
-
-				var offchainArkTx string
-
-				// First try teleport / rounds storage
-				roundTxs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{arkTxid})
-				if err == nil && len(roundTxs) > 0 {
-					offchainArkTx = roundTxs[0]
-				} else {
-					// Fallback to normal offchain storage
-					offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxid)
-					if err != nil {
-						return fmt.Errorf("error retrieving offchain tx %s: %w", arkTxid, err)
-					}
-
-					if offchainTx == nil {
-						return fmt.Errorf("offchain tx %s not found in rounds or offchain storage", arkTxid)
-					}
-
-					if !offchainTx.IsFinalized() {
-						return fmt.Errorf("offchain tx %s is failed", arkTxid)
-					}
-
-					offchainArkTx = offchainTx.ArkTx
-				}
-
-				assetGroup, err := asset.DeriveAssetGroupFromTx(offchainArkTx)
-				if err != nil {
-					return fmt.Errorf("error deriving asset from offchain tx %s: %s",
-						arkTxid, err)
-				}
-
-				if assetGroup == nil {
-					return fmt.Errorf("no asset data found in offchain tx %s", arkTxid)
-				}
-
-				// Check if the input exists in ANY of the assets in the previous tx's asset group
-				foundOutput := false
-
-				// Flatten all assets from the previous group to search for the output
-				allPrevAssets := append(assetGroup.ControlAssets, assetGroup.NormalAssets...)
-
-				for _, prevAsset := range allPrevAssets {
-					for _, assetOut := range prevAsset.Outputs {
-						if input.Type == asset.AssetInputTypeLocal {
-							if assetOut.Type == asset.AssetOutputTypeLocal && assetOut.Vout == vout {
-								foundOutput = true
-								break
-							}
-						} else if input.Type == asset.AssetInputTypeTeleport {
-							if assetOut.Type == asset.AssetOutputTypeTeleport {
-								// For teleport, we check existence of ANY teleport output?
-								// Or robust matching?
-								// Since we entered by matching CheckpointID (Commitment), we found the tx.
-								// If the asset exists here, and has Teleport output, we assume match?
-								// This is weak, but Teleport logic on offchain verification is complex.
-								foundOutput = true
-								break
-							}
-						}
-					}
-					if foundOutput {
-						break
-					}
-				}
-
-				if !foundOutput {
-					return fmt.Errorf("asset input in offchain tx %s not found in asset outputs", arkTxid)
-				}
 			}
 		}
 	}
+
+	totalAssets = append(totalAssets, normalAssets...)
+	if len(uniqueControlAssetsIndex) != len(controlAssets) {
+		return fmt.Errorf("invalid control asset count")
+	}
+
+	totalAssets = append(totalAssets, controlAssets...)
+
+	for _, grpAsset := range totalAssets {
+		// validate asset outputs
+		if err := asset.VerifyAssetOutputs(txouts, grpAsset.Outputs); err != nil {
+			return err
+		}
+
+		// Validate that each asset input refers to a valid offchain transaction
+		for _, input := range grpAsset.Inputs {
+			if input.Type == asset.AssetInputTypeTeleport {
+				// Verify commitment matches hash of witness
+				expectedHash := asset.CalculateTeleportHash(input.Witness.Script, input.Witness.Nonce)
+				if !bytes.Equal(input.Commitment[:], expectedHash[:]) {
+					return fmt.Errorf("asset input commitment does not match teleport hash witness")
+				}
+
+				// verify that theteleport hash exists
+				teleportAsset, err := s.repoManager.Assets().GetTeleportAsset(ctx, hex.EncodeToString(input.Commitment[:]))
+				if err != nil {
+					return fmt.Errorf("asset input teleport hash does not exist")
+				}
+
+				if teleportAsset == nil {
+					return fmt.Errorf("asset input teleport hash does not exist")
+				}
+
+				if teleportAsset.IsClaimed {
+					return fmt.Errorf("asset input teleport hash is already claimed")
+				}
+
+				continue
+			}
+
+			modifiedInput, err := offchain.ReconstructAssetInput(input, checkpointTxMap)
+			if err != nil {
+				return err
+			}
+
+			arkTxhash, err := chainhash.NewHash(modifiedInput.Hash[:])
+			if err != nil {
+				return err
+			}
+
+			arkTxId := arkTxhash.String()
+
+			offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxId)
+			if err != nil {
+				return fmt.Errorf("error retrieving offchain tx %s: %w", arkTxId, err)
+			}
+
+			if offchainTx == nil {
+				return fmt.Errorf("offchain tx %s not found in rounds or offchain storage", arkTxId)
+			}
+
+			if !offchainTx.IsFinalized() {
+				return fmt.Errorf("offchain tx %s is failed", arkTxId)
+			}
+
+			if err := asset.VerifyAssetOutputInTx(offchainTx.ArkTx, modifiedInput.Vin); err != nil {
+				return err
+			}
+		}
+
+	}
+
 	return nil
 }
 func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.MsgTx, assetGroupIndex int) error {
@@ -4160,40 +4072,36 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 				}
 			}
 		}
+	}
 
-		anchorPoint := domain.Outpoint{
-			Txid: arkTx.TxID(),
-			VOut: uint32(assetGroupIndex),
+	// store asset anchors
+	anchorPoint := domain.Outpoint{
+		Txid: arkTx.TxID(),
+		VOut: uint32(assetGroupIndex),
+	}
+
+	assetsToStore := make([]asset.Asset, 0)
+	assetsToStore = append(assetsToStore, normalAssets...)
+	assetsToStore = append(assetsToStore, controlAssets...)
+
+	for _, grpAsset := range assetsToStore {
+		anchorVtxos := make([]domain.AnchorVtxo, 0)
+		// store asset outputs
+		for _, out := range grpAsset.Outputs {
+			assetVtxo := domain.AnchorVtxo{
+				Vout:   out.Vout,
+				Amount: out.Amount,
+			}
+			anchorVtxos = append(anchorVtxos, assetVtxo)
 		}
 
-		assetsToStore := []*asset.Asset{&normalAsset}
-		if matchedControlAsset != nil {
-			assetsToStore = append(assetsToStore, matchedControlAsset)
-		}
-
-		for _, grpAsset := range assetsToStore {
-			if grpAsset == nil {
-				continue
-			}
-
-			anchorVtxos := make([]domain.AnchorVtxo, 0)
-			// store asset outputs
-			for _, out := range grpAsset.Outputs {
-				assetVtxo := domain.AnchorVtxo{
-					Vout:   out.Vout,
-					Amount: out.Amount,
-				}
-				anchorVtxos = append(anchorVtxos, assetVtxo)
-			}
-
-			err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
-				AnchorPoint: anchorPoint,
-				AssetID:     grpAsset.AssetId.ToString(),
-				Vtxos:       anchorVtxos,
-			})
-			if err != nil {
-				return fmt.Errorf("error storing asset anchor: %s", err)
-			}
+		err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
+			AnchorPoint: anchorPoint,
+			AssetID:     grpAsset.AssetId.ToString(),
+			Vtxos:       anchorVtxos,
+		})
+		if err != nil {
+			return fmt.Errorf("error storing asset anchor: %s", err)
 		}
 	}
 

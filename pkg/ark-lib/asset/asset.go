@@ -485,23 +485,21 @@ func (a *Asset) DecodeTlv(data []byte) error {
 	return tlvStream.Decode(buf)
 }
 
-func verifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
+func VerifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
 
 	processedOutputs := 0
 
 	for _, assetOut := range assetOutputs {
 		switch assetOut.Type {
 		case AssetOutputTypeLocal:
-			if int(assetOut.Vout) >= len(outs) {
-				return fmt.Errorf("local asset output references invalid vout %d (total outputs: %d)",
-					assetOut.Vout, len(outs))
+			for index := range outs {
+				if index == int(assetOut.Vout) {
+					processedOutputs++
+					break
+				}
 			}
 			processedOutputs++
 		case AssetOutputTypeTeleport:
-			// Teleport outputs are not bound to a specific tx output index in the same way
-			// We effectively trust the listing in the asset payload.
-			// Ideally we might check if the Commitment is valid or something,
-			// but for now we just count it.
 			processedOutputs++
 		default:
 			return fmt.Errorf("unknown asset output type %d", assetOut.Type)
@@ -517,32 +515,93 @@ func verifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
 	return nil
 }
 
-func verifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
-	for i, assetIn := range assetInputs {
+func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
+	processedInputs := 0
+
+	for _, assetIn := range assetInputs {
 		switch assetIn.Type {
 		case AssetInputTypeLocal:
-			if int(assetIn.Vin) >= len(ins) {
-				return fmt.Errorf("asset input %d references invalid input index %d (total inputs: %d)",
-					i, assetIn.Vin, len(ins))
+			for _, in := range ins {
+				if bytes.Equal(in.PreviousOutPoint.Hash[:], assetIn.Hash[:]) && in.PreviousOutPoint.Index == assetIn.Vin {
+					processedInputs++
+					break
+				}
 			}
+			processedInputs++
 		case AssetInputTypeTeleport:
-			// Teleport inputs don't reference a specific transaction input index directly for validity
-			// in the same way, or they might. For now, assuming successful check if present.
-			continue
+			processedInputs++
 		default:
 			return fmt.Errorf("unknown asset input type %d", assetIn.Type)
 		}
 	}
+
+	if processedInputs != len(assetInputs) {
+		errors := fmt.Errorf("not all asset inputs verified: processed %d of %d",
+			processedInputs, len(assetInputs))
+		return errors
+	}
+
 	return nil
 }
 
-func ValidateAssetInputOutputs(ins []*wire.TxIn, outs []*wire.TxOut, asset Asset) error {
-	if err := verifyAssetInputs(ins, asset.Inputs); err != nil {
-		return fmt.Errorf("asset input verification failed: %w", err)
+func VerifyAssetOutputInTx(arkTx string, vout uint32) error {
+	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
+	if err != nil {
+		return fmt.Errorf("error decoding Ark Tx: %s", err)
 	}
 
-	if err := verifyAssetOutputs(outs, asset.Outputs); err != nil {
-		return fmt.Errorf("asset output verification failed: %w", err)
+	var assetGroup *AssetGroup
+	var assetGroupIndex int
+
+	for i, output := range decodedArkTx.UnsignedTx.TxOut {
+		if IsAssetGroup(output.PkScript) {
+			assetGp, err := DecodeAssetGroupFromOpret(output.PkScript)
+			if err != nil {
+				return fmt.Errorf("error decoding asset Opreturn: %s", err)
+			}
+			assetGroup = assetGp
+			assetGroupIndex = i
+			break
+		}
+	}
+
+	// verify asset input in present in assetGroup.Inputs
+	totalAssetOuts := make([]AssetOutput, 0)
+	for _, asset := range assetGroup.NormalAssets {
+		totalAssetOuts = append(totalAssetOuts, asset.Outputs...)
+	}
+
+	for _, asset := range assetGroup.ControlAssets {
+		totalAssetOuts = append(totalAssetOuts, asset.Outputs...)
+	}
+
+	assetOutFound := false
+	for _, assetOut := range totalAssetOuts {
+		if assetOut.Vout == vout {
+			assetOutFound = true
+			break
+		}
+	}
+
+	if !assetOutFound {
+		return fmt.Errorf("asset output %d not found", vout)
+	}
+
+	// verify sealPresent
+	sealPresent := false
+	for i, _ := range decodedArkTx.UnsignedTx.TxOut {
+		if i == assetGroupIndex {
+			return fmt.Errorf("output not present")
+		}
+
+		if uint32(i) == vout {
+			sealPresent = true
+			break
+		}
+	}
+
+	if !sealPresent {
+		return fmt.Errorf("seal not present")
 	}
 
 	return nil
@@ -550,24 +609,4 @@ func ValidateAssetInputOutputs(ins []*wire.TxIn, outs []*wire.TxOut, asset Asset
 
 func IsAssetCreation(asset Asset) bool {
 	return len(asset.Inputs) == 0
-}
-
-func DeriveAssetGroupFromTx(arkTx string) (*AssetGroup, error) {
-	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding Ark Tx: %s", err)
-	}
-
-	for _, output := range decodedArkTx.UnsignedTx.TxOut {
-		if IsAssetGroup(output.PkScript) {
-			assetGroup, err := DecodeAssetGroupFromOpret(output.PkScript)
-			if err != nil {
-				return nil, fmt.Errorf("error decoding asset Opreturn: %s", err)
-			}
-			return assetGroup, nil
-		}
-	}
-
-	return nil, errors.New("no asset opreturn found in transaction")
-
 }
