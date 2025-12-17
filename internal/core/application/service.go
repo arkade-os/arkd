@@ -3441,12 +3441,11 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 		return
 	}
 
-	rootInput := round.VtxoTree.RootTxid()
-	blockTimestamp, err := waitForConfirmation(context.Background(), rootInput, s.wallet)
+	blockTimestamp, err := waitForConfirmation(context.Background(), round.CommitmentTxid, s.wallet)
 	if err != nil {
 		log.WithError(err).Warnf(
-			"failed to wait for confirmation of batch input tx %s, schedule task time may be inaccurate",
-			rootInput,
+			"failed to wait for confirmation of commitment tx %s, schedule task time may be inaccurate",
+			round.CommitmentTxid,
 		)
 	}
 
