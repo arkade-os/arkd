@@ -3880,9 +3880,10 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 		}
 
 		// verify Asset Reissuance / buring
-		if !asset.IsAssetCreation(normalAsset) && totalInputAmount != totalOuputAmount {
+		if len(controlAssets) > 0 && totalInputAmount != totalOuputAmount {
 			// Find the control asset matching the Normal Asset's ControlAssetId
 			foundControlAsset := false
+
 			for i, ca := range controlAssets {
 				if normalAsset.ControlAssetId != nil && ca.AssetId == *normalAsset.ControlAssetId {
 					uniqueControlAssetsIndex[i] = struct{}{}
@@ -4084,8 +4085,10 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 	assetsToStore = append(assetsToStore, normalAssets...)
 	assetsToStore = append(assetsToStore, controlAssets...)
 
+	anchorVtxos := make([]domain.AnchorVtxo, 0)
+
+	// TODO (joshua): Asset VTXO should have asset_id
 	for _, grpAsset := range assetsToStore {
-		anchorVtxos := make([]domain.AnchorVtxo, 0)
 		// store asset outputs
 		for _, out := range grpAsset.Outputs {
 			assetVtxo := domain.AnchorVtxo{
@@ -4094,15 +4097,16 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 			}
 			anchorVtxos = append(anchorVtxos, assetVtxo)
 		}
+	}
 
-		err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
-			AnchorPoint: anchorPoint,
-			AssetID:     grpAsset.AssetId.ToString(),
-			Vtxos:       anchorVtxos,
-		})
-		if err != nil {
-			return fmt.Errorf("error storing asset anchor: %s", err)
-		}
+	// TODO (joshua): AssetIDs should be a list
+	err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
+		AnchorPoint: anchorPoint,
+		AssetID:     assetsToStore[0].AssetId.ToString(),
+		Vtxos:       anchorVtxos,
+	})
+	if err != nil {
+		return fmt.Errorf("error storing asset anchor: %s", err)
 	}
 
 	return nil

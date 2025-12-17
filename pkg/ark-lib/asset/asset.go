@@ -498,7 +498,6 @@ func VerifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
 					break
 				}
 			}
-			processedOutputs++
 		case AssetOutputTypeTeleport:
 			processedOutputs++
 		default:
@@ -527,7 +526,6 @@ func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
 					break
 				}
 			}
-			processedInputs++
 		case AssetInputTypeTeleport:
 			processedInputs++
 		default:
