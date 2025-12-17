@@ -610,3 +610,23 @@ func VerifyAssetOutputInTx(arkTx string, vout uint32) error {
 func IsAssetCreation(asset Asset) bool {
 	return len(asset.Inputs) == 0
 }
+
+func DeriveAssetGroupFromTx(arkTx string) (*AssetGroup, error) {
+	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding Ark Tx: %s", err)
+	}
+
+	for _, output := range decodedArkTx.UnsignedTx.TxOut {
+		if IsAssetGroup(output.PkScript) {
+			assetGroup, err := DecodeAssetGroupFromOpret(output.PkScript)
+			if err != nil {
+				return nil, fmt.Errorf("error decoding asset Opreturn: %s", err)
+			}
+			return assetGroup, nil
+		}
+	}
+
+	return nil, errors.New("no asset opreturn found in transaction")
+
+}
