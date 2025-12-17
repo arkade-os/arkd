@@ -115,7 +115,7 @@ func taprootOutputScript(taprootKey *btcec.PublicKey) ([]byte, error) {
 }
 
 func getAssetFromIntents(
-	intents []domain.Intent, assetId asset.AssetId,
+	intents []domain.Intent, assetId *asset.AssetId,
 ) (*asset.Asset, error) {
 
 	for _, intent := range intents {
@@ -126,13 +126,13 @@ func getAssetFromIntents(
 			}
 
 			for _, controlAsset := range decodedAssetGroup.ControlAssets {
-				if controlAsset.AssetId == assetId {
+				if controlAsset.AssetId == *assetId {
 					return &controlAsset, nil
 				}
 			}
 
 			for _, normalAsset := range decodedAssetGroup.NormalAssets {
-				if normalAsset.AssetId == assetId {
+				if normalAsset.AssetId == *assetId {
 					return &normalAsset, nil
 				}
 			}

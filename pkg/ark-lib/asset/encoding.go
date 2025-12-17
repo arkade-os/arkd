@@ -43,6 +43,22 @@ func DAssetId(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 	return tlv.NewTypeForDecodingErr(val, "assetId", l, 36)
 }
 
+func DAssetIdPtr(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
+	if t, ok := val.(**AssetId); ok && l == 36 {
+		if *t == nil {
+			*t = &AssetId{}
+		}
+		if err := tlv.DBytes32(r, &(*t).TxId, buf, 32); err != nil {
+			return err
+		}
+		if err := tlv.DUint32(r, &(*t).Index, buf, 4); err != nil {
+			return err
+		}
+		return nil
+	}
+	return tlv.NewTypeForDecodingErr(val, "assetId", l, 36)
+}
+
 func AssetIdSize(val *AssetId) tlv.SizeFunc {
 	return func() uint64 {
 		return 36

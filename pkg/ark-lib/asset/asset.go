@@ -35,27 +35,27 @@ func (a AssetId) ToString() string {
 	return hex.EncodeToString(buf[:])
 }
 
-func AssetIdFromString(s string) (AssetId, error) {
+func AssetIdFromString(s string) (*AssetId, error) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
-		return AssetId{}, err
+		return nil, err
 	}
 	if len(buf) != 36 {
-		return AssetId{}, fmt.Errorf("invalid asset id length: %d", len(buf))
+		return nil, fmt.Errorf("invalid asset id length: %d", len(buf))
 	}
 
 	var assetId AssetId
 	copy(assetId.TxId[:], buf[:32])
 	// Big endian decoding for index
 	assetId.Index = uint32(buf[32])<<24 | uint32(buf[33])<<16 | uint32(buf[34])<<8 | uint32(buf[35])
-	return assetId, nil
+	return &assetId, nil
 }
 
 type Asset struct {
 	AssetId        AssetId
 	Immutable      bool
 	Outputs        []AssetOutput // 8 + 33
-	ControlAssetId AssetId
+	ControlAssetId *AssetId
 	Inputs         []AssetInput
 	Metadata       []Metadata
 
@@ -401,11 +401,13 @@ func (a *Asset) EncodeTlv() ([]byte, error) {
 		AssetOutputListSize(a.Outputs),
 		EAssetOutputList, nil))
 
-	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
-		tlvTypeControlAssetId,
-		&a.ControlAssetId,
-		AssetIdSize(&a.ControlAssetId),
-		EAssetId, nil))
+	if a.ControlAssetId != nil {
+		tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
+			tlvTypeControlAssetId,
+			a.ControlAssetId,
+			AssetIdSize(a.ControlAssetId),
+			EAssetId, nil))
+	}
 
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 		tlvTypeInput,
@@ -457,7 +459,7 @@ func (a *Asset) DecodeTlv(data []byte) error {
 			&a.ControlAssetId,
 			AssetIdSize(nil),
 			nil,
-			DAssetId,
+			DAssetIdPtr,
 		),
 		tlv.MakeDynamicRecord(
 			tlvTypeInput,

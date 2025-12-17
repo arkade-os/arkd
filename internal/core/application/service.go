@@ -3883,7 +3883,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 		if !asset.IsAssetCreation(normalAsset) && totalInputAmount != totalOuputAmount {
 			// Find the control asset matching the Normal Asset's ControlAssetId
 			for _, ca := range controlAssets {
-				if ca.AssetId == normalAsset.ControlAssetId {
+				if normalAsset.ControlAssetId != nil && ca.AssetId == *normalAsset.ControlAssetId {
 					matchedControlAsset = &ca
 					break
 				}
@@ -3895,7 +3895,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 		}
 
 		if matchedControlAsset != nil {
-			if matchedControlAsset.AssetId != normalAsset.ControlAssetId {
+			if normalAsset.ControlAssetId == nil || matchedControlAsset.AssetId != *normalAsset.ControlAssetId {
 				// This should be redundant if loop above is correct, but good for sanity
 				return fmt.Errorf("invalid control key for asset modification")
 			}
@@ -4096,7 +4096,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 
 		var matchedControlAsset *asset.Asset
 		for _, ca := range controlAssets {
-			if ca.AssetId == normalAsset.ControlAssetId {
+			if normalAsset.ControlAssetId != nil && ca.AssetId == *normalAsset.ControlAssetId {
 				matchedControlAsset = &ca
 				break
 			}

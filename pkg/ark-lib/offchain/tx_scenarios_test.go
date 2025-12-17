@@ -10,7 +10,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
@@ -105,29 +104,23 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 		require.Len(t, rebuiltGroup.NormalAssets, len(assetGroup.NormalAssets))
 
 		// Verify all inputs in rebuiltGroup point to a valid checkpoint (indirectly verified by TxID match, but good to check)
-		rebuiltCheckpointIDs := make(map[string]struct{})
-		for _, cp := range rebuiltCheckpoints {
-			rebuiltCheckpointIDs[cp.UnsignedTx.TxHash().String()] = struct{}{}
-		}
 
 		// assert inputs use Teleport and point to checkpoints
 		checkInputs := func(inputs []asset.AssetInput) {
 			for _, in := range inputs {
 				require.Equal(t, asset.AssetInputTypeTeleport, in.Type)
 
-				// RebuildAssetTxs updates Commitment to VTXO hash (which matches prev.Hash).
-				// Wait, my change to RebuildAssetTxs at step 365 updates inputs to Teleport(VTXO Hash).
-				// But BuildAssetTxs *outputs* Teleport(Checkpoint Hash).
-				// So rebuiltGroup (from rebuiltArk) should have Teleport(Checkpoint Hash).
-				// Let's verify THAT.
-
-				// Oh, RebuildAssetTxs calls BuildAssetTxs.
-				// BuildAssetTxs generates new AssetGroup (encoded in ArkTx) with Teleport(Checkpoint Hash).
-				// So YES, it should be Checkpoint Hash.
-
-				hashStr := chainhash.Hash(in.Commitment).String()
-				_, ok := rebuiltCheckpointIDs[hashStr]
-				require.True(t, ok, "Asset input should point to a checkpoint")
+				// Check that we can find a checkpoint that produces this TeleportHash
+				var found bool
+				for _, cp := range rebuiltCheckpoints {
+					pkScript := cp.UnsignedTx.TxOut[0].PkScript
+					teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
+					if bytes.Equal(teleportHash[:], in.Commitment[:]) {
+						found = true
+						break
+					}
+				}
+				require.True(t, found, "Asset input should point to a checkpoint")
 			}
 		}
 
@@ -207,7 +200,7 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 		assetGroup := &asset.AssetGroup{
 			ControlAssets: []asset.Asset{{
 				AssetId:        asset.AssetId{TxId: caID, Index: 0},
-				ControlAssetId: asset.AssetId{TxId: caID, Index: 0},
+				ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 				Inputs: []asset.AssetInput{{
 					Type:   asset.AssetInputTypeLocal,
 					Vin:    0,
@@ -222,7 +215,7 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 			NormalAssets: []asset.Asset{
 				{
 					AssetId:        asset.AssetId{TxId: assetID, Index: 0},
-					ControlAssetId: asset.AssetId{TxId: caID, Index: 0},
+					ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 					Inputs: []asset.AssetInput{{
 						Type:   asset.AssetInputTypeLocal,
 						Vin:    1,

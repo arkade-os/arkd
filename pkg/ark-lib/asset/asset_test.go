@@ -31,7 +31,7 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Amount:     22,
 			},
 		},
-		ControlAssetId: AssetId{
+		ControlAssetId: &AssetId{
 			TxId:  deterministicBytesArray(0x3c),
 			Index: 1,
 		},
@@ -74,7 +74,7 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 	controlAsset := Asset{
 		AssetId:        deterministicAssetId(0x11),
 		Outputs:        []AssetOutput{{Type: AssetOutputTypeTeleport, Commitment: deterministicBytesArray(0xdd), Amount: 1}},
-		ControlAssetId: deterministicAssetId(0x3c),
+		ControlAssetId: deterministicAssetIdPtr(0x3c),
 		Metadata:       []Metadata{{Key: "kind", Value: "control"}},
 		Version:        AssetVersion,
 		Magic:          AssetMagic,
@@ -83,7 +83,7 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 	normalAsset := Asset{
 		AssetId:        deterministicAssetId(0x12),
 		Outputs:        []AssetOutput{{Type: AssetOutputTypeLocal, Amount: 10, Vout: 1}},
-		ControlAssetId: deterministicAssetId(0x3c),
+		ControlAssetId: deterministicAssetIdPtr(0x3c),
 		Inputs:         []AssetInput{{Type: AssetInputTypeLocal, Vin: 1, Amount: 5}},
 		Metadata:       []Metadata{{Key: "kind", Value: "normal"}},
 		Version:        AssetVersion,
@@ -111,7 +111,7 @@ func TestAssetIdStringConversion(t *testing.T) {
 	s := assetId.ToString()
 	decoded, err := AssetIdFromString(s)
 	require.NoError(t, err)
-	require.Equal(t, assetId, decoded)
+	require.Equal(t, &assetId, decoded)
 
 	// Test invalid hex
 	_, err = AssetIdFromString("invalid")
@@ -129,7 +129,7 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	normalAsset := Asset{
 		AssetId:        deterministicAssetId(0x12),
 		Outputs:        []AssetOutput{{Type: AssetOutputTypeLocal, Amount: 10, Vout: 1}},
-		ControlAssetId: deterministicAssetId(0xaa),
+		ControlAssetId: deterministicAssetIdPtr(0xaa),
 		Version:        AssetVersion,
 		Magic:          AssetMagic,
 	}
@@ -242,4 +242,9 @@ func deterministicAssetId(seed byte) AssetId {
 		TxId:  deterministicBytesArray(seed),
 		Index: 0,
 	}
+}
+
+func deterministicAssetIdPtr(seed byte) *AssetId {
+	a := deterministicAssetId(seed)
+	return &a
 }

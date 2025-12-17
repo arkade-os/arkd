@@ -18,10 +18,10 @@ func TestGetAssetFromIntentsWithMultipleAssetGroups(t *testing.T) {
 		AssetGroupList: [][]byte{opret1, opret2},
 	}
 
-	foundAsset, err := getAssetFromIntents([]domain.Intent{intent}, asset2.AssetId)
+	foundAsset, err := getAssetFromIntents([]domain.Intent{intent}, &asset2.AssetId)
 	require.NoError(t, err)
 	require.Equal(t, asset2.AssetId, foundAsset.AssetId)
-	foundAsset, err = getAssetFromIntents([]domain.Intent{intent}, asset1.AssetId)
+	foundAsset, err = getAssetFromIntents([]domain.Intent{intent}, &asset1.AssetId)
 	require.NoError(t, err)
 	require.Equal(t, asset1.AssetId, foundAsset.AssetId)
 }

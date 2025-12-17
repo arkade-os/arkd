@@ -145,7 +145,7 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 
 	controlAsset := asset.Asset{
 		AssetId:        asset.AssetId{TxId: caID, Index: 0},
-		ControlAssetId: asset.AssetId{TxId: caID, Index: 0},
+		ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
 			Type:   asset.AssetInputTypeLocal,
 			Vin:    0,
@@ -163,7 +163,7 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 
 	normalAsset := asset.Asset{
 		AssetId:        asset.AssetId{TxId: assetID, Index: 0},
-		ControlAssetId: asset.AssetId{TxId: caID, Index: 0},
+		ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
 			Type:   asset.AssetInputTypeLocal,
 			Vin:    1,
@@ -268,12 +268,28 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	}
 
 	for _, in := range rebuiltGroup.ControlAssets[0].Inputs {
-		_, ok := rebuiltCheckpointIDs[chainhash.Hash(in.Commitment).String()]
-		require.True(t, ok)
+		var found bool
+		for _, cp := range rebuiltCheckpoints {
+			pkScript := cp.UnsignedTx.TxOut[0].PkScript
+			teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
+			if bytes.Equal(teleportHash[:], in.Commitment[:]) {
+				found = true
+				break
+			}
+		}
+		require.True(t, found)
 	}
 	for _, in := range rebuiltGroup.NormalAssets[0].Inputs {
-		_, ok := rebuiltCheckpointIDs[chainhash.Hash(in.Commitment).String()]
-		require.True(t, ok)
+		var found bool
+		for _, cp := range rebuiltCheckpoints {
+			pkScript := cp.UnsignedTx.TxOut[0].PkScript
+			teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
+			if bytes.Equal(teleportHash[:], in.Commitment[:]) {
+				found = true
+				break
+			}
+		}
+		require.True(t, found)
 	}
 }
 
