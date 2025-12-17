@@ -74,3 +74,24 @@ func (m *offChainTxStore) Includes(_ context.Context, outpoint domain.Outpoint) 
 	_, exists := m.inputs[outpoint.String()]
 	return exists, nil
 }
+
+func (m *offChainTxStore) GetTxidByOutpoint(_ context.Context, outpoint domain.Outpoint) (string, error) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
+	outpointStr := outpoint.String()
+	for txid, offchainTx := range m.offchainTxs {
+		for _, tx := range offchainTx.CheckpointTxs {
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+			if err != nil {
+				continue
+			}
+			for _, in := range ptx.UnsignedTx.TxIn {
+				if in.PreviousOutPoint.String() == outpointStr {
+					return txid, nil
+				}
+			}
+		}
+	}
+	return "", nil
+}

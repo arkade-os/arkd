@@ -326,19 +326,37 @@ func (h *handler) GetPendingTx(
 		return nil, status.Error(codes.InvalidArgument, "missing identifier")
 	}
 
-	intent := req.GetIntent()
-	if intent == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing intent")
-	}
+	var pendingTxs []application.AcceptedOffchainTx
+	var err error
 
-	proof, message, err := parseGetPendingTxIntent(intent)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
+	switch identifier := req.GetIdentifier().(type) {
+	case *arkv1.GetPendingTxRequest_Txid:
+		if identifier.Txid == "" {
+			return nil, status.Error(codes.InvalidArgument, "missing txid")
+		}
+		pendingTx, svcErr := h.svc.GetPendingOffchainTxByTxid(ctx, identifier.Txid)
+		if svcErr != nil {
+			return nil, svcErr
+		}
+		if pendingTx != nil {
+			pendingTxs = []application.AcceptedOffchainTx{*pendingTx}
+		}
 
-	pendingTxs, err := h.svc.GetPendingOffchainTxs(ctx, *proof, *message)
-	if err != nil {
-		return nil, err
+	case *arkv1.GetPendingTxRequest_Intent:
+		if identifier.Intent == nil {
+			return nil, status.Error(codes.InvalidArgument, "missing intent")
+		}
+		proof, message, parseErr := parseGetPendingTxIntent(identifier.Intent)
+		if parseErr != nil {
+			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
+		}
+		pendingTxs, err = h.svc.GetPendingOffchainTxs(ctx, *proof, *message)
+		if err != nil {
+			return nil, err
+		}
+
+	default:
+		return nil, status.Error(codes.InvalidArgument, "invalid identifier type")
 	}
 
 	pendingTxsProto := make([]*arkv1.PendingTx, 0, len(pendingTxs))

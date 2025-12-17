@@ -333,3 +333,14 @@ var OFFCHAIN_TX_INSUFFICIENT_FEE = Code[OffchainTxInsufficientFeeMetadata]{
 }
 
 var INTENT_FEE_EVALUATION_FAILED = Code[any]{33, "INTENT_FEE_EVALUATION_FAILED", grpccodes.Internal}
+
+type VtxoPendingTxMetadata struct {
+	VtxoOutpoint string `json:"vtxo_outpoint"`
+	PendingTxid  string `json:"pending_txid"`
+}
+
+var VTXO_PENDING_TX = Code[VtxoPendingTxMetadata]{
+	34,
+	"VTXO_PENDING_TX",
+	grpccodes.FailedPrecondition,
+}
