@@ -118,6 +118,7 @@ func CalculateTeleportHash(script []byte, nonce [32]byte) [32]byte {
 type AssetInput struct {
 	Type       AssetInputType
 	Vin        uint32          // For Local
+	Hash       []byte          // For Local
 	Commitment [32]byte        // For Teleport
 	Witness    TeleportWitness // For Teleport
 	Amount     uint64

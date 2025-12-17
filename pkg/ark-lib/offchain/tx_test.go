@@ -36,6 +36,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 			AssetId: asset.AssetId{TxId: txidHash, Index: 0},
 			Inputs: []asset.AssetInput{{
 				Type:   asset.AssetInputTypeLocal,
+				Hash:   vtxo.Outpoint.Hash.CloneBytes(),
 				Vin:    0,
 				Amount: 5,
 			}},
@@ -148,6 +149,7 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
 			Type:   asset.AssetInputTypeLocal,
+			Hash:   controlVtxo.Outpoint.Hash.CloneBytes(),
 			Vin:    0,
 			Amount: 7,
 		}},
@@ -166,7 +168,8 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
 			Type:   asset.AssetInputTypeLocal,
-			Vin:    1,
+			Hash:   normalVtxo.Outpoint.Hash.CloneBytes(),
+			Vin:    0,
 			Amount: 5,
 		}},
 		Outputs: []asset.AssetOutput{
@@ -268,11 +271,11 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	}
 
 	for _, in := range rebuiltGroup.ControlAssets[0].Inputs {
+		require.Equal(t, asset.AssetInputTypeLocal, in.Type)
 		var found bool
 		for _, cp := range rebuiltCheckpoints {
-			pkScript := cp.UnsignedTx.TxOut[0].PkScript
-			teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
-			if bytes.Equal(teleportHash[:], in.Commitment[:]) {
+			txHash := cp.UnsignedTx.TxHash()
+			if bytes.Equal(txHash[:], in.Hash) {
 				found = true
 				break
 			}
@@ -280,11 +283,11 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		require.True(t, found)
 	}
 	for _, in := range rebuiltGroup.NormalAssets[0].Inputs {
+		require.Equal(t, asset.AssetInputTypeLocal, in.Type)
 		var found bool
 		for _, cp := range rebuiltCheckpoints {
-			pkScript := cp.UnsignedTx.TxOut[0].PkScript
-			teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
-			if bytes.Equal(teleportHash[:], in.Commitment[:]) {
+			txHash := cp.UnsignedTx.TxHash()
+			if bytes.Equal(txHash[:], in.Hash) {
 				found = true
 				break
 			}

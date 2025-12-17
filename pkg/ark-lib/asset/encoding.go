@@ -76,6 +76,12 @@ func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {
 			if err := tlv.EUint32(w, &t.Vin, buf); err != nil {
 				return err
 			}
+			if err := tlv.WriteVarInt(w, uint64(len(t.Hash)), buf); err != nil {
+				return err
+			}
+			if _, err := w.Write(t.Hash); err != nil {
+				return err
+			}
 		case AssetInputTypeTeleport:
 			if err := tlv.EBytes32(w, &t.Commitment, buf); err != nil {
 				return err
@@ -124,6 +130,8 @@ func AssetInputListSize(inputs []AssetInput) tlv.SizeFunc {
 			switch input.Type {
 			case AssetInputTypeLocal:
 				size += 4 // Vin
+				size += uint64(tlv.VarIntSize(uint64(len(input.Hash))))
+				size += uint64(len(input.Hash))
 			case AssetInputTypeTeleport:
 				size += 32 // Commitment
 				size += uint64(tlv.VarIntSize(uint64(len(input.Witness.Script))))
@@ -147,9 +155,10 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		var expectedLen uint64
 		switch t.Type {
 		case AssetInputTypeLocal:
-			expectedLen = 1 + 4 + 8 // Type + Vin + Amount
-			if l != expectedLen {
-				return fmt.Errorf("invalid asset input length: got %d, want %d", l, expectedLen)
+			// 1 (Type) + 4 (Vin) + 1 (TxId length min) + 8 (Amount)
+			expectedLen = 14
+			if l < expectedLen {
+				return fmt.Errorf("invalid asset input length: got %d, want at least %d", l, expectedLen)
 			}
 		case AssetInputTypeTeleport:
 			// Teleport is variable length due to script
@@ -163,6 +172,15 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		switch t.Type {
 		case AssetInputTypeLocal:
 			if err := tlv.DUint32(r, &t.Vin, buf, 4); err != nil {
+				return err
+			}
+
+			txIdLen, err := tlv.ReadVarInt(r, buf)
+			if err != nil {
+				return err
+			}
+			t.Hash = make([]byte, txIdLen)
+			if _, err := io.ReadFull(r, t.Hash); err != nil {
 				return err
 			}
 		case AssetInputTypeTeleport:
@@ -222,7 +240,7 @@ func DAssetInputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error
 			var itemLen uint64
 			switch AssetInputType(typesByte) {
 			case AssetInputTypeLocal:
-				itemLen = 1 + 4 + 8
+				itemLen = 1 + 4 + 1 + 8 // Minimum: Type + Vin + TxIdLen(1) + Amount
 			case AssetInputTypeTeleport:
 				itemLen = 1 + 32 + 1 + 32 + 8 // Minimum length: Type + Commitment + ScriptLen(1) + Nonce + Amount
 			default:

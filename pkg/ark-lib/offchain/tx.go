@@ -9,8 +9,8 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
@@ -96,8 +96,8 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 		return nil, nil, fmt.Errorf("invalid signer unroll script")
 	}
 
-	// Track which vtxos we used for the control asset so we don't reuse them for the normal asset.
-	usedForControl := make([]bool, len(vtxos))
+	// Track which vtxos we used so we don't reuse them.
+	usedVtxos := make([]bool, len(vtxos))
 
 	// -------------------------
 	// 1. Control asset handling
@@ -107,46 +107,55 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	for _, controlAsset := range assetGroup.ControlAssets {
 		controlAssetInputs := make([]asset.AssetInput, 0)
 
-		for i, vtxo := range vtxos {
-			if usedForControl[i] {
+		for _, input := range controlAsset.Inputs {
+			if input.Type == asset.AssetInputTypeTeleport {
+				controlAssetInputs = append(controlAssetInputs, input)
 				continue
 			}
 
-			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(
-				vtxo, i, &controlAsset, signerUnrollScriptClosure, assetGroup.SubDustKey,
+			//get asset seal
+			var vtxoInput *VtxoInput
+			for i, vtxo := range vtxos {
+				if usedVtxos[i] {
+					continue
+				}
+
+				if vtxo.Outpoint.Index == input.Vin && bytes.Equal(vtxo.Outpoint.Hash[:], input.Hash) {
+					vtxoInput = &vtxos[i]
+					usedVtxos[i] = true
+					break
+				}
+			}
+
+			if vtxoInput == nil {
+				return nil, nil, fmt.Errorf("vtxo not found for input %d", input.Vin)
+			}
+
+			checkpointPtx, checkpointInput, err := buildAssetCheckpointTx(
+				vtxoInput, &input, signerUnrollScriptClosure,
 			)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			if assetOutput == nil {
-				continue
-			}
-
-			pkScript := checkpointPtx.UnsignedTx.TxOut[0].PkScript
-			teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
-			var commitment [32]byte
-			copy(commitment[:], teleportHash[:])
-
+			txHash := checkpointPtx.UnsignedTx.TxHash()
 			controlInput := asset.AssetInput{
-				Type:       asset.AssetInputTypeTeleport,
-				Commitment: commitment,
-				Witness: asset.TeleportWitness{
-					Script: pkScript,
-					Nonce:  [32]byte{},
-				},
-				Amount: assetOutput.Amount,
+				Type:   asset.AssetInputTypeLocal,
+				Vin:    0,
+				Hash:   txHash.CloneBytes(),
+				Amount: input.Amount,
 			}
 
 			controlAssetInputs = append(controlAssetInputs, controlInput)
 			checkpointInputs = append(checkpointInputs, *checkpointInput)
 			checkpointTxs = append(checkpointTxs, checkpointPtx)
-			usedForControl[i] = true
+
 		}
 
 		if len(controlAssetInputs) == 0 {
 			return nil, nil, fmt.Errorf("control asset vtxo not found for asset %x", controlAsset.AssetId)
 		}
+
 		controlAsset.Inputs = controlAssetInputs
 		updatedControlAssets = append(updatedControlAssets, controlAsset)
 	}
@@ -159,45 +168,70 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	for _, normalAsset := range assetGroup.NormalAssets {
 		normalAssetInputs := make([]asset.AssetInput, 0)
 
-		for i, vtxo := range vtxos {
-			// Don't reuse any vtxo that was already consumed
-			if usedForControl[i] {
+		for _, input := range normalAsset.Inputs {
+			if input.Type == asset.AssetInputTypeTeleport {
+				normalAssetInputs = append(normalAssetInputs, input)
 				continue
 			}
 
-			currentNormalAsset := normalAsset
-			checkpointPtx, checkpointInput, assetOutput, err := buildAssetCheckpointTx(
-				vtxo, i, &currentNormalAsset, signerUnrollScriptClosure, assetGroup.SubDustKey,
+			//get asset seal
+			var vtxoInput *VtxoInput
+			for i, vtxo := range vtxos {
+				if usedVtxos[i] {
+					continue
+				}
+
+				// TODO (Joshua) : Add Hash to TxIn
+				if vtxo.Outpoint.Index == input.Vin && bytes.Equal(vtxo.Outpoint.Hash[:], input.Hash) {
+					vtxoInput = &vtxos[i]
+					usedVtxos[i] = true
+					break
+				}
+			}
+			if vtxoInput == nil {
+				return nil, nil, fmt.Errorf("vtxo not found for input %d (normal asset)", input.Vin)
+			}
+
+			checkpointPtx, checkpointInput, err := buildAssetCheckpointTx(
+				vtxoInput, &input, signerUnrollScriptClosure,
 			)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			if assetOutput != nil {
-				pkScript := checkpointPtx.UnsignedTx.TxOut[0].PkScript
-				teleportHash := asset.CalculateTeleportHash(pkScript, [32]byte{})
-				var commitment [32]byte
-				copy(commitment[:], teleportHash[:])
-
-				normalAssetInputs = append(normalAssetInputs, asset.AssetInput{
-					Type:       asset.AssetInputTypeTeleport,
-					Commitment: commitment,
-					Witness: asset.TeleportWitness{
-						Script: pkScript,
-						Nonce:  [32]byte{},
-					},
-					Amount: assetOutput.Amount,
-				})
-
-				// We must add the checkpoint tx/input to the lists
-				checkpointInputs = append(checkpointInputs, *checkpointInput)
-				checkpointTxs = append(checkpointTxs, checkpointPtx)
-
-				usedForControl[i] = true
+			txHash := checkpointPtx.UnsignedTx.TxHash()
+			controlInput := asset.AssetInput{
+				Type:   asset.AssetInputTypeLocal,
+				Vin:    0,
+				Hash:   txHash.CloneBytes(),
+				Amount: input.Amount,
 			}
+
+			normalAssetInputs = append(normalAssetInputs, controlInput)
+			checkpointInputs = append(checkpointInputs, *checkpointInput)
+			checkpointTxs = append(checkpointTxs, checkpointPtx)
 		}
 		normalAsset.Inputs = normalAssetInputs
 		updatedNormalAssets = append(updatedNormalAssets, normalAsset)
+	}
+
+	// ------------------------
+	// 3. Handle remaining VTXOs (plain inputs)
+	// ------------------------
+	for i, vtxo := range vtxos {
+		if usedVtxos[i] {
+			continue
+		}
+
+		checkpointPtx, checkpointInput, err := buildCheckpointTx(
+			vtxo, signerUnrollScriptClosure,
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		checkpointInputs = append(checkpointInputs, *checkpointInput)
+		checkpointTxs = append(checkpointTxs, checkpointPtx)
 	}
 
 	newAssetGroup := &asset.AssetGroup{
@@ -216,11 +250,6 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	copy(copiedOutputs, outputs)
 	copiedOutputs[assetGroupIndex] = &newOpretOutput
 
-	outputAmount := int64(0)
-	for _, output := range outputs {
-		outputAmount += output.Value
-	}
-
 	arkTx, err := buildArkTx(checkpointInputs, copiedOutputs)
 	if err != nil {
 		return nil, nil, err
@@ -230,7 +259,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 }
 
-func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap map[string]string, vtxos []VtxoInput, signerUnrollScript []byte) (*psbt.Packet, []*psbt.Packet, error) {
+func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap map[string]string, checkpointInputs []VtxoInput, signerUnrollScript []byte) (*psbt.Packet, []*psbt.Packet, error) {
 
 	assetAnchor := outputs[assetGroupIndex]
 	assetGroup, err := asset.DecodeAssetGroupFromOpret(assetAnchor.PkScript)
@@ -251,95 +280,61 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 	normalAssets := assetGroup.NormalAssets
 
 	// Helper to resolve inputs
-	resolveInputs := func(inputs []asset.AssetInput) error {
-		for i, input := range inputs {
-			if input.Type != asset.AssetInputTypeTeleport {
-				return fmt.Errorf("rebuild expects Teleport inputs (Checkpoint Hash), got %d", input.Type)
+	resolveInputs := func(inputs []asset.AssetInput) ([]asset.AssetInput, error) {
+		modifiedInputs := make([]asset.AssetInput, 0, len(inputs))
+		for _, input := range inputs {
+
+			if input.Type == asset.AssetInputTypeTeleport {
+				modifiedInputs = append(modifiedInputs, input)
 			}
 
-			// We need to find the checkpoint tx that matches the commitment (which is the TeleportHash)
-			var matchedCheckpointTx *psbt.Packet
-			var found bool
+			moodifiedInput := input
 
-			for _, txHex := range checkpointTxMap {
-				ptx, err := psbt.NewFromRawBytes(strings.NewReader(txHex), true)
-				if err != nil {
-					continue
-				}
-
-				if len(ptx.UnsignedTx.TxOut) == 0 {
-					continue
-				}
-
-				// Calculate TeleportHash for this candidate
-				// Assuming Nonce is zero for control assets as in BuildAssetTxs
-				candidateHash := asset.CalculateTeleportHash(ptx.UnsignedTx.TxOut[0].PkScript, [32]byte{})
-				if bytes.Equal(candidateHash[:], input.Commitment[:]) {
-					matchedCheckpointTx = ptx
-					found = true
-					break
-				}
+			inputTxId, err := chainhash.NewHash(input.Hash)
+			if err != nil {
+				return nil, err
 			}
 
-			if !found {
-				return fmt.Errorf("checkpoint tx not found for asset input commitment %x", input.Commitment)
+			checkpointTxHex, ok := checkpointTxMap[inputTxId.String()]
+			if !ok {
+				return nil, fmt.Errorf("checkpoint tx not found for asset input reference %x", inputTxId)
 			}
 
-			prev := matchedCheckpointTx.UnsignedTx.TxIn[0].PreviousOutPoint
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
+			if err != nil {
+				return nil, err
+			}
 
-			// Update the asset input to point to the underlying VTXO
-			// We iterate through inputs slice pointer
-			inputs[i].Type = asset.AssetInputTypeTeleport
+			prev := ptx.UnsignedTx.TxIn[0].PreviousOutPoint
 
-			// For rebuilding, we regenerate the Teleport Input.
-			// The Commitment remains the same (TeleportHash).
-			// Wait, RebuildAssetTxs calls BuildAssetTxs.
-			// BuildAssetTxs expects VTXOs.
-			// Wait! RebuildAssetTxs receives `vtxos` as argument.
-			// RebuildAssetTxs resolves inputs to find WHICH vtxo corresponds to which input?
-			// No, `vtxos` are passed in.
-			// The `resolveInputs` function inside `RebuildAssetTxs` seems to updates the `inputs` of the ASSET structure.
-			// But `BuildAssetTxs` REGENERATES `inputs` from `vtxos`.
-			// `resolveInputs` in `RebuildAssetTxs` was seemingly trying to "fix" inputs to point to VTXO commitment before calling `BuildAssetTxs`?
-			// Actually `RebuildAssetTxs` passes `vtxos` to `BuildAssetTxs`.
-			// `BuildAssetTxs` iterates `vtxos` and tries to find matching inputs?
-			// `buildAssetCheckpointTx` in `BuildAssetTxs` checks:
-			// `if bytes.Equal(in.Commitment[:], vtxo.Outpoint.Hash[:])`.
-			// THIS IS CRITICAL.
-			// If `BuildAssetTxs` expects `Commitment` to be `VTXO TxHash`.
-			// But now `Commitment` is `TeleportHash`.
-			// Then `buildAssetCheckpointTx` logic checking `Commitment == vtxo.Outpoint.Hash` WILL FAIL.
+			moodifiedInput.Hash = prev.Hash.CloneBytes()
+			moodifiedInput.Vin = prev.Index
 
-			// So `RebuildAssetTxs` MUST map the `TeleportHash` commitment back to `VTXO TxHash`
-			// so that `buildAssetCheckpointTx` can match it!
-			// Yes! That's what `RebuildAssetTxs` did!
-			// It mapped `Commitment` (Checkpoint TxID) -> `Checkpoint Tx` -> `PreviousOutPoint.Hash` (VTXO Hash).
-			// And UPDATED `inputs[i].Commitment` to `VTXO Hash`.
-
-			// So my update to `RebuildAssetTxs` is right: find checkpoint by hash, get VTXO hash, update commitment.
-
-			var vtxoHash [32]byte
-			copy(vtxoHash[:], prev.Hash[:])
-			inputs[i].Commitment = vtxoHash
-			// Witness is preserved from original input
+			modifiedInputs = append(modifiedInputs, moodifiedInput)
 		}
-		return nil
+		return modifiedInputs, nil
 	}
 
 	// If control inputs are present, find the corresponding vtxos
 	for i := range controlAssets {
-		if err := resolveInputs(controlAssets[i].Inputs); err != nil {
+		inputs, err := resolveInputs(controlAssets[i].Inputs)
+
+		if err != nil {
 			return nil, nil, err
 		}
+		controlAssets[i].Inputs = inputs
 	}
 
 	// -------------------------
 	// 2. Normal asset inputs
 	// -------------------------
 	for i := range normalAssets {
-		if err := resolveInputs(normalAssets[i].Inputs); err != nil {
+		inputs, err := resolveInputs(normalAssets[i].Inputs)
+
+		if err != nil {
 			return nil, nil, err
 		}
+		normalAssets[i].Inputs = inputs
 	}
 
 	// -------------------------
@@ -358,7 +353,7 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 
 	outputs[assetGroupIndex] = &newOpretOutput
 
-	return BuildAssetTxs(outputs, assetGroupIndex, vtxos, signerUnrollScript)
+	return BuildAssetTxs(outputs, assetGroupIndex, checkpointInputs, signerUnrollScript)
 }
 
 // buildArkTx builds an ark tx for the given vtxos and outputs.
@@ -530,15 +525,15 @@ func buildCheckpointTx(
 // buildAssetCheckpointTx builds a checkpoint tx for an asset.
 // vtxoIndex is the index of the vtxo in the vtxos slice passed to BuildAssetTxs.
 func buildAssetCheckpointTx(
-	vtxo VtxoInput, vtxoIndex int, assetData *asset.Asset, signerUnrollScript *script.CSVMultisigClosure, subDustKey *btcec.PublicKey,
-) (*psbt.Packet, *VtxoInput, *asset.AssetOutput, error) {
+	vtxo *VtxoInput, assetInput *asset.AssetInput, signerUnrollScript *script.CSVMultisigClosure,
+) (*psbt.Packet, *VtxoInput, error) {
 	if vtxo.Tapscript == nil {
-		return nil, nil, nil, fmt.Errorf("vtxo tapscript is nil")
+		return nil, nil, fmt.Errorf("vtxo tapscript is nil")
 	}
 
 	collaborativeClosure, err := script.DecodeClosure(vtxo.Tapscript.RevealedScript)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	checkpointVtxoScript := script.TapscriptsVtxoScript{
@@ -547,96 +542,61 @@ func buildAssetCheckpointTx(
 
 	tapKey, tapTree, err := checkpointVtxoScript.TapTree()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	checkpointPkScript, err := script.P2TRScript(tapKey)
 	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	var (
-		isSeal       bool
-		matchedInput asset.AssetInput
-	)
-
-	if assetData != nil {
-		for _, in := range assetData.Inputs {
-			switch in.Type {
-			case asset.AssetInputTypeLocal:
-				// Use Vin as index into vtxos
-				if int(in.Vin) == vtxoIndex {
-					isSeal = true
-					matchedInput = in
-				}
-			case asset.AssetInputTypeTeleport:
-				// Use Commitment as TxHash
-				if bytes.Equal(in.Commitment[:], vtxo.Outpoint.Hash[:]) {
-					isSeal = true
-					matchedInput = in
-				}
-			}
-			if isSeal {
-				break
-			}
-		}
+		return nil, nil, err
 	}
 
 	var (
 		checkpointPtx *psbt.Packet
-		assetOutput   *asset.AssetOutput
 	)
 
-	if !isSeal {
+	if assetInput == nil {
 		checkpointPtx, err = buildArkTx(
-			[]VtxoInput{vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}},
+			[]VtxoInput{*vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}},
 		)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("build plain checkpoint tx: %w", err)
+			return nil, nil, fmt.Errorf("build plain checkpoint tx: %w", err)
 		}
 
 	} else {
 
-		newAsset := *assetData
-		// Create a new AssetInput pointing to the checkpoint
-		// For the Ark Tx (Dest), we use Teleport type pointing to Checkpoint Hash.
-		// However, here we just prepare the asset output for the checkpoint tx.
-		// Wait, the asset output in checkpoint tx is correct.
-		// But in BuildAssetTxs, we need to extract the Checkpoint Hash to put into Ark Tx Input.
-		// Here we just replicate the input amount.
+		var newAsset asset.Asset
 
 		newAsset.Inputs = []asset.AssetInput{
 			{
 				Type:   asset.AssetInputTypeLocal,
-				Vin:    0,
-				Amount: matchedInput.Amount,
+				Vin:    assetInput.Vin,
+				Amount: assetInput.Amount,
 			},
 		}
 		newAsset.Outputs = []asset.AssetOutput{
 			{
 				Type:   asset.AssetOutputTypeLocal,
-				Amount: matchedInput.Amount,
+				Amount: assetInput.Amount,
 				Vout:   0,
 			},
 		}
-		assetOutput = &newAsset.Outputs[0]
 
+		// TODO (Joshua) Subdust Key is A nightmare
 		newAssetGroup := &asset.AssetGroup{
 			ControlAssets: nil,
 			NormalAssets:  []asset.Asset{newAsset},
-			SubDustKey:    subDustKey,
 		}
 
 		assetOpret, err := newAssetGroup.EncodeOpret(0)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 
 		checkpointPtx, err = buildArkTx(
-			[]VtxoInput{vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}, &assetOpret},
+			[]VtxoInput{*vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}, &assetOpret},
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -647,17 +607,17 @@ func buildAssetCheckpointTx(
 	).TapHash()
 	collaborativeLeafProof, err := tapTree.GetTaprootMerkleProof(tapLeafHash)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	ctrlBlock, err := txscript.ParseControlBlock(collaborativeLeafProof.ControlBlock)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	revealedTapscripts, err := checkpointVtxoScript.Encode()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	checkpointInput := &VtxoInput{
@@ -673,6 +633,6 @@ func buildAssetCheckpointTx(
 		RevealedTapscripts: revealedTapscripts,
 	}
 
-	return checkpointPtx, checkpointInput, assetOutput, nil
+	return checkpointPtx, checkpointInput, nil
 
 }
