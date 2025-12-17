@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -3981,4 +3982,283 @@ func TestFee(t *testing.T) {
 	require.NotZero(t, int(bobBalance.OffchainBalance.Total))
 	require.Zero(t, int(bobBalance.OnchainBalance.SpendableAmount))
 	require.Empty(t, bobBalance.OnchainBalance.LockedAmount)
+}
+
+// TestGetPendingTxByTxid tests the GetPendingTx RPC when called with a txid identifier.
+// This test verifies that:
+// 1. A submitted (but not finalized) transaction can be retrieved by its txid
+// 2. The pending transaction contains the expected data (ark txid, final ark tx, signed checkpoints)
+// 3. Non-existent txids return an empty response
+func TestGetPendingTxByTxid(t *testing.T) {
+	t.Run("retrieve pending tx by txid", func(t *testing.T) {
+		ctx := t.Context()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(func() { arkSvc.Close() })
+
+		// Faucet Alice with offchain funds
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		pkscript, err := addr.GetPkScript()
+		require.NoError(t, err)
+
+		// Build the ark transaction (sending to self)
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			[]*wire.TxOut{
+				{
+					Value:    int64(vtxo.Amount),
+					PkScript: pkscript,
+				},
+			},
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		// Sign the ark transaction
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := aliceWallet.SignTransaction(
+			ctx,
+			explorer,
+			encodedArkTx,
+		)
+		require.NoError(t, err)
+
+		// Submit the transaction but DO NOT finalize it
+		txid, _, signedCheckpoints, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
+		require.NotEmpty(t, signedCheckpoints)
+
+		t.Logf("Submitted pending tx with txid: %s", txid)
+
+		// Wait a bit longer to ensure the transaction is stored
+		time.Sleep(2 * time.Second)
+
+		// Use HTTP REST API to call GetPendingTx
+		httpClient := &http.Client{Timeout: 15 * time.Second}
+
+		// Test 1: Retrieve the pending tx by txid
+		// Note: The pending tx might be in the cache or repository depending on server config
+		pendingTxResp, err := getPendingTxByTxid(httpClient, txid)
+		if err != nil {
+			t.Logf("GetPendingTx returned error: %v (this might indicate the server doesn't have the tx in cache)", err)
+		}
+		require.NoError(t, err, "GetPendingTx should return the submitted pending transaction")
+		require.NotNil(t, pendingTxResp)
+		require.Len(t, pendingTxResp.PendingTxs, 1, "Expected 1 pending tx, got %d", len(pendingTxResp.PendingTxs))
+
+		pendingTx := pendingTxResp.PendingTxs[0]
+		require.Equal(t, txid, pendingTx.ArkTxid)
+		require.NotEmpty(t, pendingTx.FinalArkTx)
+		require.NotEmpty(t, pendingTx.SignedCheckpointTxs)
+
+		// Test 2: Non-existent txid should return empty response
+		nonExistentResp, err := getPendingTxByTxid(httpClient, "0000000000000000000000000000000000000000000000000000000000000000")
+		require.NoError(t, err)
+		require.NotNil(t, nonExistentResp)
+		require.Empty(t, nonExistentResp.PendingTxs)
+
+		// Test 3: Empty txid should return error
+		_, err = getPendingTxByTxid(httpClient, "")
+		require.Error(t, err)
+
+		// Clean up: Finalize the pending tx
+		finalCheckpoints := make([]string, 0, len(signedCheckpoints))
+		for _, checkpoint := range signedCheckpoints {
+			finalCheckpoint, err := aliceWallet.SignTransaction(ctx, explorer, checkpoint)
+			require.NoError(t, err)
+			finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
+		}
+
+		err = arkSvc.FinalizeTx(ctx, txid, finalCheckpoints)
+		require.NoError(t, err)
+
+		time.Sleep(time.Second)
+
+		// After finalization, the tx should no longer be pending
+		afterFinalizeResp, err := getPendingTxByTxid(httpClient, txid)
+		require.NoError(t, err)
+		require.NotNil(t, afterFinalizeResp)
+		require.Empty(t, afterFinalizeResp.PendingTxs)
+	})
+
+	t.Run("vtxo pending tx error when spending locked vtxo", func(t *testing.T) {
+		ctx := t.Context()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(func() { arkSvc.Close() })
+
+		// Faucet Alice with offchain funds
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		pkscript, err := addr.GetPkScript()
+		require.NoError(t, err)
+
+		// Build the first ark transaction
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			[]*wire.TxOut{
+				{
+					Value:    int64(vtxo.Amount),
+					PkScript: pkscript,
+				},
+			},
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := aliceWallet.SignTransaction(ctx, explorer, encodedArkTx)
+		require.NoError(t, err)
+
+		// Submit first transaction but DO NOT finalize - this locks the VTXO
+		firstTxid, _, _, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+		require.NoError(t, err)
+		require.NotEmpty(t, firstTxid)
+
+		time.Sleep(time.Second)
+
+		// Try to submit a second transaction using the same VTXO
+		// The server should detect this VTXO is locked by a pending transaction
+		// and return either VTXO_PENDING_TX or a "duplicated" error (if same txid)
+		_, _, _, err = arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+		require.Error(t, err)
+		// Either error is acceptable - both indicate the VTXO cannot be spent
+		errContainsPending := strings.Contains(err.Error(), "VTXO_PENDING_TX") ||
+			strings.Contains(err.Error(), "pending")
+		errContainsDuplicated := strings.Contains(err.Error(), "duplicated")
+		require.True(t, errContainsPending || errContainsDuplicated,
+			"expected error to contain 'pending' or 'duplicated', got: %s", err.Error())
+	})
 }
