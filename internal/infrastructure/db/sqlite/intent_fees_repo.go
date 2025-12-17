@@ -41,7 +41,7 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 	intentFees, err := r.querier.SelectLatestIntentFees(ctx)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return &domain.IntentFees{}, nil
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get intent fees: %w", err)
 	}
@@ -55,6 +55,26 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 }
 
 func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
+	// determine if any of the fees passed are empty, if so we need to grab existing fees to avoid overwriting with empty values
+	if fees.OnchainInputFee == "" || fees.OffchainInputFee == "" || fees.OnchainOutputFee == "" ||
+		fees.OffchainOutputFee == "" {
+		currentIntentFees, err := r.querier.SelectLatestIntentFees(ctx)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("failed to get current intent fees: %w", err)
+		}
+		if fees.OnchainInputFee == "" {
+			fees.OnchainInputFee = currentIntentFees.OnchainInputFeeProgram
+		}
+		if fees.OffchainInputFee == "" {
+			fees.OffchainInputFee = currentIntentFees.OffchainInputFeeProgram
+		}
+		if fees.OnchainOutputFee == "" {
+			fees.OnchainOutputFee = currentIntentFees.OnchainOutputFeeProgram
+		}
+		if fees.OffchainOutputFee == "" {
+			fees.OffchainOutputFee = currentIntentFees.OffchainOutputFeeProgram
+		}
+	}
 	err := r.querier.UpsertIntentFees(ctx, queries.UpsertIntentFeesParams{
 		CreatedAt:                time.Now().Unix(),
 		OnchainInputFeeProgram:   fees.OnchainInputFee,

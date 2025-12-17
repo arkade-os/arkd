@@ -13,7 +13,4 @@ type FeeManager interface {
 		boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 		onchainOutputs, offchainOutputs []wire.TxOut,
 	) (int64, error)
-	GetIntentFees(ctx context.Context) (*domain.IntentFees, error)
-	UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error
-	ClearIntentFees(ctx context.Context) error
 }

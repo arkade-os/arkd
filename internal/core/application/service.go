@@ -2022,6 +2022,16 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 			Duration:  scheduledSessionConfig.Duration,
 		}
 	}
+	f, err := s.repoManager.Fees().GetIntentFees(ctx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)
+	}
+	s.intentFeeInfo = IntentFeeInfo{
+		OnchainInput:   f.OnchainInputFee,
+		OffchainInput:  f.OffchainInputFee,
+		OnchainOutput:  f.OnchainOutputFee,
+		OffchainOutput: f.OffchainOutputFee,
+	}
 
 	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,

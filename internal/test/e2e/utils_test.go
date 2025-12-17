@@ -516,12 +516,12 @@ type intentFees struct {
 	IntentOnchainOutputFeeProgram  string `json:"onchainOutputFee"`
 }
 
-func updateIntentFees(env intentFees) error {
+func updateIntentFees(intentFees intentFees) error {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	feesJson, err := json.Marshal(env)
+	feesJson, err := json.Marshal(intentFees)
 	if err != nil {
 		return fmt.Errorf("failed to marshal intent fees: %s", err)
 	}

@@ -387,26 +387,6 @@ func (s *adminService) UpdateIntentFees(
 	ctx context.Context,
 	fees domain.IntentFees,
 ) error {
-	// if not all fees are set, get the existing ones to allow partial updates
-	if fees.OffchainInputFee == "" || fees.OnchainInputFee == "" ||
-		fees.OffchainOutputFee == "" || fees.OnchainOutputFee == "" {
-		existingFees, err := s.repoManager.Fees().GetIntentFees(ctx)
-		if err != nil {
-			return err
-		}
-		if fees.OffchainInputFee == "" {
-			fees.OffchainInputFee = existingFees.OffchainInputFee
-		}
-		if fees.OnchainInputFee == "" {
-			fees.OnchainInputFee = existingFees.OnchainInputFee
-		}
-		if fees.OffchainOutputFee == "" {
-			fees.OffchainOutputFee = existingFees.OffchainOutputFee
-		}
-		if fees.OnchainOutputFee == "" {
-			fees.OnchainOutputFee = existingFees.OnchainOutputFee
-		}
-	}
 	return s.repoManager.Fees().UpsertIntentFees(ctx, fees)
 }
 

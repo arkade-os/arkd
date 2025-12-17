@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,7 +25,6 @@ import (
 	fileunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/file"
 	walletclient "github.com/arkade-os/arkd/internal/infrastructure/wallet"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -243,18 +243,14 @@ var (
 	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
 	defaultAllowCSVBlockType   = false
 
-	defaultRoundMaxParticipantsCount      = 128
-	defaultRoundMinParticipantsCount      = 1
-	defaultOtelPushInterval               = 10 // seconds
-	defaultHeartbeatInterval              = 60 // seconds
-	defaultRoundReportServiceEnabled      = false
-	defaultSettlementMinExpiryGap         = 0 // disabled by default
-	defaultVtxoNoCsvValidationCutoffDate  = 0 // disabled by default
-	defaultEnablePprof                    = false
-	defaultIntentOffchainInputFeeProgram  = "0.0"
-	defaultIntentOnchainInputFeeProgram   = "0.0"
-	defaultIntentOffchainOutputFeeProgram = "0.0"
-	defaultIntentOnchainOutputFeeProgram  = "0.0"
+	defaultRoundMaxParticipantsCount     = 128
+	defaultRoundMinParticipantsCount     = 1
+	defaultOtelPushInterval              = 10 // seconds
+	defaultHeartbeatInterval             = 60 // seconds
+	defaultRoundReportServiceEnabled     = false
+	defaultSettlementMinExpiryGap        = 0 // disabled by default
+	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
+	defaultEnablePprof                   = false
 )
 
 func LoadConfig() (*Config, error) {
@@ -405,10 +401,6 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
-		IntentOffchainInputProgram:    defaultIntentOffchainInputFeeProgram,
-		IntentOnchainInputProgram:     defaultIntentOnchainInputFeeProgram,
-		IntentOffchainOutputProgram:   defaultIntentOffchainOutputFeeProgram,
-		IntentOnchainOutputProgram:    defaultIntentOnchainOutputFeeProgram,
 	}, nil
 }
 
@@ -573,11 +565,10 @@ func (c *Config) Validate() error {
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
-
-	if err := c.feeManager(); err != nil {
+	if err := c.repoManager(); err != nil {
 		return err
 	}
-	if err := c.repoManager(); err != nil {
+	if err := c.feeManager(); err != nil {
 		return err
 	}
 	if err := c.walletService(); err != nil {
@@ -652,15 +643,20 @@ func (c *Config) RoundReportService() (application.RoundReportService, error) {
 }
 
 func (c *Config) feeManager() (err error) {
-	c.fee, err = feemanager.NewArkFeeManager(arkfee.Config{
-		IntentOffchainInputProgram:  c.IntentOffchainInputProgram,
-		IntentOnchainInputProgram:   c.IntentOnchainInputProgram,
-		IntentOffchainOutputProgram: c.IntentOffchainOutputProgram,
-		IntentOnchainOutputProgram:  c.IntentOnchainOutputProgram,
-	})
+	f, err := c.repo.Fees().GetIntentFees(context.TODO())
+	if err != nil {
+		return fmt.Errorf("failed to get intent fees from repo: %w", err)
+	}
+
+	c.IntentOffchainInputProgram = f.OffchainInputFee
+	c.IntentOnchainInputProgram = f.OnchainInputFee
+	c.IntentOffchainOutputProgram = f.OffchainOutputFee
+	c.IntentOnchainOutputProgram = f.OnchainOutputFee
+	c.fee, err = feemanager.NewArkFeeManager(c.repo.Fees())
 	if err != nil {
 		return fmt.Errorf("failed to create fee manager: %w", err)
 	}
+
 	return nil
 }
 
