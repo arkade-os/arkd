@@ -69,7 +69,8 @@ type service struct {
 	allowCSVBlockType         bool
 
 	// fees
-	onchainOutputFee int64 // expected fee in satoshis per onchain output registered in intents
+	feeManager    ports.FeeManager
+	intentFeeInfo IntentFeeInfo
 
 	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
 	vtxoNoCsvValidationCutoffTime time.Time
@@ -103,6 +104,7 @@ func NewService(
 	cache ports.LiveStore,
 	reportSvc RoundReportService,
 	alerts ports.Alerts,
+	feeManager ports.FeeManager,
 	vtxoTreeExpiry, unilateralExitDelay, publicUnilateralExitDelay,
 	boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
@@ -115,7 +117,7 @@ func NewService(
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
 	vtxoNoCsvValidationCutoffTime time.Time,
-	onchainOutputFee int64,
+	intentFeeInfo IntentFeeInfo,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -238,7 +240,8 @@ func NewService(
 		alerts:                        alerts,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
-		onchainOutputFee:              onchainOutputFee,
+		feeManager:                    feeManager,
+		intentFeeInfo:                 intentFeeInfo,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -1481,26 +1484,6 @@ func (s *service) RegisterIntent(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	fees, err := computeIntentFees(proof)
-	if err != nil {
-		return "", errors.INVALID_INTENT_PROOF.New("failed to compute intent fees: %w", err).
-			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   encodedProof,
-				Message: encodedMessage,
-			})
-	}
-
-	countOnchainOutputs := len(message.OnchainOutputIndexes)
-	expectedFees := int64(countOnchainOutputs) * s.onchainOutputFee
-
-	if fees < expectedFees {
-		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d expected %d", fees, expectedFees).
-			WithMetadata(errors.IntentInsufficientFeeMetadata{
-				ExpectedFee: int(expectedFees),
-				ActualFee:   int(fees),
-			})
-	}
-
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
 	for i, outpoint := range outpoints {
@@ -1740,6 +1723,8 @@ func (s *service) RegisterIntent(
 
 	hasOffChainReceiver := false
 	receivers := make([]domain.Receiver, 0)
+	onchainOutputs := make([]wire.TxOut, 0)
+	offchainOutputs := make([]wire.TxOut, 0)
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
 		amount := uint64(output.Value)
@@ -1747,8 +1732,8 @@ func (s *service) RegisterIntent(
 			Amount: amount,
 		}
 
-		intentHasOnchainOuts := slices.Contains(message.OnchainOutputIndexes, outputIndex)
-		if intentHasOnchainOuts {
+		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
+		if isOnchainOutput {
 			if s.utxoMaxAmount >= 0 {
 				if amount > uint64(s.utxoMaxAmount) {
 					return "", errors.AMOUNT_TOO_HIGH.New(
@@ -1801,6 +1786,7 @@ func (s *service) RegisterIntent(
 			}
 
 			rcv.OnchainAddress = addrs[0].EncodeAddress()
+			onchainOutputs = append(onchainOutputs, *output)
 		} else {
 			if s.vtxoMaxAmount >= 0 {
 				if amount > uint64(s.vtxoMaxAmount) {
@@ -1830,6 +1816,7 @@ func (s *service) RegisterIntent(
 		}
 
 		receivers = append(receivers, rcv)
+		offchainOutputs = append(offchainOutputs, *output)
 	}
 
 	if hasOffChainReceiver {
@@ -1858,6 +1845,41 @@ func (s *service) RegisterIntent(
 		return "", errors.INTERNAL_ERROR.New("failed to add receivers to intent: %w", err).
 			WithMetadata(map[string]any{
 				"receivers": receivers,
+			})
+	}
+
+	fees, err := proof.Fees()
+	if err != nil {
+		return "", errors.INVALID_INTENT_PROOF.New("failed to compute intent fees: %w", err).
+			WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+	}
+
+	onchainInputs := make([]wire.TxOut, 0)
+	for _, boardingInput := range boardingUtxos {
+		onchainInputs = append(onchainInputs, *boardingInput.witnessUtxo)
+	}
+
+	minFees, err := s.feeManager.GetIntentFees(
+		ctx, onchainInputs, vtxoInputs, onchainOutputs, offchainOutputs,
+	)
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to get intent fees: %w", err).
+			WithMetadata(map[string]any{
+				"boarding_inputs":  boardingUtxos,
+				"vtxo_inputs":      vtxoInputs,
+				"onchain_outputs":  onchainOutputs,
+				"offchain_outputs": offchainOutputs,
+			})
+	}
+
+	if fees < minFees {
+		return "", errors.INTENT_INSUFFICIENT_FEE.New("got %d min expected %d", fees, minFees).
+			WithMetadata(errors.IntentInsufficientFeeMetadata{
+				MinFee:    int(minFees),
+				ActualFee: int(fees),
 			})
 	}
 
@@ -2017,9 +2039,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		Fees: FeeInfo{
-			IntentFees: IntentFeeInfo{
-				OnchainOutput: uint64(s.onchainOutputFee),
-			},
+			IntentFees: s.intentFeeInfo,
 		},
 	}, nil
 }
@@ -2244,6 +2264,100 @@ func (s *service) RegisterCosignerSignatures(
 			})
 	}
 	return nil
+}
+
+func (s *service) EstimateIntentFee(
+	ctx context.Context, proof intent.Proof, message intent.EstimateIntentFeeMessage,
+) (int64, errors.Error) {
+	now := time.Now()
+
+	if message.ValidAt > 0 {
+		validAt := time.Unix(message.ValidAt, 0)
+		if now.Before(validAt) {
+			return 0, errors.INVALID_INTENT_TIMERANGE.New("proof of ownership not yet valid").
+				WithMetadata(errors.IntentTimeRangeMetadata{
+					ValidAt:  message.ValidAt,
+					ExpireAt: message.ExpireAt,
+					Now:      now.Unix(),
+				})
+		}
+	}
+
+	if message.ExpireAt > 0 {
+		expireAt := time.Unix(message.ExpireAt, 0)
+		if now.After(expireAt) {
+			return 0, errors.INVALID_INTENT_TIMERANGE.New("proof of ownership expired").
+				WithMetadata(errors.IntentTimeRangeMetadata{
+					ValidAt:  message.ValidAt,
+					ExpireAt: message.ExpireAt,
+					Now:      now.Unix(),
+				})
+		}
+	}
+
+	outpoints := proof.GetOutpoints()
+	if len(outpoints) == 0 {
+		return 0, errors.INVALID_INTENT_PSBT.New("proof misses inputs").
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
+	offchainInputs := make([]domain.Vtxo, 0, len(outpoints))
+	onchainInputs := make([]wire.TxOut, 0, len(outpoints))
+
+	for i, outpoint := range outpoints {
+		psbtInput := proof.Inputs[i+1]
+		if psbtInput.WitnessUtxo == nil {
+			continue
+		}
+
+		vtxoOutpoint := domain.Outpoint{
+			Txid: outpoint.Hash.String(),
+			VOut: outpoint.Index,
+		}
+
+		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
+		if err != nil || len(vtxosResult) == 0 {
+			if psbtInput.WitnessUtxo == nil {
+				return 0, errors.INVALID_INTENT_PSBT.New("missing witness utxo for input %d", i+1).
+					WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+			}
+			boardingInput := wire.TxOut{
+				Value:    psbtInput.WitnessUtxo.Value,
+				PkScript: psbtInput.WitnessUtxo.PkScript,
+			}
+			onchainInputs = append(onchainInputs, boardingInput)
+			continue
+		}
+
+		offchainInputs = append(offchainInputs, vtxosResult[0])
+	}
+
+	offchainOutputs := make([]wire.TxOut, 0)
+	onchainOutputs := make([]wire.TxOut, 0)
+
+	for outputIndex, output := range proof.UnsignedTx.TxOut {
+		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
+		if isOnchainOutput {
+			onchainOutputs = append(onchainOutputs, *output)
+		} else {
+			offchainOutputs = append(offchainOutputs, *output)
+		}
+	}
+
+	expectedFees, err := s.feeManager.GetIntentFees(
+		ctx, onchainInputs, offchainInputs, onchainOutputs, offchainOutputs,
+	)
+	if err != nil {
+		return 0, errors.INTERNAL_ERROR.New("failed to evaluate fees: %w", err).
+			WithMetadata(map[string]any{
+				"offchain_inputs":  offchainInputs,
+				"onchain_inputs":   onchainInputs,
+				"offchain_outputs": offchainOutputs,
+				"onchain_outputs":  onchainOutputs,
+			})
+	}
+
+	return expectedFees, nil
 }
 
 func (s *service) start() {

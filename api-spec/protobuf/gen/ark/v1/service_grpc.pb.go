@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ArkService_GetInfo_FullMethodName                = "/ark.v1.ArkService/GetInfo"
 	ArkService_RegisterIntent_FullMethodName         = "/ark.v1.ArkService/RegisterIntent"
+	ArkService_EstimateIntentFee_FullMethodName      = "/ark.v1.ArkService/EstimateIntentFee"
 	ArkService_DeleteIntent_FullMethodName           = "/ark.v1.ArkService/DeleteIntent"
 	ArkService_ConfirmRegistration_FullMethodName    = "/ark.v1.ArkService/ConfirmRegistration"
 	ArkService_SubmitTreeNonces_FullMethodName       = "/ark.v1.ArkService/SubmitTreeNonces"
@@ -44,6 +45,10 @@ type ArkServiceClient interface {
 	// The client should provide a BIP-322 message with the intent information, and the server should
 	// respond with an intent id.
 	RegisterIntent(ctx context.Context, in *RegisterIntentRequest, opts ...grpc.CallOption) (*RegisterIntentResponse, error)
+	// EstimateIntentFee allows to estimate the fees for a given intent.
+	// The client should provide a BIP-322 message with the same data as the register intent message,
+	// and the server should respond with the estimated fees in satoshis.
+	EstimateIntentFee(ctx context.Context, in *EstimateIntentFeeRequest, opts ...grpc.CallOption) (*EstimateIntentFeeResponse, error)
 	// DeleteIntent removes a previously registered intent from the server.
 	// The client should provide the BIP-322 signature and message including any of the vtxos used in
 	// the registered intent to prove its ownership.
@@ -118,6 +123,16 @@ func (c *arkServiceClient) RegisterIntent(ctx context.Context, in *RegisterInten
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RegisterIntentResponse)
 	err := c.cc.Invoke(ctx, ArkService_RegisterIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *arkServiceClient) EstimateIntentFee(ctx context.Context, in *EstimateIntentFeeRequest, opts ...grpc.CallOption) (*EstimateIntentFeeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EstimateIntentFeeResponse)
+	err := c.cc.Invoke(ctx, ArkService_EstimateIntentFee_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -253,6 +268,10 @@ type ArkServiceServer interface {
 	// The client should provide a BIP-322 message with the intent information, and the server should
 	// respond with an intent id.
 	RegisterIntent(context.Context, *RegisterIntentRequest) (*RegisterIntentResponse, error)
+	// EstimateIntentFee allows to estimate the fees for a given intent.
+	// The client should provide a BIP-322 message with the same data as the register intent message,
+	// and the server should respond with the estimated fees in satoshis.
+	EstimateIntentFee(context.Context, *EstimateIntentFeeRequest) (*EstimateIntentFeeResponse, error)
 	// DeleteIntent removes a previously registered intent from the server.
 	// The client should provide the BIP-322 signature and message including any of the vtxos used in
 	// the registered intent to prove its ownership.
@@ -317,6 +336,9 @@ func (UnimplementedArkServiceServer) GetInfo(context.Context, *GetInfoRequest) (
 }
 func (UnimplementedArkServiceServer) RegisterIntent(context.Context, *RegisterIntentRequest) (*RegisterIntentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterIntent not implemented")
+}
+func (UnimplementedArkServiceServer) EstimateIntentFee(context.Context, *EstimateIntentFeeRequest) (*EstimateIntentFeeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EstimateIntentFee not implemented")
 }
 func (UnimplementedArkServiceServer) DeleteIntent(context.Context, *DeleteIntentRequest) (*DeleteIntentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteIntent not implemented")
@@ -400,6 +422,24 @@ func _ArkService_RegisterIntent_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ArkServiceServer).RegisterIntent(ctx, req.(*RegisterIntentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ArkService_EstimateIntentFee_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EstimateIntentFeeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArkServiceServer).EstimateIntentFee(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArkService_EstimateIntentFee_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArkServiceServer).EstimateIntentFee(ctx, req.(*EstimateIntentFeeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -584,6 +624,10 @@ var ArkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RegisterIntent",
 			Handler:    _ArkService_RegisterIntent_Handler,
+		},
+		{
+			MethodName: "EstimateIntentFee",
+			Handler:    _ArkService_EstimateIntentFee_Handler,
 		},
 		{
 			MethodName: "DeleteIntent",
