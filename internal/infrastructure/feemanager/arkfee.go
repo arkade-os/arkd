@@ -61,10 +61,10 @@ func (a arkFeeManager) GetFeesFromIntent(
 // gets current intent fees programs
 func (a arkFeeManager) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
 	return &domain.IntentFees{
-		OffchainInputFee:  a.Estimator.IntentOffchainInput.String(),
-		OnchainInputFee:   a.Estimator.IntentOnchainInput.String(),
-		OffchainOutputFee: a.Estimator.IntentOffchainOutput.String(),
-		OnchainOutputFee:  a.Estimator.IntentOnchainOutput.String(),
+		OffchainInputFee:  a.IntentOffchainInput.String(),
+		OnchainInputFee:   a.IntentOnchainInput.String(),
+		OffchainOutputFee: a.IntentOffchainOutput.String(),
+		OnchainOutputFee:  a.IntentOnchainOutput.String(),
 	}, nil
 }
 
