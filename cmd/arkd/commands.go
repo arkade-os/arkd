@@ -966,12 +966,16 @@ func sweepAction(ctx *cli.Context) error {
 		commitmentTxidsJSON,
 	)
 
-	sweepTxHex, err := post[string](url, body, "hex", macaroon, tlsConfig)
+	type sweepResponse struct {
+		Txid string `json:"txid"`
+		Hex  string `json:"hex"`
+	}
+
+	sweepTxHex, err := post[sweepResponse](url, body, "", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Sweep transaction broadcasted: %s\n", sweepTxHex)
-
+	fmt.Println(sweepTxHex)
 	return nil
 }
