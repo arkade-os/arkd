@@ -33,37 +33,36 @@ func (p *program) Eval(args map[string]any) (FeeAmount, error) {
 }
 
 type Estimator struct {
-	Config               Config
-	intentOffchainInput  *program
-	intentOnchainInput   *program
-	intentOffchainOutput *program
-	intentOnchainOutput  *program
+	IntentOffchainInput  *program
+	IntentOnchainInput   *program
+	IntentOffchainOutput *program
+	IntentOnchainOutput  *program
 }
 
 // New parses the intent input and output programs if not empty and returns a new Estimator
 func New(config Config) (estimator *Estimator, err error) {
-	estimator = &Estimator{Config: config}
+	estimator = &Estimator{}
 
 	if len(config.IntentOffchainInputProgram) > 0 {
-		estimator.intentOffchainInput, err = parse(config.IntentOffchainInputProgram, celenv.IntentOffchainInputEnv)
+		estimator.IntentOffchainInput, err = parse(config.IntentOffchainInputProgram, celenv.IntentOffchainInputEnv)
 		if err != nil {
 			return
 		}
 	}
 	if len(config.IntentOnchainInputProgram) > 0 {
-		estimator.intentOnchainInput, err = parse(config.IntentOnchainInputProgram, celenv.IntentOnchainInputEnv)
+		estimator.IntentOnchainInput, err = parse(config.IntentOnchainInputProgram, celenv.IntentOnchainInputEnv)
 		if err != nil {
 			return
 		}
 	}
 	if len(config.IntentOffchainOutputProgram) > 0 {
-		estimator.intentOffchainOutput, err = parse(config.IntentOffchainOutputProgram, celenv.IntentOutputEnv)
+		estimator.IntentOffchainOutput, err = parse(config.IntentOffchainOutputProgram, celenv.IntentOutputEnv)
 		if err != nil {
 			return
 		}
 	}
 	if len(config.IntentOnchainOutputProgram) > 0 {
-		estimator.intentOnchainOutput, err = parse(config.IntentOnchainOutputProgram, celenv.IntentOutputEnv)
+		estimator.IntentOnchainOutput, err = parse(config.IntentOnchainOutputProgram, celenv.IntentOutputEnv)
 		if err != nil {
 			return
 		}
@@ -74,38 +73,38 @@ func New(config Config) (estimator *Estimator, err error) {
 
 // EvalOffchainInput evalutes the fee for a given vtxo input
 func (e Estimator) EvalOffchainInput(input OffchainInput) (FeeAmount, error) {
-	if e.intentOffchainInput == nil {
+	if e.IntentOffchainInput == nil {
 		return 0, nil
 	}
 
-	return e.intentOffchainInput.Eval(input.toArgs())
+	return e.IntentOffchainInput.Eval(input.toArgs())
 }
 
 // EvalOnchainInput evalutes the fee for a given boarding input
 func (e Estimator) EvalOnchainInput(input OnchainInput) (FeeAmount, error) {
-	if e.intentOnchainInput == nil {
+	if e.IntentOnchainInput == nil {
 		return 0, nil
 	}
 
-	return e.intentOnchainInput.Eval(input.toArgs())
+	return e.IntentOnchainInput.Eval(input.toArgs())
 }
 
 // EvalOffchainOutput evalutes the fee for a given vtxo output
 func (e Estimator) EvalOffchainOutput(output Output) (FeeAmount, error) {
-	if e.intentOffchainOutput == nil {
+	if e.IntentOffchainOutput == nil {
 		return 0, nil
 	}
 
-	return e.intentOffchainOutput.Eval(output.toArgs())
+	return e.IntentOffchainOutput.Eval(output.toArgs())
 }
 
 // EvalOnchainOutput evalutes the fee for a given collaborative exit output
 func (e Estimator) EvalOnchainOutput(output Output) (FeeAmount, error) {
-	if e.intentOnchainOutput == nil {
+	if e.IntentOnchainOutput == nil {
 		return 0, nil
 	}
 
-	return e.intentOnchainOutput.Eval(output.toArgs())
+	return e.IntentOnchainOutput.Eval(output.toArgs())
 }
 
 // Eval evaluates the fee for a given set of inputs and outputs
@@ -165,4 +164,8 @@ func parse(txt string, env *cel.Env) (*program, error) {
 		return nil, err
 	}
 	return &program{txt: txt, Program: prg}, nil
+}
+
+func (p *program) String() string {
+	return p.txt
 }

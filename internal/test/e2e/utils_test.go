@@ -573,44 +573,29 @@ func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
 	}
 }
 
-type arkdEnv struct {
-	intentOffchainInputFeeProgram  string
-	intentOnchainInputFeeProgram   string
-	intentOffchainOutputFeeProgram string
-	intentOnchainOutputFeeProgram  string
+type intentFees struct {
+	IntentOffchainInputFeeProgram  string `json:"offchainInputFee"`
+	IntentOnchainInputFeeProgram   string `json:"onchainInputFee"`
+	IntentOffchainOutputFeeProgram string `json:"offchainOutputFee"`
+	IntentOnchainOutputFeeProgram  string `json:"onchainOutputFee"`
 }
 
-func restartArkdWithNewConfig(env arkdEnv) error {
+func updateIntentFees(env intentFees) error {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	// down arkd container
-	if _, err := runCommand("docker", "container", "stop", "arkd"); err != nil {
-		return err
+	feesJson, err := json.Marshal(env)
+	if err != nil {
+		return fmt.Errorf("failed to marshal intent fees: %s", err)
 	}
 
-	time.Sleep(5 * time.Second)
+	body := fmt.Sprintf(`{"fees": %s}`, feesJson)
 
-	envVars := map[string]string{
-		"ARKD_INTENT_OFFCHAIN_INPUT_FEE_PROGRAM":  env.intentOffchainInputFeeProgram,
-		"ARKD_INTENT_ONCHAIN_INPUT_FEE_PROGRAM":   env.intentOnchainInputFeeProgram,
-		"ARKD_INTENT_OFFCHAIN_OUTPUT_FEE_PROGRAM": env.intentOffchainOutputFeeProgram,
-		"ARKD_INTENT_ONCHAIN_OUTPUT_FEE_PROGRAM":  env.intentOnchainOutputFeeProgram,
+	url := fmt.Sprintf("%s/v1/admin/intentFees", adminUrl)
+	if err := post(adminHttpClient, url, body, "intentFees"); err != nil {
+		return fmt.Errorf("failed to update intent fees: %s", err)
 	}
-	if _, err := runCommandWithEnv(envVars, "docker", "compose", "-f", "../../../docker-compose.regtest.yml", "up", "-d", "arkd"); err != nil {
-		return err
-	}
-
-	time.Sleep(5 * time.Second)
-
-	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	if err := post(adminHttpClient, url, body, "unlock"); err != nil {
-		return err
-	}
-
-	time.Sleep(2 * time.Second)
 
 	return nil
 }

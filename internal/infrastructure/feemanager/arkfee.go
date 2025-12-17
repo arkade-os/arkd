@@ -24,6 +24,7 @@ func NewArkFeeManager(config arkfee.Config) (ports.FeeManager, error) {
 	return &arkFeeManager{Estimator: *estimator}, nil
 }
 
+// calculates fees using intent fee programs applied to a parituclar set of inputs and outputs (an intent)
 func (a arkFeeManager) GetFeesFromIntent(
 	ctx context.Context,
 	boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
@@ -57,31 +58,26 @@ func (a arkFeeManager) GetFeesFromIntent(
 	return fee.ToSatoshis(), nil
 }
 
+// gets current intent fees programs
 func (a arkFeeManager) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
 	return &domain.IntentFees{
-		OffchainInputFee:  a.Config.IntentOffchainInputProgram,
-		OnchainInputFee:   a.Config.IntentOnchainInputProgram,
-		OffchainOutputFee: a.Config.IntentOffchainOutputProgram,
-		OnchainOutputFee:  a.Config.IntentOnchainOutputProgram,
+		OffchainInputFee:  a.Estimator.IntentOffchainInput.String(),
+		OnchainInputFee:   a.Estimator.IntentOnchainInput.String(),
+		OffchainOutputFee: a.Estimator.IntentOffchainOutput.String(),
+		OnchainOutputFee:  a.Estimator.IntentOnchainOutput.String(),
 	}, nil
 }
 
+// upserts intent fees programs, will only update intent fee programs that are non-empty
 func (a *arkFeeManager) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
-	// Only update if non-empty to allow partial updates
-	if fees.OffchainInputFee != "" {
-		a.Config.IntentOffchainInputProgram = fees.OffchainInputFee
-	}
-	if fees.OnchainInputFee != "" {
-		a.Config.IntentOnchainInputProgram = fees.OnchainInputFee
-	}
-	if fees.OffchainOutputFee != "" {
-		a.Config.IntentOffchainOutputProgram = fees.OffchainOutputFee
-	}
-	if fees.OnchainOutputFee != "" {
-		a.Config.IntentOnchainOutputProgram = fees.OnchainOutputFee
+	config := arkfee.Config{
+		IntentOffchainInputProgram:  fees.OffchainInputFee,
+		IntentOnchainInputProgram:   fees.OnchainInputFee,
+		IntentOffchainOutputProgram: fees.OffchainOutputFee,
+		IntentOnchainOutputProgram:  fees.OnchainOutputFee,
 	}
 
-	estimator, err := arkfee.New(a.Config)
+	estimator, err := arkfee.New(config)
 	if err != nil {
 		return err
 	}
@@ -90,13 +86,15 @@ func (a *arkFeeManager) UpsertIntentFees(ctx context.Context, fees domain.Intent
 	return nil
 }
 
+// resets intent fees to zero-fee programs
 func (a *arkFeeManager) ClearIntentFees(ctx context.Context) error {
-	a.Config.IntentOffchainInputProgram = "0.0"
-	a.Config.IntentOnchainInputProgram = "0.0"
-	a.Config.IntentOffchainOutputProgram = "0.0"
-	a.Config.IntentOnchainOutputProgram = "0.0"
-
-	estimator, err := arkfee.New(a.Config)
+	config := arkfee.Config{
+		IntentOffchainInputProgram:  "0.0",
+		IntentOnchainInputProgram:   "0.0",
+		IntentOffchainOutputProgram: "0.0",
+		IntentOnchainOutputProgram:  "0.0",
+	}
+	estimator, err := arkfee.New(config)
 	if err != nil {
 		return err
 	}

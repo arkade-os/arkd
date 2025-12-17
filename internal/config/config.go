@@ -214,12 +214,8 @@ var (
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Skip CSV validation for vtxos created before this date
-	VtxoNoCsvValidationCutoffDate  = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
-	IntentOffchainInputFeeProgram  = "INTENT_OFFCHAIN_INPUT_FEE_PROGRAM"
-	IntentOnchainInputFeeProgram   = "INTENT_ONCHAIN_INPUT_FEE_PROGRAM"
-	IntentOffchainOutputFeeProgram = "INTENT_OFFCHAIN_OUTPUT_FEE_PROGRAM"
-	IntentOnchainOutputFeeProgram  = "INTENT_ONCHAIN_OUTPUT_FEE_PROGRAM"
-	EnablePprof                    = "ENABLE_PPROF"
+	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
+	EnablePprof                   = "ENABLE_PPROF"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -299,10 +295,6 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
-	viper.SetDefault(IntentOffchainInputFeeProgram, defaultIntentOffchainInputFeeProgram)
-	viper.SetDefault(IntentOnchainInputFeeProgram, defaultIntentOnchainInputFeeProgram)
-	viper.SetDefault(IntentOffchainOutputFeeProgram, defaultIntentOffchainOutputFeeProgram)
-	viper.SetDefault(IntentOnchainOutputFeeProgram, defaultIntentOnchainOutputFeeProgram)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -413,10 +405,10 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
-		IntentOffchainInputProgram:    viper.GetString(IntentOffchainInputFeeProgram),
-		IntentOnchainInputProgram:     viper.GetString(IntentOnchainInputFeeProgram),
-		IntentOffchainOutputProgram:   viper.GetString(IntentOffchainOutputFeeProgram),
-		IntentOnchainOutputProgram:    viper.GetString(IntentOnchainOutputFeeProgram),
+		IntentOffchainInputProgram:    defaultIntentOffchainInputFeeProgram,
+		IntentOnchainInputProgram:     defaultIntentOnchainInputFeeProgram,
+		IntentOffchainOutputProgram:   defaultIntentOffchainOutputFeeProgram,
+		IntentOnchainOutputProgram:    defaultIntentOnchainOutputFeeProgram,
 	}, nil
 }
 
