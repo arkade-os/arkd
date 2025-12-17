@@ -163,14 +163,17 @@ func (w *walletDaemonClient) GetNotificationChannel(
 
 func (w *walletDaemonClient) IsTransactionConfirmed(
 	ctx context.Context, txid string,
-) (bool, int64, int64, error) {
+) (bool, *ports.BlockTimestamp, error) {
 	resp, err := w.client.IsTransactionConfirmed(
 		ctx, &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
 	)
 	if err != nil {
-		return false, 0, 0, err
+		return false, nil, err
 	}
-	return resp.Confirmed, resp.Blocknumber, resp.Blocktime, nil
+	return resp.Confirmed, &ports.BlockTimestamp{
+		Height: uint32(resp.Blocknumber),
+		Time:   int64(resp.Blocktime),
+	}, nil
 }
 
 func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{}, error) {

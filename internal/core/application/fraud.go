@@ -43,12 +43,25 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 		}
 
 		go func() {
-			blockHeight, blockTime := s.waitForConfirmation(
-				context.Background(),
-				ptx.UnsignedTx.TxID(),
-			)
+			ctx := context.Background()
 
-			if err := s.sweeper.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockHeight, blockTime); err != nil {
+			blockTimestamp, err := waitForConfirmation(
+				ctx,
+				ptx.UnsignedTx.TxID(),
+				s.wallet,
+			)
+			if err != nil {
+				log.WithError(err).Warnf(
+					"failed to wait for confirmation of checkpoint tx %s, using current block time to schedule sweep instead",
+					ptx.UnsignedTx.TxID(),
+				)
+				blockTimestamp, err = s.wallet.GetCurrentBlockTime(ctx)
+				if err != nil {
+					log.WithError(err).Errorf("failed to get current block time: %s", err)
+					return
+				}
+			}
+			if err := s.sweeper.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockTimestamp); err != nil {
 				log.Errorf("failed to schedule checkpoint sweep: %s", err)
 			}
 		}()
@@ -234,7 +247,13 @@ func (s *service) broadcastConnectorBranch(
 			}
 			log.Debugf("broadcasted connector branch tx %s", txid)
 
-			s.waitForConfirmation(ctx, txid)
+			_, err = waitForConfirmation(ctx, txid, s.wallet)
+			if err != nil {
+				log.WithError(err).Errorf(
+					"failed to wait for confirmation of connector branch tx %s",
+					txid,
+				)
+			}
 			return true, nil
 		}
 
@@ -357,13 +376,6 @@ func (s *service) bumpAnchorTx(
 	}
 
 	return hex.EncodeToString(serializedTx.Bytes()), nil
-}
-
-func (s *service) waitForConfirmation(
-	ctx context.Context,
-	txid string,
-) (blockheight int64, blocktime int64) {
-	return waitForConfirmation(ctx, txid, s.wallet, s.network)
 }
 
 // findForfeitTx finds the correct forfeit tx and connector outpoint for the given vtxo from the

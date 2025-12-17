@@ -32,7 +32,7 @@ func findSweepableOutputs(
 	blocktimeCache := make(map[string]int64) // txid -> blocktime / blockheight
 
 	if err := vtxoTree.Apply(func(g *tree.TxTree) (bool, error) {
-		isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(
+		isConfirmed, blockTimestamp, err := walletSvc.IsTransactionConfirmed(
 			ctx, g.Root.UnsignedTx.TxID(),
 		)
 		if err != nil {
@@ -43,7 +43,7 @@ func findSweepableOutputs(
 			parentTxid := g.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
 
 			if _, ok := blocktimeCache[parentTxid]; !ok {
-				isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(
+				isConfirmed, blockTimestamp, err := walletSvc.IsTransactionConfirmed(
 					ctx, parentTxid,
 				)
 				if !isConfirmed || err != nil {
@@ -51,9 +51,9 @@ func findSweepableOutputs(
 				}
 
 				if schedulerUnit == ports.BlockHeight {
-					blocktimeCache[parentTxid] = height
+					blocktimeCache[parentTxid] = int64(blockTimestamp.Height)
 				} else {
-					blocktimeCache[parentTxid] = blocktime
+					blocktimeCache[parentTxid] = blockTimestamp.Time
 				}
 			}
 
@@ -75,9 +75,9 @@ func findSweepableOutputs(
 
 		// cache the blocktime for future use
 		if schedulerUnit == ports.BlockHeight {
-			blocktimeCache[g.Root.UnsignedTx.TxID()] = height
+			blocktimeCache[g.Root.UnsignedTx.TxID()] = int64(blockTimestamp.Height)
 		} else {
-			blocktimeCache[g.Root.UnsignedTx.TxID()] = blocktime
+			blocktimeCache[g.Root.UnsignedTx.TxID()] = blockTimestamp.Time
 		}
 
 		// if the tx is onchain, it means that the input is spent, we need to check the children
@@ -429,8 +429,13 @@ func waitForConfirmation(
 	ctx context.Context,
 	txid string,
 	wallet ports.WalletService,
-	network arklib.Network,
-) (blockheight int64, blocktime int64) {
+) (*ports.BlockTimestamp, error) {
+	network, err := wallet.GetNetwork(ctx)
+	if err != nil {
+		log.WithError(err).Error("failed to get network, cannot wait for confirmation")
+		return nil, err
+	}
+
 	tickerInterval := mainnetTickerInterval
 	if network.Name == arklib.BitcoinRegTest.Name {
 		tickerInterval = regtestTickerInterval
@@ -438,16 +443,24 @@ func waitForConfirmation(
 	ticker := time.NewTicker(tickerInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if confirmed, blockHeight, blockTime, _ := wallet.IsTransactionConfirmed(ctx, txid); confirmed {
-			log.Debugf(
-				"tx %s confirmed at block height %d, block time %d",
-				txid,
-				blockHeight,
-				blockTime,
-			)
-			return blockHeight, blockTime
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			confirmed, blockTimestamp, err := wallet.IsTransactionConfirmed(ctx, txid)
+			if confirmed && err == nil {
+				log.Debugf(
+					"tx %s confirmed at block height %d, block time %d",
+					txid,
+					blockTimestamp.Height,
+					blockTimestamp.Time,
+				)
+				return blockTimestamp, nil
+			}
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
-	return 0, 0
 }

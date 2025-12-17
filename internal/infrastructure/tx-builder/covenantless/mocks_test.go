@@ -199,7 +199,7 @@ func (m *mockedWallet) GetDustAmount(ctx context.Context) (uint64, error) {
 
 func (m *mockedWallet) IsTransactionConfirmed(
 	ctx context.Context, txid string,
-) (bool, int64, int64, error) {
+) (bool, *ports.BlockTimestamp, error) {
 	args := m.Called(ctx, txid)
 
 	var res bool
@@ -217,7 +217,10 @@ func (m *mockedWallet) IsTransactionConfirmed(
 		blocktime = b.(int64)
 	}
 
-	return res, height, blocktime, args.Error(2)
+	return res, &ports.BlockTimestamp{
+		Height: uint32(height),
+		Time:   blocktime,
+	}, args.Error(2)
 }
 
 func (m *mockedWallet) SignTransactionTapscript(
