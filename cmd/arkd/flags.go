@@ -43,7 +43,7 @@ const (
 	completedFlagName                                 = "completed"
 	failedFlagName                                    = "failed"
 	withDetailsFlagName                               = "with-details"
-	sweepConnectorsFlagName                           = "connectors"
+	sweepConnectorsFlagName                           = "with-connectors"
 	sweepCommitmentTxidsFlagName                      = "commitment-txids"
 
 	dateFormat                 = time.DateOnly
@@ -219,7 +219,7 @@ var (
 	}
 	sweepConnectorsFlag = &cli.BoolFlag{
 		Name:  sweepConnectorsFlagName,
-		Usage: "include connector UTXOs in the sweep",
+		Usage: "include all spendable connector UTXOs in the sweep",
 		Value: false,
 	}
 	sweepCommitmentTxidsFlag = &cli.StringSliceFlag{
