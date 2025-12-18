@@ -53,8 +53,12 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 	if fees.OnchainInputFee == "" || fees.OffchainInputFee == "" || fees.OnchainOutputFee == "" ||
 		fees.OffchainOutputFee == "" {
 		currentIntentFees, err := r.querier.SelectLatestIntentFees(ctx)
-		if err != nil && err != sql.ErrNoRows {
-			return fmt.Errorf("failed to get latest intent fees: %w", err)
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return fmt.Errorf("failed to get latest intent fees: %w", err)
+			}
+			// no existing fees, so we can't do partial update
+			return fmt.Errorf("cannot do partial update, no existing intent fees found")
 		}
 		if fees.OnchainInputFee == "" {
 			fees.OnchainInputFee = currentIntentFees.OnchainInputFeeProgram

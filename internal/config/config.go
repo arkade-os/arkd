@@ -818,7 +818,9 @@ func (c *Config) appService() error {
 		return err
 	}
 
-	currIntentFees, err := c.repo.Fees().GetIntentFees(context.TODO())
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	currIntentFees, err := c.repo.Fees().GetIntentFees(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get intent fees from repo: %w", err)
 	}

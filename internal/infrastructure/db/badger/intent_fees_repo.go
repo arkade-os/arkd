@@ -66,7 +66,7 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 	var intentFees IntentFees
 	if err := r.store.FindOne(&intentFees, badgerhold.Where("ID").Eq("intent_fees")); err != nil {
 		if err == badgerhold.ErrNotFound {
-			return &domain.IntentFees{}, nil
+			return nil, fmt.Errorf("no intent fees found")
 		}
 		return nil, fmt.Errorf("failed to get intent fees: %w", err)
 	}
