@@ -25,7 +25,6 @@ func (a *arkFeeManager) ComputeIntentFees(
 	boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 	onchainOutputs []wire.TxOut, offchainOutputs []wire.TxOut,
 ) (int64, error) {
-	// lets instantiate a feeestimator in here now
 	currIntentFees, err := a.repo.GetIntentFees(ctx)
 	if err != nil {
 		return -1, err
@@ -68,7 +67,7 @@ func (a *arkFeeManager) ComputeIntentFees(
 		arkfeeOnchainOutputs,
 	)
 	if err != nil {
-		return 0, err
+		return -1, err
 	}
 
 	return fee.ToSatoshis(), nil
