@@ -65,17 +65,6 @@ func getOutputVtxosLeaves(
 				continue
 			}
 
-			// Decode and parse receiver pubkey once for both asset and non-asset cases.
-			pubkeyBytes, err := hex.DecodeString(receiver.PubKey)
-			if err != nil {
-				return nil, fmt.Errorf("receiver pubkey hex decode failed: %w", err)
-			}
-
-			pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
-			if err != nil {
-				return nil, fmt.Errorf("receiver pubkey parse failed: %w", err)
-			}
-
 			// Asset teleport case
 			if len(receiver.AssetId) > 0 {
 				leaf, err := buildTeleportAssetLeaf(
@@ -88,6 +77,17 @@ func getOutputVtxosLeaves(
 				}
 				leaves = append(leaves, leaf)
 				continue
+			}
+
+			// Decode and parse receiver pubkey once for both asset and non-asset cases.
+			pubkeyBytes, err := hex.DecodeString(receiver.PubKey)
+			if err != nil {
+				return nil, fmt.Errorf("receiver pubkey hex decode failed: %w", err)
+			}
+
+			pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+			if err != nil {
+				return nil, fmt.Errorf("receiver pubkey parse failed: %w", err)
 			}
 
 			// Plain offchain vtxo (no asset)
@@ -168,10 +168,12 @@ func buildTeleportAssetLeaf(
 
 	// Work on a copy so we don't mutate shared state
 	assetCopy := *assetDetails
+	var h [32]byte
+	copy(h[:], hash)
 	assetCopy.Outputs = []asset.AssetOutput{{
 		Type:       asset.AssetOutputTypeTeleport,
-		Commitment: [32]byte(hash),
-		Amount:     receiver.AssetAmount,
+		Commitment: h,
+		Amount:     receiver.Amount,
 	}}
 	assetCopy.Inputs = nil
 

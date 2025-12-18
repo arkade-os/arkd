@@ -1729,12 +1729,12 @@ func (s *service) RegisterIntent(
 			Amount:    assetOutput.Amount,
 			IsClaimed: false,
 		}); err != nil {
-			return "", errors.INTERNAL_ERROR.New("failed to insert teleport asset: %w", err)
+			log.WithError(err).Warn("failed to insert teleport asset")
 		}
 
 		receivers = append(receivers, domain.Receiver{
 			AssetTeleportHash: assetOutput.TeleportHash,
-			AssetAmount:       assetOutput.Amount,
+			Amount:            assetOutput.Amount,
 			AssetId:           assetOutput.AssetId,
 		})
 

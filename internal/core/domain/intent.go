@@ -77,7 +77,7 @@ func (i Intent) validate(ignoreOuts bool) error {
 		return fmt.Errorf("missing outputs")
 	}
 	for _, r := range i.Receivers {
-		if len(r.OnchainAddress) <= 0 && len(r.PubKey) <= 0 {
+		if len(r.OnchainAddress) <= 0 && len(r.PubKey) <= 0 && len(r.AssetTeleportHash) <= 0 {
 			return fmt.Errorf("missing receiver destination")
 		}
 		if r.Amount == 0 {
@@ -89,7 +89,6 @@ func (i Intent) validate(ignoreOuts bool) error {
 
 type Receiver struct {
 	Amount            uint64
-	AssetAmount       uint64 // asset output amount
 	AssetId           string // asset output id
 	AssetTeleportHash string // asset teleport hash
 	OnchainAddress    string // onchain
