@@ -40,10 +40,18 @@ func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error
 	}
 
 	repo := &intentFeesRepo{store}
-	// initialize intent fees to zero values, otherwise will be empty strings
-	err = repo.ClearIntentFees(context.Background())
+	// only initialize intent fees if none exist in the DB
+	var existing IntentFees
+	err = repo.store.FindOne(&existing, badgerhold.Where("ID").Eq("intent_fees"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize intent fees: %w", err)
+		if err == badgerhold.ErrNotFound {
+			// initialize intent fees to zero values
+			if cerr := repo.ClearIntentFees(context.Background()); cerr != nil {
+				return nil, fmt.Errorf("failed to initialize intent fees: %w", cerr)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to check existing intent fees: %w", err)
+		}
 	}
 
 	return repo, nil

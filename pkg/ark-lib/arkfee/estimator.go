@@ -165,7 +165,3 @@ func parse(txt string, env *cel.Env) (*program, error) {
 	}
 	return &program{txt: txt, Program: prg}, nil
 }
-
-func (p *program) String() string {
-	return p.txt
-}

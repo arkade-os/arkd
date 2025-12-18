@@ -2023,6 +2023,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		}
 	}
 
+	// TODO: caching?
 	currIntentFees, err := s.repoManager.Fees().GetIntentFees(ctx)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)

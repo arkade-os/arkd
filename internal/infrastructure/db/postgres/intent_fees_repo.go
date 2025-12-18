@@ -34,7 +34,7 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 	row, err := r.querier.SelectLatestIntentFees(ctx)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return &domain.IntentFees{}, nil
+			return nil, fmt.Errorf("no intent fees found")
 		}
 		return nil, fmt.Errorf("failed to get intent fees: %w", err)
 	}

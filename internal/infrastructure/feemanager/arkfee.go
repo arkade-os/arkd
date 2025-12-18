@@ -19,7 +19,7 @@ func NewArkFeeManager(repo domain.FeeRepository) (ports.FeeManager, error) {
 	return &arkFeeManager{repo}, nil
 }
 
-// calculates fees using intent fee programs applied to a parituclar set of inputs and outputs (an intent)
+// calculates fees using intent fee programs applied to a partiuclar set of inputs and outputs (an intent)
 func (a arkFeeManager) GetFeesFromIntent(
 	ctx context.Context,
 	boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,

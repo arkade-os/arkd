@@ -11,3 +11,6 @@ CREATE TABLE IF NOT EXISTS intent_fees (
 INSERT INTO intent_fees (id, created_at)
 SELECT 'singleton', strftime('%s','now')
 WHERE NOT EXISTS (SELECT 1 FROM intent_fees WHERE id = 'singleton');
+
+-- add index on created_at for faster retrieval of latest fees
+CREATE INDEX IF NOT EXISTS idx_intent_fees_created_at ON intent_fees (created_at);

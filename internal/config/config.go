@@ -126,11 +126,6 @@ type Config struct {
 
 	EnablePprof bool
 
-	IntentOffchainInputProgram  string
-	IntentOnchainInputProgram   string
-	IntentOffchainOutputProgram string
-	IntentOnchainOutputProgram  string
-
 	fee            ports.FeeManager
 	repo           ports.RepoManager
 	svc            application.Service
@@ -643,15 +638,6 @@ func (c *Config) RoundReportService() (application.RoundReportService, error) {
 }
 
 func (c *Config) feeManager() (err error) {
-	f, err := c.repo.Fees().GetIntentFees(context.TODO())
-	if err != nil {
-		return fmt.Errorf("failed to get intent fees from repo: %w", err)
-	}
-
-	c.IntentOffchainInputProgram = f.OffchainInputFee
-	c.IntentOnchainInputProgram = f.OnchainInputFee
-	c.IntentOffchainOutputProgram = f.OffchainOutputFee
-	c.IntentOnchainOutputProgram = f.OnchainOutputFee
 	c.fee, err = feemanager.NewArkFeeManager(c.repo.Fees())
 	if err != nil {
 		return fmt.Errorf("failed to create fee manager: %w", err)
@@ -832,6 +818,17 @@ func (c *Config) appService() error {
 		return err
 	}
 
+	currIntentFees, err := c.repo.Fees().GetIntentFees(context.TODO())
+	if err != nil {
+		return fmt.Errorf("failed to get intent fees from repo: %w", err)
+	}
+	intentFees := application.IntentFeeInfo{
+		OffchainInput:  currIntentFees.OffchainInputFee,
+		OnchainInput:   currIntentFees.OnchainInputFee,
+		OffchainOutput: currIntentFees.OffchainOutputFee,
+		OnchainOutput:  currIntentFees.OnchainOutputFee,
+	}
+
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
@@ -845,12 +842,7 @@ func (c *Config) appService() error {
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
-		application.IntentFeeInfo{
-			OffchainInput:  c.IntentOffchainInputProgram,
-			OnchainInput:   c.IntentOnchainInputProgram,
-			OffchainOutput: c.IntentOffchainOutputProgram,
-			OnchainOutput:  c.IntentOnchainOutputProgram,
-		},
+		intentFees,
 	)
 	if err != nil {
 		return err
