@@ -20,7 +20,7 @@ func NewArkFeeManager(repo domain.FeeRepository) (ports.FeeManager, error) {
 }
 
 // calculates fees using intent fee programs applied to a particular set of inputs and outputs (an intent)
-func (a *arkFeeManager) GetFeesFromIntent(
+func (a *arkFeeManager) ComputeIntentFees(
 	ctx context.Context,
 	boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 	onchainOutputs []wire.TxOut, offchainOutputs []wire.TxOut,

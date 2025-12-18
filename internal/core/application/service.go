@@ -1859,7 +1859,7 @@ func (s *service) RegisterIntent(
 		onchainInputs = append(onchainInputs, *boardingInput.witnessUtxo)
 	}
 
-	minFees, err := s.feeManager.GetFeesFromIntent(
+	minFees, err := s.feeManager.ComputeIntentFees(
 		ctx, onchainInputs, vtxoInputs, onchainOutputs, offchainOutputs,
 	)
 	if err != nil {
@@ -2354,7 +2354,7 @@ func (s *service) EstimateIntentFee(
 		}
 	}
 
-	expectedFees, err := s.feeManager.GetFeesFromIntent(
+	expectedFees, err := s.feeManager.ComputeIntentFees(
 		ctx, onchainInputs, offchainInputs, onchainOutputs, offchainOutputs,
 	)
 	if err != nil {

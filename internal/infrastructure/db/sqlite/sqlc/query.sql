@@ -360,9 +360,6 @@ SELECT * FROM conviction
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
 
--- name: SelectIntentFees :one
-SELECT * FROM intent_fees WHERE id = @id;
-
 -- name: SelectLatestIntentFees :one
 SELECT * FROM intent_fees ORDER BY created_at DESC LIMIT 1;
 

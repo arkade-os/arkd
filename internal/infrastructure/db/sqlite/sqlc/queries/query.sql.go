@@ -304,24 +304,6 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
-const selectIntentFees = `-- name: SelectIntentFees :one
-SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees WHERE id = ?1
-`
-
-func (q *Queries) SelectIntentFees(ctx context.Context, id string) (IntentFee, error) {
-	row := q.db.QueryRowContext(ctx, selectIntentFees, id)
-	var i IntentFee
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedAt,
-		&i.OffchainInputFeeProgram,
-		&i.OnchainInputFeeProgram,
-		&i.OffchainOutputFeeProgram,
-		&i.OnchainOutputFeeProgram,
-	)
-	return i, err
-}
-
 const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
 SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1
 `

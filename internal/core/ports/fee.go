@@ -8,7 +8,7 @@ import (
 )
 
 type FeeManager interface {
-	GetFeesFromIntent(
+	ComputeIntentFees(
 		ctx context.Context,
 		boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 		onchainOutputs, offchainOutputs []wire.TxOut,
