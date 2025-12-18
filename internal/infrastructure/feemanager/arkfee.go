@@ -20,7 +20,7 @@ func NewArkFeeManager(repo domain.FeeRepository) (ports.FeeManager, error) {
 }
 
 // calculates fees using intent fee programs applied to a particular set of inputs and outputs (an intent)
-func (a arkFeeManager) GetFeesFromIntent(
+func (a *arkFeeManager) GetFeesFromIntent(
 	ctx context.Context,
 	boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 	onchainOutputs []wire.TxOut, offchainOutputs []wire.TxOut,
@@ -75,17 +75,8 @@ func (a arkFeeManager) GetFeesFromIntent(
 }
 
 // gets current intent fees programs
-func (a arkFeeManager) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
-	currentIntentFees, err := a.repo.GetIntentFees(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &domain.IntentFees{
-		OffchainInputFee:  currentIntentFees.OffchainInputFee,
-		OnchainInputFee:   currentIntentFees.OnchainInputFee,
-		OffchainOutputFee: currentIntentFees.OffchainOutputFee,
-		OnchainOutputFee:  currentIntentFees.OnchainOutputFee,
-	}, nil
+func (a *arkFeeManager) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
+	return a.repo.GetIntentFees(ctx)
 }
 
 // update intent fees programs, will only update intent fee programs that are non-empty
