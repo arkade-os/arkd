@@ -1041,6 +1041,131 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
 		})
+
+		liquidityNow := time.Now().Unix()
+		after := liquidityNow + 1
+		before := liquidityNow + 45
+
+		liquidityCommitmentTxid := randomString(32)
+		expiringVtxos := []domain.Vtxo{
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 9},
+				PubKey:             pubkey,
+				Amount:             700,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow - 10,
+				Swept:              false,
+				Spent:              false,
+				Unrolled:           false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+				PubKey:             pubkey,
+				Amount:             100,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 10,
+				Swept:              false,
+				Spent:              false,
+				Unrolled:           false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 1},
+				PubKey:             pubkey,
+				Amount:             200,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 20,
+				Swept:              true,
+				Spent:              false,
+				Unrolled:           false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 2},
+				PubKey:             pubkey,
+				Amount:             300,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 30,
+				Swept:              false,
+				Spent:              true,
+				Unrolled:           false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 3},
+				PubKey:             pubkey,
+				Amount:             400,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 40,
+				Swept:              false,
+				Spent:              false,
+				Unrolled:           true,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 4},
+				PubKey:             pubkey,
+				Amount:             500,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 50,
+				Swept:              false,
+				Spent:              false,
+				Unrolled:           false,
+			},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, expiringVtxos)
+		require.NoError(t, err)
+
+		amount, err := svc.Vtxos().GetExpiringLiquidity(ctx, after, before)
+		require.NoError(t, err)
+		require.Equal(t, uint64(100), amount)
+
+		// before=0 means no upper bound.
+		amount, err = svc.Vtxos().GetExpiringLiquidity(ctx, liquidityNow, 0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(600), amount)
+
+		recoverableBefore, err := svc.Vtxos().GetRecoverableLiquidity(ctx)
+		require.NoError(t, err)
+
+		recoverableCommitmentTxid := randomString(32)
+		recoverableVtxos := []domain.Vtxo{
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 10},
+				PubKey:             pubkey,
+				Amount:             111,
+				RootCommitmentTxid: recoverableCommitmentTxid,
+				CommitmentTxids:    []string{recoverableCommitmentTxid},
+				Swept:              true,
+				Spent:              false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 11},
+				PubKey:             pubkey,
+				Amount:             222,
+				RootCommitmentTxid: recoverableCommitmentTxid,
+				CommitmentTxids:    []string{recoverableCommitmentTxid},
+				Swept:              true,
+				Spent:              true,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 12},
+				PubKey:             pubkey,
+				Amount:             333,
+				RootCommitmentTxid: recoverableCommitmentTxid,
+				CommitmentTxids:    []string{recoverableCommitmentTxid},
+				Swept:              false,
+				Spent:              false,
+			},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, recoverableVtxos)
+		require.NoError(t, err)
+
+		recoverableAfter, err := svc.Vtxos().GetRecoverableLiquidity(ctx)
+		require.NoError(t, err)
+		require.Equal(t, recoverableBefore+uint64(111), recoverableAfter)
 	})
 }
 

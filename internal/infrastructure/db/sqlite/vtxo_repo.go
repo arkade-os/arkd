@@ -185,6 +185,39 @@ func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error)
 	return readRows(rows)
 }
 
+func (v *vtxoRepository) GetExpiringLiquidity(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	amount, err := v.querier.SelectExpiringLiquidityAmount(
+		ctx,
+		queries.SelectExpiringLiquidityAmountParams{
+			After:  after,
+			Before: before,
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	n, ok := amount.(int64)
+	if !ok {
+		return 0, fmt.Errorf("unexpected sqlite amount type: %T", v)
+	}
+	return uint64(n), nil
+}
+
+func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+	amount, err := v.querier.SelectRecoverableLiquidityAmount(ctx)
+	if err != nil {
+		return 0, err
+	}
+	n, ok := amount.(int64)
+	if !ok {
+		return 0, fmt.Errorf("unexpected sqlite amount type: %T", v)
+	}
+	return uint64(n), nil
+}
+
 func (v *vtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {

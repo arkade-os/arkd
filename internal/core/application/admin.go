@@ -44,6 +44,8 @@ type AdminService interface {
 	) ([]domain.ScriptConviction, error)
 	PardonConviction(ctx context.Context, id string) error
 	BanScript(ctx context.Context, script, reason string, banDuration *time.Duration) error
+	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
+	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
 }
 
 type adminService struct {
@@ -138,6 +140,16 @@ func (a *adminService) GetRounds(
 	withFailed, withCompleted bool,
 ) ([]string, error) {
 	return a.repoManager.Rounds().GetRoundIds(ctx, after, before, withFailed, withCompleted)
+}
+
+func (a *adminService) GetExpiringLiquidity(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	return a.repoManager.Vtxos().GetExpiringLiquidity(ctx, after, before)
+}
+
+func (a *adminService) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+	return a.repoManager.Vtxos().GetRecoverableLiquidity(ctx)
 }
 
 func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error) {

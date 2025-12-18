@@ -255,6 +255,21 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 -- name: SelectVtxosWithPubkeys :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkeys'));
 
+-- name: SelectExpiringLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0) AS amount
+FROM vtxo
+WHERE swept = false
+  AND spent = false
+  AND unrolled = false
+  AND expires_at > sqlc.arg('after')
+  AND (sqlc.arg('before') = 0 OR expires_at < sqlc.arg('before'));
+
+-- name: SelectRecoverableLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0) AS amount
+FROM vtxo
+WHERE swept = true
+  AND spent = false;
+
 -- name: SelectOffchainTx :many
 SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 

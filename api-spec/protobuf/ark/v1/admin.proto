@@ -93,6 +93,17 @@ service AdminService {
       body: "*"
     };
   }
+  rpc GetExpiringLiquidity(GetExpiringLiquidityRequest) returns (GetExpiringLiquidityResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/expiringLiquidity"
+    };
+  }
+
+  rpc GetRecoverableLiquidity(GetRecoverableLiquidityRequest) returns (GetRecoverableLiquidityResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/recoverableLiquidity"
+    };
+  }
 }
 
 message GetScheduledSweepRequest {}
@@ -281,4 +292,17 @@ message Conviction {
   CrimeType crime_type = 7;
   string round_id = 8;
   string reason = 9;
+}
+
+message GetExpiringLiquidityRequest {
+  int64 after = 1; // expires after this timestamp
+  int64 before = 2; // expires before this timestamp
+}
+message GetExpiringLiquidityResponse {
+  uint64 amount = 1;
+}
+
+message GetRecoverableLiquidityRequest {}
+message GetRecoverableLiquidityResponse {
+  uint64 amount = 1;
 }

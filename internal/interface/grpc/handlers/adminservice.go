@@ -94,6 +94,50 @@ func (a *adminHandler) GetRounds(
 	return &arkv1.GetRoundsResponse{Rounds: rounds}, nil
 }
 
+func (a *adminHandler) GetExpiringLiquidity(
+	ctx context.Context, req *arkv1.GetExpiringLiquidityRequest,
+) (*arkv1.GetExpiringLiquidityResponse, error) {
+	after := req.GetAfter()
+	before := req.GetBefore()
+
+	if after < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid after (must be >= 0)")
+	}
+
+	if before < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid before (must be >= 0)")
+	}
+
+	// Treat 0 values as "unset" (proto doesn't support nil for scalars here).
+	// - after=0 -> now
+	// - before=0 -> no upper bound
+	if after == 0 {
+		after = time.Now().Unix()
+	}
+
+	if before != 0 && after >= before {
+		return nil, status.Error(codes.InvalidArgument, "invalid range")
+	}
+
+	amount, err := a.adminService.GetExpiringLiquidity(ctx, after, before)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetExpiringLiquidityResponse{Amount: amount}, nil
+}
+
+func (a *adminHandler) GetRecoverableLiquidity(
+	ctx context.Context, _ *arkv1.GetRecoverableLiquidityRequest,
+) (*arkv1.GetRecoverableLiquidityResponse, error) {
+	amount, err := a.adminService.GetRecoverableLiquidity(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetRecoverableLiquidityResponse{Amount: amount}, nil
+}
+
 func (a *adminHandler) GetScheduledSweep(
 	ctx context.Context, _ *arkv1.GetScheduledSweepRequest,
 ) (*arkv1.GetScheduledSweepResponse, error) {
