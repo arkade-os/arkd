@@ -804,6 +804,7 @@ func getPendingTxByTxid(httpClient *http.Client, txid string) (*pendingTxRespons
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
+	// nolint:errcheck
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
@@ -812,7 +813,11 @@ func getPendingTxByTxid(httpClient *http.Client, txid string) (*pendingTxRespons
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf(
+			"unexpected status code: %d, body: %s",
+			resp.StatusCode,
+			string(body),
+		)
 	}
 
 	var result pendingTxResponse

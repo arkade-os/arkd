@@ -75,7 +75,10 @@ func (m *offChainTxStore) Includes(_ context.Context, outpoint domain.Outpoint) 
 	return exists, nil
 }
 
-func (m *offChainTxStore) GetTxidByOutpoint(_ context.Context, outpoint domain.Outpoint) (string, error) {
+func (m *offChainTxStore) GetTxidByOutpoint(
+	_ context.Context,
+	outpoint domain.Outpoint,
+) (string, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
