@@ -387,7 +387,7 @@ func (s *adminService) UpdateIntentFees(
 	ctx context.Context,
 	fees domain.IntentFees,
 ) error {
-	return s.repoManager.Fees().UpsertIntentFees(ctx, fees)
+	return s.repoManager.Fees().UpdateIntentFees(ctx, fees)
 }
 
 // Zeroes out fees

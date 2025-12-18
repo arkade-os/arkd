@@ -88,9 +88,9 @@ func (a arkFeeManager) GetIntentFees(ctx context.Context) (*domain.IntentFees, e
 	}, nil
 }
 
-// upserts intent fees programs, will only update intent fee programs that are non-empty
-func (a *arkFeeManager) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
-	err := a.repo.UpsertIntentFees(ctx, fees)
+// update intent fees programs, will only update intent fee programs that are non-empty
+func (a *arkFeeManager) UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error {
+	err := a.repo.UpdateIntentFees(ctx, fees)
 	if err != nil {
 		return err
 	}

@@ -71,7 +71,7 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 	}, nil
 }
 
-func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
+func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error {
 	var existing IntentFees
 	err := r.store.FindOne(&existing, badgerhold.Where("ID").Eq("intent_fees"))
 	if err != nil && err != badgerhold.ErrNotFound {
@@ -79,6 +79,7 @@ func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.Inten
 	}
 
 	// Start from existing values (if any), then overwrite only non-empty incoming fields.
+	// This allows for partial updates.
 	intentFees := existing
 	if intentFees.ID == "" {
 		intentFees.ID = "intent_fees"

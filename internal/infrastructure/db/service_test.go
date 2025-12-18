@@ -1311,7 +1311,7 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		// wait to ensure the updated_at is different.
 		// set the new fees
 		time.Sleep(10 * time.Millisecond)
-		err = repo.UpsertIntentFees(ctx, newFees)
+		err = repo.UpdateIntentFees(ctx, newFees)
 		require.NoError(t, err)
 
 		updatedFees, err := repo.GetIntentFees(ctx)
@@ -1325,7 +1325,6 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		// zero out the fees
 		err = repo.ClearIntentFees(ctx)
 		require.NoError(t, err)
-		time.Sleep(10 * time.Millisecond)
 
 		clearedFees, err := repo.GetIntentFees(ctx)
 		require.NoError(t, err)
@@ -1337,7 +1336,7 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 
 		// set the fees back to newFees
 		time.Sleep(10 * time.Millisecond)
-		err = repo.UpsertIntentFees(ctx, newFees)
+		err = repo.UpdateIntentFees(ctx, newFees)
 		require.NoError(t, err)
 
 		updatedFees, err = repo.GetIntentFees(ctx)
@@ -1354,7 +1353,7 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 			OffchainOutputFee: "0.40",
 		}
 		time.Sleep(10 * time.Millisecond)
-		err = repo.UpsertIntentFees(ctx, newFees)
+		err = repo.UpdateIntentFees(ctx, newFees)
 		require.NoError(t, err)
 
 		updatedFees, err = repo.GetIntentFees(ctx)

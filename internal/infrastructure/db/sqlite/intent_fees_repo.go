@@ -54,13 +54,14 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 	}, nil
 }
 
-func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
-	// determine if any of the fees passed are empty, if so we need to grab existing fees to avoid overwriting with empty values
+func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error {
+	// determine if any of the fees passed are empty, if so we need to grab existing fees to avoid overwriting
+	// with empty values, allowing for partial updates.
 	if fees.OnchainInputFee == "" || fees.OffchainInputFee == "" || fees.OnchainOutputFee == "" ||
 		fees.OffchainOutputFee == "" {
 		currentIntentFees, err := r.querier.SelectLatestIntentFees(ctx)
 		if err != nil && err != sql.ErrNoRows {
-			return fmt.Errorf("failed to get current intent fees: %w", err)
+			return fmt.Errorf("failed to get latest intent fees: %w", err)
 		}
 		if fees.OnchainInputFee == "" {
 			fees.OnchainInputFee = currentIntentFees.OnchainInputFeeProgram

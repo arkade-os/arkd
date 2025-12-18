@@ -3818,8 +3818,8 @@ func TestBan(t *testing.T) {
 	})
 }
 
-// TestFee tests the fee calculation for the onboarding and settlement of the funds
-// It restarts the arkd container with the 4 fee program environment variables
+// TestFee tests the fee calculation for the onboarding and settlement of the funds.
+// It first updates the 4 fee programs for intents.
 func TestFee(t *testing.T) {
 	fees := intentFees{
 		// for input: free in case of recoverable or note, 1% of the amount otherwise

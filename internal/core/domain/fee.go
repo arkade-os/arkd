@@ -11,7 +11,7 @@ type IntentFees struct {
 
 type FeeRepository interface {
 	GetIntentFees(ctx context.Context) (*IntentFees, error)
-	UpsertIntentFees(ctx context.Context, fees IntentFees) error
+	UpdateIntentFees(ctx context.Context, fees IntentFees) error
 	ClearIntentFees(ctx context.Context) error
 	Close()
 }
