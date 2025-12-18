@@ -539,7 +539,7 @@ func (s *service) SubmitOffchainTx(
 
 		if pendingTxid != "" {
 			return nil, errors.VTXO_PENDING_TX.New(
-				"%s is locked by pending tx %s", vtxo.Outpoint.String(), pendingTxid,
+				"input(s) spent by another pending tx",
 			).WithMetadata(errors.VtxoPendingTxMetadata{
 				VtxoOutpoint: vtxo.Outpoint.String(),
 				PendingTxid:  pendingTxid,

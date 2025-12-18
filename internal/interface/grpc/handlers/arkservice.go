@@ -327,16 +327,15 @@ func (h *handler) GetPendingTx(
 	}
 
 	var pendingTxs []application.AcceptedOffchainTx
-	var err error
 
 	switch identifier := req.GetIdentifier().(type) {
 	case *arkv1.GetPendingTxRequest_Txid:
 		if identifier.Txid == "" {
 			return nil, status.Error(codes.InvalidArgument, "missing txid")
 		}
-		pendingTx, svcErr := h.svc.GetPendingOffchainTxByTxid(ctx, identifier.Txid)
-		if svcErr != nil {
-			return nil, svcErr
+		pendingTx, err := h.svc.GetPendingOffchainTxByTxid(ctx, identifier.Txid)
+		if err != nil {
+			return nil, err
 		}
 		if pendingTx != nil {
 			pendingTxs = []application.AcceptedOffchainTx{*pendingTx}
@@ -350,10 +349,11 @@ func (h *handler) GetPendingTx(
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		pendingTxs, err = h.svc.GetPendingOffchainTxs(ctx, *proof, *message)
+		txs, err := h.svc.GetPendingOffchainTxs(ctx, *proof, *message)
 		if err != nil {
 			return nil, err
 		}
+		pendingTxs = txs
 
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid identifier type")
