@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v2"
@@ -290,6 +291,31 @@ func get[T any](url, key, macaroon string, tlsConfig *tls.Config) (result T, err
 
 	result = res[key]
 	return
+}
+
+func getUint64(url, key, macaroon string, tlsConfig *tls.Config) (uint64, error) {
+	val, err := get[any](url, key, macaroon, tlsConfig)
+	if err != nil {
+		return 0, err
+	}
+
+	switch v := val.(type) {
+	case float64:
+		if v < 0 {
+			return 0, fmt.Errorf("invalid %s (must be >= 0)", key)
+		}
+		return uint64(v), nil
+	case string:
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s: %w", key, err)
+		}
+		return n, nil
+	case nil:
+		return 0, fmt.Errorf("missing %s in response", key)
+	default:
+		return 0, fmt.Errorf("invalid %s type %T", key, val)
+	}
 }
 
 func getMacaroon(path string) (string, error) {

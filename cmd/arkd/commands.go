@@ -210,6 +210,28 @@ var (
 		Flags:  []cli.Flag{scriptFlag, banDurationFlag, banReasonFlag},
 		Action: banScriptAction,
 	}
+	liquidityCmd = &cli.Command{
+		Name:  "liquidity",
+		Usage: "Get expiring or recoverable liquidity amounts",
+		Flags: []cli.Flag{
+			liquidityAfterFlag,
+			liquidityBeforeFlag,
+		},
+		Subcommands: cli.Commands{
+			liquidityRecoverableCmd,
+		},
+		Action: expiringLiquidityAction,
+	}
+	liquidityRecoverableCmd = &cli.Command{
+		Name:   "recoverable",
+		Usage:  "Return the amount of recoverable liquidity",
+		Action: recoverableLiquidityAction,
+	}
+	liquidityNeedCmd = &cli.Command{
+		Name:   "liquidity-need",
+		Usage:  "Print recoverable and expiring liquidity buckets as JSON",
+		Action: liquidityNeedAction,
+	}
 )
 
 var timeout = time.Minute
@@ -935,5 +957,110 @@ func banScriptAction(ctx *cli.Context) error {
 	}
 
 	fmt.Printf("Successfully banned script: %s\n", script)
+	return nil
+}
+
+func expiringLiquidityAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	after := ctx.Int64(liquidityAfterFlagName)
+	before := ctx.Int64(liquidityBeforeFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/expiringLiquidity?after=%d&before=%d", baseURL, after, before)
+	amount, err := getUint64(url, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(amount)
+	return nil
+}
+
+func recoverableLiquidityAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/recoverableLiquidity", baseURL)
+	amount, err := getUint64(url, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(amount)
+	return nil
+}
+
+type liquidityNeedResponse struct {
+	RecoverableLiquidity uint64 `json:"recoverableLiquidity"`
+	ExpiringIn1day       uint64 `json:"expiringIn1day"`
+	ExpiringIn2day       uint64 `json:"expiringIn2day"`
+	ExpiringIn3day       uint64 `json:"expiringIn3day"`
+	ExpiringAfter3days   uint64 `json:"expiringAfter3days"`
+}
+
+func liquidityNeedAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	t1 := now.Add(24 * time.Hour)
+	t2 := now.Add(48 * time.Hour)
+	t3 := now.Add(72 * time.Hour)
+
+	getExpiring := func(after, before int64) (uint64, error) {
+		url := fmt.Sprintf(
+			"%s/v1/admin/expiringLiquidity?after=%d&before=%d",
+			baseURL,
+			after,
+			before,
+		)
+		return getUint64(url, "amount", macaroon, tlsConfig)
+	}
+
+	recoverableURL := fmt.Sprintf("%s/v1/admin/recoverableLiquidity", baseURL)
+	recoverable, err := getUint64(recoverableURL, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	exp1, err := getExpiring(now.Unix(), t1.Unix())
+	if err != nil {
+		return err
+	}
+	exp2, err := getExpiring(t1.Unix(), t2.Unix())
+	if err != nil {
+		return err
+	}
+	exp3, err := getExpiring(t2.Unix(), t3.Unix())
+	if err != nil {
+		return err
+	}
+	expAfter, err := getExpiring(t3.Unix(), 0)
+	if err != nil {
+		return err
+	}
+
+	resp := liquidityNeedResponse{
+		RecoverableLiquidity: recoverable,
+		ExpiringIn1day:       exp1,
+		ExpiringIn2day:       exp2,
+		ExpiringIn3day:       exp3,
+		ExpiringAfter3days:   expAfter,
+	}
+
+	respJSON, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJSON))
 	return nil
 }

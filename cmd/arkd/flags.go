@@ -43,6 +43,8 @@ const (
 	completedFlagName                                 = "completed"
 	failedFlagName                                    = "failed"
 	withDetailsFlagName                               = "with-details"
+	liquidityAfterFlagName                            = "after"
+	liquidityBeforeFlagName                           = "before"
 
 	dateFormat                 = time.DateOnly
 	scheduledSessionDateFormat = time.DateTime
@@ -214,5 +216,15 @@ var (
 		Name:  withDetailsFlagName,
 		Usage: "return detailed information for each round (like round-info command)",
 		Value: false,
+	}
+	liquidityAfterFlag = &cli.Int64Flag{
+		Name:  liquidityAfterFlagName,
+		Usage: "expiring liquidity: expires after this timestamp (Unix timestamp). 0 means now",
+		Value: 0,
+	}
+	liquidityBeforeFlag = &cli.Int64Flag{
+		Name:  liquidityBeforeFlagName,
+		Usage: "expiring liquidity: expires before this timestamp (Unix timestamp). 0 means no upper bound",
+		Value: 0,
 	}
 )
