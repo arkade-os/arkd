@@ -41,7 +41,7 @@ func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error
 
 	repo := &intentFeesRepo{store}
 	// only initialize intent fees if none exist in the DB
-	var existing IntentFees
+	var existing intentFeesDTO
 	err = repo.store.FindOne(&existing, badgerhold.Where("ID").Eq("intent_fees"))
 	if err != nil {
 		if err == badgerhold.ErrNotFound {
@@ -63,7 +63,7 @@ func (r *intentFeesRepo) Close() {
 }
 
 func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
-	var intentFees IntentFees
+	var intentFees intentFeesDTO
 	if err := r.store.FindOne(&intentFees, badgerhold.Where("ID").Eq("intent_fees")); err != nil {
 		if err == badgerhold.ErrNotFound {
 			return nil, fmt.Errorf("no intent fees found")
@@ -80,7 +80,7 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 }
 
 func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error {
-	var existing IntentFees
+	var existing intentFeesDTO
 	err := r.store.FindOne(&existing, badgerhold.Where("ID").Eq("intent_fees"))
 	if err != nil && err != badgerhold.ErrNotFound {
 		return fmt.Errorf("failed to get existing intent fees: %w", err)
@@ -116,7 +116,7 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	intentFees := IntentFees{
+	intentFees := intentFeesDTO{
 		ID:                       "intent_fees",
 		CreatedAt:                time.Now().Unix(),
 		OnchainInputFeeProgram:   "0.0",
@@ -132,7 +132,7 @@ func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
 	return nil
 }
 
-type IntentFees struct {
+type intentFeesDTO struct {
 	ID                       string `badgerhold:"key"`
 	CreatedAt                int64
 	OnchainInputFeeProgram   string

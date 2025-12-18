@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -818,19 +817,6 @@ func (c *Config) appService() error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	currIntentFees, err := c.repo.Fees().GetIntentFees(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get intent fees from repo: %w", err)
-	}
-	intentFees := application.IntentFeeInfo{
-		OffchainInput:  currIntentFees.OffchainInputFee,
-		OnchainInput:   currIntentFees.OnchainInputFee,
-		OffchainOutput: currIntentFees.OffchainOutputFee,
-		OnchainOutput:  currIntentFees.OnchainOutputFee,
-	}
-
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
@@ -844,7 +830,6 @@ func (c *Config) appService() error {
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
-		intentFees,
 	)
 	if err != nil {
 		return err

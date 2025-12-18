@@ -69,8 +69,7 @@ type service struct {
 	allowCSVBlockType         bool
 
 	// fees
-	feeManager    ports.FeeManager
-	intentFeeInfo IntentFeeInfo
+	feeManager ports.FeeManager
 
 	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
 	vtxoNoCsvValidationCutoffTime time.Time
@@ -117,7 +116,6 @@ func NewService(
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
 	vtxoNoCsvValidationCutoffTime time.Time,
-	intentFeeInfo IntentFeeInfo,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -241,7 +239,6 @@ func NewService(
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 		feeManager:                    feeManager,
-		intentFeeInfo:                 intentFeeInfo,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -2029,7 +2026,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)
 	}
 
-	s.intentFeeInfo = IntentFeeInfo{
+	intentFeeInfo := IntentFeeInfo{
 		OnchainInput:   currIntentFees.OnchainInputFee,
 		OffchainInput:  currIntentFees.OffchainInputFee,
 		OnchainOutput:  currIntentFees.OnchainOutputFee,
@@ -2052,7 +2049,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		Fees: FeeInfo{
-			IntentFees: s.intentFeeInfo,
+			IntentFees: intentFeeInfo,
 		},
 	}, nil
 }
