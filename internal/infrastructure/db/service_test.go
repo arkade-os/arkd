@@ -1291,11 +1291,16 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 		repo := svc.Fees()
 
+		// fees should be initialized to 0.0
 		currentFees, err := repo.GetIntentFees(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, currentFees)
+		require.Equal(t, "0.0", currentFees.OnchainInputFee)
+		require.Equal(t, "0.0", currentFees.OffchainInputFee)
+		require.Equal(t, "0.0", currentFees.OnchainOutputFee)
+		require.Equal(t, "0.0", currentFees.OffchainOutputFee)
 
-		expectedFeeRate := domain.IntentFees{
+		newFees := domain.IntentFees{
 			OnchainInputFee:   "0.25",
 			OffchainInputFee:  "0.30",
 			OnchainOutputFee:  "0.35",
@@ -1303,19 +1308,21 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		}
 
 		// sqlite and postgres use millisecond precision for created_at so we need to
-		// wait to ensure the updated_at is different
+		// wait to ensure the updated_at is different.
+		// set the new fees
 		time.Sleep(10 * time.Millisecond)
-		err = repo.UpsertIntentFees(ctx, expectedFeeRate)
+		err = repo.UpsertIntentFees(ctx, newFees)
 		require.NoError(t, err)
 
-		newFees, err := repo.GetIntentFees(ctx)
+		updatedFees, err := repo.GetIntentFees(ctx)
 		require.NoError(t, err)
-		require.NotNil(t, newFees)
-		require.Equal(t, expectedFeeRate.OnchainInputFee, newFees.OnchainInputFee)
-		require.Equal(t, expectedFeeRate.OffchainInputFee, newFees.OffchainInputFee)
-		require.Equal(t, expectedFeeRate.OnchainOutputFee, newFees.OnchainOutputFee)
-		require.Equal(t, expectedFeeRate.OffchainOutputFee, newFees.OffchainOutputFee)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
 		time.Sleep(10 * time.Millisecond)
+		// zero out the fees
 		err = repo.ClearIntentFees(ctx)
 		require.NoError(t, err)
 		time.Sleep(10 * time.Millisecond)
@@ -1327,6 +1334,37 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, "0.0", clearedFees.OffchainInputFee)
 		require.Equal(t, "0.0", clearedFees.OnchainOutputFee)
 		require.Equal(t, "0.0", clearedFees.OffchainOutputFee)
+
+		// set the fees back to newFees
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpsertIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+
+		// only change 2 of the fees, the others should remain the same (testing partial updates)
+		newFees = domain.IntentFees{
+			OnchainInputFee:   "0.25",
+			OffchainOutputFee: "0.40",
+		}
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpsertIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
+		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+
 	})
 }
 

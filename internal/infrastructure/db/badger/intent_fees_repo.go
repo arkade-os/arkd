@@ -39,7 +39,14 @@ func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error
 		return nil, fmt.Errorf("failed to open intent fees store: %s", err)
 	}
 
-	return &intentFeesRepo{store}, nil
+	repo := &intentFeesRepo{store}
+	// initialize intent fees to zero values, otherwise will be empty strings
+	err = repo.ClearIntentFees(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize intent fees: %w", err)
+	}
+
+	return repo, nil
 }
 
 func (r *intentFeesRepo) Close() {

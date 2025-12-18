@@ -31,7 +31,6 @@ func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error
 }
 
 func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
-	fmt.Printf("postgres getting latest intent fees...\n")
 	row, err := r.querier.SelectLatestIntentFees(ctx)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -39,7 +38,6 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 		}
 		return nil, fmt.Errorf("failed to get intent fees: %w", err)
 	}
-	fmt.Printf("postgres latest fees date: %d\n", row.CreatedAt)
 
 	return &domain.IntentFees{
 		OnchainInputFee:   row.OnchainInputFeeProgram,
@@ -50,11 +48,9 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 }
 
 func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.IntentFees) error {
-	fmt.Printf("postgres UpsertIntentFees: %+v\n", fees)
 	// determine if any of the fees passed are empty, if so we need to grab existing fees to avoid overwriting with empty values
 	if fees.OnchainInputFee == "" || fees.OffchainInputFee == "" || fees.OnchainOutputFee == "" ||
 		fees.OffchainOutputFee == "" {
-		fmt.Printf("one of the postgres fees was empty!!!\n")
 		currentIntentFees, err := r.querier.SelectLatestIntentFees(ctx)
 		if err != nil && err != sql.ErrNoRows {
 			return fmt.Errorf("failed to get current intent fees: %w", err)
@@ -71,9 +67,6 @@ func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.Inten
 		if fees.OffchainOutputFee == "" {
 			fees.OffchainOutputFee = currentIntentFees.OffchainOutputFeeProgram
 		}
-	} else {
-		fmt.Printf("all of the postgres fees were non-empty!!!\n")
-		fmt.Printf("here they were: %+v\n", fees)
 	}
 	err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
 		CreatedAt:                time.Now().UnixMilli(),
@@ -85,12 +78,10 @@ func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.Inten
 	if err != nil {
 		return fmt.Errorf("failed to upsert intent fees: %w", err)
 	}
-	fmt.Printf("postgres added the new intent fees\n")
 	return nil
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	fmt.Printf("postgres intent_fees.go ClearIntentFees\n")
 	err := r.querier.ClearIntentFees(ctx, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
