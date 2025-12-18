@@ -40,10 +40,9 @@ type RegisterMessage struct {
 }
 
 type AssetOutput struct {
-	AssetId          string `json:"asset_id"`
-	TeleportHash     string `json:"teleport_hash"`
-	Amount           uint64 `json:"amount"`
-	AssetOutputIndex int    `json:"asset_output_index"`
+	AssetId      string `json:"asset_id"`
+	TeleportHash string `json:"teleport_hash"`
+	Amount       uint64 `json:"amount"`
 }
 
 func (m RegisterMessage) Encode() (string, error) {

@@ -1718,28 +1718,26 @@ func (s *service) RegisterIntent(
 			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
 		}
 
-		// Verify if asset outputs exist for this output
-		for _, assetOutput := range message.AssetOutputIndexes {
-			if assetOutput.AssetOutputIndex == outputIndex {
-				rcv.AssetAmount = assetOutput.Amount
-				rcv.AssetId = assetOutput.AssetId
-				rcv.AssetTeleportHash = assetOutput.TeleportHash
-			}
-		}
-
-		if len(rcv.AssetTeleportHash) > 0 {
-			if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
-				Hash:      rcv.AssetTeleportHash,
-				AssetID:   rcv.AssetId,
-				Amount:    rcv.AssetAmount,
-				IsClaimed: false,
-			}); err != nil {
-				return "", errors.INTERNAL_ERROR.New("failed to insert teleport asset: %w", err)
-			}
-			continue
-		}
-
 		receivers = append(receivers, rcv)
+	}
+
+	// Verify if asset outputs exist for this output
+	for _, assetOutput := range message.AssetOutputIndexes {
+		if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
+			Hash:      assetOutput.TeleportHash,
+			AssetID:   assetOutput.AssetId,
+			Amount:    assetOutput.Amount,
+			IsClaimed: false,
+		}); err != nil {
+			return "", errors.INTERNAL_ERROR.New("failed to insert teleport asset: %w", err)
+		}
+
+		receivers = append(receivers, domain.Receiver{
+			AssetTeleportHash: assetOutput.TeleportHash,
+			AssetAmount:       assetOutput.Amount,
+			AssetId:           assetOutput.AssetId,
+		})
+
 	}
 
 	if hasOffChainReceiver {
