@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS intent_fees (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    created_at BIGINT NOT NULL,
+    created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
     offchain_input_fee_program TEXT NOT NULL DEFAULT '0.0',
     onchain_input_fee_program TEXT NOT NULL DEFAULT '0.0',
     offchain_output_fee_program TEXT NOT NULL DEFAULT '0.0',

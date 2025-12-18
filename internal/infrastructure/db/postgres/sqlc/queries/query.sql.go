@@ -15,16 +15,15 @@ import (
 
 const addIntentFees = `-- name: AddIntentFees :exec
 INSERT INTO intent_fees (
-    created_at, offchain_input_fee_program, onchain_input_fee_program,
+    offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    $1, $2, $3,
-    $4, $5
+    $1, $2,
+    $3, $4
 )
 `
 
 type AddIntentFeesParams struct {
-	CreatedAt                int64
 	OffchainInputFeeProgram  string
 	OnchainInputFeeProgram   string
 	OffchainOutputFeeProgram string
@@ -33,7 +32,6 @@ type AddIntentFeesParams struct {
 
 func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) error {
 	_, err := q.db.ExecContext(ctx, addIntentFees,
-		arg.CreatedAt,
 		arg.OffchainInputFeeProgram,
 		arg.OnchainInputFeeProgram,
 		arg.OffchainOutputFeeProgram,
@@ -44,15 +42,15 @@ func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) er
 
 const clearIntentFees = `-- name: ClearIntentFees :exec
 INSERT INTO intent_fees (
-    created_at, offchain_input_fee_program, onchain_input_fee_program,
+    offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    $1, '0.0', '0.0', '0.0', '0.0'
+    '0.0', '0.0', '0.0', '0.0'
 )
 `
 
-func (q *Queries) ClearIntentFees(ctx context.Context, createdAt int64) error {
-	_, err := q.db.ExecContext(ctx, clearIntentFees, createdAt)
+func (q *Queries) ClearIntentFees(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearIntentFees)
 	return err
 }
 

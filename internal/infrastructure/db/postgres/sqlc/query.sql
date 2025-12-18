@@ -360,17 +360,17 @@ SELECT * FROM intent_fees ORDER BY created_at DESC LIMIT 1;
 
 -- name: AddIntentFees :exec
 INSERT INTO intent_fees (
-    created_at, offchain_input_fee_program, onchain_input_fee_program,
+    offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    @created_at, @offchain_input_fee_program, @onchain_input_fee_program,
+    @offchain_input_fee_program, @onchain_input_fee_program,
     @offchain_output_fee_program, @onchain_output_fee_program
 );
 
 -- name: ClearIntentFees :exec
 INSERT INTO intent_fees (
-    created_at, offchain_input_fee_program, onchain_input_fee_program,
+    offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    @created_at, '0.0', '0.0', '0.0', '0.0'
+    '0.0', '0.0', '0.0', '0.0'
 );

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
@@ -82,7 +81,6 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 		}
 	}
 	err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
-		CreatedAt:                time.Now().UnixMilli(),
 		OnchainInputFeeProgram:   fees.OnchainInputFee,
 		OffchainInputFeeProgram:  fees.OffchainInputFee,
 		OnchainOutputFeeProgram:  fees.OnchainOutputFee,
@@ -96,7 +94,7 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	err := r.querier.ClearIntentFees(ctx, time.Now().UnixMilli())
+	err := r.querier.ClearIntentFees(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
 	}

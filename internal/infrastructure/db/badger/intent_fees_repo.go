@@ -93,7 +93,7 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 		intentFees.ID = "intent_fees"
 	}
 	// update timestamp
-	intentFees.CreatedAt = time.Now().Unix()
+	intentFees.CreatedAt = time.Now().UnixMilli()
 
 	if fees.OnchainInputFee != "" {
 		intentFees.OnchainInputFeeProgram = fees.OnchainInputFee
