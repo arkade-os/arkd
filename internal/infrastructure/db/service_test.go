@@ -188,6 +188,7 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
+			testFeeRepository(t, svc)
 		})
 	}
 }
@@ -1282,6 +1283,50 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 
 		_, err = repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
+	})
+}
+
+func testFeeRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_fee_repository", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Fees()
+
+		currentFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, currentFees)
+
+		expectedFeeRate := domain.IntentFees{
+			OnchainInputFee:   "0.25",
+			OffchainInputFee:  "0.30",
+			OnchainOutputFee:  "0.35",
+			OffchainOutputFee: "0.40",
+		}
+
+		// sqlite and postgres use millisecond precision for created_at so we need to
+		// wait to ensure the updated_at is different
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpsertIntentFees(ctx, expectedFeeRate)
+		require.NoError(t, err)
+
+		newFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, newFees)
+		require.Equal(t, expectedFeeRate.OnchainInputFee, newFees.OnchainInputFee)
+		require.Equal(t, expectedFeeRate.OffchainInputFee, newFees.OffchainInputFee)
+		require.Equal(t, expectedFeeRate.OnchainOutputFee, newFees.OnchainOutputFee)
+		require.Equal(t, expectedFeeRate.OffchainOutputFee, newFees.OffchainOutputFee)
+		time.Sleep(10 * time.Millisecond)
+		err = repo.ClearIntentFees(ctx)
+		require.NoError(t, err)
+		time.Sleep(10 * time.Millisecond)
+
+		clearedFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, clearedFees)
+		require.Equal(t, "0.0", clearedFees.OnchainInputFee)
+		require.Equal(t, "0.0", clearedFees.OffchainInputFee)
+		require.Equal(t, "0.0", clearedFees.OnchainOutputFee)
+		require.Equal(t, "0.0", clearedFees.OffchainOutputFee)
 	})
 }
 

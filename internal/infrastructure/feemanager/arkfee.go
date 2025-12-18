@@ -16,7 +16,6 @@ type arkFeeManager struct {
 }
 
 func NewArkFeeManager(repo domain.FeeRepository) (ports.FeeManager, error) {
-
 	return &arkFeeManager{repo}, nil
 }
 

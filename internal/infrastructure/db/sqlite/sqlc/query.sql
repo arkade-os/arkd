@@ -366,29 +366,19 @@ SELECT * FROM intent_fees WHERE id = @id;
 -- name: SelectLatestIntentFees :one
 SELECT * FROM intent_fees ORDER BY created_at DESC LIMIT 1;
 
--- name: UpsertIntentFees :exec
+-- name: AddIntentFees :exec
 INSERT INTO intent_fees (
-    id, created_at, offchain_input_fee_program, onchain_input_fee_program,
+    created_at, offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    @id, @created_at, @offchain_input_fee_program, @onchain_input_fee_program,
+    @created_at, @offchain_input_fee_program, @onchain_input_fee_program,
     @offchain_output_fee_program, @onchain_output_fee_program
-) ON CONFLICT(id) DO UPDATE SET
-    created_at = EXCLUDED.created_at,
-    offchain_input_fee_program = EXCLUDED.offchain_input_fee_program,
-    onchain_input_fee_program = EXCLUDED.onchain_input_fee_program,
-    offchain_output_fee_program = EXCLUDED.offchain_output_fee_program,
-    onchain_output_fee_program = EXCLUDED.onchain_output_fee_program;
+);
 
 -- name: ClearIntentFees :exec
 INSERT INTO intent_fees (
-    id, created_at, offchain_input_fee_program, onchain_input_fee_program,
+    created_at, offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    @id, @created_at, '0', '0', '0', '0'
-) ON CONFLICT(id) DO UPDATE SET
-    created_at = EXCLUDED.created_at,
-    offchain_input_fee_program = EXCLUDED.offchain_input_fee_program,
-    onchain_input_fee_program = EXCLUDED.onchain_input_fee_program,
-    offchain_output_fee_program = EXCLUDED.offchain_output_fee_program,
-    onchain_output_fee_program = EXCLUDED.onchain_output_fee_program;
+    @created_at, '0.0', '0.0', '0.0', '0.0'
+);

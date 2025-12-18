@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS intent_fees (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
     created_at BIGINT NOT NULL,
     offchain_input_fee_program TEXT NOT NULL DEFAULT '0.0',
     onchain_input_fee_program TEXT NOT NULL DEFAULT '0.0',

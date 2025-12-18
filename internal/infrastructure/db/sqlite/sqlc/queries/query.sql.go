@@ -11,27 +11,46 @@ import (
 	"strings"
 )
 
-const clearIntentFees = `-- name: ClearIntentFees :exec
+const addIntentFees = `-- name: AddIntentFees :exec
 INSERT INTO intent_fees (
-    id, created_at, offchain_input_fee_program, onchain_input_fee_program,
+    created_at, offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    ?1, ?2, '0', '0', '0', '0'
-) ON CONFLICT(id) DO UPDATE SET
-    created_at = EXCLUDED.created_at,
-    offchain_input_fee_program = EXCLUDED.offchain_input_fee_program,
-    onchain_input_fee_program = EXCLUDED.onchain_input_fee_program,
-    offchain_output_fee_program = EXCLUDED.offchain_output_fee_program,
-    onchain_output_fee_program = EXCLUDED.onchain_output_fee_program
+    ?1, ?2, ?3,
+    ?4, ?5
+)
 `
 
-type ClearIntentFeesParams struct {
-	ID        string
-	CreatedAt int64
+type AddIntentFeesParams struct {
+	CreatedAt                int64
+	OffchainInputFeeProgram  string
+	OnchainInputFeeProgram   string
+	OffchainOutputFeeProgram string
+	OnchainOutputFeeProgram  string
 }
 
-func (q *Queries) ClearIntentFees(ctx context.Context, arg ClearIntentFeesParams) error {
-	_, err := q.db.ExecContext(ctx, clearIntentFees, arg.ID, arg.CreatedAt)
+func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) error {
+	_, err := q.db.ExecContext(ctx, addIntentFees,
+		arg.CreatedAt,
+		arg.OffchainInputFeeProgram,
+		arg.OnchainInputFeeProgram,
+		arg.OffchainOutputFeeProgram,
+		arg.OnchainOutputFeeProgram,
+	)
+	return err
+}
+
+const clearIntentFees = `-- name: ClearIntentFees :exec
+INSERT INTO intent_fees (
+    created_at, offchain_input_fee_program, onchain_input_fee_program,
+    offchain_output_fee_program, onchain_output_fee_program
+) VALUES (
+    ?1, '0.0', '0.0', '0.0', '0.0'
+)
+`
+
+func (q *Queries) ClearIntentFees(ctx context.Context, createdAt int64) error {
+	_, err := q.db.ExecContext(ctx, clearIntentFees, createdAt)
 	return err
 }
 
@@ -1735,42 +1754,6 @@ func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) erro
 		arg.RoundID,
 		arg.Proof,
 		arg.Message,
-	)
-	return err
-}
-
-const upsertIntentFees = `-- name: UpsertIntentFees :exec
-INSERT INTO intent_fees (
-    id, created_at, offchain_input_fee_program, onchain_input_fee_program,
-    offchain_output_fee_program, onchain_output_fee_program
-) VALUES (
-    ?1, ?2, ?3, ?4,
-    ?5, ?6
-) ON CONFLICT(id) DO UPDATE SET
-    created_at = EXCLUDED.created_at,
-    offchain_input_fee_program = EXCLUDED.offchain_input_fee_program,
-    onchain_input_fee_program = EXCLUDED.onchain_input_fee_program,
-    offchain_output_fee_program = EXCLUDED.offchain_output_fee_program,
-    onchain_output_fee_program = EXCLUDED.onchain_output_fee_program
-`
-
-type UpsertIntentFeesParams struct {
-	ID                       string
-	CreatedAt                int64
-	OffchainInputFeeProgram  string
-	OnchainInputFeeProgram   string
-	OffchainOutputFeeProgram string
-	OnchainOutputFeeProgram  string
-}
-
-func (q *Queries) UpsertIntentFees(ctx context.Context, arg UpsertIntentFeesParams) error {
-	_, err := q.db.ExecContext(ctx, upsertIntentFees,
-		arg.ID,
-		arg.CreatedAt,
-		arg.OffchainInputFeeProgram,
-		arg.OnchainInputFeeProgram,
-		arg.OffchainOutputFeeProgram,
-		arg.OnchainOutputFeeProgram,
 	)
 	return err
 }

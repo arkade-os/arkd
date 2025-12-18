@@ -75,8 +75,8 @@ func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.Inten
 			fees.OffchainOutputFee = currentIntentFees.OffchainOutputFeeProgram
 		}
 	}
-	err := r.querier.UpsertIntentFees(ctx, queries.UpsertIntentFeesParams{
-		CreatedAt:                time.Now().Unix(),
+	err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
+		CreatedAt:                time.Now().UnixMilli(),
 		OnchainInputFeeProgram:   fees.OnchainInputFee,
 		OffchainInputFeeProgram:  fees.OffchainInputFee,
 		OnchainOutputFeeProgram:  fees.OnchainOutputFee,
@@ -90,9 +90,7 @@ func (r *intentFeesRepo) UpsertIntentFees(ctx context.Context, fees domain.Inten
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	err := r.querier.ClearIntentFees(ctx, queries.ClearIntentFeesParams{
-		CreatedAt: time.Now().Unix(),
-	})
+	err := r.querier.ClearIntentFees(ctx, time.Now().UnixMilli())
 	if err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
 	}
