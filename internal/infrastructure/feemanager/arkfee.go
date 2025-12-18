@@ -74,21 +74,6 @@ func (a *arkFeeManager) ComputeIntentFees(
 	return fee.ToSatoshis(), nil
 }
 
-// gets current intent fees programs
-func (a *arkFeeManager) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
-	return a.repo.GetIntentFees(ctx)
-}
-
-// update intent fees programs, will only update intent fee programs that are non-empty
-func (a *arkFeeManager) UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error {
-	return a.repo.UpdateIntentFees(ctx, fees)
-}
-
-// resets intent fees to zero-fee programs
-func (a *arkFeeManager) ClearIntentFees(ctx context.Context) error {
-	return a.repo.ClearIntentFees(ctx)
-}
-
 func toArkFeeOffchainOutput(output wire.TxOut) arkfee.Output {
 	return arkfee.Output{
 		Amount: uint64(output.Value),

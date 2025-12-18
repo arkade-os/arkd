@@ -476,10 +476,10 @@ func (a *adminHandler) UpdateIntentFees(
 	}
 
 	fees := domain.IntentFees{
-		OffchainInputFee:  feesProto.OffchainInputFee,
-		OnchainInputFee:   feesProto.OnchainInputFee,
-		OffchainOutputFee: feesProto.OffchainOutputFee,
-		OnchainOutputFee:  feesProto.OnchainOutputFee,
+		OffchainInputFee:  feesProto.GetOffchainInputFee(),
+		OnchainInputFee:   feesProto.GetOnchainInputFee(),
+		OffchainOutputFee: feesProto.GetOffchainOutputFee(),
+		OnchainOutputFee:  feesProto.GetOnchainOutputFee(),
 	}
 
 	if err := a.adminService.UpdateIntentFees(ctx, fees); err != nil {

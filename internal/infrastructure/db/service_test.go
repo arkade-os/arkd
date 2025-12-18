@@ -1378,6 +1378,27 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
 		require.Equal(t, "0.40", updatedFees.OffchainOutputFee)
 
+		// zero out the fees
+		err = repo.ClearIntentFees(ctx)
+		require.NoError(t, err)
+
+		// do partial update after clearing to ensure fees are set correctly from zero state
+		newFees = domain.IntentFees{
+			OnchainInputFee:  "0.15",
+			OffchainInputFee: "0.20",
+		}
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, "0.0", updatedFees.OnchainOutputFee)
+		require.Equal(t, "0.0", updatedFees.OffchainOutputFee)
+
 	})
 }
 

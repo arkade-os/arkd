@@ -144,18 +144,6 @@ func Whitelist() map[string][]bakery.Op {
 			Entity: EntityArk,
 			Action: "write",
 		}},
-		fmt.Sprintf("/%s/GetIntentFees", arkv1.ArkService_ServiceDesc.ServiceName): {{
-			Entity: EntityArk,
-			Action: "read",
-		}},
-		fmt.Sprintf("/%s/UpdateIntentFees", arkv1.ArkService_ServiceDesc.ServiceName): {{
-			Entity: EntityArk,
-			Action: "write",
-		}},
-		fmt.Sprintf("/%s/ClearIntentFees", arkv1.ArkService_ServiceDesc.ServiceName): {{
-			Entity: EntityArk,
-			Action: "write",
-		}},
 		fmt.Sprintf("/%s/ConfirmRegistration", arkv1.ArkService_ServiceDesc.ServiceName): {{
 			Entity: EntityArk,
 			Action: "write",
