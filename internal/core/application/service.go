@@ -2026,11 +2026,11 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)
 	}
 
-	intentFeeInfo := IntentFeeInfo{
-		OnchainInput:   currIntentFees.OnchainInputFee,
-		OffchainInput:  currIntentFees.OffchainInputFee,
-		OnchainOutput:  currIntentFees.OnchainOutputFee,
-		OffchainOutput: currIntentFees.OffchainOutputFee,
+	intentFeeInfo := domain.IntentFees{
+		OnchainInputFee:   currIntentFees.OnchainInputFee,
+		OffchainInputFee:  currIntentFees.OffchainInputFee,
+		OnchainOutputFee:  currIntentFees.OnchainOutputFee,
+		OffchainOutputFee: currIntentFees.OffchainOutputFee,
 	}
 
 	return &ServiceInfo{

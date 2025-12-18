@@ -294,10 +294,10 @@ func (f fees) toProto() *arkv1.FeeInfo {
 	return &arkv1.FeeInfo{
 		TxFeeRate: strconv.FormatFloat(f.TxFeeRate, 'f', -1, 64),
 		IntentFee: &arkv1.IntentFeeInfo{
-			OffchainInput:  f.IntentFees.OffchainInput,
-			OffchainOutput: f.IntentFees.OffchainOutput,
-			OnchainInput:   f.IntentFees.OnchainInput,
-			OnchainOutput:  f.IntentFees.OnchainOutput,
+			OffchainInput:  f.IntentFees.OffchainInputFee,
+			OffchainOutput: f.IntentFees.OffchainOutputFee,
+			OnchainInput:   f.IntentFees.OnchainInputFee,
+			OnchainOutput:  f.IntentFees.OnchainOutputFee,
 		},
 	}
 }
