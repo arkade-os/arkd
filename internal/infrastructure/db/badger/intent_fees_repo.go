@@ -36,7 +36,7 @@ func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error
 	}
 	store, err := createDB(dir, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open intent fees store: %s", err)
+		return nil, fmt.Errorf("failed to open intent fees store: %w", err)
 	}
 
 	repo := &intentFeesRepo{store}

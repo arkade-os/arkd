@@ -8,6 +8,8 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -387,6 +389,25 @@ func (s *adminService) UpdateIntentFees(
 	ctx context.Context,
 	fees domain.IntentFees,
 ) error {
+	_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid onchain input fee: %w", err)
+	}
+
+	_, err = arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid offchain input fee: %w", err)
+	}
+
+	_, err = arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid onchain output fee: %w", err)
+	}
+
+	_, err = arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid offchain output fee: %w", err)
+	}
 	return s.repoManager.Fees().UpdateIntentFees(ctx, fees)
 }
 

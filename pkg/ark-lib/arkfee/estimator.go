@@ -44,25 +44,25 @@ func New(config Config) (estimator *Estimator, err error) {
 	estimator = &Estimator{}
 
 	if len(config.IntentOffchainInputProgram) > 0 {
-		estimator.intentOffchainInput, err = parse(config.IntentOffchainInputProgram, celenv.IntentOffchainInputEnv)
+		estimator.intentOffchainInput, err = Parse(config.IntentOffchainInputProgram, celenv.IntentOffchainInputEnv)
 		if err != nil {
 			return
 		}
 	}
 	if len(config.IntentOnchainInputProgram) > 0 {
-		estimator.intentOnchainInput, err = parse(config.IntentOnchainInputProgram, celenv.IntentOnchainInputEnv)
+		estimator.intentOnchainInput, err = Parse(config.IntentOnchainInputProgram, celenv.IntentOnchainInputEnv)
 		if err != nil {
 			return
 		}
 	}
 	if len(config.IntentOffchainOutputProgram) > 0 {
-		estimator.intentOffchainOutput, err = parse(config.IntentOffchainOutputProgram, celenv.IntentOutputEnv)
+		estimator.intentOffchainOutput, err = Parse(config.IntentOffchainOutputProgram, celenv.IntentOutputEnv)
 		if err != nil {
 			return
 		}
 	}
 	if len(config.IntentOnchainOutputProgram) > 0 {
-		estimator.intentOnchainOutput, err = parse(config.IntentOnchainOutputProgram, celenv.IntentOutputEnv)
+		estimator.intentOnchainOutput, err = Parse(config.IntentOnchainOutputProgram, celenv.IntentOutputEnv)
 		if err != nil {
 			return
 		}
@@ -149,7 +149,7 @@ func (e Estimator) Eval(
 	return fee, nil
 }
 
-func parse(txt string, env *cel.Env) (*program, error) {
+func Parse(txt string, env *cel.Env) (*program, error) {
 	ast, issues := env.Compile(txt)
 	if issues.Err() != nil {
 		return nil, issues.Err()
