@@ -8,9 +8,9 @@ CREATE TABLE IF NOT EXISTS intent_fees (
 );
 
 -- add a row with default values if not exists
-INSERT INTO intent_fees (id, created_at)
-SELECT 'singleton', strftime('%s','now')
-WHERE NOT EXISTS (SELECT 1 FROM intent_fees WHERE id = 'singleton');
+INSERT INTO intent_fees (id)
+SELECT '00000000-0000-0000-0000-000000000001'
+WHERE NOT EXISTS (SELECT 1 FROM intent_fees);
 
 -- add index on created_at for faster retrieval of latest fees
 CREATE INDEX IF NOT EXISTS idx_intent_fees_created_at ON intent_fees (created_at);
