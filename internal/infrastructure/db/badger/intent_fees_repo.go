@@ -43,16 +43,14 @@ func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error
 	// only initialize intent fees if none exist in the DB
 	var all []intentFeesDTO
 	err = repo.store.Find(&all, nil)
-	if err != nil && err == badgerhold.ErrNotFound {
-		if len(all) == 0 {
-			if cerr := repo.ClearIntentFees(context.Background()); cerr != nil {
-				return nil, fmt.Errorf("failed to initialize intent fees: %w", cerr)
-			}
-		} else {
-			return nil, fmt.Errorf("unexpected error checking existing intent fees: %w", err)
-		}
-	} else if err != nil {
+	if err != nil && err != badgerhold.ErrNotFound {
 		return nil, fmt.Errorf("failed to check existing intent fees: %w", err)
+	}
+
+	if len(all) == 0 {
+		if err := repo.ClearIntentFees(context.Background()); err != nil {
+			return nil, fmt.Errorf("failed to initialize intent fees: %w", err)
+		}
 	}
 
 	return repo, nil
@@ -90,31 +88,33 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 }
 
 func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error {
-	// load all entries and pick the most recent by CreatedAt
-	var all []intentFeesDTO
-	if err := r.store.Find(&all, nil); err != nil && err != badgerhold.ErrNotFound {
-		return fmt.Errorf("failed to list intent fees: %w", err)
-	}
+	var newEntry intentFeesDTO
+	if fees.OnchainInputFee == "" || fees.OffchainInputFee == "" || fees.OnchainOutputFee == "" ||
+		fees.OffchainOutputFee == "" {
+		// load all entries and pick the most recent by CreatedAt
+		var all []intentFeesDTO
+		if err := r.store.Find(&all, nil); err != nil && err != badgerhold.ErrNotFound {
+			return fmt.Errorf("failed to list intent fees: %w", err)
+		}
 
-	var base intentFeesDTO
-	if len(all) == 0 {
-		return fmt.Errorf("no intent fees found")
-	}
-	if len(all) > 0 {
+		if len(all) == 0 {
+			return fmt.Errorf("no intent fees found")
+		}
 		latestIdx := 0
 		for i := 1; i < len(all); i++ {
 			if all[i].CreatedAt > all[latestIdx].CreatedAt {
 				latestIdx = i
 			}
 		}
-		base = all[latestIdx]
+		newEntry = all[latestIdx]
 	}
 
-	// start a new entry from the most recent values (or zero value if none)
-	newEntry := base
-	newEntry.ID = fmt.Sprintf("intent_fees-%d", time.Now().UnixMilli())
-	newEntry.CreatedAt = time.Now().UnixMilli()
+	now := time.Now().UnixMilli()
+	nowKey := fmt.Sprintf("intent_fees-%d", now)
+	newEntry.ID = nowKey
+	newEntry.CreatedAt = now
 
+	// allow partial updates to fees by using existing values if empty
 	if fees.OnchainInputFee != "" {
 		newEntry.OnchainInputFeeProgram = fees.OnchainInputFee
 	}
@@ -128,8 +128,7 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 		newEntry.OffchainOutputFeeProgram = fees.OffchainOutputFee
 	}
 
-	// always insert a new snapshot entry (do not overwrite)
-	if err := r.store.Insert("intent_fees", &newEntry); err != nil {
+	if err := r.store.Insert(nowKey, &newEntry); err != nil {
 		return fmt.Errorf("failed to insert intent fees: %w", err)
 	}
 
@@ -137,18 +136,19 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
+	now := time.Now().UnixMilli()
+	nowKey := fmt.Sprintf("intent_fees-%d", now)
 	intentFees := intentFeesDTO{
-		// generate a unique id so we INSERT a new record each time
-		ID:                       fmt.Sprintf("intent_fees-%d", time.Now().UnixMilli()),
-		CreatedAt:                time.Now().UnixMilli(),
+		ID:                       nowKey,
+		CreatedAt:                now,
 		OnchainInputFeeProgram:   "0.0",
 		OffchainInputFeeProgram:  "0.0",
 		OnchainOutputFeeProgram:  "0.0",
 		OffchainOutputFeeProgram: "0.0",
 	}
 
-	if err := r.store.Insert("intent_fees", &intentFees); err != nil {
-		return fmt.Errorf("failed to insert intent fees: %w", err)
+	if err := r.store.Insert(nowKey, &intentFees); err != nil {
+		return fmt.Errorf("failed to clear intent fees: %w", err)
 	}
 
 	return nil
