@@ -86,6 +86,7 @@ func main() {
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
+		sweepCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,

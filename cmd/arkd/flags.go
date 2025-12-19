@@ -43,6 +43,8 @@ const (
 	completedFlagName                                 = "completed"
 	failedFlagName                                    = "failed"
 	withDetailsFlagName                               = "with-details"
+	sweepConnectorsFlagName                           = "with-connectors"
+	sweepCommitmentTxidsFlagName                      = "commitment-txids"
 	liquidityAfterFlagName                            = "after"
 	liquidityBeforeFlagName                           = "before"
 
@@ -216,6 +218,15 @@ var (
 		Name:  withDetailsFlagName,
 		Usage: "return detailed information for each round (like round-info command)",
 		Value: false,
+	}
+	sweepConnectorsFlag = &cli.BoolFlag{
+		Name:  sweepConnectorsFlagName,
+		Usage: "include all spendable connector UTXOs in the sweep",
+		Value: false,
+	}
+	sweepCommitmentTxidsFlag = &cli.StringSliceFlag{
+		Name:  sweepCommitmentTxidsFlagName,
+		Usage: "commitment transaction IDs to sweep",
 	}
 	liquidityAfterFlag = &cli.Int64Flag{
 		Name:  liquidityAfterFlagName,

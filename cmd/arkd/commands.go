@@ -119,6 +119,12 @@ var (
 		Usage:  "List all scheduled batches sweepings",
 		Action: scheduledSweepAction,
 	}
+	sweepCmd = &cli.Command{
+		Name:   "sweep",
+		Usage:  "Trigger a sweep transaction",
+		Flags:  []cli.Flag{sweepConnectorsFlag, sweepCommitmentTxidsFlag},
+		Action: sweepAction,
+	}
 	roundInfoCmd = &cli.Command{
 		Name:   "round-info",
 		Usage:  "Get round info",
@@ -960,6 +966,42 @@ func banScriptAction(ctx *cli.Context) error {
 	return nil
 }
 
+func sweepAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	withConnectors := ctx.Bool(sweepConnectorsFlagName)
+	commitmentTxids := ctx.StringSlice(sweepCommitmentTxidsFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/sweep", baseURL)
+
+	commitmentTxidsJSON, err := json.Marshal(commitmentTxids)
+	if err != nil {
+		return fmt.Errorf("failed to marshal commitment txids: %s", err)
+	}
+
+	body := fmt.Sprintf(
+		`{"connectors": %t, "commitment_txids": %s}`,
+		withConnectors,
+		commitmentTxidsJSON,
+	)
+
+	type sweepResponse struct {
+		Txid string `json:"txid"`
+		Hex  string `json:"hex"`
+	}
+
+	sweepTxHex, err := post[sweepResponse](url, body, "", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(sweepTxHex)
+	return nil
+}
+
 func expiringLiquidityAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	after := ctx.Int64(liquidityAfterFlagName)
@@ -994,14 +1036,6 @@ func recoverableLiquidityAction(ctx *cli.Context) error {
 
 	fmt.Println(amount)
 	return nil
-}
-
-type liquidityNeedResponse struct {
-	RecoverableLiquidity uint64 `json:"recoverableLiquidity"`
-	ExpiringIn1day       uint64 `json:"expiringIn1day"`
-	ExpiringIn2day       uint64 `json:"expiringIn2day"`
-	ExpiringIn3day       uint64 `json:"expiringIn3day"`
-	ExpiringAfter3days   uint64 `json:"expiringAfter3days"`
 }
 
 func liquidityNeedAction(ctx *cli.Context) error {
@@ -1049,7 +1083,13 @@ func liquidityNeedAction(ctx *cli.Context) error {
 		return err
 	}
 
-	resp := liquidityNeedResponse{
+	resp := struct {
+		RecoverableLiquidity uint64 `json:"recoverableLiquidity"`
+		ExpiringIn1day       uint64 `json:"expiringInOneDay"`
+		ExpiringIn2day       uint64 `json:"expiringInTwoDays"`
+		ExpiringIn3day       uint64 `json:"expiringInThreeDays"`
+		ExpiringAfter3days   uint64 `json:"expiringAfterThreeDays"`
+	}{
 		RecoverableLiquidity: recoverable,
 		ExpiringIn1day:       exp1,
 		ExpiringIn2day:       exp2,

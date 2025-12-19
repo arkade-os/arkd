@@ -2751,12 +2751,6 @@ func (s *service) startFinalization(
 
 	s.roundReportSvc.StageStarted(BuildCommitmentTxStage)
 
-	connectorAddresses, err := s.repoManager.Rounds().GetSweptRoundsConnectorAddress(ctx)
-	if err != nil {
-		round.Fail(errors.INTERNAL_ERROR.New("failed to retrieve swept rounds: %s", err))
-		return
-	}
-
 	operatorPubkeyHex := hex.EncodeToString(s.operatorPubkey.SerializeCompressed())
 
 	intents := make([]domain.Intent, 0, len(registeredIntents))
@@ -2781,7 +2775,7 @@ func (s *service) startFinalization(
 	s.roundReportSvc.OpStarted(BuildCommitmentTxOp)
 
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		s.forfeitPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
+		s.forfeitPubkey, intents, boardingInputs, cosignersPublicKeys,
 	)
 	if err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err))

@@ -241,6 +241,11 @@ func post[T any](url, body, key, macaroon string, tlsConfig *tls.Config) (result
 		return
 	}
 	if key == "" {
+		var res T
+		if err = json.Unmarshal(buf, &res); err != nil {
+			return
+		}
+		result = res
 		return
 	}
 	res := make(map[string]T)

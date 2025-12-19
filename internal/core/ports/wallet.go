@@ -56,11 +56,18 @@ type WalletStatus interface {
 	IsSynced() bool
 }
 
-type TxInput interface {
-	GetTxid() string
-	GetIndex() uint32
-	GetScript() string
-	GetValue() uint64
+type TxInput struct {
+	Txid          string
+	Index         uint32
+	Script        string // hex encoded
+	Value         uint64
+	TapscriptLeaf *Tapscript // nil if not tapscript spend
+}
+
+type Tapscript struct {
+	InternalKey  string // hex encoded
+	ControlBlock string // hex encoded
+	Tapscript    string // hex encoded
 }
 
 type BlockTimestamp struct {
