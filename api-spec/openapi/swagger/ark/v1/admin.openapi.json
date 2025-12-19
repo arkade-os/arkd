@@ -753,6 +753,46 @@
         }
       }
     },
+    "/v1/admin/sweep": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_Sweep",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SweepRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SweepResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/sweeps": {
       "get": {
         "tags": [
@@ -1418,6 +1458,33 @@
             }
           },
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "SweepRequest": {
+        "title": "SweepRequest",
+        "type": "object",
+        "properties": {
+          "commitmentTxids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "connectors": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SweepResponse": {
+        "title": "SweepResponse",
+        "type": "object",
+        "properties": {
+          "hex": {
+            "type": "string"
+          },
+          "txid": {
             "type": "string"
           }
         }

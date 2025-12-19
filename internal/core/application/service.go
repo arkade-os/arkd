@@ -2761,12 +2761,6 @@ func (s *service) startFinalization(
 
 	s.roundReportSvc.StageStarted(BuildCommitmentTxStage)
 
-	connectorAddresses, err := s.repoManager.Rounds().GetSweptRoundsConnectorAddress(ctx)
-	if err != nil {
-		round.Fail(errors.INTERNAL_ERROR.New("failed to retrieve swept rounds: %s", err))
-		return
-	}
-
 	operatorPubkeyHex := hex.EncodeToString(s.operatorPubkey.SerializeCompressed())
 
 	intents := make([]domain.Intent, 0, len(registeredIntents))
@@ -2791,7 +2785,7 @@ func (s *service) startFinalization(
 	s.roundReportSvc.OpStarted(BuildCommitmentTxOp)
 
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		s.forfeitPubkey, intents, boardingInputs, connectorAddresses, cosignersPublicKeys,
+		s.forfeitPubkey, intents, boardingInputs, cosignersPublicKeys,
 	)
 	if err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err))
@@ -3565,7 +3559,20 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 		return
 	}
 
-	expirationTimestamp := s.sweeper.scheduler.AddNow(int64(s.batchExpiry.Value))
+	blockTimestamp, err := waitForConfirmation(context.Background(), round.CommitmentTxid, s.wallet)
+	if err != nil {
+		log.WithError(err).Warnf(
+			"failed to wait for confirmation of commitment tx %s, schedule task time may be inaccurate",
+			round.CommitmentTxid,
+		)
+	}
+
+	var expirationTimestamp int64
+	if s.sweeper.scheduler.Unit() == ports.BlockHeight {
+		expirationTimestamp = int64(blockTimestamp.Height) + int64(s.batchExpiry.Value)
+	} else {
+		expirationTimestamp = blockTimestamp.Time + s.batchExpiry.Seconds()
+	}
 
 	if err := s.sweeper.scheduleBatchSweep(
 		expirationTimestamp, round.CommitmentTxid, round.VtxoTree.RootTxid(),
@@ -3901,7 +3908,7 @@ func (s *service) validateBoardingInput(
 		return nil, fmt.Errorf("failed to deserialize tx %s: %s", input.Txid, err)
 	}
 
-	confirmed, _, blocktime, err := s.wallet.IsTransactionConfirmed(ctx, input.Txid)
+	confirmed, blockTimestamp, err := s.wallet.IsTransactionConfirmed(ctx, input.Txid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check tx %s: %s", input.Txid, err)
 	}
@@ -3924,7 +3931,9 @@ func (s *service) validateBoardingInput(
 	}
 
 	// if the exit path is available, forbid registering the boarding utxo
-	if time.Unix(blocktime, 0).Add(time.Duration(exitDelay.Seconds()) * time.Second).Before(now) {
+	if time.Unix(blockTimestamp.Time, 0).
+		Add(time.Duration(exitDelay.Seconds()) * time.Second).
+		Before(now) {
 		return nil, fmt.Errorf("tx %s expired", input.Txid)
 	}
 
@@ -3932,7 +3941,9 @@ func (s *service) validateBoardingInput(
 	// by shifitng the current "now" in the future of the duration of the smallest exit delay.
 	// This way, any exit order guaranteed by the exit path is maintained at intent registration
 	if !input.locktimeDisabled {
-		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).Unix() - blocktime
+		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).
+			Unix() -
+			blockTimestamp.Time
 		if diff := input.locktime.Seconds() - delta; diff > 0 {
 			return nil, fmt.Errorf(
 				"vtxo script can be used for intent registration in %d seconds", diff,

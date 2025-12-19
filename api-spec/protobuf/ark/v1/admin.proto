@@ -110,6 +110,12 @@ service AdminService {
       body: "*"
     };
   }
+  rpc Sweep(SweepRequest) returns (SweepResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/sweep"
+      body: "*"
+    };
+  }
 }
 
 message GetScheduledSweepRequest {}
@@ -321,4 +327,13 @@ message Conviction {
   CrimeType crime_type = 7;
   string round_id = 8;
   string reason = 9;
+}
+
+message SweepRequest {
+  bool connectors = 1;
+  repeated string commitment_txids = 2;
+}
+message SweepResponse {
+  string txid = 1;
+  string hex = 2;
 }
