@@ -231,7 +231,7 @@ var (
 	liquidityAfterFlag = &cli.StringFlag{
 		Name: liquidityAfterFlagName,
 		Usage: fmt.Sprintf(
-			"get expiring liquidity after a specific date in format %s."+
+			"get expiring liquidity after a specific date in format %s. "+
 				"If not provided, defaults to now", dateWithTimeFormat,
 		),
 		Value: "",
@@ -239,7 +239,7 @@ var (
 	liquidityBeforeFlag = &cli.StringFlag{
 		Name: liquidityBeforeFlagName,
 		Usage: fmt.Sprintf(
-			"get expiring liquidity before a specific date in format %s."+
+			"get expiring liquidity before a specific date in format %s. "+
 				"If not provided, no upper bound is applied", dateWithTimeFormat,
 		),
 		Value: "",
