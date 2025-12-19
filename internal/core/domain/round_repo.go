@@ -20,6 +20,7 @@ type RoundRepository interface {
 		startedAfter, startedBefore int64,
 		withFailed, withCompleted bool,
 	) ([]string, error)
+	// TODO return only connector addresses with unspent utxos
 	GetSweptRoundsConnectorAddress(ctx context.Context) ([]string, error)
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
 	GetRoundsWithCommitmentTxids(ctx context.Context, txids []string) (map[string]any, error)
