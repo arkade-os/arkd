@@ -13,6 +13,7 @@ const (
 	IntentMessageTypeRegister     IntentMessageType = "register"
 	IntentMessageTypeDelete       IntentMessageType = "delete"
 	IntentMessageTypeGetPendingTx IntentMessageType = "get-pending-tx"
+	IntentMessageTypeEstimateFee  IntentMessageType = "estimate-intent-fee"
 )
 
 var tagHashMessage = []byte("ark-intent-proof-message")
@@ -52,6 +53,28 @@ func (m *RegisterMessage) Decode(data string) error {
 	}
 
 	if m.Type != IntentMessageTypeRegister {
+		return fmt.Errorf("invalid intent message type: %s", m.Type)
+	}
+
+	return nil
+}
+
+type EstimateIntentFeeMessage RegisterMessage
+
+func (m EstimateIntentFeeMessage) Encode() (string, error) {
+	encoded, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func (m *EstimateIntentFeeMessage) Decode(data string) error {
+	if err := json.Unmarshal([]byte(data), m); err != nil {
+		return err
+	}
+
+	if m.Type != IntentMessageTypeEstimateFee {
 		return fmt.Errorf("invalid intent message type: %s", m.Type)
 	}
 

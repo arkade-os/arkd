@@ -101,6 +101,22 @@ func (h *handler) RegisterIntent(
 	return &arkv1.RegisterIntentResponse{IntentId: intentId}, nil
 }
 
+func (h *handler) EstimateIntentFee(
+	ctx context.Context, req *arkv1.EstimateIntentFeeRequest,
+) (*arkv1.EstimateIntentFeeResponse, error) {
+	proof, message, err := parseEstimateFeeIntent(req.GetIntent())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	fee, err := h.svc.EstimateIntentFee(ctx, *proof, *message)
+	if err != nil {
+		return nil, err
+	}
+
+	return &arkv1.EstimateIntentFeeResponse{Fee: fee}, nil
+}
+
 func (h *handler) DeleteIntent(
 	ctx context.Context, req *arkv1.DeleteIntentRequest,
 ) (*arkv1.DeleteIntentResponse, error) {

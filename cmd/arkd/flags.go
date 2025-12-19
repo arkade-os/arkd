@@ -43,6 +43,8 @@ const (
 	completedFlagName                                 = "completed"
 	failedFlagName                                    = "failed"
 	withDetailsFlagName                               = "with-details"
+	sweepConnectorsFlagName                           = "with-connectors"
+	sweepCommitmentTxidsFlagName                      = "commitment-txids"
 
 	dateFormat                 = time.DateOnly
 	scheduledSessionDateFormat = time.DateTime
@@ -214,5 +216,14 @@ var (
 		Name:  withDetailsFlagName,
 		Usage: "return detailed information for each round (like round-info command)",
 		Value: false,
+	}
+	sweepConnectorsFlag = &cli.BoolFlag{
+		Name:  sweepConnectorsFlagName,
+		Usage: "include all spendable connector UTXOs in the sweep",
+		Value: false,
+	}
+	sweepCommitmentTxidsFlag = &cli.StringSliceFlag{
+		Name:  sweepCommitmentTxidsFlagName,
+		Usage: "commitment transaction IDs to sweep",
 	}
 )

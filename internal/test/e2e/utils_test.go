@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -131,6 +132,69 @@ func runCommand(name string, arg ...string) (string, error) {
 func newCommand(name string, arg ...string) *exec.Cmd {
 	cmd := exec.Command(name, arg...)
 	return cmd
+}
+
+func runCommandWithEnv(env map[string]string, name string, arg ...string) (string, error) {
+	errb := new(strings.Builder)
+	cmd := newCommand(name, arg...)
+
+	// Set environment variables
+	cmd.Env = os.Environ()
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	output := new(strings.Builder)
+	errorb := new(strings.Builder)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		if _, err := io.Copy(output, stdout); err != nil {
+			fmt.Fprintf(errb, "error reading stdout: %s", err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if _, err := io.Copy(errorb, stderr); err != nil {
+			fmt.Fprintf(errb, "error reading stderr: %s", err)
+		}
+	}()
+
+	wg.Wait()
+	if err := cmd.Wait(); err != nil {
+		if errMsg := errorb.String(); len(errMsg) > 0 {
+			return "", fmt.Errorf("%s", errMsg)
+		}
+
+		if outMsg := output.String(); len(outMsg) > 0 {
+			return "", fmt.Errorf("%s", outMsg)
+		}
+
+		return "", err
+	}
+
+	if errMsg := errb.String(); len(errMsg) > 0 {
+		return "", fmt.Errorf("%s", errMsg)
+	}
+
+	return strings.Trim(output.String(), "\n"), nil
 }
 
 func bumpAndBroadcastTx(t *testing.T, tx string, explorer explorer.Explorer) {
@@ -507,6 +571,48 @@ func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
 		Type:  arklib.LocktimeTypeBlock,
 		Value: batchExpiry,
 	}
+}
+
+type arkdEnv struct {
+	intentOffchainInputFeeProgram  string
+	intentOnchainInputFeeProgram   string
+	intentOffchainOutputFeeProgram string
+	intentOnchainOutputFeeProgram  string
+}
+
+func restartArkdWithNewConfig(env arkdEnv) error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	// down arkd container
+	if _, err := runCommand("docker", "container", "stop", "arkd"); err != nil {
+		return err
+	}
+
+	time.Sleep(5 * time.Second)
+
+	envVars := map[string]string{
+		"ARKD_INTENT_OFFCHAIN_INPUT_FEE_PROGRAM":  env.intentOffchainInputFeeProgram,
+		"ARKD_INTENT_ONCHAIN_INPUT_FEE_PROGRAM":   env.intentOnchainInputFeeProgram,
+		"ARKD_INTENT_OFFCHAIN_OUTPUT_FEE_PROGRAM": env.intentOffchainOutputFeeProgram,
+		"ARKD_INTENT_ONCHAIN_OUTPUT_FEE_PROGRAM":  env.intentOnchainOutputFeeProgram,
+	}
+	if _, err := runCommandWithEnv(envVars, "docker", "compose", "-f", "../../../docker-compose.regtest.yml", "up", "-d", "arkd"); err != nil {
+		return err
+	}
+
+	time.Sleep(5 * time.Second)
+
+	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
+	body := fmt.Sprintf(`{"password": "%s"}`, password)
+	if err := post(adminHttpClient, url, body, "unlock"); err != nil {
+		return err
+	}
+
+	time.Sleep(2 * time.Second)
+
+	return nil
 }
 
 // lock the wallet, wait 10s and unlock it
