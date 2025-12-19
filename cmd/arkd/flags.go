@@ -228,20 +228,20 @@ var (
 		Name:  sweepCommitmentTxidsFlagName,
 		Usage: "commitment transaction IDs to sweep",
 	}
-	liquidityAfterFlag = &cli.Int64Flag{
+	liquidityAfterFlag = &cli.StringFlag{
 		Name: liquidityAfterFlagName,
 		Usage: fmt.Sprintf(
 			"get expiring liquidity after a specific date in format %s."+
 				"If not provided, defaults to now", dateWithTimeFormat,
 		),
-		Value: 0,
+		Value: "",
 	}
-	liquidityBeforeFlag = &cli.Int64Flag{
+	liquidityBeforeFlag = &cli.StringFlag{
 		Name: liquidityBeforeFlagName,
 		Usage: fmt.Sprintf(
 			"get expiring liquidity before a specific date in format %s."+
 				"If not provided, no upper bound is applied", dateWithTimeFormat,
 		),
-		Value: 0,
+		Value: "",
 	}
 )

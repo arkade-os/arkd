@@ -1006,7 +1006,7 @@ func liquidityExpiringAction(ctx *cli.Context) error {
 	}
 
 	after := time.Now().Unix()
-	if afterDate == "" {
+	if afterDate != "" {
 		tt, err := time.Parse(dateWithTimeFormat, afterDate)
 		if err != nil {
 			return fmt.Errorf(
@@ -1074,7 +1074,7 @@ func liquidityReportAction(ctx *cli.Context) error {
 		return getUint64(url, "amount", macaroon, tlsConfig)
 	}
 
-	recoverableURL := fmt.Sprintf("%s/v1/admin/recoverableLiquidity", baseURL)
+	recoverableURL := fmt.Sprintf("%s/v1/admin/liquidity/recoverable", baseURL)
 	recoverable, err := getUint64(recoverableURL, "amount", macaroon, tlsConfig)
 	if err != nil {
 		return err
