@@ -2492,7 +2492,7 @@ type SweepRequest struct {
 
 func (x *SweepRequest) Reset() {
 	*x = SweepRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[39]
+	mi := &file_ark_v1_admin_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2504,7 +2504,7 @@ func (x *SweepRequest) String() string {
 func (*SweepRequest) ProtoMessage() {}
 
 func (x *SweepRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[39]
+	mi := &file_ark_v1_admin_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2517,7 +2517,7 @@ func (x *SweepRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepRequest.ProtoReflect.Descriptor instead.
 func (*SweepRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{39}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SweepRequest) GetConnectors() bool {
@@ -2544,7 +2544,7 @@ type SweepResponse struct {
 
 func (x *SweepResponse) Reset() {
 	*x = SweepResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[40]
+	mi := &file_ark_v1_admin_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2556,7 +2556,7 @@ func (x *SweepResponse) String() string {
 func (*SweepResponse) ProtoMessage() {}
 
 func (x *SweepResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[40]
+	mi := &file_ark_v1_admin_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2569,7 +2569,7 @@ func (x *SweepResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepResponse.ProtoReflect.Descriptor instead.
 func (*SweepResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{40}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SweepResponse) GetTxid() string {
@@ -2754,7 +2754,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x15CRIME_TYPE_MANUAL_BAN\x10\a*M\n" +
 	"\x0eConvictionType\x12\x1f\n" +
 	"\x1bCONVICTION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\xa0\x10\n" +
+	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\xf6\x12\n" +
 	"\fAdminService\x12o\n" +
 	"\x11GetScheduledSweep\x12 .ark.v1.GetScheduledSweepRequest\x1a!.ark.v1.GetScheduledSweepResponse\"\x15\xb2J\x12\x12\x10/v1/admin/sweeps\x12s\n" +
 	"\x0fGetRoundDetails\x12\x1e.ark.v1.GetRoundDetailsRequest\x1a\x1f.ark.v1.GetRoundDetailsResponse\"\x1f\xb2J\x1c\x12\x1a/v1/admin/round/{round_id}\x12W\n" +
@@ -2795,7 +2795,7 @@ func file_ark_v1_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_ark_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ark_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_ark_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_ark_v1_admin_proto_goTypes = []any{
 	(CrimeType)(0),                               // 0: ark.v1.CrimeType
 	(ConvictionType)(0),                          // 1: ark.v1.ConvictionType
@@ -2817,88 +2817,103 @@ var file_ark_v1_admin_proto_goTypes = []any{
 	(*ListIntentsResponse)(nil),                  // 17: ark.v1.ListIntentsResponse
 	(*DeleteIntentsRequest)(nil),                 // 18: ark.v1.DeleteIntentsRequest
 	(*DeleteIntentsResponse)(nil),                // 19: ark.v1.DeleteIntentsResponse
-	(*GetConvictionsRequest)(nil),                // 20: ark.v1.GetConvictionsRequest
-	(*GetConvictionsResponse)(nil),               // 21: ark.v1.GetConvictionsResponse
-	(*GetConvictionsInRangeRequest)(nil),         // 22: ark.v1.GetConvictionsInRangeRequest
-	(*GetConvictionsInRangeResponse)(nil),        // 23: ark.v1.GetConvictionsInRangeResponse
-	(*GetConvictionsByRoundRequest)(nil),         // 24: ark.v1.GetConvictionsByRoundRequest
-	(*GetConvictionsByRoundResponse)(nil),        // 25: ark.v1.GetConvictionsByRoundResponse
-	(*GetActiveScriptConvictionsRequest)(nil),    // 26: ark.v1.GetActiveScriptConvictionsRequest
-	(*GetActiveScriptConvictionsResponse)(nil),   // 27: ark.v1.GetActiveScriptConvictionsResponse
-	(*PardonConvictionRequest)(nil),              // 28: ark.v1.PardonConvictionRequest
-	(*PardonConvictionResponse)(nil),             // 29: ark.v1.PardonConvictionResponse
-	(*BanScriptRequest)(nil),                     // 30: ark.v1.BanScriptRequest
-	(*BanScriptResponse)(nil),                    // 31: ark.v1.BanScriptResponse
-	(*RevokeAuthRequest)(nil),                    // 32: ark.v1.RevokeAuthRequest
-	(*RevokeAuthResponse)(nil),                   // 33: ark.v1.RevokeAuthResponse
-	(*SweepableOutput)(nil),                      // 34: ark.v1.SweepableOutput
-	(*ScheduledSweep)(nil),                       // 35: ark.v1.ScheduledSweep
-	(*ScheduledSessionConfig)(nil),               // 36: ark.v1.ScheduledSessionConfig
-	(*IntentInput)(nil),                          // 37: ark.v1.IntentInput
-	(*IntentInfo)(nil),                           // 38: ark.v1.IntentInfo
-	(*Output)(nil),                               // 39: ark.v1.Output
-	(*Conviction)(nil),                           // 40: ark.v1.Conviction
-	(*SweepRequest)(nil),                         // 41: ark.v1.SweepRequest
-	(*SweepResponse)(nil),                        // 42: ark.v1.SweepResponse
-	(*FeeInfo)(nil),                              // 43: ark.v1.FeeInfo
-	(*Intent)(nil),                               // 44: ark.v1.Intent
+	(*GetIntentFeesRequest)(nil),                 // 20: ark.v1.GetIntentFeesRequest
+	(*GetIntentFeesResponse)(nil),                // 21: ark.v1.GetIntentFeesResponse
+	(*UpdateIntentFeesRequest)(nil),              // 22: ark.v1.UpdateIntentFeesRequest
+	(*UpdateIntentFeesResponse)(nil),             // 23: ark.v1.UpdateIntentFeesResponse
+	(*ClearIntentFeesRequest)(nil),               // 24: ark.v1.ClearIntentFeesRequest
+	(*ClearIntentFeesResponse)(nil),              // 25: ark.v1.ClearIntentFeesResponse
+	(*GetConvictionsRequest)(nil),                // 26: ark.v1.GetConvictionsRequest
+	(*GetConvictionsResponse)(nil),               // 27: ark.v1.GetConvictionsResponse
+	(*GetConvictionsInRangeRequest)(nil),         // 28: ark.v1.GetConvictionsInRangeRequest
+	(*GetConvictionsInRangeResponse)(nil),        // 29: ark.v1.GetConvictionsInRangeResponse
+	(*GetConvictionsByRoundRequest)(nil),         // 30: ark.v1.GetConvictionsByRoundRequest
+	(*GetConvictionsByRoundResponse)(nil),        // 31: ark.v1.GetConvictionsByRoundResponse
+	(*GetActiveScriptConvictionsRequest)(nil),    // 32: ark.v1.GetActiveScriptConvictionsRequest
+	(*GetActiveScriptConvictionsResponse)(nil),   // 33: ark.v1.GetActiveScriptConvictionsResponse
+	(*PardonConvictionRequest)(nil),              // 34: ark.v1.PardonConvictionRequest
+	(*PardonConvictionResponse)(nil),             // 35: ark.v1.PardonConvictionResponse
+	(*BanScriptRequest)(nil),                     // 36: ark.v1.BanScriptRequest
+	(*BanScriptResponse)(nil),                    // 37: ark.v1.BanScriptResponse
+	(*RevokeAuthRequest)(nil),                    // 38: ark.v1.RevokeAuthRequest
+	(*RevokeAuthResponse)(nil),                   // 39: ark.v1.RevokeAuthResponse
+	(*SweepableOutput)(nil),                      // 40: ark.v1.SweepableOutput
+	(*ScheduledSweep)(nil),                       // 41: ark.v1.ScheduledSweep
+	(*ScheduledSessionConfig)(nil),               // 42: ark.v1.ScheduledSessionConfig
+	(*IntentInput)(nil),                          // 43: ark.v1.IntentInput
+	(*IntentInfo)(nil),                           // 44: ark.v1.IntentInfo
+	(*IntentFees)(nil),                           // 45: ark.v1.IntentFees
+	(*Output)(nil),                               // 46: ark.v1.Output
+	(*Conviction)(nil),                           // 47: ark.v1.Conviction
+	(*SweepRequest)(nil),                         // 48: ark.v1.SweepRequest
+	(*SweepResponse)(nil),                        // 49: ark.v1.SweepResponse
+	(*FeeInfo)(nil),                              // 50: ark.v1.FeeInfo
+	(*Intent)(nil),                               // 51: ark.v1.Intent
 }
 var file_ark_v1_admin_proto_depIdxs = []int32{
-	35, // 0: ark.v1.GetScheduledSweepResponse.sweeps:type_name -> ark.v1.ScheduledSweep
-	36, // 1: ark.v1.GetScheduledSessionConfigResponse.config:type_name -> ark.v1.ScheduledSessionConfig
-	36, // 2: ark.v1.UpdateScheduledSessionConfigRequest.config:type_name -> ark.v1.ScheduledSessionConfig
-	38, // 3: ark.v1.ListIntentsResponse.intents:type_name -> ark.v1.IntentInfo
-	40, // 4: ark.v1.GetConvictionsResponse.convictions:type_name -> ark.v1.Conviction
-	40, // 5: ark.v1.GetConvictionsInRangeResponse.convictions:type_name -> ark.v1.Conviction
-	40, // 6: ark.v1.GetConvictionsByRoundResponse.convictions:type_name -> ark.v1.Conviction
-	40, // 7: ark.v1.GetActiveScriptConvictionsResponse.convictions:type_name -> ark.v1.Conviction
-	34, // 8: ark.v1.ScheduledSweep.outputs:type_name -> ark.v1.SweepableOutput
-	43, // 9: ark.v1.ScheduledSessionConfig.fees:type_name -> ark.v1.FeeInfo
-	39, // 10: ark.v1.IntentInfo.receivers:type_name -> ark.v1.Output
-	37, // 11: ark.v1.IntentInfo.inputs:type_name -> ark.v1.IntentInput
-	37, // 12: ark.v1.IntentInfo.boarding_inputs:type_name -> ark.v1.IntentInput
-	44, // 13: ark.v1.IntentInfo.intent:type_name -> ark.v1.Intent
-	1,  // 14: ark.v1.Conviction.type:type_name -> ark.v1.ConvictionType
-	0,  // 15: ark.v1.Conviction.crime_type:type_name -> ark.v1.CrimeType
-	2,  // 16: ark.v1.AdminService.GetScheduledSweep:input_type -> ark.v1.GetScheduledSweepRequest
-	4,  // 17: ark.v1.AdminService.GetRoundDetails:input_type -> ark.v1.GetRoundDetailsRequest
-	6,  // 18: ark.v1.AdminService.GetRounds:input_type -> ark.v1.GetRoundsRequest
-	8,  // 19: ark.v1.AdminService.CreateNote:input_type -> ark.v1.CreateNoteRequest
-	10, // 20: ark.v1.AdminService.GetScheduledSessionConfig:input_type -> ark.v1.GetScheduledSessionConfigRequest
-	12, // 21: ark.v1.AdminService.UpdateScheduledSessionConfig:input_type -> ark.v1.UpdateScheduledSessionConfigRequest
-	14, // 22: ark.v1.AdminService.ClearScheduledSessionConfig:input_type -> ark.v1.ClearScheduledSessionConfigRequest
-	16, // 23: ark.v1.AdminService.ListIntents:input_type -> ark.v1.ListIntentsRequest
-	18, // 24: ark.v1.AdminService.DeleteIntents:input_type -> ark.v1.DeleteIntentsRequest
-	20, // 25: ark.v1.AdminService.GetConvictions:input_type -> ark.v1.GetConvictionsRequest
-	22, // 26: ark.v1.AdminService.GetConvictionsInRange:input_type -> ark.v1.GetConvictionsInRangeRequest
-	24, // 27: ark.v1.AdminService.GetConvictionsByRound:input_type -> ark.v1.GetConvictionsByRoundRequest
-	26, // 28: ark.v1.AdminService.GetActiveScriptConvictions:input_type -> ark.v1.GetActiveScriptConvictionsRequest
-	28, // 29: ark.v1.AdminService.PardonConviction:input_type -> ark.v1.PardonConvictionRequest
-	30, // 30: ark.v1.AdminService.BanScript:input_type -> ark.v1.BanScriptRequest
-	32, // 31: ark.v1.AdminService.RevokeAuth:input_type -> ark.v1.RevokeAuthRequest
-	41, // 32: ark.v1.AdminService.Sweep:input_type -> ark.v1.SweepRequest
-	3,  // 33: ark.v1.AdminService.GetScheduledSweep:output_type -> ark.v1.GetScheduledSweepResponse
-	5,  // 34: ark.v1.AdminService.GetRoundDetails:output_type -> ark.v1.GetRoundDetailsResponse
-	7,  // 35: ark.v1.AdminService.GetRounds:output_type -> ark.v1.GetRoundsResponse
-	9,  // 36: ark.v1.AdminService.CreateNote:output_type -> ark.v1.CreateNoteResponse
-	11, // 37: ark.v1.AdminService.GetScheduledSessionConfig:output_type -> ark.v1.GetScheduledSessionConfigResponse
-	13, // 38: ark.v1.AdminService.UpdateScheduledSessionConfig:output_type -> ark.v1.UpdateScheduledSessionConfigResponse
-	15, // 39: ark.v1.AdminService.ClearScheduledSessionConfig:output_type -> ark.v1.ClearScheduledSessionConfigResponse
-	17, // 40: ark.v1.AdminService.ListIntents:output_type -> ark.v1.ListIntentsResponse
-	19, // 41: ark.v1.AdminService.DeleteIntents:output_type -> ark.v1.DeleteIntentsResponse
-	21, // 42: ark.v1.AdminService.GetConvictions:output_type -> ark.v1.GetConvictionsResponse
-	23, // 43: ark.v1.AdminService.GetConvictionsInRange:output_type -> ark.v1.GetConvictionsInRangeResponse
-	25, // 44: ark.v1.AdminService.GetConvictionsByRound:output_type -> ark.v1.GetConvictionsByRoundResponse
-	27, // 45: ark.v1.AdminService.GetActiveScriptConvictions:output_type -> ark.v1.GetActiveScriptConvictionsResponse
-	29, // 46: ark.v1.AdminService.PardonConviction:output_type -> ark.v1.PardonConvictionResponse
-	31, // 47: ark.v1.AdminService.BanScript:output_type -> ark.v1.BanScriptResponse
-	33, // 48: ark.v1.AdminService.RevokeAuth:output_type -> ark.v1.RevokeAuthResponse
-	42, // 49: ark.v1.AdminService.Sweep:output_type -> ark.v1.SweepResponse
-	33, // [33:50] is the sub-list for method output_type
-	16, // [16:33] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	41, // 0: ark.v1.GetScheduledSweepResponse.sweeps:type_name -> ark.v1.ScheduledSweep
+	42, // 1: ark.v1.GetScheduledSessionConfigResponse.config:type_name -> ark.v1.ScheduledSessionConfig
+	42, // 2: ark.v1.UpdateScheduledSessionConfigRequest.config:type_name -> ark.v1.ScheduledSessionConfig
+	44, // 3: ark.v1.ListIntentsResponse.intents:type_name -> ark.v1.IntentInfo
+	45, // 4: ark.v1.GetIntentFeesResponse.fees:type_name -> ark.v1.IntentFees
+	45, // 5: ark.v1.UpdateIntentFeesRequest.fees:type_name -> ark.v1.IntentFees
+	47, // 6: ark.v1.GetConvictionsResponse.convictions:type_name -> ark.v1.Conviction
+	47, // 7: ark.v1.GetConvictionsInRangeResponse.convictions:type_name -> ark.v1.Conviction
+	47, // 8: ark.v1.GetConvictionsByRoundResponse.convictions:type_name -> ark.v1.Conviction
+	47, // 9: ark.v1.GetActiveScriptConvictionsResponse.convictions:type_name -> ark.v1.Conviction
+	40, // 10: ark.v1.ScheduledSweep.outputs:type_name -> ark.v1.SweepableOutput
+	50, // 11: ark.v1.ScheduledSessionConfig.fees:type_name -> ark.v1.FeeInfo
+	46, // 12: ark.v1.IntentInfo.receivers:type_name -> ark.v1.Output
+	43, // 13: ark.v1.IntentInfo.inputs:type_name -> ark.v1.IntentInput
+	43, // 14: ark.v1.IntentInfo.boarding_inputs:type_name -> ark.v1.IntentInput
+	51, // 15: ark.v1.IntentInfo.intent:type_name -> ark.v1.Intent
+	1,  // 16: ark.v1.Conviction.type:type_name -> ark.v1.ConvictionType
+	0,  // 17: ark.v1.Conviction.crime_type:type_name -> ark.v1.CrimeType
+	2,  // 18: ark.v1.AdminService.GetScheduledSweep:input_type -> ark.v1.GetScheduledSweepRequest
+	4,  // 19: ark.v1.AdminService.GetRoundDetails:input_type -> ark.v1.GetRoundDetailsRequest
+	6,  // 20: ark.v1.AdminService.GetRounds:input_type -> ark.v1.GetRoundsRequest
+	8,  // 21: ark.v1.AdminService.CreateNote:input_type -> ark.v1.CreateNoteRequest
+	10, // 22: ark.v1.AdminService.GetScheduledSessionConfig:input_type -> ark.v1.GetScheduledSessionConfigRequest
+	12, // 23: ark.v1.AdminService.UpdateScheduledSessionConfig:input_type -> ark.v1.UpdateScheduledSessionConfigRequest
+	14, // 24: ark.v1.AdminService.ClearScheduledSessionConfig:input_type -> ark.v1.ClearScheduledSessionConfigRequest
+	16, // 25: ark.v1.AdminService.ListIntents:input_type -> ark.v1.ListIntentsRequest
+	18, // 26: ark.v1.AdminService.DeleteIntents:input_type -> ark.v1.DeleteIntentsRequest
+	20, // 27: ark.v1.AdminService.GetIntentFees:input_type -> ark.v1.GetIntentFeesRequest
+	22, // 28: ark.v1.AdminService.UpdateIntentFees:input_type -> ark.v1.UpdateIntentFeesRequest
+	24, // 29: ark.v1.AdminService.ClearIntentFees:input_type -> ark.v1.ClearIntentFeesRequest
+	26, // 30: ark.v1.AdminService.GetConvictions:input_type -> ark.v1.GetConvictionsRequest
+	28, // 31: ark.v1.AdminService.GetConvictionsInRange:input_type -> ark.v1.GetConvictionsInRangeRequest
+	30, // 32: ark.v1.AdminService.GetConvictionsByRound:input_type -> ark.v1.GetConvictionsByRoundRequest
+	32, // 33: ark.v1.AdminService.GetActiveScriptConvictions:input_type -> ark.v1.GetActiveScriptConvictionsRequest
+	34, // 34: ark.v1.AdminService.PardonConviction:input_type -> ark.v1.PardonConvictionRequest
+	36, // 35: ark.v1.AdminService.BanScript:input_type -> ark.v1.BanScriptRequest
+	38, // 36: ark.v1.AdminService.RevokeAuth:input_type -> ark.v1.RevokeAuthRequest
+	48, // 37: ark.v1.AdminService.Sweep:input_type -> ark.v1.SweepRequest
+	3,  // 38: ark.v1.AdminService.GetScheduledSweep:output_type -> ark.v1.GetScheduledSweepResponse
+	5,  // 39: ark.v1.AdminService.GetRoundDetails:output_type -> ark.v1.GetRoundDetailsResponse
+	7,  // 40: ark.v1.AdminService.GetRounds:output_type -> ark.v1.GetRoundsResponse
+	9,  // 41: ark.v1.AdminService.CreateNote:output_type -> ark.v1.CreateNoteResponse
+	11, // 42: ark.v1.AdminService.GetScheduledSessionConfig:output_type -> ark.v1.GetScheduledSessionConfigResponse
+	13, // 43: ark.v1.AdminService.UpdateScheduledSessionConfig:output_type -> ark.v1.UpdateScheduledSessionConfigResponse
+	15, // 44: ark.v1.AdminService.ClearScheduledSessionConfig:output_type -> ark.v1.ClearScheduledSessionConfigResponse
+	17, // 45: ark.v1.AdminService.ListIntents:output_type -> ark.v1.ListIntentsResponse
+	19, // 46: ark.v1.AdminService.DeleteIntents:output_type -> ark.v1.DeleteIntentsResponse
+	21, // 47: ark.v1.AdminService.GetIntentFees:output_type -> ark.v1.GetIntentFeesResponse
+	23, // 48: ark.v1.AdminService.UpdateIntentFees:output_type -> ark.v1.UpdateIntentFeesResponse
+	25, // 49: ark.v1.AdminService.ClearIntentFees:output_type -> ark.v1.ClearIntentFeesResponse
+	27, // 50: ark.v1.AdminService.GetConvictions:output_type -> ark.v1.GetConvictionsResponse
+	29, // 51: ark.v1.AdminService.GetConvictionsInRange:output_type -> ark.v1.GetConvictionsInRangeResponse
+	31, // 52: ark.v1.AdminService.GetConvictionsByRound:output_type -> ark.v1.GetConvictionsByRoundResponse
+	33, // 53: ark.v1.AdminService.GetActiveScriptConvictions:output_type -> ark.v1.GetActiveScriptConvictionsResponse
+	35, // 54: ark.v1.AdminService.PardonConviction:output_type -> ark.v1.PardonConvictionResponse
+	37, // 55: ark.v1.AdminService.BanScript:output_type -> ark.v1.BanScriptResponse
+	39, // 56: ark.v1.AdminService.RevokeAuth:output_type -> ark.v1.RevokeAuthResponse
+	49, // 57: ark.v1.AdminService.Sweep:output_type -> ark.v1.SweepResponse
+	38, // [38:58] is the sub-list for method output_type
+	18, // [18:38] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_admin_proto_init() }
@@ -2917,7 +2932,7 @@ func file_ark_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_admin_proto_rawDesc), len(file_ark_v1_admin_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   41,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
