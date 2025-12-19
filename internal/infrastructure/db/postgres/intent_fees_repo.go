@@ -7,6 +7,8 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
 )
 
 type intentFeesRepo struct {
@@ -72,7 +74,23 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 			fees.OffchainOutputFee = currentIntentFees.OffchainOutputFeeProgram
 		}
 	}
-	err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
+	_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid onchain input fee: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid offchain input fee: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid onchain output fee: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid offchain output fee: %w", err)
+	}
+	err = r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
 		OnchainInputFeeProgram:   fees.OnchainInputFee,
 		OffchainInputFeeProgram:  fees.OffchainInputFee,
 		OnchainOutputFeeProgram:  fees.OnchainOutputFee,

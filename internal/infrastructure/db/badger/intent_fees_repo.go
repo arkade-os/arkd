@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/timshannon/badgerhold/v4"
 )
@@ -126,6 +128,22 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 	}
 	if fees.OffchainOutputFee != "" {
 		newEntry.OffchainOutputFeeProgram = fees.OffchainOutputFee
+	}
+	_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid onchain input fee: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid offchain input fee: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid onchain output fee: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid offchain output fee: %w", err)
 	}
 
 	if err := r.store.Insert(nowKey, &newEntry); err != nil {
