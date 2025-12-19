@@ -202,7 +202,7 @@ func (v *vtxoRepository) GetExpiringLiquidity(
 		return 0, err
 	}
 	if amount < 0 {
-		return 0, nil
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", amount)
 	}
 	return uint64(amount), nil
 }
@@ -213,7 +213,7 @@ func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, e
 		return 0, err
 	}
 	if amount < 0 {
-		return 0, nil
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", amount)
 	}
 	return uint64(amount), nil
 }

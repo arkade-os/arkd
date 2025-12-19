@@ -204,7 +204,7 @@ func (v *vtxoRepository) GetExpiringLiquidity(
 		return 0, fmt.Errorf("unexpected sqlite amount type: %T", amount)
 	}
 	if n < 0 {
-		return 0, nil
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", n)
 	}
 	return uint64(n), nil
 }
@@ -217,6 +217,9 @@ func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, e
 	n, ok := amount.(int64)
 	if !ok {
 		return 0, nil
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", n)
 	}
 	return uint64(n), nil
 }
