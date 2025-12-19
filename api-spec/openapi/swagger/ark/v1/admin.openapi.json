@@ -311,56 +311,6 @@
         }
       }
     },
-    "/v1/admin/expiringLiquidity": {
-      "get": {
-        "tags": [
-          "AdminService"
-        ],
-        "operationId": "AdminService_GetExpiringLiquidity",
-        "parameters": [
-          {
-            "name": "after",
-            "in": "query",
-            "description": "expires after this timestamp",
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "before",
-            "in": "query",
-            "description": "expires before this timestamp",
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "a successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetExpiringLiquidityResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Status"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/admin/intents": {
       "get": {
         "tags": [
@@ -445,6 +395,86 @@
         }
       }
     },
+    "/v1/admin/liquidity/expiring": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetExpiringLiquidity",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "expires after this timestamp",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "expires before this timestamp",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetExpiringLiquidityResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/liquidity/recoverable": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetRecoverableLiquidity",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetRecoverableLiquidityResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/note": {
       "post": {
         "tags": [
@@ -468,36 +498,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreateNoteResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Status"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/admin/recoverableLiquidity": {
-      "get": {
-        "tags": [
-          "AdminService"
-        ],
-        "operationId": "AdminService_GetRecoverableLiquidity",
-        "responses": {
-          "200": {
-            "description": "a successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetRecoverableLiquidityResponse"
                 }
               }
             }

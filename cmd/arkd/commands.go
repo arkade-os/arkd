@@ -216,27 +216,21 @@ var (
 		Flags:  []cli.Flag{scriptFlag, banDurationFlag, banReasonFlag},
 		Action: banScriptAction,
 	}
-	liquidityCmd = &cli.Command{
-		Name:  "liquidity",
-		Usage: "Get expiring or recoverable liquidity amounts",
-		Flags: []cli.Flag{
-			liquidityAfterFlag,
-			liquidityBeforeFlag,
-		},
-		Subcommands: cli.Commands{
-			liquidityRecoverableCmd,
-		},
-		Action: expiringLiquidityAction,
+	liquidityExpiringCmd = &cli.Command{
+		Name:   "liquidity-expiring",
+		Usage:  "Get expiring liquidity within a given range",
+		Flags:  []cli.Flag{liquidityAfterFlag, liquidityBeforeFlag},
+		Action: liquidityExpiringAction,
 	}
 	liquidityRecoverableCmd = &cli.Command{
-		Name:   "recoverable",
-		Usage:  "Return the amount of recoverable liquidity",
-		Action: recoverableLiquidityAction,
+		Name:   "liquidity-recoverable",
+		Usage:  "Get all recoverable liquidity",
+		Action: liquidityRecoverableAction,
 	}
-	liquidityNeedCmd = &cli.Command{
-		Name:   "liquidity-need",
-		Usage:  "Print recoverable and expiring liquidity buckets as JSON",
-		Action: liquidityNeedAction,
+	liquidityReportCmd = &cli.Command{
+		Name:   "liquidity-report",
+		Usage:  "Get a report of the recoverable and expiring liquidity",
+		Action: liquidityReportAction,
 	}
 )
 
@@ -742,13 +736,13 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/scheduledSession", baseURL)
 	config := map[string]string{}
 	if startDate != "" {
-		startTime, err := time.Parse(scheduledSessionDateFormat, startDate)
+		startTime, err := time.Parse(dateWithTimeFormat, startDate)
 		if err != nil {
-			return fmt.Errorf("invalid --start-date format, must be %s", scheduledSessionDateFormat)
+			return fmt.Errorf("invalid --start-date format, must be %s", dateWithTimeFormat)
 		}
-		endTime, err := time.Parse(scheduledSessionDateFormat, endDate)
+		endTime, err := time.Parse(dateWithTimeFormat, endDate)
 		if err != nil {
-			return fmt.Errorf("invalid --end-date format, must be %s", scheduledSessionDateFormat)
+			return fmt.Errorf("invalid --end-date format, must be %s", dateWithTimeFormat)
 		}
 		config["startTime"] = strconv.Itoa(int(startTime.Unix()))
 		config["endTime"] = strconv.Itoa(int(endTime.Unix()))
@@ -1002,16 +996,38 @@ func sweepAction(ctx *cli.Context) error {
 	return nil
 }
 
-func expiringLiquidityAction(ctx *cli.Context) error {
+func liquidityExpiringAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	after := ctx.Int64(liquidityAfterFlagName)
-	before := ctx.Int64(liquidityBeforeFlagName)
+	afterDate := ctx.String(liquidityAfterFlagName)
+	beforeDate := ctx.String(liquidityBeforeFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/expiringLiquidity?after=%d&before=%d", baseURL, after, before)
+	after := time.Now().Unix()
+	if afterDate == "" {
+		tt, err := time.Parse(dateWithTimeFormat, afterDate)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s flag format, must be %s", liquidityAfterFlagName, dateWithTimeFormat,
+			)
+		}
+		after = tt.Unix()
+	}
+
+	before := int64(0)
+	if beforeDate != "" {
+		tt, err := time.Parse(dateWithTimeFormat, beforeDate)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s flag format, must be %s", liquidityBeforeFlagName, dateWithTimeFormat,
+			)
+		}
+		before = tt.Unix()
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/liquidity/expiring?after=%d&before=%d", baseURL, after, before)
 	amount, err := getUint64(url, "amount", macaroon, tlsConfig)
 	if err != nil {
 		return err
@@ -1021,14 +1037,14 @@ func expiringLiquidityAction(ctx *cli.Context) error {
 	return nil
 }
 
-func recoverableLiquidityAction(ctx *cli.Context) error {
+func liquidityRecoverableAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/recoverableLiquidity", baseURL)
+	url := fmt.Sprintf("%s/v1/admin/liquidity/recoverable", baseURL)
 	amount, err := getUint64(url, "amount", macaroon, tlsConfig)
 	if err != nil {
 		return err
@@ -1038,7 +1054,7 @@ func recoverableLiquidityAction(ctx *cli.Context) error {
 	return nil
 }
 
-func liquidityNeedAction(ctx *cli.Context) error {
+func liquidityReportAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
@@ -1052,10 +1068,8 @@ func liquidityNeedAction(ctx *cli.Context) error {
 
 	getExpiring := func(after, before int64) (uint64, error) {
 		url := fmt.Sprintf(
-			"%s/v1/admin/expiringLiquidity?after=%d&before=%d",
-			baseURL,
-			after,
-			before,
+			"%s/v1/admin/liquidity/expiring?after=%d&before=%d",
+			baseURL, after, before,
 		)
 		return getUint64(url, "amount", macaroon, tlsConfig)
 	}

@@ -2624,7 +2624,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x15CRIME_TYPE_MANUAL_BAN\x10\a*M\n" +
 	"\x0eConvictionType\x12\x1f\n" +
 	"\x1bCONVICTION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\xb8\x12\n" +
+	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\xba\x12\n" +
 	"\fAdminService\x12o\n" +
 	"\x11GetScheduledSweep\x12 .ark.v1.GetScheduledSweepRequest\x1a!.ark.v1.GetScheduledSweepResponse\"\x15\xb2J\x12\x12\x10/v1/admin/sweeps\x12s\n" +
 	"\x0fGetRoundDetails\x12\x1e.ark.v1.GetRoundDetailsRequest\x1a\x1f.ark.v1.GetRoundDetailsResponse\"\x1f\xb2J\x1c\x12\x1a/v1/admin/round/{round_id}\x12W\n" +
@@ -2643,9 +2643,9 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x10PardonConviction\x12\x1f.ark.v1.PardonConvictionRequest\x1a .ark.v1.PardonConvictionResponse\")\xb2J&B\x01*\"!/v1/admin/convictions/{id}/pardon\x12b\n" +
 	"\tBanScript\x12\x18.ark.v1.BanScriptRequest\x1a\x19.ark.v1.BanScriptResponse\" \xb2J\x1dB\x01*\"\x18/v1/admin/conviction/ban\x12b\n" +
 	"\n" +
-	"RevokeAuth\x12\x19.ark.v1.RevokeAuthRequest\x1a\x1a.ark.v1.RevokeAuthResponse\"\x1d\xb2J\x1aB\x01*\"\x15/v1/admin/auth/revoke\x12\x83\x01\n" +
-	"\x14GetExpiringLiquidity\x12#.ark.v1.GetExpiringLiquidityRequest\x1a$.ark.v1.GetExpiringLiquidityResponse\" \xb2J\x1d\x12\x1b/v1/admin/expiringLiquidity\x12\x8f\x01\n" +
-	"\x17GetRecoverableLiquidity\x12&.ark.v1.GetRecoverableLiquidityRequest\x1a'.ark.v1.GetRecoverableLiquidityResponse\"#\xb2J \x12\x1e/v1/admin/recoverableLiquidity\x12M\n" +
+	"RevokeAuth\x12\x19.ark.v1.RevokeAuthRequest\x1a\x1a.ark.v1.RevokeAuthResponse\"\x1d\xb2J\x1aB\x01*\"\x15/v1/admin/auth/revoke\x12\x84\x01\n" +
+	"\x14GetExpiringLiquidity\x12#.ark.v1.GetExpiringLiquidityRequest\x1a$.ark.v1.GetExpiringLiquidityResponse\"!\xb2J\x1e\x12\x1c/v1/admin/liquidity/expiring\x12\x90\x01\n" +
+	"\x17GetRecoverableLiquidity\x12&.ark.v1.GetRecoverableLiquidityRequest\x1a'.ark.v1.GetRecoverableLiquidityResponse\"$\xb2J!\x12\x1f/v1/admin/liquidity/recoverable\x12M\n" +
 	"\x05Sweep\x12\x14.ark.v1.SweepRequest\x1a\x15.ark.v1.SweepResponse\"\x17\xb2J\x14B\x01*\"\x0f/v1/admin/sweepBy\n" +
 	"\n" +
 	"com.ark.v1B\n" +

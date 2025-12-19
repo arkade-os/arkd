@@ -92,8 +92,9 @@ func main() {
 		scheduledSessionCmd,
 		revokeAuthCmd,
 		convictionsCmd,
-		liquidityCmd,
-		liquidityNeedCmd,
+		liquidityExpiringCmd,
+		liquidityRecoverableCmd,
+		liquidityReportCmd,
 	)
 
 	app.DefaultCommand = startCmd.Name

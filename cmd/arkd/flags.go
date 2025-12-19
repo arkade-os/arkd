@@ -45,11 +45,11 @@ const (
 	withDetailsFlagName                               = "with-details"
 	sweepConnectorsFlagName                           = "with-connectors"
 	sweepCommitmentTxidsFlagName                      = "commitment-txids"
-	liquidityAfterFlagName                            = "after"
-	liquidityBeforeFlagName                           = "before"
+	liquidityAfterFlagName                            = "after-date"
+	liquidityBeforeFlagName                           = "before-date"
 
-	dateFormat                 = time.DateOnly
-	scheduledSessionDateFormat = time.DateTime
+	dateFormat         = time.DateOnly
+	dateWithTimeFormat = time.DateTime
 )
 
 var (
@@ -133,14 +133,14 @@ var (
 		Name: scheduledSessionStartDateFlagName,
 		Usage: fmt.Sprintf(
 			"the starting date of the very first scheduled session, must be in %s format (GMT)",
-			scheduledSessionDateFormat,
+			dateWithTimeFormat,
 		),
 	}
 	scheduledSessionEndDateFlag = &cli.StringFlag{
 		Name: scheduledSessionEndDateFlagName,
 		Usage: fmt.Sprintf(
 			"the ending date of the very first scheduled session, must be in %s format (GMT)",
-			scheduledSessionDateFormat,
+			dateWithTimeFormat,
 		),
 	}
 	scheduledSessionDurationFlag = &cli.IntFlag{
@@ -229,13 +229,19 @@ var (
 		Usage: "commitment transaction IDs to sweep",
 	}
 	liquidityAfterFlag = &cli.Int64Flag{
-		Name:  liquidityAfterFlagName,
-		Usage: "expiring liquidity: expires after this timestamp (Unix timestamp). 0 means now",
+		Name: liquidityAfterFlagName,
+		Usage: fmt.Sprintf(
+			"get expiring liquidity after a specific date in format %s."+
+				"If not provided, defaults to now", dateWithTimeFormat,
+		),
 		Value: 0,
 	}
 	liquidityBeforeFlag = &cli.Int64Flag{
-		Name:  liquidityBeforeFlagName,
-		Usage: "expiring liquidity: expires before this timestamp (Unix timestamp). 0 means no upper bound",
+		Name: liquidityBeforeFlagName,
+		Usage: fmt.Sprintf(
+			"get expiring liquidity before a specific date in format %s."+
+				"If not provided, no upper bound is applied", dateWithTimeFormat,
+		),
 		Value: 0,
 	}
 )

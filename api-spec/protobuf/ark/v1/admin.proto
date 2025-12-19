@@ -95,12 +95,12 @@ service AdminService {
   }
   rpc GetExpiringLiquidity(GetExpiringLiquidityRequest) returns (GetExpiringLiquidityResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/admin/expiringLiquidity"
+      get: "/v1/admin/liquidity/expiring"
     };
   }
   rpc GetRecoverableLiquidity(GetRecoverableLiquidityRequest) returns (GetRecoverableLiquidityResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/admin/recoverableLiquidity"
+      get: "/v1/admin/liquidity/recoverable"
     };
   }
   rpc Sweep(SweepRequest) returns (SweepResponse) {

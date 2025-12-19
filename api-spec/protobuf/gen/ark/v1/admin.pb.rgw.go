@@ -747,13 +747,13 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *gateway.ServeMu
 		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
 	})
 
-	mux.HandleWithParams("GET", "/v1/admin/expiringLiquidity", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+	mux.HandleWithParams("GET", "/v1/admin/liquidity/expiring", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
 		var err error
 		var annotatedContext context.Context
-		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetExpiringLiquidity", gateway.WithHTTPPathPattern("/v1/admin/expiringLiquidity"))
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetExpiringLiquidity", gateway.WithHTTPPathPattern("/v1/admin/liquidity/expiring"))
 		if err != nil {
 			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
 			return
@@ -769,13 +769,13 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *gateway.ServeMu
 		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
 	})
 
-	mux.HandleWithParams("GET", "/v1/admin/recoverableLiquidity", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+	mux.HandleWithParams("GET", "/v1/admin/liquidity/recoverable", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
 		var err error
 		var annotatedContext context.Context
-		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetRecoverableLiquidity", gateway.WithHTTPPathPattern("/v1/admin/recoverableLiquidity"))
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetRecoverableLiquidity", gateway.WithHTTPPathPattern("/v1/admin/liquidity/recoverable"))
 		if err != nil {
 			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
 			return
