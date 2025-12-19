@@ -2810,91 +2810,93 @@ func TestSweep(t *testing.T) {
 		require.Len(t, mikeVtxos, 1)
 		require.True(t, mikeVtxos[0].Swept)
 	})
-}
 
-func TestManualSweep(t *testing.T) {
-	// This test creates a round with a very small vtxo (330 sats, dust amount)
-	// The automatic sweep should fail, so we use the admin Sweep RPC to manually sweep it
-	alice := setupArkSDK(t)
-	defer alice.Stop()
+	// This test creates an "uneconomical batch", ie. one with an amount too small that makes
+	// arkd not capable of sweeping it automatically. For such batches, it's required to call the
+	// admin api so that their are swept along with other sweepable funds (connectors used for
+	// batches that have been already swept)
+	t.Run("force by admin", func(t *testing.T) {
+		alice := setupArkSDK(t)
+		defer alice.Stop()
 
-	ctx := t.Context()
+		ctx := t.Context()
 
-	_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
-	require.NoError(t, err)
+		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+		require.NoError(t, err)
 
-	// Faucet with a small amount that will result in a dust vtxo after fees
-	faucetOnchain(t, boardingAddr, 0.00000330)
-	time.Sleep(5 * time.Second)
+		// Faucet with a small amount that will result in a dust vtxo after fees
+		faucetOnchain(t, boardingAddr, 0.00000330)
+		time.Sleep(5 * time.Second)
 
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	var incomingFunds []types.Vtxo
-	var incomingErr error
-	go func() {
-		incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
-		wg.Done()
-	}()
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingFunds []types.Vtxo
+		var incomingErr error
+		go func() {
+			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			wg.Done()
+		}()
 
-	// Settle the boarding utxo to create a new batch output expiring in 20 blocks
-	commitmentTxid, err := alice.Settle(ctx)
-	require.NoError(t, err)
+		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		commitmentTxid, err := alice.Settle(ctx)
+		require.NoError(t, err)
 
-	wg.Wait()
-	require.NoError(t, incomingErr)
-	require.Len(t, incomingFunds, 1)
-	vtxo := incomingFunds[0]
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.Len(t, incomingFunds, 1)
+		vtxo := incomingFunds[0]
 
-	// Generate 30 blocks to expire the batch output
-	err = generateBlocks(30)
-	require.NoError(t, err)
+		// Generate 30 blocks to expire the batch output
+		err = generateBlocks(30)
+		require.NoError(t, err)
 
-	// Wait for server to attempt the sweep (it should fail due to dust amount)
-	time.Sleep(25 * time.Second)
+		// Wait for server to attempt the sweep (it should fail due to dust amount)
+		time.Sleep(25 * time.Second)
 
-	// Verify the vtxo is not swept yet (automatic sweep failed)
-	spendable, _, err := alice.ListVtxos(ctx)
-	require.NoError(t, err)
-	require.Len(t, spendable, 1)
-	require.Equal(t, vtxo.Txid, spendable[0].Txid)
-	require.False(t, spendable[0].Swept, "vtxo should not be swept automatically")
+		// Verify the vtxo is not swept yet (automatic sweep failed)
+		spendable, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, spendable, 1)
+		require.Equal(t, vtxo.Txid, spendable[0].Txid)
+		require.False(t, spendable[0].Swept, "vtxo should not be swept automatically")
 
-	// Use admin Sweep RPC to manually sweep the batch
-	adminHttpClient := &http.Client{
-		Timeout: 15 * time.Second,
-	}
+		// Use admin Sweep RPC to manually sweep the batch
+		adminHttpClient := &http.Client{
+			Timeout: 15 * time.Second,
+		}
 
-	reqBody := bytes.NewReader([]byte(fmt.Sprintf(
-		`{"connectors": true, "commitment_txids": ["%s"]}`,
-		commitmentTxid,
-	)))
-	req, err := http.NewRequest("POST", "http://localhost:7071/v1/admin/sweep", reqBody)
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
-	req.Header.Set("Content-Type", "application/json")
+		reqBody := bytes.NewReader([]byte(fmt.Sprintf(
+			`{"connectors": true, "commitment_txids": ["%s"]}`,
+			commitmentTxid,
+		)))
+		req, err := http.NewRequest("POST", "http://localhost:7071/v1/admin/sweep", reqBody)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := adminHttpClient.Do(req)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp, err := adminHttpClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var sweepResp struct {
-		Txid string `json:"txid"`
-		Hex  string `json:"hex"`
-	}
-	err = json.NewDecoder(resp.Body).Decode(&sweepResp)
-	require.NoError(t, err)
-	require.NotEmpty(t, sweepResp.Txid)
-	require.NotEmpty(t, sweepResp.Hex)
+		var sweepResp struct {
+			Txid string `json:"txid"`
+			Hex  string `json:"hex"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&sweepResp)
+		require.NoError(t, err)
+		require.NotEmpty(t, sweepResp.Txid)
+		require.NotEmpty(t, sweepResp.Hex)
 
-	// Wait a bit for the sweep event to be processed
-	time.Sleep(5 * time.Second)
+		// Wait a bit for the sweep event to be processed
+		time.Sleep(5 * time.Second)
 
-	// Verify the vtxo is now marked as swept
-	spendable, _, err = alice.ListVtxos(ctx)
-	require.NoError(t, err)
-	require.Len(t, spendable, 1)
-	require.Equal(t, vtxo.Txid, spendable[0].Txid)
-	require.True(t, spendable[0].Swept, "vtxo should be swept after manual sweep")
+		// Verify the vtxo is now marked as swept
+		spendable, _, err = alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, spendable, 1)
+		require.Equal(t, vtxo.Txid, spendable[0].Txid)
+		require.True(t, spendable[0].Swept, "vtxo should be swept after manual sweep")
+	})
 }
 
 // TestCollisionBetweenInRoundAndRedeemVtxo tests for a potential collision between VTXOs that
