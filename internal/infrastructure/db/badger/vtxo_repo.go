@@ -247,7 +247,7 @@ func (r *vtxoRepository) GetExpiringLiquidity(
 		And("Unrolled").Eq(false).
 		And("ExpiresAt").Gt(after)
 
-	if before != 0 {
+	if before > 0 {
 		query = query.And("ExpiresAt").Lt(before)
 	}
 

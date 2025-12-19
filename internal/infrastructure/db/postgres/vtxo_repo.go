@@ -202,7 +202,7 @@ func (v *vtxoRepository) GetExpiringLiquidity(
 		return 0, err
 	}
 	if amount < 0 {
-		return 0, fmt.Errorf("invalid vtxo amount sum: %d", amount)
+		return 0, nil
 	}
 	return uint64(amount), nil
 }

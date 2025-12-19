@@ -262,7 +262,7 @@ WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > sqlc.arg('after')
-  AND (sqlc.arg('before') = 0 OR expires_at < sqlc.arg('before'));
+  AND (sqlc.arg('before') <= 0 OR expires_at < sqlc.arg('before'));
 
 -- name: SelectRecoverableLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0) AS amount

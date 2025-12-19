@@ -201,7 +201,10 @@ func (v *vtxoRepository) GetExpiringLiquidity(
 
 	n, ok := amount.(int64)
 	if !ok {
-		return 0, fmt.Errorf("unexpected sqlite amount type: %T", v)
+		return 0, fmt.Errorf("unexpected sqlite amount type: %T", amount)
+	}
+	if n < 0 {
+		return 0, nil
 	}
 	return uint64(n), nil
 }

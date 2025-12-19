@@ -257,7 +257,7 @@ WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > @after
-  AND (@before = 0 OR expires_at < @before);
+  AND (@before <= 0 OR expires_at < @before);
 
 -- name: SelectRecoverableLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0)::bigint AS amount

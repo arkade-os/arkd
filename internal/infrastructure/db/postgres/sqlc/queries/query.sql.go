@@ -270,7 +270,7 @@ WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > $1
-  AND ($2 = 0 OR expires_at < $2)
+  AND ($2 <= 0 OR expires_at < $2)
 `
 
 type SelectExpiringLiquidityAmountParams struct {

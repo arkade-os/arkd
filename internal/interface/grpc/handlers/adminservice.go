@@ -100,22 +100,14 @@ func (a *adminHandler) GetExpiringLiquidity(
 	after := req.GetAfter()
 	before := req.GetBefore()
 
-	if after < 0 {
-		return nil, status.Error(codes.InvalidArgument, "invalid after (must be >= 0)")
-	}
-
-	if before < 0 {
-		return nil, status.Error(codes.InvalidArgument, "invalid before (must be >= 0)")
-	}
-
-	// Treat 0 values as "unset" (proto doesn't support nil for scalars here).
-	// - after=0 -> now
-	// - before=0 -> no upper bound
-	if after == 0 {
+	// Treat 0 or negative values as "unset" (proto doesn't support nil for scalars here).
+	// - after <= 0 -> now
+	// - before <= 0 -> no upper bound
+	if after <= 0 {
 		after = time.Now().Unix()
 	}
 
-	if before != 0 && after >= before {
+	if before > 0 && after >= before {
 		return nil, status.Error(codes.InvalidArgument, "invalid range")
 	}
 
