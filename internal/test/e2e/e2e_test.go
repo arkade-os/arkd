@@ -2813,7 +2813,7 @@ func TestSweep(t *testing.T) {
 
 	// This test creates an "uneconomical batch", ie. one with an amount too small that makes
 	// arkd not capable of sweeping it automatically. For such batches, it's required to call the
-	// admin api so that their are swept along with other sweepable funds (connectors used for
+	// admin api so that they are swept along with other sweepable funds (connectors used for
 	// batches that have been already swept)
 	t.Run("force by admin", func(t *testing.T) {
 		alice := setupArkSDK(t)
