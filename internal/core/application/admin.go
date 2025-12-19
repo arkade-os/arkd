@@ -635,24 +635,31 @@ func (s *adminService) UpdateIntentFees(
 	ctx context.Context,
 	fees domain.IntentFees,
 ) error {
-	_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid onchain input fee: %w", err)
+	if fees.OnchainInputFee != "" {
+		_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid onchain input fee: %w", err)
+		}
 	}
 
-	_, err = arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid offchain input fee: %w", err)
+	if fees.OffchainInputFee != "" {
+		_, err := arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid offchain input fee: %w", err)
+		}
 	}
 
-	_, err = arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid onchain output fee: %w", err)
+	if fees.OnchainOutputFee != "" {
+		_, err := arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid onchain output fee: %w", err)
+		}
 	}
-
-	_, err = arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid offchain output fee: %w", err)
+	if fees.OffchainOutputFee != "" {
+		_, err := arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid offchain output fee: %w", err)
+		}
 	}
 	return s.repoManager.Fees().UpdateIntentFees(ctx, fees)
 }
