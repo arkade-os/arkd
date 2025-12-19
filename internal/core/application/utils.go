@@ -67,7 +67,7 @@ func findSweepableOutputs(
 				sweepableBatchOutputs[expirationTime] = make([]ports.TxInput, 0)
 			}
 			sweepableBatchOutputs[expirationTime] = append(
-				sweepableBatchOutputs[expirationTime], sweepInput,
+				sweepableBatchOutputs[expirationTime], *sweepInput,
 			)
 			// we don't need to check the children, we already found a sweepable output
 			return false, nil

@@ -642,9 +642,9 @@ func (b *txBuilder) BuildCommitmentTx(
 
 func (b *txBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput ports.TxInput, err error) {
+) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput *ports.TxInput, err error) {
 	if len(vtxoTree.Root.UnsignedTx.TxIn) != 1 {
-		return nil, ports.TxInput{}, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"invalid node psbt, expect 1 input, got %d", len(vtxoTree.Root.UnsignedTx.TxIn),
 		)
 	}
@@ -655,38 +655,36 @@ func (b *txBuilder) GetSweepableBatchOutputs(
 
 	sweepLeaf, internalKey, vtxoTreeExpiry, err := b.extractSweepLeaf(vtxoTree.Root, 0)
 	if err != nil {
-		return nil, ports.TxInput{}, err
+		return nil, nil, err
 	}
 
 	txhex, err := b.wallet.GetTransaction(context.Background(), txid.String())
 	if err != nil {
-		return nil, ports.TxInput{}, err
+		return nil, nil, err
 	}
 
 	var tx wire.MsgTx
 	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
-		return nil, ports.TxInput{}, err
+		return nil, nil, err
 	}
 
 	if len(tx.TxOut) <= 0 {
-		return nil, ports.TxInput{}, fmt.Errorf(
-			"no outputs found in checkpoint tx",
-		)
+		return nil, nil, fmt.Errorf("no outputs found in checkpoint tx")
 	}
 
 	// Compute prevout script (P2TR output script)
 	ctrlBlock, err := txscript.ParseControlBlock(sweepLeaf.ControlBlock)
 	if err != nil {
-		return nil, ports.TxInput{}, err
+		return nil, nil, err
 	}
 	root := ctrlBlock.RootHash(sweepLeaf.Script)
 	prevoutTaprootKey := txscript.ComputeTaprootOutputKey(internalKey, root)
 	prevoutScript, err := script.P2TRScript(prevoutTaprootKey)
 	if err != nil {
-		return nil, ports.TxInput{}, err
+		return nil, nil, err
 	}
 
-	sweepInput = ports.TxInput{
+	sweepInput = &ports.TxInput{
 		Txid:   txid.String(),
 		Index:  index,
 		Script: hex.EncodeToString(prevoutScript),

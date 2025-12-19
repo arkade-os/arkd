@@ -62,7 +62,7 @@ type TxBuilder interface {
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []TxInput) (txid string, signedSweepTx string, err error)
 	GetSweepableBatchOutputs(vtxoTree *tree.TxTree) (
-		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs TxInput, err error,
+		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs *TxInput, err error,
 	)
 	FinalizeAndExtract(tx string) (txhex string, err error)
 	VerifyVtxoTapscriptSigs(
