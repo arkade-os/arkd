@@ -718,16 +718,6 @@ func (a *adminService) saveBatchSweptEvents(
 	}
 }
 
-// type Balance struct {
-// 	Locked    uint64
-// 	Available uint64
-// }
-
-// type ArkProviderBalance struct {
-// 	MainAccountBalance       Balance
-// 	ConnectorsAccountBalance Balance
-// }
-
 type SweepableOutput struct {
 	TxInput     ports.TxInput
 	ScheduledAt int64
