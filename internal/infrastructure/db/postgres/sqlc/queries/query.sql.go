@@ -18,16 +18,18 @@ INSERT INTO intent_fees (
     offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    $1, $2,
-    $3, $4
+    COALESCE(NULLIF($1, ''), (SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
+    COALESCE(NULLIF($2, ''), (SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
+    COALESCE(NULLIF($3, ''), (SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
+    COALESCE(NULLIF($4, ''), (SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1))
 )
 `
 
 type AddIntentFeesParams struct {
-	OffchainInputFeeProgram  string
-	OnchainInputFeeProgram   string
-	OffchainOutputFeeProgram string
-	OnchainOutputFeeProgram  string
+	OffchainInputFeeProgram  interface{}
+	OnchainInputFeeProgram   interface{}
+	OffchainOutputFeeProgram interface{}
+	OnchainOutputFeeProgram  interface{}
 }
 
 func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) error {
@@ -37,20 +39,6 @@ func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) er
 		arg.OffchainOutputFeeProgram,
 		arg.OnchainOutputFeeProgram,
 	)
-	return err
-}
-
-const clearIntentFees = `-- name: ClearIntentFees :exec
-INSERT INTO intent_fees (
-    offchain_input_fee_program, onchain_input_fee_program,
-    offchain_output_fee_program, onchain_output_fee_program
-) VALUES (
-    '0.0', '0.0', '0.0', '0.0'
-)
-`
-
-func (q *Queries) ClearIntentFees(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, clearIntentFees)
 	return err
 }
 

@@ -383,14 +383,8 @@ INSERT INTO intent_fees (
     offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
 ) VALUES (
-    @offchain_input_fee_program, @onchain_input_fee_program,
-    @offchain_output_fee_program, @onchain_output_fee_program
-);
-
--- name: ClearIntentFees :exec
-INSERT INTO intent_fees (
-    offchain_input_fee_program, onchain_input_fee_program,
-    offchain_output_fee_program, onchain_output_fee_program
-) VALUES (
-    '0.0', '0.0', '0.0', '0.0'
+    COALESCE(NULLIF(@offchain_input_fee_program, ''), (SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
+    COALESCE(NULLIF(@onchain_input_fee_program, ''), (SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
+    COALESCE(NULLIF(@offchain_output_fee_program, ''), (SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
+    COALESCE(NULLIF(@onchain_output_fee_program, ''), (SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1))
 );

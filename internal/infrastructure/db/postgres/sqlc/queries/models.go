@@ -7,7 +7,6 @@ package queries
 import (
 	"database/sql"
 
-	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
 )
 
@@ -39,7 +38,7 @@ type Intent struct {
 }
 
 type IntentFee struct {
-	ID                       uuid.UUID
+	ID                       int64
 	CreatedAt                int64
 	OffchainInputFeeProgram  string
 	OnchainInputFeeProgram   string

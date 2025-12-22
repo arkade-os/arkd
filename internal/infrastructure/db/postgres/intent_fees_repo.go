@@ -49,62 +49,56 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 }
 
 func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error {
-	// determine if any of the fees passed are empty, if so we need to grab existing fees to avoid overwriting
-	// with empty values, allowing for partial updates.
-	if fees.OnchainInputFee == "" || fees.OffchainInputFee == "" || fees.OnchainOutputFee == "" ||
-		fees.OffchainOutputFee == "" {
-		currentIntentFees, err := r.querier.SelectLatestIntentFees(ctx)
+	// do not allow empty updates
+	emptyFees := domain.IntentFees{}
+	if fees == emptyFees {
+		return fmt.Errorf("missing fees to update")
+	}
+
+	if fees.OnchainInputFee != "" {
+		_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
 		if err != nil {
-			if err != sql.ErrNoRows {
-				return fmt.Errorf("failed to get latest intent fees: %w", err)
-			}
-			// no existing fees, so we can't do partial update
-			return fmt.Errorf("cannot do partial update, no existing intent fees found")
-		}
-		if fees.OnchainInputFee == "" {
-			fees.OnchainInputFee = currentIntentFees.OnchainInputFeeProgram
-		}
-		if fees.OffchainInputFee == "" {
-			fees.OffchainInputFee = currentIntentFees.OffchainInputFeeProgram
-		}
-		if fees.OnchainOutputFee == "" {
-			fees.OnchainOutputFee = currentIntentFees.OnchainOutputFeeProgram
-		}
-		if fees.OffchainOutputFee == "" {
-			fees.OffchainOutputFee = currentIntentFees.OffchainOutputFeeProgram
+			return fmt.Errorf("invalid onchain input fee: %w", err)
 		}
 	}
-	_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid onchain input fee: %w", err)
+
+	if fees.OffchainInputFee != "" {
+		_, err := arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid offchain input fee: %w", err)
+		}
 	}
-	_, err = arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid offchain input fee: %w", err)
+	if fees.OnchainOutputFee != "" {
+		_, err := arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid onchain output fee: %w", err)
+		}
 	}
-	_, err = arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid onchain output fee: %w", err)
+	if fees.OffchainOutputFee != "" {
+		_, err := arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid offchain output fee: %w", err)
+		}
 	}
-	_, err = arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid offchain output fee: %w", err)
-	}
-	err = r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
+	if err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
 		OnchainInputFeeProgram:   fees.OnchainInputFee,
 		OffchainInputFeeProgram:  fees.OffchainInputFee,
 		OnchainOutputFeeProgram:  fees.OnchainOutputFee,
 		OffchainOutputFeeProgram: fees.OffchainOutputFee,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to upsert intent fees: %w", err)
+	}); err != nil {
+		return fmt.Errorf("failed to add intent fees: %w", err)
 	}
+
 	return nil
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	err := r.querier.ClearIntentFees(ctx)
-	if err != nil {
+	if err := r.UpdateIntentFees(ctx, domain.IntentFees{
+		OnchainInputFee:   "0.0",
+		OffchainInputFee:  "0.0",
+		OnchainOutputFee:  "0.0",
+		OffchainOutputFee: "0.0",
+	}); err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
 	}
 

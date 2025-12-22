@@ -36,7 +36,7 @@ type Intent struct {
 }
 
 type IntentFee struct {
-	ID                       string
+	ID                       int64
 	CreatedAt                int64
 	OffchainInputFeeProgram  string
 	OnchainInputFeeProgram   string
