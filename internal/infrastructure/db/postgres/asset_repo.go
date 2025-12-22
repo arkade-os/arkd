@@ -52,6 +52,7 @@ func (r *assetRepository) InsertAssetAnchor(ctx context.Context, anchor domain.A
 	err := r.querier.CreateAssetAnchor(ctx, queries.CreateAssetAnchorParams{
 		AnchorTxid: anchor.AnchorPoint.Txid,
 		AnchorVout: int64(anchor.AnchorPoint.VOut),
+		AssetID:    anchor.AssetID,
 	})
 
 	if err != nil {
@@ -121,7 +122,8 @@ func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string)
 			Txid: anchor.AnchorTxid,
 			VOut: uint32(anchor.AnchorVout),
 		},
-		Vtxos: vtxos,
+		AssetID: anchor.AssetID,
+		Vtxos:   vtxos,
 	}, nil
 }
 

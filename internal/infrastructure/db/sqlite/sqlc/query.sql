@@ -347,7 +347,7 @@ INSERT INTO asset_anchors (anchor_txid, anchor_vout, asset_id)
 VALUES (?, ?, ?);
 
 -- name: GetAssetAnchor :one
-SELECT anchor_txid, anchor_vout
+SELECT anchor_txid, anchor_vout, asset_id
 FROM asset_anchors
 WHERE anchor_txid = ?;
 

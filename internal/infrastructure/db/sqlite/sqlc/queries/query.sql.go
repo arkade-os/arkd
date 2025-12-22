@@ -153,20 +153,15 @@ func (q *Queries) GetAsset(ctx context.Context, id string) (GetAssetRow, error) 
 }
 
 const getAssetAnchor = `-- name: GetAssetAnchor :one
-SELECT anchor_txid, anchor_vout
+SELECT anchor_txid, anchor_vout, asset_id
 FROM asset_anchors
 WHERE anchor_txid = ?
 `
 
-type GetAssetAnchorRow struct {
-	AnchorTxid string
-	AnchorVout int64
-}
-
-func (q *Queries) GetAssetAnchor(ctx context.Context, anchorTxid string) (GetAssetAnchorRow, error) {
+func (q *Queries) GetAssetAnchor(ctx context.Context, anchorTxid string) (AssetAnchor, error) {
 	row := q.db.QueryRowContext(ctx, getAssetAnchor, anchorTxid)
-	var i GetAssetAnchorRow
-	err := row.Scan(&i.AnchorTxid, &i.AnchorVout)
+	var i AssetAnchor
+	err := row.Scan(&i.AnchorTxid, &i.AnchorVout, &i.AssetID)
 	return i, err
 }
 
