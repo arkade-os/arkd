@@ -45,8 +45,6 @@ const (
 	withDetailsFlagName                               = "with-details"
 	sweepConnectorsFlagName                           = "with-connectors"
 	sweepCommitmentTxidsFlagName                      = "commitment-txids"
-	liquidityAfterFlagName                            = "after-date"
-	liquidityBeforeFlagName                           = "before-date"
 
 	dateFormat         = time.DateOnly
 	dateWithTimeFormat = time.DateTime
@@ -229,7 +227,7 @@ var (
 		Usage: "commitment transaction IDs to sweep",
 	}
 	liquidityAfterFlag = &cli.StringFlag{
-		Name: liquidityAfterFlagName,
+		Name: afterDateFlagName,
 		Usage: fmt.Sprintf(
 			"get expiring liquidity after a specific date in format %s. "+
 				"If not provided, defaults to now", dateWithTimeFormat,
@@ -237,7 +235,7 @@ var (
 		Value: "",
 	}
 	liquidityBeforeFlag = &cli.StringFlag{
-		Name: liquidityBeforeFlagName,
+		Name: beforeDateFlagName,
 		Usage: fmt.Sprintf(
 			"get expiring liquidity before a specific date in format %s. "+
 				"If not provided, no upper bound is applied", dateWithTimeFormat,

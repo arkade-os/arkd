@@ -998,8 +998,8 @@ func sweepAction(ctx *cli.Context) error {
 
 func liquidityExpiringAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	afterDate := ctx.String(liquidityAfterFlagName)
-	beforeDate := ctx.String(liquidityBeforeFlagName)
+	afterDate := ctx.String(afterDateFlagName)
+	beforeDate := ctx.String(beforeDateFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
@@ -1010,7 +1010,7 @@ func liquidityExpiringAction(ctx *cli.Context) error {
 		tt, err := time.Parse(dateWithTimeFormat, afterDate)
 		if err != nil {
 			return fmt.Errorf(
-				"invalid --%s flag format, must be %s", liquidityAfterFlagName, dateWithTimeFormat,
+				"invalid --%s flag format, must be %s", afterDateFlagName, dateWithTimeFormat,
 			)
 		}
 		after = tt.Unix()
@@ -1021,7 +1021,7 @@ func liquidityExpiringAction(ctx *cli.Context) error {
 		tt, err := time.Parse(dateWithTimeFormat, beforeDate)
 		if err != nil {
 			return fmt.Errorf(
-				"invalid --%s flag format, must be %s", liquidityBeforeFlagName, dateWithTimeFormat,
+				"invalid --%s flag format, must be %s", beforeDateFlagName, dateWithTimeFormat,
 			)
 		}
 		before = tt.Unix()
