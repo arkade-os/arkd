@@ -110,6 +110,15 @@ type TransactionEvent struct {
 	SpendableVtxos []domain.Vtxo
 	SweptVtxos     []domain.Outpoint
 	CheckpointTxs  map[string]TxData
+	TeleportEvents []TeleportEvent
+}
+
+type TeleportEvent struct {
+	TeleportHash   string
+	AnchorOutpoint domain.Outpoint
+	OutputVout     uint32
+	CreatedAt      int64
+	ExpiresAt      int64
 }
 
 type VtxoChainResp struct {

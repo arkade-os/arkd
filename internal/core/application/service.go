@@ -278,12 +278,15 @@ func NewService(
 			spentVtxos := svc.getSpentVtxos(round.Intents)
 			newVtxos := getNewVtxosFromRound(round)
 
+			newTeleportEvents := getTeleportEvents(round)
+
 			// commitment tx event
 			txEvent := TransactionEvent{
 				TxData:         TxData{Tx: round.CommitmentTx, Txid: round.CommitmentTxid},
 				Type:           CommitmentTxType,
 				SpentVtxos:     spentVtxos,
 				SpendableVtxos: newVtxos,
+				TeleportEvents: newTeleportEvents,
 			}
 
 			svc.propagateTransactionEvent(txEvent)
@@ -332,12 +335,14 @@ func NewService(
 			}
 
 			// ark tx event
+			// TODO (Joshua) add subscription for normal Assets
 			txEvent := TransactionEvent{
 				TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
 				Type:           ArkTxType,
 				SpentVtxos:     spentVtxos,
 				SpendableVtxos: newVtxos,
 				CheckpointTxs:  checkpointTxsByOutpoint,
+				TeleportEvents: []TeleportEvent{},
 			}
 
 			svc.propagateTransactionEvent(txEvent)
@@ -4108,4 +4113,66 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 	}
 
 	return nil
+}
+
+func getTeleportEvents(round *domain.Round) []TeleportEvent {
+	if len(round.VtxoTree) <= 0 {
+		return nil
+	}
+
+	now := time.Now()
+	createdAt := now.Unix()
+	expireAt := round.ExpiryTimestamp()
+
+	events := make([]TeleportEvent, 0)
+
+	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
+		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
+		if err != nil {
+			log.WithError(err).Warn("failed to parse tx")
+			continue
+		}
+		for i, out := range tx.UnsignedTx.TxOut {
+			if asset.IsAssetGroup(out.PkScript) {
+				group, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
+				if err == nil {
+					anchorOutpoint := domain.Outpoint{
+						Txid: tx.UnsignedTx.TxID(),
+						VOut: uint32(i),
+					}
+
+					for _, ast := range group.NormalAssets {
+						for outIdx, assetOut := range ast.Outputs {
+							if assetOut.Type == asset.AssetOutputTypeTeleport {
+								teleportHash := hex.EncodeToString(assetOut.Commitment[:])
+								events = append(events, TeleportEvent{
+									TeleportHash:   teleportHash,
+									AnchorOutpoint: anchorOutpoint,
+									OutputVout:     uint32(outIdx),
+									CreatedAt:      createdAt,
+									ExpiresAt:      expireAt,
+								})
+							}
+						}
+					}
+					for _, ast := range group.ControlAssets {
+						for outIdx, assetOut := range ast.Outputs {
+							if assetOut.Type == asset.AssetOutputTypeTeleport {
+								teleportHash := hex.EncodeToString(assetOut.Commitment[:])
+								events = append(events, TeleportEvent{
+									TeleportHash:   teleportHash,
+									AnchorOutpoint: anchorOutpoint,
+									OutputVout:     uint32(outIdx),
+									CreatedAt:      createdAt,
+									ExpiresAt:      expireAt,
+								})
+							}
+						}
+					}
+				}
+			}
+		}
+
+	}
+	return events
 }

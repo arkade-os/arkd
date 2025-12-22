@@ -506,6 +506,88 @@
         }
       }
     },
+    "/v1/indexer/teleport/subscribe": {
+      "post": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "SubscribeForTeleportHash allows to subscribe for tx notifications related to the provided\nteleport hashes. It can also be used to update an existing subscribtion by adding new hashes to it.",
+        "operationId": "IndexerService_SubscribeForTeleportHash",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeForTeleportHashRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribeForTeleportHashResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/teleport/unsubscribe": {
+      "post": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "UnsubscribeForTeleportHash allows to remove teleport hashes from an existing subscription.",
+        "operationId": "IndexerService_UnsubscribeForTeleportHash",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeForTeleportHashRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeForTeleportHashResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/indexer/virtualTx/{txids}": {
       "get": {
         "tags": [
@@ -1255,6 +1337,19 @@
               "$ref": "#/components/schemas/IndexerVtxo"
             }
           },
+          "teleportEvents": {
+            "type": "array",
+            "description": "List of teleport events involved in the transaction",
+            "items": {
+              "$ref": "#/components/schemas/TeleportEvent"
+            }
+          },
+          "teleportHashes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "tx": {
             "type": "string"
           },
@@ -1429,6 +1524,55 @@
           }
         }
       },
+      "SubscribeForTeleportHashRequest": {
+        "title": "SubscribeForTeleportHashRequest",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "description": "If set, update an existing subscription"
+          },
+          "teleportHashes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SubscribeForTeleportHashResponse": {
+        "title": "SubscribeForTeleportHashResponse",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
+      "TeleportEvent": {
+        "title": "TeleportEvent",
+        "type": "object",
+        "properties": {
+          "anchorOutpoint": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outputVout": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "teleportHash": {
+            "type": "string"
+          }
+        }
+      },
       "UnsubscribeForScriptsRequest": {
         "title": "UnsubscribeForScriptsRequest",
         "type": "object",
@@ -1447,6 +1591,26 @@
       },
       "UnsubscribeForScriptsResponse": {
         "title": "UnsubscribeForScriptsResponse",
+        "type": "object"
+      },
+      "UnsubscribeForTeleportHashRequest": {
+        "title": "UnsubscribeForTeleportHashRequest",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          },
+          "teleportHashes": {
+            "type": "array",
+            "description": "If empty, unsubscribe all teleport hashes",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UnsubscribeForTeleportHashResponse": {
+        "title": "UnsubscribeForTeleportHashResponse",
         "type": "object"
       }
     }

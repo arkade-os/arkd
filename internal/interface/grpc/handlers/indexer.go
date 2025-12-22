@@ -23,6 +23,7 @@ type indexerService struct {
 	eventsCh   <-chan application.TransactionEvent
 
 	scriptSubsHandler           *broker[*arkv1.GetSubscriptionResponse]
+	teleportSubsHandler         *broker[*arkv1.GetSubscriptionResponse]
 	subscriptionTimeoutDuration time.Duration
 
 	heartbeat time.Duration
@@ -36,6 +37,7 @@ func NewIndexerService(
 		indexerSvc:                  indexerSvc,
 		eventsCh:                    eventsCh,
 		scriptSubsHandler:           newBroker[*arkv1.GetSubscriptionResponse](),
+		teleportSubsHandler:         newBroker[*arkv1.GetSubscriptionResponse](),
 		subscriptionTimeoutDuration: subscriptionTimeoutDuration,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
 	}
@@ -379,6 +381,59 @@ func (e *indexerService) GetBatchSweepTransactions(
 	}, nil
 }
 
+func (h *indexerService) UnsubscribeForTeleportHash(
+	ctx context.Context, request *arkv1.UnsubscribeForTeleportHashRequest,
+) (*arkv1.UnsubscribeForTeleportHashResponse, error) {
+	subscriptionId := request.GetSubscriptionId()
+	if len(subscriptionId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing subscription id")
+	}
+
+	hashes := request.GetTeleportHashes()
+	if len(hashes) == 0 {
+		// remove all topics
+		if err := h.teleportSubsHandler.removeAllTopics(subscriptionId); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		h.teleportSubsHandler.removeListener(subscriptionId)
+		return &arkv1.UnsubscribeForTeleportHashResponse{}, nil
+	}
+
+	if err := h.teleportSubsHandler.removeTopics(subscriptionId, hashes); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &arkv1.UnsubscribeForTeleportHashResponse{}, nil
+}
+
+func (h *indexerService) SubscribeForTeleportHash(
+	ctx context.Context, req *arkv1.SubscribeForTeleportHashRequest,
+) (*arkv1.SubscribeForTeleportHashResponse, error) {
+	subscriptionId := req.GetSubscriptionId()
+	hashes := req.GetTeleportHashes()
+	if len(hashes) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing teleport hashes")
+	}
+
+	if len(subscriptionId) == 0 {
+		// create new listener
+		subscriptionId = uuid.NewString()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, hashes)
+
+		h.teleportSubsHandler.pushListener(listener)
+		h.teleportSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
+	} else {
+		// update listener topic
+		if err := h.teleportSubsHandler.addTopics(subscriptionId, hashes); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+	return &arkv1.SubscribeForTeleportHashResponse{
+		SubscriptionId: subscriptionId,
+	}, nil
+}
+
 func (h *indexerService) GetSubscription(
 	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
 ) error {
@@ -388,17 +443,30 @@ func (h *indexerService) GetSubscription(
 	}
 
 	h.scriptSubsHandler.stopTimeout(subscriptionId)
+	h.teleportSubsHandler.stopTimeout(subscriptionId)
 	defer func() {
 		topics := h.scriptSubsHandler.getTopics(subscriptionId)
 		if len(topics) > 0 {
 			h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-			return
+		} else {
+			h.scriptSubsHandler.removeListener(subscriptionId)
 		}
-		h.scriptSubsHandler.removeListener(subscriptionId)
+
+		teleportTopics := h.teleportSubsHandler.getTopics(subscriptionId)
+		if len(teleportTopics) > 0 {
+			h.teleportSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
+		} else {
+			h.teleportSubsHandler.removeListener(subscriptionId)
+		}
 	}()
 
-	ch, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
-	if err != nil {
+	scriptCh, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
+	if err != nil && !strings.Contains(err.Error(), "listener not found") {
+		return status.Error(codes.Internal, err.Error())
+	}
+
+	teleportCh, err := h.teleportSubsHandler.getListenerChannel(subscriptionId)
+	if err != nil && !strings.Contains(err.Error(), "listener not found") {
 		return status.Error(codes.Internal, err.Error())
 	}
 
@@ -422,7 +490,12 @@ func (h *indexerService) GetSubscription(
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case ev := <-ch:
+		case ev := <-scriptCh:
+			if err := stream.Send(ev); err != nil {
+				return err
+			}
+			resetTimer()
+		case ev := <-teleportCh:
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
@@ -496,7 +569,7 @@ func (h *indexerService) SubscribeForScripts(
 
 func (h *indexerService) listenToTxEvents() {
 	for event := range h.eventsCh {
-		if !h.scriptSubsHandler.hasListeners() {
+		if !h.scriptSubsHandler.hasListeners() && !h.teleportSubsHandler.hasListeners() {
 			continue
 		}
 
@@ -570,6 +643,51 @@ func (h *indexerService) listenToTxEvents() {
 						// channel is full, skip this message to prevent blocking
 					}
 				}(l)
+			}
+		}
+
+		teleportListenersCopy := h.teleportSubsHandler.getListenersCopy()
+		if len(teleportListenersCopy) > 0 {
+			parsedTeleportEvents := make([]*arkv1.TeleportEvent, 0)
+			for _, te := range event.TeleportEvents {
+				parsedTeleportEvents = append(parsedTeleportEvents, &arkv1.TeleportEvent{
+					TeleportHash:   te.TeleportHash,
+					AnchorOutpoint: te.AnchorOutpoint.String(),
+					OutputVout:     te.OutputVout,
+					CreatedAt:      te.CreatedAt,
+					ExpiresAt:      te.ExpiresAt,
+				})
+			}
+
+			for _, l := range teleportListenersCopy {
+				teleportEvents := make([]*arkv1.TeleportEvent, 0)
+				involvedHashes := make([]string, 0)
+
+				for _, tpEvent := range parsedTeleportEvents {
+					if _, ok := l.topics[tpEvent.TeleportHash]; ok {
+						involvedHashes = append(involvedHashes, tpEvent.TeleportHash)
+						teleportEvents = append(teleportEvents, tpEvent)
+					}
+				}
+
+				if len(teleportEvents) > 0 {
+					go func(listener *listener[*arkv1.GetSubscriptionResponse]) {
+						select {
+						case listener.ch <- &arkv1.GetSubscriptionResponse{
+							Data: &arkv1.GetSubscriptionResponse_Event{
+								Event: &arkv1.IndexerSubscriptionEvent{
+									Txid:           event.Txid,
+									TeleportEvents: teleportEvents,
+									TeleportHashes: involvedHashes,
+									Tx:             event.Tx,
+								},
+							},
+						}:
+						default:
+							// channel is full, skip this message to prevent blocking
+						}
+					}(l)
+				}
 			}
 		}
 	}
