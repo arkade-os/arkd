@@ -239,6 +239,44 @@ func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 	return allVtxos, nil
 }
 
+func (r *vtxoRepository) GetExpiringLiquidity(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	query := badgerhold.Where("Swept").Eq(false).
+		And("Spent").Eq(false).
+		And("Unrolled").Eq(false).
+		And("ExpiresAt").Gt(after)
+
+	if before > 0 {
+		query = query.And("ExpiresAt").Lt(before)
+	}
+
+	vtxos, err := r.findVtxos(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+
+	var sum uint64
+	for _, vtxo := range vtxos {
+		sum += vtxo.Amount
+	}
+	return sum, nil
+}
+
+func (r *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+	query := badgerhold.Where("Swept").Eq(true).And("Spent").Eq(false)
+	vtxos, err := r.findVtxos(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+
+	var sum uint64
+	for _, vtxo := range vtxos {
+		sum += vtxo.Amount
+	}
+	return sum, nil
+}
+
 func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	ctx context.Context, commitmentTxid string, amountFilter uint64,
 ) ([]string, error) {

@@ -304,6 +304,28 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
+const selectExpiringLiquidityAmount = `-- name: SelectExpiringLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS amount
+FROM vtxo
+WHERE swept = false
+  AND spent = false
+  AND unrolled = false
+  AND expires_at > $1
+  AND ($2 <= 0 OR expires_at < $2)
+`
+
+type SelectExpiringLiquidityAmountParams struct {
+	After  int64
+	Before interface{}
+}
+
+func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectExpiringLiquidityAmountParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, selectExpiringLiquidityAmount, arg.After, arg.Before)
+	var amount int64
+	err := row.Scan(&amount)
+	return amount, err
+}
+
 const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
 SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1
 `
@@ -569,6 +591,20 @@ func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, dollar
 		return nil, err
 	}
 	return items, nil
+}
+
+const selectRecoverableLiquidityAmount = `-- name: SelectRecoverableLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS amount
+FROM vtxo
+WHERE swept = true
+  AND spent = false
+`
+
+func (q *Queries) SelectRecoverableLiquidityAmount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, selectRecoverableLiquidityAmount)
+	var amount int64
+	err := row.Scan(&amount)
+	return amount, err
 }
 
 const selectRoundConnectors = `-- name: SelectRoundConnectors :many
