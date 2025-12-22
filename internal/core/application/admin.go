@@ -432,6 +432,7 @@ func (a *adminService) Sweep(
 	ctx context.Context, withConnectors bool, commitmentTxids []string,
 ) (txid string, txhex string, err error) {
 	inputs := make([]ports.TxInput, 0)
+	connectorsToLock := make([]domain.Outpoint, 0)
 
 	if withConnectors {
 		connectorAddresses, err := a.repoManager.Rounds().GetSweptRoundsConnectorAddress(ctx)
@@ -448,16 +449,11 @@ func (a *adminService) Sweep(
 			connectorUtxos = append(connectorUtxos, utxos...)
 		}
 
-		outpoints := make([]domain.Outpoint, 0)
 		for _, utxo := range connectorUtxos {
-			outpoints = append(outpoints, domain.Outpoint{
+			connectorsToLock = append(connectorsToLock, domain.Outpoint{
 				Txid: utxo.Txid,
 				VOut: utxo.Index,
 			})
-		}
-
-		if err := a.walletSvc.LockConnectorUtxos(ctx, outpoints); err != nil {
-			return "", "", err
 		}
 
 		inputs = append(inputs, connectorUtxos...)
@@ -500,11 +496,7 @@ func (a *adminService) Sweep(
 		batchVtxoTrees[commitmentTxid] = vtxoTree
 
 		sweepableOutputs, err := findSweepableOutputs(
-			ctx,
-			a.walletSvc,
-			a.txBuilder,
-			a.sweeperTimeUnit,
-			vtxoTree,
+			ctx, a.walletSvc, a.txBuilder, a.sweeperTimeUnit, vtxoTree,
 		)
 		if err != nil {
 			return "", "", fmt.Errorf(
@@ -536,6 +528,12 @@ func (a *adminService) Sweep(
 	txid, txhex, err = a.txBuilder.BuildSweepTx(inputs)
 	if err != nil {
 		return
+	}
+
+	if len(connectorsToLock) > 0 {
+		if err := a.walletSvc.LockConnectorUtxos(ctx, connectorsToLock); err != nil {
+			return "", "", err
+		}
 	}
 
 	// broadcast the sweep transaction
