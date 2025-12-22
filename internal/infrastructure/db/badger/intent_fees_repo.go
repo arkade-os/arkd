@@ -159,7 +159,7 @@ func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
 		OffchainOutputFee: "0.0",
 	}); err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
-	}	
+	}
 
 	return nil
 }
