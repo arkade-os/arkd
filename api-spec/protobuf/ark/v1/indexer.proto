@@ -247,7 +247,8 @@ message GetAssetResponse {
 message Asset {
   string id = 1;
   uint64 quantity = 2;
-  repeated AssetMetadata metadata = 3;
+  bool immutable = 3;
+  repeated AssetMetadata metadata = 4;
 }
 
 message AssetMetadata {

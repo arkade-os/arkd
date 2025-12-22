@@ -70,9 +70,10 @@ func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRe
 	return &arkv1.GetAssetResponse{
 		AssetId: assetId,
 		Asset: &arkv1.Asset{
-			Id:       resp.Asset.ID,
-			Quantity: resp.Asset.Quantity,
-			Metadata: assetMetadata,
+			Id:        resp.Asset.ID,
+			Quantity:  resp.Asset.Quantity,
+			Immutable: resp.Asset.Immutable,
+			Metadata:  assetMetadata,
 		},
 	}, nil
 }

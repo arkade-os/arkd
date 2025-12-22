@@ -835,6 +835,9 @@
           "id": {
             "type": "string"
           },
+          "immutable": {
+            "type": "boolean"
+          },
           "metadata": {
             "type": "array",
             "items": {

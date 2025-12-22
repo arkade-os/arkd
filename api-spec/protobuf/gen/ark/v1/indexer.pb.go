@@ -1128,7 +1128,8 @@ type Asset struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Quantity      uint64                 `protobuf:"varint,2,opt,name=quantity,proto3" json:"quantity,omitempty"`
-	Metadata      []*AssetMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	Immutable     bool                   `protobuf:"varint,3,opt,name=immutable,proto3" json:"immutable,omitempty"`
+	Metadata      []*AssetMetadata       `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1175,6 +1176,13 @@ func (x *Asset) GetQuantity() uint64 {
 		return x.Quantity
 	}
 	return 0
+}
+
+func (x *Asset) GetImmutable() bool {
+	if x != nil {
+		return x.Immutable
+	}
+	return false
 }
 
 func (x *Asset) GetMetadata() []*AssetMetadata {
@@ -2850,11 +2858,12 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\"R\n" +
 	"\x10GetAssetResponse\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\x12#\n" +
-	"\x05asset\x18\x02 \x01(\v2\r.ark.v1.AssetR\x05asset\"f\n" +
+	"\x05asset\x18\x02 \x01(\v2\r.ark.v1.AssetR\x05asset\"\x84\x01\n" +
 	"\x05Asset\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
-	"\bquantity\x18\x02 \x01(\x04R\bquantity\x121\n" +
-	"\bmetadata\x18\x03 \x03(\v2\x15.ark.v1.AssetMetadataR\bmetadata\"7\n" +
+	"\bquantity\x18\x02 \x01(\x04R\bquantity\x12\x1c\n" +
+	"\timmutable\x18\x03 \x01(\bR\timmutable\x121\n" +
+	"\bmetadata\x18\x04 \x03(\v2\x15.ark.v1.AssetMetadataR\bmetadata\"7\n" +
 	"\rAssetMetadata\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"b\n" +

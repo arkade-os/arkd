@@ -181,7 +181,6 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 					continue
 				}
 
-				// TODO (Joshua) : Add Hash to TxIn
 				if vtxo.Outpoint.Index == input.Vin && bytes.Equal(vtxo.Outpoint.Hash[:], input.Hash) {
 					vtxoInput = &vtxos[i]
 					usedVtxos[i] = true
