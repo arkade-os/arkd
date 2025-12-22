@@ -188,6 +188,36 @@ func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error)
 	return readRows(rows)
 }
 
+func (v *vtxoRepository) GetExpiringLiquidity(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	amount, err := v.querier.SelectExpiringLiquidityAmount(
+		ctx,
+		queries.SelectExpiringLiquidityAmountParams{
+			After:  after,
+			Before: before,
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+	if amount < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", amount)
+	}
+	return uint64(amount), nil
+}
+
+func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+	amount, err := v.querier.SelectRecoverableLiquidityAmount(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if amount < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", amount)
+	}
+	return uint64(amount), nil
+}
+
 func (v *vtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
