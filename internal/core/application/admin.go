@@ -428,7 +428,6 @@ func (s *adminService) UpdateIntentFees(
 	}
 	err = feeManager.Validate(fees.OffchainOutputFee, celenv.IntentOutputEnv)
 	if err != nil {
-		fmt.Printf("error spot: 4\n")
 		return fmt.Errorf("invalid offchain output fee program: %w", err)
 	}
 
