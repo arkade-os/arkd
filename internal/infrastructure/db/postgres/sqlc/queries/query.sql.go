@@ -17,12 +17,15 @@ const addIntentFees = `-- name: AddIntentFees :exec
 INSERT INTO intent_fees (
     offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
-) VALUES (
-    COALESCE(NULLIF($1, ''), (SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
-    COALESCE(NULLIF($2, ''), (SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
-    COALESCE(NULLIF($3, ''), (SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
-    COALESCE(NULLIF($4, ''), (SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1))
 )
+SELECT
+    COALESCE(NULLIF($1, ''), last.offchain_input_fee_program, ''),
+    COALESCE(NULLIF($2, ''), last.onchain_input_fee_program, ''),
+    COALESCE(NULLIF($3, ''), last.offchain_output_fee_program, ''),
+    COALESCE(NULLIF($4, ''), last.onchain_output_fee_program, '')
+FROM (
+    SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
+) AS last
 `
 
 type AddIntentFeesParams struct {

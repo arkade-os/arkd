@@ -377,9 +377,12 @@ SELECT * FROM intent_fees ORDER BY created_at DESC LIMIT 1;
 INSERT INTO intent_fees (
     offchain_input_fee_program, onchain_input_fee_program,
     offchain_output_fee_program, onchain_output_fee_program
-) VALUES (
-    COALESCE(NULLIF(@offchain_input_fee_program, ''), (SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
-    COALESCE(NULLIF(@onchain_input_fee_program, ''), (SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
-    COALESCE(NULLIF(@offchain_output_fee_program, ''), (SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1)),
-    COALESCE(NULLIF(@onchain_output_fee_program, ''), (SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1))
-);
+)
+SELECT
+    COALESCE(NULLIF(@offchain_input_fee_program, ''), last.offchain_input_fee_program, ''),
+    COALESCE(NULLIF(@onchain_input_fee_program, ''), last.onchain_input_fee_program, ''),
+    COALESCE(NULLIF(@offchain_output_fee_program, ''), last.offchain_output_fee_program, ''),
+    COALESCE(NULLIF(@onchain_output_fee_program, ''), last.onchain_output_fee_program, '')
+FROM (
+    SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1
+) AS last;
