@@ -2020,17 +2020,23 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		}
 	}
 
-	// TODO: caching?
 	currIntentFees, err := s.repoManager.Fees().GetIntentFees(ctx)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)
 	}
-
-	intentFeeInfo := domain.IntentFees{
-		OnchainInputFee:   currIntentFees.OnchainInputFee,
-		OffchainInputFee:  currIntentFees.OffchainInputFee,
-		OnchainOutputFee:  currIntentFees.OnchainOutputFee,
-		OffchainOutputFee: currIntentFees.OffchainOutputFee,
+	// resolve empty fees to zero value programs
+	resolvedFees := currIntentFees
+	if resolvedFees.OnchainInputFee == "" {
+		resolvedFees.OnchainInputFee = "0.0"
+	}
+	if resolvedFees.OffchainInputFee == "" {
+		resolvedFees.OffchainInputFee = "0.0"
+	}
+	if resolvedFees.OnchainOutputFee == "" {
+		resolvedFees.OnchainOutputFee = "0.0"
+	}
+	if resolvedFees.OffchainOutputFee == "" {
+		resolvedFees.OffchainOutputFee = "0.0"
 	}
 
 	return &ServiceInfo{
@@ -2049,7 +2055,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		Fees: FeeInfo{
-			IntentFees: intentFeeInfo,
+			IntentFees: *resolvedFees,
 		},
 	}, nil
 }

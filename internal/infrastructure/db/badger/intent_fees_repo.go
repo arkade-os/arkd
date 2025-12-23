@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/timshannon/badgerhold/v4"
 )
@@ -41,21 +39,7 @@ func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error
 		return nil, fmt.Errorf("failed to open intent fees store: %w", err)
 	}
 
-	repo := &intentFeesRepo{store}
-	// only initialize intent fees if none exist in the DB
-	var all []intentFeesDTO
-	err = repo.store.Find(&all, nil)
-	if err != nil && err != badgerhold.ErrNotFound {
-		return nil, fmt.Errorf("failed to check existing intent fees: %w", err)
-	}
-
-	if len(all) == 0 {
-		if err := repo.ClearIntentFees(context.Background()); err != nil {
-			return nil, fmt.Errorf("failed to initialize intent fees: %w", err)
-		}
-	}
-
-	return repo, nil
+	return &intentFeesRepo{store}, nil
 }
 
 func (r *intentFeesRepo) Close() {
@@ -75,7 +59,7 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 	err := r.store.FindOne(&latest, query)
 	if err != nil {
 		if err == badgerhold.ErrNotFound {
-			return nil, fmt.Errorf("no intent fees found")
+			return &domain.IntentFees{}, nil
 		}
 		return nil, fmt.Errorf("failed to get latest intent fees: %w", err)
 	}
@@ -116,34 +100,18 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 
 	// allow partial updates to fees by using existing values if empty
 	if fees.OnchainInputFee != "" {
-		_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid onchain input fee: %w", err)
-		}
 		newEntry.OnchainInputFeeProgram = fees.OnchainInputFee
 	}
 	if fees.OffchainInputFee != "" {
-		_, err := arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid offchain input fee: %w", err)
-		}
 		newEntry.OffchainInputFeeProgram = fees.OffchainInputFee
 	}
 	if fees.OnchainOutputFee != "" {
-		_, err := arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid onchain output fee: %w", err)
-		}
 		newEntry.OnchainOutputFeeProgram = fees.OnchainOutputFee
 	}
 	if fees.OffchainOutputFee != "" {
-		_, err := arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid offchain output fee: %w", err)
-		}
 		newEntry.OffchainOutputFeeProgram = fees.OffchainOutputFee
 	}
-
+	fmt.Printf("badger setting intent fees: %+v\n", newEntry)
 	if err := r.store.Insert(nowKey, &newEntry); err != nil {
 		return fmt.Errorf("failed to insert intent fees: %w", err)
 	}
@@ -152,12 +120,18 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	if err := r.UpdateIntentFees(ctx, domain.IntentFees{
-		OnchainInputFee:   "0.0",
-		OffchainInputFee:  "0.0",
-		OnchainOutputFee:  "0.0",
-		OffchainOutputFee: "0.0",
-	}); err != nil {
+	now := time.Now().UnixMilli()
+	nowKey := fmt.Sprintf("intent_fees-%d", now)
+	newEntry := intentFeesDTO{
+		ID:                       nowKey,
+		CreatedAt:                now,
+		OnchainInputFeeProgram:   "",
+		OffchainInputFeeProgram:  "",
+		OnchainOutputFeeProgram:  "",
+		OffchainOutputFeeProgram: "",
+	}
+
+	if err := r.store.Insert(nowKey, &newEntry); err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
 	}
 

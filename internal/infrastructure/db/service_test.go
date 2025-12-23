@@ -1416,14 +1416,14 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 		repo := svc.Fees()
 
-		// fees should be initialized to 0.0
+		// fees should be initialized to empty strings
 		currentFees, err := repo.GetIntentFees(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, currentFees)
-		require.Equal(t, "0.0", currentFees.OnchainInputFee)
-		require.Equal(t, "0.0", currentFees.OffchainInputFee)
-		require.Equal(t, "0.0", currentFees.OnchainOutputFee)
-		require.Equal(t, "0.0", currentFees.OffchainOutputFee)
+		require.Equal(t, "", currentFees.OnchainInputFee)
+		require.Equal(t, "", currentFees.OffchainInputFee)
+		require.Equal(t, "", currentFees.OnchainOutputFee)
+		require.Equal(t, "", currentFees.OffchainOutputFee)
 
 		newFees := domain.IntentFees{
 			OnchainInputFee:   "0.25",
@@ -1454,10 +1454,10 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		clearedFees, err := repo.GetIntentFees(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, clearedFees)
-		require.Equal(t, "0.0", clearedFees.OnchainInputFee)
-		require.Equal(t, "0.0", clearedFees.OffchainInputFee)
-		require.Equal(t, "0.0", clearedFees.OnchainOutputFee)
-		require.Equal(t, "0.0", clearedFees.OffchainOutputFee)
+		require.Equal(t, "", clearedFees.OnchainInputFee)
+		require.Equal(t, "", clearedFees.OffchainInputFee)
+		require.Equal(t, "", clearedFees.OnchainOutputFee)
+		require.Equal(t, "", clearedFees.OffchainOutputFee)
 
 		// set the fees back to newFees
 		time.Sleep(10 * time.Millisecond)
@@ -1521,8 +1521,8 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, updatedFees)
 		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
 		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
-		require.Equal(t, "0.0", updatedFees.OnchainOutputFee)
-		require.Equal(t, "0.0", updatedFees.OffchainOutputFee)
+		require.Equal(t, "", updatedFees.OnchainOutputFee)
+		require.Equal(t, "", updatedFees.OffchainOutputFee)
 
 	})
 }

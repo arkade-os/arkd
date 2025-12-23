@@ -9,6 +9,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/google/cel-go/cel"
 )
 
 type arkFeeManager struct {
@@ -71,6 +72,11 @@ func (a *arkFeeManager) ComputeIntentFees(
 	}
 
 	return fee.ToSatoshis(), nil
+}
+
+func (a *arkFeeManager) Validate(feeProgram string, celEnv *cel.Env) error {
+	_, err := arkfee.Parse(feeProgram, celEnv)
+	return err
 }
 
 func toArkFeeOffchainOutput(output wire.TxOut) arkfee.Output {

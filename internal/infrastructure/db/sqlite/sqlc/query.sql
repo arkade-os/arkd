@@ -380,14 +380,29 @@ SELECT * FROM intent_fees ORDER BY created_at DESC LIMIT 1;
 
 -- name: AddIntentFees :exec
 INSERT INTO intent_fees (
-    offchain_input_fee_program, onchain_input_fee_program,
-    offchain_output_fee_program, onchain_output_fee_program
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
 )
 SELECT
-    COALESCE(NULLIF(:offchain_input_fee_program, ''), last.offchain_input_fee_program, ''),
-    COALESCE(NULLIF(:onchain_input_fee_program, ''), last.onchain_input_fee_program, ''),
-    COALESCE(NULLIF(:offchain_output_fee_program, ''), last.offchain_output_fee_program, ''),
-    COALESCE(NULLIF(:onchain_output_fee_program, ''), last.onchain_output_fee_program, '')
-FROM (
-    SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1
-) AS last;
+  CASE
+    WHEN (:offchain_input_fee_program = '' AND :onchain_input_fee_program = '' AND :offchain_output_fee_program = '' AND :onchain_output_fee_program = '') THEN ''
+    WHEN :offchain_input_fee_program != '' THEN :offchain_input_fee_program
+    ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (:offchain_input_fee_program = '' AND :onchain_input_fee_program = '' AND :offchain_output_fee_program = '' AND :onchain_output_fee_program = '') THEN ''
+    WHEN :onchain_input_fee_program != '' THEN :onchain_input_fee_program
+    ELSE COALESCE((SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (:offchain_input_fee_program = '' AND :onchain_input_fee_program = '' AND :offchain_output_fee_program = '' AND :onchain_output_fee_program = '') THEN ''
+    WHEN :offchain_output_fee_program != '' THEN :offchain_output_fee_program
+    ELSE COALESCE((SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (:offchain_input_fee_program = '' AND :onchain_input_fee_program = '' AND :offchain_output_fee_program = '' AND :onchain_output_fee_program = '') THEN ''
+    WHEN :onchain_output_fee_program != '' THEN :onchain_output_fee_program
+    ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END;

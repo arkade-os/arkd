@@ -7,8 +7,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
 )
 
 type intentFeesRepo struct {
@@ -42,7 +40,7 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 	intentFees, err := r.querier.SelectLatestIntentFees(ctx)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no intent fees found")
+			return &domain.IntentFees{}, nil
 		}
 		return nil, fmt.Errorf("failed to get intent fees: %w", err)
 	}
@@ -62,31 +60,6 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 		return fmt.Errorf("missing fees to update")
 	}
 
-	if fees.OnchainInputFee != "" {
-		_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid onchain input fee: %w", err)
-		}
-	}
-
-	if fees.OffchainInputFee != "" {
-		_, err := arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid offchain input fee: %w", err)
-		}
-	}
-	if fees.OnchainOutputFee != "" {
-		_, err := arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid onchain output fee: %w", err)
-		}
-	}
-	if fees.OffchainOutputFee != "" {
-		_, err := arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid offchain output fee: %w", err)
-		}
-	}
 	if err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
 		OnchainInputFeeProgram:   fees.OnchainInputFee,
 		OffchainInputFeeProgram:  fees.OffchainInputFee,
@@ -100,11 +73,11 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	if err := r.UpdateIntentFees(ctx, domain.IntentFees{
-		OnchainInputFee:   "0.0",
-		OffchainInputFee:  "0.0",
-		OnchainOutputFee:  "0.0",
-		OffchainOutputFee: "0.0",
+	if err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
+		OnchainInputFeeProgram:   "",
+		OffchainInputFeeProgram:  "",
+		OnchainOutputFeeProgram:  "",
+		OffchainOutputFeeProgram: "",
 	}); err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
 	}
