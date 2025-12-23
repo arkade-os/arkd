@@ -413,24 +413,31 @@ func (s *adminService) UpdateIntentFees(
 		return fmt.Errorf("failed to create fee manager: %w", err)
 	}
 
-	// validate the programs
-	err = feeManager.Validate(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid onchain input fee program: %w", err)
+	// validate the programs for set fields
+	if fees.OnchainInputFee != "" {
+		err = feeManager.Validate(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid onchain input fee program: %w", err)
+		}
 	}
-	err = feeManager.Validate(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid offchain input fee program: %w", err)
+	if fees.OffchainInputFee != "" {
+		err = feeManager.Validate(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid offchain input fee program: %w", err)
+		}
 	}
-	err = feeManager.Validate(fees.OnchainOutputFee, celenv.IntentOutputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid onchain output fee program: %w", err)
+	if fees.OnchainOutputFee != "" {
+		err = feeManager.Validate(fees.OnchainOutputFee, celenv.IntentOutputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid onchain output fee program: %w", err)
+		}
 	}
-	err = feeManager.Validate(fees.OffchainOutputFee, celenv.IntentOutputEnv)
-	if err != nil {
-		return fmt.Errorf("invalid offchain output fee program: %w", err)
+	if fees.OffchainOutputFee != "" {
+		err = feeManager.Validate(fees.OffchainOutputFee, celenv.IntentOutputEnv)
+		if err != nil {
+			return fmt.Errorf("invalid offchain output fee program: %w", err)
+		}
 	}
-
 	return s.repoManager.Fees().UpdateIntentFees(ctx, fees)
 }
 
