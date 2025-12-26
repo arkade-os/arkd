@@ -151,7 +151,7 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 		Type:           application.CommitmentTxType,
 		SpentVtxos:     []domain.Vtxo{},
 		SpendableVtxos: []domain.Vtxo{},
-		TeleportEvents: []application.TeleportEvent{
+		TeleportAssets: []application.TeleportAsset{
 			{
 				TeleportHash: hex.EncodeToString(commitment[:]),
 				AnchorOutpoint: domain.Outpoint{

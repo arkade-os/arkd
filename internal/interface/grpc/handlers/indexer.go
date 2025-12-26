@@ -650,10 +650,12 @@ func (h *indexerService) listenToTxEvents() {
 		teleportListenersCopy := h.teleportSubsHandler.getListenersCopy()
 		if len(teleportListenersCopy) > 0 {
 			parsedTeleportEvents := make([]*arkv1.TeleportEvent, 0)
-			for _, te := range event.TeleportEvents {
+			for _, te := range event.TeleportAssets {
 				parsedTeleportEvents = append(parsedTeleportEvents, &arkv1.TeleportEvent{
 					TeleportHash:   te.TeleportHash,
 					AnchorOutpoint: te.AnchorOutpoint.String(),
+					AssetId:        te.AssetID,
+					Amount:         te.Amount,
 					OutputVout:     te.OutputVout,
 					CreatedAt:      te.CreatedAt,
 					ExpiresAt:      te.ExpiresAt,

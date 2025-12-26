@@ -121,6 +121,8 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	txid := ptx.UnsignedTx.TxID()
 
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
+	assetAnchors := make([]domain.AssetAnchor, 0)
+
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
 		var pubKey string
 		var isSubDust bool
@@ -129,6 +131,26 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			decodedAssetGroup, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf("failed to decode asset group from opreturn: %s", err)
+			}
+
+			allAssets := append(decodedAssetGroup.ControlAssets, decodedAssetGroup.NormalAssets...)
+
+			for _, grpAsset := range allAssets {
+				assetVtxos := make([]domain.AnchorVtxo, 0)
+				for _, assetOut := range grpAsset.Outputs {
+					assetVtxos = append(assetVtxos, domain.AnchorVtxo{
+						Vout:   assetOut.Vout,
+						Amount: assetOut.Amount,
+					})
+				}
+				assetAnchors = append(assetAnchors, domain.AssetAnchor{
+					AnchorPoint: domain.Outpoint{
+						Txid: txid,
+						VOut: uint32(outIndex),
+					},
+					AssetID: grpAsset.AssetId.ToString(),
+					Vtxos:   assetVtxos,
+				})
 			}
 
 			if decodedAssetGroup.SubDustKey == nil {
@@ -159,6 +181,21 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			Swept:              isSubDust,
 			CreatedAt:          offchainTx.StartingTimestamp,
 		})
+	}
+
+	// Add Asset Anchor if Present
+	for _, assetAnchor := range assetAnchors {
+		for _, assetVtxo := range assetAnchor.Vtxos {
+			// Note: assetAnchor is always after assetVtxo, therefore indexing is correct
+			idx := int(assetVtxo.Vout)
+			if idx < 0 || idx >= len(outs) {
+				continue
+			}
+
+			anchor := assetAnchor
+			anchor.Vtxos = []domain.AnchorVtxo{assetVtxo}
+			outs[idx].AssetAnchor = &anchor
+		}
 	}
 
 	return txid, ins, outs, nil

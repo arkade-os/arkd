@@ -278,7 +278,7 @@ func NewService(
 			spentVtxos := svc.getSpentVtxos(round.Intents)
 			newVtxos := getNewVtxosFromRound(round)
 
-			newTeleportEvents := getTeleportEvents(round)
+			newTeleportAssets := getTeleportAssets(round)
 
 			// commitment tx event
 			txEvent := TransactionEvent{
@@ -286,7 +286,7 @@ func NewService(
 				Type:           CommitmentTxType,
 				SpentVtxos:     spentVtxos,
 				SpendableVtxos: newVtxos,
-				TeleportEvents: newTeleportEvents,
+				TeleportAssets: newTeleportAssets,
 			}
 
 			svc.propagateTransactionEvent(txEvent)
@@ -334,15 +334,12 @@ func NewService(
 				}
 			}
 
-			// ark tx event
-			// TODO (Joshua) add subscription for normal Assets
 			txEvent := TransactionEvent{
 				TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
 				Type:           ArkTxType,
 				SpentVtxos:     spentVtxos,
 				SpendableVtxos: newVtxos,
 				CheckpointTxs:  checkpointTxsByOutpoint,
-				TeleportEvents: []TeleportEvent{},
 			}
 
 			svc.propagateTransactionEvent(txEvent)
@@ -4090,7 +4087,6 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 
 	anchorVtxos := make([]domain.AnchorVtxo, 0)
 
-	// TODO (joshua): Asset VTXO should have asset_id
 	for _, grpAsset := range assetsToStore {
 		// store asset outputs
 		for _, out := range grpAsset.Outputs {
@@ -4115,7 +4111,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 	return nil
 }
 
-func getTeleportEvents(round *domain.Round) []TeleportEvent {
+func getTeleportAssets(round *domain.Round) []TeleportAsset {
 	if len(round.VtxoTree) <= 0 {
 		return nil
 	}
@@ -4124,7 +4120,7 @@ func getTeleportEvents(round *domain.Round) []TeleportEvent {
 	createdAt := now.Unix()
 	expireAt := round.ExpiryTimestamp()
 
-	events := make([]TeleportEvent, 0)
+	events := make([]TeleportAsset, 0)
 
 	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
@@ -4145,9 +4141,10 @@ func getTeleportEvents(round *domain.Round) []TeleportEvent {
 						for outIdx, assetOut := range ast.Outputs {
 							if assetOut.Type == asset.AssetOutputTypeTeleport {
 								teleportHash := hex.EncodeToString(assetOut.Commitment[:])
-								events = append(events, TeleportEvent{
+								events = append(events, TeleportAsset{
 									TeleportHash:   teleportHash,
 									AnchorOutpoint: anchorOutpoint,
+									AssetID:        ast.AssetId.ToString(),
 									OutputVout:     uint32(outIdx),
 									CreatedAt:      createdAt,
 									ExpiresAt:      expireAt,
@@ -4159,8 +4156,10 @@ func getTeleportEvents(round *domain.Round) []TeleportEvent {
 						for outIdx, assetOut := range ast.Outputs {
 							if assetOut.Type == asset.AssetOutputTypeTeleport {
 								teleportHash := hex.EncodeToString(assetOut.Commitment[:])
-								events = append(events, TeleportEvent{
+								events = append(events, TeleportAsset{
 									TeleportHash:   teleportHash,
+									Amount:         assetOut.Amount,
+									AssetID:        ast.AssetId.ToString(),
 									AnchorOutpoint: anchorOutpoint,
 									OutputVout:     uint32(outIdx),
 									CreatedAt:      createdAt,

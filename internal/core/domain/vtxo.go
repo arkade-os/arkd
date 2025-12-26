@@ -13,8 +13,9 @@ import (
 )
 
 type Outpoint struct {
-	Txid string
-	VOut uint32
+	Txid    string
+	VOut    uint32
+	AssetId string // optional, only for asset outpoints
 }
 
 func (k *Outpoint) FromString(s string) error {

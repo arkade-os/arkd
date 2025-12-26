@@ -389,9 +389,11 @@ message UnsubscribeForTeleportHashResponse {}
 message TeleportEvent {
   string teleport_hash = 1;
   string anchor_outpoint = 2;
-  uint32 output_vout = 3;
-  int64 created_at = 4;
-  int64 expires_at = 5;
+  string asset_id = 3;
+  uint64 amount = 4;
+  uint32 output_vout = 5;
+  int64 created_at = 6;
+  int64 expires_at = 7;
 }
 
 message GetSubscriptionRequest {

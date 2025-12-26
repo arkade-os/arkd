@@ -2391,9 +2391,11 @@ type TeleportEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	TeleportHash   string                 `protobuf:"bytes,1,opt,name=teleport_hash,json=teleportHash,proto3" json:"teleport_hash,omitempty"`
 	AnchorOutpoint string                 `protobuf:"bytes,2,opt,name=anchor_outpoint,json=anchorOutpoint,proto3" json:"anchor_outpoint,omitempty"`
-	OutputVout     uint32                 `protobuf:"varint,3,opt,name=output_vout,json=outputVout,proto3" json:"output_vout,omitempty"`
-	CreatedAt      int64                  `protobuf:"varint,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	ExpiresAt      int64                  `protobuf:"varint,5,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	AssetId        string                 `protobuf:"bytes,3,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	Amount         uint64                 `protobuf:"varint,4,opt,name=amount,proto3" json:"amount,omitempty"`
+	OutputVout     uint32                 `protobuf:"varint,5,opt,name=output_vout,json=outputVout,proto3" json:"output_vout,omitempty"`
+	CreatedAt      int64                  `protobuf:"varint,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ExpiresAt      int64                  `protobuf:"varint,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2440,6 +2442,20 @@ func (x *TeleportEvent) GetAnchorOutpoint() string {
 		return x.AnchorOutpoint
 	}
 	return ""
+}
+
+func (x *TeleportEvent) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *TeleportEvent) GetAmount() uint64 {
+	if x != nil {
+		return x.Amount
+	}
+	return 0
 }
 
 func (x *TeleportEvent) GetOutputVout() uint32 {
@@ -2952,16 +2968,18 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"!UnsubscribeForTeleportHashRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12'\n" +
 	"\x0fteleport_hashes\x18\x02 \x03(\tR\x0eteleportHashes\"$\n" +
-	"\"UnsubscribeForTeleportHashResponse\"\xbc\x01\n" +
+	"\"UnsubscribeForTeleportHashResponse\"\xef\x01\n" +
 	"\rTeleportEvent\x12#\n" +
 	"\rteleport_hash\x18\x01 \x01(\tR\fteleportHash\x12'\n" +
-	"\x0fanchor_outpoint\x18\x02 \x01(\tR\x0eanchorOutpoint\x12\x1f\n" +
-	"\voutput_vout\x18\x03 \x01(\rR\n" +
+	"\x0fanchor_outpoint\x18\x02 \x01(\tR\x0eanchorOutpoint\x12\x19\n" +
+	"\basset_id\x18\x03 \x01(\tR\aassetId\x12\x16\n" +
+	"\x06amount\x18\x04 \x01(\x04R\x06amount\x12\x1f\n" +
+	"\voutput_vout\x18\x05 \x01(\rR\n" +
 	"outputVout\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\x03R\tcreatedAt\x12\x1d\n" +
+	"created_at\x18\x06 \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\x05 \x01(\x03R\texpiresAt\"A\n" +
+	"expires_at\x18\a \x01(\x03R\texpiresAt\"A\n" +
 	"\x16GetSubscriptionRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\"\x95\x01\n" +
 	"\x17GetSubscriptionResponse\x128\n" +

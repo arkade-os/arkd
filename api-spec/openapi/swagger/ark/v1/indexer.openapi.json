@@ -1556,7 +1556,14 @@
         "title": "TeleportEvent",
         "type": "object",
         "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
           "anchorOutpoint": {
+            "type": "string"
+          },
+          "assetId": {
             "type": "string"
           },
           "createdAt": {

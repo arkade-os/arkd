@@ -110,11 +110,13 @@ type TransactionEvent struct {
 	SpendableVtxos []domain.Vtxo
 	SweptVtxos     []domain.Outpoint
 	CheckpointTxs  map[string]TxData
-	TeleportEvents []TeleportEvent
+	TeleportAssets []TeleportAsset
 }
 
-type TeleportEvent struct {
+type TeleportAsset struct {
 	TeleportHash   string
+	AssetID        string
+	Amount         uint64
 	AnchorOutpoint domain.Outpoint
 	OutputVout     uint32
 	CreatedAt      int64

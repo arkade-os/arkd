@@ -168,181 +168,6 @@ func (g *AssetGroup) EncodeOpret(amount int64) (wire.TxOut, error) {
 	}, nil
 }
 
-func encodeAssetGroupPayload(controlAssets, normalAssets []Asset) ([]byte, error) {
-	var scratch [8]byte
-	var buf bytes.Buffer
-
-	totalCount := uint64(len(controlAssets) + len(normalAssets))
-	controlCount := uint64(len(controlAssets))
-
-	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
-		return nil, err
-	}
-
-	if err := tlv.WriteVarInt(&buf, controlCount, &scratch); err != nil {
-		return nil, err
-	}
-
-	allAssets := append(controlAssets, normalAssets...)
-
-	for _, asset := range allAssets {
-		encodedAsset, err := asset.EncodeTlv()
-		if err != nil {
-			return nil, err
-		}
-
-		if err := tlv.WriteVarInt(&buf, uint64(len(encodedAsset)), &scratch); err != nil {
-			return nil, err
-		}
-
-		if _, err := buf.Write(encodedAsset); err != nil {
-			return nil, err
-		}
-	}
-
-	return buf.Bytes(), nil
-}
-
-// parseAssetOpReturn extracts the asset payload and optional sub-dust pubkey
-// from an OP_RETURN script. It expects scripts built with pushdata elements
-// (OP_RETURN <MarkerSubDustKey> <subdust_pubkey> <MarkerAssetPayload> <asset_payload_chunk1> <asset_payload_chunk2> ...).
-func parseAssetOpReturn(opReturnData []byte) ([]byte, []byte, error) {
-	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
-		return nil, nil, errors.New("OP_RETURN not present")
-	}
-
-	tokenizer := txscript.MakeScriptTokenizer(0, opReturnData)
-	if !tokenizer.Next() || tokenizer.Opcode() != txscript.OP_RETURN {
-		if err := tokenizer.Err(); err != nil {
-			return nil, nil, err
-		}
-		return nil, nil, errors.New("invalid OP_RETURN script")
-	}
-
-	var dataPushes [][]byte
-
-	for tokenizer.Next() {
-		data := tokenizer.Data()
-		if data == nil {
-			return nil, nil, errors.New("unexpected opcode in OP_RETURN")
-		}
-
-		pushCopy := make([]byte, len(data))
-		copy(pushCopy, data)
-		dataPushes = append(dataPushes, pushCopy)
-	}
-
-	if err := tokenizer.Err(); err != nil {
-		return nil, nil, err
-	}
-
-	if len(dataPushes) == 0 {
-		return nil, nil, errors.New("missing OP_RETURN payload")
-	}
-
-	var subDustKey []byte
-	var assetPayload []byte
-	var currentMarker byte
-
-	for _, push := range dataPushes {
-		if len(push) == 1 && (push[0] == MarkerSubDustKey || push[0] == MarkerAssetPayload) {
-			currentMarker = push[0]
-			continue
-		}
-
-		switch currentMarker {
-		case MarkerSubDustKey:
-			if len(push) == schnorr.PubKeyBytesLen {
-				subDustKey = push
-			}
-		case MarkerAssetPayload:
-			assetPayload = append(assetPayload, push...)
-		}
-	}
-
-	if len(assetPayload) == 0 {
-		return nil, subDustKey, errors.New("missing asset payload")
-	}
-
-	return assetPayload, subDustKey, nil
-}
-
-func normalizeAssetSlices(a *Asset) {
-	if len(a.Inputs) == 0 {
-		a.Inputs = nil
-	}
-	if len(a.Outputs) == 0 {
-		a.Outputs = nil
-	}
-	if len(a.Metadata) == 0 {
-		a.Metadata = nil
-	}
-}
-
-func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) {
-	reader := bytes.NewReader(payload)
-	var scratch [8]byte
-
-	assetCount, err := tlv.ReadVarInt(reader, &scratch)
-	if err != nil {
-		return nil, fmt.Errorf("invalid asset group count: %w", err)
-	}
-
-	if assetCount == 0 {
-		return nil, errors.New("empty asset group")
-	}
-
-	controlCount, err := tlv.ReadVarInt(reader, &scratch)
-	if err != nil {
-		return nil, fmt.Errorf("invalid control asset count: %w", err)
-	}
-
-	if controlCount > assetCount {
-		return nil, fmt.Errorf("control asset count %d exceeds total asset count %d", controlCount, assetCount)
-	}
-
-	assets := make([]Asset, 0, int(assetCount))
-	for i := uint64(0); i < assetCount; i++ {
-		length, err := tlv.ReadVarInt(reader, &scratch)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read asset length: %w", err)
-		}
-
-		if length == 0 || length > uint64(reader.Len()) {
-			return nil, errors.New("asset length exceeds payload")
-		}
-
-		assetData := make([]byte, length)
-		if _, err := io.ReadFull(reader, assetData); err != nil {
-			return nil, fmt.Errorf("failed to read asset payload: %w", err)
-		}
-
-		var decoded Asset
-		decoded.Magic = AssetMagic
-		decoded.Version = version
-		if err := decoded.DecodeTlv(assetData); err != nil {
-			return nil, fmt.Errorf("failed to decode asset: %w", err)
-		}
-
-		assets = append(assets, decoded)
-	}
-
-	for i := range assets {
-		normalizeAssetSlices(&assets[i])
-	}
-
-	if reader.Len() != 0 {
-		return nil, errors.New("unexpected trailing bytes in asset group payload")
-	}
-
-	group := &AssetGroup{
-		ControlAssets: assets[:controlCount],
-		NormalAssets:  assets[controlCount:],
-	}
-
-	return group, nil
-}
-
 func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetGroup, error) {
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
 		return nil, errors.New("OP_RETURN not present")
@@ -627,4 +452,179 @@ func DeriveAssetGroupFromTx(arkTx string) (*AssetGroup, error) {
 
 	return nil, errors.New("no asset opreturn found in transaction")
 
+}
+
+func encodeAssetGroupPayload(controlAssets, normalAssets []Asset) ([]byte, error) {
+	var scratch [8]byte
+	var buf bytes.Buffer
+
+	totalCount := uint64(len(controlAssets) + len(normalAssets))
+	controlCount := uint64(len(controlAssets))
+
+	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
+		return nil, err
+	}
+
+	if err := tlv.WriteVarInt(&buf, controlCount, &scratch); err != nil {
+		return nil, err
+	}
+
+	allAssets := append(controlAssets, normalAssets...)
+
+	for _, asset := range allAssets {
+		encodedAsset, err := asset.EncodeTlv()
+		if err != nil {
+			return nil, err
+		}
+
+		if err := tlv.WriteVarInt(&buf, uint64(len(encodedAsset)), &scratch); err != nil {
+			return nil, err
+		}
+
+		if _, err := buf.Write(encodedAsset); err != nil {
+			return nil, err
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+// parseAssetOpReturn extracts the asset payload and optional sub-dust pubkey
+// from an OP_RETURN script. It expects scripts built with pushdata elements
+// (OP_RETURN <MarkerSubDustKey> <subdust_pubkey> <MarkerAssetPayload> <asset_payload_chunk1> <asset_payload_chunk2> ...).
+func parseAssetOpReturn(opReturnData []byte) ([]byte, []byte, error) {
+	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
+		return nil, nil, errors.New("OP_RETURN not present")
+	}
+
+	tokenizer := txscript.MakeScriptTokenizer(0, opReturnData)
+	if !tokenizer.Next() || tokenizer.Opcode() != txscript.OP_RETURN {
+		if err := tokenizer.Err(); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, errors.New("invalid OP_RETURN script")
+	}
+
+	var dataPushes [][]byte
+
+	for tokenizer.Next() {
+		data := tokenizer.Data()
+		if data == nil {
+			return nil, nil, errors.New("unexpected opcode in OP_RETURN")
+		}
+
+		pushCopy := make([]byte, len(data))
+		copy(pushCopy, data)
+		dataPushes = append(dataPushes, pushCopy)
+	}
+
+	if err := tokenizer.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	if len(dataPushes) == 0 {
+		return nil, nil, errors.New("missing OP_RETURN payload")
+	}
+
+	var subDustKey []byte
+	var assetPayload []byte
+	var currentMarker byte
+
+	for _, push := range dataPushes {
+		if len(push) == 1 && (push[0] == MarkerSubDustKey || push[0] == MarkerAssetPayload) {
+			currentMarker = push[0]
+			continue
+		}
+
+		switch currentMarker {
+		case MarkerSubDustKey:
+			if len(push) == schnorr.PubKeyBytesLen {
+				subDustKey = push
+			}
+		case MarkerAssetPayload:
+			assetPayload = append(assetPayload, push...)
+		}
+	}
+
+	if len(assetPayload) == 0 {
+		return nil, subDustKey, errors.New("missing asset payload")
+	}
+
+	return assetPayload, subDustKey, nil
+}
+
+func normalizeAssetSlices(a *Asset) {
+	if len(a.Inputs) == 0 {
+		a.Inputs = nil
+	}
+	if len(a.Outputs) == 0 {
+		a.Outputs = nil
+	}
+	if len(a.Metadata) == 0 {
+		a.Metadata = nil
+	}
+}
+
+func decodeAssetGroupPayload(payload []byte, version byte) (*AssetGroup, error) {
+	reader := bytes.NewReader(payload)
+	var scratch [8]byte
+
+	assetCount, err := tlv.ReadVarInt(reader, &scratch)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset group count: %w", err)
+	}
+
+	if assetCount == 0 {
+		return nil, errors.New("empty asset group")
+	}
+
+	controlCount, err := tlv.ReadVarInt(reader, &scratch)
+	if err != nil {
+		return nil, fmt.Errorf("invalid control asset count: %w", err)
+	}
+
+	if controlCount > assetCount {
+		return nil, fmt.Errorf("control asset count %d exceeds total asset count %d", controlCount, assetCount)
+	}
+
+	assets := make([]Asset, 0, int(assetCount))
+	for i := uint64(0); i < assetCount; i++ {
+		length, err := tlv.ReadVarInt(reader, &scratch)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read asset length: %w", err)
+		}
+
+		if length == 0 || length > uint64(reader.Len()) {
+			return nil, errors.New("asset length exceeds payload")
+		}
+
+		assetData := make([]byte, length)
+		if _, err := io.ReadFull(reader, assetData); err != nil {
+			return nil, fmt.Errorf("failed to read asset payload: %w", err)
+		}
+
+		var decoded Asset
+		decoded.Magic = AssetMagic
+		decoded.Version = version
+		if err := decoded.DecodeTlv(assetData); err != nil {
+			return nil, fmt.Errorf("failed to decode asset: %w", err)
+		}
+
+		assets = append(assets, decoded)
+	}
+
+	for i := range assets {
+		normalizeAssetSlices(&assets[i])
+	}
+
+	if reader.Len() != 0 {
+		return nil, errors.New("unexpected trailing bytes in asset group payload")
+	}
+
+	group := &AssetGroup{
+		ControlAssets: assets[:controlCount],
+		NormalAssets:  assets[controlCount:],
+	}
+
+	return group, nil
 }
