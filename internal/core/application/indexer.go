@@ -40,7 +40,7 @@ type IndexerService interface {
 	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error)
 	GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
-	GetAsset(ctx context.Context, assetID string) (*AssetMetadataResp, error)
+	GetAssetDetails(ctx context.Context, assetID string) (*AssetDetailsResp, error)
 }
 
 type indexerService struct {
@@ -96,17 +96,32 @@ func (i *indexerService) GetVtxoTree(
 	}, nil
 }
 
-func (i *indexerService) GetAsset(
+func (i *indexerService) GetAssetDetails(
 	ctx context.Context, assetID string,
-) (*AssetMetadataResp, error) {
-	asset, err := i.repoManager.Assets().GetAssetByID(ctx, assetID)
+) (*AssetDetailsResp, error) {
+	asset, err := i.repoManager.Assets().GetAssetDetailsByID(ctx, assetID)
 	if err != nil {
 		return nil, err
 	}
 
-	return &AssetMetadataResp{
-		AssetID: assetID,
-		Asset:   Asset(*asset),
+	if asset == nil {
+		return nil, fmt.Errorf("asset not found: %s", assetID)
+	}
+
+	assetAnchorList, err := i.repoManager.Assets().ListAssetAnchorsByAssetID(ctx, assetID)
+
+	assetAnchors := make([]Outpoint, 0, len(assetAnchorList))
+	for _, anchor := range assetAnchorList {
+		assetAnchors = append(assetAnchors, Outpoint{
+			Txid: anchor.Txid,
+			VOut: anchor.VOut,
+		})
+	}
+
+	return &AssetDetailsResp{
+		AssetID:         assetID,
+		AssetDetails:    *asset,
+		AnchorOutpoints: assetAnchors,
 	}, nil
 }
 
@@ -205,13 +220,12 @@ func (i *indexerService) GetVtxos(
 
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
 
-	for j, v := range vtxos {
-		// add asset anchor if present
-		assetAnchor, err := i.repoManager.Assets().GetAssetAnchorByTxId(ctx, v.Txid)
-		if err == nil {
-			vtxos[j].AssetAnchor = assetAnchor
+	for j, v := range allVtxos {
+		// add asset to vtxo if present
+		asst, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
+		if err == nil && asst != nil {
+			allVtxos[j].Asset = asst
 		}
-
 	}
 
 	return &GetVtxosResp{
@@ -229,12 +243,11 @@ func (i *indexerService) GetVtxosByOutpoint(
 	}
 
 	for j, v := range allVtxos {
-		// add asset anchor if present
-		assetAnchor, err := i.repoManager.Assets().GetAssetAnchorByTxId(ctx, v.Txid)
-		if err == nil {
-			allVtxos[j].AssetAnchor = assetAnchor
+		// add asset to vtxo if present
+		asst, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
+		if err == nil && asst != nil {
+			allVtxos[j].Asset = asst
 		}
-
 	}
 
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)

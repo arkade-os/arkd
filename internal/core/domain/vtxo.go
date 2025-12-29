@@ -13,9 +13,8 @@ import (
 )
 
 type Outpoint struct {
-	Txid    string
-	VOut    uint32
-	AssetId string // optional, only for asset outpoints
+	Txid string
+	VOut uint32
 }
 
 func (k *Outpoint) FromString(s string) error {
@@ -51,7 +50,7 @@ type Vtxo struct {
 	Preconfirmed       bool
 	ExpiresAt          int64
 	CreatedAt          int64
-	AssetAnchor        *AssetAnchor
+	Asset              *NormalAsset
 }
 
 func (v Vtxo) String() string {

@@ -339,16 +339,23 @@ ORDER BY created_at ASC;
 
 
 -- name: CreateAssetAnchor :exec
-INSERT INTO asset_anchors (anchor_txid, anchor_vout, asset_id)
-VALUES (@anchor_txid, @anchor_vout, @asset_id);
+INSERT INTO asset_anchor (anchor_txid, anchor_vout)
+VALUES (@anchor_txid, @anchor_vout);
+
+-- name: ListAssetAnchorsByAssetID :many
+SELECT aa.anchor_txid, aa.anchor_vout
+FROM asset_anchor aa
+JOIN asset a ON aa.anchor_txid = a.anchor_id
+WHERE a.asset_id = @asset_id
+ORDER BY aa.anchor_txid;
 
 -- name: GetAssetAnchor :one
-SELECT anchor_txid, anchor_vout, asset_id
-FROM asset_anchors
+SELECT anchor_txid, anchor_vout
+FROM asset_anchor
 WHERE anchor_txid = @anchor_txid;
 
 -- name: DeleteAssetAnchor :exec
-DELETE FROM asset_anchors
+DELETE FROM asset_anchor
 WHERE anchor_txid = @anchor_txid;
 
 -- name: UpsertAssetMetadata :exec
@@ -368,56 +375,61 @@ FROM asset_metadata
 WHERE asset_id = @asset_id
 ORDER BY meta_key;
 
--- name: AddAnchorVtxo :exec
-INSERT INTO anchor_vtxos (anchor_id, vout, amount)
-VALUES (@anchor_id, @vout, @amount)
+-- name: AddAsset :exec
+INSERT INTO asset (anchor_id, asset_id, vout, amount)
+VALUES (@anchor_id, @asset_id, @vout, @amount)
 ON CONFLICT (anchor_id, vout)
 DO UPDATE SET amount = EXCLUDED.amount;
 
--- name: DeleteAnchorVtxo :exec
-DELETE FROM anchor_vtxos
+-- name: GetAsset :one
+SELECT anchor_id, asset_id, vout, amount
+FROM asset
 WHERE anchor_id = @anchor_id AND vout = @vout;
 
--- name: ListAnchorVtxos :many
-SELECT anchor_id, vout, amount
-FROM anchor_vtxos
+-- name: DeleteAsset :exec
+DELETE FROM asset
+WHERE anchor_id = @anchor_id AND vout = @vout;
+
+-- name: ListAsset :many
+SELECT anchor_id, asset_id, vout, amount
+FROM asset
 WHERE anchor_id = @anchor_id
 ORDER BY vout;
 
--- name: GetAsset :one
+-- name: GetAssetDetails :one
 SELECT id, quantity, immutable
-FROM assets
+FROM asset_details
 WHERE id = @id;
 
--- name: ListAssets :many
+-- name: ListAssetDetails :many
 SELECT id, quantity, immutable
-FROM assets
+FROM asset_details
 ORDER BY id;
 
 -- name: AddToAssetQuantity :exec
-UPDATE assets
-SET quantity = quantity + @delta
+UPDATE asset_details
+SET quantity = quantity + @quantity
 WHERE id = @id;
 
 -- name: SubtractFromAssetQuantity :exec
-UPDATE assets
-SET quantity = quantity - @delta
-WHERE id = @id AND quantity >= @min_required;
+UPDATE asset_details
+SET quantity = quantity - @quantity
+WHERE id = @id AND quantity >= @quantity;
 
 -- name: CreateAsset :exec
-INSERT INTO assets (id, quantity, immutable)
+INSERT INTO asset_details (id, quantity, immutable)
 VALUES (@id, @quantity, @immutable);
 
 -- name: CreateTeleportAsset :exec
-INSERT INTO teleport_assets (teleport_hash, asset_id, amount, is_claimed)
+INSERT INTO teleport_asset (teleport_hash, asset_id, amount, is_claimed)
 VALUES (@teleport_hash, @asset_id, @amount, @is_claimed);
 
 -- name: GetTeleportAsset :one
 SELECT teleport_hash, asset_id, amount, is_claimed
-FROM teleport_assets
+FROM teleport_asset
 WHERE teleport_hash = @teleport_hash;
 
 -- name: UpdateTeleportAsset :exec
-UPDATE teleport_assets
+UPDATE teleport_asset
 SET is_claimed = @is_claimed
 WHERE teleport_hash = @teleport_hash;

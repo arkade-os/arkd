@@ -4018,7 +4018,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 		// create new asset If ControlAsset is absent and there are no inputs for normal asset
 		if matchedControlAsset == nil {
 			if len(normalAsset.Inputs) == 0 {
-				err = s.repoManager.Assets().InsertAsset(ctx, domain.Asset{
+				err = s.repoManager.Assets().InsertAssetDetails(ctx, domain.AssetDetails{
 					ID:        normalAssetId,
 					Quantity:  totalOut,
 					Immutable: normalAsset.Immutable,
@@ -4035,9 +4035,8 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 				)
 			}
 		} else {
-			// try to update the metadata of the existing asset
-
-			assetData, err := s.repoManager.Assets().GetAssetByID(ctx, normalAssetId)
+			// updates the metadata of the existing asset
+			assetData, err := s.repoManager.Assets().GetAssetDetailsByID(ctx, normalAssetId)
 			if err != nil {
 				return fmt.Errorf("error retrieving asset data: %s", err)
 			}
@@ -4085,24 +4084,26 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 	assetsToStore = append(assetsToStore, normalAssets...)
 	assetsToStore = append(assetsToStore, controlAssets...)
 
-	anchorVtxos := make([]domain.AnchorVtxo, 0)
+	assetList := make([]domain.NormalAsset, 0)
 
 	for _, grpAsset := range assetsToStore {
 		// store asset outputs
 		for _, out := range grpAsset.Outputs {
-			assetVtxo := domain.AnchorVtxo{
-				Vout:   out.Vout,
-				Amount: out.Amount,
+			asst := domain.NormalAsset{
+				Outpoint: domain.Outpoint{
+					Txid: arkTx.TxID(),
+					VOut: out.Vout,
+				},
+				AssetID: grpAsset.AssetId.ToString(),
+				Amount:  out.Amount,
 			}
-			anchorVtxos = append(anchorVtxos, assetVtxo)
+			assetList = append(assetList, asst)
 		}
 	}
 
-	// TODO (joshua): AssetIDs should be a list
 	err = s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
-		AnchorPoint: anchorPoint,
-		AssetID:     assetsToStore[0].AssetId.ToString(),
-		Vtxos:       anchorVtxos,
+		Outpoint: anchorPoint,
+		Assets:   assetList,
 	})
 	if err != nil {
 		return fmt.Errorf("error storing asset anchor: %s", err)

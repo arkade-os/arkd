@@ -6,9 +6,11 @@ import (
 
 type AssetRepository interface {
 	InsertAssetAnchor(ctx context.Context, anchor AssetAnchor) error
+	ListAssetAnchorsByAssetID(ctx context.Context, assetID string) ([]AssetAnchor, error)
 	UpdateAssetMetadataList(ctx context.Context, assetId string, metadatalist []AssetMetadata) error
-	InsertAsset(ctx context.Context, asset Asset) error
-	GetAssetByID(ctx context.Context, assetID string) (*Asset, error)
+	InsertAssetDetails(ctx context.Context, assetDetails AssetDetails) error
+	GetAssetByOutpoint(ctx context.Context, outpoint Outpoint) (*NormalAsset, error)
+	GetAssetDetailsByID(ctx context.Context, assetID string) (*AssetDetails, error)
 	IncreaseAssetQuantity(ctx context.Context, assetID string, amount uint64) error
 	DecreaseAssetQuantity(ctx context.Context, assetID string, amount uint64) error
 	ListMetadataByAssetID(ctx context.Context, assetID string) ([]AssetMetadata, error)

@@ -11,7 +11,7 @@
           "IndexerService"
         ],
         "description": "GetAsset returns the asset information and metadata for the specified asset ID.",
-        "operationId": "IndexerService_GetAsset",
+        "operationId": "IndexerService_GetAssetDetails",
         "parameters": [
           {
             "name": "assetId",
@@ -28,7 +28,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GetAssetResponse"
+                  "$ref": "#/components/schemas/GetAssetDetailsResponse"
                 }
               }
             }
@@ -862,8 +862,8 @@
           }
         }
       },
-      "GetAssetRequest": {
-        "title": "GetAssetRequest",
+      "GetAssetDetailsRequest": {
+        "title": "GetAssetDetailsRequest",
         "type": "object",
         "properties": {
           "assetId": {
@@ -871,8 +871,8 @@
           }
         }
       },
-      "GetAssetResponse": {
-        "title": "GetAssetResponse",
+      "GetAssetDetailsResponse": {
+        "title": "GetAssetDetailsResponse",
         "type": "object",
         "properties": {
           "asset": {
@@ -1185,6 +1185,19 @@
           }
         }
       },
+      "IndexerAsset": {
+        "title": "IndexerAsset",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "assetId": {
+            "type": "string"
+          }
+        }
+      },
       "IndexerBatch": {
         "title": "IndexerBatch",
         "type": "object",
@@ -1423,8 +1436,8 @@
           "arkTxid": {
             "type": "string"
           },
-          "assetAnchor": {
-            "$ref": "#/components/schemas/IndexerVtxoAssetAnchor"
+          "asset": {
+            "$ref": "#/components/schemas/IndexerAsset"
           },
           "commitmentTxids": {
             "type": "array",
@@ -1463,23 +1476,6 @@
           },
           "spentBy": {
             "type": "string"
-          }
-        }
-      },
-      "IndexerVtxoAssetAnchor": {
-        "title": "IndexerVtxoAssetAnchor",
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "integer",
-            "format": "uint64"
-          },
-          "assetId": {
-            "type": "string"
-          },
-          "vout": {
-            "type": "integer",
-            "format": "uint32"
           }
         }
       },

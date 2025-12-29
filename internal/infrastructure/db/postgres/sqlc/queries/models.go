@@ -10,22 +10,22 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
-type AnchorVtxo struct {
+type Asset struct {
 	AnchorID string
+	AssetID  string
 	Vout     int64
 	Amount   int64
-}
-
-type Asset struct {
-	ID        string
-	Immutable bool
-	Quantity  int64
 }
 
 type AssetAnchor struct {
 	AnchorTxid string
 	AnchorVout int64
-	AssetID    string
+}
+
+type AssetDetail struct {
+	ID        string
+	Immutable bool
+	Quantity  int64
 }
 
 type AssetMetadatum struct {

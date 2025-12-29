@@ -13,37 +13,43 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
-const addAnchorVtxo = `-- name: AddAnchorVtxo :exec
-INSERT INTO anchor_vtxos (anchor_id, vout, amount)
-VALUES ($1, $2, $3)
+const addAsset = `-- name: AddAsset :exec
+INSERT INTO asset (anchor_id, asset_id, vout, amount)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT (anchor_id, vout)
 DO UPDATE SET amount = EXCLUDED.amount
 `
 
-type AddAnchorVtxoParams struct {
+type AddAssetParams struct {
 	AnchorID string
+	AssetID  string
 	Vout     int64
 	Amount   int64
 }
 
-func (q *Queries) AddAnchorVtxo(ctx context.Context, arg AddAnchorVtxoParams) error {
-	_, err := q.db.ExecContext(ctx, addAnchorVtxo, arg.AnchorID, arg.Vout, arg.Amount)
+func (q *Queries) AddAsset(ctx context.Context, arg AddAssetParams) error {
+	_, err := q.db.ExecContext(ctx, addAsset,
+		arg.AnchorID,
+		arg.AssetID,
+		arg.Vout,
+		arg.Amount,
+	)
 	return err
 }
 
 const addToAssetQuantity = `-- name: AddToAssetQuantity :exec
-UPDATE assets
+UPDATE asset_details
 SET quantity = quantity + $1
 WHERE id = $2
 `
 
 type AddToAssetQuantityParams struct {
-	Delta int64
-	ID    string
+	Quantity int64
+	ID       string
 }
 
 func (q *Queries) AddToAssetQuantity(ctx context.Context, arg AddToAssetQuantityParams) error {
-	_, err := q.db.ExecContext(ctx, addToAssetQuantity, arg.Delta, arg.ID)
+	_, err := q.db.ExecContext(ctx, addToAssetQuantity, arg.Quantity, arg.ID)
 	return err
 }
 
@@ -57,7 +63,7 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 }
 
 const createAsset = `-- name: CreateAsset :exec
-INSERT INTO assets (id, quantity, immutable)
+INSERT INTO asset_details (id, quantity, immutable)
 VALUES ($1, $2, $3)
 `
 
@@ -73,23 +79,22 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) error 
 }
 
 const createAssetAnchor = `-- name: CreateAssetAnchor :exec
-INSERT INTO asset_anchors (anchor_txid, anchor_vout, asset_id)
-VALUES ($1, $2, $3)
+INSERT INTO asset_anchor (anchor_txid, anchor_vout)
+VALUES ($1, $2)
 `
 
 type CreateAssetAnchorParams struct {
 	AnchorTxid string
 	AnchorVout int64
-	AssetID    string
 }
 
 func (q *Queries) CreateAssetAnchor(ctx context.Context, arg CreateAssetAnchorParams) error {
-	_, err := q.db.ExecContext(ctx, createAssetAnchor, arg.AnchorTxid, arg.AnchorVout, arg.AssetID)
+	_, err := q.db.ExecContext(ctx, createAssetAnchor, arg.AnchorTxid, arg.AnchorVout)
 	return err
 }
 
 const createTeleportAsset = `-- name: CreateTeleportAsset :exec
-INSERT INTO teleport_assets (teleport_hash, asset_id, amount, is_claimed)
+INSERT INTO teleport_asset (teleport_hash, asset_id, amount, is_claimed)
 VALUES ($1, $2, $3, $4)
 `
 
@@ -110,23 +115,23 @@ func (q *Queries) CreateTeleportAsset(ctx context.Context, arg CreateTeleportAss
 	return err
 }
 
-const deleteAnchorVtxo = `-- name: DeleteAnchorVtxo :exec
-DELETE FROM anchor_vtxos
+const deleteAsset = `-- name: DeleteAsset :exec
+DELETE FROM asset
 WHERE anchor_id = $1 AND vout = $2
 `
 
-type DeleteAnchorVtxoParams struct {
+type DeleteAssetParams struct {
 	AnchorID string
 	Vout     int64
 }
 
-func (q *Queries) DeleteAnchorVtxo(ctx context.Context, arg DeleteAnchorVtxoParams) error {
-	_, err := q.db.ExecContext(ctx, deleteAnchorVtxo, arg.AnchorID, arg.Vout)
+func (q *Queries) DeleteAsset(ctx context.Context, arg DeleteAssetParams) error {
+	_, err := q.db.ExecContext(ctx, deleteAsset, arg.AnchorID, arg.Vout)
 	return err
 }
 
 const deleteAssetAnchor = `-- name: DeleteAssetAnchor :exec
-DELETE FROM asset_anchors
+DELETE FROM asset_anchor
 WHERE anchor_txid = $1
 `
 
@@ -136,34 +141,57 @@ func (q *Queries) DeleteAssetAnchor(ctx context.Context, anchorTxid string) erro
 }
 
 const getAsset = `-- name: GetAsset :one
-SELECT id, quantity, immutable
-FROM assets
-WHERE id = $1
+SELECT anchor_id, asset_id, vout, amount
+FROM asset
+WHERE anchor_id = $1 AND vout = $2
 `
 
-type GetAssetRow struct {
-	ID        string
-	Quantity  int64
-	Immutable bool
+type GetAssetParams struct {
+	AnchorID string
+	Vout     int64
 }
 
-func (q *Queries) GetAsset(ctx context.Context, id string) (GetAssetRow, error) {
-	row := q.db.QueryRowContext(ctx, getAsset, id)
-	var i GetAssetRow
-	err := row.Scan(&i.ID, &i.Quantity, &i.Immutable)
+func (q *Queries) GetAsset(ctx context.Context, arg GetAssetParams) (Asset, error) {
+	row := q.db.QueryRowContext(ctx, getAsset, arg.AnchorID, arg.Vout)
+	var i Asset
+	err := row.Scan(
+		&i.AnchorID,
+		&i.AssetID,
+		&i.Vout,
+		&i.Amount,
+	)
 	return i, err
 }
 
 const getAssetAnchor = `-- name: GetAssetAnchor :one
-SELECT anchor_txid, anchor_vout, asset_id
-FROM asset_anchors
+SELECT anchor_txid, anchor_vout
+FROM asset_anchor
 WHERE anchor_txid = $1
 `
 
 func (q *Queries) GetAssetAnchor(ctx context.Context, anchorTxid string) (AssetAnchor, error) {
 	row := q.db.QueryRowContext(ctx, getAssetAnchor, anchorTxid)
 	var i AssetAnchor
-	err := row.Scan(&i.AnchorTxid, &i.AnchorVout, &i.AssetID)
+	err := row.Scan(&i.AnchorTxid, &i.AnchorVout)
+	return i, err
+}
+
+const getAssetDetails = `-- name: GetAssetDetails :one
+SELECT id, quantity, immutable
+FROM asset_details
+WHERE id = $1
+`
+
+type GetAssetDetailsRow struct {
+	ID        string
+	Quantity  int64
+	Immutable bool
+}
+
+func (q *Queries) GetAssetDetails(ctx context.Context, id string) (GetAssetDetailsRow, error) {
+	row := q.db.QueryRowContext(ctx, getAssetDetails, id)
+	var i GetAssetDetailsRow
+	err := row.Scan(&i.ID, &i.Quantity, &i.Immutable)
 	return i, err
 }
 
@@ -187,7 +215,7 @@ func (q *Queries) GetAssetMetadata(ctx context.Context, arg GetAssetMetadataPara
 
 const getTeleportAsset = `-- name: GetTeleportAsset :one
 SELECT teleport_hash, asset_id, amount, is_claimed
-FROM teleport_assets
+FROM teleport_asset
 WHERE teleport_hash = $1
 `
 
@@ -219,23 +247,94 @@ func (q *Queries) InsertVtxoCommitmentTxid(ctx context.Context, arg InsertVtxoCo
 	return err
 }
 
-const listAnchorVtxos = `-- name: ListAnchorVtxos :many
-SELECT anchor_id, vout, amount
-FROM anchor_vtxos
+const listAsset = `-- name: ListAsset :many
+SELECT anchor_id, asset_id, vout, amount
+FROM asset
 WHERE anchor_id = $1
 ORDER BY vout
 `
 
-func (q *Queries) ListAnchorVtxos(ctx context.Context, anchorID string) ([]AnchorVtxo, error) {
-	rows, err := q.db.QueryContext(ctx, listAnchorVtxos, anchorID)
+func (q *Queries) ListAsset(ctx context.Context, anchorID string) ([]Asset, error) {
+	rows, err := q.db.QueryContext(ctx, listAsset, anchorID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AnchorVtxo
+	var items []Asset
 	for rows.Next() {
-		var i AnchorVtxo
-		if err := rows.Scan(&i.AnchorID, &i.Vout, &i.Amount); err != nil {
+		var i Asset
+		if err := rows.Scan(
+			&i.AnchorID,
+			&i.AssetID,
+			&i.Vout,
+			&i.Amount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAssetAnchorsByAssetID = `-- name: ListAssetAnchorsByAssetID :many
+SELECT aa.anchor_txid, aa.anchor_vout
+FROM asset_anchor aa
+JOIN asset a ON aa.anchor_txid = a.anchor_id
+WHERE a.asset_id = $1
+ORDER BY aa.anchor_txid
+`
+
+func (q *Queries) ListAssetAnchorsByAssetID(ctx context.Context, assetID string) ([]AssetAnchor, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetAnchorsByAssetID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AssetAnchor
+	for rows.Next() {
+		var i AssetAnchor
+		if err := rows.Scan(&i.AnchorTxid, &i.AnchorVout); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAssetDetails = `-- name: ListAssetDetails :many
+SELECT id, quantity, immutable
+FROM asset_details
+ORDER BY id
+`
+
+type ListAssetDetailsRow struct {
+	ID        string
+	Quantity  int64
+	Immutable bool
+}
+
+func (q *Queries) ListAssetDetails(ctx context.Context) ([]ListAssetDetailsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetDetails)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAssetDetailsRow
+	for rows.Next() {
+		var i ListAssetDetailsRow
+		if err := rows.Scan(&i.ID, &i.Quantity, &i.Immutable); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -266,41 +365,6 @@ func (q *Queries) ListAssetMetadata(ctx context.Context, assetID string) ([]Asse
 	for rows.Next() {
 		var i AssetMetadatum
 		if err := rows.Scan(&i.AssetID, &i.MetaKey, &i.MetaValue); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAssets = `-- name: ListAssets :many
-SELECT id, quantity, immutable
-FROM assets
-ORDER BY id
-`
-
-type ListAssetsRow struct {
-	ID        string
-	Quantity  int64
-	Immutable bool
-}
-
-func (q *Queries) ListAssets(ctx context.Context) ([]ListAssetsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAssets)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListAssetsRow
-	for rows.Next() {
-		var i ListAssetsRow
-		if err := rows.Scan(&i.ID, &i.Quantity, &i.Immutable); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1598,19 +1662,18 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, dollar_1 []string)
 }
 
 const subtractFromAssetQuantity = `-- name: SubtractFromAssetQuantity :exec
-UPDATE assets
+UPDATE asset_details
 SET quantity = quantity - $1
-WHERE id = $2 AND quantity >= $3
+WHERE id = $2 AND quantity >= $1
 `
 
 type SubtractFromAssetQuantityParams struct {
-	Delta       int64
-	ID          string
-	MinRequired int64
+	Quantity int64
+	ID       string
 }
 
 func (q *Queries) SubtractFromAssetQuantity(ctx context.Context, arg SubtractFromAssetQuantityParams) error {
-	_, err := q.db.ExecContext(ctx, subtractFromAssetQuantity, arg.Delta, arg.ID, arg.MinRequired)
+	_, err := q.db.ExecContext(ctx, subtractFromAssetQuantity, arg.Quantity, arg.ID)
 	return err
 }
 
@@ -1624,7 +1687,7 @@ func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error
 }
 
 const updateTeleportAsset = `-- name: UpdateTeleportAsset :exec
-UPDATE teleport_assets
+UPDATE teleport_asset
 SET is_claimed = $1
 WHERE teleport_hash = $2
 `

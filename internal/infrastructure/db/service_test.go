@@ -1162,69 +1162,106 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("insert and get asset anchor", func(t *testing.T) {
 		ctx := context.Background()
 		anchor := domain.AssetAnchor{
-			AnchorPoint: domain.Outpoint{
+			Outpoint: domain.Outpoint{
 				Txid: "txid-123",
 				VOut: 2,
 			},
-			Vtxos: []domain.AnchorVtxo{
-				{Vout: 0, Amount: 1000},
-				{Vout: 1, Amount: 2000},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-123", VOut: 0},
+					Amount:   1000,
+					AssetID:  "asset-1",
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-123", VOut: 1},
+					Amount:   2000,
+					AssetID:  "asset-2",
+				},
 			},
 		}
 
 		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
 		require.NoError(t, err, "InsertAssetAnchor should succeed")
 
-		got, err := svc.Assets().GetAssetAnchorByTxId(ctx, anchor.AnchorPoint.Txid)
+		got, err := svc.Assets().GetAssetAnchorByTxId(ctx, anchor.Txid)
 		require.NoError(t, err, "GetAssetAnchorByTxId should succeed")
 		require.NotNil(t, got)
 
-		require.Equal(t, anchor.AnchorPoint.Txid, got.AnchorPoint.Txid)
-		require.Equal(t, anchor.AnchorPoint.VOut, got.AnchorPoint.VOut)
-
-		require.Len(t, got.Vtxos, len(anchor.Vtxos))
-
-		// optional sanity checks
-		require.ElementsMatch(t, []domain.AnchorVtxo(anchor.Vtxos), []domain.AnchorVtxo(got.Vtxos))
+		require.Equal(t, anchor.Txid, got.Txid)
+		require.Equal(t, anchor.VOut, got.VOut)
+		require.ElementsMatch(t, anchor.Assets, got.Assets)
 	})
 
-	t.Run("list metadata by asset id", func(t *testing.T) {
+	t.Run("list asset anchors by asset id", func(t *testing.T) {
 		ctx := context.Background()
 
-		assetID := "txid-meta-1"
+		assetListID := "asset-list-1"
+		otherAssetID := "asset-list-2"
 
-		anchor := domain.AssetAnchor{
-			AnchorPoint: domain.Outpoint{
-				Txid: assetID,
-				VOut: 2,
+		anchor1 := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-asset-1",
+				VOut: 0,
 			},
-			Vtxos: []domain.AnchorVtxo{
-				{Vout: 0, Amount: 5000},
-				{Vout: 1, Amount: 10000},
+			Assets: []domain.NormalAsset{
+				{Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 0}, Amount: 5000, AssetID: assetListID},
+				{Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 1}, Amount: 2500, AssetID: otherAssetID},
+			},
+		}
+		anchor2 := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-asset-2",
+				VOut: 1,
+			},
+			Assets: []domain.NormalAsset{
+				{Outpoint: domain.Outpoint{Txid: "txid-asset-2", VOut: 2}, Amount: 7500, AssetID: assetListID},
 			},
 		}
 
-		// Insert anchor
+		err := svc.Assets().InsertAssetAnchor(ctx, anchor1)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor2)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		anchors, err := svc.Assets().ListAssetAnchorsByAssetID(ctx, assetListID)
+		require.NoError(t, err, "ListAssetAnchorsByAssetID should succeed")
+		require.Len(t, anchors, 2)
+
+		gotTxids := make(map[string]struct{})
+		for _, anchor := range anchors {
+			gotTxids[anchor.Txid] = struct{}{}
+		}
+		require.Contains(t, gotTxids, anchor1.Txid)
+		require.Contains(t, gotTxids, anchor2.Txid)
+	})
+
+	t.Run("get asset by outpoint", func(t *testing.T) {
+		ctx := context.Background()
+
+		anchor := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-by-outpoint",
+				VOut: 3,
+			},
+			Assets: []domain.NormalAsset{
+				{Outpoint: domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0}, Amount: 1234, AssetID: "asset-42"},
+			},
+		}
+
 		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
 		require.NoError(t, err, "InsertAssetAnchor should succeed")
 
-		// Get Anchor by TxId
-		gotAnchor, err := svc.Assets().GetAssetAnchorByTxId(ctx, assetID)
-		require.NoError(t, err, "GetAssetAnchorByTxId should succeed")
-		require.NotNil(t, gotAnchor)
-
-		// veriy anchor matches
-		require.Equal(t, anchor.AnchorPoint.Txid, gotAnchor.AnchorPoint.Txid)
-		require.Equal(t, anchor.AnchorPoint.VOut, gotAnchor.AnchorPoint.VOut)
-		require.Len(t, gotAnchor.Vtxos, len(anchor.Vtxos))
-		require.ElementsMatch(t, anchor.Vtxos, gotAnchor.Vtxos)
-
+		got, err := svc.Assets().GetAssetByOutpoint(ctx, domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0})
+		require.NoError(t, err, "GetAssetByOutpoint should succeed")
+		require.NotNil(t, got)
+		require.Equal(t, anchor.Assets[0], *got)
 	})
 
 	t.Run("insert and update asset quantity", func(t *testing.T) {
 		ctx := context.Background()
 
-		asset := domain.Asset{
+		asset := domain.AssetDetails{
 			ID:        "asset-1",
 			Quantity:  10,
 			Immutable: true,
@@ -1234,8 +1271,8 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 			},
 		}
 
-		err := svc.Assets().InsertAsset(ctx, asset)
-		require.NoError(t, err, "InsertAsset should succeed")
+		err := svc.Assets().InsertAssetDetails(ctx, asset)
+		require.NoError(t, err, "InsertAssetDetails should succeed")
 
 		// Increase by 5 -> 15
 		err = svc.Assets().IncreaseAssetQuantity(ctx, asset.ID, 5)
@@ -1246,8 +1283,8 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err, "DecreaseAssetQuantity should succeed")
 
 		// Assert final value in DB
-		assetD, err := svc.Assets().GetAssetByID(ctx, asset.ID)
-		require.NoError(t, err, "GetAssetByID should succeed")
+		assetD, err := svc.Assets().GetAssetDetailsByID(ctx, asset.ID)
+		require.NoError(t, err, "GetAssetDetailsByID should succeed")
 
 		require.Equal(t, uint64(12), assetD.Quantity)
 		require.True(t, assetD.Immutable)

@@ -29,6 +29,44 @@ func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 	}, nil
 }
 
+func (r *assetRepository) ListAssetAnchorsByAssetID(ctx context.Context, assetID string) ([]domain.AssetAnchor, error) {
+	anchorsDB, err := r.querier.ListAssetAnchorsByAssetID(ctx, assetID)
+	if err != nil {
+		return nil, err
+	}
+
+	anchors := make([]domain.AssetAnchor, 0, len(anchorsDB))
+	for _, anchorDB := range anchorsDB {
+		anchor, err := r.GetAssetAnchorByTxId(ctx, anchorDB.AnchorTxid)
+		if err != nil {
+			return nil, err
+		}
+		anchors = append(anchors, *anchor)
+	}
+
+	return anchors, nil
+}
+
+func (r *assetRepository) GetAssetByOutpoint(ctx context.Context, outpoint domain.Outpoint) (*domain.NormalAsset, error) {
+	{
+		assetDB, err := r.querier.GetAsset(ctx, queries.GetAssetParams{
+			AnchorID: outpoint.Txid,
+			Vout:     int64(outpoint.VOut),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &domain.NormalAsset{
+			Outpoint: domain.Outpoint{
+				Txid: assetDB.AnchorID,
+				VOut: uint32(assetDB.Vout),
+			},
+			Amount:  uint64(assetDB.Amount),
+			AssetID: assetDB.AssetID,
+		}, nil
+	}
+}
+
 func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport domain.TeleportAsset) error {
 	return r.querier.CreateTeleportAsset(ctx, queries.CreateTeleportAssetParams{
 		TeleportHash: teleport.Hash,
@@ -79,21 +117,20 @@ func (r *assetRepository) ListMetadataByAssetID(ctx context.Context, assetID str
 
 func (r *assetRepository) InsertAssetAnchor(ctx context.Context, anchor domain.AssetAnchor) error {
 	err := r.querier.CreateAssetAnchor(ctx, queries.CreateAssetAnchorParams{
-		AnchorTxid: anchor.AnchorPoint.Txid,
-		AnchorVout: int64(anchor.AnchorPoint.VOut),
-		AssetID:    anchor.AssetID,
+		AnchorTxid: anchor.Txid,
+		AnchorVout: int64(anchor.VOut),
 	})
 
 	if err != nil {
 		return err
 	}
 
-	for _, vtxo := range anchor.Vtxos {
-
-		err := r.querier.AddAnchorVtxo(ctx, queries.AddAnchorVtxoParams{
-			AnchorID: anchor.AnchorPoint.Txid,
-			Vout:     int64(vtxo.Vout),
-			Amount:   int64(vtxo.Amount),
+	for _, asst := range anchor.Assets {
+		err := r.querier.AddAsset(ctx, queries.AddAssetParams{
+			AnchorID: anchor.Txid,
+			AssetID:  asst.AssetID,
+			Vout:     int64(asst.VOut),
+			Amount:   int64(asst.Amount),
 		})
 
 		if err != nil {
@@ -111,30 +148,33 @@ func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string)
 		return nil, err
 	}
 
-	vtxosDB, err := r.querier.ListAnchorVtxos(ctx, anchor.AnchorTxid)
+	assetListResp, err := r.querier.ListAsset(ctx, anchor.AnchorTxid)
 	if err != nil {
 		return nil, err
 	}
 
-	vtxos := make([]domain.AnchorVtxo, 0, len(vtxosDB))
-	for _, vtxoDB := range vtxosDB {
-		vtxos = append(vtxos, domain.AnchorVtxo{
-			Vout:   uint32(vtxoDB.Vout),
-			Amount: uint64(vtxoDB.Amount),
+	assetList := make([]domain.NormalAsset, 0, len(assetListResp))
+	for _, asst := range assetListResp {
+		assetList = append(assetList, domain.NormalAsset{
+			Outpoint: domain.Outpoint{
+				Txid: asst.AnchorID,
+				VOut: uint32(asst.Vout),
+			},
+			Amount:  uint64(asst.Amount),
+			AssetID: asst.AssetID,
 		})
 	}
 
 	return &domain.AssetAnchor{
-		AnchorPoint: domain.Outpoint{
+		Outpoint: domain.Outpoint{
 			Txid: anchor.AnchorTxid,
 			VOut: uint32(anchor.AnchorVout),
 		},
-		AssetID: anchor.AssetID,
-		Vtxos:   vtxos,
+		Assets: assetList,
 	}, nil
 }
 
-func (r *assetRepository) InsertAsset(ctx context.Context, asset domain.Asset) error {
+func (r *assetRepository) InsertAssetDetails(ctx context.Context, asset domain.AssetDetails) error {
 	err := r.querier.CreateAsset(ctx, queries.CreateAssetParams{
 		ID:        asset.ID,
 		Quantity:  int64(asset.Quantity),
@@ -161,8 +201,8 @@ func (r *assetRepository) InsertAsset(ctx context.Context, asset domain.Asset) e
 
 }
 
-func (r *assetRepository) GetAssetByID(ctx context.Context, assetID string) (*domain.Asset, error) {
-	assetDB, err := r.querier.GetAsset(ctx, assetID)
+func (r *assetRepository) GetAssetDetailsByID(ctx context.Context, assetID string) (*domain.AssetDetails, error) {
+	assetDB, err := r.querier.GetAssetDetails(ctx, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +220,7 @@ func (r *assetRepository) GetAssetByID(ctx context.Context, assetID string) (*do
 		})
 	}
 
-	return &domain.Asset{
+	return &domain.AssetDetails{
 		ID:        assetDB.ID,
 		Quantity:  uint64(assetDB.Quantity),
 		Immutable: assetDB.Immutable,

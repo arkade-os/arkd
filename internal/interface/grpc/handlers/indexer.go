@@ -47,32 +47,32 @@ func NewIndexerService(
 	return svc
 }
 
-func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRequest,
-) (*arkv1.GetAssetResponse, error) {
+func (e *indexerService) GetAssetDetails(ctx context.Context, request *arkv1.GetAssetDetailsRequest,
+) (*arkv1.GetAssetDetailsResponse, error) {
 	assetId := request.GetAssetId()
 	if assetId == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "missing asset id")
 	}
 
-	resp, err := e.indexerSvc.GetAsset(ctx, assetId)
+	resp, err := e.indexerSvc.GetAssetDetails(ctx, assetId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	assetMetadata := make([]*arkv1.AssetMetadata, 0)
-	for _, metadata := range resp.Asset.Metadata {
+	for _, metadata := range resp.AssetDetails.Metadata {
 		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
 			Key:   metadata.Key,
 			Value: metadata.Value,
 		})
 	}
 
-	return &arkv1.GetAssetResponse{
+	return &arkv1.GetAssetDetailsResponse{
 		AssetId: assetId,
 		Asset: &arkv1.Asset{
-			Id:        resp.Asset.ID,
-			Quantity:  resp.Asset.Quantity,
-			Immutable: resp.Asset.Immutable,
+			Id:        resp.AssetDetails.ID,
+			Quantity:  resp.AssetDetails.Quantity,
+			Immutable: resp.AssetDetails.Immutable,
 			Metadata:  assetMetadata,
 		},
 	}, nil
@@ -818,16 +818,11 @@ func parseScript(script string) (string, error) {
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
-	var assetAnchor *arkv1.IndexerVtxoAssetAnchor
-	if vtxo.AssetAnchor != nil {
-		for _, out := range vtxo.AssetAnchor.Vtxos {
-			if out.Vout == vtxo.VOut {
-				assetAnchor = &arkv1.IndexerVtxoAssetAnchor{
-					AssetId: vtxo.AssetAnchor.AssetID,
-					Vout:    out.Vout,
-					Amount:  out.Amount,
-				}
-			}
+	var asst *arkv1.IndexerAsset
+	if vtxo.Asset != nil {
+		asst = &arkv1.IndexerAsset{
+			AssetId: vtxo.Asset.AssetID,
+			Amount:  vtxo.Asset.Amount,
 		}
 	}
 	return &arkv1.IndexerVtxo{
@@ -847,6 +842,6 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
-		AssetAnchor:     assetAnchor,
+		Asset:           asst,
 	}
 }

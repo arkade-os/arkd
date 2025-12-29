@@ -1,9 +1,8 @@
 package domain
 
 type AssetAnchor struct {
-	AnchorPoint Outpoint
-	AssetID     string
-	Vtxos       []AnchorVtxo
+	Outpoint
+	Assets []NormalAsset
 }
 
 type AssetMetadata struct {
@@ -11,12 +10,13 @@ type AssetMetadata struct {
 	Value string
 }
 
-type AnchorVtxo struct {
-	Vout   uint32
-	Amount uint64
+type NormalAsset struct {
+	Outpoint
+	Amount  uint64
+	AssetID string
 }
 
-type Asset struct {
+type AssetDetails struct {
 	ID        string
 	Quantity  uint64
 	Immutable bool

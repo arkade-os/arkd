@@ -121,7 +121,8 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	txid := ptx.UnsignedTx.TxID()
 
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
-	assetAnchors := make([]domain.AssetAnchor, 0)
+
+	assetList := make([]domain.NormalAsset, 0)
 
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
 		var pubKey string
@@ -136,21 +137,22 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			allAssets := append(decodedAssetGroup.ControlAssets, decodedAssetGroup.NormalAssets...)
 
 			for _, grpAsset := range allAssets {
-				assetVtxos := make([]domain.AnchorVtxo, 0)
 				for _, assetOut := range grpAsset.Outputs {
-					assetVtxos = append(assetVtxos, domain.AnchorVtxo{
-						Vout:   assetOut.Vout,
-						Amount: assetOut.Amount,
+
+					if assetOut.Type != asset.AssetOutputTypeLocal {
+						continue
+					}
+
+					assetList = append(assetList, domain.NormalAsset{
+						Outpoint: domain.Outpoint{
+							Txid: txid,
+							VOut: assetOut.Vout,
+						},
+						Amount:  assetOut.Amount,
+						AssetID: grpAsset.AssetId.ToString(),
 					})
 				}
-				assetAnchors = append(assetAnchors, domain.AssetAnchor{
-					AnchorPoint: domain.Outpoint{
-						Txid: txid,
-						VOut: uint32(outIndex),
-					},
-					AssetID: grpAsset.AssetId.ToString(),
-					Vtxos:   assetVtxos,
-				})
+
 			}
 
 			if decodedAssetGroup.SubDustKey == nil {
@@ -183,19 +185,14 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		})
 	}
 
-	// Add Asset Anchor if Present
-	for _, assetAnchor := range assetAnchors {
-		for _, assetVtxo := range assetAnchor.Vtxos {
-			// Note: assetAnchor is always after assetVtxo, therefore indexing is correct
-			idx := int(assetVtxo.Vout)
-			if idx < 0 || idx >= len(outs) {
-				continue
-			}
-
-			anchor := assetAnchor
-			anchor.Vtxos = []domain.AnchorVtxo{assetVtxo}
-			outs[idx].AssetAnchor = &anchor
+	// Add Asset if Present
+	for _, asst := range assetList {
+		idx := int(asst.VOut)
+		if idx < 0 || idx >= len(outs) {
+			continue
 		}
+
+		outs[idx].Asset = &asst
 	}
 
 	return txid, ins, outs, nil
