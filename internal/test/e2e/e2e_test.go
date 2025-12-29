@@ -2364,6 +2364,109 @@ func TestReactToFraud(t *testing.T) {
 			require.NoError(t, err)
 			require.NotContains(t, aliceVtxos, vtxoToFraud)
 		})
+
+		t.Run("with arkd restart", func(t *testing.T) {
+			ctx := context.Background()
+			indexerSvc := setupIndexer(t)
+			sdkClient := setupArkSDK(t)
+			defer sdkClient.Stop()
+
+			_, offchainAddress, boardingAddress, err := sdkClient.Receive(ctx)
+			require.NoError(t, err)
+
+			faucetOnchain(t, boardingAddress, 0.00021)
+			time.Sleep(5 * time.Second)
+
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
+				require.NoError(t, err)
+				require.NotNil(t, vtxos)
+			}()
+
+			roundId, err := sdkClient.Settle(ctx)
+			require.NoError(t, err)
+
+			wg.Wait()
+			time.Sleep(5 * time.Second)
+
+			err = generateBlocks(1)
+			require.NoError(t, err)
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
+				require.NoError(t, err)
+				require.NotNil(t, vtxos)
+			}()
+
+			_, err = sdkClient.SendOffChain(
+				ctx, false, []types.Receiver{{To: offchainAddress, Amount: 1000}},
+			)
+			require.NoError(t, err)
+
+			wg.Wait()
+
+			time.Sleep(5 * time.Second)
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
+				require.NoError(t, err)
+				require.NotNil(t, vtxos)
+			}()
+			_, err = sdkClient.Settle(ctx)
+			require.NoError(t, err)
+
+			wg.Wait()
+
+			_, spentVtxos, err := sdkClient.ListVtxos(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, spentVtxos)
+
+			var vtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if !v.Preconfirmed && v.CommitmentTxids[0] == roundId {
+					vtxo = v
+					break
+				}
+			}
+			require.NotEmpty(t, vtxo)
+
+			expl, err := mempool_explorer.NewExplorer(
+				"http://localhost:3000", arklib.BitcoinRegTest,
+				mempool_explorer.WithTracker(false),
+			)
+			require.NoError(t, err)
+
+			// restart arkd to test fraud detection after restart
+			err = restartArkd()
+			require.NoError(t, err)
+
+			time.Sleep(5 * time.Second)
+
+			branch, err := redemption.NewRedeemBranch(ctx, expl, indexerSvc, vtxo)
+			require.NoError(t, err)
+
+			for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
+				bumpAndBroadcastTx(t, parentTx, expl)
+			}
+
+			err = generateBlocks(30)
+			require.NoError(t, err)
+
+			// Give time for the server to detect and process the fraud
+			time.Sleep(5 * time.Second)
+
+			balance, err := sdkClient.Balance(ctx)
+			require.NoError(t, err)
+
+			require.Empty(t, balance.OnchainBalance.LockedAmount)
+		})
 	})
 }
 

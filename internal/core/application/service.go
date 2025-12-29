@@ -290,11 +290,33 @@ func NewService(
 
 			svc.propagateTransactionEvent(txEvent)
 
-			go func() {
-				if err := svc.startWatchingVtxos(newVtxos); err != nil {
-					log.WithError(err).Warn("failed to start watching vtxos")
-				}
-			}()
+			root := round.VtxoTree.Root()
+			if root != nil {
+				go func(rootNode *tree.TxTreeNode) {
+					rootPtx, err := psbt.NewFromRawBytes(strings.NewReader(rootNode.Tx), true)
+					if err != nil {
+						log.WithError(err).Warn("failed to parse root tx")
+						return
+					}
+					scripts := make([]string, 0, len(rootPtx.UnsignedTx.TxOut))
+					for _, out := range rootPtx.UnsignedTx.TxOut {
+						if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+							continue
+						}
+						if script.IsSubDustScript(out.PkScript) {
+							continue
+						}
+						scripts = append(scripts, hex.EncodeToString(out.PkScript))
+					}
+					if len(scripts) > 0 {
+						if err := svc.scanner.WatchScripts(context.Background(), scripts); err != nil {
+							log.WithError(err).Warn("failed to watch scripts")
+							return
+						}
+						log.Debugf("watching %d scripts", len(scripts))
+					}
+				}(root)
+			}
 
 			if lastEvent := events[len(events)-1]; lastEvent.GetType() != domain.EventTypeBatchSwept {
 				go svc.scheduleSweepBatchOutput(round)
@@ -343,19 +365,13 @@ func NewService(
 			}
 
 			svc.propagateTransactionEvent(txEvent)
-
-			go func() {
-				if err := svc.startWatchingVtxos(newVtxos); err != nil {
-					log.WithError(err).Warn("failed to start watching vtxos")
-				}
-			}()
 		},
 	)
 
-	if err := svc.restoreWatchingVtxos(); err != nil {
-		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	if err := svc.restoreWatchingScripts(); err != nil {
+		return nil, fmt.Errorf("failed to restore watching scripts: %s", err)
 	}
-	go svc.listenToScannerNotifications()
+	go svc.listenToScannerNotifications(ctx)
 	return svc, nil
 }
 
@@ -384,22 +400,8 @@ func (s *service) Stop() {
 	s.sweeperCancel()
 	s.sweeper.stop()
 
-	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
-	if err == nil {
-		tapkeys := make([]string, 0)
-
-		for _, commitmentTxId := range commitmentTxIds {
-			keys, err := s.repoManager.Vtxos().
-				GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-			if err != nil {
-				log.WithError(err).Warn("failed to get vtxo tap keys")
-				continue
-			}
-
-			tapkeys = append(tapkeys, keys...)
-		}
-
-		s.stopWatchingVtxos(tapkeys)
+	if err := s.scanner.UnwatchAllScripts(ctx); err != nil {
+		log.WithError(err).Warn("failed to unwatch scripts")
 	}
 
 	// nolint
@@ -3332,88 +3334,6 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 	log.Debugf("finalized round %s with commitment tx %s", roundId, commitmentTxid)
 }
 
-func (s *service) listenToScannerNotifications() {
-	ctx := context.Background()
-	chVtxos := s.scanner.GetNotificationChannel(ctx)
-
-	mutx := &sync.Mutex{}
-	for vtxoKeys := range chVtxos {
-		go func(vtxoKeys map[string][]ports.VtxoWithValue) {
-			for _, keys := range vtxoKeys {
-				for _, v := range keys {
-					outs := []domain.Outpoint{v.Outpoint}
-					vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outs)
-					if err != nil {
-						log.WithError(err).Warn("failed to retrieve vtxos, skipping...")
-						return
-					}
-					if len(vtxos) <= 0 {
-						log.Warnf("vtxo %s not found, skipping...", v.String())
-						return
-					}
-
-					vtxo := vtxos[0]
-
-					if vtxo.Preconfirmed {
-						go func() {
-							txs, err := s.repoManager.Rounds().GetTxsWithTxids(
-								ctx, []string{vtxo.Txid},
-							)
-							if err != nil {
-								log.WithError(err).Warn("failed to retrieve txs, skipping...")
-								return
-							}
-
-							if len(txs) <= 0 {
-								log.Warnf("tx %s not found", vtxo.Txid)
-								return
-							}
-
-							ptx, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
-							if err != nil {
-								log.WithError(err).Warn("failed to parse tx, skipping...")
-								return
-							}
-
-							// remove sweeper task for the associated checkpoint outputs
-							for _, in := range ptx.UnsignedTx.TxIn {
-								taskId := in.PreviousOutPoint.Hash.String()
-								s.sweeper.removeTask(taskId)
-								log.Debugf("sweeper: unscheduled task for tx %s", taskId)
-							}
-						}()
-					}
-
-					if !vtxo.Unrolled {
-						go func() {
-							if err := s.repoManager.Vtxos().UnrollVtxos(
-								ctx, []domain.Outpoint{vtxo.Outpoint},
-							); err != nil {
-								log.WithError(err).Warnf(
-									"failed to mark vtxo %s as unrolled", vtxo.Outpoint.String(),
-								)
-							}
-
-							log.Debugf("vtxo %s unrolled", vtxo.Outpoint.String())
-						}()
-					}
-
-					if vtxo.Spent {
-						log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
-						go func() {
-							if err := s.reactToFraud(ctx, vtxo, mutx); err != nil {
-								log.WithError(err).Warnf(
-									"failed to react to fraud for vtxo %s", vtxo.Outpoint.String(),
-								)
-							}
-						}()
-					}
-				}
-			}
-		}(vtxoKeys)
-	}
-}
-
 func (s *service) propagateEvents(ctx context.Context, round *domain.Round) {
 	lastEvent := round.Events()[len(round.Events())-1]
 	events := make([]domain.Event, 0)
@@ -3611,42 +3531,7 @@ func (s *service) getSpentVtxos(intents map[string]domain.Intent) []domain.Vtxo 
 	return vtxos
 }
 
-func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
-	scripts, err := s.extractVtxosScriptsForScanner(vtxos)
-	if err != nil {
-		return err
-	}
-
-	if len(scripts) <= 0 {
-		return nil
-	}
-
-	return s.scanner.WatchScripts(context.Background(), scripts)
-}
-
-func (s *service) stopWatchingVtxos(tapkeys []string) {
-	scripts := make([]string, 0, len(tapkeys))
-	for _, key := range tapkeys {
-		// script = OP_1 OP_PUSHBYTES_32 <key>
-		scripts = append(scripts, fmt.Sprintf("5120%s", key))
-	}
-
-	if len(scripts) <= 0 {
-		return
-	}
-
-	for {
-		if err := s.scanner.UnwatchScripts(context.Background(), scripts); err != nil {
-			log.WithError(err).Warn("failed to stop watching vtxos, retrying in a moment...")
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		log.Debugf("stopped watching %d vtxo scripts", len(tapkeys))
-		break
-	}
-}
-
-func (s *service) restoreWatchingVtxos() error {
+func (s *service) restoreWatchingScripts() error {
 	ctx := context.Background()
 
 	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
@@ -3657,6 +3542,63 @@ func (s *service) restoreWatchingVtxos() error {
 	scripts := make([]string, 0)
 
 	for _, commitmentTxId := range commitmentTxIds {
+		flatVtxoTree, err := s.repoManager.Rounds().GetRoundVtxoTree(ctx, commitmentTxId)
+		if err != nil {
+			log.WithError(err).Warn("failed to get round vtxo tree")
+			continue
+		}
+
+		vtxoTree, err := tree.NewTxTree(flatVtxoTree)
+		if err != nil {
+			log.WithError(err).Warn("failed to create vtxo tree")
+			continue
+		}
+
+		sweepableOutputs, err := findSweepableOutputs(
+			ctx,
+			s.wallet,
+			s.builder,
+			s.sweeper.scheduler.Unit(),
+			vtxoTree,
+		)
+		if err != nil {
+			log.WithError(err).Warn("failed to find sweepable outputs")
+			continue
+		}
+
+		// if there are sweepable outputs, we need to watch the children batch scripts
+		if len(sweepableOutputs) > 0 {
+			for _, outputs := range sweepableOutputs {
+				for _, output := range outputs {
+					childrenTxs, err := s.repoManager.Rounds().
+						GetChildrenTxs(ctx, output.Txid)
+					if err != nil {
+						log.WithError(err).Warn("failed to get children txs")
+						continue
+					}
+					for _, childTx := range childrenTxs {
+						ptx, err := psbt.NewFromRawBytes(strings.NewReader(childTx), true)
+						if err != nil {
+							log.WithError(err).Warn("failed to parse child tx")
+							continue
+						}
+						for _, output := range ptx.UnsignedTx.TxOut {
+							if bytes.Equal(output.PkScript, txutils.ANCHOR_PKSCRIPT) {
+								continue
+							}
+							if script.IsSubDustScript(output.PkScript) {
+								continue
+							}
+							scripts = append(scripts, hex.EncodeToString(output.PkScript))
+						}
+					}
+				}
+			}
+
+			continue
+		}
+
+		// else, fallback to the tapkeys of the vtxos
 		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
 		if err != nil {
 			return err
@@ -3675,55 +3617,8 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
+	log.Debugf("restored watching %d scripts", len(scripts))
 	return nil
-}
-
-// extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner
-// it excludes subdust vtxos scripts and duplicates
-// it logs errors and continues in order to not block the start/stop watching vtxos operations
-func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, error) {
-	dustLimit, err := s.wallet.GetDustAmount(context.Background())
-	if err != nil {
-		return nil, err
-	}
-
-	indexedScripts := make(map[string]struct{})
-	scripts := make([]string, 0)
-
-	for _, vtxo := range vtxos {
-		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
-		if err != nil {
-			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
-		if err != nil {
-			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		if vtxo.Amount < dustLimit {
-			continue
-		}
-
-		p2trScript, err := script.P2TRScript(vtxoTapKey)
-		if err != nil {
-			log.WithError(err).
-				Warnf("failed to compute P2TR script from vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		scriptHex := hex.EncodeToString(p2trScript)
-
-		if _, ok := indexedScripts[scriptHex]; !ok {
-			indexedScripts[scriptHex] = struct{}{}
-			scripts = append(scripts, scriptHex)
-		}
-	}
-
-	return scripts, nil
 }
 
 func (s *service) saveEvents(

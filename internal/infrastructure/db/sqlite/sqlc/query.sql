@@ -240,6 +240,15 @@ SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_
 UNION
 SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid IN (sqlc.slice('ids3'));
 
+-- name: SelectChildrenTxs :many
+SELECT t1.tx FROM tx t1
+WHERE t1.txid IN (
+  SELECT json_each.value
+  FROM tx t2, json_each(t2.children)
+  WHERE t2.type = 'tree'
+    AND t2.txid = @txid
+);
+
 -- name: SelectNotUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 

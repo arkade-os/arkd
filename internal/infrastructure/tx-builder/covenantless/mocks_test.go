@@ -249,14 +249,19 @@ func (m *mockedWallet) UnwatchScripts(
 	return args.Error(0)
 }
 
+func (m *mockedWallet) UnwatchAllScripts(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func (m *mockedWallet) GetNotificationChannel(
 	ctx context.Context,
-) <-chan map[string][]ports.VtxoWithValue {
+) <-chan map[string][]ports.OutpointWithValue {
 	args := m.Called(ctx)
 
-	var res <-chan map[string][]ports.VtxoWithValue
+	var res <-chan map[string][]ports.OutpointWithValue
 	if a := args.Get(0); a != nil {
-		res = a.(<-chan map[string][]ports.VtxoWithValue)
+		res = a.(<-chan map[string][]ports.OutpointWithValue)
 	}
 	return res
 }

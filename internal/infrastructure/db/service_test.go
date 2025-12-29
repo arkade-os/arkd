@@ -40,42 +40,80 @@ const (
 )
 
 var (
+	rootTxid = randomString(32)
+	txid1    = randomString(32)
+	txid2    = randomString(32)
+	txid3    = randomString(32)
+	txid4    = randomString(32)
+	txid5    = randomString(32)
+	txid6    = randomString(32)
+	txid7    = randomString(32)
+	txid8    = randomString(32)
+	txid9    = randomString(32)
 	vtxoTree = tree.FlatTxTree{
 		{
-			Txid:     randomString(32),
+			Txid: rootTxid,
+			Tx:   randomTx(),
+			Children: map[uint32]string{
+				0: txid1,
+				1: txid2,
+			},
+		},
+		{
+			Txid: txid1,
+			Tx:   randomTx(),
+			Children: map[uint32]string{
+				0: txid3,
+			},
+		},
+		{
+			Txid: txid2,
+			Tx:   randomTx(),
+			Children: map[uint32]string{
+				0: txid4,
+				1: txid5,
+			},
+		},
+		{
+			Txid: txid3,
+			Tx:   randomTx(),
+			Children: map[uint32]string{
+				0: txid6,
+				1: txid7,
+			},
+		},
+		{
+			Txid: txid4,
+			Tx:   randomTx(),
+			Children: map[uint32]string{
+				0: txid8,
+				1: txid9,
+			},
+		},
+		{
+			Txid:     txid5,
 			Tx:       randomTx(),
 			Children: nil,
 		},
 		{
-			Txid: randomString(32),
-			Tx:   randomTx(),
-			Children: map[uint32]string{
-				0: randomString(32),
-			},
+			Txid:     txid6,
+			Tx:       randomTx(),
+			Children: nil,
 		},
 		{
-			Txid: randomString(32),
-			Tx:   randomTx(),
-			Children: map[uint32]string{
-				0: randomString(32),
-				1: randomString(32),
-			},
+			Txid:     txid7,
+			Tx:       randomTx(),
+			Children: nil,
 		},
 		{
-			Txid: randomString(32),
-			Tx:   randomTx(),
-			Children: map[uint32]string{
-				0: randomString(32),
-				1: randomString(32),
-			},
+			Txid:     txid8,
+			Tx:       randomTx(),
+			Children: nil,
 		},
 		{
-			Txid: randomString(32),
-			Tx:   randomTx(),
-			Children: map[uint32]string{
-				0: randomString(32),
-				1: randomString(32),
-			},
+			Txid:     txid9,
+			Tx:       randomTx(),
+			Children: nil,
 		},
 	}
 	connectorsTree = tree.FlatTxTree{
@@ -541,6 +579,44 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.NotNil(t, txs)
 		require.Equal(t, 3, len(txs))
+
+		// Test GetChildrenTxs with a tree node that has children
+		treeNodeWithChildren := vtxoTree[2] // Has 2 children
+		childrenTxs, err := svc.Rounds().GetChildrenTxs(ctx, treeNodeWithChildren.Txid)
+		require.NoError(t, err)
+		require.NotNil(t, childrenTxs)
+		require.Len(t, childrenTxs, len(treeNodeWithChildren.Children))
+
+		// Verify that returned transactions match the child transactions
+		expectedChildTxs := make(map[string]bool)
+		for _, childTxid := range treeNodeWithChildren.Children {
+			// Find the child node in the tree
+			for _, node := range finalizedRound.VtxoTree {
+				if node.Txid == childTxid {
+					expectedChildTxs[node.Tx] = true
+					break
+				}
+			}
+		}
+		require.Len(t, expectedChildTxs, len(childrenTxs))
+		for _, childTx := range childrenTxs {
+			require.True(
+				t,
+				expectedChildTxs[childTx],
+				"Child transaction not found in expected transactions",
+			)
+		}
+
+		// Test GetChildrenTxs with a tree node that has no children
+		treeNodeWithoutChildren := vtxoTree[len(vtxoTree)-1] // Has no children
+		childrenTxs, err = svc.Rounds().GetChildrenTxs(ctx, treeNodeWithoutChildren.Txid)
+		require.NoError(t, err)
+		require.Empty(t, childrenTxs)
+
+		// Test GetChildrenTxs with non-existent txid
+		childrenTxs, err = svc.Rounds().GetChildrenTxs(ctx, randomString(32))
+		require.NoError(t, err)
+		require.Empty(t, childrenTxs)
 
 		sweepableRounds, err := svc.Rounds().GetSweepableRounds(ctx)
 		require.NoError(t, err)

@@ -109,6 +109,11 @@ func (w *walletDaemonClient) UnwatchScripts(ctx context.Context, scripts []strin
 	return err
 }
 
+func (w *walletDaemonClient) UnwatchAllScripts(ctx context.Context) error {
+	_, err := w.client.UnwatchAllScripts(ctx, &arkwalletv1.UnwatchAllScriptsRequest{})
+	return err
+}
+
 func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([]byte, error) {
 	resp, err := w.client.SignMessage(ctx, &arkwalletv1.SignMessageRequest{Message: message})
 	if err != nil {
@@ -119,8 +124,8 @@ func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([
 
 func (w *walletDaemonClient) GetNotificationChannel(
 	ctx context.Context,
-) <-chan map[string][]ports.VtxoWithValue {
-	ch := make(chan map[string][]ports.VtxoWithValue)
+) <-chan map[string][]ports.OutpointWithValue {
+	ch := make(chan map[string][]ports.OutpointWithValue)
 	stream, err := w.client.NotificationStream(ctx, &arkwalletv1.NotificationStreamRequest{})
 	if err != nil {
 		close(ch)
@@ -141,11 +146,11 @@ func (w *walletDaemonClient) GetNotificationChannel(
 				log.WithError(err).Warnf("failed to receive notification")
 				return
 			}
-			m := make(map[string][]ports.VtxoWithValue)
+			m := make(map[string][]ports.OutpointWithValue)
 			for _, entry := range resp.Entries {
-				vtxos := make([]ports.VtxoWithValue, 0, len(entry.Vtxos))
+				vtxos := make([]ports.OutpointWithValue, 0, len(entry.Vtxos))
 				for _, v := range entry.Vtxos {
-					vtxos = append(vtxos, ports.VtxoWithValue{
+					vtxos = append(vtxos, ports.OutpointWithValue{
 						Outpoint: domain.Outpoint{
 							Txid: v.Txid,
 							VOut: v.Vout,
