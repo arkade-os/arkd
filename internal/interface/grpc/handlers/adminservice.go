@@ -94,6 +94,42 @@ func (a *adminHandler) GetRounds(
 	return &arkv1.GetRoundsResponse{Rounds: rounds}, nil
 }
 
+func (a *adminHandler) GetExpiringLiquidity(
+	ctx context.Context, req *arkv1.GetExpiringLiquidityRequest,
+) (*arkv1.GetExpiringLiquidityResponse, error) {
+	after := req.GetAfter()
+	before := req.GetBefore()
+
+	// Treat 0 or negative values as "unset" (proto doesn't support nil for scalars here).
+	// - after <= 0 -> now
+	// - before <= 0 -> no upper bound
+	if after <= 0 {
+		after = time.Now().Unix()
+	}
+
+	if before > 0 && after >= before {
+		return nil, status.Error(codes.InvalidArgument, "invalid range")
+	}
+
+	amount, err := a.adminService.GetExpiringLiquidity(ctx, after, before)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetExpiringLiquidityResponse{Amount: amount}, nil
+}
+
+func (a *adminHandler) GetRecoverableLiquidity(
+	ctx context.Context, _ *arkv1.GetRecoverableLiquidityRequest,
+) (*arkv1.GetRecoverableLiquidityResponse, error) {
+	amount, err := a.adminService.GetRecoverableLiquidity(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetRecoverableLiquidityResponse{Amount: amount}, nil
+}
+
 func (a *adminHandler) GetScheduledSweep(
 	ctx context.Context, _ *arkv1.GetScheduledSweepRequest,
 ) (*arkv1.GetScheduledSweepResponse, error) {
@@ -108,10 +144,10 @@ func (a *adminHandler) GetScheduledSweep(
 
 		for _, output := range sweep.SweepableOutputs {
 			outputs = append(outputs, &arkv1.SweepableOutput{
-				Txid:        output.Hash.String(),
-				Vout:        output.Index,
+				Txid:        output.TxInput.Txid,
+				Vout:        output.TxInput.Index,
 				ScheduledAt: output.ScheduledAt,
-				Amount:      convertSatsToBTCStr(uint64(output.Amount)),
+				Amount:      convertSatsToBTCStr(output.TxInput.Value),
 			})
 		}
 
@@ -401,6 +437,23 @@ func (a *adminHandler) BanScript(
 	}
 
 	return &arkv1.BanScriptResponse{}, nil
+}
+
+func (a *adminHandler) Sweep(
+	ctx context.Context, req *arkv1.SweepRequest,
+) (*arkv1.SweepResponse, error) {
+	withConnectors := req.GetConnectors()
+	commitmentTxids := req.GetCommitmentTxids()
+
+	txid, hex, err := a.adminService.Sweep(ctx, withConnectors, commitmentTxids)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.SweepResponse{
+		Txid: txid,
+		Hex:  hex,
+	}, nil
 }
 
 func (a *adminHandler) RevokeAuth(

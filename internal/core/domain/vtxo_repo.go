@@ -13,6 +13,8 @@ type VtxoRepository interface {
 	GetAllSweepableUnrolledVtxos(ctx context.Context) ([]Vtxo, error)
 	GetAllVtxos(ctx context.Context) ([]Vtxo, error)
 	GetAllVtxosWithPubKeys(ctx context.Context, pubkeys []string) ([]Vtxo, error)
+	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
+	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
 	UpdateVtxosExpiration(ctx context.Context, outpoints []Outpoint, expiresAt int64) error
 	GetLeafVtxosForBatch(ctx context.Context, txid string) ([]Vtxo, error)
 	GetSweepableVtxosByCommitmentTxid(

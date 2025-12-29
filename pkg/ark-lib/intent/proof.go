@@ -157,6 +157,27 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 	return &Proof{Packet: *toSign}, nil
 }
 
+func (p Proof) Fees() (int64, error) {
+	sumOfInputs := int64(0)
+	for i, input := range p.Inputs {
+		if input.WitnessUtxo == nil {
+			return 0, fmt.Errorf("missing witness utxo for input %d", i)
+		}
+		sumOfInputs += int64(input.WitnessUtxo.Value)
+	}
+
+	sumOfOutputs := int64(0)
+	for _, output := range p.UnsignedTx.TxOut {
+		sumOfOutputs += int64(output.Value)
+	}
+
+	fees := sumOfInputs - sumOfOutputs
+	if fees < 0 {
+		return 0, fmt.Errorf("sum of inputs is smaller than sum of outputs (diff: %d)", fees)
+	}
+	return fees, nil
+}
+
 // GetOutpoints returns the list of inputs proving ownership of coins
 // the first input is the toSpend tx, we ignore it
 func (p Proof) GetOutpoints() []wire.OutPoint {

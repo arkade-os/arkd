@@ -168,14 +168,17 @@ func (w *walletDaemonClient) GetNotificationChannel(
 
 func (w *walletDaemonClient) IsTransactionConfirmed(
 	ctx context.Context, txid string,
-) (bool, int64, int64, error) {
+) (bool, *ports.BlockTimestamp, error) {
 	resp, err := w.client.IsTransactionConfirmed(
 		ctx, &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
 	)
 	if err != nil {
-		return false, 0, 0, err
+		return false, nil, err
 	}
-	return resp.Confirmed, resp.Blocknumber, resp.Blocktime, nil
+	return resp.Confirmed, &ports.BlockTimestamp{
+		Height: uint32(resp.Blocknumber),
+		Time:   int64(resp.Blocktime),
+	}, nil
 }
 
 func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{}, error) {
@@ -307,11 +310,11 @@ func (w *walletDaemonClient) SelectUtxos(
 	}
 	inputs := make([]ports.TxInput, len(resp.Utxos))
 	for i, utxo := range resp.Utxos {
-		inputs[i] = &txInput{
-			txId:   utxo.GetTxid(),
-			index:  utxo.GetIndex(),
-			script: utxo.GetScript(),
-			value:  utxo.GetValue(),
+		inputs[i] = ports.TxInput{
+			Txid:   utxo.GetTxid(),
+			Index:  utxo.GetIndex(),
+			Script: utxo.GetScript(),
+			Value:  utxo.GetValue(),
 		}
 	}
 	return inputs, resp.GetTotalAmount(), nil
@@ -361,11 +364,11 @@ func (w *walletDaemonClient) ListConnectorUtxos(
 	}
 	inputs := make([]ports.TxInput, len(resp.Utxos))
 	for i, utxo := range resp.Utxos {
-		inputs[i] = &txInput{
-			txId:   utxo.GetTxid(),
-			index:  utxo.GetIndex(),
-			script: utxo.GetScript(),
-			value:  utxo.GetValue(),
+		inputs[i] = ports.TxInput{
+			Txid:   utxo.GetTxid(),
+			Index:  utxo.GetIndex(),
+			Script: utxo.GetScript(),
+			Value:  utxo.GetValue(),
 		}
 	}
 	return inputs, nil

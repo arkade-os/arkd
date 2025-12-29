@@ -87,6 +87,47 @@
         }
       }
     },
+    "/v1/batch/estimateFee": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "EstimateIntentFee allows to estimate the fees for a given intent.\nThe client should provide a BIP-322 message with the same data as the register intent message,\nand the server should respond with the estimated fees in satoshis.",
+        "operationId": "ArkService_EstimateIntentFee",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateIntentFeeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateIntentFeeResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/batch/events": {
       "get": {
         "tags": [
@@ -586,6 +627,25 @@
           },
           "pubkey": {
             "type": "string"
+          }
+        }
+      },
+      "EstimateIntentFeeRequest": {
+        "title": "EstimateIntentFeeRequest",
+        "type": "object",
+        "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
+          }
+        }
+      },
+      "EstimateIntentFeeResponse": {
+        "title": "EstimateIntentFeeResponse",
+        "type": "object",
+        "properties": {
+          "fee": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

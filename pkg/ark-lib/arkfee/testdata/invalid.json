@@ -1,0 +1,113 @@
+{
+  "invalidConfigs": [
+    {
+      "name": "invalid CEL syntax in offchain input program",
+      "config": {
+        "offchainInputProgram": "invalid syntax here !!!"
+      },
+      "err": "Syntax error"
+    },
+    {
+      "name": "invalid CEL syntax in onchain input program",
+      "config": {
+        "onchainInputProgram": "amount +"
+      },
+      "err": "Syntax error"
+    },
+    {
+      "name": "invalid CEL syntax in offchain output program",
+      "config": {
+        "offchainOutputProgram": "script == '"
+      },
+      "err": "Syntax error"
+    },
+    {
+      "name": "invalid CEL syntax in onchain output program",
+      "config": {
+        "onchainOutputProgram": "amount *"
+      },
+      "err": "Syntax error"
+    },
+    {
+      "name": "wrong return type - string",
+      "config": {
+        "offchainInputProgram": "'hello'"
+      },
+      "err": "expected return type double"
+    },
+    {
+      "name": "wrong return type - int",
+      "config": {
+        "onchainInputProgram": "42"
+      },
+      "err": "expected return type double"
+    },
+    {
+      "name": "wrong return type - bool",
+      "config": {
+        "offchainOutputProgram": "true"
+      },
+      "err": "expected return type double"
+    },
+    {
+      "name": "undefined variable in offchain input",
+      "config": {
+        "offchainInputProgram": "undefinedVar * 2.0"
+      },
+      "err": "undeclared reference"
+    },
+    {
+      "name": "undefined variable in onchain input",
+      "config": {
+        "onchainInputProgram": "unknownVar + amount"
+      },
+      "err": "undeclared reference"
+    },
+    {
+      "name": "undefined variable in output",
+      "config": {
+        "offchainOutputProgram": "notDefined + amount"
+      },
+      "err": "undeclared reference"
+    },
+    {
+      "name": "type mismatch in offchain input",
+      "config": {
+        "offchainInputProgram": "amount + 'string'"
+      },
+      "err": "found no matching overload"
+    },
+    {
+      "name": "type mismatch in onchain input",
+      "config": {
+        "onchainInputProgram": "amount == 'test'"
+      },
+      "err": "found no matching overload"
+    },
+    {
+      "name": "invalid function call",
+      "config": {
+        "offchainInputProgram": "invalidFunction()"
+      },
+      "err": "undeclared reference"
+    },
+    {
+      "name": "multiple invalid programs",
+      "config": {
+        "offchainInputProgram": "invalid syntax",
+        "onchainInputProgram": "also invalid",
+        "offchainOutputProgram": "wrong type",
+        "onchainOutputProgram": "42"
+      },
+      "err": "Syntax error"
+    },
+    {
+      "name": "using offchain variable in onchain input program",
+      "config": {
+        "onchainInputProgram": "inputType == 'vtxo' ? 0.0 : 100.0"
+      },
+      "err": "undeclared reference"
+    }
+  ]
+}
+

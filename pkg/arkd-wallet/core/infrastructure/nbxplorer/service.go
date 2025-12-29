@@ -646,8 +646,9 @@ func (n *nbxplorer) UnwatchAllAddresses(ctx context.Context) error {
 	return nil
 }
 
-// GetGroupNotifications monitors group UTXOs using WebSocket events and triggers UTXO rescanning
-// only when receiving "newtransaction" events. Returns only UTXOs from the specific new transaction.
+// GetAddressNotifications returns the channel where to listen for notifications about incoming 
+// UTXOs for the watched addresses.
+// If no underlying group is set, an empty one will be created.
 func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports.Utxo, error) {
 	if len(n.groupID) == 0 {
 		if err := n.createEmptyGroup(ctx); err != nil {

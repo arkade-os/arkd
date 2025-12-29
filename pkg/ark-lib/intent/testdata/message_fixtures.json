@@ -36,5 +36,16 @@
       "expire_at": 1762862054
     },
     "expected": "{\"type\":\"get-pending-tx\",\"expire_at\":1762862054}"
+  },
+  {
+    "name": "estimate_fee",
+    "message": {
+      "type": "estimate-intent-fee",
+      "onchain_output_indexes": [],
+      "valid_at": 1762861934,
+      "expire_at": 1762862054,
+      "cosigners_public_keys": ["027b763fdd0d6d96d1ce6fb95e09e381fdae2bcbe3ed7d1a2bd95702524d5dcd8a"]
+    },
+    "expected": "{\"type\":\"estimate-intent-fee\",\"onchain_output_indexes\":[],\"valid_at\":1762861934,\"expire_at\":1762862054,\"cosigners_public_keys\":[\"027b763fdd0d6d96d1ce6fb95e09e381fdae2bcbe3ed7d1a2bd95702524d5dcd8a\"]}"
   }
 ]

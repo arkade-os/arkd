@@ -43,9 +43,11 @@ const (
 	completedFlagName                                 = "completed"
 	failedFlagName                                    = "failed"
 	withDetailsFlagName                               = "with-details"
+	sweepConnectorsFlagName                           = "with-connectors"
+	sweepCommitmentTxidsFlagName                      = "commitment-txids"
 
-	dateFormat                 = time.DateOnly
-	scheduledSessionDateFormat = time.DateTime
+	dateFormat         = time.DateOnly
+	dateWithTimeFormat = time.DateTime
 )
 
 var (
@@ -129,14 +131,14 @@ var (
 		Name: scheduledSessionStartDateFlagName,
 		Usage: fmt.Sprintf(
 			"the starting date of the very first scheduled session, must be in %s format (GMT)",
-			scheduledSessionDateFormat,
+			dateWithTimeFormat,
 		),
 	}
 	scheduledSessionEndDateFlag = &cli.StringFlag{
 		Name: scheduledSessionEndDateFlagName,
 		Usage: fmt.Sprintf(
 			"the ending date of the very first scheduled session, must be in %s format (GMT)",
-			scheduledSessionDateFormat,
+			dateWithTimeFormat,
 		),
 	}
 	scheduledSessionDurationFlag = &cli.IntFlag{
@@ -214,5 +216,30 @@ var (
 		Name:  withDetailsFlagName,
 		Usage: "return detailed information for each round (like round-info command)",
 		Value: false,
+	}
+	sweepConnectorsFlag = &cli.BoolFlag{
+		Name:  sweepConnectorsFlagName,
+		Usage: "include all spendable connector UTXOs in the sweep",
+		Value: false,
+	}
+	sweepCommitmentTxidsFlag = &cli.StringSliceFlag{
+		Name:  sweepCommitmentTxidsFlagName,
+		Usage: "commitment transaction IDs to sweep",
+	}
+	liquidityAfterFlag = &cli.StringFlag{
+		Name: afterDateFlagName,
+		Usage: fmt.Sprintf(
+			"get expiring liquidity after a specific date in format %s. "+
+				"If not provided, defaults to now", dateWithTimeFormat,
+		),
+		Value: "",
+	}
+	liquidityBeforeFlag = &cli.StringFlag{
+		Name: beforeDateFlagName,
+		Usage: fmt.Sprintf(
+			"get expiring liquidity before a specific date in format %s. "+
+				"If not provided, no upper bound is applied", dateWithTimeFormat,
+		),
+		Value: "",
 	}
 )

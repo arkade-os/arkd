@@ -86,11 +86,15 @@ func main() {
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
+		sweepCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,
 		revokeAuthCmd,
 		convictionsCmd,
+		liquidityExpiringCmd,
+		liquidityRecoverableCmd,
+		liquidityReportCmd,
 	)
 
 	app.DefaultCommand = startCmd.Name

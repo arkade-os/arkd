@@ -119,6 +119,12 @@ var (
 		Usage:  "List all scheduled batches sweepings",
 		Action: scheduledSweepAction,
 	}
+	sweepCmd = &cli.Command{
+		Name:   "sweep",
+		Usage:  "Trigger a sweep transaction",
+		Flags:  []cli.Flag{sweepConnectorsFlag, sweepCommitmentTxidsFlag},
+		Action: sweepAction,
+	}
 	roundInfoCmd = &cli.Command{
 		Name:   "round-info",
 		Usage:  "Get round info",
@@ -209,6 +215,22 @@ var (
 		Usage:  "Add a conviction",
 		Flags:  []cli.Flag{scriptFlag, banDurationFlag, banReasonFlag},
 		Action: banScriptAction,
+	}
+	liquidityExpiringCmd = &cli.Command{
+		Name:   "liquidity-expiring",
+		Usage:  "Get expiring liquidity within a given range",
+		Flags:  []cli.Flag{liquidityAfterFlag, liquidityBeforeFlag},
+		Action: liquidityExpiringAction,
+	}
+	liquidityRecoverableCmd = &cli.Command{
+		Name:   "liquidity-recoverable",
+		Usage:  "Get all recoverable liquidity",
+		Action: liquidityRecoverableAction,
+	}
+	liquidityReportCmd = &cli.Command{
+		Name:   "liquidity-report",
+		Usage:  "Get a report of the recoverable and expiring liquidity",
+		Action: liquidityReportAction,
 	}
 )
 
@@ -714,13 +736,13 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/scheduledSession", baseURL)
 	config := map[string]string{}
 	if startDate != "" {
-		startTime, err := time.Parse(scheduledSessionDateFormat, startDate)
+		startTime, err := time.Parse(dateWithTimeFormat, startDate)
 		if err != nil {
-			return fmt.Errorf("invalid --start-date format, must be %s", scheduledSessionDateFormat)
+			return fmt.Errorf("invalid --start-date format, must be %s", dateWithTimeFormat)
 		}
-		endTime, err := time.Parse(scheduledSessionDateFormat, endDate)
+		endTime, err := time.Parse(dateWithTimeFormat, endDate)
 		if err != nil {
-			return fmt.Errorf("invalid --end-date format, must be %s", scheduledSessionDateFormat)
+			return fmt.Errorf("invalid --end-date format, must be %s", dateWithTimeFormat)
 		}
 		config["startTime"] = strconv.Itoa(int(startTime.Unix()))
 		config["endTime"] = strconv.Itoa(int(endTime.Unix()))
@@ -935,5 +957,164 @@ func banScriptAction(ctx *cli.Context) error {
 	}
 
 	fmt.Printf("Successfully banned script: %s\n", script)
+	return nil
+}
+
+func sweepAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	withConnectors := ctx.Bool(sweepConnectorsFlagName)
+	commitmentTxids := ctx.StringSlice(sweepCommitmentTxidsFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/sweep", baseURL)
+
+	commitmentTxidsJSON, err := json.Marshal(commitmentTxids)
+	if err != nil {
+		return fmt.Errorf("failed to marshal commitment txids: %s", err)
+	}
+
+	body := fmt.Sprintf(
+		`{"connectors": %t, "commitment_txids": %s}`,
+		withConnectors,
+		commitmentTxidsJSON,
+	)
+
+	type sweepResponse struct {
+		Txid string `json:"txid"`
+		Hex  string `json:"hex"`
+	}
+
+	sweepTxHex, err := post[sweepResponse](url, body, "", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(sweepTxHex)
+	return nil
+}
+
+func liquidityExpiringAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	afterDate := ctx.String(afterDateFlagName)
+	beforeDate := ctx.String(beforeDateFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	after := time.Now().Unix()
+	if afterDate != "" {
+		tt, err := time.Parse(dateWithTimeFormat, afterDate)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s flag format, must be %s", afterDateFlagName, dateWithTimeFormat,
+			)
+		}
+		after = tt.Unix()
+	}
+
+	before := int64(0)
+	if beforeDate != "" {
+		tt, err := time.Parse(dateWithTimeFormat, beforeDate)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s flag format, must be %s", beforeDateFlagName, dateWithTimeFormat,
+			)
+		}
+		before = tt.Unix()
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/liquidity/expiring?after=%d&before=%d", baseURL, after, before)
+	amount, err := getUint64(url, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(amount)
+	return nil
+}
+
+func liquidityRecoverableAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/liquidity/recoverable", baseURL)
+	amount, err := getUint64(url, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(amount)
+	return nil
+}
+
+func liquidityReportAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	t1 := now.Add(24 * time.Hour)
+	t2 := now.Add(48 * time.Hour)
+	t3 := now.Add(72 * time.Hour)
+
+	getExpiring := func(after, before int64) (uint64, error) {
+		url := fmt.Sprintf(
+			"%s/v1/admin/liquidity/expiring?after=%d&before=%d",
+			baseURL, after, before,
+		)
+		return getUint64(url, "amount", macaroon, tlsConfig)
+	}
+
+	recoverableURL := fmt.Sprintf("%s/v1/admin/liquidity/recoverable", baseURL)
+	recoverable, err := getUint64(recoverableURL, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	exp1, err := getExpiring(now.Unix(), t1.Unix())
+	if err != nil {
+		return err
+	}
+	exp2, err := getExpiring(t1.Unix(), t2.Unix())
+	if err != nil {
+		return err
+	}
+	exp3, err := getExpiring(t2.Unix(), t3.Unix())
+	if err != nil {
+		return err
+	}
+	expAfter, err := getExpiring(t3.Unix(), 0)
+	if err != nil {
+		return err
+	}
+
+	resp := struct {
+		RecoverableLiquidity uint64 `json:"recoverableLiquidity"`
+		ExpiringIn1day       uint64 `json:"expiringInOneDay"`
+		ExpiringIn2day       uint64 `json:"expiringInTwoDays"`
+		ExpiringIn3day       uint64 `json:"expiringInThreeDays"`
+		ExpiringAfter3days   uint64 `json:"expiringAfterThreeDays"`
+	}{
+		RecoverableLiquidity: recoverable,
+		ExpiringIn1day:       exp1,
+		ExpiringIn2day:       exp2,
+		ExpiringIn3day:       exp3,
+		ExpiringAfter3days:   expAfter,
+	}
+
+	respJSON, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJSON))
 	return nil
 }

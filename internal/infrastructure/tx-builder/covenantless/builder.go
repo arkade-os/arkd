@@ -247,48 +247,11 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 	return hex.EncodeToString(serialized.Bytes()), nil
 }
 
-func (b *txBuilder) BuildSweepTx(
-	inputs []ports.SweepableOutput,
-) (txid, signedSweepTx string, err error) {
-	sweepPsbt, err := sweepTransaction(b.wallet, inputs)
-	if err != nil {
-		return "", "", err
-	}
-
-	sweepPsbtBase64, err := sweepPsbt.B64Encode()
-	if err != nil {
-		return "", "", err
-	}
-
+func (b *txBuilder) BuildSweepTx(inputs []ports.TxInput) (
+	txid, signedSweepTx string, err error,
+) {
 	ctx := context.Background()
-	signedSweepPsbtB64, err := b.wallet.SignTransactionTapscript(ctx, sweepPsbtBase64, nil)
-	if err != nil {
-		return "", "", err
-	}
-
-	signedPsbt, err := psbt.NewFromRawBytes(strings.NewReader(signedSweepPsbtB64), true)
-	if err != nil {
-		return "", "", err
-	}
-
-	for i := range inputs {
-		if err := psbt.Finalize(signedPsbt, i); err != nil {
-			return "", "", err
-		}
-	}
-
-	tx, err := psbt.Extract(signedPsbt)
-	if err != nil {
-		return "", "", err
-	}
-
-	buf := new(bytes.Buffer)
-
-	if err := tx.Serialize(buf); err != nil {
-		return "", "", err
-	}
-
-	return tx.TxHash().String(), hex.EncodeToString(buf.Bytes()), nil
+	return sweepTransaction(ctx, b.wallet, inputs)
 }
 
 func (b *txBuilder) VerifyForfeitTxs(
@@ -534,7 +497,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 
 func (b *txBuilder) BuildCommitmentTx(
 	signerPubkey *btcec.PublicKey, intents domain.Intents,
-	boardingInputs []ports.BoardingInput, connectorAddresses []string,
+	boardingInputs []ports.BoardingInput,
 	cosignersPublicKeys [][]string,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	var batchOutputScript []byte
@@ -628,8 +591,9 @@ func (b *txBuilder) BuildCommitmentTx(
 	}
 
 	ptx, err := b.createCommitmentTx(
-		batchOutputAmount, batchOutputScript, connectorsTreeAmount, connectorsTreePkScript,
-		intents, boardingInputs, connectorAddresses,
+		batchOutputAmount, batchOutputScript,
+		connectorsTreeAmount, connectorsTreePkScript,
+		intents, boardingInputs,
 	)
 	if err != nil {
 		return "", nil, "", nil, err
@@ -678,9 +642,9 @@ func (b *txBuilder) BuildCommitmentTx(
 
 func (b *txBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput ports.SweepableOutput, err error) {
+) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput *ports.TxInput, err error) {
 	if len(vtxoTree.Root.UnsignedTx.TxIn) != 1 {
-		return nil, ports.SweepableOutput{}, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"invalid node psbt, expect 1 input, got %d", len(vtxoTree.Root.UnsignedTx.TxIn),
 		)
 	}
@@ -691,32 +655,45 @@ func (b *txBuilder) GetSweepableBatchOutputs(
 
 	sweepLeaf, internalKey, vtxoTreeExpiry, err := b.extractSweepLeaf(vtxoTree.Root, 0)
 	if err != nil {
-		return nil, ports.SweepableOutput{}, err
+		return nil, nil, err
 	}
 
 	txhex, err := b.wallet.GetTransaction(context.Background(), txid.String())
 	if err != nil {
-		return nil, ports.SweepableOutput{}, err
+		return nil, nil, err
 	}
 
 	var tx wire.MsgTx
 	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
-		return nil, ports.SweepableOutput{}, err
+		return nil, nil, err
 	}
 
 	if len(tx.TxOut) <= 0 {
-		return nil, ports.SweepableOutput{}, fmt.Errorf(
-			"no outputs found in checkpoint tx",
-		)
+		return nil, nil, fmt.Errorf("no outputs found in checkpoint tx")
 	}
 
-	sweepInput = ports.SweepableOutput{
-		Hash:         txid,
-		Index:        index,
-		Script:       sweepLeaf.Script,
-		ControlBlock: sweepLeaf.ControlBlock,
-		InternalKey:  internalKey,
-		Amount:       tx.TxOut[index].Value,
+	// Compute prevout script (P2TR output script)
+	ctrlBlock, err := txscript.ParseControlBlock(sweepLeaf.ControlBlock)
+	if err != nil {
+		return nil, nil, err
+	}
+	root := ctrlBlock.RootHash(sweepLeaf.Script)
+	prevoutTaprootKey := txscript.ComputeTaprootOutputKey(internalKey, root)
+	prevoutScript, err := script.P2TRScript(prevoutTaprootKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sweepInput = &ports.TxInput{
+		Txid:   txid.String(),
+		Index:  index,
+		Script: hex.EncodeToString(prevoutScript),
+		Value:  uint64(tx.TxOut[index].Value),
+		TapscriptLeaf: &ports.Tapscript{
+			InternalKey:  hex.EncodeToString(internalKey.SerializeCompressed()),
+			ControlBlock: hex.EncodeToString(sweepLeaf.ControlBlock),
+			Tapscript:    hex.EncodeToString(sweepLeaf.Script),
+		},
 	}
 
 	return vtxoTreeExpiry, sweepInput, nil
@@ -725,7 +702,7 @@ func (b *txBuilder) GetSweepableBatchOutputs(
 func (b *txBuilder) createCommitmentTx(
 	batchOutputAmount int64, batchOutputScript []byte,
 	connectorOutputAmount int64, connectorOutputScript []byte,
-	intents []domain.Intent, boardingInputs []ports.BoardingInput, connectorAddresses []string,
+	intents []domain.Intent, boardingInputs []ports.BoardingInput,
 ) (*psbt.Packet, error) {
 	dustLimit, err := b.wallet.GetDustAmount(context.Background())
 	if err != nil {
@@ -790,7 +767,7 @@ func (b *txBuilder) createCommitmentTx(
 	}
 
 	ctx := context.Background()
-	utxos, change, err := b.selectUtxos(ctx, connectorAddresses, targetAmount)
+	utxos, change, err := b.wallet.SelectUtxos(ctx, "", targetAmount, false)
 	if err != nil {
 		return nil, err
 	}
@@ -840,24 +817,24 @@ func (b *txBuilder) createCommitmentTx(
 	nextIndex := 0
 
 	for _, utxo := range utxos {
-		txhash, err := chainhash.NewHashFromStr(utxo.GetTxid())
+		txhash, err := chainhash.NewHashFromStr(utxo.Txid)
 		if err != nil {
 			return nil, err
 		}
 
 		ins = append(ins, &wire.OutPoint{
 			Hash:  *txhash,
-			Index: utxo.GetIndex(),
+			Index: utxo.Index,
 		})
 		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
 
-		script, err := hex.DecodeString(utxo.GetScript())
+		script, err := hex.DecodeString(utxo.Script)
 		if err != nil {
 			return nil, err
 		}
 
 		witnessUtxos[nextIndex] = &wire.TxOut{
-			Value:    int64(utxo.GetValue()),
+			Value:    int64(utxo.Value),
 			PkScript: script,
 		}
 		nextIndex++
@@ -938,7 +915,21 @@ func (b *txBuilder) createCommitmentTx(
 		return nil, err
 	}
 
+	const maxIterations = 5
+	iteration := 0
+
 	for feeAmount > exceedingValue {
+		iteration++
+		if iteration > maxIterations {
+			// avoid infinite loop
+			return nil, fmt.Errorf(
+				"fee adjustment loop exceeded maximum iterations (%d), feeAmount: %d, exceedingValue: %d",
+				maxIterations,
+				feeAmount,
+				exceedingValue,
+			)
+		}
+
 		feesToPay := feeAmount - exceedingValue
 
 		// change is able to cover the remaining fees
@@ -963,27 +954,27 @@ func (b *txBuilder) createCommitmentTx(
 
 		// add new inputs
 		for _, utxo := range newUtxos {
-			txhash, err := chainhash.NewHashFromStr(utxo.GetTxid())
+			txhash, err := chainhash.NewHashFromStr(utxo.Txid)
 			if err != nil {
 				return nil, err
 			}
 
 			outpoint := &wire.OutPoint{
 				Hash:  *txhash,
-				Index: utxo.GetIndex(),
+				Index: utxo.Index,
 			}
 
 			ptx.UnsignedTx.AddTxIn(wire.NewTxIn(outpoint, nil, nil))
 			ptx.Inputs = append(ptx.Inputs, psbt.PInput{})
 
-			scriptBytes, err := hex.DecodeString(utxo.GetScript())
+			scriptBytes, err := hex.DecodeString(utxo.Script)
 			if err != nil {
 				return nil, err
 			}
 
 			if err := updater.AddInWitnessUtxo(
 				&wire.TxOut{
-					Value:    int64(utxo.GetValue()),
+					Value:    int64(utxo.Value),
 					PkScript: scriptBytes,
 				},
 				len(ptx.UnsignedTx.TxIn)-1,
@@ -1069,51 +1060,6 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 	return m, nil
 }
 
-func (b *txBuilder) selectUtxos(
-	ctx context.Context, connectorAddresses []string, amount uint64,
-) ([]ports.TxInput, uint64, error) {
-	selectedConnectorsUtxos := make([]ports.TxInput, 0)
-	selectedConnectorsAmount := uint64(0)
-
-	for _, addr := range connectorAddresses {
-		if selectedConnectorsAmount >= amount {
-			break
-		}
-		connectors, err := b.wallet.ListConnectorUtxos(ctx, addr)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		for _, connector := range connectors {
-			if selectedConnectorsAmount >= amount {
-				break
-			}
-
-			selectedConnectorsUtxos = append(selectedConnectorsUtxos, connector)
-			selectedConnectorsAmount += connector.GetValue()
-		}
-	}
-
-	if len(selectedConnectorsUtxos) > 0 {
-		if err := b.wallet.LockConnectorUtxos(
-			ctx, castToOutpoints(selectedConnectorsUtxos),
-		); err != nil {
-			return nil, 0, err
-		}
-	}
-
-	if selectedConnectorsAmount >= amount {
-		return selectedConnectorsUtxos, selectedConnectorsAmount - amount, nil
-	}
-
-	utxos, change, err := b.wallet.SelectUtxos(ctx, "", amount-selectedConnectorsAmount, false)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return append(selectedConnectorsUtxos, utxos...), change, nil
-}
-
 func (b *txBuilder) onchainNetwork() *chaincfg.Params {
 	switch b.network.Name {
 	case arklib.Bitcoin.Name:
@@ -1131,17 +1077,6 @@ func (b *txBuilder) onchainNetwork() *chaincfg.Params {
 	default:
 		return nil
 	}
-}
-
-func castToOutpoints(inputs []ports.TxInput) []domain.Outpoint {
-	outpoints := make([]domain.Outpoint, 0, len(inputs))
-	for _, input := range inputs {
-		outpoints = append(outpoints, domain.Outpoint{
-			Txid: input.GetTxid(),
-			VOut: input.GetIndex(),
-		})
-	}
-	return outpoints
 }
 
 func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
