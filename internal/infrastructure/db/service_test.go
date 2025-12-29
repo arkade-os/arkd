@@ -1192,6 +1192,23 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.ElementsMatch(t, anchor.Assets, got.Assets)
 	})
 
+	t.Run("insert asset anchor rejects duplicate vout", func(t *testing.T) {
+		ctx := context.Background()
+		anchor := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-dup-vout",
+				VOut: 0,
+			},
+			Assets: []domain.NormalAsset{
+				{Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0}, Amount: 1000, AssetID: "asset-1"},
+				{Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0}, Amount: 2000, AssetID: "asset-2"},
+			},
+		}
+
+		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.Error(t, err, "InsertAssetAnchor should fail on duplicate vout")
+	})
+
 	t.Run("list asset anchors by asset id", func(t *testing.T) {
 		ctx := context.Background()
 

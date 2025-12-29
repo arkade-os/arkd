@@ -123,6 +123,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
 
 	assetList := make([]domain.NormalAsset, 0)
+	assetVouts := make(map[uint32]struct{})
 
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
 		var pubKey string
@@ -138,10 +139,13 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 
 			for _, grpAsset := range allAssets {
 				for _, assetOut := range grpAsset.Outputs {
-
 					if assetOut.Type != asset.AssetOutputTypeLocal {
 						continue
 					}
+					if _, exists := assetVouts[assetOut.Vout]; exists {
+						return "", nil, nil, fmt.Errorf("duplicate asset output vout %d", assetOut.Vout)
+					}
+					assetVouts[assetOut.Vout] = struct{}{}
 
 					assetList = append(assetList, domain.NormalAsset{
 						Outpoint: domain.Outpoint{
@@ -152,7 +156,6 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 						AssetID: grpAsset.AssetId.ToString(),
 					})
 				}
-
 			}
 
 			if decodedAssetGroup.SubDustKey == nil {

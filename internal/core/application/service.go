@@ -3856,6 +3856,9 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 
 	controlAssets := decodedAssetGroup.ControlAssets
 	normalAssets := decodedAssetGroup.NormalAssets
+	if err := ensureUniqueAssetVouts(append(controlAssets, normalAssets...)); err != nil {
+		return err
+	}
 
 	txouts := arkTx.TxOut
 
@@ -3969,6 +3972,22 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 
 	}
 
+	return nil
+}
+
+func ensureUniqueAssetVouts(assets []asset.Asset) error {
+	seen := make(map[uint32]struct{})
+	for _, grpAsset := range assets {
+		for _, out := range grpAsset.Outputs {
+			if out.Type != asset.AssetOutputTypeLocal {
+				continue
+			}
+			if _, exists := seen[out.Vout]; exists {
+				return fmt.Errorf("duplicate asset output vout %d", out.Vout)
+			}
+			seen[out.Vout] = struct{}{}
+		}
+	}
 	return nil
 }
 func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.MsgTx, assetGroupIndex int) error {
