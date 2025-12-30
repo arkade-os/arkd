@@ -30,8 +30,8 @@ github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBA
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/antlr4-go/antlr/v4 v4.13.0 h1:lxCg3LAv+EUK6t1i0y1V6/SLeUi0eKEKdhQAlS8TVTI=
 github.com/antlr4-go/antlr/v4 v4.13.0/go.mod h1:pfChB/xh/Unjila75QW7+VU4TSnWnnk9UTnmpPaOR2g=
-github.com/arkade-os/go-sdk v0.8.2-0.20251210132110-e6d35e5a3c7c h1:9ZAZPnt9MDr9L9pGD++2ci998KVmE4TR/sljA+OJVFY=
-github.com/arkade-os/go-sdk v0.8.2-0.20251210132110-e6d35e5a3c7c/go.mod h1:LhsluYhdE7tCKruVxMsXQDTlrBYrhNZseZCkaXLiySk=
+github.com/arkade-os/go-sdk v0.0.0-20251230154301-38fa218e6868 h1:GpaI06WhrGgjyTTppAo3PfLsgArvLRyEm9mRhC/l0iM=
+github.com/arkade-os/go-sdk v0.0.0-20251230154301-38fa218e6868/go.mod h1:LhsluYhdE7tCKruVxMsXQDTlrBYrhNZseZCkaXLiySk=
 github.com/armon/consul-api v0.0.0-20180202201655-eb2c6b5be1b6/go.mod h1:grANhF5doyWs3UAsr3K4I6qtAmlQcZDesFNEHPZAzj8=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

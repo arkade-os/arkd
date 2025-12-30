@@ -213,6 +213,14 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	)
 }
 
+func (h *delegateBatchEventsHandler) OnStreamStartedEvent(
+	ctx context.Context,
+	event client.StreamStartedEvent,
+) error {
+	fmt.Printf("delegate_utils_test OnStreamStartedEvent: %+v\n", event)
+	return nil
+}
+
 type customBatchEventsHandler struct {
 	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, error)
 	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) error
@@ -222,6 +230,7 @@ type customBatchEventsHandler struct {
 	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
 	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
 	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error)
+	onStreamStartedEvent   func(ctx context.Context, event client.StreamStartedEvent) error
 }
 
 func (h *customBatchEventsHandler) OnBatchStarted(
@@ -312,4 +321,14 @@ func (h *customBatchEventsHandler) OnTreeNonces(
 	event client.TreeNoncesEvent,
 ) (bool, error) {
 	return false, nil
+}
+
+func (h *customBatchEventsHandler) OnStreamStartedEvent(
+	ctx context.Context,
+	event client.StreamStartedEvent,
+) error {
+	if h.onStreamStartedEvent != nil {
+		return h.onStreamStartedEvent(ctx, event)
+	}
+	return nil
 }
