@@ -146,10 +146,15 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 
 	w.keyMgr = keyMgr
 
-	select {
-	case w.isReady <- struct{}{}:
-	default:
-	}
+	go func() {
+		// To not send the notification immediately after unlocking
+		<-time.After(500 * time.Millisecond)
+		select {
+		case w.isReady <- struct{}{}:
+		default:
+			log.Warn("could not send event for ready update, channel full")
+		}
+	}()
 
 	log.Infof("wallet unlocked")
 
