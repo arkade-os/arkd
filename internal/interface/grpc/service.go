@@ -505,6 +505,8 @@ func (s *service) autoUnlock() error {
 		return nil
 	}
 
+	// If the wallet is already unlocked, force the lock to make the very next call to Unlock
+	// to take effect and run the onUnlock callback
 	if status.IsUnlocked() {
 		// nolint
 		wallet.Lock(ctx)
