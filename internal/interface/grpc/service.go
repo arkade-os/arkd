@@ -463,6 +463,17 @@ func (s *service) onInit(password string) {
 }
 
 func (s *service) onReady() {
+	if !s.config.NoMacaroons {
+		ctx := context.Background()
+		if s.macaroonSvc.IsLocked(ctx) {
+			if err := s.appConfig.WalletService().Lock(ctx); err != nil {
+				log.WithError(err).Warn("failed to lock wallet and properly setup auth service")
+			} else {
+				return
+			}
+		}
+	}
+
 	withoutAppSvc := false
 	s.stop(withoutAppSvc)
 
@@ -492,6 +503,10 @@ func (s *service) autoUnlock() error {
 	if !status.IsInitialized() {
 		log.Debug("wallet not initialized, skipping auto unlock")
 		return nil
+	}
+
+	if status.IsUnlocked() {
+		wallet.Lock(ctx)
 	}
 
 	password, err := s.appConfig.UnlockerService().GetPassword(ctx)

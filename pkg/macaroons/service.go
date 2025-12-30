@@ -3,6 +3,7 @@ package macaroons
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -273,6 +274,14 @@ func (svc *Service) CreateUnlock(password *[]byte) error {
 	}
 
 	return nil
+}
+
+func (svc *Service) IsLocked(ctx context.Context) bool {
+	if boltRKS, ok := svc.rks.(ExtendedRootKeyStore); ok {
+		_, _, err := boltRKS.RootKey(ctx)
+		return err != nil && errors.Is(err, ErrStoreLocked)
+	}
+	return true
 }
 
 // NewMacaroon wraps around the function Oven.NewMacaroon with the defaults,

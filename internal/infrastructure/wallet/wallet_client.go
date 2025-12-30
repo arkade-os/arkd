@@ -200,7 +200,6 @@ func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{
 
 			if resp.GetReady() {
 				ch <- struct{}{}
-				return
 			}
 		}
 	}()
