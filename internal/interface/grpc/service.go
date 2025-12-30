@@ -506,6 +506,7 @@ func (s *service) autoUnlock() error {
 	}
 
 	if status.IsUnlocked() {
+		// nolint
 		wallet.Lock(ctx)
 	}
 
