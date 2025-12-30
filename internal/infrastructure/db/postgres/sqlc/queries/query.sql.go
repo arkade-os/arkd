@@ -60,6 +60,21 @@ func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) er
 	return err
 }
 
+const clearIntentFees = `-- name: ClearIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+VALUES ('', '', '', '')
+`
+
+func (q *Queries) ClearIntentFees(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearIntentFees)
+	return err
+}
+
 const clearScheduledSession = `-- name: ClearScheduledSession :exec
 DELETE FROM scheduled_session
 `
@@ -333,7 +348,7 @@ func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectE
 }
 
 const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
-SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1
+SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
 `
 
 func (q *Queries) SelectLatestIntentFees(ctx context.Context) (IntentFee, error) {

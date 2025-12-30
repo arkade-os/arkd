@@ -3,13 +3,14 @@ package feemanager
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/google/cel-go/cel"
 )
 
 type arkFeeManager struct {
@@ -74,9 +75,24 @@ func (a *arkFeeManager) ComputeIntentFees(
 	return fee.ToSatoshis(), nil
 }
 
-func (a *arkFeeManager) Validate(feeProgram string, celEnv *cel.Env) error {
-	_, err := arkfee.Parse(feeProgram, celEnv)
-	return err
+func (a *arkFeeManager) Validate(fees domain.IntentFees) error {
+	_, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid onchain input fee program: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid offchain input fee program: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OnchainOutputFee, celenv.IntentOutputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid onchain output fee program: %w", err)
+	}
+	_, err = arkfee.Parse(fees.OffchainOutputFee, celenv.IntentOutputEnv)
+	if err != nil {
+		return fmt.Errorf("invalid offchain output fee program: %w", err)
+	}
+	return nil
 }
 
 func toArkFeeOffchainOutput(output wire.TxOut) arkfee.Output {

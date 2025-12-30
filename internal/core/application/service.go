@@ -2024,20 +2024,6 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)
 	}
-	// resolve empty fees to zero value programs
-	resolvedFees := currIntentFees
-	if resolvedFees.OnchainInputFee == "" {
-		resolvedFees.OnchainInputFee = "0.0"
-	}
-	if resolvedFees.OffchainInputFee == "" {
-		resolvedFees.OffchainInputFee = "0.0"
-	}
-	if resolvedFees.OnchainOutputFee == "" {
-		resolvedFees.OnchainOutputFee = "0.0"
-	}
-	if resolvedFees.OffchainOutputFee == "" {
-		resolvedFees.OffchainOutputFee = "0.0"
-	}
 
 	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
@@ -2055,7 +2041,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		Fees: FeeInfo{
-			IntentFees: *resolvedFees,
+			IntentFees: *currIntentFees,
 		},
 	}, nil
 }

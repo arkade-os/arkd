@@ -5,7 +5,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/google/cel-go/cel"
 )
 
 type FeeManager interface {
@@ -14,5 +13,5 @@ type FeeManager interface {
 		boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 		onchainOutputs, offchainOutputs []wire.TxOut,
 	) (int64, error)
-	Validate(feeProgram string, celEnv *cel.Env) error
+	Validate(fees domain.IntentFees) error
 }

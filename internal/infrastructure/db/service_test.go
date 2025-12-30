@@ -1523,7 +1523,6 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
 		require.Equal(t, "", updatedFees.OnchainOutputFee)
 		require.Equal(t, "", updatedFees.OffchainOutputFee)
-
 	})
 }
 

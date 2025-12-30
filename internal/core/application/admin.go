@@ -8,8 +8,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-	"github.com/arkade-os/arkd/internal/infrastructure/feemanager"
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -59,6 +57,7 @@ type adminService struct {
 	txBuilder       ports.TxBuilder
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
+	feeManager      ports.FeeManager
 
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
@@ -66,7 +65,7 @@ type adminService struct {
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
-	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit,
+	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) AdminService {
 	return &adminService{
@@ -75,6 +74,7 @@ func NewAdminService(
 		txBuilder:                 txBuilder,
 		sweeperTimeUnit:           timeUnit,
 		liveStore:                 liveStoreSvc,
+		feeManager:                feeManager,
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
 	}
@@ -382,61 +382,16 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 func (s *adminService) GetIntentFees(
 	ctx context.Context,
 ) (*domain.IntentFees, error) {
-	currFees, err := s.repoManager.Fees().GetIntentFees(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// resolve empty fees to zero value programs
-	resolvedFees := currFees
-	if resolvedFees.OnchainInputFee == "" {
-		resolvedFees.OnchainInputFee = "0.0"
-	}
-	if resolvedFees.OffchainInputFee == "" {
-		resolvedFees.OffchainInputFee = "0.0"
-	}
-	if resolvedFees.OnchainOutputFee == "" {
-		resolvedFees.OnchainOutputFee = "0.0"
-	}
-	if resolvedFees.OffchainOutputFee == "" {
-		resolvedFees.OffchainOutputFee = "0.0"
-	}
-
-	return resolvedFees, nil
+	return s.repoManager.Fees().GetIntentFees(ctx)
 }
 
 func (s *adminService) UpdateIntentFees(
 	ctx context.Context,
 	fees domain.IntentFees,
 ) error {
-	feeManager, err := feemanager.NewArkFeeManager(s.repoManager.Fees())
-	if err != nil {
-		return fmt.Errorf("failed to create fee manager: %w", err)
-	}
-
 	// validate the programs for set fields
-	if fees.OnchainInputFee != "" {
-		err = feeManager.Validate(fees.OnchainInputFee, celenv.IntentOnchainInputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid onchain input fee program: %w", err)
-		}
-	}
-	if fees.OffchainInputFee != "" {
-		err = feeManager.Validate(fees.OffchainInputFee, celenv.IntentOffchainInputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid offchain input fee program: %w", err)
-		}
-	}
-	if fees.OnchainOutputFee != "" {
-		err = feeManager.Validate(fees.OnchainOutputFee, celenv.IntentOutputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid onchain output fee program: %w", err)
-		}
-	}
-	if fees.OffchainOutputFee != "" {
-		err = feeManager.Validate(fees.OffchainOutputFee, celenv.IntentOutputEnv)
-		if err != nil {
-			return fmt.Errorf("invalid offchain output fee program: %w", err)
-		}
+	if err := s.feeManager.Validate(fees); err != nil {
+		return err
 	}
 	return s.repoManager.Fees().UpdateIntentFees(ctx, fees)
 }

@@ -376,7 +376,7 @@ WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
 
 -- name: SelectLatestIntentFees :one
-SELECT * FROM intent_fees ORDER BY created_at DESC LIMIT 1;
+SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
 
 -- name: AddIntentFees :exec
 INSERT INTO intent_fees (
@@ -406,3 +406,12 @@ SELECT
     WHEN :onchain_output_fee_program != '' THEN :onchain_output_fee_program
     ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
   END;
+
+-- name: ClearIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+VALUES ('', '', '', '');

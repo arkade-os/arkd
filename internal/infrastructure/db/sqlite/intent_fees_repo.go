@@ -73,12 +73,7 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	if err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
-		OnchainInputFeeProgram:   "",
-		OffchainInputFeeProgram:  "",
-		OnchainOutputFeeProgram:  "",
-		OffchainOutputFeeProgram: "",
-	}); err != nil {
+	if err := r.querier.ClearIntentFees(ctx); err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
 	}
 
