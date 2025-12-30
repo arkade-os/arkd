@@ -10,22 +10,31 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/google/uuid"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type WalletServiceHandler struct {
-	wallet  application.WalletService
-	scanner application.BlockchainScanner
+type walletHandler struct {
+	wallet         application.WalletService
+	scanner        application.BlockchainScanner
+	readyListeners *broker[*arkwalletv1.GetReadyUpdateResponse]
 }
 
 func NewWalletServiceHandler(
-	walletSvc application.WalletService, scanner application.BlockchainScanner,
+	ctx context.Context, walletSvc application.WalletService, scanner application.BlockchainScanner,
 ) arkwalletv1.WalletServiceServer {
-	return &WalletServiceHandler{wallet: walletSvc, scanner: scanner}
+	svc := &walletHandler{
+		wallet:         walletSvc,
+		scanner:        scanner,
+		readyListeners: newBroker[*arkwalletv1.GetReadyUpdateResponse](),
+	}
+	go svc.listenToReadyUpdate(ctx)
+	return svc
 }
 
-func (h *WalletServiceHandler) GenSeed(
+func (h *walletHandler) GenSeed(
 	ctx context.Context, _ *arkwalletv1.GenSeedRequest,
 ) (*arkwalletv1.GenSeedResponse, error) {
 	seed, err := h.wallet.GenSeed(ctx)
@@ -35,7 +44,7 @@ func (h *WalletServiceHandler) GenSeed(
 	return &arkwalletv1.GenSeedResponse{Seed: seed}, nil
 }
 
-func (h *WalletServiceHandler) Create(
+func (h *walletHandler) Create(
 	ctx context.Context, req *arkwalletv1.CreateRequest,
 ) (*arkwalletv1.CreateResponse, error) {
 	if err := h.wallet.Create(ctx, req.GetSeed(), req.GetPassword()); err != nil {
@@ -44,7 +53,7 @@ func (h *WalletServiceHandler) Create(
 	return &arkwalletv1.CreateResponse{}, nil
 }
 
-func (h *WalletServiceHandler) Restore(
+func (h *walletHandler) Restore(
 	ctx context.Context, req *arkwalletv1.RestoreRequest,
 ) (*arkwalletv1.RestoreResponse, error) {
 	if err := h.wallet.Restore(ctx, req.GetSeed(), req.GetPassword()); err != nil {
@@ -53,7 +62,7 @@ func (h *WalletServiceHandler) Restore(
 	return &arkwalletv1.RestoreResponse{}, nil
 }
 
-func (h *WalletServiceHandler) Unlock(
+func (h *walletHandler) Unlock(
 	ctx context.Context, req *arkwalletv1.UnlockRequest,
 ) (*arkwalletv1.UnlockResponse, error) {
 	if err := h.wallet.Unlock(ctx, req.GetPassword()); err != nil {
@@ -62,7 +71,7 @@ func (h *WalletServiceHandler) Unlock(
 	return &arkwalletv1.UnlockResponse{}, nil
 }
 
-func (h *WalletServiceHandler) Lock(
+func (h *walletHandler) Lock(
 	ctx context.Context, req *arkwalletv1.LockRequest,
 ) (*arkwalletv1.LockResponse, error) {
 	if err := h.wallet.Lock(ctx); err != nil {
@@ -71,7 +80,7 @@ func (h *WalletServiceHandler) Lock(
 	return &arkwalletv1.LockResponse{}, nil
 }
 
-func (h *WalletServiceHandler) Status(
+func (h *walletHandler) Status(
 	ctx context.Context, _ *arkwalletv1.StatusRequest,
 ) (*arkwalletv1.StatusResponse, error) {
 	status := h.wallet.Status(ctx)
@@ -83,14 +92,14 @@ func (h *WalletServiceHandler) Status(
 	}, nil
 }
 
-func (h *WalletServiceHandler) GetNetwork(
+func (h *walletHandler) GetNetwork(
 	ctx context.Context, _ *arkwalletv1.GetNetworkRequest,
 ) (*arkwalletv1.GetNetworkResponse, error) {
 	network := h.wallet.GetNetwork(ctx)
 	return &arkwalletv1.GetNetworkResponse{Network: network}, nil
 }
 
-func (h *WalletServiceHandler) GetForfeitPubkey(
+func (h *walletHandler) GetForfeitPubkey(
 	ctx context.Context, req *arkwalletv1.GetForfeitPubkeyRequest,
 ) (*arkwalletv1.GetForfeitPubkeyResponse, error) {
 	pubkey, err := h.wallet.GetForfeitPubkey(ctx)
@@ -100,7 +109,7 @@ func (h *WalletServiceHandler) GetForfeitPubkey(
 	return &arkwalletv1.GetForfeitPubkeyResponse{Pubkey: pubkey}, nil
 }
 
-func (h *WalletServiceHandler) WatchScripts(
+func (h *walletHandler) WatchScripts(
 	ctx context.Context, request *arkwalletv1.WatchScriptsRequest,
 ) (*arkwalletv1.WatchScriptsResponse, error) {
 	if err := h.scanner.WatchScripts(ctx, request.Scripts); err != nil {
@@ -109,7 +118,7 @@ func (h *WalletServiceHandler) WatchScripts(
 	return &arkwalletv1.WatchScriptsResponse{}, nil
 }
 
-func (h *WalletServiceHandler) UnwatchScripts(
+func (h *walletHandler) UnwatchScripts(
 	ctx context.Context, request *arkwalletv1.UnwatchScriptsRequest,
 ) (*arkwalletv1.UnwatchScriptsResponse, error) {
 	if err := h.scanner.UnwatchScripts(ctx, request.Scripts); err != nil {
@@ -118,7 +127,7 @@ func (h *WalletServiceHandler) UnwatchScripts(
 	return &arkwalletv1.UnwatchScriptsResponse{}, nil
 }
 
-func (h *WalletServiceHandler) DeriveConnectorAddress(
+func (h *walletHandler) DeriveConnectorAddress(
 	ctx context.Context, _ *arkwalletv1.DeriveConnectorAddressRequest,
 ) (*arkwalletv1.DeriveConnectorAddressResponse, error) {
 	addr, err := h.wallet.DeriveConnectorAddress(ctx)
@@ -128,7 +137,7 @@ func (h *WalletServiceHandler) DeriveConnectorAddress(
 	return &arkwalletv1.DeriveConnectorAddressResponse{Address: addr}, nil
 }
 
-func (h *WalletServiceHandler) DeriveAddresses(
+func (h *walletHandler) DeriveAddresses(
 	ctx context.Context, req *arkwalletv1.DeriveAddressesRequest,
 ) (*arkwalletv1.DeriveAddressesResponse, error) {
 	addresses, err := h.wallet.DeriveAddresses(ctx, int(req.Num))
@@ -138,7 +147,7 @@ func (h *WalletServiceHandler) DeriveAddresses(
 	return &arkwalletv1.DeriveAddressesResponse{Addresses: addresses}, nil
 }
 
-func (h *WalletServiceHandler) SignTransaction(
+func (h *walletHandler) SignTransaction(
 	ctx context.Context, req *arkwalletv1.SignTransactionRequest,
 ) (*arkwalletv1.SignTransactionResponse, error) {
 	signMode := application.SignModeLiquidityProvider
@@ -149,7 +158,7 @@ func (h *WalletServiceHandler) SignTransaction(
 	return &arkwalletv1.SignTransactionResponse{SignedTx: tx}, nil
 }
 
-func (h *WalletServiceHandler) SignTransactionTapscript(
+func (h *walletHandler) SignTransactionTapscript(
 	ctx context.Context, req *arkwalletv1.SignTransactionTapscriptRequest,
 ) (*arkwalletv1.SignTransactionTapscriptResponse, error) {
 	signMode := application.SignModeLiquidityProvider
@@ -164,7 +173,7 @@ func (h *WalletServiceHandler) SignTransactionTapscript(
 	return &arkwalletv1.SignTransactionTapscriptResponse{SignedTx: tx}, nil
 }
 
-func (h *WalletServiceHandler) SelectUtxos(
+func (h *walletHandler) SelectUtxos(
 	ctx context.Context, req *arkwalletv1.SelectUtxosRequest,
 ) (*arkwalletv1.SelectUtxosResponse, error) {
 	utxos, total, err := h.wallet.SelectUtxos(ctx, req.GetAmount(), req.GetConfirmedOnly())
@@ -178,7 +187,7 @@ func (h *WalletServiceHandler) SelectUtxos(
 	return &arkwalletv1.SelectUtxosResponse{Utxos: respUtxos, TotalAmount: total}, nil
 }
 
-func (h *WalletServiceHandler) BroadcastTransaction(
+func (h *walletHandler) BroadcastTransaction(
 	ctx context.Context, req *arkwalletv1.BroadcastTransactionRequest,
 ) (*arkwalletv1.BroadcastTransactionResponse, error) {
 	txid, err := h.wallet.BroadcastTransaction(ctx, req.GetTxs()...)
@@ -188,7 +197,7 @@ func (h *WalletServiceHandler) BroadcastTransaction(
 	return &arkwalletv1.BroadcastTransactionResponse{Txid: txid}, nil
 }
 
-func (h *WalletServiceHandler) EstimateFees(
+func (h *walletHandler) EstimateFees(
 	ctx context.Context, req *arkwalletv1.EstimateFeesRequest,
 ) (*arkwalletv1.EstimateFeesResponse, error) {
 	fee, err := h.wallet.EstimateFees(ctx, req.GetPsbt())
@@ -198,7 +207,7 @@ func (h *WalletServiceHandler) EstimateFees(
 	return &arkwalletv1.EstimateFeesResponse{Fee: fee}, nil
 }
 
-func (h *WalletServiceHandler) FeeRate(
+func (h *walletHandler) FeeRate(
 	ctx context.Context, _ *arkwalletv1.FeeRateRequest,
 ) (*arkwalletv1.FeeRateResponse, error) {
 	feeRate, err := h.wallet.FeeRate(ctx)
@@ -208,7 +217,7 @@ func (h *WalletServiceHandler) FeeRate(
 	return &arkwalletv1.FeeRateResponse{SatPerKvbyte: uint64(feeRate)}, nil
 }
 
-func (h *WalletServiceHandler) ListConnectorUtxos(
+func (h *walletHandler) ListConnectorUtxos(
 	ctx context.Context, req *arkwalletv1.ListConnectorUtxosRequest,
 ) (*arkwalletv1.ListConnectorUtxosResponse, error) {
 	utxos, err := h.wallet.ListConnectorUtxos(ctx, req.GetConnectorAddress())
@@ -222,7 +231,7 @@ func (h *WalletServiceHandler) ListConnectorUtxos(
 	return &arkwalletv1.ListConnectorUtxosResponse{Utxos: respUtxos}, nil
 }
 
-func (h *WalletServiceHandler) MainAccountBalance(
+func (h *walletHandler) MainAccountBalance(
 	ctx context.Context, _ *arkwalletv1.MainAccountBalanceRequest,
 ) (*arkwalletv1.MainAccountBalanceResponse, error) {
 	confirmed, unconfirmed, err := h.wallet.MainAccountBalance(ctx)
@@ -232,7 +241,7 @@ func (h *WalletServiceHandler) MainAccountBalance(
 	return &arkwalletv1.MainAccountBalanceResponse{Confirmed: confirmed, Unconfirmed: unconfirmed}, nil
 }
 
-func (h *WalletServiceHandler) ConnectorsAccountBalance(
+func (h *walletHandler) ConnectorsAccountBalance(
 	ctx context.Context, _ *arkwalletv1.ConnectorsAccountBalanceRequest,
 ) (*arkwalletv1.ConnectorsAccountBalanceResponse, error) {
 	confirmed, unconfirmed, err := h.wallet.ConnectorsAccountBalance(ctx)
@@ -242,7 +251,7 @@ func (h *WalletServiceHandler) ConnectorsAccountBalance(
 	return &arkwalletv1.ConnectorsAccountBalanceResponse{Confirmed: confirmed, Unconfirmed: unconfirmed}, nil
 }
 
-func (h *WalletServiceHandler) LockConnectorUtxos(
+func (h *walletHandler) LockConnectorUtxos(
 	ctx context.Context, req *arkwalletv1.LockConnectorUtxosRequest,
 ) (*arkwalletv1.LockConnectorUtxosResponse, error) {
 	utxos := make([]wire.OutPoint, 0, len(req.GetUtxos()))
@@ -263,14 +272,14 @@ func (h *WalletServiceHandler) LockConnectorUtxos(
 	return &arkwalletv1.LockConnectorUtxosResponse{}, nil
 }
 
-func (h *WalletServiceHandler) GetDustAmount(
+func (h *walletHandler) GetDustAmount(
 	ctx context.Context, _ *arkwalletv1.GetDustAmountRequest,
 ) (*arkwalletv1.GetDustAmountResponse, error) {
 	dust := h.wallet.GetDustAmount(ctx)
 	return &arkwalletv1.GetDustAmountResponse{DustAmount: dust}, nil
 }
 
-func (h *WalletServiceHandler) GetTransaction(
+func (h *walletHandler) GetTransaction(
 	ctx context.Context, req *arkwalletv1.GetTransactionRequest,
 ) (*arkwalletv1.GetTransactionResponse, error) {
 	tx, err := h.wallet.GetTransaction(ctx, req.GetTxid())
@@ -280,19 +289,19 @@ func (h *WalletServiceHandler) GetTransaction(
 	return &arkwalletv1.GetTransactionResponse{TxHex: tx}, nil
 }
 
-func (h *WalletServiceHandler) SignMessage(
+func (h *walletHandler) SignMessage(
 	ctx context.Context, req *arkwalletv1.SignMessageRequest,
 ) (*arkwalletv1.SignMessageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SignMessage not implemented")
 }
 
-func (h *WalletServiceHandler) VerifyMessageSignature(
+func (h *walletHandler) VerifyMessageSignature(
 	ctx context.Context, req *arkwalletv1.VerifyMessageSignatureRequest,
 ) (*arkwalletv1.VerifyMessageSignatureResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VerifyMessageSignature not implemented")
 }
 
-func (h *WalletServiceHandler) GetCurrentBlockTime(
+func (h *walletHandler) GetCurrentBlockTime(
 	ctx context.Context, _ *arkwalletv1.GetCurrentBlockTimeRequest,
 ) (*arkwalletv1.GetCurrentBlockTimeResponse, error) {
 	ts, err := h.wallet.GetCurrentBlockTime(ctx)
@@ -308,7 +317,7 @@ func (h *WalletServiceHandler) GetCurrentBlockTime(
 }
 
 // IsTransactionConfirmed returns confirmation status, blocknumber, and blocktime for a txid.
-func (h *WalletServiceHandler) IsTransactionConfirmed(
+func (h *walletHandler) IsTransactionConfirmed(
 	ctx context.Context, req *arkwalletv1.IsTransactionConfirmedRequest,
 ) (*arkwalletv1.IsTransactionConfirmedResponse, error) {
 	confirmed, blocknumber, blocktime, err := h.scanner.IsTransactionConfirmed(ctx, req.GetTxid())
@@ -329,7 +338,7 @@ func (h *WalletServiceHandler) IsTransactionConfirmed(
 	}, nil
 }
 
-func (h *WalletServiceHandler) GetOutpointStatus(
+func (h *walletHandler) GetOutpointStatus(
 	ctx context.Context, req *arkwalletv1.GetOutpointStatusRequest,
 ) (*arkwalletv1.GetOutpointStatusResponse, error) {
 	txid := req.GetTxid()
@@ -355,22 +364,38 @@ func (h *WalletServiceHandler) GetOutpointStatus(
 }
 
 // GetReadyUpdate streams an empty response when the wallet is unlocker and synced.
-func (h *WalletServiceHandler) GetReadyUpdate(
+func (h *walletHandler) GetReadyUpdate(
 	_ *arkwalletv1.GetReadyUpdateRequest, stream arkwalletv1.WalletService_GetReadyUpdateServer,
 ) error {
-	ch := h.wallet.GetReadyUpdate(stream.Context())
-	select {
-	case <-stream.Context().Done():
-		return stream.Context().Err()
-	case <-ch:
-		return stream.Send(&arkwalletv1.GetReadyUpdateResponse{
-			Ready: true,
-		})
+	id := uuid.NewString()
+	listener := newListener[*arkwalletv1.GetReadyUpdateResponse](id)
+	h.readyListeners.pushListener(listener)
+
+	log.Debugf("added new listener %s for ready update", id)
+
+	if status := h.wallet.Status(stream.Context()); status.IsInitialized &&
+		status.IsSynced && status.IsUnlocked {
+		if err := stream.Send(&arkwalletv1.GetReadyUpdateResponse{Ready: true}); err != nil {
+			return err
+		}
+	}
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			h.readyListeners.removeListener(id)
+			log.Debugf("removed listener %s", id)
+			return stream.Context().Err()
+		case ev := <-listener.ch:
+			if err := stream.Send(ev); err != nil {
+				return err
+			}
+		}
 	}
 }
 
 // NotificationStream streams notifications to the client.
-func (h *WalletServiceHandler) NotificationStream(
+func (h *walletHandler) NotificationStream(
 	_ *arkwalletv1.NotificationStreamRequest, stream arkwalletv1.WalletService_NotificationStreamServer,
 ) error {
 	ctx := stream.Context()
@@ -411,7 +436,7 @@ func (h *WalletServiceHandler) NotificationStream(
 	}
 }
 
-func (h *WalletServiceHandler) Withdraw(
+func (h *walletHandler) Withdraw(
 	ctx context.Context, req *arkwalletv1.WithdrawRequest,
 ) (*arkwalletv1.WithdrawResponse, error) {
 	address := req.GetAddress()
@@ -439,7 +464,7 @@ func (h *WalletServiceHandler) Withdraw(
 	return &arkwalletv1.WithdrawResponse{Txid: txid}, nil
 }
 
-func (h *WalletServiceHandler) LoadSignerKey(
+func (h *walletHandler) LoadSignerKey(
 	ctx context.Context, req *arkwalletv1.LoadSignerKeyRequest,
 ) (*arkwalletv1.LoadSignerKeyResponse, error) {
 	key := req.GetPrivateKey()
@@ -456,7 +481,7 @@ func (h *WalletServiceHandler) LoadSignerKey(
 	}
 	return &arkwalletv1.LoadSignerKeyResponse{}, nil
 }
-func (h *WalletServiceHandler) RescanUtxos(
+func (h *walletHandler) RescanUtxos(
 	ctx context.Context, req *arkwalletv1.RescanUtxosRequest,
 ) (*arkwalletv1.RescanUtxosResponse, error) {
 	outs := make([]wire.OutPoint, 0, len(req.Outpoints))
@@ -471,6 +496,29 @@ func (h *WalletServiceHandler) RescanUtxos(
 		return nil, err
 	}
 	return &arkwalletv1.RescanUtxosResponse{}, nil
+}
+
+func (h *walletHandler) listenToReadyUpdate(ctx context.Context) {
+	ch := h.wallet.GetReadyUpdate(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			if !errors.Is(ctx.Err(), context.Canceled) {
+				log.WithError(ctx.Err()).Error("ready update channel closed unexpectedly")
+			}
+			return
+		case <-ch:
+			for _, l := range h.readyListeners.getListenersCopy() {
+				go func(listener *listener[*arkwalletv1.GetReadyUpdateResponse]) {
+					select {
+					case listener.ch <- &arkwalletv1.GetReadyUpdateResponse{Ready: true}:
+					default:
+						log.Warnf("could not forward ready update to listener %s", listener.id)
+					}
+				}(l)
+			}
+		}
+	}
 }
 
 // toTxInput converts a UTXO to a TxInput protobuf message

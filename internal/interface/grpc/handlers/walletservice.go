@@ -131,13 +131,10 @@ func (a *walletInitHandler) listenWhenReady() {
 		return
 	}
 
-	_, ok := <-ch
-	if !ok {
-		return
-	}
-
-	if a.onReady != nil {
-		a.onReady()
+	for range ch {
+		if a.onReady != nil {
+			a.onReady()
+		}
 	}
 }
 
