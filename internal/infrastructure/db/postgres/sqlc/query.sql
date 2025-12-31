@@ -381,7 +381,9 @@ INSERT INTO intent_fees (
   onchain_output_fee_program
 )
 SELECT
-  CASE
+    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
+    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
+  CASE 
     WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
     WHEN @offchain_input_fee_program <> '' THEN @offchain_input_fee_program
     ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')

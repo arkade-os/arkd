@@ -73,4 +73,6 @@ func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
 	return nil
 }
 func (r *intentFeesRepo) Close() {
+	// nolint:all
+	r.db.Close()
 }
