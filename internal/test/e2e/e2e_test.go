@@ -3055,6 +3055,63 @@ func TestIntent(t *testing.T) {
 	})
 }
 
+func TestTopics(t *testing.T) {
+	t.Run("topics change", func(t *testing.T) {
+		ctx := t.Context()
+		alice, grpcAlice := setupArkSDKWithTransport(t)
+		defer alice.Stop()
+		defer grpcAlice.Close()
+
+		// faucet the alice's wallet
+		_, _, _, err := alice.Receive(t.Context())
+		require.NoError(t, err)
+		faucetOffchain(t, alice, 0.001)
+
+		vtxos, _, err := alice.ListVtxos(t.Context())
+		require.NoError(t, err)
+		require.NotEmpty(t, vtxos)
+		aliceVtxo := vtxos[0]
+
+		// setup a random musig2 tree signer
+		secKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signerSession := tree.NewTreeSignerSession(secKey)
+
+		topics := arksdk.GetEventStreamTopics(
+			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
+		)
+		// try to modify overwrite before starting a stream
+		_, _, _, err = grpcAlice.ModifyStreamTopics(ctx, topics, []string{})
+		require.Error(t, err) // cannot modify before starting a stream
+		_, _, _, err = grpcAlice.OverwriteStreamTopics(ctx, topics)
+		require.Error(t, err) // cannot overwrite before starting a stream
+
+		// make event stream so we can modify and overwrite topics
+		_, close, err := grpcAlice.GetEventStream(t.Context(), topics)
+		require.NoError(t, err)
+		defer close()
+		// wait a bit to ensure sdk gets the event stream
+		time.Sleep(2 * time.Second)
+
+		added, removed, all, err := grpcAlice.ModifyStreamTopics(ctx, topics, []string{})
+		require.NoError(t, err)
+		require.Empty(t, removed)
+		require.Equal(t, topics, added)
+		require.Equal(t, topics, all)
+		added, removed, all, err = grpcAlice.OverwriteStreamTopics(ctx, topics)
+		require.NoError(t, err)
+		require.Empty(t, removed)
+		require.Empty(t, added)
+		require.Equal(t, topics, all)
+
+		added, removed, all, err = grpcAlice.ModifyStreamTopics(ctx, []string{"testtopic"}, []string{topics[0]})
+		require.NoError(t, err)
+		require.Equal(t, []string{topics[0]}, removed)
+		require.Equal(t, []string{"testtopic"}, added)
+		require.Equal(t, []string{topics[1], "testtopic"}, all)
+	})
+}
+
 // TestBan tests all supported ban scenarios
 func TestBan(t *testing.T) {
 	t.Run("failed to submit tree nonces", func(t *testing.T) {
@@ -3904,51 +3961,6 @@ func TestBan(t *testing.T) {
 		// next settle should fail because the forfeit txs have not been submitted
 		_, err = alice.Settle(t.Context())
 		require.Error(t, err)
-	})
-
-	t.Run("topics change", func(t *testing.T) {
-		ctx := t.Context()
-		alice, grpcAlice := setupArkSDKWithTransport(t)
-		defer alice.Stop()
-		defer grpcAlice.Close()
-
-		// faucet the alice's wallet
-		_, _, _, err := alice.Receive(t.Context())
-		require.NoError(t, err)
-		faucetOffchain(t, alice, 0.001)
-
-		vtxos, _, err := alice.ListVtxos(t.Context())
-		require.NoError(t, err)
-		require.NotEmpty(t, vtxos)
-		aliceVtxo := vtxos[0]
-
-		// setup a random musig2 tree signer
-		secKey, err := btcec.NewPrivateKey()
-		require.NoError(t, err)
-		signerSession := tree.NewTreeSignerSession(secKey)
-
-		topics := arksdk.GetEventStreamTopics(
-			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
-		)
-		// try to modify overwrite before starting a stream
-		_, _, _, err = grpcAlice.ModifyStreamTopics(ctx, topics, []string{})
-		require.Error(t, err) // cannot modify before starting a stream
-		_, _, _, err = grpcAlice.OverwriteStreamTopics(ctx, topics)
-		require.Error(t, err) // cannot overwrite before starting a stream
-
-		// make event stream so we can modify and overwrite topics
-		_, close, err := grpcAlice.GetEventStream(t.Context(), topics)
-		require.NoError(t, err)
-		defer close()
-		// wait a bit to ensure sdk gets the event stream
-		time.Sleep(2 * time.Second)
-
-		added, removed, all, err := grpcAlice.ModifyStreamTopics(ctx, topics, []string{})
-		require.NoError(t, err)
-		fmt.Printf("MODIFY added: %+v removed: %+v all: %+v\n", added, removed, all)
-		added, removed, all, err = grpcAlice.OverwriteStreamTopics(ctx, topics)
-		require.NoError(t, err)
-		fmt.Printf("OVERWRITE added: %+v removed: %+v all: %+v\n", added, removed, all)
 	})
 }
 
