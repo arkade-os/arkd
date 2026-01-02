@@ -1238,7 +1238,10 @@ func updateIntentFees(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/intentFees", baseURL)
 	body := fmt.Sprintf(
 		`{"fees":{"onchain_input_fee": "%s", "offchain_input_fee": "%s", "onchain_output_fee": "%s", "offchain_output_fee": "%s"}}`,
-		onchainInputFee, offchainInputFee, onchainOutputFee, offchainOutputFee,
+		onchainInputFee,
+		offchainInputFee,
+		onchainOutputFee,
+		offchainOutputFee,
 	)
 
 	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
