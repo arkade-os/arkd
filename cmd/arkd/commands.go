@@ -232,6 +232,20 @@ var (
 		Usage:  "Get a report of the recoverable and expiring liquidity",
 		Action: liquidityReportAction,
 	}
+	feesCmd = &cli.Command{
+		Name:        "fees",
+		Usage:       "Manage intent and offchain tx fees",
+		Subcommands: cli.Commands{intentFeesCmd},
+		Action:      getFeesAction,
+	}
+	intentFeesCmd = &cli.Command{
+		Name:  "intent",
+		Usage: "Manage intent fees",
+		Flags: []cli.Flag{
+			onchainInputFlag, offchainInputFlag, onchainOutputFlag, offchainOutputFlag, clearFlag,
+		},
+		Action: getOrUpdateIntentFeesAction,
+	}
 )
 
 var timeout = time.Minute
@@ -529,7 +543,7 @@ func clearIntentsAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Println("Successfully deleted all intents")
+	fmt.Println("successfully deleted all intents")
 	return nil
 }
 
@@ -768,7 +782,7 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Println("Successfully updated scheduled session config")
+	fmt.Println("successfully updated scheduled session config")
 	return nil
 }
 
@@ -784,7 +798,7 @@ func clearScheduledSessionAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Println("Successfully cleared scheduled session config")
+	fmt.Println("successfully cleared scheduled session config")
 	return nil
 }
 
@@ -930,7 +944,7 @@ func pardonConvictionAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Printf("Successfully pardoned conviction: %s\n", convictionId)
+	fmt.Printf("successfully pardoned conviction: %s\n", convictionId)
 	return nil
 }
 
@@ -1116,5 +1130,126 @@ func liquidityReportAction(ctx *cli.Context) error {
 		return fmt.Errorf("failed to json encode response: %s", err)
 	}
 	fmt.Println(string(respJSON))
+	return nil
+}
+
+func getFeesAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	type intentFeeResponse struct {
+		OnchainInput   string `json:"onchainInputFee"`
+		OffchainInput  string `json:"offchainInputFee"`
+		OnchainOutput  string `json:"onchainOutputFee"`
+		OffchainOutput string `json:"offchainOutputFee"`
+	}
+	url := fmt.Sprintf("%s/v1/admin/intentFees", baseURL)
+	intentFeeResp, err := get[intentFeeResponse](url, "fees", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	// TODO: get offchain tx fees when endpoint is available
+
+	resp := struct {
+		IntentFees intentFeeResponse `json:"intent"`
+	}{
+		IntentFees: intentFeeResp,
+	}
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func getOrUpdateIntentFeesAction(ctx *cli.Context) error {
+	clear := ctx.Bool(clearFlagName)
+	onchainInputFee := ctx.String(onchainInputFlagName)
+	offchainInputFee := ctx.String(offchainInputFlagName)
+	onchainOutputFee := ctx.String(onchainOutputFlagName)
+	offchainOutputFee := ctx.String(offchainOutputFlagName)
+
+	if clear {
+		return clearIntentFees(ctx)
+	}
+	if onchainInputFee != "" || offchainInputFee != "" ||
+		onchainOutputFee != "" || offchainOutputFee != "" {
+		return updateIntentFees(ctx)
+	}
+
+	return getIntentFees(ctx)
+}
+
+func clearIntentFees(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees/clear", baseURL)
+	if _, err := post[struct{}](url, "", "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Println("successfully cleared intent fees")
+	return nil
+}
+
+func updateIntentFees(ctx *cli.Context) error {
+	onchainInputFee := ctx.String(onchainInputFlagName)
+	offchainInputFee := ctx.String(offchainInputFlagName)
+	onchainOutputFee := ctx.String(onchainOutputFlagName)
+	offchainOutputFee := ctx.String(offchainOutputFlagName)
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees", baseURL)
+	body := fmt.Sprintf(
+		`{"fees":{"onchain_input_fee": "%s", "offchain_input_fee": "%s", "onchain_output_fee": "%s", "offchain_output_fee": "%s"}}`,
+		onchainInputFee, offchainInputFee, onchainOutputFee, offchainOutputFee,
+	)
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Println("successfully updated intent fees")
+	return nil
+}
+
+func getIntentFees(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	type intentFeeResponse struct {
+		OnchainInput   string `json:"onchainInputFee"`
+		OffchainInput  string `json:"offchainInputFee"`
+		OnchainOutput  string `json:"onchainOutputFee"`
+		OffchainOutput string `json:"offchainOutputFee"`
+	}
+	url := fmt.Sprintf("%s/v1/admin/intentFees", baseURL)
+
+	resp, err := get[intentFeeResponse](url, "fees", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
 	return nil
 }
