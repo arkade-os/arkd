@@ -235,7 +235,7 @@ var (
 	feesCmd = &cli.Command{
 		Name:        "fees",
 		Usage:       "Manage intent and offchain tx fees",
-		Subcommands: cli.Commands{intentFeesCmd},
+		Subcommands: cli.Commands{intentFeesCmd, clearFeesCmd},
 		Action:      getFeesAction,
 	}
 	intentFeesCmd = &cli.Command{
@@ -245,6 +245,11 @@ var (
 			onchainInputFlag, offchainInputFlag, onchainOutputFlag, offchainOutputFlag, clearFlag,
 		},
 		Action: getOrUpdateIntentFeesAction,
+	}
+	clearFeesCmd = &cli.Command{
+		Name:   "clear",
+		Usage:  "Clear intent and offchain tx fees",
+		Action: clearFeesAction,
 	}
 )
 
@@ -1164,6 +1169,24 @@ func getFeesAction(ctx *cli.Context) error {
 		return fmt.Errorf("failed to json encode response: %s", err)
 	}
 	fmt.Println(string(respJson))
+	return nil
+}
+
+func clearFeesAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees/clear", baseURL)
+	if _, err := post[struct{}](url, "", "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	// TODO: clear offchain tx fees when endpoint is available
+
+	fmt.Println("successfully cleared intent and offchain tx fees")
 	return nil
 }
 
