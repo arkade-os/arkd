@@ -188,6 +188,7 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
+			testFeeRepository(t, svc)
 		})
 	}
 }
@@ -1407,6 +1408,121 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 
 		_, err = repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
+	})
+}
+
+func testFeeRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_fee_repository", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Fees()
+
+		// fees should be initialized to empty strings
+		currentFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, currentFees)
+		require.Equal(t, "", currentFees.OnchainInputFee)
+		require.Equal(t, "", currentFees.OffchainInputFee)
+		require.Equal(t, "", currentFees.OnchainOutputFee)
+		require.Equal(t, "", currentFees.OffchainOutputFee)
+
+		newFees := domain.IntentFees{
+			OnchainInputFee:   "0.25",
+			OffchainInputFee:  "0.30",
+			OnchainOutputFee:  "0.35",
+			OffchainOutputFee: "0.40",
+		}
+
+		// sqlite and postgres use millisecond precision for created_at so we need to
+		// wait to ensure the updated_at is different.
+		// set the new fees
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+		time.Sleep(10 * time.Millisecond)
+		// zero out the fees
+		err = repo.ClearIntentFees(ctx)
+		require.NoError(t, err)
+
+		clearedFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, clearedFees)
+		require.Equal(t, "", clearedFees.OnchainInputFee)
+		require.Equal(t, "", clearedFees.OffchainInputFee)
+		require.Equal(t, "", clearedFees.OnchainOutputFee)
+		require.Equal(t, "", clearedFees.OffchainOutputFee)
+
+		// set the fees back to newFees
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+
+		// only change 2 of the fees, the others should remain the same (testing partial updates)
+		newFees = domain.IntentFees{
+			OnchainInputFee:   "0.25",
+			OffchainOutputFee: "0.40",
+		}
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
+		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+
+		// test that updating with no fees yields an error and does not change existing fees
+		newFees = domain.IntentFees{}
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.Error(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, "0.25", updatedFees.OnchainInputFee)
+		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
+		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
+		require.Equal(t, "0.40", updatedFees.OffchainOutputFee)
+
+		// zero out the fees
+		err = repo.ClearIntentFees(ctx)
+		require.NoError(t, err)
+
+		// do partial update after clearing to ensure fees are set correctly from zero state
+		newFees = domain.IntentFees{
+			OnchainInputFee:  "0.15",
+			OffchainInputFee: "0.20",
+		}
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, "", updatedFees.OnchainOutputFee)
+		require.Equal(t, "", updatedFees.OffchainOutputFee)
 	})
 }
 

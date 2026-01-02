@@ -11,6 +11,68 @@ import (
 	"strings"
 )
 
+const addIntentFees = `-- name: AddIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+SELECT
+  CASE
+    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
+    WHEN ?1 != '' THEN ?1
+    ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
+    WHEN ?2 != '' THEN ?2
+    ELSE COALESCE((SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
+    WHEN ?3 != '' THEN ?3
+    ELSE COALESCE((SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
+    WHEN ?4 != '' THEN ?4
+    ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END
+`
+
+type AddIntentFeesParams struct {
+	OffchainInputFeeProgram  interface{}
+	OnchainInputFeeProgram   interface{}
+	OffchainOutputFeeProgram interface{}
+	OnchainOutputFeeProgram  interface{}
+}
+
+func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) error {
+	_, err := q.db.ExecContext(ctx, addIntentFees,
+		arg.OffchainInputFeeProgram,
+		arg.OnchainInputFeeProgram,
+		arg.OffchainOutputFeeProgram,
+		arg.OnchainOutputFeeProgram,
+	)
+	return err
+}
+
+const clearIntentFees = `-- name: ClearIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+VALUES ('', '', '', '')
+`
+
+func (q *Queries) ClearIntentFees(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearIntentFees)
+	return err
+}
+
 const clearScheduledSession = `-- name: ClearScheduledSession :exec
 DELETE FROM scheduled_session
 `
@@ -281,6 +343,24 @@ func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectE
 	var amount interface{}
 	err := row.Scan(&amount)
 	return amount, err
+}
+
+const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
+SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
+`
+
+func (q *Queries) SelectLatestIntentFees(ctx context.Context) (IntentFee, error) {
+	row := q.db.QueryRowContext(ctx, selectLatestIntentFees)
+	var i IntentFee
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.OffchainInputFeeProgram,
+		&i.OnchainInputFeeProgram,
+		&i.OffchainOutputFeeProgram,
+		&i.OnchainOutputFeeProgram,
+	)
+	return i, err
 }
 
 const selectLatestScheduledSession = `-- name: SelectLatestScheduledSession :one

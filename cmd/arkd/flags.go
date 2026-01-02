@@ -45,6 +45,11 @@ const (
 	withDetailsFlagName                               = "with-details"
 	sweepConnectorsFlagName                           = "with-connectors"
 	sweepCommitmentTxidsFlagName                      = "commitment-txids"
+	onchainInputFlagName                              = "onchain-input"
+	offchainInputFlagName                             = "offchain-input"
+	onchainOutputFlagName                             = "onchain-output"
+	offchainOutputFlagName                            = "offchain-output"
+	clearFlagName                                     = "clear"
 
 	dateFormat         = time.DateOnly
 	dateWithTimeFormat = time.DateTime
@@ -241,5 +246,30 @@ var (
 				"If not provided, no upper bound is applied", dateWithTimeFormat,
 		),
 		Value: "",
+	}
+	onchainInputFlag = &cli.StringFlag{
+		Name:  onchainInputFlagName,
+		Usage: "update the intent fee program for boarding inputs",
+		Value: "",
+	}
+	offchainInputFlag = &cli.StringFlag{
+		Name:  offchainInputFlagName,
+		Usage: "update the intent fee program for forfeited vtxos",
+		Value: "",
+	}
+	onchainOutputFlag = &cli.StringFlag{
+		Name:  onchainOutputFlagName,
+		Usage: "update the intent fee program for collaborative exit outputs",
+		Value: "",
+	}
+	offchainOutputFlag = &cli.StringFlag{
+		Name:  offchainOutputFlagName,
+		Usage: "update the intent fee program for new vtxo leaves",
+		Value: "",
+	}
+	clearFlag = &cli.BoolFlag{
+		Name:  clearFlagName,
+		Usage: "clear all intent fee programs",
+		Value: false,
 	}
 )

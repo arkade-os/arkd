@@ -33,6 +33,9 @@ type AdminService interface {
 	ClearScheduledSessionConfig(ctx context.Context) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
+	GetIntentFees(ctx context.Context) (*domain.IntentFees, error)
+	UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error
+	ClearIntentFees(ctx context.Context) error
 	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
 	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
 	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
@@ -54,6 +57,7 @@ type adminService struct {
 	txBuilder       ports.TxBuilder
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
+	feeManager      ports.FeeManager
 
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
@@ -61,7 +65,7 @@ type adminService struct {
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
-	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit,
+	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 ) AdminService {
 	return &adminService{
@@ -70,6 +74,7 @@ func NewAdminService(
 		txBuilder:                 txBuilder,
 		sweeperTimeUnit:           timeUnit,
 		liveStore:                 liveStoreSvc,
+		feeManager:                feeManager,
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
 	}
@@ -372,6 +377,28 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 		return s.liveStore.Intents().DeleteAll(ctx)
 	}
 	return s.liveStore.Intents().Delete(ctx, intentIds)
+}
+
+func (s *adminService) GetIntentFees(
+	ctx context.Context,
+) (*domain.IntentFees, error) {
+	return s.repoManager.Fees().GetIntentFees(ctx)
+}
+
+func (s *adminService) UpdateIntentFees(
+	ctx context.Context,
+	fees domain.IntentFees,
+) error {
+	// validate the programs for set fields
+	if err := s.feeManager.Validate(fees); err != nil {
+		return err
+	}
+	return s.repoManager.Fees().UpdateIntentFees(ctx, fees)
+}
+
+// Zeroes out fees
+func (s *adminService) ClearIntentFees(ctx context.Context) error {
+	return s.repoManager.Fees().ClearIntentFees(ctx)
 }
 
 // Conviction management methods

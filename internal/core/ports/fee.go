@@ -8,9 +8,10 @@ import (
 )
 
 type FeeManager interface {
-	GetIntentFees(
+	ComputeIntentFees(
 		ctx context.Context,
 		boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 		onchainOutputs, offchainOutputs []wire.TxOut,
 	) (int64, error)
+	Validate(fees domain.IntentFees) error
 }

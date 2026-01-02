@@ -55,6 +55,23 @@ service AdminService {
       body: "*"
     };
   }
+  rpc GetIntentFees(GetIntentFeesRequest) returns (GetIntentFeesResponse){
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/intentFees"
+    };
+  }
+  rpc UpdateIntentFees(UpdateIntentFeesRequest) returns (UpdateIntentFeesResponse){
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/intentFees"
+      body: "*"
+    };
+  }
+  rpc ClearIntentFees(ClearIntentFeesRequest) returns (ClearIntentFeesResponse){
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/intentFees/clear"
+      body: "*"
+    };
+  }
   rpc GetConvictions(GetConvictionsRequest) returns (GetConvictionsResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/admin/convictions/{ids}"
@@ -176,6 +193,22 @@ message DeleteIntentsRequest {
 }
 message DeleteIntentsResponse {}
 
+message GetIntentFeesRequest {}
+
+message GetIntentFeesResponse {
+  IntentFees fees = 1;
+}
+
+message UpdateIntentFeesRequest {
+  IntentFees fees = 1;
+}
+
+message UpdateIntentFeesResponse {}
+
+message ClearIntentFeesRequest {}
+
+message ClearIntentFeesResponse {}
+
 message GetConvictionsRequest {
   repeated string ids = 1;
 }
@@ -261,6 +294,13 @@ message IntentInfo {
   repeated IntentInput boarding_inputs = 5;
   repeated string cosigners_public_keys = 6;
   Intent intent = 7;
+}
+
+message IntentFees {
+  string offchain_input_fee = 1;
+  string onchain_input_fee = 2;
+  string offchain_output_fee = 3;
+  string onchain_output_fee = 4;
 }
 
 message Output {

@@ -24,7 +24,6 @@ import (
 	fileunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/file"
 	walletclient "github.com/arkade-os/arkd/internal/infrastructure/wallet"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -126,11 +125,6 @@ type Config struct {
 
 	EnablePprof bool
 
-	IntentOffchainInputProgram  string
-	IntentOnchainInputProgram   string
-	IntentOffchainOutputProgram string
-	IntentOnchainOutputProgram  string
-
 	fee            ports.FeeManager
 	repo           ports.RepoManager
 	svc            application.Service
@@ -214,12 +208,8 @@ var (
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Skip CSV validation for vtxos created before this date
-	VtxoNoCsvValidationCutoffDate  = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
-	IntentOffchainInputFeeProgram  = "INTENT_OFFCHAIN_INPUT_FEE_PROGRAM"
-	IntentOnchainInputFeeProgram   = "INTENT_ONCHAIN_INPUT_FEE_PROGRAM"
-	IntentOffchainOutputFeeProgram = "INTENT_OFFCHAIN_OUTPUT_FEE_PROGRAM"
-	IntentOnchainOutputFeeProgram  = "INTENT_ONCHAIN_OUTPUT_FEE_PROGRAM"
-	EnablePprof                    = "ENABLE_PPROF"
+	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
+	EnablePprof                   = "ENABLE_PPROF"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -405,10 +395,6 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
-		IntentOffchainInputProgram:    viper.GetString(IntentOffchainInputFeeProgram),
-		IntentOnchainInputProgram:     viper.GetString(IntentOnchainInputFeeProgram),
-		IntentOffchainOutputProgram:   viper.GetString(IntentOffchainOutputFeeProgram),
-		IntentOnchainOutputProgram:    viper.GetString(IntentOnchainOutputFeeProgram),
 	}, nil
 }
 
@@ -573,11 +559,10 @@ func (c *Config) Validate() error {
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
-
-	if err := c.feeManager(); err != nil {
+	if err := c.repoManager(); err != nil {
 		return err
 	}
-	if err := c.repoManager(); err != nil {
+	if err := c.feeManager(); err != nil {
 		return err
 	}
 	if err := c.walletService(); err != nil {
@@ -652,15 +637,11 @@ func (c *Config) RoundReportService() (application.RoundReportService, error) {
 }
 
 func (c *Config) feeManager() (err error) {
-	c.fee, err = feemanager.NewArkFeeManager(arkfee.Config{
-		IntentOffchainInputProgram:  c.IntentOffchainInputProgram,
-		IntentOnchainInputProgram:   c.IntentOnchainInputProgram,
-		IntentOffchainOutputProgram: c.IntentOffchainOutputProgram,
-		IntentOnchainOutputProgram:  c.IntentOnchainOutputProgram,
-	})
+	c.fee, err = feemanager.NewArkFeeManager(c.repo.Fees())
 	if err != nil {
 		return fmt.Errorf("failed to create fee manager: %w", err)
 	}
+
 	return nil
 }
 
@@ -849,12 +830,6 @@ func (c *Config) appService() error {
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
-		application.IntentFeeInfo{
-			OffchainInput:  c.IntentOffchainInputProgram,
-			OnchainInput:   c.IntentOnchainInputProgram,
-			OffchainOutput: c.IntentOffchainOutputProgram,
-			OnchainOutput:  c.IntentOnchainOutputProgram,
-		},
 	)
 	if err != nil {
 		return err
@@ -871,7 +846,7 @@ func (c *Config) adminService() error {
 	}
 
 	c.adminSvc = application.NewAdminService(
-		c.wallet, c.repo, c.txBuilder, c.liveStore, unit,
+		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 	)
 	return nil

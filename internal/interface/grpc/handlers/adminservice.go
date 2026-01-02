@@ -502,6 +502,56 @@ func (a *adminHandler) RevokeAuth(
 	}, nil
 }
 
+func (a *adminHandler) GetIntentFees(
+	ctx context.Context, req *arkv1.GetIntentFeesRequest,
+) (*arkv1.GetIntentFeesResponse, error) {
+	fees, err := a.adminService.GetIntentFees(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetIntentFeesResponse{
+		Fees: &arkv1.IntentFees{
+			OffchainInputFee:  fees.OffchainInputFee,
+			OnchainInputFee:   fees.OnchainInputFee,
+			OffchainOutputFee: fees.OffchainOutputFee,
+			OnchainOutputFee:  fees.OnchainOutputFee,
+		},
+	}, nil
+}
+
+func (a *adminHandler) UpdateIntentFees(
+	ctx context.Context, req *arkv1.UpdateIntentFeesRequest,
+) (*arkv1.UpdateIntentFeesResponse, error) {
+	feesProto := req.GetFees()
+	if feesProto == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing intent fees")
+	}
+
+	fees := domain.IntentFees{
+		OffchainInputFee:  feesProto.GetOffchainInputFee(),
+		OnchainInputFee:   feesProto.GetOnchainInputFee(),
+		OffchainOutputFee: feesProto.GetOffchainOutputFee(),
+		OnchainOutputFee:  feesProto.GetOnchainOutputFee(),
+	}
+
+	if err := a.adminService.UpdateIntentFees(ctx, fees); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.UpdateIntentFeesResponse{}, nil
+}
+
+func (a *adminHandler) ClearIntentFees(
+	ctx context.Context, req *arkv1.ClearIntentFeesRequest,
+) (*arkv1.ClearIntentFeesResponse, error) {
+	if err := a.adminService.ClearIntentFees(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.ClearIntentFeesResponse{}, nil
+}
+
 func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, error) {
 	var expiresAt int64
 	if conviction.GetExpiresAt() != nil {
