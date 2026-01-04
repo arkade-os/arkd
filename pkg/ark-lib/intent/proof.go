@@ -131,7 +131,10 @@ func Verify(proofB64, message string) error {
 // * toSpend embeds the message and make the proof "invalid" from the chain point of view
 // * toSign is the regular transaction that will be signed to prove ownership of the inputs and may include the specified outputs
 // toSign spends toSpend input as first input, making the tx unusable onchain
-func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) {
+//
+// locktime specifies the transaction locktime (default 0). When non-zero, input sequences
+// should be set to MaxTxInSequenceNum-1 (0xFFFFFFFE) to enable CLTV validation.
+func New(message string, inputs []Input, outputs []*wire.TxOut, locktime uint32) (*Proof, error) {
 	if len(inputs) == 0 {
 		return nil, ErrMissingInputs
 	}
@@ -149,7 +152,7 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 
 	firstInput := inputs[0]
 	toSpend := buildToSpendTx(message, firstInput.WitnessUtxo.PkScript)
-	toSign, err := buildToSignTx(toSpend, inputs, outputs)
+	toSign, err := buildToSignTx(toSpend, inputs, outputs, locktime)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +223,7 @@ func buildToSpendTx(message string, pkScript []byte) *wire.MsgTx {
 
 // buildToSignTx creates the transaction that will be signed for the proof
 func buildToSignTx(
-	toSpend *wire.MsgTx, inputs []Input, outputs []*wire.TxOut,
+	toSpend *wire.MsgTx, inputs []Input, outputs []*wire.TxOut, locktime uint32,
 ) (*psbt.Packet, error) {
 	outpoints := make([]*wire.OutPoint, 0, len(inputs)+1)
 	sequences := make([]uint32, 0, len(inputs)+1)
@@ -241,7 +244,7 @@ func buildToSignTx(
 		outputs = []*wire.TxOut{{Value: 0, PkScript: opReturnEmptyPkScript}}
 	}
 
-	toSign, err := psbt.New(outpoints, outputs, 2, 0, sequences)
+	toSign, err := psbt.New(outpoints, outputs, 2, locktime, sequences)
 	if err != nil {
 		return nil, err
 	}
