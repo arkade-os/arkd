@@ -3964,19 +3964,19 @@ func TestBan(t *testing.T) {
 	})
 }
 
-// TestFee tests the fee calculation for the onboarding and settlement of the funds
-// It restarts the arkd container with the 4 fee program environment variables
+// TestFee tests the fee calculation for the onboarding and settlement of the funds.
+// It first updates the 4 fee programs for intents.
 func TestFee(t *testing.T) {
-	env := arkdEnv{
+	fees := intentFees{
 		// for input: free in case of recoverable or note, 1% of the amount otherwise
 		// for output: 200 satoshis for onchain output, 0 for vtxo output
-		intentOffchainInputFeeProgram:  "inputType == 'note' || inputType == 'recoverable' ? 0.0 : amount*0.01",
-		intentOnchainInputFeeProgram:   "0.01 * amount",
-		intentOffchainOutputFeeProgram: "0.0",
-		intentOnchainOutputFeeProgram:  "200.0",
+		IntentOffchainInputFeeProgram:  "inputType == 'note' || inputType == 'recoverable' ? 0.0 : amount*0.01",
+		IntentOnchainInputFeeProgram:   "0.01 * amount",
+		IntentOffchainOutputFeeProgram: "0.0",
+		IntentOnchainOutputFeeProgram:  "200.0",
 	}
 
-	err := restartArkdWithNewConfig(env)
+	err := updateIntentFees(fees)
 	require.NoError(t, err)
 
 	ctx := t.Context()

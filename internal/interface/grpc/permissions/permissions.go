@@ -290,6 +290,14 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Entity: EntityManager,
 			Action: "read",
 		}},
+		fmt.Sprintf("/%s/GetExpiringLiquidity", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetRecoverableLiquidity", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
 		fmt.Sprintf("/%s/CreateNote", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityNote,
 			Action: "write",
@@ -319,6 +327,18 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 		fmt.Sprintf("/%s/ListIntents", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetIntentFees", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/UpdateIntentFees", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "write",
+		}},
+		fmt.Sprintf("/%s/ClearIntentFees", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "write",
 		}},
 		// Conviction management RPCs
 		fmt.Sprintf("/%s/GetConvictions", arkv1.AdminService_ServiceDesc.ServiceName): {{

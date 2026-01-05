@@ -69,8 +69,7 @@ type service struct {
 	allowCSVBlockType         bool
 
 	// fees
-	feeManager    ports.FeeManager
-	intentFeeInfo IntentFeeInfo
+	feeManager ports.FeeManager
 
 	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
 	vtxoNoCsvValidationCutoffTime time.Time
@@ -117,7 +116,6 @@ func NewService(
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
 	vtxoNoCsvValidationCutoffTime time.Time,
-	intentFeeInfo IntentFeeInfo,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -241,7 +239,6 @@ func NewService(
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 		feeManager:                    feeManager,
-		intentFeeInfo:                 intentFeeInfo,
 	}
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
 	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
@@ -1862,7 +1859,7 @@ func (s *service) RegisterIntent(
 		onchainInputs = append(onchainInputs, *boardingInput.witnessUtxo)
 	}
 
-	minFees, err := s.feeManager.GetIntentFees(
+	minFees, err := s.feeManager.ComputeIntentFees(
 		ctx, onchainInputs, vtxoInputs, onchainOutputs, offchainOutputs,
 	)
 	if err != nil {
@@ -2023,6 +2020,11 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		}
 	}
 
+	currIntentFees, err := s.repoManager.Fees().GetIntentFees(ctx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)
+	}
+
 	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
 		ForfeitPubKey:        forfeitPubkey,
@@ -2039,7 +2041,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		Fees: FeeInfo{
-			IntentFees: s.intentFeeInfo,
+			IntentFees: *currIntentFees,
 		},
 	}, nil
 }
@@ -2344,7 +2346,7 @@ func (s *service) EstimateIntentFee(
 		}
 	}
 
-	expectedFees, err := s.feeManager.GetIntentFees(
+	expectedFees, err := s.feeManager.ComputeIntentFees(
 		ctx, onchainInputs, offchainInputs, onchainOutputs, offchainOutputs,
 	)
 	if err != nil {

@@ -250,6 +250,21 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 -- name: SelectVtxosWithPubkeys :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey = ANY($1::varchar[]);
 
+-- name: SelectExpiringLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS amount
+FROM vtxo
+WHERE swept = false
+  AND spent = false
+  AND unrolled = false
+  AND expires_at > @after
+  AND (@before <= 0 OR expires_at < @before);
+
+-- name: SelectRecoverableLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS amount
+FROM vtxo
+WHERE swept = true
+  AND spent = false;
+
 -- name: SelectOffchainTx :many
 SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
 
@@ -354,3 +369,48 @@ ORDER BY created_at ASC;
 SELECT * FROM conviction 
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
+
+-- name: SelectLatestIntentFees :one
+SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
+
+-- name: AddIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+SELECT
+    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
+    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
+  CASE 
+    WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
+    WHEN @offchain_input_fee_program <> '' THEN @offchain_input_fee_program
+    ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
+    WHEN @onchain_input_fee_program <> '' THEN @onchain_input_fee_program
+    ELSE COALESCE((SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
+    WHEN @offchain_output_fee_program <> '' THEN @offchain_output_fee_program
+    ELSE COALESCE((SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
+    WHEN @onchain_output_fee_program <> '' THEN @onchain_output_fee_program
+    ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END;
+
+-- name: ClearIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+VALUES ('', '', '', '');
+
+

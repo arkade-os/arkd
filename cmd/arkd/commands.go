@@ -216,6 +216,41 @@ var (
 		Flags:  []cli.Flag{scriptFlag, banDurationFlag, banReasonFlag},
 		Action: banScriptAction,
 	}
+	liquidityExpiringCmd = &cli.Command{
+		Name:   "liquidity-expiring",
+		Usage:  "Get expiring liquidity within a given range",
+		Flags:  []cli.Flag{liquidityAfterFlag, liquidityBeforeFlag},
+		Action: liquidityExpiringAction,
+	}
+	liquidityRecoverableCmd = &cli.Command{
+		Name:   "liquidity-recoverable",
+		Usage:  "Get all recoverable liquidity",
+		Action: liquidityRecoverableAction,
+	}
+	liquidityReportCmd = &cli.Command{
+		Name:   "liquidity-report",
+		Usage:  "Get a report of the recoverable and expiring liquidity",
+		Action: liquidityReportAction,
+	}
+	feesCmd = &cli.Command{
+		Name:        "fees",
+		Usage:       "Manage intent and offchain tx fees",
+		Subcommands: cli.Commands{intentFeesCmd, clearFeesCmd},
+		Action:      getFeesAction,
+	}
+	intentFeesCmd = &cli.Command{
+		Name:  "intent",
+		Usage: "Manage intent fees",
+		Flags: []cli.Flag{
+			onchainInputFlag, offchainInputFlag, onchainOutputFlag, offchainOutputFlag, clearFlag,
+		},
+		Action: getOrUpdateIntentFeesAction,
+	}
+	clearFeesCmd = &cli.Command{
+		Name:   "clear",
+		Usage:  "Clear intent and offchain tx fees",
+		Action: clearFeesAction,
+	}
 )
 
 var timeout = time.Minute
@@ -513,7 +548,7 @@ func clearIntentsAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Println("Successfully deleted all intents")
+	fmt.Println("successfully deleted all intents")
 	return nil
 }
 
@@ -720,13 +755,13 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/scheduledSession", baseURL)
 	config := map[string]string{}
 	if startDate != "" {
-		startTime, err := time.Parse(scheduledSessionDateFormat, startDate)
+		startTime, err := time.Parse(dateWithTimeFormat, startDate)
 		if err != nil {
-			return fmt.Errorf("invalid --start-date format, must be %s", scheduledSessionDateFormat)
+			return fmt.Errorf("invalid --start-date format, must be %s", dateWithTimeFormat)
 		}
-		endTime, err := time.Parse(scheduledSessionDateFormat, endDate)
+		endTime, err := time.Parse(dateWithTimeFormat, endDate)
 		if err != nil {
-			return fmt.Errorf("invalid --end-date format, must be %s", scheduledSessionDateFormat)
+			return fmt.Errorf("invalid --end-date format, must be %s", dateWithTimeFormat)
 		}
 		config["startTime"] = strconv.Itoa(int(startTime.Unix()))
 		config["endTime"] = strconv.Itoa(int(endTime.Unix()))
@@ -752,7 +787,7 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Println("Successfully updated scheduled session config")
+	fmt.Println("successfully updated scheduled session config")
 	return nil
 }
 
@@ -768,7 +803,7 @@ func clearScheduledSessionAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Println("Successfully cleared scheduled session config")
+	fmt.Println("successfully cleared scheduled session config")
 	return nil
 }
 
@@ -914,7 +949,7 @@ func pardonConvictionAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Printf("Successfully pardoned conviction: %s\n", convictionId)
+	fmt.Printf("successfully pardoned conviction: %s\n", convictionId)
 	return nil
 }
 
@@ -977,5 +1012,270 @@ func sweepAction(ctx *cli.Context) error {
 	}
 
 	fmt.Println(sweepTxHex)
+	return nil
+}
+
+func liquidityExpiringAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	afterDate := ctx.String(afterDateFlagName)
+	beforeDate := ctx.String(beforeDateFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	after := time.Now().Unix()
+	if afterDate != "" {
+		tt, err := time.Parse(dateWithTimeFormat, afterDate)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s flag format, must be %s", afterDateFlagName, dateWithTimeFormat,
+			)
+		}
+		after = tt.Unix()
+	}
+
+	before := int64(0)
+	if beforeDate != "" {
+		tt, err := time.Parse(dateWithTimeFormat, beforeDate)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s flag format, must be %s", beforeDateFlagName, dateWithTimeFormat,
+			)
+		}
+		before = tt.Unix()
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/liquidity/expiring?after=%d&before=%d", baseURL, after, before)
+	amount, err := getUint64(url, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(amount)
+	return nil
+}
+
+func liquidityRecoverableAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/liquidity/recoverable", baseURL)
+	amount, err := getUint64(url, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(amount)
+	return nil
+}
+
+func liquidityReportAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	t1 := now.Add(24 * time.Hour)
+	t2 := now.Add(48 * time.Hour)
+	t3 := now.Add(72 * time.Hour)
+
+	getExpiring := func(after, before int64) (uint64, error) {
+		url := fmt.Sprintf(
+			"%s/v1/admin/liquidity/expiring?after=%d&before=%d",
+			baseURL, after, before,
+		)
+		return getUint64(url, "amount", macaroon, tlsConfig)
+	}
+
+	recoverableURL := fmt.Sprintf("%s/v1/admin/liquidity/recoverable", baseURL)
+	recoverable, err := getUint64(recoverableURL, "amount", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	exp1, err := getExpiring(now.Unix(), t1.Unix())
+	if err != nil {
+		return err
+	}
+	exp2, err := getExpiring(t1.Unix(), t2.Unix())
+	if err != nil {
+		return err
+	}
+	exp3, err := getExpiring(t2.Unix(), t3.Unix())
+	if err != nil {
+		return err
+	}
+	expAfter, err := getExpiring(t3.Unix(), 0)
+	if err != nil {
+		return err
+	}
+
+	resp := struct {
+		RecoverableLiquidity uint64 `json:"recoverableLiquidity"`
+		ExpiringIn1day       uint64 `json:"expiringInOneDay"`
+		ExpiringIn2day       uint64 `json:"expiringInTwoDays"`
+		ExpiringIn3day       uint64 `json:"expiringInThreeDays"`
+		ExpiringAfter3days   uint64 `json:"expiringAfterThreeDays"`
+	}{
+		RecoverableLiquidity: recoverable,
+		ExpiringIn1day:       exp1,
+		ExpiringIn2day:       exp2,
+		ExpiringIn3day:       exp3,
+		ExpiringAfter3days:   expAfter,
+	}
+
+	respJSON, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJSON))
+	return nil
+}
+
+func getFeesAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	type intentFeeResponse struct {
+		OnchainInput   string `json:"onchainInputFee"`
+		OffchainInput  string `json:"offchainInputFee"`
+		OnchainOutput  string `json:"onchainOutputFee"`
+		OffchainOutput string `json:"offchainOutputFee"`
+	}
+	url := fmt.Sprintf("%s/v1/admin/intentFees", baseURL)
+	intentFeeResp, err := get[intentFeeResponse](url, "fees", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	// TODO: get offchain tx fees when endpoint is available
+
+	resp := struct {
+		IntentFees intentFeeResponse `json:"intent"`
+	}{
+		IntentFees: intentFeeResp,
+	}
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func clearFeesAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees/clear", baseURL)
+	if _, err := post[struct{}](url, "", "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	// TODO: clear offchain tx fees when endpoint is available
+
+	fmt.Println("successfully cleared intent and offchain tx fees")
+	return nil
+}
+
+func getOrUpdateIntentFeesAction(ctx *cli.Context) error {
+	clear := ctx.Bool(clearFlagName)
+	onchainInputFee := ctx.String(onchainInputFlagName)
+	offchainInputFee := ctx.String(offchainInputFlagName)
+	onchainOutputFee := ctx.String(onchainOutputFlagName)
+	offchainOutputFee := ctx.String(offchainOutputFlagName)
+
+	if clear {
+		return clearIntentFees(ctx)
+	}
+	if onchainInputFee != "" || offchainInputFee != "" ||
+		onchainOutputFee != "" || offchainOutputFee != "" {
+		return updateIntentFees(ctx)
+	}
+
+	return getIntentFees(ctx)
+}
+
+func clearIntentFees(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees/clear", baseURL)
+	if _, err := post[struct{}](url, "", "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Println("successfully cleared intent fees")
+	return nil
+}
+
+func updateIntentFees(ctx *cli.Context) error {
+	onchainInputFee := ctx.String(onchainInputFlagName)
+	offchainInputFee := ctx.String(offchainInputFlagName)
+	onchainOutputFee := ctx.String(onchainOutputFlagName)
+	offchainOutputFee := ctx.String(offchainOutputFlagName)
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees", baseURL)
+	body := fmt.Sprintf(
+		`{"fees":{"onchain_input_fee": "%s", "offchain_input_fee": "%s", "onchain_output_fee": "%s", "offchain_output_fee": "%s"}}`,
+		onchainInputFee,
+		offchainInputFee,
+		onchainOutputFee,
+		offchainOutputFee,
+	)
+
+	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
+		return err
+	}
+
+	fmt.Println("successfully updated intent fees")
+	return nil
+}
+
+func getIntentFees(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	type intentFeeResponse struct {
+		OnchainInput   string `json:"onchainInputFee"`
+		OffchainInput  string `json:"offchainInputFee"`
+		OnchainOutput  string `json:"onchainOutputFee"`
+		OffchainOutput string `json:"offchainOutputFee"`
+	}
+	url := fmt.Sprintf("%s/v1/admin/intentFees", baseURL)
+
+	resp, err := get[intentFeeResponse](url, "fees", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
 	return nil
 }

@@ -94,6 +94,42 @@ func (a *adminHandler) GetRounds(
 	return &arkv1.GetRoundsResponse{Rounds: rounds}, nil
 }
 
+func (a *adminHandler) GetExpiringLiquidity(
+	ctx context.Context, req *arkv1.GetExpiringLiquidityRequest,
+) (*arkv1.GetExpiringLiquidityResponse, error) {
+	after := req.GetAfter()
+	before := req.GetBefore()
+
+	// Treat 0 or negative values as "unset" (proto doesn't support nil for scalars here).
+	// - after <= 0 -> now
+	// - before <= 0 -> no upper bound
+	if after <= 0 {
+		after = time.Now().Unix()
+	}
+
+	if before > 0 && after >= before {
+		return nil, status.Error(codes.InvalidArgument, "invalid range")
+	}
+
+	amount, err := a.adminService.GetExpiringLiquidity(ctx, after, before)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetExpiringLiquidityResponse{Amount: amount}, nil
+}
+
+func (a *adminHandler) GetRecoverableLiquidity(
+	ctx context.Context, _ *arkv1.GetRecoverableLiquidityRequest,
+) (*arkv1.GetRecoverableLiquidityResponse, error) {
+	amount, err := a.adminService.GetRecoverableLiquidity(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetRecoverableLiquidityResponse{Amount: amount}, nil
+}
+
 func (a *adminHandler) GetScheduledSweep(
 	ctx context.Context, _ *arkv1.GetScheduledSweepRequest,
 ) (*arkv1.GetScheduledSweepResponse, error) {
@@ -464,6 +500,56 @@ func (a *adminHandler) RevokeAuth(
 	return &arkv1.RevokeAuthResponse{
 		Token: hex.EncodeToString(macBytes),
 	}, nil
+}
+
+func (a *adminHandler) GetIntentFees(
+	ctx context.Context, req *arkv1.GetIntentFeesRequest,
+) (*arkv1.GetIntentFeesResponse, error) {
+	fees, err := a.adminService.GetIntentFees(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetIntentFeesResponse{
+		Fees: &arkv1.IntentFees{
+			OffchainInputFee:  fees.OffchainInputFee,
+			OnchainInputFee:   fees.OnchainInputFee,
+			OffchainOutputFee: fees.OffchainOutputFee,
+			OnchainOutputFee:  fees.OnchainOutputFee,
+		},
+	}, nil
+}
+
+func (a *adminHandler) UpdateIntentFees(
+	ctx context.Context, req *arkv1.UpdateIntentFeesRequest,
+) (*arkv1.UpdateIntentFeesResponse, error) {
+	feesProto := req.GetFees()
+	if feesProto == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing intent fees")
+	}
+
+	fees := domain.IntentFees{
+		OffchainInputFee:  feesProto.GetOffchainInputFee(),
+		OnchainInputFee:   feesProto.GetOnchainInputFee(),
+		OffchainOutputFee: feesProto.GetOffchainOutputFee(),
+		OnchainOutputFee:  feesProto.GetOnchainOutputFee(),
+	}
+
+	if err := a.adminService.UpdateIntentFees(ctx, fees); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.UpdateIntentFeesResponse{}, nil
+}
+
+func (a *adminHandler) ClearIntentFees(
+	ctx context.Context, req *arkv1.ClearIntentFeesRequest,
+) (*arkv1.ClearIntentFeesResponse, error) {
+	if err := a.adminService.ClearIntentFees(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.ClearIntentFeesResponse{}, nil
 }
 
 func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, error) {

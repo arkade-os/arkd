@@ -66,13 +66,13 @@ expiry - now() < double(duration('5m').getSeconds()) ? 0.0 : amount / 2.0
 ### Creating an Estimator
 
 ```go
-config := arkfee.Config{
+intentFees := arkfee.IntentFees{
     IntentOffchainInputProgram:  "inputProgram",
     IntentOnchainInputProgram:   "onchainInputProgram",
     IntentOffchainOutputProgram: "offchainOutputProgram",
     IntentOnchainOutputProgram:  "onchainOutputProgram",
 }
-estimator, err := arkfee.New(config)
+estimator, err := arkfee.New(intentFees)
 if err != nil {
     // handle error
 }

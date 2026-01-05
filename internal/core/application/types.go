@@ -93,15 +93,8 @@ type WalletStatus struct {
 }
 
 type FeeInfo struct {
-	IntentFees IntentFeeInfo
+	IntentFees domain.IntentFees
 	TxFeeRate  float64
-}
-
-type IntentFeeInfo struct {
-	OffchainInput  string
-	OffchainOutput string
-	OnchainInput   string
-	OnchainOutput  string
 }
 
 const (
