@@ -3961,32 +3961,39 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 				continue
 			}
 
-			modifiedInput, err := offchain.ReconstructAssetInput(input, checkpointTxMap)
-			if err != nil {
-				return err
+			if int(input.Vin) >= len(arkTx.TxIn) {
+				return fmt.Errorf("asset input index out of range: %d", input.Vin)
 			}
 
-			arkTxhash, err := chainhash.NewHash(modifiedInput.Hash[:])
-			if err != nil {
-				return err
+			checkpointOutpoint := arkTx.TxIn[input.Vin].PreviousOutPoint
+			checkpointTxHex, ok := checkpointTxMap[checkpointOutpoint.Hash.String()]
+			if !ok {
+				return fmt.Errorf("checkpoint tx %s not found for asset input %d", checkpointOutpoint.Hash, input.Vin)
 			}
 
-			arkTxId := arkTxhash.String()
-
-			offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, arkTxId)
+			checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)
 			if err != nil {
-				return fmt.Errorf("error retrieving offchain tx %s: %w", arkTxId, err)
+				return fmt.Errorf("failed to decode checkpoint tx %s: %w", checkpointOutpoint.Hash, err)
+			}
+			if len(checkpointPtx.UnsignedTx.TxIn) == 0 {
+				return fmt.Errorf("checkpoint tx %s missing input", checkpointOutpoint.Hash)
+			}
+
+			prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
+			offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, prev.Hash.String())
+			if err != nil {
+				return fmt.Errorf("error retrieving offchain tx %s: %w", prev.Hash, err)
 			}
 
 			if offchainTx == nil {
-				return fmt.Errorf("offchain tx %s not found in rounds or offchain storage", arkTxId)
+				return fmt.Errorf("offchain tx %s not found in rounds or offchain storage", prev.Hash)
 			}
 
 			if !offchainTx.IsFinalized() {
-				return fmt.Errorf("offchain tx %s is failed", arkTxId)
+				return fmt.Errorf("offchain tx %s is failed", prev.Hash)
 			}
 
-			if err := asset.VerifyAssetOutputInTx(offchainTx.ArkTx, modifiedInput.Vin); err != nil {
+			if err := asset.VerifyAssetOutputInTx(offchainTx.ArkTx, uint16(prev.Index)); err != nil {
 				return err
 			}
 		}

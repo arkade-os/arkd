@@ -109,7 +109,6 @@ func CalculateTeleportHash(script []byte, nonce [32]byte) [32]byte {
 type AssetInput struct {
 	Type       AssetType
 	Vin        uint16          // For Local
-	Hash       []byte          // For Local
 	Commitment [32]byte        // For Teleport
 	Witness    TeleportWitness // For Teleport
 	Amount     uint64
@@ -326,12 +325,10 @@ func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
 	for _, assetIn := range assetInputs {
 		switch assetIn.Type {
 		case AssetTypeLocal:
-			for _, in := range ins {
-				if bytes.Equal(in.PreviousOutPoint.Hash[:], assetIn.Hash[:]) && in.PreviousOutPoint.Index == uint32(assetIn.Vin) {
-					processedInputs++
-					break
-				}
+			if int(assetIn.Vin) >= len(ins) {
+				return fmt.Errorf("asset input index out of range: %d", assetIn.Vin)
 			}
+			processedInputs++
 		case AssetTypeTeleport:
 			processedInputs++
 		default:
