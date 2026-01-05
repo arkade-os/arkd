@@ -3872,6 +3872,27 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 		ins := normalAsset.Inputs
 		outs := normalAsset.Outputs
 
+		// verify control asset existence for new issuances
+		if normalAsset.ControlAssetId != nil && len(ins) == 0 {
+			foundControlAsset := false
+			for _, ca := range controlAssets {
+				if ca.AssetId == *normalAsset.ControlAssetId {
+					foundControlAsset = true
+					break
+				}
+			}
+			if !foundControlAsset {
+				controlAssetID := normalAsset.ControlAssetId.ToString()
+				existingControlAsset, err := s.repoManager.Assets().GetAssetGroupByID(ctx, controlAssetID)
+				if err != nil {
+					return fmt.Errorf("error retrieving control asset %s: %w", controlAssetID, err)
+				}
+				if existingControlAsset == nil {
+					return fmt.Errorf("control asset %s not found", controlAssetID)
+				}
+			}
+		}
+
 		totalOuputAmount := uint64(0)
 		for _, assetOut := range outs {
 			totalOuputAmount += assetOut.Amount
