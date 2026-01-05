@@ -986,8 +986,8 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	if assetGroupIndex >= 0 {
-		rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.RebuildAssetTxs(
-			outputs, assetGroupIndex, checkpointTxs, ins, s.checkpointTapscript,
+		rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildAssetTxs(
+			outputs, assetGroupIndex, ins, s.checkpointTapscript,
 		)
 
 		if err != nil {
