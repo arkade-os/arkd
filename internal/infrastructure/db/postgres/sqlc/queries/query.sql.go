@@ -21,7 +21,9 @@ INSERT INTO intent_fees (
   onchain_output_fee_program
 )
 SELECT
-  CASE
+    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
+    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
+  CASE 
     WHEN ($1 = '' AND $2 = '' AND $3 = '' AND $4 = '') THEN ''
     WHEN $1 <> '' THEN $1
     ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
@@ -482,7 +484,7 @@ func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey s
 }
 
 const selectOffchainTx = `-- name: SelectOffchainTx :many
-SELECT  offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = $1
+SELECT  offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = $1 AND fail_reason = ''
 `
 
 type SelectOffchainTxRow struct {

@@ -266,7 +266,7 @@ WHERE swept = true
   AND spent = false;
 
 -- name: SelectOffchainTx :many
-SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND fail_reason = '';
 
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
