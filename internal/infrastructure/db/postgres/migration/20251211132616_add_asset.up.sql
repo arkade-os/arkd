@@ -1,4 +1,4 @@
-CREATE TABLE asset_details (
+CREATE TABLE asset_group (
     id        TEXT PRIMARY KEY,
     immutable BOOLEAN NOT NULL DEFAULT FALSE,
     quantity  BIGINT NOT NULL
@@ -19,7 +19,7 @@ CREATE TABLE asset (
         REFERENCES asset_anchor(anchor_txid)
         ON DELETE CASCADE,
     FOREIGN KEY (asset_id)
-        REFERENCES asset_details(id)
+        REFERENCES asset_group(id)
         ON DELETE CASCADE
 );
 
@@ -29,7 +29,7 @@ CREATE TABLE asset_metadata (
     meta_value  TEXT NOT NULL,
     PRIMARY KEY (asset_id, meta_key),
     FOREIGN KEY (asset_id)
-        REFERENCES asset_details(id)
+        REFERENCES asset_group(id)
         ON DELETE CASCADE
 );
 
@@ -39,6 +39,6 @@ CREATE TABLE teleport_asset (
     amount        BIGINT NOT NULL,
     is_claimed    BOOLEAN NOT NULL DEFAULT FALSE,
     FOREIGN KEY (asset_id)
-        REFERENCES asset_details(id)
+        REFERENCES asset_group(id)
         ON DELETE CASCADE
 );

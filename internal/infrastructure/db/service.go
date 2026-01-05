@@ -475,6 +475,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
+		assetOpReturnProcessed := false
 		for outIndex, out := range outs {
 			var isSubDust bool
 			var pubKey []byte
@@ -486,6 +487,11 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 			// ignore asset anchor
 			if asset.IsAssetGroup(out.PkScript) {
+				if assetOpReturnProcessed {
+					continue
+				}
+				assetOpReturnProcessed = true
+
 				assetGroup, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")

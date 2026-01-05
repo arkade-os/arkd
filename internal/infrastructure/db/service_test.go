@@ -1278,30 +1278,30 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("insert and update asset quantity", func(t *testing.T) {
 		ctx := context.Background()
 
-		asset := domain.AssetDetails{
+		asset := domain.AssetGroup{
 			ID:        "asset-1",
 			Quantity:  10,
 			Immutable: true,
 			Metadata: []domain.AssetMetadata{
-				{Key: "name", Value: "Test Asset"},
+				{Key: "name", Value: "Test AssetGroup"},
 				{Key: "symbol", Value: "TST"},
 			},
 		}
 
-		err := svc.Assets().InsertAssetDetails(ctx, asset)
+		err := svc.Assets().InsertAssetGroup(ctx, asset)
 		require.NoError(t, err, "InsertAssetDetails should succeed")
 
 		// Increase by 5 -> 15
-		err = svc.Assets().IncreaseAssetQuantity(ctx, asset.ID, 5)
+		err = svc.Assets().IncreaseAssetGroupQuantity(ctx, asset.ID, 5)
 		require.NoError(t, err, "IncreaseAssetQuantity should succeed")
 
 		// Decrease by 3 -> 12
-		err = svc.Assets().DecreaseAssetQuantity(ctx, asset.ID, 3)
+		err = svc.Assets().DecreaseAssetGroupQuantity(ctx, asset.ID, 3)
 		require.NoError(t, err, "DecreaseAssetQuantity should succeed")
 
 		// Assert final value in DB
-		assetD, err := svc.Assets().GetAssetDetailsByID(ctx, asset.ID)
-		require.NoError(t, err, "GetAssetDetailsByID should succeed")
+		assetD, err := svc.Assets().GetAssetGroupByID(ctx, asset.ID)
+		require.NoError(t, err, "GetAsseGroupByID should succeed")
 
 		require.Equal(t, uint64(12), assetD.Quantity)
 		require.True(t, assetD.Immutable)

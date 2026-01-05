@@ -123,13 +123,19 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
 
 	assetList := make([]domain.NormalAsset, 0)
-	assetVouts := make(map[uint32]struct{})
+	assetVouts := make(map[uint16]struct{})
+	assetOpReturnProcessed := false
 
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
 		var pubKey string
 		var isSubDust bool
 
 		if asset.IsAssetGroup(out.PkScript) {
+			if assetOpReturnProcessed {
+				continue
+			}
+			assetOpReturnProcessed = true
+
 			decodedAssetGroup, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf("failed to decode asset group from opreturn: %s", err)
@@ -139,7 +145,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 
 			for _, grpAsset := range allAssets {
 				for _, assetOut := range grpAsset.Outputs {
-					if assetOut.Type != asset.AssetOutputTypeLocal {
+					if assetOut.Type != asset.AssetTypeLocal {
 						continue
 					}
 					if _, exists := assetVouts[assetOut.Vout]; exists {
@@ -150,7 +156,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 					assetList = append(assetList, domain.NormalAsset{
 						Outpoint: domain.Outpoint{
 							Txid: txid,
-							VOut: assetOut.Vout,
+							VOut: uint32(assetOut.Vout),
 						},
 						Amount:  assetOut.Amount,
 						AssetID: grpAsset.AssetId.ToString(),
@@ -188,14 +194,14 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		})
 	}
 
-	// Add Asset if Present
+	// Add AssetGroup if Present
 	for _, asst := range assetList {
 		idx := int(asst.VOut)
 		if idx < 0 || idx >= len(outs) {
 			continue
 		}
 
-		outs[idx].Asset = &asst
+		outs[idx].AssetGroup = &asst
 	}
 
 	return txid, ins, outs, nil

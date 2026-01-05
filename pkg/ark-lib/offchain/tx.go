@@ -102,13 +102,13 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	// -------------------------
 	// 1. Control asset handling
 	// -------------------------
-	updatedControlAssets := make([]asset.Asset, 0, len(assetGroup.ControlAssets))
+	updatedControlAssets := make([]asset.AssetGroup, 0, len(assetGroup.ControlAssets))
 
 	for _, controlAsset := range assetGroup.ControlAssets {
 		controlAssetInputs := make([]asset.AssetInput, 0)
 
 		for _, input := range controlAsset.Inputs {
-			if input.Type == asset.AssetInputTypeTeleport {
+			if input.Type == asset.AssetTypeTeleport {
 				controlAssetInputs = append(controlAssetInputs, input)
 				continue
 			}
@@ -120,7 +120,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 					continue
 				}
 
-				if vtxo.Outpoint.Index == input.Vin && bytes.Equal(vtxo.Outpoint.Hash[:], input.Hash) {
+				if vtxo.Outpoint.Index == uint32(input.Vin) && bytes.Equal(vtxo.Outpoint.Hash[:], input.Hash) {
 					vtxoInput = &vtxos[i]
 					usedVtxos[i] = true
 					break
@@ -140,7 +140,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 			txHash := checkpointPtx.UnsignedTx.TxHash()
 			controlInput := asset.AssetInput{
-				Type:   asset.AssetInputTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Vin:    0,
 				Hash:   txHash.CloneBytes(),
 				Amount: input.Amount,
@@ -163,13 +163,13 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	// ------------------------
 	// 2. Normal asset handling
 	// ------------------------
-	updatedNormalAssets := make([]asset.Asset, 0, len(assetGroup.NormalAssets))
+	updatedNormalAssets := make([]asset.AssetGroup, 0, len(assetGroup.NormalAssets))
 
 	for _, normalAsset := range assetGroup.NormalAssets {
 		normalAssetInputs := make([]asset.AssetInput, 0)
 
 		for _, input := range normalAsset.Inputs {
-			if input.Type == asset.AssetInputTypeTeleport {
+			if input.Type == asset.AssetTypeTeleport {
 				normalAssetInputs = append(normalAssetInputs, input)
 				continue
 			}
@@ -181,7 +181,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 					continue
 				}
 
-				if vtxo.Outpoint.Index == input.Vin && bytes.Equal(vtxo.Outpoint.Hash[:], input.Hash) {
+				if vtxo.Outpoint.Index == uint32(input.Vin) && bytes.Equal(vtxo.Outpoint.Hash[:], input.Hash) {
 					vtxoInput = &vtxos[i]
 					usedVtxos[i] = true
 					break
@@ -200,7 +200,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 
 			txHash := checkpointPtx.UnsignedTx.TxHash()
 			controlInput := asset.AssetInput{
-				Type:   asset.AssetInputTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Vin:    0,
 				Hash:   txHash.CloneBytes(),
 				Amount: input.Amount,
@@ -233,7 +233,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 		checkpointTxs = append(checkpointTxs, checkpointPtx)
 	}
 
-	newAssetGroup := &asset.AssetGroup{
+	newAssetGroup := &asset.AssetPacket{
 		ControlAssets: updatedControlAssets,
 		NormalAssets:  updatedNormalAssets,
 		SubDustKey:    assetGroup.SubDustKey,
@@ -316,9 +316,9 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 	}
 
 	// -------------------------
-	// 3. Encode updated assetGroup and build Asset Ark tx
+	// 3. Encode updated assetGroup and build AssetGroup Ark tx
 	// -------------------------
-	newAssetGroup := &asset.AssetGroup{
+	newAssetGroup := &asset.AssetPacket{
 		ControlAssets: controlAssets,
 		NormalAssets:  normalAssets,
 		SubDustKey:    assetGroup.SubDustKey,
@@ -335,7 +335,7 @@ func RebuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, checkpointTxMap
 }
 
 func ReconstructAssetInput(assetInput asset.AssetInput, checkpointTxMap map[string]string) (asset.AssetInput, error) {
-	if assetInput.Type == asset.AssetInputTypeTeleport {
+	if assetInput.Type == asset.AssetTypeTeleport {
 		return assetInput, nil
 	}
 
@@ -364,7 +364,7 @@ func ReconstructAssetInput(assetInput asset.AssetInput, checkpointTxMap map[stri
 	prev := ptx.UnsignedTx.TxIn[0].PreviousOutPoint
 
 	moodifiedInput.Hash = prev.Hash.CloneBytes()
-	moodifiedInput.Vin = prev.Index
+	moodifiedInput.Vin = uint16(prev.Index)
 
 	return moodifiedInput, nil
 }
@@ -577,27 +577,27 @@ func buildAssetCheckpointTx(
 
 	} else {
 
-		var newAsset asset.Asset
+		var newAsset asset.AssetGroup
 
 		newAsset.Inputs = []asset.AssetInput{
 			{
-				Type:   asset.AssetInputTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Vin:    assetInput.Vin,
 				Amount: assetInput.Amount,
 			},
 		}
 		newAsset.Outputs = []asset.AssetOutput{
 			{
-				Type:   asset.AssetOutputTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Amount: assetInput.Amount,
 				Vout:   0,
 			},
 		}
 
 		// TODO (Joshua) Subdust Key is A nightmare
-		newAssetGroup := &asset.AssetGroup{
+		newAssetGroup := &asset.AssetPacket{
 			ControlAssets: nil,
-			NormalAssets:  []asset.Asset{newAsset},
+			NormalAssets:  []asset.AssetGroup{newAsset},
 		}
 
 		assetOpret, err := newAssetGroup.EncodeOpret(0)

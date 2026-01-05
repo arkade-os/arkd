@@ -1112,7 +1112,7 @@ func (s *service) SubmitOffchainTx(
 	}
 	s.cache.OffchainTxs().Add(*offchainTx)
 
-	// Store Asset Details If Present
+	// Store AssetGroup Details If Present
 	if assetGroupIndex >= 0 {
 		if err := s.storeAssetDetailsFromArkTx(
 			ctx, *arkPtx.UnsignedTx, assetGroupIndex,
@@ -3862,7 +3862,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 
 	txouts := arkTx.TxOut
 
-	totalAssets := make([]asset.Asset, 0)
+	totalAssets := make([]asset.AssetGroup, 0)
 
 	uniqueControlAssetsIndex := make(map[int]struct{})
 
@@ -3882,9 +3882,9 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 			totalInputAmount += uint64(in.Amount)
 		}
 
-		// verify Asset Reissuance / buring
+		// verify AssetGroup Reissuance / buring
 		if len(controlAssets) > 0 && totalInputAmount != totalOuputAmount {
-			// Find the control asset matching the Normal Asset's ControlAssetId
+			// Find the control asset matching the Normal AssetGroup's ControlAssetId
 			foundControlAsset := false
 
 			for i, ca := range controlAssets {
@@ -3916,7 +3916,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 
 		// Validate that each asset input refers to a valid offchain transaction
 		for _, input := range grpAsset.Inputs {
-			if input.Type == asset.AssetInputTypeTeleport {
+			if input.Type == asset.AssetTypeTeleport {
 				// Verify commitment matches hash of witness
 				expectedHash := asset.CalculateTeleportHash(input.Witness.Script, input.Witness.Nonce)
 				if !bytes.Equal(input.Commitment[:], expectedHash[:]) {
@@ -3975,11 +3975,11 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 	return nil
 }
 
-func ensureUniqueAssetVouts(assets []asset.Asset) error {
-	seen := make(map[uint32]struct{})
+func ensureUniqueAssetVouts(assets []asset.AssetGroup) error {
+	seen := make(map[uint16]struct{})
 	for _, grpAsset := range assets {
 		for _, out := range grpAsset.Outputs {
-			if out.Type != asset.AssetOutputTypeLocal {
+			if out.Type != asset.AssetTypeLocal {
 				continue
 			}
 			if _, exists := seen[out.Vout]; exists {
@@ -4009,7 +4009,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 		for _, in := range normalAsset.Inputs {
 			totalIn += in.Amount
 
-			if in.Type == asset.AssetInputTypeTeleport {
+			if in.Type == asset.AssetTypeTeleport {
 				s.repoManager.Assets().UpdateTeleportAsset(ctx, hex.EncodeToString(in.Commitment[:]), true)
 			}
 		}
@@ -4026,7 +4026,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 			})
 		}
 
-		var matchedControlAsset *asset.Asset
+		var matchedControlAsset *asset.AssetGroup
 		for _, ca := range controlAssets {
 			if normalAsset.ControlAssetId != nil && ca.AssetId == *normalAsset.ControlAssetId {
 				matchedControlAsset = &ca
@@ -4037,7 +4037,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 		// create new asset If ControlAsset is absent and there are no inputs for normal asset
 		if matchedControlAsset == nil {
 			if len(normalAsset.Inputs) == 0 {
-				err = s.repoManager.Assets().InsertAssetDetails(ctx, domain.AssetDetails{
+				err = s.repoManager.Assets().InsertAssetGroup(ctx, domain.AssetGroup{
 					ID:        normalAssetId,
 					Quantity:  totalOut,
 					Immutable: normalAsset.Immutable,
@@ -4055,7 +4055,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 			}
 		} else {
 			// updates the metadata of the existing asset
-			assetData, err := s.repoManager.Assets().GetAssetDetailsByID(ctx, normalAssetId)
+			assetData, err := s.repoManager.Assets().GetAssetGroupByID(ctx, normalAssetId)
 			if err != nil {
 				return fmt.Errorf("error retrieving asset data: %s", err)
 			}
@@ -4077,14 +4077,14 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 
 			if totalOut > totalIn {
 				delta := totalOut - totalIn
-				err = s.repoManager.Assets().IncreaseAssetQuantity(ctx, normalAssetId, delta)
+				err = s.repoManager.Assets().IncreaseAssetGroupQuantity(ctx, normalAssetId, delta)
 
 				if err != nil {
 					return fmt.Errorf("error updating asset quantity: %s", err)
 				}
 			} else if totalIn > totalOut {
 				delta := totalIn - totalOut
-				err = s.repoManager.Assets().DecreaseAssetQuantity(ctx, normalAssetId, delta)
+				err = s.repoManager.Assets().DecreaseAssetGroupQuantity(ctx, normalAssetId, delta)
 
 				if err != nil {
 					return fmt.Errorf("error updating asset quantity: %s", err)
@@ -4099,7 +4099,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 		VOut: uint32(assetGroupIndex),
 	}
 
-	assetsToStore := make([]asset.Asset, 0)
+	assetsToStore := make([]asset.AssetGroup, 0)
 	assetsToStore = append(assetsToStore, normalAssets...)
 	assetsToStore = append(assetsToStore, controlAssets...)
 
@@ -4111,7 +4111,7 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 			asst := domain.NormalAsset{
 				Outpoint: domain.Outpoint{
 					Txid: arkTx.TxID(),
-					VOut: out.Vout,
+					VOut: uint32(out.Vout),
 				},
 				AssetID: grpAsset.AssetId.ToString(),
 				Amount:  out.Amount,
@@ -4148,8 +4148,14 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
 		}
+		assetOpReturnProcessed := false
 		for i, out := range tx.UnsignedTx.TxOut {
 			if asset.IsAssetGroup(out.PkScript) {
+				if assetOpReturnProcessed {
+					continue
+				}
+				assetOpReturnProcessed = true
+
 				group, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
 				if err == nil {
 					anchorOutpoint := domain.Outpoint{
@@ -4159,7 +4165,7 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 
 					for _, ast := range group.NormalAssets {
 						for outIdx, assetOut := range ast.Outputs {
-							if assetOut.Type == asset.AssetOutputTypeTeleport {
+							if assetOut.Type == asset.AssetTypeTeleport {
 								teleportHash := hex.EncodeToString(assetOut.Commitment[:])
 								events = append(events, TeleportAsset{
 									TeleportHash:   teleportHash,
@@ -4174,7 +4180,7 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 					}
 					for _, ast := range group.ControlAssets {
 						for outIdx, assetOut := range ast.Outputs {
-							if assetOut.Type == asset.AssetOutputTypeTeleport {
+							if assetOut.Type == asset.AssetTypeTeleport {
 								teleportHash := hex.EncodeToString(assetOut.Commitment[:])
 								events = append(events, TeleportAsset{
 									TeleportHash:   teleportHash,

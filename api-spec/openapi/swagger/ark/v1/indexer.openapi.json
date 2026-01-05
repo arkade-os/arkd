@@ -5,13 +5,13 @@
     "version": "version not set"
   },
   "paths": {
-    "/v1/indexer/asset/{asset_id}": {
+    "/v1/indexer/assetGroup/{asset_id}": {
       "get": {
         "tags": [
           "IndexerService"
         ],
         "description": "GetAsset returns the asset information and metadata for the specified asset ID.",
-        "operationId": "IndexerService_GetAssetDetails",
+        "operationId": "IndexerService_GetAssetGroup",
         "parameters": [
           {
             "name": "assetId",
@@ -28,7 +28,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GetAssetDetailsResponse"
+                  "$ref": "#/components/schemas/GetAssetGroupResponse"
                 }
               }
             }
@@ -828,8 +828,8 @@
           }
         }
       },
-      "Asset": {
-        "title": "Asset",
+      "AssetGroup": {
+        "title": "AssetGroup",
         "type": "object",
         "properties": {
           "id": {
@@ -862,8 +862,8 @@
           }
         }
       },
-      "GetAssetDetailsRequest": {
-        "title": "GetAssetDetailsRequest",
+      "GetAssetGroupRequest": {
+        "title": "GetAssetGroupRequest",
         "type": "object",
         "properties": {
           "assetId": {
@@ -871,12 +871,12 @@
           }
         }
       },
-      "GetAssetDetailsResponse": {
-        "title": "GetAssetDetailsResponse",
+      "GetAssetGroupResponse": {
+        "title": "GetAssetGroupResponse",
         "type": "object",
         "properties": {
-          "asset": {
-            "$ref": "#/components/schemas/Asset"
+          "assetGroup": {
+            "$ref": "#/components/schemas/AssetGroup"
           },
           "assetId": {
             "type": "string"

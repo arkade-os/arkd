@@ -19,7 +19,7 @@ type assetRepository struct {
 	store *badgerhold.Store
 }
 
-type assetDetails struct {
+type assetGroup struct {
 	ID        string `badgerhold:"key"`
 	Quantity  uint64
 	Immutable bool
@@ -306,8 +306,8 @@ func (r *assetRepository) GetTeleportAsset(ctx context.Context, hash string) (*d
 	}, nil
 }
 
-func (r *assetRepository) InsertAssetDetails(ctx context.Context, a domain.AssetDetails) error {
-	record := assetDetails{
+func (r *assetRepository) InsertAssetGroup(ctx context.Context, a domain.AssetGroup) error {
+	record := assetGroup{
 		ID:        a.ID,
 		Quantity:  a.Quantity,
 		Immutable: a.Immutable,
@@ -335,8 +335,8 @@ func (r *assetRepository) InsertAssetDetails(ctx context.Context, a domain.Asset
 	})
 }
 
-func (r *assetRepository) GetAssetDetailsByID(ctx context.Context, assetID string) (*domain.AssetDetails, error) {
-	dbAsset, err := r.getAssetDetails(ctx, assetID)
+func (r *assetRepository) GetAssetGroupByID(ctx context.Context, assetID string) (*domain.AssetGroup, error) {
+	dbAsset, err := r.getAssetGroup(ctx, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +346,7 @@ func (r *assetRepository) GetAssetDetailsByID(ctx context.Context, assetID strin
 		return nil, err
 	}
 
-	return &domain.AssetDetails{
+	return &domain.AssetGroup{
 		ID:        dbAsset.ID,
 		Quantity:  dbAsset.Quantity,
 		Immutable: dbAsset.Immutable,
@@ -354,7 +354,7 @@ func (r *assetRepository) GetAssetDetailsByID(ctx context.Context, assetID strin
 	}, nil
 }
 
-func (r *assetRepository) IncreaseAssetQuantity(ctx context.Context, assetID string, amount uint64) error {
+func (r *assetRepository) IncreaseAssetGroupQuantity(ctx context.Context, assetID string, amount uint64) error {
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
 		dbAsset, err := r.getAssetDetailsWithTx(tx, assetID)
 		if err != nil {
@@ -370,7 +370,7 @@ func (r *assetRepository) IncreaseAssetQuantity(ctx context.Context, assetID str
 	})
 }
 
-func (r *assetRepository) DecreaseAssetQuantity(ctx context.Context, assetID string, amount uint64) error {
+func (r *assetRepository) DecreaseAssetGroupQuantity(ctx context.Context, assetID string, amount uint64) error {
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
 		dbAsset, err := r.getAssetDetailsWithTx(tx, assetID)
 		if err != nil {
@@ -438,8 +438,8 @@ func (r *assetRepository) listAnchorAssets(ctx context.Context, anchorID string)
 	return assets, nil
 }
 
-func (r *assetRepository) getAssetDetails(ctx context.Context, assetID string) (*assetDetails, error) {
-	var record assetDetails
+func (r *assetRepository) getAssetGroup(ctx context.Context, assetID string) (*assetGroup, error) {
+	var record assetGroup
 	var err error
 	if tx := getTxFromContext(ctx); tx != nil {
 		err = r.store.TxGet(tx, assetID, &record)
@@ -453,8 +453,8 @@ func (r *assetRepository) getAssetDetails(ctx context.Context, assetID string) (
 	return &record, nil
 }
 
-func (r *assetRepository) getAssetDetailsWithTx(tx *badger.Txn, assetID string) (*assetDetails, error) {
-	var record assetDetails
+func (r *assetRepository) getAssetDetailsWithTx(tx *badger.Txn, assetID string) (*assetGroup, error) {
+	var record assetGroup
 	if err := r.store.TxGet(tx, assetID, &record); err != nil {
 		return nil, err
 	}

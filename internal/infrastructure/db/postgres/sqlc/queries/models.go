@@ -22,7 +22,7 @@ type AssetAnchor struct {
 	AnchorVout int64
 }
 
-type AssetDetail struct {
+type AssetGroup struct {
 	ID        string
 	Immutable bool
 	Quantity  int64

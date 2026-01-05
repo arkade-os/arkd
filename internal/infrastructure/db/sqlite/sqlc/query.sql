@@ -401,29 +401,29 @@ FROM asset
 WHERE anchor_id = ?
 ORDER BY vout;
 
--- name: GetAssetDetails :one
+-- name: GetAssetGroup :one
 SELECT id, quantity, immutable
-FROM asset_details
+FROM asset_group
 WHERE id = ?;
 
 
--- name: ListAssetDetails :many
+-- name: ListAssetGroup :many
 SELECT id, quantity, immutable
-FROM asset_details
+FROM asset_group
 ORDER BY id;
 
 -- name: AddToAssetQuantity :exec
-UPDATE asset_details
+UPDATE asset_group
 SET quantity = quantity + ?
 WHERE id = ?;
 
 -- name: SubtractFromAssetQuantity :exec
-UPDATE asset_details
+UPDATE asset_group
 SET quantity = quantity - ?
 WHERE id = ? AND quantity >= ?;
 
 -- name: CreateAsset :exec
-INSERT INTO asset_details (id, quantity, immutable)
+INSERT INTO asset_group (id, quantity, immutable)
 VALUES (?, ?, ?);
 
 -- name: CreateTeleportAsset :exec

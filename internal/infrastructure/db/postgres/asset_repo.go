@@ -178,19 +178,19 @@ func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string)
 	}, nil
 }
 
-func (r *assetRepository) InsertAssetDetails(ctx context.Context, asset domain.AssetDetails) error {
+func (r *assetRepository) InsertAssetGroup(ctx context.Context, assetGroup domain.AssetGroup) error {
 	err := r.querier.CreateAsset(ctx, queries.CreateAssetParams{
-		ID:        asset.ID,
-		Quantity:  int64(asset.Quantity),
-		Immutable: asset.Immutable,
+		ID:        assetGroup.ID,
+		Quantity:  int64(assetGroup.Quantity),
+		Immutable: assetGroup.Immutable,
 	})
 	if err != nil {
 		return err
 	}
 
-	for _, md := range asset.Metadata {
+	for _, md := range assetGroup.Metadata {
 		err := r.querier.UpsertAssetMetadata(ctx, queries.UpsertAssetMetadataParams{
-			AssetID:   asset.ID,
+			AssetID:   assetGroup.ID,
 			MetaKey:   md.Key,
 			MetaValue: md.Value,
 		})
@@ -202,8 +202,8 @@ func (r *assetRepository) InsertAssetDetails(ctx context.Context, asset domain.A
 	return nil
 }
 
-func (r *assetRepository) GetAssetDetailsByID(ctx context.Context, assetID string) (*domain.AssetDetails, error) {
-	assetDB, err := r.querier.GetAssetDetails(ctx, assetID)
+func (r *assetRepository) GetAssetGroupByID(ctx context.Context, assetID string) (*domain.AssetGroup, error) {
+	assetDB, err := r.querier.GetAssetGroup(ctx, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func (r *assetRepository) GetAssetDetailsByID(ctx context.Context, assetID strin
 		})
 	}
 
-	return &domain.AssetDetails{
+	return &domain.AssetGroup{
 		ID:        assetDB.ID,
 		Quantity:  uint64(assetDB.Quantity),
 		Immutable: assetDB.Immutable,
@@ -229,14 +229,14 @@ func (r *assetRepository) GetAssetDetailsByID(ctx context.Context, assetID strin
 	}, nil
 }
 
-func (r *assetRepository) IncreaseAssetQuantity(ctx context.Context, assetID string, amount uint64) error {
+func (r *assetRepository) IncreaseAssetGroupQuantity(ctx context.Context, assetID string, amount uint64) error {
 	return r.querier.AddToAssetQuantity(ctx, queries.AddToAssetQuantityParams{
 		ID:       assetID,
 		Quantity: int64(amount),
 	})
 }
 
-func (r *assetRepository) DecreaseAssetQuantity(ctx context.Context, assetID string, amount uint64) error {
+func (r *assetRepository) DecreaseAssetGroupQuantity(ctx context.Context, assetID string, amount uint64) error {
 	return r.querier.SubtractFromAssetQuantity(ctx, queries.SubtractFromAssetQuantityParams{
 		ID:       assetID,
 		Quantity: int64(amount),

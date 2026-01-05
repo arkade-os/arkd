@@ -16,7 +16,7 @@ type NormalAsset struct {
 	AssetID string
 }
 
-type AssetDetails struct {
+type AssetGroup struct {
 	ID        string
 	Quantity  uint64
 	Immutable bool

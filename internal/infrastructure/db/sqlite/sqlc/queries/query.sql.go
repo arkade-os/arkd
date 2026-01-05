@@ -36,7 +36,7 @@ func (q *Queries) AddAsset(ctx context.Context, arg AddAssetParams) error {
 }
 
 const addToAssetQuantity = `-- name: AddToAssetQuantity :exec
-UPDATE asset_details
+UPDATE asset_group
 SET quantity = quantity + ?
 WHERE id = ?
 `
@@ -61,7 +61,7 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 }
 
 const createAsset = `-- name: CreateAsset :exec
-INSERT INTO asset_details (id, quantity, immutable)
+INSERT INTO asset_group (id, quantity, immutable)
 VALUES (?, ?, ?)
 `
 
@@ -174,21 +174,21 @@ func (q *Queries) GetAssetAnchor(ctx context.Context, anchorTxid string) (AssetA
 	return i, err
 }
 
-const getAssetDetails = `-- name: GetAssetDetails :one
+const getAssetGroup = `-- name: GetAssetGroup :one
 SELECT id, quantity, immutable
-FROM asset_details
+FROM asset_group
 WHERE id = ?
 `
 
-type GetAssetDetailsRow struct {
+type GetAssetGroupRow struct {
 	ID        string
 	Quantity  int64
 	Immutable bool
 }
 
-func (q *Queries) GetAssetDetails(ctx context.Context, id string) (GetAssetDetailsRow, error) {
-	row := q.db.QueryRowContext(ctx, getAssetDetails, id)
-	var i GetAssetDetailsRow
+func (q *Queries) GetAssetGroup(ctx context.Context, id string) (GetAssetGroupRow, error) {
+	row := q.db.QueryRowContext(ctx, getAssetGroup, id)
+	var i GetAssetGroupRow
 	err := row.Scan(&i.ID, &i.Quantity, &i.Immutable)
 	return i, err
 }
@@ -311,27 +311,27 @@ func (q *Queries) ListAssetAnchorsByAssetID(ctx context.Context, assetID string)
 	return items, nil
 }
 
-const listAssetDetails = `-- name: ListAssetDetails :many
+const listAssetGroup = `-- name: ListAssetGroup :many
 SELECT id, quantity, immutable
-FROM asset_details
+FROM asset_group
 ORDER BY id
 `
 
-type ListAssetDetailsRow struct {
+type ListAssetGroupRow struct {
 	ID        string
 	Quantity  int64
 	Immutable bool
 }
 
-func (q *Queries) ListAssetDetails(ctx context.Context) ([]ListAssetDetailsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAssetDetails)
+func (q *Queries) ListAssetGroup(ctx context.Context) ([]ListAssetGroupRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAssetGroup)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListAssetDetailsRow
+	var items []ListAssetGroupRow
 	for rows.Next() {
-		var i ListAssetDetailsRow
+		var i ListAssetGroupRow
 		if err := rows.Scan(&i.ID, &i.Quantity, &i.Immutable); err != nil {
 			return nil, err
 		}
@@ -1716,7 +1716,7 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkey []string) (
 }
 
 const subtractFromAssetQuantity = `-- name: SubtractFromAssetQuantity :exec
-UPDATE asset_details
+UPDATE asset_group
 SET quantity = quantity - ?
 WHERE id = ? AND quantity >= ?
 `

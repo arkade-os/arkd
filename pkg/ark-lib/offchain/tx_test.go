@@ -31,17 +31,17 @@ func TestRebuildAssetTxs(t *testing.T) {
 	var txidHash [32]byte
 	copy(txidHash[:], txid[:])
 
-	assetGroup := &asset.AssetGroup{
-		NormalAssets: []asset.Asset{{
+	assetGroup := &asset.AssetPacket{
+		NormalAssets: []asset.AssetGroup{{
 			AssetId: asset.AssetId{TxId: txidHash, Index: 0},
 			Inputs: []asset.AssetInput{{
-				Type:   asset.AssetInputTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Hash:   vtxo.Outpoint.Hash.CloneBytes(),
 				Vin:    0,
 				Amount: 5,
 			}},
 			Outputs: []asset.AssetOutput{{
-				Type:   asset.AssetOutputTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Vout:   0,
 				Amount: 5,
 			}},
@@ -144,18 +144,18 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	var caID [32]byte
 	copy(caID[:], caIDHash[:])
 
-	controlAsset := asset.Asset{
+	controlAsset := asset.AssetGroup{
 		AssetId:        asset.AssetId{TxId: caID, Index: 0},
 		ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
-			Type:   asset.AssetInputTypeLocal,
+			Type:   asset.AssetTypeLocal,
 			Hash:   controlVtxo.Outpoint.Hash.CloneBytes(),
 			Vin:    0,
 			Amount: 7,
 		}},
 		Outputs: []asset.AssetOutput{
 			{
-				Type:   asset.AssetOutputTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Amount: 1,
 				Vout:   0,
 			},
@@ -163,18 +163,18 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		Metadata: []asset.Metadata{{Key: "type", Value: "control"}},
 	}
 
-	normalAsset := asset.Asset{
+	normalAsset := asset.AssetGroup{
 		AssetId:        asset.AssetId{TxId: assetID, Index: 0},
 		ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
-			Type:   asset.AssetInputTypeLocal,
+			Type:   asset.AssetTypeLocal,
 			Hash:   normalVtxo.Outpoint.Hash.CloneBytes(),
 			Vin:    0,
 			Amount: 5,
 		}},
 		Outputs: []asset.AssetOutput{
 			{
-				Type:   asset.AssetOutputTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Amount: 100,
 				Vout:   0,
 			},
@@ -182,9 +182,9 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		Metadata: []asset.Metadata{{Key: "type", Value: "normal"}},
 	}
 
-	assetGroup := &asset.AssetGroup{
-		ControlAssets: []asset.Asset{controlAsset},
-		NormalAssets:  []asset.Asset{normalAsset},
+	assetGroup := &asset.AssetPacket{
+		ControlAssets: []asset.AssetGroup{controlAsset},
+		NormalAssets:  []asset.AssetGroup{normalAsset},
 		SubDustKey:    normalTapKey,
 	}
 	opret, err := assetGroup.EncodeOpret(0)
@@ -271,7 +271,7 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 	}
 
 	for _, in := range rebuiltGroup.ControlAssets[0].Inputs {
-		require.Equal(t, asset.AssetInputTypeLocal, in.Type)
+		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		var found bool
 		for _, cp := range rebuiltCheckpoints {
 			txHash := cp.UnsignedTx.TxHash()
@@ -283,7 +283,7 @@ func TestRebuildAssetTxsWithControlAsset(t *testing.T) {
 		require.True(t, found)
 	}
 	for _, in := range rebuiltGroup.NormalAssets[0].Inputs {
-		require.Equal(t, asset.AssetInputTypeLocal, in.Type)
+		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		var found bool
 		for _, cp := range rebuiltCheckpoints {
 			txHash := cp.UnsignedTx.TxHash()

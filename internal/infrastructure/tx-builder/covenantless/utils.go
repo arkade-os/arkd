@@ -65,7 +65,7 @@ func getOutputVtxosLeaves(
 				continue
 			}
 
-			// Asset teleport case
+			// AssetGroup teleport case
 			if len(receiver.AssetId) > 0 {
 				leaf, err := buildTeleportAssetLeaf(
 					receiver,
@@ -116,7 +116,7 @@ func taprootOutputScript(taprootKey *btcec.PublicKey) ([]byte, error) {
 
 func getAssetFromIntents(
 	intents []domain.Intent, assetId *asset.AssetId,
-) (*asset.Asset, error) {
+) (*asset.AssetGroup, error) {
 
 	for _, intent := range intents {
 		for _, assetGroup := range intent.AssetGroupList {
@@ -171,15 +171,15 @@ func buildTeleportAssetLeaf(
 	var h [32]byte
 	copy(h[:], hash)
 	assetCopy.Outputs = []asset.AssetOutput{{
-		Type:       asset.AssetOutputTypeTeleport,
+		Type:       asset.AssetTypeTeleport,
 		Commitment: h,
 		Amount:     receiver.Amount,
 	}}
 	assetCopy.Inputs = nil
 
-	assetGroup := &asset.AssetGroup{
+	assetGroup := &asset.AssetPacket{
 		ControlAssets: nil,
-		NormalAssets:  []asset.Asset{assetCopy},
+		NormalAssets:  []asset.AssetGroup{assetCopy},
 	}
 
 	assetOpret, err := assetGroup.EncodeOpret(0)

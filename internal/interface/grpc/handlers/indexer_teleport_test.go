@@ -21,12 +21,12 @@ type mockIndexerService struct {
 	mock.Mock
 }
 
-func (m *mockIndexerService) GetAsset(ctx context.Context, assetId string) (*application.AssetMetadataResp, error) {
+func (m *mockIndexerService) GetAssetGroup(ctx context.Context, assetId string) (*application.AssetGroupResp, error) {
 	args := m.Called(ctx, assetId)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*application.AssetMetadataResp), args.Error(1)
+	return args.Get(0).(*application.AssetGroupResp), args.Error(1)
 }
 func (m *mockIndexerService) GetCommitmentTxInfo(ctx context.Context, txid string) (*application.CommitmentTxInfo, error) {
 	return nil, nil
@@ -83,17 +83,17 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 	eventsCh := make(chan application.TransactionEvent)
 	svc := NewIndexerService(mockSvc, eventsCh, time.Minute, 5)
 
-	// Create Asset Group with Teleport Output
+	// Create AssetGroup Group with Teleport Output
 	teleportHashBytes, _ := hex.DecodeString("deadbeef")
 	var commitment [32]byte
 	copy(commitment[:], teleportHashBytes)
 
-	assetGroup := asset.AssetGroup{
-		NormalAssets: []asset.Asset{
+	assetGroup := asset.AssetPacket{
+		NormalAssets: []asset.AssetGroup{
 			{
 				Outputs: []asset.AssetOutput{
 					{
-						Type:       asset.AssetOutputTypeTeleport,
+						Type:       asset.AssetTypeTeleport,
 						Commitment: commitment,
 					},
 				},

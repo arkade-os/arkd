@@ -47,32 +47,32 @@ func NewIndexerService(
 	return svc
 }
 
-func (e *indexerService) GetAssetDetails(ctx context.Context, request *arkv1.GetAssetDetailsRequest,
-) (*arkv1.GetAssetDetailsResponse, error) {
+func (e *indexerService) GetAssetGroup(ctx context.Context, request *arkv1.GetAssetGroupRequest,
+) (*arkv1.GetAssetGroupResponse, error) {
 	assetId := request.GetAssetId()
 	if assetId == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "missing asset id")
 	}
 
-	resp, err := e.indexerSvc.GetAssetDetails(ctx, assetId)
+	resp, err := e.indexerSvc.GetAssetGroup(ctx, assetId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	assetMetadata := make([]*arkv1.AssetMetadata, 0)
-	for _, metadata := range resp.AssetDetails.Metadata {
+	for _, metadata := range resp.AssetGroup.Metadata {
 		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
 			Key:   metadata.Key,
 			Value: metadata.Value,
 		})
 	}
 
-	return &arkv1.GetAssetDetailsResponse{
+	return &arkv1.GetAssetGroupResponse{
 		AssetId: assetId,
-		Asset: &arkv1.Asset{
-			Id:        resp.AssetDetails.ID,
-			Quantity:  resp.AssetDetails.Quantity,
-			Immutable: resp.AssetDetails.Immutable,
+		AssetGroup: &arkv1.AssetGroup{
+			Id:        resp.AssetGroup.ID,
+			Quantity:  resp.AssetGroup.Quantity,
+			Immutable: resp.AssetGroup.Immutable,
 			Metadata:  assetMetadata,
 		},
 	}, nil
@@ -819,10 +819,10 @@ func parseScript(script string) (string, error) {
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 	var asst *arkv1.IndexerAsset
-	if vtxo.Asset != nil {
+	if vtxo.AssetGroup != nil {
 		asst = &arkv1.IndexerAsset{
-			AssetId: vtxo.Asset.AssetID,
-			Amount:  vtxo.Asset.Amount,
+			AssetId: vtxo.AssetGroup.AssetID,
+			Amount:  vtxo.AssetGroup.Amount,
 		}
 	}
 	return &arkv1.IndexerVtxo{

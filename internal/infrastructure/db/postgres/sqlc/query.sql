@@ -396,28 +396,28 @@ FROM asset
 WHERE anchor_id = @anchor_id
 ORDER BY vout;
 
--- name: GetAssetDetails :one
+-- name: GetAssetGroup :one
 SELECT id, quantity, immutable
-FROM asset_details
+FROM asset_group
 WHERE id = @id;
 
--- name: ListAssetDetails :many
+-- name: ListAssetGroup :many
 SELECT id, quantity, immutable
-FROM asset_details
+FROM asset_group
 ORDER BY id;
 
 -- name: AddToAssetQuantity :exec
-UPDATE asset_details
+UPDATE asset_group
 SET quantity = quantity + @quantity
 WHERE id = @id;
 
 -- name: SubtractFromAssetQuantity :exec
-UPDATE asset_details
+UPDATE asset_group
 SET quantity = quantity - @quantity
 WHERE id = @id AND quantity >= @quantity;
 
 -- name: CreateAsset :exec
-INSERT INTO asset_details (id, quantity, immutable)
+INSERT INTO asset_group (id, quantity, immutable)
 VALUES (@id, @quantity, @immutable);
 
 -- name: CreateTeleportAsset :exec

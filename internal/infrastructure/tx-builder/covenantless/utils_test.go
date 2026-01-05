@@ -26,7 +26,7 @@ func TestGetAssetFromIntentsWithMultipleAssetGroups(t *testing.T) {
 	require.Equal(t, asset1.AssetId, foundAsset.AssetId)
 }
 
-func newTestAssetGroup(t *testing.T, idHex string) (asset.Asset, []byte) {
+func newTestAssetGroup(t *testing.T, idHex string) (asset.AssetGroup, []byte) {
 	t.Helper()
 
 	idBytes, err := hex.DecodeString(idHex)
@@ -39,20 +39,20 @@ func newTestAssetGroup(t *testing.T, idHex string) (asset.Asset, []byte) {
 	privKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	testAsset := asset.Asset{
+	testAsset := asset.AssetGroup{
 		AssetId: asset.AssetId{
 			TxId:  id,
 			Index: 0,
 		},
 		Outputs: []asset.AssetOutput{{
-			Type:   asset.AssetOutputTypeLocal,
+			Type:   asset.AssetTypeLocal,
 			Vout:   0,
 			Amount: 100,
 		}},
 	}
 
-	group := asset.AssetGroup{
-		NormalAssets: []asset.Asset{testAsset},
+	group := asset.AssetPacket{
+		NormalAssets: []asset.AssetGroup{testAsset},
 		SubDustKey:   privKey.PubKey(),
 	}
 

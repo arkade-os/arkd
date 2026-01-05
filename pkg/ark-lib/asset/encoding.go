@@ -22,7 +22,7 @@ func EAssetId(w io.Writer, val interface{}, buf *[8]byte) error {
 		if err := tlv.EBytes32(w, &t.TxId, buf); err != nil {
 			return err
 		}
-		if err := tlv.EUint32(w, &t.Index, buf); err != nil {
+		if err := tlv.EUint16(w, &t.Index, buf); err != nil {
 			return err
 		}
 		return nil
@@ -31,37 +31,37 @@ func EAssetId(w io.Writer, val interface{}, buf *[8]byte) error {
 }
 
 func DAssetId(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*AssetId); ok && l == 36 {
+	if t, ok := val.(*AssetId); ok && l == 34 {
 		if err := tlv.DBytes32(r, &t.TxId, buf, 32); err != nil {
 			return err
 		}
-		if err := tlv.DUint32(r, &t.Index, buf, 4); err != nil {
+		if err := tlv.DUint16(r, &t.Index, buf, 2); err != nil {
 			return err
 		}
 		return nil
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetId", l, 36)
+	return tlv.NewTypeForDecodingErr(val, "assetId", l, 34)
 }
 
 func DAssetIdPtr(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(**AssetId); ok && l == 36 {
+	if t, ok := val.(**AssetId); ok && l == 34 {
 		if *t == nil {
 			*t = &AssetId{}
 		}
 		if err := tlv.DBytes32(r, &(*t).TxId, buf, 32); err != nil {
 			return err
 		}
-		if err := tlv.DUint32(r, &(*t).Index, buf, 4); err != nil {
+		if err := tlv.DUint16(r, &(*t).Index, buf, 2); err != nil {
 			return err
 		}
 		return nil
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetId", l, 36)
+	return tlv.NewTypeForDecodingErr(val, "assetId", l, 34)
 }
 
 func AssetIdSize(val *AssetId) tlv.SizeFunc {
 	return func() uint64 {
-		return 36
+		return 34
 	}
 }
 
@@ -71,21 +71,21 @@ func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {
 			return err
 		}
 
-		switch t.Type {
-		case AssetInputTypeLocal:
-			if err := tlv.EUint32(w, &t.Vin, buf); err != nil {
-				return err
-			}
+	switch t.Type {
+	case AssetTypeLocal:
+		if err := tlv.EUint16(w, &t.Vin, buf); err != nil {
+			return err
+		}
 			if err := tlv.WriteVarInt(w, uint64(len(t.Hash)), buf); err != nil {
 				return err
 			}
 			if _, err := w.Write(t.Hash); err != nil {
 				return err
 			}
-		case AssetInputTypeTeleport:
-			if err := tlv.EBytes32(w, &t.Commitment, buf); err != nil {
-				return err
-			}
+	case AssetTypeTeleport:
+		if err := tlv.EBytes32(w, &t.Commitment, buf); err != nil {
+			return err
+		}
 
 			if err := tlv.WriteVarInt(w, uint64(len(t.Witness.Script)), buf); err != nil {
 				return err
@@ -125,17 +125,17 @@ func EAssetInputList(w io.Writer, val interface{}, buf *[8]byte) error {
 func AssetInputListSize(inputs []AssetInput) tlv.SizeFunc {
 	return func() uint64 {
 		var size uint64
-		for _, input := range inputs {
-			size += 1 // Type
-			switch input.Type {
-			case AssetInputTypeLocal:
-				size += 4 // Vin
-				size += uint64(tlv.VarIntSize(uint64(len(input.Hash))))
-				size += uint64(len(input.Hash))
-			case AssetInputTypeTeleport:
-				size += 32 // Commitment
-				size += uint64(tlv.VarIntSize(uint64(len(input.Witness.Script))))
-				size += uint64(len(input.Witness.Script))
+	for _, input := range inputs {
+		size += 1 // Type
+		switch input.Type {
+		case AssetTypeLocal:
+			size += 2 // Vin
+			size += uint64(tlv.VarIntSize(uint64(len(input.Hash))))
+			size += uint64(len(input.Hash))
+		case AssetTypeTeleport:
+			size += 32 // Commitment
+			size += uint64(tlv.VarIntSize(uint64(len(input.Witness.Script))))
+			size += uint64(len(input.Witness.Script))
 				size += 32 // Nonce
 			}
 			size += 8 // Amount
@@ -150,17 +150,17 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		if err := tlv.DUint8(r, &typ, buf, 1); err != nil {
 			return err
 		}
-		t.Type = AssetInputType(typ)
+		t.Type = AssetType(typ)
 
 		var expectedLen uint64
 		switch t.Type {
-		case AssetInputTypeLocal:
-			// 1 (Type) + 4 (Vin) + 1 (TxId length min) + 8 (Amount)
-			expectedLen = 14
+		case AssetTypeLocal:
+			// 1 (Type) + 2 (Vin) + 1 (TxId length min) + 8 (Amount)
+			expectedLen = 12
 			if l < expectedLen {
 				return fmt.Errorf("invalid asset input length: got %d, want at least %d", l, expectedLen)
 			}
-		case AssetInputTypeTeleport:
+		case AssetTypeTeleport:
 			// Teleport is variable length due to script
 			if l < 1+32+1+32+8 { // Minimum length
 				return fmt.Errorf("invalid asset input length: got %d", l)
@@ -170,8 +170,8 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		}
 
 		switch t.Type {
-		case AssetInputTypeLocal:
-			if err := tlv.DUint32(r, &t.Vin, buf, 4); err != nil {
+		case AssetTypeLocal:
+			if err := tlv.DUint16(r, &t.Vin, buf, 2); err != nil {
 				return err
 			}
 
@@ -179,11 +179,15 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 			if err != nil {
 				return err
 			}
-			t.Hash = make([]byte, txIdLen)
-			if _, err := io.ReadFull(r, t.Hash); err != nil {
-				return err
+			if txIdLen > 0 {
+				t.Hash = make([]byte, txIdLen)
+				if _, err := io.ReadFull(r, t.Hash); err != nil {
+					return err
+				}
+			} else {
+				t.Hash = nil
 			}
-		case AssetInputTypeTeleport:
+		case AssetTypeTeleport:
 			if err := tlv.DBytes32(r, &t.Commitment, buf, 32); err != nil {
 				return err
 			}
@@ -238,10 +242,10 @@ func DAssetInputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error
 			reader.UnreadByte()
 
 			var itemLen uint64
-			switch AssetInputType(typesByte) {
-			case AssetInputTypeLocal:
-				itemLen = 1 + 4 + 1 + 8 // Minimum: Type + Vin + TxIdLen(1) + Amount
-			case AssetInputTypeTeleport:
+			switch AssetType(typesByte) {
+			case AssetTypeLocal:
+				itemLen = 1 + 2 + 1 + 8 // Minimum: Type + Vin + TxIdLen(1) + Amount
+			case AssetTypeTeleport:
 				itemLen = 1 + 32 + 1 + 32 + 8 // Minimum length: Type + Commitment + ScriptLen(1) + Nonce + Amount
 			default:
 				return fmt.Errorf("unknown asset input type: %d", typesByte)
@@ -274,11 +278,11 @@ func EAssetOutput(w io.Writer, val interface{}, buf *[8]byte) error {
 		}
 
 		switch t.Type {
-		case AssetOutputTypeLocal:
-			if err := tlv.EUint32(w, &t.Vout, buf); err != nil {
+		case AssetTypeLocal:
+			if err := tlv.EUint16(w, &t.Vout, buf); err != nil {
 				return err
 			}
-		case AssetOutputTypeTeleport:
+		case AssetTypeTeleport:
 			if err := tlv.EBytes32(w, &t.Commitment, buf); err != nil {
 				return err
 			}
@@ -300,9 +304,9 @@ func AssetOutputListSize(outputs []AssetOutput) tlv.SizeFunc {
 		for _, output := range outputs {
 			size += 1 // Type
 			switch output.Type {
-			case AssetOutputTypeLocal:
-				size += 4 // Vout
-			case AssetOutputTypeTeleport:
+			case AssetTypeLocal:
+				size += 2 // Vout
+			case AssetTypeTeleport:
 				// size += 33 // PublicKey -- Removed
 				size += 32 // Commitment
 			}
@@ -330,13 +334,13 @@ func DAssetOutput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		if err := tlv.DUint8(r, &typ, buf, 1); err != nil {
 			return err
 		}
-		t.Type = AssetOutputType(typ)
+		t.Type = AssetType(typ)
 
 		var expectedLen uint64
 		switch t.Type {
-		case AssetOutputTypeLocal:
-			expectedLen = 1 + 4 + 8 // Type + Vout + Amount
-		case AssetOutputTypeTeleport:
+		case AssetTypeLocal:
+			expectedLen = 1 + 2 + 8 // Type + Vout + Amount
+		case AssetTypeTeleport:
 			expectedLen = 1 + 32 + 8 // Type + Commitment + Amount
 		default:
 			return fmt.Errorf("unknown asset output type: %d", t.Type)
@@ -347,11 +351,11 @@ func DAssetOutput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		}
 
 		switch t.Type {
-		case AssetOutputTypeLocal:
-			if err := tlv.DUint32(r, &t.Vout, buf, 4); err != nil {
+		case AssetTypeLocal:
+			if err := tlv.DUint16(r, &t.Vout, buf, 2); err != nil {
 				return err
 			}
-		case AssetOutputTypeTeleport:
+		case AssetTypeTeleport:
 			// No PublicKey read
 			if err := tlv.DBytes32(r, &t.Commitment, buf, 32); err != nil {
 				return err
@@ -391,10 +395,10 @@ func DAssetOutputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) erro
 			reader.UnreadByte()
 
 			var itemLen uint64
-			switch AssetOutputType(typeByte) {
-			case AssetOutputTypeLocal:
-				itemLen = 1 + 4 + 8
-			case AssetOutputTypeTeleport:
+			switch AssetType(typeByte) {
+			case AssetTypeLocal:
+				itemLen = 1 + 2 + 8
+			case AssetTypeTeleport:
 				itemLen = 1 + 32 + 8
 			default:
 				return fmt.Errorf("unknown asset output type: %d", typeByte)

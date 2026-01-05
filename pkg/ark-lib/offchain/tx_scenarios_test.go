@@ -31,7 +31,7 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 	})
 
 	// Helper function to run a scenario
-	runScenario := func(t *testing.T, assetGroup *asset.AssetGroup, vtxos []VtxoInput) {
+	runScenario := func(t *testing.T, assetGroup *asset.AssetPacket, vtxos []VtxoInput) {
 		var outputs []*wire.TxOut
 
 		// Add outputs for each vtxo
@@ -108,7 +108,7 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 		// assert inputs use Local and point to checkpoints
 		checkInputs := func(inputs []asset.AssetInput) {
 			for _, in := range inputs {
-				require.Equal(t, asset.AssetInputTypeLocal, in.Type)
+				require.Equal(t, asset.AssetTypeLocal, in.Type)
 
 				// Check that we can find a checkpoint that produces this TxHash
 				var found bool
@@ -119,7 +119,7 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 						break
 					}
 				}
-				require.True(t, found, "Asset input should point to a checkpoint")
+				require.True(t, found, "AssetGroup input should point to a checkpoint")
 			}
 		}
 
@@ -146,18 +146,18 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 		var assetID2 [32]byte
 		copy(assetID2[:], assetID2Hash[:])
 
-		assetGroup := &asset.AssetGroup{
-			NormalAssets: []asset.Asset{
+		assetGroup := &asset.AssetPacket{
+			NormalAssets: []asset.AssetGroup{
 				{
 					AssetId: asset.AssetId{TxId: assetID, Index: 0},
 					Inputs: []asset.AssetInput{{
-						Type:   asset.AssetInputTypeLocal,
+						Type:   asset.AssetTypeLocal,
 						Hash:   vtxo.Outpoint.Hash.CloneBytes(),
 						Vin:    0,
 						Amount: 5,
 					}},
 					Outputs: []asset.AssetOutput{{
-						Type:   asset.AssetOutputTypeLocal,
+						Type:   asset.AssetTypeLocal,
 						Vout:   0,
 						Amount: 5,
 					}},
@@ -165,13 +165,13 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 				{
 					AssetId: asset.AssetId{TxId: assetID2, Index: 0},
 					Inputs: []asset.AssetInput{{
-						Type:   asset.AssetInputTypeLocal,
+						Type:   asset.AssetTypeLocal,
 						Hash:   vtxo2.Outpoint.Hash.CloneBytes(),
 						Vin:    0,
 						Amount: 10,
 					}},
 					Outputs: []asset.AssetOutput{{
-						Type:   asset.AssetOutputTypeLocal,
+						Type:   asset.AssetTypeLocal,
 						Vout:   0,
 						Amount: 10,
 					}},
@@ -197,34 +197,34 @@ func TestRebuildAssetTxsScenarios(t *testing.T) {
 		var assetID2 [32]byte
 		copy(assetID2[:], assetID2Hash[:])
 
-		assetGroup := &asset.AssetGroup{
-			ControlAssets: []asset.Asset{{
+		assetGroup := &asset.AssetPacket{
+			ControlAssets: []asset.AssetGroup{{
 				AssetId:        asset.AssetId{TxId: caID, Index: 0},
 				ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 				Inputs: []asset.AssetInput{{
-					Type:   asset.AssetInputTypeLocal,
+					Type:   asset.AssetTypeLocal,
 					Hash:   vtxo.Outpoint.Hash.CloneBytes(),
 					Vin:    0,
 					Amount: 1,
 				}},
 				Outputs: []asset.AssetOutput{{
-					Type:   asset.AssetOutputTypeLocal,
+					Type:   asset.AssetTypeLocal,
 					Vout:   0,
 					Amount: 1,
 				}},
 			}},
-			NormalAssets: []asset.Asset{
+			NormalAssets: []asset.AssetGroup{
 				{
 					AssetId:        asset.AssetId{TxId: assetID, Index: 0},
 					ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
 					Inputs: []asset.AssetInput{{
-						Type:   asset.AssetInputTypeLocal,
+						Type:   asset.AssetTypeLocal,
 						Hash:   vtxo2.Outpoint.Hash.CloneBytes(),
 						Vin:    0,
 						Amount: 5,
 					}},
 					Outputs: []asset.AssetOutput{{
-						Type:   asset.AssetOutputTypeLocal,
+						Type:   asset.AssetTypeLocal,
 						Vout:   0,
 						Amount: 5,
 					}},

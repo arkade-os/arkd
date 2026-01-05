@@ -76,9 +76,9 @@ service IndexerService {
   }
 
   // GetAsset returns the asset information and metadata for the specified asset ID.
-  rpc GetAssetDetails(GetAssetDetailsRequest) returns (GetAssetDetailsResponse) {
+  rpc GetAssetGroup(GetAssetGroupRequest) returns (GetAssetGroupResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/indexer/asset/{asset_id}"
+      get: "/v1/indexer/assetGroup/{asset_id}"
     };
   }
 
@@ -235,16 +235,16 @@ message GetVirtualTxsResponse {
   IndexerPageResponse page = 2;
 }
 
-message GetAssetDetailsRequest {
+message GetAssetGroupRequest {
   string asset_id = 1;
 }
 
-message GetAssetDetailsResponse {
+message GetAssetGroupResponse {
   string asset_id = 1;
-  Asset asset = 2;
+  AssetGroup asset_group = 2;
 }
 
-message Asset {
+message AssetGroup {
   string id = 1;
   uint64 quantity = 2;
   bool immutable = 3;

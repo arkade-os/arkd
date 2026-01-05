@@ -174,13 +174,13 @@ type VirtualTxsResp struct {
 	Page PageResp
 }
 
-type AssetDetailsResp struct {
+type AssetGroupResp struct {
 	AssetID         string
-	AssetDetails    AssetDetails
+	AssetGroup      AssetGroup
 	AnchorOutpoints []Outpoint
 }
 
-type AssetDetails = domain.AssetDetails
+type AssetGroup = domain.AssetGroup
 
 type AssetAnchor = domain.AssetAnchor
 

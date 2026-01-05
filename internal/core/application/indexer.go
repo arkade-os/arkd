@@ -40,7 +40,7 @@ type IndexerService interface {
 	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error)
 	GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
-	GetAssetDetails(ctx context.Context, assetID string) (*AssetDetailsResp, error)
+	GetAssetGroup(ctx context.Context, assetID string) (*AssetGroupResp, error)
 }
 
 type indexerService struct {
@@ -96,10 +96,10 @@ func (i *indexerService) GetVtxoTree(
 	}, nil
 }
 
-func (i *indexerService) GetAssetDetails(
+func (i *indexerService) GetAssetGroup(
 	ctx context.Context, assetID string,
-) (*AssetDetailsResp, error) {
-	asset, err := i.repoManager.Assets().GetAssetDetailsByID(ctx, assetID)
+) (*AssetGroupResp, error) {
+	asset, err := i.repoManager.Assets().GetAssetGroupByID(ctx, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -118,9 +118,9 @@ func (i *indexerService) GetAssetDetails(
 		})
 	}
 
-	return &AssetDetailsResp{
+	return &AssetGroupResp{
 		AssetID:         assetID,
-		AssetDetails:    *asset,
+		AssetGroup:      *asset,
 		AnchorOutpoints: assetAnchors,
 	}, nil
 }
@@ -224,7 +224,7 @@ func (i *indexerService) GetVtxos(
 		// add asset to vtxo if present
 		asst, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
 		if err == nil && asst != nil {
-			allVtxos[j].Asset = asst
+			allVtxos[j].AssetGroup = asst
 		}
 	}
 
@@ -246,7 +246,7 @@ func (i *indexerService) GetVtxosByOutpoint(
 		// add asset to vtxo if present
 		asst, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
 		if err == nil && asst != nil {
-			allVtxos[j].Asset = asst
+			allVtxos[j].AssetGroup = asst
 		}
 	}
 
