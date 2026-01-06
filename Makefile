@@ -1,4 +1,4 @@
-.PHONY: build build-all clean cov docker-run docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate pprof psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner run-simulation run-simulation-and-setup run-large-simulation run-simulation-exact-batch run-simulation-min-batch run-simulation-custom sqlc test vet
+.PHONY: build build-all clean cov docker-run docker-run-light docker-stop droppg droppgtest help integrationtest lint migrate pg pgsqlc pgtest pgmigrate pprof psql proto proto-lint run run-light run-signer run-wallet run-wallet-nosigner run-simulation run-simulation-and-setup run-large-simulation run-simulation-exact-batch run-simulation-min-batch run-simulation-custom sqlc test vet
 
 define setup_env
     $(eval include $(1))
@@ -92,7 +92,7 @@ sqlc:
 # pg: starts postgres db inside docker container
 pg:
 	@echo "Starting postgres db..."
-	@docker run --name ark-pg -v ./scripts:/docker-entrypoint-initdb.d:ro -p 5433:5432 -e POSTGRES_USER=root -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=event -d postgres > /dev/null 2>&1 || true
+	@docker compose -f docker-compose.regtest.yml up -d pg
 
 # pgtest: starts postgres db inside docker container
 pgtest:
@@ -128,13 +128,13 @@ pgsqlc:
 # redis-up: starts redis db inside docker container
 redis-up:
 	@echo "Starting redis..."
-	@docker run --name ark-redis -d -p 6379:6379 redis:7-alpine > /dev/null 2>&1 || true
+	@docker compose -f docker-compose.regtest.yml up -d redis
 
 # redis-down: stop and remove redis container
 redis-down:
 	@echo "Stopping redis..."
-	@docker stop ark-redis > /dev/null 2>&1 || true
-	@docker rm ark-redis > /dev/null 2>&1 || true
+	@docker compose -f docker-compose.regtest.yml stop redis > /dev/null 2>&1 || true
+	@docker compose -f docker-compose.regtest.yml rm -f redis > /dev/null 2>&1 || true
 
 buf:
 	@if ! docker image inspect buf >/dev/null 2>&1; then \
@@ -150,9 +150,15 @@ proto-lint: buf
 	@echo "Linting protos..."
 	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace buf lint
 
-# docker-run: starts docker test environment
+# docker-run: starts docker test environment with postgres
 docker-run:
-	@echo "Running dockerized arkd and arkd wallet in test mode on regtest..."
+	@echo "Running dockerized arkd and arkd wallet in test mode on regtest with postgres..."
+	@set -a && . envs/test.regtest.postgres.env && set +a && \
+		docker compose -f docker-compose.regtest.yml up --build -d
+
+# docker-run-light: starts docker test environment with sqlite/badger/inmemory
+docker-run-light:
+	@echo "Running dockerized arkd and arkd wallet in test mode on regtest (light mode)..."
 	@docker compose -f docker-compose.regtest.yml up --build -d
 
 # docker-stop: tears down docker test environment
@@ -163,21 +169,21 @@ docker-stop:
 ## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest with a pre-loaded signer private key
 run-wallet:
 	@echo "Running arkd wallet in dev mode with NBXplorer on regtest with pre-loaded signer private key..."
-	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
+	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
 	$(call setup_env, envs/arkd-wallet.regtest.env)
 	@go run ./cmd/arkd-wallet
 
 ## run-wallet-nosigner: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
 run-wallet-nosigner:
 	@echo "Running arkd wallet in dev mode with NBXplorer on regtest..."
-	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
+	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
 	$(call setup_env, envs/arkd-wallet-nosigner.regtest.env)
 	@go run ./cmd/arkd-wallet
 
 ## run-signer: run arkd wallet as signer without a wallet
 run-signer:
 	@echo "Running signer in dev mode"
-	@docker compose -f docker-compose.regtest.yml up -d pgnbxplorer nbxplorer
+	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
 	$(call setup_env, envs/signer.dev.env)
 	@go run ./cmd/arkd-wallet
 
