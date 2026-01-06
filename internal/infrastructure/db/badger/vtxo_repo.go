@@ -204,7 +204,11 @@ func (r *vtxoRepository) UpdateVtxosExpiration(
 					return nil
 				}
 				vtxo.ExpiresAt = expiresAt
-				if err := r.store.TxUpdate(tx, vtxo.String(), *vtxo); err != nil {
+				dto := vtxoDTO{
+					Vtxo:      *vtxo,
+					UpdatedAt: time.Now().Unix(),
+				}
+				if err := r.store.TxUpdate(tx, vtxo.String(), dto); err != nil {
 					return err
 				}
 			}
@@ -544,15 +548,19 @@ func (r *vtxoRepository) findVtxos(
 	ctx context.Context, query *badgerhold.Query,
 ) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0)
+	dtos := make([]vtxoDTO, 0)
 	var err error
 
 	if ctx.Value("tx") != nil {
 		tx := ctx.Value("tx").(*badger.Txn)
-		err = r.store.TxFind(tx, &vtxos, query)
+		err = r.store.TxFind(tx, &dtos, query)
 	} else {
-		err = r.store.Find(&vtxos, query)
+		err = r.store.Find(&dtos, query)
 	}
 
+	for _, dto := range dtos {
+		vtxos = append(vtxos, dto.Vtxo)
+	}
 	return vtxos, err
 }
 
