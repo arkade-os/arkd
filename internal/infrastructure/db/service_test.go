@@ -1043,15 +1043,15 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			vtxosInTimeRange, err := svc.Vtxos().
-				GetVtxosUpdatedInTimeRange(ctx, now.Unix(), time.Now().UnixMilli())
+				GetVtxosUpdatedInTimeRange(ctx, now.UnixMilli(), time.Now().UnixMilli())
 			require.NoError(t, err)
 			require.GreaterOrEqual(t, len(vtxosInTimeRange), 3)
 
 			// Test with a time range that yields no results
 			vtxosInTimeRange, err = svc.Vtxos().
-				GetVtxosUpdatedInTimeRange(ctx, now.Unix(), now.Unix()+10)
+				GetVtxosUpdatedInTimeRange(ctx, now.UnixMilli(), now.UnixMilli()+10)
 			require.NoError(t, err)
-			require.GreaterOrEqual(t, len(vtxosInTimeRange), 0)
+			require.Equal(t, len(vtxosInTimeRange), 0)
 		})
 
 		liquidityNow := time.Now().Unix()

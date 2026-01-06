@@ -206,7 +206,7 @@ func (r *vtxoRepository) UpdateVtxosExpiration(
 				vtxo.ExpiresAt = expiresAt
 				dto := vtxoDTO{
 					Vtxo:      *vtxo,
-					UpdatedAt: time.Now().Unix(),
+					UpdatedAt: time.Now().UnixMilli(),
 				}
 				if err := r.store.TxUpdate(tx, vtxo.String(), dto); err != nil {
 					return err
@@ -430,7 +430,7 @@ func (r *vtxoRepository) addVtxos(
 	for _, vtxo := range vtxos {
 		dto := vtxoDTO{
 			Vtxo:      vtxo,
-			UpdatedAt: time.Now().Unix(),
+			UpdatedAt: time.Now().UnixMilli(),
 		}
 		outpoint := vtxo.Outpoint.String()
 		var insertFn func() error
@@ -567,7 +567,7 @@ func (r *vtxoRepository) findVtxos(
 func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) error {
 	dto := vtxoDTO{
 		Vtxo:      *vtxo,
-		UpdatedAt: time.Now().Unix(),
+		UpdatedAt: time.Now().UnixMilli(),
 	}
 	var updateFn func() error
 	if ctx.Value("tx") != nil {
