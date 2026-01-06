@@ -441,7 +441,7 @@ func recoverVtxos(ctx *cli.Context) error {
 		return err
 	}
 
-	txid, err := arkSdkClient.Settle(ctx.Context, arksdk.WithRecoverableVtxos)
+	txid, err := arkSdkClient.Settle(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -540,7 +540,6 @@ func sendCovenantLess(ctx *cli.Context, receivers []types.Receiver, withZeroFees
 		}
 	}
 
-	computeExpiration := ctx.Bool(enableExpiryCoinselectFlag.Name)
 	if len(onchainReceivers) > 0 {
 		txid, err := arkSdkClient.CollaborativeExit(
 			ctx.Context, onchainReceivers[0].To, onchainReceivers[0].Amount,
@@ -551,7 +550,7 @@ func sendCovenantLess(ctx *cli.Context, receivers []types.Receiver, withZeroFees
 		return printJSON(map[string]string{"txid": txid})
 	}
 
-	arkTxid, err := arkSdkClient.SendOffChain(ctx.Context, computeExpiration, offchainReceivers)
+	arkTxid, err := arkSdkClient.SendOffChain(ctx.Context, offchainReceivers)
 	if err != nil {
 		return err
 	}

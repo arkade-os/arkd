@@ -483,7 +483,6 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 
 	txid, err = client.SendOffChain(
 		t.Context(),
-		false,
 		[]types.Receiver{{To: addr, Amount: uint64(amount * 1e8)}},
 	)
 	require.NoError(t, err)
