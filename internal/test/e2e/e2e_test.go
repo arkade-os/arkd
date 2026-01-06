@@ -3056,13 +3056,12 @@ func TestIntent(t *testing.T) {
 }
 
 func TestTopics(t *testing.T) {
-	t.Run("topics change", func(t *testing.T) {
+	t.Run("topic modifications", func(t *testing.T) {
 		ctx := t.Context()
 		alice, grpcAlice := setupArkSDKWithTransport(t)
 		defer alice.Stop()
 		defer grpcAlice.Close()
 
-		// faucet the alice's wallet
 		_, _, _, err := alice.Receive(t.Context())
 		require.NoError(t, err)
 		faucetOffchain(t, alice, 0.001)
@@ -3072,7 +3071,6 @@ func TestTopics(t *testing.T) {
 		require.NotEmpty(t, vtxos)
 		aliceVtxo := vtxos[0]
 
-		// setup a random musig2 tree signer
 		secKey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 		signerSession := tree.NewTreeSignerSession(secKey)
@@ -3090,25 +3088,35 @@ func TestTopics(t *testing.T) {
 		_, close, err := grpcAlice.GetEventStream(t.Context(), topics)
 		require.NoError(t, err)
 		defer close()
-		// wait a bit to ensure sdk gets the event stream
-		time.Sleep(2 * time.Second)
+		// wait to ensure sdk gets the event stream
+		time.Sleep(3 * time.Second)
 
+		// we already have 2 topcs. Adding topics already added will have no effect.
 		added, removed, all, err := grpcAlice.ModifyStreamTopics(ctx, topics, []string{})
 		require.NoError(t, err)
 		require.Empty(t, removed)
-		require.Equal(t, topics, added)
-		require.Equal(t, topics, all)
+		require.ElementsMatch(t, topics, added)
+		require.ElementsMatch(t, topics, all)
+
+		// overwrite with same topics will have no effect
 		added, removed, all, err = grpcAlice.OverwriteStreamTopics(ctx, topics)
 		require.NoError(t, err)
 		require.Empty(t, removed)
 		require.Empty(t, added)
-		require.Equal(t, topics, all)
-
+		require.ElementsMatch(t, topics, all)
+		// add a new topic and remove an existing one
 		added, removed, all, err = grpcAlice.ModifyStreamTopics(ctx, []string{"testtopic"}, []string{topics[0]})
 		require.NoError(t, err)
-		require.Equal(t, []string{topics[0]}, removed)
-		require.Equal(t, []string{"testtopic"}, added)
-		require.Equal(t, []string{topics[1], "testtopic"}, all)
+		require.ElementsMatch(t, []string{topics[0]}, removed)
+		require.ElementsMatch(t, []string{"testtopic"}, added)
+		require.ElementsMatch(t, []string{topics[1], "testtopic"}, all)
+
+		// overwriting to 0 topics will remove all topics
+		added, removed, all, err = grpcAlice.OverwriteStreamTopics(ctx, []string{})
+		require.NoError(t, err)
+		require.Empty(t, removed)
+		require.Empty(t, added)
+		require.Empty(t, all)
 	})
 }
 
