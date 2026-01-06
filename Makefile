@@ -65,13 +65,13 @@ run-light: clean
 	@go run ./cmd/arkd
 
 ## test: runs unit and component tests
-test: pgtest redis-up
+test: pgtest redis-test-up
 	@sleep 2
 	@echo "Running unit tests..."
 	@failed=0; \
 	go test -v -count=1 -race $(shell go list ./internal/... | grep -v '/internal/test') || failed=1; \
 	find ./pkg -name go.mod -execdir go test -v ./... \; || failed=1; \
-	$(MAKE) droppgtest && $(MAKE) redis-down; \
+	$(MAKE) droppgtest && $(MAKE) redis-test-down; \
 	exit $$failed
 
 ## vet: code analysis
@@ -125,16 +125,27 @@ pgsqlc:
 	@docker run --rm -v ./internal/infrastructure/db/postgres:/src -w /src sqlc/sqlc:1.30.0 generate
 
 #### Redis database ####
-# redis-up: starts redis db inside docker container
+# redis-up: starts redis db inside docker container (compose, requires nigiri network)
 redis-up:
-	@echo "Starting redis..."
+	@echo "Starting redis via docker compose (integration/dev)..."
 	@docker compose -f docker-compose.regtest.yml up -d redis
 
-# redis-down: stop and remove redis container
+# redis-down: stop and remove redis container started via compose
 redis-down:
-	@echo "Stopping redis..."
+	@echo "Stopping redis from docker compose..."
 	@docker compose -f docker-compose.regtest.yml stop redis > /dev/null 2>&1 || true
 	@docker compose -f docker-compose.regtest.yml rm -f redis > /dev/null 2>&1 || true
+
+# redis-test-up: starts redis db for unit tests (no nigiri network required)
+redis-test-up:
+	@echo "Starting redis for unit tests..."
+	@docker run -d --name ark-redis-test -p 6379:6379 redis:7-alpine > /dev/null 2>&1 || true
+
+# redis-test-down: stop and remove unit test redis container
+redis-test-down:
+	@echo "Stopping redis for unit tests..."
+	@docker stop ark-redis-test > /dev/null 2>&1 || true
+	@docker rm ark-redis-test > /dev/null 2>&1 || true
 
 buf:
 	@if ! docker image inspect buf >/dev/null 2>&1; then \

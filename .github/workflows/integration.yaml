@@ -10,7 +10,7 @@ on:
 
 jobs:
   test:
-    name: integration tests ${{ matrix.env_name }}
+    name: ${{ matrix.env_name }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
