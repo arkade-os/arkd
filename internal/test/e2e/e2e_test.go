@@ -3089,7 +3089,7 @@ func TestTopics(t *testing.T) {
 		// wait to ensure sdk gets the event stream
 		time.Sleep(3 * time.Second)
 
-		// we already have 2 topcs. Adding topics already added will have no effect.
+		// we already have 2 topics. Adding topics already added will have no effect.
 		added, removed, all, err := grpcAlice.ModifyStreamTopics(ctx, topics, []string{})
 		require.NoError(t, err)
 		require.Empty(t, removed)
@@ -3103,7 +3103,11 @@ func TestTopics(t *testing.T) {
 		require.Empty(t, added)
 		require.ElementsMatch(t, topics, all)
 		// add a new topic and remove an existing one
-		added, removed, all, err = grpcAlice.ModifyStreamTopics(ctx, []string{"testtopic"}, []string{topics[0]})
+		added, removed, all, err = grpcAlice.ModifyStreamTopics(
+			ctx,
+			[]string{"testtopic"},
+			[]string{topics[0]},
+		)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{topics[0]}, removed)
 		require.ElementsMatch(t, []string{"testtopic"}, added)
