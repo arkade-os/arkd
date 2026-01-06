@@ -3864,8 +3864,6 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 
 	totalAssets := make([]asset.AssetGroup, 0)
 
-	uniqueControlAssetsIndex := make(map[int]struct{})
-
 	// verify the presence of control assets for each normal asset
 	for _, normalAsset := range normalAssets {
 
@@ -3908,9 +3906,8 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 			// Find the control asset matching the Normal AssetGroup's ControlAssetId
 			foundControlAsset := false
 
-			for i, ca := range controlAssets {
+			for _, ca := range controlAssets {
 				if normalAsset.ControlAssetId != nil && ca.AssetId == *normalAsset.ControlAssetId {
-					uniqueControlAssetsIndex[i] = struct{}{}
 					foundControlAsset = true
 					break
 				}
@@ -3923,10 +3920,6 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 	}
 
 	totalAssets = append(totalAssets, normalAssets...)
-	if len(uniqueControlAssetsIndex) != len(controlAssets) {
-		return fmt.Errorf("invalid control asset count")
-	}
-
 	totalAssets = append(totalAssets, controlAssets...)
 
 	for _, grpAsset := range totalAssets {
