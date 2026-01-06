@@ -20,6 +20,11 @@ type vtxoRepository struct {
 	store *badgerhold.Store
 }
 
+type vtxoDTO struct {
+	domain.Vtxo
+	UpdatedAt int64
+}
+
 func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
 	if len(config) != 2 {
 		return nil, fmt.Errorf("invalid config")
@@ -655,4 +660,11 @@ func (r *vtxoRepository) GetAllChildrenVtxos(
 	}
 
 	return outpoints, nil
+}
+
+func (r *vtxoRepository) GetVtxosUpdatedInTimeRange(
+	ctx context.Context, after, before int64,
+) ([]domain.Vtxo, error) {
+	query := badgerhold.Where("UpdatedAt").Ge(after).And("UpdatedAt").Le(before)
+	return r.findVtxos(ctx, query)
 }

@@ -47,11 +47,11 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at
+    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at
+    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, @updated_at
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -64,11 +64,16 @@ VALUES (
     swept = EXCLUDED.swept,
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
-    created_at = EXCLUDED.created_at;
+    created_at = EXCLUDED.created_at,
+    updated_at = EXCLUDED.updated_at;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
 VALUES (@vtxo_txid, @vtxo_vout, @commitment_txid);
+
+-- name: SelectVtxosUpdatedInTimeRange :many
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw 
+WHERE updated_at >= @after AND updated_at <= @before;
 
 -- name: UpsertOffchainTx :exec
 INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code)
@@ -112,17 +117,17 @@ UPDATE vtxo SET intent_id = @intent_id WHERE txid = @txid AND vout = @vout;
 UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoUnrolled :exec
-UPDATE vtxo SET unrolled = true WHERE txid = @txid AND vout = @vout;
+UPDATE vtxo SET unrolled = true, updated_at = @updated_at WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoSweptIfNotSwept :execrows
-UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout AND swept = false;
+UPDATE vtxo SET swept = true, updated_at = @updated_at WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
-UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by
+UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = @updated_at
 WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoSpent :exec
-UPDATE vtxo SET spent = true, spent_by = @spent_by, ark_txid = @ark_txid
+UPDATE vtxo SET spent = true, spent_by = @spent_by, ark_txid = @ark_txid, updated_at = @updated_at
 WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectRoundWithId :many

@@ -28,5 +28,6 @@ type VtxoRepository interface {
 	)
 	GetPendingSpentVtxosWithPubKeys(ctx context.Context, pubkeys []string) ([]Vtxo, error)
 	GetPendingSpentVtxosWithOutpoints(ctx context.Context, outpoints []Outpoint) ([]Vtxo, error)
+	GetVtxosUpdatedInTimeRange(ctx context.Context, after, before int64) ([]Vtxo, error)
 	Close()
 }

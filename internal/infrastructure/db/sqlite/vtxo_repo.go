@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
@@ -57,6 +58,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					CreatedAt:      vtxo.CreatedAt,
 					ArkTxid:        sql.NullString{String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0},
 					SettledBy:      sql.NullString{String: vtxo.SettledBy, Valid: len(vtxo.SettledBy) > 0},
+					UpdatedAt:      time.Now().UnixMilli(),
 				},
 			); err != nil {
 				return err
@@ -243,7 +245,7 @@ func (v *vtxoRepository) UnrollVtxos(ctx context.Context, vtxos []domain.Outpoin
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.UpdateVtxoUnrolled(
-				ctx, queries.UpdateVtxoUnrolledParams{Txid: vtxo.Txid, Vout: int64(vtxo.VOut)},
+				ctx, queries.UpdateVtxoUnrolledParams{Txid: vtxo.Txid, Vout: int64(vtxo.VOut), UpdatedAt: time.Now().UnixMilli()},
 			); err != nil {
 				return err
 			}
@@ -267,6 +269,7 @@ func (v *vtxoRepository) SettleVtxos(
 					SettledBy: sql.NullString{String: settledBy, Valid: len(settledBy) > 0},
 					Txid:      vtxo.Txid,
 					Vout:      int64(vtxo.VOut),
+					UpdatedAt: time.Now().UnixMilli(),
 				},
 			); err != nil {
 				return err
@@ -287,10 +290,11 @@ func (v *vtxoRepository) SpendVtxos(
 			if err := querierWithTx.UpdateVtxoSpent(
 				ctx,
 				queries.UpdateVtxoSpentParams{
-					SpentBy: sql.NullString{String: spentBy, Valid: len(spentBy) > 0},
-					ArkTxid: sql.NullString{String: arkTxid, Valid: len(arkTxid) > 0},
-					Txid:    vtxo.Txid,
-					Vout:    int64(vtxo.VOut),
+					SpentBy:   sql.NullString{String: spentBy, Valid: len(spentBy) > 0},
+					ArkTxid:   sql.NullString{String: arkTxid, Valid: len(arkTxid) > 0},
+					Txid:      vtxo.Txid,
+					Vout:      int64(vtxo.VOut),
+					UpdatedAt: time.Now().UnixMilli(),
 				},
 			); err != nil {
 				return err
@@ -310,8 +314,9 @@ func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint
 			affectedRows, err := querierWithTx.UpdateVtxoSweptIfNotSwept(
 				ctx,
 				queries.UpdateVtxoSweptIfNotSweptParams{
-					Txid: outpoint.Txid,
-					Vout: int64(outpoint.VOut),
+					Txid:      outpoint.Txid,
+					Vout:      int64(outpoint.VOut),
+					UpdatedAt: time.Now().UnixMilli(),
 				},
 			)
 			if err != nil {
@@ -496,10 +501,31 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	return vtxos, nil
 }
 
+func (v *vtxoRepository) GetVtxosUpdatedInTimeRange(
+	ctx context.Context, after, before int64,
+) ([]domain.Vtxo, error) {
+	res, err := v.querier.SelectVtxosUpdatedInTimeRange(
+		ctx,
+		queries.SelectVtxosUpdatedInTimeRangeParams{
+			After:  after,
+			Before: before,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]queries.VtxoVw, 0, len(res))
+	for _, row := range res {
+		rows = append(rows, row.VtxoVw)
+	}
+
+	return readRows(rows)
+}
+
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 	var commitmentTxids []string
-	if commitments, ok := row.Commitments.(string); ok && commitments != "" {
-		commitmentTxids = strings.Split(commitments, ",")
+	if row.Commitments != "" {
+		commitmentTxids = strings.Split(row.Commitments, ",")
 	}
 	return domain.Vtxo{
 		Outpoint: domain.Outpoint{

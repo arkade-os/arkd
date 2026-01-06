@@ -1,0 +1,2 @@
+ALTER TABLE vtxo DROP COLUMN updated_at;
+DROP VIEW IF EXISTS vtxo_vw;
