@@ -420,7 +420,6 @@ func buildAssetCheckpointTx(
 			},
 		}
 
-		// TODO (Joshua) Subdust Key is A nightmare
 		newAssetGroup := &asset.AssetPacket{
 			ControlAssets: nil,
 			NormalAssets:  []asset.AssetGroup{newAsset},

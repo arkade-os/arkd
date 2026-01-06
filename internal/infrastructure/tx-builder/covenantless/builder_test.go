@@ -56,7 +56,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TODO(Joshua) Create a builder with asset
 func TestBuildCommitmentTx(t *testing.T) {
 	builder := txbuilder.NewTxBuilder(
 		wallet, nil, arklib.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
