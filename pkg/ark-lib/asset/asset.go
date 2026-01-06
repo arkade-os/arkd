@@ -82,7 +82,7 @@ type Metadata struct {
 
 type AssetOutput struct {
 	Type       AssetType
-	Vout       uint16   // For Local
+	Vout       uint32   // For Local
 	Commitment [32]byte // For Teleport
 	Amount     uint64
 }
@@ -108,7 +108,7 @@ func CalculateTeleportHash(script []byte, nonce [32]byte) [32]byte {
 
 type AssetInput struct {
 	Type       AssetType
-	Vin        uint16          // For Local
+	Vin        uint32          // For Local
 	Commitment [32]byte        // For Teleport
 	Witness    TeleportWitness // For Teleport
 	Amount     uint64
@@ -345,7 +345,7 @@ func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
 	return nil
 }
 
-func VerifyAssetOutputInTx(arkTx string, vout uint16) error {
+func VerifyAssetOutputInTx(arkTx string, vout uint32) error {
 	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
 	if err != nil {
 		return fmt.Errorf("error decoding Ark Tx: %s", err)

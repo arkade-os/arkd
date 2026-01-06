@@ -123,7 +123,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
 
 	assetList := make([]domain.NormalAsset, 0)
-	assetVouts := make(map[uint16]struct{})
+	assetVouts := make(map[uint32]struct{})
 	assetOpReturnProcessed := false
 
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
@@ -156,7 +156,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 					assetList = append(assetList, domain.NormalAsset{
 						Outpoint: domain.Outpoint{
 							Txid: txid,
-							VOut: uint32(assetOut.Vout),
+							VOut: assetOut.Vout,
 						},
 						Amount:  assetOut.Amount,
 						AssetID: grpAsset.AssetId.ToString(),

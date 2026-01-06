@@ -3986,7 +3986,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 				return fmt.Errorf("offchain tx %s is failed", prev.Hash)
 			}
 
-			if err := asset.VerifyAssetOutputInTx(offchainTx.ArkTx, uint16(prev.Index)); err != nil {
+			if err := asset.VerifyAssetOutputInTx(offchainTx.ArkTx, prev.Index); err != nil {
 				return err
 			}
 		}
@@ -3997,7 +3997,7 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 }
 
 func ensureUniqueAssetVouts(assets []asset.AssetGroup) error {
-	seen := make(map[uint16]struct{})
+	seen := make(map[uint32]struct{})
 	for _, grpAsset := range assets {
 		for _, out := range grpAsset.Outputs {
 			if out.Type != asset.AssetTypeLocal {
