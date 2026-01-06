@@ -54,7 +54,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					Preconfirmed:   vtxo.Preconfirmed,
 					ExpiresAt:      vtxo.ExpiresAt,
 					CreatedAt:      vtxo.CreatedAt,
-					UpdatedAt:       time.Now().UnixMilli(),
+					UpdatedAt:      time.Now().UnixMilli(),
 					SpentBy: sql.NullString{
 						String: vtxo.SpentBy, Valid: len(vtxo.SpentBy) > 0,
 					},
@@ -288,7 +288,7 @@ func (v *vtxoRepository) SpendVtxos(
 					ArkTxid:   sql.NullString{String: arkTxid, Valid: true},
 					Txid:      vtxo.Txid,
 					Vout:      int32(vtxo.VOut),
-					UpdatedAt:  time.Now().UnixMilli(),
+					UpdatedAt: time.Now().UnixMilli(),
 				},
 			); err != nil {
 				return err
@@ -493,11 +493,16 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	return vtxos, nil
 }
 
-func (v *vtxoRepository) GetVtxosUpdatedInTimeRange(ctx context.Context, after, before int64) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosUpdatedInTimeRange(ctx, queries.SelectVtxosUpdatedInTimeRangeParams{
-		After:  int64(after),
-		Before: int64(before),
-	})
+func (v *vtxoRepository) GetVtxosUpdatedInTimeRange(
+	ctx context.Context, after, before int64,
+) ([]domain.Vtxo, error) {
+	res, err := v.querier.SelectVtxosUpdatedInTimeRange(
+		ctx,
+		queries.SelectVtxosUpdatedInTimeRangeParams{
+			After:  int64(after),
+			Before: int64(before),
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
