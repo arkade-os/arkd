@@ -168,19 +168,20 @@ func (i *indexerService) GetVtxos(
 		if err != nil {
 			return nil, err
 		}
-		timeBoundedVtxos, err := i.repoManager.Vtxos().
-			GetVtxosUpdatedInTimeRange(ctx, after, before)
+		timeBoundedVtxos, err := i.repoManager.Vtxos().GetVtxosUpdatedInTimeRange(ctx, after, before)
 		if err != nil {
 			return nil, err
 		}
 		// take intersection of allVtxos and timeBoundedVtxos
+		timeFilteredMap := make(map[domain.Outpoint]bool, len(timeBoundedVtxos))
+		for _, tbVtxo := range timeBoundedVtxos {
+			timeFilteredMap[tbVtxo.Outpoint] = true
+		}
+		intersectingVtxos = make([]domain.Vtxo, 0, len(allVtxos))
+
 		for _, vtxo := range allVtxos {
-			for _, tbVtxo := range timeBoundedVtxos {
-				// include if the vtxo matches tbVtxo
-				if vtxo.Outpoint == tbVtxo.Outpoint {
-					intersectingVtxos = append(intersectingVtxos, vtxo)
-					break
-				}
+			if timeFilteredMap[vtxo.Outpoint] {
+				intersectingVtxos = append(intersectingVtxos, vtxo)
 			}
 		}
 
@@ -194,13 +195,15 @@ func (i *indexerService) GetVtxos(
 			return nil, err
 		}
 		// take intersection of allVtxos and timeBoundedVtxos
+		timeFilteredMap := make(map[domain.Outpoint]bool, len(timeBoundedVtxos))
+		for _, tbVtxo := range timeBoundedVtxos {
+			timeFilteredMap[tbVtxo.Outpoint] = true
+		}
+		intersectingVtxos = make([]domain.Vtxo, 0, len(allVtxos))
+
 		for _, vtxo := range allVtxos {
-			for _, tbVtxo := range timeBoundedVtxos {
-				// include if the vtxo matches tbVtxo
-				if vtxo.Outpoint == tbVtxo.Outpoint {
-					intersectingVtxos = append(intersectingVtxos, vtxo)
-					break
-				}
+			if timeFilteredMap[vtxo.Outpoint] {
+				intersectingVtxos = append(intersectingVtxos, vtxo)
 			}
 		}
 

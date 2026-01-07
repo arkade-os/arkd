@@ -144,7 +144,6 @@ buf:
 proto: proto-lint
 	@echo "Compiling stubs..."
 	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace buf generate
-	@echo "aaaaaaaaa..."
 
 # proto-lint: lints protos
 proto-lint: buf

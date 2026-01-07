@@ -681,11 +681,15 @@ func (r *vtxoRepository) GetAllChildrenVtxos(
 func (r *vtxoRepository) GetVtxosUpdatedInTimeRange(
 	ctx context.Context, after, before int64,
 ) ([]domain.Vtxo, error) {
-	if after <= 0 {
-		return nil, fmt.Errorf("after must be greater than 0")
-	} else if before > 0 && before <= after {
+	if after < 0 {
+		return nil, fmt.Errorf("after must be greater than or equal to 0")
+	} else if before > 0 && after > 0 && before <= after {
 		return nil, fmt.Errorf("before must be greater than after")
 	}
-	query := badgerhold.Where("UpdatedAt").Ge(after).And("UpdatedAt").Le(before)
+	query := badgerhold.Where("UpdatedAt").Ge(after)
+	// only add before condition if it's greater than 0. allows for unbounded before time when before=0
+	if before > 0 {
+		query = query.And("UpdatedAt").Lt(before)
+	}
 	return r.findVtxos(ctx, query)
 }

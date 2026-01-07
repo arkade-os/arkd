@@ -248,13 +248,6 @@ func (e *indexerService) GetVtxos(
 	}
 
 	var resp *application.GetVtxosResp
-	var after, before int64
-	after = request.GetAfter()
-	before = request.GetBefore()
-	// after cannot be 0, set to 1 for beginning of time
-	if after == 0 {
-		after = 1
-	}
 
 	if len(pubkeys) > 0 {
 		resp, err = e.indexerSvc.GetVtxos(
@@ -265,8 +258,8 @@ func (e *indexerService) GetVtxos(
 			recoverableOnly,
 			pendingOnly,
 			page,
-			after,
-			before,
+			request.GetAfter(),
+			request.GetBefore(),
 		)
 	}
 	if len(outpoints) > 0 {

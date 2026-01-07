@@ -1053,15 +1053,15 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 			require.Equal(t, len(vtxosInTimeRange), 0)
 
-			// Test with invalid time range (start time greater than end time)
+			// Test with invalid time range (after time greater than before time)
 			_, err = svc.Vtxos().
 				GetVtxosUpdatedInTimeRange(ctx, now.UnixMilli()+1000, now.UnixMilli())
 			require.Error(t, err)
 
-			// Test with zero time range (both start and end times are zero)
+			// Test unbounded time range
 			_, err = svc.Vtxos().
 				GetVtxosUpdatedInTimeRange(ctx, 0, 0)
-			require.Error(t, err)
+			require.NoError(t, err)
 
 			// Test with zero time for the before field
 			_, err = svc.Vtxos().
@@ -1071,7 +1071,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			// Test with zero time for the after field
 			_, err = svc.Vtxos().
 				GetVtxosUpdatedInTimeRange(ctx, 0, now.UnixMilli())
-			require.Error(t, err)
+			require.NoError(t, err)
 
 			// Test with negative time values
 			_, err = svc.Vtxos().
