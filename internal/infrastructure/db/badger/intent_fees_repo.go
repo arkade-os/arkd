@@ -111,7 +111,6 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 	if fees.OffchainOutputFee != "" {
 		newEntry.OffchainOutputFeeProgram = fees.OffchainOutputFee
 	}
-	fmt.Printf("badger setting intent fees: %+v\n", newEntry)
 	if err := r.store.Insert(nowKey, &newEntry); err != nil {
 		return fmt.Errorf("failed to insert intent fees: %w", err)
 	}
