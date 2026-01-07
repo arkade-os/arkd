@@ -54,6 +54,8 @@ func (s *service) validateControlAssetsForNormalAssets(ctx context.Context, cont
 			if normalAsset.ControlAssetId == nil {
 				return fmt.Errorf("missing control asset for asset reissue/burn")
 			}
+
+			fmt.Printf("control asset: %+v", controlAssets[0])
 			if !hasMatchingControlAsset(controlAssets, normalAsset.ControlAssetId) {
 				return fmt.Errorf("invalid control key for asset modification")
 			}
