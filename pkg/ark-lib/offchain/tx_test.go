@@ -79,7 +79,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 		NormalAssets:  []asset.AssetGroup{normalAsset},
 		SubDustKey:    normalTapKey,
 	}
-	opret, err := assetGroup.EncodeOpret(0)
+	opret, err := assetGroup.EncodeAssetPacket(0)
 	require.NoError(t, err)
 
 	outputs := []*wire.TxOut{
@@ -134,7 +134,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 			continue
 		}
 		outputsNoAnchor = append(outputsNoAnchor, out)
-		if asset.IsAssetGroup(out.PkScript) {
+		if asset.IsAssetPacket(out.PkScript) {
 			assetGroupIndex = idx
 		}
 	}
@@ -148,15 +148,15 @@ func TestRebuildAssetTxs(t *testing.T) {
 	require.Equal(t, arkTx.UnsignedTx.TxID(), rebuiltArk.UnsignedTx.TxID())
 
 	// Verify asset group matches and points to rebuilt checkpoints.
-	origGroup, err := asset.DecodeAssetGroupFromOpret(outputsNoAnchor[assetGroupIndex].PkScript)
+	origPacket, err := asset.DecodeAssetPacket(outputsNoAnchor[assetGroupIndex].PkScript)
 	require.NoError(t, err)
-	rebuiltGroup, err := asset.DecodeAssetGroupFromOpret(rebuiltArk.UnsignedTx.TxOut[assetGroupIndex].PkScript)
+	rebuiltPacket, err := asset.DecodeAssetPacket(rebuiltArk.UnsignedTx.TxOut[assetGroupIndex].PkScript)
 	require.NoError(t, err)
 
-	require.NotNil(t, rebuiltGroup.ControlAssets)
-	require.Len(t, rebuiltGroup.ControlAssets, 1)
-	require.Equal(t, len(origGroup.ControlAssets[0].Inputs), len(rebuiltGroup.ControlAssets[0].Inputs))
-	require.Equal(t, len(origGroup.NormalAssets[0].Inputs), len(rebuiltGroup.NormalAssets[0].Inputs))
+	require.NotNil(t, rebuiltPacket.ControlAssets)
+	require.Len(t, rebuiltPacket.ControlAssets, 1)
+	require.Equal(t, len(origPacket.ControlAssets[0].Inputs), len(rebuiltPacket.ControlAssets[0].Inputs))
+	require.Equal(t, len(origPacket.NormalAssets[0].Inputs), len(rebuiltPacket.NormalAssets[0].Inputs))
 
 	// Map rebuilt checkpoint txids for quick lookup.
 	rebuiltCheckpointIDs := make(map[string]struct{})
@@ -164,11 +164,11 @@ func TestRebuildAssetTxs(t *testing.T) {
 		rebuiltCheckpointIDs[cp.UnsignedTx.TxHash().String()] = struct{}{}
 	}
 
-	for _, in := range rebuiltGroup.ControlAssets[0].Inputs {
+	for _, in := range rebuiltPacket.ControlAssets[0].Inputs {
 		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}
-	for _, in := range rebuiltGroup.NormalAssets[0].Inputs {
+	for _, in := range rebuiltPacket.NormalAssets[0].Inputs {
 		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}

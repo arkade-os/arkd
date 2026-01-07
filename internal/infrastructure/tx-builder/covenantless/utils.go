@@ -119,19 +119,19 @@ func getAssetFromIntents(
 ) (*asset.AssetGroup, error) {
 
 	for _, intent := range intents {
-		for _, assetGroup := range intent.AssetGroupList {
-			decodedAssetGroup, err := asset.DecodeAssetGroupFromOpret(assetGroup)
+		for _, assetPacket := range intent.AssetPacketList {
+			decodedAssetPacket, err := asset.DecodeAssetPacket(assetPacket)
 			if err != nil {
 				return nil, fmt.Errorf("failed to decode asset from input: %s", err)
 			}
 
-			for _, controlAsset := range decodedAssetGroup.ControlAssets {
+			for _, controlAsset := range decodedAssetPacket.ControlAssets {
 				if controlAsset.AssetId == *assetId {
 					return &controlAsset, nil
 				}
 			}
 
-			for _, normalAsset := range decodedAssetGroup.NormalAssets {
+			for _, normalAsset := range decodedAssetPacket.NormalAssets {
 				if normalAsset.AssetId == *assetId {
 					return &normalAsset, nil
 				}
@@ -177,12 +177,12 @@ func buildTeleportAssetLeaf(
 	}}
 	assetCopy.Inputs = nil
 
-	assetGroup := &asset.AssetPacket{
+	assetPacket := &asset.AssetPacket{
 		ControlAssets: nil,
 		NormalAssets:  []asset.AssetGroup{assetCopy},
 	}
 
-	assetOpret, err := assetGroup.EncodeOpret(0)
+	assetOpret, err := assetPacket.EncodeAssetPacket(0)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to encode asset opreturn: %w", err)
 	}

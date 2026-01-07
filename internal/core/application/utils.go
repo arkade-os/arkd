@@ -130,18 +130,18 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		var pubKey string
 		var isSubDust bool
 
-		if asset.IsAssetGroup(out.PkScript) {
+		if asset.IsAssetPacket(out.PkScript) {
 			if assetOpReturnProcessed {
 				continue
 			}
 			assetOpReturnProcessed = true
 
-			decodedAssetGroup, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
+			decodedAssetPacket, err := asset.DecodeAssetPacket(out.PkScript)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf("failed to decode asset group from opreturn: %s", err)
 			}
 
-			allAssets := append(decodedAssetGroup.ControlAssets, decodedAssetGroup.NormalAssets...)
+			allAssets := append(decodedAssetPacket.ControlAssets, decodedAssetPacket.NormalAssets...)
 
 			for _, grpAsset := range allAssets {
 				for _, assetOut := range grpAsset.Outputs {
@@ -164,11 +164,11 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				}
 			}
 
-			if decodedAssetGroup.SubDustKey == nil {
+			if decodedAssetPacket.SubDustKey == nil {
 				continue
 			}
 
-			pubKey = hex.EncodeToString(schnorr.SerializePubKey(decodedAssetGroup.SubDustKey))
+			pubKey = hex.EncodeToString(schnorr.SerializePubKey(decodedAssetPacket.SubDustKey))
 			isSubDust = true
 		} else {
 			pubKey = hex.EncodeToString(out.PkScript[2:])

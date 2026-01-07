@@ -3,11 +3,13 @@ package asset
 import (
 	"bytes"
 	"encoding/hex"
+	"io"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,17 +92,17 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 		Magic:          AssetMagic,
 	}
 
-	group := AssetPacket{
+	packet := AssetPacket{
 		ControlAssets: []AssetGroup{controlAsset},
 		NormalAssets:  []AssetGroup{normalAsset},
 	}
 
-	txOut, err := group.EncodeOpret(0)
+	txOut, err := packet.EncodeAssetPacket(0)
 	require.NoError(t, err)
 
-	decodedGroup, err := DecodeAssetGroupFromOpret(txOut.PkScript)
+	decodedPacket, err := DecodeAssetPacket(txOut.PkScript)
 	require.NoError(t, err)
-	require.Equal(t, group, *decodedGroup)
+	require.Equal(t, packet, *decodedPacket)
 }
 
 func TestAssetIdStringConversion(t *testing.T) {
@@ -140,24 +142,50 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 		SubDustKey:    &subDustKey,
 	}
 
-	txOut, err := group.EncodeOpret(0)
+	txOut, err := group.EncodeAssetPacket(0)
 	require.NoError(t, err)
-	require.True(t, IsAssetGroup(txOut.PkScript))
+	require.True(t, IsAssetPacket(txOut.PkScript))
 
 	tokenizer := txscript.MakeScriptTokenizer(0, txOut.PkScript)
 	require.True(t, tokenizer.Next())
 	require.Equal(t, txscript.OP_RETURN, int(tokenizer.Opcode()))
 	require.True(t, tokenizer.Next())
-	require.Equal(t, []byte{MarkerSubDustKey}, tokenizer.Data())
-	require.True(t, tokenizer.Next())
-	require.Equal(t, schnorr.SerializePubKey(&subDustKey), tokenizer.Data())
+	payload := tokenizer.Data()
+	require.NotEmpty(t, payload)
+	require.False(t, tokenizer.Next())
+	require.NoError(t, tokenizer.Err())
 
-	decodedGroup, err := DecodeAssetGroupFromOpret(txOut.PkScript)
+	reader := bytes.NewReader(payload)
+	var scratch [8]byte
+
+	typ, err := reader.ReadByte()
 	require.NoError(t, err)
-	require.NotNil(t, decodedGroup.SubDustKey)
-	require.True(t, subDustKey.IsEqual(decodedGroup.SubDustKey))
-	require.Len(t, decodedGroup.NormalAssets, 1)
-	require.Equal(t, normalAsset, decodedGroup.NormalAssets[0])
+	require.Equal(t, MarkerSubDustKey, typ)
+
+	length, err := tlv.ReadVarInt(reader, &scratch)
+	require.NoError(t, err)
+	subDustValue := make([]byte, length)
+	_, err = io.ReadFull(reader, subDustValue)
+	require.NoError(t, err)
+	require.Equal(t, schnorr.SerializePubKey(&subDustKey), subDustValue)
+
+	typ, err = reader.ReadByte()
+	require.NoError(t, err)
+	require.Equal(t, MarkerAssetPayload, typ)
+
+	length, err = tlv.ReadVarInt(reader, &scratch)
+	require.NoError(t, err)
+	assetValue := make([]byte, length)
+	_, err = io.ReadFull(reader, assetValue)
+	require.NoError(t, err)
+	require.True(t, bytes.HasPrefix(assetValue, AssetMagic))
+
+	decodedPacket, err := DecodeAssetPacket(txOut.PkScript)
+	require.NoError(t, err)
+	require.NotNil(t, decodedPacket.SubDustKey)
+	require.True(t, subDustKey.IsEqual(decodedPacket.SubDustKey))
+	require.Len(t, decodedPacket.NormalAssets, 1)
+	require.Equal(t, normalAsset, decodedPacket.NormalAssets[0])
 }
 
 func TestAssetOutputListEncodeDecode(t *testing.T) {

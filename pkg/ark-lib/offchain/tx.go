@@ -73,13 +73,13 @@ func BuildTxs(
 	return arkTx, checkpointTxs, nil
 }
 
-func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput, signerUnrollScript []byte) (*psbt.Packet, []*psbt.Packet, error) {
+func BuildAssetTxs(outputs []*wire.TxOut, assetPacketIndex int, vtxos []VtxoInput, signerUnrollScript []byte) (*psbt.Packet, []*psbt.Packet, error) {
 	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
 	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 
-	assetAnchor := outputs[assetGroupIndex]
+	assetAnchor := outputs[assetPacketIndex]
 
-	assetGroup, err := asset.DecodeAssetGroupFromOpret(assetAnchor.PkScript)
+	assetPacket, err := asset.DecodeAssetPacket(assetAnchor.PkScript)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -100,7 +100,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	// 1. Control asset handling
 	// -------------------------
 
-	for _, controlAsset := range assetGroup.ControlAssets {
+	for _, controlAsset := range assetPacket.ControlAssets {
 
 		for _, input := range controlAsset.Inputs {
 			if input.Type == asset.AssetTypeTeleport {
@@ -134,7 +134,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetGroupIndex int, vtxos []VtxoInput
 	// ------------------------
 	// 2. Normal asset handling
 	// ------------------------
-	for _, normalAsset := range assetGroup.NormalAssets {
+	for _, normalAsset := range assetPacket.NormalAssets {
 
 		for _, input := range normalAsset.Inputs {
 			if input.Type == asset.AssetTypeTeleport {
@@ -425,13 +425,13 @@ func buildAssetCheckpointTx(
 			NormalAssets:  []asset.AssetGroup{newAsset},
 		}
 
-		assetOpret, err := newAssetGroup.EncodeOpret(0)
+		assetPacket, err := newAssetGroup.EncodeAssetPacket(0)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		checkpointPtx, err = buildArkTx(
-			[]VtxoInput{*vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}, &assetOpret},
+			[]VtxoInput{*vtxo}, []*wire.TxOut{{Value: vtxo.Amount, PkScript: checkpointPkScript}, &assetPacket},
 		)
 		if err != nil {
 			return nil, nil, err

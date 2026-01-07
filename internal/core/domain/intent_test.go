@@ -40,8 +40,8 @@ func TestIntent(t *testing.T) {
 			intent, err := domain.NewIntent(proof, message, inputs, [][]byte{assetGroup})
 			require.NoError(t, err)
 			require.NotNil(t, intent)
-			require.Len(t, intent.AssetGroupList, 1)
-			require.Equal(t, assetGroup, intent.AssetGroupList[0])
+			require.Len(t, intent.AssetPacketList, 1)
+			require.Equal(t, assetGroup, intent.AssetPacketList[0])
 		})
 		t.Run("invalid", func(t *testing.T) {
 			fixtures := []struct {

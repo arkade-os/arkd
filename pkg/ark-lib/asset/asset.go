@@ -71,8 +71,8 @@ type AssetPacket struct {
 var AssetMagic []byte = []byte{0x41, 0x52, 0x4B} // "ARK"
 
 const (
-	MarkerSubDustKey   byte = 0x4B // 'K' for Key (avoid OP_1 optimization)
-	MarkerAssetPayload byte = 0x50 // 'P' for Payload (avoid OP_2 optimization)
+	MarkerSubDustKey   byte = 0x01
+	MarkerAssetPayload byte = 0x00
 )
 
 type Metadata struct {
@@ -114,8 +114,8 @@ type AssetInput struct {
 	Amount     uint64
 }
 
-func (g *AssetPacket) EncodeOpret(amount int64) (wire.TxOut, error) {
-	encodedAssets, err := encodeAssetGroupPayload(g.ControlAssets, g.NormalAssets)
+func (g *AssetPacket) EncodeAssetPacket(amount int64) (wire.TxOut, error) {
+	encodedAssets, err := encodeAssetPacket(g.ControlAssets, g.NormalAssets)
 	if err != nil {
 		return wire.TxOut{}, err
 	}
@@ -129,14 +129,32 @@ func (g *AssetPacket) EncodeOpret(amount int64) (wire.TxOut, error) {
 	assetData := append(append([]byte{}, AssetMagic...), version)
 	assetData = append(assetData, encodedAssets...)
 
-	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
+	var scratch [8]byte
+	var tlvData bytes.Buffer
 	if g.SubDustKey != nil {
-		builder.AddData([]byte{MarkerSubDustKey})
-		builder.AddData(schnorr.SerializePubKey(g.SubDustKey))
+		if err := tlvData.WriteByte(MarkerSubDustKey); err != nil {
+			return wire.TxOut{}, err
+		}
+		subDustKey := schnorr.SerializePubKey(g.SubDustKey)
+		if err := tlv.WriteVarInt(&tlvData, uint64(len(subDustKey)), &scratch); err != nil {
+			return wire.TxOut{}, err
+		}
+		if _, err := tlvData.Write(subDustKey); err != nil {
+			return wire.TxOut{}, err
+		}
+	}
+	if err := tlvData.WriteByte(MarkerAssetPayload); err != nil {
+		return wire.TxOut{}, err
+	}
+	if err := tlv.WriteVarInt(&tlvData, uint64(len(assetData)), &scratch); err != nil {
+		return wire.TxOut{}, err
+	}
+	if _, err := tlvData.Write(assetData); err != nil {
+		return wire.TxOut{}, err
 	}
 
-	builder.AddData([]byte{MarkerAssetPayload})
-	builder.AddFullData(assetData)
+	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
+	builder.AddFullData(tlvData.Bytes())
 	opReturnPubkey, err := builder.Script()
 	if err != nil {
 		return wire.TxOut{}, err
@@ -148,12 +166,12 @@ func (g *AssetPacket) EncodeOpret(amount int64) (wire.TxOut, error) {
 	}, nil
 }
 
-func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetPacket, error) {
+func DecodeAssetPacket(opReturnData []byte) (*AssetPacket, error) {
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
 		return nil, errors.New("OP_RETURN not present")
 	}
 
-	assetPayload, subDustKey, err := parseAssetOpReturn(opReturnData)
+	assetPayload, subDustKey, err := parsePacketOpReturn(opReturnData)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +183,7 @@ func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetPacket, error) {
 	version := assetPayload[len(AssetMagic)]
 	payload := assetPayload[len(AssetMagic)+1:]
 
-	group, err := decodeAssetGroupPayload(payload, version)
+	packet, err := decodeAssetPacket(payload, version)
 	if err != nil {
 		return nil, err
 	}
@@ -173,15 +191,15 @@ func DecodeAssetGroupFromOpret(opReturnData []byte) (*AssetPacket, error) {
 	if len(subDustKey) > 0 {
 		key, keyErr := schnorr.ParsePubKey(subDustKey)
 		if keyErr == nil {
-			group.SubDustKey = key
+			packet.SubDustKey = key
 		}
 	}
 
-	return group, nil
+	return packet, nil
 }
 
-func IsAssetGroup(opReturnData []byte) bool {
-	payload, _, err := parseAssetOpReturn(opReturnData)
+func IsAssetPacket(opReturnData []byte) bool {
+	payload, _, err := parsePacketOpReturn(opReturnData)
 	if err == nil && len(payload) >= len(AssetMagic)+1 {
 		return bytes.HasPrefix(payload, AssetMagic)
 	}
@@ -355,8 +373,8 @@ func VerifyAssetOutputInTx(arkTx string, vout uint32) error {
 	var assetGroupIndex int
 
 	for i, output := range decodedArkTx.UnsignedTx.TxOut {
-		if IsAssetGroup(output.PkScript) {
-			assetGp, err := DecodeAssetGroupFromOpret(output.PkScript)
+		if IsAssetPacket(output.PkScript) {
+			assetGp, err := DecodeAssetPacket(output.PkScript)
 			if err != nil {
 				return fmt.Errorf("error decoding asset Opreturn: %s", err)
 			}
@@ -408,10 +426,6 @@ func VerifyAssetOutputInTx(arkTx string, vout uint32) error {
 	return nil
 }
 
-func IsAssetCreation(asset AssetGroup) bool {
-	return len(asset.Inputs) == 0
-}
-
 func DeriveAssetGroupFromTx(arkTx string) (*AssetPacket, error) {
 	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
 	if err != nil {
@@ -419,8 +433,8 @@ func DeriveAssetGroupFromTx(arkTx string) (*AssetPacket, error) {
 	}
 
 	for _, output := range decodedArkTx.UnsignedTx.TxOut {
-		if IsAssetGroup(output.PkScript) {
-			assetGroup, err := DecodeAssetGroupFromOpret(output.PkScript)
+		if IsAssetPacket(output.PkScript) {
+			assetGroup, err := DecodeAssetPacket(output.PkScript)
 			if err != nil {
 				return nil, fmt.Errorf("error decoding asset Opreturn: %s", err)
 			}
@@ -432,7 +446,7 @@ func DeriveAssetGroupFromTx(arkTx string) (*AssetPacket, error) {
 
 }
 
-func encodeAssetGroupPayload(controlAssets, normalAssets []AssetGroup) ([]byte, error) {
+func encodeAssetPacket(controlAssets, normalAssets []AssetGroup) ([]byte, error) {
 	var scratch [8]byte
 	var buf bytes.Buffer
 
@@ -468,8 +482,8 @@ func encodeAssetGroupPayload(controlAssets, normalAssets []AssetGroup) ([]byte, 
 }
 
 // parseAssetOpReturn extracts the asset payload and optional sub-dust pubkey from an OP_RETURN script.
-// (OP_RETURN <MarkerSubDustKey> <subdust_pubkey> <MarkerAssetPayload> <asset_payload> ).
-func parseAssetOpReturn(opReturnData []byte) ([]byte, []byte, error) {
+// (OP_RETURN <type><length><value> <type><length><value> ...).
+func parsePacketOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
 		return nil, nil, errors.New("OP_RETURN not present")
 	}
@@ -482,63 +496,57 @@ func parseAssetOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 		return nil, nil, errors.New("invalid OP_RETURN script")
 	}
 
-	var dataPushes [][]byte
+	var payload []byte
 
 	for tokenizer.Next() {
 		data := tokenizer.Data()
 		if data == nil {
-			return nil, nil, errors.New("unexpected non-data push in OP_RETURN")
+			return nil, nil, errors.New("invalid OP_RETURN data push")
 		}
 
-		pushCopy := make([]byte, len(data))
-		copy(pushCopy, data)
-		dataPushes = append(dataPushes, pushCopy)
+		payload = append(payload, data...)
 	}
 
 	if err := tokenizer.Err(); err != nil {
 		return nil, nil, err
 	}
 
-	if len(dataPushes) == 0 {
+	if len(payload) == 0 {
 		return nil, nil, errors.New("missing OP_RETURN payload")
 	}
 
 	var subDustKey []byte
 	var assetPayload []byte
-	var currentMarker byte
-	seenSubDustKey := false
-	seenAssetPayload := false
+	reader := bytes.NewReader(payload)
+	var scratch [8]byte
 
-	for _, push := range dataPushes {
-		if len(push) == 1 {
-			switch push[0] {
-			case MarkerSubDustKey:
-				if seenSubDustKey {
-					currentMarker = 0
-				} else {
-					currentMarker = MarkerSubDustKey
-				}
-			case MarkerAssetPayload:
-				if seenAssetPayload {
-					currentMarker = 0
-				} else {
-					currentMarker = MarkerAssetPayload
-				}
-			}
-			continue
+	for reader.Len() > 0 {
+		typ, err := reader.ReadByte()
+		if err != nil {
+			return nil, nil, err
 		}
 
-		switch currentMarker {
+		length, err := tlv.ReadVarInt(reader, &scratch)
+		if err != nil {
+			return nil, nil, err
+		}
+		if uint64(reader.Len()) < length {
+			return nil, nil, errors.New("invalid TLV length for OP_RETURN payload")
+		}
+
+		value := make([]byte, length)
+		if _, err := io.ReadFull(reader, value); err != nil {
+			return nil, nil, err
+		}
+
+		switch typ {
 		case MarkerSubDustKey:
-			if len(push) == schnorr.PubKeyBytesLen && !seenSubDustKey {
-				subDustKey = push
-				seenSubDustKey = true
+			if subDustKey == nil {
+				subDustKey = value
 			}
 		case MarkerAssetPayload:
-			// Only take the first asset payload push
-			if !seenAssetPayload {
-				assetPayload = push
-				seenAssetPayload = true
+			if assetPayload == nil {
+				assetPayload = value
 			}
 		}
 	}
@@ -562,7 +570,7 @@ func normalizeAssetSlices(a *AssetGroup) {
 	}
 }
 
-func decodeAssetGroupPayload(payload []byte, version byte) (*AssetPacket, error) {
+func decodeAssetPacket(payload []byte, version byte) (*AssetPacket, error) {
 	reader := bytes.NewReader(payload)
 	var scratch [8]byte
 

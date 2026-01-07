@@ -15,7 +15,7 @@ func TestGetAssetFromIntentsWithMultipleAssetGroups(t *testing.T) {
 	asset2, opret2 := newTestAssetGroup(t, "0202020202020202020202020202020202020202020202020202020202020202")
 
 	intent := domain.Intent{
-		AssetGroupList: [][]byte{opret1, opret2},
+		AssetPacketList: [][]byte{opret1, opret2},
 	}
 
 	foundAsset, err := getAssetFromIntents([]domain.Intent{intent}, &asset2.AssetId)
@@ -56,7 +56,7 @@ func newTestAssetGroup(t *testing.T, idHex string) (asset.AssetGroup, []byte) {
 		SubDustKey:   privKey.PubKey(),
 	}
 
-	opret, err := group.EncodeOpret(0)
+	opret, err := group.EncodeAssetPacket(0)
 	require.NoError(t, err)
 
 	return testAsset, opret.PkScript

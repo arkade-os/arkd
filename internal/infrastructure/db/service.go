@@ -486,23 +486,23 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 
 			// ignore asset anchor
-			if asset.IsAssetGroup(out.PkScript) {
+			if asset.IsAssetPacket(out.PkScript) {
 				if assetOpReturnProcessed {
 					continue
 				}
 				assetOpReturnProcessed = true
 
-				assetGroup, err := asset.DecodeAssetGroupFromOpret(out.PkScript)
+				assetPacket, err := asset.DecodeAssetPacket(out.PkScript)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
 				}
 
-				if assetGroup.SubDustKey == nil {
+				if assetPacket.SubDustKey == nil {
 					continue
 				}
 				isSubDust = true
-				pubKey = schnorr.SerializePubKey(assetGroup.SubDustKey)
+				pubKey = schnorr.SerializePubKey(assetPacket.SubDustKey)
 
 			} else {
 				isSubDust = script.IsSubDustScript(out.PkScript)
