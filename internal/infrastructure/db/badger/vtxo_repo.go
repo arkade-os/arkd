@@ -683,7 +683,7 @@ func (r *vtxoRepository) GetVtxosUpdatedInTimeRange(
 ) ([]domain.Vtxo, error) {
 	if after <= 0 {
 		return nil, fmt.Errorf("after must be greater than 0")
-	} else if (before > 0 && before <= after){
+	} else if before > 0 && before <= after {
 		return nil, fmt.Errorf("before must be greater than after")
 	}
 	query := badgerhold.Where("UpdatedAt").Ge(after).And("UpdatedAt").Le(before)
