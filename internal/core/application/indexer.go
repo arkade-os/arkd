@@ -168,7 +168,8 @@ func (i *indexerService) GetVtxos(
 		if err != nil {
 			return nil, err
 		}
-		timeBoundedVtxos, err := i.repoManager.Vtxos().GetVtxosUpdatedInTimeRange(ctx, after, before)
+		timeBoundedVtxos, err := i.repoManager.Vtxos().
+			GetVtxosUpdatedInTimeRange(ctx, after, before)
 		if err != nil {
 			return nil, err
 		}

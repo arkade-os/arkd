@@ -1073,9 +1073,14 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				GetVtxosUpdatedInTimeRange(ctx, 0, now.UnixMilli())
 			require.NoError(t, err)
 
-			// Test with negative time values
+			// Test with negative time after value
 			_, err = svc.Vtxos().
-				GetVtxosUpdatedInTimeRange(ctx, -1000, -500)
+				GetVtxosUpdatedInTimeRange(ctx, -1000, 0)
+			require.Error(t, err)
+
+			// Test with negative time before value
+			_, err = svc.Vtxos().
+				GetVtxosUpdatedInTimeRange(ctx, 0, -5000)
 			require.Error(t, err)
 
 			// Test with future time range
