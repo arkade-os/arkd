@@ -689,7 +689,7 @@ func (r *vtxoRepository) GetVtxosUpdatedInTimeRange(
 	query := badgerhold.Where("UpdatedAt").Ge(after)
 	// only add before condition if it's greater than 0. allows for unbounded before time when before=0
 	if before > 0 {
-		query = query.And("UpdatedAt").Lt(before)
+		query = query.And("UpdatedAt").Le(before)
 	}
 	return r.findVtxos(ctx, query)
 }
