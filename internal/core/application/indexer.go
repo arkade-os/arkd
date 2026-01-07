@@ -30,7 +30,7 @@ type IndexerService interface {
 	GetConnectors(ctx context.Context, txid string, page *Page) (*TreeTxResp, error)
 	GetVtxos(
 		ctx context.Context,
-		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool, page *Page,
+		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool, page *Page, after, before int64,
 	) (*GetVtxosResp, error)
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
@@ -147,6 +147,7 @@ func (i *indexerService) GetConnectors(
 func (i *indexerService) GetVtxos(
 	ctx context.Context,
 	pubkeys []string, spendableOnly, spentOnly, recoverableOnly, pendingOnly bool, page *Page,
+	after, before int64,
 ) (*GetVtxosResp, error) {
 	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
 	count := 0
@@ -161,49 +162,78 @@ func (i *indexerService) GetVtxos(
 		)
 	}
 
-	var allVtxos []domain.Vtxo
-	var err error
+	var intersectingVtxos []domain.Vtxo
 	if pendingOnly {
-		allVtxos, err = i.repoManager.Vtxos().GetPendingSpentVtxosWithPubKeys(ctx, pubkeys)
+		allVtxos, err := i.repoManager.Vtxos().GetPendingSpentVtxosWithPubKeys(ctx, pubkeys)
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		allVtxos, err = i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys)
+		timeBoundedVtxos, err := i.repoManager.Vtxos().
+			GetVtxosUpdatedInTimeRange(ctx, after, before)
 		if err != nil {
 			return nil, err
+		}
+		// take intersection of allVtxos and timeBoundedVtxos
+		for _, vtxo := range allVtxos {
+			for _, tbVtxo := range timeBoundedVtxos {
+				// include if the vtxo matches tbVtxo
+				if vtxo.Outpoint == tbVtxo.Outpoint {
+					intersectingVtxos = append(intersectingVtxos, vtxo)
+					break
+				}
+			}
+		}
+
+	} else {
+		allVtxos, err := i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys)
+		if err != nil {
+			return nil, err
+		}
+		timeBoundedVtxos, err := i.repoManager.Vtxos().GetVtxosUpdatedInTimeRange(ctx, after, before)
+		if err != nil {
+			return nil, err
+		}
+		// take intersection of allVtxos and timeBoundedVtxos
+		for _, vtxo := range allVtxos {
+			for _, tbVtxo := range timeBoundedVtxos {
+				// include if the vtxo matches tbVtxo
+				if vtxo.Outpoint == tbVtxo.Outpoint {
+					intersectingVtxos = append(intersectingVtxos, vtxo)
+					break
+				}
+			}
 		}
 
 		if spendableOnly {
-			spendableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-			for _, vtxo := range allVtxos {
+			spendableVtxos := make([]domain.Vtxo, 0, len(intersectingVtxos))
+			for _, vtxo := range intersectingVtxos {
 				if !vtxo.Spent && !vtxo.Swept && !vtxo.Unrolled {
 					spendableVtxos = append(spendableVtxos, vtxo)
 				}
 			}
-			allVtxos = spendableVtxos
+			intersectingVtxos = spendableVtxos
 		}
 		if spentOnly {
-			spentVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-			for _, vtxo := range allVtxos {
+			spentVtxos := make([]domain.Vtxo, 0, len(intersectingVtxos))
+			for _, vtxo := range intersectingVtxos {
 				if vtxo.Spent || vtxo.Swept || vtxo.Unrolled {
 					spentVtxos = append(spentVtxos, vtxo)
 				}
 			}
-			allVtxos = spentVtxos
+			intersectingVtxos = spentVtxos
 		}
 		if recoverableOnly {
-			recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-			for _, vtxo := range allVtxos {
+			recoverableVtxos := make([]domain.Vtxo, 0, len(intersectingVtxos))
+			for _, vtxo := range intersectingVtxos {
 				if !vtxo.RequiresForfeit() && !vtxo.Spent {
 					recoverableVtxos = append(recoverableVtxos, vtxo)
 				}
 			}
-			allVtxos = recoverableVtxos
+			intersectingVtxos = recoverableVtxos
 		}
 	}
 
-	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
+	vtxos, pageResp := paginate(intersectingVtxos, page, maxPageSizeSpendableVtxos)
 	return &GetVtxosResp{
 		Vtxos: vtxos,
 		Page:  pageResp,

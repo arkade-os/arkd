@@ -188,6 +188,11 @@ message GetVtxosRequest {
   IndexerPageRequest page = 6;
   // Include only spent vtxos that are not finalized.
   bool pending_only = 7;
+  // vtxos from after unix time in milliseconds, must be above 0
+  int64 after = 8;
+  // vtxos from before unix time in milliseconds, using 0 leaves no upper time bound, must be
+  // greater value than the after
+  int64 before = 9; 
 }
 message GetVtxosResponse {
   repeated IndexerVtxo vtxos = 1;
