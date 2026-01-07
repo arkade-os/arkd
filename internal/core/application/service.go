@@ -3786,39 +3786,6 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 	}
 }
 
-func (s *service) restoreWatchingVtxos() error {
-	ctx := context.Background()
-
-	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
-	if err != nil {
-		return err
-	}
-
-	scripts := make([]string, 0)
-
-	for _, commitmentTxId := range commitmentTxIds {
-		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-		if err != nil {
-			return err
-		}
-
-		for _, key := range tapKeys {
-			scripts = append(scripts, fmt.Sprintf("5120%s", key))
-		}
-	}
-
-	if len(scripts) <= 0 {
-		return nil
-	}
-
-	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
-		return err
-	}
-
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
-	return nil
-}
-
 // extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner
 // it excludes subdust vtxos scripts and duplicates
 // it logs errors and continues in order to not block the start/stop watching vtxos operations
