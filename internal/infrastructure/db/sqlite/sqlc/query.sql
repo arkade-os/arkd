@@ -65,15 +65,11 @@ VALUES (
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = EXCLUDED.updated_at;
+    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER));
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
 VALUES (@vtxo_txid, @vtxo_vout, @commitment_txid);
-
--- name: SelectVtxosUpdatedInTimeRange :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw 
-WHERE updated_at >= @after AND updated_at <= @before;
 
 -- name: UpsertOffchainTx :exec
 INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code)
@@ -347,6 +343,10 @@ WHERE v.txid = @txid AND v.vout = @vout
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     );
+
+-- name: SelectVtxosUpdatedInTimeRange :many
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw 
+WHERE updated_at >= @after AND updated_at <= @before;
 
 -- name: UpsertConviction :exec
 INSERT INTO conviction (

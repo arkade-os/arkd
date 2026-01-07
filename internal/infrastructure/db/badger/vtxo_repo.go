@@ -681,6 +681,9 @@ func (r *vtxoRepository) GetAllChildrenVtxos(
 func (r *vtxoRepository) GetVtxosUpdatedInTimeRange(
 	ctx context.Context, after, before int64,
 ) ([]domain.Vtxo, error) {
+	if after <= 0 || before <= 0 || before < after {
+		return nil, fmt.Errorf("invalid time range")
+	}
 	query := badgerhold.Where("UpdatedAt").Ge(after).And("UpdatedAt").Le(before)
 	return r.findVtxos(ctx, query)
 }

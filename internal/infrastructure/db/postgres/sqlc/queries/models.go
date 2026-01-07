@@ -62,6 +62,7 @@ type IntentWithInputsVw struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
+	UpdatedAt      sql.NullInt64
 	Commitments    []byte
 	ID             sql.NullString
 	RoundID        sql.NullString

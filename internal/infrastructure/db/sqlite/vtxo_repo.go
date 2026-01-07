@@ -504,6 +504,9 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 func (v *vtxoRepository) GetVtxosUpdatedInTimeRange(
 	ctx context.Context, after, before int64,
 ) ([]domain.Vtxo, error) {
+	if after <= 0 || before <= 0 || before < after {
+		return nil, fmt.Errorf("invalid time range")
+	}
 	res, err := v.querier.SelectVtxosUpdatedInTimeRange(
 		ctx,
 		queries.SelectVtxosUpdatedInTimeRangeParams{
@@ -524,8 +527,8 @@ func (v *vtxoRepository) GetVtxosUpdatedInTimeRange(
 
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 	var commitmentTxids []string
-	if row.Commitments != "" {
-		commitmentTxids = strings.Split(row.Commitments, ",")
+	if commitments, ok := row.Commitments.(string); ok && commitments != "" {
+		commitmentTxids = strings.Split(commitments, ",")
 	}
 	return domain.Vtxo{
 		Outpoint: domain.Outpoint{
