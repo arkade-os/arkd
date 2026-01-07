@@ -340,8 +340,9 @@ WHERE v.txid = @txid AND v.vout = @vout
     );
 
 -- name: SelectVtxosUpdatedInTimeRange :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw 
-WHERE updated_at >= @after AND (@before::bigint IS NULL OR updated_at <= @before::bigint);
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE updated_at >= @after
+  AND (@before::bigint IS NULL OR @before::bigint = 0 OR updated_at <= @before::bigint);
 
 -- name: UpsertConviction :exec
 INSERT INTO conviction (
