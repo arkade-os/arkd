@@ -1063,12 +1063,12 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				GetVtxosUpdatedInTimeRange(ctx, 0, 0)
 			require.Error(t, err)
 
-			// Test with zero time for the after field
+			// Test with zero time for the before field
 			_, err = svc.Vtxos().
 				GetVtxosUpdatedInTimeRange(ctx, now.UnixMilli(), 0)
-			require.Error(t, err)
+			require.NoError(t, err)
 
-			// Test with zero time for the before field
+			// Test with zero time for the after field
 			_, err = svc.Vtxos().
 				GetVtxosUpdatedInTimeRange(ctx, 0, now.UnixMilli())
 			require.Error(t, err)
