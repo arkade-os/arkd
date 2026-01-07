@@ -1492,7 +1492,7 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 
 const selectVtxosUpdatedInTimeRange = `-- name: SelectVtxosUpdatedInTimeRange :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw 
-WHERE updated_at >= $1 AND updated_at <= $2
+WHERE updated_at >= $1 AND ($2::bigint IS NULL OR updated_at <= $2::bigint)
 `
 
 type SelectVtxosUpdatedInTimeRangeParams struct {
