@@ -8,7 +8,7 @@ replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20251210130629-1fad876f84f9
-	github.com/arkade-os/go-sdk v0.0.0-20260105172657-ef533ff7539d
+	github.com/arkade-os/go-sdk v0.0.0-20260107170900-941ddcfc3309
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.36.0
 )
