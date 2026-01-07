@@ -1235,6 +1235,19 @@ func updateIntentFees(ctx *cli.Context) error {
 		return err
 	}
 
+	if ctx.IsSet(onchainInputFlagName) && onchainInputFee == "" {
+		return fmt.Errorf("--%s flag requires a non-empty string", onchainInputFlagName)
+	}
+	if ctx.IsSet(offchainInputFlagName) && offchainInputFee == "" {
+		return fmt.Errorf("--%s flag requires a non-empty string", offchainInputFlagName)
+	}
+	if ctx.IsSet(onchainOutputFlagName) && onchainOutputFee == "" {
+		return fmt.Errorf("--%s flag requires a non-empty string", onchainOutputFlagName)
+	}
+	if ctx.IsSet(offchainOutputFlagName) && offchainOutputFee == "" {
+		return fmt.Errorf("--%s flag requires a non-empty string", offchainOutputFlagName)
+	}
+
 	url := fmt.Sprintf("%s/v1/admin/intentFees", baseURL)
 	body := fmt.Sprintf(
 		`{"fees":{"onchain_input_fee": "%s", "offchain_input_fee": "%s", "onchain_output_fee": "%s", "offchain_output_fee": "%s"}}`,
