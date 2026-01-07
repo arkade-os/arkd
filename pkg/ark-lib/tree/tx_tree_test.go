@@ -69,6 +69,18 @@ func TestTxTreeSerialization(t *testing.T) {
 
 			checkTxTree(t, vtxoTree, deserializedShuffled)
 			checkTxTree(t, deserialized, deserializedShuffled)
+
+			leavesFromFlatTxTree := serialized.Leaves()
+
+			for _, leaf := range leavesFromFlatTxTree {
+				leafNode := deserialized.Find(leaf.Txid)
+				require.NotNil(t, leafNode)
+				require.Equal(t, leaf.Txid, leafNode.Root.UnsignedTx.TxID())
+				require.Empty(t, leafNode.Children)
+			}
+
+			rootFromFlatTxTree := serialized.RootTxid()
+			require.Equal(t, rootFromFlatTxTree, deserialized.Root.UnsignedTx.TxID())
 		})
 	}
 }

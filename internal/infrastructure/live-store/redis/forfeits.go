@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -12,8 +13,10 @@ import (
 )
 
 type forfeitTxsStore struct {
-	rdb     *redis.Client
-	builder ports.TxBuilder
+	rdb          *redis.Client
+	builder      ports.TxBuilder
+	numOfRetries int
+	retryDelay   time.Duration
 }
 
 const (
@@ -23,15 +26,25 @@ const (
 	forfeitTxsStoreConnIdxKey = "forfeitTxsStore:connidx"
 )
 
-func NewForfeitTxsStore(rdb *redis.Client, builder ports.TxBuilder) ports.ForfeitTxsStore {
+func NewForfeitTxsStore(
+	rdb *redis.Client, builder ports.TxBuilder, numOfRetries int,
+) ports.ForfeitTxsStore {
 	return &forfeitTxsStore{
-		rdb:     rdb,
-		builder: builder,
+		rdb:          rdb,
+		builder:      builder,
+		numOfRetries: numOfRetries,
+		retryDelay:   10 * time.Millisecond,
 	}
 }
 
-func (s *forfeitTxsStore) Init(connectors tree.FlatTxTree, intents []domain.Intent) error {
-	ctx := context.Background()
+func (s *forfeitTxsStore) Init(
+	ctx context.Context, connectors tree.FlatTxTree, intents []domain.Intent,
+) error {
+	connBytes, err := json.Marshal(connectors)
+	if err != nil {
+		return fmt.Errorf("failed to marshal connectors: %v", err)
+	}
+
 	vtxosToSign := make([]domain.Vtxo, 0)
 	for _, intent := range intents {
 		for _, vtxo := range intent.Inputs {
@@ -40,6 +53,10 @@ func (s *forfeitTxsStore) Init(connectors tree.FlatTxTree, intents []domain.Inte
 			}
 			vtxosToSign = append(vtxosToSign, vtxo)
 		}
+	}
+	vtxosBytes, err := json.Marshal(vtxosToSign)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vtxos to sign: %v", err)
 	}
 
 	forfeitTxs := make(map[string]string)
@@ -69,83 +86,126 @@ func (s *forfeitTxsStore) Init(connectors tree.FlatTxTree, intents []domain.Inte
 			connIndex[connectorOutpoint.String()] = vtxosToSign[i].Outpoint
 		}
 	}
-	// Store in Redis atomically
-	pipe := s.rdb.TxPipeline()
-	for vtxoKey, forfeit := range forfeitTxs {
-		pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxoKey, forfeit)
+	idxBytes, err := json.Marshal(connIndex)
+	if err != nil {
+		return fmt.Errorf("failed to marshal connector index: %v", err)
 	}
-	connBytes, _ := json.Marshal(connectors)
-	pipe.Set(ctx, forfeitTxsStoreConnsKey, connBytes, 0)
-	vtxosBytes, _ := json.Marshal(vtxosToSign)
-	pipe.Set(ctx, forfeitTxsStoreVtxosKey, vtxosBytes, 0)
-	idxBytes, _ := json.Marshal(connIndex)
-	pipe.Set(ctx, forfeitTxsStoreConnIdxKey, idxBytes, 0)
-	_, err := pipe.Exec(ctx)
-	return err
+
+	keys := []string{
+		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
+		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+	}
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				for vtxoKey, forfeit := range forfeitTxs {
+					pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxoKey, forfeit)
+				}
+				pipe.Set(ctx, forfeitTxsStoreConnsKey, connBytes, 0)
+				pipe.Set(ctx, forfeitTxsStoreVtxosKey, vtxosBytes, 0)
+				pipe.Set(ctx, forfeitTxsStoreConnIdxKey, idxBytes, 0)
+				return nil
+			})
+			return err
+		}, keys...); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
+	}
+	return fmt.Errorf("failed to init forfeit txs after max num of retries: %v", err)
 }
 
-func (s *forfeitTxsStore) Sign(txs []string) error {
+func (s *forfeitTxsStore) Sign(ctx context.Context, txs []string) error {
 	if len(txs) == 0 {
 		return nil
 	}
-	ctx := context.Background()
+	if s.builder == nil {
+		return fmt.Errorf("missing builder for tx verification")
+	}
+
 	vtxosBytes, err := s.rdb.Get(ctx, forfeitTxsStoreVtxosKey).Bytes()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get vtxos to sign: %v", err)
 	}
 	var vtxos []domain.Vtxo
 	if err := json.Unmarshal(vtxosBytes, &vtxos); err != nil {
-		return err
+		return fmt.Errorf(
+			"malformed vtxos to sign in storage (out=%s): %v", string(vtxosBytes), err,
+		)
 	}
 	connBytes, err := s.rdb.Get(ctx, forfeitTxsStoreConnsKey).Bytes()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get connectors: %v", err)
 	}
 	var connectors tree.FlatTxTree
 	if err := json.Unmarshal(connBytes, &connectors); err != nil {
-		return err
+		return fmt.Errorf("malformed connectors in storage (out=%s): %v", string(connBytes), err)
 	}
 	idxBytes, err := s.rdb.Get(ctx, forfeitTxsStoreConnIdxKey).Bytes()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get connector indexes: %v", err)
 	}
 	connIndex := make(map[string]domain.Outpoint)
 	if err := json.Unmarshal(idxBytes, &connIndex); err != nil {
-		return err
-	}
-	if s.builder == nil {
-		return fmt.Errorf("forfeitTxsStore builder not set")
+		return fmt.Errorf(
+			"malformed connector indexes in storage (out=%s): %v", string(idxBytes), err,
+		)
 	}
 	validTxs, err := s.builder.VerifyForfeitTxs(vtxos, connectors, txs)
 	if err != nil {
 		return err
 	}
 
-	pipe := s.rdb.TxPipeline()
-	for vtxoKey, validTx := range validTxs {
-		txBytes, err := json.Marshal(validTx)
-		if err != nil {
-			return err
-		}
-		pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxoKey.String(), string(txBytes))
+	keys := []string{
+		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
+		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
 	}
-	_, err = pipe.Exec(ctx)
-
-	return err
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				for vtxoKey, validTx := range validTxs {
+					txBytes, err := json.Marshal(validTx)
+					if err != nil {
+						return err
+					}
+					pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxoKey.String(), string(txBytes))
+				}
+				return nil
+			})
+			return err
+		}, keys...); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
+	}
+	return fmt.Errorf("failed to add signed forfeit txs after max number of retries: %v", err)
 }
 
-func (s *forfeitTxsStore) Reset() {
-	ctx := context.Background()
-	pipe := s.rdb.TxPipeline()
-	pipe.Del(ctx, forfeitTxsStoreTxsKey)
-	pipe.Del(ctx, forfeitTxsStoreConnsKey)
-	pipe.Del(ctx, forfeitTxsStoreVtxosKey)
-	pipe.Del(ctx, forfeitTxsStoreConnIdxKey)
-	_, _ = pipe.Exec(ctx)
+func (s *forfeitTxsStore) Reset(ctx context.Context) error {
+	var err error
+	keys := []string{
+		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
+		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+	}
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Del(
+					ctx, forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
+					forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+				)
+				return nil
+			})
+			return err
+		}, keys...); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
+	}
+	return fmt.Errorf("failed to reset forfeit txs after max number of retries: %v", err)
 }
 
-func (s *forfeitTxsStore) Pop() ([]string, error) {
-	ctx := context.Background()
+func (s *forfeitTxsStore) Pop(ctx context.Context) ([]string, error) {
 	hash, err := s.rdb.HGetAll(ctx, forfeitTxsStoreTxsKey).Result()
 	if err != nil {
 		return nil, err
@@ -159,7 +219,7 @@ func (s *forfeitTxsStore) Pop() ([]string, error) {
 		}
 		var validTx ports.ValidForfeitTx
 		if err := json.Unmarshal([]byte(forfeitJSON), &validTx); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal forfeit tx for vtxo %s: %w", vtxo, err)
+			return nil, fmt.Errorf("failed to unmarshal forfeit tx for vtxo %s: %v", vtxo, err)
 		}
 		if _, used := usedConnectors[validTx.Connector]; used {
 			return nil, fmt.Errorf(
@@ -169,42 +229,46 @@ func (s *forfeitTxsStore) Pop() ([]string, error) {
 		usedConnectors[validTx.Connector] = struct{}{}
 		result = append(result, validTx.Tx)
 	}
-	s.Reset()
+
+	if err := s.Reset(ctx); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
-func (s *forfeitTxsStore) AllSigned() bool {
-	ctx := context.Background()
+func (s *forfeitTxsStore) AllSigned(ctx context.Context) (bool, error) {
 	hash, err := s.rdb.HGetAll(ctx, forfeitTxsStoreTxsKey).Result()
 	if err != nil {
-		return false
+		return false, err
 	}
+
 	for _, forfeitJSON := range hash {
 		if len(forfeitJSON) == 0 {
-			return false
+			return false, nil
 		}
 		var validTx ports.ValidForfeitTx
 		if err := json.Unmarshal([]byte(forfeitJSON), &validTx); err != nil {
-			return false
+			return false, fmt.Errorf(
+				"failed to unmarshal signed forfeit tx (out=%s): %v", forfeitJSON, err,
+			)
 		}
 		if len(validTx.Tx) == 0 {
-			return false
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
-func (s *forfeitTxsStore) GetUnsignedInputs() []domain.Outpoint {
-	ctx := context.Background()
+func (s *forfeitTxsStore) GetUnsignedInputs(ctx context.Context) ([]domain.Outpoint, error) {
 	hash, err := s.rdb.HGetAll(ctx, forfeitTxsStoreTxsKey).Result()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	vtxoKeys := make([]domain.Outpoint, 0)
 	for vtxoStr, forfeitJSON := range hash {
 		var vtxoKey domain.Outpoint
 		if err := vtxoKey.FromString(vtxoStr); err != nil {
-			continue
+			return nil, fmt.Errorf("malformed data in storage: %v", err)
 		}
 		if len(forfeitJSON) == 0 {
 			vtxoKeys = append(vtxoKeys, vtxoKey)
@@ -220,27 +284,29 @@ func (s *forfeitTxsStore) GetUnsignedInputs() []domain.Outpoint {
 		}
 	}
 
-	return vtxoKeys
+	return vtxoKeys, nil
 }
 
-func (s *forfeitTxsStore) Len() int {
-	ctx := context.Background()
+func (s *forfeitTxsStore) Len(ctx context.Context) (int, error) {
 	count, err := s.rdb.HLen(ctx, forfeitTxsStoreTxsKey).Result()
 	if err != nil {
-		return 0
+		return -1, err
 	}
-	return int(count)
+	return int(count), nil
 }
 
-func (s *forfeitTxsStore) GetConnectorsIndexes() map[string]domain.Outpoint {
-	ctx := context.Background()
+func (s *forfeitTxsStore) GetConnectorsIndexes(
+	ctx context.Context,
+) (map[string]domain.Outpoint, error) {
 	idxBytes, err := s.rdb.Get(ctx, forfeitTxsStoreConnIdxKey).Bytes()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to get connector indexes: %v", err)
 	}
 	connIndex := make(map[string]domain.Outpoint)
 	if err := json.Unmarshal(idxBytes, &connIndex); err != nil {
-		return nil
+		return nil, fmt.Errorf(
+			"malformed connector indexes in storage (out=%s): %v", string(idxBytes), err,
+		)
 	}
-	return connIndex
+	return connIndex, nil
 }

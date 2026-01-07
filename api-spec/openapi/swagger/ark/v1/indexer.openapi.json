@@ -775,6 +775,14 @@
             }
           },
           {
+            "name": "pendingOnly",
+            "in": "query",
+            "description": "Include only spent vtxos that are not finalized.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -1148,6 +1156,10 @@
           },
           "page": {
             "$ref": "#/components/schemas/IndexerPageRequest"
+          },
+          "pendingOnly": {
+            "type": "boolean",
+            "description": "Include only spent vtxos that are not finalized."
           },
           "recoverableOnly": {
             "type": "boolean",

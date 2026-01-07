@@ -188,6 +188,36 @@ func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error)
 	return readRows(rows)
 }
 
+func (v *vtxoRepository) GetExpiringLiquidity(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	amount, err := v.querier.SelectExpiringLiquidityAmount(
+		ctx,
+		queries.SelectExpiringLiquidityAmountParams{
+			After:  after,
+			Before: before,
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+	if amount < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", amount)
+	}
+	return uint64(amount), nil
+}
+
+func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+	amount, err := v.querier.SelectRecoverableLiquidityAmount(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if amount < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", amount)
+	}
+	return uint64(amount), nil
+}
+
 func (v *vtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
@@ -401,6 +431,61 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	}
 
 	return taprootKeys, nil
+}
+
+func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Vtxo, error) {
+	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(ctx, pubkeys)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	vtxos, err := readRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+	})
+
+	return vtxos, nil
+}
+
+func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
+	ctx context.Context, outpoints []domain.Outpoint,
+) ([]domain.Vtxo, error) {
+	var vtxos []domain.Vtxo
+	for _, outpoint := range outpoints {
+		res, err := v.querier.SelectPendingSpentVtxo(
+			ctx, queries.SelectPendingSpentVtxoParams{
+				Txid: outpoint.Txid,
+				Vout: int32(outpoint.VOut),
+			},
+		)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return nil, err
+		}
+
+		result, err := readRows([]queries.VtxoVw{res})
+		if err != nil {
+			return nil, err
+		}
+
+		vtxos = append(vtxos, result...)
+	}
+
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+	})
+
+	return vtxos, nil
 }
 
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {

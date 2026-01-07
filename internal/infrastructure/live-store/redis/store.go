@@ -18,11 +18,11 @@ type redisLiveStore struct {
 func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int) ports.LiveStore {
 	return &redisLiveStore{
 		intentStore:               NewIntentStore(rdb, numOfRetries),
-		forfeitTxsStore:           NewForfeitTxsStore(rdb, builder),
-		offChainTxStore:           NewOffChainTxStore(rdb),
+		forfeitTxsStore:           NewForfeitTxsStore(rdb, builder, numOfRetries),
+		offChainTxStore:           NewOffChainTxStore(rdb, numOfRetries),
 		currentRoundStore:         NewCurrentRoundStore(rdb, numOfRetries),
 		confirmationSessionsStore: NewConfirmationSessionsStore(rdb, numOfRetries),
-		treeSigningSessions:       NewTreeSigningSessionsStore(rdb),
+		treeSigningSessions:       NewTreeSigningSessionsStore(rdb, numOfRetries),
 		boardingInputsStore:       NewBoardingInputsStore(rdb, numOfRetries),
 	}
 }

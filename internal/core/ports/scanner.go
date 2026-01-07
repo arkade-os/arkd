@@ -17,6 +17,6 @@ type BlockchainScanner interface {
 	GetNotificationChannel(ctx context.Context) <-chan map[string][]VtxoWithValue
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
-	) (isConfirmed bool, blocknumber int64, blocktime int64, err error)
+	) (isConfirmed bool, blockTimestamp *BlockTimestamp, err error)
 	RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error
 }

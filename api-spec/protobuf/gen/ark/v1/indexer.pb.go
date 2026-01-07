@@ -692,8 +692,10 @@ type GetVtxosRequest struct {
 	// The 3 filters are mutually exclusive,
 	RecoverableOnly bool                `protobuf:"varint,5,opt,name=recoverable_only,json=recoverableOnly,proto3" json:"recoverable_only,omitempty"`
 	Page            *IndexerPageRequest `protobuf:"bytes,6,opt,name=page,proto3" json:"page,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Include only spent vtxos that are not finalized.
+	PendingOnly   bool `protobuf:"varint,7,opt,name=pending_only,json=pendingOnly,proto3" json:"pending_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetVtxosRequest) Reset() {
@@ -766,6 +768,13 @@ func (x *GetVtxosRequest) GetPage() *IndexerPageRequest {
 		return x.Page
 	}
 	return nil
+}
+
+func (x *GetVtxosRequest) GetPendingOnly() bool {
+	if x != nil {
+		return x.PendingOnly
+	}
+	return false
 }
 
 type GetVtxosResponse struct {
@@ -2838,7 +2847,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\"}\n" +
 	"\x19GetVtxoTreeLeavesResponse\x12/\n" +
 	"\x06leaves\x18\x01 \x03(\v2\x17.ark.v1.IndexerOutpointR\x06leaves\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xea\x01\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\x8d\x02\n" +
 	"\x0fGetVtxosRequest\x12\x18\n" +
 	"\ascripts\x18\x01 \x03(\tR\ascripts\x12\x1c\n" +
 	"\toutpoints\x18\x02 \x03(\tR\toutpoints\x12%\n" +
@@ -2846,7 +2855,8 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\n" +
 	"spent_only\x18\x04 \x01(\bR\tspentOnly\x12)\n" +
 	"\x10recoverable_only\x18\x05 \x01(\bR\x0frecoverableOnly\x12.\n" +
-	"\x04page\x18\x06 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\"n\n" +
+	"\x04page\x18\x06 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12!\n" +
+	"\fpending_only\x18\a \x01(\bR\vpendingOnly\"n\n" +
 	"\x10GetVtxosResponse\x12)\n" +
 	"\x05vtxos\x18\x01 \x03(\v2\x13.ark.v1.IndexerVtxoR\x05vtxos\x12/\n" +
 	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"z\n" +

@@ -2,7 +2,7 @@ module github.com/arkade-os/arkd/pkg/errors
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
-go 1.25
+go 1.25.5
 
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
@@ -22,5 +22,4 @@ require (
 	github.com/stretchr/testify v1.11.1 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250818200422-3122310a409c // indirect
 )

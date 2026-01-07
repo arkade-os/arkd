@@ -80,7 +80,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				}
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
-					pubkey, pubkey, arklib.RelativeLocktime{}, f.Intents, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
+					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys,
 				)
 				require.NoError(t, err)
 				require.NotEmpty(t, commitmentTx)
@@ -111,7 +111,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				}
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
-					pubkey, pubkey, arklib.RelativeLocktime{}, f.Intents, []ports.BoardingInput{}, []string{}, cosignersPublicKeys,
+					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys,
 				)
 				require.EqualError(t, err, f.ExpectedErr)
 				require.Empty(t, commitmentTx)
@@ -124,12 +124,12 @@ func TestBuildCommitmentTx(t *testing.T) {
 
 func randomInput() []ports.TxInput {
 	txid := randomHex(32)
-	input := &mockedInput{}
-	input.On("GetAsset").Return("5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225")
-	input.On("GetValue").Return(uint64(1000))
-	input.On("GetScript").Return("a914ea9f486e82efb3dd83a69fd96e3f0113757da03c87")
-	input.On("GetTxid").Return(txid)
-	input.On("GetIndex").Return(uint32(0))
+	input := ports.TxInput{
+		Txid:   txid,
+		Index:  0,
+		Script: "a914ea9f486e82efb3dd83a69fd96e3f0113757da03c87",
+		Value:  1000,
+	}
 
 	return []ports.TxInput{input}
 }

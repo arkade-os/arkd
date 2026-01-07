@@ -509,6 +509,33 @@ func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
 	}
 }
 
+type intentFees struct {
+	IntentOffchainInputFeeProgram  string `json:"offchainInputFee"`
+	IntentOnchainInputFeeProgram   string `json:"onchainInputFee"`
+	IntentOffchainOutputFeeProgram string `json:"offchainOutputFee"`
+	IntentOnchainOutputFeeProgram  string `json:"onchainOutputFee"`
+}
+
+func updateIntentFees(intentFees intentFees) error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	feesJson, err := json.Marshal(intentFees)
+	if err != nil {
+		return fmt.Errorf("failed to marshal intent fees: %s", err)
+	}
+
+	body := fmt.Sprintf(`{"fees": %s}`, feesJson)
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees", adminUrl)
+	if err := post(adminHttpClient, url, body, "intentFees"); err != nil {
+		return fmt.Errorf("failed to update intent fees: %s", err)
+	}
+
+	return nil
+}
+
 // lock the wallet, wait 10s and unlock it
 func restartArkd() error {
 	adminHttpClient := &http.Client{

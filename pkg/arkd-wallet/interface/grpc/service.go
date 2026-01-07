@@ -32,6 +32,7 @@ type service struct {
 	closeFn           func()
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func() error
+	stopFn            func()
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -83,7 +84,8 @@ func (s *service) Start() error {
 	}
 	grpcSrv := grpc.NewServer(grpcOpts...)
 
-	walletHandler := handlers.NewWalletServiceHandler(s.cfg.WalletSvc, s.cfg.ScannerSvc)
+	ctx, cancel := context.WithCancel(context.Background())
+	walletHandler := handlers.NewWalletServiceHandler(ctx, s.cfg.WalletSvc, s.cfg.ScannerSvc)
 	arkwalletv1.RegisterWalletServiceServer(grpcSrv, walletHandler)
 	signerHandler := handlers.NewSignerHandler(s.cfg.WalletSvc)
 	signerv1.RegisterSignerServiceServer(grpcSrv, signerHandler)
@@ -97,23 +99,14 @@ func (s *service) Start() error {
 		gatewayAddress(s.cfg.Port), gatewayOpts,
 	)
 	if err != nil {
+		cancel()
 		return fmt.Errorf("failed to connect wallet grpc-gateway: %w", err)
 	}
 
 	gwmux := gateway.NewServeMux(
 		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
-		// runtime.WithMarshalerOption("application/json+pretty", &runtime.JSONPb{
-		// 	MarshalOptions: protojson.MarshalOptions{
-		// 		Indent:    "  ",
-		// 		Multiline: true,
-		// 	},
-		// 	UnmarshalOptions: protojson.UnmarshalOptions{
-		// 		DiscardUnknown: true,
-		// 	},
-		// }),
 	)
 
-	ctx := context.Background()
 	arkwalletv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
 	signerv1.RegisterSignerServiceHandler(ctx, gwmux, conn)
 
@@ -128,6 +121,7 @@ func (s *service) Start() error {
 		Addr:    address(s.cfg.Port),
 		Handler: httpServerHandler,
 	}
+	s.stopFn = cancel
 
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -138,6 +132,9 @@ func (s *service) Start() error {
 }
 
 func (s *service) Stop() {
+	if s.stopFn != nil {
+		s.stopFn()
+	}
 	if s.server != nil {
 		_ = s.server.Shutdown(context.Background())
 	}

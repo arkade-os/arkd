@@ -10,5 +10,6 @@ type RepoManager interface {
 	OffchainTxs() domain.OffchainTxRepository
 	Convictions() domain.ConvictionRepository
 	Assets() domain.AssetRepository
+	Fees() domain.FeeRepository
 	Close()
 }

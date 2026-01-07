@@ -14,10 +14,8 @@ import (
 
 const (
 	maxPageSizeVtxoTree       = 300
-	maxPageSizeConnector      = 300
 	maxPageSizeForfeitTxs     = 500
 	maxPageSizeSpendableVtxos = 100
-	maxPageSizeTxHistory      = 200
 	maxPageSizeVtxoChain      = 100
 	maxPageSizeVirtualTxs     = 100
 )
@@ -32,7 +30,7 @@ type IndexerService interface {
 	GetConnectors(ctx context.Context, txid string, page *Page) (*TreeTxResp, error)
 	GetVtxos(
 		ctx context.Context,
-		pubkeys []string, spendableOnly, spendOnly, recoverableOnly bool, page *Page,
+		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool, page *Page,
 	) (*GetVtxosResp, error)
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
@@ -178,44 +176,61 @@ func (i *indexerService) GetConnectors(
 
 func (i *indexerService) GetVtxos(
 	ctx context.Context,
-	pubkeys []string, spendableOnly, spentOnly, recoverableOnly bool, page *Page,
+	pubkeys []string, spendableOnly, spentOnly, recoverableOnly, pendingOnly bool, page *Page,
 ) (*GetVtxosResp, error) {
-	if (spendableOnly && spentOnly) || (spendableOnly && recoverableOnly) ||
-		(spentOnly && recoverableOnly) {
-		return nil, fmt.Errorf("spendable, spent and recoverable filters are mutually exclusive")
+	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
+	count := 0
+	for _, v := range options {
+		if v {
+			count++
+		}
+	}
+	if count > 1 {
+		return nil, fmt.Errorf(
+			"spendable, spent, recoverable and pending filters are mutually exclusive",
+		)
 	}
 
-	allVtxos, err := i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys)
-	if err != nil {
-		return nil, err
-	}
+	var allVtxos []domain.Vtxo
+	var err error
+	if pendingOnly {
+		allVtxos, err = i.repoManager.Vtxos().GetPendingSpentVtxosWithPubKeys(ctx, pubkeys)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		allVtxos, err = i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys)
+		if err != nil {
+			return nil, err
+		}
 
-	if spendableOnly {
-		spendableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-		for _, vtxo := range allVtxos {
-			if !vtxo.Spent && !vtxo.Swept && !vtxo.Unrolled {
-				spendableVtxos = append(spendableVtxos, vtxo)
+		if spendableOnly {
+			spendableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
+			for _, vtxo := range allVtxos {
+				if !vtxo.Spent && !vtxo.Swept && !vtxo.Unrolled {
+					spendableVtxos = append(spendableVtxos, vtxo)
+				}
 			}
+			allVtxos = spendableVtxos
 		}
-		allVtxos = spendableVtxos
-	}
-	if spentOnly {
-		spentVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-		for _, vtxo := range allVtxos {
-			if vtxo.Spent || vtxo.Swept || vtxo.Unrolled {
-				spentVtxos = append(spentVtxos, vtxo)
+		if spentOnly {
+			spentVtxos := make([]domain.Vtxo, 0, len(allVtxos))
+			for _, vtxo := range allVtxos {
+				if vtxo.Spent || vtxo.Swept || vtxo.Unrolled {
+					spentVtxos = append(spentVtxos, vtxo)
+				}
 			}
+			allVtxos = spentVtxos
 		}
-		allVtxos = spentVtxos
-	}
-	if recoverableOnly {
-		recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-		for _, vtxo := range allVtxos {
-			if !vtxo.RequiresForfeit() && !vtxo.Spent {
-				recoverableVtxos = append(recoverableVtxos, vtxo)
+		if recoverableOnly {
+			recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
+			for _, vtxo := range allVtxos {
+				if !vtxo.RequiresForfeit() && !vtxo.Spent {
+					recoverableVtxos = append(recoverableVtxos, vtxo)
+				}
 			}
+			allVtxos = recoverableVtxos
 		}
-		allVtxos = recoverableVtxos
 	}
 
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)

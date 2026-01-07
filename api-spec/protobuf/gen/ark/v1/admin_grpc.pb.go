@@ -28,6 +28,9 @@ const (
 	AdminService_ClearScheduledSessionConfig_FullMethodName  = "/ark.v1.AdminService/ClearScheduledSessionConfig"
 	AdminService_ListIntents_FullMethodName                  = "/ark.v1.AdminService/ListIntents"
 	AdminService_DeleteIntents_FullMethodName                = "/ark.v1.AdminService/DeleteIntents"
+	AdminService_GetIntentFees_FullMethodName                = "/ark.v1.AdminService/GetIntentFees"
+	AdminService_UpdateIntentFees_FullMethodName             = "/ark.v1.AdminService/UpdateIntentFees"
+	AdminService_ClearIntentFees_FullMethodName              = "/ark.v1.AdminService/ClearIntentFees"
 	AdminService_GetConvictions_FullMethodName               = "/ark.v1.AdminService/GetConvictions"
 	AdminService_GetConvictionsInRange_FullMethodName        = "/ark.v1.AdminService/GetConvictionsInRange"
 	AdminService_GetConvictionsByRound_FullMethodName        = "/ark.v1.AdminService/GetConvictionsByRound"
@@ -35,6 +38,9 @@ const (
 	AdminService_PardonConviction_FullMethodName             = "/ark.v1.AdminService/PardonConviction"
 	AdminService_BanScript_FullMethodName                    = "/ark.v1.AdminService/BanScript"
 	AdminService_RevokeAuth_FullMethodName                   = "/ark.v1.AdminService/RevokeAuth"
+	AdminService_GetExpiringLiquidity_FullMethodName         = "/ark.v1.AdminService/GetExpiringLiquidity"
+	AdminService_GetRecoverableLiquidity_FullMethodName      = "/ark.v1.AdminService/GetRecoverableLiquidity"
+	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -50,6 +56,9 @@ type AdminServiceClient interface {
 	ClearScheduledSessionConfig(ctx context.Context, in *ClearScheduledSessionConfigRequest, opts ...grpc.CallOption) (*ClearScheduledSessionConfigResponse, error)
 	ListIntents(ctx context.Context, in *ListIntentsRequest, opts ...grpc.CallOption) (*ListIntentsResponse, error)
 	DeleteIntents(ctx context.Context, in *DeleteIntentsRequest, opts ...grpc.CallOption) (*DeleteIntentsResponse, error)
+	GetIntentFees(ctx context.Context, in *GetIntentFeesRequest, opts ...grpc.CallOption) (*GetIntentFeesResponse, error)
+	UpdateIntentFees(ctx context.Context, in *UpdateIntentFeesRequest, opts ...grpc.CallOption) (*UpdateIntentFeesResponse, error)
+	ClearIntentFees(ctx context.Context, in *ClearIntentFeesRequest, opts ...grpc.CallOption) (*ClearIntentFeesResponse, error)
 	GetConvictions(ctx context.Context, in *GetConvictionsRequest, opts ...grpc.CallOption) (*GetConvictionsResponse, error)
 	GetConvictionsInRange(ctx context.Context, in *GetConvictionsInRangeRequest, opts ...grpc.CallOption) (*GetConvictionsInRangeResponse, error)
 	GetConvictionsByRound(ctx context.Context, in *GetConvictionsByRoundRequest, opts ...grpc.CallOption) (*GetConvictionsByRoundResponse, error)
@@ -57,6 +66,9 @@ type AdminServiceClient interface {
 	PardonConviction(ctx context.Context, in *PardonConvictionRequest, opts ...grpc.CallOption) (*PardonConvictionResponse, error)
 	BanScript(ctx context.Context, in *BanScriptRequest, opts ...grpc.CallOption) (*BanScriptResponse, error)
 	RevokeAuth(ctx context.Context, in *RevokeAuthRequest, opts ...grpc.CallOption) (*RevokeAuthResponse, error)
+	GetExpiringLiquidity(ctx context.Context, in *GetExpiringLiquidityRequest, opts ...grpc.CallOption) (*GetExpiringLiquidityResponse, error)
+	GetRecoverableLiquidity(ctx context.Context, in *GetRecoverableLiquidityRequest, opts ...grpc.CallOption) (*GetRecoverableLiquidityResponse, error)
+	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
 }
 
 type adminServiceClient struct {
@@ -157,6 +169,36 @@ func (c *adminServiceClient) DeleteIntents(ctx context.Context, in *DeleteIntent
 	return out, nil
 }
 
+func (c *adminServiceClient) GetIntentFees(ctx context.Context, in *GetIntentFeesRequest, opts ...grpc.CallOption) (*GetIntentFeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIntentFeesResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetIntentFees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) UpdateIntentFees(ctx context.Context, in *UpdateIntentFeesRequest, opts ...grpc.CallOption) (*UpdateIntentFeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateIntentFeesResponse)
+	err := c.cc.Invoke(ctx, AdminService_UpdateIntentFees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ClearIntentFees(ctx context.Context, in *ClearIntentFeesRequest, opts ...grpc.CallOption) (*ClearIntentFeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClearIntentFeesResponse)
+	err := c.cc.Invoke(ctx, AdminService_ClearIntentFees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) GetConvictions(ctx context.Context, in *GetConvictionsRequest, opts ...grpc.CallOption) (*GetConvictionsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetConvictionsResponse)
@@ -227,6 +269,36 @@ func (c *adminServiceClient) RevokeAuth(ctx context.Context, in *RevokeAuthReque
 	return out, nil
 }
 
+func (c *adminServiceClient) GetExpiringLiquidity(ctx context.Context, in *GetExpiringLiquidityRequest, opts ...grpc.CallOption) (*GetExpiringLiquidityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetExpiringLiquidityResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetExpiringLiquidity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetRecoverableLiquidity(ctx context.Context, in *GetRecoverableLiquidityRequest, opts ...grpc.CallOption) (*GetRecoverableLiquidityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRecoverableLiquidityResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetRecoverableLiquidity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SweepResponse)
+	err := c.cc.Invoke(ctx, AdminService_Sweep_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility.
@@ -240,6 +312,9 @@ type AdminServiceServer interface {
 	ClearScheduledSessionConfig(context.Context, *ClearScheduledSessionConfigRequest) (*ClearScheduledSessionConfigResponse, error)
 	ListIntents(context.Context, *ListIntentsRequest) (*ListIntentsResponse, error)
 	DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error)
+	GetIntentFees(context.Context, *GetIntentFeesRequest) (*GetIntentFeesResponse, error)
+	UpdateIntentFees(context.Context, *UpdateIntentFeesRequest) (*UpdateIntentFeesResponse, error)
+	ClearIntentFees(context.Context, *ClearIntentFeesRequest) (*ClearIntentFeesResponse, error)
 	GetConvictions(context.Context, *GetConvictionsRequest) (*GetConvictionsResponse, error)
 	GetConvictionsInRange(context.Context, *GetConvictionsInRangeRequest) (*GetConvictionsInRangeResponse, error)
 	GetConvictionsByRound(context.Context, *GetConvictionsByRoundRequest) (*GetConvictionsByRoundResponse, error)
@@ -247,6 +322,9 @@ type AdminServiceServer interface {
 	PardonConviction(context.Context, *PardonConvictionRequest) (*PardonConvictionResponse, error)
 	BanScript(context.Context, *BanScriptRequest) (*BanScriptResponse, error)
 	RevokeAuth(context.Context, *RevokeAuthRequest) (*RevokeAuthResponse, error)
+	GetExpiringLiquidity(context.Context, *GetExpiringLiquidityRequest) (*GetExpiringLiquidityResponse, error)
+	GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error)
+	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have
@@ -283,6 +361,15 @@ func (UnimplementedAdminServiceServer) ListIntents(context.Context, *ListIntents
 func (UnimplementedAdminServiceServer) DeleteIntents(context.Context, *DeleteIntentsRequest) (*DeleteIntentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteIntents not implemented")
 }
+func (UnimplementedAdminServiceServer) GetIntentFees(context.Context, *GetIntentFeesRequest) (*GetIntentFeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetIntentFees not implemented")
+}
+func (UnimplementedAdminServiceServer) UpdateIntentFees(context.Context, *UpdateIntentFeesRequest) (*UpdateIntentFeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateIntentFees not implemented")
+}
+func (UnimplementedAdminServiceServer) ClearIntentFees(context.Context, *ClearIntentFeesRequest) (*ClearIntentFeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearIntentFees not implemented")
+}
 func (UnimplementedAdminServiceServer) GetConvictions(context.Context, *GetConvictionsRequest) (*GetConvictionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetConvictions not implemented")
 }
@@ -303,6 +390,15 @@ func (UnimplementedAdminServiceServer) BanScript(context.Context, *BanScriptRequ
 }
 func (UnimplementedAdminServiceServer) RevokeAuth(context.Context, *RevokeAuthRequest) (*RevokeAuthResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RevokeAuth not implemented")
+}
+func (UnimplementedAdminServiceServer) GetExpiringLiquidity(context.Context, *GetExpiringLiquidityRequest) (*GetExpiringLiquidityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetExpiringLiquidity not implemented")
+}
+func (UnimplementedAdminServiceServer) GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRecoverableLiquidity not implemented")
+}
+func (UnimplementedAdminServiceServer) Sweep(context.Context, *SweepRequest) (*SweepResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Sweep not implemented")
 }
 func (UnimplementedAdminServiceServer) testEmbeddedByValue() {}
 
@@ -486,6 +582,60 @@ func _AdminService_DeleteIntents_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetIntentFees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIntentFeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetIntentFees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetIntentFees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetIntentFees(ctx, req.(*GetIntentFeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_UpdateIntentFees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateIntentFeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).UpdateIntentFees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_UpdateIntentFees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).UpdateIntentFees(ctx, req.(*UpdateIntentFeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ClearIntentFees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClearIntentFeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ClearIntentFees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ClearIntentFees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ClearIntentFees(ctx, req.(*ClearIntentFeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_GetConvictions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetConvictionsRequest)
 	if err := dec(in); err != nil {
@@ -612,6 +762,60 @@ func _AdminService_RevokeAuth_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetExpiringLiquidity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExpiringLiquidityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetExpiringLiquidity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetExpiringLiquidity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetExpiringLiquidity(ctx, req.(*GetExpiringLiquidityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetRecoverableLiquidity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRecoverableLiquidityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetRecoverableLiquidity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetRecoverableLiquidity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetRecoverableLiquidity(ctx, req.(*GetRecoverableLiquidityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_Sweep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SweepRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).Sweep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_Sweep_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).Sweep(ctx, req.(*SweepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -656,6 +860,18 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_DeleteIntents_Handler,
 		},
 		{
+			MethodName: "GetIntentFees",
+			Handler:    _AdminService_GetIntentFees_Handler,
+		},
+		{
+			MethodName: "UpdateIntentFees",
+			Handler:    _AdminService_UpdateIntentFees_Handler,
+		},
+		{
+			MethodName: "ClearIntentFees",
+			Handler:    _AdminService_ClearIntentFees_Handler,
+		},
+		{
 			MethodName: "GetConvictions",
 			Handler:    _AdminService_GetConvictions_Handler,
 		},
@@ -682,6 +898,18 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeAuth",
 			Handler:    _AdminService_RevokeAuth_Handler,
+		},
+		{
+			MethodName: "GetExpiringLiquidity",
+			Handler:    _AdminService_GetExpiringLiquidity_Handler,
+		},
+		{
+			MethodName: "GetRecoverableLiquidity",
+			Handler:    _AdminService_GetRecoverableLiquidity_Handler,
+		},
+		{
+			MethodName: "Sweep",
+			Handler:    _AdminService_Sweep_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

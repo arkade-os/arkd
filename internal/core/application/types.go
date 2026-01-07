@@ -13,12 +13,21 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+type AcceptedOffchainTx struct {
+	TxId                string
+	FinalArkTx          string
+	SignedCheckpointTxs []string
+}
+
 type Service interface {
 	Start() errors.Error
 	Stop()
 	RegisterIntent(
 		ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
 	) (string, errors.Error)
+	EstimateIntentFee(
+		ctx context.Context, proof intent.Proof, message intent.EstimateIntentFeeMessage,
+	) (int64, errors.Error)
 	ConfirmRegistration(ctx context.Context, intentId string) errors.Error
 	SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) errors.Error
 	SignCommitmentTx(ctx context.Context, commitmentTx string) errors.Error
@@ -26,8 +35,13 @@ type Service interface {
 	GetInfo(ctx context.Context) (*ServiceInfo, errors.Error)
 	SubmitOffchainTx(
 		ctx context.Context, checkpointTxs []string, signedArkTx string,
-	) (signedCheckpoints []string, finalArkTx string, arkTxid string, err errors.Error)
+	) (tx *AcceptedOffchainTx, err errors.Error)
 	FinalizeOffchainTx(ctx context.Context, txid string, finalCheckpoints []string) errors.Error
+	GetPendingOffchainTxs(
+		ctx context.Context,
+		proof intent.Proof,
+		message intent.GetPendingTxMessage,
+	) ([]AcceptedOffchainTx, errors.Error)
 	// Tree signing methods
 	RegisterCosignerNonces(
 		ctx context.Context, roundId, pubkey string, nonces tree.TreeNonces,
@@ -79,15 +93,8 @@ type WalletStatus struct {
 }
 
 type FeeInfo struct {
-	IntentFees IntentFeeInfo
+	IntentFees domain.IntentFees
 	TxFeeRate  float64
-}
-
-type IntentFeeInfo struct {
-	OffchainInput  string
-	OffchainOutput string
-	OnchainInput   uint64
-	OnchainOutput  uint64
 }
 
 const (

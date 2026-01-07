@@ -1,6 +1,7 @@
 package inmemorylivestore
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"sync"
@@ -24,7 +25,7 @@ func NewConfirmationSessionsStore() ports.ConfirmationSessionsStore {
 	}
 }
 
-func (c *confirmationSessionsStore) Init(intentIDsHashes [][32]byte) {
+func (c *confirmationSessionsStore) Init(_ context.Context, intentIDsHashes [][32]byte) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -33,12 +34,14 @@ func (c *confirmationSessionsStore) Init(intentIDsHashes [][32]byte) {
 		hashes[hash] = false
 	}
 
+	c.sessionCompleteCh = make(chan struct{})
 	c.intentsHashes = hashes
 	c.numIntents = len(intentIDsHashes)
 	c.initialized = true
+	return nil
 }
 
-func (c *confirmationSessionsStore) Confirm(intentId string) error {
+func (c *confirmationSessionsStore) Confirm(_ context.Context, intentId string) error {
 	hash := sha256.Sum256([]byte(intentId))
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -55,16 +58,15 @@ func (c *confirmationSessionsStore) Confirm(intentId string) error {
 	c.intentsHashes[hash] = true
 
 	if c.numConfirmedIntents == c.numIntents {
-		select {
-		case c.sessionCompleteCh <- struct{}{}:
-		default:
-		}
+		go func() {
+			c.sessionCompleteCh <- struct{}{}
+		}()
 	}
 
 	return nil
 }
 
-func (c *confirmationSessionsStore) Get() *ports.ConfirmationSessions {
+func (c *confirmationSessionsStore) Get(_ context.Context) (*ports.ConfirmationSessions, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -72,20 +74,25 @@ func (c *confirmationSessionsStore) Get() *ports.ConfirmationSessions {
 		IntentsHashes:       c.intentsHashes,
 		NumIntents:          c.numIntents,
 		NumConfirmedIntents: c.numConfirmedIntents,
-	}
+	}, nil
 }
 
-func (c *confirmationSessionsStore) Reset() {
+func (c *confirmationSessionsStore) Reset(_ context.Context) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	if c.sessionCompleteCh != nil {
+		close(c.sessionCompleteCh)
+	}
+	c.sessionCompleteCh = make(chan struct{})
 	c.intentsHashes = make(map[[32]byte]bool)
 	c.numIntents = 0
 	c.numConfirmedIntents = 0
 	c.initialized = false
+	return nil
 }
 
-func (c *confirmationSessionsStore) Initialized() bool {
+func (c *confirmationSessionsStore) Initialized(_ context.Context) bool {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	return c.initialized

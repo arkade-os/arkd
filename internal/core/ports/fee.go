@@ -1,0 +1,17 @@
+package ports
+
+import (
+	"context"
+
+	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/btcsuite/btcd/wire"
+)
+
+type FeeManager interface {
+	ComputeIntentFees(
+		ctx context.Context,
+		boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
+		onchainOutputs, offchainOutputs []wire.TxOut,
+	) (int64, error)
+	Validate(fees domain.IntentFees) error
+}

@@ -35,6 +35,55 @@ func (q *Queries) AddAsset(ctx context.Context, arg AddAssetParams) error {
 	return err
 }
 
+const addIntentFees = `-- name: AddIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+SELECT
+    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
+    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
+  CASE
+    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
+    WHEN ?1 != '' THEN ?1
+    ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
+    WHEN ?2 != '' THEN ?2
+    ELSE COALESCE((SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
+    WHEN ?3 != '' THEN ?3
+    ELSE COALESCE((SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
+    WHEN ?4 != '' THEN ?4
+    ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END
+`
+
+type AddIntentFeesParams struct {
+	OffchainInputFeeProgram  interface{}
+	OnchainInputFeeProgram   interface{}
+	OffchainOutputFeeProgram interface{}
+	OnchainOutputFeeProgram  interface{}
+}
+
+func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) error {
+	_, err := q.db.ExecContext(ctx, addIntentFees,
+		arg.OffchainInputFeeProgram,
+		arg.OnchainInputFeeProgram,
+		arg.OffchainOutputFeeProgram,
+		arg.OnchainOutputFeeProgram,
+	)
+	return err
+}
+
 const addToAssetQuantity = `-- name: AddToAssetQuantity :exec
 UPDATE asset_group
 SET quantity = quantity + ?
@@ -48,6 +97,21 @@ type AddToAssetQuantityParams struct {
 
 func (q *Queries) AddToAssetQuantity(ctx context.Context, arg AddToAssetQuantityParams) error {
 	_, err := q.db.ExecContext(ctx, addToAssetQuantity, arg.Quantity, arg.ID)
+	return err
+}
+
+const clearIntentFees = `-- name: ClearIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+VALUES ('', '', '', '')
+`
+
+func (q *Queries) ClearIntentFees(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearIntentFees)
 	return err
 }
 
@@ -601,6 +665,46 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
+const selectExpiringLiquidityAmount = `-- name: SelectExpiringLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0) AS amount
+FROM vtxo
+WHERE swept = false
+  AND spent = false
+  AND unrolled = false
+  AND expires_at > ?1
+  AND (?2 <= 0 OR expires_at < ?2)
+`
+
+type SelectExpiringLiquidityAmountParams struct {
+	After  int64
+	Before interface{}
+}
+
+func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectExpiringLiquidityAmountParams) (interface{}, error) {
+	row := q.db.QueryRowContext(ctx, selectExpiringLiquidityAmount, arg.After, arg.Before)
+	var amount interface{}
+	err := row.Scan(&amount)
+	return amount, err
+}
+
+const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
+SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
+`
+
+func (q *Queries) SelectLatestIntentFees(ctx context.Context) (IntentFee, error) {
+	row := q.db.QueryRowContext(ctx, selectLatestIntentFees)
+	var i IntentFee
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.OffchainInputFeeProgram,
+		&i.OnchainInputFeeProgram,
+		&i.OffchainOutputFeeProgram,
+		&i.OnchainOutputFeeProgram,
+	)
+	return i, err
+}
+
 const selectLatestScheduledSession = `-- name: SelectLatestScheduledSession :one
 SELECT id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at FROM scheduled_session ORDER BY updated_at DESC LIMIT 1
 `
@@ -759,6 +863,119 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 		return nil, err
 	}
 	return items, nil
+}
+
+const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :one
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.commitments
+FROM vtxo_vw v
+WHERE v.txid = ?1 AND v.vout = ?2
+    AND v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+`
+
+type SelectPendingSpentVtxoParams struct {
+	Txid string
+	Vout int64
+}
+
+func (q *Queries) SelectPendingSpentVtxo(ctx context.Context, arg SelectPendingSpentVtxoParams) (VtxoVw, error) {
+	row := q.db.QueryRowContext(ctx, selectPendingSpentVtxo, arg.Txid, arg.Vout)
+	var i VtxoVw
+	err := row.Scan(
+		&i.Txid,
+		&i.Vout,
+		&i.Pubkey,
+		&i.Amount,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.CommitmentTxid,
+		&i.SpentBy,
+		&i.Spent,
+		&i.Unrolled,
+		&i.Swept,
+		&i.Preconfirmed,
+		&i.SettledBy,
+		&i.ArkTxid,
+		&i.IntentID,
+		&i.Commitments,
+	)
+	return i, err
+}
+
+const selectPendingSpentVtxosWithPubkeys = `-- name: SelectPendingSpentVtxosWithPubkeys :many
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.commitments
+FROM vtxo_vw v
+WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
+    AND v.pubkey IN (/*SLICE:pubkeys*/?)
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+`
+
+func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, pubkeys []string) ([]VtxoVw, error) {
+	query := selectPendingSpentVtxosWithPubkeys
+	var queryParams []interface{}
+	if len(pubkeys) > 0 {
+		for _, v := range pubkeys {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(pubkeys))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VtxoVw
+	for rows.Next() {
+		var i VtxoVw
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.CommitmentTxid,
+			&i.SpentBy,
+			&i.Spent,
+			&i.Unrolled,
+			&i.Swept,
+			&i.Preconfirmed,
+			&i.SettledBy,
+			&i.ArkTxid,
+			&i.IntentID,
+			&i.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectRecoverableLiquidityAmount = `-- name: SelectRecoverableLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0) AS amount
+FROM vtxo
+WHERE swept = true
+  AND spent = false
+`
+
+func (q *Queries) SelectRecoverableLiquidityAmount(ctx context.Context) (interface{}, error) {
+	row := q.db.QueryRowContext(ctx, selectRecoverableLiquidityAmount)
+	var amount interface{}
+	err := row.Scan(&amount)
+	return amount, err
 }
 
 const selectRoundConnectors = `-- name: SelectRoundConnectors :many
@@ -1658,23 +1875,23 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 }
 
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkey*/?)
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkeys*/?)
 `
 
 type SelectVtxosWithPubkeysRow struct {
 	VtxoVw VtxoVw
 }
 
-func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkey []string) ([]SelectVtxosWithPubkeysRow, error) {
+func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkeys []string) ([]SelectVtxosWithPubkeysRow, error) {
 	query := selectVtxosWithPubkeys
 	var queryParams []interface{}
-	if len(pubkey) > 0 {
-		for _, v := range pubkey {
+	if len(pubkeys) > 0 {
+		for _, v := range pubkeys {
 			queryParams = append(queryParams, v)
 		}
-		query = strings.Replace(query, "/*SLICE:pubkey*/?", strings.Repeat(",?", len(pubkey))[1:], 1)
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(pubkeys))[1:], 1)
 	} else {
-		query = strings.Replace(query, "/*SLICE:pubkey*/?", "NULL", 1)
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
 	}
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {

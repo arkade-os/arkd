@@ -262,12 +262,20 @@ func (e *indexerService) GetVtxos(
 	spendableOnly := request.GetSpendableOnly()
 	spentOnly := request.GetSpentOnly()
 	recoverableOnly := request.GetRecoverableOnly()
+	pendingOnly := request.GetPendingOnly()
 	if len(pubkeys) > 0 {
-		if (spendableOnly && spentOnly) || (spendableOnly && recoverableOnly) ||
-			(spentOnly && recoverableOnly) {
+		options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
+
+		count := 0
+		for _, v := range options {
+			if v {
+				count++
+			}
+		}
+		if count > 1 {
 			return nil, status.Error(
 				codes.InvalidArgument,
-				"spendable, spent and recoverable filters are mutually exclusive",
+				"spendable, spent, recoverable and pending filters are mutually exclusive",
 			)
 		}
 	}
@@ -275,7 +283,7 @@ func (e *indexerService) GetVtxos(
 	var resp *application.GetVtxosResp
 	if len(pubkeys) > 0 {
 		resp, err = e.indexerSvc.GetVtxos(
-			ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly, page,
+			ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly, pendingOnly, page,
 		)
 	}
 	if len(outpoints) > 0 {

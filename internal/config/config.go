@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	"github.com/arkade-os/arkd/internal/infrastructure/feemanager"
 	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
 	blockscheduler "github.com/arkade-os/arkd/internal/infrastructure/scheduler/block"
@@ -74,6 +75,7 @@ type Config struct {
 	DbUrl                     string
 	EventDbUrl                string
 	EventDbDir                string
+	PostgresAutoCreateDB      bool
 	SessionDuration           int64
 	BanDuration               int64
 	BanThreshold              int64 // number of crimes to trigger a ban
@@ -121,9 +123,9 @@ type Config struct {
 	VtxoMinAmount             int64
 	SettlementMinExpiryGap    int64
 
-	OnchainOutputFee int64
-	EnablePprof      bool
+	EnablePprof bool
 
+	fee            ports.FeeManager
 	repo           ports.RepoManager
 	svc            application.Service
 	adminSvc       application.AdminService
@@ -163,6 +165,7 @@ var (
 	EventDbType                          = "EVENT_DB_TYPE"
 	DbType                               = "DB_TYPE"
 	DbUrl                                = "PG_DB_URL"
+	PostgresAutoCreateDB                 = "PG_DB_AUTOCREATE"
 	EventDbUrl                           = "PG_EVENT_DB_URL"
 	SchedulerType                        = "SCHEDULER_TYPE"
 	TxBuilderType                        = "TX_BUILDER_TYPE"
@@ -206,7 +209,6 @@ var (
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
-	OnchainOutputFee              = "ONCHAIN_OUTPUT_FEE"
 	EnablePprof                   = "ENABLE_PPROF"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
@@ -242,7 +244,6 @@ var (
 	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
-	defaultOnchainOutputFee              = 0 // no fee by default
 	defaultEnablePprof                   = false
 )
 
@@ -283,7 +284,6 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
-	viper.SetDefault(OnchainOutputFee, defaultOnchainOutputFee)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 
 	if err := initDatadir(); err != nil {
@@ -353,6 +353,7 @@ func LoadConfig() (*Config, error) {
 		DbUrl:                     dbUrl,
 		EventDbDir:                dbPath,
 		EventDbUrl:                eventDbUrl,
+		PostgresAutoCreateDB:      viper.GetBool(PostgresAutoCreateDB),
 		LogLevel:                  viper.GetInt(LogLevel),
 		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
 		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
@@ -393,7 +394,6 @@ func LoadConfig() (*Config, error) {
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
-		OnchainOutputFee:              viper.GetInt64(OnchainOutputFee),
 		EnablePprof:                   viper.GetBool(EnablePprof),
 	}, nil
 }
@@ -559,12 +559,10 @@ func (c *Config) Validate() error {
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
-
-	if c.OnchainOutputFee < 0 {
-		return fmt.Errorf("onchain output fee must be greater than 0")
-	}
-
 	if err := c.repoManager(); err != nil {
+		return err
+	}
+	if err := c.feeManager(); err != nil {
 		return err
 	}
 	if err := c.walletService(); err != nil {
@@ -638,6 +636,15 @@ func (c *Config) RoundReportService() (application.RoundReportService, error) {
 	return c.roundReportSvc, nil
 }
 
+func (c *Config) feeManager() (err error) {
+	c.fee, err = feemanager.NewArkFeeManager(c.repo.Fees())
+	if err != nil {
+		return fmt.Errorf("failed to create fee manager: %w", err)
+	}
+
+	return nil
+}
+
 func (c *Config) repoManager() error {
 	var svc ports.RepoManager
 	var err error
@@ -649,7 +656,7 @@ func (c *Config) repoManager() error {
 	case "badger":
 		eventStoreConfig = []interface{}{c.EventDbDir, logger}
 	case "postgres":
-		eventStoreConfig = []interface{}{c.EventDbUrl}
+		eventStoreConfig = []interface{}{c.EventDbUrl, c.PostgresAutoCreateDB}
 	default:
 		return fmt.Errorf("unknown event db type")
 	}
@@ -660,7 +667,7 @@ func (c *Config) repoManager() error {
 	case "sqlite":
 		dataStoreConfig = []interface{}{c.DbDir}
 	case "postgres":
-		dataStoreConfig = []interface{}{c.DbUrl}
+		dataStoreConfig = []interface{}{c.DbUrl, c.PostgresAutoCreateDB}
 	default:
 		return fmt.Errorf("unknown db type")
 	}
@@ -812,7 +819,7 @@ func (c *Config) appService() error {
 
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
-		c.scheduler, c.liveStore, roundReportSvc, c.alerts,
+		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
 		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.PublicUnilateralExitDelay,
 		c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
@@ -823,7 +830,6 @@ func (c *Config) appService() error {
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
-		c.OnchainOutputFee,
 	)
 	if err != nil {
 		return err
@@ -840,7 +846,7 @@ func (c *Config) adminService() error {
 	}
 
 	c.adminSvc = application.NewAdminService(
-		c.wallet, c.repo, c.txBuilder, c.liveStore, unit,
+		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 	)
 	return nil

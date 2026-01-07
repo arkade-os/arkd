@@ -36,6 +36,28 @@ type TxTreeNode struct {
 // The purpose of this struct is to facilitate the persistence of the tx tree in storage services.
 type FlatTxTree []TxTreeNode
 
+func (c FlatTxTree) RootTxid() string {
+	if len(c) == 1 {
+		return c[0].Txid
+	}
+
+	// the root is the node not being a child of another one
+	allchildren := make(map[string]struct{})
+	for _, node := range c {
+		for _, child := range node.Children {
+			allchildren[child] = struct{}{}
+		}
+	}
+
+	for _, node := range c {
+		if _, ok := allchildren[node.Txid]; !ok {
+			return node.Txid
+		}
+	}
+
+	return ""
+}
+
 func (c FlatTxTree) Leaves() []TxTreeNode {
 	leaves := make([]TxTreeNode, 0)
 	for _, child := range c {

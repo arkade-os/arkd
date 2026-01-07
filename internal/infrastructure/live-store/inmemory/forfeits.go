@@ -1,7 +1,9 @@
 package inmemorylivestore
 
 import (
+	"context"
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -25,7 +27,9 @@ func NewForfeitTxsStore(txBuilder ports.TxBuilder) ports.ForfeitTxsStore {
 	}
 }
 
-func (m *forfeitTxsStore) Init(connectors tree.FlatTxTree, intents []domain.Intent) error {
+func (m *forfeitTxsStore) Init(
+	_ context.Context, connectors tree.FlatTxTree, intents []domain.Intent,
+) error {
 	vtxosToSign := make([]domain.Vtxo, 0)
 	for _, intent := range intents {
 		for _, vtxo := range intent.Inputs {
@@ -83,7 +87,7 @@ func (m *forfeitTxsStore) Init(connectors tree.FlatTxTree, intents []domain.Inte
 	return nil
 }
 
-func (m *forfeitTxsStore) Sign(txs []string) error {
+func (m *forfeitTxsStore) Sign(_ context.Context, txs []string) error {
 	if len(txs) == 0 {
 		return nil
 	}
@@ -110,7 +114,7 @@ func (m *forfeitTxsStore) Sign(txs []string) error {
 
 	return nil
 }
-func (m *forfeitTxsStore) Reset() {
+func (m *forfeitTxsStore) Reset(_ context.Context) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
@@ -118,12 +122,14 @@ func (m *forfeitTxsStore) Reset() {
 	m.connectors = nil
 	m.connectorsIndex = nil
 	m.vtxos = nil
+	return nil
 }
-func (m *forfeitTxsStore) Pop() ([]string, error) {
+func (m *forfeitTxsStore) Pop(ctx context.Context) ([]string, error) {
 	m.lock.Lock()
 	defer func() {
 		m.lock.Unlock()
-		m.Reset()
+		// nolint
+		m.Reset(ctx)
 	}()
 
 	txs := make([]string, 0)
@@ -144,38 +150,41 @@ func (m *forfeitTxsStore) Pop() ([]string, error) {
 
 	return txs, nil
 }
-func (m *forfeitTxsStore) AllSigned() bool {
+func (m *forfeitTxsStore) AllSigned(_ context.Context) (bool, error) {
+	m.lock.RLock()
+	defer m.lock.RUnlock()
+
 	for _, forfeit := range m.forfeitTxs {
 		if len(forfeit.Tx) == 0 {
-			return false
+			return false, nil
 		}
 	}
 
-	return true
+	return true, nil
 }
 
-func (m *forfeitTxsStore) GetUnsignedInputs() []domain.Outpoint {
+func (m *forfeitTxsStore) GetUnsignedInputs(_ context.Context) ([]domain.Outpoint, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
 	vtxoKeys := make([]domain.Outpoint, 0)
-
 	for vtxo, forfeit := range m.forfeitTxs {
 		if len(forfeit.Tx) == 0 {
 			vtxoKeys = append(vtxoKeys, vtxo)
 		}
 	}
-
-	return vtxoKeys
+	return vtxoKeys, nil
 }
-func (m *forfeitTxsStore) Len() int {
+func (m *forfeitTxsStore) Len(_ context.Context) (int, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	return len(m.forfeitTxs)
+	return len(m.forfeitTxs), nil
 }
 
-func (m *forfeitTxsStore) GetConnectorsIndexes() map[string]domain.Outpoint {
+func (m *forfeitTxsStore) GetConnectorsIndexes(
+	_ context.Context) (map[string]domain.Outpoint, error,
+) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	return m.connectorsIndex
+	return maps.Clone(m.connectorsIndex), nil
 }

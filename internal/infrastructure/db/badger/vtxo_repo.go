@@ -239,6 +239,44 @@ func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 	return allVtxos, nil
 }
 
+func (r *vtxoRepository) GetExpiringLiquidity(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	query := badgerhold.Where("Swept").Eq(false).
+		And("Spent").Eq(false).
+		And("Unrolled").Eq(false).
+		And("ExpiresAt").Gt(after)
+
+	if before > 0 {
+		query = query.And("ExpiresAt").Lt(before)
+	}
+
+	vtxos, err := r.findVtxos(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+
+	var sum uint64
+	for _, vtxo := range vtxos {
+		sum += vtxo.Amount
+	}
+	return sum, nil
+}
+
+func (r *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+	query := badgerhold.Where("Swept").Eq(true).And("Spent").Eq(false)
+	vtxos, err := r.findVtxos(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+
+	var sum uint64
+	for _, vtxo := range vtxos {
+		sum += vtxo.Amount
+	}
+	return sum, nil
+}
+
 func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	ctx context.Context, commitmentTxid string, amountFilter uint64,
 ) ([]string, error) {
@@ -284,6 +322,92 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	}
 
 	return taprootKeys, nil
+}
+
+func (r *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Vtxo, error) {
+	indexedPubkeys := make(map[string]struct{})
+	for _, pubkey := range pubkeys {
+		indexedPubkeys[pubkey] = struct{}{}
+	}
+	// Get all candidates: vtxos that are spent, not unrolled and not settled
+	query := badgerhold.Where("Spent").Eq(true).And("Unrolled").Eq(false).
+		And("SettledBy").Eq("").And("ArkTxid").Ne("")
+	candidates, err := r.findVtxos(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter the candidates by excluding those with non-matching pubkeys and that for which
+	// exists in db a vtxo matching their ark txid
+	indexedCandidates := make(map[string][]domain.Vtxo)
+	for _, vtxo := range candidates {
+		if _, ok := indexedPubkeys[vtxo.PubKey]; !ok {
+			continue
+		}
+		indexedCandidates[vtxo.ArkTxid] = append(indexedCandidates[vtxo.ArkTxid], vtxo)
+	}
+
+	vtxos := make([]domain.Vtxo, 0)
+	for txid, candidates := range indexedCandidates {
+		query := badgerhold.Where("Txid").Eq(txid)
+		res, err := r.findVtxos(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		if len(res) == 0 {
+			vtxos = append(vtxos, candidates...)
+		}
+	}
+
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+	})
+
+	return vtxos, nil
+}
+
+func (r *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
+	ctx context.Context, outpoints []domain.Outpoint,
+) ([]domain.Vtxo, error) {
+	// Get all candidates
+	indexedCandidates := make(map[string][]domain.Vtxo)
+	for _, outpoint := range outpoints {
+		vtxo, err := r.getVtxo(ctx, outpoint)
+		if err != nil {
+			return nil, err
+		}
+		if vtxo == nil {
+			continue
+		}
+		if !vtxo.Spent || vtxo.Unrolled || vtxo.SettledBy != "" {
+			continue
+		}
+		if vtxo.ArkTxid == "" {
+			continue
+		}
+		indexedCandidates[vtxo.ArkTxid] = append(indexedCandidates[vtxo.ArkTxid], *vtxo)
+	}
+
+	// Filter by including only those for which there's no vtxo in db matching their ark txid
+	vtxos := make([]domain.Vtxo, 0)
+	for txid, candidates := range indexedCandidates {
+		query := badgerhold.Where("Txid").Eq(txid)
+		res, err := r.findVtxos(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		if len(res) == 0 {
+			vtxos = append(vtxos, candidates...)
+		}
+	}
+
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+	})
+
+	return vtxos, nil
 }
 
 func (r *vtxoRepository) Close() {

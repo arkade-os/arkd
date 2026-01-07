@@ -13,14 +13,23 @@ import (
 
 const tipHeightEndpoint = "/blocks/tip/height"
 
-type service struct {
-	tipURL string
-	lock   sync.Locker
-	taskes map[int64][]func()
-	stopCh chan struct{}
+type Option func(*service)
+
+func WithTickerInterval(interval time.Duration) Option {
+	return func(s *service) {
+		s.tickerInterval = interval
+	}
 }
 
-func NewScheduler(esploraURL string) (ports.SchedulerService, error) {
+type service struct {
+	tipURL         string
+	lock           sync.Locker
+	taskes         map[int64][]func()
+	stopCh         chan struct{}
+	tickerInterval time.Duration
+}
+
+func NewScheduler(esploraURL string, opts ...Option) (ports.SchedulerService, error) {
 	if len(esploraURL) == 0 {
 		return nil, fmt.Errorf("esplora URL is required")
 	}
@@ -30,22 +39,30 @@ func NewScheduler(esploraURL string) (ports.SchedulerService, error) {
 		return nil, err
 	}
 
-	return &service{
+	svc := &service{
 		tipURL,
 		&sync.Mutex{},
 		make(map[int64][]func()),
 		make(chan struct{}),
-	}, nil
+		time.Second * 10,
+	}
+
+	for _, opt := range opts {
+		opt(svc)
+	}
+
+	return svc, nil
 }
 
 func (s *service) Start() {
 	go func() {
+		ticker := time.NewTicker(s.tickerInterval)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-s.stopCh:
 				return
-			default:
-				time.Sleep(10 * time.Second)
+			case <-ticker.C:
 				taskes, err := s.popTaskes()
 				if err != nil {
 					log.Errorf("error fetching tasks: %s", err)
@@ -68,15 +85,6 @@ func (s *service) Stop() {
 
 func (s *service) Unit() ports.TimeUnit {
 	return ports.BlockHeight
-}
-
-func (s *service) AddNow(expiry int64) int64 {
-	tip, err := s.fetchTipHeight()
-	if err != nil {
-		return 0
-	}
-
-	return tip + expiry
 }
 
 func (s *service) AfterNow(expiry int64) bool {

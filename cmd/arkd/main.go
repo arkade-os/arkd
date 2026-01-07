@@ -61,7 +61,9 @@ func startAction(_ *cli.Context) error {
 	log.RegisterExitHandler(svc.Stop)
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, os.Interrupt)
+	signal.Notify(
+		sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP, os.Interrupt,
+	)
 	<-sigChan
 
 	log.Debug("shutting down service...")
@@ -86,11 +88,16 @@ func main() {
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
+		sweepCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,
 		revokeAuthCmd,
 		convictionsCmd,
+		liquidityExpiringCmd,
+		liquidityRecoverableCmd,
+		liquidityReportCmd,
+		feesCmd,
 	)
 
 	app.DefaultCommand = startCmd.Name

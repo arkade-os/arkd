@@ -73,6 +73,11 @@ var (
 		"badger":   badgerdb.NewAssetRepository,
 		"postgres": pgdb.NewAssetRepository,
 	}
+	intentFeesStoreTypes = map[string]func(...interface{}) (domain.FeeRepository, error){
+		"badger":   badgerdb.NewIntentFeesRepository,
+		"sqlite":   sqlitedb.NewIntentFeesRepository,
+		"postgres": pgdb.NewIntentFeesRepository,
+	}
 )
 
 const (
@@ -95,6 +100,7 @@ type service struct {
 	offchainTxStore       domain.OffchainTxRepository
 	convictionStore       domain.ConvictionRepository
 	assetStore            domain.AssetRepository
+	intentFeesStore       domain.FeeRepository
 	txDecoder             ports.TxDecoder
 }
 
@@ -124,6 +130,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
 	assetStoreFactory, ok := assetStoreTypes[config.DataStoreType]
+	intentFeesStoreFactory, ok := intentFeesStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
@@ -135,6 +142,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
 	var assetStore domain.AssetRepository
+	var intentFeesStore domain.FeeRepository
 	var err error
 
 	switch config.EventStoreType {
@@ -144,16 +152,21 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
 	case "postgres":
-		if len(config.DataStoreConfig) != 1 {
+		if len(config.EventStoreConfig) != 2 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
-		dsn, ok := config.DataStoreConfig[0].(string)
+		dsn, ok := config.EventStoreConfig[0].(string)
 		if !ok {
 			return nil, fmt.Errorf("invalid DSN for postgres")
 		}
 
-		db, err := pgdb.OpenDb(dsn)
+		autoCreate, ok := config.EventStoreConfig[1].(bool)
+		if !ok {
+			return nil, fmt.Errorf("invalid autocreate flag for postgres")
+		}
+
+		db, err := pgdb.OpenDb(dsn, autoCreate)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres db: %s", err)
 		}
@@ -189,13 +202,16 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
-
 		assetStore, err = assetStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
+		intentFeesStore, err = intentFeesStoreFactory(config.DataStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+		}
 	case "postgres":
-		if len(config.DataStoreConfig) != 1 {
+		if len(config.DataStoreConfig) != 2 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
@@ -204,7 +220,12 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("invalid DSN for postgres")
 		}
 
-		db, err := pgdb.OpenDb(dsn)
+		autoCreate, ok := config.DataStoreConfig[1].(bool)
+		if !ok {
+			return nil, fmt.Errorf("invalid autocreate flag for postgres")
+		}
+
+		db, err := pgdb.OpenDb(dsn, autoCreate)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres db: %s", err)
 		}
@@ -250,6 +271,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		convictionStore, err = convictionStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
+		}
+		intentFeesStore, err = intentFeesStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
 	case "sqlite":
 		if len(config.DataStoreConfig) != 1 {
@@ -310,6 +335,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
+		intentFeesStore, err = intentFeesStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+		}
 	}
 
 	svc := &service{
@@ -321,6 +350,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		txDecoder:             txDecoder,
 		convictionStore:       convictionStore,
 		assetStore:            assetStore,
+		intentFeesStore:       intentFeesStore,
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -360,6 +390,10 @@ func (s *service) OffchainTxs() domain.OffchainTxRepository {
 
 func (s *service) Convictions() domain.ConvictionRepository {
 	return s.convictionStore
+}
+
+func (s *service) Fees() domain.FeeRepository {
+	return s.intentFeesStore
 }
 
 func (s *service) Close() {
