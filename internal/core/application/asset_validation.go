@@ -51,6 +51,9 @@ func (s *service) validateControlAssetsForNormalAssets(ctx context.Context, cont
 		totalOutputAmount := sumAssetOutputs(normalAsset.Outputs)
 		// Ensure Presence of Control Asset for Reissue/Burn
 		if totalInputAmount != totalOutputAmount {
+			if normalAsset.ControlAssetId == nil {
+				return fmt.Errorf("missing control asset for asset reissue/burn")
+			}
 			if !hasMatchingControlAsset(controlAssets, normalAsset.ControlAssetId) {
 				return fmt.Errorf("invalid control key for asset modification")
 			}
