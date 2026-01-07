@@ -11,8 +11,14 @@ import (
 )
 
 func TestGetAssetFromIntentsWithMultipleAssetGroups(t *testing.T) {
-	asset1, opret1 := newTestAssetGroup(t, "0101010101010101010101010101010101010101010101010101010101010101")
-	asset2, opret2 := newTestAssetGroup(t, "0202020202020202020202020202020202020202020202020202020202020202")
+	asset1, opret1 := newTestAssetGroup(
+		t,
+		"0101010101010101010101010101010101010101010101010101010101010101",
+	)
+	asset2, opret2 := newTestAssetGroup(
+		t,
+		"0202020202020202020202020202020202020202020202020202020202020202",
+	)
 
 	intent := domain.Intent{
 		AssetPacketList: [][]byte{opret1, opret2},

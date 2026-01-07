@@ -12,7 +12,12 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx, checkpointTxMap map[string]string, assetOutput []byte) error {
+func (s *service) validateAssetTransaction(
+	ctx context.Context,
+	arkTx wire.MsgTx,
+	checkpointTxMap map[string]string,
+	assetOutput []byte,
+) error {
 	decodedAssetPacket, err := asset.DecodeAssetPacket(assetOutput)
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
@@ -35,7 +40,10 @@ func (s *service) validateAssetTransaction(ctx context.Context, arkTx wire.MsgTx
 	return s.validateAssetGroups(ctx, arkTx, checkpointTxMap, allAssets)
 }
 
-func (s *service) validateControlAssetsForNormalAssets(ctx context.Context, controlAssets, normalAssets []asset.AssetGroup) error {
+func (s *service) validateControlAssetsForNormalAssets(
+	ctx context.Context,
+	controlAssets, normalAssets []asset.AssetGroup,
+) error {
 	for _, normalAsset := range normalAssets {
 		// Ensure Presence of Control Asset for Issuance and Metadata modification
 		if len(normalAsset.Inputs) == 0 {
@@ -64,7 +72,11 @@ func (s *service) validateControlAssetsForNormalAssets(ctx context.Context, cont
 	return nil
 }
 
-func (s *service) ensureControlAssetExists(ctx context.Context, controlAssets []asset.AssetGroup, controlAssetID asset.AssetId) error {
+func (s *service) ensureControlAssetExists(
+	ctx context.Context,
+	controlAssets []asset.AssetGroup,
+	controlAssetID asset.AssetId,
+) error {
 	// check in the provided control assets first
 	if hasMatchingControlAsset(controlAssets, &controlAssetID) {
 		return nil
@@ -112,7 +124,12 @@ func sumAssetOutputs(outputs []asset.AssetOutput) uint64 {
 	return total
 }
 
-func (s *service) validateAssetGroups(ctx context.Context, arkTx wire.MsgTx, checkpointTxMap map[string]string, assets []asset.AssetGroup) error {
+func (s *service) validateAssetGroups(
+	ctx context.Context,
+	arkTx wire.MsgTx,
+	checkpointTxMap map[string]string,
+	assets []asset.AssetGroup,
+) error {
 	for _, grpAsset := range assets {
 		if err := asset.VerifyAssetOutputs(arkTx.TxOut, grpAsset.Outputs); err != nil {
 			return err
@@ -128,7 +145,12 @@ func (s *service) validateAssetGroups(ctx context.Context, arkTx wire.MsgTx, che
 	return nil
 }
 
-func (s *service) validateAssetInput(ctx context.Context, arkTx wire.MsgTx, checkpointTxMap map[string]string, input asset.AssetInput) error {
+func (s *service) validateAssetInput(
+	ctx context.Context,
+	arkTx wire.MsgTx,
+	checkpointTxMap map[string]string,
+	input asset.AssetInput,
+) error {
 	if input.Type == asset.AssetTypeTeleport {
 		expectedHash := asset.CalculateTeleportHash(input.Witness.Script, input.Witness.Nonce)
 		if !bytes.Equal(input.Commitment[:], expectedHash[:]) {
@@ -157,7 +179,11 @@ func (s *service) validateAssetInput(ctx context.Context, arkTx wire.MsgTx, chec
 	checkpointOutpoint := arkTx.TxIn[input.Vin].PreviousOutPoint
 	checkpointTxHex, ok := checkpointTxMap[checkpointOutpoint.Hash.String()]
 	if !ok {
-		return fmt.Errorf("checkpoint tx %s not found for asset input %d", checkpointOutpoint.Hash, input.Vin)
+		return fmt.Errorf(
+			"checkpoint tx %s not found for asset input %d",
+			checkpointOutpoint.Hash,
+			input.Vin,
+		)
 	}
 
 	checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointTxHex), true)

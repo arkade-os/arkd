@@ -1454,8 +1454,16 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				VOut: 0,
 			},
 			Assets: []domain.NormalAsset{
-				{Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0}, Amount: 1000, AssetID: "asset-1"},
-				{Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0}, Amount: 2000, AssetID: "asset-2"},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
+					Amount:   1000,
+					AssetID:  "asset-1",
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
+					Amount:   2000,
+					AssetID:  "asset-2",
+				},
 			},
 		}
 
@@ -1475,8 +1483,16 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				VOut: 0,
 			},
 			Assets: []domain.NormalAsset{
-				{Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 0}, Amount: 5000, AssetID: assetListID},
-				{Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 1}, Amount: 2500, AssetID: otherAssetID},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 0},
+					Amount:   5000,
+					AssetID:  assetListID,
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 1},
+					Amount:   2500,
+					AssetID:  otherAssetID,
+				},
 			},
 		}
 		anchor2 := domain.AssetAnchor{
@@ -1485,7 +1501,11 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				VOut: 1,
 			},
 			Assets: []domain.NormalAsset{
-				{Outpoint: domain.Outpoint{Txid: "txid-asset-2", VOut: 2}, Amount: 7500, AssetID: assetListID},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-2", VOut: 2},
+					Amount:   7500,
+					AssetID:  assetListID,
+				},
 			},
 		}
 
@@ -1516,14 +1536,19 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				VOut: 3,
 			},
 			Assets: []domain.NormalAsset{
-				{Outpoint: domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0}, Amount: 1234, AssetID: "asset-42"},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0},
+					Amount:   1234,
+					AssetID:  "asset-42",
+				},
 			},
 		}
 
 		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
 		require.NoError(t, err, "InsertAssetAnchor should succeed")
 
-		got, err := svc.Assets().GetAssetByOutpoint(ctx, domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0})
+		got, err := svc.Assets().
+			GetAssetByOutpoint(ctx, domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0})
 		require.NoError(t, err, "GetAssetByOutpoint should succeed")
 		require.NotNil(t, got)
 		require.Equal(t, anchor.Assets[0], *got)

@@ -107,6 +107,9 @@ func (i *indexerService) GetAssetGroup(
 	}
 
 	assetAnchorList, err := i.repoManager.Assets().ListAssetAnchorsByAssetID(ctx, assetID)
+	if err != nil {
+		return nil, err
+	}
 
 	assetAnchors := make([]Outpoint, 0, len(assetAnchorList))
 	for _, anchor := range assetAnchorList {

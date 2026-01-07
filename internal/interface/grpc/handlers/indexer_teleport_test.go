@@ -21,41 +21,93 @@ type mockIndexerService struct {
 	mock.Mock
 }
 
-func (m *mockIndexerService) GetAssetGroup(ctx context.Context, assetId string) (*application.AssetGroupResp, error) {
+func (m *mockIndexerService) GetAssetGroup(
+	ctx context.Context,
+	assetId string,
+) (*application.AssetGroupResp, error) {
 	args := m.Called(ctx, assetId)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*application.AssetGroupResp), args.Error(1)
 }
-func (m *mockIndexerService) GetCommitmentTxInfo(ctx context.Context, txid string) (*application.CommitmentTxInfo, error) {
+
+func (m *mockIndexerService) GetCommitmentTxInfo(
+	ctx context.Context,
+	txid string,
+) (*application.CommitmentTxInfo, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetVtxoTree(ctx context.Context, batchOutpoint application.Outpoint, page *application.Page) (*application.TreeTxResp, error) {
+
+func (m *mockIndexerService) GetVtxoTree(
+	ctx context.Context,
+	batchOutpoint application.Outpoint,
+	page *application.Page,
+) (*application.TreeTxResp, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetVtxoTreeLeaves(ctx context.Context, batchOutpoint application.Outpoint, page *application.Page) (*application.VtxoTreeLeavesResp, error) {
+
+func (m *mockIndexerService) GetVtxoTreeLeaves(
+	ctx context.Context,
+	batchOutpoint application.Outpoint,
+	page *application.Page,
+) (*application.VtxoTreeLeavesResp, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetForfeitTxs(ctx context.Context, txid string, page *application.Page) (*application.ForfeitTxsResp, error) {
+
+func (m *mockIndexerService) GetForfeitTxs(
+	ctx context.Context,
+	txid string,
+	page *application.Page,
+) (*application.ForfeitTxsResp, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetConnectors(ctx context.Context, txid string, page *application.Page) (*application.TreeTxResp, error) {
+
+func (m *mockIndexerService) GetConnectors(
+	ctx context.Context,
+	txid string,
+	page *application.Page,
+) (*application.TreeTxResp, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetVtxos(ctx context.Context, pubkeys []string, spendableOnly, spentOnly, recoverableOnly bool, page *application.Page) (*application.GetVtxosResp, error) {
+
+func (m *mockIndexerService) GetVtxos(
+	ctx context.Context,
+	pubkeys []string,
+	spendableOnly, spentOnly, recoverableOnly, includeAnchors bool,
+	page *application.Page,
+) (*application.GetVtxosResp, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetVtxosByOutpoint(ctx context.Context, outpoints []application.Outpoint, page *application.Page) (*application.GetVtxosResp, error) {
+
+func (m *mockIndexerService) GetVtxosByOutpoint(
+	ctx context.Context,
+	outpoints []application.Outpoint,
+	page *application.Page,
+) (*application.GetVtxosResp, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetVtxoChain(ctx context.Context, outpoint application.Outpoint, page *application.Page) (*application.VtxoChainResp, error) {
+
+func (m *mockIndexerService) GetVtxoChain(
+	ctx context.Context,
+	outpoint application.Outpoint,
+	page *application.Page,
+) (*application.VtxoChainResp, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetVirtualTxs(ctx context.Context, txids []string, page *application.Page) (*application.VirtualTxsResp, error) {
+
+func (m *mockIndexerService) GetVirtualTxs(
+	ctx context.Context,
+	txids []string,
+	page *application.Page,
+) (*application.VirtualTxsResp, error) {
 	return nil, nil
 }
-func (m *mockIndexerService) GetBatchSweepTxs(ctx context.Context, batchOutpoint application.Outpoint) ([]string, error) {
+
+func (m *mockIndexerService) GetBatchSweepTxs(
+	ctx context.Context,
+	batchOutpoint application.Outpoint,
+) ([]string, error) {
 	return nil, nil
 }
 
@@ -84,7 +136,9 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 	svc := NewIndexerService(mockSvc, eventsCh, time.Minute, 5)
 
 	// Create AssetGroup Group with Teleport Output
-	teleportHashBytes, _ := hex.DecodeString("deadbeef")
+	teleportHashBytes, err := hex.DecodeString("deadbeef")
+	assert.NoError(t, err)
+
 	var commitment [32]byte
 	copy(commitment[:], teleportHashBytes)
 
@@ -128,16 +182,21 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 			t.Log("Received event", resp.GetEvent())
 			assert.Equal(t, "txid", resp.GetEvent().Txid)
 			assert.Len(t, resp.GetEvent().TeleportEvents, 1)
-			assert.Equal(t, hex.EncodeToString(commitment[:]), resp.GetEvent().TeleportEvents[0].TeleportHash)
+			assert.Equal(
+				t,
+				hex.EncodeToString(commitment[:]),
+				resp.GetEvent().TeleportEvents[0].TeleportHash,
+			)
 			assert.Equal(t, uint32(0), resp.GetEvent().TeleportEvents[0].OutputVout)
 		}
 	}).Return(nil)
 
 	// 3. Start GetSubscription loop
 	go func() {
-		svc.GetSubscription(&arkv1.GetSubscriptionRequest{
+		err := svc.GetSubscription(&arkv1.GetSubscriptionRequest{
 			SubscriptionId: subRes.SubscriptionId,
 		}, stream)
+		assert.NoError(t, err)
 	}()
 
 	// 4. Send Event

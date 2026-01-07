@@ -50,7 +50,7 @@ type Vtxo struct {
 	Preconfirmed       bool
 	ExpiresAt          int64
 	CreatedAt          int64
-	AssetGroup              *NormalAsset
+	AssetGroup         *NormalAsset
 }
 
 func (v Vtxo) String() string {

@@ -29,7 +29,10 @@ func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 	}, nil
 }
 
-func (r *assetRepository) ListAssetAnchorsByAssetID(ctx context.Context, assetID string) ([]domain.AssetAnchor, error) {
+func (r *assetRepository) ListAssetAnchorsByAssetID(
+	ctx context.Context,
+	assetID string,
+) ([]domain.AssetAnchor, error) {
 	anchorsDB, err := r.querier.ListAssetAnchorsByAssetID(ctx, assetID)
 	if err != nil {
 		return nil, err
@@ -47,7 +50,10 @@ func (r *assetRepository) ListAssetAnchorsByAssetID(ctx context.Context, assetID
 	return anchors, nil
 }
 
-func (r *assetRepository) GetAssetByOutpoint(ctx context.Context, outpoint domain.Outpoint) (*domain.NormalAsset, error) {
+func (r *assetRepository) GetAssetByOutpoint(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) (*domain.NormalAsset, error) {
 	{
 		assetDB, err := r.querier.GetAsset(ctx, queries.GetAssetParams{
 			AnchorID: outpoint.Txid,
@@ -67,7 +73,10 @@ func (r *assetRepository) GetAssetByOutpoint(ctx context.Context, outpoint domai
 	}
 }
 
-func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport domain.TeleportAsset) error {
+func (r *assetRepository) InsertTeleportAsset(
+	ctx context.Context,
+	teleport domain.TeleportAsset,
+) error {
 	return r.querier.CreateTeleportAsset(ctx, queries.CreateTeleportAssetParams{
 		TeleportHash: teleport.Hash,
 		AssetID:      teleport.AssetID,
@@ -76,7 +85,10 @@ func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport doma
 	})
 }
 
-func (r *assetRepository) GetTeleportAsset(ctx context.Context, teleportHash string) (*domain.TeleportAsset, error) {
+func (r *assetRepository) GetTeleportAsset(
+	ctx context.Context,
+	teleportHash string,
+) (*domain.TeleportAsset, error) {
 	teleportDB, err := r.querier.GetTeleportAsset(ctx, teleportHash)
 	if err != nil {
 		return nil, err
@@ -89,7 +101,11 @@ func (r *assetRepository) GetTeleportAsset(ctx context.Context, teleportHash str
 	}, nil
 }
 
-func (r *assetRepository) UpdateTeleportAsset(ctx context.Context, teleportHash string, isClaimed bool) error {
+func (r *assetRepository) UpdateTeleportAsset(
+	ctx context.Context,
+	teleportHash string,
+	isClaimed bool,
+) error {
 	return r.querier.UpdateTeleportAsset(ctx, queries.UpdateTeleportAssetParams{
 		TeleportHash: teleportHash,
 		IsClaimed:    isClaimed,
@@ -100,7 +116,10 @@ func (r *assetRepository) Close() {
 	_ = r.db.Close()
 }
 
-func (r *assetRepository) ListMetadataByAssetID(ctx context.Context, assetID string) ([]domain.AssetMetadata, error) {
+func (r *assetRepository) ListMetadataByAssetID(
+	ctx context.Context,
+	assetID string,
+) ([]domain.AssetMetadata, error) {
 	res, err := r.querier.ListAssetMetadata(ctx, assetID)
 	if err != nil {
 		return nil, err
@@ -150,7 +169,10 @@ func (r *assetRepository) InsertAssetAnchor(ctx context.Context, anchor domain.A
 	return nil
 }
 
-func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string) (*domain.AssetAnchor, error) {
+func (r *assetRepository) GetAssetAnchorByTxId(
+	ctx context.Context,
+	txId string,
+) (*domain.AssetAnchor, error) {
 	anchor, err := r.querier.GetAssetAnchor(ctx, txId)
 	if err != nil {
 		return nil, err
@@ -182,7 +204,10 @@ func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string)
 	}, nil
 }
 
-func (r *assetRepository) InsertAssetGroup(ctx context.Context, assetGroup domain.AssetGroup) error {
+func (r *assetRepository) InsertAssetGroup(
+	ctx context.Context,
+	assetGroup domain.AssetGroup,
+) error {
 	err := r.querier.CreateAsset(ctx, queries.CreateAssetParams{
 		ID:        assetGroup.ID,
 		Quantity:  int64(assetGroup.Quantity),
@@ -209,7 +234,10 @@ func (r *assetRepository) InsertAssetGroup(ctx context.Context, assetGroup domai
 
 }
 
-func (r *assetRepository) GetAssetGroupByID(ctx context.Context, assetID string) (*domain.AssetGroup, error) {
+func (r *assetRepository) GetAssetGroupByID(
+	ctx context.Context,
+	assetID string,
+) (*domain.AssetGroup, error) {
 	assetDB, err := r.querier.GetAssetGroup(ctx, assetID)
 	if err != nil {
 		return nil, err
@@ -236,21 +264,33 @@ func (r *assetRepository) GetAssetGroupByID(ctx context.Context, assetID string)
 	}, nil
 }
 
-func (r *assetRepository) IncreaseAssetGroupQuantity(ctx context.Context, assetID string, amount uint64) error {
+func (r *assetRepository) IncreaseAssetGroupQuantity(
+	ctx context.Context,
+	assetID string,
+	amount uint64,
+) error {
 	return r.querier.AddToAssetQuantity(ctx, queries.AddToAssetQuantityParams{
 		ID:       assetID,
 		Quantity: int64(amount),
 	})
 }
 
-func (r *assetRepository) DecreaseAssetGroupQuantity(ctx context.Context, assetID string, amount uint64) error {
+func (r *assetRepository) DecreaseAssetGroupQuantity(
+	ctx context.Context,
+	assetID string,
+	amount uint64,
+) error {
 	return r.querier.SubtractFromAssetQuantity(ctx, queries.SubtractFromAssetQuantityParams{
 		ID:       assetID,
 		Quantity: int64(amount),
 	})
 }
 
-func (r *assetRepository) UpdateAssetMetadataList(ctx context.Context, assetId string, metadatalist []domain.AssetMetadata) error {
+func (r *assetRepository) UpdateAssetMetadataList(
+	ctx context.Context,
+	assetId string,
+	metadatalist []domain.AssetMetadata,
+) error {
 	for _, md := range metadatalist {
 		err := r.querier.UpsertAssetMetadata(ctx, queries.UpsertAssetMetadataParams{
 			AssetID:   assetId,

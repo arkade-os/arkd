@@ -1594,7 +1594,11 @@ func (s *service) RegisterIntent(
 			&proof.Packet, i+1, txutils.VtxoTaprootTreeField,
 		)
 
-		sealsOutputs, err := txutils.GetArkPsbtFields(&proof.Packet, i+1, txutils.AssetSealVtxoField)
+		sealsOutputs, err := txutils.GetArkPsbtFields(
+			&proof.Packet,
+			i+1,
+			txutils.AssetSealVtxoField,
+		)
 		if err != nil {
 			return "", errors.INVALID_PSBT_INPUT.New(
 				"failed to get asset seal field for input %d: %w", i+1, err,
@@ -4284,7 +4288,11 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	}()
 }
 
-func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.MsgTx, assetPacketIndex int) error {
+func (s *service) storeAssetDetailsFromArkTx(
+	ctx context.Context,
+	arkTx wire.MsgTx,
+	assetPacketIndex int,
+) error {
 	assetPacketScript := arkTx.TxOut[assetPacketIndex].PkScript
 
 	assetGroup, err := asset.DecodeAssetPacket(assetPacketScript)
@@ -4296,10 +4304,19 @@ func (s *service) storeAssetDetailsFromArkTx(ctx context.Context, arkTx wire.Msg
 		return err
 	}
 
-	return s.storeAssetAnchor(ctx, arkTx, assetPacketIndex, assetGroup.NormalAssets, assetGroup.ControlAssets)
+	return s.storeAssetAnchor(
+		ctx,
+		arkTx,
+		assetPacketIndex,
+		assetGroup.NormalAssets,
+		assetGroup.ControlAssets,
+	)
 }
 
-func (s *service) storeNormalAssetDetails(ctx context.Context, normalAssets, controlAssets []asset.AssetGroup) error {
+func (s *service) storeNormalAssetDetails(
+	ctx context.Context,
+	normalAssets, controlAssets []asset.AssetGroup,
+) error {
 	for _, normalAsset := range normalAssets {
 		normalAssetId := normalAsset.AssetId.ToString()
 		totalIn := sumAssetInputs(normalAsset.Inputs)
@@ -4379,7 +4396,11 @@ func assetMetadataFromGroup(metadata []asset.Metadata) []domain.AssetMetadata {
 	return metadataList
 }
 
-func (s *service) updateAssetQuantity(ctx context.Context, assetID string, totalIn, totalOut uint64) error {
+func (s *service) updateAssetQuantity(
+	ctx context.Context,
+	assetID string,
+	totalIn, totalOut uint64,
+) error {
 	if totalOut > totalIn {
 		delta := totalOut - totalIn
 		if err := s.repoManager.Assets().IncreaseAssetGroupQuantity(ctx, assetID, delta); err != nil {
@@ -4398,7 +4419,12 @@ func (s *service) updateAssetQuantity(ctx context.Context, assetID string, total
 	return nil
 }
 
-func (s *service) storeAssetAnchor(ctx context.Context, arkTx wire.MsgTx, assetGroupIndex int, normalAssets, controlAssets []asset.AssetGroup) error {
+func (s *service) storeAssetAnchor(
+	ctx context.Context,
+	arkTx wire.MsgTx,
+	assetGroupIndex int,
+	normalAssets, controlAssets []asset.AssetGroup,
+) error {
 	anchorPoint := domain.Outpoint{
 		Txid: arkTx.TxID(),
 		VOut: uint32(assetGroupIndex),
@@ -4505,8 +4531,24 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 			continue
 		}
 
-		events = append(events, collectTeleportAssets(packet.NormalAssets, anchorOutpoint, createdAt, expireAt, false)...)
-		events = append(events, collectTeleportAssets(packet.ControlAssets, anchorOutpoint, createdAt, expireAt, true)...)
+		events = append(
+			events,
+			collectTeleportAssets(
+				packet.NormalAssets,
+				anchorOutpoint,
+				createdAt,
+				expireAt,
+				false,
+			)...)
+		events = append(
+			events,
+			collectTeleportAssets(
+				packet.ControlAssets,
+				anchorOutpoint,
+				createdAt,
+				expireAt,
+				true,
+			)...)
 	}
 	return events
 }

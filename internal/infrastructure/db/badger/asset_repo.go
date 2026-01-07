@@ -85,7 +85,10 @@ func (r *assetRepository) Close() {
 	r.store.Close()
 }
 
-func (r *assetRepository) ListAssetAnchorsByAssetID(ctx context.Context, assetID string) ([]domain.AssetAnchor, error) {
+func (r *assetRepository) ListAssetAnchorsByAssetID(
+	ctx context.Context,
+	assetID string,
+) ([]domain.AssetAnchor, error) {
 	query := badgerhold.Where("AssetID").Eq(assetID)
 
 	var assets []anchorAsset
@@ -119,7 +122,10 @@ func (r *assetRepository) ListAssetAnchorsByAssetID(ctx context.Context, assetID
 	return anchors, nil
 }
 
-func (r *assetRepository) GetAssetByOutpoint(ctx context.Context, outpoint domain.Outpoint) (*domain.NormalAsset, error) {
+func (r *assetRepository) GetAssetByOutpoint(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) (*domain.NormalAsset, error) {
 	key := anchorAssetKey(outpoint.Txid, outpoint.VOut)
 	var record anchorAsset
 
@@ -143,7 +149,10 @@ func (r *assetRepository) GetAssetByOutpoint(ctx context.Context, outpoint domai
 	}, nil
 }
 
-func (r *assetRepository) ListMetadataByAssetID(ctx context.Context, assetID string) ([]domain.AssetMetadata, error) {
+func (r *assetRepository) ListMetadataByAssetID(
+	ctx context.Context,
+	assetID string,
+) ([]domain.AssetMetadata, error) {
 	query := badgerhold.Where("AssetID").Eq(assetID)
 
 	var metadata []assetMetadata
@@ -208,7 +217,10 @@ func (r *assetRepository) InsertAssetAnchor(ctx context.Context, anchor domain.A
 	})
 }
 
-func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string) (*domain.AssetAnchor, error) {
+func (r *assetRepository) GetAssetAnchorByTxId(
+	ctx context.Context,
+	txId string,
+) (*domain.AssetAnchor, error) {
 	var anchor assetAnchor
 
 	var err error
@@ -247,7 +259,10 @@ func (r *assetRepository) GetAssetAnchorByTxId(ctx context.Context, txId string)
 	}, nil
 }
 
-func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport domain.TeleportAsset) error {
+func (r *assetRepository) InsertTeleportAsset(
+	ctx context.Context,
+	teleport domain.TeleportAsset,
+) error {
 	record := teleportAsset{
 		Hash:      teleport.Hash,
 		AssetID:   teleport.AssetID,
@@ -260,7 +275,11 @@ func (r *assetRepository) InsertTeleportAsset(ctx context.Context, teleport doma
 	})
 }
 
-func (r *assetRepository) UpdateTeleportAsset(ctx context.Context, hash string, isClaimed bool) error {
+func (r *assetRepository) UpdateTeleportAsset(
+	ctx context.Context,
+	hash string,
+	isClaimed bool,
+) error {
 	var teleport teleportAsset
 
 	var err error
@@ -285,7 +304,10 @@ func (r *assetRepository) UpdateTeleportAsset(ctx context.Context, hash string, 
 	})
 }
 
-func (r *assetRepository) GetTeleportAsset(ctx context.Context, hash string) (*domain.TeleportAsset, error) {
+func (r *assetRepository) GetTeleportAsset(
+	ctx context.Context,
+	hash string,
+) (*domain.TeleportAsset, error) {
 	var teleport teleportAsset
 
 	var err error
@@ -335,7 +357,10 @@ func (r *assetRepository) InsertAssetGroup(ctx context.Context, a domain.AssetGr
 	})
 }
 
-func (r *assetRepository) GetAssetGroupByID(ctx context.Context, assetID string) (*domain.AssetGroup, error) {
+func (r *assetRepository) GetAssetGroupByID(
+	ctx context.Context,
+	assetID string,
+) (*domain.AssetGroup, error) {
 	dbAsset, err := r.getAssetGroup(ctx, assetID)
 	if err != nil {
 		return nil, err
@@ -354,7 +379,11 @@ func (r *assetRepository) GetAssetGroupByID(ctx context.Context, assetID string)
 	}, nil
 }
 
-func (r *assetRepository) IncreaseAssetGroupQuantity(ctx context.Context, assetID string, amount uint64) error {
+func (r *assetRepository) IncreaseAssetGroupQuantity(
+	ctx context.Context,
+	assetID string,
+	amount uint64,
+) error {
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
 		dbAsset, err := r.getAssetDetailsWithTx(tx, assetID)
 		if err != nil {
@@ -370,7 +399,11 @@ func (r *assetRepository) IncreaseAssetGroupQuantity(ctx context.Context, assetI
 	})
 }
 
-func (r *assetRepository) DecreaseAssetGroupQuantity(ctx context.Context, assetID string, amount uint64) error {
+func (r *assetRepository) DecreaseAssetGroupQuantity(
+	ctx context.Context,
+	assetID string,
+	amount uint64,
+) error {
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
 		dbAsset, err := r.getAssetDetailsWithTx(tx, assetID)
 		if err != nil {
@@ -390,7 +423,11 @@ func (r *assetRepository) DecreaseAssetGroupQuantity(ctx context.Context, assetI
 	})
 }
 
-func (r *assetRepository) UpdateAssetMetadataList(ctx context.Context, assetId string, metadatalist []domain.AssetMetadata) error {
+func (r *assetRepository) UpdateAssetMetadataList(
+	ctx context.Context,
+	assetId string,
+	metadatalist []domain.AssetMetadata,
+) error {
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
 		_, err := r.getAssetDetailsWithTx(tx, assetId)
 		if err != nil {
@@ -414,7 +451,10 @@ func (r *assetRepository) UpdateAssetMetadataList(ctx context.Context, assetId s
 	})
 }
 
-func (r *assetRepository) listAnchorAssets(ctx context.Context, anchorID string) ([]anchorAsset, error) {
+func (r *assetRepository) listAnchorAssets(
+	ctx context.Context,
+	anchorID string,
+) ([]anchorAsset, error) {
 	var assets []anchorAsset
 	query := badgerhold.Where("AnchorID").Eq(anchorID)
 
@@ -453,7 +493,10 @@ func (r *assetRepository) getAssetGroup(ctx context.Context, assetID string) (*a
 	return &record, nil
 }
 
-func (r *assetRepository) getAssetDetailsWithTx(tx *badger.Txn, assetID string) (*assetGroup, error) {
+func (r *assetRepository) getAssetDetailsWithTx(
+	tx *badger.Txn,
+	assetID string,
+) (*assetGroup, error) {
 	var record assetGroup
 	if err := r.store.TxGet(tx, assetID, &record); err != nil {
 		return nil, err
@@ -461,7 +504,10 @@ func (r *assetRepository) getAssetDetailsWithTx(tx *badger.Txn, assetID string) 
 	return &record, nil
 }
 
-func (r *assetRepository) withRetryableWrite(ctx context.Context, fn func(tx *badger.Txn) error) error {
+func (r *assetRepository) withRetryableWrite(
+	ctx context.Context,
+	fn func(tx *badger.Txn) error,
+) error {
 	if tx := getTxFromContext(ctx); tx != nil {
 		return fn(tx)
 	}

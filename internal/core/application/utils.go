@@ -137,10 +137,15 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 
 			decodedAssetPacket, err := asset.DecodeAssetPacket(out.PkScript)
 			if err != nil {
-				return "", nil, nil, fmt.Errorf("failed to decode asset group from opreturn: %s", err)
+				return "", nil, nil, fmt.Errorf(
+					"failed to decode asset group from opreturn: %s",
+					err,
+				)
 			}
 
-			allAssets := append(decodedAssetPacket.ControlAssets, decodedAssetPacket.NormalAssets...)
+			allAssets := append(
+				decodedAssetPacket.ControlAssets,
+				decodedAssetPacket.NormalAssets...)
 
 			for _, grpAsset := range allAssets {
 				for _, assetOut := range grpAsset.Outputs {
@@ -148,7 +153,10 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 						continue
 					}
 					if _, exists := assetVouts[assetOut.Vout]; exists {
-						return "", nil, nil, fmt.Errorf("duplicate asset output vout %d", assetOut.Vout)
+						return "", nil, nil, fmt.Errorf(
+							"duplicate asset output vout %d",
+							assetOut.Vout,
+						)
 					}
 					assetVouts[assetOut.Vout] = struct{}{}
 

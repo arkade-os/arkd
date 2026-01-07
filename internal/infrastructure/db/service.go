@@ -130,6 +130,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
 	assetStoreFactory, ok := assetStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
+
 	intentFeesStoreFactory, ok := intentFeesStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
