@@ -576,19 +576,30 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
+    AND v.updated_at >= ?2
+    AND (?3 IS NULL OR ?3 = 0 OR v.updated_at <= ?3
+    )
 `
 
-func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, pubkeys []string) ([]VtxoVw, error) {
+type SelectPendingSpentVtxosWithPubkeysParams struct {
+	Pubkeys []string
+	After   int64
+	Before  interface{}
+}
+
+func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, arg SelectPendingSpentVtxosWithPubkeysParams) ([]VtxoVw, error) {
 	query := selectPendingSpentVtxosWithPubkeys
 	var queryParams []interface{}
-	if len(pubkeys) > 0 {
-		for _, v := range pubkeys {
+	if len(arg.Pubkeys) > 0 {
+		for _, v := range arg.Pubkeys {
 			queryParams = append(queryParams, v)
 		}
-		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(pubkeys))[1:], 1)
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(arg.Pubkeys))[1:], 1)
 	} else {
 		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
 	}
+	queryParams = append(queryParams, arg.After)
+	queryParams = append(queryParams, arg.Before)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
@@ -1544,81 +1555,36 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 	return items, nil
 }
 
-const selectVtxosUpdatedInTimeRange = `-- name: SelectVtxosUpdatedInTimeRange :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw
-WHERE updated_at >= ?1
-  AND (?2 IS NULL OR ?2 = 0 OR updated_at <= ?2)
-`
-
-type SelectVtxosUpdatedInTimeRangeParams struct {
-	After  int64
-	Before interface{}
-}
-
-type SelectVtxosUpdatedInTimeRangeRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectVtxosUpdatedInTimeRange(ctx context.Context, arg SelectVtxosUpdatedInTimeRangeParams) ([]SelectVtxosUpdatedInTimeRangeRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosUpdatedInTimeRange, arg.After, arg.Before)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectVtxosUpdatedInTimeRangeRow
-	for rows.Next() {
-		var i SelectVtxosUpdatedInTimeRangeRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.ExpiresAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.CommitmentTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Unrolled,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.IntentID,
-			&i.VtxoVw.UpdatedAt,
-			&i.VtxoVw.Commitments,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkeys*/?)
+    AND updated_at >= ?2
+    AND (?3 IS NULL OR ?3 = 0 OR updated_at <= ?3
+    )
 `
+
+type SelectVtxosWithPubkeysParams struct {
+	Pubkeys []string
+	After   int64
+	Before  interface{}
+}
 
 type SelectVtxosWithPubkeysRow struct {
 	VtxoVw VtxoVw
 }
 
-func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, pubkeys []string) ([]SelectVtxosWithPubkeysRow, error) {
+func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWithPubkeysParams) ([]SelectVtxosWithPubkeysRow, error) {
 	query := selectVtxosWithPubkeys
 	var queryParams []interface{}
-	if len(pubkeys) > 0 {
-		for _, v := range pubkeys {
+	if len(arg.Pubkeys) > 0 {
+		for _, v := range arg.Pubkeys {
 			queryParams = append(queryParams, v)
 		}
-		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(pubkeys))[1:], 1)
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(arg.Pubkeys))[1:], 1)
 	} else {
 		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
 	}
+	queryParams = append(queryParams, arg.After)
+	queryParams = append(queryParams, arg.Before)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err

@@ -146,9 +146,16 @@ func (i *indexerService) GetConnectors(
 
 func (i *indexerService) GetVtxos(
 	ctx context.Context,
-	pubkeys []string, spendableOnly, spentOnly, recoverableOnly, pendingOnly bool, page *Page,
+	pubkeys []string,
+	spendableOnly, spentOnly, recoverableOnly, pendingOnly bool,
+	page *Page,
 	after, before int64,
 ) (*GetVtxosResp, error) {
+	if after < 0 || before < 0 {
+		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
+	} else if before > 0 && after > 0 && before <= after {
+		return nil, fmt.Errorf("before must be greater than after")
+	}
 	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
 	count := 0
 	for _, v := range options {
@@ -162,82 +169,50 @@ func (i *indexerService) GetVtxos(
 		)
 	}
 
-	var intersectingVtxos []domain.Vtxo
+	var allVtxos []domain.Vtxo
+	var err error
 	if pendingOnly {
-		allVtxos, err := i.repoManager.Vtxos().GetPendingSpentVtxosWithPubKeys(ctx, pubkeys)
+		allVtxos, err = i.repoManager.Vtxos().
+			GetPendingSpentVtxosWithPubKeys(ctx, pubkeys, after, before)
 		if err != nil {
 			return nil, err
 		}
-		timeBoundedVtxos, err := i.repoManager.Vtxos().
-			GetVtxosUpdatedInTimeRange(ctx, after, before)
-		if err != nil {
-			return nil, err
-		}
-		// take intersection of allVtxos and timeBoundedVtxos
-		timeFilteredMap := make(map[domain.Outpoint]bool, len(timeBoundedVtxos))
-		for _, tbVtxo := range timeBoundedVtxos {
-			timeFilteredMap[tbVtxo.Outpoint] = true
-		}
-		intersectingVtxos = make([]domain.Vtxo, 0, len(allVtxos))
-
-		for _, vtxo := range allVtxos {
-			if timeFilteredMap[vtxo.Outpoint] {
-				intersectingVtxos = append(intersectingVtxos, vtxo)
-			}
-		}
-
 	} else {
-		allVtxos, err := i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys)
+		allVtxos, err = i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys, after, before)
 		if err != nil {
 			return nil, err
-		}
-		timeBoundedVtxos, err := i.repoManager.Vtxos().GetVtxosUpdatedInTimeRange(ctx, after, before)
-		if err != nil {
-			return nil, err
-		}
-		// take intersection of allVtxos and timeBoundedVtxos
-		timeFilteredMap := make(map[domain.Outpoint]bool, len(timeBoundedVtxos))
-		for _, tbVtxo := range timeBoundedVtxos {
-			timeFilteredMap[tbVtxo.Outpoint] = true
-		}
-		intersectingVtxos = make([]domain.Vtxo, 0, len(allVtxos))
-
-		for _, vtxo := range allVtxos {
-			if timeFilteredMap[vtxo.Outpoint] {
-				intersectingVtxos = append(intersectingVtxos, vtxo)
-			}
 		}
 
 		if spendableOnly {
-			spendableVtxos := make([]domain.Vtxo, 0, len(intersectingVtxos))
-			for _, vtxo := range intersectingVtxos {
+			spendableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
+			for _, vtxo := range allVtxos {
 				if !vtxo.Spent && !vtxo.Swept && !vtxo.Unrolled {
 					spendableVtxos = append(spendableVtxos, vtxo)
 				}
 			}
-			intersectingVtxos = spendableVtxos
+			allVtxos = spendableVtxos
 		}
 		if spentOnly {
-			spentVtxos := make([]domain.Vtxo, 0, len(intersectingVtxos))
-			for _, vtxo := range intersectingVtxos {
+			spentVtxos := make([]domain.Vtxo, 0, len(allVtxos))
+			for _, vtxo := range allVtxos {
 				if vtxo.Spent || vtxo.Swept || vtxo.Unrolled {
 					spentVtxos = append(spentVtxos, vtxo)
 				}
 			}
-			intersectingVtxos = spentVtxos
+			allVtxos = spentVtxos
 		}
 		if recoverableOnly {
-			recoverableVtxos := make([]domain.Vtxo, 0, len(intersectingVtxos))
-			for _, vtxo := range intersectingVtxos {
+			recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
+			for _, vtxo := range allVtxos {
 				if !vtxo.RequiresForfeit() && !vtxo.Spent {
 					recoverableVtxos = append(recoverableVtxos, vtxo)
 				}
 			}
-			intersectingVtxos = recoverableVtxos
+			allVtxos = recoverableVtxos
 		}
 	}
 
-	vtxos, pageResp := paginate(intersectingVtxos, page, maxPageSizeSpendableVtxos)
+	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
 	return &GetVtxosResp{
 		Vtxos: vtxos,
 		Page:  pageResp,

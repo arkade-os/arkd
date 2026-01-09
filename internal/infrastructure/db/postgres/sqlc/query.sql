@@ -249,7 +249,11 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
 -- name: SelectVtxosWithPubkeys :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey = ANY($1::varchar[]);
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw v
+WHERE v.pubkey = ANY($1::varchar[])
+    AND v.updated_at >= @after
+    AND (@before::bigint IS NULL OR @before::bigint = 0 OR v.updated_at <= @before::bigint
+    );
 
 -- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0)::bigint AS amount
@@ -328,6 +332,9 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.pubkey = ANY($1::varchar[])
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+    AND v.updated_at >= @after
+    AND (@before::bigint IS NULL OR @before::bigint = 0 OR v.updated_at <= @before::bigint
     );
 
 -- name: SelectPendingSpentVtxo :one
@@ -338,11 +345,6 @@ WHERE v.txid = @txid AND v.vout = @vout
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     );
-
--- name: SelectVtxosUpdatedInTimeRange :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
-WHERE updated_at >= @after
-  AND (@before::bigint IS NULL OR @before::bigint = 0 OR updated_at <= @before::bigint);
 
 -- name: UpsertConviction :exec
 INSERT INTO conviction (

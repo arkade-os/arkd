@@ -361,9 +361,18 @@ func (v *vtxoRepository) UpdateVtxosExpiration(
 }
 
 func (v *vtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosWithPubkeys(ctx, pubkeys)
+	if after < 0 || before < 0 {
+		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
+	} else if before > 0 && after > 0 && before <= after {
+		return nil, fmt.Errorf("before must be greater than after")
+	}
+	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
+		Pubkeys: pubkeys,
+		After:   after,
+		Before:  before,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -447,9 +456,21 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 }
 
 func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(ctx, pubkeys)
+	if after < 0 || before < 0 {
+		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
+	} else if before > 0 && after > 0 && before <= after {
+		return nil, fmt.Errorf("before must be greater than after")
+	}
+	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(
+		ctx,
+		queries.SelectPendingSpentVtxosWithPubkeysParams{
+			Pubkeys: pubkeys,
+			After:   after,
+			Before:  before,
+		},
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -499,32 +520,6 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	})
 
 	return vtxos, nil
-}
-
-func (v *vtxoRepository) GetVtxosUpdatedInTimeRange(
-	ctx context.Context, after, before int64,
-) ([]domain.Vtxo, error) {
-	if after < 0 || before < 0 {
-		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
-	} else if before > 0 && after > 0 && before <= after {
-		return nil, fmt.Errorf("before must be greater than after")
-	}
-	res, err := v.querier.SelectVtxosUpdatedInTimeRange(
-		ctx,
-		queries.SelectVtxosUpdatedInTimeRangeParams{
-			After:  after,
-			Before: before,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	rows := make([]queries.VtxoVw, 0, len(res))
-	for _, row := range res {
-		rows = append(rows, row.VtxoVw)
-	}
-
-	return readRows(rows)
 }
 
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {

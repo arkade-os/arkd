@@ -230,11 +230,19 @@ func (r *vtxoRepository) UpdateVtxosExpiration(
 }
 
 func (r *vtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
+	if after < 0 || before < 0 {
+		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
+	} else if before > 0 && after > 0 && before <= after {
+		return nil, fmt.Errorf("before must be greater than after")
+	}
 	allVtxos := make([]domain.Vtxo, 0)
 	for _, pubkey := range pubkeys {
-		query := badgerhold.Where("PubKey").Eq(pubkey)
+		query := badgerhold.Where("PubKey").Eq(pubkey).And("UpdatedAt").Ge(after)
+		if before > 0 {
+			query = query.And("UpdatedAt").Le(before)
+		}
 		vtxos, err := r.findVtxos(ctx, query)
 		if err != nil {
 			return nil, err
@@ -334,15 +342,23 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 }
 
 func (r *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
+	if after < 0 || before < 0 {
+		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
+	} else if before > 0 && after > 0 && before <= after {
+		return nil, fmt.Errorf("before must be greater than after")
+	}
 	indexedPubkeys := make(map[string]struct{})
 	for _, pubkey := range pubkeys {
 		indexedPubkeys[pubkey] = struct{}{}
 	}
-	// Get all candidates: vtxos that are spent, not unrolled and not settled
+	// Get all candidates: vtxos that are spent, not unrolled and not settled, and are within time range
 	query := badgerhold.Where("Spent").Eq(true).And("Unrolled").Eq(false).
-		And("SettledBy").Eq("").And("ArkTxid").Ne("")
+		And("SettledBy").Eq("").And("ArkTxid").Ne("").And("UpdatedAt").Ge(after)
+	if before > 0 {
+		query = query.And("UpdatedAt").Le(before)
+	}
 	candidates, err := r.findVtxos(ctx, query)
 	if err != nil {
 		return nil, err

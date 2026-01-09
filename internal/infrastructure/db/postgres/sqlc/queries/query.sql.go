@@ -578,10 +578,19 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
+    AND v.updated_at >= $2
+    AND ($3::bigint IS NULL OR $3::bigint = 0 OR v.updated_at <= $3::bigint
+    )
 `
 
-func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, dollar_1 []string) ([]VtxoVw, error) {
-	rows, err := q.db.QueryContext(ctx, selectPendingSpentVtxosWithPubkeys, pq.Array(dollar_1))
+type SelectPendingSpentVtxosWithPubkeysParams struct {
+	Column1 []string
+	After   int64
+	Before  int64
+}
+
+func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, arg SelectPendingSpentVtxosWithPubkeysParams) ([]VtxoVw, error) {
+	rows, err := q.db.QueryContext(ctx, selectPendingSpentVtxosWithPubkeys, pq.Array(arg.Column1), arg.After, arg.Before)
 	if err != nil {
 		return nil, err
 	}
@@ -1490,72 +1499,26 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 	return items, nil
 }
 
-const selectVtxosUpdatedInTimeRange = `-- name: SelectVtxosUpdatedInTimeRange :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw
-WHERE updated_at >= $1
-  AND ($2::bigint IS NULL OR $2::bigint = 0 OR updated_at <= $2::bigint)
-`
-
-type SelectVtxosUpdatedInTimeRangeParams struct {
-	After  int64
-	Before int64
-}
-
-type SelectVtxosUpdatedInTimeRangeRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectVtxosUpdatedInTimeRange(ctx context.Context, arg SelectVtxosUpdatedInTimeRangeParams) ([]SelectVtxosUpdatedInTimeRangeRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosUpdatedInTimeRange, arg.After, arg.Before)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectVtxosUpdatedInTimeRangeRow
-	for rows.Next() {
-		var i SelectVtxosUpdatedInTimeRangeRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.ExpiresAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.CommitmentTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Unrolled,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.IntentID,
-			&i.VtxoVw.UpdatedAt,
-			&i.VtxoVw.Commitments,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey = ANY($1::varchar[])
+SELECT  FROM vtxo_vw v
+WHERE v.pubkey = ANY($1::varchar[])
+    AND v.updated_at >= $2
+    AND ($3::bigint IS NULL OR $3::bigint = 0 OR v.updated_at <= $3::bigint
+    )
 `
+
+type SelectVtxosWithPubkeysParams struct {
+	Column1 []string
+	After   int64
+	Before  int64
+}
 
 type SelectVtxosWithPubkeysRow struct {
 	VtxoVw VtxoVw
 }
 
-func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, dollar_1 []string) ([]SelectVtxosWithPubkeysRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosWithPubkeys, pq.Array(dollar_1))
+func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWithPubkeysParams) ([]SelectVtxosWithPubkeysRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosWithPubkeys, pq.Array(arg.Column1), arg.After, arg.Before)
 	if err != nil {
 		return nil, err
 	}
