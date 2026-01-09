@@ -578,8 +578,8 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
-    AND v.updated_at >= $2
-    AND ($3::bigint IS NULL OR $3::bigint = 0 OR v.updated_at <= $3::bigint
+    AND v.updated_at >= $2::bigint
+    AND ($3::bigint = 0 OR v.updated_at <= $3::bigint
     )
 `
 
@@ -1502,8 +1502,8 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw
 WHERE vtxo_vw.pubkey = ANY($1::varchar[])
-    AND vtxo_vw.updated_at >= $2
-    AND ($3::bigint IS NULL OR $3::bigint = 0 OR vtxo_vw.updated_at <= $3::bigint
+    AND vtxo_vw.updated_at >= $2::bigint
+    AND ($3::bigint = 0 OR vtxo_vw.updated_at <= $3::bigint
     )
 `
 

@@ -577,7 +577,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
     AND v.updated_at >= ?2
-    AND (?3 IS NULL OR ?3 = 0 OR v.updated_at <= ?3
+    AND (?3 = 0 OR v.updated_at <= ?3
     )
 `
 
@@ -1558,7 +1558,7 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkeys*/?)
     AND updated_at >= ?2
-    AND (?3 IS NULL OR ?3 = 0 OR updated_at <= ?3
+    AND (?3 = 0 OR updated_at <= ?3
     )
 `
 

@@ -251,8 +251,8 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 -- name: SelectVtxosWithPubkeys :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE vtxo_vw.pubkey = ANY($1::varchar[])
-    AND vtxo_vw.updated_at >= @after
-    AND (@before::bigint IS NULL OR @before::bigint = 0 OR vtxo_vw.updated_at <= @before::bigint
+    AND vtxo_vw.updated_at >= @after::bigint
+    AND (@before::bigint = 0 OR vtxo_vw.updated_at <= @before::bigint
     );
 
 -- name: SelectExpiringLiquidityAmount :one
@@ -333,8 +333,8 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
-    AND v.updated_at >= @after
-    AND (@before::bigint IS NULL OR @before::bigint = 0 OR v.updated_at <= @before::bigint
+    AND v.updated_at >= @after::bigint
+    AND (@before::bigint = 0 OR v.updated_at <= @before::bigint
     );
 
 -- name: SelectPendingSpentVtxo :one
