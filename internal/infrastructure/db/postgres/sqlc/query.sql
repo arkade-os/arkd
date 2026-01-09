@@ -249,10 +249,10 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
 -- name: SelectVtxosWithPubkeys :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw v
-WHERE v.pubkey = ANY($1::varchar[])
-    AND v.updated_at >= @after
-    AND (@before::bigint IS NULL OR @before::bigint = 0 OR v.updated_at <= @before::bigint
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE vtxo_vw.pubkey = ANY($1::varchar[])
+    AND vtxo_vw.updated_at >= @after
+    AND (@before::bigint IS NULL OR @before::bigint = 0 OR vtxo_vw.updated_at <= @before::bigint
     );
 
 -- name: SelectExpiringLiquidityAmount :one
