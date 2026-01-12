@@ -338,7 +338,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
     AND v.updated_at >= :after
-    AND (:before = 0 OR v.updated_at <= :before);
+    AND (CAST(:before AS INTEGER) = 0 OR v.updated_at <= CAST(:before AS INTEGER));
 
 -- name: SelectPendingSpentVtxo :one
 SELECT v.*

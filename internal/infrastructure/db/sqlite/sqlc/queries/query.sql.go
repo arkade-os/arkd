@@ -577,13 +577,13 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
     AND v.updated_at >= ?2
-    AND (?3 = 0 OR v.updated_at <= ?3)
+    AND (CAST(?3 AS INTEGER) = 0 OR v.updated_at <= CAST(?3 AS INTEGER))
 `
 
 type SelectPendingSpentVtxosWithPubkeysParams struct {
 	Pubkeys []string
 	After   int64
-	Before  interface{}
+	Before  int64
 }
 
 func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, arg SelectPendingSpentVtxosWithPubkeysParams) ([]VtxoVw, error) {
