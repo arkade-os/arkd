@@ -188,10 +188,11 @@ message GetVtxosRequest {
   IndexerPageRequest page = 6;
   // Include only spent vtxos that are not finalized.
   bool pending_only = 7;
-  // Include only vtxos with last update after the given unix time in millisecond
+  // Include only vtxos with last update after the given unix time in milliseconds.
+  // A value of 0 means no lower bound.
   int64 after = 8;
   // Include only vtxos with last update before the given unix time in milliseconds,
-  // greater value than the after when speciified
+  // greater value than the after when specified. A value of 0 means no upper bound.
   int64 before = 9; 
 }
 message GetVtxosResponse {

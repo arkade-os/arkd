@@ -65,7 +65,7 @@ VALUES (
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER));
+    updated_at = EXCLUDED.updated_at;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
@@ -338,8 +338,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
     AND v.updated_at >= :after
-    AND (:before = 0 OR v.updated_at <= :before
-    );
+    AND (:before = 0 OR v.updated_at <= :before);
 
 -- name: SelectPendingSpentVtxo :one
 SELECT v.*

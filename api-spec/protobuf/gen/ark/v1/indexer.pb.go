@@ -694,10 +694,11 @@ type GetVtxosRequest struct {
 	Page            *IndexerPageRequest `protobuf:"bytes,6,opt,name=page,proto3" json:"page,omitempty"`
 	// Include only spent vtxos that are not finalized.
 	PendingOnly bool `protobuf:"varint,7,opt,name=pending_only,json=pendingOnly,proto3" json:"pending_only,omitempty"`
-	// Include only vtxos with last update after the given unix time in millisecond
+	// Include only vtxos with last update after the given unix time in milliseconds.
+	// A value of 0 means no lower bound.
 	After int64 `protobuf:"varint,8,opt,name=after,proto3" json:"after,omitempty"`
 	// Include only vtxos with last update before the given unix time in milliseconds,
-	// greater value than the after when speciified
+	// greater value than the after when specified. A value of 0 means no upper bound.
 	Before        int64 `protobuf:"varint,9,opt,name=before,proto3" json:"before,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

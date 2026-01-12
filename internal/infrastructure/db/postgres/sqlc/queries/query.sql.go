@@ -579,8 +579,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
     AND v.updated_at >= $2::bigint
-    AND ($3::bigint = 0 OR v.updated_at <= $3::bigint
-    )
+    AND ($3::bigint = 0 OR v.updated_at <= $3::bigint)
 `
 
 type SelectPendingSpentVtxosWithPubkeysParams struct {
@@ -1968,7 +1967,7 @@ VALUES (
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    updated_at = EXCLUDED.updated_at
 `
 
 type UpsertVtxoParams struct {
