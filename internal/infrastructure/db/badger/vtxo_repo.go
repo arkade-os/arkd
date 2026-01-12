@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbuitl"
+	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbutil"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/timshannon/badgerhold/v4"
 )

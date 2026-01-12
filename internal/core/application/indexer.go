@@ -8,7 +8,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbuitl"
+	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbutil"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )

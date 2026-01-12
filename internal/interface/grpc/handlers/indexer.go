@@ -11,7 +11,7 @@ import (
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
-	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbuitl"
+	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbutil"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/google/uuid"

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbuitl"
+	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbutil"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 )
 
