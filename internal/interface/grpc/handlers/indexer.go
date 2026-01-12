@@ -251,9 +251,14 @@ func (e *indexerService) GetVtxos(
 
 	if len(pubkeys) > 0 {
 		if request.GetAfter() < 0 || request.GetBefore() < 0 {
-			return nil, status.Errorf(codes.InvalidArgument, "after and before must be greater than or equal to 0")
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"after and before must be greater than or equal to 0",
+			)
 		} else if request.GetBefore() > 0 && request.GetAfter() > 0 && request.GetBefore() <= request.GetAfter() {
-			return nil, status.Errorf(codes.InvalidArgument, "before must be greater than after")
+			return nil, status.Errorf(
+				codes.InvalidArgument,
+				"before must be greater than after")
 		}
 		resp, err = e.indexerSvc.GetVtxos(
 			ctx,
