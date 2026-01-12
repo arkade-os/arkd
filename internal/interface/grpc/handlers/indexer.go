@@ -250,6 +250,11 @@ func (e *indexerService) GetVtxos(
 	var resp *application.GetVtxosResp
 
 	if len(pubkeys) > 0 {
+		if request.GetAfter() < 0 || request.GetBefore() < 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "after and before must be greater than or equal to 0")
+		} else if request.GetBefore() > 0 && request.GetAfter() > 0 && request.GetBefore() <= request.GetAfter() {
+			return nil, status.Errorf(codes.InvalidArgument, "before must be greater than after")
+		}
 		resp, err = e.indexerSvc.GetVtxos(
 			ctx,
 			pubkeys,
@@ -257,10 +262,13 @@ func (e *indexerService) GetVtxos(
 			spentOnly,
 			recoverableOnly,
 			pendingOnly,
-			page,
 			request.GetAfter(),
 			request.GetBefore(),
+			page,
 		)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "%s", err.Error())
+		}
 	}
 	if len(outpoints) > 0 {
 		resp, err = e.indexerSvc.GetVtxosByOutpoint(ctx, outpoints, page)

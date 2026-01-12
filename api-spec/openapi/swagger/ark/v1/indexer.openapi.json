@@ -662,7 +662,7 @@
           {
             "name": "after",
             "in": "query",
-            "description": "vtxos from after unix time in milliseconds, must be above 0",
+            "description": "Include only vtxos with last update after the given unix time in millisecond",
             "schema": {
               "type": "integer",
               "format": "int64"
@@ -671,7 +671,7 @@
           {
             "name": "before",
             "in": "query",
-            "description": "vtxos from before unix time in milliseconds, using 0 leaves no upper time bound, must be\ngreater value than the after",
+            "description": "Include only vtxos with last update before the given unix time in milliseconds,\ngreater value than the after when speciified",
             "schema": {
               "type": "integer",
               "format": "int64"
@@ -989,12 +989,12 @@
         "properties": {
           "after": {
             "type": "integer",
-            "description": "vtxos from after unix time in milliseconds, must be above 0",
+            "description": "Include only vtxos with last update after the given unix time in millisecond",
             "format": "int64"
           },
           "before": {
             "type": "integer",
-            "description": "vtxos from before unix time in milliseconds, using 0 leaves no upper time bound, must be\ngreater value than the after",
+            "description": "Include only vtxos with last update before the given unix time in milliseconds,\ngreater value than the after when speciified",
             "format": "int64"
           },
           "outpoints": {

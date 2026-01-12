@@ -113,17 +113,17 @@ UPDATE vtxo SET intent_id = @intent_id WHERE txid = @txid AND vout = @vout;
 UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoUnrolled :exec
-UPDATE vtxo SET unrolled = true, updated_at = @updated_at WHERE txid = @txid AND vout = @vout;
+UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoSweptIfNotSwept :execrows
-UPDATE vtxo SET swept = true, updated_at = @updated_at WHERE txid = @txid AND vout = @vout AND swept = false;
+UPDATE vtxo SET swept = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
-UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = @updated_at
+UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoSpent :exec
-UPDATE vtxo SET spent = true, spent_by = @spent_by, ark_txid = @ark_txid, updated_at = @updated_at
+UPDATE vtxo SET spent = true, spent_by = @spent_by, ark_txid = @ark_txid, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectRoundWithId :many

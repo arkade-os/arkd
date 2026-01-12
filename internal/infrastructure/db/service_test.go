@@ -1046,6 +1046,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
+			// TODO: move to "invalid" sub-test
 			// Test with invalid time range where after is greater than before
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
 				ctx, []string{"bbbb"}, now.UnixMilli()+1000, now.UnixMilli(),

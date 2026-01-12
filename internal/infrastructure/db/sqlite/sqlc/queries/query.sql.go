@@ -1665,14 +1665,13 @@ func (q *Queries) UpdateVtxoIntentId(ctx context.Context, arg UpdateVtxoIntentId
 }
 
 const updateVtxoSettled = `-- name: UpdateVtxoSettled :exec
-UPDATE vtxo SET spent = true, spent_by = ?1, settled_by = ?2, updated_at = ?3
-WHERE txid = ?4 AND vout = ?5
+UPDATE vtxo SET spent = true, spent_by = ?1, settled_by = ?2, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+WHERE txid = ?3 AND vout = ?4
 `
 
 type UpdateVtxoSettledParams struct {
 	SpentBy   sql.NullString
 	SettledBy sql.NullString
-	UpdatedAt int64
 	Txid      string
 	Vout      int64
 }
@@ -1681,7 +1680,6 @@ func (q *Queries) UpdateVtxoSettled(ctx context.Context, arg UpdateVtxoSettledPa
 	_, err := q.db.ExecContext(ctx, updateVtxoSettled,
 		arg.SpentBy,
 		arg.SettledBy,
-		arg.UpdatedAt,
 		arg.Txid,
 		arg.Vout,
 	)
@@ -1689,23 +1687,21 @@ func (q *Queries) UpdateVtxoSettled(ctx context.Context, arg UpdateVtxoSettledPa
 }
 
 const updateVtxoSpent = `-- name: UpdateVtxoSpent :exec
-UPDATE vtxo SET spent = true, spent_by = ?1, ark_txid = ?2, updated_at = ?3
-WHERE txid = ?4 AND vout = ?5
+UPDATE vtxo SET spent = true, spent_by = ?1, ark_txid = ?2, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+WHERE txid = ?3 AND vout = ?4
 `
 
 type UpdateVtxoSpentParams struct {
-	SpentBy   sql.NullString
-	ArkTxid   sql.NullString
-	UpdatedAt int64
-	Txid      string
-	Vout      int64
+	SpentBy sql.NullString
+	ArkTxid sql.NullString
+	Txid    string
+	Vout    int64
 }
 
 func (q *Queries) UpdateVtxoSpent(ctx context.Context, arg UpdateVtxoSpentParams) error {
 	_, err := q.db.ExecContext(ctx, updateVtxoSpent,
 		arg.SpentBy,
 		arg.ArkTxid,
-		arg.UpdatedAt,
 		arg.Txid,
 		arg.Vout,
 	)
@@ -1713,17 +1709,16 @@ func (q *Queries) UpdateVtxoSpent(ctx context.Context, arg UpdateVtxoSpentParams
 }
 
 const updateVtxoSweptIfNotSwept = `-- name: UpdateVtxoSweptIfNotSwept :execrows
-UPDATE vtxo SET swept = true, updated_at = ?1 WHERE txid = ?2 AND vout = ?3 AND swept = false
+UPDATE vtxo SET swept = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)) WHERE txid = ?1 AND vout = ?2 AND swept = false
 `
 
 type UpdateVtxoSweptIfNotSweptParams struct {
-	UpdatedAt int64
-	Txid      string
-	Vout      int64
+	Txid string
+	Vout int64
 }
 
 func (q *Queries) UpdateVtxoSweptIfNotSwept(ctx context.Context, arg UpdateVtxoSweptIfNotSweptParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, updateVtxoSweptIfNotSwept, arg.UpdatedAt, arg.Txid, arg.Vout)
+	result, err := q.db.ExecContext(ctx, updateVtxoSweptIfNotSwept, arg.Txid, arg.Vout)
 	if err != nil {
 		return 0, err
 	}
@@ -1731,17 +1726,16 @@ func (q *Queries) UpdateVtxoSweptIfNotSwept(ctx context.Context, arg UpdateVtxoS
 }
 
 const updateVtxoUnrolled = `-- name: UpdateVtxoUnrolled :exec
-UPDATE vtxo SET unrolled = true, updated_at = ?1 WHERE txid = ?2 AND vout = ?3
+UPDATE vtxo SET unrolled = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)) WHERE txid = ?1 AND vout = ?2
 `
 
 type UpdateVtxoUnrolledParams struct {
-	UpdatedAt int64
-	Txid      string
-	Vout      int64
+	Txid string
+	Vout int64
 }
 
 func (q *Queries) UpdateVtxoUnrolled(ctx context.Context, arg UpdateVtxoUnrolledParams) error {
-	_, err := q.db.ExecContext(ctx, updateVtxoUnrolled, arg.UpdatedAt, arg.Txid, arg.Vout)
+	_, err := q.db.ExecContext(ctx, updateVtxoUnrolled, arg.Txid, arg.Vout)
 	return err
 }
 

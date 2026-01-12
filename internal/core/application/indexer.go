@@ -30,7 +30,7 @@ type IndexerService interface {
 	GetConnectors(ctx context.Context, txid string, page *Page) (*TreeTxResp, error)
 	GetVtxos(
 		ctx context.Context,
-		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool, page *Page, after, before int64,
+		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool, after, before int64, page *Page,
 	) (*GetVtxosResp, error)
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
@@ -148,8 +148,8 @@ func (i *indexerService) GetVtxos(
 	ctx context.Context,
 	pubkeys []string,
 	spendableOnly, spentOnly, recoverableOnly, pendingOnly bool,
-	page *Page,
 	after, before int64,
+	page *Page,
 ) (*GetVtxosResp, error) {
 	if after < 0 || before < 0 {
 		return nil, fmt.Errorf("after and before must be greater than or equal to 0")

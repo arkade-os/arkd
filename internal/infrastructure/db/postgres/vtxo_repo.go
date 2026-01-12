@@ -239,7 +239,7 @@ func (v *vtxoRepository) UnrollVtxos(ctx context.Context, vtxos []domain.Outpoin
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {
 			if err := querierWithTx.UpdateVtxoUnrolled(
-				ctx, queries.UpdateVtxoUnrolledParams{Txid: vtxo.Txid, Vout: int32(vtxo.VOut), UpdatedAt: time.Now().UnixMilli()},
+				ctx, queries.UpdateVtxoUnrolledParams{Txid: vtxo.Txid, Vout: int32(vtxo.VOut)},
 			); err != nil {
 				return err
 			}
@@ -263,7 +263,6 @@ func (v *vtxoRepository) SettleVtxos(
 					SettledBy: sql.NullString{String: settledBy, Valid: len(settledBy) > 0},
 					Txid:      vtxo.Txid,
 					Vout:      int32(vtxo.VOut),
-					UpdatedAt: time.Now().UnixMilli(),
 				},
 			); err != nil {
 				return err
@@ -284,11 +283,10 @@ func (v *vtxoRepository) SpendVtxos(
 			if err := querierWithTx.UpdateVtxoSpent(
 				ctx,
 				queries.UpdateVtxoSpentParams{
-					SpentBy:   sql.NullString{String: spentBy, Valid: len(spentBy) > 0},
-					ArkTxid:   sql.NullString{String: arkTxid, Valid: true},
-					Txid:      vtxo.Txid,
-					Vout:      int32(vtxo.VOut),
-					UpdatedAt: time.Now().UnixMilli(),
+					SpentBy: sql.NullString{String: spentBy, Valid: len(spentBy) > 0},
+					ArkTxid: sql.NullString{String: arkTxid, Valid: true},
+					Txid:    vtxo.Txid,
+					Vout:    int32(vtxo.VOut),
 				},
 			); err != nil {
 				return err
@@ -308,9 +306,8 @@ func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint
 			affectedRows, err := querierWithTx.UpdateVtxoSweptIfNotSwept(
 				ctx,
 				queries.UpdateVtxoSweptIfNotSweptParams{
-					Txid:      outpoint.Txid,
-					Vout:      int32(outpoint.VOut),
-					UpdatedAt: time.Now().UnixMilli(),
+					Txid: outpoint.Txid,
+					Vout: int32(outpoint.VOut),
 				},
 			)
 			if err != nil {
