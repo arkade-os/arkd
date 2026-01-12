@@ -8,6 +8,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbuitl"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
@@ -151,10 +152,8 @@ func (i *indexerService) GetVtxos(
 	after, before int64,
 	page *Page,
 ) (*GetVtxosResp, error) {
-	if after < 0 || before < 0 {
-		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
-	} else if before > 0 && after > 0 && before <= after {
-		return nil, fmt.Errorf("before must be greater than after")
+	if err := dbutil.ValidateTimeRange(after, before); err != nil {
+		return nil, err
 	}
 	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
 	count := 0

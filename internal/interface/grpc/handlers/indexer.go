@@ -11,6 +11,7 @@ import (
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
+	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbuitl"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/google/uuid"
@@ -250,16 +251,10 @@ func (e *indexerService) GetVtxos(
 	var resp *application.GetVtxosResp
 
 	if len(pubkeys) > 0 {
-		if request.GetAfter() < 0 || request.GetBefore() < 0 {
-			return nil, status.Errorf(
-				codes.InvalidArgument,
-				"after and before must be greater than or equal to 0",
-			)
-		} else if request.GetBefore() > 0 && request.GetAfter() > 0 && request.GetBefore() <= request.GetAfter() {
-			return nil, status.Errorf(
-				codes.InvalidArgument,
-				"before must be greater than after")
+		if err := dbutil.ValidateTimeRange(request.GetAfter(), request.GetBefore()); err != nil {
+			return nil, err
 		}
+
 		resp, err = e.indexerSvc.GetVtxos(
 			ctx,
 			pubkeys,

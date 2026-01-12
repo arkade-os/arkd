@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbuitl"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/timshannon/badgerhold/v4"
 )
@@ -232,10 +233,8 @@ func (r *vtxoRepository) UpdateVtxosExpiration(
 func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	if after < 0 || before < 0 {
-		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
-	} else if before > 0 && after > 0 && before <= after {
-		return nil, fmt.Errorf("before must be greater than after")
+	if err := dbutil.ValidateTimeRange(after, before); err != nil {
+		return nil, err
 	}
 	allVtxos := make([]domain.Vtxo, 0)
 	for _, pubkey := range pubkeys {
@@ -344,10 +343,8 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 func (r *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	if after < 0 || before < 0 {
-		return nil, fmt.Errorf("after and before must be greater than or equal to 0")
-	} else if before > 0 && after > 0 && before <= after {
-		return nil, fmt.Errorf("before must be greater than after")
+	if err := dbutil.ValidateTimeRange(after, before); err != nil {
+		return nil, err
 	}
 	indexedPubkeys := make(map[string]struct{})
 	for _, pubkey := range pubkeys {
