@@ -256,7 +256,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 -- name: SelectVtxosWithPubkeys :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkeys'))
     AND updated_at >= :after
-    AND (:before = 0 OR updated_at <= :before
+    AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER)
     );
 
 -- name: SelectExpiringLiquidityAmount :one
