@@ -97,12 +97,11 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetPacketIndex int, vtxos []VtxoInpu
 	usedVtxos := make([]bool, len(vtxos))
 
 	// -------------------------
-	// 1. Control asset handling
+	// 1. Asset handling
 	// -------------------------
 
-	for _, controlAsset := range assetPacket.ControlAssets {
-
-		for _, input := range controlAsset.Inputs {
+	for _, packetAsset := range assetPacket.Assets {
+		for _, input := range packetAsset.Inputs {
 			if input.Type == asset.AssetTypeTeleport {
 				continue
 			}
@@ -128,43 +127,10 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetPacketIndex int, vtxos []VtxoInpu
 			checkpointTxs = append(checkpointTxs, checkpointPtx)
 
 		}
-
 	}
 
 	// ------------------------
-	// 2. Normal asset handling
-	// ------------------------
-	for _, normalAsset := range assetPacket.NormalAssets {
-
-		for _, input := range normalAsset.Inputs {
-			if input.Type == asset.AssetTypeTeleport {
-				continue
-			}
-
-			//get asset seal
-			if int(input.Vin) >= len(vtxos) {
-				return nil, nil, fmt.Errorf("vtxo index out of range for input %d", input.Vin)
-			}
-			if usedVtxos[input.Vin] {
-				return nil, nil, fmt.Errorf("vtxo input %d already used", input.Vin)
-			}
-			vtxoInput := &vtxos[input.Vin]
-			usedVtxos[input.Vin] = true
-
-			checkpointPtx, checkpointInput, err := buildAssetCheckpointTx(
-				vtxoInput, &input, signerUnrollScriptClosure,
-			)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			checkpointInputs = append(checkpointInputs, *checkpointInput)
-			checkpointTxs = append(checkpointTxs, checkpointPtx)
-		}
-	}
-
-	// ------------------------
-	// 3. Handle remaining VTXOs (plain inputs)
+	// 2. Handle remaining VTXOs (plain inputs)
 	// ------------------------
 	for i, vtxo := range vtxos {
 		if usedVtxos[i] {
@@ -420,10 +386,9 @@ func buildAssetCheckpointTx(
 			},
 		}
 
-		newAssetGroup := &asset.AssetPacket{
-			ControlAssets: nil,
-			NormalAssets:  []asset.AssetGroup{newAsset},
-		}
+	newAssetGroup := &asset.AssetPacket{
+		Assets: []asset.AssetGroup{newAsset},
+	}
 
 		assetPacket, err := newAssetGroup.EncodeAssetPacket(0)
 		if err != nil {

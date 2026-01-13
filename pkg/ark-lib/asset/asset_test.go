@@ -17,9 +17,9 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	asset := AssetGroup{
-		AssetId: AssetId{
-			TxId:  deterministicBytesArray(0x2a),
-			Index: 0,
+		AssetId: &AssetId{
+			TxHash: deterministicBytesArray(0x2a),
+			Index:  0,
 		},
 		Outputs: []AssetOutput{
 			{
@@ -33,10 +33,10 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Amount:     22,
 			},
 		},
-		ControlAssetId: &AssetId{
-			TxId:  deterministicBytesArray(0x3c),
-			Index: 1,
-		},
+		ControlAsset: AssetRefFromId(AssetId{
+			TxHash: deterministicBytesArray(0x3c),
+			Index:  1,
+		}),
 		Inputs: []AssetInput{
 			{
 				Type:   AssetTypeLocal,
@@ -74,27 +74,23 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 	t.Parallel()
 
 	controlAsset := AssetGroup{
-		AssetId:        deterministicAssetId(0x11),
-		Outputs:        []AssetOutput{{Type: AssetTypeTeleport, Commitment: deterministicBytesArray(0xdd), Amount: 1}},
-		ControlAssetId: deterministicAssetIdPtr(0x3c),
-		Metadata:       []Metadata{{Key: "kind", Value: "control"}},
-		Version:        AssetVersion,
-		Magic:          AssetMagic,
+		AssetId:      ptrAssetId(deterministicAssetId(0x11)),
+		Outputs:      []AssetOutput{{Type: AssetTypeTeleport, Commitment: deterministicBytesArray(0xdd), Amount: 1}},
+		ControlAsset: deterministicAssetRefId(0x3c),
+		Metadata:     []Metadata{{Key: "kind", Value: "control"}},
 	}
 
 	normalAsset := AssetGroup{
-		AssetId:        deterministicAssetId(0x12),
-		Outputs:        []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
-		ControlAssetId: deterministicAssetIdPtr(0x3c),
-		Inputs:         []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 5}},
-		Metadata:       []Metadata{{Key: "kind", Value: "normal"}},
-		Version:        AssetVersion,
-		Magic:          AssetMagic,
+		AssetId:      ptrAssetId(deterministicAssetId(0x12)),
+		Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
+		ControlAsset: deterministicAssetRefId(0x3c),
+		Inputs:       []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 5}},
+		Metadata:     []Metadata{{Key: "kind", Value: "normal"}},
 	}
 
 	packet := AssetPacket{
-		ControlAssets: []AssetGroup{controlAsset},
-		NormalAssets:  []AssetGroup{normalAsset},
+		Assets:  []AssetGroup{controlAsset, normalAsset},
+		Version: AssetVersion,
 	}
 
 	txOut, err := packet.EncodeAssetPacket(0)
@@ -105,10 +101,30 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 	require.Equal(t, packet, *decodedPacket)
 }
 
+func TestAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
+	t.Parallel()
+
+	groupIndex := uint16(1)
+	assetGroup := AssetGroup{
+		AssetId:      ptrAssetId(deterministicAssetId(0x21)),
+		ControlAsset: AssetRefFromGroupIndex(groupIndex),
+		Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 0}},
+	}
+
+	encoded, err := assetGroup.EncodeTlv()
+	require.NoError(t, err)
+
+	var decoded AssetGroup
+	require.NoError(t, decoded.DecodeTlv(encoded))
+	require.NotNil(t, decoded.ControlAsset)
+	require.Equal(t, AssetRefByGroup, decoded.ControlAsset.Type)
+	require.Equal(t, groupIndex, decoded.ControlAsset.GroupIndex)
+}
+
 func TestAssetIdStringConversion(t *testing.T) {
 	txid := deterministicBytesArray(0x01)
 	index := uint16(12345)
-	assetId := AssetId{TxId: txid, Index: index}
+	assetId := AssetId{TxHash: txid, Index: index}
 
 	s := assetId.ToString()
 	decoded, err := AssetIdFromString(s)
@@ -129,17 +145,15 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 
 	subDustKey := deterministicPubKey(t, 0x55)
 	normalAsset := AssetGroup{
-		AssetId:        deterministicAssetId(0x12),
-		Outputs:        []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
-		ControlAssetId: deterministicAssetIdPtr(0xaa),
-		Version:        AssetVersion,
-		Magic:          AssetMagic,
+		AssetId:      ptrAssetId(deterministicAssetId(0x12)),
+		Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
+		ControlAsset: deterministicAssetRefId(0xaa),
 	}
 
 	group := AssetPacket{
-		ControlAssets: nil,
-		NormalAssets:  []AssetGroup{normalAsset},
-		SubDustKey:    &subDustKey,
+		Assets:     []AssetGroup{normalAsset},
+		SubDustKey: &subDustKey,
+		Version:    AssetVersion,
 	}
 
 	txOut, err := group.EncodeAssetPacket(0)
@@ -178,14 +192,14 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	assetValue := make([]byte, length)
 	_, err = io.ReadFull(reader, assetValue)
 	require.NoError(t, err)
-	require.True(t, bytes.HasPrefix(assetValue, AssetMagic))
+	require.True(t, bytes.HasPrefix(assetValue, ArkadeMagic))
 
 	decodedPacket, err := DecodeAssetPacket(txOut.PkScript)
 	require.NoError(t, err)
 	require.NotNil(t, decodedPacket.SubDustKey)
 	require.True(t, subDustKey.IsEqual(decodedPacket.SubDustKey))
-	require.Len(t, decodedPacket.NormalAssets, 1)
-	require.Equal(t, normalAsset, decodedPacket.NormalAssets[0])
+	require.Len(t, decodedPacket.Assets, 1)
+	require.Equal(t, normalAsset, decodedPacket.Assets[0])
 }
 
 func TestAssetOutputListEncodeDecode(t *testing.T) {
@@ -267,12 +281,15 @@ func deterministicBytesArray(seed byte) [32]byte {
 
 func deterministicAssetId(seed byte) AssetId {
 	return AssetId{
-		TxId:  deterministicBytesArray(seed),
-		Index: 0,
+		TxHash: deterministicBytesArray(seed),
+		Index:  0,
 	}
 }
 
-func deterministicAssetIdPtr(seed byte) *AssetId {
-	a := deterministicAssetId(seed)
-	return &a
+func ptrAssetId(id AssetId) *AssetId {
+	return &id
+}
+
+func deterministicAssetRefId(seed byte) *AssetRef {
+	return AssetRefFromId(deterministicAssetId(seed))
 }

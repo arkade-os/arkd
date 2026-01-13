@@ -26,6 +26,7 @@ type AssetGroup struct {
 	ID        string
 	Immutable bool
 	Quantity  int64
+	ControlID sql.NullString
 }
 
 type AssetMetadatum struct {

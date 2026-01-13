@@ -20,9 +20,10 @@ type assetRepository struct {
 }
 
 type assetGroup struct {
-	ID        string `badgerhold:"key"`
-	Quantity  uint64
-	Immutable bool
+	ID             string `badgerhold:"key"`
+	Quantity       uint64
+	Immutable      bool
+	ControlAssetId string
 }
 
 type assetMetadata struct {
@@ -330,9 +331,10 @@ func (r *assetRepository) GetTeleportAsset(
 
 func (r *assetRepository) InsertAssetGroup(ctx context.Context, a domain.AssetGroup) error {
 	record := assetGroup{
-		ID:        a.ID,
-		Quantity:  a.Quantity,
-		Immutable: a.Immutable,
+		ID:             a.ID,
+		Quantity:       a.Quantity,
+		Immutable:      a.Immutable,
+		ControlAssetId: a.ControlAssetID,
 	}
 
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
@@ -372,10 +374,11 @@ func (r *assetRepository) GetAssetGroupByID(
 	}
 
 	return &domain.AssetGroup{
-		ID:        dbAsset.ID,
-		Quantity:  dbAsset.Quantity,
-		Immutable: dbAsset.Immutable,
-		Metadata:  metadata,
+		ID:             dbAsset.ID,
+		Quantity:       dbAsset.Quantity,
+		Immutable:      dbAsset.Immutable,
+		ControlAssetID: dbAsset.ControlAssetId,
+		Metadata:       metadata,
 	}, nil
 }
 

@@ -40,7 +40,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 	copy(caID[:], caInputTxId[:])
 
 	controlAsset := asset.AssetGroup{
-		AssetId: asset.AssetId{TxId: caID, Index: 0},
+		AssetId: &asset.AssetId{TxHash: caID, Index: 0},
 		Inputs: []asset.AssetInput{{
 			Type:   asset.AssetTypeLocal,
 			Vin:    0,
@@ -57,8 +57,8 @@ func TestRebuildAssetTxs(t *testing.T) {
 	}
 
 	normalAsset := asset.AssetGroup{
-		AssetId:        asset.AssetId{TxId: assetInTxId, Index: 0},
-		ControlAssetId: &asset.AssetId{TxId: caID, Index: 0},
+		AssetId:      &asset.AssetId{TxHash: assetInTxId, Index: 0},
+		ControlAsset: asset.AssetRefFromId(asset.AssetId{TxHash: caID, Index: 0}),
 		Inputs: []asset.AssetInput{{
 			Type:   asset.AssetTypeLocal,
 			Vin:    1,
@@ -75,9 +75,9 @@ func TestRebuildAssetTxs(t *testing.T) {
 	}
 
 	assetGroup := &asset.AssetPacket{
-		ControlAssets: []asset.AssetGroup{controlAsset},
-		NormalAssets:  []asset.AssetGroup{normalAsset},
-		SubDustKey:    normalTapKey,
+		Assets:     []asset.AssetGroup{controlAsset, normalAsset},
+		SubDustKey: normalTapKey,
+		Version:    asset.AssetVersion,
 	}
 	opret, err := assetGroup.EncodeAssetPacket(0)
 	require.NoError(t, err)
@@ -153,10 +153,10 @@ func TestRebuildAssetTxs(t *testing.T) {
 	rebuiltPacket, err := asset.DecodeAssetPacket(rebuiltArk.UnsignedTx.TxOut[assetGroupIndex].PkScript)
 	require.NoError(t, err)
 
-	require.NotNil(t, rebuiltPacket.ControlAssets)
-	require.Len(t, rebuiltPacket.ControlAssets, 1)
-	require.Equal(t, len(origPacket.ControlAssets[0].Inputs), len(rebuiltPacket.ControlAssets[0].Inputs))
-	require.Equal(t, len(origPacket.NormalAssets[0].Inputs), len(rebuiltPacket.NormalAssets[0].Inputs))
+	require.NotNil(t, rebuiltPacket)
+	require.Len(t, rebuiltPacket.Assets, 2)
+	require.Equal(t, len(origPacket.Assets[0].Inputs), len(rebuiltPacket.Assets[0].Inputs))
+	require.Equal(t, len(origPacket.Assets[1].Inputs), len(rebuiltPacket.Assets[1].Inputs))
 
 	// Map rebuilt checkpoint txids for quick lookup.
 	rebuiltCheckpointIDs := make(map[string]struct{})
@@ -164,11 +164,11 @@ func TestRebuildAssetTxs(t *testing.T) {
 		rebuiltCheckpointIDs[cp.UnsignedTx.TxHash().String()] = struct{}{}
 	}
 
-	for _, in := range rebuiltPacket.ControlAssets[0].Inputs {
+	for _, in := range rebuiltPacket.Assets[0].Inputs {
 		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}
-	for _, in := range rebuiltPacket.NormalAssets[0].Inputs {
+	for _, in := range rebuiltPacket.Assets[1].Inputs {
 		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}

@@ -143,11 +143,19 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				)
 			}
 
-			allAssets := append(
-				decodedAssetPacket.ControlAssets,
-				decodedAssetPacket.NormalAssets...)
+			allAssets := decodedAssetPacket.Assets
 
-			for _, grpAsset := range allAssets {
+			for i, grpAsset := range allAssets {
+				var assetId asset.AssetId
+
+				if grpAsset.AssetId == nil {
+					assetId = asset.AssetId{
+						TxHash: ptx.UnsignedTx.TxHash(),
+						Index:  uint16(i),
+					}
+				} else {
+					assetId = *grpAsset.AssetId
+				}
 				for _, assetOut := range grpAsset.Outputs {
 					if assetOut.Type != asset.AssetTypeLocal {
 						continue
@@ -166,7 +174,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 							VOut: assetOut.Vout,
 						},
 						Amount:  assetOut.Amount,
-						AssetID: grpAsset.AssetId.ToString(),
+						AssetID: assetId.ToString(),
 					})
 				}
 			}

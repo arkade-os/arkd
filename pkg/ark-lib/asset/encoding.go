@@ -19,7 +19,7 @@ const (
 
 func EAssetId(w io.Writer, val interface{}, buf *[8]byte) error {
 	if t, ok := val.(*AssetId); ok {
-		if err := tlv.EBytes32(w, &t.TxId, buf); err != nil {
+		if err := tlv.EBytes32(w, &t.TxHash, buf); err != nil {
 			return err
 		}
 		if err := tlv.EUint16(w, &t.Index, buf); err != nil {
@@ -32,7 +32,7 @@ func EAssetId(w io.Writer, val interface{}, buf *[8]byte) error {
 
 func DAssetId(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 	if t, ok := val.(*AssetId); ok && l == 34 {
-		if err := tlv.DBytes32(r, &t.TxId, buf, 32); err != nil {
+		if err := tlv.DBytes32(r, &t.TxHash, buf, 32); err != nil {
 			return err
 		}
 		if err := tlv.DUint16(r, &t.Index, buf, 2); err != nil {
@@ -48,7 +48,7 @@ func DAssetIdPtr(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 		if *t == nil {
 			*t = &AssetId{}
 		}
-		if err := tlv.DBytes32(r, &(*t).TxId, buf, 32); err != nil {
+		if err := tlv.DBytes32(r, &(*t).TxHash, buf, 32); err != nil {
 			return err
 		}
 		if err := tlv.DUint16(r, &(*t).Index, buf, 2); err != nil {
@@ -62,6 +62,91 @@ func DAssetIdPtr(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 func AssetIdSize(val *AssetId) tlv.SizeFunc {
 	return func() uint64 {
 		return 34
+	}
+}
+
+func EAssetRef(w io.Writer, val interface{}, buf *[8]byte) error {
+	if t, ok := val.(*AssetRef); ok {
+		refType := t.Type
+		switch refType {
+		case AssetRefByID:
+			if err := tlv.EUint8(w, (*uint8)(&refType), buf); err != nil {
+				return err
+			}
+			return EAssetId(w, &t.AssetId, buf)
+		case AssetRefByGroup:
+			if err := tlv.EUint8(w, (*uint8)(&refType), buf); err != nil {
+				return err
+			}
+			return tlv.EUint16(w, &t.GroupIndex, buf)
+		default:
+			return fmt.Errorf("unknown asset ref type: %d", t.Type)
+		}
+	}
+	return tlv.NewTypeForEncodingErr(val, "assetRef")
+}
+
+func DAssetRef(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
+	if t, ok := val.(*AssetRef); ok {
+		if l < 1 {
+			return fmt.Errorf("invalid asset ref length: %d", l)
+		}
+		var typ uint8
+		if err := tlv.DUint8(r, &typ, buf, 1); err != nil {
+			return err
+		}
+
+		switch AssetRefType(typ) {
+		case AssetRefByID:
+			if l != 1+34 {
+				return fmt.Errorf("invalid asset ref length: %d", l)
+			}
+			var assetId AssetId
+			if err := DAssetId(r, &assetId, buf, 34); err != nil {
+				return err
+			}
+			*t = AssetRef{Type: AssetRefByID, AssetId: assetId}
+			return nil
+		case AssetRefByGroup:
+			if l != 1+2 {
+				return fmt.Errorf("invalid asset ref length: %d", l)
+			}
+			var groupIndex uint16
+			if err := tlv.DUint16(r, &groupIndex, buf, 2); err != nil {
+				return err
+			}
+			*t = AssetRef{Type: AssetRefByGroup, GroupIndex: groupIndex}
+			return nil
+		default:
+			return fmt.Errorf("unknown asset ref type: %d", typ)
+		}
+	}
+	return tlv.NewTypeForDecodingErr(val, "assetRef", l, l)
+}
+
+func DAssetRefPtr(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
+	if t, ok := val.(**AssetRef); ok {
+		if *t == nil {
+			*t = &AssetRef{}
+		}
+		return DAssetRef(r, *t, buf, l)
+	}
+	return tlv.NewTypeForDecodingErr(val, "assetRef", l, l)
+}
+
+func AssetRefSize(val *AssetRef) tlv.SizeFunc {
+	return func() uint64 {
+		if val == nil {
+			return 0
+		}
+		switch val.Type {
+		case AssetRefByID:
+			return 1 + 34
+		case AssetRefByGroup:
+			return 1 + 2
+		default:
+			return 0
+		}
 	}
 }
 

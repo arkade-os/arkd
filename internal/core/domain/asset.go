@@ -17,10 +17,11 @@ type NormalAsset struct {
 }
 
 type AssetGroup struct {
-	ID        string
-	Quantity  uint64
-	Immutable bool
-	Metadata  []AssetMetadata
+	ID             string
+	Quantity       uint64
+	Immutable      bool
+	ControlAssetID string
+	Metadata       []AssetMetadata
 }
 
 type TeleportAsset struct {

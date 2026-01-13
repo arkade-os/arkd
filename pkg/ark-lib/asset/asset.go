@@ -20,13 +20,40 @@ import (
 const AssetVersion byte = 0x01
 
 type AssetId struct {
-	TxId  [32]byte
-	Index uint16
+	TxHash [32]byte
+	Index  uint16
+}
+
+type AssetRefType uint8
+
+const (
+	AssetRefByID    AssetRefType = 0x01
+	AssetRefByGroup AssetRefType = 0x02
+)
+
+type AssetRef struct {
+	Type       AssetRefType
+	AssetId    AssetId
+	GroupIndex uint16
+}
+
+func AssetRefFromId(assetId AssetId) *AssetRef {
+	return &AssetRef{
+		Type:    AssetRefByID,
+		AssetId: assetId,
+	}
+}
+
+func AssetRefFromGroupIndex(groupIndex uint16) *AssetRef {
+	return &AssetRef{
+		Type:       AssetRefByGroup,
+		GroupIndex: groupIndex,
+	}
 }
 
 func (a AssetId) ToString() string {
 	var buf [34]byte
-	copy(buf[:32], a.TxId[:])
+	copy(buf[:32], a.TxHash[:])
 	// Big endian encoding for index
 	buf[32] = byte(a.Index >> 8)
 	buf[33] = byte(a.Index)
@@ -43,32 +70,28 @@ func AssetIdFromString(s string) (*AssetId, error) {
 	}
 
 	var assetId AssetId
-	copy(assetId.TxId[:], buf[:32])
+	copy(assetId.TxHash[:], buf[:32])
 	// Big endian decoding for index
 	assetId.Index = uint16(buf[32])<<8 | uint16(buf[33])
 	return &assetId, nil
 }
 
 type AssetGroup struct {
-	AssetId        AssetId
-	Immutable      bool
-	Outputs        []AssetOutput // 8 + 33
-	ControlAssetId *AssetId
-	Inputs         []AssetInput
-	Metadata       []Metadata
-
-	// OP_RETURN
-	Version byte
-	Magic   []byte
+	AssetId      *AssetId
+	Immutable    bool
+	Outputs      []AssetOutput // 8 + 33
+	ControlAsset *AssetRef
+	Inputs       []AssetInput
+	Metadata     []Metadata
 }
 
 type AssetPacket struct {
-	ControlAssets []AssetGroup
-	NormalAssets  []AssetGroup
-	SubDustKey    *btcec.PublicKey
+	Assets     []AssetGroup
+	SubDustKey *btcec.PublicKey
+	Version    byte
 }
 
-var AssetMagic []byte = []byte{0x41, 0x52, 0x4B} // "ARK"
+var ArkadeMagic []byte = []byte{0x41, 0x52, 0x4B} // "ARK"
 
 const (
 	MarkerSubDustKey   byte = 0x01
@@ -115,18 +138,17 @@ type AssetInput struct {
 }
 
 func (g *AssetPacket) EncodeAssetPacket(amount int64) (wire.TxOut, error) {
-	encodedAssets, err := encodeAssetPacket(g.ControlAssets, g.NormalAssets)
+	encodedAssets, err := encodeAssetPacket(g.Assets)
 	if err != nil {
 		return wire.TxOut{}, err
 	}
 
-	version := AssetVersion
-	// Use version from first normal asset if available, else default
-	if len(g.NormalAssets) > 0 && g.NormalAssets[0].Version != 0 {
-		version = g.NormalAssets[0].Version
+	version := g.Version
+	if version == 0 {
+		version = AssetVersion
 	}
 
-	assetData := append(append([]byte{}, AssetMagic...), version)
+	assetData := append(append([]byte{}, ArkadeMagic...), version)
 	assetData = append(assetData, encodedAssets...)
 
 	var scratch [8]byte
@@ -176,12 +198,12 @@ func DecodeAssetPacket(opReturnData []byte) (*AssetPacket, error) {
 		return nil, err
 	}
 
-	if len(assetPayload) < len(AssetMagic)+1 || !bytes.HasPrefix(assetPayload, AssetMagic) {
+	if len(assetPayload) < len(ArkadeMagic)+1 || !bytes.HasPrefix(assetPayload, ArkadeMagic) {
 		return nil, errors.New("invalid asset op_return payload")
 	}
 
-	version := assetPayload[len(AssetMagic)]
-	payload := assetPayload[len(AssetMagic)+1:]
+	version := assetPayload[len(ArkadeMagic)]
+	payload := assetPayload[len(ArkadeMagic)+1:]
 
 	packet, err := decodeAssetPacket(payload, version)
 	if err != nil {
@@ -200,8 +222,8 @@ func DecodeAssetPacket(opReturnData []byte) (*AssetPacket, error) {
 
 func IsAssetPacket(opReturnData []byte) bool {
 	payload, _, err := parsePacketOpReturn(opReturnData)
-	if err == nil && len(payload) >= len(AssetMagic)+1 {
-		return bytes.HasPrefix(payload, AssetMagic)
+	if err == nil && len(payload) >= len(ArkadeMagic)+1 {
+		return bytes.HasPrefix(payload, ArkadeMagic)
 	}
 	return false
 }
@@ -209,11 +231,13 @@ func IsAssetPacket(opReturnData []byte) bool {
 func (a *AssetGroup) EncodeTlv() ([]byte, error) {
 	var tlvRecords []tlv.Record
 
-	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
-		tlvTypeAssetID,
-		&a.AssetId,
-		AssetIdSize(&a.AssetId),
-		EAssetId, nil))
+	if a.AssetId != nil {
+		tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
+			tlvTypeAssetID,
+			a.AssetId,
+			AssetIdSize(a.AssetId),
+			EAssetId, nil))
+	}
 
 	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
 		tlvTypeImmutable,
@@ -225,12 +249,12 @@ func (a *AssetGroup) EncodeTlv() ([]byte, error) {
 		AssetOutputListSize(a.Outputs),
 		EAssetOutputList, nil))
 
-	if a.ControlAssetId != nil {
+	if a.ControlAsset != nil {
 		tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
 			tlvTypeControlAssetId,
-			a.ControlAssetId,
-			AssetIdSize(a.ControlAssetId),
-			EAssetId, nil))
+			a.ControlAsset,
+			AssetRefSize(a.ControlAsset),
+			EAssetRef, nil))
 	}
 
 	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
@@ -263,7 +287,7 @@ func (a *AssetGroup) DecodeTlv(data []byte) error {
 			&a.AssetId,
 			AssetIdSize(nil),
 			nil,
-			DAssetId,
+			DAssetIdPtr,
 		),
 
 		tlv.MakePrimitiveRecord(
@@ -280,10 +304,10 @@ func (a *AssetGroup) DecodeTlv(data []byte) error {
 		),
 		tlv.MakeDynamicRecord(
 			tlvTypeControlAssetId,
-			&a.ControlAssetId,
-			AssetIdSize(nil),
+			&a.ControlAsset,
+			AssetRefSize(nil),
 			nil,
-			DAssetIdPtr,
+			DAssetRefPtr,
 		),
 		tlv.MakeDynamicRecord(
 			tlvTypeInput,
@@ -308,124 +332,6 @@ func (a *AssetGroup) DecodeTlv(data []byte) error {
 	return tlvStream.Decode(buf)
 }
 
-func VerifyAssetOutputs(outs []*wire.TxOut, assetOutputs []AssetOutput) error {
-
-	processedOutputs := 0
-
-	for _, assetOut := range assetOutputs {
-		switch assetOut.Type {
-		case AssetTypeLocal:
-			for index := range outs {
-				if index == int(assetOut.Vout) {
-					processedOutputs++
-					break
-				}
-			}
-		case AssetTypeTeleport:
-			processedOutputs++
-		default:
-			return fmt.Errorf("unknown asset output type %d", assetOut.Type)
-		}
-	}
-
-	if processedOutputs != len(assetOutputs) {
-		errors := fmt.Errorf("not all asset outputs verified: processed %d of %d",
-			processedOutputs, len(assetOutputs))
-		return errors
-	}
-
-	return nil
-}
-
-func VerifyAssetInputs(ins []*wire.TxIn, assetInputs []AssetInput) error {
-	processedInputs := 0
-
-	for _, assetIn := range assetInputs {
-		switch assetIn.Type {
-		case AssetTypeLocal:
-			if int(assetIn.Vin) >= len(ins) {
-				return fmt.Errorf("asset input index out of range: %d", assetIn.Vin)
-			}
-			processedInputs++
-		case AssetTypeTeleport:
-			processedInputs++
-		default:
-			return fmt.Errorf("unknown asset input type %d", assetIn.Type)
-		}
-	}
-
-	if processedInputs != len(assetInputs) {
-		errors := fmt.Errorf("not all asset inputs verified: processed %d of %d",
-			processedInputs, len(assetInputs))
-		return errors
-	}
-
-	return nil
-}
-
-func VerifyAssetOutputInTx(arkTx string, vout uint32) error {
-	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
-	if err != nil {
-		return fmt.Errorf("error decoding Ark Tx: %s", err)
-	}
-
-	var assetGroup *AssetPacket
-	var assetGroupIndex int
-
-	for i, output := range decodedArkTx.UnsignedTx.TxOut {
-		if IsAssetPacket(output.PkScript) {
-			assetGp, err := DecodeAssetPacket(output.PkScript)
-			if err != nil {
-				return fmt.Errorf("error decoding asset Opreturn: %s", err)
-			}
-			assetGroup = assetGp
-			assetGroupIndex = i
-			break
-		}
-	}
-
-	// verify asset input in present in assetGroup.Inputs
-	totalAssetOuts := make([]AssetOutput, 0)
-	for _, asset := range assetGroup.NormalAssets {
-		totalAssetOuts = append(totalAssetOuts, asset.Outputs...)
-	}
-
-	for _, asset := range assetGroup.ControlAssets {
-		totalAssetOuts = append(totalAssetOuts, asset.Outputs...)
-	}
-
-	assetOutFound := false
-	for _, assetOut := range totalAssetOuts {
-		if assetOut.Vout == vout {
-			assetOutFound = true
-			break
-		}
-	}
-
-	if !assetOutFound {
-		return fmt.Errorf("asset output %d not found", vout)
-	}
-
-	// verify sealPresent
-	sealPresent := false
-	for i, _ := range decodedArkTx.UnsignedTx.TxOut {
-		if i == assetGroupIndex {
-			return fmt.Errorf("output not present")
-		}
-
-		if i == int(vout) {
-			sealPresent = true
-			break
-		}
-	}
-
-	if !sealPresent {
-		return fmt.Errorf("seal not present")
-	}
-
-	return nil
-}
-
 func DeriveAssetGroupFromTx(arkTx string) (*AssetPacket, error) {
 	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
 	if err != nil {
@@ -446,24 +352,17 @@ func DeriveAssetGroupFromTx(arkTx string) (*AssetPacket, error) {
 
 }
 
-func encodeAssetPacket(controlAssets, normalAssets []AssetGroup) ([]byte, error) {
+func encodeAssetPacket(assets []AssetGroup) ([]byte, error) {
 	var scratch [8]byte
 	var buf bytes.Buffer
 
-	totalCount := uint64(len(controlAssets) + len(normalAssets))
-	controlCount := uint64(len(controlAssets))
+	totalCount := uint64(len(assets))
 
 	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
 		return nil, err
 	}
 
-	if err := tlv.WriteVarInt(&buf, controlCount, &scratch); err != nil {
-		return nil, err
-	}
-
-	allAssets := append(controlAssets, normalAssets...)
-
-	for _, asset := range allAssets {
+	for _, asset := range assets {
 		encodedAsset, err := asset.EncodeTlv()
 		if err != nil {
 			return nil, err
@@ -583,15 +482,6 @@ func decodeAssetPacket(payload []byte, version byte) (*AssetPacket, error) {
 		return nil, errors.New("empty asset group")
 	}
 
-	controlCount, err := tlv.ReadVarInt(reader, &scratch)
-	if err != nil {
-		return nil, fmt.Errorf("invalid control asset count: %w", err)
-	}
-
-	if controlCount > assetCount {
-		return nil, fmt.Errorf("control asset count %d exceeds total asset count %d", controlCount, assetCount)
-	}
-
 	assets := make([]AssetGroup, 0, int(assetCount))
 	for i := uint64(0); i < assetCount; i++ {
 		length, err := tlv.ReadVarInt(reader, &scratch)
@@ -609,8 +499,6 @@ func decodeAssetPacket(payload []byte, version byte) (*AssetPacket, error) {
 		}
 
 		var decoded AssetGroup
-		decoded.Magic = AssetMagic
-		decoded.Version = version
 		if err := decoded.DecodeTlv(assetData); err != nil {
 			return nil, fmt.Errorf("failed to decode asset: %w", err)
 		}
@@ -627,8 +515,8 @@ func decodeAssetPacket(payload []byte, version byte) (*AssetPacket, error) {
 	}
 
 	group := &AssetPacket{
-		ControlAssets: assets[:controlCount],
-		NormalAssets:  assets[controlCount:],
+		Assets:  assets,
+		Version: version,
 	}
 
 	return group, nil

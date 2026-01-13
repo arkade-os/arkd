@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-func (s *service) validateAssetTransaction(
+func (s *service) validateAssetTransition(
 	ctx context.Context,
 	arkTx wire.MsgTx,
 	checkpointTxMap map[string]string,
@@ -23,47 +23,87 @@ func (s *service) validateAssetTransaction(
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
 
-	controlAssets := decodedAssetPacket.ControlAssets
-	normalAssets := decodedAssetPacket.NormalAssets
-	allAssets := make([]asset.AssetGroup, 0, len(controlAssets)+len(normalAssets))
-	allAssets = append(allAssets, normalAssets...)
-	allAssets = append(allAssets, controlAssets...)
+	allAssets := decodedAssetPacket.Assets
 
 	if err := ensureUniqueAssetVouts(allAssets); err != nil {
 		return err
 	}
 
-	if err := s.validateControlAssetsForNormalAssets(ctx, controlAssets, normalAssets); err != nil {
+	if err := s.validateControlAssets(ctx, allAssets); err != nil {
 		return err
 	}
 
-	return s.validateAssetGroups(ctx, arkTx, checkpointTxMap, allAssets)
+	for _, grpAsset := range allAssets {
+		if err := s.validateAssetGroup(ctx, arkTx, checkpointTxMap, grpAsset); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func (s *service) validateControlAssetsForNormalAssets(
-	ctx context.Context,
-	controlAssets, normalAssets []asset.AssetGroup,
-) error {
-	for _, normalAsset := range normalAssets {
-		// Ensure Presence of Control Asset for Issuance and Metadata modification
-		if len(normalAsset.Inputs) == 0 {
-			if normalAsset.ControlAssetId == nil {
-				continue
+func (s *service) validateControlAssets(ctx context.Context, assets []asset.AssetGroup) error {
+	// Validate Presence of Control Assets
+	for _, asst := range assets {
+
+		// If AssetId is nill : Issuance
+		if asst.AssetId == nil && asst.ControlAsset != nil {
+			switch asst.ControlAsset.Type {
+			case asset.AssetRefByGroup:
+				if int(asst.ControlAsset.GroupIndex) >= len(assets) {
+					return fmt.Errorf("control asset group index %d out of range for issuance", asst.ControlAsset.GroupIndex)
+				}
+
+			case asset.AssetRefByID:
+				controlAssetIDStr := asst.ControlAsset.AssetId.ToString()
+				assetGroup, err := s.repoManager.Assets().GetAssetGroupByID(ctx, controlAssetIDStr)
+				if err != nil {
+					return fmt.Errorf("error retrieving control asset %s for issuance: %w", controlAssetIDStr, err)
+				}
+
+				if assetGroup == nil {
+					return fmt.Errorf("control asset %s does not exist for issuance", controlAssetIDStr)
+				}
+
+			default:
+				return fmt.Errorf("invalid control asset reference for issuance")
 			}
-			if err := s.ensureControlAssetExists(ctx, controlAssets, *normalAsset.ControlAssetId); err != nil {
-				return err
-			}
+			continue
 		}
 
-		totalInputAmount := sumAssetInputs(normalAsset.Inputs)
-		totalOutputAmount := sumAssetOutputs(normalAsset.Outputs)
-		// Ensure Presence of Control Asset for Reissue/Burn
-		if totalInputAmount != totalOutputAmount {
-			if normalAsset.ControlAssetId == nil {
-				return fmt.Errorf("missing control asset for asset reissue/burn")
+		// Ensure Presence of Control Asset for  Reissuance
+		totalInputAmount := sumAssetInputs(asst.Inputs)
+		totalOutputAmount := sumAssetOutputs(asst.Outputs)
+
+		if totalOutputAmount > totalInputAmount {
+			if asst.AssetId == nil {
+				return fmt.Errorf("missing asset ID")
 			}
 
-			if err := s.ensureControlAssetExists(ctx, controlAssets, *normalAsset.ControlAssetId); err != nil {
+			controlAssetDetails, err := s.repoManager.Assets().GetAssetGroupByID(ctx, asst.AssetId.ToString())
+			if err != nil {
+				return fmt.Errorf("error retrieving asset %s: %w", asst.AssetId.ToString(), err)
+			}
+
+			if controlAssetDetails == nil {
+				return fmt.Errorf("asset %s does not exist", asst.AssetId.ToString())
+			}
+
+			controlAssetId := controlAssetDetails.ControlAssetID
+			if controlAssetId == "" {
+				return fmt.Errorf("asset %s does not have a control asset", asst.AssetId.ToString())
+			}
+
+			decodedControlAssetId, err := asset.AssetIdFromString(controlAssetId)
+			if err != nil {
+				return fmt.Errorf("error decoding control asset ID %s: %w", controlAssetId, err)
+			}
+
+			if decodedControlAssetId == nil {
+				return fmt.Errorf("invalid control asset ID %s", controlAssetId)
+			}
+
+			if err := s.ensureAssetPresence(ctx, assets, *decodedControlAssetId); err != nil {
 				return err
 			}
 		}
@@ -72,76 +112,68 @@ func (s *service) validateControlAssetsForNormalAssets(
 	return nil
 }
 
-func (s *service) ensureControlAssetExists(
-	ctx context.Context,
-	controlAssets []asset.AssetGroup,
-	controlAssetID asset.AssetId,
-) error {
-	// check in the provided control assets first
-	if hasMatchingControlAsset(controlAssets, &controlAssetID) {
-		return nil
-	}
-
-	controlAssetIDStr := controlAssetID.ToString()
-	existingControlAsset, err := s.repoManager.Assets().GetAssetGroupByID(ctx, controlAssetIDStr)
-	if err != nil {
-		return fmt.Errorf("error retrieving control asset %s: %w", controlAssetIDStr, err)
-	}
-	if existingControlAsset == nil {
-		return fmt.Errorf("control asset %s not found", controlAssetIDStr)
-	}
-
-	return nil
-}
-
-func hasMatchingControlAsset(controlAssets []asset.AssetGroup, controlAssetID *asset.AssetId) bool {
-	if controlAssetID == nil {
-		return false
-	}
-
-	for _, ca := range controlAssets {
-		if ca.AssetId == *controlAssetID {
-			return true
-		}
-	}
-
-	return false
-}
-
-func sumAssetInputs(inputs []asset.AssetInput) uint64 {
-	total := uint64(0)
-	for _, in := range inputs {
-		total += in.Amount
-	}
-	return total
-}
-
-func sumAssetOutputs(outputs []asset.AssetOutput) uint64 {
-	total := uint64(0)
-	for _, out := range outputs {
-		total += out.Amount
-	}
-	return total
-}
-
-func (s *service) validateAssetGroups(
+func (s *service) validateAssetGroup(
 	ctx context.Context,
 	arkTx wire.MsgTx,
 	checkpointTxMap map[string]string,
-	assets []asset.AssetGroup,
+	grpAsset asset.AssetGroup,
 ) error {
-	for _, grpAsset := range assets {
-		if err := asset.VerifyAssetOutputs(arkTx.TxOut, grpAsset.Outputs); err != nil {
-			return err
-		}
 
-		for _, input := range grpAsset.Inputs {
-			if err := s.validateAssetInput(ctx, arkTx, checkpointTxMap, input); err != nil {
-				return err
-			}
+	if grpAsset.AssetId != nil {
+		gp, err := s.repoManager.Assets().GetAssetGroupByID(ctx, grpAsset.AssetId.ToString())
+
+		if err != nil {
+			return fmt.Errorf("error retrieving asset group %s: %w", grpAsset.AssetId.ToString(), err)
+		}
+		if gp == nil {
+			return fmt.Errorf("asset group %s does not exist", grpAsset.AssetId.ToString())
 		}
 	}
 
+	for _, output := range grpAsset.Outputs {
+		if err := s.validateAssetOutput(ctx, arkTx, grpAsset, output); err != nil {
+			return err
+		}
+	}
+
+	for _, input := range grpAsset.Inputs {
+		if err := s.validateAssetInput(ctx, arkTx, checkpointTxMap, input); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *service) validateAssetOutput(
+	ctx context.Context,
+	arkTx wire.MsgTx,
+	assetGp asset.AssetGroup,
+	output asset.AssetOutput,
+) error {
+	processedOutputs := 0
+
+	for _, assetOut := range assetGp.Outputs {
+		switch assetOut.Type {
+		case asset.AssetTypeLocal:
+			for index := range arkTx.TxOut {
+				if index == int(assetOut.Vout) {
+					processedOutputs++
+					break
+				}
+			}
+		case asset.AssetTypeTeleport:
+			processedOutputs++
+		default:
+			return fmt.Errorf("unknown asset output type %d", assetOut.Type)
+		}
+	}
+
+	if processedOutputs != len(assetGp.Outputs) {
+		errors := fmt.Errorf("not all asset outputs verified: processed %d of %d",
+			processedOutputs, len(assetGp.Outputs))
+		return errors
+	}
 	return nil
 }
 
@@ -176,6 +208,20 @@ func (s *service) validateAssetInput(
 		return fmt.Errorf("asset input index out of range: %d", input.Vin)
 	}
 
+	err := s.verifyAssetInputPrevOut(ctx, input, checkpointTxMap, arkTx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *service) verifyAssetInputPrevOut(
+	ctx context.Context,
+	input asset.AssetInput,
+	checkpointTxMap map[string]string,
+	arkTx wire.MsgTx,
+) error {
 	checkpointOutpoint := arkTx.TxIn[input.Vin].PreviousOutPoint
 	checkpointTxHex, ok := checkpointTxMap[checkpointOutpoint.Hash.String()]
 	if !ok {
@@ -206,11 +252,54 @@ func (s *service) validateAssetInput(
 		return fmt.Errorf("offchain tx %s is failed", prev.Hash)
 	}
 
-	if err := asset.VerifyAssetOutputInTx(offchainTx.ArkTx, prev.Index); err != nil {
-		return err
+	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
+	if err != nil {
+		return fmt.Errorf("error decoding Ark Tx: %s", err)
 	}
 
-	return nil
+	var assetGroup *asset.AssetPacket
+
+	for _, output := range decodedArkTx.UnsignedTx.TxOut {
+		if asset.IsAssetPacket(output.PkScript) {
+			assetGp, err := asset.DecodeAssetPacket(output.PkScript)
+			if err != nil {
+				return fmt.Errorf("error decoding asset Opreturn: %s", err)
+			}
+			assetGroup = assetGp
+			break
+		}
+	}
+
+	// verify asset input in present in assetGroup.Inputs
+	totalAssetOuts := make([]asset.AssetOutput, 0)
+	for _, asset := range assetGroup.Assets {
+		totalAssetOuts = append(totalAssetOuts, asset.Outputs...)
+	}
+
+	for _, assetOut := range totalAssetOuts {
+		if assetOut.Vout == prev.Index && input.Amount == assetOut.Amount {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("asset output %d not found", prev.Index)
+
+}
+
+func sumAssetInputs(inputs []asset.AssetInput) uint64 {
+	total := uint64(0)
+	for _, in := range inputs {
+		total += in.Amount
+	}
+	return total
+}
+
+func sumAssetOutputs(outputs []asset.AssetOutput) uint64 {
+	total := uint64(0)
+	for _, out := range outputs {
+		total += out.Amount
+	}
+	return total
 }
 
 func ensureUniqueAssetVouts(assets []asset.AssetGroup) error {
@@ -227,4 +316,22 @@ func ensureUniqueAssetVouts(assets []asset.AssetGroup) error {
 		}
 	}
 	return nil
+}
+
+func (s *service) ensureAssetPresence(
+	ctx context.Context,
+	assets []asset.AssetGroup,
+	asset asset.AssetId,
+) error {
+	if len(assets) == 0 {
+		return fmt.Errorf("no assets provided for control asset validation")
+	}
+
+	for _, asst := range assets {
+		if asst.AssetId != nil && (*asst.AssetId == asset) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("missing control asset %s in transaction", asset.ToString())
 }

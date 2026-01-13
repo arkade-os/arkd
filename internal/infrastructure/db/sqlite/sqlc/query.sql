@@ -435,13 +435,13 @@ WHERE anchor_id = ?
 ORDER BY vout;
 
 -- name: GetAssetGroup :one
-SELECT id, quantity, immutable
+SELECT id, quantity, immutable, control_id
 FROM asset_group
 WHERE id = ?;
 
 
 -- name: ListAssetGroup :many
-SELECT id, quantity, immutable
+SELECT id, quantity, immutable, control_id
 FROM asset_group
 ORDER BY id;
 
@@ -456,8 +456,8 @@ SET quantity = quantity - ?
 WHERE id = ? AND quantity >= ?;
 
 -- name: CreateAsset :exec
-INSERT INTO asset_group (id, quantity, immutable)
-VALUES (?, ?, ?);
+INSERT INTO asset_group (id, quantity, immutable, control_id)
+VALUES (?, ?, ?, ?);
 
 -- name: CreateTeleportAsset :exec
 INSERT INTO teleport_asset (teleport_hash, asset_id, amount, is_claimed)

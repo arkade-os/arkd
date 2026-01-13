@@ -208,10 +208,19 @@ func (r *assetRepository) InsertAssetGroup(
 	ctx context.Context,
 	assetGroup domain.AssetGroup,
 ) error {
+	controlId := sql.NullString{}
+	if assetGroup.ControlAssetID != "" {
+		controlId = sql.NullString{
+			String: assetGroup.ControlAssetID,
+			Valid:  true,
+		}
+	}
+
 	err := r.querier.CreateAsset(ctx, queries.CreateAssetParams{
 		ID:        assetGroup.ID,
 		Quantity:  int64(assetGroup.Quantity),
 		Immutable: assetGroup.Immutable,
+		ControlID: controlId,
 	})
 
 	if err != nil {
@@ -257,10 +266,11 @@ func (r *assetRepository) GetAssetGroupByID(
 	}
 
 	return &domain.AssetGroup{
-		ID:        assetDB.ID,
-		Quantity:  uint64(assetDB.Quantity),
-		Immutable: assetDB.Immutable,
-		Metadata:  metadata,
+		ID:             assetDB.ID,
+		Quantity:       uint64(assetDB.Quantity),
+		Immutable:      assetDB.Immutable,
+		Metadata:       metadata,
+		ControlAssetID: assetDB.ControlID.String,
 	}, nil
 }
 

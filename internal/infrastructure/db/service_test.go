@@ -1446,6 +1446,33 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.ElementsMatch(t, anchor.Assets, got.Assets)
 	})
 
+	t.Run("inser and get asset group", func(t *testing.T) {
+		ctx := context.Background()
+		asset := domain.AssetGroup{
+			ID:        "asset-group-123",
+			Quantity:  5000,
+			Immutable: false,
+			Metadata: []domain.AssetMetadata{
+				{Key: "name", Value: "My Asset"},
+				{Key: "symbol", Value: "MAS"},
+			},
+			ControlAssetID: "control-asset-123",
+		}
+
+		err := svc.Assets().InsertAssetGroup(ctx, asset)
+		require.NoError(t, err, "InsertAssetGroup should succeed")
+
+		got, err := svc.Assets().GetAssetGroupByID(ctx, asset.ID)
+		require.NoError(t, err, "GetAssetGroupByID should succeed")
+		require.NotNil(t, got)
+
+		require.Equal(t, asset.ID, got.ID)
+		require.Equal(t, asset.Quantity, got.Quantity)
+		require.Equal(t, asset.Immutable, got.Immutable)
+		require.ElementsMatch(t, asset.Metadata, got.Metadata)
+		require.Equal(t, asset.ControlAssetID, got.ControlAssetID)
+	})
+
 	t.Run("insert asset anchor rejects duplicate vout", func(t *testing.T) {
 		ctx := context.Background()
 		anchor := domain.AssetAnchor{
@@ -1565,6 +1592,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				{Key: "name", Value: "Test AssetGroup"},
 				{Key: "symbol", Value: "TST"},
 			},
+			ControlAssetID: "controlAssetId",
 		}
 
 		err := svc.Assets().InsertAssetGroup(ctx, asset)

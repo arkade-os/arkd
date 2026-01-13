@@ -1,7 +1,8 @@
 CREATE TABLE asset_group (
     id        TEXT PRIMARY KEY,
     immutable BOOLEAN NOT NULL DEFAULT FALSE,
-    quantity  BIGINT NOT NULL
+    quantity  BIGINT NOT NULL,
+    control_id TEXT 
 );
 
 CREATE TABLE asset_anchor (

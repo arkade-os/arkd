@@ -109,7 +109,7 @@ func getOutputVtxosLeaves(
 }
 
 func getAssetFromIntents(
-	intents []domain.Intent, assetId *asset.AssetId,
+	intents []domain.Intent, assetId asset.AssetId,
 ) (*asset.AssetGroup, error) {
 
 	for _, intent := range intents {
@@ -119,22 +119,20 @@ func getAssetFromIntents(
 				return nil, fmt.Errorf("failed to decode asset from input: %s", err)
 			}
 
-			for _, controlAsset := range decodedAssetPacket.ControlAssets {
-				if controlAsset.AssetId == *assetId {
-					return &controlAsset, nil
+			for _, packetAsset := range decodedAssetPacket.Assets {
+				if packetAsset.AssetId == nil {
+					continue
 				}
-			}
 
-			for _, normalAsset := range decodedAssetPacket.NormalAssets {
-				if normalAsset.AssetId == *assetId {
-					return &normalAsset, nil
+				if packetAsset.AssetId.ToString() == assetId.ToString() {
+					return &packetAsset, nil
 				}
 			}
 		}
 
 	}
 	// Format the error nicely for struct
-	return nil, fmt.Errorf("asset with id %x:%d not found in intents", assetId.TxId, assetId.Index)
+	return nil, fmt.Errorf("asset with id %x:%d not found in intents", assetId.TxHash, assetId.Index)
 }
 
 // buildTeleportAssetLeaf builds the leaf for an offchain receiver that has an associated asset teleport.
@@ -154,8 +152,12 @@ func buildTeleportAssetLeaf(
 		return tree.Leaf{}, fmt.Errorf("failed to decode asset id: %w", err)
 	}
 
+	if assetId == nil {
+		return tree.Leaf{}, fmt.Errorf("asset id is nil")
+	}
+
 	// Get base asset details from intents
-	assetDetails, err := getAssetFromIntents(intents, assetId)
+	assetDetails, err := getAssetFromIntents(intents, *assetId)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to get asset from intents: %w", err)
 	}
@@ -172,8 +174,7 @@ func buildTeleportAssetLeaf(
 	assetCopy.Inputs = nil
 
 	assetPacket := &asset.AssetPacket{
-		ControlAssets: nil,
-		NormalAssets:  []asset.AssetGroup{assetCopy},
+		Assets: []asset.AssetGroup{assetCopy},
 	}
 
 	assetOpret, err := assetPacket.EncodeAssetPacket(0)

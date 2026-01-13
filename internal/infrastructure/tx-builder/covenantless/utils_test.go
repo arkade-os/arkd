@@ -24,10 +24,10 @@ func TestGetAssetFromIntentsWithMultipleAssetGroups(t *testing.T) {
 		AssetPacketList: [][]byte{opret1, opret2},
 	}
 
-	foundAsset, err := getAssetFromIntents([]domain.Intent{intent}, &asset2.AssetId)
+	foundAsset, err := getAssetFromIntents([]domain.Intent{intent}, asset2.AssetId)
 	require.NoError(t, err)
 	require.Equal(t, asset2.AssetId, foundAsset.AssetId)
-	foundAsset, err = getAssetFromIntents([]domain.Intent{intent}, &asset1.AssetId)
+	foundAsset, err = getAssetFromIntents([]domain.Intent{intent}, asset1.AssetId)
 	require.NoError(t, err)
 	require.Equal(t, asset1.AssetId, foundAsset.AssetId)
 }
@@ -46,9 +46,9 @@ func newTestAssetGroup(t *testing.T, idHex string) (asset.AssetGroup, []byte) {
 	require.NoError(t, err)
 
 	testAsset := asset.AssetGroup{
-		AssetId: asset.AssetId{
-			TxId:  id,
-			Index: 0,
+		AssetId: &asset.AssetId{
+			TxHash: id,
+			Index:  0,
 		},
 		Outputs: []asset.AssetOutput{{
 			Type:   asset.AssetTypeLocal,
@@ -58,8 +58,9 @@ func newTestAssetGroup(t *testing.T, idHex string) (asset.AssetGroup, []byte) {
 	}
 
 	group := asset.AssetPacket{
-		NormalAssets: []asset.AssetGroup{testAsset},
-		SubDustKey:   privKey.PubKey(),
+		Assets:     []asset.AssetGroup{testAsset},
+		SubDustKey: privKey.PubKey(),
+		Version:    asset.AssetVersion,
 	}
 
 	opret, err := group.EncodeAssetPacket(0)

@@ -26,7 +26,8 @@ CREATE TABLE asset_metadata (
 CREATE TABLE asset_group (
     id           TEXT PRIMARY KEY,
     immutable    BOOLEAN NOT NULL DEFAULT 0,
-    quantity     INTEGER NOT NULL
+    quantity     INTEGER NOT NULL,
+    control_id   TEXT
 );
 
 CREATE TABLE teleport_asset (

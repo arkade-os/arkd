@@ -143,7 +143,7 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 	copy(commitment[:], teleportHashBytes)
 
 	assetGroup := asset.AssetPacket{
-		NormalAssets: []asset.AssetGroup{
+		Assets: []asset.AssetGroup{
 			{
 				Outputs: []asset.AssetOutput{
 					{
@@ -153,6 +153,7 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 				},
 			},
 		},
+		Version: asset.AssetVersion,
 	}
 
 	opretTxOut, _ := assetGroup.EncodeAssetPacket(0)

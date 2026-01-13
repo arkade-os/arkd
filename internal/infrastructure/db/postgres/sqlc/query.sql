@@ -429,12 +429,12 @@ WHERE anchor_id = @anchor_id
 ORDER BY vout;
 
 -- name: GetAssetGroup :one
-SELECT id, quantity, immutable
+SELECT id, quantity, immutable, control_id
 FROM asset_group
 WHERE id = @id;
 
 -- name: ListAssetGroup :many
-SELECT id, quantity, immutable
+SELECT id, quantity, immutable, control_id
 FROM asset_group
 ORDER BY id;
 
@@ -449,8 +449,8 @@ SET quantity = quantity - @quantity
 WHERE id = @id AND quantity >= @quantity;
 
 -- name: CreateAsset :exec
-INSERT INTO asset_group (id, quantity, immutable)
-VALUES (@id, @quantity, @immutable);
+INSERT INTO asset_group (id, quantity, immutable, control_id)
+VALUES (@id, @quantity, @immutable, @control_id);
 
 -- name: CreateTeleportAsset :exec
 INSERT INTO teleport_asset (teleport_hash, asset_id, amount, is_claimed)
