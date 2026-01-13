@@ -65,7 +65,7 @@ VALUES (
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = EXCLUDED.updated_at;
+    updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)

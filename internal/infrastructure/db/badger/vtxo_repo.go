@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
-	dbutil "github.com/arkade-os/arkd/internal/infrastructure/db/dbutil"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/timshannon/badgerhold/v4"
 )
@@ -233,7 +233,7 @@ func (r *vtxoRepository) UpdateVtxosExpiration(
 func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	if err := dbutil.ValidateTimeRange(after, before); err != nil {
+	if err := application.ValidateTimeRange(after, before); err != nil {
 		return nil, err
 	}
 	allVtxos := make([]domain.Vtxo, 0)
@@ -343,7 +343,7 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 func (r *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	if err := dbutil.ValidateTimeRange(after, before); err != nil {
+	if err := application.ValidateTimeRange(after, before); err != nil {
 		return nil, err
 	}
 	indexedPubkeys := make(map[string]struct{})
