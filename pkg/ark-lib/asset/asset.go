@@ -271,7 +271,7 @@ func DecodeOpReturnPacket(opReturnData []byte) (*OpReturnPacket, error) {
 	return packet, nil
 }
 
-func IsAssetPacket(opReturnData []byte) bool {
+func ContainsAssetPacket(opReturnData []byte) bool {
 	payload, _, err := parsePacketOpReturn(opReturnData)
 	return err == nil && len(payload) > 0
 }
@@ -387,7 +387,7 @@ func DeriveAssetGroupFromTx(arkTx string) (*AssetPacket, error) {
 	}
 
 	for _, output := range decodedArkTx.UnsignedTx.TxOut {
-		if IsAssetPacket(output.PkScript) {
+		if ContainsAssetPacket(output.PkScript) {
 			assetGroup, err := DecodeAssetPacket(output.PkScript)
 			if err != nil {
 				return nil, fmt.Errorf("error decoding asset Opreturn: %s", err)

@@ -28,20 +28,12 @@ var (
 func TestIntent(t *testing.T) {
 	t.Run("new_intent", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			intent, err := domain.NewIntent(proof, message, inputs, nil)
+			intent, err := domain.NewIntent(proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 			require.NotEmpty(t, intent.Id)
 			require.Exactly(t, inputs, intent.Inputs)
 			require.Empty(t, intent.Receivers)
-		})
-		t.Run("with_asset_group_list", func(t *testing.T) {
-			assetGroup := []byte{0x01, 0x02, 0x03}
-			intent, err := domain.NewIntent(proof, message, inputs, [][]byte{assetGroup})
-			require.NoError(t, err)
-			require.NotNil(t, intent)
-			require.Len(t, intent.AssetPacketList, 1)
-			require.Equal(t, assetGroup, intent.AssetPacketList[0])
 		})
 		t.Run("invalid", func(t *testing.T) {
 			fixtures := []struct {
@@ -65,7 +57,7 @@ func TestIntent(t *testing.T) {
 			}
 			for _, f := range fixtures {
 				t.Run(f.expectedErr, func(t *testing.T) {
-					intent, err := domain.NewIntent(f.proof, f.message, f.inputs, nil)
+					intent, err := domain.NewIntent(f.proof, f.message, f.inputs)
 					require.Nil(t, intent)
 					require.Error(t, err)
 					require.Contains(t, err.Error(), f.expectedErr)
@@ -76,7 +68,7 @@ func TestIntent(t *testing.T) {
 
 	t.Run("add_receivers", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			intent, err := domain.NewIntent(proof, message, inputs, nil)
+			intent, err := domain.NewIntent(proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 
@@ -104,7 +96,7 @@ func TestIntent(t *testing.T) {
 				},
 			}
 
-			intent, err := domain.NewIntent(proof, message, inputs, nil)
+			intent, err := domain.NewIntent(proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 

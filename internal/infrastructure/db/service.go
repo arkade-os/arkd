@@ -524,7 +524,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 
 			// ignore asset anchor
-			if asset.IsAssetPacket(out.PkScript) {
+			if asset.ContainsAssetPacket(out.PkScript) {
 				if assetOpReturnProcessed {
 					continue
 				}

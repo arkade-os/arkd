@@ -161,7 +161,7 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 
 	txOut, err := group.EncodeAssetPacket(0, &SubDustPacket{Key: &subDustKey})
 	require.NoError(t, err)
-	require.True(t, IsAssetPacket(txOut.PkScript))
+	require.True(t, ContainsAssetPacket(txOut.PkScript))
 
 	tokenizer := txscript.MakeScriptTokenizer(0, txOut.PkScript)
 	require.True(t, tokenizer.Next())

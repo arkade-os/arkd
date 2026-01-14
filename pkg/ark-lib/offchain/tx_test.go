@@ -133,7 +133,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 			continue
 		}
 		outputsNoAnchor = append(outputsNoAnchor, out)
-		if asset.IsAssetPacket(out.PkScript) {
+		if asset.ContainsAssetPacket(out.PkScript) {
 			assetGroupIndex = idx
 		}
 	}

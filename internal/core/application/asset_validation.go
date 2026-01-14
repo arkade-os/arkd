@@ -208,20 +208,6 @@ func (s *service) validateAssetInput(
 		return fmt.Errorf("asset input index out of range: %d", input.Vin)
 	}
 
-	err := s.verifyAssetInputPrevOut(ctx, input, checkpointTxMap, arkTx)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *service) verifyAssetInputPrevOut(
-	ctx context.Context,
-	input asset.AssetInput,
-	checkpointTxMap map[string]string,
-	arkTx wire.MsgTx,
-) error {
 	checkpointOutpoint := arkTx.TxIn[input.Vin].PreviousOutPoint
 	checkpointTxHex, ok := checkpointTxMap[checkpointOutpoint.Hash.String()]
 	if !ok {
@@ -241,6 +227,21 @@ func (s *service) verifyAssetInputPrevOut(
 	}
 
 	prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
+
+	if err := s.verifyAssetInputPrevOut(ctx, input, prev, arkTx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *service) verifyAssetInputPrevOut(
+	ctx context.Context,
+	input asset.AssetInput,
+	prev wire.OutPoint,
+	arkTx wire.MsgTx,
+) error {
+
 	offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, prev.Hash.String())
 	if err != nil {
 		return fmt.Errorf("error retrieving offchain tx %s: %w", prev.Hash, err)
@@ -260,7 +261,7 @@ func (s *service) verifyAssetInputPrevOut(
 	var assetGroup *asset.AssetPacket
 
 	for _, output := range decodedArkTx.UnsignedTx.TxOut {
-		if asset.IsAssetPacket(output.PkScript) {
+		if asset.ContainsAssetPacket(output.PkScript) {
 			assetGp, err := asset.DecodeAssetPacket(output.PkScript)
 			if err != nil {
 				return fmt.Errorf("error decoding asset Opreturn: %s", err)
@@ -268,6 +269,9 @@ func (s *service) verifyAssetInputPrevOut(
 			assetGroup = assetGp
 			break
 		}
+	}
+	if assetGroup == nil {
+		return fmt.Errorf("asset packet missing in offchain tx %s", prev.Hash)
 	}
 
 	// verify asset input in present in assetGroup.Inputs

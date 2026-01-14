@@ -108,33 +108,6 @@ func getOutputVtxosLeaves(
 	return leaves, nil
 }
 
-func getAssetFromIntents(
-	intents []domain.Intent, assetId asset.AssetId,
-) (*asset.AssetGroup, error) {
-
-	for _, intent := range intents {
-		for _, assetPacket := range intent.AssetPacketList {
-			decodedAssetPacket, err := asset.DecodeAssetPacket(assetPacket)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode asset from input: %s", err)
-			}
-
-			for _, packetAsset := range decodedAssetPacket.Assets {
-				if packetAsset.AssetId == nil {
-					continue
-				}
-
-				if packetAsset.AssetId.ToString() == assetId.ToString() {
-					return &packetAsset, nil
-				}
-			}
-		}
-
-	}
-	// Format the error nicely for struct
-	return nil, fmt.Errorf("asset with id %x:%d not found in intents", assetId.TxHash, assetId.Index)
-}
-
 // buildTeleportAssetLeaf builds the leaf for an offchain receiver that has an associated asset teleport.
 func buildTeleportAssetLeaf(
 	receiver domain.Receiver,
@@ -156,25 +129,21 @@ func buildTeleportAssetLeaf(
 		return tree.Leaf{}, fmt.Errorf("asset id is nil")
 	}
 
-	// Get base asset details from intents
-	assetDetails, err := getAssetFromIntents(intents, *assetId)
-	if err != nil {
-		return tree.Leaf{}, fmt.Errorf("failed to get asset from intents: %w", err)
+	assetGroup := asset.AssetGroup{
+		AssetId: assetId,
 	}
 
-	// Work on a copy so we don't mutate shared state
-	assetCopy := *assetDetails
 	var h [32]byte
 	copy(h[:], hash)
-	assetCopy.Outputs = []asset.AssetOutput{{
+	assetGroup.Outputs = []asset.AssetOutput{{
 		Type:       asset.AssetTypeTeleport,
 		Commitment: h,
 		Amount:     receiver.Amount,
 	}}
-	assetCopy.Inputs = nil
+	assetGroup.Inputs = nil
 
 	assetPacket := &asset.AssetPacket{
-		Assets: []asset.AssetGroup{assetCopy},
+		Assets: []asset.AssetGroup{assetGroup},
 	}
 
 	assetOpret, err := assetPacket.EncodeAssetPacket(0, nil)

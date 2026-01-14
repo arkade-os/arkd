@@ -27,8 +27,6 @@ type RegisterMessage struct {
 	// OnchainOutputIndexes specifies what are the outputs in the proof tx
 	// that should be considered as onchain by the Ark operator
 	OnchainOutputIndexes []int `json:"onchain_output_indexes"`
-	// AssetOUtputIndexes specifies the assets outputs in the proof tx with the asset Index and Teleport Hash
-	AssetOutputIndexes []AssetOutput `json:"asset_output_indexes,omitempty"`
 	// ValidAt is the timestamp (in seconds) at which the proof should be considered valid
 	// if set to 0, the proof will be considered valid indefinitely or until ExpireAt is reached
 	ValidAt int64 `json:"valid_at"`

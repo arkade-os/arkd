@@ -332,7 +332,7 @@ var OFFCHAIN_TX_INSUFFICIENT_FEE = Code[OffchainTxInsufficientFeeMetadata]{
 	grpccodes.InvalidArgument,
 }
 
-var ASSET_VALIDATION_FAILED = Code[map[string]any]{
+var ASSET_VALIDATION_FAILED = Code[any]{
 	33,
 	"ASSET_VALIDATION_FAILED",
 	grpccodes.InvalidArgument,

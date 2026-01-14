@@ -129,7 +129,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		var pubKey string
 		var isSubDust bool
 
-		if asset.IsAssetPacket(out.PkScript) {
+		if asset.ContainsAssetPacket(out.PkScript) {
 			if assetOpReturnProcessed {
 				continue
 			}
