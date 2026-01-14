@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 )
@@ -361,7 +360,7 @@ func (v *vtxoRepository) UpdateVtxosExpiration(
 func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	if err := application.ValidateTimeRange(after, before); err != nil {
+	if err := validateTimeRange(after, before); err != nil {
 		return nil, err
 	}
 	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
@@ -454,7 +453,7 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	if err := application.ValidateTimeRange(after, before); err != nil {
+	if err := validateTimeRange(after, before); err != nil {
 		return nil, err
 	}
 	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(

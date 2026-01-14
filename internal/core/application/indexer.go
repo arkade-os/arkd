@@ -151,7 +151,7 @@ func (i *indexerService) GetVtxos(
 	after, before int64,
 	page *Page,
 ) (*GetVtxosResp, error) {
-	if err := ValidateTimeRange(after, before); err != nil {
+	if err := validateTimeRange(after, before); err != nil {
 		return nil, err
 	}
 	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}

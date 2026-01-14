@@ -465,8 +465,8 @@ func waitForConfirmation(
 	}
 }
 
-// Validates time range values. A zero value means unbounded and is allowed.
-func ValidateTimeRange(after, before int64) error {
+// validateTimeRange validates time range values. A zero value means unbounded and is allowed.
+func validateTimeRange(after, before int64) error {
 	if after < 0 || before < 0 {
 		return fmt.Errorf("after and before must be greater than or equal to 0")
 	}
