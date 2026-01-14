@@ -21,7 +21,9 @@ INSERT INTO intent_fees (
   onchain_output_fee_program
 )
 SELECT
-  CASE
+    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
+    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
+  CASE 
     WHEN ($1 = '' AND $2 = '' AND $3 = '' AND $4 = '') THEN ''
     WHEN $1 <> '' THEN $1
     ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
@@ -345,6 +347,50 @@ func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectE
 	var amount int64
 	err := row.Scan(&amount)
 	return amount, err
+}
+
+const selectIntentsByTxid = `-- name: SelectIntentsByTxid :many
+SELECT intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message
+FROM intent_with_receivers_vw
+WHERE round_id = (
+  SELECT round_id FROM tx WHERE tx.txid = $1
+)
+`
+
+type SelectIntentsByTxidRow struct {
+	IntentWithReceiversVw IntentWithReceiversVw
+}
+
+func (q *Queries) SelectIntentsByTxid(ctx context.Context, txid string) ([]SelectIntentsByTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectIntentsByTxid, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectIntentsByTxidRow
+	for rows.Next() {
+		var i SelectIntentsByTxidRow
+		if err := rows.Scan(
+			&i.IntentWithReceiversVw.IntentID,
+			&i.IntentWithReceiversVw.Pubkey,
+			&i.IntentWithReceiversVw.OnchainAddress,
+			&i.IntentWithReceiversVw.Amount,
+			&i.IntentWithReceiversVw.ID,
+			&i.IntentWithReceiversVw.RoundID,
+			&i.IntentWithReceiversVw.Proof,
+			&i.IntentWithReceiversVw.Message,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one

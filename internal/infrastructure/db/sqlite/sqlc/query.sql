@@ -417,3 +417,10 @@ INSERT INTO intent_fees (
   onchain_output_fee_program
 )
 VALUES ('', '', '', '');
+
+-- name: SelectIntentsByTxid :many
+SELECT sqlc.embed(intent_with_receivers_vw)
+FROM intent_with_receivers_vw
+WHERE round_id = (
+  SELECT round_id FROM tx WHERE tx.txid = @txid
+);

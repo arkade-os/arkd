@@ -610,6 +610,16 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// - first round has been swept
 		// - second round has no vtxo tree
 		require.Empty(t, sweepableRounds)
+
+		// get intents by txid
+		intents, err := svc.Rounds().GetIntentsByTxid(ctx, vtxoTree[0].Txid)
+		require.NoError(t, err)
+		require.Len(t, intents, 3)
+		// validate each intents proof and message
+		for _, intent := range intents {
+			require.Equal(t, "proof", intent.Proof)
+			require.Equal(t, "message", intent.Message)
+		}
 	})
 }
 

@@ -32,6 +32,7 @@ const (
 	ArkService_FinalizeTx_FullMethodName             = "/ark.v1.ArkService/FinalizeTx"
 	ArkService_GetPendingTx_FullMethodName           = "/ark.v1.ArkService/GetPendingTx"
 	ArkService_GetTransactionsStream_FullMethodName  = "/ark.v1.ArkService/GetTransactionsStream"
+	ArkService_GetIntent_FullMethodName              = "/ark.v1.ArkService/GetIntent"
 )
 
 // ArkServiceClient is the client API for ArkService service.
@@ -99,6 +100,7 @@ type ArkServiceClient interface {
 	// NOTE: the stream doesn't have history support, therefore returns only txs from the moment it's
 	// opened until it's closed.
 	GetTransactionsStream(ctx context.Context, in *GetTransactionsStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetTransactionsStreamResponse], error)
+	GetIntent(ctx context.Context, in *GetIntentRequest, opts ...grpc.CallOption) (*GetIntentResponse, error)
 }
 
 type arkServiceClient struct {
@@ -257,6 +259,16 @@ func (c *arkServiceClient) GetTransactionsStream(ctx context.Context, in *GetTra
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ArkService_GetTransactionsStreamClient = grpc.ServerStreamingClient[GetTransactionsStreamResponse]
 
+func (c *arkServiceClient) GetIntent(ctx context.Context, in *GetIntentRequest, opts ...grpc.CallOption) (*GetIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIntentResponse)
+	err := c.cc.Invoke(ctx, ArkService_GetIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ArkServiceServer is the server API for ArkService service.
 // All implementations should embed UnimplementedArkServiceServer
 // for forward compatibility.
@@ -322,6 +334,7 @@ type ArkServiceServer interface {
 	// NOTE: the stream doesn't have history support, therefore returns only txs from the moment it's
 	// opened until it's closed.
 	GetTransactionsStream(*GetTransactionsStreamRequest, grpc.ServerStreamingServer[GetTransactionsStreamResponse]) error
+	GetIntent(context.Context, *GetIntentRequest) (*GetIntentResponse, error)
 }
 
 // UnimplementedArkServiceServer should be embedded to have
@@ -369,6 +382,9 @@ func (UnimplementedArkServiceServer) GetPendingTx(context.Context, *GetPendingTx
 }
 func (UnimplementedArkServiceServer) GetTransactionsStream(*GetTransactionsStreamRequest, grpc.ServerStreamingServer[GetTransactionsStreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method GetTransactionsStream not implemented")
+}
+func (UnimplementedArkServiceServer) GetIntent(context.Context, *GetIntentRequest) (*GetIntentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetIntent not implemented")
 }
 func (UnimplementedArkServiceServer) testEmbeddedByValue() {}
 
@@ -610,6 +626,24 @@ func _ArkService_GetTransactionsStream_Handler(srv interface{}, stream grpc.Serv
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ArkService_GetTransactionsStreamServer = grpc.ServerStreamingServer[GetTransactionsStreamResponse]
 
+func _ArkService_GetIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIntentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArkServiceServer).GetIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArkService_GetIntent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArkServiceServer).GetIntent(ctx, req.(*GetIntentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ArkService_ServiceDesc is the grpc.ServiceDesc for ArkService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -660,6 +694,10 @@ var ArkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPendingTx",
 			Handler:    _ArkService_GetPendingTx_Handler,
+		},
+		{
+			MethodName: "GetIntent",
+			Handler:    _ArkService_GetIntent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

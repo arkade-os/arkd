@@ -422,6 +422,24 @@ func (r *roundRepository) GetRoundsWithCommitmentTxids(
 	return resp, nil
 }
 
+func (r *roundRepository) GetIntentsByTxid(
+	ctx context.Context,
+	txid string,
+) ([]domain.Intent, error) {
+	rows, err := r.querier.SelectIntentsByTxid(ctx, txid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get intents by txid: %w", err)
+	}
+	intents := make([]domain.Intent, 0, len(rows))
+	for _, row := range rows {
+		intentToAdd := domain.Intent{
+			Proof:   row.IntentWithReceiversVw.Proof.String,
+			Message: row.IntentWithReceiversVw.Message.String,
+		}
+		intents = append(intents, intentToAdd)
+	}
+	return intents, nil
+}
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),

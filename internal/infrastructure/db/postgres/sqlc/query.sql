@@ -414,3 +414,9 @@ INSERT INTO intent_fees (
 VALUES ('', '', '', '');
 
 
+-- name: SelectIntentsByTxid :many
+SELECT sqlc.embed(intent_with_receivers_vw)
+FROM intent_with_receivers_vw
+WHERE round_id = (
+  SELECT round_id FROM tx WHERE tx.txid = @txid
+);

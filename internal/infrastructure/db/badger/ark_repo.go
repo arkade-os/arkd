@@ -526,3 +526,33 @@ func (r arkRepository) findOffchainTxs(ctx context.Context, txids []string) ([]s
 	}
 	return txs, nil
 }
+
+func (r arkRepository) GetIntentsByTxid(ctx context.Context, txid string) ([]domain.Intent, error) {
+	// get the round that has this txid
+	query := badgerhold.Where(badgerhold.Key).Eq(txid)
+	rounds, err := r.findRound(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find round for txid %s: %w", txid, err)
+	}
+	if len(rounds) == 0 {
+		return []domain.Intent{}, fmt.Errorf("no round found for commitment txid %s", txid)
+	}
+
+	intents := make([]domain.Intent, 0)
+
+	// should we check only 1 round was found? there should only be one round per commitment txid?
+	// is this txid supposed to even be a commitment txid?
+	for _, r := range rounds {
+		if r.Intents != nil && len(r.Intents) <= 0 {
+			continue
+		}
+		for _, intent := range r.Intents {
+			intents = append(intents, domain.Intent{
+				Proof:   intent.Proof,
+				Message: intent.Message,
+			})
+		}
+	}
+
+	return intents, nil
+}

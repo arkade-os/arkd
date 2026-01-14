@@ -4096,6 +4096,26 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 	return convictions
 }
 
+func (s *service) GetIntentsByTxid(
+	ctx context.Context,
+	txid string,
+) ([]domain.Intent, errors.Error) {
+	intents, err := s.repoManager.Rounds().GetIntentsByTxid(ctx, txid)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New(
+			"failed to get intent by txid %s: %w", txid, err,
+		)
+	}
+
+	if len(intents) == 0 {
+		return nil, errors.INTENT_NOT_FOUND.New(
+			"intent with txid %s not found", txid,
+		)
+	}
+
+	return intents, nil
+}
+
 func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
