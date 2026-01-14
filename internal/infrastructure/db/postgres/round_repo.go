@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -165,6 +166,10 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 
 		if len(round.Intents) > 0 {
 			for _, intent := range round.Intents {
+				txid, err := application.DeriveTxidFromProof(intent.Proof)
+				if err != nil {
+					return fmt.Errorf("failed to derive txid from proof: %w", err)
+				}
 				if err := querierWithTx.UpsertIntent(
 					ctx,
 					queries.UpsertIntentParams{
@@ -172,6 +177,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 						RoundID: sql.NullString{String: round.Id, Valid: true},
 						Proof:   sql.NullString{String: intent.Proof, Valid: true},
 						Message: sql.NullString{String: intent.Message, Valid: true},
+						Txid:    txid,
 					},
 				); err != nil {
 					return fmt.Errorf("failed to upsert intent: %w", err)
@@ -422,23 +428,19 @@ func (r *roundRepository) GetRoundsWithCommitmentTxids(
 	return resp, nil
 }
 
-func (r *roundRepository) GetIntentsByTxid(
+func (r *roundRepository) GetIntentByTxid(
 	ctx context.Context,
 	txid string,
-) ([]domain.Intent, error) {
-	rows, err := r.querier.SelectIntentsByTxid(ctx, txid)
+) (domain.Intent, error) {
+	intent, err := r.querier.SelectIntentByTxid(ctx, txid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get intents by txid: %w", err)
+		return domain.Intent{}, fmt.Errorf("failed to get intents by txid: %w", err)
 	}
-	intents := make([]domain.Intent, 0, len(rows))
-	for _, row := range rows {
-		intentToAdd := domain.Intent{
-			Proof:   row.IntentWithReceiversVw.Proof.String,
-			Message: row.IntentWithReceiversVw.Message.String,
-		}
-		intents = append(intents, intentToAdd)
-	}
-	return intents, nil
+
+	return domain.Intent{
+		Proof:   intent.Proof.String,
+		Message: intent.Message.String,
+	}, nil
 }
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{

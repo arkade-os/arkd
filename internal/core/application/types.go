@@ -57,10 +57,10 @@ type Service interface {
 	) errors.Error
 	// TODO: remove when detaching the indexer svc.
 	GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent
-	GetIntentsByTxid(
+	GetIntentByTxid(
 		ctx context.Context,
 		txid string,
-	) ([]domain.Intent, errors.Error)
+	) (domain.Intent, errors.Error)
 }
 
 type ServiceInfo struct {

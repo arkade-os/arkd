@@ -108,6 +108,8 @@ func (r *Round) RegisterIntents(intents []Intent) ([]Event, error) {
 		return nil, fmt.Errorf("missing intents to register")
 	}
 	for _, intent := range intents {
+		txid, _ := deriveTxidFromProof(intent.Proof)
+		intent.Txid = txid
 		if err := intent.validate(false); err != nil {
 			return nil, err
 		}

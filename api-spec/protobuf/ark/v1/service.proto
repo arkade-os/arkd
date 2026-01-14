@@ -289,5 +289,5 @@ message GetIntentRequest {
 }
 
 message GetIntentResponse {
-  repeated Intent intents = 1;
+  Intent intent = 1;
 }

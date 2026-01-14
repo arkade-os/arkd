@@ -464,3 +464,11 @@ func waitForConfirmation(
 		}
 	}
 }
+
+func DeriveTxidFromProof(proof string) (string, error) {
+	tx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
+	if err != nil {
+		return "", fmt.Errorf("error deriving txid from proof: %w", err)
+	}
+	return tx.UnsignedTx.TxID(), nil
+}

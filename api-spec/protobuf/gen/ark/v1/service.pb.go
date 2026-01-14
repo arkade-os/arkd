@@ -1634,7 +1634,7 @@ func (*GetIntentRequest_Txid) isGetIntentRequest_Filter() {}
 
 type GetIntentResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Intents       []*Intent              `protobuf:"bytes,1,rep,name=intents,proto3" json:"intents,omitempty"`
+	Intent        *Intent                `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1669,9 +1669,9 @@ func (*GetIntentResponse) Descriptor() ([]byte, []int) {
 	return file_ark_v1_service_proto_rawDescGZIP(), []int{27}
 }
 
-func (x *GetIntentResponse) GetIntents() []*Intent {
+func (x *GetIntentResponse) GetIntent() *Intent {
 	if x != nil {
-		return x.Intents
+		return x.Intent
 	}
 	return nil
 }
@@ -1784,9 +1784,9 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x04data\"2\n" +
 	"\x10GetIntentRequest\x12\x14\n" +
 	"\x04txid\x18\x01 \x01(\tH\x00R\x04txidB\b\n" +
-	"\x06filter\"=\n" +
-	"\x11GetIntentResponse\x12(\n" +
-	"\aintents\x18\x01 \x03(\v2\x0e.ark.v1.IntentR\aintents2\x92\f\n" +
+	"\x06filter\";\n" +
+	"\x11GetIntentResponse\x12&\n" +
+	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent2\x92\f\n" +
 	"\n" +
 	"ArkService\x12I\n" +
 	"\aGetInfo\x12\x16.ark.v1.GetInfoRequest\x1a\x17.ark.v1.GetInfoResponse\"\r\xb2J\n" +
@@ -1896,7 +1896,7 @@ var file_ark_v1_service_proto_depIdxs = []int32{
 	46, // 21: ark.v1.GetTransactionsStreamResponse.commitment_tx:type_name -> ark.v1.TxNotification
 	46, // 22: ark.v1.GetTransactionsStreamResponse.ark_tx:type_name -> ark.v1.TxNotification
 	44, // 23: ark.v1.GetTransactionsStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
-	34, // 24: ark.v1.GetIntentResponse.intents:type_name -> ark.v1.Intent
+	34, // 24: ark.v1.GetIntentResponse.intent:type_name -> ark.v1.Intent
 	0,  // 25: ark.v1.ArkService.GetInfo:input_type -> ark.v1.GetInfoRequest
 	2,  // 26: ark.v1.ArkService.RegisterIntent:input_type -> ark.v1.RegisterIntentRequest
 	4,  // 27: ark.v1.ArkService.EstimateIntentFee:input_type -> ark.v1.EstimateIntentFeeRequest

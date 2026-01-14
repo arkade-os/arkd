@@ -863,11 +863,8 @@
         "title": "GetIntentResponse",
         "type": "object",
         "properties": {
-          "intents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Intent"
-            }
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
           }
         }
       },

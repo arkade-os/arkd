@@ -527,32 +527,24 @@ func (r arkRepository) findOffchainTxs(ctx context.Context, txids []string) ([]s
 	return txs, nil
 }
 
-func (r arkRepository) GetIntentsByTxid(ctx context.Context, txid string) ([]domain.Intent, error) {
-	// get the round that has this txid
-	query := badgerhold.Where(badgerhold.Key).Eq(txid)
+func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (domain.Intent, error) {
+	// get the proof and message from the intent given the txid
+	// we store for a round id a round object that contains intents, and inside
+	// the intents have the txid
+	// so we need to find the round that contains the intent with the given txid
+	query := badgerhold.Where("Id").Ne("") // fetch all rounds
 	rounds, err := r.findRound(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find round for txid %s: %w", txid, err)
-	}
-	if len(rounds) == 0 {
-		return []domain.Intent{}, fmt.Errorf("no round found for commitment txid %s", txid)
+		return domain.Intent{}, err
 	}
 
-	intents := make([]domain.Intent, 0)
-
-	// should we check only 1 round was found? there should only be one round per commitment txid?
-	// is this txid supposed to even be a commitment txid?
-	for _, r := range rounds {
-		if r.Intents != nil && len(r.Intents) <= 0 {
-			continue
-		}
-		for _, intent := range r.Intents {
-			intents = append(intents, domain.Intent{
-				Proof:   intent.Proof,
-				Message: intent.Message,
-			})
+	for _, round := range rounds {
+		for _, in := range round.Intents {
+			if in.Txid == txid {
+				return in, nil
+			}
 		}
 	}
 
-	return intents, nil
+	return domain.Intent{}, fmt.Errorf("intent with txid %s not found", txid)
 }

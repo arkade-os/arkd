@@ -30,11 +30,12 @@ ON CONFLICT(txid) DO UPDATE SET
     children = EXCLUDED.children;
 
 -- name: UpsertIntent :exec
-INSERT INTO intent (id, round_id, proof, message) VALUES (@id, @round_id, @proof, @message)
+INSERT INTO intent (id, round_id, proof, message, txid) VALUES (@id, @round_id, @proof, @message, @txid)
 ON CONFLICT(id) DO UPDATE SET
     round_id = EXCLUDED.round_id,
     proof = EXCLUDED.proof,
-    message = EXCLUDED.message;
+    message = EXCLUDED.message,
+    txid = EXCLUDED.txid;
 
 -- name: UpsertReceiver :exec
 INSERT INTO receiver (intent_id, pubkey, onchain_address, amount)
@@ -414,9 +415,6 @@ INSERT INTO intent_fees (
 VALUES ('', '', '', '');
 
 
--- name: SelectIntentsByTxid :many
-SELECT sqlc.embed(intent_with_receivers_vw)
-FROM intent_with_receivers_vw
-WHERE round_id = (
-  SELECT round_id FROM tx WHERE tx.txid = @txid
-);
+-- name: SelectIntentByTxid :one
+SELECT proof, message FROM intent
+WHERE txid = @txid;

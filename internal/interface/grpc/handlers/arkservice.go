@@ -594,30 +594,23 @@ func (h *handler) GetIntent(
 	ctx context.Context, req *arkv1.GetIntentRequest,
 ) (*arkv1.GetIntentResponse, error) {
 	var err error
-	var intents []domain.Intent
+	var intent domain.Intent
 
 	switch filter := req.GetFilter().(type) {
 	case *arkv1.GetIntentRequest_Txid:
-		intents, err = h.svc.GetIntentsByTxid(ctx, filter.Txid)
+		intent, err = h.svc.GetIntentByTxid(ctx, filter.Txid)
 		if err != nil {
 			return nil, err
 		}
-		if len(intents) == 0 {
-			return nil, status.Error(codes.NotFound, "intents not found for provided txid")
-		}
+
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown intent filter provided")
 	}
 
-	arkv1Intents := make([]*arkv1.Intent, 0, len(intents))
-	for _, intent := range intents {
-		arkv1Intents = append(arkv1Intents, &arkv1.Intent{
-			Proof:   intent.Proof,
-			Message: intent.Message,
-		})
-	}
-
-	return &arkv1.GetIntentResponse{Intents: arkv1Intents}, nil
+	return &arkv1.GetIntentResponse{Intent: &arkv1.Intent{
+		Proof:   intent.Proof,
+		Message: intent.Message,
+	}}, nil
 }
 
 type eventWithTopics struct {

@@ -347,48 +347,21 @@ func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectE
 	return amount, err
 }
 
-const selectIntentsByTxid = `-- name: SelectIntentsByTxid :many
-SELECT intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message
-FROM intent_with_receivers_vw
-WHERE round_id = (
-  SELECT round_id FROM tx WHERE tx.txid = ?1
-)
+const selectIntentByTxid = `-- name: SelectIntentByTxid :one
+SELECT proof, message FROM intent
+WHERE txid = ?1
 `
 
-type SelectIntentsByTxidRow struct {
-	IntentWithReceiversVw IntentWithReceiversVw
+type SelectIntentByTxidRow struct {
+	Proof   sql.NullString
+	Message sql.NullString
 }
 
-func (q *Queries) SelectIntentsByTxid(ctx context.Context, txid string) ([]SelectIntentsByTxidRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectIntentsByTxid, txid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectIntentsByTxidRow
-	for rows.Next() {
-		var i SelectIntentsByTxidRow
-		if err := rows.Scan(
-			&i.IntentWithReceiversVw.IntentID,
-			&i.IntentWithReceiversVw.Pubkey,
-			&i.IntentWithReceiversVw.OnchainAddress,
-			&i.IntentWithReceiversVw.Amount,
-			&i.IntentWithReceiversVw.ID,
-			&i.IntentWithReceiversVw.RoundID,
-			&i.IntentWithReceiversVw.Proof,
-			&i.IntentWithReceiversVw.Message,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) SelectIntentByTxid(ctx context.Context, txid sql.NullString) (SelectIntentByTxidRow, error) {
+	row := q.db.QueryRowContext(ctx, selectIntentByTxid, txid)
+	var i SelectIntentByTxidRow
+	err := row.Scan(&i.Proof, &i.Message)
+	return i, err
 }
 
 const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
@@ -1817,11 +1790,12 @@ func (q *Queries) UpsertConviction(ctx context.Context, arg UpsertConvictionPara
 }
 
 const upsertIntent = `-- name: UpsertIntent :exec
-INSERT INTO intent (id, round_id, proof, message) VALUES (?1, ?2, ?3, ?4)
+INSERT INTO intent (id, round_id, proof, message, txid) VALUES (?1, ?2, ?3, ?4, ?5)
 ON CONFLICT(id) DO UPDATE SET
     round_id = EXCLUDED.round_id,
     proof = EXCLUDED.proof,
-    message = EXCLUDED.message
+    message = EXCLUDED.message,
+    txid = EXCLUDED.txid
 `
 
 type UpsertIntentParams struct {
@@ -1829,6 +1803,7 @@ type UpsertIntentParams struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) error {
@@ -1837,6 +1812,7 @@ func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) erro
 		arg.RoundID,
 		arg.Proof,
 		arg.Message,
+		arg.Txid,
 	)
 	return err
 }

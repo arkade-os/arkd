@@ -2,7 +2,9 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/google/uuid"
 )
 
@@ -12,14 +14,17 @@ type Intent struct {
 	Receivers []Receiver
 	Proof     string
 	Message   string
+	Txid      string
 }
 
 func NewIntent(proof, message string, inputs []Vtxo) (*Intent, error) {
+	txid, _ := deriveTxidFromProof(proof)
 	intent := &Intent{
 		Id:      uuid.New().String(),
 		Inputs:  inputs,
 		Proof:   proof,
 		Message: message,
+		Txid:    txid,
 	}
 	if err := intent.validate(true); err != nil {
 		return nil, err
@@ -66,6 +71,9 @@ func (i Intent) validate(ignoreOuts bool) error {
 	}
 	if len(i.Message) <= 0 {
 		return fmt.Errorf("missing message")
+	}
+	if len(i.Txid) <= 0 {
+		return fmt.Errorf("missing txid")
 	}
 	if ignoreOuts {
 		return nil
@@ -120,4 +128,12 @@ func (t Intents) HaveOnlyOnchainOutput() bool {
 		}
 	}
 	return true
+}
+
+func deriveTxidFromProof(proof string) (string, error) {
+	tx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
+	if err != nil {
+		return "", fmt.Errorf("error deriving txid from proof: %w", err)
+	}
+	return tx.UnsignedTx.TxID(), nil
 }
