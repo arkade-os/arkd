@@ -390,7 +390,7 @@ func buildAssetCheckpointTx(
 		Assets: []asset.AssetGroup{newAsset},
 	}
 
-		assetPacket, err := newAssetGroup.EncodeAssetPacket(0)
+		assetPacket, err := newAssetGroup.EncodeAssetPacket(0, nil)
 		if err != nil {
 			return nil, nil, err
 		}

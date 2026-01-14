@@ -75,11 +75,10 @@ func TestRebuildAssetTxs(t *testing.T) {
 	}
 
 	assetGroup := &asset.AssetPacket{
-		Assets:     []asset.AssetGroup{controlAsset, normalAsset},
-		SubDustKey: normalTapKey,
-		Version:    asset.AssetVersion,
+		Assets:  []asset.AssetGroup{controlAsset, normalAsset},
+		Version: asset.AssetVersion,
 	}
-	opret, err := assetGroup.EncodeAssetPacket(0)
+	opret, err := assetGroup.EncodeAssetPacket(0, &asset.SubDustPacket{Key: normalTapKey})
 	require.NoError(t, err)
 
 	outputs := []*wire.TxOut{

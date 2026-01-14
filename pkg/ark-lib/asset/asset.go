@@ -86,9 +86,17 @@ type AssetGroup struct {
 }
 
 type AssetPacket struct {
-	Assets     []AssetGroup
-	SubDustKey *btcec.PublicKey
-	Version    byte
+	Assets  []AssetGroup
+	Version byte
+}
+
+type SubDustPacket struct {
+	Key *btcec.PublicKey
+}
+
+type OpReturnPacket struct {
+	Asset   *AssetPacket
+	SubDust *SubDustPacket
 }
 
 var ArkadeMagic []byte = []byte{0x41, 0x52, 0x4B} // "ARK"
@@ -137,27 +145,28 @@ type AssetInput struct {
 	Amount     uint64
 }
 
-func (g *AssetPacket) EncodeAssetPacket(amount int64) (wire.TxOut, error) {
-	encodedAssets, err := encodeAssetPacket(g.Assets)
-	if err != nil {
-		return wire.TxOut{}, err
-	}
+func (g *AssetPacket) EncodeAssetPacket(amount int64, subDust *SubDustPacket) (wire.TxOut, error) {
+	return EncodeOpReturnPacket(amount, &OpReturnPacket{
+		Asset:   g,
+		SubDust: subDust,
+	})
+}
 
-	version := g.Version
-	if version == 0 {
-		version = AssetVersion
+func EncodeOpReturnPacket(amount int64, packet *OpReturnPacket) (wire.TxOut, error) {
+	if packet == nil || (packet.Asset == nil && (packet.SubDust == nil || packet.SubDust.Key == nil)) {
+		return wire.TxOut{}, errors.New("empty op_return packet")
 	}
-
-	assetData := append(append([]byte{}, ArkadeMagic...), version)
-	assetData = append(assetData, encodedAssets...)
 
 	var scratch [8]byte
 	var tlvData bytes.Buffer
-	if g.SubDustKey != nil {
+	if _, err := tlvData.Write(ArkadeMagic); err != nil {
+		return wire.TxOut{}, err
+	}
+	if packet.SubDust != nil && packet.SubDust.Key != nil {
 		if err := tlvData.WriteByte(MarkerSubDustKey); err != nil {
 			return wire.TxOut{}, err
 		}
-		subDustKey := schnorr.SerializePubKey(g.SubDustKey)
+		subDustKey := schnorr.SerializePubKey(packet.SubDust.Key)
 		if err := tlv.WriteVarInt(&tlvData, uint64(len(subDustKey)), &scratch); err != nil {
 			return wire.TxOut{}, err
 		}
@@ -165,14 +174,28 @@ func (g *AssetPacket) EncodeAssetPacket(amount int64) (wire.TxOut, error) {
 			return wire.TxOut{}, err
 		}
 	}
-	if err := tlvData.WriteByte(MarkerAssetPayload); err != nil {
-		return wire.TxOut{}, err
-	}
-	if err := tlv.WriteVarInt(&tlvData, uint64(len(assetData)), &scratch); err != nil {
-		return wire.TxOut{}, err
-	}
-	if _, err := tlvData.Write(assetData); err != nil {
-		return wire.TxOut{}, err
+	if packet.Asset != nil {
+		encodedAssets, err := encodeAssetPacket(packet.Asset.Assets)
+		if err != nil {
+			return wire.TxOut{}, err
+		}
+
+		version := packet.Asset.Version
+		if version == 0 {
+			version = AssetVersion
+		}
+
+		assetData := append([]byte{version}, encodedAssets...)
+
+		if err := tlvData.WriteByte(MarkerAssetPayload); err != nil {
+			return wire.TxOut{}, err
+		}
+		if err := tlv.WriteVarInt(&tlvData, uint64(len(assetData)), &scratch); err != nil {
+			return wire.TxOut{}, err
+		}
+		if _, err := tlvData.Write(assetData); err != nil {
+			return wire.TxOut{}, err
+		}
 	}
 
 	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
@@ -189,6 +212,25 @@ func (g *AssetPacket) EncodeAssetPacket(amount int64) (wire.TxOut, error) {
 }
 
 func DecodeAssetPacket(opReturnData []byte) (*AssetPacket, error) {
+	packet, err := DecodeOpReturnPacket(opReturnData)
+	if err != nil {
+		return nil, err
+	}
+	if packet.Asset == nil {
+		return nil, errors.New("missing asset payload")
+	}
+	return packet.Asset, nil
+}
+
+func DecodeSubDustPacket(opReturnData []byte) (*SubDustPacket, error) {
+	packet, err := DecodeOpReturnPacket(opReturnData)
+	if err != nil {
+		return nil, err
+	}
+	return packet.SubDust, nil
+}
+
+func DecodeOpReturnPacket(opReturnData []byte) (*OpReturnPacket, error) {
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
 		return nil, errors.New("OP_RETURN not present")
 	}
@@ -198,23 +240,32 @@ func DecodeAssetPacket(opReturnData []byte) (*AssetPacket, error) {
 		return nil, err
 	}
 
-	if len(assetPayload) < len(ArkadeMagic)+1 || !bytes.HasPrefix(assetPayload, ArkadeMagic) {
-		return nil, errors.New("invalid asset op_return payload")
-	}
+	packet := &OpReturnPacket{}
+	if len(assetPayload) > 0 {
+		if len(assetPayload) < 1 {
+			return nil, errors.New("invalid asset op_return payload")
+		}
 
-	version := assetPayload[len(ArkadeMagic)]
-	payload := assetPayload[len(ArkadeMagic)+1:]
+		version := assetPayload[0]
+		payload := assetPayload[1:]
 
-	packet, err := decodeAssetPacket(payload, version)
-	if err != nil {
-		return nil, err
+		assetPacket, err := decodeAssetPacket(payload, version)
+		if err != nil {
+			return nil, err
+		}
+		packet.Asset = assetPacket
 	}
 
 	if len(subDustKey) > 0 {
-		key, keyErr := schnorr.ParsePubKey(subDustKey)
-		if keyErr == nil {
-			packet.SubDustKey = key
+		key, err := schnorr.ParsePubKey(subDustKey)
+		if err != nil {
+			return nil, err
 		}
+		packet.SubDust = &SubDustPacket{Key: key}
+	}
+
+	if packet.Asset == nil && packet.SubDust == nil {
+		return nil, errors.New("missing op_return payload")
 	}
 
 	return packet, nil
@@ -222,10 +273,7 @@ func DecodeAssetPacket(opReturnData []byte) (*AssetPacket, error) {
 
 func IsAssetPacket(opReturnData []byte) bool {
 	payload, _, err := parsePacketOpReturn(opReturnData)
-	if err == nil && len(payload) >= len(ArkadeMagic)+1 {
-		return bytes.HasPrefix(payload, ArkadeMagic)
-	}
-	return false
+	return err == nil && len(payload) > 0
 }
 
 func (a *AssetGroup) EncodeTlv() ([]byte, error) {
@@ -380,7 +428,7 @@ func encodeAssetPacket(assets []AssetGroup) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// parseAssetOpReturn extracts the asset payload and optional sub-dust pubkey from an OP_RETURN script.
+// parsePacketOpReturn extracts the asset payload and optional sub-dust pubkey from an OP_RETURN script.
 // (OP_RETURN <type><length><value> <type><length><value> ...).
 func parsePacketOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
@@ -413,6 +461,12 @@ func parsePacketOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 	if len(payload) == 0 {
 		return nil, nil, errors.New("missing OP_RETURN payload")
 	}
+
+	if len(payload) < len(ArkadeMagic) || !bytes.HasPrefix(payload, ArkadeMagic) {
+		return nil, nil, errors.New("invalid op_return payload magic")
+	}
+
+	payload = payload[len(ArkadeMagic):]
 
 	var subDustKey []byte
 	var assetPayload []byte
@@ -450,8 +504,8 @@ func parsePacketOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 		}
 	}
 
-	if len(assetPayload) == 0 {
-		return nil, subDustKey, errors.New("missing asset payload")
+	if len(assetPayload) == 0 && len(subDustKey) == 0 {
+		return nil, nil, errors.New("missing op_return payload")
 	}
 
 	return assetPayload, subDustKey, nil

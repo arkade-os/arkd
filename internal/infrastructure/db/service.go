@@ -530,17 +530,21 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				}
 				assetOpReturnProcessed = true
 
-				assetPacket, err := asset.DecodeAssetPacket(out.PkScript)
-				if err != nil {
+				if _, err := asset.DecodeAssetPacket(out.PkScript); err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
 				}
 
-				if assetPacket.SubDustKey == nil {
+				subDustPacket, err := asset.DecodeSubDustPacket(out.PkScript)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode sub-dust key from opret")
+					continue
+				}
+				if subDustPacket == nil || subDustPacket.Key == nil {
 					continue
 				}
 				isSubDust = true
-				pubKey = schnorr.SerializePubKey(assetPacket.SubDustKey)
+				pubKey = schnorr.SerializePubKey(subDustPacket.Key)
 
 			} else {
 				isSubDust = script.IsSubDustScript(out.PkScript)

@@ -13,9 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
+func TestAssetEncoding(t *testing.T) {
 	t.Parallel()
+	testAssetEncodeDecodeRoundTrip(t)
+	testAssetGroupEncodeDecode(t)
+	testAssetGroupEncodeDecodeWithSubDustKey(t)
+	testAssetIdStringConversion(t)
+	testAssetOutputListEncodeDecode(t)
+	testAssetInputListEncodeDecode(t)
+}
 
+func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 	asset := AssetGroup{
 		AssetId: &AssetId{
 			TxHash: deterministicBytesArray(0x2a),
@@ -70,9 +78,7 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	require.Equal(t, asset, decoded)
 }
 
-func TestAssetGroupEncodeDecode(t *testing.T) {
-	t.Parallel()
-
+func testAssetGroupEncodeDecode(t *testing.T) {
 	controlAsset := AssetGroup{
 		AssetId:      ptrAssetId(deterministicAssetId(0x11)),
 		Outputs:      []AssetOutput{{Type: AssetTypeTeleport, Commitment: deterministicBytesArray(0xdd), Amount: 1}},
@@ -93,7 +99,7 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 		Version: AssetVersion,
 	}
 
-	txOut, err := packet.EncodeAssetPacket(0)
+	txOut, err := packet.EncodeAssetPacket(0, nil)
 	require.NoError(t, err)
 
 	decodedPacket, err := DecodeAssetPacket(txOut.PkScript)
@@ -101,7 +107,7 @@ func TestAssetGroupEncodeDecode(t *testing.T) {
 	require.Equal(t, packet, *decodedPacket)
 }
 
-func TestAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
+func testAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 	t.Parallel()
 
 	groupIndex := uint16(1)
@@ -121,7 +127,7 @@ func TestAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 	require.Equal(t, groupIndex, decoded.ControlAsset.GroupIndex)
 }
 
-func TestAssetIdStringConversion(t *testing.T) {
+func testAssetIdStringConversion(t *testing.T) {
 	txid := deterministicBytesArray(0x01)
 	index := uint16(12345)
 	assetId := AssetId{TxHash: txid, Index: index}
@@ -140,9 +146,7 @@ func TestAssetIdStringConversion(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
-	t.Parallel()
-
+func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	subDustKey := deterministicPubKey(t, 0x55)
 	normalAsset := AssetGroup{
 		AssetId:      ptrAssetId(deterministicAssetId(0x12)),
@@ -151,12 +155,11 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	}
 
 	group := AssetPacket{
-		Assets:     []AssetGroup{normalAsset},
-		SubDustKey: &subDustKey,
-		Version:    AssetVersion,
+		Assets:  []AssetGroup{normalAsset},
+		Version: AssetVersion,
 	}
 
-	txOut, err := group.EncodeAssetPacket(0)
+	txOut, err := group.EncodeAssetPacket(0, &SubDustPacket{Key: &subDustKey})
 	require.NoError(t, err)
 	require.True(t, IsAssetPacket(txOut.PkScript))
 
@@ -169,7 +172,8 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	require.False(t, tokenizer.Next())
 	require.NoError(t, tokenizer.Err())
 
-	reader := bytes.NewReader(payload)
+	require.True(t, bytes.HasPrefix(payload, ArkadeMagic))
+	reader := bytes.NewReader(payload[len(ArkadeMagic):])
 	var scratch [8]byte
 
 	typ, err := reader.ReadByte()
@@ -192,19 +196,21 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	assetValue := make([]byte, length)
 	_, err = io.ReadFull(reader, assetValue)
 	require.NoError(t, err)
-	require.True(t, bytes.HasPrefix(assetValue, ArkadeMagic))
+	require.NotEmpty(t, assetValue)
+	require.Equal(t, AssetVersion, assetValue[0])
 
 	decodedPacket, err := DecodeAssetPacket(txOut.PkScript)
 	require.NoError(t, err)
-	require.NotNil(t, decodedPacket.SubDustKey)
-	require.True(t, subDustKey.IsEqual(decodedPacket.SubDustKey))
+	decodedSubDust, err := DecodeSubDustPacket(txOut.PkScript)
+	require.NoError(t, err)
+	require.NotNil(t, decodedSubDust)
+	require.NotNil(t, decodedSubDust.Key)
+	require.True(t, subDustKey.IsEqual(decodedSubDust.Key))
 	require.Len(t, decodedPacket.Assets, 1)
 	require.Equal(t, normalAsset, decodedPacket.Assets[0])
 }
 
-func TestAssetOutputListEncodeDecode(t *testing.T) {
-	t.Parallel()
-
+func testAssetOutputListEncodeDecode(t *testing.T) {
 	outputs := []AssetOutput{
 		{
 			Type:   AssetTypeLocal,
@@ -228,9 +234,7 @@ func TestAssetOutputListEncodeDecode(t *testing.T) {
 	require.Equal(t, outputs, decoded)
 }
 
-func TestAssetInputListEncodeDecode(t *testing.T) {
-	t.Parallel()
-
+func testAssetInputListEncodeDecode(t *testing.T) {
 	inputs := []AssetInput{
 		{
 			Type:   AssetTypeLocal,

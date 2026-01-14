@@ -156,7 +156,7 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 		Version: asset.AssetVersion,
 	}
 
-	opretTxOut, _ := assetGroup.EncodeAssetPacket(0)
+	opretTxOut, _ := assetGroup.EncodeAssetPacket(0, nil)
 
 	// Create PSBT
 	tx := wire.NewMsgTx(2)

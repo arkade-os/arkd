@@ -179,11 +179,18 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				}
 			}
 
-			if decodedAssetPacket.SubDustKey == nil {
+			subDustPacket, err := asset.DecodeSubDustPacket(out.PkScript)
+			if err != nil {
+				return "", nil, nil, fmt.Errorf(
+					"failed to decode sub-dust key from opreturn: %s",
+					err,
+				)
+			}
+			if subDustPacket == nil || subDustPacket.Key == nil {
 				continue
 			}
 
-			pubKey = hex.EncodeToString(schnorr.SerializePubKey(decodedAssetPacket.SubDustKey))
+			pubKey = hex.EncodeToString(schnorr.SerializePubKey(subDustPacket.Key))
 			isSubDust = true
 		} else {
 			pubKey = hex.EncodeToString(out.PkScript[2:])

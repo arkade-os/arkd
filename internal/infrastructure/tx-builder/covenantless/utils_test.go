@@ -58,12 +58,11 @@ func newTestAssetGroup(t *testing.T, idHex string) (asset.AssetGroup, []byte) {
 	}
 
 	group := asset.AssetPacket{
-		Assets:     []asset.AssetGroup{testAsset},
-		SubDustKey: privKey.PubKey(),
-		Version:    asset.AssetVersion,
+		Assets:  []asset.AssetGroup{testAsset},
+		Version: asset.AssetVersion,
 	}
 
-	opret, err := group.EncodeAssetPacket(0)
+	opret, err := group.EncodeAssetPacket(0, &asset.SubDustPacket{Key: privKey.PubKey()})
 	require.NoError(t, err)
 
 	return testAsset, opret.PkScript
