@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/dgraph-io/badger/v4"
@@ -252,6 +253,21 @@ func (r *arkRepository) findRound(
 func (r *arkRepository) addOrUpdateRound(
 	ctx context.Context, round domain.Round,
 ) error {
+	// derive txids from intent proofs and add to each intents
+	for k, v := range round.Intents {
+		if v.Txid != "" {
+			continue
+		}
+		txid, err := application.DeriveTxidFromProof(v.Proof)
+		if err != nil {
+			fmt.Printf("error deriving txid from proof: %s\n", err.Error())
+			continue
+		}
+		updatedIntent := v
+		updatedIntent.Txid = txid
+		round.Intents[k] = updatedIntent
+	}
+
 	rnd := domain.Round{
 		Id:                 round.Id,
 		StartingTimestamp:  round.StartingTimestamp,
