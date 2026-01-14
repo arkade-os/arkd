@@ -15,7 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -921,7 +921,7 @@ func (s *service) SubmitOffchainTx(
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		// validate asset packet if present
-		if asset.ContainsAssetPacket(out.PkScript) {
+		if extension.ContainsAssetPacket(out.PkScript) {
 			if foundOpReturn {
 				return nil, errors.MALFORMED_ARK_TX.New(
 					"tx %s has multiple op return outputs, not allowed for assets", txid,
@@ -929,7 +929,7 @@ func (s *service) SubmitOffchainTx(
 			}
 			foundOpReturn = true
 
-			err := s.validateAssetTransition(ctx, *arkPtx.UnsignedTx, checkpointTxs, out.PkScript)
+			err := s.validateAssetTransition(ctx, *arkPtx.UnsignedTx, checkpointTxs, *out)
 			if err != nil {
 				log.WithError(err).Warn("asset transaction validation failed")
 				return nil, errors.ASSET_VALIDATION_FAILED.Wrap(err)
@@ -1542,12 +1542,12 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
-	assetInputMap := make(map[uint32]asset.AssetInput)
-	var assetPacket *asset.AssetPacket
+	assetInputMap := make(map[uint32]extension.AssetInput)
+	var assetPacket *extension.AssetPacket
 
 	for _, txOut := range proof.UnsignedTx.TxOut {
-		if asset.ContainsAssetPacket(txOut.PkScript) {
-			assetPacket, err = asset.DecodeAssetPacket(txOut.PkScript)
+		if extension.ContainsAssetPacket(txOut.PkScript) {
+			assetPacket, err = extension.DecodeAssetPacket(*txOut)
 			if err != nil {
 				return "", errors.INVALID_INTENT_PROOF.New(
 					"failed to decode asset packet: %w", err,
@@ -1940,7 +1940,7 @@ func (s *service) RegisterIntent(
 				})
 			}
 			for _, output := range asst.Outputs {
-				if output.Type != asset.AssetTypeTeleport {
+				if output.Type != extension.AssetTypeTeleport {
 					return "", errors.INVALID_INTENT_PROOF.New(
 						"asset output is not teleport output",
 					).WithMetadata(errors.InvalidIntentProofMetadata{
@@ -4277,9 +4277,7 @@ func (s *service) storeAssetDetailsFromArkTx(
 	arkTx wire.MsgTx,
 	assetPacketIndex int,
 ) error {
-	assetPacketScript := arkTx.TxOut[assetPacketIndex].PkScript
-
-	assetPkt, err := asset.DecodeAssetPacket(assetPacketScript)
+	assetPkt, err := extension.DecodeAssetPacket(*arkTx.TxOut[assetPacketIndex])
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
@@ -4295,7 +4293,7 @@ func (s *service) storeAssetDetailsFromArkTx(
 func (s *service) storeAssetGroups(
 	ctx context.Context,
 	assetPacketIndex int,
-	assetGroupList []asset.AssetGroup,
+	assetGroupList []extension.AssetGroup,
 	arkTx wire.MsgTx,
 ) error {
 	anchorPoint := domain.Outpoint{
@@ -4322,17 +4320,17 @@ func (s *service) storeAssetGroups(
 			var txHashBytes [32]byte
 			copy(txHashBytes[:], txHash[:])
 
-			assetId := asset.AssetId{
+			assetId := extension.AssetId{
 				TxHash: txHashBytes,
 				Index:  uint16(i),
 			}
 
 			if asstGp.ControlAsset != nil {
 				switch asstGp.ControlAsset.Type {
-				case asset.AssetRefByID:
+				case extension.AssetRefByID:
 					controlAsset = asstGp.ControlAsset.AssetId.ToString()
-				case asset.AssetRefByGroup:
-					controlAsset = asset.AssetId{
+				case extension.AssetRefByGroup:
+					controlAsset = extension.AssetId{
 						TxHash: txHashBytes,
 						Index:  uint16(asstGp.ControlAsset.GroupIndex),
 					}.ToString()
@@ -4383,7 +4381,7 @@ func (s *service) storeAssetGroups(
 				return fmt.Errorf("cannot update mutable asset without control asset")
 			}
 
-			controlAssetID, err := asset.AssetIdFromString(assetGp.ControlAssetID)
+			controlAssetID, err := extension.AssetIdFromString(assetGp.ControlAssetID)
 			if err != nil {
 				return fmt.Errorf("error parsing control asset id: %s", err)
 			}
@@ -4432,9 +4430,9 @@ func (s *service) storeAssetGroups(
 	return nil
 }
 
-func (s *service) markTeleportInputsClaimed(ctx context.Context, inputs []asset.AssetInput) {
+func (s *service) markTeleportInputsClaimed(ctx context.Context, inputs []extension.AssetInput) {
 	for _, in := range inputs {
-		if in.Type != asset.AssetTypeTeleport {
+		if in.Type != extension.AssetTypeTeleport {
 			continue
 		}
 
@@ -4444,7 +4442,7 @@ func (s *service) markTeleportInputsClaimed(ctx context.Context, inputs []asset.
 	}
 }
 
-func assetMetadataFromGroup(metadata []asset.Metadata) []domain.AssetMetadata {
+func assetMetadataFromGroup(metadata []extension.Metadata) []domain.AssetMetadata {
 	metadataList := make([]domain.AssetMetadata, 0, len(metadata))
 	for _, meta := range metadata {
 		metadataList = append(metadataList, domain.AssetMetadata{
@@ -4488,11 +4486,11 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 
 	events := make([]TeleportAsset, 0)
 
-	collectTeleportAssets := func(groups []asset.AssetGroup, anchorOutpoint domain.Outpoint, createdAt, expiresAt int64, includeAmount bool) []TeleportAsset {
+	collectTeleportAssets := func(groups []extension.AssetGroup, anchorOutpoint domain.Outpoint, createdAt, expiresAt int64, includeAmount bool) []TeleportAsset {
 		events := make([]TeleportAsset, 0)
 		for _, ast := range groups {
 			for outIdx, assetOut := range ast.Outputs {
-				if assetOut.Type != asset.AssetTypeTeleport {
+				if assetOut.Type != extension.AssetTypeTeleport {
 					continue
 				}
 
@@ -4518,13 +4516,13 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 		return events
 	}
 
-	findAssetPacketInTx := func(tx *wire.MsgTx) (*asset.AssetPacket, domain.Outpoint) {
+	findAssetPacketInTx := func(tx *wire.MsgTx) (*extension.AssetPacket, domain.Outpoint) {
 		for i, out := range tx.TxOut {
-			if !asset.ContainsAssetPacket(out.PkScript) {
+			if !extension.ContainsAssetPacket(out.PkScript) {
 				continue
 			}
 
-			packet, err := asset.DecodeAssetPacket(out.PkScript)
+			packet, err := extension.DecodeAssetPacket(*out)
 			if err != nil {
 				return nil, domain.Outpoint{}
 			}

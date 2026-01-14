@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +19,7 @@ func TestBuildTeleportAssetLeaf(t *testing.T) {
 
 	var id [32]byte
 	copy(id[:], idBytes)
-	assetID := asset.AssetId{TxHash: id, Index: 0}
+	assetID := extension.AssetId{TxHash: id, Index: 0}
 
 	hashBytes := bytes.Repeat([]byte{0x02}, 32)
 
@@ -33,7 +34,13 @@ func TestBuildTeleportAssetLeaf(t *testing.T) {
 	require.NotEmpty(t, leaf.AssetScript)
 	require.Equal(t, receiver.Amount, leaf.Amount)
 
-	packet, err := asset.DecodeAssetPacket([]byte(leaf.AssetScript))
+	decodedAssetLeaf, err := hex.DecodeString(leaf.AssetScript)
+	require.NoError(t, err)
+
+	packet, err := extension.DecodeAssetPacket(wire.TxOut{
+		PkScript: decodedAssetLeaf,
+		Value:    0,
+	})
 	require.NoError(t, err)
 	require.Len(t, packet.Assets, 1)
 	require.NotNil(t, packet.Assets[0].AssetId)
@@ -41,7 +48,7 @@ func TestBuildTeleportAssetLeaf(t *testing.T) {
 
 	outputs := packet.Assets[0].Outputs
 	require.Len(t, outputs, 1)
-	require.Equal(t, asset.AssetTypeTeleport, outputs[0].Type)
+	require.Equal(t, extension.AssetTypeTeleport, outputs[0].Type)
 	require.Equal(t, receiver.Amount, outputs[0].Amount)
 
 	var expectedCommitment [32]byte

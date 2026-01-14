@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 )
@@ -16,9 +16,9 @@ func (s *service) validateAssetTransition(
 	ctx context.Context,
 	arkTx wire.MsgTx,
 	checkpointTxMap map[string]string,
-	assetOutput []byte,
+	opReturnOutput wire.TxOut,
 ) error {
-	decodedAssetPacket, err := asset.DecodeAssetPacket(assetOutput)
+	decodedAssetPacket, err := extension.DecodeAssetPacket(opReturnOutput)
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
@@ -42,19 +42,19 @@ func (s *service) validateAssetTransition(
 	return nil
 }
 
-func (s *service) validateControlAssets(ctx context.Context, assets []asset.AssetGroup) error {
+func (s *service) validateControlAssets(ctx context.Context, assets []extension.AssetGroup) error {
 	// Validate Presence of Control Assets
 	for _, asst := range assets {
 
 		// If AssetId is nill : Issuance
 		if asst.AssetId == nil && asst.ControlAsset != nil {
 			switch asst.ControlAsset.Type {
-			case asset.AssetRefByGroup:
+			case extension.AssetRefByGroup:
 				if int(asst.ControlAsset.GroupIndex) >= len(assets) {
 					return fmt.Errorf("control asset group index %d out of range for issuance", asst.ControlAsset.GroupIndex)
 				}
 
-			case asset.AssetRefByID:
+			case extension.AssetRefByID:
 				controlAssetIDStr := asst.ControlAsset.AssetId.ToString()
 				assetGroup, err := s.repoManager.Assets().GetAssetGroupByID(ctx, controlAssetIDStr)
 				if err != nil {
@@ -94,7 +94,7 @@ func (s *service) validateControlAssets(ctx context.Context, assets []asset.Asse
 				return fmt.Errorf("asset %s does not have a control asset", asst.AssetId.ToString())
 			}
 
-			decodedControlAssetId, err := asset.AssetIdFromString(controlAssetId)
+			decodedControlAssetId, err := extension.AssetIdFromString(controlAssetId)
 			if err != nil {
 				return fmt.Errorf("error decoding control asset ID %s: %w", controlAssetId, err)
 			}
@@ -116,7 +116,7 @@ func (s *service) validateAssetGroup(
 	ctx context.Context,
 	arkTx wire.MsgTx,
 	checkpointTxMap map[string]string,
-	grpAsset asset.AssetGroup,
+	grpAsset extension.AssetGroup,
 ) error {
 
 	if grpAsset.AssetId != nil {
@@ -148,21 +148,21 @@ func (s *service) validateAssetGroup(
 func (s *service) validateAssetOutput(
 	ctx context.Context,
 	arkTx wire.MsgTx,
-	assetGp asset.AssetGroup,
-	output asset.AssetOutput,
+	assetGp extension.AssetGroup,
+	output extension.AssetOutput,
 ) error {
 	processedOutputs := 0
 
 	for _, assetOut := range assetGp.Outputs {
 		switch assetOut.Type {
-		case asset.AssetTypeLocal:
+		case extension.AssetTypeLocal:
 			for index := range arkTx.TxOut {
 				if index == int(assetOut.Vout) {
 					processedOutputs++
 					break
 				}
 			}
-		case asset.AssetTypeTeleport:
+		case extension.AssetTypeTeleport:
 			processedOutputs++
 		default:
 			return fmt.Errorf("unknown asset output type %d", assetOut.Type)
@@ -181,10 +181,10 @@ func (s *service) validateAssetInput(
 	ctx context.Context,
 	arkTx wire.MsgTx,
 	checkpointTxMap map[string]string,
-	input asset.AssetInput,
+	input extension.AssetInput,
 ) error {
-	if input.Type == asset.AssetTypeTeleport {
-		expectedHash := asset.CalculateTeleportHash(input.Witness.Script, input.Witness.Nonce)
+	if input.Type == extension.AssetTypeTeleport {
+		expectedHash := extension.CalculateTeleportHash(input.Witness.Script, input.Witness.Nonce)
 		if !bytes.Equal(input.Commitment[:], expectedHash[:]) {
 			return fmt.Errorf("asset input commitment does not match teleport hash witness")
 		}
@@ -237,7 +237,7 @@ func (s *service) validateAssetInput(
 
 func (s *service) verifyAssetInputPrevOut(
 	ctx context.Context,
-	input asset.AssetInput,
+	input extension.AssetInput,
 	prev wire.OutPoint,
 	arkTx wire.MsgTx,
 ) error {
@@ -258,11 +258,11 @@ func (s *service) verifyAssetInputPrevOut(
 		return fmt.Errorf("error decoding Ark Tx: %s", err)
 	}
 
-	var assetGroup *asset.AssetPacket
+	var assetGroup *extension.AssetPacket
 
 	for _, output := range decodedArkTx.UnsignedTx.TxOut {
-		if asset.ContainsAssetPacket(output.PkScript) {
-			assetGp, err := asset.DecodeAssetPacket(output.PkScript)
+		if extension.ContainsAssetPacket(output.PkScript) {
+			assetGp, err := extension.DecodeAssetPacket(*output)
 			if err != nil {
 				return fmt.Errorf("error decoding asset Opreturn: %s", err)
 			}
@@ -275,7 +275,7 @@ func (s *service) verifyAssetInputPrevOut(
 	}
 
 	// verify asset input in present in assetGroup.Inputs
-	totalAssetOuts := make([]asset.AssetOutput, 0)
+	totalAssetOuts := make([]extension.AssetOutput, 0)
 	for _, asset := range assetGroup.Assets {
 		totalAssetOuts = append(totalAssetOuts, asset.Outputs...)
 	}
@@ -290,7 +290,7 @@ func (s *service) verifyAssetInputPrevOut(
 
 }
 
-func sumAssetInputs(inputs []asset.AssetInput) uint64 {
+func sumAssetInputs(inputs []extension.AssetInput) uint64 {
 	total := uint64(0)
 	for _, in := range inputs {
 		total += in.Amount
@@ -298,7 +298,7 @@ func sumAssetInputs(inputs []asset.AssetInput) uint64 {
 	return total
 }
 
-func sumAssetOutputs(outputs []asset.AssetOutput) uint64 {
+func sumAssetOutputs(outputs []extension.AssetOutput) uint64 {
 	total := uint64(0)
 	for _, out := range outputs {
 		total += out.Amount
@@ -306,11 +306,11 @@ func sumAssetOutputs(outputs []asset.AssetOutput) uint64 {
 	return total
 }
 
-func ensureUniqueAssetVouts(assets []asset.AssetGroup) error {
+func ensureUniqueAssetVouts(assets []extension.AssetGroup) error {
 	seen := make(map[uint32]struct{})
 	for _, grpAsset := range assets {
 		for _, out := range grpAsset.Outputs {
-			if out.Type != asset.AssetTypeLocal {
+			if out.Type != extension.AssetTypeLocal {
 				continue
 			}
 			if _, exists := seen[out.Vout]; exists {
@@ -324,8 +324,8 @@ func ensureUniqueAssetVouts(assets []asset.AssetGroup) error {
 
 func (s *service) ensureAssetPresence(
 	ctx context.Context,
-	assets []asset.AssetGroup,
-	asset asset.AssetId,
+	assets []extension.AssetGroup,
+	asset extension.AssetId,
 ) error {
 	if len(assets) == 0 {
 		return fmt.Errorf("no assets provided for control asset validation")

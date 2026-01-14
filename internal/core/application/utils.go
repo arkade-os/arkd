@@ -11,7 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -129,13 +129,13 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		var pubKey string
 		var isSubDust bool
 
-		if asset.ContainsAssetPacket(out.PkScript) {
+		if extension.ContainsAssetPacket(out.PkScript) {
 			if assetOpReturnProcessed {
 				continue
 			}
 			assetOpReturnProcessed = true
 
-			decodedAssetPacket, err := asset.DecodeAssetPacket(out.PkScript)
+			decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf(
 					"failed to decode asset group from opreturn: %s",
@@ -146,10 +146,10 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			allAssets := decodedAssetPacket.Assets
 
 			for i, grpAsset := range allAssets {
-				var assetId asset.AssetId
+				var assetId extension.AssetId
 
 				if grpAsset.AssetId == nil {
-					assetId = asset.AssetId{
+					assetId = extension.AssetId{
 						TxHash: ptx.UnsignedTx.TxHash(),
 						Index:  uint16(i),
 					}
@@ -157,7 +157,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 					assetId = *grpAsset.AssetId
 				}
 				for _, assetOut := range grpAsset.Outputs {
-					if assetOut.Type != asset.AssetTypeLocal {
+					if assetOut.Type != extension.AssetTypeLocal {
 						continue
 					}
 					if _, exists := assetVouts[assetOut.Vout]; exists {
@@ -179,7 +179,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				}
 			}
 
-			subDustPacket, err := asset.DecodeSubDustPacket(out.PkScript)
+			subDustPacket, err := extension.DecodeSubDustPacket(*out)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf(
 					"failed to decode sub-dust key from opreturn: %s",

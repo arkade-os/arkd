@@ -9,7 +9,7 @@ import (
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/assert"
@@ -142,21 +142,21 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 	var commitment [32]byte
 	copy(commitment[:], teleportHashBytes)
 
-	assetGroup := asset.AssetPacket{
-		Assets: []asset.AssetGroup{
+	assetGroup := extension.AssetPacket{
+		Assets: []extension.AssetGroup{
 			{
-				Outputs: []asset.AssetOutput{
+				Outputs: []extension.AssetOutput{
 					{
-						Type:       asset.AssetTypeTeleport,
+						Type:       extension.AssetTypeTeleport,
 						Commitment: commitment,
 					},
 				},
 			},
 		},
-		Version: asset.AssetVersion,
+		Version: extension.AssetVersion,
 	}
 
-	opretTxOut, _ := assetGroup.EncodeAssetPacket(0, nil)
+	opretTxOut, _ := assetGroup.EncodeAssetPacket()
 
 	// Create PSBT
 	tx := wire.NewMsgTx(2)

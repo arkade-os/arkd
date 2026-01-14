@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -120,7 +120,7 @@ func buildTeleportAssetLeaf(
 		return tree.Leaf{}, fmt.Errorf("failed to decode teleport hash: %w", err)
 	}
 
-	assetId, err := asset.AssetIdFromString(receiver.AssetId)
+	assetId, err := extension.AssetIdFromString(receiver.AssetId)
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to decode asset id: %w", err)
 	}
@@ -129,24 +129,24 @@ func buildTeleportAssetLeaf(
 		return tree.Leaf{}, fmt.Errorf("asset id is nil")
 	}
 
-	assetGroup := asset.AssetGroup{
+	assetGroup := extension.AssetGroup{
 		AssetId: assetId,
 	}
 
 	var h [32]byte
 	copy(h[:], hash)
-	assetGroup.Outputs = []asset.AssetOutput{{
-		Type:       asset.AssetTypeTeleport,
+	assetGroup.Outputs = []extension.AssetOutput{{
+		Type:       extension.AssetTypeTeleport,
 		Commitment: h,
 		Amount:     receiver.Amount,
 	}}
 	assetGroup.Inputs = nil
 
-	assetPacket := &asset.AssetPacket{
-		Assets: []asset.AssetGroup{assetGroup},
+	assetPacket := &extension.AssetPacket{
+		Assets: []extension.AssetGroup{assetGroup},
 	}
 
-	assetOpret, err := assetPacket.EncodeAssetPacket(0, nil)
+	assetOpret, err := assetPacket.EncodeAssetPacket()
 	if err != nil {
 		return tree.Leaf{}, fmt.Errorf("failed to encode asset opreturn: %w", err)
 	}

@@ -16,12 +16,13 @@ import (
 	badgerdb "github.com/arkade-os/arkd/internal/infrastructure/db/badger"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
 	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -524,18 +525,23 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 
 			// ignore asset anchor
-			if asset.ContainsAssetPacket(out.PkScript) {
+			if extension.ContainsAssetPacket(out.PkScript) {
 				if assetOpReturnProcessed {
 					continue
 				}
 				assetOpReturnProcessed = true
 
-				if _, err := asset.DecodeAssetPacket(out.PkScript); err != nil {
+				txOut := wire.TxOut{
+					Value:    int64(out.Amount),
+					PkScript: out.PkScript,
+				}
+
+				if _, err := extension.DecodeAssetPacket(txOut); err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
 				}
 
-				subDustPacket, err := asset.DecodeSubDustPacket(out.PkScript)
+				subDustPacket, err := extension.DecodeSubDustPacket(txOut)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode sub-dust key from opret")
 					continue

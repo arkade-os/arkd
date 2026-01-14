@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -39,46 +39,54 @@ func TestRebuildAssetTxs(t *testing.T) {
 	var caID [32]byte
 	copy(caID[:], caInputTxId[:])
 
-	controlAsset := asset.AssetGroup{
-		AssetId: &asset.AssetId{TxHash: caID, Index: 0},
-		Inputs: []asset.AssetInput{{
-			Type:   asset.AssetTypeLocal,
+	controlAsset := extension.AssetGroup{
+		AssetId: &extension.AssetId{TxHash: caID, Index: 0},
+		Inputs: []extension.AssetInput{{
+			Type:   extension.AssetTypeLocal,
 			Vin:    0,
 			Amount: 7,
 		}},
-		Outputs: []asset.AssetOutput{
+		Outputs: []extension.AssetOutput{
 			{
-				Type:   asset.AssetTypeLocal,
+				Type:   extension.AssetTypeLocal,
 				Amount: 1,
 				Vout:   0,
 			},
 		},
-		Metadata: []asset.Metadata{{Key: "type", Value: "control"}},
+		Metadata: []extension.Metadata{{Key: "type", Value: "control"}},
 	}
 
-	normalAsset := asset.AssetGroup{
-		AssetId:      &asset.AssetId{TxHash: assetInTxId, Index: 0},
-		ControlAsset: asset.AssetRefFromId(asset.AssetId{TxHash: caID, Index: 0}),
-		Inputs: []asset.AssetInput{{
-			Type:   asset.AssetTypeLocal,
+	normalAsset := extension.AssetGroup{
+		AssetId:      &extension.AssetId{TxHash: assetInTxId, Index: 0},
+		ControlAsset: extension.AssetRefFromId(extension.AssetId{TxHash: caID, Index: 0}),
+		Inputs: []extension.AssetInput{{
+			Type:   extension.AssetTypeLocal,
 			Vin:    1,
 			Amount: 5,
 		}},
-		Outputs: []asset.AssetOutput{
+		Outputs: []extension.AssetOutput{
 			{
-				Type:   asset.AssetTypeLocal,
+				Type:   extension.AssetTypeLocal,
 				Amount: 100,
 				Vout:   1,
 			},
 		},
-		Metadata: []asset.Metadata{{Key: "type", Value: "normal"}},
+		Metadata: []extension.Metadata{{Key: "type", Value: "normal"}},
 	}
 
-	assetGroup := &asset.AssetPacket{
-		Assets:  []asset.AssetGroup{controlAsset, normalAsset},
-		Version: asset.AssetVersion,
+	assetGroup := &extension.AssetPacket{
+		Assets:  []extension.AssetGroup{controlAsset, normalAsset},
+		Version: extension.AssetVersion,
 	}
-	opret, err := assetGroup.EncodeAssetPacket(0, &asset.SubDustPacket{Key: normalTapKey})
+
+	opPacket := &extension.OpReturnPacket{
+		Asset: assetGroup,
+		SubDust: &extension.SubDustPacket{
+			Key:    normalTapKey,
+			Amount: 220,
+		},
+	}
+	opret, err := opPacket.EncodeOpReturnPacket()
 	require.NoError(t, err)
 
 	outputs := []*wire.TxOut{
@@ -133,7 +141,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 			continue
 		}
 		outputsNoAnchor = append(outputsNoAnchor, out)
-		if asset.ContainsAssetPacket(out.PkScript) {
+		if extension.ContainsAssetPacket(out.PkScript) {
 			assetGroupIndex = idx
 		}
 	}
@@ -147,9 +155,9 @@ func TestRebuildAssetTxs(t *testing.T) {
 	require.Equal(t, arkTx.UnsignedTx.TxID(), rebuiltArk.UnsignedTx.TxID())
 
 	// Verify asset group matches and points to rebuilt checkpoints.
-	origPacket, err := asset.DecodeAssetPacket(outputsNoAnchor[assetGroupIndex].PkScript)
+	origPacket, err := extension.DecodeAssetPacket(*outputsNoAnchor[assetGroupIndex])
 	require.NoError(t, err)
-	rebuiltPacket, err := asset.DecodeAssetPacket(rebuiltArk.UnsignedTx.TxOut[assetGroupIndex].PkScript)
+	rebuiltPacket, err := extension.DecodeAssetPacket(*rebuiltArk.UnsignedTx.TxOut[assetGroupIndex])
 	require.NoError(t, err)
 
 	require.NotNil(t, rebuiltPacket)
@@ -164,11 +172,11 @@ func TestRebuildAssetTxs(t *testing.T) {
 	}
 
 	for _, in := range rebuiltPacket.Assets[0].Inputs {
-		require.Equal(t, asset.AssetTypeLocal, in.Type)
+		require.Equal(t, extension.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}
 	for _, in := range rebuiltPacket.Assets[1].Inputs {
-		require.Equal(t, asset.AssetTypeLocal, in.Type)
+		require.Equal(t, extension.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}
 }

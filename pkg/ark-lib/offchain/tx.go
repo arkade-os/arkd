@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -79,7 +79,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetPacketIndex int, vtxos []VtxoInpu
 
 	assetAnchor := outputs[assetPacketIndex]
 
-	assetPacket, err := asset.DecodeAssetPacket(assetAnchor.PkScript)
+	assetPacket, err := extension.DecodeAssetPacket(*assetAnchor)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -102,7 +102,7 @@ func BuildAssetTxs(outputs []*wire.TxOut, assetPacketIndex int, vtxos []VtxoInpu
 
 	for _, packetAsset := range assetPacket.Assets {
 		for _, input := range packetAsset.Inputs {
-			if input.Type == asset.AssetTypeTeleport {
+			if input.Type == extension.AssetTypeTeleport {
 				continue
 			}
 
@@ -330,7 +330,7 @@ func buildCheckpointTx(
 // buildAssetCheckpointTx builds a checkpoint tx for an asset.
 // vtxoIndex is the index of the vtxo in the vtxos slice passed to BuildAssetTxs.
 func buildAssetCheckpointTx(
-	vtxo *VtxoInput, assetInput *asset.AssetInput, signerUnrollScript *script.CSVMultisigClosure,
+	vtxo *VtxoInput, assetInput *extension.AssetInput, signerUnrollScript *script.CSVMultisigClosure,
 ) (*psbt.Packet, *VtxoInput, error) {
 	if vtxo.Tapscript == nil {
 		return nil, nil, fmt.Errorf("vtxo tapscript is nil")
@@ -369,28 +369,28 @@ func buildAssetCheckpointTx(
 
 	} else {
 
-		var newAsset asset.AssetGroup
+		var newAsset extension.AssetGroup
 
-		newAsset.Inputs = []asset.AssetInput{
+		newAsset.Inputs = []extension.AssetInput{
 			{
-				Type:   asset.AssetTypeLocal,
+				Type:   extension.AssetTypeLocal,
 				Amount: assetInput.Amount,
 				Vin:    0,
 			},
 		}
-		newAsset.Outputs = []asset.AssetOutput{
+		newAsset.Outputs = []extension.AssetOutput{
 			{
-				Type:   asset.AssetTypeLocal,
+				Type:   extension.AssetTypeLocal,
 				Amount: assetInput.Amount,
 				Vout:   0,
 			},
 		}
 
-	newAssetGroup := &asset.AssetPacket{
-		Assets: []asset.AssetGroup{newAsset},
-	}
+		newAssetGroup := &extension.AssetPacket{
+			Assets: []extension.AssetGroup{newAsset},
+		}
 
-		assetPacket, err := newAssetGroup.EncodeAssetPacket(0, nil)
+		assetPacket, err := newAssetGroup.EncodeAssetPacket()
 		if err != nil {
 			return nil, nil, err
 		}

@@ -1,4 +1,4 @@
-package asset
+package extension
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAssetEncoding(t *testing.T) {
+func TestExtension(t *testing.T) {
 	t.Parallel()
 	testAssetEncodeDecodeRoundTrip(t)
 	testAssetGroupEncodeDecode(t)
@@ -99,10 +99,10 @@ func testAssetGroupEncodeDecode(t *testing.T) {
 		Version: AssetVersion,
 	}
 
-	txOut, err := packet.EncodeAssetPacket(0, nil)
+	txOut, err := packet.EncodeAssetPacket()
 	require.NoError(t, err)
 
-	decodedPacket, err := DecodeAssetPacket(txOut.PkScript)
+	decodedPacket, err := DecodeAssetPacket(txOut)
 	require.NoError(t, err)
 	require.Equal(t, packet, *decodedPacket)
 }
@@ -154,12 +154,17 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 		ControlAsset: deterministicAssetRefId(0xaa),
 	}
 
-	group := AssetPacket{
+	assetPacket := AssetPacket{
 		Assets:  []AssetGroup{normalAsset},
 		Version: AssetVersion,
 	}
 
-	txOut, err := group.EncodeAssetPacket(0, &SubDustPacket{Key: &subDustKey})
+	opReturnPacket := &OpReturnPacket{
+		Asset:   &assetPacket,
+		SubDust: &SubDustPacket{Key: &subDustKey, Amount: 220},
+	}
+
+	txOut, err := opReturnPacket.EncodeOpReturnPacket()
 	require.NoError(t, err)
 	require.True(t, ContainsAssetPacket(txOut.PkScript))
 
@@ -199,9 +204,9 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	require.NotEmpty(t, assetValue)
 	require.Equal(t, AssetVersion, assetValue[0])
 
-	decodedPacket, err := DecodeAssetPacket(txOut.PkScript)
+	decodedPacket, err := DecodeAssetPacket(txOut)
 	require.NoError(t, err)
-	decodedSubDust, err := DecodeSubDustPacket(txOut.PkScript)
+	decodedSubDust, err := DecodeSubDustPacket(txOut)
 	require.NoError(t, err)
 	require.NotNil(t, decodedSubDust)
 	require.NotNil(t, decodedSubDust.Key)
