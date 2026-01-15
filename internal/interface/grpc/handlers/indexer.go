@@ -253,7 +253,7 @@ func (e *indexerService) GetVtxos(
 
 		after, before, err := parseTimeRange(request.GetAfter(), request.GetBefore())
 		if err != nil {
-			return nil, err
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 
 		resp, err = e.indexerSvc.GetVtxos(
@@ -268,7 +268,7 @@ func (e *indexerService) GetVtxos(
 		resp, err = e.indexerSvc.GetVtxosByOutpoint(ctx, outpoints, page)
 	}
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	vtxos := make([]*arkv1.IndexerVtxo, 0, len(resp.Vtxos))
