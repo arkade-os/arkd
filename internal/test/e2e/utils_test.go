@@ -702,3 +702,49 @@ func refill(httpClient *http.Client) error {
 	}
 	return nil
 }
+
+type pendingTxResponse struct {
+	PendingTxs []pendingTx `json:"pendingTxs"`
+}
+
+type pendingTx struct {
+	ArkTxid             string   `json:"arkTxid"`
+	FinalArkTx          string   `json:"finalArkTx"`
+	SignedCheckpointTxs []string `json:"signedCheckpointTxs"`
+}
+
+func getPendingTxByTxid(httpClient *http.Client, txid string) (*pendingTxResponse, error) {
+	reqBody := bytes.NewReader([]byte(fmt.Sprintf(`{"txid": "%s"}`, txid)))
+	req, err := http.NewRequest("POST", "http://localhost:7070/v1/tx/pending", reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	// nolint:errcheck
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(
+			"unexpected status code: %d, body: %s",
+			resp.StatusCode,
+			string(body),
+		)
+	}
+
+	var result pendingTxResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &result, nil
+}

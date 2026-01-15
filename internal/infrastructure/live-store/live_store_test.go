@@ -334,6 +334,20 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.True(t, exists)
 
+		// GetTxidByOutpoint - existing outpoint should return txid
+		txid, err := store.OffchainTxs().GetTxidByOutpoint(ctx, outpoint)
+		require.NoError(t, err)
+		require.Equal(t, tx.ArkTxid, txid)
+
+		// GetTxidByOutpoint - non-existent outpoint should return empty string
+		nonExistentOutpoint := domain.Outpoint{
+			Txid: "0000000000000000000000000000000000000000000000000000000000000000",
+			VOut: 0,
+		}
+		txid, err = store.OffchainTxs().GetTxidByOutpoint(ctx, nonExistentOutpoint)
+		require.NoError(t, err)
+		require.Empty(t, txid)
+
 		// Remove
 		err = store.OffchainTxs().Remove(ctx, tx.ArkTxid)
 		require.NoError(t, err)

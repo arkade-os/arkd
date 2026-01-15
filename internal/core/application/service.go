@@ -526,17 +526,21 @@ func (s *service) SubmitOffchainTx(
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 		}
 
-		// check if already spent by another offchain tx
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, vtxo.Outpoint)
+		// check if already spent by another pending offchain tx
+		pendingTxid, err := s.cache.OffchainTxs().GetTxidByOutpoint(ctx, vtxo.Outpoint)
 		if err != nil {
 			log.WithError(err).Errorf("failed to check spent status of inputs against tx in cache")
 			return nil, errors.INTERNAL_ERROR.New("something went wrong").
 				WithMetadata(map[string]any{"vtxos": vtxo.Outpoint.String()})
 		}
 
-		if isSpent {
-			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint.String()).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+		if pendingTxid != "" {
+			return nil, errors.VTXO_PENDING_TX.New(
+				"input(s) spent by another pending tx",
+			).WithMetadata(errors.VtxoPendingTxMetadata{
+				VtxoOutpoint: vtxo.Outpoint.String(),
+				PendingTxid:  pendingTxid,
+			})
 		}
 	}
 
@@ -1077,10 +1081,10 @@ func (s *service) SubmitOffchainTx(
 	s.offchainTxMu.Lock()
 	defer s.offchainTxMu.Unlock()
 
-	// before pushing to the cache, check if any of the spent vtxos are already spent by another offchain tx
+	// before pushing to the cache, check if any of the spent vtxos are already spent by another pending offchain tx
 	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
 	for _, spentVtxo := range spentVtxos {
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, spentVtxo.Outpoint)
+		pendingTxid, err := s.cache.OffchainTxs().GetTxidByOutpoint(ctx, spentVtxo.Outpoint)
 		if err != nil {
 			log.WithError(err).Errorf(
 				"failed to check again spent status of inputs against tx in cache",
@@ -1088,9 +1092,13 @@ func (s *service) SubmitOffchainTx(
 			return nil, errors.INTERNAL_ERROR.New("something went wrong").
 				WithMetadata(map[string]any{"vtxo": spentVtxo.Outpoint.String()})
 		}
-		if isSpent {
-			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
+		if pendingTxid != "" {
+			return nil, errors.VTXO_PENDING_TX.New(
+				"input(s) spent by another pending tx",
+			).WithMetadata(errors.VtxoPendingTxMetadata{
+				VtxoOutpoint: spentVtxo.Outpoint.String(),
+				PendingTxid:  pendingTxid,
+			})
 		}
 	}
 	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
@@ -1426,6 +1434,34 @@ func (s *service) GetPendingOffchainTxs(
 	}
 
 	return acceptedOffchainTxs, nil
+}
+
+func (s *service) GetPendingOffchainTxByTxid(
+	ctx context.Context, txid string,
+) (*AcceptedOffchainTx, errors.Error) {
+	offchainTx, err := s.cache.OffchainTxs().Get(ctx, txid)
+	if err != nil {
+		log.WithError(err).Error("failed to get offchain tx from cache")
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{"txid": txid})
+	}
+
+	if offchainTx == nil {
+		offchainTx, err = s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
+		if err != nil {
+			return nil, nil
+		}
+	}
+
+	if !offchainTx.IsAccepted() {
+		return nil, nil
+	}
+
+	return &AcceptedOffchainTx{
+		TxId:                offchainTx.ArkTxid,
+		FinalArkTx:          offchainTx.ArkTx,
+		SignedCheckpointTxs: offchainTx.CheckpointTxsList(),
+	}, nil
 }
 
 func (s *service) RegisterIntent(

@@ -51,6 +51,7 @@ type OffChainTxStore interface {
 	Remove(ctx context.Context, arkTxid string) error
 	Get(ctx context.Context, arkTxid string) (*domain.OffchainTx, error)
 	Includes(ctx context.Context, outpoint domain.Outpoint) (bool, error)
+	GetTxidByOutpoint(ctx context.Context, outpoint domain.Outpoint) (string, error)
 }
 
 type CurrentRoundStore interface {

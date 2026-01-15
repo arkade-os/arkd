@@ -135,3 +135,40 @@ func (s *offChainTxStore) Includes(ctx context.Context, outpoint domain.Outpoint
 	}
 	return exists, nil
 }
+
+func (s *offChainTxStore) GetTxidByOutpoint(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) (string, error) {
+	exists, err := s.rdb.SIsMember(ctx, offChainInputsSetKey, outpoint.String()).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to check existence of input %s: %v", outpoint, err)
+	}
+	if !exists {
+		return "", nil
+	}
+	txsMap, err := s.rdb.HGetAll(ctx, offChainTxsHashKey).Result()
+	if err != nil {
+		return "", fmt.Errorf("failed to get offchain txs: %v", err)
+	}
+
+	outpointStr := outpoint.String()
+	for txid, txStr := range txsMap {
+		var offchainTx domain.OffchainTx
+		if err := json.Unmarshal([]byte(txStr), &offchainTx); err != nil {
+			continue
+		}
+		for _, tx := range offchainTx.CheckpointTxs {
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+			if err != nil {
+				continue
+			}
+			for _, in := range ptx.UnsignedTx.TxIn {
+				if in.PreviousOutPoint.String() == outpointStr {
+					return txid, nil
+				}
+			}
+		}
+	}
+	return "", nil
+}

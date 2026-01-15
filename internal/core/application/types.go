@@ -42,6 +42,10 @@ type Service interface {
 		proof intent.Proof,
 		message intent.GetPendingTxMessage,
 	) ([]AcceptedOffchainTx, errors.Error)
+	GetPendingOffchainTxByTxid(
+		ctx context.Context,
+		txid string,
+	) (*AcceptedOffchainTx, errors.Error)
 	// Tree signing methods
 	RegisterCosignerNonces(
 		ctx context.Context, roundId, pubkey string, nonces tree.TreeNonces,
