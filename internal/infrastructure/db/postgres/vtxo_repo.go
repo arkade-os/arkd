@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
@@ -54,7 +53,6 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					Preconfirmed:   vtxo.Preconfirmed,
 					ExpiresAt:      vtxo.ExpiresAt,
 					CreatedAt:      vtxo.CreatedAt,
-					UpdatedAt:      time.Now().UnixMilli(),
 					SpentBy: sql.NullString{
 						String: vtxo.SpentBy, Valid: len(vtxo.SpentBy) > 0,
 					},

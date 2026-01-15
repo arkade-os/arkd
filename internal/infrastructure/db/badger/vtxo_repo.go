@@ -485,8 +485,11 @@ func (r *vtxoRepository) getVtxo(
 	} else {
 		err = r.store.Get(outpoint.String(), &dto)
 	}
-	if err != nil && err == badgerhold.ErrNotFound {
-		return nil, nil
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
 	}
 
 	return &dto.Vtxo, nil

@@ -51,7 +51,7 @@ INSERT INTO vtxo (
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, @updated_at
+    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -256,8 +256,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 -- name: SelectVtxosWithPubkeys :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkeys'))
     AND updated_at >= :after
-    AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER)
-    );
+    AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER));
 
 -- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0) AS amount
