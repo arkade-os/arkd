@@ -318,9 +318,8 @@ func (r *arkRepository) addOrUpdateRound(
 		if it.Txid == "" {
 			continue
 		}
-		if err := r.upsertIntentIndex(ctx, it.Txid, rnd.Id, it.Id); err != nil {
-			return err
-		}
+		// do not fail the whole round upsert if intent index upsert fails
+		r.upsertIntentIndex(ctx, it.Txid, rnd.Id, it.Id)
 	}
 	return nil
 }

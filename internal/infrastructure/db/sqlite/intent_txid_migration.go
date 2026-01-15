@@ -28,7 +28,7 @@ func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
 	}
 
 	// backfill existing intents with derived txids from proof
-	if err := backfillIntent(context.Background(), dbh); err != nil {
+	if err := backfillIntent(ctx, dbh); err != nil {
 		return fmt.Errorf("failed to backfill txids: %s", err)
 	}
 
