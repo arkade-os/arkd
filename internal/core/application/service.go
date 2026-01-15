@@ -1542,7 +1542,7 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
-	assetInputMap := make(map[uint32]extension.AssetInput)
+	assetInputMap := make(map[uint32]AssetInput)
 	var assetPacket *extension.AssetPacket
 
 	for _, txOut := range proof.UnsignedTx.TxOut {
@@ -1568,7 +1568,10 @@ func (s *service) RegisterIntent(
 				}
 
 				for _, input := range asst.Inputs {
-					assetInputMap[input.Vin] = input
+					assetInputMap[input.Vin] = AssetInput{
+						AssetInput: input,
+						AssetId:    asst.AssetId.ToString(),
+					}
 				}
 			}
 			break
@@ -1676,14 +1679,20 @@ func (s *service) RegisterIntent(
 
 		vtxo := vtxosResult[0]
 
-		// verify if assetVtxo
-		if assetInput, ok := assetInputMap[uint32(i)]; ok {
+		// verify asset input if present
+		// +1 to account for proof fake input at index 0
+		if assetInput, ok := assetInputMap[uint32(i+1)]; ok {
 
-			if err := s.verifyAssetInputPrevOut(ctx, assetInput, outpoint, *proof.UnsignedTx); err != nil {
+			if err := s.verifyAssetInputPrevOut(ctx, assetInput.AssetInput, outpoint, *proof.UnsignedTx); err != nil {
 				return "", errors.ASSET_VALIDATION_FAILED.New(
 					"asset input validation failed for input %d: %w", i, err,
 				).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 			}
+
+			vtxo.Extensions = append(vtxo.Extensions, domain.AssetExtension{
+				AssetID: assetInput.AssetId,
+				Amount:  assetInput.Amount,
+			})
 
 		}
 
@@ -2085,8 +2094,8 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 	}
 
 	// TODO move forfeit validation outside of ports.LiveStore
-	if err := s.cache.ForfeitTxs().Sign(ctx, forfeitTxs); err != nil {
-		return errors.INVALID_FORFEIT_TXS.New("failed to sign forfeit txs: %w", err).
+	if err := s.cache.ForfeitTxs().Verify(ctx, forfeitTxs); err != nil {
+		return errors.INVALID_FORFEIT_TXS.New("failed to verify forfeit txs: %w", err).
 			WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
 	}
 

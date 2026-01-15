@@ -7,6 +7,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/errors"
@@ -234,4 +235,9 @@ type boardingIntentInput struct {
 	locktime         *arklib.RelativeLocktime
 	locktimeDisabled bool
 	witnessUtxo      *wire.TxOut
+}
+
+type AssetInput struct {
+	extension.AssetInput
+	AssetId string
 }

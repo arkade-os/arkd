@@ -13,7 +13,7 @@ import (
 
 var ArkadeMagic []byte = []byte{0x41, 0x52, 0x4B} // "ARK"
 
-type OpReturnPacket struct {
+type ExtensionPacket struct {
 	Asset   *AssetPacket
 	SubDust *SubDustPacket
 }
@@ -23,7 +23,7 @@ const (
 	MarkerAssetPayload byte = 0x00
 )
 
-func (packet *OpReturnPacket) EncodeOpReturnPacket() (wire.TxOut, error) {
+func (packet *ExtensionPacket) EncodeExtensionPacket() (wire.TxOut, error) {
 	if packet == nil || (packet.Asset == nil && (packet.SubDust == nil || packet.SubDust.Key == nil)) {
 		return wire.TxOut{}, errors.New("empty op_return packet")
 	}
@@ -87,7 +87,7 @@ func (packet *OpReturnPacket) EncodeOpReturnPacket() (wire.TxOut, error) {
 	}, nil
 }
 
-func DecodeOpReturnPacket(txOut wire.TxOut) (*OpReturnPacket, error) {
+func DecodeExtensionPacket(txOut wire.TxOut) (*ExtensionPacket, error) {
 	opReturnData := txOut.PkScript
 
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
@@ -99,7 +99,7 @@ func DecodeOpReturnPacket(txOut wire.TxOut) (*OpReturnPacket, error) {
 		return nil, err
 	}
 
-	packet := &OpReturnPacket{}
+	packet := &ExtensionPacket{}
 	if len(assetPayload) > 0 {
 		if len(assetPayload) < 1 {
 			return nil, errors.New("invalid asset op_return payload")

@@ -826,13 +826,11 @@ func parseScript(script string) (string, error) {
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
-	var asst *arkv1.IndexerAsset
-	if vtxo.AssetGroup != nil {
-		asst = &arkv1.IndexerAsset{
-			AssetId: vtxo.AssetGroup.AssetID,
-			Amount:  vtxo.AssetGroup.Amount,
-		}
+	extensions := make([]*arkv1.IndexerExtension, 0)
+	for _, ext := range vtxo.Extensions {
+		extensions = append(extensions, toExtension(ext))
 	}
+
 	return &arkv1.IndexerVtxo{
 		Outpoint: &arkv1.IndexerOutpoint{
 			Txid: vtxo.Txid,
@@ -850,6 +848,23 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
-		Asset:           asst,
+		Extensions:      extensions,
+	}
+}
+
+func toExtension(extension domain.Extension) *arkv1.IndexerExtension {
+	switch extension.Type() {
+	case domain.ExtAsset:
+		assetExt := extension.(domain.AssetExtension)
+		return &arkv1.IndexerExtension{
+			Kind: &arkv1.IndexerExtension_Asset{
+				Asset: &arkv1.IndexerAsset{
+					AssetId: assetExt.AssetID,
+					Amount:  assetExt.Amount,
+				},
+			},
+		}
+	default:
+		return &arkv1.IndexerExtension{}
 	}
 }

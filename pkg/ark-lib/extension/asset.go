@@ -127,14 +127,14 @@ type AssetInput struct {
 }
 
 func (g *AssetPacket) EncodeAssetPacket() (wire.TxOut, error) {
-	opReturnPacket := &OpReturnPacket{
+	opReturnPacket := &ExtensionPacket{
 		Asset: g,
 	}
-	return opReturnPacket.EncodeOpReturnPacket()
+	return opReturnPacket.EncodeExtensionPacket()
 }
 
 func DecodeAssetPacket(txOut wire.TxOut) (*AssetPacket, error) {
-	packet, err := DecodeOpReturnPacket(txOut)
+	packet, err := DecodeExtensionPacket(txOut)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func (a *AssetGroup) DecodeTlv(data []byte) error {
 	return tlvStream.Decode(buf)
 }
 
-func DeriveAssetGroupFromTx(arkTx string) (*AssetPacket, error) {
+func DeriveAssetPacketFromTx(arkTx string) (*AssetPacket, error) {
 	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding Ark Tx: %s", err)

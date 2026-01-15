@@ -11,14 +11,14 @@ type SubDustPacket struct {
 }
 
 func (packet *SubDustPacket) EncodeSubDustPacket() (wire.TxOut, error) {
-	opReturnPacket := &OpReturnPacket{
+	opReturnPacket := &ExtensionPacket{
 		SubDust: packet,
 	}
-	return opReturnPacket.EncodeOpReturnPacket()
+	return opReturnPacket.EncodeExtensionPacket()
 }
 
 func DecodeSubDustPacket(txOut wire.TxOut) (*SubDustPacket, error) {
-	packet, err := DecodeOpReturnPacket(txOut)
+	packet, err := DecodeExtensionPacket(txOut)
 	if err != nil {
 		return nil, err
 	}

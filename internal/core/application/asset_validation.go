@@ -45,7 +45,6 @@ func (s *service) validateAssetTransition(
 func (s *service) validateControlAssets(ctx context.Context, assets []extension.AssetGroup) error {
 	// Validate Presence of Control Assets
 	for _, asst := range assets {
-
 		// If AssetId is nill : Issuance
 		if asst.AssetId == nil && asst.ControlAsset != nil {
 			switch asst.ControlAsset.Type {
@@ -290,6 +289,24 @@ func (s *service) verifyAssetInputPrevOut(
 
 }
 
+func (s *service) ensureAssetPresence(
+	ctx context.Context,
+	assets []extension.AssetGroup,
+	asset extension.AssetId,
+) error {
+	if len(assets) == 0 {
+		return fmt.Errorf("no assets provided for control asset validation")
+	}
+
+	for _, asst := range assets {
+		if asst.AssetId != nil && (*asst.AssetId == asset) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("missing control asset %s in transaction", asset.ToString())
+}
+
 func sumAssetInputs(inputs []extension.AssetInput) uint64 {
 	total := uint64(0)
 	for _, in := range inputs {
@@ -320,22 +337,4 @@ func ensureUniqueAssetVouts(assets []extension.AssetGroup) error {
 		}
 	}
 	return nil
-}
-
-func (s *service) ensureAssetPresence(
-	ctx context.Context,
-	assets []extension.AssetGroup,
-	asset extension.AssetId,
-) error {
-	if len(assets) == 0 {
-		return fmt.Errorf("no assets provided for control asset validation")
-	}
-
-	for _, asst := range assets {
-		if asst.AssetId != nil && (*asst.AssetId == asset) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("missing control asset %s in transaction", asset.ToString())
 }

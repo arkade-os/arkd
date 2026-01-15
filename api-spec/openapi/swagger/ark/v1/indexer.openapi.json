@@ -1266,6 +1266,15 @@
         "type": "string",
         "default": "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED"
       },
+      "IndexerExtension": {
+        "title": "IndexerExtension",
+        "type": "object",
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/IndexerAsset"
+          }
+        }
+      },
       "IndexerHeartbeat": {
         "title": "IndexerHeartbeat",
         "type": "object"
@@ -1448,9 +1457,6 @@
           "arkTxid": {
             "type": "string"
           },
-          "asset": {
-            "$ref": "#/components/schemas/IndexerAsset"
-          },
           "commitmentTxids": {
             "type": "array",
             "items": {
@@ -1464,6 +1470,12 @@
           "expiresAt": {
             "type": "integer",
             "format": "int64"
+          },
+          "extensions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerExtension"
+            }
           },
           "isPreconfirmed": {
             "type": "boolean"

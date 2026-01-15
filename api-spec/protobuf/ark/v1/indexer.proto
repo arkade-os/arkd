@@ -297,9 +297,14 @@ message IndexerVtxo {
   repeated string commitment_txids = 11;
   string settled_by = 12;
   string ark_txid = 13;
-  IndexerAsset asset = 14;
+  repeated IndexerExtension extensions = 14;
 }
 
+message IndexerExtension {
+  oneof kind {
+    IndexerAsset asset        = 1;
+  }
+}
 
 message IndexerAsset {
   string asset_id = 1;

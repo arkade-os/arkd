@@ -159,12 +159,12 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 		Version: AssetVersion,
 	}
 
-	opReturnPacket := &OpReturnPacket{
+	opReturnPacket := &ExtensionPacket{
 		Asset:   &assetPacket,
 		SubDust: &SubDustPacket{Key: &subDustKey, Amount: 220},
 	}
 
-	txOut, err := opReturnPacket.EncodeOpReturnPacket()
+	txOut, err := opReturnPacket.EncodeExtensionPacket()
 	require.NoError(t, err)
 	require.True(t, ContainsAssetPacket(txOut.PkScript))
 

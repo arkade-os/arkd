@@ -223,7 +223,10 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			continue
 		}
 
-		outs[idx].AssetGroup = &asst
+		outs[idx].Extensions = append(outs[idx].Extensions, domain.AssetExtension{
+			AssetID: asst.AssetID,
+			Amount:  asst.Amount,
+		})
 	}
 
 	return txid, ins, outs, nil

@@ -242,7 +242,11 @@ func (i *indexerService) GetVtxos(
 		// add asset to vtxo if present
 		asst, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
 		if err == nil && asst != nil {
-			allVtxos[j].AssetGroup = asst
+			assetExtension := domain.AssetExtension{
+				AssetID: asst.AssetID,
+				Amount:  asst.Amount,
+			}
+			allVtxos[j].Extensions = append(allVtxos[j].Extensions, assetExtension)
 		}
 	}
 
@@ -264,7 +268,11 @@ func (i *indexerService) GetVtxosByOutpoint(
 		// add asset to vtxo if present
 		asst, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
 		if err == nil && asst != nil {
-			allVtxos[j].AssetGroup = asst
+			assetExtension := domain.AssetExtension{
+				AssetID: asst.AssetID,
+				Amount:  0,
+			}
+			allVtxos[j].Extensions = append(allVtxos[j].Extensions, assetExtension)
 		}
 	}
 

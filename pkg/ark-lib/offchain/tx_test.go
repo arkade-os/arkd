@@ -79,14 +79,14 @@ func TestRebuildAssetTxs(t *testing.T) {
 		Version: extension.AssetVersion,
 	}
 
-	opPacket := &extension.OpReturnPacket{
+	opPacket := &extension.ExtensionPacket{
 		Asset: assetGroup,
 		SubDust: &extension.SubDustPacket{
 			Key:    normalTapKey,
 			Amount: 220,
 		},
 	}
-	opret, err := opPacket.EncodeOpReturnPacket()
+	opret, err := opPacket.EncodeExtensionPacket()
 	require.NoError(t, err)
 
 	outputs := []*wire.TxOut{
