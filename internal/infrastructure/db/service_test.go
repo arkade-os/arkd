@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
@@ -38,8 +37,6 @@ const (
 	arkTxid   = txida
 	sweepTxid = "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
 	sweepTx   = "cHNidP8BADwBAAAAAauqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
-	proof1    = "cHNidP8BALICAAAAAv/d70xPgEdsEq2xvJnXiBtJrEQAkZYVSWdwarEJCZe9AAAAAAAAAAAA9PRZ58PC4lJAJ7VEYtMMUC1E+poh/Gxo+0TNqvgh27wAAAAAAAAAAAAC6AMAAAAAAAAiUSC53+wMdwD72qU3mUE5FijgQ6Yt0XUhysD5ptE7PlTmuqyGAQAAAAAAIlEgmPgUCMQCRH0hhxoDwH31/dD86/v/CCHc+HlYPNZQMvoAAAAAAAEBKwAAAAAAAAAAIlEgud/sDHcA+9qlN5lBORYo4EOmLdF1IcrA+abYOz5U5soBAwQBAAAAAAEBK+gDAAAAAAAAIlEgud/sDHcA+9qlN5lBORYo4EOmLdF1IcrA+abYOz5U5soBAwQBAAAAAAAA"
-	proof2    = "cHNidP8BANsCAAAAA//d70xPgEdsEq2xvJnXiBtJrEQAkZYVSWdwarEJCZe9AAAAAAAAAAAA9PRZ58PC4lJAJ7VEYtMMUC1E+poh/Gxo+0TNqvgh27wAAAAAAAAAAABRRy0Q2j/vH4YYRfWfzzF4LBB1xX+tQdFOIWTU6ZD0CwMAAAAAAAAAAALoAwAAAAAAACJRILnf7Ax3APvapTeZQTkWKOBDpi3RdSHKwPmm0Ts+VOa6rIYBAAAAAAAiUSCY+BQIxAJEfSGHGgPAffX90Pzr+/8IIdz4eVg81lAy+gAAAAAAAQErAAAAAAAAAAAiUSC53+wMdwD72qU3mUE5FijgQ6Yt0XUhysD5ptg7PlTmygEDBAEAAAAAAQEr6AMAAAAAAAAiUSC53+wMdwD72qU3mUE5FijgQ6Yt0XUhysD5ptg7PlTmygEDBAEAAAAAAQErrIYBAAAAAAAiUSCY+BQIxAJEfSGHGgPAffX90Pzr+/8IIdz4eVg81lAy+gEDBAEAAAAAAAA="
 )
 
 var (
@@ -433,7 +430,8 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 				Intents: []domain.Intent{
 					{
 						Id:      uuid.New().String(),
-						Proof:   proof1,
+						Proof:   "proof",
+						Txid:    txida,
 						Message: "message",
 						Inputs: []domain.Vtxo{
 							{
@@ -453,7 +451,8 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 					},
 					{
 						Id:      uuid.New().String(),
-						Proof:   proof2,
+						Proof:   "proof",
+						Txid:    txidb,
 						Message: "message",
 						Inputs: []domain.Vtxo{
 							{
@@ -506,18 +505,14 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		roundsMatch(t, *updatedRound, *roundById)
 
 		// get intents by txid
-		txidToFind, err := application.DeriveTxidFromProof(proof1)
+		intent, err := svc.Rounds().GetIntentByTxid(ctx, txida)
 		require.NoError(t, err)
-		intent, err := svc.Rounds().GetIntentByTxid(ctx, txidToFind)
-		require.NoError(t, err)
-		require.Equal(t, proof1, intent.Proof)
+		require.Equal(t, "proof", intent.Proof)
 		require.Equal(t, "message", intent.Message)
 
-		txidToFind, err = application.DeriveTxidFromProof(proof2)
+		intent, err = svc.Rounds().GetIntentByTxid(ctx, txidb)
 		require.NoError(t, err)
-		intent, err = svc.Rounds().GetIntentByTxid(ctx, txidToFind)
-		require.NoError(t, err)
-		require.Equal(t, proof2, intent.Proof)
+		require.Equal(t, "proof", intent.Proof)
 		require.Equal(t, "message", intent.Message)
 
 		newEvents = []domain.Event{

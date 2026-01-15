@@ -10,8 +10,8 @@ import (
 // x-only pubkey
 
 var (
-	pubkey  = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
-	proof   = "cHNidP8BALACAAAAAyLh21ahYqxWy2slXY09ZoLvYWKFo7R0zPtbnJqkSUq6AAAAAAAAAAAA9PRZ58PC4lJAJ7VEYtMMUC1E+poh/Gxo+0TNqvgh27wAAAAAAAAAAABRRy0Q2j/vH4YYRfWfzzF4LBB1xX+tQdFOIWTU6ZD0CwMAAAAAAAAAAAHoAwAAAAAAACJRILnf7Ax3APvapTeZQTkWKOBDpi3RdSHKwPmm0Ts+VOa6AAAAAAABASsAAAAAAAAAACJRILnf7Ax3APvapTeZQTkWKOBDpi3RdSHKwPmm2Ds+VObKAQMEAQAAAAABASvoAwAAAAAAACJRILnf7Ax3APvapTeZQTkWKOBDpi3RdSHKwPmm2Ds+VObKAQMEAQAAAAABASushgEAAAAAACJRIJj4FAjEAkR9IYcaA8B99f3Q/Ov7/wgh3Ph5WDzWUDL6AQMEAQAAAAAA"
+	pubkey = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
+	proof  = "proof"
 	message = "message"
 	inputs  = []domain.Vtxo{
 		{
@@ -28,7 +28,7 @@ var (
 func TestIntent(t *testing.T) {
 	t.Run("new_intent", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			intent, err := domain.NewIntent(proof, message, inputs)
+			intent, err := domain.NewIntent(txid, proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 			require.NotEmpty(t, intent.Id)
@@ -57,7 +57,7 @@ func TestIntent(t *testing.T) {
 			}
 			for _, f := range fixtures {
 				t.Run(f.expectedErr, func(t *testing.T) {
-					intent, err := domain.NewIntent(f.proof, f.message, f.inputs)
+					intent, err := domain.NewIntent(txid, f.proof, f.message, f.inputs)
 					require.Nil(t, intent)
 					require.Error(t, err)
 					require.Contains(t, err.Error(), f.expectedErr)
@@ -68,7 +68,7 @@ func TestIntent(t *testing.T) {
 
 	t.Run("add_receivers", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			intent, err := domain.NewIntent(proof, message, inputs)
+			intent, err := domain.NewIntent(txid, proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 
@@ -95,8 +95,7 @@ func TestIntent(t *testing.T) {
 					expectedErr: "missing outputs",
 				},
 			}
-
-			intent, err := domain.NewIntent(proof, message, inputs)
+			intent, err := domain.NewIntent(txid, proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 

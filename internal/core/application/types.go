@@ -60,7 +60,7 @@ type Service interface {
 	GetIntentByTxid(
 		ctx context.Context,
 		txid string,
-	) (domain.Intent, errors.Error)
+	) (*domain.Intent, errors.Error)
 }
 
 type ServiceInfo struct {

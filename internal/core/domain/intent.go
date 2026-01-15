@@ -2,9 +2,7 @@ package domain
 
 import (
 	"fmt"
-	"strings"
 
-	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/google/uuid"
 )
 
@@ -17,14 +15,13 @@ type Intent struct {
 	Txid      string
 }
 
-func NewIntent(proof, message string, inputs []Vtxo) (*Intent, error) {
-	txid, _ := deriveTxidFromProof(proof)
+func NewIntent(proofTxid, proof, message string, inputs []Vtxo) (*Intent, error) {
 	intent := &Intent{
 		Id:      uuid.New().String(),
 		Inputs:  inputs,
 		Proof:   proof,
 		Message: message,
-		Txid:    txid,
+		Txid:    proofTxid,
 	}
 	if err := intent.validate(true); err != nil {
 		return nil, err
@@ -128,12 +125,4 @@ func (t Intents) HaveOnlyOnchainOutput() bool {
 		}
 	}
 	return true
-}
-
-func deriveTxidFromProof(proof string) (string, error) {
-	tx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
-	if err != nil {
-		return "", fmt.Errorf("error deriving txid from proof: %w", err)
-	}
-	return tx.UnsignedTx.TxID(), nil
 }

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/dgraph-io/badger/v4"
@@ -259,21 +258,6 @@ func (r *arkRepository) findRound(
 func (r *arkRepository) addOrUpdateRound(
 	ctx context.Context, round domain.Round,
 ) error {
-	// derive txids from intent proofs and add to each intents
-	for k, v := range round.Intents {
-		if v.Txid != "" {
-			continue
-		}
-		txid, err := application.DeriveTxidFromProof(v.Proof)
-		if err != nil {
-			fmt.Printf("error deriving txid from proof: %s\n", err.Error())
-			continue
-		}
-		updatedIntent := v
-		updatedIntent.Txid = txid
-		round.Intents[k] = updatedIntent
-	}
-
 	rnd := domain.Round{
 		Id:                 round.Id,
 		StartingTimestamp:  round.StartingTimestamp,
@@ -315,9 +299,6 @@ func (r *arkRepository) addOrUpdateRound(
 	}
 	// upsert intent index for each intent with a txid
 	for _, it := range rnd.Intents {
-		if it.Txid == "" {
-			continue
-		}
 		// do not fail the whole round upsert if intent index upsert fails
 		// nolint:errcheck
 		r.upsertIntentIndex(ctx, it.Txid, rnd.Id, it.Id)
@@ -558,25 +539,25 @@ func (r arkRepository) findOffchainTxs(ctx context.Context, txids []string) ([]s
 	return txs, nil
 }
 
-func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (domain.Intent, error) {
+func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (*domain.Intent, error) {
 	idx, err := r.getIntentIndexByTxid(ctx, txid)
 	if err != nil {
-		return domain.Intent{}, err
+		return nil, err
 	}
 
 	round, err := r.GetRoundWithId(ctx, idx.RoundId)
 	if err != nil {
-		return domain.Intent{}, err
+		return nil, err
 	}
 
 	for _, in := range round.Intents {
 		if in.Id == idx.IntentId {
 			// optionally populate receivers like intent_with_receivers_vw if needed
-			return in, nil
+			return &in, nil
 		}
 	}
 
-	return domain.Intent{}, fmt.Errorf("intent with txid %s not found", txid)
+	return nil, nil
 }
 
 func (r *arkRepository) upsertIntentIndex(

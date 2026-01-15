@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -164,10 +163,6 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 
 		if len(round.Intents) > 0 {
 			for _, intent := range round.Intents {
-				txid, err := application.DeriveTxidFromProof(intent.Proof)
-				if err != nil {
-					return fmt.Errorf("failed to derive txid from proof: %w", err)
-				}
 				if err := querierWithTx.UpsertIntent(
 					ctx,
 					queries.UpsertIntentParams{
@@ -175,7 +170,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 						RoundID: sql.NullString{String: round.Id, Valid: true},
 						Proof:   sql.NullString{String: intent.Proof, Valid: true},
 						Message: sql.NullString{String: intent.Message, Valid: true},
-						Txid:    sql.NullString{String: txid, Valid: true},
+						Txid:    sql.NullString{String: intent.Txid, Valid: true},
 					},
 				); err != nil {
 					return fmt.Errorf("failed to upsert intent: %w", err)
@@ -462,13 +457,16 @@ func (r *roundRepository) GetRoundsWithCommitmentTxids(
 func (r *roundRepository) GetIntentByTxid(
 	ctx context.Context,
 	txid string,
-) (domain.Intent, error) {
+) (*domain.Intent, error) {
 	intent, err := r.querier.SelectIntentByTxid(ctx, sql.NullString{String: txid, Valid: true})
 	if err != nil {
-		return domain.Intent{}, fmt.Errorf("failed to get intents by txid: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get intents by txid: %w", err)
 	}
 
-	return domain.Intent{
+	return &domain.Intent{
 		Proof:   intent.Proof.String,
 		Message: intent.Message.String,
 	}, nil

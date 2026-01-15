@@ -360,7 +360,7 @@ type SelectIntentByTxidRow struct {
 	Message sql.NullString
 }
 
-func (q *Queries) SelectIntentByTxid(ctx context.Context, txid string) (SelectIntentByTxidRow, error) {
+func (q *Queries) SelectIntentByTxid(ctx context.Context, txid sql.NullString) (SelectIntentByTxidRow, error) {
 	row := q.db.QueryRowContext(ctx, selectIntentByTxid, txid)
 	var i SelectIntentByTxidRow
 	err := row.Scan(&i.Proof, &i.Message)
@@ -1767,7 +1767,7 @@ type UpsertIntentParams struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
-	Txid    string
+	Txid    sql.NullString
 }
 
 func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) error {
