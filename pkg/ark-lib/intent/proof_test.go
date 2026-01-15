@@ -19,7 +19,7 @@ func TestNewIntent(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		for _, fixture := range validFixtures {
 			t.Run(fixture.Name, func(t *testing.T) {
-				proof, err := intent.New(fixture.Message, fixture.Inputs, fixture.Outputs)
+				proof, err := intent.New(fixture.Message, fixture.Inputs, fixture.Outputs, 0)
 				require.NoError(t, err)
 				require.NotNil(t, proof)
 				require.GreaterOrEqual(t, len(proof.Inputs), 2)
@@ -45,7 +45,7 @@ func TestNewIntent(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		for _, fixture := range invalidFixtures {
 			t.Run(fixture.Name, func(t *testing.T) {
-				proof, err := intent.New(fixture.Message, fixture.Inputs, fixture.Outputs)
+				proof, err := intent.New(fixture.Message, fixture.Inputs, fixture.Outputs, 0)
 				require.Error(t, err)
 				require.Nil(t, proof)
 				require.ErrorContains(t, err, fixture.ExpectedError)

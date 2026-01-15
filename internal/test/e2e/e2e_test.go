@@ -1166,6 +1166,7 @@ func TestDelegateRefresh(t *testing.T) {
 				PkScript: alicePkScript,
 			},
 		},
+		0,
 	)
 	require.NoError(t, err)
 
