@@ -54,12 +54,14 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	// nolint:errcheck
 	defer rows.Close()
 
 	stmt, err := tx.PrepareContext(ctx, updateIntent)
 	if err != nil {
 		return err
 	}
+	// nolint:errcheck
 	defer stmt.Close()
 
 	for rows.Next() {
@@ -109,6 +111,7 @@ func columnExists(ctx context.Context, db *sql.DB, tableName, columnName string)
 	if err != nil {
 		return false, err
 	}
+	// nolint:errcheck
 	defer rows.Close()
 
 	for rows.Next() {
