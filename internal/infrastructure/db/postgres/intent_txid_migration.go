@@ -14,13 +14,8 @@ func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("failed to check intent.txid existence: %w", err)
 	}
-	if exists {
+	if !exists {
 		return nil
-	}
-
-	// Add nullable column in-place (SQLite supports this)
-	if _, err := dbh.ExecContext(ctx, `ALTER TABLE intent ADD COLUMN txid TEXT;`); err != nil {
-		return fmt.Errorf("failed to add txid column: %w", err)
 	}
 
 	// Backfill existing intents with derived txids from proof (in-place UPDATE)
