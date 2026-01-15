@@ -300,11 +300,14 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to read migration version: %w", verr)
 		}
 		if dirty {
-			return nil, fmt.Errorf("database is in a dirty migration state; manual intervention required")
+			return nil, fmt.Errorf(
+				"database is in a dirty migration state; manual intervention required",
+			)
 		}
 
 		if version < intentTxidMigrationBegin {
-			if err := m.Migrate(intentTxidMigrationBegin); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+			if err := m.Migrate(intentTxidMigrationBegin); err != nil &&
+				!errors.Is(err, migrate.ErrNoChange) {
 				return nil, fmt.Errorf("failed to run migrations: %s", err)
 			}
 

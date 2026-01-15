@@ -92,12 +92,14 @@ INSERT INTO intent_new (
 	if err != nil {
 		return err
 	}
+	// nolint:errcheck
 	defer rows.Close()
 
 	stmt, err := tx.PrepareContext(ctx, insertIntent)
 	if err != nil {
 		return err
 	}
+	// nolint:errcheck
 	defer stmt.Close()
 
 	for rows.Next() {
@@ -165,12 +167,67 @@ func swapIntent(ctx context.Context, db *sql.DB) error {
 	if oldCT != newCT {
 		return fmt.Errorf("backfill mismatch: intent=%d intent_new=%d", oldCT, newCT)
 	}
-	if _, err = tx.ExecContext(ctx, `DROP TABLE intent;`); err != nil {
+
+		// drop dependent indexes
+	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS receiver DROP CONSTRAINT IF EXISTS fk_receiver_intent_id;`); err != nil {
+		return fmt.Errorf("drop receiver FK: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS vtxo DROP CONSTRAINT IF EXISTS fk_vtxo_intent_id;`); err != nil {
+		return fmt.Errorf("drop vtxo FK: %w", err)
+	}
+
+	// drop dependent foreign keys
+	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS receiver DROP CONSTRAINT IF EXISTS receiver_intent_id_fkey;`); err != nil {
+		return fmt.Errorf("drop receiver FK: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS vtxo DROP CONSTRAINT IF EXISTS vtxo_intent_id_fkey;`); err != nil {
+		return fmt.Errorf("drop vtxo FK: %w", err)
+	}
+
+	// drop views that depend on intent before dropping the intent table
+	if _, err = tx.ExecContext(ctx, `
+        DROP VIEW IF EXISTS intent_with_receivers_vw;
+        DROP VIEW IF EXISTS intent_with_inputs_vw;
+        DROP VIEW IF EXISTS round_intents_vw;
+    `); err != nil {
+		return fmt.Errorf("drop dependent views: %w", err)
+	}
+
+	if _, err = tx.ExecContext(ctx, `DROP TABLE IF EXISTS intent;`); err != nil {
 		return err
 	}
 
 	if _, err = tx.ExecContext(ctx, `ALTER TABLE intent_new RENAME TO intent;`); err != nil {
 		return err
+	}
+
+	// Recreate the views (use the canonical definitions from your migration)
+	if _, err = tx.ExecContext(ctx, `
+        CREATE VIEW round_intents_vw AS
+        SELECT intent.*
+        FROM round
+        LEFT OUTER JOIN intent
+        ON round.id = intent.round_id;
+    `); err != nil {
+		return fmt.Errorf("recreate round_intents_vw: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `
+        CREATE VIEW intent_with_receivers_vw AS
+        SELECT intent.*, receiver.*
+        FROM intent
+        LEFT OUTER JOIN receiver
+        ON intent.id = receiver.intent_id;
+    `); err != nil {
+		return fmt.Errorf("recreate intent_with_receivers_vw: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `
+        CREATE VIEW intent_with_inputs_vw AS
+        SELECT intent.*, vtxo_vw.*
+        FROM intent
+        LEFT OUTER JOIN vtxo_vw
+        ON intent.id = vtxo_vw.intent_id;
+    `); err != nil {
+		return fmt.Errorf("recreate intent_with_inputs_vw: %w", err)
 	}
 
 	// Re-enable FKs.
@@ -186,23 +243,23 @@ func swapIntent(ctx context.Context, db *sql.DB) error {
 
 func fixReceiverTableFK(ctx context.Context, db *sql.DB) error {
 	const createNew = `CREATE TABLE IF NOT EXISTS receiver_new (
-    intent_id TEXT NOT NULL,
+    intent_id TEXT,
     pubkey TEXT,
     onchain_address TEXT NOT NULL DEFAULT '',
     amount INTEGER NOT NULL,
     FOREIGN KEY (intent_id) REFERENCES intent(id),
     PRIMARY KEY (intent_id, pubkey, onchain_address)
-	);`
+    );`
 
 	const copyData = `
-	INSERT INTO receiver_new (
-	  pubkey, onchain_address, amount, intent_id
-	)
-	SELECT
-	  r.pubkey, r.onchain_address, r.amount, i.id AS intent_id
-	FROM receiver AS r
-	JOIN intent AS i
-	  ON i.id = r.intent_id;`
+    INSERT INTO receiver_new (
+      intent_id, pubkey, onchain_address, amount
+    )
+    SELECT
+      r.intent_id, r.pubkey, r.onchain_address, r.amount
+    FROM receiver AS r
+		LEFT JOIN intent AS i
+      ON i.id = r.intent_id;`
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -224,7 +281,7 @@ func fixReceiverTableFK(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("copy data: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `DROP TABLE receiver;`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS receiver;`); err != nil {
 		return fmt.Errorf("drop old receiver: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `ALTER TABLE receiver_new RENAME TO receiver;`); err != nil {
@@ -245,35 +302,35 @@ func fixReceiverTableFK(ctx context.Context, db *sql.DB) error {
 
 func fixVtxoTableFK(ctx context.Context, db *sql.DB) error {
 	const createNew = `CREATE TABLE IF NOT EXISTS vtxo_new (
-		txid TEXT NOT NULL,
-		vout INTEGER NOT NULL,
-		pubkey TEXT NOT NULL,
-		amount INTEGER NOT NULL,
-		expires_at INTEGER NOT NULL,
-		created_at INTEGER NOT NULL,
-		commitment_txid TEXT NOT NULL,
-		spent_by TEXT,
-		spent BOOLEAN NOT NULL DEFAULT FALSE,
-		unrolled BOOLEAN NOT NULL DEFAULT FALSE,
-		swept BOOLEAN NOT NULL DEFAULT FALSE,
-		preconfirmed BOOLEAN NOT NULL DEFAULT FALSE,
-		settled_by TEXT,
-		ark_txid TEXT,
-		intent_id TEXT,
-		PRIMARY KEY (txid, vout),
-		FOREIGN KEY (intent_id) REFERENCES intent(id)
-	);`
+        txid TEXT NOT NULL,
+        vout INTEGER NOT NULL,
+        pubkey TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        commitment_txid TEXT NOT NULL,
+        spent_by TEXT,
+        spent BOOLEAN NOT NULL DEFAULT FALSE,
+        unrolled BOOLEAN NOT NULL DEFAULT FALSE,
+        swept BOOLEAN NOT NULL DEFAULT FALSE,
+        preconfirmed BOOLEAN NOT NULL DEFAULT FALSE,
+        settled_by TEXT,
+        ark_txid TEXT,
+        intent_id TEXT,
+        PRIMARY KEY (txid, vout),
+        FOREIGN KEY (intent_id) REFERENCES intent(id)
+    );`
 
 	const copyData = `
-	INSERT INTO vtxo_new (
-	  txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, swept, preconfirmed, settled_by, ark_txid, intent_id
-	)
-	SELECT
-	  v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid,
-	  i.id AS intent_id
-	FROM vtxo AS v
-	JOIN intent AS i
-	  ON i.id = v.intent_id;`
+    INSERT INTO vtxo_new (
+      txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, swept, preconfirmed, settled_by, ark_txid, intent_id
+    )
+    SELECT
+      v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid,
+      i.id AS intent_id
+    FROM vtxo AS v
+		 LEFT JOIN intent AS i
+      ON i.id = v.intent_id;`
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -295,7 +352,7 @@ func fixVtxoTableFK(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("copy data: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `DROP TABLE vtxo;`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS vtxo;`); err != nil {
 		return fmt.Errorf("drop old vtxo: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `ALTER TABLE vtxo_new RENAME TO vtxo;`); err != nil {
@@ -315,5 +372,9 @@ func fixVtxoTableFK(ctx context.Context, db *sql.DB) error {
 }
 
 func existsQuery(tableName, columnName string) string {
-	return fmt.Sprintf(`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = '%s'`, tableName, columnName)
+	return fmt.Sprintf(
+		`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = '%s'`,
+		tableName,
+		columnName,
+	)
 }
