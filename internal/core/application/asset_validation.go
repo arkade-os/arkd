@@ -25,8 +25,15 @@ func (s *service) validateAssetTransition(
 
 	allAssets := decodedAssetPacket.Assets
 
-	if err := ensureUniqueAssetVouts(allAssets); err != nil {
-		return err
+	// single asset / single out rule
+	{
+		if err := ensureUniqueAssetVouts(allAssets); err != nil {
+			return err
+		}
+
+		if err := ensureUniqueAssetInputs(allAssets); err != nil {
+			return err
+		}
 	}
 
 	if err := s.validateControlAssets(ctx, allAssets); err != nil {
@@ -334,6 +341,22 @@ func ensureUniqueAssetVouts(assets []extension.AssetGroup) error {
 				return fmt.Errorf("duplicate asset output vout %d", out.Vout)
 			}
 			seen[out.Vout] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func ensureUniqueAssetInputs(assets []extension.AssetGroup) error {
+	seen := make(map[uint32]struct{})
+	for _, grpAsset := range assets {
+		for _, in := range grpAsset.Inputs {
+			if in.Type != extension.AssetTypeLocal {
+				continue
+			}
+			if _, exists := seen[in.Vin]; exists {
+				return fmt.Errorf("duplicate asset input vin %d", in.Vin)
+			}
+			seen[in.Vin] = struct{}{}
 		}
 	}
 	return nil

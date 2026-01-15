@@ -89,11 +89,14 @@ func TestRebuildAssetTxs(t *testing.T) {
 	opret, err := opPacket.EncodeExtensionPacket()
 	require.NoError(t, err)
 
+	changeValue := changeVtxo.Amount - opret.Value
+	require.GreaterOrEqual(t, changeValue, int64(0))
+
 	outputs := []*wire.TxOut{
 		{Value: controlVtxo.Amount, PkScript: mustP2TRScript(t, controlTapKey)},
 		{Value: normalVtxo.Amount, PkScript: mustP2TRScript(t, normalTapKey)},
 		&opret,
-		{Value: changeVtxo.Amount, PkScript: mustP2TRScript(t, changeTapKey)},
+		{Value: changeValue, PkScript: mustP2TRScript(t, changeTapKey)},
 	}
 
 	signerScript := mustClosureScript(t, &script.CSVMultisigClosure{
@@ -103,8 +106,8 @@ func TestRebuildAssetTxs(t *testing.T) {
 		Locktime: arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 4},
 	})
 
-	arkTx, checkpoints, err := BuildAssetTxs(
-		outputs, 2, []VtxoInput{controlVtxo, normalVtxo, changeVtxo}, signerScript,
+	arkTx, checkpoints, err := BuildTxs(
+		[]VtxoInput{controlVtxo, normalVtxo, changeVtxo}, outputs, signerScript,
 	)
 	require.NoError(t, err)
 	require.Len(t, checkpoints, 3)
@@ -147,8 +150,8 @@ func TestRebuildAssetTxs(t *testing.T) {
 	}
 	require.NotEqual(t, -1, assetGroupIndex)
 
-	rebuiltArk, rebuiltCheckpoints, err := BuildAssetTxs(
-		outputsNoAnchor, assetGroupIndex, ins, signerScript,
+	rebuiltArk, rebuiltCheckpoints, err := BuildTxs(
+		ins, outputsNoAnchor, signerScript,
 	)
 	require.NoError(t, err)
 	require.Len(t, rebuiltCheckpoints, len(checkpoints))

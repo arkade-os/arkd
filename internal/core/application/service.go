@@ -914,10 +914,9 @@ func (s *service) SubmitOffchainTx(
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	foundOpReturn := false
+	assetOutputIndex := -1
 	var rebuiltArkTx *psbt.Packet
 	var rebuiltCheckpointTxs []*psbt.Packet
-
-	assetGroupIndex := -1
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		// validate asset packet if present
@@ -936,8 +935,7 @@ func (s *service) SubmitOffchainTx(
 			}
 
 			outputs = append(outputs, out)
-
-			assetGroupIndex = outIndex
+			assetOutputIndex = outIndex
 			continue
 		}
 
@@ -1006,36 +1004,19 @@ func (s *service) SubmitOffchainTx(
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
-	if assetGroupIndex >= 0 {
-		rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildAssetTxs(
-			outputs, assetGroupIndex, ins, s.checkpointTapscript,
-		)
+	// recompute all txs (checkpoint txs + ark tx)
+	rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
+		ins, outputs, s.checkpointTapscript,
+	)
 
-		if err != nil {
-			return nil, errors.INTERNAL_ERROR.New(
-				"failed to rebuild asset ark transaction: %w", err,
-			).WithMetadata(map[string]any{
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
+			WithMetadata(map[string]any{
 				"ark_tx":               signedArkTx,
 				"outputs":              outputs,
 				"ins":                  ins,
 				"checkpoint_tapscript": s.checkpointTapscript,
 			})
-		}
-	} else {
-		// recompute all txs (checkpoint txs + ark tx)
-		rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
-			ins, outputs, s.checkpointTapscript,
-		)
-
-		if err != nil {
-			return nil, errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
-				WithMetadata(map[string]any{
-					"ark_tx":               signedArkTx,
-					"outputs":              outputs,
-					"ins":                  ins,
-					"checkpoint_tapscript": s.checkpointTapscript,
-				})
-		}
 	}
 
 	// verify the checkpoints txs integrity
@@ -1144,19 +1125,18 @@ func (s *service) SubmitOffchainTx(
 			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
 	}
 
-	// Store AssetGroup Details If Present
-	if assetGroupIndex >= 0 {
+	// apply Accepted event only after verifying the spent vtxos
+	changes = append(changes, change)
+
+	if assetOutputIndex >= 0 {
 		if err := s.storeAssetDetailsFromArkTx(
-			ctx, *arkPtx.UnsignedTx, assetGroupIndex,
+			ctx, *arkPtx.UnsignedTx, assetOutputIndex,
 		); err != nil {
 			log.WithError(err).Errorf(
 				"failed to store asset details for offchain tx %s", txid,
 			)
 		}
 	}
-
-	// apply Accepted event only after verifying the spent vtxos
-	changes = append(changes, change)
 
 	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
