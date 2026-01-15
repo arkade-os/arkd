@@ -309,11 +309,8 @@ func fixVtxoTableFK(ctx context.Context, db *sql.DB) error {
       txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, swept, preconfirmed, settled_by, ark_txid, intent_id
     )
     SELECT
-      v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid,
-      i.id AS intent_id
-    FROM vtxo AS v
-    LEFT JOIN intent AS i
-      ON i.id = v.intent_id;`
+      v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id
+    FROM vtxo AS v;`
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
