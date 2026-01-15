@@ -10,8 +10,8 @@ import (
 // x-only pubkey
 
 var (
-	pubkey = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
-	proof  = "proof"
+	pubkey  = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
+	proof   = "proof"
 	message = "message"
 	inputs  = []domain.Vtxo{
 		{
