@@ -10,8 +10,16 @@ on:
 
 jobs:
   test:
-    name: integration tests
+    name: ${{ matrix.env_name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env_target: docker-run
+            env_name: postgres/redis
+          - env_target: docker-run-light
+            env_name: sqlite/badger
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
@@ -22,9 +30,9 @@ jobs:
         uses: vulpemventures/nigiri-github-action@v1
 
       - name: Run Arkd and Arkd Wallet
-        run: make docker-run
+        run: make ${{ matrix.env_target }}
 
-      - name: integration testing
+      - name: Run test
         run: make integrationtest
       
       - name: Capture arkd logs

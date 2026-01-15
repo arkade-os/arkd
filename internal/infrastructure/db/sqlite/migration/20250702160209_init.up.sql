@@ -140,11 +140,11 @@ ON intent.id = vtxo_vw.intent_id;
 CREATE VIEW offchain_tx_vw AS
 SELECT
     offchain_tx.*,
-    checkpoint_tx.txid AS checkpoint_txid,
-    checkpoint_tx.tx AS checkpoint_tx,
+    COALESCE(checkpoint_tx.txid, '') AS checkpoint_txid,
+    COALESCE(checkpoint_tx.tx, '') AS checkpoint_tx,
     checkpoint_tx.commitment_txid,
     checkpoint_tx.is_root_commitment_txid,
     checkpoint_tx.offchain_txid
 FROM offchain_tx
-    INNER JOIN checkpoint_tx
+    LEFT JOIN checkpoint_tx
     ON offchain_tx.txid = checkpoint_tx.offchain_txid;

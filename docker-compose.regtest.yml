@@ -1,8 +1,8 @@
 services:
-  pgnbxplorer:
+  pg:
     restart: unless-stopped
     image: postgres:16
-    container_name: pgnbxplorer
+    container_name: pg
     ports:
       - 5432:5432
     environment:
@@ -32,14 +32,14 @@ services:
       - NBXPLORER_BIND=0.0.0.0:32838
       - NBXPLORER_TRIMEVENTS=10000
       - NBXPLORER_SIGNALFILESDIR=/datadir
-      - NBXPLORER_POSTGRES=User ID=postgres;Host=pgnbxplorer;Port=5432;Application Name=nbxplorer;MaxPoolSize=20;Database=nbxplorer
+      - NBXPLORER_POSTGRES=User ID=postgres;Host=pg;Port=5432;Application Name=nbxplorer;MaxPoolSize=20;Database=nbxplorer
       - NBXPLORER_EXPOSERPC=1
       - NBXPLORER_NOAUTH=1
     volumes:
       - type: tmpfs
         target: /datadir
     depends_on:
-      pgnbxplorer:
+      pg:
         condition: service_healthy
 
   arkd-wallet:
@@ -60,6 +60,17 @@ services:
       - ARKD_WALLET_SIGNER_KEY=afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0
     volumes:
       - arkd-wallet-volume:/app/data
+  redis:
+    restart: unless-stopped
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
   arkd:
     build:
       context: .
@@ -68,6 +79,8 @@ services:
     restart: unless-stopped
     depends_on:
       - arkd-wallet
+      - pg
+      - redis
     ports:
       - "7070:7070"
       - "7071:7071"
@@ -85,14 +98,16 @@ services:
       - ARKD_ROUND_MIN_PARTICIPANTS_COUNT=${ARKD_ROUND_MIN_PARTICIPANTS_COUNT:-1}
       - ARKD_ROUND_MAX_PARTICIPANTS_COUNT=${ARKD_ROUND_MAX_PARTICIPANTS_COUNT:-128}
       - ARKD_VTXO_MIN_AMOUNT=1
-      - ARKD_LIVE_STORE_TYPE=inmemory
-      - ARKD_EVENT_DB_TYPE=badger
-      - ARKD_DB_TYPE=sqlite
+      - ARKD_DB_TYPE=${ARKD_DB_TYPE:-sqlite}
+      - ARKD_PG_DB_URL=${ARKD_PG_DB_URL:-}
+      - ARKD_PG_EVENT_DB_URL=${ARKD_PG_EVENT_DB_URL:-}
+      - ARKD_PG_DB_AUTOCREATE=${ARKD_PG_DB_AUTOCREATE:-false}
+      - ARKD_EVENT_DB_TYPE=${ARKD_EVENT_DB_TYPE:-badger}
+      - ARKD_LIVE_STORE_TYPE=${ARKD_LIVE_STORE_TYPE:-inmemory}
+      - ARKD_REDIS_URL=${ARKD_REDIS_URL:-}
       - ARKD_SESSION_DURATION=${ARKD_SESSION_DURATION:-10}
       - ARKD_ROUND_REPORT_ENABLED=${ARKD_ROUND_REPORT_ENABLED:-true}
       - ARKD_BAN_THRESHOLD=1
-    volumes:
-      - arkd-volume:/app/data
 
 volumes:
   arkd-wallet-volume:
