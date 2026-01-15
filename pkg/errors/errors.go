@@ -332,4 +332,10 @@ var OFFCHAIN_TX_INSUFFICIENT_FEE = Code[OffchainTxInsufficientFeeMetadata]{
 	grpccodes.InvalidArgument,
 }
 
+var ASSET_VALIDATION_FAILED = Code[any]{
+	33,
+	"ASSET_VALIDATION_FAILED",
+	grpccodes.InvalidArgument,
+}
+
 var INTENT_FEE_EVALUATION_FAILED = Code[any]{33, "INTENT_FEE_EVALUATION_FAILED", grpccodes.Internal}

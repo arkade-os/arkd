@@ -16,11 +16,13 @@ import (
 	badgerdb "github.com/arkade-os/arkd/internal/infrastructure/db/badger"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
 	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -67,6 +69,11 @@ var (
 		"sqlite":   sqlitedb.NewConvictionRepository,
 		"postgres": pgdb.NewConvictionRepository,
 	}
+	assetStoreTypes = map[string]func(...interface{}) (domain.AssetRepository, error){
+		"sqlite":   sqlitedb.NewAssetRepository,
+		"badger":   badgerdb.NewAssetRepository,
+		"postgres": pgdb.NewAssetRepository,
+	}
 	intentFeesStoreTypes = map[string]func(...interface{}) (domain.FeeRepository, error){
 		"badger":   badgerdb.NewIntentFeesRepository,
 		"sqlite":   sqlitedb.NewIntentFeesRepository,
@@ -93,6 +100,7 @@ type service struct {
 	scheduledSessionStore domain.ScheduledSessionRepo
 	offchainTxStore       domain.OffchainTxRepository
 	convictionStore       domain.ConvictionRepository
+	assetStore            domain.AssetRepository
 	intentFeesStore       domain.FeeRepository
 	txDecoder             ports.TxDecoder
 }
@@ -122,6 +130,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
+	assetStoreFactory, ok := assetStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
+
 	intentFeesStoreFactory, ok := intentFeesStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
@@ -133,6 +146,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var scheduledSessionStore domain.ScheduledSessionRepo
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
+	var assetStore domain.AssetRepository
 	var intentFeesStore domain.FeeRepository
 	var err error
 
@@ -166,6 +180,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
+
 	default:
 		return nil, fmt.Errorf("unknown event store db type")
 	}
@@ -191,6 +206,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		convictionStore, err = convictionStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
+		}
+		assetStore, err = assetStoreFactory(config.DataStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
 		intentFeesStore, err = intentFeesStoreFactory(config.DataStoreConfig...)
 		if err != nil {
@@ -317,6 +336,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
+		assetStore, err = assetStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
+		}
 		intentFeesStore, err = intentFeesStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
@@ -331,6 +354,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		offchainTxStore:       offchainTxStore,
 		txDecoder:             txDecoder,
 		convictionStore:       convictionStore,
+		assetStore:            assetStore,
 		intentFeesStore:       intentFeesStore,
 	}
 
@@ -351,6 +375,10 @@ func (s *service) Events() domain.EventRepository {
 
 func (s *service) Rounds() domain.RoundRepository {
 	return s.roundStore
+}
+
+func (s *service) Assets() domain.AssetRepository {
+	return s.assetStore
 }
 
 func (s *service) Vtxos() domain.VtxoRepository {
@@ -486,20 +514,55 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
+		assetOpReturnProcessed := false
 		for outIndex, out := range outs {
+			var isSubDust bool
+			var pubKey []byte
+
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
 
-			isDust := script.IsSubDustScript(out.PkScript)
+			// ignore asset anchor
+			if extension.ContainsAssetPacket(out.PkScript) {
+				if assetOpReturnProcessed {
+					continue
+				}
+				assetOpReturnProcessed = true
+
+				txOut := wire.TxOut{
+					Value:    int64(out.Amount),
+					PkScript: out.PkScript,
+				}
+
+				if _, err := extension.DecodeAssetPacket(txOut); err != nil {
+					log.WithError(err).Warn("failed to decode asset group from opret")
+					continue
+				}
+
+				subDustPacket, err := extension.DecodeSubDustPacket(txOut)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode sub-dust key from opret")
+					continue
+				}
+				if subDustPacket == nil || subDustPacket.Key == nil {
+					continue
+				}
+				isSubDust = true
+				pubKey = schnorr.SerializePubKey(subDustPacket.Key)
+
+			} else {
+				isSubDust = script.IsSubDustScript(out.PkScript)
+				pubKey = out.PkScript[2:]
+			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
 				Outpoint: domain.Outpoint{
 					Txid: txid,
 					VOut: uint32(outIndex),
 				},
-				PubKey:             hex.EncodeToString(out.PkScript[2:]),
+				PubKey:             hex.EncodeToString(pubKey),
 				Amount:             uint64(out.Amount),
 				ExpiresAt:          offchainTx.ExpiryTimestamp,
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
@@ -509,7 +572,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-				Swept: isDust,
+				Swept: isSubDust,
 			})
 		}
 

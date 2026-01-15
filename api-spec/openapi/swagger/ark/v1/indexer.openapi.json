@@ -5,6 +5,47 @@
     "version": "version not set"
   },
   "paths": {
+    "/v1/indexer/assetGroup/{asset_id}": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetAsset returns the asset information and metadata for the specified asset ID.",
+        "operationId": "IndexerService_GetAssetGroup",
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAssetGroupResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs": {
       "get": {
         "tags": [
@@ -465,6 +506,88 @@
         }
       }
     },
+    "/v1/indexer/teleport/subscribe": {
+      "post": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "SubscribeForTeleportHash allows to subscribe for tx notifications related to the provided\nteleport hashes. It can also be used to update an existing subscribtion by adding new hashes to it.",
+        "operationId": "IndexerService_SubscribeForTeleportHash",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribeForTeleportHashRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribeForTeleportHashResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/teleport/unsubscribe": {
+      "post": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "UnsubscribeForTeleportHash allows to remove teleport hashes from an existing subscription.",
+        "operationId": "IndexerService_UnsubscribeForTeleportHash",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribeForTeleportHashRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribeForTeleportHashResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/indexer/virtualTx/{txids}": {
       "get": {
         "tags": [
@@ -728,6 +851,61 @@
           "@type": {
             "type": "string",
             "description": "A URL/resource name that uniquely identifies the type of the schema."
+          }
+        }
+      },
+      "AssetGroup": {
+        "title": "AssetGroup",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "immutable": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetMetadata"
+            }
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "uint64"
+          }
+        }
+      },
+      "AssetMetadata": {
+        "title": "AssetMetadata",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "GetAssetGroupRequest": {
+        "title": "GetAssetGroupRequest",
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetAssetGroupResponse": {
+        "title": "GetAssetGroupResponse",
+        "type": "object",
+        "properties": {
+          "assetGroup": {
+            "$ref": "#/components/schemas/AssetGroup"
+          },
+          "assetId": {
+            "type": "string"
           }
         }
       },
@@ -1047,6 +1225,19 @@
           }
         }
       },
+      "IndexerAsset": {
+        "title": "IndexerAsset",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "assetId": {
+            "type": "string"
+          }
+        }
+      },
       "IndexerBatch": {
         "title": "IndexerBatch",
         "type": "object",
@@ -1102,6 +1293,15 @@
         ],
         "type": "string",
         "default": "INDEXER_CHAINED_TX_TYPE_UNSPECIFIED"
+      },
+      "IndexerExtension": {
+        "title": "IndexerExtension",
+        "type": "object",
+        "properties": {
+          "asset": {
+            "$ref": "#/components/schemas/IndexerAsset"
+          }
+        }
       },
       "IndexerHeartbeat": {
         "title": "IndexerHeartbeat",
@@ -1202,6 +1402,19 @@
               "$ref": "#/components/schemas/IndexerVtxo"
             }
           },
+          "teleportEvents": {
+            "type": "array",
+            "description": "List of teleport events involved in the transaction",
+            "items": {
+              "$ref": "#/components/schemas/TeleportEvent"
+            }
+          },
+          "teleportHashes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "tx": {
             "type": "string"
           },
@@ -1286,6 +1499,12 @@
             "type": "integer",
             "format": "int64"
           },
+          "extensions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerExtension"
+            }
+          },
           "isPreconfirmed": {
             "type": "boolean"
           },
@@ -1356,6 +1575,62 @@
           }
         }
       },
+      "SubscribeForTeleportHashRequest": {
+        "title": "SubscribeForTeleportHashRequest",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "description": "If set, update an existing subscription"
+          },
+          "teleportHashes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SubscribeForTeleportHashResponse": {
+        "title": "SubscribeForTeleportHashResponse",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
+      "TeleportEvent": {
+        "title": "TeleportEvent",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "anchorOutpoint": {
+            "type": "string"
+          },
+          "assetId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outputVout": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "teleportHash": {
+            "type": "string"
+          }
+        }
+      },
       "UnsubscribeForScriptsRequest": {
         "title": "UnsubscribeForScriptsRequest",
         "type": "object",
@@ -1374,6 +1649,26 @@
       },
       "UnsubscribeForScriptsResponse": {
         "title": "UnsubscribeForScriptsResponse",
+        "type": "object"
+      },
+      "UnsubscribeForTeleportHashRequest": {
+        "title": "UnsubscribeForTeleportHashRequest",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          },
+          "teleportHashes": {
+            "type": "array",
+            "description": "If empty, unsubscribe all teleport hashes",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UnsubscribeForTeleportHashResponse": {
+        "title": "UnsubscribeForTeleportHashResponse",
         "type": "object"
       }
     }

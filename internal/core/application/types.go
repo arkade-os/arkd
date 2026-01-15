@@ -7,6 +7,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/errors"
@@ -117,6 +118,17 @@ type TransactionEvent struct {
 	SpendableVtxos []domain.Vtxo
 	SweptVtxos     []domain.Outpoint
 	CheckpointTxs  map[string]TxData
+	TeleportAssets []TeleportAsset
+}
+
+type TeleportAsset struct {
+	TeleportHash   string
+	AssetID        string
+	Amount         uint64
+	AnchorOutpoint domain.Outpoint
+	OutputVout     uint32
+	CreatedAt      int64
+	ExpiresAt      int64
 }
 
 type VtxoChainResp struct {
@@ -170,6 +182,16 @@ type VirtualTxsResp struct {
 	Page PageResp
 }
 
+type AssetGroupResp struct {
+	AssetID         string
+	AssetGroup      AssetGroup
+	AnchorOutpoints []Outpoint
+}
+
+type AssetGroup = domain.AssetGroup
+
+type AssetAnchor = domain.AssetAnchor
+
 type Outpoint = domain.Outpoint
 
 type TxType int
@@ -213,4 +235,9 @@ type boardingIntentInput struct {
 	locktime         *arklib.RelativeLocktime
 	locktimeDisabled bool
 	witnessUtxo      *wire.TxOut
+}
+
+type AssetInput struct {
+	extension.AssetInput
+	AssetId string
 }

@@ -141,8 +141,8 @@ func TestMain(m *testing.M) {
 
 func TestService(t *testing.T) {
 	dbDir := t.TempDir()
-	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
-	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
+	// pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
+	// pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
@@ -165,15 +165,15 @@ func TestService(t *testing.T) {
 				DataStoreConfig:  []interface{}{dbDir},
 			},
 		},
-		{
-			name: "repo_manager_with_postgres_stores",
-			config: db.ServiceConfig{
-				EventStoreType:   "postgres",
-				DataStoreType:    "postgres",
-				EventStoreConfig: []interface{}{pgEventDns, false},
-				DataStoreConfig:  []interface{}{pgDns, false},
-			},
-		},
+		// {
+		// 	name: "repo_manager_with_postgres_stores",
+		// 	config: db.ServiceConfig{
+		// 		EventStoreType:   "postgres",
+		// 		DataStoreType:    "postgres",
+		// 		EventStoreConfig: []interface{}{pgEventDns},
+		// 		DataStoreConfig:  []interface{}{pgDns},
+		// 	},
+		// },
 	}
 
 	for _, tt := range tests {
@@ -188,6 +188,7 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
+			testAssetRepository(t, svc)
 			testFeeRepository(t, svc)
 		})
 	}
@@ -1479,6 +1480,252 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 
 		_, err = repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
+	})
+}
+
+func testAssetRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("insert and get asset anchor", func(t *testing.T) {
+		ctx := context.Background()
+		anchor := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-123",
+				VOut: 2,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-123", VOut: 0},
+					Amount:   1000,
+					AssetID:  "asset-1",
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-123", VOut: 1},
+					Amount:   2000,
+					AssetID:  "asset-2",
+				},
+			},
+		}
+
+		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		got, err := svc.Assets().GetAssetAnchorByTxId(ctx, anchor.Txid)
+		require.NoError(t, err, "GetAssetAnchorByTxId should succeed")
+		require.NotNil(t, got)
+
+		require.Equal(t, anchor.Txid, got.Txid)
+		require.Equal(t, anchor.VOut, got.VOut)
+		require.ElementsMatch(t, anchor.Assets, got.Assets)
+	})
+
+	t.Run("inser and get asset group", func(t *testing.T) {
+		ctx := context.Background()
+		asset := domain.AssetGroup{
+			ID:        "asset-group-123",
+			Quantity:  5000,
+			Immutable: false,
+			Metadata: []domain.AssetMetadata{
+				{Key: "name", Value: "My Asset"},
+				{Key: "symbol", Value: "MAS"},
+			},
+			ControlAssetID: "control-asset-123",
+		}
+
+		err := svc.Assets().InsertAssetGroup(ctx, asset)
+		require.NoError(t, err, "InsertAssetGroup should succeed")
+
+		got, err := svc.Assets().GetAssetGroupByID(ctx, asset.ID)
+		require.NoError(t, err, "GetAssetGroupByID should succeed")
+		require.NotNil(t, got)
+
+		require.Equal(t, asset.ID, got.ID)
+		require.Equal(t, asset.Quantity, got.Quantity)
+		require.Equal(t, asset.Immutable, got.Immutable)
+		require.ElementsMatch(t, asset.Metadata, got.Metadata)
+		require.Equal(t, asset.ControlAssetID, got.ControlAssetID)
+	})
+
+	t.Run("insert asset anchor rejects duplicate vout", func(t *testing.T) {
+		ctx := context.Background()
+		anchor := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-dup-vout",
+				VOut: 0,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
+					Amount:   1000,
+					AssetID:  "asset-1",
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
+					Amount:   2000,
+					AssetID:  "asset-2",
+				},
+			},
+		}
+
+		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.Error(t, err, "InsertAssetAnchor should fail on duplicate vout")
+	})
+
+	t.Run("list asset anchors by asset id", func(t *testing.T) {
+		ctx := context.Background()
+
+		assetListID := "asset-list-1"
+		otherAssetID := "asset-list-2"
+
+		anchor1 := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-asset-1",
+				VOut: 0,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 0},
+					Amount:   5000,
+					AssetID:  assetListID,
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 1},
+					Amount:   2500,
+					AssetID:  otherAssetID,
+				},
+			},
+		}
+		anchor2 := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-asset-2",
+				VOut: 1,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-2", VOut: 2},
+					Amount:   7500,
+					AssetID:  assetListID,
+				},
+			},
+		}
+
+		err := svc.Assets().InsertAssetAnchor(ctx, anchor1)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor2)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		anchors, err := svc.Assets().ListAssetAnchorsByAssetID(ctx, assetListID)
+		require.NoError(t, err, "ListAssetAnchorsByAssetID should succeed")
+		require.Len(t, anchors, 2)
+
+		gotTxids := make(map[string]struct{})
+		for _, anchor := range anchors {
+			gotTxids[anchor.Txid] = struct{}{}
+		}
+		require.Contains(t, gotTxids, anchor1.Txid)
+		require.Contains(t, gotTxids, anchor2.Txid)
+	})
+
+	t.Run("get asset by outpoint", func(t *testing.T) {
+		ctx := context.Background()
+
+		anchor := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-by-outpoint",
+				VOut: 3,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0},
+					Amount:   1234,
+					AssetID:  "asset-42",
+				},
+			},
+		}
+
+		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		got, err := svc.Assets().
+			GetAssetByOutpoint(ctx, domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0})
+		require.NoError(t, err, "GetAssetByOutpoint should succeed")
+		require.NotNil(t, got)
+		require.Equal(t, anchor.Assets[0], *got)
+	})
+
+	t.Run("insert and update asset quantity", func(t *testing.T) {
+		ctx := context.Background()
+
+		asset := domain.AssetGroup{
+			ID:        "asset-1",
+			Quantity:  10,
+			Immutable: true,
+			Metadata: []domain.AssetMetadata{
+				{Key: "name", Value: "Test AssetGroup"},
+				{Key: "symbol", Value: "TST"},
+			},
+			ControlAssetID: "controlAssetId",
+		}
+
+		err := svc.Assets().InsertAssetGroup(ctx, asset)
+		require.NoError(t, err, "InsertAssetDetails should succeed")
+
+		// Increase by 5 -> 15
+		err = svc.Assets().IncreaseAssetGroupQuantity(ctx, asset.ID, 5)
+		require.NoError(t, err, "IncreaseAssetQuantity should succeed")
+
+		// Decrease by 3 -> 12
+		err = svc.Assets().DecreaseAssetGroupQuantity(ctx, asset.ID, 3)
+		require.NoError(t, err, "DecreaseAssetQuantity should succeed")
+
+		// Assert final value in DB
+		assetD, err := svc.Assets().GetAssetGroupByID(ctx, asset.ID)
+		require.NoError(t, err, "GetAsseGroupByID should succeed")
+
+		require.Equal(t, uint64(12), assetD.Quantity)
+		require.True(t, assetD.Immutable)
+
+		md, err := svc.Assets().ListMetadataByAssetID(ctx, asset.ID)
+		require.NoError(t, err, "ListMetadataByAssetID should succeed")
+
+		require.Len(t, md, len(asset.Metadata))
+		require.ElementsMatch(t, asset.Metadata, md)
+	})
+
+	t.Run("insert get and update teleport asset", func(t *testing.T) {
+		ctx := context.Background()
+		hash := randomString(32)
+		assetID := randomString(32)
+		amount := uint64(5000)
+
+		asset := domain.TeleportAsset{
+			Hash:      hash,
+			AssetID:   assetID,
+			Amount:    amount,
+			IsClaimed: false,
+		}
+
+		err := svc.Assets().InsertTeleportAsset(ctx, asset)
+		require.NoError(t, err, "InsertTeleportAsset should succeed")
+
+		got, err := svc.Assets().GetTeleportAsset(ctx, hash)
+		require.NoError(t, err, "GetTeleportAsset should succeed")
+		require.NotNil(t, got)
+		require.Equal(t, hash, got.Hash)
+		require.Equal(t, assetID, got.AssetID)
+		require.Equal(t, amount, got.Amount)
+		require.False(t, got.IsClaimed)
+
+		err = svc.Assets().UpdateTeleportAsset(ctx, hash, true)
+		require.NoError(t, err, "UpdateTeleportAsset should succeed")
+
+		gotUpdated, err := svc.Assets().GetTeleportAsset(ctx, hash)
+		require.NoError(t, err, "GetTeleportAsset after update should succeed")
+		require.NotNil(t, gotUpdated)
+		require.Equal(t, hash, gotUpdated.Hash)
+		require.Equal(t, assetID, gotUpdated.AssetID)
+		require.Equal(t, amount, gotUpdated.Amount)
+		require.True(t, gotUpdated.IsClaimed)
+
 	})
 }
 

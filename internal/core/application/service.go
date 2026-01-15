@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -277,12 +278,15 @@ func NewService(
 			spentVtxos := svc.getSpentVtxos(round.Intents)
 			newVtxos := getNewVtxosFromRound(round)
 
+			newTeleportAssets := getTeleportAssets(round)
+
 			// commitment tx event
 			txEvent := TransactionEvent{
 				TxData:         TxData{Tx: round.CommitmentTx, Txid: round.CommitmentTxid},
 				Type:           CommitmentTxType,
 				SpentVtxos:     spentVtxos,
 				SpendableVtxos: newVtxos,
+				TeleportAssets: newTeleportAssets,
 			}
 
 			svc.propagateTransactionEvent(txEvent)
@@ -330,7 +334,6 @@ func NewService(
 				}
 			}
 
-			// ark tx event
 			txEvent := TransactionEvent{
 				TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
 				Type:           ArkTxType,
@@ -349,9 +352,9 @@ func NewService(
 		},
 	)
 
-	if err := svc.restoreWatchingVtxos(); err != nil {
-		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	}
+	// if err := svc.restoreWatchingVtxos(); err != nil {
+	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	// }
 	go svc.listenToScannerNotifications()
 	return svc, nil
 }
@@ -911,8 +914,31 @@ func (s *service) SubmitOffchainTx(
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	foundOpReturn := false
+	assetOutputIndex := -1
+	var rebuiltArkTx *psbt.Packet
+	var rebuiltCheckpointTxs []*psbt.Packet
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
+		// validate asset packet if present
+		if extension.ContainsAssetPacket(out.PkScript) {
+			if foundOpReturn {
+				return nil, errors.MALFORMED_ARK_TX.New(
+					"tx %s has multiple op return outputs, not allowed for assets", txid,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			foundOpReturn = true
+
+			err := s.validateAssetTransition(ctx, *arkPtx.UnsignedTx, checkpointTxs, *out)
+			if err != nil {
+				log.WithError(err).Warn("asset transaction validation failed")
+				return nil, errors.ASSET_VALIDATION_FAILED.Wrap(err)
+			}
+
+			outputs = append(outputs, out)
+			assetOutputIndex = outIndex
+			continue
+		}
+
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
 				return nil, errors.MALFORMED_ARK_TX.New(
@@ -979,9 +1005,10 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// recompute all txs (checkpoint txs + ark tx)
-	rebuiltArkTx, rebuiltCheckpointTxs, err := offchain.BuildTxs(
+	rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
 		ins, outputs, s.checkpointTapscript,
 	)
+
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
 			WithMetadata(map[string]any{
@@ -1100,6 +1127,16 @@ func (s *service) SubmitOffchainTx(
 
 	// apply Accepted event only after verifying the spent vtxos
 	changes = append(changes, change)
+
+	if assetOutputIndex >= 0 {
+		if err := s.storeAssetDetailsFromArkTx(
+			ctx, *arkPtx.UnsignedTx, assetOutputIndex,
+		); err != nil {
+			log.WithError(err).Errorf(
+				"failed to store asset details for offchain tx %s", txid,
+			)
+		}
+	}
 
 	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
@@ -1437,6 +1474,8 @@ func (s *service) RegisterIntent(
 	boardingUtxos := make([]boardingIntentInput, 0)
 
 	outpoints := proof.GetOutpoints()
+
+	log.Printf("these are the outpoints %+v", outpoints)
 	if len(outpoints) == 0 {
 		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
@@ -1482,6 +1521,42 @@ func (s *service) RegisterIntent(
 	}
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
+
+	assetInputMap := make(map[uint32]AssetInput)
+	var assetPacket *extension.AssetPacket
+
+	for _, txOut := range proof.UnsignedTx.TxOut {
+		if extension.ContainsAssetPacket(txOut.PkScript) {
+			assetPacket, err = extension.DecodeAssetPacket(*txOut)
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"failed to decode asset packet: %w", err,
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+
+			for _, asst := range assetPacket.Assets {
+				if asst.AssetId == nil {
+					return "", errors.INVALID_INTENT_PROOF.New(
+						"asset packet missing asset id",
+					).WithMetadata(errors.InvalidIntentProofMetadata{
+						Proof:   encodedProof,
+						Message: encodedMessage,
+					})
+				}
+
+				for _, input := range asst.Inputs {
+					assetInputMap[input.Vin] = AssetInput{
+						AssetInput: input,
+						AssetId:    asst.AssetId.ToString(),
+					}
+				}
+			}
+			break
+		}
+	}
 
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
@@ -1532,6 +1607,13 @@ func (s *service) RegisterIntent(
 		taptreeFields, _ := txutils.GetArkPsbtFields(
 			&proof.Packet, i+1, txutils.VtxoTaprootTreeField,
 		)
+
+		if err != nil {
+			return "", errors.INVALID_PSBT_INPUT.New(
+				"failed to get asset seal field for input %d: %w", i+1, err,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
 		tapscripts := make([]string, 0)
 		if len(taptreeFields) > 0 {
 			tapscripts = taptreeFields[0]
@@ -1543,6 +1625,7 @@ func (s *service) RegisterIntent(
 		)
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
+
 		if err != nil || len(vtxosResult) == 0 {
 			// reject if intent specifies onchain outputs and boarding inputs
 			if len(message.OnchainOutputIndexes) > 0 {
@@ -1575,6 +1658,24 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
+
+		// verify asset input if present
+		// +1 to account for proof fake input at index 0
+		if assetInput, ok := assetInputMap[uint32(i+1)]; ok {
+
+			if err := s.verifyAssetInputPrevOut(ctx, assetInput.AssetInput, outpoint, *proof.UnsignedTx); err != nil {
+				return "", errors.ASSET_VALIDATION_FAILED.New(
+					"asset input validation failed for input %d: %w", i, err,
+				).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+			}
+
+			vtxo.Extensions = append(vtxo.Extensions, domain.AssetExtension{
+				AssetID: assetInput.AssetId,
+				Amount:  assetInput.Amount,
+			})
+
+		}
+
 		if err := s.checkIfBanned(ctx, vtxo); err != nil {
 			return "", errors.VTXO_BANNED.Wrap(err).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
@@ -1816,6 +1917,49 @@ func (s *service) RegisterIntent(
 		offchainOutputs = append(offchainOutputs, *output)
 	}
 
+	if assetPacket != nil {
+		// validate asset outputs are Teleport outputs
+		for _, asst := range assetPacket.Assets {
+			if asst.AssetId == nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"asset packet missing asset id",
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+			for _, output := range asst.Outputs {
+				if output.Type != extension.AssetTypeTeleport {
+					return "", errors.INVALID_INTENT_PROOF.New(
+						"asset output is not teleport output",
+					).WithMetadata(errors.InvalidIntentProofMetadata{
+						Proof:   encodedProof,
+						Message: encodedMessage,
+					})
+				}
+
+				teleportHash := hex.EncodeToString(output.Commitment[:])
+
+				if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
+					Hash:      teleportHash,
+					AssetID:   asst.AssetId.ToString(),
+					Amount:    output.Amount,
+					IsClaimed: false,
+				}); err != nil {
+					log.WithError(err).Warn("failed to insert teleport asset")
+				}
+
+				receivers = append(receivers, domain.Receiver{
+					AssetTeleportHash: teleportHash,
+					Amount:            output.Amount,
+					AssetId:           asst.AssetId.ToString(),
+				})
+
+			}
+		}
+
+	}
+
 	if hasOffChainReceiver {
 		if len(message.CosignersPublicKeys) == 0 {
 			return "", errors.INVALID_INTENT_MESSAGE.New(
@@ -1930,8 +2074,8 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 	}
 
 	// TODO move forfeit validation outside of ports.LiveStore
-	if err := s.cache.ForfeitTxs().Sign(ctx, forfeitTxs); err != nil {
-		return errors.INVALID_FORFEIT_TXS.New("failed to sign forfeit txs: %w", err).
+	if err := s.cache.ForfeitTxs().Verify(ctx, forfeitTxs); err != nil {
+		return errors.INVALID_FORFEIT_TXS.New("failed to verify forfeit txs: %w", err).
 			WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
 	}
 
@@ -3648,39 +3792,6 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 	}
 }
 
-func (s *service) restoreWatchingVtxos() error {
-	ctx := context.Background()
-
-	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
-	if err != nil {
-		return err
-	}
-
-	scripts := make([]string, 0)
-
-	for _, commitmentTxId := range commitmentTxIds {
-		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-		if err != nil {
-			return err
-		}
-
-		for _, key := range tapKeys {
-			scripts = append(scripts, fmt.Sprintf("5120%s", key))
-		}
-	}
-
-	if len(scripts) <= 0 {
-		return nil
-	}
-
-	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
-		return err
-	}
-
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
-	return nil
-}
-
 // extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner
 // it excludes subdust vtxos scripts and duplicates
 // it logs errors and continues in order to not block the start/stop watching vtxos operations
@@ -3694,6 +3805,11 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 	scripts := make([]string, 0)
 
 	for _, vtxo := range vtxos {
+		// skip OP_RETURN outputs
+		if vtxo.Amount < dustLimit {
+			continue
+		}
+
 		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
 			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
@@ -3703,10 +3819,6 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
 		if err != nil {
 			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		if vtxo.Amount < dustLimit {
 			continue
 		}
 
@@ -4147,4 +4259,294 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
+}
+
+func (s *service) storeAssetDetailsFromArkTx(
+	ctx context.Context,
+	arkTx wire.MsgTx,
+	assetPacketIndex int,
+) error {
+	assetPkt, err := extension.DecodeAssetPacket(*arkTx.TxOut[assetPacketIndex])
+	if err != nil {
+		return fmt.Errorf("error decoding asset from opreturn: %s", err)
+	}
+
+	if err := s.storeAssetGroups(ctx, assetPacketIndex, assetPkt.Assets, arkTx); err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
+func (s *service) storeAssetGroups(
+	ctx context.Context,
+	assetPacketIndex int,
+	assetGroupList []extension.AssetGroup,
+	arkTx wire.MsgTx,
+) error {
+	anchorPoint := domain.Outpoint{
+		Txid: arkTx.TxID(),
+		VOut: uint32(assetPacketIndex),
+	}
+
+	assetList := make([]domain.NormalAsset, 0)
+
+	for i, asstGp := range assetGroupList {
+		totalIn := sumAssetInputs(asstGp.Inputs)
+		totalOut := sumAssetOutputs(asstGp.Outputs)
+
+		s.markTeleportInputsClaimed(ctx, asstGp.Inputs)
+
+		metadataList := assetMetadataFromGroup(asstGp.Metadata)
+
+		assetId := asstGp.AssetId
+
+		// For Issuance
+		if assetId == nil {
+			var controlAsset string
+			txHash := arkTx.TxHash()
+			var txHashBytes [32]byte
+			copy(txHashBytes[:], txHash[:])
+
+			assetId := extension.AssetId{
+				TxHash: txHashBytes,
+				Index:  uint16(i),
+			}
+
+			if asstGp.ControlAsset != nil {
+				switch asstGp.ControlAsset.Type {
+				case extension.AssetRefByID:
+					controlAsset = asstGp.ControlAsset.AssetId.ToString()
+				case extension.AssetRefByGroup:
+					controlAsset = extension.AssetId{
+						TxHash: txHashBytes,
+						Index:  uint16(asstGp.ControlAsset.GroupIndex),
+					}.ToString()
+				}
+			}
+
+			err := s.repoManager.Assets().InsertAssetGroup(ctx, domain.AssetGroup{
+				ID:             assetId.ToString(),
+				Quantity:       totalOut,
+				Immutable:      asstGp.Immutable,
+				Metadata:       metadataList,
+				ControlAssetID: controlAsset,
+			})
+			if err != nil {
+				return fmt.Errorf("error storing new asset: %s", err)
+			}
+
+			log.Infof("stored new asset with id %s and total quantity %d",
+				assetId.ToString(),
+				totalOut,
+			)
+
+			for _, out := range asstGp.Outputs {
+				asst := domain.NormalAsset{
+					Outpoint: domain.Outpoint{
+						Txid: arkTx.TxID(),
+						VOut: uint32(out.Vout),
+					},
+					AssetID: assetId.ToString(),
+					Amount:  out.Amount,
+				}
+				assetList = append(assetList, asst)
+			}
+
+			continue
+		}
+
+		assetGp, err := s.repoManager.Assets().GetAssetGroupByID(ctx, assetId.ToString())
+		if err != nil {
+			return fmt.Errorf("error retrieving asset data: %s", err)
+		}
+		if assetGp == nil {
+			return fmt.Errorf("asset with id %s not found for update", assetId)
+		}
+
+		if !assetGp.Immutable && len(metadataList) > 0 {
+			if len(assetGp.ControlAssetID) == 0 {
+				return fmt.Errorf("cannot update mutable asset without control asset")
+			}
+
+			controlAssetID, err := extension.AssetIdFromString(assetGp.ControlAssetID)
+			if err != nil {
+				return fmt.Errorf("error parsing control asset id: %s", err)
+			}
+
+			if controlAssetID == nil {
+				return fmt.Errorf("invalid control asset id for asset %s", assetId)
+			}
+
+			if err := s.ensureAssetPresence(ctx, assetGroupList, *controlAssetID); err != nil {
+				return fmt.Errorf("cannot update asset metadata while control asset is being issued")
+			}
+
+			if err := s.repoManager.Assets().UpdateAssetMetadataList(ctx, assetId.ToString(), metadataList); err != nil {
+				return fmt.Errorf("error updating asset metadata: %s", err)
+			}
+		}
+
+		log.Infof("updated asset metadata for asset id %s",
+			assetId,
+		)
+
+		if err := s.updateAssetQuantity(ctx, assetId.ToString(), totalIn, totalOut); err != nil {
+			return err
+		}
+
+		for _, out := range asstGp.Outputs {
+			asst := domain.NormalAsset{
+				Outpoint: domain.Outpoint{
+					Txid: arkTx.TxID(),
+					VOut: uint32(out.Vout),
+				},
+				AssetID: assetId.ToString(),
+				Amount:  out.Amount,
+			}
+			assetList = append(assetList, asst)
+		}
+	}
+
+	if err := s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
+		Outpoint: anchorPoint,
+		Assets:   assetList,
+	}); err != nil {
+		return fmt.Errorf("error storing asset anchor: %s", err)
+	}
+
+	return nil
+}
+
+func (s *service) markTeleportInputsClaimed(ctx context.Context, inputs []extension.AssetInput) {
+	for _, in := range inputs {
+		if in.Type != extension.AssetTypeTeleport {
+			continue
+		}
+
+		if err := s.repoManager.Assets().UpdateTeleportAsset(ctx, hex.EncodeToString(in.Commitment[:]), true); err != nil {
+			log.WithError(err).Warn("failed to update teleport asset")
+		}
+	}
+}
+
+func assetMetadataFromGroup(metadata []extension.Metadata) []domain.AssetMetadata {
+	metadataList := make([]domain.AssetMetadata, 0, len(metadata))
+	for _, meta := range metadata {
+		metadataList = append(metadataList, domain.AssetMetadata{
+			Key:   meta.Key,
+			Value: meta.Value,
+		})
+	}
+	return metadataList
+}
+
+func (s *service) updateAssetQuantity(
+	ctx context.Context,
+	assetID string,
+	totalIn, totalOut uint64,
+) error {
+	if totalOut > totalIn {
+		delta := totalOut - totalIn
+		if err := s.repoManager.Assets().IncreaseAssetGroupQuantity(ctx, assetID, delta); err != nil {
+			return fmt.Errorf("error updating asset quantity: %s", err)
+		}
+		return nil
+	}
+
+	if totalIn > totalOut {
+		delta := totalIn - totalOut
+		if err := s.repoManager.Assets().DecreaseAssetGroupQuantity(ctx, assetID, delta); err != nil {
+			return fmt.Errorf("error updating asset quantity: %s", err)
+		}
+	}
+
+	return nil
+}
+
+func getTeleportAssets(round *domain.Round) []TeleportAsset {
+	if len(round.VtxoTree) <= 0 {
+		return nil
+	}
+
+	createdAt := time.Now().Unix()
+	expireAt := round.ExpiryTimestamp()
+
+	events := make([]TeleportAsset, 0)
+
+	collectTeleportAssets := func(groups []extension.AssetGroup, anchorOutpoint domain.Outpoint, createdAt, expiresAt int64, includeAmount bool) []TeleportAsset {
+		events := make([]TeleportAsset, 0)
+		for _, ast := range groups {
+			for outIdx, assetOut := range ast.Outputs {
+				if assetOut.Type != extension.AssetTypeTeleport {
+					continue
+				}
+
+				if ast.AssetId == nil {
+					continue // skip teleport output with issuance asset id [should not happen]
+				}
+
+				event := TeleportAsset{
+					TeleportHash:   hex.EncodeToString(assetOut.Commitment[:]),
+					AnchorOutpoint: anchorOutpoint,
+					AssetID:        ast.AssetId.ToString(),
+					OutputVout:     uint32(outIdx),
+					CreatedAt:      createdAt,
+					ExpiresAt:      expiresAt,
+				}
+				if includeAmount {
+					event.Amount = assetOut.Amount
+				}
+				events = append(events, event)
+			}
+		}
+
+		return events
+	}
+
+	findAssetPacketInTx := func(tx *wire.MsgTx) (*extension.AssetPacket, domain.Outpoint) {
+		for i, out := range tx.TxOut {
+			if !extension.ContainsAssetPacket(out.PkScript) {
+				continue
+			}
+
+			packet, err := extension.DecodeAssetPacket(*out)
+			if err != nil {
+				return nil, domain.Outpoint{}
+			}
+
+			anchorOutpoint := domain.Outpoint{
+				Txid: tx.TxID(),
+				VOut: uint32(i),
+			}
+			return packet, anchorOutpoint
+		}
+
+		return nil, domain.Outpoint{}
+	}
+
+	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
+		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
+		if err != nil {
+			log.WithError(err).Warn("failed to parse tx")
+			continue
+		}
+		packet, anchorOutpoint := findAssetPacketInTx(tx.UnsignedTx)
+		if packet == nil {
+			continue
+		}
+
+		events = append(
+			events,
+			collectTeleportAssets(
+				packet.Assets,
+				anchorOutpoint,
+				createdAt,
+				expireAt,
+				false,
+			)...)
+
+	}
+	return events
 }

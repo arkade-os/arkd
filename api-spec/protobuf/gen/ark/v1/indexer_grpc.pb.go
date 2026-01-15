@@ -19,18 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	IndexerService_GetCommitmentTx_FullMethodName           = "/ark.v1.IndexerService/GetCommitmentTx"
-	IndexerService_GetForfeitTxs_FullMethodName             = "/ark.v1.IndexerService/GetForfeitTxs"
-	IndexerService_GetConnectors_FullMethodName             = "/ark.v1.IndexerService/GetConnectors"
-	IndexerService_GetVtxoTree_FullMethodName               = "/ark.v1.IndexerService/GetVtxoTree"
-	IndexerService_GetVtxoTreeLeaves_FullMethodName         = "/ark.v1.IndexerService/GetVtxoTreeLeaves"
-	IndexerService_GetVtxos_FullMethodName                  = "/ark.v1.IndexerService/GetVtxos"
-	IndexerService_GetVtxoChain_FullMethodName              = "/ark.v1.IndexerService/GetVtxoChain"
-	IndexerService_GetVirtualTxs_FullMethodName             = "/ark.v1.IndexerService/GetVirtualTxs"
-	IndexerService_GetBatchSweepTransactions_FullMethodName = "/ark.v1.IndexerService/GetBatchSweepTransactions"
-	IndexerService_SubscribeForScripts_FullMethodName       = "/ark.v1.IndexerService/SubscribeForScripts"
-	IndexerService_UnsubscribeForScripts_FullMethodName     = "/ark.v1.IndexerService/UnsubscribeForScripts"
-	IndexerService_GetSubscription_FullMethodName           = "/ark.v1.IndexerService/GetSubscription"
+	IndexerService_GetCommitmentTx_FullMethodName            = "/ark.v1.IndexerService/GetCommitmentTx"
+	IndexerService_GetForfeitTxs_FullMethodName              = "/ark.v1.IndexerService/GetForfeitTxs"
+	IndexerService_GetConnectors_FullMethodName              = "/ark.v1.IndexerService/GetConnectors"
+	IndexerService_GetVtxoTree_FullMethodName                = "/ark.v1.IndexerService/GetVtxoTree"
+	IndexerService_GetVtxoTreeLeaves_FullMethodName          = "/ark.v1.IndexerService/GetVtxoTreeLeaves"
+	IndexerService_GetVtxos_FullMethodName                   = "/ark.v1.IndexerService/GetVtxos"
+	IndexerService_GetVtxoChain_FullMethodName               = "/ark.v1.IndexerService/GetVtxoChain"
+	IndexerService_GetVirtualTxs_FullMethodName              = "/ark.v1.IndexerService/GetVirtualTxs"
+	IndexerService_GetAssetGroup_FullMethodName              = "/ark.v1.IndexerService/GetAssetGroup"
+	IndexerService_GetBatchSweepTransactions_FullMethodName  = "/ark.v1.IndexerService/GetBatchSweepTransactions"
+	IndexerService_SubscribeForScripts_FullMethodName        = "/ark.v1.IndexerService/SubscribeForScripts"
+	IndexerService_SubscribeForTeleportHash_FullMethodName   = "/ark.v1.IndexerService/SubscribeForTeleportHash"
+	IndexerService_UnsubscribeForTeleportHash_FullMethodName = "/ark.v1.IndexerService/UnsubscribeForTeleportHash"
+	IndexerService_UnsubscribeForScripts_FullMethodName      = "/ark.v1.IndexerService/UnsubscribeForScripts"
+	IndexerService_GetSubscription_FullMethodName            = "/ark.v1.IndexerService/GetSubscription"
 )
 
 // IndexerServiceClient is the client API for IndexerService service.
@@ -67,6 +70,8 @@ type IndexerServiceClient interface {
 	// GetVirtualTxs returns the virtual transactions in hex format for the specified txids.
 	// The response may be paginated if the results span multiple pages.
 	GetVirtualTxs(ctx context.Context, in *GetVirtualTxsRequest, opts ...grpc.CallOption) (*GetVirtualTxsResponse, error)
+	// GetAsset returns the asset information and metadata for the specified asset ID.
+	GetAssetGroup(ctx context.Context, in *GetAssetGroupRequest, opts ...grpc.CallOption) (*GetAssetGroupResponse, error)
 	// GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
 	// output.
 	// In most cases the list contains only one txid, meaning that all the amount locked for a
@@ -81,6 +86,11 @@ type IndexerServiceClient interface {
 	// SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo
 	// scripts. It can also be used to update an existing subscribtion by adding new scripts to it.
 	SubscribeForScripts(ctx context.Context, in *SubscribeForScriptsRequest, opts ...grpc.CallOption) (*SubscribeForScriptsResponse, error)
+	// SubscribeForTeleportHash allows to subscribe for tx notifications related to the provided
+	// teleport hashes. It can also be used to update an existing subscribtion by adding new hashes to it.
+	SubscribeForTeleportHash(ctx context.Context, in *SubscribeForTeleportHashRequest, opts ...grpc.CallOption) (*SubscribeForTeleportHashResponse, error)
+	// UnsubscribeForTeleportHash allows to remove teleport hashes from an existing subscription.
+	UnsubscribeForTeleportHash(ctx context.Context, in *UnsubscribeForTeleportHashRequest, opts ...grpc.CallOption) (*UnsubscribeForTeleportHashResponse, error)
 	// UnsubscribeForScripts allows to remove scripts from an existing subscription.
 	UnsubscribeForScripts(ctx context.Context, in *UnsubscribeForScriptsRequest, opts ...grpc.CallOption) (*UnsubscribeForScriptsResponse, error)
 	// GetSubscription is a server-side streaming RPC which allows clients to receive real-time
@@ -178,6 +188,16 @@ func (c *indexerServiceClient) GetVirtualTxs(ctx context.Context, in *GetVirtual
 	return out, nil
 }
 
+func (c *indexerServiceClient) GetAssetGroup(ctx context.Context, in *GetAssetGroupRequest, opts ...grpc.CallOption) (*GetAssetGroupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAssetGroupResponse)
+	err := c.cc.Invoke(ctx, IndexerService_GetAssetGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *indexerServiceClient) GetBatchSweepTransactions(ctx context.Context, in *GetBatchSweepTransactionsRequest, opts ...grpc.CallOption) (*GetBatchSweepTransactionsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetBatchSweepTransactionsResponse)
@@ -192,6 +212,26 @@ func (c *indexerServiceClient) SubscribeForScripts(ctx context.Context, in *Subs
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SubscribeForScriptsResponse)
 	err := c.cc.Invoke(ctx, IndexerService_SubscribeForScripts_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexerServiceClient) SubscribeForTeleportHash(ctx context.Context, in *SubscribeForTeleportHashRequest, opts ...grpc.CallOption) (*SubscribeForTeleportHashResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SubscribeForTeleportHashResponse)
+	err := c.cc.Invoke(ctx, IndexerService_SubscribeForTeleportHash_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexerServiceClient) UnsubscribeForTeleportHash(ctx context.Context, in *UnsubscribeForTeleportHashRequest, opts ...grpc.CallOption) (*UnsubscribeForTeleportHashResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnsubscribeForTeleportHashResponse)
+	err := c.cc.Invoke(ctx, IndexerService_UnsubscribeForTeleportHash_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -261,6 +301,8 @@ type IndexerServiceServer interface {
 	// GetVirtualTxs returns the virtual transactions in hex format for the specified txids.
 	// The response may be paginated if the results span multiple pages.
 	GetVirtualTxs(context.Context, *GetVirtualTxsRequest) (*GetVirtualTxsResponse, error)
+	// GetAsset returns the asset information and metadata for the specified asset ID.
+	GetAssetGroup(context.Context, *GetAssetGroupRequest) (*GetAssetGroupResponse, error)
 	// GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
 	// output.
 	// In most cases the list contains only one txid, meaning that all the amount locked for a
@@ -275,6 +317,11 @@ type IndexerServiceServer interface {
 	// SubscribeForScripts allows to subscribe for tx notifications related to the provided vtxo
 	// scripts. It can also be used to update an existing subscribtion by adding new scripts to it.
 	SubscribeForScripts(context.Context, *SubscribeForScriptsRequest) (*SubscribeForScriptsResponse, error)
+	// SubscribeForTeleportHash allows to subscribe for tx notifications related to the provided
+	// teleport hashes. It can also be used to update an existing subscribtion by adding new hashes to it.
+	SubscribeForTeleportHash(context.Context, *SubscribeForTeleportHashRequest) (*SubscribeForTeleportHashResponse, error)
+	// UnsubscribeForTeleportHash allows to remove teleport hashes from an existing subscription.
+	UnsubscribeForTeleportHash(context.Context, *UnsubscribeForTeleportHashRequest) (*UnsubscribeForTeleportHashResponse, error)
 	// UnsubscribeForScripts allows to remove scripts from an existing subscription.
 	UnsubscribeForScripts(context.Context, *UnsubscribeForScriptsRequest) (*UnsubscribeForScriptsResponse, error)
 	// GetSubscription is a server-side streaming RPC which allows clients to receive real-time
@@ -315,11 +362,20 @@ func (UnimplementedIndexerServiceServer) GetVtxoChain(context.Context, *GetVtxoC
 func (UnimplementedIndexerServiceServer) GetVirtualTxs(context.Context, *GetVirtualTxsRequest) (*GetVirtualTxsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVirtualTxs not implemented")
 }
+func (UnimplementedIndexerServiceServer) GetAssetGroup(context.Context, *GetAssetGroupRequest) (*GetAssetGroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAssetGroup not implemented")
+}
 func (UnimplementedIndexerServiceServer) GetBatchSweepTransactions(context.Context, *GetBatchSweepTransactionsRequest) (*GetBatchSweepTransactionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBatchSweepTransactions not implemented")
 }
 func (UnimplementedIndexerServiceServer) SubscribeForScripts(context.Context, *SubscribeForScriptsRequest) (*SubscribeForScriptsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubscribeForScripts not implemented")
+}
+func (UnimplementedIndexerServiceServer) SubscribeForTeleportHash(context.Context, *SubscribeForTeleportHashRequest) (*SubscribeForTeleportHashResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubscribeForTeleportHash not implemented")
+}
+func (UnimplementedIndexerServiceServer) UnsubscribeForTeleportHash(context.Context, *UnsubscribeForTeleportHashRequest) (*UnsubscribeForTeleportHashResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnsubscribeForTeleportHash not implemented")
 }
 func (UnimplementedIndexerServiceServer) UnsubscribeForScripts(context.Context, *UnsubscribeForScriptsRequest) (*UnsubscribeForScriptsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnsubscribeForScripts not implemented")
@@ -491,6 +547,24 @@ func _IndexerService_GetVirtualTxs_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IndexerService_GetAssetGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAssetGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexerServiceServer).GetAssetGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IndexerService_GetAssetGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexerServiceServer).GetAssetGroup(ctx, req.(*GetAssetGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _IndexerService_GetBatchSweepTransactions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetBatchSweepTransactionsRequest)
 	if err := dec(in); err != nil {
@@ -523,6 +597,42 @@ func _IndexerService_SubscribeForScripts_Handler(srv interface{}, ctx context.Co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(IndexerServiceServer).SubscribeForScripts(ctx, req.(*SubscribeForScriptsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IndexerService_SubscribeForTeleportHash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubscribeForTeleportHashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexerServiceServer).SubscribeForTeleportHash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IndexerService_SubscribeForTeleportHash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexerServiceServer).SubscribeForTeleportHash(ctx, req.(*SubscribeForTeleportHashRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IndexerService_UnsubscribeForTeleportHash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnsubscribeForTeleportHashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexerServiceServer).UnsubscribeForTeleportHash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IndexerService_UnsubscribeForTeleportHash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexerServiceServer).UnsubscribeForTeleportHash(ctx, req.(*UnsubscribeForTeleportHashRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -596,12 +706,24 @@ var IndexerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _IndexerService_GetVirtualTxs_Handler,
 		},
 		{
+			MethodName: "GetAssetGroup",
+			Handler:    _IndexerService_GetAssetGroup_Handler,
+		},
+		{
 			MethodName: "GetBatchSweepTransactions",
 			Handler:    _IndexerService_GetBatchSweepTransactions_Handler,
 		},
 		{
 			MethodName: "SubscribeForScripts",
 			Handler:    _IndexerService_SubscribeForScripts_Handler,
+		},
+		{
+			MethodName: "SubscribeForTeleportHash",
+			Handler:    _IndexerService_SubscribeForTeleportHash_Handler,
+		},
+		{
+			MethodName: "UnsubscribeForTeleportHash",
+			Handler:    _IndexerService_UnsubscribeForTeleportHash_Handler,
 		},
 		{
 			MethodName: "UnsubscribeForScripts",

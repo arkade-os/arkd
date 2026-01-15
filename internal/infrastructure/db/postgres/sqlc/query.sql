@@ -376,6 +376,101 @@ SELECT * FROM conviction
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
 
+-- name: CreateAssetAnchor :exec
+INSERT INTO asset_anchor (anchor_txid, anchor_vout)
+VALUES (@anchor_txid, @anchor_vout);
+
+-- name: ListAssetAnchorsByAssetID :many
+SELECT aa.anchor_txid, aa.anchor_vout
+FROM asset_anchor aa
+JOIN asset a ON aa.anchor_txid = a.anchor_id
+WHERE a.asset_id = @asset_id
+ORDER BY aa.anchor_txid;
+
+-- name: GetAssetAnchor :one
+SELECT anchor_txid, anchor_vout
+FROM asset_anchor
+WHERE anchor_txid = @anchor_txid;
+
+-- name: DeleteAssetAnchor :exec
+DELETE FROM asset_anchor
+WHERE anchor_txid = @anchor_txid;
+
+-- name: UpsertAssetMetadata :exec
+INSERT INTO asset_metadata (asset_id, meta_key, meta_value)
+VALUES (@asset_id, @meta_key, @meta_value)
+ON CONFLICT (asset_id, meta_key)
+DO UPDATE SET meta_value = EXCLUDED.meta_value;
+
+-- name: GetAssetMetadata :one
+SELECT asset_id, meta_key, meta_value
+FROM asset_metadata
+WHERE asset_id = @asset_id AND meta_key = @meta_key;
+
+-- name: ListAssetMetadata :many
+SELECT asset_id, meta_key, meta_value
+FROM asset_metadata
+WHERE asset_id = @asset_id
+ORDER BY meta_key;
+
+-- name: AddAsset :exec
+INSERT INTO asset (anchor_id, asset_id, vout, amount)
+VALUES (@anchor_id, @asset_id, @vout, @amount)
+ON CONFLICT (anchor_id, vout)
+DO UPDATE SET amount = EXCLUDED.amount;
+
+-- name: GetAsset :one
+SELECT anchor_id, asset_id, vout, amount
+FROM asset
+WHERE anchor_id = @anchor_id AND vout = @vout;
+
+-- name: DeleteAsset :exec
+DELETE FROM asset
+WHERE anchor_id = @anchor_id AND vout = @vout;
+
+-- name: ListAsset :many
+SELECT anchor_id, asset_id, vout, amount
+FROM asset
+WHERE anchor_id = @anchor_id
+ORDER BY vout;
+
+-- name: GetAssetGroup :one
+SELECT id, quantity, immutable, control_id
+FROM asset_group
+WHERE id = @id;
+
+-- name: ListAssetGroup :many
+SELECT id, quantity, immutable, control_id
+FROM asset_group
+ORDER BY id;
+
+-- name: AddToAssetQuantity :exec
+UPDATE asset_group
+SET quantity = quantity + @quantity
+WHERE id = @id;
+
+-- name: SubtractFromAssetQuantity :exec
+UPDATE asset_group
+SET quantity = quantity - @quantity
+WHERE id = @id AND quantity >= @quantity;
+
+-- name: CreateAsset :exec
+INSERT INTO asset_group (id, quantity, immutable, control_id)
+VALUES (@id, @quantity, @immutable, @control_id);
+
+-- name: CreateTeleportAsset :exec
+INSERT INTO teleport_asset (teleport_hash, asset_id, amount, is_claimed)
+VALUES (@teleport_hash, @asset_id, @amount, @is_claimed);
+
+-- name: GetTeleportAsset :one
+SELECT teleport_hash, asset_id, amount, is_claimed
+FROM teleport_asset
+WHERE teleport_hash = @teleport_hash;
+
+-- name: UpdateTeleportAsset :exec
+UPDATE teleport_asset
+SET is_claimed = @is_claimed
+WHERE teleport_hash = @teleport_hash;
 -- name: SelectLatestIntentFees :one
 SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
 

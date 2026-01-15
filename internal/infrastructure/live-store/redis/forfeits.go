@@ -115,7 +115,7 @@ func (s *forfeitTxsStore) Init(
 	return fmt.Errorf("failed to init forfeit txs after max num of retries: %v", err)
 }
 
-func (s *forfeitTxsStore) Sign(ctx context.Context, txs []string) error {
+func (s *forfeitTxsStore) Verify(ctx context.Context, txs []string) error {
 	if len(txs) == 0 {
 		return nil
 	}

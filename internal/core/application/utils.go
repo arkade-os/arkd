@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -119,7 +120,83 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	txid := ptx.UnsignedTx.TxID()
 
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
+
+	assetList := make([]domain.NormalAsset, 0)
+	assetVouts := make(map[uint32]struct{})
+	assetOpReturnProcessed := false
+
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
+		var pubKey string
+		var isSubDust bool
+
+		if extension.ContainsAssetPacket(out.PkScript) {
+			if assetOpReturnProcessed {
+				continue
+			}
+			assetOpReturnProcessed = true
+
+			decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+			if err != nil {
+				return "", nil, nil, fmt.Errorf(
+					"failed to decode asset group from opreturn: %s",
+					err,
+				)
+			}
+
+			allAssets := decodedAssetPacket.Assets
+
+			for i, grpAsset := range allAssets {
+				var assetId extension.AssetId
+
+				if grpAsset.AssetId == nil {
+					assetId = extension.AssetId{
+						TxHash: ptx.UnsignedTx.TxHash(),
+						Index:  uint16(i),
+					}
+				} else {
+					assetId = *grpAsset.AssetId
+				}
+				for _, assetOut := range grpAsset.Outputs {
+					if assetOut.Type != extension.AssetTypeLocal {
+						continue
+					}
+					if _, exists := assetVouts[assetOut.Vout]; exists {
+						return "", nil, nil, fmt.Errorf(
+							"duplicate asset output vout %d",
+							assetOut.Vout,
+						)
+					}
+					assetVouts[assetOut.Vout] = struct{}{}
+
+					assetList = append(assetList, domain.NormalAsset{
+						Outpoint: domain.Outpoint{
+							Txid: txid,
+							VOut: assetOut.Vout,
+						},
+						Amount:  assetOut.Amount,
+						AssetID: assetId.ToString(),
+					})
+				}
+			}
+
+			subDustPacket, err := extension.DecodeSubDustPacket(*out)
+			if err != nil {
+				return "", nil, nil, fmt.Errorf(
+					"failed to decode sub-dust key from opreturn: %s",
+					err,
+				)
+			}
+			if subDustPacket == nil || subDustPacket.Key == nil {
+				continue
+			}
+
+			pubKey = hex.EncodeToString(schnorr.SerializePubKey(subDustPacket.Key))
+			isSubDust = true
+		} else {
+			pubKey = hex.EncodeToString(out.PkScript[2:])
+			isSubDust = script.IsSubDustScript(out.PkScript)
+		}
+
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			continue
 		}
@@ -128,14 +205,27 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				Txid: txid,
 				VOut: uint32(outIndex),
 			},
-			PubKey:             hex.EncodeToString(out.PkScript[2:]),
+			PubKey:             pubKey,
 			Amount:             uint64(out.Value),
 			ExpiresAt:          offchainTx.ExpiryTimestamp,
 			CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 			RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 			Preconfirmed:       true,
-			Swept:              script.IsSubDustScript(out.PkScript),
+			Swept:              isSubDust,
 			CreatedAt:          offchainTx.StartingTimestamp,
+		})
+	}
+
+	// Add AssetGroup if Present
+	for _, asst := range assetList {
+		idx := int(asst.VOut)
+		if idx < 0 || idx >= len(outs) {
+			continue
+		}
+
+		outs[idx].Extensions = append(outs[idx].Extensions, domain.AssetExtension{
+			AssetID: asst.AssetID,
+			Amount:  asst.Amount,
 		})
 	}
 

@@ -10,6 +10,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -284,11 +285,15 @@ func (b *txBuilder) VerifyForfeitTxs(
 
 	validForfeitTxs := make(map[domain.Outpoint]ports.ValidForfeitTx)
 
+	forfeitTxPtxList := make([]*psbt.Packet, 0)
+
 	for _, forfeitTx := range forfeitTxs {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(forfeitTx), true)
 		if err != nil {
 			return nil, err
 		}
+
+		forfeitTxPtxList = append(forfeitTxPtxList, tx)
 
 		if len(tx.Inputs) != 2 {
 			continue
@@ -490,6 +495,11 @@ func (b *txBuilder) VerifyForfeitTxs(
 				VOut: connectorInput.PreviousOutPoint.Index,
 			},
 		}
+	}
+
+	// verify asset forfeit transactions if any
+	if err := verifyAssetForfeitTransaction(vtxos, forfeitTxPtxList); err != nil {
+		return nil, err
 	}
 
 	return validForfeitTxs, nil
@@ -1177,4 +1187,89 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 	}
 
 	return txscript.PayToAddrScript(addr)
+}
+
+func verifyAssetForfeitTransaction(vtxos []domain.Vtxo, forfeitTxs []*psbt.Packet) error {
+	vtxoMap := make(map[domain.Outpoint]domain.Vtxo, len(vtxos))
+	for _, vtxo := range vtxos {
+		vtxoMap[vtxo.Outpoint] = vtxo
+	}
+
+	for _, pkt := range forfeitTxs {
+		if pkt == nil || pkt.UnsignedTx == nil {
+			return fmt.Errorf("nil forfeit packet or unsigned tx")
+		}
+
+		txid := pkt.UnsignedTx.TxID()
+
+		for _, output := range pkt.UnsignedTx.TxOut {
+			if !extension.ContainsAssetPacket(output.PkScript) {
+				continue
+			}
+
+			assetPkt, err := extension.DecodeAssetPacket(*output)
+			if err != nil {
+				return fmt.Errorf("decode asset packet for forfeit txid %s: %w", txid, err)
+			}
+
+			for _, asset := range assetPkt.Assets {
+				assetID := asset.AssetId.ToString()
+				for _, in := range asset.Inputs {
+					if in.Type == extension.AssetTypeTeleport {
+						continue
+					}
+
+					if int(in.Vin) >= len(pkt.UnsignedTx.TxIn) {
+						return fmt.Errorf(
+							"asset input index out of range for txid %s: vin=%d",
+							txid, in.Vin,
+						)
+					}
+
+					prevOut := pkt.UnsignedTx.TxIn[in.Vin].PreviousOutPoint
+					outpoint := domain.Outpoint{
+						Txid: prevOut.Hash.String(),
+						VOut: prevOut.Index,
+					}
+
+					vtxo, ok := vtxoMap[outpoint]
+					if !ok {
+						return fmt.Errorf(
+							"vtxo not found for asset input txid=%s assetID=%s outpoint=%s",
+							txid, assetID, outpoint.String(),
+						)
+					}
+
+					foundAsset := false
+					for _, ext := range vtxo.Extensions {
+						if ext.Type() != domain.ExtAsset {
+							continue
+						}
+
+						assetExt, ok := ext.(domain.AssetExtension)
+						if !ok {
+							return fmt.Errorf(
+								"extension type is ExtAsset but concrete type is %T",
+								ext,
+							)
+						}
+
+						if assetExt.AssetID == assetID {
+							foundAsset = true
+							break
+						}
+					}
+
+					if !foundAsset {
+						return fmt.Errorf(
+							"vtxo %s missing asset extension for assetID %s",
+							outpoint.String(), assetID,
+						)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
 }

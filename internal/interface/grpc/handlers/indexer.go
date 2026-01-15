@@ -23,6 +23,7 @@ type indexerService struct {
 	eventsCh   <-chan application.TransactionEvent
 
 	scriptSubsHandler           *broker[*arkv1.GetSubscriptionResponse]
+	teleportSubsHandler         *broker[*arkv1.GetSubscriptionResponse]
 	subscriptionTimeoutDuration time.Duration
 
 	heartbeat time.Duration
@@ -36,6 +37,7 @@ func NewIndexerService(
 		indexerSvc:                  indexerSvc,
 		eventsCh:                    eventsCh,
 		scriptSubsHandler:           newBroker[*arkv1.GetSubscriptionResponse](),
+		teleportSubsHandler:         newBroker[*arkv1.GetSubscriptionResponse](),
 		subscriptionTimeoutDuration: subscriptionTimeoutDuration,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
 	}
@@ -43,6 +45,37 @@ func NewIndexerService(
 	go svc.listenToTxEvents()
 
 	return svc
+}
+
+func (e *indexerService) GetAssetGroup(ctx context.Context, request *arkv1.GetAssetGroupRequest,
+) (*arkv1.GetAssetGroupResponse, error) {
+	assetId := request.GetAssetId()
+	if assetId == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "missing asset id")
+	}
+
+	resp, err := e.indexerSvc.GetAssetGroup(ctx, assetId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	assetMetadata := make([]*arkv1.AssetMetadata, 0)
+	for _, metadata := range resp.AssetGroup.Metadata {
+		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
+			Key:   metadata.Key,
+			Value: metadata.Value,
+		})
+	}
+
+	return &arkv1.GetAssetGroupResponse{
+		AssetId: assetId,
+		AssetGroup: &arkv1.AssetGroup{
+			Id:        resp.AssetGroup.ID,
+			Quantity:  resp.AssetGroup.Quantity,
+			Immutable: resp.AssetGroup.Immutable,
+			Metadata:  assetMetadata,
+		},
+	}, nil
 }
 
 func (e *indexerService) GetCommitmentTx(
@@ -368,6 +401,59 @@ func (e *indexerService) GetBatchSweepTransactions(
 	}, nil
 }
 
+func (h *indexerService) UnsubscribeForTeleportHash(
+	ctx context.Context, request *arkv1.UnsubscribeForTeleportHashRequest,
+) (*arkv1.UnsubscribeForTeleportHashResponse, error) {
+	subscriptionId := request.GetSubscriptionId()
+	if len(subscriptionId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing subscription id")
+	}
+
+	hashes := request.GetTeleportHashes()
+	if len(hashes) == 0 {
+		// remove all topics
+		if err := h.teleportSubsHandler.removeAllTopics(subscriptionId); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		h.teleportSubsHandler.removeListener(subscriptionId)
+		return &arkv1.UnsubscribeForTeleportHashResponse{}, nil
+	}
+
+	if err := h.teleportSubsHandler.removeTopics(subscriptionId, hashes); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &arkv1.UnsubscribeForTeleportHashResponse{}, nil
+}
+
+func (h *indexerService) SubscribeForTeleportHash(
+	ctx context.Context, req *arkv1.SubscribeForTeleportHashRequest,
+) (*arkv1.SubscribeForTeleportHashResponse, error) {
+	subscriptionId := req.GetSubscriptionId()
+	hashes := req.GetTeleportHashes()
+	if len(hashes) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing teleport hashes")
+	}
+
+	if len(subscriptionId) == 0 {
+		// create new listener
+		subscriptionId = uuid.NewString()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, hashes)
+
+		h.teleportSubsHandler.pushListener(listener)
+		h.teleportSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
+	} else {
+		// update listener topic
+		if err := h.teleportSubsHandler.addTopics(subscriptionId, hashes); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+	return &arkv1.SubscribeForTeleportHashResponse{
+		SubscriptionId: subscriptionId,
+	}, nil
+}
+
 func (h *indexerService) GetSubscription(
 	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
 ) error {
@@ -377,17 +463,30 @@ func (h *indexerService) GetSubscription(
 	}
 
 	h.scriptSubsHandler.stopTimeout(subscriptionId)
+	h.teleportSubsHandler.stopTimeout(subscriptionId)
 	defer func() {
 		topics := h.scriptSubsHandler.getTopics(subscriptionId)
 		if len(topics) > 0 {
 			h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-			return
+		} else {
+			h.scriptSubsHandler.removeListener(subscriptionId)
 		}
-		h.scriptSubsHandler.removeListener(subscriptionId)
+
+		teleportTopics := h.teleportSubsHandler.getTopics(subscriptionId)
+		if len(teleportTopics) > 0 {
+			h.teleportSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
+		} else {
+			h.teleportSubsHandler.removeListener(subscriptionId)
+		}
 	}()
 
-	ch, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
-	if err != nil {
+	scriptCh, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
+	if err != nil && !strings.Contains(err.Error(), "listener not found") {
+		return status.Error(codes.Internal, err.Error())
+	}
+
+	teleportCh, err := h.teleportSubsHandler.getListenerChannel(subscriptionId)
+	if err != nil && !strings.Contains(err.Error(), "listener not found") {
 		return status.Error(codes.Internal, err.Error())
 	}
 
@@ -411,7 +510,12 @@ func (h *indexerService) GetSubscription(
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case ev := <-ch:
+		case ev := <-scriptCh:
+			if err := stream.Send(ev); err != nil {
+				return err
+			}
+			resetTimer()
+		case ev := <-teleportCh:
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
@@ -485,7 +589,7 @@ func (h *indexerService) SubscribeForScripts(
 
 func (h *indexerService) listenToTxEvents() {
 	for event := range h.eventsCh {
-		if !h.scriptSubsHandler.hasListeners() {
+		if !h.scriptSubsHandler.hasListeners() && !h.teleportSubsHandler.hasListeners() {
 			continue
 		}
 
@@ -559,6 +663,53 @@ func (h *indexerService) listenToTxEvents() {
 						// channel is full, skip this message to prevent blocking
 					}
 				}(l)
+			}
+		}
+
+		teleportListenersCopy := h.teleportSubsHandler.getListenersCopy()
+		if len(teleportListenersCopy) > 0 {
+			parsedTeleportEvents := make([]*arkv1.TeleportEvent, 0)
+			for _, te := range event.TeleportAssets {
+				parsedTeleportEvents = append(parsedTeleportEvents, &arkv1.TeleportEvent{
+					TeleportHash:   te.TeleportHash,
+					AnchorOutpoint: te.AnchorOutpoint.String(),
+					AssetId:        te.AssetID,
+					Amount:         te.Amount,
+					OutputVout:     te.OutputVout,
+					CreatedAt:      te.CreatedAt,
+					ExpiresAt:      te.ExpiresAt,
+				})
+			}
+
+			for _, l := range teleportListenersCopy {
+				teleportEvents := make([]*arkv1.TeleportEvent, 0)
+				involvedHashes := make([]string, 0)
+
+				for _, tpEvent := range parsedTeleportEvents {
+					if _, ok := l.topics[tpEvent.TeleportHash]; ok {
+						involvedHashes = append(involvedHashes, tpEvent.TeleportHash)
+						teleportEvents = append(teleportEvents, tpEvent)
+					}
+				}
+
+				if len(teleportEvents) > 0 {
+					go func(listener *listener[*arkv1.GetSubscriptionResponse]) {
+						select {
+						case listener.ch <- &arkv1.GetSubscriptionResponse{
+							Data: &arkv1.GetSubscriptionResponse_Event{
+								Event: &arkv1.IndexerSubscriptionEvent{
+									Txid:           event.Txid,
+									TeleportEvents: teleportEvents,
+									TeleportHashes: involvedHashes,
+									Tx:             event.Tx,
+								},
+							},
+						}:
+						default:
+							// channel is full, skip this message to prevent blocking
+						}
+					}(l)
+				}
 			}
 		}
 	}
@@ -696,6 +847,11 @@ func parseTimeRange(after, before int64) (int64, int64, error) {
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
+	extensions := make([]*arkv1.IndexerExtension, 0)
+	for _, ext := range vtxo.Extensions {
+		extensions = append(extensions, toExtension(ext))
+	}
+
 	return &arkv1.IndexerVtxo{
 		Outpoint: &arkv1.IndexerOutpoint{
 			Txid: vtxo.Txid,
@@ -713,5 +869,23 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
+		Extensions:      extensions,
+	}
+}
+
+func toExtension(extension domain.Extension) *arkv1.IndexerExtension {
+	switch extension.Type() {
+	case domain.ExtAsset:
+		assetExt := extension.(domain.AssetExtension)
+		return &arkv1.IndexerExtension{
+			Kind: &arkv1.IndexerExtension_Asset{
+				Asset: &arkv1.IndexerAsset{
+					AssetId: assetExt.AssetID,
+					Amount:  assetExt.Amount,
+				},
+			},
+		}
+	default:
+		return &arkv1.IndexerExtension{}
 	}
 }
