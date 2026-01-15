@@ -168,7 +168,7 @@ func swapIntent(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("backfill mismatch: intent=%d intent_new=%d", oldCT, newCT)
 	}
 
-		// drop dependent indexes
+	// drop dependent indexes
 	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS receiver DROP CONSTRAINT IF EXISTS fk_receiver_intent_id;`); err != nil {
 		return fmt.Errorf("drop receiver FK: %w", err)
 	}

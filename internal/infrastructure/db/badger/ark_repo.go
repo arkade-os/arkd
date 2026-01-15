@@ -579,7 +579,10 @@ func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (domain
 	return domain.Intent{}, fmt.Errorf("intent with txid %s not found", txid)
 }
 
-func (r *arkRepository) upsertIntentIndex(ctx context.Context, txid, roundId, intentId string) error {
+func (r *arkRepository) upsertIntentIndex(
+	ctx context.Context,
+	txid, roundId, intentId string,
+) error {
 	idx := IntentIndex{Txid: txid, RoundId: roundId, IntentId: intentId}
 	if ctx.Value("tx") != nil {
 		tx := ctx.Value("tx").(*badger.Txn)
@@ -588,7 +591,10 @@ func (r *arkRepository) upsertIntentIndex(ctx context.Context, txid, roundId, in
 	return r.store.Upsert(txid, idx)
 }
 
-func (r *arkRepository) getIntentIndexByTxid(ctx context.Context, txid string) (*IntentIndex, error) {
+func (r *arkRepository) getIntentIndexByTxid(
+	ctx context.Context,
+	txid string,
+) (*IntentIndex, error) {
 	var idx IntentIndex
 	var err error
 	if ctx.Value("tx") != nil {
