@@ -660,6 +660,24 @@
             }
           },
           {
+            "name": "after",
+            "in": "query",
+            "description": "Include only vtxos with last update after the given unix time in milliseconds.\nA value of 0 means no lower bound.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Include only vtxos with last update before the given unix time in milliseconds,\ngreater value than the after when specified. A value of 0 means no upper bound.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -969,6 +987,16 @@
         "title": "GetVtxosRequest",
         "type": "object",
         "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Include only vtxos with last update after the given unix time in milliseconds.\nA value of 0 means no lower bound.",
+            "format": "int64"
+          },
+          "before": {
+            "type": "integer",
+            "description": "Include only vtxos with last update before the given unix time in milliseconds,\ngreater value than the after when specified. A value of 0 means no upper bound.",
+            "format": "int64"
+          },
           "outpoints": {
             "type": "array",
             "description": "Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.",

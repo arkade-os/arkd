@@ -356,9 +356,16 @@ func (v *vtxoRepository) UpdateVtxosExpiration(
 }
 
 func (v *vtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosWithPubkeys(ctx, pubkeys)
+	if err := validateTimeRange(after, before); err != nil {
+		return nil, err
+	}
+	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
+		Pubkeys: pubkeys,
+		After:   after,
+		Before:  before,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -442,9 +449,19 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 }
 
 func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(ctx, pubkeys)
+	if err := validateTimeRange(after, before); err != nil {
+		return nil, err
+	}
+	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(
+		ctx,
+		queries.SelectPendingSpentVtxosWithPubkeysParams{
+			Pubkeys: pubkeys,
+			After:   after,
+			Before:  before,
+		},
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
