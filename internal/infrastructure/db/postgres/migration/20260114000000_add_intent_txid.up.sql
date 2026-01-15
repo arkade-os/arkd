@@ -3,4 +3,4 @@ ALTER TABLE intent
 ADD COLUMN txid TEXT;
 
 -- create an index on the new txid column for faster lookups
-CREATE INDEX idx_intent_txid ON intent(txid);
+CREATE INDEX IF NOT EXISTS idx_intent_txid ON intent(txid);

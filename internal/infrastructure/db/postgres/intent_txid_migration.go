@@ -45,6 +45,10 @@ func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
 	if err := fixVtxoTableFK(ctx, dbh); err != nil {
 		return fmt.Errorf("failed to fix vtxo table foreign keys: %s", err)
 	}
+	// create index on intent txid column
+	if err := createIntentTxidIndex(ctx, dbh); err != nil {
+		return fmt.Errorf("failed to create intent txid index: %s", err)
+	}
 
 	return nil
 
@@ -341,6 +345,16 @@ func fixVtxoTableFK(ctx context.Context, db *sql.DB) error {
 
 	return nil
 
+}
+
+func createIntentTxidIndex(ctx context.Context, db *sql.DB) error {
+	const createIndex = `
+		CREATE INDEX IF NOT EXISTS idx_intent_txid ON intent(txid);`
+	_, err := db.ExecContext(ctx, createIndex)
+	if err != nil {
+		return fmt.Errorf("create intent txid index: %w", err)
+	}
+	return nil
 }
 
 func existsQuery(tableName, columnName string) string {
