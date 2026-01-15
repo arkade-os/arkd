@@ -7,81 +7,38 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	log "github.com/sirupsen/logrus"
 )
 
 func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
-	var tableExists int
-
-	if err := dbh.QueryRowContext(ctx,
-		existsQuery("intent", "txid"),
-	).Scan(&tableExists); err != nil {
-		return fmt.Errorf("failed to verify updated txid column existence in intent table: %w", err)
+	exists, err := columnExists(ctx, dbh, "intent", "txid")
+	if err != nil {
+		return fmt.Errorf("failed to check intent.txid existence: %w", err)
 	}
-	if tableExists > 0 {
+	if exists {
 		return nil
 	}
 
-	// make new intent table with txid column
-	if err := ensureIntentNew(ctx, dbh); err != nil {
-		return fmt.Errorf("failed to ensure txid column in intent table: %s", err)
+	// Add nullable column in-place (SQLite supports this)
+	if _, err := dbh.ExecContext(ctx, `ALTER TABLE intent ADD COLUMN txid TEXT;`); err != nil {
+		return fmt.Errorf("failed to add txid column: %w", err)
 	}
 
-	// backfill existing intents with derived txids from proof
+	// Backfill existing intents with derived txids from proof (in-place UPDATE)
 	if err := backfillIntent(ctx, dbh); err != nil {
-		return fmt.Errorf("failed to backfill txids: %s", err)
+		return fmt.Errorf("failed to backfill txids: %w", err)
 	}
 
-	// swap old intent table with new intent table that contains the new txid column
-	if err := swapIntent(ctx, dbh); err != nil {
-		return fmt.Errorf("failed to swap intent tables: %s", err)
-	}
-
-	// do we even need since we keep the intent id unchanged?
-	if err := fixReceiverTableFK(ctx, dbh); err != nil {
-		return fmt.Errorf("failed to fix receiver table foreign keys: %s", err)
-	}
-	// do we even need since we keep the intent id unchanged?
-	if err := fixVtxoTableFK(ctx, dbh); err != nil {
-		return fmt.Errorf("failed to fix vtxo table foreign keys: %s", err)
-	}
-	// create index on intent txid column
+	// Create index on intent.txid to enable fast lookups
 	if err := createIntentTxidIndex(ctx, dbh); err != nil {
-		return fmt.Errorf("failed to create intent txid index: %s", err)
-	}
-
-	return nil
-
-}
-
-func ensureIntentNew(ctx context.Context, db *sql.DB) error {
-	createIntentNew := `
-    CREATE TABLE IF NOT EXISTS intent_new (
-    id TEXT PRIMARY KEY,
-    round_id TEXT NOT NULL,
-    proof TEXT NOT NULL,
-    message TEXT NOT NULL,
-    txid TEXT,
-    FOREIGN KEY (round_id) REFERENCES round(id)
-);
-    `
-
-	if _, err := db.ExecContext(ctx, createIntentNew); err != nil {
-		return fmt.Errorf("create intent_new: %w", err)
+		return fmt.Errorf("failed to create intent txid index: %w", err)
 	}
 
 	return nil
 }
 
 func backfillIntent(ctx context.Context, db *sql.DB) error {
-	listIntent := `-- name: ListIntent :many
-SELECT id, round_id, proof, message FROM intent
-`
-	insertIntent := `-- name: InsertIntent :exec
-INSERT INTO intent_new (
-   id, round_id, proof, message, txid
-) VALUES ($1, $2 , $3, $4, $5)
-`
+	const listIntent = `SELECT id, proof FROM intent;`
+	const updateIntent = `UPDATE intent SET txid = ? WHERE id = ?;`
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -93,39 +50,30 @@ INSERT INTO intent_new (
 		}
 	}()
 
-	rows, err := tx.QueryContext(ctx, listIntent) // SELECT ... FROM intent
+	rows, err := tx.QueryContext(ctx, listIntent)
 	if err != nil {
 		return err
 	}
-	// nolint:errcheck
 	defer rows.Close()
 
-	stmt, err := tx.PrepareContext(ctx, insertIntent)
+	stmt, err := tx.PrepareContext(ctx, updateIntent)
 	if err != nil {
 		return err
 	}
-	// nolint:errcheck
 	defer stmt.Close()
 
 	for rows.Next() {
-		var (
-			id, round_id, proof, message, txid string
-		)
-		if err = rows.Scan(&id, &round_id, &proof, &message); err != nil {
+		var id, proof string
+		if err = rows.Scan(&id, &proof); err != nil {
 			return err
 		}
 
-		// derive the txid from the proof
-		txid, err = deriveTxidFromProof(proof)
-		if err != nil {
-			return fmt.Errorf("derive txid from proof for intent id: %s: %w", id, err)
+		txid, derr := deriveTxidFromProof(proof)
+		if derr != nil {
+			return fmt.Errorf("derive txid from proof for intent id %s: %w", id, derr)
 		}
 
-		log.Debug(fmt.Sprintf("intent %s migrated -> txid %s", id, txid))
-
-		if _, err = stmt.ExecContext(ctx,
-			id, round_id, proof, message, txid,
-		); err != nil {
+		if _, err = stmt.ExecContext(ctx, txid, id); err != nil {
 			return err
 		}
 	}
@@ -134,8 +82,7 @@ INSERT INTO intent_new (
 		return err
 	}
 
-	err = tx.Commit()
-	return err
+	return tx.Commit()
 }
 
 func deriveTxidFromProof(proof string) (string, error) {
@@ -146,210 +93,8 @@ func deriveTxidFromProof(proof string) (string, error) {
 	return tx.UnsignedTx.TxID(), nil
 }
 
-func swapIntent(ctx context.Context, db *sql.DB) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	var oldCT, newCT int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM intent;`).Scan(&oldCT); err != nil {
-		return err
-	}
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM intent_new;`).Scan(&newCT); err != nil {
-		return err
-	}
-	if oldCT != newCT {
-		return fmt.Errorf("backfill mismatch: intent=%d intent_new=%d", oldCT, newCT)
-	}
-
-	// drop dependent indexes
-	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS receiver DROP CONSTRAINT IF EXISTS fk_receiver_intent_id;`); err != nil {
-		return fmt.Errorf("drop receiver FK: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS vtxo DROP CONSTRAINT IF EXISTS fk_vtxo_intent_id;`); err != nil {
-		return fmt.Errorf("drop vtxo FK: %w", err)
-	}
-
-	// drop dependent foreign keys
-	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS receiver DROP CONSTRAINT IF EXISTS receiver_intent_id_fkey;`); err != nil {
-		return fmt.Errorf("drop receiver FK: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS vtxo DROP CONSTRAINT IF EXISTS vtxo_intent_id_fkey;`); err != nil {
-		return fmt.Errorf("drop vtxo FK: %w", err)
-	}
-
-	// drop views that depend on intent before dropping the intent table
-	if _, err = tx.ExecContext(ctx, `
-        DROP VIEW IF EXISTS intent_with_receivers_vw, intent_with_inputs_vw, round_intents_vw CASCADE;
-    `); err != nil {
-		return fmt.Errorf("drop dependent views: %w", err)
-	}
-
-	if _, err = tx.ExecContext(ctx, `DROP TABLE IF EXISTS intent;`); err != nil {
-		return err
-	}
-
-	if _, err = tx.ExecContext(ctx, `ALTER TABLE intent_new RENAME TO intent;`); err != nil {
-		return err
-	}
-
-	// Recreate the views (use the canonical definitions from your migration)
-	if _, err = tx.ExecContext(ctx, `
-        CREATE VIEW round_intents_vw AS
-        SELECT intent.*
-        FROM round
-        LEFT OUTER JOIN intent
-        ON round.id = intent.round_id;
-    `); err != nil {
-		return fmt.Errorf("recreate round_intents_vw: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx, `
-        CREATE VIEW intent_with_receivers_vw AS
-        SELECT receiver.*, intent.*
-        FROM intent
-        LEFT OUTER JOIN receiver
-        ON intent.id = receiver.intent_id;
-    `); err != nil {
-		return fmt.Errorf("recreate intent_with_receivers_vw: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx, `
-        CREATE VIEW intent_with_inputs_vw AS
-        SELECT vtxo_vw.*, intent.*
-        FROM intent
-        LEFT OUTER JOIN vtxo_vw
-        ON intent.id = vtxo_vw.intent_id;
-    `); err != nil {
-		return fmt.Errorf("recreate intent_with_inputs_vw: %w", err)
-	}
-
-	// Re-add foreign keys will be handled in fixReceiverTableFK and fixVtxoTableFK
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func fixReceiverTableFK(ctx context.Context, db *sql.DB) error {
-	const createNew = `CREATE TABLE IF NOT EXISTS receiver_new (
-    intent_id TEXT NOT NULL,
-    pubkey TEXT,
-    onchain_address TEXT,
-    amount BIGINT NOT NULL,
-    FOREIGN KEY (intent_id) REFERENCES intent(id),
-    PRIMARY KEY (intent_id, pubkey, onchain_address)
-    );`
-
-	const copyData = `
-    INSERT INTO receiver_new (
-      intent_id, pubkey, onchain_address, amount
-    )
-    SELECT
-      r.intent_id, r.pubkey, r.onchain_address, r.amount
-    FROM receiver AS r
-    LEFT JOIN intent AS i
-      ON i.id = r.intent_id;`
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-
-	// Create new table, copy data, replace old table -- Postgres style (no PRAGMA)
-	if _, err := tx.ExecContext(ctx, createNew); err != nil {
-		return fmt.Errorf("create receiver_new: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, copyData); err != nil {
-		return fmt.Errorf("copy data: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS receiver;`); err != nil {
-		return fmt.Errorf("drop old receiver: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE receiver_new RENAME TO receiver;`); err != nil {
-		return fmt.Errorf("rename new->receiver: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
-	}
-
-	return nil
-
-}
-
-func fixVtxoTableFK(ctx context.Context, db *sql.DB) error {
-	const createNew = `CREATE TABLE IF NOT EXISTS vtxo_new (
-        txid TEXT NOT NULL,
-        vout INTEGER NOT NULL,
-        pubkey TEXT NOT NULL,
-        amount BIGINT NOT NULL,
-        expires_at BIGINT NOT NULL,
-        created_at BIGINT NOT NULL,
-        commitment_txid TEXT NOT NULL,
-        spent_by TEXT,
-        spent BOOLEAN NOT NULL DEFAULT FALSE,
-        unrolled BOOLEAN NOT NULL DEFAULT FALSE,
-        swept BOOLEAN NOT NULL DEFAULT FALSE,
-        preconfirmed BOOLEAN NOT NULL DEFAULT FALSE,
-        settled_by TEXT,
-        ark_txid TEXT,
-        intent_id TEXT,
-        PRIMARY KEY (txid, vout),
-        FOREIGN KEY (intent_id) REFERENCES intent(id)
-    );`
-
-	const copyData = `
-    INSERT INTO vtxo_new (
-      txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, swept, preconfirmed, settled_by, ark_txid, intent_id
-    )
-    SELECT
-      v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id
-    FROM vtxo AS v;`
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-
-	if _, err := tx.ExecContext(ctx, createNew); err != nil {
-		return fmt.Errorf("create vtxo_new: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, copyData); err != nil {
-		return fmt.Errorf("copy data: %w", err)
-	}
-
-	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS vtxo;`); err != nil {
-		return fmt.Errorf("drop old vtxo: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE vtxo_new RENAME TO vtxo;`); err != nil {
-		return fmt.Errorf("rename new->vtxo: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
-	}
-
-	return nil
-
-}
-
 func createIntentTxidIndex(ctx context.Context, db *sql.DB) error {
-	const createIndex = `
-		CREATE INDEX IF NOT EXISTS idx_intent_txid ON intent(txid);`
+	const createIndex = `CREATE INDEX IF NOT EXISTS idx_intent_txid ON intent(txid);`
 	_, err := db.ExecContext(ctx, createIndex)
 	if err != nil {
 		return fmt.Errorf("create intent txid index: %w", err)
@@ -357,12 +102,31 @@ func createIntentTxidIndex(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func existsQuery(tableName, columnName string) string {
-	return fmt.Sprintf(`
-        SELECT COUNT(*)
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name   = '%s'
-          AND column_name  = '%s'
-    `, tableName, columnName)
+// columnExists checks whether a column exists on a table using PRAGMA table_info.
+func columnExists(ctx context.Context, db *sql.DB, tableName, columnName string) (bool, error) {
+	query := fmt.Sprintf("PRAGMA table_info(%s);", tableName)
+	rows, err := db.QueryContext(ctx, query)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		// PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
