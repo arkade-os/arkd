@@ -52,7 +52,7 @@ func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
 
 func ensureIntentNew(ctx context.Context, db *sql.DB) error {
 	createIntentNew := `
-        CREATE TABLE IF NOT EXISTS intent_new (
+    CREATE TABLE IF NOT EXISTS intent_new (
     id TEXT PRIMARY KEY,
     round_id TEXT NOT NULL,
     proof TEXT NOT NULL,

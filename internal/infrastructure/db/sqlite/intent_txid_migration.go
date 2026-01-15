@@ -56,7 +56,7 @@ func ensureIntentNew(ctx context.Context, db *sql.DB) error {
     round_id TEXT NOT NULL,
     proof TEXT NOT NULL,
     message TEXT NOT NULL,
-		txid TEXT UNIQUE NOT NULL,
+		txid TEXT,
     FOREIGN KEY (round_id) REFERENCES round(id)
 );
 	`
@@ -168,14 +168,6 @@ func swapIntent(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("backfill mismatch: intent=%d intent_new=%d", oldCT, newCT)
 	}
 
-	// drop dependent indexes
-	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS receiver DROP CONSTRAINT IF EXISTS fk_receiver_intent_id;`); err != nil {
-		return fmt.Errorf("drop receiver FK: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS vtxo DROP CONSTRAINT IF EXISTS fk_vtxo_intent_id;`); err != nil {
-		return fmt.Errorf("drop vtxo FK: %w", err)
-	}
-
 	// drop dependent foreign keys
 	if _, err = tx.ExecContext(ctx, `ALTER TABLE IF EXISTS receiver DROP CONSTRAINT IF EXISTS receiver_intent_id_fkey;`); err != nil {
 		return fmt.Errorf("drop receiver FK: %w", err)
@@ -243,9 +235,9 @@ func swapIntent(ctx context.Context, db *sql.DB) error {
 
 func fixReceiverTableFK(ctx context.Context, db *sql.DB) error {
 	const createNew = `CREATE TABLE IF NOT EXISTS receiver_new (
-    intent_id TEXT,
+    intent_id TEXT NOT NULL,
     pubkey TEXT,
-    onchain_address TEXT NOT NULL DEFAULT '',
+    onchain_address TEXT,
     amount INTEGER NOT NULL,
     FOREIGN KEY (intent_id) REFERENCES intent(id),
     PRIMARY KEY (intent_id, pubkey, onchain_address)

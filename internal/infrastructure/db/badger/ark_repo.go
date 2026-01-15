@@ -319,6 +319,7 @@ func (r *arkRepository) addOrUpdateRound(
 			continue
 		}
 		// do not fail the whole round upsert if intent index upsert fails
+		// nolint:errcheck
 		r.upsertIntentIndex(ctx, it.Txid, rnd.Id, it.Id)
 	}
 	return nil
