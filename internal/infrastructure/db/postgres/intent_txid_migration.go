@@ -34,7 +34,7 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin tx err: %w", err)
 	}
 	defer func() {
 		if err != nil {
