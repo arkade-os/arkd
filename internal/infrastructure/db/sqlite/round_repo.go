@@ -170,6 +170,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 						RoundID: sql.NullString{String: round.Id, Valid: true},
 						Proof:   sql.NullString{String: intent.Proof, Valid: true},
 						Message: sql.NullString{String: intent.Message, Valid: true},
+						Txid:    sql.NullString{String: intent.Txid, Valid: true},
 					},
 				); err != nil {
 					return fmt.Errorf("failed to upsert intent: %w", err)
@@ -451,6 +452,24 @@ func (r *roundRepository) GetRoundsWithCommitmentTxids(
 		resp[txid] = nil
 	}
 	return resp, nil
+}
+
+func (r *roundRepository) GetIntentByTxid(
+	ctx context.Context,
+	txid string,
+) (*domain.Intent, error) {
+	intent, err := r.querier.SelectIntentByTxid(ctx, sql.NullString{String: txid, Valid: true})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get intents by txid: %w", err)
+	}
+
+	return &domain.Intent{
+		Proof:   intent.Proof.String,
+		Message: intent.Message.String,
+	}, nil
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {

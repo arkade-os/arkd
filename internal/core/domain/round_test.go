@@ -14,6 +14,7 @@ var (
 		{
 			Id:      "0",
 			Proof:   "proof",
+			Txid:    txid,
 			Message: "message",
 			Inputs: []domain.Vtxo{
 				{
@@ -45,6 +46,7 @@ var (
 		{
 			Id:      "1",
 			Proof:   "proof",
+			Txid:    txid,
 			Message: "message",
 			Inputs: []domain.Vtxo{
 				{

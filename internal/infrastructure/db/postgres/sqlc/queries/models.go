@@ -35,6 +35,7 @@ type Intent struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type IntentFee struct {

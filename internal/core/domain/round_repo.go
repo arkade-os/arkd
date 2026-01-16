@@ -24,6 +24,7 @@ type RoundRepository interface {
 	GetSweptRoundsConnectorAddress(ctx context.Context) ([]string, error)
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
 	GetRoundsWithCommitmentTxids(ctx context.Context, txids []string) (map[string]any, error)
+	GetIntentByTxid(ctx context.Context, txid string) (*Intent, error)
 	Close()
 }
 

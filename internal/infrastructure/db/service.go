@@ -196,6 +196,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
+
 	case "postgres":
 		if len(config.DataStoreConfig) != 2 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
@@ -229,6 +230,30 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		m, err := migrate.NewWithInstance("iofs", source, "postgres", pgDriver)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create postgres migration instance: %s", err)
+		}
+
+		// stepwise migration for intent txid field addition
+		intentTxidMigrationBegin := uint(20260114000000)
+		version, dirty, verr := m.Version()
+		if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
+			return nil, fmt.Errorf("failed to read migration version: %w", verr)
+		}
+		if dirty {
+			return nil, fmt.Errorf(
+				"database is in a dirty migration state; manual intervention required",
+			)
+		}
+
+		if version < intentTxidMigrationBegin {
+			if err := m.Migrate(intentTxidMigrationBegin); err != nil &&
+				!errors.Is(err, migrate.ErrNoChange) {
+				return nil, fmt.Errorf("failed to run migrations: %s", err)
+			}
+
+			err = pgdb.BackfillIntentTxid(context.Background(), db)
+			if err != nil {
+				return nil, fmt.Errorf("failed to backfill intent txid field: %w", err)
+			}
 		}
 
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
@@ -291,6 +316,30 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		m, err := migrate.NewWithInstance("iofs", source, "arkdb", driver)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create migration instance: %s", err)
+		}
+
+		// stepwise migration for intent txid field addition
+		intentTxidMigrationBegin := uint(20260114000000)
+		version, dirty, verr := m.Version()
+		if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
+			return nil, fmt.Errorf("failed to read migration version: %w", verr)
+		}
+		if dirty {
+			return nil, fmt.Errorf(
+				"database is in a dirty migration state; manual intervention required",
+			)
+		}
+
+		if version < intentTxidMigrationBegin {
+			if err := m.Migrate(intentTxidMigrationBegin); err != nil &&
+				!errors.Is(err, migrate.ErrNoChange) {
+				return nil, fmt.Errorf("failed to run migrations: %s", err)
+			}
+
+			err = sqlitedb.BackfillIntentTxid(context.Background(), db)
+			if err != nil {
+				return nil, fmt.Errorf("failed to backfill intent txid field: %w", err)
+			}
 		}
 
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {

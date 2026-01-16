@@ -333,3 +333,5 @@ var OFFCHAIN_TX_INSUFFICIENT_FEE = Code[OffchainTxInsufficientFeeMetadata]{
 }
 
 var INTENT_FEE_EVALUATION_FAILED = Code[any]{33, "INTENT_FEE_EVALUATION_FAILED", grpccodes.Internal}
+
+var INTENT_NOT_FOUND = Code[any]{34, "INTENT_NOT_FOUND", grpccodes.NotFound}
