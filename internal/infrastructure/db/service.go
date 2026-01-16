@@ -231,6 +231,30 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create postgres migration instance: %s", err)
 		}
 
+		// stepwise migration for intent txid field addition
+		intentTxidMigrationBegin := uint(20260114000000)
+		version, dirty, verr := m.Version()
+		if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
+			return nil, fmt.Errorf("failed to read migration version: %w", verr)
+		}
+		if dirty {
+			return nil, fmt.Errorf(
+				"database is in a dirty migration state; manual intervention required",
+			)
+		}
+
+		if version < intentTxidMigrationBegin {
+			if err := m.Migrate(intentTxidMigrationBegin); err != nil &&
+				!errors.Is(err, migrate.ErrNoChange) {
+				return nil, fmt.Errorf("failed to run migrations: %s", err)
+			}
+
+			err = pgdb.BackfillIntentTxid(context.Background(), db)
+			if err != nil {
+				return nil, fmt.Errorf("failed to backfill intent txid field: %w", err)
+			}
+		}
+
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 			return nil, fmt.Errorf("failed to run postgres migrations: %s", err)
 		}
