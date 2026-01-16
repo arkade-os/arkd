@@ -17,17 +17,14 @@ func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
 	if !exists {
 		return nil
 	}
-
 	// Backfill existing intents with derived txids from proof (in-place UPDATE)
 	if err := backfillIntent(ctx, dbh); err != nil {
 		return fmt.Errorf("failed to backfill txids: %w", err)
 	}
-
 	// Create index on intent.txid to enable fast lookups
 	if err := createIntentTxidIndex(ctx, dbh); err != nil {
 		return fmt.Errorf("failed to create intent txid index: %w", err)
 	}
-
 	return nil
 }
 
@@ -47,28 +44,40 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 
 	rows, err := tx.QueryContext(ctx, listIntent)
 	if err != nil {
-		return err
+		return fmt.Errorf("query intents: %w", err)
 	}
-	// nolint:errcheck
-	defer rows.Close()
+
+	type item struct {
+		id    string
+		proof string
+	}
+	var list []item
 
 	for rows.Next() {
 		var id, proof string
 		if err = rows.Scan(&id, &proof); err != nil {
-			return err
+			_ = rows.Close()
+			return fmt.Errorf("scan intent row: %w", err)
 		}
-
-		txid, derr := deriveTxidFromProof(proof)
-		if derr != nil {
-			return fmt.Errorf("derive txid from proof for intent id %s: %w", id, derr)
-		}
-		if _, err = tx.ExecContext(ctx, updateIntent, txid, id); err != nil {
-			return fmt.Errorf("update intent txid for id %s: %w", id, err)
-		}
+		list = append(list, item{id: id, proof: proof})
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate rows: %w", err)
 	}
 
-	if err := rows.Err(); err != nil {
-		return err
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close rows: %w", err)
+	}
+
+	for _, it := range list {
+		txid, derr := deriveTxidFromProof(it.proof)
+		if derr != nil {
+			return fmt.Errorf("derive txid from proof for intent id %s: %w", it.id, derr)
+		}
+		if _, err = tx.ExecContext(ctx, updateIntent, txid, it.id); err != nil {
+			return fmt.Errorf("update intent txid for id %s: %w", it.id, err)
+		}
 	}
 
 	return tx.Commit()
