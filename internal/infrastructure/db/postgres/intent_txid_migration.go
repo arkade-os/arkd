@@ -52,13 +52,6 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 	// nolint:errcheck
 	defer rows.Close()
 
-	stmt, err := tx.PrepareContext(ctx, updateIntent)
-	if err != nil {
-		return err
-	}
-	// nolint:errcheck
-	defer stmt.Close()
-
 	for rows.Next() {
 		var id, proof string
 		if err = rows.Scan(&id, &proof); err != nil {
@@ -69,9 +62,8 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 		if derr != nil {
 			return fmt.Errorf("derive txid from proof for intent id %s: %w", id, derr)
 		}
-
-		if _, err = stmt.ExecContext(ctx, txid, id); err != nil {
-			return err
+		if _, err = tx.ExecContext(ctx, updateIntent, txid, id); err != nil {
+			return fmt.Errorf("update intent txid for id %s: %w", id, err)
 		}
 	}
 
