@@ -11,7 +11,6 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -28,12 +27,12 @@ import (
 func findSweepableOutputs(
 	ctx context.Context, walletSvc ports.WalletService, txbuilder ports.TxBuilder,
 	schedulerUnit ports.TimeUnit, vtxoTree *tree.TxTree,
-) (map[int64][]ports.SweepableOutput, error) {
-	sweepableBatchOutputs := make(map[int64][]ports.SweepableOutput)
+) (map[int64][]ports.TxInput, error) {
+	sweepableBatchOutputs := make(map[int64][]ports.TxInput)
 	blocktimeCache := make(map[string]int64) // txid -> blocktime / blockheight
 
 	if err := vtxoTree.Apply(func(g *tree.TxTree) (bool, error) {
-		isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(
+		isConfirmed, blockTimestamp, err := walletSvc.IsTransactionConfirmed(
 			ctx, g.Root.UnsignedTx.TxID(),
 		)
 		if err != nil {
@@ -44,7 +43,7 @@ func findSweepableOutputs(
 			parentTxid := g.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
 
 			if _, ok := blocktimeCache[parentTxid]; !ok {
-				isConfirmed, height, blocktime, err := walletSvc.IsTransactionConfirmed(
+				isConfirmed, blockTimestamp, err := walletSvc.IsTransactionConfirmed(
 					ctx, parentTxid,
 				)
 				if !isConfirmed || err != nil {
@@ -52,9 +51,9 @@ func findSweepableOutputs(
 				}
 
 				if schedulerUnit == ports.BlockHeight {
-					blocktimeCache[parentTxid] = height
+					blocktimeCache[parentTxid] = int64(blockTimestamp.Height)
 				} else {
-					blocktimeCache[parentTxid] = blocktime
+					blocktimeCache[parentTxid] = blockTimestamp.Time
 				}
 			}
 
@@ -65,10 +64,10 @@ func findSweepableOutputs(
 
 			expirationTime := blocktimeCache[parentTxid] + int64(vtxoTreeExpiry.Value)
 			if _, ok := sweepableBatchOutputs[expirationTime]; !ok {
-				sweepableBatchOutputs[expirationTime] = make([]ports.SweepableOutput, 0)
+				sweepableBatchOutputs[expirationTime] = make([]ports.TxInput, 0)
 			}
 			sweepableBatchOutputs[expirationTime] = append(
-				sweepableBatchOutputs[expirationTime], sweepInput,
+				sweepableBatchOutputs[expirationTime], *sweepInput,
 			)
 			// we don't need to check the children, we already found a sweepable output
 			return false, nil
@@ -76,9 +75,9 @@ func findSweepableOutputs(
 
 		// cache the blocktime for future use
 		if schedulerUnit == ports.BlockHeight {
-			blocktimeCache[g.Root.UnsignedTx.TxID()] = height
+			blocktimeCache[g.Root.UnsignedTx.TxID()] = int64(blockTimestamp.Height)
 		} else {
-			blocktimeCache[g.Root.UnsignedTx.TxID()] = blocktime
+			blocktimeCache[g.Root.UnsignedTx.TxID()] = blockTimestamp.Time
 		}
 
 		// if the tx is onchain, it means that the input is spent, we need to check the children
@@ -430,8 +429,13 @@ func waitForConfirmation(
 	ctx context.Context,
 	txid string,
 	wallet ports.WalletService,
-	network arklib.Network,
-) (blockheight int64, blocktime int64) {
+) (*ports.BlockTimestamp, error) {
+	network, err := wallet.GetNetwork(ctx)
+	if err != nil {
+		log.WithError(err).Error("failed to get network, cannot wait for confirmation")
+		return nil, err
+	}
+
 	tickerInterval := mainnetTickerInterval
 	if network.Name == arklib.BitcoinRegTest.Name {
 		tickerInterval = regtestTickerInterval
@@ -439,37 +443,35 @@ func waitForConfirmation(
 	ticker := time.NewTicker(tickerInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if confirmed, blockHeight, blockTime, _ := wallet.IsTransactionConfirmed(ctx, txid); confirmed {
-			log.Debugf(
-				"tx %s confirmed at block height %d, block time %d",
-				txid,
-				blockHeight,
-				blockTime,
-			)
-			return blockHeight, blockTime
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			confirmed, blockTimestamp, err := wallet.IsTransactionConfirmed(ctx, txid)
+			if confirmed && err == nil {
+				log.Debugf(
+					"tx %s confirmed at block height %d, block time %d",
+					txid,
+					blockTimestamp.Height,
+					blockTimestamp.Time,
+				)
+				return blockTimestamp, nil
+			}
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
-	return 0, 0
 }
 
-func computeIntentFees(proof intent.Proof) (int64, error) {
-	sumOfInputs := int64(0)
-	for i, input := range proof.Inputs {
-		if input.WitnessUtxo == nil {
-			return 0, fmt.Errorf("missing witness utxo for input %d", i)
-		}
-		sumOfInputs += int64(input.WitnessUtxo.Value)
+// validateTimeRange validates time range values. A zero value means unbounded and is allowed.
+func validateTimeRange(after, before int64) error {
+	if after < 0 || before < 0 {
+		return fmt.Errorf("after and before must be greater than or equal to 0")
 	}
-
-	sumOfOutputs := int64(0)
-	for _, output := range proof.UnsignedTx.TxOut {
-		sumOfOutputs += int64(output.Value)
+	if before > 0 && after > 0 && before <= after {
+		return fmt.Errorf("before must be greater than after")
 	}
-
-	fees := sumOfInputs - sumOfOutputs
-	if fees < 0 {
-		return 0, fmt.Errorf("sum of inputs is smaller than sum of outputs (diff: %d)", fees)
-	}
-	return fees, nil
+	return nil
 }

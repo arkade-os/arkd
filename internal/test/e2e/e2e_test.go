@@ -6,7 +6,9 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -2822,6 +2824,93 @@ func TestSweep(t *testing.T) {
 		require.Len(t, mikeVtxos, 1)
 		require.True(t, mikeVtxos[0].Swept)
 	})
+
+	// This test creates an "uneconomical batch", ie. one with an amount too small that makes
+	// arkd not capable of sweeping it automatically. For such batches, it's required to call the
+	// admin api so that they are swept along with other sweepable funds (connectors used for
+	// batches that have been already swept)
+	t.Run("force by admin", func(t *testing.T) {
+		alice := setupArkSDK(t)
+		defer alice.Stop()
+
+		ctx := t.Context()
+
+		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		// Faucet with a small amount that will result in a dust vtxo after fees
+		faucetOnchain(t, boardingAddr, 0.00000330)
+		time.Sleep(5 * time.Second)
+
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingFunds []types.Vtxo
+		var incomingErr error
+		go func() {
+			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			wg.Done()
+		}()
+
+		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		commitmentTxid, err := alice.Settle(ctx)
+		require.NoError(t, err)
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.Len(t, incomingFunds, 1)
+		vtxo := incomingFunds[0]
+
+		// Generate 30 blocks to expire the batch output
+		err = generateBlocks(30)
+		require.NoError(t, err)
+
+		// Wait for server to attempt the sweep (it should fail due to dust amount)
+		time.Sleep(25 * time.Second)
+
+		// Verify the vtxo is not swept yet (automatic sweep failed)
+		spendable, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, spendable, 1)
+		require.Equal(t, vtxo.Txid, spendable[0].Txid)
+		require.False(t, spendable[0].Swept, "vtxo should not be swept automatically")
+
+		// Use admin Sweep RPC to manually sweep the batch
+		adminHttpClient := &http.Client{
+			Timeout: 15 * time.Second,
+		}
+
+		reqBody := bytes.NewReader([]byte(fmt.Sprintf(
+			`{"connectors": true, "commitment_txids": ["%s"]}`,
+			commitmentTxid,
+		)))
+		req, err := http.NewRequest("POST", "http://localhost:7071/v1/admin/sweep", reqBody)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := adminHttpClient.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var sweepResp struct {
+			Txid string `json:"txid"`
+			Hex  string `json:"hex"`
+		}
+		err = json.NewDecoder(resp.Body).Decode(&sweepResp)
+		require.NoError(t, err)
+		require.NotEmpty(t, sweepResp.Txid)
+		require.NotEmpty(t, sweepResp.Hex)
+
+		// Wait a bit for the sweep event to be processed
+		time.Sleep(5 * time.Second)
+
+		// Verify the vtxo is now marked as swept
+		spendable, _, err = alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, spendable, 1)
+		require.Equal(t, vtxo.Txid, spendable[0].Txid)
+		require.True(t, spendable[0].Swept, "vtxo should be swept after manual sweep")
+	})
 }
 
 // TestCollisionBetweenInRoundAndRedeemVtxo tests for a potential collision between VTXOs that
@@ -3823,4 +3912,169 @@ func TestBan(t *testing.T) {
 		_, err = alice.Settle(t.Context())
 		require.Error(t, err)
 	})
+}
+
+// TestFee tests the fee calculation for the onboarding and settlement of the funds.
+// It first updates the 4 fee programs for intents.
+func TestFee(t *testing.T) {
+	fees := intentFees{
+		// for input: free in case of recoverable or note, 1% of the amount otherwise
+		// for output: 200 satoshis for onchain output, 0 for vtxo output
+		IntentOffchainInputFeeProgram:  "inputType == 'note' || inputType == 'recoverable' ? 0.0 : amount*0.01",
+		IntentOnchainInputFeeProgram:   "0.01 * amount",
+		IntentOffchainOutputFeeProgram: "0.0",
+		IntentOnchainOutputFeeProgram:  "200.0",
+	}
+
+	err := updateIntentFees(fees)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	alice := setupArkSDK(t)
+	bob := setupArkSDK(t)
+
+	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+	_, bobOffchainAddr, bobBoardingAddr, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	// Faucet Alice and Bob boarding addresses
+	faucetOnchain(t, aliceBoardingAddr, 0.00021)
+	faucetOnchain(t, bobBoardingAddr, 0.00021)
+	time.Sleep(6 * time.Second)
+
+	aliceBalance, err := alice.Balance(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, aliceBalance)
+	require.Zero(t, int(aliceBalance.OffchainBalance.Total))
+	require.Zero(t, int(aliceBalance.OnchainBalance.SpendableAmount))
+	require.NotEmpty(t, aliceBalance.OnchainBalance.LockedAmount)
+	require.NotZero(t, int(aliceBalance.OnchainBalance.LockedAmount[0].Amount))
+
+	bobBalance, err := bob.Balance(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, bobBalance)
+	require.Zero(t, int(bobBalance.OffchainBalance.Total))
+	require.Empty(t, int(bobBalance.OnchainBalance.SpendableAmount))
+	require.NotEmpty(t, bobBalance.OnchainBalance.LockedAmount)
+	require.NotZero(t, int(bobBalance.OnchainBalance.LockedAmount[0].Amount))
+
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+
+	// They join the same batch to settle their funds
+	var aliceIncomingErr, bobIncomingErr error
+	var aliceIncomingFunds, bobIncomingFunds []types.Vtxo
+	go func() {
+		aliceIncomingFunds, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+		wg.Done()
+	}()
+	go func() {
+		bobIncomingFunds, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr)
+		wg.Done()
+	}()
+
+	var aliceCommitmentTx, bobCommitmentTx string
+	var aliceBatchErr, bobBatchErr error
+	go func() {
+		aliceCommitmentTx, aliceBatchErr = alice.Settle(ctx)
+		wg.Done()
+	}()
+	go func() {
+		bobCommitmentTx, bobBatchErr = bob.Settle(ctx)
+		wg.Done()
+	}()
+
+	wg.Wait()
+
+	require.NoError(t, aliceIncomingErr)
+	require.NotEmpty(t, aliceIncomingFunds)
+	require.Len(t, aliceIncomingFunds, 1)
+	require.NoError(t, bobIncomingErr)
+	require.NotEmpty(t, bobIncomingFunds)
+	require.Len(t, bobIncomingFunds, 1)
+	require.NoError(t, aliceBatchErr)
+	require.NoError(t, bobBatchErr)
+	require.NotEmpty(t, aliceCommitmentTx)
+	require.NotEmpty(t, bobCommitmentTx)
+	require.Equal(t, aliceCommitmentTx, bobCommitmentTx)
+
+	aliceFirstVtxo := aliceIncomingFunds[0]
+	bobFirstVtxo := bobIncomingFunds[0]
+
+	// 21000 - 1% of 21000 = 20790
+	require.Equal(t, 20790, int(aliceFirstVtxo.Amount))
+	require.Equal(t, 20790, int(bobFirstVtxo.Amount))
+
+	time.Sleep(time.Second)
+
+	aliceBalance, err = alice.Balance(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, aliceBalance)
+	require.NotZero(t, int(aliceBalance.OffchainBalance.Total))
+
+	bobBalance, err = bob.Balance(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, bobBalance)
+	require.NotZero(t, int(bobBalance.OffchainBalance.Total))
+
+	time.Sleep(5 * time.Second)
+
+	// Alice and Bob refresh their VTXOs by joining another batch together
+	wg.Add(4)
+
+	go func() {
+		aliceIncomingFunds, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+		wg.Done()
+	}()
+	go func() {
+		bobIncomingFunds, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr)
+		wg.Done()
+	}()
+
+	go func() {
+		aliceCommitmentTx, aliceBatchErr = alice.Settle(ctx)
+		wg.Done()
+	}()
+	go func() {
+		bobCommitmentTx, bobBatchErr = bob.Settle(ctx)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	time.Sleep(time.Second)
+
+	require.NoError(t, aliceIncomingErr)
+	require.NoError(t, bobIncomingErr)
+	require.NotEmpty(t, aliceIncomingFunds)
+	require.Len(t, aliceIncomingFunds, 1)
+	require.NotEmpty(t, bobIncomingFunds)
+	require.Len(t, bobIncomingFunds, 1)
+	require.NoError(t, aliceBatchErr)
+	require.NoError(t, bobBatchErr)
+
+	aliceSecondVtxo := aliceIncomingFunds[0]
+	bobSecondVtxo := bobIncomingFunds[0]
+
+	// 20790 - 1% of 20790 = 20582
+	require.Equal(t, 20582, int(aliceSecondVtxo.Amount))
+	require.Equal(t, 20582, int(bobSecondVtxo.Amount))
+
+	require.NotEmpty(t, aliceCommitmentTx)
+	require.NotEmpty(t, bobCommitmentTx)
+	require.Equal(t, aliceCommitmentTx, bobCommitmentTx)
+
+	aliceBalance, err = alice.Balance(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, aliceBalance)
+	require.NotZero(t, int(aliceBalance.OffchainBalance.Total))
+	require.Zero(t, int(aliceBalance.OnchainBalance.SpendableAmount))
+	require.Empty(t, aliceBalance.OnchainBalance.LockedAmount)
+
+	bobBalance, err = bob.Balance(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, bobBalance)
+	require.NotZero(t, int(bobBalance.OffchainBalance.Total))
+	require.Zero(t, int(bobBalance.OnchainBalance.SpendableAmount))
+	require.Empty(t, bobBalance.OnchainBalance.LockedAmount)
 }

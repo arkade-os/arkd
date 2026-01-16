@@ -30,7 +30,7 @@ type IndexerService interface {
 	GetConnectors(ctx context.Context, txid string, page *Page) (*TreeTxResp, error)
 	GetVtxos(
 		ctx context.Context,
-		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool, page *Page,
+		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool, after, before int64, page *Page,
 	) (*GetVtxosResp, error)
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
@@ -146,8 +146,14 @@ func (i *indexerService) GetConnectors(
 
 func (i *indexerService) GetVtxos(
 	ctx context.Context,
-	pubkeys []string, spendableOnly, spentOnly, recoverableOnly, pendingOnly bool, page *Page,
+	pubkeys []string,
+	spendableOnly, spentOnly, recoverableOnly, pendingOnly bool,
+	after, before int64,
+	page *Page,
 ) (*GetVtxosResp, error) {
+	if err := validateTimeRange(after, before); err != nil {
+		return nil, err
+	}
 	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
 	count := 0
 	for _, v := range options {
@@ -164,12 +170,13 @@ func (i *indexerService) GetVtxos(
 	var allVtxos []domain.Vtxo
 	var err error
 	if pendingOnly {
-		allVtxos, err = i.repoManager.Vtxos().GetPendingSpentVtxosWithPubKeys(ctx, pubkeys)
+		allVtxos, err = i.repoManager.Vtxos().
+			GetPendingSpentVtxosWithPubKeys(ctx, pubkeys, after, before)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		allVtxos, err = i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys)
+		allVtxos, err = i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys, after, before)
 		if err != nil {
 			return nil, err
 		}

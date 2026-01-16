@@ -48,6 +48,24 @@ func parseRegisterIntent(
 	return proof, &message, nil
 }
 
+func parseEstimateFeeIntent(
+	intentProof *arkv1.Intent,
+) (*intent.Proof, *intent.EstimateIntentFeeMessage, error) {
+	proof, err := parseIntentProofTx(intentProof)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(intentProof.GetMessage()) <= 0 {
+		return nil, nil, fmt.Errorf("missing message")
+	}
+	var message intent.EstimateIntentFeeMessage
+	if err := message.Decode(intentProof.GetMessage()); err != nil {
+		return nil, nil, fmt.Errorf("invalid intent message")
+	}
+	return proof, &message, nil
+}
+
 func parseDeleteIntent(
 	intentProof *arkv1.Intent,
 ) (*intent.Proof, *intent.DeleteMessage, error) {
@@ -276,10 +294,10 @@ func (f fees) toProto() *arkv1.FeeInfo {
 	return &arkv1.FeeInfo{
 		TxFeeRate: strconv.FormatFloat(f.TxFeeRate, 'f', -1, 64),
 		IntentFee: &arkv1.IntentFeeInfo{
-			OffchainInput:  f.IntentFees.OffchainInput,
-			OffchainOutput: f.IntentFees.OffchainOutput,
-			OnchainInput:   fmt.Sprintf("%d", f.IntentFees.OnchainInput),
-			OnchainOutput:  fmt.Sprintf("%d", f.IntentFees.OnchainOutput),
+			OffchainInput:  f.IntentFees.OffchainInputFee,
+			OffchainOutput: f.IntentFees.OffchainOutputFee,
+			OnchainInput:   f.IntentFees.OnchainInputFee,
+			OnchainOutput:  f.IntentFees.OnchainOutputFee,
 		},
 	}
 }

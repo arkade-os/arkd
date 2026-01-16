@@ -199,7 +199,7 @@ func (m *mockedWallet) GetDustAmount(ctx context.Context) (uint64, error) {
 
 func (m *mockedWallet) IsTransactionConfirmed(
 	ctx context.Context, txid string,
-) (bool, int64, int64, error) {
+) (bool, *ports.BlockTimestamp, error) {
 	args := m.Called(ctx, txid)
 
 	var res bool
@@ -217,7 +217,10 @@ func (m *mockedWallet) IsTransactionConfirmed(
 		blocktime = b.(int64)
 	}
 
-	return res, height, blocktime, args.Error(2)
+	return res, &ports.BlockTimestamp{
+		Height: uint32(height),
+		Time:   blocktime,
+	}, args.Error(2)
 }
 
 func (m *mockedWallet) SignTransactionTapscript(
@@ -376,59 +379,4 @@ func (m *mockedWallet) LoadSignerKey(ctx context.Context, privateKey string) err
 func (m *mockedWallet) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
 	args := m.Called(ctx, outs)
 	return args.Error(0)
-}
-
-type mockedInput struct {
-	mock.Mock
-}
-
-func (m *mockedInput) GetTxid() string {
-	args := m.Called()
-
-	var res string
-	if a := args.Get(0); a != nil {
-		res = a.(string)
-	}
-
-	return res
-}
-
-func (m *mockedInput) GetIndex() uint32 {
-	args := m.Called()
-
-	var res uint32
-	if a := args.Get(0); a != nil {
-		res = a.(uint32)
-	}
-	return res
-}
-
-func (m *mockedInput) GetScript() string {
-	args := m.Called()
-
-	var res string
-	if a := args.Get(0); a != nil {
-		res = a.(string)
-	}
-	return res
-}
-
-func (m *mockedInput) GetAsset() string {
-	args := m.Called()
-
-	var res string
-	if a := args.Get(0); a != nil {
-		res = a.(string)
-	}
-	return res
-}
-
-func (m *mockedInput) GetValue() uint64 {
-	args := m.Called()
-
-	var res uint64
-	if a := args.Get(0); a != nil {
-		res = a.(uint64)
-	}
-	return res
 }

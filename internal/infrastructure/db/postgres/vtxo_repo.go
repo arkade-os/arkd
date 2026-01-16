@@ -188,6 +188,36 @@ func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error)
 	return readRows(rows)
 }
 
+func (v *vtxoRepository) GetExpiringLiquidity(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	amount, err := v.querier.SelectExpiringLiquidityAmount(
+		ctx,
+		queries.SelectExpiringLiquidityAmountParams{
+			After:  after,
+			Before: before,
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+	if amount < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", amount)
+	}
+	return uint64(amount), nil
+}
+
+func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+	amount, err := v.querier.SelectRecoverableLiquidityAmount(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if amount < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative value %d", amount)
+	}
+	return uint64(amount), nil
+}
+
 func (v *vtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
@@ -320,9 +350,16 @@ func (v *vtxoRepository) UpdateVtxosExpiration(
 }
 
 func (v *vtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectVtxosWithPubkeys(ctx, pubkeys)
+	if err := validateTimeRange(after, before); err != nil {
+		return nil, err
+	}
+	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
+		Column1: pubkeys,
+		After:   after,
+		Before:  before,
+	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -404,9 +441,19 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 }
 
 func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
-	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(ctx, pubkeys)
+	if err := validateTimeRange(after, before); err != nil {
+		return nil, err
+	}
+	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(
+		ctx,
+		queries.SelectPendingSpentVtxosWithPubkeysParams{
+			Column1: pubkeys,
+			After:   after,
+			Before:  before,
+		},
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

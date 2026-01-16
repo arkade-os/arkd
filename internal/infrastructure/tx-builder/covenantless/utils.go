@@ -7,7 +7,6 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -80,9 +79,4 @@ func getOutputVtxosLeaves(
 		}
 	}
 	return leaves, nil
-}
-
-func taprootOutputScript(taprootKey *btcec.PublicKey) ([]byte, error) {
-	return txscript.NewScriptBuilder().AddOp(txscript.OP_1).
-		AddData(schnorr.SerializePubKey(taprootKey)).Script()
 }

@@ -37,6 +37,15 @@ type Intent struct {
 	Message sql.NullString
 }
 
+type IntentFee struct {
+	ID                       int64
+	CreatedAt                int64
+	OffchainInputFeeProgram  string
+	OnchainInputFeeProgram   string
+	OffchainOutputFeeProgram string
+	OnchainOutputFeeProgram  string
+}
+
 type IntentWithInputsVw struct {
 	Txid           sql.NullString
 	Vout           sql.NullInt32
@@ -53,6 +62,7 @@ type IntentWithInputsVw struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
+	UpdatedAt      sql.NullInt64
 	Commitments    []byte
 	ID             sql.NullString
 	RoundID        sql.NullString
@@ -200,6 +210,7 @@ type Vtxo struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
+	UpdatedAt      int64
 }
 
 type VtxoCommitmentTxid struct {
@@ -224,5 +235,6 @@ type VtxoVw struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
+	UpdatedAt      int64
 	Commitments    []byte
 }

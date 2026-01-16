@@ -47,11 +47,11 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at
+    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at
+    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -64,7 +64,8 @@ VALUES (
     swept = EXCLUDED.swept,
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
-    created_at = EXCLUDED.created_at;
+    created_at = EXCLUDED.created_at,
+    updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
@@ -112,17 +113,17 @@ UPDATE vtxo SET intent_id = @intent_id WHERE txid = @txid AND vout = @vout;
 UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoUnrolled :exec
-UPDATE vtxo SET unrolled = true WHERE txid = @txid AND vout = @vout;
+UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoSweptIfNotSwept :execrows
-UPDATE vtxo SET swept = true WHERE txid = @txid AND vout = @vout AND swept = false;
+UPDATE vtxo SET swept = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
-UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by
+UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoSpent :exec
-UPDATE vtxo SET spent = true, spent_by = @spent_by, ark_txid = @ark_txid
+UPDATE vtxo SET spent = true, spent_by = @spent_by, ark_txid = @ark_txid, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectRoundWithId :many
@@ -248,7 +249,25 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
 
 -- name: SelectVtxosWithPubkeys :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey = ANY($1::varchar[]);
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE vtxo_vw.pubkey = ANY($1::varchar[])
+    AND vtxo_vw.updated_at >= @after::bigint
+    AND (@before::bigint = 0 OR vtxo_vw.updated_at <= @before::bigint);
+
+-- name: SelectExpiringLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS amount
+FROM vtxo
+WHERE swept = false
+  AND spent = false
+  AND unrolled = false
+  AND expires_at > @after
+  AND (@before <= 0 OR expires_at < @before);
+
+-- name: SelectRecoverableLiquidityAmount :one
+SELECT COALESCE(SUM(amount), 0)::bigint AS amount
+FROM vtxo
+WHERE swept = true
+  AND spent = false;
 
 -- name: SelectOffchainTx :many
 SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
@@ -312,7 +331,9 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.pubkey = ANY($1::varchar[])
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
-    );
+    )
+    AND v.updated_at >= @after::bigint
+    AND (@before::bigint = 0 OR v.updated_at <= @before::bigint);
 
 -- name: SelectPendingSpentVtxo :one
 SELECT v.*
@@ -354,3 +375,48 @@ ORDER BY created_at ASC;
 SELECT * FROM conviction 
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
+
+-- name: SelectLatestIntentFees :one
+SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
+
+-- name: AddIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+SELECT
+    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
+    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
+  CASE 
+    WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
+    WHEN @offchain_input_fee_program <> '' THEN @offchain_input_fee_program
+    ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
+    WHEN @onchain_input_fee_program <> '' THEN @onchain_input_fee_program
+    ELSE COALESCE((SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
+    WHEN @offchain_output_fee_program <> '' THEN @offchain_output_fee_program
+    ELSE COALESCE((SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END,
+  CASE
+    WHEN (@offchain_input_fee_program = '' AND @onchain_input_fee_program = '' AND @offchain_output_fee_program = '' AND @onchain_output_fee_program = '') THEN ''
+    WHEN @onchain_output_fee_program <> '' THEN @onchain_output_fee_program
+    ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
+  END;
+
+-- name: ClearIntentFees :exec
+INSERT INTO intent_fees (
+  offchain_input_fee_program,
+  onchain_input_fee_program,
+  offchain_output_fee_program,
+  onchain_output_fee_program
+)
+VALUES ('', '', '', '');
+
+

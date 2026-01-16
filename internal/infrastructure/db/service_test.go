@@ -188,6 +188,7 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
+			testFeeRepository(t, svc)
 		})
 	}
 }
@@ -961,7 +962,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Empty(t, pendingSpentVtxos)
 
 			pendingSpentVtxosByPubkey, err := svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"},
+				ctx, []string{"aaaa"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
@@ -974,13 +975,13 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Len(t, pendingSpentVtxos, 3)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"},
+				ctx, []string{"aaaa"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 2)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"},
+				ctx, []string{"bbbb"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
@@ -1005,16 +1006,87 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, "bbbb", pendingSpentVtxos[0].PubKey)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"},
+				ctx, []string{"aaaa"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"},
+				ctx, []string{"bbbb"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Test with time range that includes the vtxo
+			currTime := time.Now()
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, currTime.Add(-1*time.Hour).UnixMilli(), currTime.Add(1*time.Hour).UnixMilli(),
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Test with unbounded after time
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, 0, currTime.Add(1*time.Hour).UnixMilli(),
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Test with unbounded before time
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, currTime.Add(-1*time.Hour).UnixMilli(), 0,
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Test with time range that excludes the vtxo
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, currTime.Add(-2*time.Hour).UnixMilli(), currTime.Add(-1*time.Hour).UnixMilli(),
+			)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// TODO: move to "invalid" sub-test
+			// Test with invalid time range where after is greater than before
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, now.UnixMilli()+1000, now.UnixMilli(),
+			)
+			require.Error(t, err)
+			require.Equal(t, "before must be greater than after", err.Error())
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// Test with invalid time range where after is equal to before
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, now.UnixMilli(), now.UnixMilli(),
+			)
+			require.Error(t, err)
+			require.Equal(t, "before must be greater than after", err.Error())
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// Test with negative time after value
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, -1000, 0,
+			)
+			require.Error(t, err)
+			require.Equal(t, "after and before must be greater than or equal to 0", err.Error())
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// Test with negative time before value
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, 0, -1000,
+			)
+			require.Error(t, err)
+			require.Equal(t, "after and before must be greater than or equal to 0", err.Error())
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// Test with future time range
+			futureStart := time.Now().Add(24 * time.Hour).UnixMilli()
+			futureEnd := time.Now().Add(25 * time.Hour).UnixMilli()
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, futureStart, futureEnd,
+			)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			// Simulate finalization of a send-all by adding a new vtxo spending the pending one
 			// with same amount and different pubkey
@@ -1036,11 +1108,136 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Empty(t, pendingSpentVtxos)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"},
+				ctx, []string{"bbbb"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
 		})
+
+		liquidityNow := time.Now().Unix()
+		after := liquidityNow + 1
+		before := liquidityNow + 45
+
+		liquidityCommitmentTxid := randomString(32)
+		expiringVtxos := []domain.Vtxo{
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 9},
+				PubKey:             pubkey,
+				Amount:             700,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow - 10,
+				Swept:              false,
+				Spent:              false,
+				Unrolled:           false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+				PubKey:             pubkey,
+				Amount:             100,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 10,
+				Swept:              false,
+				Spent:              false,
+				Unrolled:           false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 1},
+				PubKey:             pubkey,
+				Amount:             200,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 20,
+				Swept:              true,
+				Spent:              false,
+				Unrolled:           false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 2},
+				PubKey:             pubkey,
+				Amount:             300,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 30,
+				Swept:              false,
+				Spent:              true,
+				Unrolled:           false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 3},
+				PubKey:             pubkey,
+				Amount:             400,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 40,
+				Swept:              false,
+				Spent:              false,
+				Unrolled:           true,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 4},
+				PubKey:             pubkey,
+				Amount:             500,
+				RootCommitmentTxid: liquidityCommitmentTxid,
+				CommitmentTxids:    []string{liquidityCommitmentTxid},
+				ExpiresAt:          liquidityNow + 50,
+				Swept:              false,
+				Spent:              false,
+				Unrolled:           false,
+			},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, expiringVtxos)
+		require.NoError(t, err)
+
+		amount, err := svc.Vtxos().GetExpiringLiquidity(ctx, after, before)
+		require.NoError(t, err)
+		require.Equal(t, uint64(100), amount)
+
+		// before=0 means no upper bound.
+		amount, err = svc.Vtxos().GetExpiringLiquidity(ctx, liquidityNow, 0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(600), amount)
+
+		recoverableBefore, err := svc.Vtxos().GetRecoverableLiquidity(ctx)
+		require.NoError(t, err)
+
+		recoverableCommitmentTxid := randomString(32)
+		recoverableVtxos := []domain.Vtxo{
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 10},
+				PubKey:             pubkey,
+				Amount:             111,
+				RootCommitmentTxid: recoverableCommitmentTxid,
+				CommitmentTxids:    []string{recoverableCommitmentTxid},
+				Swept:              true,
+				Spent:              false,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 11},
+				PubKey:             pubkey,
+				Amount:             222,
+				RootCommitmentTxid: recoverableCommitmentTxid,
+				CommitmentTxids:    []string{recoverableCommitmentTxid},
+				Swept:              true,
+				Spent:              true,
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 12},
+				PubKey:             pubkey,
+				Amount:             333,
+				RootCommitmentTxid: recoverableCommitmentTxid,
+				CommitmentTxids:    []string{recoverableCommitmentTxid},
+				Swept:              false,
+				Spent:              false,
+			},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, recoverableVtxos)
+		require.NoError(t, err)
+
+		recoverableAfter, err := svc.Vtxos().GetRecoverableLiquidity(ctx)
+		require.NoError(t, err)
+		require.Equal(t, recoverableBefore+uint64(111), recoverableAfter)
 	})
 }
 
@@ -1282,6 +1479,121 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 
 		_, err = repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
+	})
+}
+
+func testFeeRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_fee_repository", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Fees()
+
+		// fees should be initialized to empty strings
+		currentFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, currentFees)
+		require.Equal(t, "", currentFees.OnchainInputFee)
+		require.Equal(t, "", currentFees.OffchainInputFee)
+		require.Equal(t, "", currentFees.OnchainOutputFee)
+		require.Equal(t, "", currentFees.OffchainOutputFee)
+
+		newFees := domain.IntentFees{
+			OnchainInputFee:   "0.25",
+			OffchainInputFee:  "0.30",
+			OnchainOutputFee:  "0.35",
+			OffchainOutputFee: "0.40",
+		}
+
+		// sqlite and postgres use millisecond precision for created_at so we need to
+		// wait to ensure the updated_at is different.
+		// set the new fees
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+		time.Sleep(10 * time.Millisecond)
+		// zero out the fees
+		err = repo.ClearIntentFees(ctx)
+		require.NoError(t, err)
+
+		clearedFees, err := repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, clearedFees)
+		require.Equal(t, "", clearedFees.OnchainInputFee)
+		require.Equal(t, "", clearedFees.OffchainInputFee)
+		require.Equal(t, "", clearedFees.OnchainOutputFee)
+		require.Equal(t, "", clearedFees.OffchainOutputFee)
+
+		// set the fees back to newFees
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+
+		// only change 2 of the fees, the others should remain the same (testing partial updates)
+		newFees = domain.IntentFees{
+			OnchainInputFee:   "0.25",
+			OffchainOutputFee: "0.40",
+		}
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
+		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
+		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+
+		// test that updating with no fees yields an error and does not change existing fees
+		newFees = domain.IntentFees{}
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.Error(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, "0.25", updatedFees.OnchainInputFee)
+		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
+		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
+		require.Equal(t, "0.40", updatedFees.OffchainOutputFee)
+
+		// zero out the fees
+		err = repo.ClearIntentFees(ctx)
+		require.NoError(t, err)
+
+		// do partial update after clearing to ensure fees are set correctly from zero state
+		newFees = domain.IntentFees{
+			OnchainInputFee:  "0.15",
+			OffchainInputFee: "0.20",
+		}
+		time.Sleep(10 * time.Millisecond)
+		err = repo.UpdateIntentFees(ctx, newFees)
+		require.NoError(t, err)
+
+		updatedFees, err = repo.GetIntentFees(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, updatedFees)
+		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
+		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
+		require.Equal(t, "", updatedFees.OnchainOutputFee)
+		require.Equal(t, "", updatedFees.OffchainOutputFee)
 	})
 }
 

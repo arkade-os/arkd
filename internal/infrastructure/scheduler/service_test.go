@@ -17,6 +17,7 @@ import (
 type service struct {
 	name      string
 	scheduler ports.SchedulerService
+	now       int64
 }
 
 func TestScheduleTask(t *testing.T) {
@@ -31,7 +32,7 @@ func TestScheduleTask(t *testing.T) {
 				handlerFuncCalled.Store(true)
 			}
 
-			err := svc.scheduler.ScheduleTaskOnce(svc.scheduler.AddNow(2), handlerFunc)
+			err := svc.scheduler.ScheduleTaskOnce(svc.now+2, handlerFunc)
 			require.NoError(t, err)
 
 			time.Sleep(3 * time.Second)
@@ -43,7 +44,7 @@ func TestScheduleTask(t *testing.T) {
 
 func servicesToTest(t *testing.T) []service {
 	// mock esplora server for block tip endpoint
-	var blockHeight int64 = 99
+	var blockHeight int64 = 0
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/blocks/tip/height" {
 			w.WriteHeader(http.StatusOK)
@@ -67,8 +68,8 @@ func servicesToTest(t *testing.T) []service {
 	}
 
 	svcs := []service{
-		{name: "gocron", scheduler: timescheduler.NewScheduler()},
-		{name: "block", scheduler: blockService},
+		{name: "gocron", scheduler: timescheduler.NewScheduler(), now: time.Now().Unix()},
+		{name: "block", scheduler: blockService, now: 0},
 	}
 
 	for _, svc := range svcs {
