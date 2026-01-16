@@ -69,7 +69,7 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 		if derr != nil {
 			return fmt.Errorf("derive txid from proof for intent id %s: %w", id, derr)
 		}
-
+		
 		if _, err = stmt.ExecContext(ctx, txid, id); err != nil {
 			return err
 		}
@@ -101,30 +101,18 @@ func createIntentTxidIndex(ctx context.Context, db *sql.DB) error {
 
 // columnExists checks whether a column exists on a table using PRAGMA table_info.
 func columnExists(ctx context.Context, db *sql.DB, tableName, columnName string) (bool, error) {
-	query := fmt.Sprintf("PRAGMA table_info(%s);", tableName)
-	rows, err := db.QueryContext(ctx, query)
-	if err != nil {
+	const q = `
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name   = $1
+              AND column_name  = $2
+        );
+    `
+	var exists bool
+	if err := db.QueryRowContext(ctx, q, tableName, columnName).Scan(&exists); err != nil {
 		return false, err
 	}
-	// nolint:errcheck
-	defer rows.Close()
-
-	for rows.Next() {
-		// PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
-		var cid int
-		var name, ctype string
-		var notnull int
-		var dflt sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
-			return false, err
-		}
-		if name == columnName {
-			return true, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, err
-	}
-	return false, nil
+	return exists, nil
 }
