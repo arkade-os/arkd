@@ -14,6 +14,7 @@ func TestIntentTxidMigration(t *testing.T) {
 	db, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
 
+	// nolint:errcheck
 	defer db.Close()
 	// create table intent references
 	setupRoundTable(t, db)
@@ -67,6 +68,7 @@ func TestIntentTxidMigration(t *testing.T) {
 	require.NoError(t, rows.Err())
 	require.Len(t, got, 2)
 
+	// nolint:errcheck
 	rows.Close()
 
 	// Check each row has a non-empty txid and that it matches the derived txid from the proof

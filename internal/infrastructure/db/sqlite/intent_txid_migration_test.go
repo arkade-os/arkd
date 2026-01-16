@@ -13,6 +13,7 @@ func TestIntentTxidMigration(t *testing.T) {
 	db, err := OpenDb(":memory:")
 	require.NoError(t, err)
 
+	// nolint:errcheck
 	defer db.Close()
 	// create table intent references
 	setupRoundTable(t, db)
@@ -32,7 +33,8 @@ func TestIntentTxidMigration(t *testing.T) {
 
 	// check the intent table has the new txid column
 	var hasID int
-	err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('intent') WHERE name = 'txid'`).Scan(&hasID)
+	err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('intent') WHERE name = 'txid'`).
+		Scan(&hasID)
 	require.NoError(t, err)
 	require.Equal(t, 1, hasID)
 
@@ -58,6 +60,7 @@ func TestIntentTxidMigration(t *testing.T) {
 	require.NoError(t, rows.Err())
 	require.Len(t, got, 2)
 
+	// nolint:errcheck
 	rows.Close()
 
 	// Check each row has a non-empty txid and that it matches the derived txid from the proof
