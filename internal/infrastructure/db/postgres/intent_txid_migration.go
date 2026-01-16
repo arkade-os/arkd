@@ -33,7 +33,7 @@ func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
 
 func backfillIntent(ctx context.Context, db *sql.DB) error {
 	const listIntent = `SELECT id, proof FROM intent;`
-	const updateIntent = `UPDATE intent SET txid = ? WHERE id = ?;`
+	const updateIntent = `UPDATE intent SET txid = $1 WHERE id = $2;`
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -69,7 +69,7 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 		if derr != nil {
 			return fmt.Errorf("derive txid from proof for intent id %s: %w", id, derr)
 		}
-		
+
 		if _, err = stmt.ExecContext(ctx, txid, id); err != nil {
 			return err
 		}
