@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/timshannon/badgerhold/v4"
 )
@@ -593,48 +591,4 @@ func (r *arkRepository) getIntentIndexByTxid(
 		return nil, err
 	}
 	return &idx, nil
-}
-
-// BackfillIntentTxids backfills missing intent txids from existing proofs
-func (r *arkRepository) BackfillIntentTxids(ctx context.Context) error {
-	var rounds []domain.Round
-	if err := r.store.Find(&rounds, nil); err != nil {
-		return fmt.Errorf("failed to list rounds: %w", err)
-	}
-
-	numUpdated := 0
-	for _, round := range rounds {
-		updated := false
-		for _, intent := range round.Intents {
-			if intent.Txid == "" {
-				fmt.Printf("updating intent txid...\n")
-				txid, derr := deriveTxidFromProof(intent.Proof)
-				if derr != nil {
-					return fmt.Errorf("error deriving txid from proof for intent id %s: %w", intent.Id, derr)
-				}
-				fmt.Printf("new txid adding: %s\n", txid)
-				numUpdated++
-				intent.Txid = txid
-				if upsertErr := r.upsertIntentIndex(ctx, txid, round.Id, intent.Id); upsertErr != nil {
-					return fmt.Errorf("error upserting intent index for intent id %s: %w", intent.Id, upsertErr)
-				}
-				updated = true
-			}
-		}
-		if updated {
-			if err := r.addOrUpdateRound(ctx, round); err != nil {
-				return fmt.Errorf("error updating round %s with backfilled intent txids: %w", round.Id, err)
-			}
-		}
-	}
-	fmt.Printf("num intents updated: %d\n", numUpdated)
-	return nil
-}
-
-func deriveTxidFromProof(proof string) (string, error) {
-	tx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
-	if err != nil {
-		return "", fmt.Errorf("psbt parse: %w", err)
-	}
-	return tx.UnsignedTx.TxID(), nil
 }

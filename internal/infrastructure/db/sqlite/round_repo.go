@@ -695,7 +695,3 @@ func createUpsertTransactionParams(
 
 	return params
 }
-
-func (r *roundRepository) BackfillIntentTxids(ctx context.Context) error {
-	return nil
-}
