@@ -88,8 +88,7 @@ func NewClient(serverUrl string, withMonitorConn bool) (indexer.Indexer, error) 
 }
 
 func (a *grpcClient) GetCommitmentTx(
-	ctx context.Context,
-	txid string,
+	ctx context.Context, txid string,
 ) (*indexer.CommitmentTx, error) {
 	req := &arkv1.GetCommitmentTxRequest{
 		Txid: txid,
@@ -311,6 +310,7 @@ func (a *grpcClient) GetVtxos(
 		}
 	}
 
+	after, before := opt.GetTimeRange()
 	req := &arkv1.GetVtxosRequest{
 		Scripts:         opt.GetScripts(),
 		Outpoints:       opt.GetOutpoints(),
@@ -318,6 +318,8 @@ func (a *grpcClient) GetVtxos(
 		SpentOnly:       opt.GetSpentOnly(),
 		RecoverableOnly: opt.GetRecoverableOnly(),
 		PendingOnly:     opt.GetPendingOnly(),
+		After:           after,
+		Before:          before,
 		Page:            page,
 	}
 
@@ -421,8 +423,7 @@ func (a *grpcClient) GetVirtualTxs(
 }
 
 func (a *grpcClient) GetBatchSweepTxs(
-	ctx context.Context,
-	batchOutpoint types.Outpoint,
+	ctx context.Context, batchOutpoint types.Outpoint,
 ) ([]string, error) {
 	req := &arkv1.GetBatchSweepTransactionsRequest{
 		BatchOutpoint: &arkv1.IndexerOutpoint{
@@ -529,9 +530,7 @@ func (a *grpcClient) GetSubscription(
 }
 
 func (a *grpcClient) SubscribeForScripts(
-	ctx context.Context,
-	subscriptionId string,
-	scripts []string,
+	ctx context.Context, subscriptionId string, scripts []string,
 ) (string, error) {
 	req := &arkv1.SubscribeForScriptsRequest{
 		Scripts: scripts,
@@ -548,9 +547,7 @@ func (a *grpcClient) SubscribeForScripts(
 }
 
 func (a *grpcClient) UnsubscribeForScripts(
-	ctx context.Context,
-	subscriptionId string,
-	scripts []string,
+	ctx context.Context, subscriptionId string, scripts []string,
 ) error {
 	req := &arkv1.UnsubscribeForScriptsRequest{
 		Scripts: scripts,

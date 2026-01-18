@@ -1182,6 +1182,8 @@ type ApiIndexerServiceGetVtxosRequest struct {
 	spentOnly *bool
 	recoverableOnly *bool
 	pendingOnly *bool
+	after *int64
+	before *int64
 	pageSize *int32
 	pageIndex *int32
 }
@@ -1219,6 +1221,18 @@ func (r ApiIndexerServiceGetVtxosRequest) RecoverableOnly(recoverableOnly bool) 
 // Include only spent vtxos that are not finalized.
 func (r ApiIndexerServiceGetVtxosRequest) PendingOnly(pendingOnly bool) ApiIndexerServiceGetVtxosRequest {
 	r.pendingOnly = &pendingOnly
+	return r
+}
+
+// Include only vtxos with last update after the given unix time in milliseconds. A value of 0 means no lower bound.
+func (r ApiIndexerServiceGetVtxosRequest) After(after int64) ApiIndexerServiceGetVtxosRequest {
+	r.after = &after
+	return r
+}
+
+// Include only vtxos with last update before the given unix time in milliseconds, greater value than the after when specified. A value of 0 means no upper bound.
+func (r ApiIndexerServiceGetVtxosRequest) Before(before int64) ApiIndexerServiceGetVtxosRequest {
+	r.before = &before
 	return r
 }
 
@@ -1291,6 +1305,12 @@ func (a *IndexerServiceAPIService) IndexerServiceGetVtxosExecute(r ApiIndexerSer
 	}
 	if r.pendingOnly != nil {
 		parameterAddToHeaderOrQuery(localVarQueryParams, "pendingOnly", r.pendingOnly, "form", "")
+	}
+	if r.after != nil {
+		parameterAddToHeaderOrQuery(localVarQueryParams, "after", r.after, "form", "")
+	}
+	if r.before != nil {
+		parameterAddToHeaderOrQuery(localVarQueryParams, "before", r.before, "form", "")
 	}
 	if r.pageSize != nil {
 		parameterAddToHeaderOrQuery(localVarQueryParams, "page.size", r.pageSize, "form", "")

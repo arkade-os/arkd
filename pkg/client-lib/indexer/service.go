@@ -10,46 +10,30 @@ import (
 type Indexer interface {
 	GetCommitmentTx(ctx context.Context, txid string) (*CommitmentTx, error)
 	GetVtxoTree(
-		ctx context.Context,
-		batchOutpoint types.Outpoint,
-		opts ...RequestOption,
+		ctx context.Context, batchOutpoint types.Outpoint, opts ...RequestOption,
 	) (*VtxoTreeResponse, error)
 	GetFullVtxoTree(
-		ctx context.Context,
-		batchOutpoint types.Outpoint,
-		opts ...RequestOption,
+		ctx context.Context, batchOutpoint types.Outpoint, opts ...RequestOption,
 	) ([]tree.TxTreeNode, error)
 	GetVtxoTreeLeaves(
-		ctx context.Context,
-		batchOutpoint types.Outpoint,
-		opts ...RequestOption,
+		ctx context.Context, batchOutpoint types.Outpoint, opts ...RequestOption,
 	) (*VtxoTreeLeavesResponse, error)
 	GetForfeitTxs(
-		ctx context.Context,
-		txid string,
-		opts ...RequestOption,
+		ctx context.Context, txid string, opts ...RequestOption,
 	) (*ForfeitTxsResponse, error)
 	GetConnectors(
-		ctx context.Context,
-		txid string,
-		opts ...RequestOption,
+		ctx context.Context, txid string, opts ...RequestOption,
 	) (*ConnectorsResponse, error)
 	GetVtxos(ctx context.Context, opts ...GetVtxosRequestOption) (*VtxosResponse, error)
 	GetVtxoChain(
-		ctx context.Context,
-		outpoint types.Outpoint,
-		opts ...RequestOption,
+		ctx context.Context, outpoint types.Outpoint, opts ...RequestOption,
 	) (*VtxoChainResponse, error)
 	GetVirtualTxs(
-		ctx context.Context,
-		txids []string,
-		opts ...RequestOption,
+		ctx context.Context, txids []string, opts ...RequestOption,
 	) (*VirtualTxsResponse, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint types.Outpoint) ([]string, error)
 	SubscribeForScripts(
-		ctx context.Context,
-		subscriptionId string,
-		scripts []string,
+		ctx context.Context, subscriptionId string, scripts []string,
 	) (string, error)
 	UnsubscribeForScripts(ctx context.Context, subscriptionId string, scripts []string) error
 	GetSubscription(ctx context.Context, subscriptionId string) (<-chan *ScriptEvent, func(), error)

@@ -244,12 +244,13 @@ func (a *restClient) GetVtxos(
 		return nil, fmt.Errorf("missing opts")
 	}
 	opt := opts[0]
-
+	after, before := opt.GetTimeRange()
 	req := a.svc.IndexerServiceAPI.IndexerServiceGetVtxos(ctx).
 		SpendableOnly(opt.GetSpendableOnly()).
 		SpentOnly(opt.GetSpentOnly()).
 		RecoverableOnly(opt.GetRecoverableOnly()).
-		PendingOnly(opt.GetPendingOnly())
+		PendingOnly(opt.GetPendingOnly()).
+		After(after).Before(before)
 
 	if len(opt.GetOutpoints()) > 0 {
 		req = req.Outpoints(opt.GetOutpoints())

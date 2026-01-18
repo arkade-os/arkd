@@ -27,6 +27,8 @@ type GetVtxosRequestOption struct {
 	spendableOnly   bool
 	recoverableOnly bool
 	pendingOnly     bool
+	after           int64
+	before          int64
 }
 
 func (o *GetVtxosRequestOption) WithScripts(scripts []string) error {
@@ -93,6 +95,27 @@ func (o *GetVtxosRequestOption) WithPendingOnly() {
 
 func (o *GetVtxosRequestOption) GetPendingOnly() bool {
 	return o.pendingOnly
+}
+
+func (o *GetVtxosRequestOption) WithTimeRange(before, after int64) error {
+	if o.after > 0 || o.before > 0 {
+		return fmt.Errorf("time range already set")
+	}
+	if before <= 0 && after <= 0 {
+		return fmt.Errorf("missing time range")
+	}
+	if before > 0 && after > 0 && before <= after {
+		return fmt.Errorf("before must be greater than after")
+	}
+	o.before = before
+	o.after = after
+	return nil
+}
+
+func (o *GetVtxosRequestOption) GetTimeRange() (after, before int64) {
+	after = o.after
+	before = o.before
+	return
 }
 
 type GetTxHistoryRequestOption struct {

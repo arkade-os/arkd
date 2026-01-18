@@ -3930,6 +3930,7 @@ func TestFee(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
+		// nolint
 		clearIntentFees()
 	})
 

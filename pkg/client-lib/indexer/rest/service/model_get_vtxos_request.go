@@ -19,6 +19,10 @@ var _ MappedNullable = &GetVtxosRequest{}
 
 // GetVtxosRequest struct for GetVtxosRequest
 type GetVtxosRequest struct {
+	// Include only vtxos with last update after the given unix time in milliseconds. A value of 0 means no lower bound.
+		After *int64 `json:"after,omitempty"`
+	// Include only vtxos with last update before the given unix time in milliseconds, greater value than the after when specified. A value of 0 means no upper bound.
+		Before *int64 `json:"before,omitempty"`
 	// Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.
 		Outpoints []string `json:"outpoints,omitempty"`
 		Page *IndexerPageRequest `json:"page,omitempty"`
@@ -49,6 +53,70 @@ func NewGetVtxosRequest() *GetVtxosRequest {
 func NewGetVtxosRequestWithDefaults() *GetVtxosRequest {
 	this := GetVtxosRequest{}
 	return &this
+}
+
+// GetAfter returns the After field value if set, zero value otherwise.
+func (o *GetVtxosRequest) GetAfter() int64 {
+	if o == nil || IsNil(o.After) {
+		var ret int64
+		return ret
+	}
+	return *o.After
+}
+
+// GetAfterOk returns a tuple with the After field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *GetVtxosRequest) GetAfterOk() (*int64, bool) {
+	if o == nil || IsNil(o.After) {
+		return nil, false
+	}
+	return o.After, true
+}
+
+// HasAfter returns a boolean if a field has been set.
+func (o *GetVtxosRequest) HasAfter() bool {
+	if o != nil && !IsNil(o.After) {
+		return true
+	}
+
+	return false
+}
+
+// SetAfter gets a reference to the given int64 and assigns it to the After field.
+func (o *GetVtxosRequest) SetAfter(v int64) {
+	o.After = &v
+}
+
+// GetBefore returns the Before field value if set, zero value otherwise.
+func (o *GetVtxosRequest) GetBefore() int64 {
+	if o == nil || IsNil(o.Before) {
+		var ret int64
+		return ret
+	}
+	return *o.Before
+}
+
+// GetBeforeOk returns a tuple with the Before field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *GetVtxosRequest) GetBeforeOk() (*int64, bool) {
+	if o == nil || IsNil(o.Before) {
+		return nil, false
+	}
+	return o.Before, true
+}
+
+// HasBefore returns a boolean if a field has been set.
+func (o *GetVtxosRequest) HasBefore() bool {
+	if o != nil && !IsNil(o.Before) {
+		return true
+	}
+
+	return false
+}
+
+// SetBefore gets a reference to the given int64 and assigns it to the Before field.
+func (o *GetVtxosRequest) SetBefore(v int64) {
+	o.Before = &v
 }
 
 // GetOutpoints returns the Outpoints field value if set, zero value otherwise.
@@ -285,6 +353,12 @@ func (o GetVtxosRequest) MarshalJSON() ([]byte, error) {
 
 func (o GetVtxosRequest) ToMap() (map[string]interface{}, error) {
 	toSerialize := map[string]interface{}{}
+	if !IsNil(o.After) {
+		toSerialize["after"] = o.After
+	}
+	if !IsNil(o.Before) {
+		toSerialize["before"] = o.Before
+	}
 	if !IsNil(o.Outpoints) {
 		toSerialize["outpoints"] = o.Outpoints
 	}
