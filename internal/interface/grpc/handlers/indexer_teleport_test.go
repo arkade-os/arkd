@@ -136,19 +136,18 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 	svc := NewIndexerService(mockSvc, eventsCh, time.Minute, 5)
 
 	// Create AssetGroup Group with Teleport Output
-	teleportHashBytes, err := hex.DecodeString("deadbeef")
+	teleportScript, err := hex.DecodeString("deadbeef")
 	assert.NoError(t, err)
 
-	var commitment [32]byte
-	copy(commitment[:], teleportHashBytes)
+	teleportScriptHex := hex.EncodeToString(teleportScript)
 
 	assetGroup := extension.AssetPacket{
 		Assets: []extension.AssetGroup{
 			{
 				Outputs: []extension.AssetOutput{
 					{
-						Type:       extension.AssetTypeTeleport,
-						Commitment: commitment,
+						Type:   extension.AssetTypeTeleport,
+						Script: teleportScript,
 					},
 				},
 			},
@@ -170,7 +169,7 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 	// 1. Subscribe
 	ctx := context.Background()
 	subRes, err := svc.SubscribeForTeleportHash(ctx, &arkv1.SubscribeForTeleportHashRequest{
-		TeleportHashes: []string{hex.EncodeToString(commitment[:])},
+		TeleportHashes: []string{teleportScriptHex},
 	})
 	assert.NoError(t, err)
 	assert.NotEmpty(t, subRes.SubscriptionId)
@@ -185,7 +184,7 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 			assert.Len(t, resp.GetEvent().TeleportEvents, 1)
 			assert.Equal(
 				t,
-				hex.EncodeToString(commitment[:]),
+				teleportScriptHex,
 				resp.GetEvent().TeleportEvents[0].TeleportHash,
 			)
 			assert.Equal(t, uint32(0), resp.GetEvent().TeleportEvents[0].OutputVout)
@@ -213,7 +212,7 @@ func TestSubscribeForTeleportHash(t *testing.T) {
 		SpendableVtxos: []domain.Vtxo{},
 		TeleportAssets: []application.TeleportAsset{
 			{
-				TeleportHash: hex.EncodeToString(commitment[:]),
+				TeleportHash: teleportScriptHex,
 				AnchorOutpoint: domain.Outpoint{
 					Txid: "txid",
 					VOut: 0,

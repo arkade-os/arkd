@@ -1522,7 +1522,7 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
-	assetInputMap := make(map[uint32]AssetInput)
+	assetInputMap := make(map[uint32][]AssetInput)
 	var assetPacket *extension.AssetPacket
 
 	for _, txOut := range proof.UnsignedTx.TxOut {
@@ -1548,11 +1548,16 @@ func (s *service) RegisterIntent(
 				}
 
 				for _, input := range asst.Inputs {
-					assetInputMap[input.Vin] = AssetInput{
+					if _, ok := assetInputMap[input.Vin]; !ok {
+						assetInputMap[input.Vin] = make([]AssetInput, 0)
+					}
+
+					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], AssetInput{
 						AssetInput: input,
 						AssetId:    asst.AssetId.ToString(),
-					}
+					})
 				}
+
 			}
 			break
 		}
@@ -1661,18 +1666,19 @@ func (s *service) RegisterIntent(
 
 		// verify asset input if present
 		// +1 to account for proof fake input at index 0
-		if assetInput, ok := assetInputMap[uint32(i+1)]; ok {
+		if assetInputList, ok := assetInputMap[uint32(i+1)]; ok {
+			for _, assetInput := range assetInputList {
+				if err := s.verifyAssetInputPrevOut(ctx, assetInput.AssetInput, outpoint); err != nil {
+					return "", errors.ASSET_VALIDATION_FAILED.New(
+						"asset input validation failed for input %d: %w", i, err,
+					).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+				}
 
-			if err := s.verifyAssetInputPrevOut(ctx, assetInput.AssetInput, outpoint, *proof.UnsignedTx); err != nil {
-				return "", errors.ASSET_VALIDATION_FAILED.New(
-					"asset input validation failed for input %d: %w", i, err,
-				).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+				vtxo.Extensions = append(vtxo.Extensions, domain.AssetExtension{
+					AssetID: assetInput.AssetId,
+					Amount:  assetInput.Amount,
+				})
 			}
-
-			vtxo.Extensions = append(vtxo.Extensions, domain.AssetExtension{
-				AssetID: assetInput.AssetId,
-				Amount:  assetInput.Amount,
-			})
 
 		}
 
@@ -1938,10 +1944,10 @@ func (s *service) RegisterIntent(
 					})
 				}
 
-				teleportHash := hex.EncodeToString(output.Commitment[:])
+				teleportScript := hex.EncodeToString(output.Script)
 
 				if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
-					Hash:      teleportHash,
+					Hash:      teleportScript,
 					AssetID:   asst.AssetId.ToString(),
 					Amount:    output.Amount,
 					IsClaimed: false,
@@ -1950,11 +1956,10 @@ func (s *service) RegisterIntent(
 				}
 
 				receivers = append(receivers, domain.Receiver{
-					AssetTeleportHash: teleportHash,
-					Amount:            output.Amount,
-					AssetId:           asst.AssetId.ToString(),
+					Amount:  output.Amount,
+					AssetId: asst.AssetId.ToString(),
+					PubKey:  hex.EncodeToString(output.Script[2:]),
 				})
-
 			}
 		}
 
@@ -4343,6 +4348,10 @@ func (s *service) storeAssetGroups(
 			)
 
 			for _, out := range asstGp.Outputs {
+				if out.Type == extension.AssetTypeTeleport {
+					continue
+				}
+
 				asst := domain.NormalAsset{
 					Outpoint: domain.Outpoint{
 						Txid: arkTx.TxID(),
@@ -4362,7 +4371,7 @@ func (s *service) storeAssetGroups(
 			return fmt.Errorf("error retrieving asset data: %s", err)
 		}
 		if assetGp == nil {
-			return fmt.Errorf("asset with id %s not found for update", assetId)
+			return fmt.Errorf("asset with id %s not found for update", assetId.ToString())
 		}
 
 		if !assetGp.Immutable && len(metadataList) > 0 {
@@ -4376,7 +4385,7 @@ func (s *service) storeAssetGroups(
 			}
 
 			if controlAssetID == nil {
-				return fmt.Errorf("invalid control asset id for asset %s", assetId)
+				return fmt.Errorf("invalid control asset id for asset %s", assetId.ToString())
 			}
 
 			if err := s.ensureAssetPresence(ctx, assetGroupList, *controlAssetID); err != nil {
@@ -4425,7 +4434,8 @@ func (s *service) markTeleportInputsClaimed(ctx context.Context, inputs []extens
 			continue
 		}
 
-		if err := s.repoManager.Assets().UpdateTeleportAsset(ctx, hex.EncodeToString(in.Commitment[:]), true); err != nil {
+		teleportScript := hex.EncodeToString(in.Witness.Script)
+		if err := s.repoManager.Assets().UpdateTeleportAsset(ctx, teleportScript, in.Vin); err != nil {
 			log.WithError(err).Warn("failed to update teleport asset")
 		}
 	}
@@ -4488,7 +4498,7 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 				}
 
 				event := TeleportAsset{
-					TeleportHash:   hex.EncodeToString(assetOut.Commitment[:]),
+					TeleportHash:   hex.EncodeToString(assetOut.Script),
 					AnchorOutpoint: anchorOutpoint,
 					AssetID:        ast.AssetId.ToString(),
 					OutputVout:     uint32(outIdx),

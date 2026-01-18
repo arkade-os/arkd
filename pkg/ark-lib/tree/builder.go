@@ -299,11 +299,7 @@ func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, e
 		}
 
 		var outputs []*wire.TxOut
-		if len(r.AssetScript) > 0 {
-			outputs = []*wire.TxOut{{Value: 0, PkScript: []byte(r.AssetScript)}}
-		} else {
-			outputs = []*wire.TxOut{{Value: int64(r.Amount), PkScript: pkScript}}
-		}
+		outputs = []*wire.TxOut{{Value: int64(r.Amount), PkScript: pkScript}}
 
 		leafNode := &leaf{
 			outputs:     outputs,

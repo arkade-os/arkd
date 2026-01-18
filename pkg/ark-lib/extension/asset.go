@@ -2,14 +2,11 @@ package extension
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
-	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/tlv"
 )
@@ -76,7 +73,7 @@ func AssetIdFromString(s string) (*AssetId, error) {
 type AssetGroup struct {
 	AssetId      *AssetId
 	Immutable    bool
-	Outputs      []AssetOutput // 8 + 33
+	Outputs      []AssetOutput // local: vout+amount, teleport: script+amount
 	ControlAsset *AssetRef
 	Inputs       []AssetInput
 	Metadata     []Metadata
@@ -93,10 +90,10 @@ type Metadata struct {
 }
 
 type AssetOutput struct {
-	Type       AssetType
-	Vout       uint32   // For Local
-	Commitment [32]byte // For Teleport
-	Amount     uint64
+	Type   AssetType
+	Vout   uint32 // For Local
+	Script []byte // For Teleport
+	Amount uint64
 }
 
 type AssetType uint8
@@ -107,23 +104,15 @@ const (
 )
 
 type TeleportWitness struct {
-	Script []byte
-	Nonce  [32]byte
-}
-
-func CalculateTeleportHash(script []byte, nonce [32]byte) [32]byte {
-	var buf bytes.Buffer
-	buf.Write(script)
-	buf.Write(nonce[:])
-	return sha256.Sum256(buf.Bytes())
+	Script   []byte
+	IntentId [32]byte
 }
 
 type AssetInput struct {
-	Type       AssetType
-	Vin        uint32          // For Local
-	Commitment [32]byte        // For Teleport
-	Witness    TeleportWitness // For Teleport
-	Amount     uint64
+	Type    AssetType
+	Vin     uint32
+	Witness TeleportWitness // For Teleport
+	Amount  uint64
 }
 
 func (g *AssetPacket) EncodeAssetPacket() (wire.TxOut, error) {
@@ -131,22 +120,6 @@ func (g *AssetPacket) EncodeAssetPacket() (wire.TxOut, error) {
 		Asset: g,
 	}
 	return opReturnPacket.EncodeExtensionPacket()
-}
-
-func DecodeAssetPacket(txOut wire.TxOut) (*AssetPacket, error) {
-	packet, err := DecodeExtensionPacket(txOut)
-	if err != nil {
-		return nil, err
-	}
-	if packet.Asset == nil {
-		return nil, errors.New("missing asset payload")
-	}
-	return packet.Asset, nil
-}
-
-func ContainsAssetPacket(opReturnData []byte) bool {
-	payload, _, err := parsePacketOpReturn(opReturnData)
-	return err == nil && len(payload) > 0
 }
 
 func (a *AssetGroup) EncodeTlv() ([]byte, error) {
@@ -253,23 +226,34 @@ func (a *AssetGroup) DecodeTlv(data []byte) error {
 	return tlvStream.Decode(buf)
 }
 
-func DeriveAssetPacketFromTx(arkTx string) (*AssetPacket, error) {
-	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(arkTx), true)
+func DecodeAssetPacket(txOut wire.TxOut) (*AssetPacket, error) {
+	packet, err := DecodeExtensionPacket(txOut)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding Ark Tx: %s", err)
+		return nil, err
 	}
+	if packet.Asset == nil {
+		return nil, errors.New("missing asset payload")
+	}
+	return packet.Asset, nil
+}
 
-	for _, output := range decodedArkTx.UnsignedTx.TxOut {
+func ContainsAssetPacket(opReturnData []byte) bool {
+	payload, _, err := parsePacketOpReturn(opReturnData)
+	return err == nil && len(payload) > 0
+}
+
+func DeriveAssetPacketFromTx(arkTx wire.MsgTx) (*AssetPacket, int, error) {
+	for i, output := range arkTx.TxOut {
 		if ContainsAssetPacket(output.PkScript) {
 			assetPacket, err := DecodeAssetPacket(*output)
 			if err != nil {
-				return nil, fmt.Errorf("error decoding asset Opreturn: %s", err)
+				return nil, 0, fmt.Errorf("error decoding asset Opreturn: %s", err)
 			}
-			return assetPacket, nil
+			return assetPacket, i, nil
 		}
 	}
 
-	return nil, errors.New("no asset opreturn found in transaction")
+	return nil, 0, errors.New("no asset opreturn found in transaction")
 
 }
 

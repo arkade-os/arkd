@@ -10,7 +10,6 @@ import (
 // Leaf represents the output of a leaf transaction.
 type Leaf struct {
 	Script              string
-	AssetScript         string
 	Amount              uint64
 	CosignersPublicKeys []string
 }

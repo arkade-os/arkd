@@ -47,7 +47,7 @@ type AssetRepository interface {
 	ListMetadataByAssetID(ctx context.Context, assetID string) ([]AssetMetadata, error)
 	GetAssetAnchorByTxId(ctx context.Context, txId string) (*AssetAnchor, error)
 	InsertTeleportAsset(ctx context.Context, teleport TeleportAsset) error
-	GetTeleportAsset(ctx context.Context, teleportHash string) (*TeleportAsset, error)
-	UpdateTeleportAsset(ctx context.Context, teleportHash string, isClaimed bool) error
+	GetTeleportAsset(ctx context.Context, teleportScript string, index uint32) (*TeleportAsset, error)
+	UpdateTeleportAsset(ctx context.Context, teleportHash string, index uint32) error
 	Close()
 }

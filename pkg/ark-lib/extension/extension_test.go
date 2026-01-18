@@ -36,9 +36,9 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Vout:   0,
 			},
 			{
-				Type:       AssetTypeTeleport,
-				Commitment: deterministicBytesArray(0xcc),
-				Amount:     22,
+				Type:   AssetTypeTeleport,
+				Script: deterministicTxhash(0xcc),
+				Amount: 22,
 			},
 		},
 		ControlAsset: AssetRefFromId(AssetId{
@@ -53,10 +53,10 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 			},
 			{
 				Type:       AssetTypeTeleport,
-				Commitment: deterministicBytesArray(0xbb),
+				Vin:        2,
 				Witness: TeleportWitness{
-					Script: []byte{0x00, 0x01, 0x02, 0x03},
-					Nonce:  deterministicBytesArray(0x99),
+					Script:   []byte{0x00, 0x01, 0x02, 0x03},
+					IntentId: deterministicBytesArray(0x55),
 				},
 				Amount: 40,
 			},
@@ -81,7 +81,7 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 func testAssetGroupEncodeDecode(t *testing.T) {
 	controlAsset := AssetGroup{
 		AssetId:      ptrAssetId(deterministicAssetId(0x11)),
-		Outputs:      []AssetOutput{{Type: AssetTypeTeleport, Commitment: deterministicBytesArray(0xdd), Amount: 1}},
+		Outputs:      []AssetOutput{{Type: AssetTypeTeleport, Script: deterministicTxhash(0xdd), Amount: 1}},
 		ControlAsset: deterministicAssetRefId(0x3c),
 		Metadata:     []Metadata{{Key: "kind", Value: "control"}},
 	}
@@ -90,8 +90,12 @@ func testAssetGroupEncodeDecode(t *testing.T) {
 		AssetId:      ptrAssetId(deterministicAssetId(0x12)),
 		Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
 		ControlAsset: deterministicAssetRefId(0x3c),
-		Inputs:       []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 5}},
-		Metadata:     []Metadata{{Key: "kind", Value: "normal"}},
+		Inputs: []AssetInput{{
+			Type:   AssetTypeLocal,
+			Vin:    1,
+			Amount: 5,
+		}},
+		Metadata: []Metadata{{Key: "kind", Value: "normal"}},
 	}
 
 	packet := AssetPacket{
@@ -223,9 +227,9 @@ func testAssetOutputListEncodeDecode(t *testing.T) {
 			Amount: 100,
 		},
 		{
-			Type:       AssetTypeTeleport,
-			Commitment: deterministicBytesArray(0xEE),
-			Amount:     200,
+			Type:   AssetTypeTeleport,
+			Script: deterministicTxhash(0xEE),
+			Amount: 200,
 		},
 	}
 
@@ -248,11 +252,11 @@ func testAssetInputListEncodeDecode(t *testing.T) {
 		},
 		{
 			Type:       AssetTypeTeleport,
+			Vin:        2,
 			Amount:     20,
-			Commitment: deterministicBytesArray(0x02),
 			Witness: TeleportWitness{
-				Script: []byte{0xde, 0xad, 0xbe, 0xef},
-				Nonce:  deterministicBytesArray(0x88),
+				Script:   []byte{0xde, 0xad, 0xbe, 0xef},
+				IntentId: deterministicBytesArray(0x11),
 			},
 		},
 	}
