@@ -81,37 +81,48 @@ func (r *assetRepository) InsertTeleportAsset(
 	teleport domain.TeleportAsset,
 ) error {
 	return r.querier.CreateTeleportAsset(ctx, queries.CreateTeleportAssetParams{
-		TeleportHash: teleport.Hash,
-		AssetID:      teleport.AssetID,
-		Amount:       int64(teleport.Amount),
-		IsClaimed:    teleport.IsClaimed,
+		Script:     teleport.Script,
+		IntentID:   teleport.IntentID,
+		GroupIndex: int64(teleport.OutputIndex),
+		AssetID:    teleport.AssetID,
+		Amount:     int64(teleport.Amount),
+		IsClaimed:  teleport.IsClaimed,
 	})
 }
 
 func (r *assetRepository) GetTeleportAsset(
 	ctx context.Context,
-	teleportHash string,
+	script string, intentID string, assetID string, outputIndex uint32,
 ) (*domain.TeleportAsset, error) {
-	teleportDB, err := r.querier.GetTeleportAsset(ctx, teleportHash)
+	teleportDB, err := r.querier.GetTeleportAsset(ctx, queries.GetTeleportAssetParams{
+		Script:     script,
+		IntentID:   intentID,
+		AssetID:    assetID,
+		GroupIndex: int64(outputIndex),
+	})
 	if err != nil {
 		return nil, err
 	}
 	return &domain.TeleportAsset{
-		Hash:      teleportDB.TeleportHash,
-		AssetID:   teleportDB.AssetID,
-		Amount:    uint64(teleportDB.Amount),
-		IsClaimed: teleportDB.IsClaimed,
+		Script:      teleportDB.Script,
+		AssetID:     teleportDB.AssetID,
+		IntentID:    teleportDB.IntentID,
+		OutputIndex: uint32(teleportDB.GroupIndex),
+		Amount:      uint64(teleportDB.Amount),
+		IsClaimed:   teleportDB.IsClaimed,
 	}, nil
 }
 
 func (r *assetRepository) UpdateTeleportAsset(
 	ctx context.Context,
-	teleportHash string,
-	isClaimed bool,
+	script string, intentID string, assetID string, outputIndex uint32, isClaimed bool,
 ) error {
 	return r.querier.UpdateTeleportAsset(ctx, queries.UpdateTeleportAssetParams{
-		TeleportHash: teleportHash,
-		IsClaimed:    isClaimed,
+		IsClaimed:  isClaimed,
+		Script:     script,
+		IntentID:   intentID,
+		AssetID:    assetID,
+		GroupIndex: int64(outputIndex),
 	})
 }
 

@@ -35,10 +35,13 @@ CREATE TABLE asset_metadata (
 );
 
 CREATE TABLE teleport_asset (
-    teleport_hash TEXT PRIMARY KEY,
-    asset_id      TEXT NOT NULL,
+    script         TEXT NOT NULL,
+    intent_id      TEXT NOT NULL,
+    group_index           BIGINT NOT NULL,
+    asset_id     TEXT    NOT NULL,
     amount        BIGINT NOT NULL,
     is_claimed    BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (script, intent_id, asset_id, group_index),
     FOREIGN KEY (asset_id)
         REFERENCES asset_group(id)
         ON DELETE CASCADE

@@ -164,21 +164,25 @@ func (q *Queries) CreateAssetAnchor(ctx context.Context, arg CreateAssetAnchorPa
 }
 
 const createTeleportAsset = `-- name: CreateTeleportAsset :exec
-INSERT INTO teleport_asset (teleport_hash, asset_id, amount, is_claimed)
-VALUES ($1, $2, $3, $4)
+INSERT INTO teleport_asset (script, intent_id, asset_id, group_index, amount, is_claimed)
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateTeleportAssetParams struct {
-	TeleportHash string
-	AssetID      string
-	Amount       int64
-	IsClaimed    bool
+	Script     string
+	IntentID   string
+	AssetID    string
+	GroupIndex int64
+	Amount     int64
+	IsClaimed  bool
 }
 
 func (q *Queries) CreateTeleportAsset(ctx context.Context, arg CreateTeleportAssetParams) error {
 	_, err := q.db.ExecContext(ctx, createTeleportAsset,
-		arg.TeleportHash,
+		arg.Script,
+		arg.IntentID,
 		arg.AssetID,
+		arg.GroupIndex,
 		arg.Amount,
 		arg.IsClaimed,
 	)
@@ -290,17 +294,40 @@ func (q *Queries) GetAssetMetadata(ctx context.Context, arg GetAssetMetadataPara
 }
 
 const getTeleportAsset = `-- name: GetTeleportAsset :one
-SELECT teleport_hash, asset_id, amount, is_claimed
+SELECT script, intent_id, asset_id, group_index, amount, is_claimed
 FROM teleport_asset
-WHERE teleport_hash = $1
+WHERE script = $1 AND intent_id = $2 AND asset_id = $3 AND group_index = $4
 `
 
-func (q *Queries) GetTeleportAsset(ctx context.Context, teleportHash string) (TeleportAsset, error) {
-	row := q.db.QueryRowContext(ctx, getTeleportAsset, teleportHash)
-	var i TeleportAsset
+type GetTeleportAssetParams struct {
+	Script     string
+	IntentID   string
+	AssetID    string
+	GroupIndex int64
+}
+
+type GetTeleportAssetRow struct {
+	Script     string
+	IntentID   string
+	AssetID    string
+	GroupIndex int64
+	Amount     int64
+	IsClaimed  bool
+}
+
+func (q *Queries) GetTeleportAsset(ctx context.Context, arg GetTeleportAssetParams) (GetTeleportAssetRow, error) {
+	row := q.db.QueryRowContext(ctx, getTeleportAsset,
+		arg.Script,
+		arg.IntentID,
+		arg.AssetID,
+		arg.GroupIndex,
+	)
+	var i GetTeleportAssetRow
 	err := row.Scan(
-		&i.TeleportHash,
+		&i.Script,
+		&i.IntentID,
 		&i.AssetID,
+		&i.GroupIndex,
 		&i.Amount,
 		&i.IsClaimed,
 	)
@@ -1914,16 +1941,25 @@ func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error
 const updateTeleportAsset = `-- name: UpdateTeleportAsset :exec
 UPDATE teleport_asset
 SET is_claimed = $1
-WHERE teleport_hash = $2
+WHERE script = $2 AND intent_id = $3 AND asset_id = $4 AND group_index = $5
 `
 
 type UpdateTeleportAssetParams struct {
-	IsClaimed    bool
-	TeleportHash string
+	IsClaimed  bool
+	Script     string
+	IntentID   string
+	AssetID    string
+	GroupIndex int64
 }
 
 func (q *Queries) UpdateTeleportAsset(ctx context.Context, arg UpdateTeleportAssetParams) error {
-	_, err := q.db.ExecContext(ctx, updateTeleportAsset, arg.IsClaimed, arg.TeleportHash)
+	_, err := q.db.ExecContext(ctx, updateTeleportAsset,
+		arg.IsClaimed,
+		arg.Script,
+		arg.IntentID,
+		arg.AssetID,
+		arg.GroupIndex,
+	)
 	return err
 }
 

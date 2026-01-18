@@ -105,7 +105,7 @@ const (
 
 type TeleportWitness struct {
 	Script   []byte
-	IntentId [32]byte
+	IntentId []byte
 }
 
 type AssetInput struct {

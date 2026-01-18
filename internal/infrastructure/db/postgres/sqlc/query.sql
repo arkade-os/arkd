@@ -453,18 +453,18 @@ INSERT INTO asset_group (id, quantity, immutable, control_id)
 VALUES (@id, @quantity, @immutable, @control_id);
 
 -- name: CreateTeleportAsset :exec
-INSERT INTO teleport_asset (teleport_hash, asset_id, amount, is_claimed)
-VALUES (@teleport_hash, @asset_id, @amount, @is_claimed);
+INSERT INTO teleport_asset (script, intent_id, asset_id, group_index, amount, is_claimed)
+VALUES (@script, @intent_id, @asset_id, @group_index, @amount, @is_claimed);
 
 -- name: GetTeleportAsset :one
-SELECT teleport_hash, asset_id, amount, is_claimed
+SELECT script, intent_id, asset_id, group_index, amount, is_claimed
 FROM teleport_asset
-WHERE teleport_hash = @teleport_hash;
+WHERE script = @script AND intent_id = @intent_id AND asset_id = @asset_id AND group_index = @group_index;
 
 -- name: UpdateTeleportAsset :exec
 UPDATE teleport_asset
 SET is_claimed = @is_claimed
-WHERE teleport_hash = @teleport_hash;
+WHERE script = @script AND intent_id = @intent_id AND asset_id = @asset_id AND group_index = @group_index;
 -- name: SelectLatestIntentFees :one
 SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
 

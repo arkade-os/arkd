@@ -1934,7 +1934,7 @@ func (s *service) RegisterIntent(
 					Message: encodedMessage,
 				})
 			}
-			for _, output := range asst.Outputs {
+			for i, output := range asst.Outputs {
 				if output.Type != extension.AssetTypeTeleport {
 					return "", errors.INVALID_INTENT_PROOF.New(
 						"asset output is not teleport output",
@@ -1947,10 +1947,12 @@ func (s *service) RegisterIntent(
 				teleportScript := hex.EncodeToString(output.Script)
 
 				if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
-					Hash:      teleportScript,
-					AssetID:   asst.AssetId.ToString(),
-					Amount:    output.Amount,
-					IsClaimed: false,
+					IntentID:    intent.Id,
+					Script:      teleportScript,
+					OutputIndex: uint32(i),
+					AssetID:     asst.AssetId.ToString(),
+					Amount:      output.Amount,
+					IsClaimed:   false,
 				}); err != nil {
 					log.WithError(err).Warn("failed to insert teleport asset")
 				}
@@ -4301,7 +4303,7 @@ func (s *service) storeAssetGroups(
 		totalIn := sumAssetInputs(asstGp.Inputs)
 		totalOut := sumAssetOutputs(asstGp.Outputs)
 
-		s.markTeleportInputsClaimed(ctx, asstGp.Inputs)
+		s.markTeleportInputsClaimed(ctx, asstGp)
 
 		metadataList := assetMetadataFromGroup(asstGp.Metadata)
 
@@ -4428,14 +4430,22 @@ func (s *service) storeAssetGroups(
 	return nil
 }
 
-func (s *service) markTeleportInputsClaimed(ctx context.Context, inputs []extension.AssetInput) {
-	for _, in := range inputs {
+func (s *service) markTeleportInputsClaimed(ctx context.Context, grpAsset extension.AssetGroup) {
+	assetId := grpAsset.AssetId
+	if assetId == nil {
+		return
+	}
+
+	assetIdStr := assetId.ToString()
+
+	for _, in := range grpAsset.Inputs {
 		if in.Type != extension.AssetTypeTeleport {
 			continue
 		}
 
+		intentId := hex.EncodeToString(in.Witness.IntentId)
 		teleportScript := hex.EncodeToString(in.Witness.Script)
-		if err := s.repoManager.Assets().UpdateTeleportAsset(ctx, teleportScript, in.Vin); err != nil {
+		if err := s.repoManager.Assets().UpdateTeleportAsset(ctx, teleportScript, intentId, assetIdStr, in.Vin, true); err != nil {
 			log.WithError(err).Warn("failed to update teleport asset")
 		}
 	}

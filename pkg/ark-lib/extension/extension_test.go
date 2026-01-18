@@ -56,7 +56,7 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Vin:        2,
 				Witness: TeleportWitness{
 					Script:   []byte{0x00, 0x01, 0x02, 0x03},
-					IntentId: deterministicBytesArray(0x55),
+					IntentId: deterministicTxhash(0x55),
 				},
 				Amount: 40,
 			},
@@ -256,7 +256,7 @@ func testAssetInputListEncodeDecode(t *testing.T) {
 			Amount:     20,
 			Witness: TeleportWitness{
 				Script:   []byte{0xde, 0xad, 0xbe, 0xef},
-				IntentId: deterministicBytesArray(0x11),
+				IntentId: deterministicTxhash(0x11),
 			},
 		},
 	}

@@ -168,11 +168,14 @@ func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {
 		if err := tlv.WriteVarInt(w, uint64(len(t.Witness.Script)), buf); err != nil {
 			return err
 		}
-		if _, err := w.Write(t.Witness.Script); err != nil {
+			if _, err := w.Write(t.Witness.Script); err != nil {
 				return err
 			}
 
-			if err := tlv.EBytes32(w, &t.Witness.IntentId, buf); err != nil {
+			if err := tlv.WriteVarInt(w, uint64(len(t.Witness.IntentId)), buf); err != nil {
+				return err
+			}
+			if _, err := w.Write(t.Witness.IntentId); err != nil {
 				return err
 			}
 		default:
@@ -212,7 +215,8 @@ func AssetInputListSize(inputs []AssetInput) tlv.SizeFunc {
 				size += 4 // Vin
 				size += uint64(tlv.VarIntSize(uint64(len(input.Witness.Script))))
 				size += uint64(len(input.Witness.Script))
-				size += 32 // IntentId
+				size += uint64(tlv.VarIntSize(uint64(len(input.Witness.IntentId))))
+				size += uint64(len(input.Witness.IntentId))
 			}
 			size += 8 // Amount
 		}
@@ -238,7 +242,7 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 			}
 		case AssetTypeTeleport:
 			// Teleport is variable length due to script
-			if l < 1+4+1+32+8 { // Minimum length
+			if l < 1+4+1+1+8 { // Minimum length
 				return fmt.Errorf("invalid asset input length: got %d", l)
 			}
 		default:
@@ -264,9 +268,15 @@ func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
 			}
 			t.Witness.Script = script
 
-			if err := tlv.DBytes32(r, &t.Witness.IntentId, buf, 32); err != nil {
+			intentLen, err := tlv.ReadVarInt(r, buf)
+			if err != nil {
 				return err
 			}
+			intentID := make([]byte, intentLen)
+			if _, err := io.ReadFull(r, intentID); err != nil {
+				return err
+			}
+			t.Witness.IntentId = intentID
 		}
 
 		if err := tlv.DUint64(r, &t.Amount, buf, 8); err != nil {
@@ -308,7 +318,7 @@ func DAssetInputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error
 			case AssetTypeLocal:
 				itemLen = 1 + 4 + 8 // Minimum: Type + Vin + Amount
 			case AssetTypeTeleport:
-				itemLen = 1 + 4 + 1 + 32 + 8 // Minimum: Type + Vin + ScriptLen(1) + IntentId + Amount
+				itemLen = 1 + 4 + 1 + 1 + 8 // Minimum: Type + Vin + ScriptLen(1) + IntentLen(1) + Amount
 			default:
 				return fmt.Errorf("unknown asset input type: %d", typesByte)
 			}

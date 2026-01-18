@@ -47,10 +47,17 @@ type anchorAsset struct {
 }
 
 type teleportAsset struct {
-	Hash      string `badgerhold:"key"`
-	AssetID   string `badgerhold:"index"`
-	Amount    uint64
-	IsClaimed bool
+	Key         string `badgerhold:"key"`
+	Script      string `badgerhold:"index"`
+	IntentID    string `badgerhold:"index"`
+	AssetID     string `badgerhold:"index"`
+	OutputIndex uint32
+	Amount      uint64
+	IsClaimed   bool
+}
+
+func teleportAssetKey(script, intentID, assetID string, outputIndex uint32) string {
+	return fmt.Sprintf("%s:%s:%s:%d", script, intentID, assetID, outputIndex)
 }
 
 func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
@@ -264,30 +271,38 @@ func (r *assetRepository) InsertTeleportAsset(
 	ctx context.Context,
 	teleport domain.TeleportAsset,
 ) error {
+	key := teleportAssetKey(teleport.Script, teleport.IntentID, teleport.AssetID, teleport.OutputIndex)
 	record := teleportAsset{
-		Hash:      teleport.Hash,
-		AssetID:   teleport.AssetID,
-		Amount:    teleport.Amount,
-		IsClaimed: teleport.IsClaimed,
+		Key:         key,
+		Script:      teleport.Script,
+		IntentID:    teleport.IntentID,
+		AssetID:     teleport.AssetID,
+		OutputIndex: teleport.OutputIndex,
+		Amount:      teleport.Amount,
+		IsClaimed:   teleport.IsClaimed,
 	}
 
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
-		return r.store.TxInsert(tx, record.Hash, record)
+		return r.store.TxInsert(tx, record.Key, record)
 	})
 }
 
 func (r *assetRepository) UpdateTeleportAsset(
 	ctx context.Context,
-	hash string,
+	script string,
+	intentID string,
+	assetID string,
+	outputIndex uint32,
 	isClaimed bool,
 ) error {
 	var teleport teleportAsset
+	key := teleportAssetKey(script, intentID, assetID, outputIndex)
 
 	var err error
 	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxGet(tx, hash, &teleport)
+		err = r.store.TxGet(tx, key, &teleport)
 	} else {
-		err = r.store.Get(hash, &teleport)
+		err = r.store.Get(key, &teleport)
 	}
 	if err != nil {
 		return err
@@ -295,37 +310,46 @@ func (r *assetRepository) UpdateTeleportAsset(
 
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
 		record := teleportAsset{
-			Hash:      hash,
-			AssetID:   teleport.AssetID,
-			Amount:    teleport.Amount,
-			IsClaimed: isClaimed,
+			Key:         key,
+			Script:      teleport.Script,
+			IntentID:    teleport.IntentID,
+			AssetID:     teleport.AssetID,
+			OutputIndex: teleport.OutputIndex,
+			Amount:      teleport.Amount,
+			IsClaimed:   isClaimed,
 		}
 
-		return r.store.TxUpsert(tx, hash, record)
+		return r.store.TxUpsert(tx, key, record)
 	})
 }
 
 func (r *assetRepository) GetTeleportAsset(
 	ctx context.Context,
-	hash string,
+	script string,
+	intentID string,
+	assetID string,
+	outputIndex uint32,
 ) (*domain.TeleportAsset, error) {
 	var teleport teleportAsset
+	key := teleportAssetKey(script, intentID, assetID, outputIndex)
 
 	var err error
 	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxGet(tx, hash, &teleport)
+		err = r.store.TxGet(tx, key, &teleport)
 	} else {
-		err = r.store.Get(hash, &teleport)
+		err = r.store.Get(key, &teleport)
 	}
 	if err != nil {
 		return nil, err
 	}
 
 	return &domain.TeleportAsset{
-		Hash:      teleport.Hash,
-		AssetID:   teleport.AssetID,
-		Amount:    teleport.Amount,
-		IsClaimed: teleport.IsClaimed,
+		Script:      teleport.Script,
+		IntentID:    teleport.IntentID,
+		AssetID:     teleport.AssetID,
+		OutputIndex: teleport.OutputIndex,
+		Amount:      teleport.Amount,
+		IsClaimed:   teleport.IsClaimed,
 	}, nil
 }
 

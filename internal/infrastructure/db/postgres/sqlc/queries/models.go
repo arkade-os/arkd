@@ -210,10 +210,12 @@ type ScheduledSession struct {
 }
 
 type TeleportAsset struct {
-	TeleportHash string
-	AssetID      string
-	Amount       int64
-	IsClaimed    bool
+	Script     string
+	IntentID   string
+	GroupIndex int64
+	AssetID    string
+	Amount     int64
+	IsClaimed  bool
 }
 
 type Tx struct {

@@ -29,10 +29,12 @@ type AssetGroup struct {
 }
 
 type TeleportAsset struct {
-	Hash      string
-	AssetID   string
-	Amount    uint64
-	IsClaimed bool
+	Script      string
+	IntentID    string
+	AssetID     string
+	OutputIndex uint32
+	Amount      uint64
+	IsClaimed   bool
 }
 
 type AssetRepository interface {
@@ -47,7 +49,7 @@ type AssetRepository interface {
 	ListMetadataByAssetID(ctx context.Context, assetID string) ([]AssetMetadata, error)
 	GetAssetAnchorByTxId(ctx context.Context, txId string) (*AssetAnchor, error)
 	InsertTeleportAsset(ctx context.Context, teleport TeleportAsset) error
-	GetTeleportAsset(ctx context.Context, teleportScript string, index uint32) (*TeleportAsset, error)
-	UpdateTeleportAsset(ctx context.Context, teleportHash string, index uint32) error
+	GetTeleportAsset(ctx context.Context, script string, intentID string, assetID string, outputIndex uint32) (*TeleportAsset, error)
+	UpdateTeleportAsset(ctx context.Context, script string, intentID string, assetID string, outputIndex uint32, isClaimed bool) error
 	Close()
 }

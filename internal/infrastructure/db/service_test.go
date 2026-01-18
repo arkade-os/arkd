@@ -1622,35 +1622,43 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 
 	t.Run("insert get and update teleport asset", func(t *testing.T) {
 		ctx := context.Background()
-		hash := randomString(32)
+		script := randomString(32)
+		intentID := randomString(32)
 		assetID := randomString(32)
+		outputIndex := uint32(7)
 		amount := uint64(5000)
 
 		asset := domain.TeleportAsset{
-			Hash:      hash,
-			AssetID:   assetID,
-			Amount:    amount,
-			IsClaimed: false,
+			Script:      script,
+			IntentID:    intentID,
+			AssetID:     assetID,
+			OutputIndex: outputIndex,
+			Amount:      amount,
+			IsClaimed:   false,
 		}
 
 		err := svc.Assets().InsertTeleportAsset(ctx, asset)
 		require.NoError(t, err, "InsertTeleportAsset should succeed")
 
-		got, err := svc.Assets().GetTeleportAsset(ctx, hash)
+		got, err := svc.Assets().GetTeleportAsset(ctx, script, intentID, assetID, outputIndex)
 		require.NoError(t, err, "GetTeleportAsset should succeed")
 		require.NotNil(t, got)
-		require.Equal(t, hash, got.Hash)
+		require.Equal(t, script, got.Script)
+		require.Equal(t, intentID, got.IntentID)
+		require.Equal(t, outputIndex, got.OutputIndex)
 		require.Equal(t, assetID, got.AssetID)
 		require.Equal(t, amount, got.Amount)
 		require.False(t, got.IsClaimed)
 
-		err = svc.Assets().UpdateTeleportAsset(ctx, hash, true)
+		err = svc.Assets().UpdateTeleportAsset(ctx, script, intentID, assetID, outputIndex, true)
 		require.NoError(t, err, "UpdateTeleportAsset should succeed")
 
-		gotUpdated, err := svc.Assets().GetTeleportAsset(ctx, hash)
+		gotUpdated, err := svc.Assets().GetTeleportAsset(ctx, script, intentID, assetID, outputIndex)
 		require.NoError(t, err, "GetTeleportAsset after update should succeed")
 		require.NotNil(t, gotUpdated)
-		require.Equal(t, hash, gotUpdated.Hash)
+		require.Equal(t, script, gotUpdated.Script)
+		require.Equal(t, intentID, gotUpdated.IntentID)
+		require.Equal(t, outputIndex, gotUpdated.OutputIndex)
 		require.Equal(t, assetID, gotUpdated.AssetID)
 		require.Equal(t, amount, gotUpdated.Amount)
 		require.True(t, gotUpdated.IsClaimed)

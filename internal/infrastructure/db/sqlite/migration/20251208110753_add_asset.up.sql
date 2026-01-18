@@ -31,10 +31,13 @@ CREATE TABLE asset_group (
 );
 
 CREATE TABLE teleport_asset (
-    teleport_hash         TEXT PRIMARY KEY,
+    script         TEXT NOT NULL,
+    intent_id      TEXT NOT NULL,
+    group_index          INTEGER  NOT NULL,
     asset_id     TEXT    NOT NULL,
     amount       INTEGER NOT NULL,
     is_claimed   BOOLEAN NOT NULL DEFAULT 0,
+    PRIMARY KEY (script, intent_id, asset_id, group_index),
     FOREIGN KEY (asset_id) REFERENCES asset_group(id) ON DELETE CASCADE
 );
 
