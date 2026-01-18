@@ -9,6 +9,8 @@ model_batch_started_event.go
 model_confirm_registration_request.go
 model_delete_intent_request.go
 model_deprecated_signer.go
+model_estimate_intent_fee_request.go
+model_estimate_intent_fee_response.go
 model_fee_info.go
 model_finalize_tx_request.go
 model_get_event_stream_request.go

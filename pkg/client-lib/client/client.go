@@ -27,21 +27,16 @@ type TransportClient interface {
 	GetInfo(ctx context.Context) (*Info, error)
 	RegisterIntent(ctx context.Context, proof, message string) (string, error)
 	DeleteIntent(ctx context.Context, proof, message string) error
+	EstimateIntentFee(ctx context.Context, proof, message string) (int64, error)
 	ConfirmRegistration(ctx context.Context, intentID string) error
 	SubmitTreeNonces(
-		ctx context.Context,
-		batchId, cosignerPubkey string,
-		nonces tree.TreeNonces,
+		ctx context.Context, batchId, cosignerPubkey string, nonces tree.TreeNonces,
 	) error
 	SubmitTreeSignatures(
-		ctx context.Context,
-		batchId, cosignerPubkey string,
-		signatures tree.TreePartialSigs,
+		ctx context.Context, batchId, cosignerPubkey string, signatures tree.TreePartialSigs,
 	) error
 	SubmitSignedForfeitTxs(
-		ctx context.Context,
-		signedForfeitTxs []string,
-		signedCommitmentTx string,
+		ctx context.Context, signedForfeitTxs []string, signedCommitmentTx string,
 	) error
 	GetEventStream(ctx context.Context, topics []string) (<-chan BatchEventChannel, func(), error)
 	SubmitTx(ctx context.Context, signedArkTx string, checkpointTxs []string) (

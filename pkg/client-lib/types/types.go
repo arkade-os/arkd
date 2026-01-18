@@ -7,6 +7,7 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -50,15 +51,8 @@ func (c Config) CheckpointExitPath() []byte {
 }
 
 type FeeInfo struct {
-	IntentFees IntentFeeInfo
+	IntentFees arkfee.Config
 	TxFeeRate  float64
-}
-
-type IntentFeeInfo struct {
-	OffchainInput  string
-	OffchainOutput string
-	OnchainInput   uint64
-	OnchainOutput  uint64
 }
 
 type DeprecatedSigner struct {
@@ -125,6 +119,21 @@ func (v Vtxo) Address(server *btcec.PublicKey, net arklib.Network) (string, erro
 type VtxoWithTapTree struct {
 	Vtxo
 	Tapscripts []string
+}
+
+func (v VtxoWithTapTree) ToArkFeeInput() arkfee.OffchainInput {
+	vtxoType := arkfee.VtxoTypeVtxo
+	if v.Swept {
+		vtxoType = arkfee.VtxoTypeRecoverable
+	}
+
+	return arkfee.OffchainInput{
+		Amount: v.Amount,
+		Expiry: v.ExpiresAt,
+		Birth:  v.CreatedAt,
+		Type:   vtxoType,
+		Weight: 0,
+	}
 }
 
 type UtxoEventType int
@@ -245,8 +254,14 @@ func (u Utxo) IsConfirmed() bool {
 	return !u.CreatedAt.IsZero()
 }
 
-func (u *Utxo) Sequence() (uint32, error) {
+func (u Utxo) Sequence() (uint32, error) {
 	return arklib.BIP68Sequence(u.Delay)
+}
+
+func (u Utxo) ToArkFeeInput() arkfee.OnchainInput {
+	return arkfee.OnchainInput{
+		Amount: u.Amount,
+	}
 }
 
 type Receiver struct {
@@ -292,6 +307,17 @@ func (o Receiver) ToTxOut() (*wire.TxOut, bool, error) {
 		Value:    int64(o.Amount),
 		PkScript: pkScript,
 	}, isOnchain, nil
+}
+
+func (r Receiver) ToArkFeeOutput() arkfee.Output {
+	txout, _, err := r.ToTxOut()
+	if err != nil {
+		return arkfee.Output{}
+	}
+	return arkfee.Output{
+		Amount: r.Amount,
+		Script: hex.EncodeToString(txout.PkScript),
+	}
 }
 
 type OnchainOutput struct {

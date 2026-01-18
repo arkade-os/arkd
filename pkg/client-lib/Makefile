@@ -11,11 +11,6 @@ SWAGGER = $(shell \
 
 ## genrest: compiles rest client from stub with https://github.com/go-swagger/go-swagger
 genrest:
-	@if [ "$(CI)" != "true" ]; then \
-		$(MAKE) proto; \
-	else \
-		echo "Skipping proto (CI=true passed)"; \
-	fi
 	@echo "Cleaning existing files..."
 	@rm -rf $(ark_client_dir) $(indexer_client_dir)
 	@echo "Generating rest client from stub..."

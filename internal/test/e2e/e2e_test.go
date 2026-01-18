@@ -3929,6 +3929,10 @@ func TestFee(t *testing.T) {
 	err := updateIntentFees(fees)
 	require.NoError(t, err)
 
+	t.Cleanup(func() {
+		clearIntentFees()
+	})
+
 	ctx := t.Context()
 	alice := setupArkSDK(t)
 	bob := setupArkSDK(t)

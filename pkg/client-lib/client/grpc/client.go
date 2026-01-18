@@ -10,6 +10,7 @@ import (
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
@@ -181,6 +182,20 @@ func (a *grpcClient) DeleteIntent(ctx context.Context, proof, message string) er
 	return nil
 }
 
+func (a *grpcClient) EstimateIntentFee(ctx context.Context, proof, message string) (int64, error) {
+	req := &arkv1.EstimateIntentFeeRequest{
+		Intent: &arkv1.Intent{
+			Message: message,
+			Proof:   proof,
+		},
+	}
+	resp, err := a.svc().EstimateIntentFee(ctx, req)
+	if err != nil {
+		return -1, err
+	}
+	return resp.GetFee(), nil
+}
+
 func (a *grpcClient) ConfirmRegistration(ctx context.Context, intentID string) error {
 	req := &arkv1.ConfirmRegistrationRequest{
 		IntentId: intentID,
@@ -245,8 +260,7 @@ func (a *grpcClient) SubmitSignedForfeitTxs(
 }
 
 func (a *grpcClient) GetEventStream(
-	ctx context.Context,
-	topics []string,
+	ctx context.Context, topics []string,
 ) (<-chan client.BatchEventChannel, func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -529,9 +543,8 @@ func parseFees(fees *arkv1.FeeInfo) (types.FeeInfo, error) {
 	}
 
 	var (
-		err                               error
-		txFeeRate                         float64
-		onchainInputFee, onchainOutputFee uint64
+		err       error
+		txFeeRate float64
 	)
 	if fees.GetTxFeeRate() != "" {
 		txFeeRate, err = strconv.ParseFloat(fees.GetTxFeeRate(), 64)
@@ -539,30 +552,19 @@ func parseFees(fees *arkv1.FeeInfo) (types.FeeInfo, error) {
 			return types.FeeInfo{}, err
 		}
 	}
-	intentFees := fees.GetIntentFee()
-	if intentFees == nil {
-		return types.FeeInfo{}, nil
+
+	var intentFees arkfee.Config
+	if f := fees.GetIntentFee(); f != nil {
+		intentFees = arkfee.Config{
+			IntentOffchainInputProgram:  f.GetOffchainInput(),
+			IntentOffchainOutputProgram: f.GetOffchainOutput(),
+			IntentOnchainInputProgram:   f.GetOnchainInput(),
+			IntentOnchainOutputProgram:  f.GetOnchainOutput(),
+		}
 	}
 
-	if intentFees.GetOnchainInput() != "" {
-		onchainInputFee, err = strconv.ParseUint(intentFees.GetOnchainInput(), 10, 64)
-		if err != nil {
-			return types.FeeInfo{}, err
-		}
-	}
-	if intentFees.GetOnchainOutput() != "" {
-		onchainOutputFee, err = strconv.ParseUint(intentFees.GetOnchainOutput(), 10, 64)
-		if err != nil {
-			return types.FeeInfo{}, err
-		}
-	}
 	return types.FeeInfo{
-		TxFeeRate: txFeeRate,
-		IntentFees: types.IntentFeeInfo{
-			OffchainInput:  fees.GetIntentFee().GetOffchainInput(),
-			OffchainOutput: fees.GetIntentFee().GetOffchainOutput(),
-			OnchainInput:   onchainInputFee,
-			OnchainOutput:  onchainOutputFee,
-		},
+		TxFeeRate:  txFeeRate,
+		IntentFees: intentFees,
 	}, nil
 }

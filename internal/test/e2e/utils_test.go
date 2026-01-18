@@ -524,8 +524,21 @@ func updateIntentFees(intentFees intentFees) error {
 	body := fmt.Sprintf(`{"fees": %s}`, feesJson)
 
 	url := fmt.Sprintf("%s/v1/admin/intentFees", adminUrl)
-	if err := post(adminHttpClient, url, body, "intentFees"); err != nil {
+	if err := post(adminHttpClient, url, body, "updateIntentFees"); err != nil {
 		return fmt.Errorf("failed to update intent fees: %s", err)
+	}
+
+	return nil
+}
+
+func clearIntentFees() error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees/clear", adminUrl)
+	if err := post(adminHttpClient, url, "", "clearIntentFees"); err != nil {
+		return fmt.Errorf("failed to clear intent fees: %s", err)
 	}
 
 	return nil

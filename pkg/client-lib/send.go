@@ -98,7 +98,7 @@ func (a *service) SendOffChain(
 
 	// do not include boarding utxos
 	_, selectedCoins, changeAmount, err := utils.CoinSelect(
-		nil, vtxos, sumOfReceivers, a.Dust, options.withoutExpirySorting,
+		nil, vtxos, receivers, a.Dust, options.withoutExpirySorting, nil,
 	)
 	if err != nil {
 		return "", err

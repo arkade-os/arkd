@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -79,15 +80,13 @@ func (d storeData) decode() types.Config {
 	}
 
 	txFeeRate, _ := strconv.ParseFloat(d.Fees.TxFeeRate, 64)
-	onchainInputFee, _ := strconv.Atoi(d.Fees.IntentFees.OffchainInput)
-	onchainOutputFee, _ := strconv.Atoi(d.Fees.IntentFees.OffchainOutput)
 	fees := types.FeeInfo{
 		TxFeeRate: txFeeRate,
-		IntentFees: types.IntentFeeInfo{
-			OffchainInput:  d.Fees.IntentFees.OffchainInput,
-			OffchainOutput: d.Fees.IntentFees.OffchainOutput,
-			OnchainInput:   uint64(onchainInputFee),
-			OnchainOutput:  uint64(onchainOutputFee),
+		IntentFees: arkfee.Config{
+			IntentOffchainInputProgram:  d.Fees.IntentFees.OffchainInput,
+			IntentOffchainOutputProgram: d.Fees.IntentFees.OffchainOutput,
+			IntentOnchainInputProgram:   d.Fees.IntentFees.OnchainInput,
+			IntentOnchainOutputProgram:  d.Fees.IntentFees.OnchainOutput,
 		},
 	}
 
