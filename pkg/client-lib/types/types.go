@@ -201,7 +201,6 @@ type Transaction struct {
 	TransactionKey
 	Amount    uint64
 	Type      TxType
-	Settled   bool
 	CreatedAt time.Time
 	Hex       string
 	SettledBy string

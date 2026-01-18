@@ -310,7 +310,6 @@ func (a *service) getBoardingTxs(ctx context.Context) ([]types.Transaction, erro
 			Amount:    u.Amount,
 			Type:      types.TxReceived,
 			CreatedAt: u.CreatedAt,
-			Settled:   u.Spent,
 			SettledBy: u.SpentBy,
 			Hex:       u.Tx,
 		}
@@ -420,12 +419,10 @@ func (i *service) vtxosToTxs(
 
 		commitmentTxid := vtxo.CommitmentTxids[0]
 		arkTxid := ""
-		settled := !vtxo.Preconfirmed
 		settledBy := ""
 		if vtxo.Preconfirmed {
 			arkTxid = vtxo.Txid
 			commitmentTxid = ""
-			settled = vtxo.Spent
 			settledBy = vtxo.SettledBy
 		}
 
@@ -437,7 +434,6 @@ func (i *service) vtxosToTxs(
 			Amount:    vtxo.Amount - settleAmount - spentAmount,
 			Type:      types.TxReceived,
 			CreatedAt: vtxo.CreatedAt,
-			Settled:   settled,
 			SettledBy: settledBy,
 		})
 	}
@@ -487,7 +483,6 @@ func (i *service) vtxosToTxs(
 				Amount:    forfeitAmount - resultedAmount,
 				Type:      types.TxSent,
 				CreatedAt: vtxo.CreatedAt,
-				Settled:   true,
 			})
 		}
 	}
@@ -532,7 +527,7 @@ func (i *service) vtxosToTxs(
 			Amount:    spentAmount - resultedAmount,
 			Type:      types.TxSent,
 			CreatedAt: vtxo.CreatedAt,
-			Settled:   true,
+			SettledBy: vtxo.SettledBy,
 		})
 	}
 
