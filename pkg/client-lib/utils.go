@@ -613,6 +613,19 @@ func findVtxosSettled(vtxos []types.Vtxo, id string) []types.Vtxo {
 	return result
 }
 
+func findVtxosResultedFromSettledBy(vtxos []types.Vtxo, commitmentTxid string) []types.Vtxo {
+	var result []types.Vtxo
+	for _, v := range vtxos {
+		if v.Preconfirmed || len(v.CommitmentTxids) != 1 {
+			continue
+		}
+		if v.CommitmentTxids[0] == commitmentTxid {
+			result = append(result, v)
+		}
+	}
+	return result
+}
+
 func findVtxosSpent(vtxos []types.Vtxo, id string) []types.Vtxo {
 	var result []types.Vtxo
 	leftVtxos := make([]types.Vtxo, 0)
