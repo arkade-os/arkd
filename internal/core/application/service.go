@@ -1670,7 +1670,10 @@ func (s *service) RegisterIntent(
 				if err := s.verifyAssetInputPrevOut(ctx, assetInput.AssetInput, outpoint); err != nil {
 					return "", errors.ASSET_VALIDATION_FAILED.New(
 						"asset input validation failed for input %d: %w", i, err,
-					).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+					).WithMetadata(errors.AssetValidationMetadata{
+						AssetID: assetInput.AssetId,
+						Message: fmt.Sprintf("validation failed for vtxo %s", vtxo.Outpoint.String()),
+					})
 				}
 
 				vtxo.Extensions = append(vtxo.Extensions, domain.AssetExtension{

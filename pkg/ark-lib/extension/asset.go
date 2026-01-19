@@ -1,14 +1,11 @@
 package extension
 
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightningnetwork/lnd/tlv"
 )
 
 const AssetVersion byte = 0x01
@@ -54,6 +51,11 @@ func (a AssetId) ToString() string {
 	return hex.EncodeToString(buf[:])
 }
 
+// String implements fmt.Stringer
+func (a AssetId) String() string {
+	return a.ToString()
+}
+
 func AssetIdFromString(s string) (*AssetId, error) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
@@ -73,7 +75,7 @@ func AssetIdFromString(s string) (*AssetId, error) {
 type AssetGroup struct {
 	AssetId      *AssetId
 	Immutable    bool
-	Outputs      []AssetOutput // local: vout+amount, teleport: script+amount
+	Outputs      []AssetOutput
 	ControlAsset *AssetRef
 	Inputs       []AssetInput
 	Metadata     []Metadata
@@ -122,110 +124,6 @@ func (g *AssetPacket) EncodeAssetPacket() (wire.TxOut, error) {
 	return opReturnPacket.EncodeExtensionPacket()
 }
 
-func (a *AssetGroup) EncodeTlv() ([]byte, error) {
-	var tlvRecords []tlv.Record
-
-	if a.AssetId != nil {
-		tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
-			tlvTypeAssetID,
-			a.AssetId,
-			AssetIdSize(a.AssetId),
-			EAssetId, nil))
-	}
-
-	tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
-		tlvTypeImmutable,
-		&a.Immutable))
-
-	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
-		tlvTypeOutput,
-		&a.Outputs,
-		AssetOutputListSize(a.Outputs),
-		EAssetOutputList, nil))
-
-	if a.ControlAsset != nil {
-		tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
-			tlvTypeControlAssetId,
-			a.ControlAsset,
-			AssetRefSize(a.ControlAsset),
-			EAssetRef, nil))
-	}
-
-	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
-		tlvTypeInput,
-		&a.Inputs,
-		AssetInputListSize(a.Inputs),
-		EAssetInputList, nil))
-
-	tlvRecords = append(tlvRecords, tlv.MakeDynamicRecord(
-		tlvTypeMetadata, &a.Metadata, MetadataListSize(a.Metadata), EMetadataList, nil))
-
-	tlvStream, err := tlv.NewStream(tlvRecords...)
-	if err != nil {
-		return nil, err
-	}
-
-	var buf bytes.Buffer
-
-	err = tlvStream.Encode(&buf)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func (a *AssetGroup) DecodeTlv(data []byte) error {
-	tlvStream, err := tlv.NewStream(
-		tlv.MakeDynamicRecord(
-			tlvTypeAssetID,
-			&a.AssetId,
-			AssetIdSize(nil),
-			nil,
-			DAssetIdPtr,
-		),
-
-		tlv.MakePrimitiveRecord(
-			tlvTypeImmutable,
-			&a.Immutable,
-		),
-
-		tlv.MakeDynamicRecord(
-			tlvTypeOutput,
-			&a.Outputs,
-			AssetOutputListSize(a.Outputs),
-			nil,
-			DAssetOutputList,
-		),
-		tlv.MakeDynamicRecord(
-			tlvTypeControlAssetId,
-			&a.ControlAsset,
-			AssetRefSize(nil),
-			nil,
-			DAssetRefPtr,
-		),
-		tlv.MakeDynamicRecord(
-			tlvTypeInput,
-			&a.Inputs,
-			AssetInputListSize(a.Inputs),
-			nil,
-			DAssetInputList,
-		),
-		tlv.MakeDynamicRecord(
-			tlvTypeMetadata,
-			&a.Metadata,
-			MetadataListSize(a.Metadata),
-			nil,
-			DMetadataList,
-		),
-	)
-	if err != nil {
-		return err
-	}
-
-	buf := bytes.NewReader(data)
-	return tlvStream.Decode(buf)
-}
-
 func DecodeAssetPacket(txOut wire.TxOut) (*AssetPacket, error) {
 	packet, err := DecodeExtensionPacket(txOut)
 	if err != nil {
@@ -255,85 +153,4 @@ func DeriveAssetPacketFromTx(arkTx wire.MsgTx) (*AssetPacket, int, error) {
 
 	return nil, 0, errors.New("no asset opreturn found in transaction")
 
-}
-
-func encodeAssetPacket(assets []AssetGroup) ([]byte, error) {
-	var scratch [8]byte
-	var buf bytes.Buffer
-
-	totalCount := uint64(len(assets))
-
-	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
-		return nil, err
-	}
-
-	for _, asset := range assets {
-		encodedAsset, err := asset.EncodeTlv()
-		if err != nil {
-			return nil, err
-		}
-
-		if err := tlv.WriteVarInt(&buf, uint64(len(encodedAsset)), &scratch); err != nil {
-			return nil, err
-		}
-
-		if _, err := buf.Write(encodedAsset); err != nil {
-			return nil, err
-		}
-	}
-
-	return buf.Bytes(), nil
-}
-
-func decodeAssetPacket(payload []byte, version byte) (*AssetPacket, error) {
-	reader := bytes.NewReader(payload)
-	var scratch [8]byte
-
-	assetCount, err := tlv.ReadVarInt(reader, &scratch)
-	if err != nil {
-		return nil, fmt.Errorf("invalid asset group count: %w", err)
-	}
-
-	if assetCount == 0 {
-		return nil, errors.New("empty asset group")
-	}
-
-	assets := make([]AssetGroup, 0, int(assetCount))
-	for i := uint64(0); i < assetCount; i++ {
-		length, err := tlv.ReadVarInt(reader, &scratch)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read asset length: %w", err)
-		}
-
-		if length == 0 || length > uint64(reader.Len()) {
-			return nil, errors.New("asset length exceeds payload")
-		}
-
-		assetData := make([]byte, length)
-		if _, err := io.ReadFull(reader, assetData); err != nil {
-			return nil, fmt.Errorf("failed to read asset payload: %w", err)
-		}
-
-		var decoded AssetGroup
-		if err := decoded.DecodeTlv(assetData); err != nil {
-			return nil, fmt.Errorf("failed to decode asset: %w", err)
-		}
-
-		assets = append(assets, decoded)
-	}
-
-	for i := range assets {
-		normalizeAssetSlices(&assets[i])
-	}
-
-	if reader.Len() != 0 {
-		return nil, errors.New("unexpected trailing bytes in asset group payload")
-	}
-
-	group := &AssetPacket{
-		Assets:  assets,
-		Version: version,
-	}
-
-	return group, nil
 }

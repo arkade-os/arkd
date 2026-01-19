@@ -15,13 +15,13 @@ import (
 
 func TestExtension(t *testing.T) {
 	t.Parallel()
-	testAssetEncodeDecodeRoundTrip(t)
-	testAssetGroupEncodeDecode(t)
-	testAssetGroupEncodeDecodeWithSubDustKey(t)
-	testAssetIdStringConversion(t)
-	testAssetOutputListEncodeDecode(t)
-	testAssetInputListEncodeDecode(t)
-	testAssetGroupEncodeDecodeWithGroupIndexRef(t)
+	t.Run("AssetEncodeDecodeRoundTrip", testAssetEncodeDecodeRoundTrip)
+	t.Run("AssetGroupEncodeDecode", testAssetGroupEncodeDecode)
+	t.Run("AssetGroupEncodeDecodeWithSubDustKey", testAssetGroupEncodeDecodeWithSubDustKey)
+	t.Run("AssetIdStringConversion", testAssetIdStringConversion)
+	t.Run("AssetOutputListEncodeDecode", testAssetOutputListEncodeDecode)
+	t.Run("AssetInputListEncodeDecode", testAssetInputListEncodeDecode)
+	t.Run("AssetGroupEncodeDecodeWithGroupIndexRef", testAssetGroupEncodeDecodeWithGroupIndexRef)
 }
 
 func testAssetEncodeDecodeRoundTrip(t *testing.T) {
@@ -54,7 +54,8 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 			},
 			{
 				Type: AssetTypeTeleport,
-				Vin:  2,
+				// Vin is not encoded for Teleport inputs
+				Vin: 0,
 				Witness: TeleportWitness{
 					Script:   []byte{0x00, 0x01, 0x02, 0x03},
 					IntentId: deterministicTxhash(0x55),
@@ -69,13 +70,13 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 		Immutable: true,
 	}
 
-	encoded, err := asset.EncodeTlv()
+	encoded, err := asset.Encode()
 	require.NoError(t, err)
 	require.NotEmpty(t, encoded)
 
 	var decoded AssetGroup
 
-	require.NoError(t, decoded.DecodeTlv(encoded))
+	require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
 	require.Equal(t, asset, decoded)
 }
 
@@ -100,16 +101,17 @@ func testAssetGroupEncodeDecode(t *testing.T) {
 	}
 
 	packet := AssetPacket{
-		Assets:  []AssetGroup{controlAsset, normalAsset},
-		Version: AssetVersion,
+		Assets: []AssetGroup{controlAsset, normalAsset},
 	}
 
-	txOut, err := packet.EncodeAssetPacket()
+	extPacket := &ExtensionPacket{Asset: &packet}
+	txOut, err := extPacket.EncodeExtensionPacket()
 	require.NoError(t, err)
 
-	decodedPacket, err := DecodeAssetPacket(txOut)
+	decodedExt, err := DecodeExtensionPacket(txOut)
 	require.NoError(t, err)
-	require.Equal(t, packet, *decodedPacket)
+	require.NotNil(t, decodedExt.Asset)
+	require.Equal(t, packet, *decodedExt.Asset)
 }
 
 func testAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
@@ -122,11 +124,11 @@ func testAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 		Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 0}},
 	}
 
-	encoded, err := assetGroup.EncodeTlv()
+	encoded, err := assetGroup.Encode()
 	require.NoError(t, err)
 
 	var decoded AssetGroup
-	require.NoError(t, decoded.DecodeTlv(encoded))
+	require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
 	require.NotNil(t, decoded.ControlAsset)
 	require.Equal(t, AssetRefByGroup, decoded.ControlAsset.Type)
 	require.Equal(t, groupIndex, decoded.ControlAsset.GroupIndex)
@@ -160,8 +162,7 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	}
 
 	assetPacket := AssetPacket{
-		Assets:  []AssetGroup{normalAsset},
-		Version: AssetVersion,
+		Assets: []AssetGroup{normalAsset},
 	}
 
 	opReturnPacket := &ExtensionPacket{
@@ -171,7 +172,6 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 
 	txOut, err := opReturnPacket.EncodeExtensionPacket()
 	require.NoError(t, err)
-	require.True(t, ContainsAssetPacket(txOut.PkScript))
 
 	tokenizer := txscript.MakeScriptTokenizer(0, txOut.PkScript)
 	require.True(t, tokenizer.Next())
@@ -207,17 +207,15 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	_, err = io.ReadFull(reader, assetValue)
 	require.NoError(t, err)
 	require.NotEmpty(t, assetValue)
-	require.Equal(t, AssetVersion, assetValue[0])
+	// No version byte check as it is removed
 
-	decodedPacket, err := DecodeAssetPacket(txOut)
+	decodedExt, err := DecodeExtensionPacket(txOut)
 	require.NoError(t, err)
-	decodedSubDust, err := DecodeSubDustPacket(txOut)
-	require.NoError(t, err)
-	require.NotNil(t, decodedSubDust)
-	require.NotNil(t, decodedSubDust.Key)
-	require.True(t, subDustKey.IsEqual(decodedSubDust.Key))
-	require.Len(t, decodedPacket.Assets, 1)
-	require.Equal(t, normalAsset, decodedPacket.Assets[0])
+	require.NotNil(t, decodedExt.SubDust)
+	require.True(t, subDustKey.IsEqual(decodedExt.SubDust.Key))
+	require.NotNil(t, decodedExt.Asset)
+	require.Len(t, decodedExt.Asset.Assets, 1)
+	require.Equal(t, normalAsset, decodedExt.Asset.Assets[0])
 }
 
 func testAssetOutputListEncodeDecode(t *testing.T) {
@@ -236,11 +234,12 @@ func testAssetOutputListEncodeDecode(t *testing.T) {
 
 	var scratch [8]byte
 	var buf bytes.Buffer
-	require.NoError(t, EAssetOutputList(&buf, &outputs, &scratch))
+	require.NoError(t, encodeAssetOutputList(&buf, outputs, &scratch))
 
 	var decoded []AssetOutput
 	reader := bytes.NewReader(buf.Bytes())
-	require.NoError(t, DAssetOutputList(reader, &decoded, &scratch, uint64(buf.Len())))
+	decoded, err := decodeAssetOutputList(reader, &scratch)
+	require.NoError(t, err)
 	require.Equal(t, outputs, decoded)
 }
 
@@ -253,7 +252,7 @@ func testAssetInputListEncodeDecode(t *testing.T) {
 		},
 		{
 			Type:   AssetTypeTeleport,
-			Vin:    2,
+			Vin:    0,
 			Amount: 20,
 			Witness: TeleportWitness{
 				Script:   []byte{0xde, 0xad, 0xbe, 0xef},
@@ -264,11 +263,12 @@ func testAssetInputListEncodeDecode(t *testing.T) {
 
 	var scratch [8]byte
 	var buf bytes.Buffer
-	require.NoError(t, EAssetInputList(&buf, &inputs, &scratch))
+	require.NoError(t, encodeAssetInputList(&buf, inputs, &scratch))
 
 	var decoded []AssetInput
 	reader := bytes.NewReader(buf.Bytes())
-	require.NoError(t, DAssetInputList(reader, &decoded, &scratch, uint64(buf.Len())))
+	decoded, err := decodeAssetInputList(reader, &scratch)
+	require.NoError(t, err)
 	require.Equal(t, inputs, decoded)
 }
 

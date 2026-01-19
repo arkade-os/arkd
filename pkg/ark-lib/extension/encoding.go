@@ -2,619 +2,436 @@ package extension
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 
 	"github.com/lightningnetwork/lnd/tlv"
 )
 
+// Presence byte masks
 const (
-	tlvTypeAssetID        tlv.Type = 1
-	tlvTypeImmutable      tlv.Type = 2
-	tlvTypeOutput         tlv.Type = 3
-	tlvTypeControlAssetId tlv.Type = 4
-	tlvTypeInput          tlv.Type = 5
-	tlvTypeMetadata       tlv.Type = 6
+	maskAssetId      uint8 = 1 << 0 // 0x01
+	maskControlAsset uint8 = 1 << 1 // 0x02
+	maskMetadata     uint8 = 1 << 2 // 0x04
+	maskImmutable    uint8 = 1 << 3 // 0x08
 )
 
-func EAssetId(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*AssetId); ok {
-		if err := tlv.EBytes32(w, &t.TxHash, buf); err != nil {
-			return err
-		}
-		if err := tlv.EUint16(w, &t.Index, buf); err != nil {
-			return err
-		}
-		return nil
-	}
-	return tlv.NewTypeForEncodingErr(val, "assetId")
-}
+func (a *AssetGroup) Encode() ([]byte, error) {
+	var buf bytes.Buffer
+	var scratch [8]byte
 
-func DAssetId(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*AssetId); ok && l == 34 {
-		if err := tlv.DBytes32(r, &t.TxHash, buf, 32); err != nil {
-			return err
-		}
-		if err := tlv.DUint16(r, &t.Index, buf, 2); err != nil {
-			return err
-		}
-		return nil
+	// 1. Calculate and write Presence Byte
+	var presence uint8
+	if a.AssetId != nil {
+		presence |= maskAssetId
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetId", l, 34)
-}
-
-func DAssetIdPtr(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(**AssetId); ok && l == 34 {
-		if *t == nil {
-			*t = &AssetId{}
-		}
-		if err := tlv.DBytes32(r, &(*t).TxHash, buf, 32); err != nil {
-			return err
-		}
-		if err := tlv.DUint16(r, &(*t).Index, buf, 2); err != nil {
-			return err
-		}
-		return nil
+	if a.ControlAsset != nil {
+		presence |= maskControlAsset
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetId", l, 34)
-}
-
-func AssetIdSize(val *AssetId) tlv.SizeFunc {
-	return func() uint64 {
-		return 34
+	if len(a.Metadata) > 0 {
+		presence |= maskMetadata
 	}
-}
+	if a.Immutable {
+		presence |= maskImmutable
+	}
+	if err := buf.WriteByte(presence); err != nil {
+		return nil, err
+	}
 
-func EAssetRef(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*AssetRef); ok {
-		refType := t.Type
-		switch refType {
-		case AssetRefByID:
-			if err := tlv.EUint8(w, (*uint8)(&refType), buf); err != nil {
-				return err
-			}
-			return EAssetId(w, &t.AssetId, buf)
-		case AssetRefByGroup:
-			if err := tlv.EUint8(w, (*uint8)(&refType), buf); err != nil {
-				return err
-			}
-			return tlv.EUint16(w, &t.GroupIndex, buf)
-		default:
-			return fmt.Errorf("unknown asset ref type: %d", t.Type)
+	// 2. Write fields in fixed order based on presence
+
+	// AssetId
+	if (presence & maskAssetId) != 0 {
+		if _, err := buf.Write(a.AssetId.TxHash[:]); err != nil {
+			return nil, err
+		}
+		binary.BigEndian.PutUint16(scratch[:2], a.AssetId.Index)
+		if _, err := buf.Write(scratch[:2]); err != nil {
+			return nil, err
 		}
 	}
-	return tlv.NewTypeForEncodingErr(val, "assetRef")
-}
 
-func DAssetRef(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*AssetRef); ok {
-		if l < 1 {
-			return fmt.Errorf("invalid asset ref length: %d", l)
-		}
-		var typ uint8
-		if err := tlv.DUint8(r, &typ, buf, 1); err != nil {
-			return err
-		}
-
-		switch AssetRefType(typ) {
-		case AssetRefByID:
-			if l != 1+34 {
-				return fmt.Errorf("invalid asset ref length: %d", l)
-			}
-			var assetId AssetId
-			if err := DAssetId(r, &assetId, buf, 34); err != nil {
-				return err
-			}
-			*t = AssetRef{Type: AssetRefByID, AssetId: assetId}
-			return nil
-		case AssetRefByGroup:
-			if l != 1+2 {
-				return fmt.Errorf("invalid asset ref length: %d", l)
-			}
-			var groupIndex uint16
-			if err := tlv.DUint16(r, &groupIndex, buf, 2); err != nil {
-				return err
-			}
-			*t = AssetRef{Type: AssetRefByGroup, GroupIndex: groupIndex}
-			return nil
-		default:
-			return fmt.Errorf("unknown asset ref type: %d", typ)
+	// ControlAsset
+	if (presence & maskControlAsset) != 0 {
+		if err := encodeAssetRef(&buf, a.ControlAsset, &scratch); err != nil {
+			return nil, err
 		}
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetRef", l, l)
-}
 
-func DAssetRefPtr(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(**AssetRef); ok {
-		if *t == nil {
-			*t = &AssetRef{}
-		}
-		return DAssetRef(r, *t, buf, l)
-	}
-	return tlv.NewTypeForDecodingErr(val, "assetRef", l, l)
-}
-
-func AssetRefSize(val *AssetRef) tlv.SizeFunc {
-	return func() uint64 {
-		if val == nil {
-			return 0
-		}
-		switch val.Type {
-		case AssetRefByID:
-			return 1 + 34
-		case AssetRefByGroup:
-			return 1 + 2
-		default:
-			return 0
+	// Metadata
+	if (presence & maskMetadata) != 0 {
+		if err := encodeMetadataList(&buf, a.Metadata, &scratch); err != nil {
+			return nil, err
 		}
 	}
-}
 
-func EAssetInput(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*AssetInput); ok {
-		if err := tlv.EUint8(w, (*uint8)(&t.Type), buf); err != nil {
-			return err
-		}
+	// Immutable: No payload, presence bit is the value (true).
 
-	switch t.Type {
-	case AssetTypeLocal:
-		if err := tlv.EUint32(w, &t.Vin, buf); err != nil {
-			return err
-		}
-	case AssetTypeTeleport:
-		if err := tlv.EUint32(w, &t.Vin, buf); err != nil {
-			return err
-		}
-		if err := tlv.WriteVarInt(w, uint64(len(t.Witness.Script)), buf); err != nil {
-			return err
-		}
-			if _, err := w.Write(t.Witness.Script); err != nil {
-				return err
-			}
-
-			if err := tlv.WriteVarInt(w, uint64(len(t.Witness.IntentId)), buf); err != nil {
-				return err
-			}
-			if _, err := w.Write(t.Witness.IntentId); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unknown asset input type: %d", t.Type)
-		}
-
-		if err := tlv.EUint64(w, &t.Amount, buf); err != nil {
-			return err
-		}
-
-		return nil
+	// 3. Inputs
+	if err := encodeAssetInputList(&buf, a.Inputs, &scratch); err != nil {
+		return nil, err
 	}
-	return tlv.NewTypeForEncodingErr(val, "assetInput")
-}
 
-func EAssetInputList(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*[]AssetInput); ok {
-		for _, input := range *t {
-			if err := EAssetInput(w, &input, buf); err != nil {
-				return err
-			}
-		}
-		return nil
+	// 4. Outputs
+	if err := encodeAssetOutputList(&buf, a.Outputs, &scratch); err != nil {
+		return nil, err
 	}
-	return tlv.NewTypeForEncodingErr(val, "assetInputList")
+
+	return buf.Bytes(), nil
 }
 
-func AssetInputListSize(inputs []AssetInput) tlv.SizeFunc {
-	return func() uint64 {
-		var size uint64
-		for _, input := range inputs {
-			size += 1 // Type
-			switch input.Type {
-			case AssetTypeLocal:
-				size += 4 // Vin
-			case AssetTypeTeleport:
-				size += 4 // Vin
-				size += uint64(tlv.VarIntSize(uint64(len(input.Witness.Script))))
-				size += uint64(len(input.Witness.Script))
-				size += uint64(tlv.VarIntSize(uint64(len(input.Witness.IntentId))))
-				size += uint64(len(input.Witness.IntentId))
-			}
-			size += 8 // Amount
-		}
-		return size
+func (a *AssetGroup) Decode(r io.Reader) error {
+	var scratch [8]byte
+
+	// 1. Read Presence Byte
+	var presenceBuf [1]byte
+	if _, err := io.ReadFull(r, presenceBuf[:]); err != nil {
+		return err
 	}
-}
+	presence := presenceBuf[0]
 
-func DAssetInput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*AssetInput); ok {
-		var typ uint8
-		if err := tlv.DUint8(r, &typ, buf, 1); err != nil {
+	// 2. Read fields
+
+	// AssetId
+	if (presence & maskAssetId) != 0 {
+		a.AssetId = &AssetId{}
+		if _, err := io.ReadFull(r, a.AssetId.TxHash[:]); err != nil {
 			return err
 		}
-		t.Type = AssetType(typ)
-
-		var expectedLen uint64
-		switch t.Type {
-		case AssetTypeLocal:
-			// 1 (Type) + 4 (Vin) + 8 (Amount)
-			expectedLen = 13
-			if l < expectedLen {
-				return fmt.Errorf("invalid asset input length: got %d, want at least %d", l, expectedLen)
-			}
-		case AssetTypeTeleport:
-			// Teleport is variable length due to script
-			if l < 1+4+1+1+8 { // Minimum length
-				return fmt.Errorf("invalid asset input length: got %d", l)
-			}
-		default:
-			return fmt.Errorf("unknown asset input type: %d", t.Type)
-		}
-
-		switch t.Type {
-		case AssetTypeLocal:
-			if err := tlv.DUint32(r, &t.Vin, buf, 4); err != nil {
-				return err
-			}
-		case AssetTypeTeleport:
-			if err := tlv.DUint32(r, &t.Vin, buf, 4); err != nil {
-				return err
-			}
-			scriptLen, err := tlv.ReadVarInt(r, buf)
-			if err != nil {
-				return err
-			}
-			script := make([]byte, scriptLen)
-			if _, err := io.ReadFull(r, script); err != nil {
-				return err
-			}
-			t.Witness.Script = script
-
-			intentLen, err := tlv.ReadVarInt(r, buf)
-			if err != nil {
-				return err
-			}
-			intentID := make([]byte, intentLen)
-			if _, err := io.ReadFull(r, intentID); err != nil {
-				return err
-			}
-			t.Witness.IntentId = intentID
-		}
-
-		if err := tlv.DUint64(r, &t.Amount, buf, 8); err != nil {
+		if _, err := io.ReadFull(r, scratch[:2]); err != nil {
 			return err
 		}
-
-		return nil
+		a.AssetId.Index = binary.BigEndian.Uint16(scratch[:2])
 	}
-	// Note: Generic error here as detailed length check is inside the function
-	return tlv.NewTypeForDecodingErr(val, "assetInput", l, l)
-}
 
-func DAssetInputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*[]AssetInput); ok {
-		if l == 0 {
-			*t = nil
-			return nil
-		}
-
-		data := make([]byte, l)
-		if _, err := io.ReadFull(r, data); err != nil {
+	// ControlAsset
+	if (presence & maskControlAsset) != 0 {
+		var err error
+		a.ControlAsset, err = decodeAssetRef(r, &scratch)
+		if err != nil {
 			return err
 		}
-
-		reader := bytes.NewReader(data)
-		var inputs []AssetInput
-
-		for reader.Len() > 0 {
-			startLen := reader.Len()
-
-			typesByte, err := reader.ReadByte()
-			if err != nil {
-				return err
-			}
-			reader.UnreadByte()
-
-			var itemLen uint64
-			switch AssetType(typesByte) {
-			case AssetTypeLocal:
-				itemLen = 1 + 4 + 8 // Minimum: Type + Vin + Amount
-			case AssetTypeTeleport:
-				itemLen = 1 + 4 + 1 + 1 + 8 // Minimum: Type + Vin + ScriptLen(1) + IntentLen(1) + Amount
-			default:
-				return fmt.Errorf("unknown asset input type: %d", typesByte)
-			}
-
-			if uint64(reader.Len()) < itemLen {
-				return fmt.Errorf("not enough data for asset input type %d", typesByte)
-			}
-
-			var input AssetInput
-			if err := DAssetInput(reader, &input, buf, itemLen); err != nil {
-				return err
-			}
-			inputs = append(inputs, input)
-
-			if reader.Len() >= startLen {
-				return fmt.Errorf("infinite loop reading asset inputs")
-			}
-		}
-		*t = inputs
-		return nil
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetInputList", l, l)
-}
 
-func EAssetOutput(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*AssetOutput); ok {
-		if err := tlv.EUint8(w, (*uint8)(&t.Type), buf); err != nil {
+	// Metadata
+	if (presence & maskMetadata) != 0 {
+		var err error
+		a.Metadata, err = decodeMetadataList(r, &scratch)
+		if err != nil {
 			return err
 		}
+	}
 
-		switch t.Type {
-		case AssetTypeLocal:
-			if err := tlv.EUint32(w, &t.Vout, buf); err != nil {
-				return err
-			}
-		case AssetTypeTeleport:
-			if err := tlv.WriteVarInt(w, uint64(len(t.Script)), buf); err != nil {
-				return err
-			}
-			if _, err := w.Write(t.Script); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("unknown asset output type: %d", t.Type)
-		}
+	// Immutable
+	if (presence & maskImmutable) != 0 {
+		a.Immutable = true
+	} else {
+		a.Immutable = false
+	}
 
-		if err := tlv.EUint64(w, &t.Amount, buf); err != nil {
+	// 3. Inputs
+	var err error
+	a.Inputs, err = decodeAssetInputList(r, &scratch)
+	if err != nil {
+		return err
+	}
+
+	// 4. Outputs
+	a.Outputs, err = decodeAssetOutputList(r, &scratch)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func encodeAssetRef(w io.Writer, ref *AssetRef, scratch *[8]byte) error {
+	if _, err := w.Write([]byte{byte(ref.Type)}); err != nil {
+		return err
+	}
+	switch ref.Type {
+	case AssetRefByID:
+		if _, err := w.Write(ref.AssetId.TxHash[:]); err != nil {
 			return err
 		}
-		return nil
-	}
-	return tlv.NewTypeForEncodingErr(val, "assetOutput")
-}
-
-func AssetOutputListSize(outputs []AssetOutput) tlv.SizeFunc {
-	return func() uint64 {
-		var size uint64
-		for _, output := range outputs {
-			size += 1 // Type
-			switch output.Type {
-			case AssetTypeLocal:
-				size += 4 // Vout
-			case AssetTypeTeleport:
-				size += uint64(tlv.VarIntSize(uint64(len(output.Script))))
-				size += uint64(len(output.Script))
-			}
-			size += 8 // Amount
-		}
-		return size
-	}
-}
-
-func EAssetOutputList(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*[]AssetOutput); ok {
-		for _, output := range *t {
-			if err := EAssetOutput(w, &output, buf); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	return tlv.NewTypeForEncodingErr(val, "assetOutputList")
-}
-
-func DAssetOutput(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*AssetOutput); ok {
-		var typ uint8
-		if err := tlv.DUint8(r, &typ, buf, 1); err != nil {
+		binary.BigEndian.PutUint16(scratch[:2], ref.AssetId.Index)
+		if _, err := w.Write(scratch[:2]); err != nil {
 			return err
 		}
-		t.Type = AssetType(typ)
-
-		var expectedLen uint64
-		switch t.Type {
-		case AssetTypeLocal:
-			expectedLen = 1 + 4 + 8 // Type + Vout + Amount
-		case AssetTypeTeleport:
-			expectedLen = 1 + 1 + 8 // Type + ScriptLen(1) + Amount
-		default:
-			return fmt.Errorf("unknown asset output type: %d", t.Type)
-		}
-
-		if l < expectedLen {
-			return tlv.NewTypeForDecodingErr(val, "assetOutput", l, expectedLen)
-		}
-
-		switch t.Type {
-		case AssetTypeLocal:
-			if err := tlv.DUint32(r, &t.Vout, buf, 4); err != nil {
-				return err
-			}
-		case AssetTypeTeleport:
-			scriptLen, err := tlv.ReadVarInt(r, buf)
-			if err != nil {
-				return err
-			}
-			script := make([]byte, scriptLen)
-			if _, err := io.ReadFull(r, script); err != nil {
-				return err
-			}
-			t.Script = script
-		}
-
-		if err := tlv.DUint64(r, &t.Amount, buf, 8); err != nil {
+	case AssetRefByGroup:
+		binary.BigEndian.PutUint16(scratch[:2], ref.GroupIndex)
+		if _, err := w.Write(scratch[:2]); err != nil {
 			return err
 		}
-		return nil
+	default:
+		return fmt.Errorf("unknown asset ref type: %d", ref.Type)
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetOutput", l, l)
+	return nil
 }
 
-func DAssetOutputList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*[]AssetOutput); ok {
-		if l == 0 {
-			*t = nil
-			return nil
-		}
-
-		data := make([]byte, l)
-		if _, err := io.ReadFull(r, data); err != nil {
-			return err
-		}
-
-		reader := bytes.NewReader(data)
-		var outputs []AssetOutput
-
-		for reader.Len() > 0 {
-			startLen := reader.Len()
-
-			typeByte, err := reader.ReadByte()
-			if err != nil {
-				return err
-			}
-			reader.UnreadByte()
-
-			var itemLen uint64
-			switch AssetType(typeByte) {
-			case AssetTypeLocal:
-				itemLen = 1 + 4 + 8
-			case AssetTypeTeleport:
-				itemLen = 1 + 1 + 8
-			default:
-				return fmt.Errorf("unknown asset output type: %d", typeByte)
-			}
-
-			if uint64(reader.Len()) < itemLen {
-				return fmt.Errorf("not enough data for asset output type %d", typeByte)
-			}
-
-			var output AssetOutput
-			if err := DAssetOutput(reader, &output, buf, itemLen); err != nil {
-				return err
-			}
-			outputs = append(outputs, output)
-
-			if reader.Len() >= startLen {
-				return fmt.Errorf("infinite loop reading asset outputs")
-			}
-		}
-		*t = outputs
-		return nil
+func decodeAssetRef(r io.Reader, scratch *[8]byte) (*AssetRef, error) {
+	var typBuf [1]byte
+	if _, err := io.ReadFull(r, typBuf[:]); err != nil {
+		return nil, err
 	}
-	return tlv.NewTypeForDecodingErr(val, "assetOutputList", l, l)
+	typ := AssetRefType(typBuf[0])
+
+	ref := &AssetRef{Type: typ}
+	switch typ {
+	case AssetRefByID:
+		if _, err := io.ReadFull(r, ref.AssetId.TxHash[:]); err != nil {
+			return nil, err
+		}
+		if _, err := io.ReadFull(r, scratch[:2]); err != nil {
+			return nil, err
+		}
+		ref.AssetId.Index = binary.BigEndian.Uint16(scratch[:2])
+	case AssetRefByGroup:
+		if _, err := io.ReadFull(r, scratch[:2]); err != nil {
+			return nil, err
+		}
+		ref.GroupIndex = binary.BigEndian.Uint16(scratch[:2])
+	default:
+		return nil, fmt.Errorf("unknown asset ref type: %d", typ)
+	}
+	return ref, nil
 }
 
-func EMetadata(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*Metadata); ok {
-		keyBytes := []byte(t.Key)
-		if err := tlv.WriteVarInt(w, uint64(len(keyBytes)), buf); err != nil {
+func encodeMetadataList(w io.Writer, meta []Metadata, scratch *[8]byte) error {
+	if err := tlv.WriteVarInt(w, uint64(len(meta)), scratch); err != nil {
+		return err
+	}
+	for _, m := range meta {
+		keyBytes := []byte(m.Key)
+		valBytes := []byte(m.Value)
+
+		if err := tlv.WriteVarInt(w, uint64(len(keyBytes)), scratch); err != nil {
 			return err
 		}
 		if _, err := w.Write(keyBytes); err != nil {
 			return err
 		}
-
-		valueBytes := []byte(t.Value)
-		if err := tlv.WriteVarInt(w, uint64(len(valueBytes)), buf); err != nil {
+		if err := tlv.WriteVarInt(w, uint64(len(valBytes)), scratch); err != nil {
 			return err
 		}
-		_, err := w.Write(valueBytes)
+		if _, err := w.Write(valBytes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func decodeMetadataList(r io.Reader, scratch *[8]byte) ([]Metadata, error) {
+	count, err := tlv.ReadVarInt(r, scratch)
+	if err != nil {
+		return nil, err
+	}
+
+	meta := make([]Metadata, count)
+	for i := uint64(0); i < count; i++ {
+		// Key
+		kLen, err := tlv.ReadVarInt(r, scratch)
+		if err != nil {
+			return nil, err
+		}
+		kBytes := make([]byte, kLen)
+		if _, err := io.ReadFull(r, kBytes); err != nil {
+			return nil, err
+		}
+
+		// Value
+		vLen, err := tlv.ReadVarInt(r, scratch)
+		if err != nil {
+			return nil, err
+		}
+		vBytes := make([]byte, vLen)
+		if _, err := io.ReadFull(r, vBytes); err != nil {
+			return nil, err
+		}
+
+		meta[i] = Metadata{Key: string(kBytes), Value: string(vBytes)}
+	}
+	return meta, nil
+}
+
+func encodeAssetInputList(w io.Writer, inputs []AssetInput, scratch *[8]byte) error {
+	if err := tlv.WriteVarInt(w, uint64(len(inputs)), scratch); err != nil {
 		return err
 	}
-	return tlv.NewTypeForEncodingErr(val, "metadata")
+	for _, in := range inputs {
+		if _, err := w.Write([]byte{byte(in.Type)}); err != nil {
+			return err
+		}
+		switch in.Type {
+		case AssetTypeLocal:
+			binary.BigEndian.PutUint32(scratch[:4], in.Vin)
+			if _, err := w.Write(scratch[:4]); err != nil {
+				return err
+			}
+			binary.BigEndian.PutUint64(scratch[:8], in.Amount)
+			if _, err := w.Write(scratch[:8]); err != nil {
+				return err
+			}
+		case AssetTypeTeleport:
+			// Amount
+			binary.BigEndian.PutUint64(scratch[:8], in.Amount)
+			if _, err := w.Write(scratch[:8]); err != nil {
+				return err
+			}
+			// Witness
+			if err := tlv.WriteVarInt(w, uint64(len(in.Witness.Script)), scratch); err != nil {
+				return err
+			}
+			if _, err := w.Write(in.Witness.Script); err != nil {
+				return err
+			}
+			if err := tlv.WriteVarInt(w, uint64(len(in.Witness.IntentId)), scratch); err != nil {
+				return err
+			}
+			if _, err := w.Write(in.Witness.IntentId); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unknown asset input type: %d", in.Type)
+		}
+	}
+	return nil
 }
 
-func DMetadata(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*Metadata); ok {
-		readField := func() (string, error) {
-			length, err := tlv.ReadVarInt(r, buf)
+func decodeAssetInputList(r io.Reader, scratch *[8]byte) ([]AssetInput, error) {
+	count, err := tlv.ReadVarInt(r, scratch)
+	if err != nil {
+		return nil, err
+	}
+	inputs := make([]AssetInput, count)
+	for i := uint64(0); i < count; i++ {
+		var typBuf [1]byte
+		if _, err := io.ReadFull(r, typBuf[:]); err != nil {
+			return nil, err
+		}
+		inputs[i].Type = AssetType(typBuf[0])
+
+		switch inputs[i].Type {
+		case AssetTypeLocal:
+			if _, err := io.ReadFull(r, scratch[:4]); err != nil {
+				return nil, err
+			}
+			inputs[i].Vin = binary.BigEndian.Uint32(scratch[:4])
+			if _, err := io.ReadFull(r, scratch[:8]); err != nil {
+				return nil, err
+			}
+			inputs[i].Amount = binary.BigEndian.Uint64(scratch[:8])
+		case AssetTypeTeleport:
+			if _, err := io.ReadFull(r, scratch[:8]); err != nil {
+				return nil, err
+			}
+			inputs[i].Amount = binary.BigEndian.Uint64(scratch[:8])
+
+			// Script
+			sLen, err := tlv.ReadVarInt(r, scratch)
 			if err != nil {
-				return "", err
+				return nil, err
+			}
+			inputs[i].Witness.Script = make([]byte, sLen)
+			if _, err := io.ReadFull(r, inputs[i].Witness.Script); err != nil {
+				return nil, err
 			}
 
-			data := make([]byte, length)
-			if _, err := io.ReadFull(r, data); err != nil {
-				return "", err
+			// IntentId
+			nLen, err := tlv.ReadVarInt(r, scratch)
+			if err != nil {
+				return nil, err
 			}
-
-			return string(data), nil
+			inputs[i].Witness.IntentId = make([]byte, nLen)
+			if _, err := io.ReadFull(r, inputs[i].Witness.IntentId); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("unknown asset input type: %d", inputs[i].Type)
 		}
-
-		key, err := readField()
-		if err != nil {
-			return err
-		}
-
-		value, err := readField()
-		if err != nil {
-			return err
-		}
-
-		t.Key = key
-		t.Value = value
-
-		return nil
 	}
-	return tlv.NewTypeForDecodingErr(val, "metadata", l, l)
+	return inputs, nil
 }
 
-func EMetadataList(w io.Writer, val interface{}, buf *[8]byte) error {
-	if t, ok := val.(*[]Metadata); ok {
-		for _, md := range *t {
-			if err := EMetadata(w, &md, buf); err != nil {
+func encodeAssetOutputList(w io.Writer, outputs []AssetOutput, scratch *[8]byte) error {
+	if err := tlv.WriteVarInt(w, uint64(len(outputs)), scratch); err != nil {
+		return err
+	}
+	for _, out := range outputs {
+		if _, err := w.Write([]byte{byte(out.Type)}); err != nil {
+			return err
+		}
+		switch out.Type {
+		case AssetTypeLocal:
+			binary.BigEndian.PutUint32(scratch[:4], out.Vout)
+			if _, err := w.Write(scratch[:4]); err != nil {
 				return err
 			}
-		}
-		return nil
-	}
-	return tlv.NewTypeForEncodingErr(val, "metadataList")
-}
-
-func MetadataListSize(metadataList []Metadata) tlv.SizeFunc {
-	return func() uint64 {
-		var total uint64
-		for _, md := range metadataList {
-			keyLen := uint64(len(md.Key))
-			valueLen := uint64(len(md.Value))
-
-			total += uint64(tlv.VarIntSize(keyLen)) + keyLen
-			total += uint64(tlv.VarIntSize(valueLen)) + valueLen
-		}
-		return total
-	}
-}
-
-func DMetadataList(r io.Reader, val interface{}, buf *[8]byte, l uint64) error {
-	if t, ok := val.(*[]Metadata); ok {
-		if l == 0 {
-			*t = nil
-			return nil
-		}
-
-		data := make([]byte, l)
-		if _, err := io.ReadFull(r, data); err != nil {
-			return err
-		}
-
-		reader := bytes.NewReader(data)
-		var metadataList []Metadata
-
-		for reader.Len() > 0 {
-			startLen := reader.Len()
-			var md Metadata
-			if err := DMetadata(reader, &md, buf, uint64(reader.Len())); err != nil {
+			binary.BigEndian.PutUint64(scratch[:8], out.Amount)
+			if _, err := w.Write(scratch[:8]); err != nil {
 				return err
 			}
+		case AssetTypeTeleport:
+			// Script (Commitment) - variable length
+			if err := tlv.WriteVarInt(w, uint64(len(out.Script)), scratch); err != nil {
+				return err
+			}
+			if _, err := w.Write(out.Script); err != nil {
+				return err
+			}
+			binary.BigEndian.PutUint64(scratch[:8], out.Amount)
+			if _, err := w.Write(scratch[:8]); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unknown asset output type: %d", out.Type)
+		}
+	}
+	return nil
+}
 
-			if reader.Len() >= startLen {
-				return tlv.NewTypeForDecodingErr(val, "metadataList", l, l)
+func decodeAssetOutputList(r io.Reader, scratch *[8]byte) ([]AssetOutput, error) {
+	count, err := tlv.ReadVarInt(r, scratch)
+	if err != nil {
+		return nil, err
+	}
+	outputs := make([]AssetOutput, count)
+	for i := uint64(0); i < count; i++ {
+		var typBuf [1]byte
+		if _, err := io.ReadFull(r, typBuf[:]); err != nil {
+			return nil, err
+		}
+		outputs[i].Type = AssetType(typBuf[0])
+
+		switch outputs[i].Type {
+		case AssetTypeLocal:
+			if _, err := io.ReadFull(r, scratch[:4]); err != nil {
+				return nil, err
+			}
+			outputs[i].Vout = binary.BigEndian.Uint32(scratch[:4])
+			if _, err := io.ReadFull(r, scratch[:8]); err != nil {
+				return nil, err
+			}
+			outputs[i].Amount = binary.BigEndian.Uint64(scratch[:8])
+		case AssetTypeTeleport:
+			// Script (Commitment)
+			sLen, err := tlv.ReadVarInt(r, scratch)
+			if err != nil {
+				return nil, err
+			}
+			outputs[i].Script = make([]byte, sLen)
+			if _, err := io.ReadFull(r, outputs[i].Script); err != nil {
+				return nil, err
 			}
 
-			metadataList = append(metadataList, md)
+			if _, err := io.ReadFull(r, scratch[:8]); err != nil {
+				return nil, err
+			}
+			outputs[i].Amount = binary.BigEndian.Uint64(scratch[:8])
+		default:
+			return nil, fmt.Errorf("unknown asset output type: %d", outputs[i].Type)
 		}
-
-		*t = metadataList
-		return nil
 	}
-	return tlv.NewTypeForDecodingErr(val, "metadataList", l, l)
+	return outputs, nil
 }

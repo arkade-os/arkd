@@ -3,6 +3,7 @@ package extension
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -51,20 +52,18 @@ func (packet *ExtensionPacket) EncodeExtensionPacket() (wire.TxOut, error) {
 			return wire.TxOut{}, err
 		}
 
-		version := packet.Asset.Version
-		if version == 0 {
-			version = AssetVersion
-		}
-
-		assetData := append([]byte{version}, encodedAssets...)
+		// Spec does not mention a version byte in the payload value for Type 0x00.
+		// "Value: Asset_Payload ... Asset_Payload: The TLV packet containing asset group data"
+		// "Packet := { GroupCount, Groups }"
+		// So we just write encodedAssets.
 
 		if err := tlvData.WriteByte(MarkerAssetPayload); err != nil {
 			return wire.TxOut{}, err
 		}
-		if err := tlv.WriteVarInt(&tlvData, uint64(len(assetData)), &scratch); err != nil {
+		if err := tlv.WriteVarInt(&tlvData, uint64(len(encodedAssets)), &scratch); err != nil {
 			return wire.TxOut{}, err
 		}
-		if _, err := tlvData.Write(assetData); err != nil {
+		if _, err := tlvData.Write(encodedAssets); err != nil {
 			return wire.TxOut{}, err
 		}
 	}
@@ -100,11 +99,9 @@ func DecodeExtensionPacket(txOut wire.TxOut) (*ExtensionPacket, error) {
 	}
 
 	packet := &ExtensionPacket{}
-	if len(assetPayload) > 0 {
-		version := assetPayload[0]
-		payload := assetPayload[1:]
 
-		assetPacket, err := decodeAssetPacket(payload, version)
+	if len(assetPayload) > 0 {
+		assetPacket, err := decodeAssetPacket(assetPayload)
 		if err != nil {
 			return nil, err
 		}
@@ -207,6 +204,69 @@ func parsePacketOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 	}
 
 	return assetPayload, subDustKey, nil
+}
+
+func encodeAssetPacket(assets []AssetGroup) ([]byte, error) {
+	var scratch [8]byte
+	var buf bytes.Buffer
+
+	totalCount := uint64(len(assets))
+
+	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
+		return nil, err
+	}
+
+	for _, asset := range assets {
+		encodedAsset, err := asset.Encode()
+		if err != nil {
+			return nil, err
+		}
+
+		// No length prefix, groups are self-delimiting/known
+		if _, err := buf.Write(encodedAsset); err != nil {
+			return nil, err
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+func decodeAssetPacket(payload []byte) (*AssetPacket, error) {
+	reader := bytes.NewReader(payload)
+	var scratch [8]byte
+
+	assetCount, err := tlv.ReadVarInt(reader, &scratch)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset group count: %w", err)
+	}
+
+	if assetCount == 0 {
+		return nil, errors.New("empty asset group")
+	}
+
+	assets := make([]AssetGroup, 0, int(assetCount))
+	for i := uint64(0); i < assetCount; i++ {
+		var decoded AssetGroup
+		if err := decoded.Decode(reader); err != nil {
+			return nil, fmt.Errorf("failed to decode asset group %d: %w", i, err)
+		}
+
+		assets = append(assets, decoded)
+	}
+
+	for i := range assets {
+		normalizeAssetSlices(&assets[i])
+	}
+
+	if reader.Len() != 0 {
+		return nil, errors.New("unexpected trailing bytes in asset group payload")
+	}
+
+	group := &AssetPacket{
+		Assets: assets,
+	}
+
+	return group, nil
 }
 
 func normalizeAssetSlices(a *AssetGroup) {
