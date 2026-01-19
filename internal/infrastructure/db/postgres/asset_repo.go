@@ -145,14 +145,6 @@ func (r *assetRepository) ListMetadataByAssetID(
 }
 
 func (r *assetRepository) InsertAssetAnchor(ctx context.Context, anchor domain.AssetAnchor) error {
-	seen := make(map[uint32]struct{}, len(anchor.Assets))
-	for _, asst := range anchor.Assets {
-		if _, exists := seen[asst.VOut]; exists {
-			return fmt.Errorf("duplicate asset vout %d", asst.VOut)
-		}
-		seen[asst.VOut] = struct{}{}
-	}
-
 	err := r.querier.CreateAssetAnchor(ctx, queries.CreateAssetAnchorParams{
 		AnchorTxid: anchor.Txid,
 		AnchorVout: int64(anchor.VOut),

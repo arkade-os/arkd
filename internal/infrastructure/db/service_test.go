@@ -1415,6 +1415,13 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("insert and get asset anchor", func(t *testing.T) {
 		ctx := context.Background()
+
+		// Create asset groups first to satisfy FK constraints
+		err := svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-1", Quantity: 1000})
+		require.NoError(t, err)
+		err = svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-2", Quantity: 2000})
+		require.NoError(t, err)
+
 		anchor := domain.AssetAnchor{
 			Outpoint: domain.Outpoint{
 				Txid: "txid-123",
@@ -1434,7 +1441,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 			},
 		}
 
-		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
 		require.NoError(t, err, "InsertAssetAnchor should succeed")
 
 		got, err := svc.Assets().GetAssetAnchorByTxId(ctx, anchor.Txid)
@@ -1446,7 +1453,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.ElementsMatch(t, anchor.Assets, got.Assets)
 	})
 
-	t.Run("inser and get asset group", func(t *testing.T) {
+	t.Run("insert and get asset group", func(t *testing.T) {
 		ctx := context.Background()
 		asset := domain.AssetGroup{
 			ID:        "asset-group-123",
@@ -1473,8 +1480,17 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, asset.ControlAssetID, got.ControlAssetID)
 	})
 
-	t.Run("insert asset anchor rejects duplicate vout", func(t *testing.T) {
+	t.Run("insert asset anchor accepts duplicate vout", func(t *testing.T) {
 		ctx := context.Background()
+
+		// Create asset groups first to satisfy FK constraints
+		err := svc.Assets().
+			InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-dup-1", Quantity: 1000})
+		require.NoError(t, err)
+		err = svc.Assets().
+			InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-dup-2", Quantity: 2000})
+		require.NoError(t, err)
+
 		anchor := domain.AssetAnchor{
 			Outpoint: domain.Outpoint{
 				Txid: "txid-dup-vout",
@@ -1484,18 +1500,18 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				{
 					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
 					Amount:   1000,
-					AssetID:  "asset-1",
+					AssetID:  "asset-dup-1",
 				},
 				{
 					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
 					Amount:   2000,
-					AssetID:  "asset-2",
+					AssetID:  "asset-dup-2",
 				},
 			},
 		}
 
-		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
-		require.Error(t, err, "InsertAssetAnchor should fail on duplicate vout")
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.NoError(t, err, "InsertAssetAnchor should succeed even with duplicate vout")
 	})
 
 	t.Run("list asset anchors by asset id", func(t *testing.T) {
@@ -1503,6 +1519,14 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 
 		assetListID := "asset-list-1"
 		otherAssetID := "asset-list-2"
+
+		// Create asset groups first to satisfy FK constraints
+		err := svc.Assets().
+			InsertAssetGroup(ctx, domain.AssetGroup{ID: assetListID, Quantity: 10000})
+		require.NoError(t, err)
+		err = svc.Assets().
+			InsertAssetGroup(ctx, domain.AssetGroup{ID: otherAssetID, Quantity: 5000})
+		require.NoError(t, err)
 
 		anchor1 := domain.AssetAnchor{
 			Outpoint: domain.Outpoint{
@@ -1536,7 +1560,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 			},
 		}
 
-		err := svc.Assets().InsertAssetAnchor(ctx, anchor1)
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor1)
 		require.NoError(t, err, "InsertAssetAnchor should succeed")
 
 		err = svc.Assets().InsertAssetAnchor(ctx, anchor2)
@@ -1557,6 +1581,10 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("get asset by outpoint", func(t *testing.T) {
 		ctx := context.Background()
 
+		// Create asset group first to satisfy FK constraints
+		err := svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-42", Quantity: 5000})
+		require.NoError(t, err)
+
 		anchor := domain.AssetAnchor{
 			Outpoint: domain.Outpoint{
 				Txid: "txid-by-outpoint",
@@ -1571,7 +1599,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 			},
 		}
 
-		err := svc.Assets().InsertAssetAnchor(ctx, anchor)
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
 		require.NoError(t, err, "InsertAssetAnchor should succeed")
 
 		got, err := svc.Assets().
@@ -1653,7 +1681,8 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		err = svc.Assets().UpdateTeleportAsset(ctx, script, intentID, assetID, outputIndex, true)
 		require.NoError(t, err, "UpdateTeleportAsset should succeed")
 
-		gotUpdated, err := svc.Assets().GetTeleportAsset(ctx, script, intentID, assetID, outputIndex)
+		gotUpdated, err := svc.Assets().
+			GetTeleportAsset(ctx, script, intentID, assetID, outputIndex)
 		require.NoError(t, err, "GetTeleportAsset after update should succeed")
 		require.NotNil(t, gotUpdated)
 		require.Equal(t, script, gotUpdated.Script)

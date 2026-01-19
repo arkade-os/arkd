@@ -49,7 +49,20 @@ type AssetRepository interface {
 	ListMetadataByAssetID(ctx context.Context, assetID string) ([]AssetMetadata, error)
 	GetAssetAnchorByTxId(ctx context.Context, txId string) (*AssetAnchor, error)
 	InsertTeleportAsset(ctx context.Context, teleport TeleportAsset) error
-	GetTeleportAsset(ctx context.Context, script string, intentID string, assetID string, outputIndex uint32) (*TeleportAsset, error)
-	UpdateTeleportAsset(ctx context.Context, script string, intentID string, assetID string, outputIndex uint32, isClaimed bool) error
+	GetTeleportAsset(
+		ctx context.Context,
+		script string,
+		intentID string,
+		assetID string,
+		outputIndex uint32,
+	) (*TeleportAsset, error)
+	UpdateTeleportAsset(
+		ctx context.Context,
+		script string,
+		intentID string,
+		assetID string,
+		outputIndex uint32,
+		isClaimed bool,
+	) error
 	Close()
 }

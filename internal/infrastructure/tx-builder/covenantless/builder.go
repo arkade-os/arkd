@@ -1213,6 +1213,10 @@ func verifyAssetForfeitTransaction(vtxos []domain.Vtxo, forfeitTxs []*psbt.Packe
 			}
 
 			for _, asset := range assetPkt.Assets {
+				if asset.AssetId == nil {
+					// Issuance assets don't have inputs to validate against existing VTXOs
+					continue
+				}
 				assetID := asset.AssetId.ToString()
 				for _, in := range asset.Inputs {
 					if in.Type == extension.AssetTypeTeleport {

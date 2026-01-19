@@ -1475,7 +1475,6 @@ func (s *service) RegisterIntent(
 
 	outpoints := proof.GetOutpoints()
 
-	log.Printf("these are the outpoints %+v", outpoints)
 	if len(outpoints) == 0 {
 		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
@@ -4391,7 +4390,9 @@ func (s *service) storeAssetGroups(
 			}
 
 			if err := s.ensureAssetPresence(ctx, assetGroupList, *controlAssetID); err != nil {
-				return fmt.Errorf("cannot update asset metadata while control asset is being issued")
+				return fmt.Errorf(
+					"cannot update asset metadata while control asset is being issued",
+				)
 			}
 
 			if err := s.repoManager.Assets().UpdateAssetMetadataList(ctx, assetId.ToString(), metadataList); err != nil {
@@ -4400,7 +4401,7 @@ func (s *service) storeAssetGroups(
 		}
 
 		log.Infof("updated asset metadata for asset id %s",
-			assetId,
+			assetId.ToString(),
 		)
 
 		if err := s.updateAssetQuantity(ctx, assetId.ToString(), totalIn, totalOut); err != nil {

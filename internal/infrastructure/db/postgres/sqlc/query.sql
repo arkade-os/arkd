@@ -375,7 +375,7 @@ INSERT INTO asset_anchor (anchor_txid, anchor_vout)
 VALUES (@anchor_txid, @anchor_vout);
 
 -- name: ListAssetAnchorsByAssetID :many
-SELECT aa.anchor_txid, aa.anchor_vout
+SELECT DISTINCT aa.anchor_txid, aa.anchor_vout
 FROM asset_anchor aa
 JOIN asset a ON aa.anchor_txid = a.anchor_id
 WHERE a.asset_id = @asset_id
@@ -411,7 +411,8 @@ ORDER BY meta_key;
 INSERT INTO asset (anchor_id, asset_id, vout, amount)
 VALUES (@anchor_id, @asset_id, @vout, @amount)
 ON CONFLICT (anchor_id, vout)
-DO UPDATE SET amount = EXCLUDED.amount;
+DO UPDATE SET amount = EXCLUDED.amount
+WHERE asset.asset_id = EXCLUDED.asset_id;
 
 -- name: GetAsset :one
 SELECT anchor_id, asset_id, vout, amount

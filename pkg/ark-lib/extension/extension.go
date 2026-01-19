@@ -101,10 +101,6 @@ func DecodeExtensionPacket(txOut wire.TxOut) (*ExtensionPacket, error) {
 
 	packet := &ExtensionPacket{}
 	if len(assetPayload) > 0 {
-		if len(assetPayload) < 1 {
-			return nil, errors.New("invalid asset op_return payload")
-		}
-
 		version := assetPayload[0]
 		payload := assetPayload[1:]
 

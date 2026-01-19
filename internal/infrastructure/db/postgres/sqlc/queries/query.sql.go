@@ -18,6 +18,7 @@ INSERT INTO asset (anchor_id, asset_id, vout, amount)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (anchor_id, vout)
 DO UPDATE SET amount = EXCLUDED.amount
+WHERE asset.asset_id = EXCLUDED.asset_id
 `
 
 type AddAssetParams struct {
@@ -386,7 +387,7 @@ func (q *Queries) ListAsset(ctx context.Context, anchorID string) ([]Asset, erro
 }
 
 const listAssetAnchorsByAssetID = `-- name: ListAssetAnchorsByAssetID :many
-SELECT aa.anchor_txid, aa.anchor_vout
+SELECT DISTINCT aa.anchor_txid, aa.anchor_vout
 FROM asset_anchor aa
 JOIN asset a ON aa.anchor_txid = a.anchor_id
 WHERE a.asset_id = $1

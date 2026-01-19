@@ -21,6 +21,7 @@ func TestExtension(t *testing.T) {
 	testAssetIdStringConversion(t)
 	testAssetOutputListEncodeDecode(t)
 	testAssetInputListEncodeDecode(t)
+	testAssetGroupEncodeDecodeWithGroupIndexRef(t)
 }
 
 func testAssetEncodeDecodeRoundTrip(t *testing.T) {
@@ -52,8 +53,8 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Amount: 20,
 			},
 			{
-				Type:       AssetTypeTeleport,
-				Vin:        2,
+				Type: AssetTypeTeleport,
+				Vin:  2,
 				Witness: TeleportWitness{
 					Script:   []byte{0x00, 0x01, 0x02, 0x03},
 					IntentId: deterministicTxhash(0x55),
@@ -251,9 +252,9 @@ func testAssetInputListEncodeDecode(t *testing.T) {
 			Vin:    1,
 		},
 		{
-			Type:       AssetTypeTeleport,
-			Vin:        2,
-			Amount:     20,
+			Type:   AssetTypeTeleport,
+			Vin:    2,
+			Amount: 20,
 			Witness: TeleportWitness{
 				Script:   []byte{0xde, 0xad, 0xbe, 0xef},
 				IntentId: deterministicTxhash(0x11),

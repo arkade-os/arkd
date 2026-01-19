@@ -58,6 +58,9 @@ func (e *indexerService) GetAssetGroup(ctx context.Context, request *arkv1.GetAs
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
+	if resp == nil {
+		return nil, status.Errorf(codes.NotFound, "asset not found: %s", assetId)
+	}
 
 	assetMetadata := make([]*arkv1.AssetMetadata, 0)
 	for _, metadata := range resp.AssetGroup.Metadata {
