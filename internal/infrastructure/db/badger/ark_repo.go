@@ -552,7 +552,6 @@ func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (*domai
 
 	for _, in := range round.Intents {
 		if in.Id == idx.IntentId {
-			// optionally populate receivers like intent_with_receivers_vw if needed
 			return &in, nil
 		}
 	}

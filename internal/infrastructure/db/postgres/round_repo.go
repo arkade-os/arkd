@@ -432,7 +432,7 @@ func (r *roundRepository) GetIntentByTxid(
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get intents by txid: %w", err)
+		return nil, fmt.Errorf("failed to get intent by txid: %w", err)
 	}
 
 	return &domain.Intent{

@@ -196,7 +196,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
-
 	case "postgres":
 		if len(config.DataStoreConfig) != 2 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
