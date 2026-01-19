@@ -28,14 +28,17 @@ func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
 	return nil
 }
 
-func backfillIntent(ctx context.Context, db *sql.DB) error {
+func backfillIntent(ctx context.Context, db *sql.DB) (err error) {
 	const listIntent = `SELECT id, proof FROM intent;`
 	const updateIntent = `UPDATE intent SET txid = $1 WHERE id = $2;`
 
-	tx, err := db.BeginTx(ctx, nil)
+	var tx *sql.Tx
+	tx, err = db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx err: %w", err)
 	}
+
+	// ensure rollback on any error-return
 	defer func() {
 		if err != nil {
 			_ = tx.Rollback()
@@ -47,6 +50,9 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 		return fmt.Errorf("query intents: %w", err)
 	}
 
+	// nolint:errcheck
+	defer rows.Close()
+
 	type item struct {
 		id    string
 		proof string
@@ -56,31 +62,29 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 	for rows.Next() {
 		var id, proof string
 		if err = rows.Scan(&id, &proof); err != nil {
-			_ = rows.Close()
 			return fmt.Errorf("scan intent row: %w", err)
 		}
 		list = append(list, item{id: id, proof: proof})
 	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
+	if err = rows.Err(); err != nil {
 		return fmt.Errorf("iterate rows: %w", err)
 	}
 
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close rows: %w", err)
-	}
-
 	for _, it := range list {
-		txid, derr := DeriveTxidFromProof(it.proof)
-		if derr != nil {
-			return fmt.Errorf("derive txid from proof for intent id %s: %w", it.id, derr)
+		var txid string
+		txid, err = DeriveTxidFromProof(it.proof)
+		if err != nil {
+			return fmt.Errorf("derive txid from proof for intent id %s: %w", it.id, err)
 		}
 		if _, err = tx.ExecContext(ctx, updateIntent, txid, it.id); err != nil {
 			return fmt.Errorf("update intent txid for id %s: %w", it.id, err)
 		}
 	}
 
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
 }
 
 func DeriveTxidFromProof(proof string) (string, error) {
@@ -100,7 +104,7 @@ func createIntentTxidIndex(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// columnExists checks whether a column exists on a table using PRAGMA table_info.
+// columnExists checks whether a column exists on a table using information_schema.columns.
 func columnExists(ctx context.Context, db *sql.DB, tableName, columnName string) (bool, error) {
 	const q = `
         SELECT EXISTS (
