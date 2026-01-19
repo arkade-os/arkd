@@ -314,6 +314,11 @@ func (a *grpcClient) GetEventStream(
 				return
 			}
 
+			if ev == nil {
+				// heartbeat, skip
+				continue
+			}
+
 			eventsCh <- client.BatchEventChannel{Event: ev}
 		}
 	}()
