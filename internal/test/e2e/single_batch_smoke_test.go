@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/application"
-	arksdk "github.com/arkade-os/go-sdk"
+	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"

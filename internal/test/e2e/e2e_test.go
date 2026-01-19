@@ -22,15 +22,15 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/client"
-	mempool_explorer "github.com/arkade-os/go-sdk/explorer/mempool"
-	"github.com/arkade-os/go-sdk/indexer"
-	"github.com/arkade-os/go-sdk/redemption"
-	inmemorystoreconfig "github.com/arkade-os/go-sdk/store/inmemory"
-	"github.com/arkade-os/go-sdk/types"
-	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
-	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
+	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
+	inmemorystoreconfig "github.com/arkade-os/arkd/pkg/client-lib/store/inmemory"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
+	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -302,7 +302,7 @@ func TestUnilateralExit(t *testing.T) {
 			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 			To:     bobOffchainAddr,
 			Amount: 21000,
 		}})
@@ -493,7 +493,10 @@ func TestOffchainTx(t *testing.T) {
 			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 1000}})
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To:     bobAddress,
+			Amount: 1000,
+		}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -510,7 +513,10 @@ func TestOffchainTx(t *testing.T) {
 			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To:     bobAddress,
+			Amount: 10000,
+		}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -527,7 +533,10 @@ func TestOffchainTx(t *testing.T) {
 			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To:     bobAddress,
+			Amount: 10000,
+		}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -544,7 +553,10 @@ func TestOffchainTx(t *testing.T) {
 			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To:     bobAddress,
+			Amount: 10000,
+		}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -591,7 +603,7 @@ func TestOffchainTx(t *testing.T) {
 				_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr)
 				wg.Done()
 			}()
-			_, err := alice.SendOffChain(t.Context(), false, []types.Receiver{{
+			_, err := alice.SendOffChain(t.Context(), []types.Receiver{{
 				To:     bobOffchainAddr,
 				Amount: amount,
 			}})
@@ -607,7 +619,7 @@ func TestOffchainTx(t *testing.T) {
 			_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr)
 			wg.Done()
 		}()
-		_, err = bob.SendOffChain(t.Context(), false, []types.Receiver{{
+		_, err = bob.SendOffChain(t.Context(), []types.Receiver{{
 			To:     aliceOffchainAddr,
 			Amount: numInputs * amount,
 		}})
@@ -643,7 +655,7 @@ func TestOffchainTx(t *testing.T) {
 			wg.Done()
 		}()
 
-		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 			To:     bobOffchainAddr,
 			Amount: 100,
 		}})
@@ -654,7 +666,7 @@ func TestOffchainTx(t *testing.T) {
 		time.Sleep(time.Second)
 
 		// Bob can't spend his VTXO
-		_, err = bob.SendOffChain(t.Context(), false, []types.Receiver{{
+		_, err = bob.SendOffChain(t.Context(), []types.Receiver{{
 			To:     aliceOffchainAddr,
 			Amount: 100,
 		}})
@@ -671,7 +683,7 @@ func TestOffchainTx(t *testing.T) {
 			wg.Done()
 		}()
 
-		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 			To:     bobOffchainAddr,
 			Amount: 250,
 		}})
@@ -1097,7 +1109,7 @@ func TestDelegateRefresh(t *testing.T) {
 		incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, arkAddressStr)
 		wg.Done()
 	}()
-	_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
+	_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 		To:     arkAddressStr,
 		Amount: 21000,
 	}})
@@ -1376,9 +1388,10 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		_, incomingErr = alice.NotifyIncomingFunds(ctx, bobAddrStr)
 		wg.Done()
 	}()
-	txid, err := alice.SendOffChain(
-		ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
-	)
+	txid, err := alice.SendOffChain(ctx, []types.Receiver{{
+		To:     bobAddrStr,
+		Amount: sendAmount,
+	}})
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
@@ -1617,9 +1630,10 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		defer wg.Done()
 	}()
 
-	txid, err := alice.SendOffChain(
-		ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
-	)
+	txid, err := alice.SendOffChain(ctx, []types.Receiver{{
+		To:     bobAddrStr,
+		Amount: sendAmount,
+	}})
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
@@ -2004,9 +2018,10 @@ func TestReactToFraud(t *testing.T) {
 				require.NotNil(t, vtxos)
 			}()
 
-			_, err = sdkClient.SendOffChain(
-				ctx, false, []types.Receiver{{To: offchainAddress, Amount: 1000}},
-			)
+			_, err = sdkClient.SendOffChain(ctx, []types.Receiver{{
+				To:     offchainAddress,
+				Amount: 1000,
+			}})
 			require.NoError(t, err)
 
 			wg.Wait()
@@ -2185,9 +2200,10 @@ func TestReactToFraud(t *testing.T) {
 				require.NotNil(t, vtxos)
 			}()
 
-			txid, err := alice.SendOffChain(
-				ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
-			)
+			txid, err := alice.SendOffChain(ctx, []types.Receiver{{
+				To:     bobAddrStr,
+				Amount: sendAmount,
+			}})
 			require.NoError(t, err)
 			require.NotEmpty(t, txid)
 
@@ -2421,7 +2437,7 @@ func TestSweep(t *testing.T) {
 		}()
 
 		// Test fund recovery
-		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos)
+		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -2482,11 +2498,10 @@ func TestSweep(t *testing.T) {
 		}()
 
 		// self-send the VTXO to create a checkpoint output
-		firstOffchainTxId, err := alice.SendOffChain(
-			ctx,
-			false,
-			[]types.Receiver{{To: offchainAddr, Amount: boardedVtxo.Amount}},
-		)
+		firstOffchainTxId, err := alice.SendOffChain(ctx, []types.Receiver{{
+			To:     offchainAddr,
+			Amount: boardedVtxo.Amount,
+		}})
 		require.NoError(t, err)
 		require.NotEmpty(t, firstOffchainTxId)
 
@@ -2496,11 +2511,10 @@ func TestSweep(t *testing.T) {
 		time.Sleep(time.Second)
 
 		// self-send again to create a second checkpoint output
-		secondOffchainTxId, err := alice.SendOffChain(
-			ctx,
-			false,
-			[]types.Receiver{{To: offchainAddr, Amount: boardedVtxo.Amount}},
-		)
+		secondOffchainTxId, err := alice.SendOffChain(ctx, []types.Receiver{{
+			To:     offchainAddr,
+			Amount: boardedVtxo.Amount,
+		}})
 		require.NoError(t, err)
 		require.NotEmpty(t, secondOffchainTxId)
 
@@ -2626,7 +2640,7 @@ func TestSweep(t *testing.T) {
 		})
 
 		// Test fund recovery
-		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos)
+		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -2936,7 +2950,10 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		defer wg.Done()
-		txid, err := alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddr, Amount: 1000}})
+		txid, err := alice.SendOffChain(ctx, []types.Receiver{{
+			To:     bobAddr,
+			Amount: 1000,
+		}})
 		ch <- resp{txid, err}
 	}()
 
@@ -3124,12 +3141,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3254,12 +3269,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3379,12 +3392,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3524,12 +3535,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3720,12 +3729,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3921,6 +3928,11 @@ func TestFee(t *testing.T) {
 
 	err := updateIntentFees(fees)
 	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		// nolint
+		clearIntentFees()
+	})
 
 	ctx := t.Context()
 	alice := setupArkSDK(t)
