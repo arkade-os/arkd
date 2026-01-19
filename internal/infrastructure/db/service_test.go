@@ -34,6 +34,7 @@ const (
 	pubkey2   = "33ffb3dee353b1a9ebe4ced64b946238d0a4ac364f275d771da6ad2445d07ae0"
 	txida     = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	txidb     = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	txidc     = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 	arkTxid   = txida
 	sweepTxid = "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss"
 	sweepTx   = "cHNidP8BADwBAAAAAauqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqAAAAAAD/////AegDAAAAAAAAAAAAAAAAAAA="
@@ -509,11 +510,20 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Equal(t, "proof", intent.Proof)
 		require.Equal(t, "message", intent.Message)
+		require.NotEqual(t, "", intent.Id)
+		require.NotEqual(t, "", intent.Txid)
 
 		intent, err = svc.Rounds().GetIntentByTxid(ctx, txidb)
 		require.NoError(t, err)
 		require.Equal(t, "proof", intent.Proof)
 		require.Equal(t, "message", intent.Message)
+		require.NotEqual(t, "", intent.Id)
+		require.NotEqual(t, "", intent.Txid)
+
+		// non existing intent by txid
+		intent, err = svc.Rounds().GetIntentByTxid(ctx, txidc)
+		require.NoError(t, err)
+		require.Nil(t, intent)
 
 		newEvents = []domain.Event{
 			domain.RoundFinalized{

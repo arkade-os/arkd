@@ -1,16 +1,19 @@
-package sqlitedb
+package sqlitedb_test
 
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 
+	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/stretchr/testify/require"
 )
 
 func TestIntentTxidMigration(t *testing.T) {
 	ctx := context.Background()
-	db, err := OpenDb(":memory:")
+	db, err := sqlitedb.OpenDb(":memory:")
 	require.NoError(t, err)
 
 	// nolint:errcheck
@@ -28,7 +31,7 @@ func TestIntentTxidMigration(t *testing.T) {
 	modifyIntentTable(t, db)
 
 	// run the backfill to populate intent rows with derived txids
-	err = BackfillIntentTxid(ctx, db)
+	err = sqlitedb.BackfillIntentTxid(ctx, db)
 	require.NoError(t, err)
 
 	// check the intent table has the new txid column
@@ -69,7 +72,8 @@ func TestIntentTxidMigration(t *testing.T) {
 		require.NotEqual(t, "", r.Proof)
 		require.NotEqual(t, "", r.ID)
 
-		txidFromProof, err := DeriveTxidFromProof(r.Proof)
+		pkt, err := psbt.NewFromRawBytes(strings.NewReader(r.Proof), true)
+		txidFromProof := pkt.UnsignedTx.TxID()
 		require.NoError(t, err)
 		require.Equal(t, r.Txid, txidFromProof)
 	}

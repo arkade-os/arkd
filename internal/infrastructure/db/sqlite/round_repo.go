@@ -467,6 +467,8 @@ func (r *roundRepository) GetIntentByTxid(
 	}
 
 	return &domain.Intent{
+		Id:      intent.ID.String,
+		Txid:    intent.Txid.String,
 		Proof:   intent.Proof.String,
 		Message: intent.Message.String,
 	}, nil

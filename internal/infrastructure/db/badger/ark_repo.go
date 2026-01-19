@@ -540,8 +540,18 @@ func (r arkRepository) findOffchainTxs(ctx context.Context, txids []string) ([]s
 }
 
 func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (*domain.Intent, error) {
-	idx, err := r.getIntentIndexByTxid(ctx, txid)
+	var idx IntentIndex
+	var err error
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		err = r.store.TxGet(tx, txid, &idx)
+	} else {
+		err = r.store.Get(txid, &idx)
+	}
 	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -569,25 +579,4 @@ func (r *arkRepository) upsertIntentIndex(
 		return r.store.TxUpsert(tx, txid, idx)
 	}
 	return r.store.Upsert(txid, idx)
-}
-
-func (r *arkRepository) getIntentIndexByTxid(
-	ctx context.Context,
-	txid string,
-) (*IntentIndex, error) {
-	var idx IntentIndex
-	var err error
-	if ctx.Value("tx") != nil {
-		tx := ctx.Value("tx").(*badger.Txn)
-		err = r.store.TxGet(tx, txid, &idx)
-	} else {
-		err = r.store.Get(txid, &idx)
-	}
-	if err != nil {
-		if err == badgerhold.ErrNotFound {
-			return nil, fmt.Errorf("intent with txid %s not found", txid)
-		}
-		return nil, err
-	}
-	return &idx, nil
 }

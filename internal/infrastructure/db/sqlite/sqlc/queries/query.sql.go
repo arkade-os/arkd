@@ -349,11 +349,13 @@ func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectE
 }
 
 const selectIntentByTxid = `-- name: SelectIntentByTxid :one
-SELECT proof, message FROM intent
+SELECT id, txid, proof, message FROM intent
 WHERE txid = ?1
 `
 
 type SelectIntentByTxidRow struct {
+	ID      sql.NullString
+	Txid    sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
 }
@@ -361,7 +363,12 @@ type SelectIntentByTxidRow struct {
 func (q *Queries) SelectIntentByTxid(ctx context.Context, txid sql.NullString) (SelectIntentByTxidRow, error) {
 	row := q.db.QueryRowContext(ctx, selectIntentByTxid, txid)
 	var i SelectIntentByTxidRow
-	err := row.Scan(&i.Proof, &i.Message)
+	err := row.Scan(
+		&i.ID,
+		&i.Txid,
+		&i.Proof,
+		&i.Message,
+	)
 	return i, err
 }
 

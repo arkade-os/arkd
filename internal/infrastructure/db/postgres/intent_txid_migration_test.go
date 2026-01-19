@@ -1,10 +1,13 @@
-package pgdb
+package pgdb_test
 
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +32,7 @@ func TestIntentTxidMigration(t *testing.T) {
 	modifyIntentTable(t, db)
 
 	// run the backfill to populate intent rows with derived txids
-	err = BackfillIntentTxid(ctx, db)
+	err = pgdb.BackfillIntentTxid(ctx, db)
 	require.NoError(t, err)
 
 	// check the intent table has the new txid column
@@ -77,7 +80,8 @@ func TestIntentTxidMigration(t *testing.T) {
 		require.NotEqual(t, "", r.Proof)
 		require.NotEqual(t, "", r.ID)
 
-		txidFromProof, err := DeriveTxidFromProof(r.Proof)
+		pkt, err := psbt.NewFromRawBytes(strings.NewReader(r.Proof), true)
+		txidFromProof := pkt.UnsignedTx.TxID()
 		require.NoError(t, err)
 		require.Equal(t, r.Txid, txidFromProof)
 	}

@@ -422,5 +422,5 @@ VALUES ('', '', '', '');
 
 
 -- name: SelectIntentByTxid :one
-SELECT proof, message FROM intent
+SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;

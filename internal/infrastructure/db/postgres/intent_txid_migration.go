@@ -72,7 +72,7 @@ func backfillIntent(ctx context.Context, db *sql.DB) (err error) {
 
 	for _, it := range list {
 		var txid string
-		txid, err = DeriveTxidFromProof(it.proof)
+		txid, err = deriveTxidFromProof(it.proof)
 		if err != nil {
 			return fmt.Errorf("derive txid from proof for intent id %s: %w", it.id, err)
 		}
@@ -87,7 +87,7 @@ func backfillIntent(ctx context.Context, db *sql.DB) (err error) {
 	return nil
 }
 
-func DeriveTxidFromProof(proof string) (string, error) {
+func deriveTxidFromProof(proof string) (string, error) {
 	tx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
 	if err != nil {
 		return "", fmt.Errorf("psbt parse: %w", err)
