@@ -962,7 +962,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Empty(t, pendingSpentVtxos)
 
 			pendingSpentVtxosByPubkey, err := svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"},
+				ctx, []string{"aaaa"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
@@ -975,13 +975,13 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Len(t, pendingSpentVtxos, 3)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"},
+				ctx, []string{"aaaa"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 2)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"},
+				ctx, []string{"bbbb"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
@@ -1006,16 +1006,87 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, "bbbb", pendingSpentVtxos[0].PubKey)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"},
+				ctx, []string{"aaaa"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"},
+				ctx, []string{"bbbb"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Test with time range that includes the vtxo
+			currTime := time.Now()
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, currTime.Add(-1*time.Hour).UnixMilli(), currTime.Add(1*time.Hour).UnixMilli(),
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Test with unbounded after time
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, 0, currTime.Add(1*time.Hour).UnixMilli(),
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Test with unbounded before time
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, currTime.Add(-1*time.Hour).UnixMilli(), 0,
+			)
+			require.NoError(t, err)
+			require.Len(t, pendingSpentVtxosByPubkey, 1)
+
+			// Test with time range that excludes the vtxo
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, currTime.Add(-2*time.Hour).UnixMilli(), currTime.Add(-1*time.Hour).UnixMilli(),
+			)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// TODO: move to "invalid" sub-test
+			// Test with invalid time range where after is greater than before
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, now.UnixMilli()+1000, now.UnixMilli(),
+			)
+			require.Error(t, err)
+			require.Equal(t, "before must be greater than after", err.Error())
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// Test with invalid time range where after is equal to before
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, now.UnixMilli(), now.UnixMilli(),
+			)
+			require.Error(t, err)
+			require.Equal(t, "before must be greater than after", err.Error())
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// Test with negative time after value
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, -1000, 0,
+			)
+			require.Error(t, err)
+			require.Equal(t, "after and before must be greater than or equal to 0", err.Error())
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// Test with negative time before value
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, 0, -1000,
+			)
+			require.Error(t, err)
+			require.Equal(t, "after and before must be greater than or equal to 0", err.Error())
+			require.Empty(t, pendingSpentVtxosByPubkey)
+
+			// Test with future time range
+			futureStart := time.Now().Add(24 * time.Hour).UnixMilli()
+			futureEnd := time.Now().Add(25 * time.Hour).UnixMilli()
+			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
+				ctx, []string{"bbbb"}, futureStart, futureEnd,
+			)
+			require.NoError(t, err)
+			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			// Simulate finalization of a send-all by adding a new vtxo spending the pending one
 			// with same amount and different pubkey
@@ -1037,7 +1108,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Empty(t, pendingSpentVtxos)
 
 			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"},
+				ctx, []string{"bbbb"}, 0, 0,
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)

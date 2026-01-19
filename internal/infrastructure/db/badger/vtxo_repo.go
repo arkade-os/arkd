@@ -20,6 +20,11 @@ type vtxoRepository struct {
 	store *badgerhold.Store
 }
 
+type vtxoDTO struct {
+	domain.Vtxo
+	UpdatedAt int64
+}
+
 func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
 	if len(config) != 2 {
 		return nil, fmt.Errorf("invalid config")
@@ -199,7 +204,11 @@ func (r *vtxoRepository) UpdateVtxosExpiration(
 					return nil
 				}
 				vtxo.ExpiresAt = expiresAt
-				if err := r.store.TxUpdate(tx, vtxo.String(), *vtxo); err != nil {
+				dto := vtxoDTO{
+					Vtxo:      *vtxo,
+					UpdatedAt: time.Now().UnixMilli(),
+				}
+				if err := r.store.TxUpdate(tx, vtxo.String(), dto); err != nil {
 					return err
 				}
 			}
@@ -221,11 +230,17 @@ func (r *vtxoRepository) UpdateVtxosExpiration(
 }
 
 func (r *vtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
+	if err := validateTimeRange(after, before); err != nil {
+		return nil, err
+	}
 	allVtxos := make([]domain.Vtxo, 0)
 	for _, pubkey := range pubkeys {
-		query := badgerhold.Where("PubKey").Eq(pubkey)
+		query := badgerhold.Where("PubKey").Eq(pubkey).And("UpdatedAt").Ge(after)
+		if before > 0 {
+			query = query.And("UpdatedAt").Le(before)
+		}
 		vtxos, err := r.findVtxos(ctx, query)
 		if err != nil {
 			return nil, err
@@ -325,15 +340,21 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 }
 
 func (r *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string,
+	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
+	if err := validateTimeRange(after, before); err != nil {
+		return nil, err
+	}
 	indexedPubkeys := make(map[string]struct{})
 	for _, pubkey := range pubkeys {
 		indexedPubkeys[pubkey] = struct{}{}
 	}
-	// Get all candidates: vtxos that are spent, not unrolled and not settled
+	// Get all candidates: vtxos that are spent, not unrolled and not settled, and are within time range
 	query := badgerhold.Where("Spent").Eq(true).And("Unrolled").Eq(false).
-		And("SettledBy").Eq("").And("ArkTxid").Ne("")
+		And("SettledBy").Eq("").And("ArkTxid").Ne("").And("UpdatedAt").Ge(after)
+	if before > 0 {
+		query = query.And("UpdatedAt").Le(before)
+	}
 	candidates, err := r.findVtxos(ctx, query)
 	if err != nil {
 		return nil, err
@@ -419,16 +440,20 @@ func (r *vtxoRepository) addVtxos(
 	ctx context.Context, vtxos []domain.Vtxo,
 ) error {
 	for _, vtxo := range vtxos {
+		dto := vtxoDTO{
+			Vtxo:      vtxo,
+			UpdatedAt: time.Now().UnixMilli(),
+		}
 		outpoint := vtxo.Outpoint.String()
 		var insertFn func() error
 		if ctx.Value("tx") != nil {
 			tx := ctx.Value("tx").(*badger.Txn)
 			insertFn = func() error {
-				return r.store.TxInsert(tx, outpoint, vtxo)
+				return r.store.TxInsert(tx, outpoint, dto)
 			}
 		} else {
 			insertFn = func() error {
-				return r.store.Insert(outpoint, vtxo)
+				return r.store.Insert(outpoint, dto)
 			}
 		}
 		if err := insertFn(); err != nil {
@@ -452,19 +477,22 @@ func (r *vtxoRepository) addVtxos(
 func (r *vtxoRepository) getVtxo(
 	ctx context.Context, outpoint domain.Outpoint,
 ) (*domain.Vtxo, error) {
-	var vtxo domain.Vtxo
+	var dto vtxoDTO
 	var err error
 	if ctx.Value("tx") != nil {
 		tx := ctx.Value("tx").(*badger.Txn)
-		err = r.store.TxGet(tx, outpoint.String(), &vtxo)
+		err = r.store.TxGet(tx, outpoint.String(), &dto)
 	} else {
-		err = r.store.Get(outpoint.String(), &vtxo)
+		err = r.store.Get(outpoint.String(), &dto)
 	}
-	if err != nil && err == badgerhold.ErrNotFound {
-		return nil, nil
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
 	}
 
-	return &vtxo, nil
+	return &dto.Vtxo, nil
 }
 
 func (r *vtxoRepository) settleVtxo(
@@ -535,28 +563,36 @@ func (r *vtxoRepository) findVtxos(
 	ctx context.Context, query *badgerhold.Query,
 ) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0)
+	dtos := make([]vtxoDTO, 0)
 	var err error
 
 	if ctx.Value("tx") != nil {
 		tx := ctx.Value("tx").(*badger.Txn)
-		err = r.store.TxFind(tx, &vtxos, query)
+		err = r.store.TxFind(tx, &dtos, query)
 	} else {
-		err = r.store.Find(&vtxos, query)
+		err = r.store.Find(&dtos, query)
 	}
 
+	for _, dto := range dtos {
+		vtxos = append(vtxos, dto.Vtxo)
+	}
 	return vtxos, err
 }
 
 func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) error {
+	dto := vtxoDTO{
+		Vtxo:      *vtxo,
+		UpdatedAt: time.Now().UnixMilli(),
+	}
 	var updateFn func() error
 	if ctx.Value("tx") != nil {
 		tx := ctx.Value("tx").(*badger.Txn)
 		updateFn = func() error {
-			return r.store.TxUpdate(tx, vtxo.Outpoint.String(), *vtxo)
+			return r.store.TxUpdate(tx, vtxo.Outpoint.String(), dto)
 		}
 	} else {
 		updateFn = func() error {
-			return r.store.Update(vtxo.Outpoint.String(), *vtxo)
+			return r.store.Update(vtxo.Outpoint.String(), dto)
 		}
 	}
 

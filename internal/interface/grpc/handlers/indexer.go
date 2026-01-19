@@ -230,7 +230,12 @@ func (e *indexerService) GetVtxos(
 	spentOnly := request.GetSpentOnly()
 	recoverableOnly := request.GetRecoverableOnly()
 	pendingOnly := request.GetPendingOnly()
+
+	var resp *application.GetVtxosResp
+
 	if len(pubkeys) > 0 {
+		// Validate filters
+		// TODO: get rid of this and move to oneof in the protos
 		options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
 
 		count := 0
@@ -245,19 +250,25 @@ func (e *indexerService) GetVtxos(
 				"spendable, spent, recoverable and pending filters are mutually exclusive",
 			)
 		}
-	}
 
-	var resp *application.GetVtxosResp
-	if len(pubkeys) > 0 {
+		after, before, err := parseTimeRange(request.GetAfter(), request.GetBefore())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+
 		resp, err = e.indexerSvc.GetVtxos(
-			ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly, pendingOnly, page,
+			ctx, pubkeys,
+			spendableOnly, spentOnly, recoverableOnly, pendingOnly, after, before, page,
 		)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "%s", err.Error())
+		}
 	}
 	if len(outpoints) > 0 {
 		resp, err = e.indexerSvc.GetVtxosByOutpoint(ctx, outpoints, page)
 	}
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	vtxos := make([]*arkv1.IndexerVtxo, 0, len(resp.Vtxos))
@@ -672,6 +683,16 @@ func parseScript(script string) (string, error) {
 		return "", fmt.Errorf("invalid script, failed to extract tapkey: %s", err)
 	}
 	return script, nil
+}
+
+func parseTimeRange(after, before int64) (int64, int64, error) {
+	if after < 0 || before < 0 {
+		return -1, -1, fmt.Errorf("after and before must be greater than or equal to 0")
+	}
+	if before > 0 && after > 0 && before <= after {
+		return -1, -1, fmt.Errorf("before must be greater than after")
+	}
+	return after, before, nil
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
