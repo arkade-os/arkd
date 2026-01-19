@@ -550,7 +550,7 @@ func sendCovenantLess(ctx *cli.Context, receivers []types.Receiver, withZeroFees
 		return printJSON(map[string]string{"txid": txid})
 	}
 
-	arkTxid, err := arkSdkClient.SendOffChain(ctx.Context, offchainReceivers)
+	arkTxid, err := arkSdkClient.SendOffChain(ctx.Context, false, offchainReceivers)
 	if err != nil {
 		return err
 	}

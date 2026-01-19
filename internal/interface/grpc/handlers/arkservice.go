@@ -296,49 +296,51 @@ func (h *handler) UpdateStreamTopics(
 
 	switch req.GetTopicsChange().(type) {
 	case nil:
-		return nil, status.Error(codes.InvalidArgument, "no topics provided")
+		return nil, status.Error(codes.InvalidArgument, "missing topics")
 	// when overwrite topics is provided, it takes precedence, we will not
 	// process add/remove topics in this case
 	case *arkv1.UpdateStreamTopicsRequest_Overwrite:
 		if req.GetOverwrite() == nil {
-			return nil, status.Error(codes.InvalidArgument, "overwrite topics is nil")
+			return nil, status.Error(codes.InvalidArgument, "missing topics to overwrite")
 		}
 		if err := h.eventsListenerHandler.overwriteTopics(
 			req.GetStreamId(), req.GetOverwrite().GetTopics(),
 		); err != nil {
-			return nil, status.Errorf(codes.NotFound, "overwrite topics error: %s", err.Error())
+			return nil, status.Error(codes.NotFound, err.Error())
 		}
 		return &arkv1.UpdateStreamTopicsResponse{
-			AllTopics:     h.eventsListenerHandler.getTopics(req.GetStreamId()),
-			TopicsAdded:   []string{},
-			TopicsRemoved: []string{},
+			AllTopics: h.eventsListenerHandler.getTopics(req.GetStreamId()),
 		}, nil
 	// allow adding/removing topics simultaneously
 	case *arkv1.UpdateStreamTopicsRequest_Modify:
-		if req.GetModify() == nil {
-			return nil, status.Error(codes.InvalidArgument, "modify topics is nil")
+		modify := req.GetModify()
+		if modify == nil {
+			return nil, status.Error(codes.InvalidArgument, "missing topics to add or remove")
 		}
-		if len(req.GetModify().GetAddTopics()) > 0 {
+		if len(modify.GetAddTopics()) <= 0 && len(modify.GetRemoveTopics()) <= 0 {
+			return nil, status.Error(codes.InvalidArgument, "missing topics to add or remove")
+		}
+		if len(modify.GetAddTopics()) > 0 {
 			if err := h.eventsListenerHandler.addTopics(
-				req.GetStreamId(), req.GetModify().GetAddTopics(),
+				req.GetStreamId(), modify.GetAddTopics(),
 			); err != nil {
-				return nil, status.Errorf(codes.NotFound, "add topics error: %s", err.Error())
+				return nil, status.Error(codes.NotFound, err.Error())
 			}
 		}
-		if len(req.GetModify().GetRemoveTopics()) > 0 {
+		if len(modify.GetRemoveTopics()) > 0 {
 			if err := h.eventsListenerHandler.removeTopics(
-				req.GetStreamId(), req.GetModify().GetRemoveTopics(),
+				req.GetStreamId(), modify.GetRemoveTopics(),
 			); err != nil {
-				return nil, status.Errorf(codes.NotFound, "remove topics error: %s", err.Error())
+				return nil,  status.Error(codes.NotFound, err.Error())
 			}
 		}
 		return &arkv1.UpdateStreamTopicsResponse{
-			TopicsAdded:   req.GetModify().GetAddTopics(),
-			TopicsRemoved: req.GetModify().GetRemoveTopics(),
+			TopicsAdded:   modify.GetAddTopics(),
+			TopicsRemoved: modify.GetRemoveTopics(),
 			AllTopics:     h.eventsListenerHandler.getTopics(req.GetStreamId()),
 		}, nil
 	default:
-		return nil, status.Error(codes.InvalidArgument, "no topics provided")
+		return nil, status.Error(codes.InvalidArgument, "unknown topics to change")
 	}
 }
 

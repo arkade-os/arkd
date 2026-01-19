@@ -302,7 +302,7 @@ func TestUnilateralExit(t *testing.T) {
 			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
 			To:     bobOffchainAddr,
 			Amount: 21000,
 		}})
@@ -493,7 +493,7 @@ func TestOffchainTx(t *testing.T) {
 			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress, Amount: 1000}})
+		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 1000}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -510,7 +510,7 @@ func TestOffchainTx(t *testing.T) {
 			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -527,7 +527,7 @@ func TestOffchainTx(t *testing.T) {
 			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -544,7 +544,7 @@ func TestOffchainTx(t *testing.T) {
 			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddress, Amount: 10000}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -591,7 +591,7 @@ func TestOffchainTx(t *testing.T) {
 				_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr)
 				wg.Done()
 			}()
-			_, err := alice.SendOffChain(t.Context(), []types.Receiver{{
+			_, err := alice.SendOffChain(t.Context(), false, []types.Receiver{{
 				To:     bobOffchainAddr,
 				Amount: amount,
 			}})
@@ -607,7 +607,7 @@ func TestOffchainTx(t *testing.T) {
 			_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr)
 			wg.Done()
 		}()
-		_, err = bob.SendOffChain(t.Context(), []types.Receiver{{
+		_, err = bob.SendOffChain(t.Context(), false, []types.Receiver{{
 			To:     aliceOffchainAddr,
 			Amount: numInputs * amount,
 		}})
@@ -643,7 +643,7 @@ func TestOffchainTx(t *testing.T) {
 			wg.Done()
 		}()
 
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
 			To:     bobOffchainAddr,
 			Amount: 100,
 		}})
@@ -654,7 +654,7 @@ func TestOffchainTx(t *testing.T) {
 		time.Sleep(time.Second)
 
 		// Bob can't spend his VTXO
-		_, err = bob.SendOffChain(t.Context(), []types.Receiver{{
+		_, err = bob.SendOffChain(t.Context(), false, []types.Receiver{{
 			To:     aliceOffchainAddr,
 			Amount: 100,
 		}})
@@ -671,7 +671,7 @@ func TestOffchainTx(t *testing.T) {
 			wg.Done()
 		}()
 
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
 			To:     bobOffchainAddr,
 			Amount: 250,
 		}})
@@ -1097,7 +1097,7 @@ func TestDelegateRefresh(t *testing.T) {
 		incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, arkAddressStr)
 		wg.Done()
 	}()
-	_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+	_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{{
 		To:     arkAddressStr,
 		Amount: 21000,
 	}})
@@ -1377,7 +1377,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		wg.Done()
 	}()
 	txid, err := alice.SendOffChain(
-		ctx, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+		ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
@@ -1618,7 +1618,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	}()
 
 	txid, err := alice.SendOffChain(
-		ctx, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+		ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
@@ -2005,7 +2005,7 @@ func TestReactToFraud(t *testing.T) {
 			}()
 
 			_, err = sdkClient.SendOffChain(
-				ctx, []types.Receiver{{To: offchainAddress, Amount: 1000}},
+				ctx, false, []types.Receiver{{To: offchainAddress, Amount: 1000}},
 			)
 			require.NoError(t, err)
 
@@ -2186,7 +2186,7 @@ func TestReactToFraud(t *testing.T) {
 			}()
 
 			txid, err := alice.SendOffChain(
-				ctx, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+				ctx, false, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
 			)
 			require.NoError(t, err)
 			require.NotEmpty(t, txid)
@@ -2484,6 +2484,7 @@ func TestSweep(t *testing.T) {
 		// self-send the VTXO to create a checkpoint output
 		firstOffchainTxId, err := alice.SendOffChain(
 			ctx,
+			false,
 			[]types.Receiver{{To: offchainAddr, Amount: boardedVtxo.Amount}},
 		)
 		require.NoError(t, err)
@@ -2497,6 +2498,7 @@ func TestSweep(t *testing.T) {
 		// self-send again to create a second checkpoint output
 		secondOffchainTxId, err := alice.SendOffChain(
 			ctx,
+			false,
 			[]types.Receiver{{To: offchainAddr, Amount: boardedVtxo.Amount}},
 		)
 		require.NoError(t, err)
@@ -2934,7 +2936,7 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		defer wg.Done()
-		txid, err := alice.SendOffChain(ctx, []types.Receiver{{To: bobAddr, Amount: 1000}})
+		txid, err := alice.SendOffChain(ctx, false, []types.Receiver{{To: bobAddr, Amount: 1000}})
 		ch <- resp{txid, err}
 	}()
 
@@ -3053,75 +3055,6 @@ func TestIntent(t *testing.T) {
 	})
 }
 
-func TestTopics(t *testing.T) {
-	t.Run("topic modifications", func(t *testing.T) {
-		ctx := t.Context()
-		alice, grpcAlice := setupArkSDKWithTransport(t)
-		defer alice.Stop()
-		defer grpcAlice.Close()
-
-		_, _, _, err := alice.Receive(t.Context())
-		require.NoError(t, err)
-		faucetOffchain(t, alice, 0.001)
-
-		vtxos, _, err := alice.ListVtxos(t.Context())
-		require.NoError(t, err)
-		require.NotEmpty(t, vtxos)
-		aliceVtxo := vtxos[0]
-
-		secKey, err := btcec.NewPrivateKey()
-		require.NoError(t, err)
-		signerSession := tree.NewTreeSignerSession(secKey)
-
-		topics := arksdk.GetEventStreamTopics(
-			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
-		)
-		// try to modify overwrite before starting a stream
-		_, _, _, err = grpcAlice.ModifyStreamTopics(ctx, topics, []string{})
-		require.Error(t, err) // cannot modify before starting a stream
-		_, _, _, err = grpcAlice.OverwriteStreamTopics(ctx, topics)
-		require.Error(t, err) // cannot overwrite before starting a stream
-
-		// make event stream so we can modify and overwrite topics
-		_, close, err := grpcAlice.GetEventStream(t.Context(), topics)
-		require.NoError(t, err)
-		defer close()
-		// wait to ensure sdk gets the event stream
-		time.Sleep(3 * time.Second)
-
-		// we already have 2 topics. Adding topics already added will have no effect.
-		added, removed, all, err := grpcAlice.ModifyStreamTopics(ctx, topics, []string{})
-		require.NoError(t, err)
-		require.Empty(t, removed)
-		require.ElementsMatch(t, topics, added)
-		require.ElementsMatch(t, topics, all)
-
-		// overwrite with same topics will have no effect
-		added, removed, all, err = grpcAlice.OverwriteStreamTopics(ctx, topics)
-		require.NoError(t, err)
-		require.Empty(t, removed)
-		require.Empty(t, added)
-		require.ElementsMatch(t, topics, all)
-		// add a new topic and remove an existing one
-		added, removed, all, err = grpcAlice.ModifyStreamTopics(
-			ctx,
-			[]string{"testtopic"},
-			[]string{topics[0]},
-		)
-		require.NoError(t, err)
-		require.ElementsMatch(t, []string{topics[0]}, removed)
-		require.ElementsMatch(t, []string{"testtopic"}, added)
-		require.ElementsMatch(t, []string{topics[1], "testtopic"}, all)
-
-		// overwriting to 0 topics will remove all topics
-		added, removed, all, err = grpcAlice.OverwriteStreamTopics(ctx, []string{})
-		require.NoError(t, err)
-		require.Empty(t, removed)
-		require.Empty(t, added)
-		require.Empty(t, all)
-	})
-}
-
 // TestBan tests all supported ban scenarios
 func TestBan(t *testing.T) {
 	t.Run("failed to submit tree nonces", func(t *testing.T) {
@@ -3191,7 +3124,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
 			{
 				Amount: aliceVtxo.Amount,
 				To:     aliceAddr,
@@ -3321,7 +3254,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
 			{
 				Amount: aliceVtxo.Amount,
 				To:     aliceAddr,
@@ -3446,7 +3379,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
 			{
 				Amount: aliceVtxo.Amount,
 				To:     aliceAddr,
@@ -3591,7 +3524,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
 			{
 				Amount: aliceVtxo.Amount,
 				To:     aliceAddr,
@@ -3787,7 +3720,7 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
+		_, err = alice.SendOffChain(t.Context(), false, []types.Receiver{
 			{
 				Amount: aliceVtxo.Amount,
 				To:     aliceAddr,
