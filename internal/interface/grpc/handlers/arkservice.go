@@ -331,7 +331,7 @@ func (h *handler) UpdateStreamTopics(
 			if err := h.eventsListenerHandler.removeTopics(
 				req.GetStreamId(), modify.GetRemoveTopics(),
 			); err != nil {
-				return nil,  status.Error(codes.NotFound, err.Error())
+				return nil, status.Error(codes.NotFound, err.Error())
 			}
 		}
 		return &arkv1.UpdateStreamTopicsResponse{
