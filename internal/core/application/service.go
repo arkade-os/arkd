@@ -1697,14 +1697,8 @@ func (s *service) RegisterIntent(
 				Message: encodedMessage,
 			})
 	}
-	txid, err := DeriveTxidFromProof(signedProof)
-	if err != nil {
-		return "", errors.INTERNAL_ERROR.New("failed to derive txid from proof: %w", err).
-			WithMetadata(map[string]any{
-				"proof": signedProof,
-			})
-	}
-	intent, err := domain.NewIntent(txid, signedProof, encodedMessage, vtxoInputs)
+
+	intent, err := domain.NewIntent(proofTxid, signedProof, encodedMessage, vtxoInputs)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
 			WithMetadata(map[string]any{
