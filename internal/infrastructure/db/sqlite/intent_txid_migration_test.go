@@ -73,8 +73,8 @@ func TestIntentTxidMigration(t *testing.T) {
 		require.NotEqual(t, "", r.ID)
 
 		pkt, err := psbt.NewFromRawBytes(strings.NewReader(r.Proof), true)
-		txidFromProof := pkt.UnsignedTx.TxID()
 		require.NoError(t, err)
+		txidFromProof := pkt.UnsignedTx.TxID()
 		require.Equal(t, r.Txid, txidFromProof)
 	}
 
