@@ -3,6 +3,7 @@ package db
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"embed"
 	"encoding/hex"
 	"errors"
@@ -250,6 +251,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create postgres migration instance: %s", err)
 		}
 
+		err = handleIntentTxidMigration(m, db, config.DataStoreType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
+		}
+
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 			return nil, fmt.Errorf("failed to run postgres migrations: %s", err)
 		}
@@ -310,6 +316,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		m, err := migrate.NewWithInstance("iofs", source, "arkdb", driver)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create migration instance: %s", err)
+		}
+
+		err = handleIntentTxidMigration(m, db, config.DataStoreType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
 		}
 
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
@@ -671,4 +682,40 @@ func newBadgerRoundRepository(args ...interface{}) (domain.RoundRepository, erro
 
 func newBadgerOffchainTxRepository(args ...interface{}) (domain.OffchainTxRepository, error) {
 	return initBadgerArkRepository(args...)
+}
+
+// stepwise migration for intent txid field addition
+func handleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) error {
+	intentTxidMigrationBegin := uint(20260114000000)
+	version, dirty, verr := m.Version()
+	if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
+		return fmt.Errorf("failed to read migration version: %w", verr)
+	}
+	if dirty {
+		return fmt.Errorf(
+			"database is in a dirty migration state; manual intervention required",
+		)
+	}
+
+	if version < intentTxidMigrationBegin {
+		if err := m.Migrate(intentTxidMigrationBegin); err != nil &&
+			!errors.Is(err, migrate.ErrNoChange) {
+			return fmt.Errorf("failed to run migrations: %s", err)
+		}
+
+		switch dbType {
+		case "postgres":
+			if err := pgdb.BackfillIntentTxid(context.Background(), db); err != nil {
+				return fmt.Errorf("failed to backfill intent txid field: %w", err)
+			}
+		case "sqlite":
+			if err := sqlitedb.BackfillIntentTxid(context.Background(), db); err != nil {
+				return fmt.Errorf("failed to backfill intent txid field: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported db type for intent txid migration: %s", dbType)
+		}
+	}
+
+	return nil
 }

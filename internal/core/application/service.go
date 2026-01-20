@@ -1807,7 +1807,7 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	intent, err := domain.NewIntent(signedProof, encodedMessage, vtxoInputs)
+	intent, err := domain.NewIntent(proofTxid, signedProof, encodedMessage, vtxoInputs)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
 			WithMetadata(map[string]any{
@@ -4215,6 +4215,25 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 	}
 
 	return convictions
+}
+
+func (s *service) GetIntentByTxid(
+	ctx context.Context,
+	txid string,
+) (*domain.Intent, errors.Error) {
+	intent, err := s.repoManager.Rounds().GetIntentByTxid(ctx, txid)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New(
+			"failed to get intent by txid %s: %w", txid, err,
+		)
+	}
+	if intent == nil {
+		return nil, errors.INTENT_NOT_FOUND.New(
+			"intent with txid %s not found", txid,
+		)
+	}
+
+	return intent, nil
 }
 
 func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {

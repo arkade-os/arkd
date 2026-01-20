@@ -58,6 +58,7 @@ type Intent struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type IntentFee struct {
@@ -85,6 +86,7 @@ type IntentWithInputsVw struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
+	UpdatedAt      sql.NullInt64
 	Commitments    interface{}
 	ID             sql.NullString
 	RoundID        sql.NullString
@@ -230,6 +232,7 @@ type Vtxo struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
+	UpdatedAt      int64
 }
 
 type VtxoCommitmentTxid struct {
@@ -254,5 +257,6 @@ type VtxoVw struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
+	UpdatedAt      int64
 	Commitments    interface{}
 }

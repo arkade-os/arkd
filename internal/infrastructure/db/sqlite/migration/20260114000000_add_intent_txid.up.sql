@@ -1,0 +1,2 @@
+ALTER TABLE intent
+ADD COLUMN txid TEXT;

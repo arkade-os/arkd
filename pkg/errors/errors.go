@@ -439,3 +439,5 @@ var ASSET_PACKET_INVALID = Code[AssetValidationMetadata]{
 }
 
 var INTENT_FEE_EVALUATION_FAILED = Code[any]{44, "INTENT_FEE_EVALUATION_FAILED", grpccodes.Internal}
+
+var INTENT_NOT_FOUND = Code[any]{34, "INTENT_NOT_FOUND", grpccodes.NotFound}

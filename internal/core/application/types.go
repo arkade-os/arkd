@@ -56,9 +56,12 @@ type Service interface {
 		proof intent.Proof,
 		message intent.DeleteMessage,
 	) errors.Error
-
 	// TODO: remove when detaching the indexer svc.
 	GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent
+	GetIntentByTxid(
+		ctx context.Context,
+		txid string,
+	) (*domain.Intent, errors.Error)
 }
 
 type ServiceInfo struct {
