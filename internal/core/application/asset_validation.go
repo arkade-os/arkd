@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
-	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -339,15 +339,30 @@ func (m *assetGroupValidationMachine) validateOutputs(s *service) error {
 func (m *assetGroupValidationMachine) validateInput(s *service, input extension.AssetInput) error {
 	grpAsset := m.group()
 	if input.Type == extension.AssetTypeTeleport {
-		// TODO : Use Real Input proof
-		var intentProof intent.Proof
-
 		if grpAsset.AssetId == nil {
 			return errors.TELEPORT_VALIDATION_FAILED.New("asset ID is required for teleport input validation").
 				WithMetadata(errors.TeleportValidationMetadata{})
 		}
 
-		if err := s.validateTeleportInput(intentProof, m.arkTx, *grpAsset.AssetId, uint32(input.Vin), input.Witness.Script); err != nil {
+		txHash, err := chainhash.NewHash(input.Witness.IntentId)
+		if err != nil {
+			return errors.TELEPORT_VALIDATION_FAILED.New("invalid intent ID for teleport input validation: %w", err).
+				WithMetadata(errors.TeleportValidationMetadata{})
+		}
+
+		intent, err := s.repoManager.Rounds().GetIntentByTxid(context.Background(), txHash.String())
+		if err != nil {
+			return errors.TELEPORT_VALIDATION_FAILED.New("error retrieving intent for teleport input validation: %w", err).
+				WithMetadata(errors.TeleportValidationMetadata{})
+		}
+
+		decodedProof, err := psbt.NewFromRawBytes(strings.NewReader(intent.Proof), true)
+		if err != nil {
+			return errors.TELEPORT_VALIDATION_FAILED.New("error decoding intent proof for teleport input validation: %w", err).
+				WithMetadata(errors.TeleportValidationMetadata{})
+		}
+
+		if err := s.validateTeleportInput(*decodedProof, m.arkTx, *grpAsset.AssetId, uint32(input.Vin), input.Witness.Script); err != nil {
 			return err
 		}
 		return nil
@@ -531,7 +546,7 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 }
 
 func (s *service) validateTeleportInput(
-	intentProof intent.Proof,
+	intentProof psbt.Packet,
 	arkTx wire.MsgTx,
 	assetId extension.AssetId,
 	index uint32,
