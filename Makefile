@@ -164,7 +164,7 @@ proto-lint: buf
 # docker-run: starts docker test environment with postgres
 docker-run:
 	@echo "Running dockerized arkd and arkd wallet in test mode on regtest with postgres..."
-	@set -a && . envs/test.regtest.postgres.env && set +a && \
+	@set -a && . envs/arkd.dev.docker.env && set +a && \
 		docker compose -f docker-compose.regtest.yml up --build -d
 
 # docker-run-light: starts docker test environment with sqlite/badger/inmemory
