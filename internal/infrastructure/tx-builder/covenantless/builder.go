@@ -293,6 +293,12 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, err
 		}
 
+		// verfity asset forfeit transaction
+		extensionAnchor, err := verifyAssetForfeitTransaction(indexedVtxos, tx)
+		if err != nil {
+			return nil, err
+		}
+
 		forfeitTxPtxList = append(forfeitTxPtxList, tx)
 
 		if len(tx.Inputs) != 2 {
@@ -462,6 +468,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 			inputs,
 			sequences,
 			prevouts,
+			extensionAnchor,
 			forfeitScript,
 			uint32(locktime),
 		)
@@ -495,11 +502,6 @@ func (b *txBuilder) VerifyForfeitTxs(
 				VOut: connectorInput.PreviousOutPoint.Index,
 			},
 		}
-	}
-
-	// verify asset forfeit transactions if any
-	if err := verifyAssetForfeitTransaction(vtxos, forfeitTxPtxList); err != nil {
-		return nil, err
 	}
 
 	return validForfeitTxs, nil
@@ -1189,91 +1191,87 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 	return txscript.PayToAddrScript(addr)
 }
 
-func verifyAssetForfeitTransaction(vtxos []domain.Vtxo, forfeitTxs []*psbt.Packet) error {
-	vtxoMap := make(map[domain.Outpoint]domain.Vtxo, len(vtxos))
-	for _, vtxo := range vtxos {
-		vtxoMap[vtxo.Outpoint] = vtxo
+func verifyAssetForfeitTransaction(vtxoMap map[domain.Outpoint]domain.Vtxo, pkt *psbt.Packet) (*wire.TxOut, error) {
+
+	if pkt == nil || pkt.UnsignedTx == nil {
+		return nil, fmt.Errorf("nil forfeit packet or unsigned tx")
 	}
 
-	for _, pkt := range forfeitTxs {
-		if pkt == nil || pkt.UnsignedTx == nil {
-			return fmt.Errorf("nil forfeit packet or unsigned tx")
+	txid := pkt.UnsignedTx.TxID()
+
+	for _, output := range pkt.UnsignedTx.TxOut {
+		if !extension.ContainsAssetPacket(output.PkScript) {
+			continue
 		}
 
-		txid := pkt.UnsignedTx.TxID()
+		assetPkt, err := extension.DecodeAssetPacket(*output)
+		if err != nil {
+			return nil, fmt.Errorf("decode asset packet for forfeit txid %s: %w", txid, err)
+		}
 
-		for _, output := range pkt.UnsignedTx.TxOut {
-			if !extension.ContainsAssetPacket(output.PkScript) {
+		for _, asset := range assetPkt.Assets {
+			if asset.AssetId == nil {
+				// Issuance assets don't have inputs to validate against existing VTXOs
 				continue
 			}
-
-			assetPkt, err := extension.DecodeAssetPacket(*output)
-			if err != nil {
-				return fmt.Errorf("decode asset packet for forfeit txid %s: %w", txid, err)
-			}
-
-			for _, asset := range assetPkt.Assets {
-				if asset.AssetId == nil {
-					// Issuance assets don't have inputs to validate against existing VTXOs
+			assetID := asset.AssetId.ToString()
+			for _, in := range asset.Inputs {
+				if in.Type == extension.AssetTypeTeleport {
 					continue
 				}
-				assetID := asset.AssetId.ToString()
-				for _, in := range asset.Inputs {
-					if in.Type == extension.AssetTypeTeleport {
+
+				if int(in.Vin) >= len(pkt.UnsignedTx.TxIn) {
+					return nil, fmt.Errorf(
+						"asset input index out of range for txid %s: vin=%d",
+						txid, in.Vin,
+					)
+				}
+
+				prevOut := pkt.UnsignedTx.TxIn[in.Vin].PreviousOutPoint
+				outpoint := domain.Outpoint{
+					Txid: prevOut.Hash.String(),
+					VOut: prevOut.Index,
+				}
+
+				vtxo, ok := vtxoMap[outpoint]
+				if !ok {
+					return nil, fmt.Errorf(
+						"vtxo not found for asset input txid=%s assetID=%s outpoint=%s",
+						txid, assetID, outpoint.String(),
+					)
+				}
+
+				foundAsset := false
+				for _, ext := range vtxo.Extensions {
+					if ext.Type() != domain.ExtAsset {
 						continue
 					}
 
-					if int(in.Vin) >= len(pkt.UnsignedTx.TxIn) {
-						return fmt.Errorf(
-							"asset input index out of range for txid %s: vin=%d",
-							txid, in.Vin,
-						)
-					}
-
-					prevOut := pkt.UnsignedTx.TxIn[in.Vin].PreviousOutPoint
-					outpoint := domain.Outpoint{
-						Txid: prevOut.Hash.String(),
-						VOut: prevOut.Index,
-					}
-
-					vtxo, ok := vtxoMap[outpoint]
+					assetExt, ok := ext.(domain.AssetExtension)
 					if !ok {
-						return fmt.Errorf(
-							"vtxo not found for asset input txid=%s assetID=%s outpoint=%s",
-							txid, assetID, outpoint.String(),
+						return nil, fmt.Errorf(
+							"extension type is ExtAsset but concrete type is %T",
+							ext,
 						)
 					}
 
-					foundAsset := false
-					for _, ext := range vtxo.Extensions {
-						if ext.Type() != domain.ExtAsset {
-							continue
-						}
-
-						assetExt, ok := ext.(domain.AssetExtension)
-						if !ok {
-							return fmt.Errorf(
-								"extension type is ExtAsset but concrete type is %T",
-								ext,
-							)
-						}
-
-						if assetExt.AssetID == assetID {
-							foundAsset = true
-							break
-						}
-					}
-
-					if !foundAsset {
-						return fmt.Errorf(
-							"vtxo %s missing asset extension for assetID %s",
-							outpoint.String(), assetID,
-						)
+					if assetExt.AssetID == assetID {
+						foundAsset = true
+						break
 					}
 				}
+
+				if !foundAsset {
+					return nil, fmt.Errorf(
+						"vtxo %s missing asset extension for assetID %s",
+						outpoint.String(), assetID,
+					)
+				}
 			}
+
+			return output, nil
 		}
 	}
 
-	return nil
+	return nil, nil
 }

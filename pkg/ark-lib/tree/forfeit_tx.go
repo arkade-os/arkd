@@ -8,6 +8,7 @@ import (
 
 func BuildForfeitTx(
 	inputs []*wire.OutPoint, sequences []uint32, prevouts []*wire.TxOut,
+	extensionAnchor *wire.TxOut,
 	signerScript []byte, txLocktime uint32,
 ) (*psbt.Packet, error) {
 
@@ -18,16 +19,21 @@ func BuildForfeitTx(
 	sumPrevout -= txutils.ANCHOR_VALUE
 
 	forfeitOut := wire.NewTxOut(sumPrevout, signerScript)
-	return BuildForfeitTxWithOutput(inputs, sequences, prevouts, forfeitOut, txLocktime)
+	return BuildForfeitTxWithOutput(inputs, sequences, prevouts, forfeitOut, extensionAnchor, txLocktime)
 }
 
 func BuildForfeitTxWithOutput(
 	inputs []*wire.OutPoint, sequences []uint32, prevouts []*wire.TxOut,
 	forfeitOutput *wire.TxOut,
+	extensionAnchor *wire.TxOut,
 	txLocktime uint32,
 ) (*psbt.Packet, error) {
 	version := int32(3)
-	outs := []*wire.TxOut{forfeitOutput, txutils.AnchorOutput()}
+	outs := []*wire.TxOut{forfeitOutput}
+	if extensionAnchor != nil {
+		outs = append(outs, extensionAnchor)
+	}
+	outs = append(outs, txutils.AnchorOutput())
 
 	partialTx, err := psbt.New(
 		inputs,

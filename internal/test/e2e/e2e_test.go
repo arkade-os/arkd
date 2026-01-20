@@ -1222,6 +1222,7 @@ func TestDelegateRefresh(t *testing.T) {
 			Value:    int64(aliceVtxo.Amount + connectorAmount),
 			PkScript: forfeitOutputScript,
 		},
+		nil,
 		uint32(delegateLocktime),
 	)
 	require.NoError(t, err)
@@ -3685,6 +3686,7 @@ func TestBan(t *testing.T) {
 					}},
 					[]uint32{wire.MaxTxInSequenceNum},
 					[]*wire.TxOut{{Value: int64(aliceVtxo.Amount), PkScript: fakeScript}},
+					nil,
 					forfeitOutputScript,
 					0,
 				)
