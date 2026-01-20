@@ -1,7 +1,9 @@
 package extension
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 
@@ -15,6 +17,34 @@ const (
 	maskMetadata     uint8 = 1 << 2 // 0x04
 	maskImmutable    uint8 = 1 << 3 // 0x08
 )
+
+func encodeAssetGroups(assets []AssetGroup) ([]byte, error) {
+	var scratch [8]byte
+	var buf bytes.Buffer
+
+	totalCount := uint64(len(assets))
+	if totalCount == 0 {
+		return nil, errors.New("cannot encode empty asset group")
+	}
+
+	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
+		return nil, err
+	}
+
+	for idx, assetGroup := range assets {
+		encodedAssetGroup, err := assetGroup.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode asset group: %d: %w", idx, err)
+		}
+
+		// No length prefix, groups are self-delimiting/known
+		if _, err := buf.Write(encodedAssetGroup); err != nil {
+			return nil, err
+		}
+	}
+
+	return buf.Bytes(), nil
+}
 
 func encodeAssetRef(w io.Writer, ref *AssetRef, scratch *[8]byte) error {
 	if _, err := w.Write([]byte{byte(ref.Type)}); err != nil {

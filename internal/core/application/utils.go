@@ -135,7 +135,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			}
 			assetOpReturnProcessed = true
 
-			decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+			decodedAssetPacket, err := extension.DecodeOutputToAssetPacket(*out)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf(
 					"failed to decode asset group from opreturn: %s",
@@ -179,7 +179,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				}
 			}
 
-			subDustPacket, err := extension.DecodeSubDustPacket(*out)
+			subDustPacket, err := extension.DecodeToSubDustPacket(*out)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf(
 					"failed to decode sub-dust key from opreturn: %s",

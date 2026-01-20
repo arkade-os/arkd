@@ -86,7 +86,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 			Amount: 220,
 		},
 	}
-	opret, err := opPacket.EncodeExtensionPacket()
+	opret, err := opPacket.Encode()
 	require.NoError(t, err)
 
 	changeValue := changeVtxo.Amount - opret.Value
@@ -158,9 +158,9 @@ func TestRebuildAssetTxs(t *testing.T) {
 	require.Equal(t, arkTx.UnsignedTx.TxID(), rebuiltArk.UnsignedTx.TxID())
 
 	// Verify asset group matches and points to rebuilt checkpoints.
-	origPacket, err := extension.DecodeAssetPacket(*outputsNoAnchor[assetGroupIndex])
+	origPacket, err := extension.DecodeOutputToAssetPacket(*outputsNoAnchor[assetGroupIndex])
 	require.NoError(t, err)
-	rebuiltPacket, err := extension.DecodeAssetPacket(*rebuiltArk.UnsignedTx.TxOut[assetGroupIndex])
+	rebuiltPacket, err := extension.DecodeOutputToAssetPacket(*rebuiltArk.UnsignedTx.TxOut[assetGroupIndex])
 	require.NoError(t, err)
 
 	require.NotNil(t, rebuiltPacket)

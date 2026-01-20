@@ -1530,7 +1530,7 @@ func (s *service) RegisterIntent(
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
 
 		if extension.ContainsAssetPacket(output.PkScript) {
-			assetPacket, err = extension.DecodeAssetPacket(*output)
+			assetPacket, err = extension.DecodeOutputToAssetPacket(*output)
 			if err != nil {
 				return "", errors.INVALID_INTENT_PROOF.New(
 					"failed to decode asset packet: %w", err,
@@ -4288,7 +4288,7 @@ func (s *service) storeAssetDetailsFromArkTx(
 	arkTx wire.MsgTx,
 	assetPacketIndex int,
 ) error {
-	assetPkt, err := extension.DecodeAssetPacket(*arkTx.TxOut[assetPacketIndex])
+	assetPkt, err := extension.DecodeOutputToAssetPacket(*arkTx.TxOut[assetPacketIndex])
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}

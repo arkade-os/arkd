@@ -127,10 +127,10 @@ func testAssetGroupEncodeDecode(t *testing.T) {
 	}
 
 	extPacket := &ExtensionPacket{Asset: &packet}
-	txOut, err := extPacket.EncodeExtensionPacket()
+	txOut, err := extPacket.Encode()
 	require.NoError(t, err)
 
-	decodedExt, err := DecodeExtensionPacket(txOut)
+	decodedExt, err := DecodeToExtensionPacket(txOut)
 	require.NoError(t, err)
 	require.NotNil(t, decodedExt.Asset)
 	require.Equal(t, packet, *decodedExt.Asset)
@@ -140,13 +140,11 @@ func testAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 	t.Parallel()
 
 	groupIndex := uint16(1)
-	assetGroup := AssetGroup{
-		AssetId:      ptrAssetId(deterministicAssetId(0x21)),
-		ControlAsset: AssetRefFromGroupIndex(groupIndex),
-		Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 0}},
-	}
+	modifiedNormalAsset := normalAsset
+	// Set ControlAsset to reference by group index
+	modifiedNormalAsset.ControlAsset = AssetRefFromGroupIndex(groupIndex)
 
-	encoded, err := assetGroup.Encode()
+	encoded, err := modifiedNormalAsset.Encode()
 	require.NoError(t, err)
 
 	var decoded AssetGroup
@@ -154,6 +152,7 @@ func testAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 	require.NotNil(t, decoded.ControlAsset)
 	require.Equal(t, AssetRefByGroup, decoded.ControlAsset.Type)
 	require.Equal(t, groupIndex, decoded.ControlAsset.GroupIndex)
+	fmt.Printf("check spot -\n")
 }
 
 func testAssetIdStringConversion(t *testing.T) {
@@ -177,12 +176,6 @@ func testAssetIdStringConversion(t *testing.T) {
 
 func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	subDustKey := deterministicPubKey(t, 0x55)
-	normalAsset := AssetGroup{
-		AssetId:      ptrAssetId(deterministicAssetId(0x12)),
-		Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
-		ControlAsset: deterministicAssetRefId(0xaa),
-	}
-
 	assetPacket := AssetPacket{
 		Assets: []AssetGroup{normalAsset},
 	}
@@ -192,7 +185,7 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 		SubDust: &SubDustPacket{Key: &subDustKey, Amount: 220},
 	}
 
-	txOut, err := opReturnPacket.EncodeExtensionPacket()
+	txOut, err := opReturnPacket.Encode()
 	require.NoError(t, err)
 
 	tokenizer := txscript.MakeScriptTokenizer(0, txOut.PkScript)
@@ -231,7 +224,7 @@ func testAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	require.NotEmpty(t, assetValue)
 	// No version byte check as it is removed
 
-	decodedExt, err := DecodeExtensionPacket(txOut)
+	decodedExt, err := DecodeToExtensionPacket(txOut)
 	require.NoError(t, err)
 	require.NotNil(t, decodedExt.SubDust)
 	require.True(t, subDustKey.IsEqual(decodedExt.SubDust.Key))

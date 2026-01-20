@@ -66,7 +66,7 @@ func (m *assetValidationMachine) run(s *service) error {
 	for {
 		switch state {
 		case assetValidationDecode:
-			decodedAssetPacket, err := extension.DecodeAssetPacket(m.opReturnOutput)
+			decodedAssetPacket, err := extension.DecodeOutputToAssetPacket(m.opReturnOutput)
 			if err != nil {
 				return errors.ASSET_PACKET_INVALID.New("error decoding asset from opreturn: %s", err).
 					WithMetadata(errors.AssetValidationMetadata{Message: err.Error()})
@@ -595,7 +595,7 @@ func (s *service) verifyAssetInputPrevOut(
 
 	for _, output := range decodedArkTx.UnsignedTx.TxOut {
 		if extension.ContainsAssetPacket(output.PkScript) {
-			assetGp, err := extension.DecodeAssetPacket(*output)
+			assetGp, err := extension.DecodeOutputToAssetPacket(*output)
 			if err != nil {
 				return errors.ASSET_PACKET_INVALID.New("error decoding asset Opreturn: %s", err).
 					WithMetadata(errors.AssetValidationMetadata{})
