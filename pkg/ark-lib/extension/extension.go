@@ -256,7 +256,8 @@ func decodeAssetPacket(payload []byte) (*AssetPacket, error) {
 	}
 
 	for i := range assets {
-		normalizeAssetSlices(&assets[i])
+		ag := &assets[i]
+		ag.normalizeAssetSlices()
 	}
 
 	if reader.Len() != 0 {
@@ -268,16 +269,4 @@ func decodeAssetPacket(payload []byte) (*AssetPacket, error) {
 	}
 
 	return group, nil
-}
-
-func normalizeAssetSlices(a *AssetGroup) {
-	if len(a.Inputs) == 0 {
-		a.Inputs = nil
-	}
-	if len(a.Outputs) == 0 {
-		a.Outputs = nil
-	}
-	if len(a.Metadata) == 0 {
-		a.Metadata = nil
-	}
 }
