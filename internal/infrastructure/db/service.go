@@ -232,7 +232,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create postgres migration instance: %s", err)
 		}
 
-		err = HandleIntentTxidMigration(m, db, config.DataStoreType)
+		err = handleIntentTxidMigration(m, db, config.DataStoreType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
 		}
@@ -299,7 +299,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create migration instance: %s", err)
 		}
 
-		err = HandleIntentTxidMigration(m, db, config.DataStoreType)
+		err = handleIntentTxidMigration(m, db, config.DataStoreType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
 		}
@@ -622,7 +622,7 @@ func newBadgerOffchainTxRepository(args ...interface{}) (domain.OffchainTxReposi
 }
 
 // stepwise migration for intent txid field addition
-func HandleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) error {
+func handleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) error {
 	intentTxidMigrationBegin := uint(20260114000000)
 	version, dirty, verr := m.Version()
 	if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {

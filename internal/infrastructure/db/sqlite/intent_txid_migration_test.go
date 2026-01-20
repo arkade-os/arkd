@@ -16,8 +16,10 @@ func TestIntentTxidMigration(t *testing.T) {
 	db, err := sqlitedb.OpenDb(":memory:")
 	require.NoError(t, err)
 
-	// nolint:errcheck
-	defer db.Close()
+	t.Cleanup(func() {
+		//nolint:errcheck
+		db.Close()
+	})
 	// create table intent references
 	setupRoundTable(t, db)
 	// create intent table using old schema
