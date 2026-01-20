@@ -1,12 +1,15 @@
 package sqlitedb
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/ltcsuite/ltcd/wire"
 )
 
 func BackfillIntentTxid(ctx context.Context, dbh *sql.DB) error {
@@ -85,10 +88,21 @@ func backfillIntent(ctx context.Context, db *sql.DB) error {
 	return tx.Commit()
 }
 
+// deriveTxidFromProof decodes the given proof (base64 format) and returns its txid.
+// If the psbt parsing fails, it tries to decode the tx as raw transaction to be compatible with
+// versions of the server prior to v0.8.0.
 func deriveTxidFromProof(proof string) (string, error) {
 	tx, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
 	if err != nil {
-		return "", fmt.Errorf("psbt parse: %w", err)
+		tx := wire.MsgTx{}
+		buf, err := base64.StdEncoding.DecodeString(proof)
+		if err != nil {
+			return "", fmt.Errorf("failed to decode proof tx")
+		}
+		if err := tx.Deserialize(bytes.NewBuffer(buf)); err != nil {
+			return "", fmt.Errorf("failed to parse proof tx")
+		}
+		return tx.TxHash().String(), nil
 	}
 	return tx.UnsignedTx.TxID(), nil
 }
