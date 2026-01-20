@@ -24,6 +24,12 @@ type ArkRepository interface {
 	domain.OffchainTxRepository
 }
 
+type IntentIndex struct {
+	Txid     string
+	RoundId  string
+	IntentId string
+}
+
 func NewArkRepository(config ...interface{}) (ArkRepository, error) {
 	if len(config) != 2 {
 		return nil, fmt.Errorf("invalid config")
@@ -291,6 +297,12 @@ func (r *arkRepository) addOrUpdateRound(
 		}
 		return err
 	}
+	// upsert intent index for each intent with a txid
+	for _, it := range rnd.Intents {
+		// do not fail the whole round upsert if intent index upsert fails
+		// nolint:errcheck
+		r.upsertIntentIndex(ctx, it.Txid, rnd.Id, it.Id)
+	}
 	return nil
 }
 
@@ -525,4 +537,46 @@ func (r arkRepository) findOffchainTxs(ctx context.Context, txids []string) ([]s
 		txs = append(txs, checkpointTxs...)
 	}
 	return txs, nil
+}
+
+func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (*domain.Intent, error) {
+	var idx IntentIndex
+	var err error
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		err = r.store.TxGet(tx, txid, &idx)
+	} else {
+		err = r.store.Get(txid, &idx)
+	}
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	round, err := r.GetRoundWithId(ctx, idx.RoundId)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, in := range round.Intents {
+		if in.Id == idx.IntentId {
+			return &in, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (r *arkRepository) upsertIntentIndex(
+	ctx context.Context,
+	txid, roundId, intentId string,
+) error {
+	idx := IntentIndex{Txid: txid, RoundId: roundId, IntentId: intentId}
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		return r.store.TxUpsert(tx, txid, idx)
+	}
+	return r.store.Upsert(txid, idx)
 }

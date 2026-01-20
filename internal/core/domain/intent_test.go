@@ -28,7 +28,7 @@ var (
 func TestIntent(t *testing.T) {
 	t.Run("new_intent", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			intent, err := domain.NewIntent(proof, message, inputs)
+			intent, err := domain.NewIntent(txid, proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 			require.NotEmpty(t, intent.Id)
@@ -57,7 +57,7 @@ func TestIntent(t *testing.T) {
 			}
 			for _, f := range fixtures {
 				t.Run(f.expectedErr, func(t *testing.T) {
-					intent, err := domain.NewIntent(f.proof, f.message, f.inputs)
+					intent, err := domain.NewIntent(txid, f.proof, f.message, f.inputs)
 					require.Nil(t, intent)
 					require.Error(t, err)
 					require.Contains(t, err.Error(), f.expectedErr)
@@ -68,7 +68,7 @@ func TestIntent(t *testing.T) {
 
 	t.Run("add_receivers", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			intent, err := domain.NewIntent(proof, message, inputs)
+			intent, err := domain.NewIntent(txid, proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 
@@ -95,8 +95,7 @@ func TestIntent(t *testing.T) {
 					expectedErr: "missing outputs",
 				},
 			}
-
-			intent, err := domain.NewIntent(proof, message, inputs)
+			intent, err := domain.NewIntent(txid, proof, message, inputs)
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 

@@ -350,6 +350,30 @@ func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectE
 	return amount, err
 }
 
+const selectIntentByTxid = `-- name: SelectIntentByTxid :one
+SELECT id, txid, proof, message FROM intent
+WHERE txid = $1
+`
+
+type SelectIntentByTxidRow struct {
+	ID      sql.NullString
+	Txid    sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
+}
+
+func (q *Queries) SelectIntentByTxid(ctx context.Context, txid sql.NullString) (SelectIntentByTxidRow, error) {
+	row := q.db.QueryRowContext(ctx, selectIntentByTxid, txid)
+	var i SelectIntentByTxidRow
+	err := row.Scan(
+		&i.ID,
+		&i.Txid,
+		&i.Proof,
+		&i.Message,
+	)
+	return i, err
+}
+
 const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
 SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
 `
@@ -1737,11 +1761,12 @@ func (q *Queries) UpsertConviction(ctx context.Context, arg UpsertConvictionPara
 }
 
 const upsertIntent = `-- name: UpsertIntent :exec
-INSERT INTO intent (id, round_id, proof, message) VALUES ($1, $2, $3, $4)
+INSERT INTO intent (id, round_id, proof, message, txid) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT(id) DO UPDATE SET
     round_id = EXCLUDED.round_id,
     proof = EXCLUDED.proof,
-    message = EXCLUDED.message
+    message = EXCLUDED.message,
+    txid = EXCLUDED.txid
 `
 
 type UpsertIntentParams struct {
@@ -1749,6 +1774,7 @@ type UpsertIntentParams struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) error {
@@ -1757,6 +1783,7 @@ func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) erro
 		arg.RoundID,
 		arg.Proof,
 		arg.Message,
+		arg.Txid,
 	)
 	return err
 }

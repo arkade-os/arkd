@@ -1,5 +1,4 @@
-ALTER TABLE vtxo
-  ADD COLUMN updated_at BIGINT NOT NULL DEFAULT (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER));
+ALTER TABLE vtxo ADD COLUMN updated_at BIGINT;
 
 -- set existing null updated_at values to current timestamp
 UPDATE vtxo

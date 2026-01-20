@@ -12,14 +12,16 @@ type Intent struct {
 	Receivers []Receiver
 	Proof     string
 	Message   string
+	Txid      string
 }
 
-func NewIntent(proof, message string, inputs []Vtxo) (*Intent, error) {
+func NewIntent(proofTxid, proof, message string, inputs []Vtxo) (*Intent, error) {
 	intent := &Intent{
 		Id:      uuid.New().String(),
 		Inputs:  inputs,
 		Proof:   proof,
 		Message: message,
+		Txid:    proofTxid,
 	}
 	if err := intent.validate(true); err != nil {
 		return nil, err
@@ -66,6 +68,9 @@ func (i Intent) validate(ignoreOuts bool) error {
 	}
 	if len(i.Message) <= 0 {
 		return fmt.Errorf("missing message")
+	}
+	if len(i.Txid) <= 0 {
+		return fmt.Errorf("missing txid")
 	}
 	if ignoreOuts {
 		return nil
