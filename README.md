@@ -292,7 +292,7 @@ To compile the `arkd` binary from source, you can use the following Make command
    make run-signer
    ```
 
-   NOTE: This command starts `pgnbxplorer` and `nbxplorer` services defined in `docker-compose.regtest.yml`, make sure to tear them down once you want to delete your dev env with `make docker-stop`
+   NOTE: This command starts `pg` and `nbxplorer` services defined in `docker-compose.regtest.yml`, make sure to tear them down once you want to delete your dev env with `make docker-stop`
 
 7. Run arkd in dev mode:
 
