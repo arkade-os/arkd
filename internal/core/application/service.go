@@ -4330,7 +4330,7 @@ func (s *service) storeAssetGroups(
 				case extension.AssetRefByGroup:
 					controlAsset = extension.AssetId{
 						TxHash: txHashBytes,
-						Index:  uint16(asstGp.ControlAsset.GroupIndex),
+						Index:  asstGp.ControlAsset.GroupIndex,
 					}.ToString()
 				}
 			}
