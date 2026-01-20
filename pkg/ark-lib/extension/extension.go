@@ -125,14 +125,14 @@ func DecodeExtensionPacket(txOut wire.TxOut) (*ExtensionPacket, error) {
 
 // parsePacketOpReturn extracts the asset payload and optional sub-dust pubkey from an OP_RETURN script.
 // (OP_RETURN <type><length><value> <type><length><value> ...).
-func parsePacketOpReturn(opReturnData []byte) ([]byte, []byte, error) {
+func parsePacketOpReturn(opReturnData []byte) (assetPayload []byte, subDustKey []byte, err error) {
 	if len(opReturnData) == 0 || opReturnData[0] != txscript.OP_RETURN {
 		return nil, nil, errors.New("OP_RETURN not present")
 	}
 
 	tokenizer := txscript.MakeScriptTokenizer(0, opReturnData)
 	if !tokenizer.Next() || tokenizer.Opcode() != txscript.OP_RETURN {
-		if err := tokenizer.Err(); err != nil {
+		if err = tokenizer.Err(); err != nil {
 			return nil, nil, err
 		}
 		return nil, nil, errors.New("invalid OP_RETURN script")
@@ -149,7 +149,7 @@ func parsePacketOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 		payload = append(payload, data...)
 	}
 
-	if err := tokenizer.Err(); err != nil {
+	if err = tokenizer.Err(); err != nil {
 		return nil, nil, err
 	}
 
@@ -163,28 +163,26 @@ func parsePacketOpReturn(opReturnData []byte) ([]byte, []byte, error) {
 
 	payload = payload[len(ArkadeMagic):]
 
-	var subDustKey []byte
-	var assetPayload []byte
 	reader := bytes.NewReader(payload)
 	var scratch [8]byte
 
 	for reader.Len() > 0 {
-		typ, err := reader.ReadByte()
-		if err != nil {
-			return nil, nil, err
+		typ, readErr := reader.ReadByte()
+		if readErr != nil {
+			return nil, nil, readErr
 		}
 
-		length, err := tlv.ReadVarInt(reader, &scratch)
-		if err != nil {
-			return nil, nil, err
+		length, readVarErr := tlv.ReadVarInt(reader, &scratch)
+		if readVarErr != nil {
+			return nil, nil, readVarErr
 		}
 		if uint64(reader.Len()) < length {
 			return nil, nil, errors.New("invalid TLV length for OP_RETURN payload")
 		}
 
 		value := make([]byte, length)
-		if _, err := io.ReadFull(reader, value); err != nil {
-			return nil, nil, err
+		if _, readFullErr := io.ReadFull(reader, value); readFullErr != nil {
+			return nil, nil, readFullErr
 		}
 
 		switch typ {
@@ -211,6 +209,9 @@ func encodeAssetPacket(assets []AssetGroup) ([]byte, error) {
 	var buf bytes.Buffer
 
 	totalCount := uint64(len(assets))
+	if totalCount == 0 {
+		return nil, errors.New("cannot encode empty asset group")
+	}
 
 	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
 		return nil, err

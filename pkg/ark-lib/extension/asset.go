@@ -14,8 +14,8 @@ const ASSET_ID_SIZE = 34
 const AssetVersion byte = 0x01
 
 type AssetId struct {
-	TxHash [TX_HASH_SIZE]byte
-	Index  uint16
+	Txid  [TX_HASH_SIZE]byte
+	Index uint16
 }
 
 type AssetRefType uint8
@@ -47,7 +47,7 @@ func AssetRefFromGroupIndex(groupIndex uint16) *AssetRef {
 
 func (a AssetId) ToString() string {
 	var buf [ASSET_ID_SIZE]byte
-	copy(buf[:TX_HASH_SIZE], a.TxHash[:])
+	copy(buf[:TX_HASH_SIZE], a.Txid[:])
 	// Big endian encoding for index
 	buf[ASSET_ID_SIZE-2] = byte(a.Index >> 8)
 	buf[ASSET_ID_SIZE-1] = byte(a.Index)
@@ -69,7 +69,7 @@ func AssetIdFromString(s string) (*AssetId, error) {
 	}
 
 	var assetId AssetId
-	copy(assetId.TxHash[:], buf[:TX_HASH_SIZE])
+	copy(assetId.Txid[:], buf[:TX_HASH_SIZE])
 	// Big endian decoding for index
 	assetId.Index = uint16(buf[ASSET_ID_SIZE-2])<<8 | uint16(buf[ASSET_ID_SIZE-1])
 	return &assetId, nil

@@ -2,6 +2,7 @@ package extension
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 
@@ -17,6 +18,9 @@ const (
 )
 
 func (a *AssetGroup) Encode() ([]byte, error) {
+	if a == nil {
+		return nil, errors.New("cannot encode nil AssetGroup")
+	}
 	var buf bytes.Buffer
 	var scratch [8]byte
 

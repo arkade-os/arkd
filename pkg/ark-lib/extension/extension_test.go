@@ -3,6 +3,7 @@ package extension
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"testing"
 
@@ -94,6 +95,11 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 
 	require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
 	require.Equal(t, asset, decoded)
+
+	var nilAssetGroup *AssetGroup
+	_, err = nilAssetGroup.Encode()
+	require.Error(t, err)
+	require.Equal(t, "cannot encode nil AssetGroup", fmt.Sprint(err))
 }
 
 func testAssetGroupEncodeDecode(t *testing.T) {

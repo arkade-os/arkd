@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +27,7 @@ func RandIndex() uint16 {
 
 func TestAssetId_Roundtrip(t *testing.T) {
 	assetId := AssetId{
-		TxHash: RandTxHash(),
+		Txid: RandTxHash(),
 		Index:  RandIndex(),
 	}
 
@@ -36,7 +37,7 @@ func TestAssetId_Roundtrip(t *testing.T) {
 	derivedAssetId, err := AssetIdFromString(assetString)
 	require.NoError(t, err)
 	require.Equal(t, assetId.Index, derivedAssetId.Index)
-	require.Equal(t, assetId.TxHash, derivedAssetId.TxHash)
+	require.Equal(t, assetId.Txid, derivedAssetId.Txid)
 }
 
 func TestAssetIdFromString_InvalidLength(t *testing.T) {
@@ -45,14 +46,13 @@ func TestAssetIdFromString_InvalidLength(t *testing.T) {
 	shortLen := len(shortString) / 2
 	assetId, err := AssetIdFromString(shortString)
 	require.Error(t, err)
-	fmt.Printf("shortLen: %d\n", shortLen)
 	require.Equal(t, fmt.Sprintf("invalid asset id length: %d", shortLen), err.Error())
 	require.Nil(t, assetId)
 }
 
 func TestAssetRef_Constructors(t *testing.T) {
 	randTxHash := RandTxHash()
-	id := AssetId{TxHash: randTxHash, Index: 1}
+	id := AssetId{Txid: randTxHash, Index: 1}
 
 	ref := AssetRefFromId(id)
 	require.Equal(t, AssetRefByID, ref.Type)
@@ -81,6 +81,131 @@ func TestEncodeDecodeAssetPacket(t *testing.T) {
 	require.Equal(t, packet.Version, decodedPacket.Version)
 	require.Equal(t, len(packet.Assets), len(decodedPacket.Assets))
 	require.True(t, assetGroupsEqual(packet.Assets, decodedPacket.Assets))
+
+	// fail to encode empty asset packet
+	emptyPacket := &AssetPacket{
+		Assets: []AssetGroup{},
+	}
+
+	wireTx, err := emptyPacket.EncodeAssetPacket()
+	require.Error(t, err)
+	require.Equal(t, "cannot encode empty asset group", err.Error())
+	require.Equal(t, int64(0), wireTx.Value)
+	require.Equal(t, 0, len(wireTx.PkScript))
+
+	// empty asset packet decode failure
+	emptyTxOut := wire.TxOut{}
+	pkt, err := DecodeAssetPacket(emptyTxOut)
+	require.Error(t, err)
+	require.Nil(t, pkt)
+	require.Equal(t, "OP_RETURN not present", err.Error())
+
+	// asset packet with no opreturn prefix
+	missingOpReturnTx := wire.TxOut{
+		PkScript: []byte{0x01, 0x02, 0x03},
+		Value:    0,
+	}
+	pkt, err = DecodeAssetPacket(missingOpReturnTx)
+	require.Error(t, err)
+	require.Nil(t, pkt)
+	require.Equal(t, "OP_RETURN not present", err.Error())
+}
+
+func TestContainsAssetPacket(t *testing.T) {
+	var empty []byte
+	require.Equal(t, false, ContainsAssetPacket(empty))
+
+	// asset packet with no opreturn prefix
+	require.Equal(t, false, ContainsAssetPacket([]byte{0x01, 0x02, 0x03}))
+	// only opreturn prefix
+	require.Equal(t, false, ContainsAssetPacket([]byte{0x6a}))
+	// tokenizer error
+	require.Equal(t, false, ContainsAssetPacket([]byte{0x6a, 0x01, 0x02, 0x03}))
+	// missing ArkadeMagic prefix
+	require.Equal(t, false, ContainsAssetPacket([]byte{0x6a, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06}))
+	// include ArkadeMagic prefix, but bad data
+	withArkadeMagic := append([]byte{0x6a}, ArkadeMagic...)
+	// add 66 bytes to make a valid TLV record
+	for i := 0; i < 66; i++ {
+		withArkadeMagic = append(withArkadeMagic, 0x00)
+	}
+	require.Equal(t, false, ContainsAssetPacket(withArkadeMagic))
+
+	// include ArkadeMagic prefix, but bad data length
+	withArkadeMagic = []byte{}
+	withArkadeMagic = append([]byte{0x6a}, ArkadeMagic...)
+	// add bytes that will yield tokenizer error
+	for i := 0; i < 67; i++ {
+		withArkadeMagic = append(withArkadeMagic, byte(i))
+	}
+	require.Equal(t, false, ContainsAssetPacket(withArkadeMagic))
+
+	// check valid asset packet
+	packet := &AssetPacket{
+		Assets: []AssetGroup{controlAsset, normalAsset},
+	}
+	txOut, err := packet.EncodeAssetPacket()
+	require.NoError(t, err)
+	require.NotEmpty(t, txOut)
+	require.Equal(t, true, ContainsAssetPacket(txOut.PkScript))
+
+}
+
+func TestDeriveAsserPacketFromTx(t *testing.T) {
+	empty := wire.MsgTx{}
+	packet, idx, err := DeriveAssetPacketFromTx(empty)
+	require.Error(t, err)
+	require.Equal(t, "no asset opreturn found in transaction", err.Error())
+	require.Nil(t, packet)
+	require.Equal(t, 0, idx)
+
+	arkTxNoAssetPackets := wire.MsgTx{
+		TxOut: []*wire.TxOut{
+			{Value: int64(1000)},
+		},
+	}
+	packet, idx, err = DeriveAssetPacketFromTx(arkTxNoAssetPackets)
+	require.Error(t, err)
+	require.Equal(t, "no asset opreturn found in transaction", err.Error())
+	require.Nil(t, packet)
+	require.Equal(t, 0, idx)
+
+	arkTxWithAssetPacket := wire.MsgTx{
+		TxOut: []*wire.TxOut{
+			{Value: int64(1000), PkScript: []byte{0x6a, 0x01, 0x02}},
+		},
+	}
+	packet, idx, err = DeriveAssetPacketFromTx(arkTxWithAssetPacket)
+	require.Error(t, err)
+	require.Equal(t, "no asset opreturn found in transaction", err.Error())
+	require.Nil(t, packet)
+	require.Equal(t, 0, idx)
+
+	// check valid asset packet
+	packet = &AssetPacket{
+		Assets: []AssetGroup{controlAsset, normalAsset},
+	}
+	txOut, err := packet.EncodeAssetPacket()
+	require.NoError(t, err)
+	require.NotEmpty(t, txOut)
+
+	badMagicScript := append([]byte{0x6a}, ArkadeMagic...)
+	arkTxWithAssetPacket = wire.MsgTx{
+		TxOut: []*wire.TxOut{
+			{Value: int64(1000), PkScript: []byte{0x00, 0x01}},
+			&txOut,
+			{Value: int64(2000), PkScript: []byte{0x6a, 0x02, 0x03}},
+			{Value: int64(2000), PkScript: badMagicScript},
+			&txOut,
+		},
+	}
+	packet, idx, err = DeriveAssetPacketFromTx(arkTxWithAssetPacket)
+	require.NoError(t, err)
+	require.NotNil(t, packet)
+	// should find first valid asset packet at index 1, second TxOut
+	// with valid asset packet is at index 4 but is never reached
+	require.Equal(t, 1, idx)
+	require.True(t, assetGroupsEqual(packet.Assets, []AssetGroup{controlAsset, normalAsset}))
 }
 
 // helper function to deep equal compare []AssetGroup slices
@@ -97,7 +222,7 @@ func assetGroupsEqual(a, b []AssetGroup) bool {
 			if a[i].AssetId.Index != b[i].AssetId.Index {
 				return false
 			}
-			if a[i].AssetId.TxHash != b[i].AssetId.TxHash {
+			if a[i].AssetId.Txid != b[i].AssetId.Txid {
 				return false
 			}
 		}
@@ -156,9 +281,4 @@ func assetGroupsEqual(a, b []AssetGroup) bool {
 		}
 	}
 	return true
-}
-
-func TestContainsAssetPacket_NoPayload(t *testing.T) {
-	var empty []byte
-	require.Equal(t, false, ContainsAssetPacket(empty))
 }
