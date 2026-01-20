@@ -8,11 +8,14 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+const TX_HASH_SIZE = 32
+const ASSET_ID_SIZE = 34
+
 const AssetVersion byte = 0x01
 
 type AssetId struct {
-	Txid  [32]byte
-	Index uint16
+	TxHash [TX_HASH_SIZE]byte
+	Index  uint16
 }
 
 type AssetRefType uint8
@@ -43,11 +46,11 @@ func AssetRefFromGroupIndex(groupIndex uint16) *AssetRef {
 }
 
 func (a AssetId) ToString() string {
-	var buf [34]byte
-	copy(buf[:32], a.Txid[:])
+	var buf [ASSET_ID_SIZE]byte
+	copy(buf[:TX_HASH_SIZE], a.TxHash[:])
 	// Big endian encoding for index
-	buf[32] = byte(a.Index >> 8)
-	buf[33] = byte(a.Index)
+	buf[ASSET_ID_SIZE-2] = byte(a.Index >> 8)
+	buf[ASSET_ID_SIZE-1] = byte(a.Index)
 	return hex.EncodeToString(buf[:])
 }
 
@@ -61,14 +64,14 @@ func AssetIdFromString(s string) (*AssetId, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(buf) != 34 {
+	if len(buf) != ASSET_ID_SIZE {
 		return nil, fmt.Errorf("invalid asset id length: %d", len(buf))
 	}
 
 	var assetId AssetId
-	copy(assetId.Txid[:], buf[:32])
+	copy(assetId.TxHash[:], buf[:TX_HASH_SIZE])
 	// Big endian decoding for index
-	assetId.Index = uint16(buf[32])<<8 | uint16(buf[33])
+	assetId.Index = uint16(buf[ASSET_ID_SIZE-2])<<8 | uint16(buf[ASSET_ID_SIZE-1])
 	return &assetId, nil
 }
 

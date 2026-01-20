@@ -24,6 +24,26 @@ func TestExtension(t *testing.T) {
 	t.Run("AssetGroupEncodeDecodeWithGroupIndexRef", testAssetGroupEncodeDecodeWithGroupIndexRef)
 }
 
+var (
+	controlAsset = AssetGroup{
+		AssetId:      ptrAssetId(deterministicAssetId(0x11)),
+		Outputs:      []AssetOutput{{Type: AssetTypeTeleport, Script: deterministicTxhash(0xdd), Amount: 1}},
+		ControlAsset: deterministicAssetRefId(0x3c),
+		Metadata:     []Metadata{{Key: "kind", Value: "control"}},
+	}
+	normalAsset = AssetGroup{
+		AssetId:      ptrAssetId(deterministicAssetId(0x12)),
+		Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
+		ControlAsset: deterministicAssetRefId(0x3c),
+		Inputs: []AssetInput{{
+			Type:   AssetTypeLocal,
+			Vin:    1,
+			Amount: 5,
+		}},
+		Metadata: []Metadata{{Key: "kind", Value: "normal"}},
+	}
+)
+
 func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 	asset := AssetGroup{
 		AssetId: &AssetId{
