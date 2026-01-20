@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+var charset = "0123456789"
 var maxUint16 = 65535
 
 func RandTxHash() [TX_HASH_SIZE]byte {
@@ -40,11 +40,13 @@ func TestAssetId_Roundtrip(t *testing.T) {
 }
 
 func TestAssetIdFromString_InvalidLength(t *testing.T) {
-	shortString := "shortstring"
-	shortLen := len(shortString)
+	shortString := "0123"
+	// hex encoding means string length is double the byte length
+	shortLen := len(shortString) / 2
 	assetId, err := AssetIdFromString(shortString)
 	require.Error(t, err)
-	require.Equal(t, err.Error(), fmt.Sprintf("invalid asset id length: %d", shortLen))
+	fmt.Printf("shortLen: %d\n", shortLen)
+	require.Equal(t, fmt.Sprintf("invalid asset id length: %d", shortLen), err.Error())
 	require.Nil(t, assetId)
 }
 
