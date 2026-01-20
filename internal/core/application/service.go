@@ -2874,6 +2874,8 @@ func (s *service) startFinalization(
 	defer func() {
 		s.wg.Add(1)
 
+		fmt.Printf("events %+v", round.Events())
+
 		if err := s.saveEvents(ctx, roundId, round.Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
 		}
@@ -3236,6 +3238,8 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 		if stopped {
 			return
 		}
+
+		fmt.Printf("events %+v", changes)
 
 		if err := s.saveEvents(ctx, roundId, changes); err != nil {
 			log.WithError(err).Error("failed to store new round events")
