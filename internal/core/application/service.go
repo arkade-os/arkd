@@ -1563,6 +1563,36 @@ func (s *service) RegisterIntent(
 					})
 				}
 
+				for i, output := range asst.Outputs {
+					if output.Type != extension.AssetTypeTeleport {
+						return "", errors.INVALID_INTENT_PROOF.New(
+							"asset output is not teleport output",
+						).WithMetadata(errors.InvalidIntentProofMetadata{
+							Proof:   encodedProof,
+							Message: encodedMessage,
+						})
+					}
+
+					teleportScript := hex.EncodeToString(output.Script)
+
+					if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
+						IntentID:    proofTxid,
+						Script:      teleportScript,
+						OutputIndex: uint32(i),
+						AssetID:     asst.AssetId.ToString(),
+						Amount:      output.Amount,
+						IsClaimed:   false,
+					}); err != nil {
+						log.WithError(err).Warn("failed to insert teleport asset")
+					}
+
+					receivers = append(receivers, domain.Receiver{
+						Amount:  output.Amount,
+						AssetId: asst.AssetId.ToString(),
+						PubKey:  hex.EncodeToString(output.Script[2:]),
+					})
+				}
+
 			}
 
 			continue
@@ -1923,50 +1953,6 @@ func (s *service) RegisterIntent(
 				Proof:   signedProof,
 				Message: encodedMessage,
 			})
-	}
-
-	if assetPacket != nil {
-		// validate asset outputs are Teleport outputs
-		for _, asst := range assetPacket.Assets {
-			if asst.AssetId == nil {
-				return "", errors.INVALID_INTENT_PROOF.New(
-					"asset packet missing asset id",
-				).WithMetadata(errors.InvalidIntentProofMetadata{
-					Proof:   encodedProof,
-					Message: encodedMessage,
-				})
-			}
-			for i, output := range asst.Outputs {
-				if output.Type != extension.AssetTypeTeleport {
-					return "", errors.INVALID_INTENT_PROOF.New(
-						"asset output is not teleport output",
-					).WithMetadata(errors.InvalidIntentProofMetadata{
-						Proof:   encodedProof,
-						Message: encodedMessage,
-					})
-				}
-
-				teleportScript := hex.EncodeToString(output.Script)
-
-				if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
-					IntentID:    proofTxid,
-					Script:      teleportScript,
-					OutputIndex: uint32(i),
-					AssetID:     asst.AssetId.ToString(),
-					Amount:      output.Amount,
-					IsClaimed:   false,
-				}); err != nil {
-					log.WithError(err).Warn("failed to insert teleport asset")
-				}
-
-				receivers = append(receivers, domain.Receiver{
-					Amount:  output.Amount,
-					AssetId: asst.AssetId.ToString(),
-					PubKey:  hex.EncodeToString(output.Script[2:]),
-				})
-			}
-		}
-
 	}
 
 	if hasOffChainReceiver {
