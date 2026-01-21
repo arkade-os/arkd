@@ -464,7 +464,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 			prevouts = []*wire.TxOut{connectorOutput, vtxoPrevout}
 		}
 
-		rebuilt, err := tree.BuildForfeitTx(
+		rebuilt, err := tree.BuildForfeitTxWithAnchor(
 			inputs,
 			sequences,
 			prevouts,
