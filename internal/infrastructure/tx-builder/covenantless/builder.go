@@ -285,8 +285,6 @@ func (b *txBuilder) VerifyForfeitTxs(
 
 	validForfeitTxs := make(map[domain.Outpoint]ports.ValidForfeitTx)
 
-	forfeitTxPtxList := make([]*psbt.Packet, 0)
-
 	for _, forfeitTx := range forfeitTxs {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(forfeitTx), true)
 		if err != nil {
@@ -298,8 +296,6 @@ func (b *txBuilder) VerifyForfeitTxs(
 		if err != nil {
 			return nil, err
 		}
-
-		forfeitTxPtxList = append(forfeitTxPtxList, tx)
 
 		if len(tx.Inputs) != 2 {
 			continue
@@ -1191,15 +1187,17 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 	return txscript.PayToAddrScript(addr)
 }
 
-func verifyAssetForfeitTransaction(vtxoMap map[domain.Outpoint]domain.Vtxo, pkt *psbt.Packet) (*wire.TxOut, error) {
+func verifyAssetForfeitTransaction(
+	vtxoMap map[domain.Outpoint]domain.Vtxo, tx *psbt.Packet,
+) (*wire.TxOut, error) {
 
-	if pkt == nil || pkt.UnsignedTx == nil {
+	if tx == nil || tx.UnsignedTx == nil {
 		return nil, fmt.Errorf("nil forfeit packet or unsigned tx")
 	}
 
-	txid := pkt.UnsignedTx.TxID()
+	txid := tx.UnsignedTx.TxID()
 
-	for _, output := range pkt.UnsignedTx.TxOut {
+	for _, output := range tx.UnsignedTx.TxOut {
 		if !extension.ContainsAssetPacket(output.PkScript) {
 			continue
 		}
@@ -1220,14 +1218,14 @@ func verifyAssetForfeitTransaction(vtxoMap map[domain.Outpoint]domain.Vtxo, pkt 
 					continue
 				}
 
-				if int(in.Vin) >= len(pkt.UnsignedTx.TxIn) {
+				if int(in.Vin) >= len(tx.UnsignedTx.TxIn) {
 					return nil, fmt.Errorf(
 						"asset input index out of range for txid %s: vin=%d",
 						txid, in.Vin,
 					)
 				}
 
-				prevOut := pkt.UnsignedTx.TxIn[in.Vin].PreviousOutPoint
+				prevOut := tx.UnsignedTx.TxIn[in.Vin].PreviousOutPoint
 				outpoint := domain.Outpoint{
 					Txid: prevOut.Hash.String(),
 					VOut: prevOut.Index,

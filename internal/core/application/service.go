@@ -1800,7 +1800,9 @@ func (s *service) RegisterIntent(
 						"asset input validation failed for input %d: %w", i, err,
 					).WithMetadata(errors.AssetValidationMetadata{
 						AssetID: assetInput.AssetId,
-						Message: fmt.Sprintf("validation failed for vtxo %s", vtxo.Outpoint.String()),
+						Message: fmt.Sprintf(
+							"validation failed for vtxo %s", vtxo.Outpoint.String(),
+						),
 					})
 				}
 

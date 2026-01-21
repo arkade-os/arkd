@@ -488,7 +488,9 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 					}
 
 					assetID := m.assetGp.AssetId.ToString()
-					controlAssetDetails, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, assetID)
+					controlAssetDetails, err := s.repoManager.Assets().GetAssetGroupByID(
+						m.ctx, assetID,
+					)
 					if err != nil {
 						return errors.ASSET_VALIDATION_FAILED.New(
 							"error retrieving asset %s: %w",
