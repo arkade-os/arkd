@@ -102,6 +102,8 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 	require.Equal(t, "cannot encode nil AssetGroup", fmt.Sprint(err))
 }
 
+// deeper testing for Encode and DecodeToExtensionPacket is in the TestEncodeDecodeAssetPacket
+// inside asset_test.go
 func testAssetGroupEncodeDecode(t *testing.T) {
 	controlAsset := AssetGroup{
 		AssetId:      ptrAssetId(deterministicAssetId(0x11)),
@@ -152,7 +154,6 @@ func testAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 	require.NotNil(t, decoded.ControlAsset)
 	require.Equal(t, AssetRefByGroup, decoded.ControlAsset.Type)
 	require.Equal(t, groupIndex, decoded.ControlAsset.GroupIndex)
-	fmt.Printf("check spot -\n")
 }
 
 func testAssetIdStringConversion(t *testing.T) {
