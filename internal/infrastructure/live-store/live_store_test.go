@@ -236,7 +236,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			wg.Add(1)
 			go func(txStr string) {
 				defer wg.Done()
-				err := store.ForfeitTxs().Verify(ctx, []string{txStr})
+				err := store.ForfeitTxs().Sign(ctx, []string{txStr})
 				require.NoError(t, err)
 			}(tx)
 		}
@@ -280,7 +280,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			wg2.Add(1)
 			go func(txStr string) {
 				defer wg2.Done()
-				err := store.ForfeitTxs().Verify(ctx, []string{txStr})
+				err := store.ForfeitTxs().Sign(ctx, []string{txStr})
 				require.NoError(t, err)
 			}(tx)
 		}
@@ -294,7 +294,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.True(t, allSigned)
 
 		// sign after the session is deleted
-		require.Error(t, store.ForfeitTxs().Verify(ctx, []string{txs[0]}))
+		require.Error(t, store.ForfeitTxs().Sign(ctx, []string{txs[0]}))
 
 		allSigned, err = store.ForfeitTxs().AllSigned(ctx)
 		require.NoError(t, err)

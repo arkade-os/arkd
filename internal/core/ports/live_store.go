@@ -37,7 +37,7 @@ type IntentStore interface {
 
 type ForfeitTxsStore interface {
 	Init(ctx context.Context, connectors tree.FlatTxTree, intents []domain.Intent) error
-	Verify(ctx context.Context, txs []string) error
+	Sign(ctx context.Context, txs []string) error
 	Reset(ctx context.Context) error
 	Pop(ctx context.Context) ([]string, error)
 	AllSigned(ctx context.Context) (bool, error)

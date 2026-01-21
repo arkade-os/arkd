@@ -2077,7 +2077,7 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 	}
 
 	// TODO move forfeit validation outside of ports.LiveStore
-	if err := s.cache.ForfeitTxs().Verify(ctx, forfeitTxs); err != nil {
+	if err := s.cache.ForfeitTxs().Sign(ctx, forfeitTxs); err != nil {
 		return errors.INVALID_FORFEIT_TXS.New("failed to verify forfeit txs: %w", err).
 			WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
 	}
