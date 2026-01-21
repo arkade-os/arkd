@@ -3237,8 +3237,6 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 			return
 		}
 
-		fmt.Printf("events %+v", changes)
-
 		if err := s.saveEvents(ctx, roundId, changes); err != nil {
 			log.WithError(err).Error("failed to store new round events")
 		}
