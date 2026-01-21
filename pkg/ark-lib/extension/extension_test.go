@@ -46,7 +46,7 @@ var (
 )
 
 func testAssetEncodeDecodeRoundTrip(t *testing.T) {
-	asset := AssetGroup{
+	ag := AssetGroup{
 		AssetId: &AssetId{
 			Txid:  deterministicBytesArray(0x3c),
 			Index: 2,
@@ -87,19 +87,57 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 		Immutable: true,
 	}
 
-	encoded, err := asset.Encode()
+	encoded, err := ag.Encode()
 	require.NoError(t, err)
 	require.NotEmpty(t, encoded)
 
 	var decoded AssetGroup
 
 	require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
-	require.Equal(t, asset, decoded)
+	require.Equal(t, ag, decoded)
+
+	decoded.normalizeAssetSlices()
+	ag.normalizeAssetSlices()
+	require.Equal(t, ag.AssetId.Index, decoded.AssetId.Index)
+	require.Equal(t, ag.Immutable, decoded.Immutable)
+	require.Equal(t, ag.ControlAsset.Type, decoded.ControlAsset.Type)
+	require.Equal(t, ag.Metadata, decoded.Metadata)
+	require.Equal(t, ag.Inputs[0].Vin, decoded.Inputs[0].Vin)
+	require.Equal(t, ag.Outputs[0].Vout, decoded.Outputs[0].Vout)
 
 	var nilAssetGroup *AssetGroup
 	_, err = nilAssetGroup.Encode()
 	require.Error(t, err)
 	require.Equal(t, "cannot encode nil AssetGroup", fmt.Sprint(err))
+}
+
+func TestAssetGroup_Encode_ErrorUnknownInputType(t *testing.T) {
+	t.Parallel()
+	ag := &AssetGroup{
+		Inputs: []AssetInput{{Type: AssetType(99)}},
+	}
+	_, err := ag.Encode()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown asset input type")
+}
+
+func TestAssetGroup_Decode_Truncated(t *testing.T) {
+	t.Parallel()
+	ag := &AssetGroup{
+		Inputs:  []AssetInput{{Type: AssetTypeLocal, Vin: 5, Amount: 555}},
+		Outputs: []AssetOutput{{Type: AssetTypeLocal, Vout: 6, Amount: 666}},
+	}
+	data, err := ag.Encode()
+	require.NoError(t, err)
+	if len(data) < 5 {
+		t.Skip("encoded data too small to truncate")
+	}
+	// Truncate last 3 bytes to simulate incomplete data
+	tr := data[:len(data)-3]
+	var out AssetGroup
+	err = out.Decode(bytes.NewReader(tr))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected EOF")
 }
 
 // deeper testing for Encode and DecodeToExtensionPacket is in the TestEncodeDecodeAssetPacket

@@ -2,6 +2,7 @@ package extension
 
 import (
 	"bytes"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -176,8 +177,16 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 			IntentId: []byte{0xca, 0xfe, 0xba, 0xbe},
 		}},
 		{Type: AssetTypeTeleport, Witness: TeleportWitness{
+			Script:   nil,
+			IntentId: []byte{0xca, 0xfe, 0xba, 0xbe},
+		}},
+		{Type: AssetTypeTeleport, Witness: TeleportWitness{
 			Script:   []byte{0xde, 0xad, 0xbe, 0xef},
 			IntentId: []byte{},
+		}},
+		{Type: AssetTypeTeleport, Witness: TeleportWitness{
+			Script:   []byte{0xde, 0xad, 0xbe, 0xef},
+			IntentId: nil,
 		}},
 	}
 	buf := bytes.NewBuffer(nil)
@@ -193,11 +202,11 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 		case AssetTypeLocal:
 			require.Equal(t, inputs[idx].Vin, got[idx].Vin)
 		case AssetTypeTeleport:
-			switch idx {
-			case 5:
+			switch {
+			case idx == 5 || idx == 6:
 				require.True(t, bytes.Equal([]byte{}, got[idx].Witness.Script))
 				require.True(t, bytes.Equal(inputs[idx].Witness.IntentId, got[idx].Witness.IntentId))
-			case 6:
+			case idx == 7 || idx == 8:
 				require.True(t, bytes.Equal(inputs[idx].Witness.Script, got[idx].Witness.Script))
 				require.True(t, bytes.Equal([]byte{}, got[idx].Witness.IntentId))
 			default:
@@ -225,87 +234,125 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 		tr := bytes.NewBuffer(b[:len(b)-1])
 		_, err := decodeAssetInputList(tr, &scratch)
 		require.Error(t, err)
-	}
-}
-
-func TestEncodeDecodeAssetInputList_MixedTeleportCombos(t *testing.T) {
-	t.Parallel()
-	var scratch [8]byte
-	// build inputs without referencing AssetWitness type directly
-	in1 := AssetInput{Type: AssetTypeLocal, Vin: 7, Amount: 700}
-	in2 := AssetInput{Type: AssetTypeTeleport, Amount: 2000} // empty witness
-	in3 := AssetInput{Type: AssetTypeTeleport, Amount: 3000}
-	// set witness fields on in2 and in3 by accessing the anonymous Witness field
-	in2.Witness.Script = []byte{}
-	in2.Witness.IntentId = []byte{}
-	in3.Witness.Script = []byte{0x01}
-	in3.Witness.IntentId = []byte{}
-
-	inputs := []AssetInput{in1, in2, in3}
-	buf := bytes.NewBuffer(nil)
-	require.NoError(t, encodeAssetInputList(buf, inputs, &scratch))
-	got, err := decodeAssetInputList(buf, &scratch)
-	require.NoError(t, err)
-	require.Equal(t, len(inputs), len(got))
-	for i := range inputs {
-		require.Equal(t, inputs[i].Type, got[i].Type)
-		require.Equal(t, inputs[i].Amount, got[i].Amount)
-		if inputs[i].Type == AssetTypeLocal {
-			require.Equal(t, inputs[i].Vin, got[i].Vin)
-		} else {
-			require.True(t, bytes.Equal(inputs[i].Witness.Script, got[i].Witness.Script))
-			require.True(t, bytes.Equal(inputs[i].Witness.IntentId, got[i].Witness.IntentId))
-		}
-	}
-}
-
-func TestEncodeDecodeAssetOutputList_MixedTeleportCombos(t *testing.T) {
-	t.Parallel()
-	var scratch [8]byte
-	outputs := []AssetOutput{
-		// local
-		{Type: AssetTypeLocal, Vout: 2, Amount: 250},
-		// teleport with nil script
-		{Type: AssetTypeTeleport, Script: nil, Amount: 9999},
-		// teleport with short script
-		{Type: AssetTypeTeleport, Script: []byte{0xaa, 0xbb}, Amount: 12345},
-	}
-	buf := bytes.NewBuffer(nil)
-	require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
-	got, err := decodeAssetOutputList(buf, &scratch)
-	require.NoError(t, err)
-	require.Equal(t, len(outputs), len(got))
-	for i := range outputs {
-		require.Equal(t, outputs[i].Type, got[i].Type)
-		require.Equal(t, outputs[i].Amount, got[i].Amount)
-		if outputs[i].Type == AssetTypeLocal {
-			require.Equal(t, outputs[i].Vout, got[i].Vout)
-		} else {
-			require.True(t, bytes.Equal(outputs[i].Script, got[i].Script))
-		}
+		require.Equal(t, "unexpected EOF", err.Error())
 	}
 }
 
 func TestPresenceBitCombinations(t *testing.T) {
 	t.Parallel()
-	// construct a presence byte with metadata + immutable but no asset id or control asset
-	presence := uint8(0)
-	presence |= maskMetadata
-	presence |= maskImmutable
-	// check bits
-	require.Equal(t, uint8(maskMetadata|maskImmutable), presence)
 
-	// ensure mask operations are idempotent
-	presence |= maskMetadata
-	require.Equal(t, uint8(maskMetadata|maskImmutable), presence)
+	cases := []struct {
+		name      string
+		assetId   bool
+		control   bool
+		metadata  bool
+		immutable bool
+	}{
+		{"none", false, false, false, false},
+		{"assetId", true, false, false, false},
+		{"control", false, true, false, false},
+		{"metadata", false, false, true, false},
+		{"immutable", false, false, false, true},
+		{"assetId_control", true, true, false, false},
+		{"all", true, true, true, true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			var ag AssetGroup
+			if c.assetId {
+				var txh [TX_HASH_SIZE]byte
+				txh[0] = 1
+				ag.AssetId = &AssetId{TxHash: txh, Index: 1}
+			}
+			if c.control {
+				ag.ControlAsset = &AssetRef{Type: AssetRefByGroup, GroupIndex: 2}
+			}
+			if c.metadata {
+				ag.Metadata = []Metadata{{Key: "k", Value: "v"}}
+			}
+			ag.Immutable = c.immutable
+
+			data, err := ag.Encode()
+			require.NoError(t, err)
+			require.True(t, len(data) > 0)
+
+			// first byte is the presence
+			presence := data[0]
+			expected := uint8(0)
+			if c.assetId {
+				expected |= maskAssetId
+			}
+			if c.control {
+				expected |= maskControlAsset
+			}
+			if c.metadata {
+				expected |= maskMetadata
+			}
+			if c.immutable {
+				expected |= maskImmutable
+			}
+			require.Equal(t, expected, presence)
+
+			// decode and verify fields
+			var out AssetGroup
+			require.NoError(t, out.Decode(bytes.NewReader(data)))
+			if c.assetId {
+				require.NotNil(t, out.AssetId)
+			} else {
+				require.Nil(t, out.AssetId)
+			}
+			if c.control {
+				require.NotNil(t, out.ControlAsset)
+			} else {
+				require.Nil(t, out.ControlAsset)
+			}
+			if c.metadata {
+				require.NotZero(t, len(out.Metadata))
+			} else {
+				require.Zero(t, len(out.Metadata))
+			}
+			require.Equal(t, c.immutable, out.Immutable)
+		})
+	}
+}
+
+type failWriter struct{}
+
+func (f failWriter) Write(p []byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+func TestEncodeAssetRef_WriteFail(t *testing.T) {
+	t.Parallel()
+	// failing writer that always returns an error
+	var scratch [8]byte
+	ref := &AssetRef{Type: AssetRefByGroup, GroupIndex: 1}
+	fw := failWriter{}
+	err := encodeAssetRef(fw, ref, &scratch)
+	require.Error(t, err)
+	require.Equal(t, io.ErrUnexpectedEOF, err)
 }
 
 func TestEncodeDecodeAssetOutputList(t *testing.T) {
 	t.Parallel()
 	var scratch [8]byte
 	outputs := []AssetOutput{
-		{Type: AssetTypeLocal, Vout: 1, Amount: 500},
-		{Type: AssetTypeTeleport, Script: []byte{0x03, 0x04}, Amount: 1500},
+		{Type: AssetTypeLocal, Vout: 3, Amount: 1000},
+		{Type: AssetTypeLocal, Vout: 0, Amount: 0},
+		{Type: AssetTypeTeleport, Amount: 2000},
+		{Type: AssetTypeTeleport, Vout: 3, Amount: 2000},
+		{Type: AssetTypeTeleport, Vout: 3, Amount: 2000, Script: []byte{0xde, 0xad, 0xbe, 0xef}},
+		{Type: AssetTypeTeleport, Script: []byte{}},
+		{Type: AssetTypeTeleport, Script: nil},
+		{Type: AssetTypeLocal, Vout: 3, Amount: 2000, Script: []byte{0xde, 0xad, 0xbe, 0xef}},
+		{Type: AssetTypeLocal, Script: []byte{}},
+		{Type: AssetTypeLocal, Script: nil},
+		// large Amount values
+		{Type: AssetTypeLocal, Amount: ^uint64(0) - 1},
+		{Type: AssetTypeTeleport, Amount: ^uint64(0) - 1, Script: []byte{0xde, 0xad, 0xbe, 0xef}},
+		// case for large Vout value
+		{Type: AssetTypeLocal, Vout: ^uint32(0), Amount: 5000},
+		{Type: AssetTypeTeleport, Vout: ^uint32(0), Amount: 5000, Script: []byte{0xde, 0xad, 0xbe, 0xef}},
 	}
 	buf := bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
@@ -322,27 +369,36 @@ func TestEncodeDecodeAssetOutputList(t *testing.T) {
 			require.True(t, bytes.Equal(outputs[i].Script, got[i].Script))
 		}
 	}
-}
-
-func TestEncodeDecodeAssetOutputList_EdgeCases(t *testing.T) {
-	t.Parallel()
-	var scratch [8]byte
-	// teleport with zero-length script and large amount
-	outputs := []AssetOutput{
-		{Type: AssetTypeTeleport, Script: []byte{}, Amount: ^uint64(0) - 1},
+	// test with unknown type
+	outputs = []AssetOutput{
+		{Type: AssetType(10), Vout: 3, Amount: 1000},
 	}
-	buf := bytes.NewBuffer(nil)
+	buf = bytes.NewBuffer(nil)
+	err = encodeAssetOutputList(buf, outputs, &scratch)
+	require.Error(t, err)
+	require.Equal(t, "unknown asset output type: 10", err.Error())
+
+	// trigger unknown type on decode
+	buf = bytes.NewBuffer(nil)
+	// manually craft invalid data
+	buf.Write([]byte{1})  // count = 1
+	buf.Write([]byte{10}) // invalid type
+	_, err = decodeAssetOutputList(buf, &scratch)
+	require.Error(t, err)
+	require.Equal(t, "unknown asset output type: 10", err.Error())
+
+	// test decode with truncated data
+	outputs = []AssetOutput{
+		{Type: AssetTypeLocal, Vout: 1, Amount: 10},
+	}
+	buf = bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
-	got, err := decodeAssetOutputList(buf, &scratch)
-	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, outputs[0].Type, got[0].Type)
-	require.Equal(t, outputs[0].Amount, got[0].Amount)
-	// truncated decode should fail
 	b := buf.Bytes()
-	if len(b) > 2 {
-		tr := bytes.NewBuffer(b[:len(b)-2])
+	// truncate buffer to simulate corruption
+	if len(b) > 0 {
+		tr := bytes.NewBuffer(b[:len(b)-1])
 		_, err := decodeAssetOutputList(tr, &scratch)
 		require.Error(t, err)
+		require.Equal(t, "unexpected EOF", err.Error())
 	}
 }
