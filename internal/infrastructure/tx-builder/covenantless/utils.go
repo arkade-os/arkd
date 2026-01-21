@@ -52,7 +52,6 @@ func getOutputVtxosLeaves(
 	}
 
 	leaves := make([]tree.Leaf, 0)
-
 	for i, intent := range intents {
 		cosigners := cosignersPublicKeys[i]
 

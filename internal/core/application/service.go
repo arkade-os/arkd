@@ -1471,7 +1471,6 @@ func (s *service) RegisterIntent(
 	boardingUtxos := make([]boardingIntentInput, 0)
 
 	outpoints := proof.GetOutpoints()
-
 	if len(outpoints) == 0 {
 		return "", errors.INVALID_INTENT_PSBT.New("proof misses inputs").
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
@@ -1761,13 +1760,6 @@ func (s *service) RegisterIntent(
 		taptreeFields, _ := txutils.GetArkPsbtFields(
 			&proof.Packet, i+1, txutils.VtxoTaprootTreeField,
 		)
-
-		if err != nil {
-			return "", errors.INVALID_PSBT_INPUT.New(
-				"failed to get asset seal field for input %d: %w", i+1, err,
-			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
-		}
-
 		tapscripts := make([]string, 0)
 		if len(taptreeFields) > 0 {
 			tapscripts = taptreeFields[0]
@@ -1779,7 +1771,6 @@ func (s *service) RegisterIntent(
 		)
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
-
 		if err != nil || len(vtxosResult) == 0 {
 			// reject if intent specifies onchain outputs and boarding inputs
 			if len(message.OnchainOutputIndexes) > 0 {
@@ -2078,7 +2069,7 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 
 	// TODO move forfeit validation outside of ports.LiveStore
 	if err := s.cache.ForfeitTxs().Sign(ctx, forfeitTxs); err != nil {
-		return errors.INVALID_FORFEIT_TXS.New("failed to verify forfeit txs: %w", err).
+		return errors.INVALID_FORFEIT_TXS.New("failed to sign forfeit txs: %w", err).
 			WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
 	}
 

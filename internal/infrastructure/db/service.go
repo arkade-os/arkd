@@ -182,7 +182,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
-
 	default:
 		return nil, fmt.Errorf("unknown event store db type")
 	}
