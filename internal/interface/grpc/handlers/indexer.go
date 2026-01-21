@@ -404,59 +404,6 @@ func (e *indexerService) GetBatchSweepTransactions(
 	}, nil
 }
 
-func (h *indexerService) UnsubscribeForTeleportHash(
-	ctx context.Context, request *arkv1.UnsubscribeForTeleportHashRequest,
-) (*arkv1.UnsubscribeForTeleportHashResponse, error) {
-	subscriptionId := request.GetSubscriptionId()
-	if len(subscriptionId) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing subscription id")
-	}
-
-	hashes := request.GetTeleportHashes()
-	if len(hashes) == 0 {
-		// remove all topics
-		if err := h.teleportSubsHandler.removeAllTopics(subscriptionId); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		h.teleportSubsHandler.removeListener(subscriptionId)
-		return &arkv1.UnsubscribeForTeleportHashResponse{}, nil
-	}
-
-	if err := h.teleportSubsHandler.removeTopics(subscriptionId, hashes); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	return &arkv1.UnsubscribeForTeleportHashResponse{}, nil
-}
-
-func (h *indexerService) SubscribeForTeleportHash(
-	ctx context.Context, req *arkv1.SubscribeForTeleportHashRequest,
-) (*arkv1.SubscribeForTeleportHashResponse, error) {
-	subscriptionId := req.GetSubscriptionId()
-	hashes := req.GetTeleportHashes()
-	if len(hashes) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing teleport hashes")
-	}
-
-	if len(subscriptionId) == 0 {
-		// create new listener
-		subscriptionId = uuid.NewString()
-
-		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, hashes)
-
-		h.teleportSubsHandler.pushListener(listener)
-		h.teleportSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-	} else {
-		// update listener topic
-		if err := h.teleportSubsHandler.addTopics(subscriptionId, hashes); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-	}
-	return &arkv1.SubscribeForTeleportHashResponse{
-		SubscriptionId: subscriptionId,
-	}, nil
-}
-
 func (h *indexerService) GetSubscription(
 	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
 ) error {

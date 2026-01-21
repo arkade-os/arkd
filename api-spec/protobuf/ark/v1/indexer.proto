@@ -107,23 +107,6 @@ service IndexerService {
     };
   };
 
-  // SubscribeForTeleportHash allows to subscribe for tx notifications related to the provided
-  // teleport hashes. It can also be used to update an existing subscribtion by adding new hashes to it.
-  rpc SubscribeForTeleportHash(SubscribeForTeleportHashRequest) returns (SubscribeForTeleportHashResponse) {
-    option (meshapi.gateway.http) = {
-      post: "/v1/indexer/teleport/subscribe"
-      body: "*"
-    };
-  };
-
-  // UnsubscribeForTeleportHash allows to remove teleport hashes from an existing subscription.
-  rpc UnsubscribeForTeleportHash(UnsubscribeForTeleportHashRequest) returns (UnsubscribeForTeleportHashResponse) {
-    option (meshapi.gateway.http) = {
-      post: "/v1/indexer/teleport/unsubscribe"
-      body: "*"
-    };
-  };
-
   // UnsubscribeForScripts allows to remove scripts from an existing subscription.
   rpc UnsubscribeForScripts(UnsubscribeForScriptsRequest) returns (UnsubscribeForScriptsResponse) {
     option (meshapi.gateway.http) = {
@@ -373,24 +356,6 @@ message UnsubscribeForScriptsRequest {
 }
 
 message UnsubscribeForScriptsResponse {}
-
-message SubscribeForTeleportHashRequest {
-  repeated string teleport_hashes = 1;
-  // If set, update an existing subscription
-  string subscription_id = 2;
-}
-
-message SubscribeForTeleportHashResponse {
-  string subscription_id = 1;
-}
-
-message UnsubscribeForTeleportHashRequest {
-  string subscription_id = 1;
-  // If empty, unsubscribe all teleport hashes
-  repeated string teleport_hashes = 2; 
-}
-
-message UnsubscribeForTeleportHashResponse {}
 
 message TeleportEvent {
   string teleport_hash = 1;
