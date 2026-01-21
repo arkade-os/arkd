@@ -142,8 +142,8 @@ func TestMain(m *testing.M) {
 
 func TestService(t *testing.T) {
 	dbDir := t.TempDir()
-	// pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
-	// pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
+	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
+	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
@@ -166,22 +166,22 @@ func TestService(t *testing.T) {
 				DataStoreConfig:  []interface{}{dbDir},
 			},
 		},
-		// {
-		// 	name: "repo_manager_with_postgres_stores",
-		// 	config: db.ServiceConfig{
-		// 		EventStoreType:   "postgres",
-		// 		DataStoreType:    "postgres",
-		// 		EventStoreConfig: []interface{}{pgEventDns},
-		// 		DataStoreConfig:  []interface{}{pgDns},
-		// 	},
-		// },
+		{
+			name: "repo_manager_with_postgres_stores",
+			config: db.ServiceConfig{
+				EventStoreType:   "postgres",
+				DataStoreType:    "postgres",
+				EventStoreConfig: []interface{}{pgEventDns, false},
+				DataStoreConfig:  []interface{}{pgDns, false},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc, err := db.NewService(tt.config, nil)
 			require.NoError(t, err)
-			defer svc.Close()
+			require.NotNil(t, svc)
 
 			testEventRepository(t, svc)
 			testRoundRepository(t, svc)
@@ -191,6 +191,8 @@ func TestService(t *testing.T) {
 			testConvictionRepository(t, svc)
 			testAssetRepository(t, svc)
 			testFeeRepository(t, svc)
+
+			svc.Close()
 		})
 	}
 }
@@ -1707,7 +1709,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 
 		asset := domain.AssetGroup{
-			ID:        "asset-1",
+			ID:        "asset-3",
 			Quantity:  10,
 			Immutable: true,
 			Metadata: []domain.AssetMetadata{
@@ -1746,7 +1748,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 		script := randomString(32)
 		intentID := randomString(32)
-		assetID := randomString(32)
+		assetID := "asset-3"
 		outputIndex := uint32(7)
 		amount := uint64(5000)
 

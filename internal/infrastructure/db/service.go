@@ -284,6 +284,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
+		assetStore, err = assetStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
+		}
 		intentFeesStore, err = intentFeesStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)

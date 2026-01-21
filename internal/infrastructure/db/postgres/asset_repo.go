@@ -20,7 +20,7 @@ func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 	}
 	db, ok := config[0].(*sql.DB)
 	if !ok {
-		return nil, fmt.Errorf("cannot open vtxo repository: invalid config")
+		return nil, fmt.Errorf("cannot open asset repository: invalid config")
 	}
 
 	return &assetRepository{
