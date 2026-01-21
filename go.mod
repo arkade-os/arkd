@@ -39,6 +39,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/lightningnetwork/lnd v0.18.2-beta
+	github.com/ltcsuite/ltcd v0.23.5
 	github.com/meshapi/grpc-api-gateway v0.1.0
 	github.com/nbd-wtf/go-nostr v0.40.1
 	github.com/redis/go-redis/v9 v9.10.0
@@ -157,7 +158,6 @@ require (
 	github.com/lightningnetwork/lnd/tlv v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/tor v1.1.3 // indirect
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
-	github.com/ltcsuite/ltcd v0.23.5 // indirect
 	github.com/ltcsuite/ltcd/chaincfg/chainhash v1.0.2 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

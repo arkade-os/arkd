@@ -87,9 +87,9 @@ func (v *offchainTxRepository) GetOffchainTx(
 		vw := row.OffchainTxVw
 		if vw.CheckpointTxid != "" && vw.CheckpointTx != "" {
 			checkpointTxs[vw.CheckpointTxid] = vw.CheckpointTx
-			commitmentTxids[vw.CheckpointTxid] = vw.CommitmentTxid
-			if vw.IsRootCommitmentTxid {
-				rootCommitmentTxId = vw.CommitmentTxid
+			commitmentTxids[vw.CheckpointTxid] = vw.CommitmentTxid.String
+			if vw.IsRootCommitmentTxid.Bool {
+				rootCommitmentTxId = vw.CommitmentTxid.String
 			}
 		}
 	}

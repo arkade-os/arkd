@@ -1832,6 +1832,116 @@ func (*GetTransactionsStreamResponse_ArkTx) isGetTransactionsStreamResponse_Data
 
 func (*GetTransactionsStreamResponse_Heartbeat) isGetTransactionsStreamResponse_Data() {}
 
+type GetIntentRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Filter:
+	//
+	//	*GetIntentRequest_Txid
+	Filter        isGetIntentRequest_Filter `protobuf_oneof:"filter"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntentRequest) Reset() {
+	*x = GetIntentRequest{}
+	mi := &file_ark_v1_service_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntentRequest) ProtoMessage() {}
+
+func (x *GetIntentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_service_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntentRequest.ProtoReflect.Descriptor instead.
+func (*GetIntentRequest) Descriptor() ([]byte, []int) {
+	return file_ark_v1_service_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *GetIntentRequest) GetFilter() isGetIntentRequest_Filter {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
+func (x *GetIntentRequest) GetTxid() string {
+	if x != nil {
+		if x, ok := x.Filter.(*GetIntentRequest_Txid); ok {
+			return x.Txid
+		}
+	}
+	return ""
+}
+
+type isGetIntentRequest_Filter interface {
+	isGetIntentRequest_Filter()
+}
+
+type GetIntentRequest_Txid struct {
+	Txid string `protobuf:"bytes,1,opt,name=txid,proto3,oneof"`
+}
+
+func (*GetIntentRequest_Txid) isGetIntentRequest_Filter() {}
+
+type GetIntentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Intent        *Intent                `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIntentResponse) Reset() {
+	*x = GetIntentResponse{}
+	mi := &file_ark_v1_service_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIntentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIntentResponse) ProtoMessage() {}
+
+func (x *GetIntentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_service_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIntentResponse.ProtoReflect.Descriptor instead.
+func (*GetIntentResponse) Descriptor() ([]byte, []int) {
+	return file_ark_v1_service_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *GetIntentResponse) GetIntent() *Intent {
+	if x != nil {
+		return x.Intent
+	}
+	return nil
+}
+
 var File_ark_v1_service_proto protoreflect.FileDescriptor
 
 const file_ark_v1_service_proto_rawDesc = "" +
@@ -1954,7 +2064,12 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\rcommitment_tx\x18\x01 \x01(\v2\x16.ark.v1.TxNotificationH\x00R\fcommitmentTx\x12/\n" +
 	"\x06ark_tx\x18\x02 \x01(\v2\x16.ark.v1.TxNotificationH\x00R\x05arkTx\x121\n" +
 	"\theartbeat\x18\x03 \x01(\v2\x11.ark.v1.HeartbeatH\x00R\theartbeatB\x06\n" +
-	"\x04data2\xbc\f\n" +
+	"\x04data\"2\n" +
+	"\x10GetIntentRequest\x12\x14\n" +
+	"\x04txid\x18\x01 \x01(\tH\x00R\x04txidB\b\n" +
+	"\x06filter\";\n" +
+	"\x11GetIntentResponse\x12&\n" +
+	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent2\x8f\r\n" +
 	"\n" +
 	"ArkService\x12I\n" +
 	"\aGetInfo\x12\x16.ark.v1.GetInfoRequest\x1a\x17.ark.v1.GetInfoResponse\"\r\xb2J\n" +
@@ -1972,7 +2087,9 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\n" +
 	"FinalizeTx\x12\x19.ark.v1.FinalizeTxRequest\x1a\x1a.ark.v1.FinalizeTxResponse\"\x17\xb2J\x14B\x01*\"\x0f/v1/tx/finalize\x12a\n" +
 	"\fGetPendingTx\x12\x1b.ark.v1.GetPendingTxRequest\x1a\x1c.ark.v1.GetPendingTxResponse\"\x16\xb2J\x13B\x01*\"\x0e/v1/tx/pending\x12z\n" +
-	"\x15GetTransactionsStream\x12$.ark.v1.GetTransactionsStreamRequest\x1a%.ark.v1.GetTransactionsStreamResponse\"\x12\xb2J\x0fb\x04\b\x01\x18\x01\x12\a/v1/txs0\x01B{\n" +
+	"\x15GetTransactionsStream\x12$.ark.v1.GetTransactionsStreamRequest\x1a%.ark.v1.GetTransactionsStreamResponse\"\x12\xb2J\x0fb\x04\b\x01\x18\x01\x12\a/v1/txs0\x01\x12Q\n" +
+	"\tGetIntent\x12\x18.ark.v1.GetIntentRequest\x1a\x19.ark.v1.GetIntentResponse\"\x0f\xb2J\f\x12\n" +
+	"/v1/intentB{\n" +
 	"\n" +
 	"com.ark.v1B\fServiceProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 
@@ -1988,7 +2105,7 @@ func file_ark_v1_service_proto_rawDescGZIP() []byte {
 	return file_ark_v1_service_proto_rawDescData
 }
 
-var file_ark_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
+var file_ark_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
 var file_ark_v1_service_proto_goTypes = []any{
 	(*GetInfoRequest)(nil),                 // 0: ark.v1.GetInfoRequest
 	(*GetInfoResponse)(nil),                // 1: ark.v1.GetInfoResponse
@@ -2020,88 +2137,93 @@ var file_ark_v1_service_proto_goTypes = []any{
 	(*GetPendingTxResponse)(nil),           // 27: ark.v1.GetPendingTxResponse
 	(*GetTransactionsStreamRequest)(nil),   // 28: ark.v1.GetTransactionsStreamRequest
 	(*GetTransactionsStreamResponse)(nil),  // 29: ark.v1.GetTransactionsStreamResponse
-	nil,                                    // 30: ark.v1.GetInfoResponse.ServiceStatusEntry
-	nil,                                    // 31: ark.v1.SubmitTreeNoncesRequest.TreeNoncesEntry
-	nil,                                    // 32: ark.v1.SubmitTreeSignaturesRequest.TreeSignaturesEntry
-	(*FeeInfo)(nil),                        // 33: ark.v1.FeeInfo
-	(*ScheduledSession)(nil),               // 34: ark.v1.ScheduledSession
-	(*DeprecatedSigner)(nil),               // 35: ark.v1.DeprecatedSigner
-	(*Intent)(nil),                         // 36: ark.v1.Intent
-	(*BatchStartedEvent)(nil),              // 37: ark.v1.BatchStartedEvent
-	(*BatchFinalizationEvent)(nil),         // 38: ark.v1.BatchFinalizationEvent
-	(*BatchFinalizedEvent)(nil),            // 39: ark.v1.BatchFinalizedEvent
-	(*BatchFailedEvent)(nil),               // 40: ark.v1.BatchFailedEvent
-	(*TreeSigningStartedEvent)(nil),        // 41: ark.v1.TreeSigningStartedEvent
-	(*TreeNoncesAggregatedEvent)(nil),      // 42: ark.v1.TreeNoncesAggregatedEvent
-	(*TreeTxEvent)(nil),                    // 43: ark.v1.TreeTxEvent
-	(*TreeSignatureEvent)(nil),             // 44: ark.v1.TreeSignatureEvent
-	(*TreeNoncesEvent)(nil),                // 45: ark.v1.TreeNoncesEvent
-	(*Heartbeat)(nil),                      // 46: ark.v1.Heartbeat
-	(*StreamStartedEvent)(nil),             // 47: ark.v1.StreamStartedEvent
-	(*PendingTx)(nil),                      // 48: ark.v1.PendingTx
-	(*TxNotification)(nil),                 // 49: ark.v1.TxNotification
+	(*GetIntentRequest)(nil),               // 30: ark.v1.GetIntentRequest
+	(*GetIntentResponse)(nil),              // 31: ark.v1.GetIntentResponse
+	nil,                                    // 32: ark.v1.GetInfoResponse.ServiceStatusEntry
+	nil,                                    // 33: ark.v1.SubmitTreeNoncesRequest.TreeNoncesEntry
+	nil,                                    // 34: ark.v1.SubmitTreeSignaturesRequest.TreeSignaturesEntry
+	(*FeeInfo)(nil),                        // 35: ark.v1.FeeInfo
+	(*ScheduledSession)(nil),               // 36: ark.v1.ScheduledSession
+	(*DeprecatedSigner)(nil),               // 37: ark.v1.DeprecatedSigner
+	(*Intent)(nil),                         // 38: ark.v1.Intent
+	(*BatchStartedEvent)(nil),              // 39: ark.v1.BatchStartedEvent
+	(*BatchFinalizationEvent)(nil),         // 40: ark.v1.BatchFinalizationEvent
+	(*BatchFinalizedEvent)(nil),            // 41: ark.v1.BatchFinalizedEvent
+	(*BatchFailedEvent)(nil),               // 42: ark.v1.BatchFailedEvent
+	(*TreeSigningStartedEvent)(nil),        // 43: ark.v1.TreeSigningStartedEvent
+	(*TreeNoncesAggregatedEvent)(nil),      // 44: ark.v1.TreeNoncesAggregatedEvent
+	(*TreeTxEvent)(nil),                    // 45: ark.v1.TreeTxEvent
+	(*TreeSignatureEvent)(nil),             // 46: ark.v1.TreeSignatureEvent
+	(*TreeNoncesEvent)(nil),                // 47: ark.v1.TreeNoncesEvent
+	(*Heartbeat)(nil),                      // 48: ark.v1.Heartbeat
+	(*StreamStartedEvent)(nil),             // 49: ark.v1.StreamStartedEvent
+	(*PendingTx)(nil),                      // 50: ark.v1.PendingTx
+	(*TxNotification)(nil),                 // 51: ark.v1.TxNotification
 }
 var file_ark_v1_service_proto_depIdxs = []int32{
-	33, // 0: ark.v1.GetInfoResponse.fees:type_name -> ark.v1.FeeInfo
-	34, // 1: ark.v1.GetInfoResponse.scheduled_session:type_name -> ark.v1.ScheduledSession
-	35, // 2: ark.v1.GetInfoResponse.deprecated_signers:type_name -> ark.v1.DeprecatedSigner
-	30, // 3: ark.v1.GetInfoResponse.service_status:type_name -> ark.v1.GetInfoResponse.ServiceStatusEntry
-	36, // 4: ark.v1.RegisterIntentRequest.intent:type_name -> ark.v1.Intent
-	36, // 5: ark.v1.EstimateIntentFeeRequest.intent:type_name -> ark.v1.Intent
-	36, // 6: ark.v1.DeleteIntentRequest.intent:type_name -> ark.v1.Intent
-	31, // 7: ark.v1.SubmitTreeNoncesRequest.tree_nonces:type_name -> ark.v1.SubmitTreeNoncesRequest.TreeNoncesEntry
-	32, // 8: ark.v1.SubmitTreeSignaturesRequest.tree_signatures:type_name -> ark.v1.SubmitTreeSignaturesRequest.TreeSignaturesEntry
-	37, // 9: ark.v1.GetEventStreamResponse.batch_started:type_name -> ark.v1.BatchStartedEvent
-	38, // 10: ark.v1.GetEventStreamResponse.batch_finalization:type_name -> ark.v1.BatchFinalizationEvent
-	39, // 11: ark.v1.GetEventStreamResponse.batch_finalized:type_name -> ark.v1.BatchFinalizedEvent
-	40, // 12: ark.v1.GetEventStreamResponse.batch_failed:type_name -> ark.v1.BatchFailedEvent
-	41, // 13: ark.v1.GetEventStreamResponse.tree_signing_started:type_name -> ark.v1.TreeSigningStartedEvent
-	42, // 14: ark.v1.GetEventStreamResponse.tree_nonces_aggregated:type_name -> ark.v1.TreeNoncesAggregatedEvent
-	43, // 15: ark.v1.GetEventStreamResponse.tree_tx:type_name -> ark.v1.TreeTxEvent
-	44, // 16: ark.v1.GetEventStreamResponse.tree_signature:type_name -> ark.v1.TreeSignatureEvent
-	45, // 17: ark.v1.GetEventStreamResponse.tree_nonces:type_name -> ark.v1.TreeNoncesEvent
-	46, // 18: ark.v1.GetEventStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
-	47, // 19: ark.v1.GetEventStreamResponse.stream_started:type_name -> ark.v1.StreamStartedEvent
+	35, // 0: ark.v1.GetInfoResponse.fees:type_name -> ark.v1.FeeInfo
+	36, // 1: ark.v1.GetInfoResponse.scheduled_session:type_name -> ark.v1.ScheduledSession
+	37, // 2: ark.v1.GetInfoResponse.deprecated_signers:type_name -> ark.v1.DeprecatedSigner
+	32, // 3: ark.v1.GetInfoResponse.service_status:type_name -> ark.v1.GetInfoResponse.ServiceStatusEntry
+	38, // 4: ark.v1.RegisterIntentRequest.intent:type_name -> ark.v1.Intent
+	38, // 5: ark.v1.EstimateIntentFeeRequest.intent:type_name -> ark.v1.Intent
+	38, // 6: ark.v1.DeleteIntentRequest.intent:type_name -> ark.v1.Intent
+	33, // 7: ark.v1.SubmitTreeNoncesRequest.tree_nonces:type_name -> ark.v1.SubmitTreeNoncesRequest.TreeNoncesEntry
+	34, // 8: ark.v1.SubmitTreeSignaturesRequest.tree_signatures:type_name -> ark.v1.SubmitTreeSignaturesRequest.TreeSignaturesEntry
+	39, // 9: ark.v1.GetEventStreamResponse.batch_started:type_name -> ark.v1.BatchStartedEvent
+	40, // 10: ark.v1.GetEventStreamResponse.batch_finalization:type_name -> ark.v1.BatchFinalizationEvent
+	41, // 11: ark.v1.GetEventStreamResponse.batch_finalized:type_name -> ark.v1.BatchFinalizedEvent
+	42, // 12: ark.v1.GetEventStreamResponse.batch_failed:type_name -> ark.v1.BatchFailedEvent
+	43, // 13: ark.v1.GetEventStreamResponse.tree_signing_started:type_name -> ark.v1.TreeSigningStartedEvent
+	44, // 14: ark.v1.GetEventStreamResponse.tree_nonces_aggregated:type_name -> ark.v1.TreeNoncesAggregatedEvent
+	45, // 15: ark.v1.GetEventStreamResponse.tree_tx:type_name -> ark.v1.TreeTxEvent
+	46, // 16: ark.v1.GetEventStreamResponse.tree_signature:type_name -> ark.v1.TreeSignatureEvent
+	47, // 17: ark.v1.GetEventStreamResponse.tree_nonces:type_name -> ark.v1.TreeNoncesEvent
+	48, // 18: ark.v1.GetEventStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
+	49, // 19: ark.v1.GetEventStreamResponse.stream_started:type_name -> ark.v1.StreamStartedEvent
 	18, // 20: ark.v1.UpdateStreamTopicsRequest.modify:type_name -> ark.v1.ModifyTopics
 	19, // 21: ark.v1.UpdateStreamTopicsRequest.overwrite:type_name -> ark.v1.OverwriteTopics
-	36, // 22: ark.v1.GetPendingTxRequest.intent:type_name -> ark.v1.Intent
-	48, // 23: ark.v1.GetPendingTxResponse.pending_txs:type_name -> ark.v1.PendingTx
-	49, // 24: ark.v1.GetTransactionsStreamResponse.commitment_tx:type_name -> ark.v1.TxNotification
-	49, // 25: ark.v1.GetTransactionsStreamResponse.ark_tx:type_name -> ark.v1.TxNotification
-	46, // 26: ark.v1.GetTransactionsStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
-	0,  // 27: ark.v1.ArkService.GetInfo:input_type -> ark.v1.GetInfoRequest
-	2,  // 28: ark.v1.ArkService.RegisterIntent:input_type -> ark.v1.RegisterIntentRequest
-	4,  // 29: ark.v1.ArkService.EstimateIntentFee:input_type -> ark.v1.EstimateIntentFeeRequest
-	6,  // 30: ark.v1.ArkService.DeleteIntent:input_type -> ark.v1.DeleteIntentRequest
-	8,  // 31: ark.v1.ArkService.ConfirmRegistration:input_type -> ark.v1.ConfirmRegistrationRequest
-	10, // 32: ark.v1.ArkService.SubmitTreeNonces:input_type -> ark.v1.SubmitTreeNoncesRequest
-	12, // 33: ark.v1.ArkService.SubmitTreeSignatures:input_type -> ark.v1.SubmitTreeSignaturesRequest
-	14, // 34: ark.v1.ArkService.SubmitSignedForfeitTxs:input_type -> ark.v1.SubmitSignedForfeitTxsRequest
-	16, // 35: ark.v1.ArkService.GetEventStream:input_type -> ark.v1.GetEventStreamRequest
-	20, // 36: ark.v1.ArkService.UpdateStreamTopics:input_type -> ark.v1.UpdateStreamTopicsRequest
-	22, // 37: ark.v1.ArkService.SubmitTx:input_type -> ark.v1.SubmitTxRequest
-	24, // 38: ark.v1.ArkService.FinalizeTx:input_type -> ark.v1.FinalizeTxRequest
-	26, // 39: ark.v1.ArkService.GetPendingTx:input_type -> ark.v1.GetPendingTxRequest
-	28, // 40: ark.v1.ArkService.GetTransactionsStream:input_type -> ark.v1.GetTransactionsStreamRequest
-	1,  // 41: ark.v1.ArkService.GetInfo:output_type -> ark.v1.GetInfoResponse
-	3,  // 42: ark.v1.ArkService.RegisterIntent:output_type -> ark.v1.RegisterIntentResponse
-	5,  // 43: ark.v1.ArkService.EstimateIntentFee:output_type -> ark.v1.EstimateIntentFeeResponse
-	7,  // 44: ark.v1.ArkService.DeleteIntent:output_type -> ark.v1.DeleteIntentResponse
-	9,  // 45: ark.v1.ArkService.ConfirmRegistration:output_type -> ark.v1.ConfirmRegistrationResponse
-	11, // 46: ark.v1.ArkService.SubmitTreeNonces:output_type -> ark.v1.SubmitTreeNoncesResponse
-	13, // 47: ark.v1.ArkService.SubmitTreeSignatures:output_type -> ark.v1.SubmitTreeSignaturesResponse
-	15, // 48: ark.v1.ArkService.SubmitSignedForfeitTxs:output_type -> ark.v1.SubmitSignedForfeitTxsResponse
-	17, // 49: ark.v1.ArkService.GetEventStream:output_type -> ark.v1.GetEventStreamResponse
-	21, // 50: ark.v1.ArkService.UpdateStreamTopics:output_type -> ark.v1.UpdateStreamTopicsResponse
-	23, // 51: ark.v1.ArkService.SubmitTx:output_type -> ark.v1.SubmitTxResponse
-	25, // 52: ark.v1.ArkService.FinalizeTx:output_type -> ark.v1.FinalizeTxResponse
-	27, // 53: ark.v1.ArkService.GetPendingTx:output_type -> ark.v1.GetPendingTxResponse
-	29, // 54: ark.v1.ArkService.GetTransactionsStream:output_type -> ark.v1.GetTransactionsStreamResponse
-	41, // [41:55] is the sub-list for method output_type
-	27, // [27:41] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	38, // 22: ark.v1.GetPendingTxRequest.intent:type_name -> ark.v1.Intent
+	50, // 23: ark.v1.GetPendingTxResponse.pending_txs:type_name -> ark.v1.PendingTx
+	51, // 24: ark.v1.GetTransactionsStreamResponse.commitment_tx:type_name -> ark.v1.TxNotification
+	51, // 25: ark.v1.GetTransactionsStreamResponse.ark_tx:type_name -> ark.v1.TxNotification
+	48, // 26: ark.v1.GetTransactionsStreamResponse.heartbeat:type_name -> ark.v1.Heartbeat
+	38, // 27: ark.v1.GetIntentResponse.intent:type_name -> ark.v1.Intent
+	0,  // 28: ark.v1.ArkService.GetInfo:input_type -> ark.v1.GetInfoRequest
+	2,  // 29: ark.v1.ArkService.RegisterIntent:input_type -> ark.v1.RegisterIntentRequest
+	4,  // 30: ark.v1.ArkService.EstimateIntentFee:input_type -> ark.v1.EstimateIntentFeeRequest
+	6,  // 31: ark.v1.ArkService.DeleteIntent:input_type -> ark.v1.DeleteIntentRequest
+	8,  // 32: ark.v1.ArkService.ConfirmRegistration:input_type -> ark.v1.ConfirmRegistrationRequest
+	10, // 33: ark.v1.ArkService.SubmitTreeNonces:input_type -> ark.v1.SubmitTreeNoncesRequest
+	12, // 34: ark.v1.ArkService.SubmitTreeSignatures:input_type -> ark.v1.SubmitTreeSignaturesRequest
+	14, // 35: ark.v1.ArkService.SubmitSignedForfeitTxs:input_type -> ark.v1.SubmitSignedForfeitTxsRequest
+	16, // 36: ark.v1.ArkService.GetEventStream:input_type -> ark.v1.GetEventStreamRequest
+	20, // 37: ark.v1.ArkService.UpdateStreamTopics:input_type -> ark.v1.UpdateStreamTopicsRequest
+	22, // 38: ark.v1.ArkService.SubmitTx:input_type -> ark.v1.SubmitTxRequest
+	24, // 39: ark.v1.ArkService.FinalizeTx:input_type -> ark.v1.FinalizeTxRequest
+	26, // 40: ark.v1.ArkService.GetPendingTx:input_type -> ark.v1.GetPendingTxRequest
+	28, // 41: ark.v1.ArkService.GetTransactionsStream:input_type -> ark.v1.GetTransactionsStreamRequest
+	30, // 42: ark.v1.ArkService.GetIntent:input_type -> ark.v1.GetIntentRequest
+	1,  // 43: ark.v1.ArkService.GetInfo:output_type -> ark.v1.GetInfoResponse
+	3,  // 44: ark.v1.ArkService.RegisterIntent:output_type -> ark.v1.RegisterIntentResponse
+	5,  // 45: ark.v1.ArkService.EstimateIntentFee:output_type -> ark.v1.EstimateIntentFeeResponse
+	7,  // 46: ark.v1.ArkService.DeleteIntent:output_type -> ark.v1.DeleteIntentResponse
+	9,  // 47: ark.v1.ArkService.ConfirmRegistration:output_type -> ark.v1.ConfirmRegistrationResponse
+	11, // 48: ark.v1.ArkService.SubmitTreeNonces:output_type -> ark.v1.SubmitTreeNoncesResponse
+	13, // 49: ark.v1.ArkService.SubmitTreeSignatures:output_type -> ark.v1.SubmitTreeSignaturesResponse
+	15, // 50: ark.v1.ArkService.SubmitSignedForfeitTxs:output_type -> ark.v1.SubmitSignedForfeitTxsResponse
+	17, // 51: ark.v1.ArkService.GetEventStream:output_type -> ark.v1.GetEventStreamResponse
+	21, // 52: ark.v1.ArkService.UpdateStreamTopics:output_type -> ark.v1.UpdateStreamTopicsResponse
+	23, // 53: ark.v1.ArkService.SubmitTx:output_type -> ark.v1.SubmitTxResponse
+	25, // 54: ark.v1.ArkService.FinalizeTx:output_type -> ark.v1.FinalizeTxResponse
+	27, // 55: ark.v1.ArkService.GetPendingTx:output_type -> ark.v1.GetPendingTxResponse
+	29, // 56: ark.v1.ArkService.GetTransactionsStream:output_type -> ark.v1.GetTransactionsStreamResponse
+	31, // 57: ark.v1.ArkService.GetIntent:output_type -> ark.v1.GetIntentResponse
+	43, // [43:58] is the sub-list for method output_type
+	28, // [28:43] is the sub-list for method input_type
+	28, // [28:28] is the sub-list for extension type_name
+	28, // [28:28] is the sub-list for extension extendee
+	0,  // [0:28] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_service_proto_init() }
@@ -2135,13 +2257,16 @@ func file_ark_v1_service_proto_init() {
 		(*GetTransactionsStreamResponse_ArkTx)(nil),
 		(*GetTransactionsStreamResponse_Heartbeat)(nil),
 	}
+	file_ark_v1_service_proto_msgTypes[30].OneofWrappers = []any{
+		(*GetIntentRequest_Txid)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_service_proto_rawDesc), len(file_ark_v1_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   33,
+			NumMessages:   35,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

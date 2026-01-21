@@ -161,6 +161,12 @@ service ArkService {
       }
     };
   }
+
+  rpc GetIntent(GetIntentRequest) returns (GetIntentResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/intent"
+    };
+  }
 }
 
 message GetInfoRequest {}
@@ -315,4 +321,14 @@ message GetTransactionsStreamResponse {
     TxNotification ark_tx = 2;
     Heartbeat heartbeat = 3;
   }
+}
+
+message GetIntentRequest {
+  oneof filter {
+      string txid = 1;
+    }
+}
+
+message GetIntentResponse {
+  Intent intent = 1;
 }

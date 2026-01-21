@@ -12,6 +12,7 @@ import (
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
+	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -658,6 +659,33 @@ func (h *handler) listenToTxEvents() {
 			)
 		}
 	}
+}
+
+func (h *handler) GetIntent(
+	ctx context.Context, req *arkv1.GetIntentRequest,
+) (*arkv1.GetIntentResponse, error) {
+	var err error
+	var intent *domain.Intent
+
+	switch filter := req.GetFilter().(type) {
+	case *arkv1.GetIntentRequest_Txid:
+		intent, err = h.svc.GetIntentByTxid(ctx, filter.Txid)
+
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unknown intent filter provided")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	if intent == nil {
+		return nil, arkdErrors.INTENT_NOT_FOUND.New("intent not found")
+	}
+
+	return &arkv1.GetIntentResponse{Intent: &arkv1.Intent{
+		Proof:   intent.Proof,
+		Message: intent.Message,
+	}}, nil
 }
 
 type eventWithTopics struct {

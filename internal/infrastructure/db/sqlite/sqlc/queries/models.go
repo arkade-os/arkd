@@ -33,6 +33,7 @@ type Intent struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type IntentFee struct {
@@ -99,9 +100,9 @@ type OffchainTxVw struct {
 	StageCode            int64
 	CheckpointTxid       string
 	CheckpointTx         string
-	CommitmentTxid       string
-	IsRootCommitmentTxid bool
-	OffchainTxid         string
+	CommitmentTxid       sql.NullString
+	IsRootCommitmentTxid sql.NullBool
+	OffchainTxid         sql.NullString
 }
 
 type Receiver struct {

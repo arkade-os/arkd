@@ -30,11 +30,12 @@ ON CONFLICT(txid) DO UPDATE SET
     children = EXCLUDED.children;
 
 -- name: UpsertIntent :exec
-INSERT INTO intent (id, round_id, proof, message) VALUES (@id, @round_id, @proof, @message)
+INSERT INTO intent (id, round_id, proof, message, txid) VALUES (@id, @round_id, @proof, @message, @txid)
 ON CONFLICT(id) DO UPDATE SET
     round_id = EXCLUDED.round_id,
     proof = EXCLUDED.proof,
-    message = EXCLUDED.message;
+    message = EXCLUDED.message,
+    txid = EXCLUDED.txid;
 
 -- name: UpsertReceiver :exec
 INSERT INTO receiver (intent_id, pubkey, onchain_address, amount)
@@ -274,7 +275,7 @@ WHERE swept = true
   AND spent = false;
 
 -- name: SelectOffchainTx :many
-SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
 
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
@@ -422,3 +423,7 @@ INSERT INTO intent_fees (
   onchain_output_fee_program
 )
 VALUES ('', '', '', '');
+
+-- name: SelectIntentByTxid :one
+SELECT id, txid, proof, message FROM intent
+WHERE txid = @txid;
