@@ -151,6 +151,11 @@ message TreeSignatureEvent {
 message Heartbeat {
 }
 
+message StreamStartedEvent {
+  string id = 1;
+}
+
+
 message ErrorDetails {
   int32 code = 1;
   string name = 2;

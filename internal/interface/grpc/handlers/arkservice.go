@@ -236,6 +236,18 @@ func (h *handler) GetEventStream(
 	defer h.eventsListenerHandler.removeListener(listener.id)
 	defer close(listener.ch)
 
+	// immediately send a stream started event
+	startedEvt := &arkv1.GetEventStreamResponse{
+		Event: &arkv1.GetEventStreamResponse_StreamStarted{
+			StreamStarted: &arkv1.StreamStartedEvent{
+				Id: listener.id,
+			},
+		},
+	}
+	if err := stream.Send(startedEvt); err != nil {
+		return err
+	}
+
 	// create a Timer that will fire after one heartbeat interval
 	timer := time.NewTimer(h.heartbeat)
 	defer timer.Stop()
@@ -272,6 +284,64 @@ func (h *handler) GetEventStream(
 			}
 			resetTimer()
 		}
+	}
+}
+
+func (h *handler) UpdateStreamTopics(
+	ctx context.Context,
+	req *arkv1.UpdateStreamTopicsRequest,
+) (*arkv1.UpdateStreamTopicsResponse, error) {
+	if req.GetStreamId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing stream id")
+	}
+
+	switch req.GetTopicsChange().(type) {
+	case nil:
+		return nil, status.Error(codes.InvalidArgument, "missing topics")
+	// when overwrite topics is provided, it takes precedence, we will not
+	// process add/remove topics in this case
+	case *arkv1.UpdateStreamTopicsRequest_Overwrite:
+		if req.GetOverwrite() == nil {
+			return nil, status.Error(codes.InvalidArgument, "missing topics to overwrite")
+		}
+		if err := h.eventsListenerHandler.overwriteTopics(
+			req.GetStreamId(), req.GetOverwrite().GetTopics(),
+		); err != nil {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return &arkv1.UpdateStreamTopicsResponse{
+			AllTopics: h.eventsListenerHandler.getTopics(req.GetStreamId()),
+		}, nil
+	// allow adding/removing topics simultaneously
+	case *arkv1.UpdateStreamTopicsRequest_Modify:
+		modify := req.GetModify()
+		if modify == nil {
+			return nil, status.Error(codes.InvalidArgument, "missing topics to add or remove")
+		}
+		if len(modify.GetAddTopics()) <= 0 && len(modify.GetRemoveTopics()) <= 0 {
+			return nil, status.Error(codes.InvalidArgument, "missing topics to add or remove")
+		}
+		if len(modify.GetAddTopics()) > 0 {
+			if err := h.eventsListenerHandler.addTopics(
+				req.GetStreamId(), modify.GetAddTopics(),
+			); err != nil {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+		}
+		if len(modify.GetRemoveTopics()) > 0 {
+			if err := h.eventsListenerHandler.removeTopics(
+				req.GetStreamId(), modify.GetRemoveTopics(),
+			); err != nil {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+		}
+		return &arkv1.UpdateStreamTopicsResponse{
+			TopicsAdded:   modify.GetAddTopics(),
+			TopicsRemoved: modify.GetRemoveTopics(),
+			AllTopics:     h.eventsListenerHandler.getTopics(req.GetStreamId()),
+		}, nil
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unknown topics to change")
 	}
 }
 
