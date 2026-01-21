@@ -1242,20 +1242,8 @@ func verifyAssetForfeitTransaction(vtxoMap map[domain.Outpoint]domain.Vtxo, pkt 
 				}
 
 				foundAsset := false
-				for _, ext := range vtxo.Extensions {
-					if ext.Type() != domain.ExtAsset {
-						continue
-					}
-
-					assetExt, ok := ext.(domain.AssetExtension)
-					if !ok {
-						return nil, fmt.Errorf(
-							"extension type is ExtAsset but concrete type is %T",
-							ext,
-						)
-					}
-
-					if assetExt.AssetID == assetID {
+				for _, asset := range vtxo.Assets {
+					if asset.AssetID == assetID {
 						foundAsset = true
 						break
 					}

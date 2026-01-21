@@ -247,13 +247,12 @@ func (i *indexerService) GetVtxos(
 
 	for j, v := range allVtxos {
 		// add asset to vtxo if present
-		asst, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
-		if err == nil && asst != nil {
-			assetExtension := domain.AssetExtension{
-				AssetID: asst.AssetID,
-				Amount:  asst.Amount,
-			}
-			allVtxos[j].Extensions = append(allVtxos[j].Extensions, assetExtension)
+		asset, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
+		if err == nil && asset != nil {
+			allVtxos[j].Assets = append(allVtxos[j].Assets, domain.Asset{
+				AssetID: asset.AssetID,
+				Amount:  asset.Amount,
+			})
 		}
 	}
 
@@ -273,13 +272,12 @@ func (i *indexerService) GetVtxosByOutpoint(
 
 	for j, v := range allVtxos {
 		// add asset to vtxo if present
-		asst, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
-		if err == nil && asst != nil {
-			assetExtension := domain.AssetExtension{
-				AssetID: asst.AssetID,
+		asset, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
+		if err == nil && asset != nil {
+			allVtxos[j].Assets = append(allVtxos[j].Assets, domain.Asset{
+				AssetID: asset.AssetID,
 				Amount:  0,
-			}
-			allVtxos[j].Extensions = append(allVtxos[j].Extensions, assetExtension)
+			})
 		}
 	}
 

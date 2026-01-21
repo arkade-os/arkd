@@ -35,6 +35,11 @@ func (k Outpoint) String() string {
 	return fmt.Sprintf("%s:%d", k.Txid, k.VOut)
 }
 
+type Asset struct {
+	AssetID string
+	Amount  uint64
+}
+
 type Vtxo struct {
 	Outpoint
 	Amount             uint64
@@ -50,7 +55,7 @@ type Vtxo struct {
 	Preconfirmed       bool
 	ExpiresAt          int64
 	CreatedAt          int64
-	Extensions         []Extension
+	Assets             []Asset
 }
 
 func (v Vtxo) String() string {

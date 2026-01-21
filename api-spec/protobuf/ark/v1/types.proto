@@ -28,14 +28,7 @@ message Vtxo {
   string spent_by = 11;
   string settled_by = 12;
   string ark_txid = 13;
-  repeated VtxoExtension extensions = 14;
-
-}
-
-message VtxoExtension {
-  oneof kind {
-    Asset asset        = 1;
-  }
+  repeated Asset assets = 14;
 }
 
 message Asset {

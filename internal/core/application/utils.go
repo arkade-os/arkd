@@ -19,6 +19,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
@@ -223,7 +224,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			continue
 		}
 
-		outs[idx].Extensions = append(outs[idx].Extensions, domain.AssetExtension{
+		outs[idx].Assets = append(outs[idx].Assets, domain.Asset{
 			AssetID: asst.AssetID,
 			Amount:  asst.Amount,
 		})
@@ -314,6 +315,11 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 		}
 		for i, out := range tx.UnsignedTx.TxOut {
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+				continue
+			}
+			// Skip any OP_RETURN output (asset packets)
+			// TODO: Make this more robust?
+			if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
 				continue
 			}
 

@@ -850,9 +850,12 @@ func parseTimeRange(after, before int64) (int64, int64, error) {
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
-	extensions := make([]*arkv1.IndexerExtension, 0)
-	for _, ext := range vtxo.Extensions {
-		extensions = append(extensions, toExtension(ext))
+	assets := make([]*arkv1.IndexerAsset, 0)
+	for _, asset := range vtxo.Assets {
+		assets = append(assets, &arkv1.IndexerAsset{
+			AssetId: asset.AssetID,
+			Amount:  asset.Amount,
+		})
 	}
 
 	return &arkv1.IndexerVtxo{
@@ -872,23 +875,6 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
-		Extensions:      extensions,
-	}
-}
-
-func toExtension(extension domain.Extension) *arkv1.IndexerExtension {
-	switch extension.Type() {
-	case domain.ExtAsset:
-		assetExt := extension.(domain.AssetExtension)
-		return &arkv1.IndexerExtension{
-			Kind: &arkv1.IndexerExtension_Asset{
-				Asset: &arkv1.IndexerAsset{
-					AssetId: assetExt.AssetID,
-					Amount:  assetExt.Amount,
-				},
-			},
-		}
-	default:
-		return &arkv1.IndexerExtension{}
+		Assets:          assets,
 	}
 }

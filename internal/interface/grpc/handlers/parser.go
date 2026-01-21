@@ -173,28 +173,18 @@ type vtxoList []domain.Vtxo
 func (v vtxoList) toProto() []*arkv1.Vtxo {
 	list := make([]*arkv1.Vtxo, 0, len(v))
 
-	toExtensions := func(vv domain.Vtxo) []*arkv1.VtxoExtension {
-		extensions := make([]*arkv1.VtxoExtension, 0)
-
-		if vv.Extensions != nil {
-
-			for _, ext := range vv.Extensions {
-				switch ext := ext.(type) {
-				case domain.AssetExtension:
-					extensions = append(extensions, &arkv1.VtxoExtension{
-						Kind: &arkv1.VtxoExtension_Asset{
-							Asset: &arkv1.Asset{
-								AssetId: ext.AssetID,
-								Amount:  ext.Amount,
-							},
-						},
-					})
-				}
-			}
-
+	toAssets := func(vv domain.Vtxo) []*arkv1.Asset {
+		if len(vv.Assets) <= 0 {
+			return nil
 		}
-
-		return extensions
+		assets := make([]*arkv1.Asset, 0)
+		for _, asset := range vv.Assets {
+			assets = append(assets, &arkv1.Asset{
+				AssetId: asset.AssetID,
+				Amount:  asset.Amount,
+			})
+		}
+		return assets
 	}
 
 	for _, vv := range v {
@@ -215,7 +205,7 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 			CreatedAt:       vv.CreatedAt,
 			SettledBy:       vv.SettledBy,
 			ArkTxid:         vv.ArkTxid,
-			Extensions:      toExtensions(vv),
+			Assets:          toAssets(vv),
 		})
 	}
 

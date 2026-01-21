@@ -75,6 +75,7 @@ func (m *mockIndexerService) GetVtxos(
 	ctx context.Context,
 	pubkeys []string,
 	spendableOnly, spentOnly, recoverableOnly, includeAnchors bool,
+	after, before int64,
 	page *application.Page,
 ) (*application.GetVtxosResp, error) {
 	return nil, nil

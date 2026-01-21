@@ -23,6 +23,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -641,6 +642,11 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 		for i, out := range tx.UnsignedTx.TxOut {
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+				continue
+			}
+			// Skip any OP_RETURN output (asset packets)
+			// TODO: Make this more robust?
+			if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
 				continue
 			}
 

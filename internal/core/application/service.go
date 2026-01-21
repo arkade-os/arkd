@@ -1804,7 +1804,7 @@ func (s *service) RegisterIntent(
 					})
 				}
 
-				vtxo.Extensions = append(vtxo.Extensions, domain.AssetExtension{
+				vtxo.Assets = append(vtxo.Assets, domain.Asset{
 					AssetID: assetInput.AssetId,
 					Amount:  assetInput.Amount,
 				})
@@ -2873,8 +2873,6 @@ func (s *service) startFinalization(
 
 	defer func() {
 		s.wg.Add(1)
-
-		fmt.Printf("events %+v", round.Events())
 
 		if err := s.saveEvents(ctx, roundId, round.Events()); err != nil {
 			log.WithError(err).Warn("failed to store new round events")
