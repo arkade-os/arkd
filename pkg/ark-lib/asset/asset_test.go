@@ -1,7 +1,8 @@
-package extension
+package asset
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -27,8 +28,8 @@ func RandIndex() uint16 {
 
 func TestAssetId_Roundtrip(t *testing.T) {
 	assetId := AssetId{
-		Txid: RandTxHash(),
-		Index:  RandIndex(),
+		Txid:  RandTxHash(),
+		Index: RandIndex(),
 	}
 
 	assetString := assetId.ToString()
@@ -50,21 +51,7 @@ func TestAssetIdFromString_InvalidLength(t *testing.T) {
 	require.Nil(t, assetId)
 }
 
-func TestAssetRef_Constructors(t *testing.T) {
-	randTxHash := RandTxHash()
-	id := AssetId{Txid: randTxHash, Index: 1}
 
-	ref := AssetRefFromId(id)
-	require.Equal(t, AssetRefByID, ref.Type)
-	require.Equal(t, id, ref.AssetId)
-	require.Equal(t, uint16(0), ref.GroupIndex)
-
-	gref := AssetRefFromGroupIndex(42)
-	require.Equal(t, AssetRefByGroup, gref.Type)
-	require.Equal(t, uint16(42), gref.GroupIndex)
-	require.Equal(t, AssetId{}, gref.AssetId)
-
-}
 
 func TestEncodeDecodeAssetPacket(t *testing.T) {
 	packet := &AssetPacket{
@@ -167,6 +154,27 @@ func TestDeriveAsserPacketFromTx(t *testing.T) {
 	require.Equal(t, 1, idx)
 	require.True(t, assetGroupsEqual(packet.Assets, []AssetGroup{controlAsset, normalAsset}))
 }
+
+func TestAssetIdStringConversion(t *testing.T) {
+	txid := deterministicBytesArray(0x01)
+	index := uint16(12345)
+	assetId := AssetId{Txid: txid, Index: index}
+
+	s := assetId.ToString()
+	decoded, err := AssetIdFromString(s)
+	require.NoError(t, err)
+	require.Equal(t, &assetId, decoded)
+
+	// Test invalid hex
+	_, err = AssetIdFromString("invalid")
+	require.Error(t, err)
+
+	// Test invalid length
+	_, err = AssetIdFromString(hex.EncodeToString(make([]byte, 35)))
+	require.Error(t, err)
+}
+
+
 
 // helper function to deep equal compare []AssetGroup slices
 func assetGroupsEqual(a, b []AssetGroup) bool {

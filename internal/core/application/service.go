@@ -15,7 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -917,7 +917,7 @@ func (s *service) SubmitOffchainTx(
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		// validate asset packet if present
-		if extension.ContainsAssetPacket(out.PkScript) {
+		if asset.ContainsAssetPacket(out.PkScript) {
 			if foundOpReturn {
 				return nil, errors.MALFORMED_ARK_TX.New(
 					"tx %s has multiple op return outputs, not allowed for assets", txid,
@@ -1524,12 +1524,12 @@ func (s *service) RegisterIntent(
 	onchainOutputs := make([]wire.TxOut, 0)
 	offchainOutputs := make([]wire.TxOut, 0)
 
-	var assetPacket *extension.AssetPacket
+	var assetPacket *asset.AssetPacket
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
 
-		if extension.ContainsAssetPacket(output.PkScript) {
-			assetPacket, err = extension.DecodeOutputToAssetPacket(*output)
+		if asset.ContainsAssetPacket(output.PkScript) {
+			assetPacket, err = asset.DecodeOutputToAssetPacket(*output)
 			if err != nil {
 				return "", errors.INVALID_INTENT_PROOF.New(
 					"failed to decode asset packet: %w", err,
@@ -1663,25 +1663,25 @@ func (s *service) RegisterIntent(
 	// add asset packet to asset receivers
 	if assetPacket != nil {
 		for i := range receivers {
-			assetGroupList := make([]extension.AssetGroup, 0)
+			assetGroupList := make([]asset.AssetGroup, 0)
 
 			for _, grp := range assetPacket.Assets {
 
 				for _, out := range grp.Outputs {
 					if uint32(receivers[i].IntentVout) == out.Vout {
 
-						assetGrp := extension.AssetGroup{
+						assetGrp := asset.AssetGroup{
 							AssetId: grp.AssetId,
 
-							Inputs: []extension.AssetInput{{
-								Type:   extension.AssetTypeIntent,
+							Inputs: []asset.AssetInput{{
+								Type:   asset.AssetTypeIntent,
 								Amount: out.Amount,
 								Txid:   proof.UnsignedTx.TxHash(),
 								Vin:    out.Vout,
 							}},
 
-							Outputs: []extension.AssetOutput{{
-								Type:   extension.AssetTypeLocal,
+							Outputs: []asset.AssetOutput{{
+								Type:   asset.AssetTypeLocal,
 								Amount: out.Amount,
 								Vout:   0,
 							}},
@@ -1695,10 +1695,10 @@ func (s *service) RegisterIntent(
 			}
 
 			if len(assetGroupList) > 0 {
-				newAssetPacket := extension.AssetPacket{
+				newAssetPacket := asset.AssetPacket{
 					Assets: assetGroupList,
 				}
-				encodedPacket, err := newAssetPacket.EncodeAssetPacket()
+				encodedPacket, err := newAssetPacket.Encode()
 				if err != nil {
 					return "", errors.INTERNAL_ERROR.New("failed to encode asset packet").
 						WithMetadata(map[string]any{"error": err.Error()})
@@ -4279,7 +4279,7 @@ func (s *service) storeAssetDetailsFromArkTx(
 	arkTx wire.MsgTx,
 	assetPacketIndex int,
 ) error {
-	assetPkt, err := extension.DecodeOutputToAssetPacket(*arkTx.TxOut[assetPacketIndex])
+	assetPkt, err := asset.DecodeOutputToAssetPacket(*arkTx.TxOut[assetPacketIndex])
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
@@ -4295,7 +4295,7 @@ func (s *service) storeAssetDetailsFromArkTx(
 func (s *service) storeAssetGroups(
 	ctx context.Context,
 	assetPacketIndex int,
-	assetGroupList []extension.AssetGroup,
+	assetGroupList []asset.AssetGroup,
 	arkTx wire.MsgTx,
 ) error {
 	anchorPoint := domain.Outpoint{
@@ -4320,17 +4320,17 @@ func (s *service) storeAssetGroups(
 			var txHashBytes [32]byte
 			copy(txHashBytes[:], txHash[:])
 
-			assetId := extension.AssetId{
+			assetId := asset.AssetId{
 				Txid:  txHashBytes,
 				Index: uint16(i),
 			}
 
 			if asstGp.ControlAsset != nil {
 				switch asstGp.ControlAsset.Type {
-				case extension.AssetRefByID:
+				case asset.AssetRefByID:
 					controlAsset = asstGp.ControlAsset.AssetId.ToString()
-				case extension.AssetRefByGroup:
-					controlAsset = extension.AssetId{
+				case asset.AssetRefByGroup:
+					controlAsset = asset.AssetId{
 						Txid:  txHashBytes,
 						Index: asstGp.ControlAsset.GroupIndex,
 					}.ToString()
@@ -4354,7 +4354,7 @@ func (s *service) storeAssetGroups(
 			)
 
 			for _, out := range asstGp.Outputs {
-				if out.Type == extension.AssetTypeIntent {
+				if out.Type == asset.AssetTypeTeleport {
 					continue
 				}
 
@@ -4407,7 +4407,7 @@ func (s *service) storeAssetGroups(
 	return nil
 }
 
-func assetMetadataFromGroup(metadata []extension.Metadata) []domain.AssetMetadata {
+func assetMetadataFromGroup(metadata []asset.Metadata) []domain.AssetMetadata {
 	metadataList := make([]domain.AssetMetadata, 0, len(metadata))
 	for _, meta := range metadata {
 		metadataList = append(metadataList, domain.AssetMetadata{

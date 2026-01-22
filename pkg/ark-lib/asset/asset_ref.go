@@ -1,4 +1,4 @@
-package extension
+package asset
 
 type AssetRefType uint8
 

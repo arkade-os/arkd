@@ -1,4 +1,4 @@
-package extension
+package asset
 
 import (
 	"encoding/hex"

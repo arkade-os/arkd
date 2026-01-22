@@ -17,7 +17,7 @@ import (
 	badgerdb "github.com/arkade-os/arkd/internal/infrastructure/db/badger"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -561,7 +561,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					PkScript: out.PkScript,
 				}
 
-				packet, err := extension.DecodeExtensionPacket(txOut)
+				packet, err := extension.DecodeOutputToAssetPacket(txOut)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
@@ -710,7 +710,7 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 				continue
 			}
 
-			if extension.ContainsAssetPacket(out.PkScript) {
+			if asset.ContainsAssetPacket(out.PkScript) {
 				decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset packet")
