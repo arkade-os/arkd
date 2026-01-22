@@ -36,8 +36,9 @@ const (
 )
 
 type TeleportWitness struct {
-	Script   []byte
-	IntentId []byte
+	Script []byte
+	Txid   [32]byte
+	Index  uint32
 }
 
 type AssetInput struct {
@@ -76,7 +77,7 @@ func (a *AssetGroup) Encode() ([]byte, error) {
 
 	// AssetId
 	if (presence & maskAssetId) != 0 {
-		if _, err := buf.Write(a.AssetId.TxHash[:]); err != nil {
+		if _, err := buf.Write(a.AssetId.Txid[:]); err != nil {
 			return nil, err
 		}
 		binary.BigEndian.PutUint16(scratch[:2], a.AssetId.Index)
@@ -129,7 +130,7 @@ func (a *AssetGroup) Decode(r io.Reader) error {
 	// AssetId
 	if (presence & maskAssetId) != 0 {
 		a.AssetId = &AssetId{}
-		if _, err := io.ReadFull(r, a.AssetId.TxHash[:]); err != nil {
+		if _, err := io.ReadFull(r, a.AssetId.Txid[:]); err != nil {
 			return err
 		}
 		if _, err := io.ReadFull(r, scratch[:2]); err != nil {

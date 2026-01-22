@@ -10,8 +10,8 @@ import (
 
 var (
 	emptyAssetId = AssetId{
-		TxHash: [32]uint8{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
-		Index:  uint16(0),
+		Txid:  [32]uint8{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
+		Index: uint16(0),
 	}
 )
 
@@ -49,7 +49,7 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	}
 	// AssetRef with AssetId
 	ref := &AssetRef{Type: AssetRefByID}
-	ref.AssetId = AssetId{TxHash: txh, Index: 0x1234}
+	ref.AssetId = AssetId{Txid: txh, Index: 0x1234}
 
 	buf := bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetRef(buf, ref, &scratch))
@@ -58,7 +58,7 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ref.Type, decoded.Type)
 	require.Equal(t, ref.AssetId.Index, decoded.AssetId.Index)
-	require.Equal(t, ref.AssetId.TxHash, decoded.AssetId.TxHash)
+	require.Equal(t, ref.AssetId.Txid, decoded.AssetId.Txid)
 
 	// AssetRef with GroupIndex
 	ref2 := &AssetRef{Type: AssetRefByGroup}
@@ -80,11 +80,11 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.NotEqual(t, ref3.GroupIndex, decoded3.GroupIndex)
 	require.Equal(t, uint16(0), decoded3.GroupIndex)
 	require.Equal(t, emptyAssetId.Index, decoded3.AssetId.Index)
-	require.Equal(t, emptyAssetId.TxHash, decoded3.AssetId.TxHash)
+	require.Equal(t, emptyAssetId.Txid, decoded3.AssetId.Txid)
 
 	// Mix type with wrong fields (asset by Group but has AssetId set)
 	ref4 := &AssetRef{Type: AssetRefByGroup}
-	ref4.AssetId = AssetId{TxHash: txh, Index: 0x1234}
+	ref4.AssetId = AssetId{Txid: txh, Index: 0x1234}
 	buf = bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetRef(buf, ref4, &scratch))
 	decoded4, err := decodeAssetRef(buf, &scratch)
@@ -93,7 +93,7 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.Equal(t, uint16(0), decoded4.GroupIndex)
 	require.Equal(t, ref4.Type, decoded4.Type)
 	require.Equal(t, emptyAssetId.Index, decoded4.AssetId.Index)
-	require.Equal(t, emptyAssetId.TxHash, decoded4.AssetId.TxHash)
+	require.Equal(t, emptyAssetId.Txid, decoded4.AssetId.Txid)
 
 	// unknown type
 	ref5 := &AssetRef{Type: AssetRefType(99)}
@@ -169,25 +169,33 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 		{Type: AssetTypeTeleport, Amount: 2000},
 		{Type: AssetTypeTeleport, Vin: 3, Amount: 2000},
 		{Type: AssetTypeTeleport, Vin: 3, Amount: 2000, Witness: TeleportWitness{
-			Script:   []byte{0xde, 0xad, 0xbe, 0xef},
-			IntentId: []byte{0xca, 0xfe, 0xba, 0xbe},
+			Script: []byte{0xde, 0xad, 0xbe, 0xef},
+			Txid:   [32]byte{0xca, 0xfe, 0xba, 0xbe},
+			Index:  42,
 		}},
 		{Type: AssetTypeTeleport, Witness: TeleportWitness{
-			Script:   []byte{},
-			IntentId: []byte{0xca, 0xfe, 0xba, 0xbe},
+			Script: []byte{},
+			Txid:   [32]byte{0xca, 0xfe, 0xba, 0xbe},
+			Index:  99,
 		}},
 		{Type: AssetTypeTeleport, Witness: TeleportWitness{
-			Script:   nil,
-			IntentId: []byte{0xca, 0xfe, 0xba, 0xbe},
+			Script: nil,
+			Txid:   [32]byte{0xca, 0xfe, 0xba, 0xbe},
+			Index:  100,
 		}},
 		{Type: AssetTypeTeleport, Witness: TeleportWitness{
-			Script:   []byte{0xde, 0xad, 0xbe, 0xef},
-			IntentId: []byte{},
-		}},
+			Script: []byte{0xde, 0xad, 0xbe, 0xef},
+			Txid:   [32]byte{},
+			Index:  101,
+		},
+		},
 		{Type: AssetTypeTeleport, Witness: TeleportWitness{
-			Script:   []byte{0xde, 0xad, 0xbe, 0xef},
-			IntentId: nil,
-		}},
+			Script: []byte{0xde, 0xad, 0xbe, 0xef},
+			Txid:   [32]byte{},
+			// large Index value using max value of uint32
+			Index: 4294967295,
+		},
+		},
 	}
 	buf := bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetInputList(buf, inputs, &scratch))
@@ -205,13 +213,16 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 			switch {
 			case idx == 5 || idx == 6:
 				require.True(t, bytes.Equal([]byte{}, got[idx].Witness.Script))
-				require.True(t, bytes.Equal(inputs[idx].Witness.IntentId, got[idx].Witness.IntentId))
+				require.True(t, bytes.Equal(inputs[idx].Witness.Txid[:], got[idx].Witness.Txid[:]))
+				require.Equal(t, inputs[idx].Witness.Index, got[idx].Witness.Index)
 			case idx == 7 || idx == 8:
 				require.True(t, bytes.Equal(inputs[idx].Witness.Script, got[idx].Witness.Script))
-				require.True(t, bytes.Equal([]byte{}, got[idx].Witness.IntentId))
+				require.True(t, bytes.Equal(emptyAssetId.Txid[:], got[idx].Witness.Txid[:]))
+				require.Equal(t, inputs[idx].Witness.Index, got[idx].Witness.Index)
 			default:
 				require.True(t, bytes.Equal(inputs[idx].Witness.Script, got[idx].Witness.Script))
-				require.True(t, bytes.Equal(inputs[idx].Witness.IntentId, got[idx].Witness.IntentId))
+				require.True(t, bytes.Equal(inputs[idx].Witness.Txid[:], got[idx].Witness.Txid[:]))
+				require.Equal(t, inputs[idx].Witness.Index, got[idx].Witness.Index)
 			}
 		}
 	}
@@ -264,7 +275,7 @@ func TestPresenceBitCombinations(t *testing.T) {
 			if c.assetId {
 				var txh [TX_HASH_SIZE]byte
 				txh[0] = 1
-				ag.AssetId = &AssetId{TxHash: txh, Index: 1}
+				ag.AssetId = &AssetId{Txid: txh, Index: 1}
 			}
 			if c.control {
 				ag.ControlAsset = &AssetRef{Type: AssetRefByGroup, GroupIndex: 2}

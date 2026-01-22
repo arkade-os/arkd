@@ -223,8 +223,8 @@ func assetGroupsEqual(a, b []AssetGroup) bool {
 				// check Witness fields
 				len(in.Witness.Script) != len(b[i].Inputs[idx].Witness.Script) ||
 				bytes.Equal(in.Witness.Script, b[i].Inputs[idx].Witness.Script) == false ||
-				len(in.Witness.IntentId) != len(b[i].Inputs[idx].Witness.IntentId) ||
-				bytes.Equal(in.Witness.IntentId, b[i].Inputs[idx].Witness.IntentId) == false ||
+				len(in.Witness.Txid) != len(b[i].Inputs[idx].Witness.Txid) ||
+				bytes.Equal(in.Witness.Txid[:], b[i].Inputs[idx].Witness.Txid[:]) == false ||
 				in.Amount != b[i].Inputs[idx].Amount {
 				return false
 			}
