@@ -23,6 +23,7 @@ func TestExtension(t *testing.T) {
 	t.Run("AssetOutputListEncodeDecode", testAssetOutputListEncodeDecode)
 	t.Run("AssetInputListEncodeDecode", testAssetInputListEncodeDecode)
 	t.Run("AssetGroupEncodeDecodeWithGroupIndexRef", testAssetGroupEncodeDecodeWithGroupIndexRef)
+	t.Run("NormalizeAssetSlices", testNormalizeAssetSlices)
 }
 
 var (
@@ -320,6 +321,81 @@ func testAssetInputListEncodeDecode(t *testing.T) {
 	decoded, err := decodeAssetInputList(reader, &scratch)
 	require.NoError(t, err)
 	require.Equal(t, inputs, decoded)
+}
+
+func testNormalizeAssetSlices(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-empty remains", func(t *testing.T) {
+		ag := AssetGroup{
+			AssetId:      ptrAssetId(deterministicAssetId(0x12)),
+			Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
+			ControlAsset: deterministicAssetRefId(0x3c),
+			Inputs: []AssetInput{{
+				Type:   AssetTypeLocal,
+				Vin:    1,
+				Amount: 5,
+			}},
+			Metadata: []Metadata{{Key: "kind", Value: "normal"}},
+		}
+
+		ag.normalizeAssetSlices()
+
+		require.Equal(t, 1, len(ag.Outputs))
+		require.Equal(t, 1, len(ag.Inputs))
+		require.Equal(t, 1, len(ag.Metadata))
+	})
+
+	t.Run("empty slices become nil", func(t *testing.T) {
+		ag := AssetGroup{
+			AssetId: ptrAssetId(deterministicAssetId(0x13)),
+			// explicitly empty slices
+			Outputs:  []AssetOutput{},
+			Inputs:   []AssetInput{},
+			Metadata: []Metadata{},
+		}
+
+		ag.normalizeAssetSlices()
+
+		require.Nil(t, ag.Outputs)
+		require.Nil(t, ag.Inputs)
+		require.Nil(t, ag.Metadata)
+	})
+
+	t.Run("nil slices remain nil and idempotent", func(t *testing.T) {
+		ag := AssetGroup{
+			AssetId: ptrAssetId(deterministicAssetId(0x14)),
+			// nil slices
+			Outputs:  nil,
+			Inputs:   nil,
+			Metadata: nil,
+		}
+
+		ag.normalizeAssetSlices()
+		ag.normalizeAssetSlices() // idempotent
+
+		require.Nil(t, ag.Outputs)
+		require.Nil(t, ag.Inputs)
+		require.Nil(t, ag.Metadata)
+	})
+
+	t.Run("preserve elements after normalize", func(t *testing.T) {
+		ag := AssetGroup{
+			AssetId:  ptrAssetId(deterministicAssetId(0x15)),
+			Outputs:  []AssetOutput{{Type: AssetTypeLocal, Vout: 4, Amount: 44}},
+			Inputs:   []AssetInput{{Type: AssetTypeLocal, Vin: 5, Amount: 55}},
+			Metadata: []Metadata{{Key: "a", Value: "b"}},
+		}
+
+		ag.normalizeAssetSlices()
+
+		require.NotNil(t, ag.Outputs)
+		require.Equal(t, uint32(4), ag.Outputs[0].Vout)
+		require.NotNil(t, ag.Inputs)
+		require.Equal(t, uint32(5), ag.Inputs[0].Vin)
+		require.NotNil(t, ag.Metadata)
+		require.Equal(t, "a", ag.Metadata[0].Key)
+	})
 }
 
 func deterministicPubKey(t *testing.T, seed byte) btcec.PublicKey {
