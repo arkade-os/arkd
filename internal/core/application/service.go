@@ -4326,8 +4326,8 @@ func (s *service) storeAssetGroups(
 			copy(txHashBytes[:], txHash[:])
 
 			assetId := extension.AssetId{
-				TxHash: txHashBytes,
-				Index:  uint16(i),
+				Txid:  txHashBytes,
+				Index: uint16(i),
 			}
 
 			if asstGp.ControlAsset != nil {
@@ -4336,8 +4336,8 @@ func (s *service) storeAssetGroups(
 					controlAsset = asstGp.ControlAsset.AssetId.ToString()
 				case extension.AssetRefByGroup:
 					controlAsset = extension.AssetId{
-						TxHash: txHashBytes,
-						Index:  asstGp.ControlAsset.GroupIndex,
+						Txid:  txHashBytes,
+						Index: asstGp.ControlAsset.GroupIndex,
 					}.ToString()
 				}
 			}
@@ -4454,7 +4454,7 @@ func (s *service) markTeleportInputsClaimed(ctx context.Context, grpAsset extens
 			continue
 		}
 
-		intentId := hex.EncodeToString(in.Witness.IntentId)
+		intentId := hex.EncodeToString(in.Witness.Txid[:])
 		teleportScript := hex.EncodeToString(in.Witness.Script)
 		if err := s.repoManager.Assets().UpdateTeleportAsset(ctx, teleportScript, intentId, assetIdStr, in.Vin, true); err != nil {
 			log.WithError(err).Warn("failed to update teleport asset")

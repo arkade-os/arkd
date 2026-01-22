@@ -27,8 +27,8 @@ func TestExtension(t *testing.T) {
 func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 	asset := AssetGroup{
 		AssetId: &AssetId{
-			TxHash: deterministicBytesArray(0x2a),
-			Index:  0,
+			Txid:  deterministicBytesArray(0x3c),
+			Index: 2,
 		},
 		Outputs: []AssetOutput{
 			{
@@ -43,8 +43,8 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 			},
 		},
 		ControlAsset: AssetRefFromId(AssetId{
-			TxHash: deterministicBytesArray(0x3c),
-			Index:  1,
+			Txid:  deterministicBytesArray(0x3c),
+			Index: 1,
 		}),
 		Inputs: []AssetInput{
 			{
@@ -57,8 +57,9 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 				// Vin is not encoded for Teleport inputs
 				Vin: 0,
 				Witness: TeleportWitness{
-					Script:   []byte{0x00, 0x01, 0x02, 0x03},
-					IntentId: deterministicTxhash(0x55),
+					Script: []byte{0x00, 0x01, 0x02, 0x03},
+					Txid:   deterministicBytesArray(0x55),
+					Index:  123,
 				},
 				Amount: 40,
 			},
@@ -137,7 +138,7 @@ func testAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 func testAssetIdStringConversion(t *testing.T) {
 	txid := deterministicBytesArray(0x01)
 	index := uint16(12345)
-	assetId := AssetId{TxHash: txid, Index: index}
+	assetId := AssetId{Txid: txid, Index: index}
 
 	s := assetId.ToString()
 	decoded, err := AssetIdFromString(s)
@@ -255,8 +256,9 @@ func testAssetInputListEncodeDecode(t *testing.T) {
 			Vin:    0,
 			Amount: 20,
 			Witness: TeleportWitness{
-				Script:   []byte{0xde, 0xad, 0xbe, 0xef},
-				IntentId: deterministicTxhash(0x11),
+				Script: []byte{0xde, 0xad, 0xbe, 0xef},
+				Txid:   deterministicBytesArray(0x11),
+				Index:  456,
 			},
 		},
 	}
@@ -295,8 +297,8 @@ func deterministicBytesArray(seed byte) [32]byte {
 
 func deterministicAssetId(seed byte) AssetId {
 	return AssetId{
-		TxHash: deterministicBytesArray(seed),
-		Index:  0,
+		Txid:  deterministicBytesArray(seed),
+		Index: 0,
 	}
 }
 

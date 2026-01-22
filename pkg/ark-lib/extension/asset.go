@@ -11,8 +11,8 @@ import (
 const AssetVersion byte = 0x01
 
 type AssetId struct {
-	TxHash [32]byte
-	Index  uint16
+	Txid  [32]byte
+	Index uint16
 }
 
 type AssetRefType uint8
@@ -44,7 +44,7 @@ func AssetRefFromGroupIndex(groupIndex uint16) *AssetRef {
 
 func (a AssetId) ToString() string {
 	var buf [34]byte
-	copy(buf[:32], a.TxHash[:])
+	copy(buf[:32], a.Txid[:])
 	// Big endian encoding for index
 	buf[32] = byte(a.Index >> 8)
 	buf[33] = byte(a.Index)
@@ -66,7 +66,7 @@ func AssetIdFromString(s string) (*AssetId, error) {
 	}
 
 	var assetId AssetId
-	copy(assetId.TxHash[:], buf[:32])
+	copy(assetId.Txid[:], buf[:32])
 	// Big endian decoding for index
 	assetId.Index = uint16(buf[32])<<8 | uint16(buf[33])
 	return &assetId, nil
@@ -106,13 +106,14 @@ const (
 )
 
 type TeleportWitness struct {
-	Script   []byte
-	IntentId []byte
+	Script []byte
+	Txid   [32]byte
+	Index  uint32
 }
 
 type AssetInput struct {
 	Type    AssetType
-	Vin     uint32
+	Vin     uint32          // For Local
 	Witness TeleportWitness // For Teleport
 	Amount  uint64
 }

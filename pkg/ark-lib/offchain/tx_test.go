@@ -40,7 +40,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 	copy(caID[:], caInputTxId[:])
 
 	controlAsset := extension.AssetGroup{
-		AssetId: &extension.AssetId{TxHash: caID, Index: 0},
+		AssetId: &extension.AssetId{Txid: caID, Index: 0},
 		Inputs: []extension.AssetInput{{
 			Type:   extension.AssetTypeLocal,
 			Vin:    0,
@@ -57,8 +57,8 @@ func TestRebuildAssetTxs(t *testing.T) {
 	}
 
 	normalAsset := extension.AssetGroup{
-		AssetId:      &extension.AssetId{TxHash: assetInTxId, Index: 0},
-		ControlAsset: extension.AssetRefFromId(extension.AssetId{TxHash: caID, Index: 0}),
+		AssetId:      &extension.AssetId{Txid: assetInTxId, Index: 0},
+		ControlAsset: extension.AssetRefFromId(extension.AssetId{Txid: caID, Index: 0}),
 		Inputs: []extension.AssetInput{{
 			Type:   extension.AssetTypeLocal,
 			Vin:    1,

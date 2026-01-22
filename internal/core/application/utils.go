@@ -151,8 +151,8 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 
 				if grpAsset.AssetId == nil {
 					assetId = extension.AssetId{
-						TxHash: ptx.UnsignedTx.TxHash(),
-						Index:  uint16(i),
+						Txid:  ptx.UnsignedTx.TxHash(),
+						Index: uint16(i),
 					}
 				} else {
 					assetId = *grpAsset.AssetId

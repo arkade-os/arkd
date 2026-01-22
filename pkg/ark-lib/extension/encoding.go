@@ -2,7 +2,6 @@ package extension
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -43,11 +42,10 @@ func (a *AssetGroup) Encode() ([]byte, error) {
 
 	// AssetId
 	if (presence & maskAssetId) != 0 {
-		if _, err := buf.Write(a.AssetId.TxHash[:]); err != nil {
+		if _, err := buf.Write(a.AssetId.Txid[:]); err != nil {
 			return nil, err
 		}
-		binary.BigEndian.PutUint16(scratch[:2], a.AssetId.Index)
-		if _, err := buf.Write(scratch[:2]); err != nil {
+		if err := tlv.EUint16(&buf, &a.AssetId.Index, &scratch); err != nil {
 			return nil, err
 		}
 	}
@@ -96,13 +94,12 @@ func (a *AssetGroup) Decode(r io.Reader) error {
 	// AssetId
 	if (presence & maskAssetId) != 0 {
 		a.AssetId = &AssetId{}
-		if _, err := io.ReadFull(r, a.AssetId.TxHash[:]); err != nil {
+		if _, err := io.ReadFull(r, a.AssetId.Txid[:]); err != nil {
 			return err
 		}
-		if _, err := io.ReadFull(r, scratch[:2]); err != nil {
+		if err := tlv.DUint16(r, &a.AssetId.Index, &scratch, 2); err != nil {
 			return err
 		}
-		a.AssetId.Index = binary.BigEndian.Uint16(scratch[:2])
 	}
 
 	// ControlAsset
@@ -152,16 +149,14 @@ func encodeAssetRef(w io.Writer, ref *AssetRef, scratch *[8]byte) error {
 	}
 	switch ref.Type {
 	case AssetRefByID:
-		if _, err := w.Write(ref.AssetId.TxHash[:]); err != nil {
+		if _, err := w.Write(ref.AssetId.Txid[:]); err != nil {
 			return err
 		}
-		binary.BigEndian.PutUint16(scratch[:2], ref.AssetId.Index)
-		if _, err := w.Write(scratch[:2]); err != nil {
+		if err := tlv.EUint16(w, &ref.AssetId.Index, scratch); err != nil {
 			return err
 		}
 	case AssetRefByGroup:
-		binary.BigEndian.PutUint16(scratch[:2], ref.GroupIndex)
-		if _, err := w.Write(scratch[:2]); err != nil {
+		if err := tlv.EUint16(w, &ref.GroupIndex, scratch); err != nil {
 			return err
 		}
 	default:
@@ -180,18 +175,16 @@ func decodeAssetRef(r io.Reader, scratch *[8]byte) (*AssetRef, error) {
 	ref := &AssetRef{Type: typ}
 	switch typ {
 	case AssetRefByID:
-		if _, err := io.ReadFull(r, ref.AssetId.TxHash[:]); err != nil {
+		if _, err := io.ReadFull(r, ref.AssetId.Txid[:]); err != nil {
 			return nil, err
 		}
-		if _, err := io.ReadFull(r, scratch[:2]); err != nil {
+		if err := tlv.DUint16(r, &ref.AssetId.Index, scratch, 2); err != nil {
 			return nil, err
 		}
-		ref.AssetId.Index = binary.BigEndian.Uint16(scratch[:2])
 	case AssetRefByGroup:
-		if _, err := io.ReadFull(r, scratch[:2]); err != nil {
+		if err := tlv.DUint16(r, &ref.GroupIndex, scratch, 2); err != nil {
 			return nil, err
 		}
-		ref.GroupIndex = binary.BigEndian.Uint16(scratch[:2])
 	default:
 		return nil, fmt.Errorf("unknown asset ref type: %d", typ)
 	}
@@ -265,18 +258,15 @@ func encodeAssetInputList(w io.Writer, inputs []AssetInput, scratch *[8]byte) er
 		}
 		switch in.Type {
 		case AssetTypeLocal:
-			binary.BigEndian.PutUint32(scratch[:4], in.Vin)
-			if _, err := w.Write(scratch[:4]); err != nil {
+			if err := tlv.EUint32(w, &in.Vin, scratch); err != nil {
 				return err
 			}
-			binary.BigEndian.PutUint64(scratch[:8], in.Amount)
-			if _, err := w.Write(scratch[:8]); err != nil {
+			if err := tlv.EUint64(w, &in.Amount, scratch); err != nil {
 				return err
 			}
 		case AssetTypeTeleport:
 			// Amount
-			binary.BigEndian.PutUint64(scratch[:8], in.Amount)
-			if _, err := w.Write(scratch[:8]); err != nil {
+			if err := tlv.EUint64(w, &in.Amount, scratch); err != nil {
 				return err
 			}
 			// Witness
@@ -286,10 +276,11 @@ func encodeAssetInputList(w io.Writer, inputs []AssetInput, scratch *[8]byte) er
 			if _, err := w.Write(in.Witness.Script); err != nil {
 				return err
 			}
-			if err := tlv.WriteVarInt(w, uint64(len(in.Witness.IntentId)), scratch); err != nil {
+			if _, err := w.Write(in.Witness.Txid[:]); err != nil {
 				return err
 			}
-			if _, err := w.Write(in.Witness.IntentId); err != nil {
+
+			if err := tlv.EUint32(w, &in.Witness.Index, scratch); err != nil {
 				return err
 			}
 		default:
@@ -314,19 +305,16 @@ func decodeAssetInputList(r io.Reader, scratch *[8]byte) ([]AssetInput, error) {
 
 		switch inputs[i].Type {
 		case AssetTypeLocal:
-			if _, err := io.ReadFull(r, scratch[:4]); err != nil {
+			if err := tlv.DUint32(r, &inputs[i].Vin, scratch, 4); err != nil {
 				return nil, err
 			}
-			inputs[i].Vin = binary.BigEndian.Uint32(scratch[:4])
-			if _, err := io.ReadFull(r, scratch[:8]); err != nil {
+			if err := tlv.DUint64(r, &inputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}
-			inputs[i].Amount = binary.BigEndian.Uint64(scratch[:8])
 		case AssetTypeTeleport:
-			if _, err := io.ReadFull(r, scratch[:8]); err != nil {
+			if err := tlv.DUint64(r, &inputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}
-			inputs[i].Amount = binary.BigEndian.Uint64(scratch[:8])
 
 			// Script
 			sLen, err := tlv.ReadVarInt(r, scratch)
@@ -338,13 +326,13 @@ func decodeAssetInputList(r io.Reader, scratch *[8]byte) ([]AssetInput, error) {
 				return nil, err
 			}
 
-			// IntentId
-			nLen, err := tlv.ReadVarInt(r, scratch)
-			if err != nil {
+			// Txid
+			if _, err := io.ReadFull(r, inputs[i].Witness.Txid[:]); err != nil {
 				return nil, err
 			}
-			inputs[i].Witness.IntentId = make([]byte, nLen)
-			if _, err := io.ReadFull(r, inputs[i].Witness.IntentId); err != nil {
+
+			// Index
+			if err := tlv.DUint32(r, &inputs[i].Witness.Index, scratch, 4); err != nil {
 				return nil, err
 			}
 		default:
@@ -364,12 +352,10 @@ func encodeAssetOutputList(w io.Writer, outputs []AssetOutput, scratch *[8]byte)
 		}
 		switch out.Type {
 		case AssetTypeLocal:
-			binary.BigEndian.PutUint32(scratch[:4], out.Vout)
-			if _, err := w.Write(scratch[:4]); err != nil {
+			if err := tlv.EUint32(w, &out.Vout, scratch); err != nil {
 				return err
 			}
-			binary.BigEndian.PutUint64(scratch[:8], out.Amount)
-			if _, err := w.Write(scratch[:8]); err != nil {
+			if err := tlv.EUint64(w, &out.Amount, scratch); err != nil {
 				return err
 			}
 		case AssetTypeTeleport:
@@ -380,8 +366,7 @@ func encodeAssetOutputList(w io.Writer, outputs []AssetOutput, scratch *[8]byte)
 			if _, err := w.Write(out.Script); err != nil {
 				return err
 			}
-			binary.BigEndian.PutUint64(scratch[:8], out.Amount)
-			if _, err := w.Write(scratch[:8]); err != nil {
+			if err := tlv.EUint64(w, &out.Amount, scratch); err != nil {
 				return err
 			}
 		default:
@@ -406,14 +391,12 @@ func decodeAssetOutputList(r io.Reader, scratch *[8]byte) ([]AssetOutput, error)
 
 		switch outputs[i].Type {
 		case AssetTypeLocal:
-			if _, err := io.ReadFull(r, scratch[:4]); err != nil {
+			if err := tlv.DUint32(r, &outputs[i].Vout, scratch, 4); err != nil {
 				return nil, err
 			}
-			outputs[i].Vout = binary.BigEndian.Uint32(scratch[:4])
-			if _, err := io.ReadFull(r, scratch[:8]); err != nil {
+			if err := tlv.DUint64(r, &outputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}
-			outputs[i].Amount = binary.BigEndian.Uint64(scratch[:8])
 		case AssetTypeTeleport:
 			// Script (Commitment)
 			sLen, err := tlv.ReadVarInt(r, scratch)
@@ -425,10 +408,9 @@ func decodeAssetOutputList(r io.Reader, scratch *[8]byte) ([]AssetOutput, error)
 				return nil, err
 			}
 
-			if _, err := io.ReadFull(r, scratch[:8]); err != nil {
+			if err := tlv.DUint64(r, &outputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}
-			outputs[i].Amount = binary.BigEndian.Uint64(scratch[:8])
 		default:
 			return nil, fmt.Errorf("unknown asset output type: %d", outputs[i].Type)
 		}

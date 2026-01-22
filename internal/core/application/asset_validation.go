@@ -344,7 +344,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 				WithMetadata(errors.TeleportValidationMetadata{})
 		}
 
-		txHash, err := chainhash.NewHash(input.Witness.IntentId)
+		txHash, err := chainhash.NewHash(input.Witness.Txid[:])
 		if err != nil {
 			return errors.TELEPORT_VALIDATION_FAILED.New("invalid intent ID for teleport input validation: %w", err).
 				WithMetadata(errors.TeleportValidationMetadata{})
