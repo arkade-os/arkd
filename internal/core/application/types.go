@@ -125,7 +125,6 @@ type TransactionEvent struct {
 }
 
 type TeleportAsset struct {
-	TeleportHash   string
 	AssetID        string
 	Amount         uint64
 	AnchorOutpoint domain.Outpoint

@@ -270,17 +270,11 @@ func encodeAssetInputList(w io.Writer, inputs []AssetInput, scratch *[8]byte) er
 				return err
 			}
 			// Witness
-			if err := tlv.WriteVarInt(w, uint64(len(in.Witness.Script)), scratch); err != nil {
-				return err
-			}
-			if _, err := w.Write(in.Witness.Script); err != nil {
-				return err
-			}
 			if _, err := w.Write(in.Witness.Txid[:]); err != nil {
 				return err
 			}
 
-			if err := tlv.EUint32(w, &in.Witness.Index, scratch); err != nil {
+			if err := tlv.EUint32(w, &in.Witness.Vout, scratch); err != nil {
 				return err
 			}
 		default:
@@ -316,23 +310,13 @@ func decodeAssetInputList(r io.Reader, scratch *[8]byte) ([]AssetInput, error) {
 				return nil, err
 			}
 
-			// Script
-			sLen, err := tlv.ReadVarInt(r, scratch)
-			if err != nil {
-				return nil, err
-			}
-			inputs[i].Witness.Script = make([]byte, sLen)
-			if _, err := io.ReadFull(r, inputs[i].Witness.Script); err != nil {
-				return nil, err
-			}
-
 			// Txid
 			if _, err := io.ReadFull(r, inputs[i].Witness.Txid[:]); err != nil {
 				return nil, err
 			}
 
 			// Index
-			if err := tlv.DUint32(r, &inputs[i].Witness.Index, scratch, 4); err != nil {
+			if err := tlv.DUint32(r, &inputs[i].Witness.Vout, scratch, 4); err != nil {
 				return nil, err
 			}
 		default:
@@ -359,13 +343,6 @@ func encodeAssetOutputList(w io.Writer, outputs []AssetOutput, scratch *[8]byte)
 				return err
 			}
 		case AssetTypeTeleport:
-			// Script (Commitment) - variable length
-			if err := tlv.WriteVarInt(w, uint64(len(out.Script)), scratch); err != nil {
-				return err
-			}
-			if _, err := w.Write(out.Script); err != nil {
-				return err
-			}
 			if err := tlv.EUint64(w, &out.Amount, scratch); err != nil {
 				return err
 			}
@@ -398,16 +375,6 @@ func decodeAssetOutputList(r io.Reader, scratch *[8]byte) ([]AssetOutput, error)
 				return nil, err
 			}
 		case AssetTypeTeleport:
-			// Script (Commitment)
-			sLen, err := tlv.ReadVarInt(r, scratch)
-			if err != nil {
-				return nil, err
-			}
-			outputs[i].Script = make([]byte, sLen)
-			if _, err := io.ReadFull(r, outputs[i].Script); err != nil {
-				return nil, err
-			}
-
 			if err := tlv.DUint64(r, &outputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}

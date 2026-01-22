@@ -94,7 +94,6 @@ type Metadata struct {
 type AssetOutput struct {
 	Type   AssetType
 	Vout   uint32 // For Local
-	Script []byte // For Teleport
 	Amount uint64
 }
 
@@ -106,9 +105,8 @@ const (
 )
 
 type TeleportWitness struct {
-	Script []byte
-	Txid   [32]byte
-	Index  uint32
+	Txid [32]byte
+	Vout uint32
 }
 
 type AssetInput struct {

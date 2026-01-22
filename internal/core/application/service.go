@@ -1522,12 +1522,13 @@ func (s *service) RegisterIntent(
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
 	assetInputMap := make(map[uint32][]AssetInput)
-	var assetPacket *extension.AssetPacket
 
 	hasOffChainReceiver := false
 	receivers := make([]domain.Receiver, 0)
 	onchainOutputs := make([]wire.TxOut, 0)
 	offchainOutputs := make([]wire.TxOut, 0)
+
+	var assetPacket *extension.AssetPacket
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
 
@@ -1542,57 +1543,14 @@ func (s *service) RegisterIntent(
 				})
 			}
 
-			for _, asst := range assetPacket.Assets {
-				if asst.AssetId == nil {
-					return "", errors.INVALID_INTENT_PROOF.New(
-						"asset packet missing asset id",
-					).WithMetadata(errors.InvalidIntentProofMetadata{
+			// validate asset
+			err := s.validateAssetTransition(ctx, *proof.UnsignedTx, nil, *output)
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New("failed to validate asset transition: %w", err).
+					WithMetadata(errors.InvalidIntentProofMetadata{
 						Proof:   encodedProof,
 						Message: encodedMessage,
 					})
-				}
-
-				for _, input := range asst.Inputs {
-					if _, ok := assetInputMap[input.Vin]; !ok {
-						assetInputMap[input.Vin] = make([]AssetInput, 0)
-					}
-
-					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], AssetInput{
-						AssetInput: input,
-						AssetId:    asst.AssetId.ToString(),
-					})
-				}
-
-				for i, output := range asst.Outputs {
-					if output.Type != extension.AssetTypeTeleport {
-						return "", errors.INVALID_INTENT_PROOF.New(
-							"asset output is not teleport output",
-						).WithMetadata(errors.InvalidIntentProofMetadata{
-							Proof:   encodedProof,
-							Message: encodedMessage,
-						})
-					}
-
-					teleportScript := hex.EncodeToString(output.Script)
-
-					if err := s.repoManager.Assets().InsertTeleportAsset(ctx, domain.TeleportAsset{
-						IntentID:    proofTxid,
-						Script:      teleportScript,
-						OutputIndex: uint32(i),
-						AssetID:     asst.AssetId.ToString(),
-						Amount:      output.Amount,
-						IsClaimed:   false,
-					}); err != nil {
-						log.WithError(err).Warn("failed to insert teleport asset")
-					}
-
-					receivers = append(receivers, domain.Receiver{
-						Amount:  output.Amount,
-						AssetId: asst.AssetId.ToString(),
-						PubKey:  hex.EncodeToString(output.Script[2:]),
-					})
-				}
-
 			}
 
 			continue
@@ -1600,7 +1558,8 @@ func (s *service) RegisterIntent(
 
 		amount := uint64(output.Value)
 		rcv := domain.Receiver{
-			Amount: amount,
+			Amount:      amount,
+			OutputIndex: outputIndex,
 		}
 
 		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
@@ -1688,6 +1647,72 @@ func (s *service) RegisterIntent(
 
 		receivers = append(receivers, rcv)
 		offchainOutputs = append(offchainOutputs, *output)
+	}
+
+	// add the asset group
+	if assetPacket != nil {
+		for i, _ := range receivers {
+			assetGroupList := make([]extension.AssetGroup, 0)
+
+			for _, grp := range assetPacket.Assets {
+
+				for _, input := range grp.Inputs {
+					if _, ok := assetInputMap[input.Vin]; !ok {
+						assetInputMap[input.Vin] = make([]AssetInput, 0)
+					}
+
+					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], AssetInput{
+						AssetInput: input,
+						AssetId:    grp.AssetId.ToString(),
+					})
+				}
+
+				for _, out := range grp.Outputs {
+					if uint32(i) == out.Vout {
+
+						assetGrp := extension.AssetGroup{
+							AssetId: grp.AssetId,
+
+							Inputs: []extension.AssetInput{{
+								Type:   extension.AssetTypeTeleport,
+								Amount: out.Amount,
+								Witness: extension.TeleportWitness{
+									Txid: proof.UnsignedTx.TxHash(),
+									Vout: out.Vout,
+								},
+							}},
+
+							Outputs: []extension.AssetOutput{{
+								Type:   extension.AssetTypeLocal,
+								Amount: out.Amount,
+								Vout:   0,
+							}},
+						}
+
+						assetGroupList = append(assetGroupList, assetGrp)
+
+						break
+					}
+				}
+
+			}
+
+			if len(assetGroupList) > 0 {
+				newAssetPacket := extension.AssetPacket{
+					Assets: assetGroupList,
+				}
+				encodedPacket, err := newAssetPacket.EncodeAssetPacket()
+				if err != nil {
+					return "", errors.INTERNAL_ERROR.New("failed to encode asset packet").
+						WithMetadata(map[string]any{"error": err.Error()})
+				}
+
+				receivers[i].AssetPacket = encodedPacket.PkScript
+
+			}
+
+		}
+
 	}
 
 	for i, outpoint := range outpoints {
@@ -4312,8 +4337,6 @@ func (s *service) storeAssetGroups(
 		totalIn := sumAssetInputs(asstGp.Inputs)
 		totalOut := sumAssetOutputs(asstGp.Outputs)
 
-		s.markTeleportInputsClaimed(ctx, asstGp)
-
 		metadataList := assetMetadataFromGroup(asstGp.Metadata)
 
 		assetId := asstGp.AssetId
@@ -4441,27 +4464,6 @@ func (s *service) storeAssetGroups(
 	return nil
 }
 
-func (s *service) markTeleportInputsClaimed(ctx context.Context, grpAsset extension.AssetGroup) {
-	assetId := grpAsset.AssetId
-	if assetId == nil {
-		return
-	}
-
-	assetIdStr := assetId.ToString()
-
-	for _, in := range grpAsset.Inputs {
-		if in.Type != extension.AssetTypeTeleport {
-			continue
-		}
-
-		intentId := hex.EncodeToString(in.Witness.Txid[:])
-		teleportScript := hex.EncodeToString(in.Witness.Script)
-		if err := s.repoManager.Assets().UpdateTeleportAsset(ctx, teleportScript, intentId, assetIdStr, in.Vin, true); err != nil {
-			log.WithError(err).Warn("failed to update teleport asset")
-		}
-	}
-}
-
 func assetMetadataFromGroup(metadata []extension.Metadata) []domain.AssetMetadata {
 	metadataList := make([]domain.AssetMetadata, 0, len(metadata))
 	for _, meta := range metadata {
@@ -4519,7 +4521,6 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 				}
 
 				event := TeleportAsset{
-					TeleportHash:   hex.EncodeToString(assetOut.Script),
 					AnchorOutpoint: anchorOutpoint,
 					AssetID:        ast.AssetId.ToString(),
 					OutputVout:     uint32(outIdx),

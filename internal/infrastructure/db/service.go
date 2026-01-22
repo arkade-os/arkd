@@ -23,7 +23,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -462,7 +461,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	}
 
 	spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
-	newVtxos := getNewVtxosFromRound(round)
+	newVtxos, newAssetAnchors := getNewVtxosFromRound(round)
 
 	if len(spentVtxos) > 0 {
 		for {
@@ -483,7 +482,22 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
+
 			log.Debugf("added %d new vtxos", len(newVtxos))
+			break
+		}
+
+	}
+
+	if len(newAssetAnchors) > 0 {
+		for _, anchor := range newAssetAnchors {
+			if err := s.assetStore.InsertAssetAnchor(ctx, anchor); err != nil {
+				log.WithError(err).Warn("failed to add new asset anchors, retrying soon")
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			log.Debugf("added %d new asset anchors", len(newAssetAnchors))
 			break
 		}
 	}
@@ -631,27 +645,47 @@ func getSpentVtxoKeysFromRound(
 	return spentVtxos
 }
 
-func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
+func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnchor) {
 	if len(round.VtxoTree) <= 0 {
-		return nil
+		return nil, nil
 	}
 
-	vtxos := make([]domain.Vtxo, 0)
+	totalVtxos := make([]domain.Vtxo, 0)
+	totolAssetAnchors := make([]domain.AssetAnchor, 0)
+
 	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
 		}
+
+		assetsMap := make(map[uint32]domain.Asset, 0)
+		assetAnchorIndex := -1
+
+		vtxos := make([]domain.Vtxo, 0)
 		for i, out := range tx.UnsignedTx.TxOut {
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
-			// Skip any OP_RETURN output (asset packets)
-			// TODO: Make this more robust?
-			if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
-				continue
+
+			if extension.ContainsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode asset packet")
+					continue
+				}
+				assetAnchorIndex = i
+
+				for _, asst := range decodedAssetPacket.Assets {
+					for _, out := range asst.Outputs {
+						assetsMap[out.Vout] = domain.Asset{
+							AssetID: asst.AssetId.ToString(),
+							Amount:  uint64(out.Amount),
+						}
+					}
+				}
 			}
 
 			vtxoTapKey, err := schnorr.ParsePubKey(out.PkScript[2:])
@@ -671,8 +705,33 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				ExpiresAt:          round.ExpiryTimestamp(),
 			})
 		}
+
+		if assetAnchorIndex > -1 {
+			assetAnchor := domain.AssetAnchor{
+				Outpoint: domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(assetAnchorIndex)},
+			}
+
+			normalAssets := make([]domain.NormalAsset, 0)
+
+			for i, vtxo := range vtxos {
+				if asset, found := assetsMap[vtxo.Outpoint.VOut]; found {
+					vtxos[i].Assets = []domain.Asset{asset}
+
+					normalAssets = append(normalAssets, domain.NormalAsset{
+						Outpoint: vtxo.Outpoint,
+						Amount:   asset.Amount,
+						AssetID:  asset.AssetID,
+					})
+				}
+			}
+
+			assetAnchor.Assets = normalAssets
+			totolAssetAnchors = append(totolAssetAnchors, assetAnchor)
+		}
+
+		totalVtxos = append(totalVtxos, vtxos...)
 	}
-	return vtxos
+	return totalVtxos, totolAssetAnchors
 }
 
 func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {
