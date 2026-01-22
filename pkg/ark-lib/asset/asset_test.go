@@ -98,7 +98,7 @@ func TestEncodeDecodeAssetPacket(t *testing.T) {
 	require.Equal(t, "OP_RETURN not present", err.Error())
 }
 
-func TestDeriveAsserPacketFromTx(t *testing.T) {
+func TestDeriveAssetPacketFromTx(t *testing.T) {
 	empty := wire.MsgTx{}
 	packet, idx, err := DeriveAssetPacketFromTx(empty)
 	require.Error(t, err)

@@ -1,7 +1,6 @@
 package asset
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -60,6 +59,16 @@ func TestExtensionPacket_SubDustOnly_Roundtrip(t *testing.T) {
 	require.Equal(t, schnorr.SerializePubKey(&pub), schnorr.SerializePubKey(decodedExt.SubDust.Key))
 }
 
+// test subdust triggering subdust key missing error
+func TestExtensionPacket_SubDustMissingKey(t *testing.T) {
+	t.Parallel()
+	sd := &SubDustPacket{Key: nil, Amount: 100}
+	extPacket := &ExtensionPacket{SubDust: sd, Asset: &AssetPacket{Assets: []AssetGroup{controlAsset}}}
+	_, err := extPacket.Encode()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "subdust key missing")
+}
+
 func TestDecodeToExtensionPacket_InvalidOpReturn(t *testing.T) {
 	t.Parallel()
 	// missing OP_RETURN
@@ -79,14 +88,11 @@ func TestDecodeToExtensionPacket_CorruptedPayload(t *testing.T) {
 	extPacket := &ExtensionPacket{Asset: &packet, SubDust: sd}
 	txOut, err := extPacket.Encode()
 	require.NoError(t, err)
-
+	require.Greater(t, len(txOut.PkScript), 2)
 	// truncate pkScript to corrupt and trigger tokenizer error
-	if len(txOut.PkScript) > 2 {
-		tr := wire.TxOut{Value: txOut.Value, PkScript: txOut.PkScript[:len(txOut.PkScript)-2]}
-		fmt.Printf("heres spot\n")
-		ep, err := DecodeToExtensionPacket(tr)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "opcode OP_PUSHDATA1 pushes 168 bytes, but script only has 166 remaining")
-		require.Nil(t, ep)
-	}
+	tr := wire.TxOut{Value: txOut.Value, PkScript: txOut.PkScript[:len(txOut.PkScript)-2]}
+	ep, err := DecodeToExtensionPacket(tr)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "opcode OP_PUSHDATA1 pushes 168 bytes, but script only has 166 remaining")
+	require.Nil(t, ep)
 }

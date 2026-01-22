@@ -26,6 +26,10 @@ func (packet *ExtensionPacket) Encode() (wire.TxOut, error) {
 	if packet == nil || (packet.Asset == nil && (packet.SubDust == nil || packet.SubDust.Key == nil)) {
 		return wire.TxOut{}, errors.New("empty op_return packet")
 	}
+	// SubDust key must be present if SubDust packet is included
+	if packet.SubDust != nil && packet.SubDust.Key == nil {
+		return wire.TxOut{}, errors.New("subdust key missing")
+	}
 
 	var scratch [8]byte
 	var tlvData bytes.Buffer
@@ -73,7 +77,7 @@ func (packet *ExtensionPacket) Encode() (wire.TxOut, error) {
 		return wire.TxOut{}, err
 	}
 
-	var amount uint64 = 0
+	var amount uint64
 	if packet.SubDust != nil {
 		amount = packet.SubDust.Amount
 	}
