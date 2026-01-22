@@ -362,7 +362,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 				WithMetadata(errors.TeleportValidationMetadata{})
 		}
 
-		if err := s.validateTeleportInput(*decodedProof, m.arkTx, *grpAsset.AssetId, uint32(input.Vin), input.Witness.Script); err != nil {
+		if err := s.validateTeleportInput(*decodedProof, m.arkTx, *grpAsset.AssetId, uint32(input.Witness.Index), input.Witness.Script); err != nil {
 			return err
 		}
 		return nil
