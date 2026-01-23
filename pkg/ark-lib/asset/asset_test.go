@@ -32,10 +32,10 @@ func TestAssetId_Roundtrip(t *testing.T) {
 		Index: RandIndex(),
 	}
 
-	assetString := assetId.ToString()
+	assetString := assetId.String()
 	require.Equal(t, ASSET_ID_SIZE*2, len(assetString))
 
-	derivedAssetId, err := AssetIdFromString(assetString)
+	derivedAssetId, err := NewAssetIdFromString(assetString)
 	require.NoError(t, err)
 	require.Equal(t, assetId.Index, derivedAssetId.Index)
 	require.Equal(t, assetId.Txid, derivedAssetId.Txid)
@@ -45,13 +45,11 @@ func TestAssetIdFromString_InvalidLength(t *testing.T) {
 	shortString := "0123"
 	// hex encoding means string length is double the byte length
 	shortLen := len(shortString) / 2
-	assetId, err := AssetIdFromString(shortString)
+	assetId, err := NewAssetIdFromString(shortString)
 	require.Error(t, err)
 	require.Equal(t, fmt.Sprintf("invalid asset id length: %d", shortLen), err.Error())
 	require.Nil(t, assetId)
 }
-
-
 
 func TestEncodeDecodeAssetPacket(t *testing.T) {
 	packet := &AssetPacket{
@@ -160,21 +158,19 @@ func TestAssetIdStringConversion(t *testing.T) {
 	index := uint16(12345)
 	assetId := AssetId{Txid: txid, Index: index}
 
-	s := assetId.ToString()
-	decoded, err := AssetIdFromString(s)
+	s := assetId.String()
+	decoded, err := NewAssetIdFromString(s)
 	require.NoError(t, err)
 	require.Equal(t, &assetId, decoded)
 
 	// Test invalid hex
-	_, err = AssetIdFromString("invalid")
+	_, err = NewAssetIdFromString("invalid")
 	require.Error(t, err)
 
 	// Test invalid length
-	_, err = AssetIdFromString(hex.EncodeToString(make([]byte, 35)))
+	_, err = NewAssetIdFromString(hex.EncodeToString(make([]byte, 35)))
 	require.Error(t, err)
 }
-
-
 
 // helper function to deep equal compare []AssetGroup slices
 func assetGroupsEqual(a, b []AssetGroup) bool {

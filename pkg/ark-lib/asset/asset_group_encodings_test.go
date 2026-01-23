@@ -110,6 +110,7 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 func TestEncodeAssetGroups(t *testing.T) {
 	t.Parallel()
 
+	// grab from fixtures
 	assetGroups := []AssetGroup{controlAsset, normalAsset}
 	data, err := encodeAssetGroups(assetGroups)
 	require.NoError(t, err)

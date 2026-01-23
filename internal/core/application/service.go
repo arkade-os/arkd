@@ -4328,17 +4328,17 @@ func (s *service) storeAssetGroups(
 			if asstGp.ControlAsset != nil {
 				switch asstGp.ControlAsset.Type {
 				case asset.AssetRefByID:
-					controlAsset = asstGp.ControlAsset.AssetId.ToString()
+					controlAsset = asstGp.ControlAsset.AssetId.String()
 				case asset.AssetRefByGroup:
 					controlAsset = asset.AssetId{
 						Txid:  txHashBytes,
 						Index: asstGp.ControlAsset.GroupIndex,
-					}.ToString()
+					}.String()
 				}
 			}
 
 			err := s.repoManager.Assets().InsertAssetGroup(ctx, domain.AssetGroup{
-				ID:             assetId.ToString(),
+				ID:             assetId.String(),
 				Quantity:       totalOut,
 				Immutable:      asstGp.Immutable,
 				Metadata:       metadataList,
@@ -4349,7 +4349,7 @@ func (s *service) storeAssetGroups(
 			}
 
 			log.Infof("stored new asset with id %s and total quantity %d",
-				assetId.ToString(),
+				assetId.String(),
 				totalOut,
 			)
 
@@ -4363,7 +4363,7 @@ func (s *service) storeAssetGroups(
 						Txid: arkTx.TxID(),
 						VOut: uint32(out.Vout),
 					},
-					AssetID: assetId.ToString(),
+					AssetID: assetId.String(),
 					Amount:  out.Amount,
 				}
 				assetList = append(assetList, asst)
@@ -4372,12 +4372,12 @@ func (s *service) storeAssetGroups(
 			continue
 		}
 
-		assetGp, err := s.repoManager.Assets().GetAssetGroupByID(ctx, assetId.ToString())
+		assetGp, err := s.repoManager.Assets().GetAssetGroupByID(ctx, assetId.String())
 		if err != nil {
 			return fmt.Errorf("error retrieving asset data: %s", err)
 		}
 		if assetGp == nil {
-			return fmt.Errorf("asset with id %s not found for update", assetId.ToString())
+			return fmt.Errorf("asset with id %s not found for update", assetId.String())
 		}
 
 		if err := s.updateAssetQuantity(ctx, assetId.ToString(), totalIn, totalOut); err != nil {
@@ -4390,7 +4390,7 @@ func (s *service) storeAssetGroups(
 					Txid: arkTx.TxID(),
 					VOut: uint32(out.Vout),
 				},
-				AssetID: assetId.ToString(),
+				AssetID: assetId.String(),
 				Amount:  out.Amount,
 			}
 			assetList = append(assetList, asst)

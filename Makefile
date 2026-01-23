@@ -99,6 +99,16 @@ test: pgtest redis-test-up
 	$(MAKE) droppgtest && $(MAKE) redis-test-down; \
 	exit $$failed
 
+## testFixtures: runs unit tests with fixtures and updates the fixtures
+assetTestFixtures: pgtest redis-test-up
+	@sleep 2
+	@echo "Running unit tests with fixtures..."
+	@failed=0; \
+	( cd pkg/ark-lib/asset && UPDATE_FIXTURES=1 go test -v -count=1 -race -tags=fixtures -run TestFixtures_DecodeExtensionPacket ./... ) || failed=1; \
+	find ./pkg -name go.mod -execdir sh -c 'go test -v -tags=fixtures ./...' \; || failed=1; \
+	$(MAKE) droppgtest && $(MAKE) redis-test-down; \
+	exit $$failed
+
 ## vet: code analysis
 vet:
 	@echo "Running code analysis..."

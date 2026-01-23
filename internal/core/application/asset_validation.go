@@ -163,7 +163,7 @@ func (m *controlAssetMachine) validateIssuance(s *service) error {
 			})
 		}
 	case asset.AssetRefByID:
-		controlAssetIDStr := m.asset.ControlAsset.AssetId.ToString()
+		controlAssetIDStr := m.asset.ControlAsset.AssetId.String()
 		assetGroup, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, controlAssetIDStr)
 		if err != nil {
 			return errors.CONTROL_ASSET_INVALID.New(
@@ -202,7 +202,7 @@ func (m *controlAssetMachine) validateReissuance(s *service) error {
 			WithMetadata(errors.AssetValidationMetadata{Message: "asset ID required for reissuance"})
 	}
 
-	assetID := m.asset.AssetId.ToString()
+	assetID := m.asset.AssetId.String()
 	controlAssetDetails, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, assetID)
 	if err != nil {
 		return errors.ASSET_VALIDATION_FAILED.New("error retrieving asset %s: %w", assetID, err).
@@ -219,7 +219,7 @@ func (m *controlAssetMachine) validateReissuance(s *service) error {
 			WithMetadata(errors.ControlAssetMetadata{AssetID: assetID})
 	}
 
-	decodedControlAssetId, err := asset.AssetIdFromString(controlAssetId)
+	decodedControlAssetId, err := asset.NewAssetIdFromString(controlAssetId)
 	if err != nil {
 		return errors.CONTROL_ASSET_INVALID.New("error decoding control asset ID %s: %w", controlAssetId, err).
 			WithMetadata(errors.ControlAssetMetadata{AssetID: assetID, ControlAssetID: controlAssetId})
@@ -279,7 +279,7 @@ func (m *assetGroupValidationMachine) run(s *service) error {
 		switch m.state {
 		case assetGroupValidateExists:
 			if grpAsset.AssetId != nil {
-				assetID := grpAsset.AssetId.ToString()
+				assetID := grpAsset.AssetId.String()
 				gp, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, assetID)
 				if err != nil {
 					return errors.ASSET_VALIDATION_FAILED.New(
@@ -641,7 +641,7 @@ func (s *service) ensureAssetPresence(
 		}
 	}
 
-	assetID := asset.ToString()
+	assetID := asset.String()
 	return errors.CONTROL_ASSET_NOT_FOUND.New("missing control asset %s in transaction", assetID).
 		WithMetadata(errors.ControlAssetMetadata{ControlAssetID: assetID})
 }

@@ -174,7 +174,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 							VOut: assetOut.Vout,
 						},
 						Amount:  assetOut.Amount,
-						AssetID: assetId.ToString(),
+						AssetID: assetId.String(),
 					})
 				}
 			}
