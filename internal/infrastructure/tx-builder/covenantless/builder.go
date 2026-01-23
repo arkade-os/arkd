@@ -10,7 +10,6 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -291,12 +290,6 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, err
 		}
 
-		// verfity asset forfeit transaction
-		extensionAnchor, err := verifyAssetForfeitTransaction(indexedVtxos, tx)
-		if err != nil {
-			return nil, err
-		}
-
 		if len(tx.Inputs) != 2 {
 			continue
 		}
@@ -460,11 +453,10 @@ func (b *txBuilder) VerifyForfeitTxs(
 			prevouts = []*wire.TxOut{connectorOutput, vtxoPrevout}
 		}
 
-		rebuilt, err := tree.BuildForfeitTxWithAnchor(
+		rebuilt, err := tree.BuildForfeitTx(
 			inputs,
 			sequences,
 			prevouts,
-			extensionAnchor,
 			forfeitScript,
 			uint32(locktime),
 		)
@@ -1185,79 +1177,4 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 	}
 
 	return txscript.PayToAddrScript(addr)
-}
-
-func verifyAssetForfeitTransaction(
-	vtxoMap map[domain.Outpoint]domain.Vtxo, tx *psbt.Packet,
-) (*wire.TxOut, error) {
-
-	if tx == nil || tx.UnsignedTx == nil {
-		return nil, fmt.Errorf("nil forfeit packet or unsigned tx")
-	}
-
-	txid := tx.UnsignedTx.TxID()
-
-	for _, output := range tx.UnsignedTx.TxOut {
-		if !extension.ContainsAssetPacket(output.PkScript) {
-			continue
-		}
-
-		assetPkt, err := extension.DecodeAssetPacket(*output)
-		if err != nil {
-			return nil, fmt.Errorf("decode asset packet for forfeit txid %s: %w", txid, err)
-		}
-
-		for _, asset := range assetPkt.Assets {
-			if asset.AssetId == nil {
-				// Issuance assets don't have inputs to validate against existing VTXOs
-				continue
-			}
-			assetID := asset.AssetId.ToString()
-			for _, in := range asset.Inputs {
-				if in.Type == extension.AssetTypeTeleport {
-					continue
-				}
-
-				if int(in.Vin) >= len(tx.UnsignedTx.TxIn) {
-					return nil, fmt.Errorf(
-						"asset input index out of range for txid %s: vin=%d",
-						txid, in.Vin,
-					)
-				}
-
-				prevOut := tx.UnsignedTx.TxIn[in.Vin].PreviousOutPoint
-				outpoint := domain.Outpoint{
-					Txid: prevOut.Hash.String(),
-					VOut: prevOut.Index,
-				}
-
-				vtxo, ok := vtxoMap[outpoint]
-				if !ok {
-					return nil, fmt.Errorf(
-						"vtxo not found for asset input txid=%s assetID=%s outpoint=%s",
-						txid, assetID, outpoint.String(),
-					)
-				}
-
-				foundAsset := false
-				for _, asset := range vtxo.Assets {
-					if asset.AssetID == assetID {
-						foundAsset = true
-						break
-					}
-				}
-
-				if !foundAsset {
-					return nil, fmt.Errorf(
-						"vtxo %s missing asset extension for assetID %s",
-						outpoint.String(), assetID,
-					)
-				}
-			}
-
-			return output, nil
-		}
-	}
-
-	return nil, nil
 }

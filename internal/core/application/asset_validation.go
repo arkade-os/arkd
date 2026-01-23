@@ -336,13 +336,13 @@ func (m *assetGroupValidationMachine) validateOutputs(s *service) error {
 
 func (m *assetGroupValidationMachine) validateInput(s *service, input extension.AssetInput) error {
 	grpAsset := m.group()
-	if input.Type == extension.AssetTypeTeleport {
+	if input.Type == extension.AssetTypeIntent {
 		if grpAsset.AssetId == nil {
 			return errors.TELEPORT_VALIDATION_FAILED.New("asset ID is required for teleport input validation").
 				WithMetadata(errors.TeleportValidationMetadata{})
 		}
 
-		txHash, err := chainhash.NewHash(input.Witness.Txid[:])
+		txHash, err := chainhash.NewHash(input.Txid[:])
 		if err != nil {
 			return errors.TELEPORT_VALIDATION_FAILED.New("invalid intent ID for teleport input validation: %w", err).
 				WithMetadata(errors.TeleportValidationMetadata{})
@@ -360,7 +360,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 				WithMetadata(errors.TeleportValidationMetadata{})
 		}
 
-		if err := s.validateTeleportInput(*decodedProof, *grpAsset.AssetId, input.Witness.Vout); err != nil {
+		if err := s.validateIntentInput(*decodedProof, *grpAsset.AssetId, input.Vin); err != nil {
 			return err
 		}
 
@@ -464,7 +464,7 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 	}
 }
 
-func (s *service) validateTeleportInput(
+func (s *service) validateIntentInput(
 	intentProof psbt.Packet,
 	assetId extension.AssetId,
 	vout uint32,
@@ -484,7 +484,7 @@ func (s *service) validateTeleportInput(
 	teleportOutputFound := false
 	for _, assetGroup := range assetPacket.Assets {
 		for _, assetOutput := range assetGroup.Outputs {
-			if assetOutput.Type == extension.AssetTypeTeleport && assetId == *assetGroup.AssetId &&
+			if assetOutput.Type == extension.AssetTypeIntent && assetId == *assetGroup.AssetId &&
 				vout == assetOutput.Vout {
 				teleportOutputFound = true
 				break

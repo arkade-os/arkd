@@ -779,9 +779,6 @@
           "id": {
             "type": "string"
           },
-          "immutable": {
-            "type": "boolean"
-          },
           "metadata": {
             "type": "array",
             "items": {
@@ -1309,19 +1306,6 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/IndexerVtxo"
-            }
-          },
-          "teleportEvents": {
-            "type": "array",
-            "description": "List of teleport events involved in the transaction",
-            "items": {
-              "$ref": "#/components/schemas/TeleportEvent"
-            }
-          },
-          "teleportHashes": {
-            "type": "array",
-            "items": {
-              "type": "string"
             }
           },
           "tx": {

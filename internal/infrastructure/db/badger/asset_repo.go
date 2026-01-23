@@ -22,7 +22,6 @@ type assetRepository struct {
 type assetGroup struct {
 	ID             string `badgerhold:"key"`
 	Quantity       uint64
-	Immutable      bool
 	ControlAssetId string
 }
 
@@ -354,7 +353,6 @@ func (r *assetRepository) InsertAssetGroup(ctx context.Context, a domain.AssetGr
 	record := assetGroup{
 		ID:             a.ID,
 		Quantity:       a.Quantity,
-		Immutable:      a.Immutable,
 		ControlAssetId: a.ControlAssetID,
 	}
 
@@ -397,7 +395,6 @@ func (r *assetRepository) GetAssetGroupByID(
 	return &domain.AssetGroup{
 		ID:             dbAsset.ID,
 		Quantity:       dbAsset.Quantity,
-		Immutable:      dbAsset.Immutable,
 		ControlAssetID: dbAsset.ControlAssetId,
 		Metadata:       metadata,
 	}, nil

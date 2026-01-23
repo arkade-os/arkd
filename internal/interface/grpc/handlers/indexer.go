@@ -73,10 +73,9 @@ func (e *indexerService) GetAssetGroup(ctx context.Context, request *arkv1.GetAs
 	return &arkv1.GetAssetGroupResponse{
 		AssetId: assetId,
 		AssetGroup: &arkv1.AssetGroup{
-			Id:        resp.AssetGroup.ID,
-			Quantity:  resp.AssetGroup.Quantity,
-			Immutable: resp.AssetGroup.Immutable,
-			Metadata:  assetMetadata,
+			Id:       resp.AssetGroup.ID,
+			Quantity: resp.AssetGroup.Quantity,
+			Metadata: assetMetadata,
 		},
 	}, nil
 }
@@ -613,53 +612,6 @@ func (h *indexerService) listenToTxEvents() {
 						// channel is full, skip this message to prevent blocking
 					}
 				}(l)
-			}
-		}
-
-		teleportListenersCopy := h.teleportSubsHandler.getListenersCopy()
-		if len(teleportListenersCopy) > 0 {
-			parsedTeleportEvents := make([]*arkv1.TeleportEvent, 0)
-			for _, te := range event.TeleportAssets {
-				parsedTeleportEvents = append(parsedTeleportEvents, &arkv1.TeleportEvent{
-					TeleportHash:   te.TeleportHash,
-					AnchorOutpoint: te.AnchorOutpoint.String(),
-					AssetId:        te.AssetID,
-					Amount:         te.Amount,
-					OutputVout:     te.OutputVout,
-					CreatedAt:      te.CreatedAt,
-					ExpiresAt:      te.ExpiresAt,
-				})
-			}
-
-			for _, l := range teleportListenersCopy {
-				teleportEvents := make([]*arkv1.TeleportEvent, 0)
-				involvedHashes := make([]string, 0)
-
-				for _, tpEvent := range parsedTeleportEvents {
-					if _, ok := l.topics[tpEvent.TeleportHash]; ok {
-						involvedHashes = append(involvedHashes, tpEvent.TeleportHash)
-						teleportEvents = append(teleportEvents, tpEvent)
-					}
-				}
-
-				if len(teleportEvents) > 0 {
-					go func(listener *listener[*arkv1.GetSubscriptionResponse]) {
-						select {
-						case listener.ch <- &arkv1.GetSubscriptionResponse{
-							Data: &arkv1.GetSubscriptionResponse_Event{
-								Event: &arkv1.IndexerSubscriptionEvent{
-									Txid:           event.Txid,
-									TeleportEvents: teleportEvents,
-									TeleportHashes: involvedHashes,
-									Tx:             event.Tx,
-								},
-							},
-						}:
-						default:
-							// channel is full, skip this message to prevent blocking
-						}
-					}(l)
-				}
 			}
 		}
 	}

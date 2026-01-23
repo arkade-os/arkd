@@ -74,7 +74,6 @@ func AssetIdFromString(s string) (*AssetId, error) {
 
 type AssetGroup struct {
 	AssetId      *AssetId
-	Immutable    bool
 	Outputs      []AssetOutput
 	ControlAsset *AssetRef
 	Inputs       []AssetInput
@@ -100,20 +99,15 @@ type AssetOutput struct {
 type AssetType uint8
 
 const (
-	AssetTypeLocal    AssetType = 0x01
-	AssetTypeTeleport AssetType = 0x02
+	AssetTypeLocal  AssetType = 0x01
+	AssetTypeIntent AssetType = 0x02
 )
 
-type TeleportWitness struct {
-	Txid [32]byte
-	Vout uint32
-}
-
 type AssetInput struct {
-	Type    AssetType
-	Vin     uint32          // For Local
-	Witness TeleportWitness // For Teleport
-	Amount  uint64
+	Type   AssetType
+	Vin    uint32
+	Txid   [32]byte
+	Amount uint64
 }
 
 func (g *AssetPacket) EncodeAssetPacket() (wire.TxOut, error) {
@@ -136,6 +130,11 @@ func DecodeAssetPacket(txOut wire.TxOut) (*AssetPacket, error) {
 
 func ContainsAssetPacket(opReturnData []byte) bool {
 	payload, _, err := parsePacketOpReturn(opReturnData)
+	return err == nil && len(payload) > 0
+}
+
+func ContainsSubKeyPacket(opReturnData []byte) bool {
+	_, payload, err := parsePacketOpReturn(opReturnData)
 	return err == nil && len(payload) > 0
 }
 

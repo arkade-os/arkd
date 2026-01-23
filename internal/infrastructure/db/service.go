@@ -544,7 +544,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
-		assetOpReturnProcessed := false
+		assetMapped := make(map[uint32][]domain.Asset)
 		for outIndex, out := range outs {
 			var isSubDust bool
 			var pubKey []byte
@@ -556,34 +556,51 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 			// ignore asset anchor
 			if extension.ContainsAssetPacket(out.PkScript) {
-				if assetOpReturnProcessed {
-					continue
-				}
-				assetOpReturnProcessed = true
-
 				txOut := wire.TxOut{
 					Value:    int64(out.Amount),
 					PkScript: out.PkScript,
 				}
 
-				if _, err := extension.DecodeAssetPacket(txOut); err != nil {
+				packet, err := extension.DecodeAssetPacket(txOut)
+				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
 				}
 
-				subDustPacket, err := extension.DecodeSubDustPacket(txOut)
+				for _, grp := range packet.Assets {
+					for _, assetOut := range grp.Outputs {
+						assetMapped[assetOut.Vout] = append(
+							assetMapped[assetOut.Vout],
+							domain.Asset{
+								AssetID: grp.AssetId.ToString(),
+								Amount:  uint64(assetOut.Amount),
+							},
+						)
+					}
+				}
+
+			}
+
+			if extension.ContainsSubKeyPacket(out.PkScript) {
+				subdustPacket, err := extension.DecodeSubDustPacket(wire.TxOut{
+					Value:    int64(out.Amount),
+					PkScript: out.PkScript,
+				})
+
 				if err != nil {
 					log.WithError(err).Warn("failed to decode sub-dust key from opret")
 					continue
 				}
-				if subDustPacket == nil || subDustPacket.Key == nil {
+				if subdustPacket == nil {
 					continue
 				}
 				isSubDust = true
-				pubKey = schnorr.SerializePubKey(subDustPacket.Key)
+				pubKey = schnorr.SerializePubKey(subdustPacket.Key)
 
-			} else {
-				isSubDust = script.IsSubDustScript(out.PkScript)
+			}
+
+			if script.IsSubDustScript(out.PkScript) {
+				isSubDust = true
 				pubKey = out.PkScript[2:]
 			}
 
@@ -606,10 +623,17 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			})
 		}
 
+		for i, newVtxo := range newVtxos {
+			if assets, found := assetMapped[newVtxo.Outpoint.VOut]; found {
+				newVtxos[i].Assets = assets
+			}
+		}
+
 		if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
 			log.WithError(err).Warn("failed to add vtxos")
 			return
 		}
+
 		log.Debugf("added %d vtxos", len(newVtxos))
 	}
 }

@@ -121,7 +121,6 @@ type TransactionEvent struct {
 	SpendableVtxos []domain.Vtxo
 	SweptVtxos     []domain.Outpoint
 	CheckpointTxs  map[string]TxData
-	TeleportAssets []TeleportAsset
 }
 
 type TeleportAsset struct {

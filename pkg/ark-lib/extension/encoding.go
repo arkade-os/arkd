@@ -13,7 +13,6 @@ const (
 	maskAssetId      uint8 = 1 << 0 // 0x01
 	maskControlAsset uint8 = 1 << 1 // 0x02
 	maskMetadata     uint8 = 1 << 2 // 0x04
-	maskImmutable    uint8 = 1 << 3 // 0x08
 )
 
 func (a *AssetGroup) Encode() ([]byte, error) {
@@ -31,9 +30,7 @@ func (a *AssetGroup) Encode() ([]byte, error) {
 	if len(a.Metadata) > 0 {
 		presence |= maskMetadata
 	}
-	if a.Immutable {
-		presence |= maskImmutable
-	}
+
 	if err := buf.WriteByte(presence); err != nil {
 		return nil, err
 	}
@@ -63,8 +60,6 @@ func (a *AssetGroup) Encode() ([]byte, error) {
 			return nil, err
 		}
 	}
-
-	// Immutable: No payload, presence bit is the value (true).
 
 	// 3. Inputs
 	if err := encodeAssetInputList(&buf, a.Inputs, &scratch); err != nil {
@@ -118,13 +113,6 @@ func (a *AssetGroup) Decode(r io.Reader) error {
 		if err != nil {
 			return err
 		}
-	}
-
-	// Immutable
-	if (presence & maskImmutable) != 0 {
-		a.Immutable = true
-	} else {
-		a.Immutable = false
 	}
 
 	// 3. Inputs
@@ -264,17 +252,15 @@ func encodeAssetInputList(w io.Writer, inputs []AssetInput, scratch *[8]byte) er
 			if err := tlv.EUint64(w, &in.Amount, scratch); err != nil {
 				return err
 			}
-		case AssetTypeTeleport:
-			// Amount
+		case AssetTypeIntent:
 			if err := tlv.EUint64(w, &in.Amount, scratch); err != nil {
 				return err
 			}
-			// Witness
-			if _, err := w.Write(in.Witness.Txid[:]); err != nil {
+			if _, err := w.Write(in.Txid[:]); err != nil {
 				return err
 			}
 
-			if err := tlv.EUint32(w, &in.Witness.Vout, scratch); err != nil {
+			if err := tlv.EUint32(w, &in.Vin, scratch); err != nil {
 				return err
 			}
 		default:
@@ -305,18 +291,17 @@ func decodeAssetInputList(r io.Reader, scratch *[8]byte) ([]AssetInput, error) {
 			if err := tlv.DUint64(r, &inputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}
-		case AssetTypeTeleport:
+		case AssetTypeIntent:
+			inputs[i].Type = AssetTypeIntent
 			if err := tlv.DUint64(r, &inputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}
-
-			// Txid
-			if _, err := io.ReadFull(r, inputs[i].Witness.Txid[:]); err != nil {
+			if _, err := io.ReadFull(r, inputs[i].Txid[:]); err != nil {
 				return nil, err
 			}
 
 			// Index
-			if err := tlv.DUint32(r, &inputs[i].Witness.Vout, scratch, 4); err != nil {
+			if err := tlv.DUint32(r, &inputs[i].Vin, scratch, 4); err != nil {
 				return nil, err
 			}
 		default:
@@ -342,7 +327,7 @@ func encodeAssetOutputList(w io.Writer, outputs []AssetOutput, scratch *[8]byte)
 			if err := tlv.EUint64(w, &out.Amount, scratch); err != nil {
 				return err
 			}
-		case AssetTypeTeleport:
+		case AssetTypeIntent:
 			if err := tlv.EUint64(w, &out.Amount, scratch); err != nil {
 				return err
 			}
@@ -374,7 +359,7 @@ func decodeAssetOutputList(r io.Reader, scratch *[8]byte) ([]AssetOutput, error)
 			if err := tlv.DUint64(r, &outputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}
-		case AssetTypeTeleport:
+		case AssetTypeIntent:
 			if err := tlv.DUint64(r, &outputs[i].Amount, scratch, 8); err != nil {
 				return nil, err
 			}

@@ -37,8 +37,7 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Vout:   0,
 			},
 			{
-				Type:   AssetTypeTeleport,
-				Script: deterministicTxhash(0xcc),
+				Type:   AssetTypeIntent,
 				Amount: 22,
 			},
 		},
@@ -53,14 +52,10 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 				Amount: 20,
 			},
 			{
-				Type: AssetTypeTeleport,
+				Type: AssetTypeIntent,
 				// Vin is not encoded for Teleport inputs
-				Vin: 0,
-				Witness: TeleportWitness{
-					Script: []byte{0x00, 0x01, 0x02, 0x03},
-					Txid:   deterministicBytesArray(0x55),
-					Vout:   123,
-				},
+				Vin:    123,
+				Txid:   deterministicBytesArray(0x55),
 				Amount: 40,
 			},
 		},
@@ -68,7 +63,6 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 			{Key: "purpose", Value: "roundtrip"},
 			{Key: "owner", Value: "arkade"},
 		},
-		Immutable: true,
 	}
 
 	encoded, err := asset.Encode()
@@ -84,7 +78,7 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 func testAssetGroupEncodeDecode(t *testing.T) {
 	controlAsset := AssetGroup{
 		AssetId:      ptrAssetId(deterministicAssetId(0x11)),
-		Outputs:      []AssetOutput{{Type: AssetTypeTeleport, Script: deterministicTxhash(0xdd), Amount: 1}},
+		Outputs:      []AssetOutput{{Type: AssetTypeIntent, Amount: 1}},
 		ControlAsset: deterministicAssetRefId(0x3c),
 		Metadata:     []Metadata{{Key: "kind", Value: "control"}},
 	}
@@ -227,8 +221,7 @@ func testAssetOutputListEncodeDecode(t *testing.T) {
 			Amount: 100,
 		},
 		{
-			Type:   AssetTypeTeleport,
-			Script: deterministicTxhash(0xEE),
+			Type:   AssetTypeIntent,
 			Amount: 200,
 		},
 	}
@@ -252,14 +245,10 @@ func testAssetInputListEncodeDecode(t *testing.T) {
 			Vin:    1,
 		},
 		{
-			Type:   AssetTypeTeleport,
-			Vin:    0,
+			Type:   AssetTypeIntent,
+			Vin:    456,
+			Txid:   deterministicBytesArray(0x11),
 			Amount: 20,
-			Witness: TeleportWitness{
-				Script: []byte{0xde, 0xad, 0xbe, 0xef},
-				Txid:   deterministicBytesArray(0x11),
-				Vout:   456,
-			},
 		},
 	}
 

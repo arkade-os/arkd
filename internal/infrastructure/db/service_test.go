@@ -1552,9 +1552,8 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("insert and get asset group", func(t *testing.T) {
 		ctx := context.Background()
 		asset := domain.AssetGroup{
-			ID:        "asset-group-123",
-			Quantity:  5000,
-			Immutable: false,
+			ID:       "asset-group-123",
+			Quantity: 5000,
 			Metadata: []domain.AssetMetadata{
 				{Key: "name", Value: "My Asset"},
 				{Key: "symbol", Value: "MAS"},
@@ -1571,7 +1570,6 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 
 		require.Equal(t, asset.ID, got.ID)
 		require.Equal(t, asset.Quantity, got.Quantity)
-		require.Equal(t, asset.Immutable, got.Immutable)
 		require.ElementsMatch(t, asset.Metadata, got.Metadata)
 		require.Equal(t, asset.ControlAssetID, got.ControlAssetID)
 	})
@@ -1709,9 +1707,8 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 
 		asset := domain.AssetGroup{
-			ID:        "asset-3",
-			Quantity:  10,
-			Immutable: true,
+			ID:       "asset-3",
+			Quantity: 10,
 			Metadata: []domain.AssetMetadata{
 				{Key: "name", Value: "Test AssetGroup"},
 				{Key: "symbol", Value: "TST"},
@@ -1735,7 +1732,6 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err, "GetAsseGroupByID should succeed")
 
 		require.Equal(t, uint64(12), assetD.Quantity)
-		require.True(t, assetD.Immutable)
 
 		md, err := svc.Assets().ListMetadataByAssetID(ctx, asset.ID)
 		require.NoError(t, err, "ListMetadataByAssetID should succeed")

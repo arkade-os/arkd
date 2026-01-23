@@ -278,15 +278,12 @@ func NewService(
 			spentVtxos := svc.getSpentVtxos(round.Intents)
 			newVtxos := getNewVtxosFromRound(round)
 
-			newTeleportAssets := getTeleportAssets(round)
-
 			// commitment tx event
 			txEvent := TransactionEvent{
 				TxData:         TxData{Tx: round.CommitmentTx, Txid: round.CommitmentTxid},
 				Type:           CommitmentTxType,
 				SpentVtxos:     spentVtxos,
 				SpendableVtxos: newVtxos,
-				TeleportAssets: newTeleportAssets,
 			}
 
 			svc.propagateTransactionEvent(txEvent)
@@ -1674,12 +1671,10 @@ func (s *service) RegisterIntent(
 							AssetId: grp.AssetId,
 
 							Inputs: []extension.AssetInput{{
-								Type:   extension.AssetTypeTeleport,
+								Type:   extension.AssetTypeIntent,
 								Amount: out.Amount,
-								Witness: extension.TeleportWitness{
-									Txid: proof.UnsignedTx.TxHash(),
-									Vout: out.Vout,
-								},
+								Txid:   proof.UnsignedTx.TxHash(),
+								Vin:    out.Vout,
 							}},
 
 							Outputs: []extension.AssetOutput{{
@@ -4368,7 +4363,6 @@ func (s *service) storeAssetGroups(
 			err := s.repoManager.Assets().InsertAssetGroup(ctx, domain.AssetGroup{
 				ID:             assetId.ToString(),
 				Quantity:       totalOut,
-				Immutable:      asstGp.Immutable,
 				Metadata:       metadataList,
 				ControlAssetID: controlAsset,
 			})
@@ -4382,7 +4376,7 @@ func (s *service) storeAssetGroups(
 			)
 
 			for _, out := range asstGp.Outputs {
-				if out.Type == extension.AssetTypeTeleport {
+				if out.Type == extension.AssetTypeIntent {
 					continue
 				}
 
@@ -4407,35 +4401,6 @@ func (s *service) storeAssetGroups(
 		if assetGp == nil {
 			return fmt.Errorf("asset with id %s not found for update", assetId.ToString())
 		}
-
-		if !assetGp.Immutable && len(metadataList) > 0 {
-			if len(assetGp.ControlAssetID) == 0 {
-				return fmt.Errorf("cannot update mutable asset without control asset")
-			}
-
-			controlAssetID, err := extension.AssetIdFromString(assetGp.ControlAssetID)
-			if err != nil {
-				return fmt.Errorf("error parsing control asset id: %s", err)
-			}
-
-			if controlAssetID == nil {
-				return fmt.Errorf("invalid control asset id for asset %s", assetId.ToString())
-			}
-
-			if err := s.ensureAssetPresence(ctx, assetGroupList, *controlAssetID); err != nil {
-				return fmt.Errorf(
-					"cannot update asset metadata while control asset is being issued",
-				)
-			}
-
-			if err := s.repoManager.Assets().UpdateAssetMetadataList(ctx, assetId.ToString(), metadataList); err != nil {
-				return fmt.Errorf("error updating asset metadata: %s", err)
-			}
-		}
-
-		log.Infof("updated asset metadata for asset id %s",
-			assetId.ToString(),
-		)
 
 		if err := s.updateAssetQuantity(ctx, assetId.ToString(), totalIn, totalOut); err != nil {
 			return err
@@ -4512,7 +4477,7 @@ func getTeleportAssets(round *domain.Round) []TeleportAsset {
 		events := make([]TeleportAsset, 0)
 		for _, ast := range groups {
 			for outIdx, assetOut := range ast.Outputs {
-				if assetOut.Type != extension.AssetTypeTeleport {
+				if assetOut.Type != extension.AssetTypeIntent {
 					continue
 				}
 
