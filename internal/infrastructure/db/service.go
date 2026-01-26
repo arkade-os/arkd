@@ -23,6 +23,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -567,18 +568,33 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					continue
 				}
 
-				for _, grp := range packet.Assets {
+				for i, grp := range packet.Assets {
+					var assetId string
+					if grp.AssetId == nil {
+						txhash, err := chainhash.NewHashFromStr(txid)
+						if err != nil {
+							log.WithError(err).Warn("failed to generate asset id from txid")
+							continue
+						}
+
+						assetId = extension.AssetId{
+							Txid:  *txhash,
+							Index: uint16(i),
+						}.ToString()
+					} else {
+						assetId = grp.AssetId.ToString()
+					}
+
 					for _, assetOut := range grp.Outputs {
 						assetMapped[assetOut.Vout] = append(
 							assetMapped[assetOut.Vout],
 							domain.Asset{
-								AssetID: grp.AssetId.ToString(),
+								AssetID: assetId,
 								Amount:  uint64(assetOut.Amount),
 							},
 						)
 					}
 				}
-
 			}
 
 			if extension.ContainsSubKeyPacket(out.PkScript) {
