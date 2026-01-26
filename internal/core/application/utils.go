@@ -359,7 +359,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 			})
 
 			for i, vtxo := range vtxos {
-				if assets, found := assetsMap[vtxo.Outpoint.VOut]; found {
+				if assets, found := assetsMap[vtxo.VOut]; found {
 					vtxos[i].Assets = assets
 				}
 			}

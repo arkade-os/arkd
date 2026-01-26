@@ -1648,7 +1648,7 @@ func (s *service) RegisterIntent(
 
 	// add the asset group
 	if assetPacket != nil {
-		for i, _ := range receivers {
+		for i := range receivers {
 			assetGroupList := make([]extension.AssetGroup, 0)
 
 			for _, grp := range assetPacket.Assets {
@@ -4461,89 +4461,4 @@ func (s *service) updateAssetQuantity(
 	}
 
 	return nil
-}
-
-func getTeleportAssets(round *domain.Round) []TeleportAsset {
-	if len(round.VtxoTree) <= 0 {
-		return nil
-	}
-
-	createdAt := time.Now().Unix()
-	expireAt := round.ExpiryTimestamp()
-
-	events := make([]TeleportAsset, 0)
-
-	collectTeleportAssets := func(groups []extension.AssetGroup, anchorOutpoint domain.Outpoint, createdAt, expiresAt int64, includeAmount bool) []TeleportAsset {
-		events := make([]TeleportAsset, 0)
-		for _, ast := range groups {
-			for outIdx, assetOut := range ast.Outputs {
-				if assetOut.Type != extension.AssetTypeIntent {
-					continue
-				}
-
-				if ast.AssetId == nil {
-					continue // skip teleport output with issuance asset id [should not happen]
-				}
-
-				event := TeleportAsset{
-					AnchorOutpoint: anchorOutpoint,
-					AssetID:        ast.AssetId.ToString(),
-					OutputVout:     uint32(outIdx),
-					CreatedAt:      createdAt,
-					ExpiresAt:      expiresAt,
-				}
-				if includeAmount {
-					event.Amount = assetOut.Amount
-				}
-				events = append(events, event)
-			}
-		}
-
-		return events
-	}
-
-	findAssetPacketInTx := func(tx *wire.MsgTx) (*extension.AssetPacket, domain.Outpoint) {
-		for i, out := range tx.TxOut {
-			if !extension.ContainsAssetPacket(out.PkScript) {
-				continue
-			}
-
-			packet, err := extension.DecodeAssetPacket(*out)
-			if err != nil {
-				return nil, domain.Outpoint{}
-			}
-
-			anchorOutpoint := domain.Outpoint{
-				Txid: tx.TxID(),
-				VOut: uint32(i),
-			}
-			return packet, anchorOutpoint
-		}
-
-		return nil, domain.Outpoint{}
-	}
-
-	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
-		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
-		if err != nil {
-			log.WithError(err).Warn("failed to parse tx")
-			continue
-		}
-		packet, anchorOutpoint := findAssetPacketInTx(tx.UnsignedTx)
-		if packet == nil {
-			continue
-		}
-
-		events = append(
-			events,
-			collectTeleportAssets(
-				packet.Assets,
-				anchorOutpoint,
-				createdAt,
-				expireAt,
-				false,
-			)...)
-
-	}
-	return events
 }

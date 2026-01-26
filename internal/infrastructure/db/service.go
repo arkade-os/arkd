@@ -624,7 +624,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 
 		for i, newVtxo := range newVtxos {
-			if assets, found := assetMapped[newVtxo.Outpoint.VOut]; found {
+			if assets, found := assetMapped[newVtxo.VOut]; found {
 				newVtxos[i].Assets = assets
 			}
 		}
@@ -732,13 +732,16 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 
 		if assetAnchorIndex > -1 {
 			assetAnchor := domain.AssetAnchor{
-				Outpoint: domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(assetAnchorIndex)},
+				Outpoint: domain.Outpoint{
+					Txid: tx.UnsignedTx.TxID(),
+					VOut: uint32(assetAnchorIndex),
+				},
 			}
 
 			normalAssets := make([]domain.NormalAsset, 0)
 
 			for i, vtxo := range vtxos {
-				if asset, found := assetsMap[vtxo.Outpoint.VOut]; found {
+				if asset, found := assetsMap[vtxo.VOut]; found {
 					vtxos[i].Assets = []domain.Asset{asset}
 
 					normalAssets = append(normalAssets, domain.NormalAsset{
