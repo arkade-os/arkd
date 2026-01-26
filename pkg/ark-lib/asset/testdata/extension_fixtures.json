@@ -1,22 +1,88 @@
-[
-  {
-    "name": "control+normal",
-    "pk_script_hex": "6a4cf541524b00f0020711111111111111111111111111111111111111111111111111111111111111110000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e6407636f6e74726f6c00010220dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd00000000000000010712121212121212121212121212121212121212121212121212121212121212120000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
-  },
-  {
-    "name": "subdust+control",
-    "pk_script_hex": "6a4ca841524b01209ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b0081010711111111111111111111111111111111111111111111111111111111111111110000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e6407636f6e74726f6c00010220dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd0000000000000001"
-  },
-  {
-    "name": "normal",
-    "pk_script_hex": "6a4c7541524b0070010712121212121212121212121212121212121212121212121212121212121212120000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
-  },
-  {
-    "name": "control",
-    "pk_script_hex": "6a4c8641524b0081010711111111111111111111111111111111111111111111111111111111111111110000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e6407636f6e74726f6c00010220dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd0000000000000001"
-  },
-  {
-    "name": "subdust",
-    "pk_script_hex": "6a2541524b01209ac20335eb38768d2052be1dbbc3c8f6178407458e51e6b4ad22f1d91758895b"
-  }
-]
+{
+  "valid": [
+    {
+      "name": "control",
+      "assets": [
+        {
+          "asset_id": {
+            "txid": "11111111111111111111111111111111111111111111111111111111111111110000",
+            "index": 0
+          },
+          "immutable": false,
+          "outputs": [
+            {
+              "type": "teleport",
+              "vout": 0,
+              "script": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "amount": 1
+            }
+          ],
+          "control_asset": {
+            "type": "AssetRefByID",
+            "asset_id": {
+              "txid": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c0000",
+              "index": 0
+            },
+            "group_index": 0
+          },
+          "inputs": [],
+          "metadata": [
+            {
+              "key": "kind",
+              "value": "control"
+            }
+          ]
+        }
+      ],
+      "pk_script_hex": "0711111111111111111111111111111111111111111111111111111111111111110000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e6407636f6e74726f6c00010220dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd0000000000000001"
+    },
+    {
+      "name": "normal",
+      "assets": [
+        {
+          "asset_id": {
+            "txid": "12121212121212121212121212121212121212121212121212121212121212120000",
+            "index": 0
+          },
+          "immutable": false,
+          "outputs": [
+            {
+              "type": "local",
+              "vout": 1,
+              "script": "",
+              "amount": 10
+            }
+          ],
+          "control_asset": {
+            "type": "AssetRefByID",
+            "asset_id": {
+              "txid": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c0000",
+              "index": 0
+            },
+            "group_index": 0
+          },
+          "inputs": [
+            {
+              "type": "local",
+              "vin": 1,
+              "witness": {
+                "script": "",
+                "txid": "",
+                "index": 0
+              },
+              "amount": 5
+            }
+          ],
+          "metadata": [
+            {
+              "key": "kind",
+              "value": "normal"
+            }
+          ]
+        }
+      ],
+      "pk_script_hex": "0712121212121212121212121212121212121212121212121212121212121212120000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
+    }
+  ],
+  "invalid": []
+}
