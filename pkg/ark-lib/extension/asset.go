@@ -152,3 +152,9 @@ func DeriveAssetPacketFromTx(arkTx wire.MsgTx) (*AssetPacket, int, error) {
 	return nil, 0, errors.New("no asset opreturn found in transaction")
 
 }
+
+func IsExtensionPacket(opReturnData []byte) bool {
+	asset, subdust, err := parsePacketOpReturn(opReturnData)
+	return err == nil && len(asset) > 0 || len(subdust) > 0
+
+}

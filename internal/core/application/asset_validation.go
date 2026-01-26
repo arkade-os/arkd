@@ -372,6 +372,14 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 			WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin)})
 	}
 
+	if m.checkpointTxMap == nil {
+		prev := m.arkTx.TxIn[input.Vin].PreviousOutPoint
+		if err := s.verifyAssetInputPrevOut(m.ctx, input, prev); err != nil {
+			return err
+		}
+		return nil
+	}
+
 	checkpointOutpoint := m.arkTx.TxIn[input.Vin].PreviousOutPoint
 	checkpointTxHex, ok := m.checkpointTxMap[checkpointOutpoint.Hash.String()]
 	if !ok {
@@ -396,7 +404,6 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 	}
 
 	prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
-
 	if err := s.verifyAssetInputPrevOut(m.ctx, input, prev); err != nil {
 		return err
 	}

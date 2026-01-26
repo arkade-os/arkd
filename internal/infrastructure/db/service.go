@@ -556,68 +556,69 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 
 			// ignore asset anchor
-			if extension.ContainsAssetPacket(out.PkScript) {
+			if extension.IsExtensionPacket(out.PkScript) {
 				txOut := wire.TxOut{
 					Value:    int64(out.Amount),
 					PkScript: out.PkScript,
 				}
 
-				packet, err := extension.DecodeAssetPacket(txOut)
+				packet, err := extension.DecodeExtensionPacket(txOut)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
 				}
 
-				for i, grp := range packet.Assets {
-					var assetId string
-					if grp.AssetId == nil {
-						txhash, err := chainhash.NewHashFromStr(txid)
-						if err != nil {
-							log.WithError(err).Warn("failed to generate asset id from txid")
-							continue
+				if packet.Asset != nil {
+					for i, grp := range packet.Asset.Assets {
+						var assetId string
+						if grp.AssetId == nil {
+							txhash, err := chainhash.NewHashFromStr(txid)
+							if err != nil {
+								log.WithError(err).Warn("failed to generate asset id from txid")
+								continue
+							}
+
+							assetId = extension.AssetId{
+								Txid:  *txhash,
+								Index: uint16(i),
+							}.ToString()
+						} else {
+							assetId = grp.AssetId.ToString()
 						}
 
-						assetId = extension.AssetId{
-							Txid:  *txhash,
-							Index: uint16(i),
-						}.ToString()
-					} else {
-						assetId = grp.AssetId.ToString()
-					}
-
-					for _, assetOut := range grp.Outputs {
-						assetMapped[assetOut.Vout] = append(
-							assetMapped[assetOut.Vout],
-							domain.Asset{
-								AssetID: assetId,
-								Amount:  uint64(assetOut.Amount),
-							},
-						)
+						for _, assetOut := range grp.Outputs {
+							assetMapped[assetOut.Vout] = append(
+								assetMapped[assetOut.Vout],
+								domain.Asset{
+									AssetID: assetId,
+									Amount:  uint64(assetOut.Amount),
+								},
+							)
+						}
 					}
 				}
-			}
 
-			if extension.ContainsSubKeyPacket(out.PkScript) {
-				subdustPacket, err := extension.DecodeSubDustPacket(wire.TxOut{
-					Value:    int64(out.Amount),
-					PkScript: out.PkScript,
-				})
-
-				if err != nil {
-					log.WithError(err).Warn("failed to decode sub-dust key from opret")
+				if packet.SubDust == nil {
 					continue
+				} else {
+					isSubDust = true
+					pubKey = schnorr.SerializePubKey(packet.SubDust.Key)
 				}
-				if subdustPacket == nil {
-					continue
-				}
-				isSubDust = true
-				pubKey = schnorr.SerializePubKey(subdustPacket.Key)
 
 			}
 
-			if script.IsSubDustScript(out.PkScript) {
+			if !isSubDust && script.IsSubDustScript(out.PkScript) {
 				isSubDust = true
 				pubKey = out.PkScript[2:]
+			}
+
+			if !isSubDust {
+				vtxoTapKey, err := schnorr.ParsePubKey(out.PkScript[2:])
+				if err != nil {
+					log.WithError(err).Warn("failed to parse vtxo tap key")
+					continue
+				}
+				pubKey = schnorr.SerializePubKey(vtxoTapKey)
 			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
