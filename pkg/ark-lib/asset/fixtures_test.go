@@ -66,6 +66,7 @@ type verifyFixturesJSON struct {
 // make a Control Asset from fixture
 var controlAsset AssetGroup
 var normalAsset AssetGroup
+var emptyAssetId AssetId
 
 func init() {
 	{
@@ -75,6 +76,7 @@ func init() {
 		}
 		controlAsset = ControlAsset(valid)
 		normalAsset = NormalAsset(valid)
+		emptyAssetId = EmptyAssetId(valid)
 	}
 }
 
@@ -355,4 +357,12 @@ func ControlAsset(fixtures []fixture) AssetGroup {
 
 func NormalAsset(fixtures []fixture) AssetGroup {
 	return GetFixture("normal", fixtures)
+}
+
+func EmptyAssetId(fixtures []fixture) AssetId {
+	emptyFixture := GetFixture("empty", fixtures)
+	if emptyFixture.AssetId != nil {
+		return *emptyFixture.AssetId
+	}
+	return AssetId{}
 }

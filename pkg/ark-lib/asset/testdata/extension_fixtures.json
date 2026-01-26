@@ -82,6 +82,53 @@
         }
       ],
       "pk_script_hex": "0712121212121212121212121212121212121212121212121212121212121212120000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
+    },
+    {
+      "name": "empty",
+      "assets": [
+        {
+          "asset_id": {
+            "txid": "00000000000000000000000000000000000000000000000000000000000000000000",
+            "index": 0
+          },
+          "immutable": false,
+          "outputs": [
+            {
+              "type": "local",
+              "vout": 1,
+              "script": "",
+              "amount": 10
+            }
+          ],
+          "control_asset": {
+            "type": "AssetRefByID",
+            "asset_id": {
+              "txid": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c0000",
+              "index": 0
+            },
+            "group_index": 0
+          },
+          "inputs": [
+            {
+              "type": "local",
+              "vin": 1,
+              "witness": {
+                "script": "",
+                "txid": "",
+                "index": 0
+              },
+              "amount": 5
+            }
+          ],
+          "metadata": [
+            {
+              "key": "kind",
+              "value": "normal"
+            }
+          ]
+        }
+      ],
+      "pk_script_hex": "0700000000000000000000000000000000000000000000000000000000000000000000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
     }
   ],
   "invalid": []
