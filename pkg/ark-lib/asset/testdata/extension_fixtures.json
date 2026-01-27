@@ -131,5 +131,96 @@
       "pk_script_hex": "0700000000000000000000000000000000000000000000000000000000000000000000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
     }
   ],
-  "invalid": []
+  "invalid": [
+    {
+      "name": "unknown_input_type",
+      "description": "Asset with unknown input type (99)",
+      "assets": [
+        {
+          "asset_id": {
+            "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+            "index": 0
+          },
+          "inputs": [
+            {
+              "type_raw": 99,
+              "amount": 100
+            }
+          ],
+          "outputs": [
+            {
+              "type": "local",
+              "vout": 0,
+              "amount": 100
+            }
+          ]
+        }
+      ],
+      "expected_error": "unknown asset input type"
+    },
+    {
+      "name": "unknown_output_type",
+      "description": "Asset with unknown output type (99)",
+      "assets": [
+        {
+          "asset_id": {
+            "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+            "index": 0
+          },
+          "inputs": [
+            {
+              "type": "local",
+              "vin": 0,
+              "amount": 100
+            }
+          ],
+          "outputs": [
+            {
+              "type_raw": 99,
+              "vout": 0,
+              "amount": 100
+            }
+          ]
+        }
+      ],
+      "expected_error": "unknown asset output type"
+    },
+    {
+      "name": "unknown_control_asset_type",
+      "description": "Asset with unknown control asset ref type (99)",
+      "assets": [
+        {
+          "asset_id": {
+            "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+            "index": 0
+          },
+          "control_asset": {
+            "type_raw": 99
+          },
+          "inputs": [
+            {
+              "type": "local",
+              "vin": 0,
+              "amount": 100
+            }
+          ],
+          "outputs": [
+            {
+              "type": "local",
+              "vout": 0,
+              "amount": 100
+            }
+          ]
+        }
+      ],
+      "expected_error": "unknown asset ref type"
+    },
+    {
+      "name": "truncated_pk_script",
+      "description": "Truncated pk_script data that will fail to decode",
+      "assets": [],
+      "pk_script_hex": "07111111111111111111111111",
+      "expected_error": "unexpected EOF"
+    }
+  ]
 }

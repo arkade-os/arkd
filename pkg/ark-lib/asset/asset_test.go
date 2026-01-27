@@ -3,8 +3,10 @@ package asset
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,6 +14,62 @@ import (
 
 var charset = "0123456789"
 var maxUint16 = 65535
+
+type jsonAssetIdFixture struct {
+	Name     string `json:"name"`
+	TxidSeed byte   `json:"txid_seed"`
+	Index    uint16 `json:"index"`
+}
+
+type jsonInvalidStringFixture struct {
+	Name                  string `json:"name"`
+	Value                 string `json:"value,omitempty"`
+	ByteLength            int    `json:"byte_length,omitempty"`
+	ExpectedErrorFormat   string `json:"expected_error_format,omitempty"`
+	ExpectedErrorContains string `json:"expected_error_contains,omitempty"`
+}
+
+type assetFixturesJSON struct {
+	AssetIds       []jsonAssetIdFixture       `json:"asset_ids"`
+	InvalidStrings []jsonInvalidStringFixture `json:"invalid_strings"`
+}
+
+var assetFixtures assetFixturesJSON
+
+func init() {
+	file, err := os.ReadFile("testdata/asset_fixtures.json")
+	if err != nil {
+		panic(err)
+	}
+	if err := json.Unmarshal(file, &assetFixtures); err != nil {
+		panic(err)
+	}
+}
+
+func getAssetIdFixture(name string) *jsonAssetIdFixture {
+	for _, f := range assetFixtures.AssetIds {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func getInvalidStringFixture(name string) *jsonInvalidStringFixture {
+	for _, f := range assetFixtures.InvalidStrings {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func fixtureToAssetId(f *jsonAssetIdFixture) AssetId {
+	return AssetId{
+		Txid:  deterministicBytesArray(f.TxidSeed),
+		Index: f.Index,
+	}
+}
 
 func RandTxHash() [TX_HASH_SIZE]byte {
 	var txh [TX_HASH_SIZE]byte
@@ -41,19 +99,21 @@ func TestAssetId_Roundtrip(t *testing.T) {
 }
 
 func TestAssetIdFromString_InvalidLength(t *testing.T) {
-	shortString := "0123"
+	fixture := getInvalidStringFixture("short")
+	require.NotNil(t, fixture)
+
 	// hex encoding means string length is double the byte length
-	shortLen := len(shortString) / 2
-	assetId, err := NewAssetIdFromString(shortString)
+	shortLen := len(fixture.Value) / 2
+	assetId, err := NewAssetIdFromString(fixture.Value)
 	require.Error(t, err)
-	require.Equal(t, fmt.Sprintf("invalid asset id length: %d", shortLen), err.Error())
+	require.Equal(t, fmt.Sprintf(fixture.ExpectedErrorFormat, shortLen), err.Error())
 	require.Nil(t, assetId)
 }
 
 func TestAssetIdStringConversion(t *testing.T) {
-	txid := deterministicBytesArray(0x01)
-	index := uint16(12345)
-	assetId := AssetId{Txid: txid, Index: index}
+	fixture := getAssetIdFixture("deterministic")
+	require.NotNil(t, fixture)
+	assetId := fixtureToAssetId(fixture)
 
 	s := assetId.String()
 	decoded, err := NewAssetIdFromString(s)
@@ -61,11 +121,15 @@ func TestAssetIdStringConversion(t *testing.T) {
 	require.Equal(t, &assetId, decoded)
 
 	// Test invalid hex
-	_, err = NewAssetIdFromString("invalid")
+	invalidHexFixture := getInvalidStringFixture("invalid_hex")
+	require.NotNil(t, invalidHexFixture)
+	_, err = NewAssetIdFromString(invalidHexFixture.Value)
 	require.Error(t, err)
 
 	// Test invalid length
-	_, err = NewAssetIdFromString(hex.EncodeToString(make([]byte, 35)))
+	wrongLengthFixture := getInvalidStringFixture("wrong_length")
+	require.NotNil(t, wrongLengthFixture)
+	_, err = NewAssetIdFromString(hex.EncodeToString(make([]byte, wrongLengthFixture.ByteLength)))
 	require.Error(t, err)
 }
 

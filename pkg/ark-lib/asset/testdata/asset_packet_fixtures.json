@@ -1,0 +1,55 @@
+{
+  "tx_outs": {
+    "error_cases": [
+      {
+        "name": "empty",
+        "pk_script_hex": "",
+        "value": 0,
+        "expected_error": "OP_RETURN not present"
+      },
+      {
+        "name": "missing_op_return",
+        "pk_script_hex": "010203",
+        "value": 0,
+        "expected_error": "OP_RETURN not present"
+      }
+    ]
+  },
+  "msg_txs": {
+    "error_cases": [
+      {
+        "name": "empty",
+        "tx_outs": [],
+        "expected_error": "no asset opreturn found in transaction"
+      },
+      {
+        "name": "no_asset_packets",
+        "tx_outs": [
+          { "value": 1000, "pk_script_hex": "" }
+        ],
+        "expected_error": "no asset opreturn found in transaction"
+      },
+      {
+        "name": "with_non_asset_op_return",
+        "tx_outs": [
+          { "value": 1000, "pk_script_hex": "6a0102" }
+        ],
+        "expected_error": "no asset opreturn found in transaction"
+      }
+    ],
+    "valid_cases": [
+      {
+        "name": "mixed_with_valid_at_index_1",
+        "description": "First valid asset packet at index 1, second at index 4 (never reached)",
+        "tx_outs": [
+          { "value": 1000, "pk_script_hex": "0001", "is_asset_packet": false },
+          { "value": 0, "pk_script_hex": "", "is_asset_packet": true },
+          { "value": 2000, "pk_script_hex": "6a0203", "is_asset_packet": false },
+          { "value": 2000, "pk_script_hex": "bad_magic", "is_asset_packet": false },
+          { "value": 0, "pk_script_hex": "", "is_asset_packet": true }
+        ],
+        "expected_index": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "asset_ids": [
+    {
+      "name": "deterministic",
+      "txid_seed": 1,
+      "index": 12345
+    }
+  ],
+  "invalid_strings": [
+    {
+      "name": "short",
+      "value": "0123",
+      "expected_error_format": "invalid asset id length: %d"
+    },
+    {
+      "name": "invalid_hex",
+      "value": "invalid",
+      "expected_error_contains": "encoding/hex"
+    },
+    {
+      "name": "wrong_length",
+      "byte_length": 35,
+      "expected_error_format": "invalid asset id length: %d"
+    }
+  ]
+}

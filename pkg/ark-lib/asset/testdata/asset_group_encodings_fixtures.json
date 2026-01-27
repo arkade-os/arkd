@@ -1,0 +1,192 @@
+{
+  "asset_refs": {
+    "valid": [
+      {
+        "name": "by_id",
+        "type": "AssetRefByID",
+        "asset_id": {
+          "txid": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+          "index": 4660
+        },
+        "group_index": 0
+      },
+      {
+        "name": "by_group",
+        "type": "AssetRefByGroup",
+        "asset_id": null,
+        "group_index": 42
+      },
+      {
+        "name": "by_id_with_extra_group_index",
+        "type": "AssetRefByID",
+        "asset_id": null,
+        "group_index": 10,
+        "description": "AssetRefByID but has GroupIndex set - GroupIndex should be ignored on decode"
+      },
+      {
+        "name": "by_group_with_extra_asset_id",
+        "type": "AssetRefByGroup",
+        "asset_id": {
+          "txid": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+          "index": 4660
+        },
+        "group_index": 0,
+        "description": "AssetRefByGroup but has AssetId set - AssetId should be ignored on decode"
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown_type",
+        "type_raw": 99,
+        "expected_error": "unknown asset ref type: 99"
+      }
+    ]
+  },
+  "metadata_lists": [
+    {
+      "name": "varied",
+      "items": [
+        { "key": "k1", "value": "v1" },
+        { "key": "", "value": "v2" },
+        { "key": "v3", "value": "" },
+        { "key": "", "value": "" }
+      ]
+    },
+    {
+      "name": "empty",
+      "items": []
+    }
+  ],
+  "asset_inputs": {
+    "valid": [
+      {
+        "name": "comprehensive",
+        "inputs": [
+          { "type": "local", "vin": 3, "amount": 1000 },
+          { "type": "local", "vin": 0, "amount": 0 },
+          { "type": "teleport", "amount": 2000 },
+          { "type": "teleport", "vin": 3, "amount": 2000 },
+          { "type": "teleport", "vin": 3, "amount": 2000, "witness": { "script": "deadbeef", "txid": "cafebabe00000000000000000000000000000000000000000000000000000000", "index": 42 } },
+          { "type": "teleport", "witness": { "script": "", "txid": "cafebabe00000000000000000000000000000000000000000000000000000000", "index": 99 } },
+          { "type": "teleport", "witness": { "txid": "cafebabe00000000000000000000000000000000000000000000000000000000", "index": 100 } },
+          { "type": "teleport", "witness": { "script": "deadbeef", "txid": "0000000000000000000000000000000000000000000000000000000000000000", "index": 101 } },
+          { "type": "teleport", "witness": { "script": "deadbeef", "txid": "0000000000000000000000000000000000000000000000000000000000000000", "index": 4294967295 } }
+        ]
+      },
+      {
+        "name": "simple_pair",
+        "inputs": [
+          { "type": "local", "vin": 1, "amount": 80 },
+          { "type": "teleport", "vin": 0, "amount": 20, "witness": { "script": "deadbeef", "txid": "1111111111111111111111111111111111111111111111111111111111111111", "index": 456 } }
+        ]
+      },
+      {
+        "name": "single_local",
+        "inputs": [
+          { "type": "local", "vin": 1, "amount": 10 }
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown_type",
+        "inputs": [
+          { "type": "local", "vin": 3, "amount": 1000 },
+          { "type_raw": 10 }
+        ],
+        "expected_error": "unknown asset input type: 10"
+      }
+    ]
+  },
+  "asset_outputs": {
+    "valid": [
+      {
+        "name": "comprehensive",
+        "outputs": [
+          { "type": "local", "vout": 3, "amount": 1000 },
+          { "type": "local", "vout": 0, "amount": 0 },
+          { "type": "teleport", "amount": 2000 },
+          { "type": "teleport", "vout": 3, "amount": 2000 },
+          { "type": "teleport", "vout": 3, "amount": 2000, "script": "deadbeef" },
+          { "type": "teleport", "script": "" },
+          { "type": "teleport" },
+          { "type": "local", "vout": 3, "amount": 2000, "script": "deadbeef" },
+          { "type": "local", "script": "" },
+          { "type": "local" },
+          { "type": "local", "amount": 18446744073709551614 },
+          { "type": "teleport", "amount": 18446744073709551614, "script": "deadbeef" },
+          { "type": "local", "vout": 4294967295, "amount": 5000 },
+          { "type": "teleport", "vout": 4294967295, "amount": 5000, "script": "deadbeef" }
+        ]
+      },
+      {
+        "name": "simple_pair",
+        "outputs": [
+          { "type": "local", "vout": 0, "amount": 100 },
+          { "type": "teleport", "script": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "amount": 200 }
+        ]
+      },
+      {
+        "name": "single_local",
+        "outputs": [
+          { "type": "local", "vout": 1, "amount": 10 }
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown_type",
+        "outputs": [
+          { "type_raw": 10, "vout": 3, "amount": 1000 }
+        ],
+        "expected_error": "unknown asset output type: 10"
+      }
+    ]
+  },
+  "presence_bit_cases": [
+    { "name": "none", "asset_id": false, "control": false, "metadata": false, "immutable": false },
+    { "name": "assetId", "asset_id": true, "control": false, "metadata": false, "immutable": false },
+    { "name": "control", "asset_id": false, "control": true, "metadata": false, "immutable": false },
+    { "name": "metadata", "asset_id": false, "control": false, "metadata": true, "immutable": false },
+    { "name": "immutable", "asset_id": false, "control": false, "metadata": false, "immutable": true },
+    { "name": "assetId_control", "asset_id": true, "control": true, "metadata": false, "immutable": false },
+    { "name": "all", "asset_id": true, "control": true, "metadata": true, "immutable": true }
+  ],
+  "normalize_slices_cases": [
+    {
+      "name": "non_empty_remains",
+      "seed": 18,
+      "has_outputs": true,
+      "has_inputs": true,
+      "has_metadata": true,
+      "output": { "type": "local", "amount": 10, "vout": 1 },
+      "input": { "type": "local", "vin": 1, "amount": 5 },
+      "metadata": { "key": "kind", "value": "normal" }
+    },
+    {
+      "name": "empty_slices_become_nil",
+      "seed": 19,
+      "has_outputs": false,
+      "has_inputs": false,
+      "has_metadata": false
+    },
+    {
+      "name": "nil_slices_remain_nil",
+      "seed": 20,
+      "has_outputs": false,
+      "has_inputs": false,
+      "has_metadata": false,
+      "use_nil": true
+    },
+    {
+      "name": "preserve_elements",
+      "seed": 21,
+      "has_outputs": true,
+      "has_inputs": true,
+      "has_metadata": true,
+      "output": { "type": "local", "vout": 4, "amount": 44 },
+      "input": { "type": "local", "vin": 5, "amount": 55 },
+      "metadata": { "key": "a", "value": "b" }
+    }
+  ]
+}

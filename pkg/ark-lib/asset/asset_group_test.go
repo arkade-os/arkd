@@ -2,28 +2,185 @@ package asset
 
 import (
 	"bytes"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
+type assetGroupFixture struct {
+	Name          string         `json:"name"`
+	AssetGroup    jsonAssetGroup `json:"asset_group"`
+	ExpectedError string         `json:"expected_error,omitempty"`
+}
+
+type assetGroupFixturesJSON struct {
+	Valid   []assetGroupFixture `json:"valid"`
+	Invalid []assetGroupFixture `json:"invalid"`
+}
+
+var (
+	localInputOutputFixture AssetGroup
+	fullRoundtripFixture    AssetGroup
+)
+
+func init() {
+	valid, _, err := parseAssetGroupFixtures()
+	if err != nil {
+		panic(err)
+	}
+	localInputOutputFixture, err = GetAssetGroupFixture("local_input_output", valid)
+	if err != nil {
+		panic(err)
+	}
+	fullRoundtripFixture, err = GetAssetGroupFixture("full_roundtrip", valid)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func parseAssetGroupFixtures() ([]assetGroupFixture, []assetGroupFixture, error) {
+	file, err := os.ReadFile("testdata/asset_group_fixtures.json")
+	if err != nil {
+		return nil, nil, err
+	}
+	var jsonData assetGroupFixturesJSON
+	if err := json.Unmarshal(file, &jsonData); err != nil {
+		return nil, nil, err
+	}
+	return jsonData.Valid, jsonData.Invalid, nil
+}
+
+func fixtureToAssetGroupSingle(ja jsonAssetGroup) (AssetGroup, error) {
+	var ag AssetGroup
+
+	if ja.AssetId != nil && ja.AssetId.Txid != "" {
+		b, err := hex.DecodeString(ja.AssetId.Txid)
+		if err != nil {
+			return ag, err
+		}
+		var arr [32]byte
+		copy(arr[:], b)
+		ag.AssetId = &AssetId{Txid: arr, Index: ja.AssetId.Index}
+	}
+
+	ag.Immutable = ja.Immutable
+
+	for _, o := range ja.Outputs {
+		out := AssetOutput{Amount: o.Amount}
+		switch o.Type {
+		case "local":
+			out.Type = AssetTypeLocal
+			out.Vout = o.Vout
+		case "teleport":
+			out.Type = AssetTypeTeleport
+			if o.Script != "" {
+				script, err := hex.DecodeString(o.Script)
+				if err != nil {
+					return ag, err
+				}
+				out.Script = script
+			}
+		}
+		ag.Outputs = append(ag.Outputs, out)
+	}
+
+	if ja.Control != nil {
+		if ja.Control.Type == "AssetRefByGroup" {
+			ag.ControlAsset = AssetRefFromGroupIndex(ja.Control.GroupIndex)
+		} else if ja.Control.AssetId != nil && ja.Control.AssetId.Txid != "" {
+			b, err := hex.DecodeString(ja.Control.AssetId.Txid)
+			if err != nil {
+				return ag, err
+			}
+			var arr [32]byte
+			copy(arr[:], b)
+			ag.ControlAsset = AssetRefFromId(AssetId{Txid: arr, Index: ja.Control.AssetId.Index})
+		}
+	}
+
+	for _, in := range ja.Inputs {
+		ai := AssetInput{Amount: in.Amount}
+
+		if in.TypeRaw != nil {
+			ai.Type = AssetType(*in.TypeRaw)
+		} else {
+			switch in.Type {
+			case "local":
+				ai.Type = AssetTypeLocal
+				ai.Vin = in.Vin
+			case "teleport":
+				ai.Type = AssetTypeTeleport
+			}
+		}
+
+		if in.Witness != nil {
+			if in.Witness.Script != "" {
+				s, err := hex.DecodeString(in.Witness.Script)
+				if err != nil {
+					return ag, err
+				}
+				ai.Witness.Script = s
+			}
+			if in.Witness.Txid != "" {
+				b, err := hex.DecodeString(in.Witness.Txid)
+				if err != nil {
+					return ag, err
+				}
+				var arr [32]byte
+				copy(arr[:], b)
+				ai.Witness.Txid = arr
+			}
+			ai.Witness.Index = in.Witness.Index
+		}
+		ag.Inputs = append(ag.Inputs, ai)
+	}
+
+	if len(ja.Metadata) > 0 {
+		ag.Metadata = ja.Metadata
+	}
+
+	return ag, nil
+}
+
+func GetAssetGroupFixture(name string, fixtures []assetGroupFixture) (AssetGroup, error) {
+	for _, f := range fixtures {
+		if f.Name == name {
+			return fixtureToAssetGroupSingle(f.AssetGroup)
+		}
+	}
+	return AssetGroup{}, fmt.Errorf("fixture not found: %s", name)
+}
+
+func GetInvalidAssetGroupFixture(name string, fixtures []assetGroupFixture) (AssetGroup, string, error) {
+	for _, f := range fixtures {
+		if f.Name == name {
+			ag, err := fixtureToAssetGroupSingle(f.AssetGroup)
+			return ag, f.ExpectedError, err
+		}
+	}
+	return AssetGroup{}, "", fmt.Errorf("fixture not found: %s", name)
+}
+
 func TestAssetGroup_Encode_ErrorUnknownInputType(t *testing.T) {
 	t.Parallel()
-	ag := &AssetGroup{
-		Inputs: []AssetInput{{Type: AssetType(99)}},
-	}
-	_, err := ag.Encode()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unknown asset input type")
+	_, invalid, err := parseAssetGroupFixtures()
+	require.NoError(t, err)
+
+	ag, expectedErr, err := GetInvalidAssetGroupFixture("unknown_input_type", invalid)
+	require.NoError(t, err)
+
+	_, encErr := ag.Encode()
+	require.Error(t, encErr)
+	require.Contains(t, encErr.Error(), expectedErr)
 }
 
 func TestAssetGroup_Decode_Truncated(t *testing.T) {
 	t.Parallel()
-	ag := &AssetGroup{
-		Inputs:  []AssetInput{{Type: AssetTypeLocal, Vin: 5, Amount: 555}},
-		Outputs: []AssetOutput{{Type: AssetTypeLocal, Vout: 6, Amount: 666}},
-	}
+	ag := localInputOutputFixture
 	data, err := ag.Encode()
 	require.NoError(t, err)
 	if len(data) < 5 {
@@ -38,51 +195,7 @@ func TestAssetGroup_Decode_Truncated(t *testing.T) {
 }
 
 func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
-	ag := AssetGroup{
-		AssetId: &AssetId{
-			Txid:  deterministicBytesArray(0x3c),
-			Index: 2,
-		},
-		Outputs: []AssetOutput{
-			{
-				Type:   AssetTypeLocal,
-				Amount: 11,
-				Vout:   0,
-			},
-			{
-				Type:   AssetTypeTeleport,
-				Script: deterministicTxhash(0xcc),
-				Amount: 22,
-			},
-		},
-		ControlAsset: AssetRefFromId(AssetId{
-			Txid:  deterministicBytesArray(0x3c),
-			Index: 1,
-		}),
-		Inputs: []AssetInput{
-			{
-				Type:   AssetTypeLocal,
-				Vin:    7,
-				Amount: 20,
-			},
-			{
-				Type: AssetTypeTeleport,
-				// Vin is not encoded for Teleport inputs
-				Vin: 0,
-				Witness: TeleportWitness{
-					Script: []byte{0x00, 0x01, 0x02, 0x03},
-					Txid:   deterministicBytesArray(0x55),
-					Index:  123,
-				},
-				Amount: 40,
-			},
-		},
-		Metadata: []Metadata{
-			{Key: "purpose", Value: "roundtrip"},
-			{Key: "owner", Value: "arkade"},
-		},
-		Immutable: true,
-	}
+	ag := fullRoundtripFixture
 
 	encoded, err := ag.Encode()
 	require.NoError(t, err)

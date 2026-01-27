@@ -2,7 +2,10 @@ package asset
 
 import (
 	"bytes"
+	"encoding/hex"
+	"encoding/json"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -11,6 +14,244 @@ import (
 	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
+
+// Fixture types for asset_group_encodings tests
+type jsonAssetRefFixture struct {
+	Name        string       `json:"name"`
+	Type        string       `json:"type"`
+	TypeRaw     *uint8       `json:"type_raw,omitempty"`
+	AssetId     *jsonAssetId `json:"asset_id,omitempty"`
+	GroupIndex  uint16       `json:"group_index,omitempty"`
+	Description string       `json:"description,omitempty"`
+}
+
+type jsonAssetRefInvalidFixture struct {
+	Name          string `json:"name"`
+	TypeRaw       uint8  `json:"type_raw"`
+	ExpectedError string `json:"expected_error"`
+}
+
+type jsonAssetRefsFixtures struct {
+	Valid   []jsonAssetRefFixture        `json:"valid"`
+	Invalid []jsonAssetRefInvalidFixture `json:"invalid"`
+}
+
+type jsonMetadataListFixture struct {
+	Name  string     `json:"name"`
+	Items []Metadata `json:"items"`
+}
+
+type jsonAssetInputsFixture struct {
+	Name          string      `json:"name"`
+	Inputs        []jsonInput `json:"inputs"`
+	ExpectedError string      `json:"expected_error,omitempty"`
+}
+
+type jsonAssetInputsFixtures struct {
+	Valid   []jsonAssetInputsFixture `json:"valid"`
+	Invalid []jsonAssetInputsFixture `json:"invalid"`
+}
+
+type jsonAssetOutputsFixture struct {
+	Name          string       `json:"name"`
+	Outputs       []jsonOutput `json:"outputs"`
+	ExpectedError string       `json:"expected_error,omitempty"`
+}
+
+type jsonAssetOutputsFixtures struct {
+	Valid   []jsonAssetOutputsFixture `json:"valid"`
+	Invalid []jsonAssetOutputsFixture `json:"invalid"`
+}
+
+type jsonPresenceBitCase struct {
+	Name      string `json:"name"`
+	AssetId   bool   `json:"asset_id"`
+	Control   bool   `json:"control"`
+	Metadata  bool   `json:"metadata"`
+	Immutable bool   `json:"immutable"`
+}
+
+type jsonNormalizeSlicesCase struct {
+	Name        string      `json:"name"`
+	Seed        byte        `json:"seed"`
+	HasOutputs  bool        `json:"has_outputs"`
+	HasInputs   bool        `json:"has_inputs"`
+	HasMetadata bool        `json:"has_metadata"`
+	UseNil      bool        `json:"use_nil,omitempty"`
+	Output      *jsonOutput `json:"output,omitempty"`
+	Input       *jsonInput  `json:"input,omitempty"`
+	Metadata    *Metadata   `json:"metadata,omitempty"`
+}
+
+type encodingsFixturesJSON struct {
+	AssetRefs            jsonAssetRefsFixtures     `json:"asset_refs"`
+	MetadataLists        []jsonMetadataListFixture `json:"metadata_lists"`
+	AssetInputs          jsonAssetInputsFixtures   `json:"asset_inputs"`
+	AssetOutputs         jsonAssetOutputsFixtures  `json:"asset_outputs"`
+	PresenceBitCases     []jsonPresenceBitCase     `json:"presence_bit_cases"`
+	NormalizeSlicesCases []jsonNormalizeSlicesCase `json:"normalize_slices_cases"`
+}
+
+var encodingsFixtures encodingsFixturesJSON
+
+func init() {
+	file, err := os.ReadFile("testdata/asset_group_encodings_fixtures.json")
+	if err != nil {
+		panic(err)
+	}
+	if err := json.Unmarshal(file, &encodingsFixtures); err != nil {
+		panic(err)
+	}
+}
+
+func getAssetRefFixture(name string) *jsonAssetRefFixture {
+	for _, f := range encodingsFixtures.AssetRefs.Valid {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func getInvalidAssetRefFixture(name string) *jsonAssetRefInvalidFixture {
+	for _, f := range encodingsFixtures.AssetRefs.Invalid {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func fixtureToAssetRef(f *jsonAssetRefFixture) (*AssetRef, error) {
+	ref := &AssetRef{}
+	switch f.Type {
+	case "AssetRefByID":
+		ref.Type = AssetRefByID
+	case "AssetRefByGroup":
+		ref.Type = AssetRefByGroup
+	}
+	ref.GroupIndex = f.GroupIndex
+	if f.AssetId != nil && f.AssetId.Txid != "" {
+		b, err := hex.DecodeString(f.AssetId.Txid)
+		if err != nil {
+			return nil, err
+		}
+		var arr [32]byte
+		copy(arr[:], b)
+		ref.AssetId = AssetId{Txid: arr, Index: f.AssetId.Index}
+	}
+	return ref, nil
+}
+
+func getMetadataListFixture(name string) []Metadata {
+	for _, f := range encodingsFixtures.MetadataLists {
+		if f.Name == name {
+			return f.Items
+		}
+	}
+	return nil
+}
+
+func getAssetInputsFixture(name string) *jsonAssetInputsFixture {
+	for _, f := range encodingsFixtures.AssetInputs.Valid {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func getInvalidAssetInputsFixture(name string) *jsonAssetInputsFixture {
+	for _, f := range encodingsFixtures.AssetInputs.Invalid {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func fixtureToAssetInputs(inputs []jsonInput) ([]AssetInput, error) {
+	result := make([]AssetInput, 0, len(inputs))
+	for _, in := range inputs {
+		ai := AssetInput{Amount: in.Amount}
+		if in.TypeRaw != nil {
+			ai.Type = AssetType(*in.TypeRaw)
+		} else {
+			switch in.Type {
+			case "local":
+				ai.Type = AssetTypeLocal
+				ai.Vin = in.Vin
+			case "teleport":
+				ai.Type = AssetTypeTeleport
+			}
+		}
+		if in.Witness != nil {
+			if in.Witness.Script != "" {
+				s, err := hex.DecodeString(in.Witness.Script)
+				if err != nil {
+					return nil, err
+				}
+				ai.Witness.Script = s
+			}
+			if in.Witness.Txid != "" {
+				b, err := hex.DecodeString(in.Witness.Txid)
+				if err != nil {
+					return nil, err
+				}
+				var arr [32]byte
+				copy(arr[:], b)
+				ai.Witness.Txid = arr
+			}
+			ai.Witness.Index = in.Witness.Index
+		}
+		result = append(result, ai)
+	}
+	return result, nil
+}
+
+func getAssetOutputsFixture(name string) *jsonAssetOutputsFixture {
+	for _, f := range encodingsFixtures.AssetOutputs.Valid {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func getInvalidAssetOutputsFixture(name string) *jsonAssetOutputsFixture {
+	for _, f := range encodingsFixtures.AssetOutputs.Invalid {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func fixtureToAssetOutputs(outputs []jsonOutput) ([]AssetOutput, error) {
+	result := make([]AssetOutput, 0, len(outputs))
+	for _, o := range outputs {
+		out := AssetOutput{Amount: o.Amount, Vout: o.Vout}
+		if o.TypeRaw != nil {
+			out.Type = AssetType(*o.TypeRaw)
+		} else {
+			switch o.Type {
+			case "local":
+				out.Type = AssetTypeLocal
+			case "teleport":
+				out.Type = AssetTypeTeleport
+				if o.Script != "" {
+					script, err := hex.DecodeString(o.Script)
+					if err != nil {
+						return nil, err
+					}
+					out.Script = script
+				}
+			}
+		}
+		result = append(result, out)
+	}
+	return result, nil
+}
 
 func TestEncodeAssetGroups(t *testing.T) {
 	t.Parallel()
@@ -41,13 +282,11 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	t.Parallel()
 	var scratch [8]byte
 
-	var txh [TX_HASH_SIZE]byte
-	for i := 0; i < TX_HASH_SIZE; i++ {
-		txh[i] = byte(i + 1)
-	}
 	// AssetRef with AssetId
-	ref := &AssetRef{Type: AssetRefByID}
-	ref.AssetId = AssetId{Txid: txh, Index: 0x1234}
+	refFixture := getAssetRefFixture("by_id")
+	require.NotNil(t, refFixture)
+	ref, err := fixtureToAssetRef(refFixture)
+	require.NoError(t, err)
 
 	buf := bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetRef(buf, ref, &scratch))
@@ -59,8 +298,10 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.Equal(t, ref.AssetId.Txid, decoded.AssetId.Txid)
 
 	// AssetRef with GroupIndex
-	ref2 := &AssetRef{Type: AssetRefByGroup}
-	ref2.GroupIndex = 42
+	ref2Fixture := getAssetRefFixture("by_group")
+	require.NotNil(t, ref2Fixture)
+	ref2, err := fixtureToAssetRef(ref2Fixture)
+	require.NoError(t, err)
 	buf = bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetRef(buf, ref2, &scratch))
 	decoded2, err := decodeAssetRef(buf, &scratch)
@@ -69,7 +310,10 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.Equal(t, ref2.GroupIndex, decoded2.GroupIndex)
 
 	// Mix type with wrong fields (asset by ID but has GroupIndex set)
-	ref3 := &AssetRef{Type: AssetRefByID, GroupIndex: 10}
+	ref3Fixture := getAssetRefFixture("by_id_with_extra_group_index")
+	require.NotNil(t, ref3Fixture)
+	ref3, err := fixtureToAssetRef(ref3Fixture)
+	require.NoError(t, err)
 	buf = bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetRef(buf, ref3, &scratch))
 	decoded3, err := decodeAssetRef(buf, &scratch)
@@ -81,8 +325,10 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.Equal(t, emptyAssetId.Txid, decoded3.AssetId.Txid)
 
 	// Mix type with wrong fields (asset by Group but has AssetId set)
-	ref4 := &AssetRef{Type: AssetRefByGroup}
-	ref4.AssetId = AssetId{Txid: txh, Index: 0x1234}
+	ref4Fixture := getAssetRefFixture("by_group_with_extra_asset_id")
+	require.NotNil(t, ref4Fixture)
+	ref4, err := fixtureToAssetRef(ref4Fixture)
+	require.NoError(t, err)
 	buf = bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetRef(buf, ref4, &scratch))
 	decoded4, err := decodeAssetRef(buf, &scratch)
@@ -94,14 +340,16 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.Equal(t, emptyAssetId.Txid, decoded4.AssetId.Txid)
 
 	// unknown type
-	ref5 := &AssetRef{Type: AssetRefType(99)}
+	invalidFixture := getInvalidAssetRefFixture("unknown_type")
+	require.NotNil(t, invalidFixture)
+	ref5 := &AssetRef{Type: AssetRefType(invalidFixture.TypeRaw)}
 	buf = bytes.NewBuffer(nil)
 	err = encodeAssetRef(buf, ref5, &scratch)
 	require.Error(t, err)
-	require.Equal(t, err.Error(), "unknown asset ref type: 99")
+	require.Equal(t, err.Error(), invalidFixture.ExpectedError)
 	decoded5, err := decodeAssetRef(buf, &scratch)
 	require.Error(t, err)
-	require.Equal(t, "unknown asset ref type: 99", err.Error())
+	require.Equal(t, invalidFixture.ExpectedError, err.Error())
 	require.Nil(t, decoded5)
 }
 
@@ -118,7 +366,9 @@ func TestDecodeAssetRef_Truncated(t *testing.T) {
 func TestEncodeDecodeMetadataList(t *testing.T) {
 	t.Parallel()
 	var scratch [8]byte
-	meta := []Metadata{{Key: "k1", Value: "v1"}, {Key: "", Value: "v2"}, {Key: "v3", Value: ""}, {Key: "", Value: ""}}
+
+	meta := getMetadataListFixture("varied")
+	require.NotNil(t, meta)
 	buf := bytes.NewBuffer(nil)
 	require.NoError(t, encodeMetadataList(buf, meta, &scratch))
 
@@ -131,13 +381,14 @@ func TestEncodeDecodeMetadataList(t *testing.T) {
 		require.Equal(t, meta[i].Value, out[i].Value)
 	}
 
-	meta = []Metadata{}
+	emptyMeta := getMetadataListFixture("empty")
+	require.NotNil(t, emptyMeta)
 	buf2 := bytes.NewBuffer(nil)
-	require.NoError(t, encodeMetadataList(buf2, meta, &scratch))
+	require.NoError(t, encodeMetadataList(buf2, emptyMeta, &scratch))
 	out, err = decodeMetadataList(buf2, &scratch)
 	require.NoError(t, err)
-	require.Equal(t, 0, len(meta))
-	require.Equal(t, len(meta), len(out))
+	require.Equal(t, 0, len(emptyMeta))
+	require.Equal(t, len(emptyMeta), len(out))
 
 	// test long keys and value
 	longKey := make([]byte, 1024)
@@ -148,53 +399,25 @@ func TestEncodeDecodeMetadataList(t *testing.T) {
 	for i := range longVal {
 		longVal[i] = 'v'
 	}
-	meta = []Metadata{{Key: string(longKey), Value: string(longVal)}}
+	longMeta := []Metadata{{Key: string(longKey), Value: string(longVal)}}
 	buf = bytes.NewBuffer(nil)
-	require.NoError(t, encodeMetadataList(buf, meta, &scratch))
+	require.NoError(t, encodeMetadataList(buf, longMeta, &scratch))
 	out, err = decodeMetadataList(buf, &scratch)
 	require.NoError(t, err)
 	require.Len(t, out, 1)
-	require.Equal(t, meta[0].Key, out[0].Key)
-	require.Equal(t, meta[0].Value, out[0].Value)
+	require.Equal(t, longMeta[0].Key, out[0].Key)
+	require.Equal(t, longMeta[0].Value, out[0].Value)
 }
 
 func TestEncodeDecodeAssetInputList(t *testing.T) {
 	t.Parallel()
 	var scratch [8]byte
-	inputs := []AssetInput{
-		{Type: AssetTypeLocal, Vin: 3, Amount: 1000},
-		{Type: AssetTypeLocal, Vin: 0, Amount: 0},
-		{Type: AssetTypeTeleport, Amount: 2000},
-		{Type: AssetTypeTeleport, Vin: 3, Amount: 2000},
-		{Type: AssetTypeTeleport, Vin: 3, Amount: 2000, Witness: TeleportWitness{
-			Script: []byte{0xde, 0xad, 0xbe, 0xef},
-			Txid:   [32]byte{0xca, 0xfe, 0xba, 0xbe},
-			Index:  42,
-		}},
-		{Type: AssetTypeTeleport, Witness: TeleportWitness{
-			Script: []byte{},
-			Txid:   [32]byte{0xca, 0xfe, 0xba, 0xbe},
-			Index:  99,
-		}},
-		{Type: AssetTypeTeleport, Witness: TeleportWitness{
-			Script: nil,
-			Txid:   [32]byte{0xca, 0xfe, 0xba, 0xbe},
-			Index:  100,
-		}},
-		{Type: AssetTypeTeleport, Witness: TeleportWitness{
-			Script: []byte{0xde, 0xad, 0xbe, 0xef},
-			Txid:   [32]byte{},
-			Index:  101,
-		},
-		},
-		{Type: AssetTypeTeleport, Witness: TeleportWitness{
-			Script: []byte{0xde, 0xad, 0xbe, 0xef},
-			Txid:   [32]byte{},
-			// large Index value using max value of uint32
-			Index: 4294967295,
-		},
-		},
-	}
+
+	inputsFixture := getAssetInputsFixture("comprehensive")
+	require.NotNil(t, inputsFixture)
+	inputs, err := fixtureToAssetInputs(inputsFixture.Inputs)
+	require.NoError(t, err)
+
 	buf := bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetInputList(buf, inputs, &scratch))
 
@@ -224,19 +447,24 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 			}
 		}
 	}
-	inputs = []AssetInput{
-		{Type: AssetTypeLocal, Vin: 3, Amount: 1000},
-		{Type: AssetType(10)},
-	}
 
+	// test with unknown type
+	invalidFixture := getInvalidAssetInputsFixture("unknown_type")
+	require.NotNil(t, invalidFixture)
+	invalidInputs, err := fixtureToAssetInputs(invalidFixture.Inputs)
+	require.NoError(t, err)
 	buf = bytes.NewBuffer(nil)
-	err = encodeAssetInputList(buf, inputs, &scratch)
+	err = encodeAssetInputList(buf, invalidInputs, &scratch)
 	require.Error(t, err)
-	require.Equal(t, "unknown asset input type: 10", err.Error())
+	require.Equal(t, invalidFixture.ExpectedError, err.Error())
 
-	inputs = []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 10}}
+	// test decode with truncated data
+	singleFixture := getAssetInputsFixture("single_local")
+	require.NotNil(t, singleFixture)
+	singleInputs, err := fixtureToAssetInputs(singleFixture.Inputs)
+	require.NoError(t, err)
 	buf = bytes.NewBuffer(nil)
-	require.NoError(t, encodeAssetInputList(buf, inputs, &scratch))
+	require.NoError(t, encodeAssetInputList(buf, singleInputs, &scratch))
 	b := buf.Bytes()
 	// truncate buffer to simulate corruption
 	if len(b) > 0 {
@@ -250,38 +478,22 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 func TestPresenceBitCombinations(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		name      string
-		assetId   bool
-		control   bool
-		metadata  bool
-		immutable bool
-	}{
-		{"none", false, false, false, false},
-		{"assetId", true, false, false, false},
-		{"control", false, true, false, false},
-		{"metadata", false, false, true, false},
-		{"immutable", false, false, false, true},
-		{"assetId_control", true, true, false, false},
-		{"all", true, true, true, true},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
+	for _, c := range encodingsFixtures.PresenceBitCases {
+		t.Run(c.Name, func(t *testing.T) {
 			t.Parallel()
 			var ag AssetGroup
-			if c.assetId {
+			if c.AssetId {
 				var txh [TX_HASH_SIZE]byte
 				txh[0] = 1
 				ag.AssetId = &AssetId{Txid: txh, Index: 1}
 			}
-			if c.control {
+			if c.Control {
 				ag.ControlAsset = &AssetRef{Type: AssetRefByGroup, GroupIndex: 2}
 			}
-			if c.metadata {
+			if c.Metadata {
 				ag.Metadata = []Metadata{{Key: "k", Value: "v"}}
 			}
-			ag.Immutable = c.immutable
+			ag.Immutable = c.Immutable
 
 			data, err := ag.Encode()
 			require.NoError(t, err)
@@ -290,16 +502,16 @@ func TestPresenceBitCombinations(t *testing.T) {
 			// first byte is the presence
 			presence := data[0]
 			expected := uint8(0)
-			if c.assetId {
+			if c.AssetId {
 				expected |= maskAssetId
 			}
-			if c.control {
+			if c.Control {
 				expected |= maskControlAsset
 			}
-			if c.metadata {
+			if c.Metadata {
 				expected |= maskMetadata
 			}
-			if c.immutable {
+			if c.Immutable {
 				expected |= maskImmutable
 			}
 			require.Equal(t, expected, presence)
@@ -307,22 +519,22 @@ func TestPresenceBitCombinations(t *testing.T) {
 			// decode and verify fields
 			var out AssetGroup
 			require.NoError(t, out.Decode(bytes.NewReader(data)))
-			if c.assetId {
+			if c.AssetId {
 				require.NotNil(t, out.AssetId)
 			} else {
 				require.Nil(t, out.AssetId)
 			}
-			if c.control {
+			if c.Control {
 				require.NotNil(t, out.ControlAsset)
 			} else {
 				require.Nil(t, out.ControlAsset)
 			}
-			if c.metadata {
+			if c.Metadata {
 				require.NotZero(t, len(out.Metadata))
 			} else {
 				require.Zero(t, len(out.Metadata))
 			}
-			require.Equal(t, c.immutable, out.Immutable)
+			require.Equal(t, c.Immutable, out.Immutable)
 		})
 	}
 }
@@ -345,24 +557,12 @@ func TestEncodeAssetRef_WriteFail(t *testing.T) {
 func TestEncodeDecodeAssetOutputList(t *testing.T) {
 	t.Parallel()
 	var scratch [8]byte
-	outputs := []AssetOutput{
-		{Type: AssetTypeLocal, Vout: 3, Amount: 1000},
-		{Type: AssetTypeLocal, Vout: 0, Amount: 0},
-		{Type: AssetTypeTeleport, Amount: 2000},
-		{Type: AssetTypeTeleport, Vout: 3, Amount: 2000},
-		{Type: AssetTypeTeleport, Vout: 3, Amount: 2000, Script: []byte{0xde, 0xad, 0xbe, 0xef}},
-		{Type: AssetTypeTeleport, Script: []byte{}},
-		{Type: AssetTypeTeleport, Script: nil},
-		{Type: AssetTypeLocal, Vout: 3, Amount: 2000, Script: []byte{0xde, 0xad, 0xbe, 0xef}},
-		{Type: AssetTypeLocal, Script: []byte{}},
-		{Type: AssetTypeLocal, Script: nil},
-		// large Amount values
-		{Type: AssetTypeLocal, Amount: ^uint64(0) - 1},
-		{Type: AssetTypeTeleport, Amount: ^uint64(0) - 1, Script: []byte{0xde, 0xad, 0xbe, 0xef}},
-		// case for large Vout value
-		{Type: AssetTypeLocal, Vout: ^uint32(0), Amount: 5000},
-		{Type: AssetTypeTeleport, Vout: ^uint32(0), Amount: 5000, Script: []byte{0xde, 0xad, 0xbe, 0xef}},
-	}
+
+	outputsFixture := getAssetOutputsFixture("comprehensive")
+	require.NotNil(t, outputsFixture)
+	outputs, err := fixtureToAssetOutputs(outputsFixture.Outputs)
+	require.NoError(t, err)
+
 	buf := bytes.NewBuffer(nil)
 	require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
 
@@ -378,14 +578,16 @@ func TestEncodeDecodeAssetOutputList(t *testing.T) {
 			require.True(t, bytes.Equal(outputs[i].Script, got[i].Script))
 		}
 	}
+
 	// test with unknown type
-	outputs = []AssetOutput{
-		{Type: AssetType(10), Vout: 3, Amount: 1000},
-	}
+	invalidFixture := getInvalidAssetOutputsFixture("unknown_type")
+	require.NotNil(t, invalidFixture)
+	invalidOutputs, err := fixtureToAssetOutputs(invalidFixture.Outputs)
+	require.NoError(t, err)
 	buf = bytes.NewBuffer(nil)
-	err = encodeAssetOutputList(buf, outputs, &scratch)
+	err = encodeAssetOutputList(buf, invalidOutputs, &scratch)
 	require.Error(t, err)
-	require.Equal(t, "unknown asset output type: 10", err.Error())
+	require.Equal(t, invalidFixture.ExpectedError, err.Error())
 
 	// trigger unknown type on decode
 	buf = bytes.NewBuffer(nil)
@@ -397,11 +599,12 @@ func TestEncodeDecodeAssetOutputList(t *testing.T) {
 	require.Equal(t, "unknown asset output type: 10", err.Error())
 
 	// test decode with truncated data
-	outputs = []AssetOutput{
-		{Type: AssetTypeLocal, Vout: 1, Amount: 10},
-	}
+	singleFixture := getAssetOutputsFixture("single_local")
+	require.NotNil(t, singleFixture)
+	singleOutputs, err := fixtureToAssetOutputs(singleFixture.Outputs)
+	require.NoError(t, err)
 	buf = bytes.NewBuffer(nil)
-	require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
+	require.NoError(t, encodeAssetOutputList(buf, singleOutputs, &scratch))
 	b := buf.Bytes()
 	// truncate buffer to simulate corruption
 	if len(b) > 0 {
@@ -472,18 +675,10 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 }
 
 func TestAssetOutputListEncodeDecode(t *testing.T) {
-	outputs := []AssetOutput{
-		{
-			Type:   AssetTypeLocal,
-			Vout:   0,
-			Amount: 100,
-		},
-		{
-			Type:   AssetTypeTeleport,
-			Script: deterministicTxhash(0xEE),
-			Amount: 200,
-		},
-	}
+	outputsFixture := getAssetOutputsFixture("simple_pair")
+	require.NotNil(t, outputsFixture)
+	outputs, err := fixtureToAssetOutputs(outputsFixture.Outputs)
+	require.NoError(t, err)
 
 	var scratch [8]byte
 	var buf bytes.Buffer
@@ -491,29 +686,16 @@ func TestAssetOutputListEncodeDecode(t *testing.T) {
 
 	var decoded []AssetOutput
 	reader := bytes.NewReader(buf.Bytes())
-	decoded, err := decodeAssetOutputList(reader, &scratch)
+	decoded, err = decodeAssetOutputList(reader, &scratch)
 	require.NoError(t, err)
 	require.Equal(t, outputs, decoded)
 }
 
 func TestAssetInputListEncodeDecode(t *testing.T) {
-	inputs := []AssetInput{
-		{
-			Type:   AssetTypeLocal,
-			Amount: 80,
-			Vin:    1,
-		},
-		{
-			Type:   AssetTypeTeleport,
-			Vin:    0,
-			Amount: 20,
-			Witness: TeleportWitness{
-				Script: []byte{0xde, 0xad, 0xbe, 0xef},
-				Txid:   deterministicBytesArray(0x11),
-				Index:  456,
-			},
-		},
-	}
+	inputsFixture := getAssetInputsFixture("simple_pair")
+	require.NotNil(t, inputsFixture)
+	inputs, err := fixtureToAssetInputs(inputsFixture.Inputs)
+	require.NoError(t, err)
 
 	var scratch [8]byte
 	var buf bytes.Buffer
@@ -521,7 +703,7 @@ func TestAssetInputListEncodeDecode(t *testing.T) {
 
 	var decoded []AssetInput
 	reader := bytes.NewReader(buf.Bytes())
-	decoded, err := decodeAssetInputList(reader, &scratch)
+	decoded, err = decodeAssetInputList(reader, &scratch)
 	require.NoError(t, err)
 	require.Equal(t, inputs, decoded)
 }
@@ -563,76 +745,73 @@ func TestAssetRef_Constructors(t *testing.T) {
 func TestNormalizeAssetSlices(t *testing.T) {
 	t.Parallel()
 
-	t.Run("non-empty remains", func(t *testing.T) {
-		ag := AssetGroup{
-			AssetId:      ptrAssetId(deterministicAssetId(0x12)),
-			Outputs:      []AssetOutput{{Type: AssetTypeLocal, Amount: 10, Vout: 1}},
-			ControlAsset: deterministicAssetRefId(0x3c),
-			Inputs: []AssetInput{{
-				Type:   AssetTypeLocal,
-				Vin:    1,
-				Amount: 5,
-			}},
-			Metadata: []Metadata{{Key: "kind", Value: "normal"}},
-		}
+	for _, c := range encodingsFixtures.NormalizeSlicesCases {
+		t.Run(c.Name, func(t *testing.T) {
+			t.Parallel()
 
-		ag.normalizeAssetSlices()
+			ag := AssetGroup{
+				AssetId: ptrAssetId(deterministicAssetId(c.Seed)),
+			}
 
-		require.Equal(t, 1, len(ag.Outputs))
-		require.Equal(t, 1, len(ag.Inputs))
-		require.Equal(t, 1, len(ag.Metadata))
-	})
+			if c.HasOutputs && c.Output != nil {
+				out, err := fixtureToAssetOutputs([]jsonOutput{*c.Output})
+				require.NoError(t, err)
+				ag.Outputs = out
+			} else if !c.UseNil {
+				ag.Outputs = []AssetOutput{}
+			}
 
-	t.Run("empty slices become nil", func(t *testing.T) {
-		ag := AssetGroup{
-			AssetId: ptrAssetId(deterministicAssetId(0x13)),
-			// explicitly empty slices
-			Outputs:  []AssetOutput{},
-			Inputs:   []AssetInput{},
-			Metadata: []Metadata{},
-		}
+			if c.HasInputs && c.Input != nil {
+				in, err := fixtureToAssetInputs([]jsonInput{*c.Input})
+				require.NoError(t, err)
+				ag.Inputs = in
+			} else if !c.UseNil {
+				ag.Inputs = []AssetInput{}
+			}
 
-		ag.normalizeAssetSlices()
+			if c.HasMetadata && c.Metadata != nil {
+				ag.Metadata = []Metadata{*c.Metadata}
+			} else if !c.UseNil {
+				ag.Metadata = []Metadata{}
+			}
 
-		require.Nil(t, ag.Outputs)
-		require.Nil(t, ag.Inputs)
-		require.Nil(t, ag.Metadata)
-	})
+			if c.HasOutputs || c.HasInputs || c.HasMetadata {
+				ag.ControlAsset = deterministicAssetRefId(0x3c)
+			}
 
-	t.Run("nil slices remain nil and idempotent", func(t *testing.T) {
-		ag := AssetGroup{
-			AssetId: ptrAssetId(deterministicAssetId(0x14)),
-			// nil slices
-			Outputs:  nil,
-			Inputs:   nil,
-			Metadata: nil,
-		}
+			ag.normalizeAssetSlices()
 
-		ag.normalizeAssetSlices()
-		ag.normalizeAssetSlices() // idempotent
+			if c.HasOutputs {
+				require.NotNil(t, ag.Outputs)
+				require.Equal(t, 1, len(ag.Outputs))
+				if c.Output != nil {
+					require.Equal(t, c.Output.Vout, ag.Outputs[0].Vout)
+				}
+			} else {
+				require.Nil(t, ag.Outputs)
+			}
 
-		require.Nil(t, ag.Outputs)
-		require.Nil(t, ag.Inputs)
-		require.Nil(t, ag.Metadata)
-	})
+			if c.HasInputs {
+				require.NotNil(t, ag.Inputs)
+				require.Equal(t, 1, len(ag.Inputs))
+				if c.Input != nil {
+					require.Equal(t, c.Input.Vin, ag.Inputs[0].Vin)
+				}
+			} else {
+				require.Nil(t, ag.Inputs)
+			}
 
-	t.Run("preserve elements after normalize", func(t *testing.T) {
-		ag := AssetGroup{
-			AssetId:  ptrAssetId(deterministicAssetId(0x15)),
-			Outputs:  []AssetOutput{{Type: AssetTypeLocal, Vout: 4, Amount: 44}},
-			Inputs:   []AssetInput{{Type: AssetTypeLocal, Vin: 5, Amount: 55}},
-			Metadata: []Metadata{{Key: "a", Value: "b"}},
-		}
-
-		ag.normalizeAssetSlices()
-
-		require.NotNil(t, ag.Outputs)
-		require.Equal(t, uint32(4), ag.Outputs[0].Vout)
-		require.NotNil(t, ag.Inputs)
-		require.Equal(t, uint32(5), ag.Inputs[0].Vin)
-		require.NotNil(t, ag.Metadata)
-		require.Equal(t, "a", ag.Metadata[0].Key)
-	})
+			if c.HasMetadata {
+				require.NotNil(t, ag.Metadata)
+				require.Equal(t, 1, len(ag.Metadata))
+				if c.Metadata != nil {
+					require.Equal(t, c.Metadata.Key, ag.Metadata[0].Key)
+				}
+			} else {
+				require.Nil(t, ag.Metadata)
+			}
+		})
+	}
 }
 
 func deterministicPubKey(t *testing.T, seed byte) btcec.PublicKey {

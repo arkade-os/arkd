@@ -1,0 +1,43 @@
+{
+  "contains_asset_packet_cases": [
+    {
+      "name": "empty",
+      "pk_script_hex": "",
+      "expected": false
+    },
+    {
+      "name": "no_opreturn_prefix",
+      "pk_script_hex": "010203",
+      "expected": false
+    },
+    {
+      "name": "only_opreturn_prefix",
+      "pk_script_hex": "6a",
+      "expected": false
+    },
+    {
+      "name": "tokenizer_error",
+      "pk_script_hex": "6a010203",
+      "expected": false
+    },
+    {
+      "name": "missing_arkade_magic",
+      "pk_script_hex": "6a01020304050607",
+      "expected": false
+    },
+    {
+      "name": "with_arkade_magic_bad_data",
+      "description": "OP_RETURN + ArkadeMagic + 66 zero bytes",
+      "build_type": "arkade_magic_with_zeros",
+      "zero_count": 66,
+      "expected": false
+    },
+    {
+      "name": "with_arkade_magic_bad_length",
+      "description": "OP_RETURN + ArkadeMagic + 67 sequential bytes (tokenizer error)",
+      "build_type": "arkade_magic_with_sequential",
+      "byte_count": 67,
+      "expected": false
+    }
+  ]
+}
