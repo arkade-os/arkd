@@ -3051,6 +3051,35 @@ func TestIntent(t *testing.T) {
 		require.Equal(t, 1, successCount, fmt.Sprintf("expected 1 success, got %d", successCount))
 		require.Equal(t, 1, errCount, fmt.Sprintf("expected 1 error, got %d", errCount))
 	})
+
+	t.Run("get intent by proof", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupArkSDK(t)
+
+		// faucet offchain address
+		faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddr)
+
+		aliceVtxos, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, aliceVtxos)
+
+		cosignerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
+		outs := []types.Receiver{{To: offchainAddr, Amount: 20000}}
+		_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
+		require.NoError(t, err)
+
+		intents, err := alice.GetPendingIntents(ctx, aliceVtxos, []types.Utxo{}, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, intents)
+		require.Equal(t, 1, len(intents))
+	})
 }
 
 // TestBan tests all supported ban scenarios

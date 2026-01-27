@@ -103,6 +103,24 @@ func parseGetPendingTxIntent(
 	return proof, &message, nil
 }
 
+func parseGetIntentIntent(
+	intentProof *arkv1.Intent,
+) (*intent.Proof, *intent.GetIntentMessage, error) {
+	proof, err := parseIntentProofTx(intentProof)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(intentProof.GetMessage()) <= 0 {
+		return nil, nil, fmt.Errorf("missing message")
+	}
+	var message intent.GetIntentMessage
+	if err := message.Decode(intentProof.GetMessage()); err != nil {
+		return nil, nil, fmt.Errorf("invalid get-intent intent message")
+	}
+	return proof, &message, nil
+}
+
 func parseIntentId(id string) (string, error) {
 	if len(id) <= 0 {
 		return "", fmt.Errorf("missing intent id")
