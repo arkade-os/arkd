@@ -238,7 +238,6 @@ message GetAssetGroupResponse {
 message AssetGroup {
   string id = 1;
   uint64 quantity = 2;
-  bool immutable = 3;
   repeated AssetMetadata metadata = 4;
 }
 
@@ -394,7 +393,4 @@ message IndexerSubscriptionEvent {
   string tx = 5;
   map<string, IndexerTxData> checkpoint_txs = 6;
   repeated IndexerVtxo swept_vtxos = 7;
-  // List of teleport events involved in the transaction
-  repeated TeleportEvent teleport_events = 8;
-  repeated string teleport_hashes = 9;
 }

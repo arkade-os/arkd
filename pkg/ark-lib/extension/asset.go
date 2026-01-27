@@ -94,28 +94,21 @@ type Metadata struct {
 type AssetOutput struct {
 	Type   AssetType
 	Vout   uint32 // For Local
-	Script []byte // For Teleport
 	Amount uint64
 }
 
 type AssetType uint8
 
 const (
-	AssetTypeLocal    AssetType = 0x01
-	AssetTypeTeleport AssetType = 0x02
+	AssetTypeLocal  AssetType = 0x01
+	AssetTypeIntent AssetType = 0x02
 )
 
-type TeleportWitness struct {
-	Script []byte
-	Txid   [32]byte
-	Index  uint32
-}
-
 type AssetInput struct {
-	Type    AssetType
-	Vin     uint32          // For Local
-	Witness TeleportWitness // For Teleport
-	Amount  uint64
+	Type   AssetType
+	Vin    uint32
+	Txid   [32]byte
+	Amount uint64
 }
 
 func (g *AssetPacket) EncodeAssetPacket() (wire.TxOut, error) {
@@ -141,6 +134,11 @@ func ContainsAssetPacket(opReturnData []byte) bool {
 	return err == nil && len(payload) > 0
 }
 
+func ContainsSubKeyPacket(opReturnData []byte) bool {
+	_, payload, err := parsePacketOpReturn(opReturnData)
+	return err == nil && len(payload) > 0
+}
+
 func DeriveAssetPacketFromTx(arkTx wire.MsgTx) (*AssetPacket, int, error) {
 	for i, output := range arkTx.TxOut {
 		if ContainsAssetPacket(output.PkScript) {
@@ -153,5 +151,11 @@ func DeriveAssetPacketFromTx(arkTx wire.MsgTx) (*AssetPacket, int, error) {
 	}
 
 	return nil, 0, errors.New("no asset opreturn found in transaction")
+
+}
+
+func IsExtensionPacket(opReturnData []byte) bool {
+	asset, subdust, err := parsePacketOpReturn(opReturnData)
+	return err == nil && len(asset) > 0 || len(subdust) > 0
 
 }

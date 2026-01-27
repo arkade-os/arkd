@@ -19,7 +19,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
@@ -306,20 +305,40 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 	createdAt := now.Unix()
 	expireAt := round.ExpiryTimestamp()
 
-	vtxos := make([]domain.Vtxo, 0)
+	totalVtxos := make([]domain.Vtxo, 0)
 	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
 		}
+
+		assetsMap := make(map[uint32][]domain.Asset, 0)
+		vtxos := make([]domain.Vtxo, 0)
+
 		for i, out := range tx.UnsignedTx.TxOut {
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
-			// Skip any OP_RETURN output (asset packets)
-			// TODO: Make this more robust?
-			if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
+
+			if extension.ContainsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode asset packet")
+					continue
+				}
+
+				for _, asst := range decodedAssetPacket.Assets {
+					for _, out := range asst.Outputs {
+						assetsMap[out.Vout] = append(
+							assetsMap[out.Vout],
+							domain.Asset{
+								AssetID: asst.AssetId.ToString(),
+								Amount:  uint64(out.Amount),
+							},
+						)
+					}
+				}
 				continue
 			}
 
@@ -340,8 +359,19 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				ExpiresAt:          expireAt,
 			})
 		}
+
+		if len(assetsMap) > 0 {
+			for i, vtxo := range vtxos {
+				if assets, found := assetsMap[vtxo.VOut]; found {
+					vtxos[i].Assets = assets
+				}
+			}
+		}
+
+		totalVtxos = append(totalVtxos, vtxos...)
 	}
-	return vtxos
+
+	return totalVtxos
 }
 
 func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {

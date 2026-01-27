@@ -23,7 +23,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -462,7 +462,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	}
 
 	spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
-	newVtxos := getNewVtxosFromRound(round)
+	newVtxos, newAssetAnchors := getNewVtxosFromRound(round)
 
 	if len(spentVtxos) > 0 {
 		for {
@@ -483,7 +483,22 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
+
 			log.Debugf("added %d new vtxos", len(newVtxos))
+			break
+		}
+
+	}
+
+	if len(newAssetAnchors) > 0 {
+		for _, anchor := range newAssetAnchors {
+			if err := s.assetStore.InsertAssetAnchor(ctx, anchor); err != nil {
+				log.WithError(err).Warn("failed to add new asset anchors, retrying soon")
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			log.Debugf("added %d new asset anchors", len(newAssetAnchors))
 			break
 		}
 	}
@@ -530,7 +545,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
-		assetOpReturnProcessed := false
+		assetMapped := make(map[uint32][]domain.Asset)
 		for outIndex, out := range outs {
 			var isSubDust bool
 			var pubKey []byte
@@ -541,36 +556,69 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 
 			// ignore asset anchor
-			if extension.ContainsAssetPacket(out.PkScript) {
-				if assetOpReturnProcessed {
-					continue
-				}
-				assetOpReturnProcessed = true
-
+			if extension.IsExtensionPacket(out.PkScript) {
 				txOut := wire.TxOut{
 					Value:    int64(out.Amount),
 					PkScript: out.PkScript,
 				}
 
-				if _, err := extension.DecodeAssetPacket(txOut); err != nil {
+				packet, err := extension.DecodeExtensionPacket(txOut)
+				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
 				}
 
-				subDustPacket, err := extension.DecodeSubDustPacket(txOut)
-				if err != nil {
-					log.WithError(err).Warn("failed to decode sub-dust key from opret")
-					continue
-				}
-				if subDustPacket == nil || subDustPacket.Key == nil {
-					continue
-				}
-				isSubDust = true
-				pubKey = schnorr.SerializePubKey(subDustPacket.Key)
+				if packet.Asset != nil {
+					for i, grp := range packet.Asset.Assets {
+						var assetId string
+						if grp.AssetId == nil {
+							txhash, err := chainhash.NewHashFromStr(txid)
+							if err != nil {
+								log.WithError(err).Warn("failed to generate asset id from txid")
+								continue
+							}
 
-			} else {
-				isSubDust = script.IsSubDustScript(out.PkScript)
+							assetId = extension.AssetId{
+								Txid:  *txhash,
+								Index: uint16(i),
+							}.ToString()
+						} else {
+							assetId = grp.AssetId.ToString()
+						}
+
+						for _, assetOut := range grp.Outputs {
+							assetMapped[assetOut.Vout] = append(
+								assetMapped[assetOut.Vout],
+								domain.Asset{
+									AssetID: assetId,
+									Amount:  uint64(assetOut.Amount),
+								},
+							)
+						}
+					}
+				}
+
+				if packet.SubDust == nil {
+					continue
+				} else {
+					isSubDust = true
+					pubKey = schnorr.SerializePubKey(packet.SubDust.Key)
+				}
+
+			}
+
+			if !isSubDust && script.IsSubDustScript(out.PkScript) {
+				isSubDust = true
 				pubKey = out.PkScript[2:]
+			}
+
+			if !isSubDust {
+				vtxoTapKey, err := schnorr.ParsePubKey(out.PkScript[2:])
+				if err != nil {
+					log.WithError(err).Warn("failed to parse vtxo tap key")
+					continue
+				}
+				pubKey = schnorr.SerializePubKey(vtxoTapKey)
 			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
@@ -592,10 +640,17 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			})
 		}
 
+		for i, newVtxo := range newVtxos {
+			if assets, found := assetMapped[newVtxo.VOut]; found {
+				newVtxos[i].Assets = assets
+			}
+		}
+
 		if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
 			log.WithError(err).Warn("failed to add vtxos")
 			return
 		}
+
 		log.Debugf("added %d vtxos", len(newVtxos))
 	}
 }
@@ -631,26 +686,47 @@ func getSpentVtxoKeysFromRound(
 	return spentVtxos
 }
 
-func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
+func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnchor) {
 	if len(round.VtxoTree) <= 0 {
-		return nil
+		return nil, nil
 	}
 
-	vtxos := make([]domain.Vtxo, 0)
+	totalVtxos := make([]domain.Vtxo, 0)
+	totolAssetAnchors := make([]domain.AssetAnchor, 0)
+
 	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
 		}
+
+		assetsMap := make(map[uint32]domain.Asset, 0)
+		assetAnchorIndex := -1
+
+		vtxos := make([]domain.Vtxo, 0)
 		for i, out := range tx.UnsignedTx.TxOut {
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
-			// Skip any OP_RETURN output (asset packets)
-			// TODO: Make this more robust?
-			if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
+
+			if extension.ContainsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode asset packet")
+					continue
+				}
+				assetAnchorIndex = i
+
+				for _, asst := range decodedAssetPacket.Assets {
+					for _, out := range asst.Outputs {
+						assetsMap[out.Vout] = domain.Asset{
+							AssetID: asst.AssetId.ToString(),
+							Amount:  uint64(out.Amount),
+						}
+					}
+				}
 				continue
 			}
 
@@ -671,8 +747,38 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				ExpiresAt:          round.ExpiryTimestamp(),
 			})
 		}
+
+		if assetAnchorIndex > -1 {
+			assetAnchor := domain.AssetAnchor{
+				Outpoint: domain.Outpoint{
+					Txid: tx.UnsignedTx.TxID(),
+					VOut: uint32(assetAnchorIndex),
+				},
+			}
+
+			normalAssets := make([]domain.NormalAsset, 0)
+
+			if len(assetsMap) > 0 {
+				for i, vtxo := range vtxos {
+					if asset, found := assetsMap[vtxo.VOut]; found {
+						vtxos[i].Assets = []domain.Asset{asset}
+
+						normalAssets = append(normalAssets, domain.NormalAsset{
+							Outpoint: vtxo.Outpoint,
+							Amount:   asset.Amount,
+							AssetID:  asset.AssetID,
+						})
+					}
+				}
+			}
+
+			assetAnchor.Assets = normalAssets
+			totolAssetAnchors = append(totolAssetAnchors, assetAnchor)
+		}
+
+		totalVtxos = append(totalVtxos, vtxos...)
 	}
-	return vtxos
+	return totalVtxos, totolAssetAnchors
 }
 
 func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {

@@ -3,10 +3,8 @@ package txbuilder
 import (
 	"encoding/hex"
 	"fmt"
-	"log"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -75,56 +73,23 @@ func getOutputVtxosLeaves(
 				return nil, fmt.Errorf("receiver pubkey parse failed: %w", err)
 			}
 
-			// Plain offchain vtxo (no asset)
 			vtxoScript, err := script.P2TRScript(pubkey)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create P2TR script: %w", err)
 			}
 
-			// AssetGroup teleport case
-			if len(receiver.AssetId) > 0 {
-				assetId, err := extension.AssetIdFromString(receiver.AssetId)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode asset id: %w", err)
-				}
-
-				if assetId == nil {
-					return nil, fmt.Errorf("asset id is nil")
-				}
-
-				assetPacket := &extension.AssetPacket{
-					Assets: []extension.AssetGroup{{
-						AssetId: assetId,
-						Outputs: []extension.AssetOutput{{
-							Type:   extension.AssetTypeTeleport,
-							Script: vtxoScript,
-							Amount: receiver.Amount,
-						}},
-					}},
-				}
-
-				assetOpret, err := assetPacket.EncodeAssetPacket()
-				if err != nil {
-					return nil, fmt.Errorf("failed to encode asset opreturn: %w", err)
-				}
-
-				leaves = append(leaves, tree.Leaf{
-					Script:              hex.EncodeToString(assetOpret.PkScript),
-					Amount:              uint64(assetOpret.Value),
-					CosignersPublicKeys: cosigners,
-				})
-
-				continue
-			}
-
-			log.Printf("plain vtxo script %s", hex.EncodeToString(vtxoScript))
-
-			leaves = append(leaves, tree.Leaf{
+			leaf := tree.Leaf{
 				Script:              hex.EncodeToString(vtxoScript),
 				Amount:              receiver.Amount,
 				CosignersPublicKeys: cosigners,
-			})
+			}
 
+			// AssetGroup intent case
+			if len(receiver.AssetPacket) > 0 {
+				leaf.ExtensionScript = receiver.AssetPacket
+			}
+
+			leaves = append(leaves, leaf)
 		}
 	}
 	return leaves, nil

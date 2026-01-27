@@ -1743,52 +1743,6 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.Len(t, md, len(asset.Metadata))
 		require.ElementsMatch(t, asset.Metadata, md)
 	})
-
-	t.Run("insert get and update teleport asset", func(t *testing.T) {
-		ctx := context.Background()
-		script := randomString(32)
-		intentID := randomString(32)
-		assetID := "asset-3"
-		outputIndex := uint32(7)
-		amount := uint64(5000)
-
-		asset := domain.TeleportAsset{
-			Script:      script,
-			IntentID:    intentID,
-			AssetID:     assetID,
-			OutputIndex: outputIndex,
-			Amount:      amount,
-			IsClaimed:   false,
-		}
-
-		err := svc.Assets().InsertTeleportAsset(ctx, asset)
-		require.NoError(t, err, "InsertTeleportAsset should succeed")
-
-		got, err := svc.Assets().GetTeleportAsset(ctx, script, intentID, assetID, outputIndex)
-		require.NoError(t, err, "GetTeleportAsset should succeed")
-		require.NotNil(t, got)
-		require.Equal(t, script, got.Script)
-		require.Equal(t, intentID, got.IntentID)
-		require.Equal(t, outputIndex, got.OutputIndex)
-		require.Equal(t, assetID, got.AssetID)
-		require.Equal(t, amount, got.Amount)
-		require.False(t, got.IsClaimed)
-
-		err = svc.Assets().UpdateTeleportAsset(ctx, script, intentID, assetID, outputIndex, true)
-		require.NoError(t, err, "UpdateTeleportAsset should succeed")
-
-		gotUpdated, err := svc.Assets().
-			GetTeleportAsset(ctx, script, intentID, assetID, outputIndex)
-		require.NoError(t, err, "GetTeleportAsset after update should succeed")
-		require.NotNil(t, gotUpdated)
-		require.Equal(t, script, gotUpdated.Script)
-		require.Equal(t, intentID, gotUpdated.IntentID)
-		require.Equal(t, outputIndex, gotUpdated.OutputIndex)
-		require.Equal(t, assetID, gotUpdated.AssetID)
-		require.Equal(t, amount, gotUpdated.Amount)
-		require.True(t, gotUpdated.IsClaimed)
-
-	})
 }
 
 func testFeeRepository(t *testing.T, svc ports.RepoManager) {

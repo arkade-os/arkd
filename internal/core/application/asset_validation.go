@@ -1,9 +1,7 @@
 package application
 
 import (
-	"bytes"
 	"context"
-	"encoding/hex"
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
@@ -338,39 +336,52 @@ func (m *assetGroupValidationMachine) validateOutputs(s *service) error {
 
 func (m *assetGroupValidationMachine) validateInput(s *service, input extension.AssetInput) error {
 	grpAsset := m.group()
-	if input.Type == extension.AssetTypeTeleport {
+	if input.Type == extension.AssetTypeIntent {
+		intentTxid := chainhash.Hash(input.Txid).String()
+
 		if grpAsset.AssetId == nil {
-			return errors.TELEPORT_VALIDATION_FAILED.New("asset ID is required for teleport input validation").
-				WithMetadata(errors.TeleportValidationMetadata{})
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New("asset ID is required for intent input validation").
+				WithMetadata(errors.IntentValidationMetadata{
+					IntentTxid:  intentTxid,
+					OutputIndex: input.Vin,
+				})
 		}
 
-		txHash, err := chainhash.NewHash(input.Witness.Txid[:])
+		intent, err := s.repoManager.Rounds().GetIntentByTxid(context.Background(), intentTxid)
 		if err != nil {
-			return errors.TELEPORT_VALIDATION_FAILED.New("invalid intent ID for teleport input validation: %w", err).
-				WithMetadata(errors.TeleportValidationMetadata{})
-		}
-
-		intent, err := s.repoManager.Rounds().GetIntentByTxid(context.Background(), txHash.String())
-		if err != nil {
-			return errors.TELEPORT_VALIDATION_FAILED.New("error retrieving intent for teleport input validation: %w", err).
-				WithMetadata(errors.TeleportValidationMetadata{})
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error retrieving intent for intent input validation: %w", err).
+				WithMetadata(errors.IntentValidationMetadata{
+					IntentTxid:  intentTxid,
+					AssetId:     grpAsset.AssetId.ToString(),
+					OutputIndex: input.Vin,
+				})
 		}
 
 		decodedProof, err := psbt.NewFromRawBytes(strings.NewReader(intent.Proof), true)
 		if err != nil {
-			return errors.TELEPORT_VALIDATION_FAILED.New("error decoding intent proof for teleport input validation: %w", err).
-				WithMetadata(errors.TeleportValidationMetadata{})
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New(
+				"error decoding  proof for intent input validation: %w", err,
+			)
 		}
 
-		if err := s.validateTeleportInput(*decodedProof, m.arkTx, *grpAsset.AssetId, uint32(input.Witness.Index), input.Witness.Script); err != nil {
+		if err := s.validateIntentOutput(*decodedProof, *grpAsset.AssetId, input.Vin); err != nil {
 			return err
 		}
+
 		return nil
 	}
 
 	if int(input.Vin) >= len(m.arkTx.TxIn) {
 		return errors.ASSET_INPUT_INVALID.New("asset input index out of range: %d", input.Vin).
 			WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin)})
+	}
+
+	if m.checkpointTxMap == nil {
+		prev := m.arkTx.TxIn[input.Vin].PreviousOutPoint
+		if err := s.verifyAssetInputPrevOut(m.ctx, input, prev); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	checkpointOutpoint := m.arkTx.TxIn[input.Vin].PreviousOutPoint
@@ -397,7 +408,6 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 	}
 
 	prev := checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint
-
 	if err := s.verifyAssetInputPrevOut(m.ctx, input, prev); err != nil {
 		return err
 	}
@@ -411,21 +421,19 @@ const (
 	assetOutputInit assetOutputValidationState = iota
 	assetOutputCollect
 	assetOutputCountCheck
-	assetOutputTeleportCheck
+	assetOutputIntentCheck
 	assetOutputDone
 )
 
 type assetOutputValidationMachine struct {
-	ctx             context.Context
-	arkTx           wire.MsgTx
-	assetsList      []extension.AssetGroup
-	assetGp         extension.AssetGroup
-	state           assetOutputValidationState
-	processed       int
-	sumInputs       uint64
-	sumOutputs      uint64
-	teleportInputs  map[string]uint64
-	localScriptAmts map[string]uint64
+	ctx        context.Context
+	arkTx      wire.MsgTx
+	assetsList []extension.AssetGroup
+	assetGp    extension.AssetGroup
+	state      assetOutputValidationState
+	processed  int
+	sumInputs  uint64
+	sumOutputs uint64
 }
 
 func (m *assetOutputValidationMachine) run(s *service) error {
@@ -434,33 +442,20 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 		case assetOutputInit:
 			m.sumInputs = sumAssetInputs(m.assetGp.Inputs)
 			m.sumOutputs = sumAssetOutputs(m.assetGp.Outputs)
-			m.teleportInputs = make(map[string]uint64)
-			m.localScriptAmts = make(map[string]uint64)
 			m.processed = 0
-			for _, in := range m.assetGp.Inputs {
-				if in.Type == extension.AssetTypeTeleport {
-					teleportScriptHex := hex.EncodeToString(in.Witness.Script[:])
-					m.teleportInputs[teleportScriptHex] += in.Amount
-				}
-			}
+
 			m.state = assetOutputCollect
 		case assetOutputCollect:
 			for _, assetOut := range m.assetGp.Outputs {
-				switch assetOut.Type {
-				case extension.AssetTypeLocal:
-					for index, txout := range m.arkTx.TxOut {
-						if index == int(assetOut.Vout) {
-							m.localScriptAmts[hex.EncodeToString(txout.PkScript)] += assetOut.Amount
-							m.processed++
-							break
-						}
-					}
-				case extension.AssetTypeTeleport:
-					m.processed++
-				default:
-					return errors.ASSET_OUTPUT_INVALID.New("unknown asset output type %d", assetOut.Type).
-						WithMetadata(errors.AssetOutputMetadata{OutputType: int(assetOut.Type)})
+				vout := int(assetOut.Vout)
+				if vout >= len(m.arkTx.TxOut) {
+					return errors.ASSET_OUTPUT_INVALID.New(
+						"asset output vout %d exceeds ark tx outputs",
+						vout,
+					).WithMetadata(errors.AssetOutputMetadata{OutputIndex: int(assetOut.Vout)})
 				}
+
+				m.processed++
 			}
 			m.state = assetOutputCountCheck
 		case assetOutputCountCheck:
@@ -469,73 +464,6 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 					"not all asset outputs verified: processed %d of %d",
 					m.processed, len(m.assetGp.Outputs),
 				).WithMetadata(errors.AssetOutputMetadata{})
-			}
-			m.state = assetOutputTeleportCheck
-		case assetOutputTeleportCheck:
-			// Teleport redemptions must land on a local output with the same script.
-			for scriptHex, inAmount := range m.teleportInputs {
-				outAmount, exists := m.localScriptAmts[scriptHex]
-				if !exists {
-					return errors.TELEPORT_VALIDATION_FAILED.New(
-						"teleport input script %s not found in output",
-						scriptHex,
-					).WithMetadata(errors.TeleportValidationMetadata{Script: scriptHex})
-				}
-				if outAmount > inAmount {
-					// verify if extra amount is covered by existing input
-					if m.sumInputs == m.sumOutputs {
-						continue
-					}
-
-					assetID := m.assetGp.AssetId.ToString()
-					controlAssetDetails, err := s.repoManager.Assets().GetAssetGroupByID(
-						m.ctx, assetID,
-					)
-					if err != nil {
-						return errors.ASSET_VALIDATION_FAILED.New(
-							"error retrieving asset %s: %w",
-							assetID,
-							err,
-						).WithMetadata(errors.AssetValidationMetadata{AssetID: assetID})
-					}
-
-					if controlAssetDetails == nil {
-						return errors.ASSET_NOT_FOUND.New("asset %s does not exist", assetID).
-							WithMetadata(errors.AssetValidationMetadata{AssetID: assetID})
-					}
-
-					controlAssetId := controlAssetDetails.ControlAssetID
-					if controlAssetId == "" {
-						return errors.CONTROL_ASSET_INVALID.New(
-							"asset %s does not have a control asset",
-							assetID,
-						).WithMetadata(errors.ControlAssetMetadata{AssetID: assetID})
-					}
-
-					decodedControlAssetId, err := extension.AssetIdFromString(controlAssetId)
-					if err != nil {
-						return errors.CONTROL_ASSET_INVALID.New(
-							"error decoding control asset ID %s: %w",
-							controlAssetId,
-							err,
-						).WithMetadata(errors.ControlAssetMetadata{
-							AssetID:        assetID,
-							ControlAssetID: controlAssetId,
-						})
-					}
-
-					if decodedControlAssetId == nil {
-						return errors.CONTROL_ASSET_INVALID.New("invalid control asset ID %s", controlAssetId).
-							WithMetadata(errors.ControlAssetMetadata{
-								AssetID:        assetID,
-								ControlAssetID: controlAssetId,
-							})
-					}
-
-					if err := s.ensureAssetPresence(m.ctx, m.assetsList, *decodedControlAssetId); err != nil {
-						return err
-					}
-				}
 			}
 			m.state = assetOutputDone
 		case assetOutputDone:
@@ -547,18 +475,19 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 	}
 }
 
-func (s *service) validateTeleportInput(
+func (s *service) validateIntentOutput(
 	intentProof psbt.Packet,
-	arkTx wire.MsgTx,
 	assetId extension.AssetId,
-	index uint32,
-	script []byte,
+	vout uint32,
 ) error {
-	// validate teleport script exists in intent proof
+	// validate intent output exists in intent proof
 	assetPacket, _, err := extension.DeriveAssetPacketFromTx(*intentProof.UnsignedTx)
 	if err != nil {
-		return errors.TELEPORT_VALIDATION_FAILED.New("error deriving asset packet from intent proof: %s", err).
-			WithMetadata(errors.TeleportValidationMetadata{AssetID: assetId.ToString()})
+		return errors.INTENT_ASSET_VALIDATION_FAILED.New("error deriving asset packet from intent proof: %s", err).
+			WithMetadata(errors.IntentValidationMetadata{
+				AssetId:    assetId.ToString(),
+				IntentTxid: intentProof.UnsignedTx.TxHash().String(),
+			})
 	}
 
 	if assetPacket == nil {
@@ -566,27 +495,26 @@ func (s *service) validateTeleportInput(
 			WithMetadata(errors.AssetValidationMetadata{})
 	}
 
-	teleportOutputFound := false
+	intentOutputFound := false
 	for _, assetGroup := range assetPacket.Assets {
-		for i, assetOutput := range assetGroup.Outputs {
-			if assetOutput.Type == extension.AssetTypeTeleport &&
-				bytes.Equal(assetOutput.Script, script) &&
-				assetId == *assetGroup.AssetId &&
-				index == uint32(i) {
-				teleportOutputFound = true
+		for _, assetOutput := range assetGroup.Outputs {
+			if assetOutput.Type == extension.AssetTypeIntent && assetId == *assetGroup.AssetId &&
+				vout == assetOutput.Vout {
+				intentOutputFound = true
 				break
 			}
 		}
 	}
 
-	if !teleportOutputFound {
-		return errors.TELEPORT_VALIDATION_FAILED.New(
-			"teleport output not found in intent proof for asset %s index %d",
+	if !intentOutputFound {
+		return errors.INTENT_ASSET_VALIDATION_FAILED.New(
+			"intent output not found in intent proof for asset %s index %d",
 			assetId.ToString(),
-			index,
-		).WithMetadata(errors.TeleportValidationMetadata{
-			AssetID:     assetId.ToString(),
-			OutputIndex: int(index),
+			vout,
+		).WithMetadata(errors.IntentValidationMetadata{
+			AssetId:     assetId.ToString(),
+			IntentTxid:  intentProof.UnsignedTx.TxHash().String(),
+			OutputIndex: vout,
 		})
 	}
 
@@ -601,24 +529,66 @@ func (s *service) verifyAssetInputPrevOut(
 ) error {
 	txid := prev.Hash.String()
 
-	offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
-	if err != nil {
-		return errors.OFFCHAIN_TX_INVALID.New("error retrieving offchain tx %s: %w", txid, err).
-			WithMetadata(errors.OffchainTxValidationMetadata{Txid: txid})
-	}
-	if offchainTx == nil {
-		return errors.OFFCHAIN_TX_INVALID.New("offchain tx %s not found in rounds or offchain storage", txid).
-			WithMetadata(errors.OffchainTxValidationMetadata{Txid: txid})
-	}
-	if !offchainTx.IsFinalized() {
-		return errors.OFFCHAIN_TX_INVALID.New("offchain tx %s is failed", txid).
-			WithMetadata(errors.OffchainTxValidationMetadata{Txid: txid})
+	var decodedArkTx *psbt.Packet
+
+	decodeOffchain := func() (*psbt.Packet, error) {
+		offchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
+		if err != nil {
+			return nil, errors.OFFCHAIN_TX_INVALID.
+				New("error retrieving offchain tx %s: %w", txid, err).
+				WithMetadata(errors.OffchainTxValidationMetadata{Txid: txid})
+		}
+		if offchainTx == nil {
+			return nil, errors.OFFCHAIN_TX_INVALID.
+				New("offchain tx %s not found in rounds or offchain storage", txid).
+				WithMetadata(errors.OffchainTxValidationMetadata{Txid: txid})
+		}
+		if !offchainTx.IsFinalized() {
+			return nil, errors.OFFCHAIN_TX_INVALID.
+				New("offchain tx %s is failed", txid).
+				WithMetadata(errors.OffchainTxValidationMetadata{Txid: txid})
+		}
+
+		p, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
+		if err != nil {
+			return nil, errors.OFFCHAIN_TX_INVALID.
+				New("error decoding Ark Tx: %w", err).
+				WithMetadata(errors.OffchainTxValidationMetadata{Txid: txid})
+		}
+		return p, nil
 	}
 
-	decodedArkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
+	decodeRound := func() (*psbt.Packet, error) {
+		roundTxs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{txid})
+		if err != nil {
+			return nil, errors.TX_NOT_FOUND.
+				New("error retrieving round tx %s: %w", txid, err).
+				WithMetadata(errors.TxNotFoundMetadata{Txid: txid})
+		}
+		if len(roundTxs) == 0 {
+			return nil, errors.TX_NOT_FOUND.
+				New("round tx %s not found in rounds or offchain storage", txid).
+				WithMetadata(errors.TxNotFoundMetadata{Txid: txid})
+		}
+
+		p, err := psbt.NewFromRawBytes(strings.NewReader(roundTxs[0]), true)
+		if err != nil {
+			return nil, errors.TX_NOT_FOUND.
+				New("error decoding Ark Tx: %w", err).
+				WithMetadata(errors.TxNotFoundMetadata{Txid: txid})
+		}
+		return p, nil
+	}
+
+	// try offchain
+	decodedArkTx, err := decodeOffchain()
 	if err != nil {
-		return errors.OFFCHAIN_TX_INVALID.New("error decoding Ark Tx: %s", err).
-			WithMetadata(errors.OffchainTxValidationMetadata{Txid: txid})
+		// fallback to round
+		decodedArkTx, err = decodeRound()
+		if err != nil {
+			return errors.TX_NOT_FOUND.
+				New("txid %s not found as offchain or round: %v", txid, err)
+		}
 	}
 
 	var assetGroup *extension.AssetPacket

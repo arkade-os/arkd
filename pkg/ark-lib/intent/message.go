@@ -39,12 +39,6 @@ type RegisterMessage struct {
 	CosignersPublicKeys []string `json:"cosigners_public_keys"`
 }
 
-type AssetOutput struct {
-	AssetId      string `json:"asset_id"`
-	TeleportHash string `json:"teleport_hash"`
-	Amount       uint64 `json:"amount"`
-}
-
 func (m RegisterMessage) Encode() (string, error) {
 	encoded, err := json.Marshal(m)
 	if err != nil {
