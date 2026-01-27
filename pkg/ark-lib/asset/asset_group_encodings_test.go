@@ -83,13 +83,59 @@ type jsonNormalizeSlicesCase struct {
 	Metadata    *Metadata   `json:"metadata,omitempty"`
 }
 
+type jsonEncodeAssetGroupsErrorCase struct {
+	Name                     string                 `json:"name"`
+	Description              string                 `json:"description,omitempty"`
+	AssetGroups              []jsonEncodeAssetGroup `json:"asset_groups"`
+	UseNormalAssetFirst      bool                   `json:"use_normal_asset_first,omitempty"`
+	UseControlAndNormalFirst bool                   `json:"use_control_and_normal_first,omitempty"`
+	ExpectedError            string                 `json:"expected_error"`
+}
+
+type jsonEncodeAssetGroupsValidCase struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description,omitempty"`
+	AssetGroups []jsonEncodeAssetGroup `json:"asset_groups"`
+}
+
+type jsonEncodeAssetGroup struct {
+	AssetId      *jsonAssetId         `json:"asset_id,omitempty"`
+	Immutable    bool                 `json:"immutable,omitempty"`
+	ControlAsset *jsonControlAssetRef `json:"control_asset,omitempty"`
+	Inputs       []jsonInput          `json:"inputs,omitempty"`
+	Outputs      []jsonOutput         `json:"outputs,omitempty"`
+	Metadata     []Metadata           `json:"metadata,omitempty"`
+}
+
+type jsonControlAssetRef struct {
+	Type       string       `json:"type,omitempty"`
+	TypeRaw    *uint8       `json:"type_raw,omitempty"`
+	AssetId    *jsonAssetId `json:"asset_id,omitempty"`
+	GroupIndex uint16       `json:"group_index,omitempty"`
+}
+
+type jsonWriteTestData struct {
+	AssetRefByID         jsonAssetRefFixture `json:"asset_ref_by_id"`
+	AssetRefByGroup      jsonAssetRefFixture `json:"asset_ref_by_group"`
+	MetadataSingle       []Metadata          `json:"metadata_single"`
+	MetadataEmptyKey     []Metadata          `json:"metadata_empty_key"`
+	InputLocal           jsonInput           `json:"input_local"`
+	InputTeleport        jsonInput           `json:"input_teleport"`
+	InputTeleportWitness jsonInput           `json:"input_teleport_with_witness"`
+	OutputLocal          jsonOutput          `json:"output_local"`
+	OutputTeleport       jsonOutput          `json:"output_teleport"`
+}
+
 type encodingsFixturesJSON struct {
-	AssetRefs            jsonAssetRefsFixtures     `json:"asset_refs"`
-	MetadataLists        []jsonMetadataListFixture `json:"metadata_lists"`
-	AssetInputs          jsonAssetInputsFixtures   `json:"asset_inputs"`
-	AssetOutputs         jsonAssetOutputsFixtures  `json:"asset_outputs"`
-	PresenceBitCases     []jsonPresenceBitCase     `json:"presence_bit_cases"`
-	NormalizeSlicesCases []jsonNormalizeSlicesCase `json:"normalize_slices_cases"`
+	AssetRefs               jsonAssetRefsFixtures            `json:"asset_refs"`
+	MetadataLists           []jsonMetadataListFixture        `json:"metadata_lists"`
+	AssetInputs             jsonAssetInputsFixtures          `json:"asset_inputs"`
+	AssetOutputs            jsonAssetOutputsFixtures         `json:"asset_outputs"`
+	PresenceBitCases        []jsonPresenceBitCase            `json:"presence_bit_cases"`
+	NormalizeSlicesCases    []jsonNormalizeSlicesCase        `json:"normalize_slices_cases"`
+	EncodeAssetGroupsErrors []jsonEncodeAssetGroupsErrorCase `json:"encode_asset_groups_errors"`
+	EncodeAssetGroupsValid  []jsonEncodeAssetGroupsValidCase `json:"encode_asset_groups_valid"`
+	WriteTestData           jsonWriteTestData                `json:"write_test_data"`
 }
 
 var encodingsFixtures encodingsFixturesJSON
@@ -253,6 +299,120 @@ func fixtureToAssetOutputs(outputs []jsonOutput) ([]AssetOutput, error) {
 	return result, nil
 }
 
+func fixtureToEncodeAssetGroup(jag jsonEncodeAssetGroup) (AssetGroup, error) {
+	var ag AssetGroup
+
+	if jag.AssetId != nil && jag.AssetId.Txid != "" {
+		b, err := hex.DecodeString(jag.AssetId.Txid)
+		if err != nil {
+			return ag, err
+		}
+		var arr [32]byte
+		copy(arr[:], b)
+		ag.AssetId = &AssetId{Txid: arr, Index: jag.AssetId.Index}
+	}
+
+	ag.Immutable = jag.Immutable
+
+	if jag.ControlAsset != nil {
+		if jag.ControlAsset.TypeRaw != nil {
+			ag.ControlAsset = &AssetRef{Type: AssetRefType(*jag.ControlAsset.TypeRaw)}
+		} else if jag.ControlAsset.Type == "AssetRefByGroup" {
+			ag.ControlAsset = AssetRefFromGroupIndex(jag.ControlAsset.GroupIndex)
+		} else if jag.ControlAsset.AssetId != nil && jag.ControlAsset.AssetId.Txid != "" {
+			b, err := hex.DecodeString(jag.ControlAsset.AssetId.Txid)
+			if err != nil {
+				return ag, err
+			}
+			var arr [32]byte
+			copy(arr[:], b)
+			ag.ControlAsset = AssetRefFromId(AssetId{Txid: arr, Index: jag.ControlAsset.AssetId.Index})
+		}
+	}
+
+	if len(jag.Inputs) > 0 {
+		inputs, err := fixtureToAssetInputs(jag.Inputs)
+		if err != nil {
+			return ag, err
+		}
+		ag.Inputs = inputs
+	}
+
+	if len(jag.Outputs) > 0 {
+		outputs, err := fixtureToAssetOutputs(jag.Outputs)
+		if err != nil {
+			return ag, err
+		}
+		ag.Outputs = outputs
+	}
+
+	if len(jag.Metadata) > 0 {
+		ag.Metadata = jag.Metadata
+	}
+
+	return ag, nil
+}
+
+func getWriteTestInput(name string) (AssetInput, error) {
+	var ji jsonInput
+	switch name {
+	case "local":
+		ji = encodingsFixtures.WriteTestData.InputLocal
+	case "teleport":
+		ji = encodingsFixtures.WriteTestData.InputTeleport
+	case "teleport_with_witness":
+		ji = encodingsFixtures.WriteTestData.InputTeleportWitness
+	default:
+		return AssetInput{}, nil
+	}
+	inputs, err := fixtureToAssetInputs([]jsonInput{ji})
+	if err != nil {
+		return AssetInput{}, err
+	}
+	return inputs[0], nil
+}
+
+func getWriteTestOutput(name string) (AssetOutput, error) {
+	var jo jsonOutput
+	switch name {
+	case "local":
+		jo = encodingsFixtures.WriteTestData.OutputLocal
+	case "teleport":
+		jo = encodingsFixtures.WriteTestData.OutputTeleport
+	default:
+		return AssetOutput{}, nil
+	}
+	outputs, err := fixtureToAssetOutputs([]jsonOutput{jo})
+	if err != nil {
+		return AssetOutput{}, err
+	}
+	return outputs[0], nil
+}
+
+func getWriteTestAssetRef(name string) (*AssetRef, error) {
+	var jf jsonAssetRefFixture
+	switch name {
+	case "by_id":
+		jf = encodingsFixtures.WriteTestData.AssetRefByID
+	case "by_group":
+		jf = encodingsFixtures.WriteTestData.AssetRefByGroup
+	default:
+		return nil, nil
+	}
+	return fixtureToAssetRef(&jf)
+}
+
+func getWriteTestMetadata(name string) []Metadata {
+	switch name {
+	case "single":
+		return encodingsFixtures.WriteTestData.MetadataSingle
+	case "empty_key":
+		return encodingsFixtures.WriteTestData.MetadataEmptyKey
+	default:
+		return nil
+	}
+}
+
 func TestEncodeAssetGroups(t *testing.T) {
 	t.Parallel()
 
@@ -276,6 +436,54 @@ func TestEncodeAssetGroups_Single(t *testing.T) {
 	data, err := encodeAssetGroups(assetGroups)
 	require.NoError(t, err)
 	require.NotEmpty(t, data)
+}
+
+func TestEncodeAssetGroups_Errors(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range encodingsFixtures.EncodeAssetGroupsErrors {
+		t.Run(tc.Name, func(t *testing.T) {
+			var assetGroups []AssetGroup
+
+			// Prepend control and/or normal assets if specified
+			if tc.UseControlAndNormalFirst {
+				assetGroups = append(assetGroups, controlAsset, normalAsset)
+			} else if tc.UseNormalAssetFirst {
+				assetGroups = append(assetGroups, normalAsset)
+			}
+
+			// Convert fixture asset groups
+			for _, jag := range tc.AssetGroups {
+				ag, err := fixtureToEncodeAssetGroup(jag)
+				require.NoError(t, err)
+				assetGroups = append(assetGroups, ag)
+			}
+
+			data, err := encodeAssetGroups(assetGroups)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.ExpectedError)
+			require.Nil(t, data)
+		})
+	}
+}
+
+func TestEncodeAssetGroups_ValidCases(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range encodingsFixtures.EncodeAssetGroupsValid {
+		t.Run(tc.Name, func(t *testing.T) {
+			var assetGroups []AssetGroup
+			for _, jag := range tc.AssetGroups {
+				ag, err := fixtureToEncodeAssetGroup(jag)
+				require.NoError(t, err)
+				assetGroups = append(assetGroups, ag)
+			}
+
+			data, err := encodeAssetGroups(assetGroups)
+			require.NoError(t, err)
+			require.NotEmpty(t, data)
+		})
+	}
 }
 
 func TestEncodeDecodeAssetRef(t *testing.T) {
@@ -353,14 +561,97 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.Nil(t, decoded5)
 }
 
-func TestDecodeAssetRef_Truncated(t *testing.T) {
+func TestEncodeAssetRef_WriteFails(t *testing.T) {
 	t.Parallel()
 	var scratch [8]byte
-	// create a buffer that's too short for an AssetRefByID
-	short := []byte{byte(AssetRefByID)}
-	buf := bytes.NewBuffer(short)
-	_, err := decodeAssetRef(buf, &scratch)
-	require.Error(t, err)
+
+	refByID, err := getWriteTestAssetRef("by_id")
+	require.NoError(t, err)
+	require.NotNil(t, refByID)
+
+	refByGroup, err := getWriteTestAssetRef("by_group")
+	require.NoError(t, err)
+	require.NotNil(t, refByGroup)
+
+	// Test write failure on type byte (first write)
+	t.Run("fail_on_type_byte", func(t *testing.T) {
+		lw := &limitedWriter{limit: 0}
+		err := encodeAssetRef(lw, refByID, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Txid (AssetRefByID)
+	t.Run("fail_on_txid", func(t *testing.T) {
+		lw := &limitedWriter{limit: 1} // allow type byte, fail on txid
+		err := encodeAssetRef(lw, refByID, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Index (AssetRefByID)
+	t.Run("fail_on_index", func(t *testing.T) {
+		lw := &limitedWriter{limit: 33} // allow type byte + txid, fail on index
+		err := encodeAssetRef(lw, refByID, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on GroupIndex (AssetRefByGroup)
+	t.Run("fail_on_group_index", func(t *testing.T) {
+		lw := &limitedWriter{limit: 1} // allow type byte, fail on group index
+		err := encodeAssetRef(lw, refByGroup, &scratch)
+		require.Error(t, err)
+	})
+}
+
+func TestDecodeAssetRef_TruncatedAtVariousPoints(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	// Test decode with empty buffer (no type byte)
+	t.Run("empty_buffer", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{})
+		_, err := decodeAssetRef(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode AssetRefByID truncated after type (no txid)
+	t.Run("by_id_truncated_after_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{byte(AssetRefByID)})
+		_, err := decodeAssetRef(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode AssetRefByID truncated after partial txid
+	t.Run("by_id_truncated_partial_txid", func(t *testing.T) {
+		data := make([]byte, 17) // type + 16 bytes of txid (need 32)
+		data[0] = byte(AssetRefByID)
+		buf := bytes.NewBuffer(data)
+		_, err := decodeAssetRef(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode AssetRefByID truncated after txid (no index)
+	t.Run("by_id_truncated_after_txid", func(t *testing.T) {
+		data := make([]byte, 33) // type + 32 bytes txid, but no index
+		data[0] = byte(AssetRefByID)
+		buf := bytes.NewBuffer(data)
+		_, err := decodeAssetRef(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode AssetRefByGroup truncated after type (no group index)
+	t.Run("by_group_truncated_after_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{byte(AssetRefByGroup)})
+		_, err := decodeAssetRef(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode with unknown type
+	t.Run("unknown_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{99}) // unknown type
+		_, err := decodeAssetRef(buf, &scratch)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unknown asset ref type")
+	})
 }
 
 func TestEncodeDecodeMetadataList(t *testing.T) {
@@ -407,6 +698,111 @@ func TestEncodeDecodeMetadataList(t *testing.T) {
 	require.Len(t, out, 1)
 	require.Equal(t, longMeta[0].Key, out[0].Key)
 	require.Equal(t, longMeta[0].Value, out[0].Value)
+}
+
+func TestEncodeMetadataList_WriteFails(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	meta := getWriteTestMetadata("single")
+	require.NotNil(t, meta)
+
+	metaEmptyKey := getWriteTestMetadata("empty_key")
+	require.NotNil(t, metaEmptyKey)
+
+	// Test write failure on count (first write)
+	t.Run("fail_on_count", func(t *testing.T) {
+		lw := &limitedWriter{limit: 0}
+		err := encodeMetadataList(lw, meta, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on key length
+	t.Run("fail_on_key_length", func(t *testing.T) {
+		lw := &limitedWriter{limit: 1} // allow count, fail on key length
+		err := encodeMetadataList(lw, meta, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on key bytes
+	t.Run("fail_on_key_bytes", func(t *testing.T) {
+		lw := &limitedWriter{limit: 2} // allow count + key length, fail on key bytes
+		err := encodeMetadataList(lw, meta, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on value length
+	t.Run("fail_on_value_length", func(t *testing.T) {
+		lw := &limitedWriter{limit: 9} // allow count + key length + key bytes, fail on value length
+		err := encodeMetadataList(lw, meta, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on value bytes
+	t.Run("fail_on_value_bytes", func(t *testing.T) {
+		lw := &limitedWriter{limit: 10} // allow count + key length + key bytes + value length, fail on value bytes
+		err := encodeMetadataList(lw, meta, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test with empty key (write still happens for length)
+	t.Run("fail_on_empty_key_value_length", func(t *testing.T) {
+		lw := &limitedWriter{limit: 2} // allow count + key length (0), fail on value length
+		err := encodeMetadataList(lw, metaEmptyKey, &scratch)
+		require.Error(t, err)
+	})
+}
+
+func TestDecodeMetadataList_TruncatedAtVariousPoints(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	// Test decode with empty buffer (no count)
+	t.Run("empty_buffer", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{})
+		_, err := decodeMetadataList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode with only count, no key length
+	t.Run("only_count", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1}) // count = 1, but no key length
+		_, err := decodeMetadataList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode truncated after key length (no key bytes)
+	t.Run("truncated_after_key_length", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, 5}) // count=1, key_len=5, but no key bytes
+		_, err := decodeMetadataList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode truncated after key bytes (no value length)
+	t.Run("truncated_after_key_bytes", func(t *testing.T) {
+		// Encode a valid metadata, then truncate
+		var encodeBuf bytes.Buffer
+		meta := []Metadata{{Key: "key", Value: "value"}}
+		require.NoError(t, encodeMetadataList(&encodeBuf, meta, &scratch))
+		// Truncate to just count + key_length + key bytes (no value length)
+		truncated := encodeBuf.Bytes()[:5]
+		_, err := decodeMetadataList(bytes.NewBuffer(truncated), &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode truncated after value length (no value bytes)
+	t.Run("truncated_after_value_length", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, 3, 'k', 'e', 'y', 5}) // count=1, key_len=3, key="key", value_len=5, but no value bytes
+		_, err := decodeMetadataList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode with empty key but truncated value
+	t.Run("empty_key_truncated_value", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, 0, 5}) // count=1, key_len=0, value_len=5, but no value bytes
+		_, err := decodeMetadataList(buf, &scratch)
+		require.Error(t, err)
+	})
 }
 
 func TestEncodeDecodeAssetInputList(t *testing.T) {
@@ -475,6 +871,165 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 	}
 }
 
+// limitedWriter writes up to limit bytes, then returns an error
+type limitedWriter struct {
+	limit   int
+	written int
+}
+
+func (lw *limitedWriter) Write(p []byte) (int, error) {
+	remaining := lw.limit - lw.written
+	if remaining <= 0 {
+		return 0, io.ErrShortWrite
+	}
+	if len(p) <= remaining {
+		lw.written += len(p)
+		return len(p), nil
+	}
+	lw.written += remaining
+	return remaining, io.ErrShortWrite
+}
+
+func TestEncodeAssetInputList_WriteFails(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	inputLocal, err := getWriteTestInput("local")
+	require.NoError(t, err)
+
+	inputTeleport, err := getWriteTestInput("teleport")
+	require.NoError(t, err)
+
+	inputTeleportWitness, err := getWriteTestInput("teleport_with_witness")
+	require.NoError(t, err)
+
+	// Test write failure on count (first write)
+	t.Run("fail_on_count", func(t *testing.T) {
+		inputs := []AssetInput{inputLocal}
+		lw := &limitedWriter{limit: 0}
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on type byte
+	t.Run("fail_on_type_byte", func(t *testing.T) {
+		inputs := []AssetInput{inputLocal}
+		lw := &limitedWriter{limit: 1} // allow count, fail on type
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Local Vin
+	t.Run("fail_on_local_vin", func(t *testing.T) {
+		inputs := []AssetInput{inputLocal}
+		lw := &limitedWriter{limit: 2} // allow count + type, fail on vin
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Local Amount
+	t.Run("fail_on_local_amount", func(t *testing.T) {
+		inputs := []AssetInput{inputLocal}
+		lw := &limitedWriter{limit: 6} // allow count + type + vin, fail on amount
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Teleport Amount
+	t.Run("fail_on_teleport_amount", func(t *testing.T) {
+		inputs := []AssetInput{inputTeleport}
+		lw := &limitedWriter{limit: 2} // allow count + type, fail on amount
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Teleport Witness Script length
+	t.Run("fail_on_teleport_script_length", func(t *testing.T) {
+		inputs := []AssetInput{inputTeleportWitness}
+		lw := &limitedWriter{limit: 10} // allow count + type + amount, fail on script length
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Teleport Witness Script
+	t.Run("fail_on_teleport_script", func(t *testing.T) {
+		inputs := []AssetInput{inputTeleportWitness}
+		lw := &limitedWriter{limit: 11} // allow up to script length, fail on script
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Teleport Witness Txid
+	t.Run("fail_on_teleport_txid", func(t *testing.T) {
+		inputs := []AssetInput{inputTeleportWitness}
+		lw := &limitedWriter{limit: 13} // allow up to script, fail on txid
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Teleport Witness Index
+	t.Run("fail_on_teleport_index", func(t *testing.T) {
+		inputs := []AssetInput{inputTeleportWitness}
+		lw := &limitedWriter{limit: 45} // allow up to txid, fail on index
+		err := encodeAssetInputList(lw, inputs, &scratch)
+		require.Error(t, err)
+	})
+}
+
+func TestDecodeAssetInputList_TruncatedAtVariousPoints(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	// Test decode with empty buffer (no count)
+	t.Run("empty_buffer", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{})
+		_, err := decodeAssetInputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode with only count, no type
+	t.Run("only_count", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1}) // count = 1, but no type
+		_, err := decodeAssetInputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode Local truncated after type
+	t.Run("local_truncated_after_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeLocal)}) // count=1, type=local, but no vin
+		_, err := decodeAssetInputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode Teleport truncated after type
+	t.Run("teleport_truncated_after_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeTeleport)}) // count=1, type=teleport, but no amount
+		_, err := decodeAssetInputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode with unknown type
+	t.Run("unknown_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, 99}) // count=1, type=99 (unknown)
+		_, err := decodeAssetInputList(buf, &scratch)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unknown asset input type")
+	})
+
+	// Test using fixtures with unknown type
+	t.Run("unknown_type_first_fixture", func(t *testing.T) {
+		invalidFixture := getInvalidAssetInputsFixture("unknown_type_first")
+		require.NotNil(t, invalidFixture)
+		inputs, err := fixtureToAssetInputs(invalidFixture.Inputs)
+		require.NoError(t, err)
+
+		buf := bytes.NewBuffer(nil)
+		err = encodeAssetInputList(buf, inputs, &scratch)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), invalidFixture.ExpectedError)
+	})
+}
+
 func TestPresenceBitCombinations(t *testing.T) {
 	t.Parallel()
 
@@ -539,21 +1094,6 @@ func TestPresenceBitCombinations(t *testing.T) {
 	}
 }
 
-type failWriter struct{}
-
-func (f failWriter) Write(p []byte) (int, error) { return 0, io.ErrUnexpectedEOF }
-
-func TestEncodeAssetRef_WriteFail(t *testing.T) {
-	t.Parallel()
-	// failing writer that always returns an error
-	var scratch [8]byte
-	ref := &AssetRef{Type: AssetRefByGroup, GroupIndex: 1}
-	fw := failWriter{}
-	err := encodeAssetRef(fw, ref, &scratch)
-	require.Error(t, err)
-	require.Equal(t, io.ErrUnexpectedEOF, err)
-}
-
 func TestEncodeDecodeAssetOutputList(t *testing.T) {
 	t.Parallel()
 	var scratch [8]byte
@@ -615,6 +1155,158 @@ func TestEncodeDecodeAssetOutputList(t *testing.T) {
 	}
 }
 
+func TestEncodeAssetOutputList_WriteFails(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	outputLocal, err := getWriteTestOutput("local")
+	require.NoError(t, err)
+
+	outputTeleport, err := getWriteTestOutput("teleport")
+	require.NoError(t, err)
+
+	// Test write failure on count (first write)
+	t.Run("fail_on_count", func(t *testing.T) {
+		outputs := []AssetOutput{outputLocal}
+		lw := &limitedWriter{limit: 0}
+		err := encodeAssetOutputList(lw, outputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on type byte
+	t.Run("fail_on_type_byte", func(t *testing.T) {
+		outputs := []AssetOutput{outputLocal}
+		lw := &limitedWriter{limit: 1} // allow count, fail on type
+		err := encodeAssetOutputList(lw, outputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Local Vout
+	t.Run("fail_on_local_vout", func(t *testing.T) {
+		outputs := []AssetOutput{outputLocal}
+		lw := &limitedWriter{limit: 2} // allow count + type, fail on vout
+		err := encodeAssetOutputList(lw, outputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Local Amount
+	t.Run("fail_on_local_amount", func(t *testing.T) {
+		outputs := []AssetOutput{outputLocal}
+		lw := &limitedWriter{limit: 6} // allow count + type + vout, fail on amount
+		err := encodeAssetOutputList(lw, outputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Teleport Script length
+	t.Run("fail_on_teleport_script_length", func(t *testing.T) {
+		outputs := []AssetOutput{outputTeleport}
+		lw := &limitedWriter{limit: 2} // allow count + type, fail on script length
+		err := encodeAssetOutputList(lw, outputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Teleport Script
+	t.Run("fail_on_teleport_script", func(t *testing.T) {
+		outputs := []AssetOutput{outputTeleport}
+		lw := &limitedWriter{limit: 3} // allow count + type + script length, fail on script
+		err := encodeAssetOutputList(lw, outputs, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test write failure on Teleport Amount
+	t.Run("fail_on_teleport_amount", func(t *testing.T) {
+		outputs := []AssetOutput{outputTeleport}
+		lw := &limitedWriter{limit: 5} // allow count + type + script length + script, fail on amount
+		err := encodeAssetOutputList(lw, outputs, &scratch)
+		require.Error(t, err)
+	})
+}
+
+func TestDecodeAssetOutputList_TruncatedAtVariousPoints(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	// Test decode with empty buffer (no count)
+	t.Run("empty_buffer", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{})
+		_, err := decodeAssetOutputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode with only count, no type
+	t.Run("only_count", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1}) // count = 1, but no type
+		_, err := decodeAssetOutputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode Local truncated after type
+	t.Run("local_truncated_after_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeLocal)}) // count=1, type=local, but no vout
+		_, err := decodeAssetOutputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode Local truncated after vout (no amount)
+	t.Run("local_truncated_after_vout", func(t *testing.T) {
+		// Encode a valid local output, then truncate
+		var encodeBuf bytes.Buffer
+		outputs := []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: 100}}
+		require.NoError(t, encodeAssetOutputList(&encodeBuf, outputs, &scratch))
+		// Truncate to just count + type + vout (no amount)
+		truncated := encodeBuf.Bytes()[:6]
+		_, err := decodeAssetOutputList(bytes.NewBuffer(truncated), &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode Teleport truncated after type
+	t.Run("teleport_truncated_after_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeTeleport)}) // count=1, type=teleport, but no script length
+		_, err := decodeAssetOutputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode Teleport truncated after script length (no script)
+	t.Run("teleport_truncated_after_script_length", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeTeleport), 4}) // count=1, type=teleport, script_len=4, but no script
+		_, err := decodeAssetOutputList(buf, &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode Teleport truncated after script (no amount)
+	t.Run("teleport_truncated_after_script", func(t *testing.T) {
+		// Encode a valid teleport output, then truncate
+		var encodeBuf bytes.Buffer
+		outputs := []AssetOutput{{Type: AssetTypeTeleport, Script: []byte{0xaa, 0xbb}, Amount: 100}}
+		require.NoError(t, encodeAssetOutputList(&encodeBuf, outputs, &scratch))
+		// Truncate to remove amount
+		truncated := encodeBuf.Bytes()[:5]
+		_, err := decodeAssetOutputList(bytes.NewBuffer(truncated), &scratch)
+		require.Error(t, err)
+	})
+
+	// Test decode with unknown type
+	t.Run("unknown_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, 99}) // count=1, type=99 (unknown)
+		_, err := decodeAssetOutputList(buf, &scratch)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unknown asset output type")
+	})
+
+	// Test using fixtures with unknown type
+	t.Run("unknown_type_first_fixture", func(t *testing.T) {
+		invalidFixture := getInvalidAssetOutputsFixture("unknown_type_first")
+		require.NotNil(t, invalidFixture)
+		outputs, err := fixtureToAssetOutputs(invalidFixture.Outputs)
+		require.NoError(t, err)
+
+		buf := bytes.NewBuffer(nil)
+		err = encodeAssetOutputList(buf, outputs, &scratch)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), invalidFixture.ExpectedError)
+	})
+}
+
 func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	subDustKey := deterministicPubKey(t, 0x55)
 	assetPacket := AssetPacket{
@@ -674,40 +1366,6 @@ func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
 	require.Equal(t, normalAsset, decodedExt.Asset.Assets[0])
 }
 
-func TestAssetOutputListEncodeDecode(t *testing.T) {
-	outputsFixture := getAssetOutputsFixture("simple_pair")
-	require.NotNil(t, outputsFixture)
-	outputs, err := fixtureToAssetOutputs(outputsFixture.Outputs)
-	require.NoError(t, err)
-
-	var scratch [8]byte
-	var buf bytes.Buffer
-	require.NoError(t, encodeAssetOutputList(&buf, outputs, &scratch))
-
-	var decoded []AssetOutput
-	reader := bytes.NewReader(buf.Bytes())
-	decoded, err = decodeAssetOutputList(reader, &scratch)
-	require.NoError(t, err)
-	require.Equal(t, outputs, decoded)
-}
-
-func TestAssetInputListEncodeDecode(t *testing.T) {
-	inputsFixture := getAssetInputsFixture("simple_pair")
-	require.NotNil(t, inputsFixture)
-	inputs, err := fixtureToAssetInputs(inputsFixture.Inputs)
-	require.NoError(t, err)
-
-	var scratch [8]byte
-	var buf bytes.Buffer
-	require.NoError(t, encodeAssetInputList(&buf, inputs, &scratch))
-
-	var decoded []AssetInput
-	reader := bytes.NewReader(buf.Bytes())
-	decoded, err = decodeAssetInputList(reader, &scratch)
-	require.NoError(t, err)
-	require.Equal(t, inputs, decoded)
-}
-
 func TestAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 	t.Parallel()
 
@@ -724,22 +1382,6 @@ func TestAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 	require.NotNil(t, decoded.ControlAsset)
 	require.Equal(t, AssetRefByGroup, decoded.ControlAsset.Type)
 	require.Equal(t, groupIndex, decoded.ControlAsset.GroupIndex)
-}
-
-func TestAssetRef_Constructors(t *testing.T) {
-	randTxHash := RandTxHash()
-	id := AssetId{Txid: randTxHash, Index: 1}
-
-	ref := AssetRefFromId(id)
-	require.Equal(t, AssetRefByID, ref.Type)
-	require.Equal(t, id, ref.AssetId)
-	require.Equal(t, uint16(0), ref.GroupIndex)
-
-	gref := AssetRefFromGroupIndex(42)
-	require.Equal(t, AssetRefByGroup, gref.Type)
-	require.Equal(t, uint16(42), gref.GroupIndex)
-	require.Equal(t, AssetId{}, gref.AssetId)
-
 }
 
 func TestNormalizeAssetSlices(t *testing.T) {
@@ -812,6 +1454,343 @@ func TestNormalizeAssetSlices(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBoundaryValues(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	t.Run("max_uint64_amount_output", func(t *testing.T) {
+		// Test max uint64 amount (18446744073709551615)
+		maxAmount := uint64(18446744073709551615)
+		outputs := []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: maxAmount}}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
+
+		decoded, err := decodeAssetOutputList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.Equal(t, maxAmount, decoded[0].Amount)
+	})
+
+	t.Run("max_uint64_amount_input", func(t *testing.T) {
+		maxAmount := uint64(18446744073709551615)
+		inputs := []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: maxAmount}}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetInputList(buf, inputs, &scratch))
+
+		decoded, err := decodeAssetInputList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.Equal(t, maxAmount, decoded[0].Amount)
+	})
+
+	t.Run("max_uint32_vout", func(t *testing.T) {
+		// Test max uint32 vout (4294967295)
+		maxVout := uint32(4294967295)
+		outputs := []AssetOutput{{Type: AssetTypeLocal, Vout: maxVout, Amount: 100}}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
+
+		decoded, err := decodeAssetOutputList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.Equal(t, maxVout, decoded[0].Vout)
+	})
+
+	t.Run("max_uint32_vin", func(t *testing.T) {
+		maxVin := uint32(4294967295)
+		inputs := []AssetInput{{Type: AssetTypeLocal, Vin: maxVin, Amount: 100}}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetInputList(buf, inputs, &scratch))
+
+		decoded, err := decodeAssetInputList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.Equal(t, maxVin, decoded[0].Vin)
+	})
+
+	t.Run("zero_values", func(t *testing.T) {
+		outputs := []AssetOutput{{Type: AssetTypeLocal, Vout: 0, Amount: 0}}
+		inputs := []AssetInput{{Type: AssetTypeLocal, Vin: 0, Amount: 0}}
+
+		bufOut := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetOutputList(bufOut, outputs, &scratch))
+		decodedOut, err := decodeAssetOutputList(bufOut, &scratch)
+		require.NoError(t, err)
+		require.Equal(t, uint32(0), decodedOut[0].Vout)
+		require.Equal(t, uint64(0), decodedOut[0].Amount)
+
+		bufIn := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetInputList(bufIn, inputs, &scratch))
+		decodedIn, err := decodeAssetInputList(bufIn, &scratch)
+		require.NoError(t, err)
+		require.Equal(t, uint32(0), decodedIn[0].Vin)
+		require.Equal(t, uint64(0), decodedIn[0].Amount)
+	})
+
+	t.Run("varint_boundary_253", func(t *testing.T) {
+		// 253 is the first value that requires 3-byte varint encoding
+		outputs := make([]AssetOutput, 253)
+		for i := range outputs {
+			outputs[i] = AssetOutput{Type: AssetTypeLocal, Vout: uint32(i), Amount: 1}
+		}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
+
+		decoded, err := decodeAssetOutputList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 253)
+	})
+
+	t.Run("max_uint16_group_index", func(t *testing.T) {
+		maxGroupIndex := uint16(65535)
+		ref := AssetRefFromGroupIndex(maxGroupIndex)
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetRef(buf, ref, &scratch))
+
+		decoded, err := decodeAssetRef(buf, &scratch)
+		require.NoError(t, err)
+		require.Equal(t, AssetRefByGroup, decoded.Type)
+		require.Equal(t, maxGroupIndex, decoded.GroupIndex)
+	})
+
+	t.Run("max_uint16_asset_id_index", func(t *testing.T) {
+		maxIndex := uint16(65535)
+		assetId := AssetId{Txid: deterministicBytesArray(0xAA), Index: maxIndex}
+		ref := AssetRefFromId(assetId)
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeAssetRef(buf, ref, &scratch))
+
+		decoded, err := decodeAssetRef(buf, &scratch)
+		require.NoError(t, err)
+		require.Equal(t, maxIndex, decoded.AssetId.Index)
+	})
+}
+
+func TestMetadataEdgeCases(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	t.Run("empty_key_and_value", func(t *testing.T) {
+		meta := []Metadata{{Key: "", Value: ""}}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeMetadataList(buf, meta, &scratch))
+
+		decoded, err := decodeMetadataList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.Equal(t, "", decoded[0].Key)
+		require.Equal(t, "", decoded[0].Value)
+	})
+
+	t.Run("empty_key_with_value", func(t *testing.T) {
+		meta := []Metadata{{Key: "", Value: "somevalue"}}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeMetadataList(buf, meta, &scratch))
+
+		decoded, err := decodeMetadataList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.Equal(t, "", decoded[0].Key)
+		require.Equal(t, "somevalue", decoded[0].Value)
+	})
+
+	t.Run("key_with_empty_value", func(t *testing.T) {
+		meta := []Metadata{{Key: "somekey", Value: ""}}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeMetadataList(buf, meta, &scratch))
+
+		decoded, err := decodeMetadataList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.Equal(t, "somekey", decoded[0].Key)
+		require.Equal(t, "", decoded[0].Value)
+	})
+
+	t.Run("special_characters", func(t *testing.T) {
+		meta := []Metadata{
+			{Key: "emoji🔥", Value: "火"},
+			{Key: "newline\nkey", Value: "tab\tvalue"},
+			{Key: "null\x00byte", Value: "value\x00here"},
+		}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeMetadataList(buf, meta, &scratch))
+
+		decoded, err := decodeMetadataList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 3)
+		require.Equal(t, meta[0].Key, decoded[0].Key)
+		require.Equal(t, meta[0].Value, decoded[0].Value)
+		require.Equal(t, meta[1].Key, decoded[1].Key)
+		require.Equal(t, meta[1].Value, decoded[1].Value)
+		require.Equal(t, meta[2].Key, decoded[2].Key)
+		require.Equal(t, meta[2].Value, decoded[2].Value)
+	})
+
+	t.Run("large_metadata_value", func(t *testing.T) {
+		// Create a 10KB value
+		largeValue := make([]byte, 10*1024)
+		for i := range largeValue {
+			largeValue[i] = byte(i % 256)
+		}
+		meta := []Metadata{{Key: "large", Value: string(largeValue)}}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeMetadataList(buf, meta, &scratch))
+
+		decoded, err := decodeMetadataList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 1)
+		require.Equal(t, string(largeValue), decoded[0].Value)
+	})
+
+	t.Run("many_metadata_items", func(t *testing.T) {
+		meta := make([]Metadata, 100)
+		for i := range meta {
+			meta[i] = Metadata{Key: string(rune('a' + i%26)), Value: string(rune('A' + i%26))}
+		}
+
+		buf := bytes.NewBuffer(nil)
+		require.NoError(t, encodeMetadataList(buf, meta, &scratch))
+
+		decoded, err := decodeMetadataList(buf, &scratch)
+		require.NoError(t, err)
+		require.Len(t, decoded, 100)
+	})
+}
+
+func TestPresenceBitDecodeVerification(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no_flags_fields_nil", func(t *testing.T) {
+		// AssetGroup with no optional fields
+		ag := AssetGroup{
+			Inputs:  []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 100}},
+			Outputs: []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: 100}},
+		}
+
+		encoded, err := ag.Encode()
+		require.NoError(t, err)
+
+		// Verify presence byte has no flags set
+		require.Equal(t, uint8(0), encoded[0])
+
+		var decoded AssetGroup
+		require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
+
+		// Verify optional fields are nil/empty
+		require.Nil(t, decoded.AssetId)
+		require.Nil(t, decoded.ControlAsset)
+		require.Nil(t, decoded.Metadata)
+		require.False(t, decoded.Immutable)
+	})
+
+	t.Run("only_asset_id_set", func(t *testing.T) {
+		ag := AssetGroup{
+			AssetId: ptrAssetId(deterministicAssetId(0x11)),
+			Inputs:  []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 100}},
+			Outputs: []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: 100}},
+		}
+
+		encoded, err := ag.Encode()
+		require.NoError(t, err)
+
+		var decoded AssetGroup
+		require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
+
+		require.NotNil(t, decoded.AssetId)
+		require.Nil(t, decoded.ControlAsset)
+		require.Nil(t, decoded.Metadata)
+		require.False(t, decoded.Immutable)
+	})
+
+	t.Run("only_control_asset_set", func(t *testing.T) {
+		ag := AssetGroup{
+			ControlAsset: AssetRefFromGroupIndex(5),
+			Inputs:       []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 100}},
+			Outputs:      []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: 100}},
+		}
+
+		encoded, err := ag.Encode()
+		require.NoError(t, err)
+
+		var decoded AssetGroup
+		require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
+
+		require.Nil(t, decoded.AssetId)
+		require.NotNil(t, decoded.ControlAsset)
+		require.Nil(t, decoded.Metadata)
+		require.False(t, decoded.Immutable)
+	})
+
+	t.Run("only_metadata_set", func(t *testing.T) {
+		ag := AssetGroup{
+			Metadata: []Metadata{{Key: "k", Value: "v"}},
+			Inputs:   []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 100}},
+			Outputs:  []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: 100}},
+		}
+
+		encoded, err := ag.Encode()
+		require.NoError(t, err)
+
+		var decoded AssetGroup
+		require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
+
+		require.Nil(t, decoded.AssetId)
+		require.Nil(t, decoded.ControlAsset)
+		require.NotNil(t, decoded.Metadata)
+		require.Len(t, decoded.Metadata, 1)
+		require.False(t, decoded.Immutable)
+	})
+
+	t.Run("only_immutable_set", func(t *testing.T) {
+		ag := AssetGroup{
+			Immutable: true,
+			Inputs:    []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 100}},
+			Outputs:   []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: 100}},
+		}
+
+		encoded, err := ag.Encode()
+		require.NoError(t, err)
+
+		var decoded AssetGroup
+		require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
+
+		require.Nil(t, decoded.AssetId)
+		require.Nil(t, decoded.ControlAsset)
+		require.Nil(t, decoded.Metadata)
+		require.True(t, decoded.Immutable)
+	})
+
+	t.Run("immutable_false_explicit", func(t *testing.T) {
+		ag := AssetGroup{
+			Immutable: false,
+			Inputs:    []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 100}},
+			Outputs:   []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: 100}},
+		}
+
+		encoded, err := ag.Encode()
+		require.NoError(t, err)
+
+		// Verify immutable bit is NOT set
+		require.Equal(t, uint8(0), encoded[0]&maskImmutable)
+
+		var decoded AssetGroup
+		require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
+		require.False(t, decoded.Immutable)
+	})
 }
 
 func deterministicPubKey(t *testing.T, seed byte) btcec.PublicKey {

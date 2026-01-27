@@ -144,3 +144,20 @@ func TestEncodeDecodeSubDustPacket(t *testing.T) {
 	require.Equal(t, int64(0), txOut.Value)
 	require.Equal(t, 0, len(txOut.PkScript))
 }
+
+func TestDecodeToSubDustPacket_MissingSubDustPayload(t *testing.T) {
+	t.Parallel()
+	// Create a TxOut with only asset payload (no subdust)
+	packet := &AssetPacket{
+		Assets: []AssetGroup{controlAsset},
+	}
+	extPacket := &ExtensionPacket{Asset: packet, SubDust: nil}
+	txOut, err := extPacket.Encode()
+	require.NoError(t, err)
+
+	// Try to decode as SubDustPacket - should fail
+	pkt, err := DecodeToSubDustPacket(txOut)
+	require.Error(t, err)
+	require.Equal(t, "missing subdust payload", err.Error())
+	require.Nil(t, pkt)
+}

@@ -206,17 +206,97 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
 	require.Equal(t, ag, decoded)
 
-	decoded.normalizeAssetSlices()
-	ag.normalizeAssetSlices()
-	require.Equal(t, ag.AssetId.Index, decoded.AssetId.Index)
-	require.Equal(t, ag.Immutable, decoded.Immutable)
-	require.Equal(t, ag.ControlAsset.Type, decoded.ControlAsset.Type)
-	require.Equal(t, ag.Metadata, decoded.Metadata)
-	require.Equal(t, ag.Inputs[0].Vin, decoded.Inputs[0].Vin)
-	require.Equal(t, ag.Outputs[0].Vout, decoded.Outputs[0].Vout)
-
 	var nilAssetGroup *AssetGroup
 	_, err = nilAssetGroup.Encode()
 	require.Error(t, err)
 	require.Equal(t, "cannot encode nil AssetGroup", fmt.Sprint(err))
+}
+
+func TestAssetGroup_Decode_TruncatedAtVariousPoints(t *testing.T) {
+	t.Parallel()
+
+	// Test empty buffer (no presence byte)
+	t.Run("empty_buffer", func(t *testing.T) {
+		var ag AssetGroup
+		err := ag.Decode(bytes.NewReader([]byte{}))
+		require.Error(t, err)
+		require.Equal(t, "EOF", err.Error())
+	})
+
+	// Test with AssetId present but truncated
+	t.Run("truncated_asset_id_txid", func(t *testing.T) {
+		// presence byte with AssetId flag, but only partial Txid
+		data := []byte{0x01} // maskAssetId
+		data = append(data, bytes.Repeat([]byte{0xaa}, 16)...) // only 16 bytes of Txid (need 32)
+		var ag AssetGroup
+		err := ag.Decode(bytes.NewReader(data))
+		require.Error(t, err)
+		require.Equal(t, "unexpected EOF", err.Error())
+	})
+
+	t.Run("truncated_asset_id_index", func(t *testing.T) {
+		// presence byte with AssetId flag, full Txid but no Index
+		data := []byte{0x01} // maskAssetId
+		data = append(data, bytes.Repeat([]byte{0xaa}, 32)...) // 32 bytes Txid
+		// missing 2 bytes for Index
+		var ag AssetGroup
+		err := ag.Decode(bytes.NewReader(data))
+		require.Error(t, err)
+		require.Equal(t, "EOF", err.Error())
+	})
+
+	// Test with ControlAsset present but truncated
+	t.Run("truncated_control_asset", func(t *testing.T) {
+		// presence byte with ControlAsset flag, but no control asset data
+		data := []byte{0x02} // maskControlAsset
+		var ag AssetGroup
+		err := ag.Decode(bytes.NewReader(data))
+		require.Error(t, err)
+		require.Equal(t, "EOF", err.Error())
+	})
+
+	// Test with Metadata present but truncated
+	t.Run("truncated_metadata", func(t *testing.T) {
+		// presence byte with Metadata flag, but no metadata data
+		data := []byte{0x04} // maskMetadata
+		var ag AssetGroup
+		err := ag.Decode(bytes.NewReader(data))
+		require.Error(t, err)
+		require.Equal(t, "EOF", err.Error())
+	})
+
+	// Test with valid presence but truncated inputs
+	t.Run("truncated_inputs", func(t *testing.T) {
+		// presence byte with no flags, then truncated input list
+		data := []byte{0x00}        // no flags
+		data = append(data, 0x01)   // input count = 1
+		// but no actual input data
+		var ag AssetGroup
+		err := ag.Decode(bytes.NewReader(data))
+		require.Error(t, err)
+		require.Equal(t, "EOF", err.Error())
+	})
+
+	// Test with valid inputs but truncated outputs
+	t.Run("truncated_outputs", func(t *testing.T) {
+		// Use fixture for minimal valid asset group
+		ag := localInputOutputFixture
+		encoded, err := ag.Encode()
+		require.NoError(t, err)
+
+		// Find where outputs start and truncate there
+		// Structure: presence(1) + inputs(count + data) + outputs(count + data)
+		// We need to truncate after inputs but before outputs complete
+		// Truncate to just presence + inputs + output count but no output data
+		truncateAt := len(encoded) - 10 // remove last 10 bytes
+		if truncateAt < 5 {
+			truncateAt = 5
+		}
+		truncated := encoded[:truncateAt]
+
+		var decoded AssetGroup
+		err = decoded.Decode(bytes.NewReader(truncated))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unexpected EOF")
+	})
 }

@@ -1,12 +1,15 @@
 package asset
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"testing"
 
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,9 +38,25 @@ type jsonMsgTxsFixtures struct {
 	ValidCases []jsonMsgTxFixture `json:"valid_cases"`
 }
 
+type jsonDecodeAssetPacketErrorCase struct {
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	BuildType     string `json:"build_type"`
+	ExpectedError string `json:"expected_error"`
+}
+
+type jsonDeriveAssetPacketDecodeErrorCase struct {
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	BuildType     string `json:"build_type"`
+	ExpectedError string `json:"expected_error"`
+}
+
 type assetPacketFixturesJSON struct {
-	TxOuts  jsonTxOutsFixtures `json:"tx_outs"`
-	MsgTxs  jsonMsgTxsFixtures `json:"msg_txs"`
+	TxOuts                       jsonTxOutsFixtures                     `json:"tx_outs"`
+	MsgTxs                       jsonMsgTxsFixtures                     `json:"msg_txs"`
+	DecodeToAssetPacketErrors    []jsonDecodeAssetPacketErrorCase       `json:"decode_to_asset_packet_errors"`
+	DeriveAssetPacketDecodeErrors []jsonDeriveAssetPacketDecodeErrorCase `json:"derive_asset_packet_decode_errors"`
 }
 
 var assetPacketFixtures assetPacketFixturesJSON
@@ -132,7 +151,6 @@ func TestEncodeDecodeAssetPacket(t *testing.T) {
 
 	// check original and decoded packet fields are equal
 	require.Equal(t, packet.Version, decodedPacket.Version)
-	require.Equal(t, len(packet.Assets), len(decodedPacket.Assets))
 	require.True(t, assetGroupsEqual(packet.Assets, decodedPacket.Assets))
 
 	// fail to encode empty asset packet
@@ -219,4 +237,174 @@ func TestDeriveAssetPacketFromTx(t *testing.T) {
 	require.NotNil(t, packet)
 	require.Equal(t, mixedFixture.ExpectedIndex, idx)
 	require.True(t, assetGroupsEqual(packet.Assets, []AssetGroup{controlAsset, normalAsset}))
+}
+
+func TestDecodeOutputToAssetPacket_MissingAssetPayload(t *testing.T) {
+	t.Parallel()
+	// Create a TxOut with only subdust payload (no asset)
+	key := deterministicPubKey(t, 0x42)
+	extPacket := &ExtensionPacket{
+		Asset:   nil,
+		SubDust: &SubDustPacket{Key: &key, Amount: 100},
+	}
+	txOut, err := extPacket.Encode()
+	require.NoError(t, err)
+
+	// Try to decode as AssetPacket - should fail
+	pkt, err := DecodeOutputToAssetPacket(txOut)
+	require.Error(t, err)
+	require.Equal(t, "missing asset payload", err.Error())
+	require.Nil(t, pkt)
+}
+
+func TestDecodeToAssetPacket_EmptyAssetGroup(t *testing.T) {
+	t.Parallel()
+	// Payload with asset count = 0, tests decodeToAssetPacket's "empty asset group" error path
+	var payload bytes.Buffer
+	var scratch [8]byte
+	_ = tlv.WriteVarInt(&payload, 0, &scratch) // count = 0
+
+	// Wrap in extension packet format
+	var tlvData bytes.Buffer
+	tlvData.Write(ArkadeMagic)
+	tlvData.WriteByte(MarkerAssetPayload)
+	_ = tlv.WriteVarInt(&tlvData, uint64(payload.Len()), &scratch)
+	tlvData.Write(payload.Bytes())
+
+	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
+	builder.AddFullData(tlvData.Bytes())
+	pkScript, err := builder.Script()
+	require.NoError(t, err)
+
+	txOut := wire.TxOut{Value: 0, PkScript: pkScript}
+	pkt, err := DecodeOutputToAssetPacket(txOut)
+	require.Error(t, err)
+	require.Equal(t, "empty asset group", err.Error())
+	require.Nil(t, pkt)
+}
+
+func TestDecodeToAssetPacket_TrailingBytes(t *testing.T) {
+	t.Parallel()
+	// Create a valid asset packet, then add trailing bytes
+	packet := &AssetPacket{
+		Assets: []AssetGroup{controlAsset},
+	}
+	txOut, err := packet.Encode()
+	require.NoError(t, err)
+
+	// Decode the pkScript to get the payload, add trailing bytes, re-encode
+	// Parse the OP_RETURN script to extract payload
+	tokenizer := txscript.MakeScriptTokenizer(0, txOut.PkScript)
+	require.True(t, tokenizer.Next()) // OP_RETURN
+	require.True(t, tokenizer.Next()) // data push
+	originalPayload := tokenizer.Data()
+	require.True(t, bytes.HasPrefix(originalPayload, ArkadeMagic))
+
+	// Find the asset payload within the TLV structure and add trailing bytes to it
+	// The structure is: ArkadeMagic + type(1) + length(varint) + value
+	// We need to modify the value to have trailing bytes.
+	// Simpler to encode asset groups with trailing bytes.
+	encodedAssets, err := encodeAssetGroups(packet.Assets)
+	require.NoError(t, err)
+
+	// Add trailing bytes to the encoded assets
+	encodedAssetsWithTrailing := append(encodedAssets, 0xff, 0xfe, 0xfd)
+
+	// Build new payload
+	var tlvData bytes.Buffer
+	var scratch [8]byte
+	tlvData.Write(ArkadeMagic)
+	tlvData.WriteByte(MarkerAssetPayload)
+	_ = tlv.WriteVarInt(&tlvData, uint64(len(encodedAssetsWithTrailing)), &scratch)
+	tlvData.Write(encodedAssetsWithTrailing)
+
+	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
+	builder.AddFullData(tlvData.Bytes())
+	pkScript, err := builder.Script()
+	require.NoError(t, err)
+
+	modifiedTxOut := wire.TxOut{Value: 0, PkScript: pkScript}
+	pkt, err := DecodeOutputToAssetPacket(modifiedTxOut)
+	require.Error(t, err)
+	require.Equal(t, "unexpected trailing bytes in asset group payload", err.Error())
+	require.Nil(t, pkt)
+}
+
+func buildAssetPacketTestScript(buildType string) ([]byte, error) {
+	var scratch [8]byte
+	var tlvData bytes.Buffer
+	tlvData.Write(ArkadeMagic)
+
+	switch buildType {
+	case "invalid_group_count_varint":
+		// Asset payload marker + truncated varint (0xff requires more bytes)
+		tlvData.WriteByte(MarkerAssetPayload)
+		_ = tlv.WriteVarInt(&tlvData, 1, &scratch) // length = 1
+		tlvData.WriteByte(0xff)                    // incomplete varint
+	case "corrupted_asset_group":
+		// Valid count but corrupted asset group data
+		tlvData.WriteByte(MarkerAssetPayload)
+		var assetPayload bytes.Buffer
+		_ = tlv.WriteVarInt(&assetPayload, 1, &scratch) // count = 1
+		assetPayload.Write([]byte{0xff, 0xff, 0xff})    // garbage data
+		_ = tlv.WriteVarInt(&tlvData, uint64(assetPayload.Len()), &scratch)
+		tlvData.Write(assetPayload.Bytes())
+	case "contains_but_invalid":
+		// Creates a packet that passes ContainsAssetPacket but fails decode
+		// Use a valid-looking structure but with invalid asset data
+		tlvData.WriteByte(MarkerAssetPayload)
+		var assetPayload bytes.Buffer
+		_ = tlv.WriteVarInt(&assetPayload, 1, &scratch)    // count = 1
+		assetPayload.WriteByte(0x00)                        // presence byte
+		_ = tlv.WriteVarInt(&assetPayload, 1, &scratch)    // input count = 1
+		assetPayload.WriteByte(0x99)                        // unknown input type
+		_ = tlv.WriteVarInt(&tlvData, uint64(assetPayload.Len()), &scratch)
+		tlvData.Write(assetPayload.Bytes())
+	default:
+		return nil, nil
+	}
+
+	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
+	builder.AddFullData(tlvData.Bytes())
+	return builder.Script()
+}
+
+func TestDecodeToAssetPacket_InvalidGroupCount(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range assetPacketFixtures.DecodeToAssetPacketErrors {
+		t.Run(tc.Name, func(t *testing.T) {
+			pkScript, err := buildAssetPacketTestScript(tc.BuildType)
+			require.NoError(t, err)
+
+			txOut := wire.TxOut{Value: 0, PkScript: pkScript}
+			pkt, err := DecodeOutputToAssetPacket(txOut)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.ExpectedError)
+			require.Nil(t, pkt)
+		})
+	}
+}
+
+func TestDeriveAssetPacketFromTx_DecodeError(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range assetPacketFixtures.DeriveAssetPacketDecodeErrors {
+		t.Run(tc.Name, func(t *testing.T) {
+			pkScript, err := buildAssetPacketTestScript(tc.BuildType)
+			require.NoError(t, err)
+
+			msgTx := wire.MsgTx{
+				TxOut: []*wire.TxOut{
+					{Value: 0, PkScript: pkScript},
+				},
+			}
+
+			pkt, idx, err := DeriveAssetPacketFromTx(msgTx)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.ExpectedError)
+			require.Nil(t, pkt)
+			require.Equal(t, 0, idx)
+		})
+	}
 }

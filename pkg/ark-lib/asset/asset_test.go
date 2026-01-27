@@ -5,15 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
-
-var charset = "0123456789"
-var maxUint16 = 65535
 
 type jsonAssetIdFixture struct {
 	Name     string `json:"name"`
@@ -71,33 +67,6 @@ func fixtureToAssetId(f *jsonAssetIdFixture) AssetId {
 	}
 }
 
-func RandTxHash() [TX_HASH_SIZE]byte {
-	var txh [TX_HASH_SIZE]byte
-	for i := 0; i < TX_HASH_SIZE; i++ {
-		txh[i] = charset[rand.Intn(len(charset))]
-	}
-	return txh
-}
-
-func RandIndex() uint16 {
-	return uint16(rand.Intn(maxUint16))
-}
-
-func TestAssetId_Roundtrip(t *testing.T) {
-	assetId := AssetId{
-		Txid:  RandTxHash(),
-		Index: RandIndex(),
-	}
-
-	assetString := assetId.String()
-	require.Equal(t, ASSET_ID_SIZE*2, len(assetString))
-
-	derivedAssetId, err := NewAssetIdFromString(assetString)
-	require.NoError(t, err)
-	require.Equal(t, assetId.Index, derivedAssetId.Index)
-	require.Equal(t, assetId.Txid, derivedAssetId.Txid)
-}
-
 func TestAssetIdFromString_InvalidLength(t *testing.T) {
 	fixture := getInvalidStringFixture("short")
 	require.NotNil(t, fixture)
@@ -133,6 +102,169 @@ func TestAssetIdStringConversion(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestNewAssetIdFromBytes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid_bytes", func(t *testing.T) {
+		fixture := getAssetIdFixture("deterministic")
+		require.NotNil(t, fixture)
+		expected := fixtureToAssetId(fixture)
+
+		// Build the expected bytes manually
+		buf := make([]byte, ASSET_ID_SIZE)
+		copy(buf[:TX_HASH_SIZE], expected.Txid[:])
+		buf[ASSET_ID_SIZE-2] = byte(expected.Index >> 8)
+		buf[ASSET_ID_SIZE-1] = byte(expected.Index)
+
+		assetId, err := NewAssetIdFromBytes(buf)
+		require.NoError(t, err)
+		require.Equal(t, &expected, assetId)
+	})
+
+	t.Run("too_short", func(t *testing.T) {
+		fixture := getInvalidStringFixture("too_short_bytes")
+		require.NotNil(t, fixture)
+
+		buf := make([]byte, fixture.ByteLength)
+		assetId, err := NewAssetIdFromBytes(buf)
+		require.Error(t, err)
+		require.Nil(t, assetId)
+		require.Equal(t, fmt.Sprintf(fixture.ExpectedErrorFormat, fixture.ByteLength), err.Error())
+	})
+
+	t.Run("too_long", func(t *testing.T) {
+		fixture := getInvalidStringFixture("wrong_length")
+		require.NotNil(t, fixture)
+
+		buf := make([]byte, fixture.ByteLength)
+		assetId, err := NewAssetIdFromBytes(buf)
+		require.Error(t, err)
+		require.Nil(t, assetId)
+		require.Equal(t, fmt.Sprintf(fixture.ExpectedErrorFormat, fixture.ByteLength), err.Error())
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		fixture := getInvalidStringFixture("empty")
+		require.NotNil(t, fixture)
+
+		assetId, err := NewAssetIdFromBytes([]byte{})
+		require.Error(t, err)
+		require.Nil(t, assetId)
+		require.Equal(t, fmt.Sprintf(fixture.ExpectedErrorFormat, 0), err.Error())
+	})
+}
+
+func TestAssetId_Serialize_BigEndianIndex(t *testing.T) {
+	t.Parallel()
+
+	t.Run("high_byte_index", func(t *testing.T) {
+		// Index 256 = 0x0100 in big endian should be [0x01, 0x00]
+		fixture := getAssetIdFixture("high_byte_index")
+		require.NotNil(t, fixture)
+		assetId := fixtureToAssetId(fixture)
+
+		serialized := assetId.Serialize()
+		require.Len(t, serialized, ASSET_ID_SIZE)
+
+		// Check big-endian encoding: high byte first
+		require.Equal(t, byte(0x01), serialized[ASSET_ID_SIZE-2])
+		require.Equal(t, byte(0x00), serialized[ASSET_ID_SIZE-1])
+	})
+
+	t.Run("low_byte_only", func(t *testing.T) {
+		// Index 255 = 0x00FF in big endian should be [0x00, 0xFF]
+		fixture := getAssetIdFixture("low_byte_only")
+		require.NotNil(t, fixture)
+		assetId := fixtureToAssetId(fixture)
+
+		serialized := assetId.Serialize()
+		require.Len(t, serialized, ASSET_ID_SIZE)
+
+		require.Equal(t, byte(0x00), serialized[ASSET_ID_SIZE-2])
+		require.Equal(t, byte(0xFF), serialized[ASSET_ID_SIZE-1])
+	})
+
+	t.Run("max_index", func(t *testing.T) {
+		// Index 65535 = 0xFFFF in big endian should be [0xFF, 0xFF]
+		fixture := getAssetIdFixture("max_index")
+		require.NotNil(t, fixture)
+		assetId := fixtureToAssetId(fixture)
+
+		serialized := assetId.Serialize()
+		require.Len(t, serialized, ASSET_ID_SIZE)
+
+		require.Equal(t, byte(0xFF), serialized[ASSET_ID_SIZE-2])
+		require.Equal(t, byte(0xFF), serialized[ASSET_ID_SIZE-1])
+	})
+
+	t.Run("zero_index", func(t *testing.T) {
+		// Index 0 = 0x0000 in big endian should be [0x00, 0x00]
+		fixture := getAssetIdFixture("zero_index")
+		require.NotNil(t, fixture)
+		assetId := fixtureToAssetId(fixture)
+
+		serialized := assetId.Serialize()
+		require.Len(t, serialized, ASSET_ID_SIZE)
+
+		require.Equal(t, byte(0x00), serialized[ASSET_ID_SIZE-2])
+		require.Equal(t, byte(0x00), serialized[ASSET_ID_SIZE-1])
+	})
+}
+
+func TestAssetId_SerializeRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	for _, fixtureName := range []string{"deterministic", "zero_index", "max_index", "high_byte_index", "low_byte_only", "zero_txid"} {
+		fixtureName := fixtureName
+		t.Run(fixtureName, func(t *testing.T) {
+			t.Parallel()
+			fixture := getAssetIdFixture(fixtureName)
+			require.NotNil(t, fixture)
+			original := fixtureToAssetId(fixture)
+
+			serialized := original.Serialize()
+			decoded, err := NewAssetIdFromBytes(serialized)
+			require.NoError(t, err)
+			require.Equal(t, &original, decoded)
+
+			// Verify Txid bytes match
+			for i := 0; i < TX_HASH_SIZE; i++ {
+				require.Equal(t, original.Txid[i], decoded.Txid[i])
+			}
+			require.Equal(t, original.Index, decoded.Index)
+		})
+	}
+}
+
+func TestAssetId_String(t *testing.T) {
+	t.Parallel()
+
+	t.Run("deterministic", func(t *testing.T) {
+		fixture := getAssetIdFixture("deterministic")
+		require.NotNil(t, fixture)
+		assetId := fixtureToAssetId(fixture)
+
+		s := assetId.String()
+		// String should be hex encoded, so 34 bytes * 2 = 68 characters
+		require.Len(t, s, ASSET_ID_SIZE*2)
+
+		// Verify it's valid hex
+		decoded, err := hex.DecodeString(s)
+		require.NoError(t, err)
+		require.Len(t, decoded, ASSET_ID_SIZE)
+	})
+
+	t.Run("zero_txid", func(t *testing.T) {
+		fixture := getAssetIdFixture("zero_txid")
+		require.NotNil(t, fixture)
+		assetId := fixtureToAssetId(fixture)
+
+		s := assetId.String()
+		// First 64 chars should be all zeros (32 bytes of 0x00)
+		require.Equal(t, "0000000000000000000000000000000000000000000000000000000000000000", s[:64])
+	})
+}
+
 // helper function to deep equal compare []AssetGroup slices
 func assetGroupsEqual(a, b []AssetGroup) bool {
 	if len(a) != len(b) {
@@ -162,7 +294,7 @@ func assetGroupsEqual(a, b []AssetGroup) bool {
 			if o.Type != b[i].Outputs[idx].Type ||
 				o.Vout != b[i].Outputs[idx].Vout ||
 				len(o.Script) != len(b[i].Outputs[idx].Script) ||
-				bytes.Equal(o.Script, b[i].Outputs[idx].Script) == false ||
+				!bytes.Equal(o.Script, b[i].Outputs[idx].Script) ||
 				o.Amount != b[i].Outputs[idx].Amount {
 				return false
 			}
@@ -187,9 +319,9 @@ func assetGroupsEqual(a, b []AssetGroup) bool {
 				in.Vin != b[i].Inputs[idx].Vin ||
 				// check Witness fields
 				len(in.Witness.Script) != len(b[i].Inputs[idx].Witness.Script) ||
-				bytes.Equal(in.Witness.Script, b[i].Inputs[idx].Witness.Script) == false ||
+				!bytes.Equal(in.Witness.Script, b[i].Inputs[idx].Witness.Script) ||
 				len(in.Witness.Txid) != len(b[i].Inputs[idx].Witness.Txid) ||
-				bytes.Equal(in.Witness.Txid[:], b[i].Inputs[idx].Witness.Txid[:]) == false ||
+				!bytes.Equal(in.Witness.Txid[:], b[i].Inputs[idx].Witness.Txid[:]) ||
 				in.Amount != b[i].Inputs[idx].Amount {
 				return false
 			}

@@ -7,7 +7,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightningnetwork/lnd/tlv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,148 +93,44 @@ func TestVerifyAssetGroupFixtures(t *testing.T) {
 
 	t.Run("valid", func(t *testing.T) {
 		for _, validFixture := range valid {
-			// create AssetGroups from fixture
-			ags := make([]AssetGroup, 0, len(validFixture.Assets))
-			for _, ja := range validFixture.Assets {
-				ag := AssetGroup{}
-				if ja.AssetId != nil && ja.AssetId.Txid != "" {
-					b, err := hex.DecodeString(ja.AssetId.Txid)
-					require.NoError(t, err)
-					var arr [32]byte
-					copy(arr[:], b)
-					ag.AssetId = &AssetId{Txid: arr, Index: ja.AssetId.Index}
-				}
-				ag.Immutable = ja.Immutable
-				for _, o := range ja.Outputs {
-					out := AssetOutput{}
-					switch o.Type {
-					case "local":
-						out.Type = AssetTypeLocal
-						out.Vout = o.Vout
-						out.Amount = o.Amount
-					case "teleport":
-						out.Type = AssetTypeTeleport
-						if o.Script != "" {
-							script, err := hex.DecodeString(o.Script)
-							require.NoError(t, err)
-							out.Script = script
-						}
-						out.Amount = o.Amount
-					}
-					ag.Outputs = append(ag.Outputs, out)
-				}
-				if ja.Control != nil {
-					if ja.Control.Type == "AssetRefByGroup" {
-						ag.ControlAsset = AssetRefFromGroupIndex(ja.Control.GroupIndex)
-					} else if ja.Control.AssetId != nil && ja.Control.AssetId.Txid != "" {
-						b, err := hex.DecodeString(ja.Control.AssetId.Txid)
-						require.NoError(t, err)
-						var arr [32]byte
-						copy(arr[:], b)
-						ag.ControlAsset = AssetRefFromId(AssetId{Txid: arr, Index: ja.Control.AssetId.Index})
-					}
-				}
-				// inputs
-				for _, in := range ja.Inputs {
-					ai := AssetInput{}
-					switch in.Type {
-					case "local":
-						ai.Type = AssetTypeLocal
-						ai.Vin = in.Vin
-						ai.Amount = in.Amount
-					case "teleport":
-						ai.Type = AssetTypeTeleport
-						ai.Amount = in.Amount
-					}
-					if in.Witness != nil {
-						if in.Witness.Script != "" {
-							s, err := hex.DecodeString(in.Witness.Script)
-							require.NoError(t, err)
-							ai.Witness.Script = s
-						}
-						if in.Witness.Txid != "" {
-							b, err := hex.DecodeString(in.Witness.Txid)
-							require.NoError(t, err)
-							var arr [32]byte
-							copy(arr[:], b)
-							ai.Witness.Txid = arr
-						}
-						ai.Witness.Index = in.Witness.Index
-					}
-					ag.Inputs = append(ag.Inputs, ai)
-				}
-				if len(ja.Metadata) > 0 {
-					ag.Metadata = ja.Metadata
-				}
-				ags = append(ags, ag)
-				// encode the AssetGroup for comparison
-				agBytes, err := ag.Encode()
+			t.Run(validFixture.Name, func(t *testing.T) {
+				// create AssetGroups from fixture using helper
+				ags, err := fixtureToAssetGroups(validFixture)
 				require.NoError(t, err)
-				// compare to fixture expected encoding
-				expectedAgBytes, err := hex.DecodeString(validFixture.PkScriptHex)
-				require.NoError(t, err)
-				require.True(t, bytes.Equal(expectedAgBytes, agBytes))
-			}
-			// put AssetGroups into AssetPacket and ExtensionPacket
-			packet := AssetPacket{Assets: ags}
-			extPacket := &ExtensionPacket{Asset: &packet}
-			// validate the asset groups can be encoded
-			txOut, err := extPacket.Encode()
-			require.NoError(t, err)
 
-			// now decode back and compare to original fixture AssetGroup
-			decodedExtPacket, err := DecodeToExtensionPacket(wire.TxOut{Value: 0, PkScript: txOut.PkScript})
-			require.NoError(t, err)
-			require.NotNil(t, decodedExtPacket.Asset)
-			require.Equal(t, len(packet.Assets), len(decodedExtPacket.Asset.Assets))
-			for i, originalAG := range packet.Assets {
-				decodedAG := decodedExtPacket.Asset.Assets[i]
-				require.Equal(t, originalAG.Immutable, decodedAG.Immutable)
-				// AssetId
-				if originalAG.AssetId == nil {
-					require.Nil(t, decodedAG.AssetId)
-				} else {
-					require.NotNil(t, decodedAG.AssetId)
-					require.Equal(t, originalAG.AssetId.Txid, decodedAG.AssetId.Txid)
-					require.Equal(t, originalAG.AssetId.Index, decodedAG.AssetId.Index)
+				// verify each asset group encodes to expected bytes
+				for _, ag := range ags {
+					agBytes, err := ag.Encode()
+					require.NoError(t, err)
+					expectedAgBytes, err := hex.DecodeString(validFixture.PkScriptHex)
+					require.NoError(t, err)
+					require.True(t, bytes.Equal(expectedAgBytes, agBytes))
 				}
-				// ControlAsset
-				if originalAG.ControlAsset == nil {
-					require.Nil(t, decodedAG.ControlAsset)
-				} else {
-					require.NotNil(t, decodedAG.ControlAsset)
-					require.Equal(t, originalAG.ControlAsset.Type, decodedAG.ControlAsset.Type)
-					require.Equal(t, originalAG.ControlAsset.AssetId.String(), decodedAG.ControlAsset.AssetId.String())
-					require.Equal(t, originalAG.ControlAsset.GroupIndex, decodedAG.ControlAsset.GroupIndex)
+
+				// put AssetGroups into AssetPacket and ExtensionPacket
+				packet := AssetPacket{Assets: ags}
+				extPacket := &ExtensionPacket{Asset: &packet}
+
+				// validate the asset groups can be encoded
+				txOut, err := extPacket.Encode()
+				require.NoError(t, err)
+
+				// decode back and compare to original
+				decodedExtPacket, err := DecodeToExtensionPacket(wire.TxOut{Value: 0, PkScript: txOut.PkScript})
+				require.NoError(t, err)
+				require.NotNil(t, decodedExtPacket.Asset)
+				require.Equal(t, len(packet.Assets), len(decodedExtPacket.Asset.Assets))
+
+				for i, originalAG := range packet.Assets {
+					decodedAG := decodedExtPacket.Asset.Assets[i]
+					require.Equal(t, originalAG.Immutable, decodedAG.Immutable)
+					require.Equal(t, originalAG.AssetId, decodedAG.AssetId)
+					require.Equal(t, originalAG.ControlAsset, decodedAG.ControlAsset)
+					require.Equal(t, originalAG.Outputs, decodedAG.Outputs)
+					require.Equal(t, originalAG.Inputs, decodedAG.Inputs)
+					require.Equal(t, originalAG.Metadata, decodedAG.Metadata)
 				}
-				// Outputs
-				require.Equal(t, len(originalAG.Outputs), len(decodedAG.Outputs))
-				for j, originalOut := range originalAG.Outputs {
-					decodedOut := decodedAG.Outputs[j]
-					require.Equal(t, originalOut.Type, decodedOut.Type)
-					require.Equal(t, originalOut.Vout, decodedOut.Vout)
-					require.Equal(t, originalOut.Amount, decodedOut.Amount)
-					require.Equal(t, originalOut.Script, decodedOut.Script)
-				}
-				// Inputs
-				require.Equal(t, len(originalAG.Inputs), len(decodedAG.Inputs))
-				for j, originalIn := range originalAG.Inputs {
-					decodedIn := decodedAG.Inputs[j]
-					require.Equal(t, originalIn.Type, decodedIn.Type)
-					require.Equal(t, originalIn.Vin, decodedIn.Vin)
-					require.Equal(t, originalIn.Amount, decodedIn.Amount)
-					require.Equal(t, originalIn.Witness.Script, decodedIn.Witness.Script)
-					require.Equal(t, originalIn.Witness.Txid, decodedIn.Witness.Txid)
-					require.Equal(t, originalIn.Witness.Index, decodedIn.Witness.Index)
-				}
-				// Metadata
-				require.Equal(t, len(originalAG.Metadata), len(decodedAG.Metadata))
-				for j, originalMeta := range originalAG.Metadata {
-					decodedMeta := decodedAG.Metadata[j]
-					require.Equal(t, originalMeta.Key, decodedMeta.Key)
-					require.Equal(t, originalMeta.Value, decodedMeta.Value)
-				}
-			}
+			})
 		}
 	})
 
@@ -325,13 +223,22 @@ func parseFixtures() ([]fixture, []fixture, error) {
 	return jsonData.Valid, jsonData.Invalid, nil
 }
 
-// convert jsonAssetGroup from fixture to AssetGroup
-func fixtureToAssetGroup(f fixture) (AssetGroup, error) {
-	var ag AssetGroup
-	if len(f.Assets) == 0 {
-		return ag, nil
+// convert all jsonAssetGroups from fixture to []AssetGroup
+func fixtureToAssetGroups(f fixture) ([]AssetGroup, error) {
+	ags := make([]AssetGroup, 0, len(f.Assets))
+	for _, ja := range f.Assets {
+		ag, err := jsonAssetGroupToAssetGroup(ja)
+		if err != nil {
+			return nil, err
+		}
+		ags = append(ags, ag)
 	}
-	ja := f.Assets[0]
+	return ags, nil
+}
+
+// convert single jsonAssetGroup to AssetGroup
+func jsonAssetGroupToAssetGroup(ja jsonAssetGroup) (AssetGroup, error) {
+	var ag AssetGroup
 	if ja.AssetId != nil && ja.AssetId.Txid != "" {
 		b, err := hex.DecodeString(ja.AssetId.Txid)
 		if err != nil {
@@ -383,7 +290,6 @@ func fixtureToAssetGroup(f fixture) (AssetGroup, error) {
 			ag.ControlAsset = AssetRefFromId(AssetId{Txid: arr, Index: ja.Control.AssetId.Index})
 		}
 	}
-	// inputs
 	for _, in := range ja.Inputs {
 		ai := AssetInput{}
 		if in.TypeRaw != nil {
@@ -427,6 +333,14 @@ func fixtureToAssetGroup(f fixture) (AssetGroup, error) {
 	return ag, nil
 }
 
+// convert jsonAssetGroup from fixture to AssetGroup (legacy - uses first asset only)
+func fixtureToAssetGroup(f fixture) (AssetGroup, error) {
+	if len(f.Assets) == 0 {
+		return AssetGroup{}, nil
+	}
+	return jsonAssetGroupToAssetGroup(f.Assets[0])
+}
+
 func GetFixture(name string, fixtures []fixture) AssetGroup {
 	for _, f := range fixtures {
 		if f.Name == name {
@@ -451,4 +365,67 @@ func EmptyAssetId(fixtures []fixture) AssetId {
 		return *emptyFixture.AssetId
 	}
 	return AssetId{}
+}
+
+func TestExtensionPacketEncode_SubDustKeyMissing(t *testing.T) {
+	t.Parallel()
+	// SubDust is set but Key is nil (with Asset present to pass first validation)
+	extPacket := &ExtensionPacket{
+		Asset:   &AssetPacket{Assets: []AssetGroup{controlAsset}},
+		SubDust: &SubDustPacket{Key: nil, Amount: 100},
+	}
+	txOut, err := extPacket.Encode()
+	require.Error(t, err)
+	require.Equal(t, "subdust key missing", err.Error())
+	require.Equal(t, int64(0), txOut.Value)
+}
+
+func TestDecodeToExtensionPacket_InvalidSubDustKey(t *testing.T) {
+	t.Parallel()
+	// Craft a TxOut with invalid schnorr pubkey bytes
+	// OP_RETURN + ArkadeMagic + MarkerSubDustKey(0x01) + length + invalid key bytes
+	invalidKey := bytes.Repeat([]byte{0xff}, 32) // invalid schnorr pubkey
+	var payload bytes.Buffer
+	payload.Write(ArkadeMagic)
+	payload.WriteByte(MarkerSubDustKey)
+	var scratch [8]byte
+	_ = tlv.WriteVarInt(&payload, uint64(len(invalidKey)), &scratch)
+	payload.Write(invalidKey)
+
+	builder := txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN)
+	builder.AddFullData(payload.Bytes())
+	pkScript, err := builder.Script()
+	require.NoError(t, err)
+
+	txOut := wire.TxOut{Value: 100, PkScript: pkScript}
+	ep, err := DecodeToExtensionPacket(txOut)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid public key")
+	require.Nil(t, ep)
+}
+
+func TestExtensionPacketEncode_EmptyPacket(t *testing.T) {
+	t.Parallel()
+	// nil packet
+	var nilPacket *ExtensionPacket
+	txOut, err := nilPacket.Encode()
+	require.Error(t, err)
+	require.Equal(t, "empty op_return packet", err.Error())
+	require.Equal(t, int64(0), txOut.Value)
+
+	// empty packet (no Asset, no SubDust)
+	emptyPacket := &ExtensionPacket{}
+	txOut, err = emptyPacket.Encode()
+	require.Error(t, err)
+	require.Equal(t, "empty op_return packet", err.Error())
+	require.Equal(t, int64(0), txOut.Value)
+
+	// SubDust with nil key and no Asset
+	subDustNoKey := &ExtensionPacket{
+		SubDust: &SubDustPacket{Key: nil, Amount: 100},
+	}
+	txOut, err = subDustNoKey.Encode()
+	require.Error(t, err)
+	require.Equal(t, "empty op_return packet", err.Error())
+	require.Equal(t, int64(0), txOut.Value)
 }

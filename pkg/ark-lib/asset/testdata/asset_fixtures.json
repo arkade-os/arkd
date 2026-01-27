@@ -4,6 +4,31 @@
       "name": "deterministic",
       "txid_seed": 1,
       "index": 12345
+    },
+    {
+      "name": "zero_index",
+      "txid_seed": 170,
+      "index": 0
+    },
+    {
+      "name": "max_index",
+      "txid_seed": 255,
+      "index": 65535
+    },
+    {
+      "name": "high_byte_index",
+      "txid_seed": 85,
+      "index": 256
+    },
+    {
+      "name": "low_byte_only",
+      "txid_seed": 204,
+      "index": 255
+    },
+    {
+      "name": "zero_txid",
+      "txid_seed": 0,
+      "index": 1
     }
   ],
   "invalid_strings": [
@@ -20,6 +45,16 @@
     {
       "name": "wrong_length",
       "byte_length": 35,
+      "expected_error_format": "invalid asset id length: %d"
+    },
+    {
+      "name": "too_short_bytes",
+      "byte_length": 33,
+      "expected_error_format": "invalid asset id length: %d"
+    },
+    {
+      "name": "empty",
+      "byte_length": 0,
       "expected_error_format": "invalid asset id length: %d"
     }
   ]

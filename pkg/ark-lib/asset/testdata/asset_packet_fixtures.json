@@ -15,6 +15,28 @@
       }
     ]
   },
+  "decode_to_asset_packet_errors": [
+    {
+      "name": "invalid_asset_group_count",
+      "description": "Asset payload with invalid varint for group count",
+      "build_type": "invalid_group_count_varint",
+      "expected_error": "invalid asset group count"
+    },
+    {
+      "name": "failed_to_decode_asset_group",
+      "description": "Asset payload with valid count but corrupted group data",
+      "build_type": "corrupted_asset_group",
+      "expected_error": "failed to decode asset group"
+    }
+  ],
+  "derive_asset_packet_decode_errors": [
+    {
+      "name": "contains_but_fails_decode",
+      "description": "Transaction with output that passes ContainsAssetPacket but fails decode",
+      "build_type": "contains_but_invalid",
+      "expected_error": "error decoding asset Opreturn"
+    }
+  ],
   "msg_txs": {
     "error_cases": [
       {

@@ -55,6 +55,24 @@
     {
       "name": "empty",
       "items": []
+    },
+    {
+      "name": "single",
+      "items": [
+        { "key": "testkey", "value": "testvalue" }
+      ]
+    },
+    {
+      "name": "single_empty_key",
+      "items": [
+        { "key": "", "value": "somevalue" }
+      ]
+    },
+    {
+      "name": "single_empty_value",
+      "items": [
+        { "key": "somekey", "value": "" }
+      ]
     }
   ],
   "asset_inputs": {
@@ -85,6 +103,18 @@
         "inputs": [
           { "type": "local", "vin": 1, "amount": 10 }
         ]
+      },
+      {
+        "name": "single_teleport",
+        "inputs": [
+          { "type": "teleport", "amount": 500, "witness": { "script": "aabbccdd", "txid": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", "index": 77 } }
+        ]
+      },
+      {
+        "name": "single_teleport_empty_witness",
+        "inputs": [
+          { "type": "teleport", "amount": 100 }
+        ]
       }
     ],
     "invalid": [
@@ -95,6 +125,13 @@
           { "type_raw": 10 }
         ],
         "expected_error": "unknown asset input type: 10"
+      },
+      {
+        "name": "unknown_type_first",
+        "inputs": [
+          { "type_raw": 55 }
+        ],
+        "expected_error": "unknown asset input type: 55"
       }
     ]
   },
@@ -131,6 +168,18 @@
         "outputs": [
           { "type": "local", "vout": 1, "amount": 10 }
         ]
+      },
+      {
+        "name": "single_teleport",
+        "outputs": [
+          { "type": "teleport", "script": "aabbccdd", "amount": 500 }
+        ]
+      },
+      {
+        "name": "single_teleport_empty_script",
+        "outputs": [
+          { "type": "teleport", "amount": 100 }
+        ]
       }
     ],
     "invalid": [
@@ -140,6 +189,13 @@
           { "type_raw": 10, "vout": 3, "amount": 1000 }
         ],
         "expected_error": "unknown asset output type: 10"
+      },
+      {
+        "name": "unknown_type_first",
+        "outputs": [
+          { "type_raw": 77 }
+        ],
+        "expected_error": "unknown asset output type: 77"
       }
     ]
   },
@@ -188,5 +244,115 @@
       "input": { "type": "local", "vin": 5, "amount": 55 },
       "metadata": { "key": "a", "value": "b" }
     }
-  ]
+  ],
+  "encode_asset_groups_errors": [
+    {
+      "name": "invalid_input_type_first",
+      "description": "First asset group has invalid input type",
+      "asset_groups": [
+        {
+          "inputs": [{ "type_raw": 99, "amount": 100 }]
+        }
+      ],
+      "expected_error": "failed to encode asset group: 0"
+    },
+    {
+      "name": "invalid_input_type_second",
+      "description": "Second asset group has invalid input type",
+      "use_normal_asset_first": true,
+      "asset_groups": [
+        {
+          "inputs": [{ "type_raw": 88, "amount": 100 }]
+        }
+      ],
+      "expected_error": "failed to encode asset group: 1"
+    },
+    {
+      "name": "invalid_output_type",
+      "description": "Asset group has invalid output type",
+      "asset_groups": [
+        {
+          "outputs": [{ "type_raw": 77, "amount": 100 }]
+        }
+      ],
+      "expected_error": "failed to encode asset group: 0"
+    },
+    {
+      "name": "invalid_control_asset_type",
+      "description": "Asset group has invalid control asset ref type",
+      "asset_groups": [
+        {
+          "control_asset": { "type_raw": 66 }
+        }
+      ],
+      "expected_error": "failed to encode asset group: 0"
+    },
+    {
+      "name": "multiple_valid_then_invalid",
+      "description": "Two valid asset groups followed by invalid",
+      "use_control_and_normal_first": true,
+      "asset_groups": [
+        {
+          "inputs": [{ "type_raw": 55, "amount": 100 }]
+        }
+      ],
+      "expected_error": "failed to encode asset group: 2"
+    }
+  ],
+  "encode_asset_groups_valid": [
+    {
+      "name": "full_asset_group",
+      "description": "Asset group with all fields populated",
+      "asset_groups": [
+        {
+          "asset_id": { "txid": "0102030000000000000000000000000000000000000000000000000000000000", "index": 1 },
+          "immutable": true,
+          "control_asset": { "type": "AssetRefByGroup", "group_index": 0 },
+          "inputs": [{ "type": "local", "vin": 0, "amount": 100 }],
+          "outputs": [{ "type": "local", "vout": 0, "amount": 100 }],
+          "metadata": [{ "key": "test", "value": "value" }]
+        }
+      ]
+    },
+    {
+      "name": "minimal_asset_group",
+      "description": "Empty but valid asset group",
+      "asset_groups": [{}]
+    },
+    {
+      "name": "teleport_assets",
+      "description": "Asset group with teleport inputs and outputs",
+      "asset_groups": [
+        {
+          "inputs": [
+            { "type": "teleport", "amount": 100, "witness": { "script": "aa", "txid": "0100000000000000000000000000000000000000000000000000000000000000", "index": 1 } }
+          ],
+          "outputs": [
+            { "type": "teleport", "script": "bbcc", "amount": 100 }
+          ]
+        }
+      ]
+    }
+  ],
+  "write_test_data": {
+    "asset_ref_by_id": {
+      "type": "AssetRefByID",
+      "asset_id": { "txid": "0102030000000000000000000000000000000000000000000000000000000000", "index": 1 }
+    },
+    "asset_ref_by_group": {
+      "type": "AssetRefByGroup",
+      "group_index": 42
+    },
+    "metadata_single": [
+      { "key": "testkey", "value": "testvalue" }
+    ],
+    "metadata_empty_key": [
+      { "key": "", "value": "testvalue" }
+    ],
+    "input_local": { "type": "local", "vin": 1, "amount": 10 },
+    "input_teleport": { "type": "teleport", "amount": 100 },
+    "input_teleport_with_witness": { "type": "teleport", "amount": 100, "witness": { "script": "aabb", "txid": "0102030000000000000000000000000000000000000000000000000000000000", "index": 5 } },
+    "output_local": { "type": "local", "vout": 1, "amount": 10 },
+    "output_teleport": { "type": "teleport", "script": "aabb", "amount": 100 }
+  }
 }
