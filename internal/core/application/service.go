@@ -1571,7 +1571,7 @@ func (s *service) RegisterIntent(
 		amount := uint64(output.Value)
 		rcv := domain.Receiver{
 			Amount:     amount,
-			TxOutIndex: outputIndex,
+			IntentVout: outputIndex,
 		}
 
 		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
@@ -1669,7 +1669,7 @@ func (s *service) RegisterIntent(
 			for _, grp := range assetPacket.Assets {
 
 				for _, out := range grp.Outputs {
-					if uint32(receivers[i].TxOutIndex) == out.Vout {
+					if uint32(receivers[i].IntentVout) == out.Vout {
 
 						assetGrp := extension.AssetGroup{
 							AssetId: grp.AssetId,

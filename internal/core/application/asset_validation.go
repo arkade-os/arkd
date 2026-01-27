@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"encoding/hex"
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
@@ -338,21 +337,16 @@ func (m *assetGroupValidationMachine) validateOutputs(s *service) error {
 func (m *assetGroupValidationMachine) validateInput(s *service, input extension.AssetInput) error {
 	grpAsset := m.group()
 	if input.Type == extension.AssetTypeIntent {
+		txHash, err := chainhash.NewHash(input.Txid[:])
+		if err != nil {
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New("invalid intent ID for intent input validation: %w", err)
+		}
+
 		if grpAsset.AssetId == nil {
 			return errors.INTENT_ASSET_VALIDATION_FAILED.New("asset ID is required for intent input validation").
 				WithMetadata(errors.IntentValidationMetadata{
-					IntentId:    hex.EncodeToString(input.Txid[:]),
+					IntentTxid:  txHash.String(),
 					AssetId:     "",
-					OutputIndex: input.Vin,
-				})
-		}
-
-		txHash, err := chainhash.NewHash(input.Txid[:])
-		if err != nil {
-			return errors.INTENT_ASSET_VALIDATION_FAILED.New("invalid intent ID for intent input validation: %w", err).
-				WithMetadata(errors.IntentValidationMetadata{
-					IntentId:    hex.EncodeToString(input.Txid[:]),
-					AssetId:     grpAsset.AssetId.ToString(),
 					OutputIndex: input.Vin,
 				})
 		}
@@ -361,7 +355,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 		if err != nil {
 			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error retrieving intent for intent input validation: %w", err).
 				WithMetadata(errors.IntentValidationMetadata{
-					IntentId:    hex.EncodeToString(input.Txid[:]),
+					IntentTxid:  txHash.String(),
 					AssetId:     grpAsset.AssetId.ToString(),
 					OutputIndex: input.Vin,
 				})
@@ -369,8 +363,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 
 		decodedProof, err := psbt.NewFromRawBytes(strings.NewReader(intent.Proof), true)
 		if err != nil {
-			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error decoding  proof for intent input validation: %w", err).
-				WithMetadata(errors.IntentValidationMetadata{})
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error decoding  proof for intent input validation: %w", err)
 		}
 
 		if err := s.validateIntentOutput(*decodedProof, *grpAsset.AssetId, input.Vin); err != nil {
@@ -514,7 +507,7 @@ func (s *service) validateIntentOutput(
 
 	if !intentOutputFound {
 		return errors.INTENT_ASSET_VALIDATION_FAILED.New(
-			"teleport output not found in intent proof for asset %s index %d",
+			"intent output not found in intent proof for asset %s index %d",
 			assetId.ToString(),
 			vout,
 		).WithMetadata(errors.IntentValidationMetadata{

@@ -358,7 +358,7 @@ type ControlAssetMetadata struct {
 
 type IntentValidationMetadata struct {
 	AssetId     string `json:"asset_id,omitempty"`
-	IntentId    string `json:"intent_id,omitempty"`
+	IntentTxid  string `json:"intent_id,omitempty"`
 	OutputIndex uint32 `json:"output_index,omitempty"`
 }
 
