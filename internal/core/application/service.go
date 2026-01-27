@@ -4349,6 +4349,7 @@ func (s *service) storeAssetGroups(
 			err := s.repoManager.Assets().InsertAssetGroup(ctx, domain.AssetGroup{
 				ID:             assetId.ToString(),
 				Quantity:       totalOut,
+				Immutable:      asstGp.Immutable,
 				Metadata:       metadataList,
 				ControlAssetID: controlAsset,
 			})

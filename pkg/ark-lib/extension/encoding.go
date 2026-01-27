@@ -13,6 +13,7 @@ const (
 	maskAssetId      uint8 = 1 << 0 // 0x01
 	maskControlAsset uint8 = 1 << 1 // 0x02
 	maskMetadata     uint8 = 1 << 2 // 0x04
+	maskImmutable    uint8 = 1 << 3 // 0x08
 )
 
 func (a *AssetGroup) Encode() ([]byte, error) {
@@ -29,6 +30,9 @@ func (a *AssetGroup) Encode() ([]byte, error) {
 	}
 	if len(a.Metadata) > 0 {
 		presence |= maskMetadata
+	}
+	if a.Immutable {
+		presence |= maskImmutable
 	}
 
 	if err := buf.WriteByte(presence); err != nil {
@@ -60,6 +64,8 @@ func (a *AssetGroup) Encode() ([]byte, error) {
 			return nil, err
 		}
 	}
+
+	// Immutable: No payload, presence bit is the value (true).
 
 	// 3. Inputs
 	if err := encodeAssetInputList(&buf, a.Inputs, &scratch); err != nil {
@@ -113,6 +119,13 @@ func (a *AssetGroup) Decode(r io.Reader) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Immutable
+	if (presence & maskImmutable) != 0 {
+		a.Immutable = true
+	} else {
+		a.Immutable = false
 	}
 
 	// 3. Inputs

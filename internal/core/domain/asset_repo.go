@@ -23,8 +23,8 @@ type NormalAsset struct {
 type AssetGroup struct {
 	ID             string
 	Quantity       uint64
-	ControlAssetID string
 	Immutable      bool
+	ControlAssetID string
 	Metadata       []AssetMetadata
 }
 

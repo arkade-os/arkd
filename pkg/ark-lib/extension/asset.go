@@ -74,6 +74,7 @@ func AssetIdFromString(s string) (*AssetId, error) {
 
 type AssetGroup struct {
 	AssetId      *AssetId
+	Immutable    bool
 	Outputs      []AssetOutput
 	ControlAsset *AssetRef
 	Inputs       []AssetInput

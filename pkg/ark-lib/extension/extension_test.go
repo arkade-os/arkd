@@ -63,6 +63,7 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 			{Key: "purpose", Value: "roundtrip"},
 			{Key: "owner", Value: "arkade"},
 		},
+		Immutable: true,
 	}
 
 	encoded, err := asset.Encode()
