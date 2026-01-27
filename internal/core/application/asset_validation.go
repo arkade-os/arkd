@@ -359,7 +359,9 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 
 		decodedProof, err := psbt.NewFromRawBytes(strings.NewReader(intent.Proof), true)
 		if err != nil {
-			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error decoding  proof for intent input validation: %w", err)
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New(
+				"error decoding  proof for intent input validation: %w", err,
+			)
 		}
 
 		if err := s.validateIntentOutput(*decodedProof, *grpAsset.AssetId, input.Vin); err != nil {
