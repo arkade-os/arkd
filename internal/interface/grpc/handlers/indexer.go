@@ -506,15 +506,9 @@ func (h *indexerService) SubscribeForScripts(
 
 		h.scriptSubsHandler.pushListener(listener)
 		h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-		h.teleportSubsHandler.pushListener(listener)
-		h.teleportSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
 	} else {
 		// update listener topic
 		if err := h.scriptSubsHandler.addTopics(subscriptionId, scripts); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		// update teleport listener topic
-		if err := h.teleportSubsHandler.addTopics(subscriptionId, scripts); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
