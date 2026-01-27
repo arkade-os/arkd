@@ -968,7 +968,10 @@ func (s *service) SubmitOffchainTx(
 				})
 			}
 		}
-		if out.Value < s.vtxoMinOffchainTxAmount {
+
+		isSubDust := script.IsSubDustScript(out.PkScript)
+
+		if out.Value < s.vtxoMinOffchainTxAmount && !isSubDust {
 			return nil, errors.AMOUNT_TOO_LOW.New(
 				"output #%d amount is lower than min vtxo amount: %d",
 				outIndex, s.vtxoMinOffchainTxAmount,
@@ -981,7 +984,7 @@ func (s *service) SubmitOffchainTx(
 
 		if out.Value < int64(dust) {
 			// if the output is below dust limit, it must be using OP_RETURN-style vtxo pkscript
-			if !script.IsSubDustScript(out.PkScript) {
+			if !isSubDust {
 				return nil, errors.AMOUNT_TOO_LOW.New(
 					"output #%d amount is below dust limit (%d < %d) but is not using "+
 						"OP_RETURN output script", outIndex, out.Value, dust,
