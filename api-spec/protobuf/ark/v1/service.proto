@@ -162,7 +162,9 @@ service ArkService {
     };
   }
 
-  // GetIntent returns a list of intents matching the given txid or spending one of the given proof inputs.
+  // GetIntent returns a list of intents depending on the filter provided:
+  // by txid: the server will return intent from completed batches
+  // by proof: the server will return any pending intents matching the proof inputs
   rpc GetIntent(GetIntentRequest) returns (GetIntentResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/intent"

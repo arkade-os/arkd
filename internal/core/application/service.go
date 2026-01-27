@@ -4300,11 +4300,7 @@ func (s *service) GetIntentsByProof(
 		}
 	}
 
-	if len(inputsMap) > 0 {
-		return nil, errors.INVALID_INTENT_PROOF.New("some inputs are not matched by any intent")
-	}
 	return matchingIntents, nil
-
 }
 
 func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {
