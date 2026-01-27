@@ -358,12 +358,13 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				ExpiresAt:          expireAt,
 			})
 
-			for i, vtxo := range vtxos {
-				if assets, found := assetsMap[vtxo.VOut]; found {
-					vtxos[i].Assets = assets
+			if len(assetsMap) > 0 {
+				for i, vtxo := range vtxos {
+					if assets, found := assetsMap[vtxo.VOut]; found {
+						vtxos[i].Assets = assets
+					}
 				}
 			}
-
 		}
 
 		totalVtxos = append(totalVtxos, vtxos...)

@@ -222,6 +222,7 @@ func (r *assetRepository) InsertAssetGroup(
 	err := r.querier.CreateAsset(ctx, queries.CreateAssetParams{
 		ID:        assetGroup.ID,
 		Quantity:  int64(assetGroup.Quantity),
+		Immutable: assetGroup.Immutable,
 		ControlID: controlId,
 	})
 
@@ -272,6 +273,7 @@ func (r *assetRepository) GetAssetGroupByID(
 		Quantity:       uint64(assetDB.Quantity),
 		Metadata:       metadata,
 		ControlAssetID: assetDB.ControlID.String,
+		Immutable:      assetDB.Immutable,
 	}, nil
 }
 

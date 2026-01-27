@@ -23,7 +23,6 @@ type indexerService struct {
 	eventsCh   <-chan application.TransactionEvent
 
 	scriptSubsHandler           *broker[*arkv1.GetSubscriptionResponse]
-	teleportSubsHandler         *broker[*arkv1.GetSubscriptionResponse]
 	subscriptionTimeoutDuration time.Duration
 
 	heartbeat time.Duration
@@ -37,7 +36,6 @@ func NewIndexerService(
 		indexerSvc:                  indexerSvc,
 		eventsCh:                    eventsCh,
 		scriptSubsHandler:           newBroker[*arkv1.GetSubscriptionResponse](),
-		teleportSubsHandler:         newBroker[*arkv1.GetSubscriptionResponse](),
 		subscriptionTimeoutDuration: subscriptionTimeoutDuration,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
 	}
@@ -412,7 +410,6 @@ func (h *indexerService) GetSubscription(
 	}
 
 	h.scriptSubsHandler.stopTimeout(subscriptionId)
-	h.teleportSubsHandler.stopTimeout(subscriptionId)
 	defer func() {
 		topics := h.scriptSubsHandler.getTopics(subscriptionId)
 		if len(topics) > 0 {
@@ -421,20 +418,9 @@ func (h *indexerService) GetSubscription(
 			h.scriptSubsHandler.removeListener(subscriptionId)
 		}
 
-		teleportTopics := h.teleportSubsHandler.getTopics(subscriptionId)
-		if len(teleportTopics) > 0 {
-			h.teleportSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-		} else {
-			h.teleportSubsHandler.removeListener(subscriptionId)
-		}
 	}()
 
 	scriptCh, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
-	if err != nil && !strings.Contains(err.Error(), "listener not found") {
-		return status.Error(codes.Internal, err.Error())
-	}
-
-	teleportCh, err := h.teleportSubsHandler.getListenerChannel(subscriptionId)
 	if err != nil && !strings.Contains(err.Error(), "listener not found") {
 		return status.Error(codes.Internal, err.Error())
 	}
@@ -460,11 +446,6 @@ func (h *indexerService) GetSubscription(
 		case <-stream.Context().Done():
 			return nil
 		case ev := <-scriptCh:
-			if err := stream.Send(ev); err != nil {
-				return err
-			}
-			resetTimer()
-		case ev := <-teleportCh:
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
@@ -538,7 +519,7 @@ func (h *indexerService) SubscribeForScripts(
 
 func (h *indexerService) listenToTxEvents() {
 	for event := range h.eventsCh {
-		if !h.scriptSubsHandler.hasListeners() && !h.teleportSubsHandler.hasListeners() {
+		if !h.scriptSubsHandler.hasListeners() {
 			continue
 		}
 

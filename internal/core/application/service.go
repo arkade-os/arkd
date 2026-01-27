@@ -1518,7 +1518,7 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
-	assetInputMap := make(map[uint32][]AssetInput)
+	assetInputMap := make(map[uint32][]domain.Asset)
 
 	hasOffChainReceiver := false
 	receivers := make([]domain.Receiver, 0)
@@ -1550,13 +1550,28 @@ func (s *service) RegisterIntent(
 					})
 			}
 
+			// build asset input map for indexing asset vtxos
+			for _, grp := range assetPacket.Assets {
+
+				for _, input := range grp.Inputs {
+					if _, ok := assetInputMap[input.Vin]; !ok {
+						assetInputMap[input.Vin] = make([]domain.Asset, 0)
+					}
+
+					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], domain.Asset{
+						Amount:  input.Amount,
+						AssetID: grp.AssetId.ToString(),
+					})
+				}
+			}
+
 			continue
 		}
 
 		amount := uint64(output.Value)
 		rcv := domain.Receiver{
-			Amount:      amount,
-			OutputIndex: outputIndex,
+			Amount:     amount,
+			TxOutIndex: outputIndex,
 		}
 
 		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
@@ -1646,26 +1661,15 @@ func (s *service) RegisterIntent(
 		offchainOutputs = append(offchainOutputs, *output)
 	}
 
-	// add the asset group
+	// add asset packet to asset receivers
 	if assetPacket != nil {
 		for i := range receivers {
 			assetGroupList := make([]extension.AssetGroup, 0)
 
 			for _, grp := range assetPacket.Assets {
 
-				for _, input := range grp.Inputs {
-					if _, ok := assetInputMap[input.Vin]; !ok {
-						assetInputMap[input.Vin] = make([]AssetInput, 0)
-					}
-
-					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], AssetInput{
-						AssetInput: input,
-						AssetId:    grp.AssetId.ToString(),
-					})
-				}
-
 				for _, out := range grp.Outputs {
-					if uint32(i) == out.Vout {
+					if uint32(receivers[i].TxOutIndex) == out.Vout {
 
 						assetGrp := extension.AssetGroup{
 							AssetId: grp.AssetId,
@@ -1689,7 +1693,6 @@ func (s *service) RegisterIntent(
 						break
 					}
 				}
-
 			}
 
 			if len(assetGroupList) > 0 {
@@ -1705,7 +1708,6 @@ func (s *service) RegisterIntent(
 				receivers[i].AssetPacket = encodedPacket.PkScript
 
 			}
-
 		}
 
 	}
@@ -1814,23 +1816,7 @@ func (s *service) RegisterIntent(
 		// verify asset input if present
 		// +1 to account for proof fake input at index 0
 		if assetInputList, ok := assetInputMap[uint32(i+1)]; ok {
-			for _, assetInput := range assetInputList {
-				if err := s.verifyAssetInputPrevOut(ctx, assetInput.AssetInput, outpoint); err != nil {
-					return "", errors.ASSET_VALIDATION_FAILED.New(
-						"asset input validation failed for input %d: %w", i, err,
-					).WithMetadata(errors.AssetValidationMetadata{
-						AssetID: assetInput.AssetId,
-						Message: fmt.Sprintf(
-							"validation failed for vtxo %s", vtxo.Outpoint.String(),
-						),
-					})
-				}
-
-				vtxo.Assets = append(vtxo.Assets, domain.Asset{
-					AssetID: assetInput.AssetId,
-					Amount:  assetInput.Amount,
-				})
-			}
+			vtxo.Assets = assetInputList
 
 		}
 

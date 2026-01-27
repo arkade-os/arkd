@@ -24,6 +24,7 @@ type AssetGroup struct {
 	ID             string
 	Quantity       uint64
 	ControlAssetID string
+	Immutable      bool
 	Metadata       []AssetMetadata
 }
 

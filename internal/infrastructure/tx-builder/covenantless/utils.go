@@ -73,7 +73,6 @@ func getOutputVtxosLeaves(
 				return nil, fmt.Errorf("receiver pubkey parse failed: %w", err)
 			}
 
-			// Plain offchain vtxo (no asset)
 			vtxoScript, err := script.P2TRScript(pubkey)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create P2TR script: %w", err)
@@ -85,7 +84,7 @@ func getOutputVtxosLeaves(
 				CosignersPublicKeys: cosigners,
 			}
 
-			// AssetGroup teleport case
+			// AssetGroup intent case
 			if len(receiver.AssetPacket) > 0 {
 				leaf.ExtensionScript = receiver.AssetPacket
 			}

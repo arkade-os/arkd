@@ -93,7 +93,7 @@ func (i Intent) validate(ignoreOuts bool) error {
 type Receiver struct {
 	Amount         uint64
 	OnchainAddress string // onchain
-	OutputIndex    int
+	TxOutIndex     int
 	AssetPacket    []byte // asset
 	PubKey         string // offchain
 }

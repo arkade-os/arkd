@@ -53,7 +53,7 @@ func testAssetEncodeDecodeRoundTrip(t *testing.T) {
 			},
 			{
 				Type: AssetTypeIntent,
-				// Vin is not encoded for Teleport inputs
+				// Vin is not encoded for Intent inputs
 				Vin:    123,
 				Txid:   deterministicBytesArray(0x55),
 				Amount: 40,

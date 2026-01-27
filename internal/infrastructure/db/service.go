@@ -757,15 +757,17 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 
 			normalAssets := make([]domain.NormalAsset, 0)
 
-			for i, vtxo := range vtxos {
-				if asset, found := assetsMap[vtxo.VOut]; found {
-					vtxos[i].Assets = []domain.Asset{asset}
+			if len(assetsMap) > 0 {
+				for i, vtxo := range vtxos {
+					if asset, found := assetsMap[vtxo.VOut]; found {
+						vtxos[i].Assets = []domain.Asset{asset}
 
-					normalAssets = append(normalAssets, domain.NormalAsset{
-						Outpoint: vtxo.Outpoint,
-						Amount:   asset.Amount,
-						AssetID:  asset.AssetID,
-					})
+						normalAssets = append(normalAssets, domain.NormalAsset{
+							Outpoint: vtxo.Outpoint,
+							Amount:   asset.Amount,
+							AssetID:  asset.AssetID,
+						})
+					}
 				}
 			}
 

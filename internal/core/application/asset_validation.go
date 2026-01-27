@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/hex"
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
@@ -338,29 +339,41 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 	grpAsset := m.group()
 	if input.Type == extension.AssetTypeIntent {
 		if grpAsset.AssetId == nil {
-			return errors.TELEPORT_VALIDATION_FAILED.New("asset ID is required for teleport input validation").
-				WithMetadata(errors.TeleportValidationMetadata{})
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New("asset ID is required for intent input validation").
+				WithMetadata(errors.IntentValidationMetadata{
+					IntentId:    hex.EncodeToString(input.Txid[:]),
+					AssetId:     "",
+					OutputIndex: input.Vin,
+				})
 		}
 
 		txHash, err := chainhash.NewHash(input.Txid[:])
 		if err != nil {
-			return errors.TELEPORT_VALIDATION_FAILED.New("invalid intent ID for teleport input validation: %w", err).
-				WithMetadata(errors.TeleportValidationMetadata{})
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New("invalid intent ID for intent input validation: %w", err).
+				WithMetadata(errors.IntentValidationMetadata{
+					IntentId:    hex.EncodeToString(input.Txid[:]),
+					AssetId:     grpAsset.AssetId.ToString(),
+					OutputIndex: input.Vin,
+				})
 		}
 
 		intent, err := s.repoManager.Rounds().GetIntentByTxid(context.Background(), txHash.String())
 		if err != nil {
-			return errors.TELEPORT_VALIDATION_FAILED.New("error retrieving intent for teleport input validation: %w", err).
-				WithMetadata(errors.TeleportValidationMetadata{})
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error retrieving intent for intent input validation: %w", err).
+				WithMetadata(errors.IntentValidationMetadata{
+					IntentId:    hex.EncodeToString(input.Txid[:]),
+					AssetId:     grpAsset.AssetId.ToString(),
+					OutputIndex: input.Vin,
+				})
 		}
 
 		decodedProof, err := psbt.NewFromRawBytes(strings.NewReader(intent.Proof), true)
 		if err != nil {
-			return errors.TELEPORT_VALIDATION_FAILED.New("error decoding intent proof for teleport input validation: %w", err).
-				WithMetadata(errors.TeleportValidationMetadata{})
+			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error decoding  proof for intent input validation: %w", err).
+				WithMetadata(errors.IntentValidationMetadata{})
 		}
 
-		if err := s.validateIntentInput(*decodedProof, *grpAsset.AssetId, input.Vin); err != nil {
+		if err := s.validateIntentOutput(*decodedProof, *grpAsset.AssetId, input.Vin); err != nil {
 			return err
 		}
 
@@ -417,7 +430,7 @@ const (
 	assetOutputInit assetOutputValidationState = iota
 	assetOutputCollect
 	assetOutputCountCheck
-	assetOutputTeleportCheck
+	assetOutputIntentCheck
 	assetOutputDone
 )
 
@@ -471,16 +484,16 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 	}
 }
 
-func (s *service) validateIntentInput(
+func (s *service) validateIntentOutput(
 	intentProof psbt.Packet,
 	assetId extension.AssetId,
 	vout uint32,
 ) error {
-	// validate teleport script exists in intent proof
+	// validate intent output exists in intent proof
 	assetPacket, _, err := extension.DeriveAssetPacketFromTx(*intentProof.UnsignedTx)
 	if err != nil {
-		return errors.TELEPORT_VALIDATION_FAILED.New("error deriving asset packet from intent proof: %s", err).
-			WithMetadata(errors.TeleportValidationMetadata{AssetID: assetId.ToString()})
+		return errors.INTENT_ASSET_VALIDATION_FAILED.New("error deriving asset packet from intent proof: %s", err).
+			WithMetadata(errors.IntentValidationMetadata{AssetId: assetId.ToString(), IntentId: intentProof.UnsignedTx.TxHash().String()})
 	}
 
 	if assetPacket == nil {
@@ -488,25 +501,26 @@ func (s *service) validateIntentInput(
 			WithMetadata(errors.AssetValidationMetadata{})
 	}
 
-	teleportOutputFound := false
+	intentOutputFound := false
 	for _, assetGroup := range assetPacket.Assets {
 		for _, assetOutput := range assetGroup.Outputs {
 			if assetOutput.Type == extension.AssetTypeIntent && assetId == *assetGroup.AssetId &&
 				vout == assetOutput.Vout {
-				teleportOutputFound = true
+				intentOutputFound = true
 				break
 			}
 		}
 	}
 
-	if !teleportOutputFound {
-		return errors.TELEPORT_VALIDATION_FAILED.New(
+	if !intentOutputFound {
+		return errors.INTENT_ASSET_VALIDATION_FAILED.New(
 			"teleport output not found in intent proof for asset %s index %d",
 			assetId.ToString(),
 			vout,
-		).WithMetadata(errors.TeleportValidationMetadata{
-			AssetID:     assetId.ToString(),
-			OutputIndex: int(vout),
+		).WithMetadata(errors.IntentValidationMetadata{
+			AssetId:     assetId.ToString(),
+			IntentId:    intentProof.UnsignedTx.TxHash().String(),
+			OutputIndex: vout,
 		})
 	}
 

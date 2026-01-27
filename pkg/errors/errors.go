@@ -356,10 +356,10 @@ type ControlAssetMetadata struct {
 	GroupIndex     int    `json:"group_index,omitempty"`
 }
 
-type TeleportValidationMetadata struct {
-	AssetID     string `json:"asset_id,omitempty"`
-	Script      string `json:"script,omitempty"`
-	OutputIndex int    `json:"output_index,omitempty"`
+type IntentValidationMetadata struct {
+	AssetId     string `json:"asset_id,omitempty"`
+	IntentId    string `json:"intent_id,omitempty"`
+	OutputIndex uint32 `json:"output_index,omitempty"`
 }
 
 type CheckpointValidationMetadata struct {
@@ -408,9 +408,9 @@ var CONTROL_ASSET_NOT_FOUND = Code[ControlAssetMetadata]{
 	grpccodes.NotFound,
 }
 
-var TELEPORT_VALIDATION_FAILED = Code[TeleportValidationMetadata]{
+var INTENT_ASSET_VALIDATION_FAILED = Code[IntentValidationMetadata]{
 	39,
-	"TELEPORT_VALIDATION_FAILED",
+	"INTENT_ASSET_VALIDATION_FAILED",
 	grpccodes.InvalidArgument,
 }
 

@@ -23,6 +23,7 @@ type assetGroup struct {
 	ID             string `badgerhold:"key"`
 	Quantity       uint64
 	ControlAssetId string
+	Immutable      bool
 }
 
 type assetMetadata struct {
@@ -354,6 +355,7 @@ func (r *assetRepository) InsertAssetGroup(ctx context.Context, a domain.AssetGr
 		ID:             a.ID,
 		Quantity:       a.Quantity,
 		ControlAssetId: a.ControlAssetID,
+		Immutable:      a.Immutable,
 	}
 
 	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
@@ -397,6 +399,7 @@ func (r *assetRepository) GetAssetGroupByID(
 		Quantity:       dbAsset.Quantity,
 		ControlAssetID: dbAsset.ControlAssetId,
 		Metadata:       metadata,
+		Immutable:      dbAsset.Immutable,
 	}, nil
 }
 
