@@ -34,7 +34,6 @@ func (a *AssetGroup) Encode() ([]byte, error) {
 	if a.Immutable {
 		presence |= maskImmutable
 	}
-
 	if err := buf.WriteByte(presence); err != nil {
 		return nil, err
 	}

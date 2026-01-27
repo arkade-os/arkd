@@ -264,8 +264,8 @@ func (r *assetRepository) GetAssetGroupByID(
 	return &domain.AssetGroup{
 		ID:             assetDB.ID,
 		Quantity:       uint64(assetDB.Quantity),
-		Metadata:       metadata,
 		Immutable:      assetDB.Immutable,
+		Metadata:       metadata,
 		ControlAssetID: assetDB.ControlID.String,
 	}, nil
 }
