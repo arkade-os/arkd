@@ -337,25 +337,21 @@ func (m *assetGroupValidationMachine) validateOutputs(s *service) error {
 func (m *assetGroupValidationMachine) validateInput(s *service, input extension.AssetInput) error {
 	grpAsset := m.group()
 	if input.Type == extension.AssetTypeIntent {
-		txHash, err := chainhash.NewHash(input.Txid[:])
-		if err != nil {
-			return errors.INTENT_ASSET_VALIDATION_FAILED.New("invalid intent ID for intent input validation: %w", err)
-		}
+		intentTxid := chainhash.Hash(input.Txid).String()
 
 		if grpAsset.AssetId == nil {
 			return errors.INTENT_ASSET_VALIDATION_FAILED.New("asset ID is required for intent input validation").
 				WithMetadata(errors.IntentValidationMetadata{
-					IntentTxid:  txHash.String(),
-					AssetId:     "",
+					IntentTxid:  intentTxid,
 					OutputIndex: input.Vin,
 				})
 		}
 
-		intent, err := s.repoManager.Rounds().GetIntentByTxid(context.Background(), txHash.String())
+		intent, err := s.repoManager.Rounds().GetIntentByTxid(context.Background(), intentTxid)
 		if err != nil {
 			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error retrieving intent for intent input validation: %w", err).
 				WithMetadata(errors.IntentValidationMetadata{
-					IntentTxid:  txHash.String(),
+					IntentTxid:  intentTxid,
 					AssetId:     grpAsset.AssetId.ToString(),
 					OutputIndex: input.Vin,
 				})
@@ -486,7 +482,10 @@ func (s *service) validateIntentOutput(
 	assetPacket, _, err := extension.DeriveAssetPacketFromTx(*intentProof.UnsignedTx)
 	if err != nil {
 		return errors.INTENT_ASSET_VALIDATION_FAILED.New("error deriving asset packet from intent proof: %s", err).
-			WithMetadata(errors.IntentValidationMetadata{AssetId: assetId.ToString(), IntentId: intentProof.UnsignedTx.TxHash().String()})
+			WithMetadata(errors.IntentValidationMetadata{
+				AssetId:    assetId.ToString(),
+				IntentTxid: intentProof.UnsignedTx.TxHash().String(),
+			})
 	}
 
 	if assetPacket == nil {
@@ -512,7 +511,7 @@ func (s *service) validateIntentOutput(
 			vout,
 		).WithMetadata(errors.IntentValidationMetadata{
 			AssetId:     assetId.ToString(),
-			IntentId:    intentProof.UnsignedTx.TxHash().String(),
+			IntentTxid:  intentProof.UnsignedTx.TxHash().String(),
 			OutputIndex: vout,
 		})
 	}
