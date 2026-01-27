@@ -727,6 +727,7 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 						}
 					}
 				}
+				continue
 			}
 
 			vtxoTapKey, err := schnorr.ParsePubKey(out.PkScript[2:])

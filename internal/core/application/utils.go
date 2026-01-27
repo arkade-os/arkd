@@ -339,6 +339,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 						)
 					}
 				}
+				continue
 			}
 
 			vtxoTapKey, err := schnorr.ParsePubKey(out.PkScript[2:])
@@ -357,12 +358,12 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				CreatedAt:          createdAt,
 				ExpiresAt:          expireAt,
 			})
+		}
 
-			if len(assetsMap) > 0 {
-				for i, vtxo := range vtxos {
-					if assets, found := assetsMap[vtxo.VOut]; found {
-						vtxos[i].Assets = assets
-					}
+		if len(assetsMap) > 0 {
+			for i, vtxo := range vtxos {
+				if assets, found := assetsMap[vtxo.VOut]; found {
+					vtxos[i].Assets = assets
 				}
 			}
 		}
