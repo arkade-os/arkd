@@ -162,6 +162,7 @@ service ArkService {
     };
   }
 
+  // GetIntent returns a list of intents matching the given txid or spending one of the given proof inputs.
   rpc GetIntent(GetIntentRequest) returns (GetIntentResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/intent"
@@ -326,9 +327,10 @@ message GetTransactionsStreamResponse {
 message GetIntentRequest {
   oneof filter {
       string txid = 1;
+      Intent intent = 2;
     }
 }
 
 message GetIntentResponse {
-  Intent intent = 1;
+  repeated Intent intents = 1;
 }

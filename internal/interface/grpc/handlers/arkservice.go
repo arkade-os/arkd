@@ -664,28 +664,39 @@ func (h *handler) listenToTxEvents() {
 func (h *handler) GetIntent(
 	ctx context.Context, req *arkv1.GetIntentRequest,
 ) (*arkv1.GetIntentResponse, error) {
-	var err error
-	var intent *domain.Intent
+	intents := make([]domain.Intent, 0)
 
 	switch filter := req.GetFilter().(type) {
 	case *arkv1.GetIntentRequest_Txid:
-		intent, err = h.svc.GetIntentByTxid(ctx, filter.Txid)
-
+		intent, err := h.svc.GetIntentByTxid(ctx, filter.Txid)
+		if err != nil {
+			return nil, err
+		}
+		if intent == nil {
+			return nil, arkdErrors.INTENT_NOT_FOUND.New("intent not found")
+		}
+		intents = append(intents, *intent)
+	case *arkv1.GetIntentRequest_Intent:
+		proof, message, err := parseGetIntentIntent(filter.Intent)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		intents, err = h.svc.GetIntentsByProof(ctx, *proof, *message)
+		if err != nil {
+			return nil, err
+		}
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown intent filter provided")
 	}
 
-	if err != nil {
-		return nil, err
+	intentsProto := make([]*arkv1.Intent, 0, len(intents))
+	for _, intent := range intents {
+		intentsProto = append(intentsProto, &arkv1.Intent{
+			Proof:   intent.Proof,
+			Message: intent.Message,
+		})
 	}
-	if intent == nil {
-		return nil, arkdErrors.INTENT_NOT_FOUND.New("intent not found")
-	}
-
-	return &arkv1.GetIntentResponse{Intent: &arkv1.Intent{
-		Proof:   intent.Proof,
-		Message: intent.Message,
-	}}, nil
+	return &arkv1.GetIntentResponse{Intents: intentsProto}, nil
 }
 
 type eventWithTopics struct {

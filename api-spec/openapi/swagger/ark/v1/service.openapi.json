@@ -414,10 +414,25 @@
         "tags": [
           "ArkService"
         ],
+        "description": "GetIntent returns a list of intents matching the given txid or spending one of the given proof inputs.",
         "operationId": "ArkService_GetIntent",
         "parameters": [
           {
             "name": "txid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
             "in": "query",
             "schema": {
               "type": "string"
@@ -898,6 +913,9 @@
         "title": "GetIntentRequest",
         "type": "object",
         "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
+          },
           "txid": {
             "type": "string"
           }
@@ -907,8 +925,11 @@
         "title": "GetIntentResponse",
         "type": "object",
         "properties": {
-          "intent": {
-            "$ref": "#/components/schemas/Intent"
+          "intents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Intent"
+            }
           }
         }
       },

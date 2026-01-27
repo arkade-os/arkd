@@ -4115,6 +4115,198 @@ func (s *service) GetIntentByTxid(
 	return intent, nil
 }
 
+func (s *service) GetIntentsByProof(
+	ctx context.Context,
+	proof intent.Proof,
+	message intent.GetIntentMessage,
+) ([]domain.Intent, errors.Error) {
+	// verify the proof of ownership
+	if message.ExpireAt > 0 {
+		expireAt := time.Unix(message.ExpireAt, 0)
+		if time.Now().After(expireAt) {
+			return nil, errors.INVALID_INTENT_TIMERANGE.New("proof of ownership expired").
+				WithMetadata(errors.IntentTimeRangeMetadata{
+					ValidAt:  0,
+					ExpireAt: message.ExpireAt,
+					Now:      time.Now().Unix(),
+				})
+		}
+	}
+
+	outpoints := proof.GetOutpoints()
+	proofTxid := proof.UnsignedTx.TxID()
+
+	boardingTxs := make(map[string]wire.MsgTx)
+	for i, outpoint := range outpoints {
+		psbtInput := proof.Inputs[i+1]
+
+		if len(psbtInput.TaprootLeafScript) == 0 {
+			return nil, errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", i+1).
+				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
+		vtxoOutpoint := domain.Outpoint{
+			Txid: outpoint.Hash.String(),
+			VOut: outpoint.Index,
+		}
+
+		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
+		if err != nil || len(vtxosResult) == 0 {
+			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
+				txhex, err := s.wallet.GetTransaction(ctx, outpoint.Hash.String())
+				if err != nil {
+					return nil, errors.TX_NOT_FOUND.New(
+						"failed to get boarding input tx %s: %s", vtxoOutpoint.Txid, err,
+					).WithMetadata(errors.TxNotFoundMetadata{Txid: vtxoOutpoint.Txid})
+				}
+
+				var tx wire.MsgTx
+				if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
+					return nil, errors.INVALID_PSBT_INPUT.New(
+						"failed to deserialize boarding tx %s: %s", vtxoOutpoint.Txid, err,
+					).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+				}
+
+				boardingTxs[vtxoOutpoint.Txid] = tx
+			}
+
+			tx := boardingTxs[vtxoOutpoint.Txid]
+			if int(vtxoOutpoint.VOut) >= len(tx.TxOut) {
+				return nil, errors.INVALID_PSBT_INPUT.New(
+					"invalid vout index %d for tx %s (tx has %d outputs)",
+					vtxoOutpoint.VOut, vtxoOutpoint.Txid, len(tx.TxOut),
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+			}
+			prevout := tx.TxOut[vtxoOutpoint.VOut]
+
+			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
+				return nil, errors.INVALID_PSBT_INPUT.New(
+					"pkscript mismatch: got %x expected %x",
+					prevout.PkScript,
+					psbtInput.WitnessUtxo.PkScript,
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+			}
+
+			if prevout.Value != int64(psbtInput.WitnessUtxo.Value) {
+				return nil, errors.INVALID_PSBT_INPUT.New(
+					"invalid witness utxo value: got %d expected %d",
+					prevout.Value,
+					psbtInput.WitnessUtxo.Value,
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+			}
+
+			continue
+		}
+
+		vtxo := vtxosResult[0]
+
+		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid witness utxo value: got %d expected %d",
+				psbtInput.WitnessUtxo.Value,
+				vtxo.Amount,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+
+		pubkeyBytes, err := hex.DecodeString(vtxo.PubKey)
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New("failed to decode vtxo pubkey: %w", err).
+				WithMetadata(map[string]any{
+					"vtxo_pubkey": vtxo.PubKey,
+				})
+		}
+
+		pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New("failed to parse vtxo pubkey: %w", err).
+				WithMetadata(map[string]any{
+					"vtxo_pubkey": vtxo.PubKey,
+				})
+		}
+
+		pkScript, err := script.P2TRScript(pubkey)
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New(
+				"failed to compute P2TR script from vtxo pubkey: %w", err,
+			).WithMetadata(map[string]any{
+				"vtxo_pubkey": vtxo.PubKey,
+			})
+		}
+
+		if !bytes.Equal(pkScript, psbtInput.WitnessUtxo.PkScript) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid witness utxo script: got %x expected %x",
+				psbtInput.WitnessUtxo.PkScript,
+				pkScript,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+		}
+	}
+
+	encodedMessage, err := message.Encode()
+	if err != nil {
+		return nil, errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
+			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
+	}
+
+	encodedProof, err := proof.B64Encode()
+	if err != nil {
+		return nil, errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
+	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
+			WithMetadata(map[string]any{
+				"proof": proof.UnsignedTx.TxID(),
+			})
+	}
+
+	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+		log.
+			WithField("unsignedProof", encodedProof).
+			WithField("signedProof", signedProof).
+			WithField("encodedMessage", encodedMessage).
+			Tracef("failed to verify intent proof: %s", err)
+		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
+			WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   signedProof,
+				Message: encodedMessage,
+			})
+	}
+
+	// proof is valid, we can retrieve the intents matching the proof's inputs
+
+	allIntents, err := s.cache.Intents().ViewAll(ctx, nil)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to view all intents: %w", err)
+	}
+
+	inputsMap := make(map[domain.Outpoint]struct{})
+	for _, op := range outpoints {
+		inputsMap[domain.Outpoint{
+			Txid: op.Hash.String(),
+			VOut: op.Index,
+		}] = struct{}{}
+	}
+
+	matchingIntents := make([]domain.Intent, 0)
+	for _, intent := range allIntents {
+		for _, in := range intent.Inputs {
+			if _, ok := inputsMap[in.Outpoint]; ok {
+				matchingIntents = append(matchingIntents, intent.Intent)
+				break
+			}
+		}
+	}
+
+	if len(inputsMap) > 0 {
+		return nil, errors.INVALID_INTENT_PROOF.New("some inputs are not matched by any intent")
+	}
+	return matchingIntents, nil
+
+}
+
 func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
