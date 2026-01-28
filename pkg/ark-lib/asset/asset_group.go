@@ -24,28 +24,21 @@ type Metadata struct {
 type AssetOutput struct {
 	Type   AssetType
 	Vout   uint32 // For Local
-	Script []byte // For Teleport
 	Amount uint64
 }
 
 type AssetType uint8
 
 const (
-	AssetTypeLocal    AssetType = 0x01
-	AssetTypeTeleport AssetType = 0x02
+	AssetTypeLocal  AssetType = 0x01
+	AssetTypeIntent AssetType = 0x02
 )
 
-type TeleportWitness struct {
-	Script []byte
-	Txid   [32]byte
-	Index  uint32
-}
-
 type AssetInput struct {
-	Type    AssetType
-	Vin     uint32
-	Witness TeleportWitness // For Teleport
-	Amount  uint64
+	Type   AssetType
+	Vin    uint32
+	Txid   [32]byte
+	Amount uint64
 }
 
 func (a *AssetGroup) Encode() ([]byte, error) {

@@ -124,3 +124,8 @@ func DecodeToExtensionPacket(txOut wire.TxOut) (*ExtensionPacket, error) {
 
 	return packet, nil
 }
+
+func IsExtensionPacket(opReturnData []byte) bool {
+	asset, subdust, err := parsePacketOpReturn(opReturnData)
+	return err == nil && len(asset) > 0 || len(subdust) > 0
+}

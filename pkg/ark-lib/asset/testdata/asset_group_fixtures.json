@@ -17,7 +17,7 @@
         "immutable": true,
         "outputs": [
           { "type": "local", "vout": 0, "amount": 11 },
-          { "type": "teleport", "script": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "amount": 22 }
+          { "type": "intent", "amount": 22 }
         ],
         "control_asset": {
           "type": "AssetRefByID",
@@ -25,7 +25,7 @@
         },
         "inputs": [
           { "type": "local", "vin": 7, "amount": 20 },
-          { "type": "teleport", "amount": 40, "witness": { "script": "00010203", "txid": "5555555555555555555555555555555555555555555555555555555555555555", "index": 123 } }
+          { "type": "intent", "amount": 40, "txid": "5555555555555555555555555555555555555555555555555555555555555555", "vin": 123 }
         ],
         "metadata": [
           { "key": "purpose", "value": "roundtrip" },

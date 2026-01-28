@@ -115,15 +115,15 @@ type jsonControlAssetRef struct {
 }
 
 type jsonWriteTestData struct {
-	AssetRefByID         jsonAssetRefFixture `json:"asset_ref_by_id"`
-	AssetRefByGroup      jsonAssetRefFixture `json:"asset_ref_by_group"`
-	MetadataSingle       []Metadata          `json:"metadata_single"`
-	MetadataEmptyKey     []Metadata          `json:"metadata_empty_key"`
-	InputLocal           jsonInput           `json:"input_local"`
-	InputTeleport        jsonInput           `json:"input_teleport"`
-	InputTeleportWitness jsonInput           `json:"input_teleport_with_witness"`
-	OutputLocal          jsonOutput          `json:"output_local"`
-	OutputTeleport       jsonOutput          `json:"output_teleport"`
+	AssetRefByID      jsonAssetRefFixture `json:"asset_ref_by_id"`
+	AssetRefByGroup   jsonAssetRefFixture `json:"asset_ref_by_group"`
+	MetadataSingle    []Metadata          `json:"metadata_single"`
+	MetadataEmptyKey  []Metadata          `json:"metadata_empty_key"`
+	InputLocal        jsonInput           `json:"input_local"`
+	InputIntent       jsonInput           `json:"input_intent"`
+	InputIntentTxid   jsonInput           `json:"input_intent_with_txid"`
+	OutputLocal       jsonOutput          `json:"output_local"`
+	OutputIntent      jsonOutput          `json:"output_intent"`
 }
 
 type encodingsFixturesJSON struct {
@@ -227,28 +227,17 @@ func fixtureToAssetInputs(inputs []jsonInput) ([]AssetInput, error) {
 			case "local":
 				ai.Type = AssetTypeLocal
 				ai.Vin = in.Vin
-			case "teleport":
-				ai.Type = AssetTypeTeleport
-			}
-		}
-		if in.Witness != nil {
-			if in.Witness.Script != "" {
-				s, err := hex.DecodeString(in.Witness.Script)
-				if err != nil {
-					return nil, err
+			case "intent":
+				ai.Type = AssetTypeIntent
+				ai.Vin = in.Vin
+				if in.Txid != "" {
+					b, err := hex.DecodeString(in.Txid)
+					if err != nil {
+						return nil, err
+					}
+					copy(ai.Txid[:], b)
 				}
-				ai.Witness.Script = s
 			}
-			if in.Witness.Txid != "" {
-				b, err := hex.DecodeString(in.Witness.Txid)
-				if err != nil {
-					return nil, err
-				}
-				var arr [32]byte
-				copy(arr[:], b)
-				ai.Witness.Txid = arr
-			}
-			ai.Witness.Index = in.Witness.Index
 		}
 		result = append(result, ai)
 	}
@@ -283,15 +272,8 @@ func fixtureToAssetOutputs(outputs []jsonOutput) ([]AssetOutput, error) {
 			switch o.Type {
 			case "local":
 				out.Type = AssetTypeLocal
-			case "teleport":
-				out.Type = AssetTypeTeleport
-				if o.Script != "" {
-					script, err := hex.DecodeString(o.Script)
-					if err != nil {
-						return nil, err
-					}
-					out.Script = script
-				}
+			case "intent":
+				out.Type = AssetTypeIntent
 			}
 		}
 		result = append(result, out)
@@ -358,10 +340,10 @@ func getWriteTestInput(name string) (AssetInput, error) {
 	switch name {
 	case "local":
 		ji = encodingsFixtures.WriteTestData.InputLocal
-	case "teleport":
-		ji = encodingsFixtures.WriteTestData.InputTeleport
-	case "teleport_with_witness":
-		ji = encodingsFixtures.WriteTestData.InputTeleportWitness
+	case "intent":
+		ji = encodingsFixtures.WriteTestData.InputIntent
+	case "intent_with_txid":
+		ji = encodingsFixtures.WriteTestData.InputIntentTxid
 	default:
 		return AssetInput{}, nil
 	}
@@ -377,8 +359,8 @@ func getWriteTestOutput(name string) (AssetOutput, error) {
 	switch name {
 	case "local":
 		jo = encodingsFixtures.WriteTestData.OutputLocal
-	case "teleport":
-		jo = encodingsFixtures.WriteTestData.OutputTeleport
+	case "intent":
+		jo = encodingsFixtures.WriteTestData.OutputIntent
 	default:
 		return AssetOutput{}, nil
 	}
@@ -826,21 +808,9 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 		switch inputs[idx].Type {
 		case AssetTypeLocal:
 			require.Equal(t, inputs[idx].Vin, got[idx].Vin)
-		case AssetTypeTeleport:
-			switch {
-			case idx == 5 || idx == 6:
-				require.True(t, bytes.Equal([]byte{}, got[idx].Witness.Script))
-				require.True(t, bytes.Equal(inputs[idx].Witness.Txid[:], got[idx].Witness.Txid[:]))
-				require.Equal(t, inputs[idx].Witness.Index, got[idx].Witness.Index)
-			case idx == 7 || idx == 8:
-				require.True(t, bytes.Equal(inputs[idx].Witness.Script, got[idx].Witness.Script))
-				require.True(t, bytes.Equal(emptyAssetId.Txid[:], got[idx].Witness.Txid[:]))
-				require.Equal(t, inputs[idx].Witness.Index, got[idx].Witness.Index)
-			default:
-				require.True(t, bytes.Equal(inputs[idx].Witness.Script, got[idx].Witness.Script))
-				require.True(t, bytes.Equal(inputs[idx].Witness.Txid[:], got[idx].Witness.Txid[:]))
-				require.Equal(t, inputs[idx].Witness.Index, got[idx].Witness.Index)
-			}
+		case AssetTypeIntent:
+			require.True(t, bytes.Equal(inputs[idx].Txid[:], got[idx].Txid[:]))
+			require.Equal(t, inputs[idx].Vin, got[idx].Vin)
 		}
 	}
 
@@ -897,10 +867,10 @@ func TestEncodeAssetInputList_WriteFails(t *testing.T) {
 	inputLocal, err := getWriteTestInput("local")
 	require.NoError(t, err)
 
-	inputTeleport, err := getWriteTestInput("teleport")
+	inputIntent, err := getWriteTestInput("intent")
 	require.NoError(t, err)
 
-	inputTeleportWitness, err := getWriteTestInput("teleport_with_witness")
+	inputIntentTxid, err := getWriteTestInput("intent_with_txid")
 	require.NoError(t, err)
 
 	// Test write failure on count (first write)
@@ -935,42 +905,26 @@ func TestEncodeAssetInputList_WriteFails(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	// Test write failure on Teleport Amount
-	t.Run("fail_on_teleport_amount", func(t *testing.T) {
-		inputs := []AssetInput{inputTeleport}
+	// Test write failure on Intent Amount
+	t.Run("fail_on_intent_amount", func(t *testing.T) {
+		inputs := []AssetInput{inputIntent}
 		lw := &limitedWriter{limit: 2} // allow count + type, fail on amount
 		err := encodeAssetInputList(lw, inputs, &scratch)
 		require.Error(t, err)
 	})
 
-	// Test write failure on Teleport Witness Script length
-	t.Run("fail_on_teleport_script_length", func(t *testing.T) {
-		inputs := []AssetInput{inputTeleportWitness}
-		lw := &limitedWriter{limit: 10} // allow count + type + amount, fail on script length
+	// Test write failure on Intent Txid
+	t.Run("fail_on_intent_txid", func(t *testing.T) {
+		inputs := []AssetInput{inputIntentTxid}
+		lw := &limitedWriter{limit: 10} // allow count + type + amount, fail on txid
 		err := encodeAssetInputList(lw, inputs, &scratch)
 		require.Error(t, err)
 	})
 
-	// Test write failure on Teleport Witness Script
-	t.Run("fail_on_teleport_script", func(t *testing.T) {
-		inputs := []AssetInput{inputTeleportWitness}
-		lw := &limitedWriter{limit: 11} // allow up to script length, fail on script
-		err := encodeAssetInputList(lw, inputs, &scratch)
-		require.Error(t, err)
-	})
-
-	// Test write failure on Teleport Witness Txid
-	t.Run("fail_on_teleport_txid", func(t *testing.T) {
-		inputs := []AssetInput{inputTeleportWitness}
-		lw := &limitedWriter{limit: 13} // allow up to script, fail on txid
-		err := encodeAssetInputList(lw, inputs, &scratch)
-		require.Error(t, err)
-	})
-
-	// Test write failure on Teleport Witness Index
-	t.Run("fail_on_teleport_index", func(t *testing.T) {
-		inputs := []AssetInput{inputTeleportWitness}
-		lw := &limitedWriter{limit: 45} // allow up to txid, fail on index
+	// Test write failure on Intent Vin (index)
+	t.Run("fail_on_intent_vin", func(t *testing.T) {
+		inputs := []AssetInput{inputIntentTxid}
+		lw := &limitedWriter{limit: 42} // allow count + type + amount + txid(32), fail on vin
 		err := encodeAssetInputList(lw, inputs, &scratch)
 		require.Error(t, err)
 	})
@@ -1001,9 +955,9 @@ func TestDecodeAssetInputList_TruncatedAtVariousPoints(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	// Test decode Teleport truncated after type
-	t.Run("teleport_truncated_after_type", func(t *testing.T) {
-		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeTeleport)}) // count=1, type=teleport, but no amount
+	// Test decode Intent truncated after type
+	t.Run("intent_truncated_after_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeIntent)}) // count=1, type=intent, but no amount
 		_, err := decodeAssetInputList(buf, &scratch)
 		require.Error(t, err)
 	})
@@ -1114,8 +1068,6 @@ func TestEncodeDecodeAssetOutputList(t *testing.T) {
 		require.Equal(t, outputs[i].Amount, got[i].Amount)
 		if outputs[i].Type == AssetTypeLocal {
 			require.Equal(t, outputs[i].Vout, got[i].Vout)
-		} else {
-			require.True(t, bytes.Equal(outputs[i].Script, got[i].Script))
 		}
 	}
 
@@ -1162,7 +1114,7 @@ func TestEncodeAssetOutputList_WriteFails(t *testing.T) {
 	outputLocal, err := getWriteTestOutput("local")
 	require.NoError(t, err)
 
-	outputTeleport, err := getWriteTestOutput("teleport")
+	outputIntent, err := getWriteTestOutput("intent")
 	require.NoError(t, err)
 
 	// Test write failure on count (first write)
@@ -1197,26 +1149,10 @@ func TestEncodeAssetOutputList_WriteFails(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	// Test write failure on Teleport Script length
-	t.Run("fail_on_teleport_script_length", func(t *testing.T) {
-		outputs := []AssetOutput{outputTeleport}
-		lw := &limitedWriter{limit: 2} // allow count + type, fail on script length
-		err := encodeAssetOutputList(lw, outputs, &scratch)
-		require.Error(t, err)
-	})
-
-	// Test write failure on Teleport Script
-	t.Run("fail_on_teleport_script", func(t *testing.T) {
-		outputs := []AssetOutput{outputTeleport}
-		lw := &limitedWriter{limit: 3} // allow count + type + script length, fail on script
-		err := encodeAssetOutputList(lw, outputs, &scratch)
-		require.Error(t, err)
-	})
-
-	// Test write failure on Teleport Amount
-	t.Run("fail_on_teleport_amount", func(t *testing.T) {
-		outputs := []AssetOutput{outputTeleport}
-		lw := &limitedWriter{limit: 5} // allow count + type + script length + script, fail on amount
+	// Test write failure on Intent Amount
+	t.Run("fail_on_intent_amount", func(t *testing.T) {
+		outputs := []AssetOutput{outputIntent}
+		lw := &limitedWriter{limit: 2} // allow count + type, fail on amount
 		err := encodeAssetOutputList(lw, outputs, &scratch)
 		require.Error(t, err)
 	})
@@ -1259,29 +1195,10 @@ func TestDecodeAssetOutputList_TruncatedAtVariousPoints(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	// Test decode Teleport truncated after type
-	t.Run("teleport_truncated_after_type", func(t *testing.T) {
-		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeTeleport)}) // count=1, type=teleport, but no script length
+	// Test decode Intent truncated after type (no amount)
+	t.Run("intent_truncated_after_type", func(t *testing.T) {
+		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeIntent)}) // count=1, type=intent, but no amount
 		_, err := decodeAssetOutputList(buf, &scratch)
-		require.Error(t, err)
-	})
-
-	// Test decode Teleport truncated after script length (no script)
-	t.Run("teleport_truncated_after_script_length", func(t *testing.T) {
-		buf := bytes.NewBuffer([]byte{1, byte(AssetTypeTeleport), 4}) // count=1, type=teleport, script_len=4, but no script
-		_, err := decodeAssetOutputList(buf, &scratch)
-		require.Error(t, err)
-	})
-
-	// Test decode Teleport truncated after script (no amount)
-	t.Run("teleport_truncated_after_script", func(t *testing.T) {
-		// Encode a valid teleport output, then truncate
-		var encodeBuf bytes.Buffer
-		outputs := []AssetOutput{{Type: AssetTypeTeleport, Script: []byte{0xaa, 0xbb}, Amount: 100}}
-		require.NoError(t, encodeAssetOutputList(&encodeBuf, outputs, &scratch))
-		// Truncate to remove amount
-		truncated := encodeBuf.Bytes()[:5]
-		_, err := decodeAssetOutputList(bytes.NewBuffer(truncated), &scratch)
 		require.Error(t, err)
 	})
 

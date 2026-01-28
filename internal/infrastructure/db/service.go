@@ -555,13 +555,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 
 			// ignore asset anchor
-			if extension.IsExtensionPacket(out.PkScript) {
+			if asset.IsExtensionPacket(out.PkScript) {
 				txOut := wire.TxOut{
 					Value:    int64(out.Amount),
 					PkScript: out.PkScript,
 				}
 
-				packet, err := extension.DecodeOutputToAssetPacket(txOut)
+				packet, err := asset.DecodeToExtensionPacket(txOut)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
@@ -577,12 +577,12 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 								continue
 							}
 
-							assetId = extension.AssetId{
+							assetId = asset.AssetId{
 								Txid:  *txhash,
 								Index: uint16(i),
-							}.ToString()
+							}.String()
 						} else {
-							assetId = grp.AssetId.ToString()
+							assetId = grp.AssetId.String()
 						}
 
 						for _, assetOut := range grp.Outputs {
@@ -711,7 +711,7 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 			}
 
 			if asset.ContainsAssetPacket(out.PkScript) {
-				decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+				decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset packet")
 					continue
@@ -721,7 +721,7 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 				for _, asst := range decodedAssetPacket.Assets {
 					for _, out := range asst.Outputs {
 						assetsMap[out.Vout] = domain.Asset{
-							AssetID: asst.AssetId.ToString(),
+							AssetID: asst.AssetId.String(),
 							Amount:  uint64(out.Amount),
 						}
 					}

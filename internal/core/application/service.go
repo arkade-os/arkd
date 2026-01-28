@@ -1559,7 +1559,7 @@ func (s *service) RegisterIntent(
 
 					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], domain.Asset{
 						Amount:  input.Amount,
-						AssetID: grp.AssetId.ToString(),
+						AssetID: grp.AssetId.String(),
 					})
 				}
 			}
@@ -4354,7 +4354,7 @@ func (s *service) storeAssetGroups(
 			)
 
 			for _, out := range asstGp.Outputs {
-				if out.Type == asset.AssetTypeTeleport {
+				if out.Type == asset.AssetTypeIntent {
 					continue
 				}
 
@@ -4380,7 +4380,7 @@ func (s *service) storeAssetGroups(
 			return fmt.Errorf("asset with id %s not found for update", assetId.String())
 		}
 
-		if err := s.updateAssetQuantity(ctx, assetId.ToString(), totalIn, totalOut); err != nil {
+		if err := s.updateAssetQuantity(ctx, assetId.String(), totalIn, totalOut); err != nil {
 			return err
 		}
 

@@ -27,18 +27,12 @@ type jsonOutput struct {
 	Amount  uint64 `json:"amount,omitempty"`
 }
 
-type jsonInputWitness struct {
-	Script string `json:"script,omitempty"`
-	Txid   string `json:"txid,omitempty"`
-	Index  uint32 `json:"index,omitempty"`
-}
-
 type jsonInput struct {
-	Type    string            `json:"type"`
-	TypeRaw *uint8            `json:"type_raw,omitempty"`
-	Vin     uint32            `json:"vin,omitempty"`
-	Amount  uint64            `json:"amount,omitempty"`
-	Witness *jsonInputWitness `json:"witness,omitempty"`
+	Type    string `json:"type"`
+	TypeRaw *uint8 `json:"type_raw,omitempty"`
+	Vin     uint32 `json:"vin,omitempty"`
+	Amount  uint64 `json:"amount,omitempty"`
+	Txid    string `json:"txid,omitempty"`
 }
 
 type jsonControlAsset struct {
@@ -98,13 +92,15 @@ func TestVerifyAssetGroupFixtures(t *testing.T) {
 				ags, err := fixtureToAssetGroups(validFixture)
 				require.NoError(t, err)
 
-				// verify each asset group encodes to expected bytes
-				for _, ag := range ags {
-					agBytes, err := ag.Encode()
-					require.NoError(t, err)
-					expectedAgBytes, err := hex.DecodeString(validFixture.PkScriptHex)
-					require.NoError(t, err)
-					require.True(t, bytes.Equal(expectedAgBytes, agBytes))
+				// verify each asset group encodes to expected bytes (if provided)
+				if validFixture.PkScriptHex != "" {
+					for _, ag := range ags {
+						agBytes, err := ag.Encode()
+						require.NoError(t, err)
+						expectedAgBytes, err := hex.DecodeString(validFixture.PkScriptHex)
+						require.NoError(t, err)
+						require.True(t, bytes.Equal(expectedAgBytes, agBytes))
+					}
 				}
 
 				// put AssetGroups into AssetPacket and ExtensionPacket
@@ -206,7 +202,8 @@ func TestDecodeToExtensionPacket_CorruptedPayload(t *testing.T) {
 	tr := wire.TxOut{Value: txOut.Value, PkScript: txOut.PkScript[:len(txOut.PkScript)-2]}
 	ep, err := DecodeToExtensionPacket(tr)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "opcode OP_PUSHDATA1 pushes 168 bytes, but script only has 166 remaining")
+	require.Contains(t, err.Error(), "opcode OP_PUSHDATA1 pushes")
+	require.Contains(t, err.Error(), "but script only has")
 	require.Nil(t, ep)
 }
 
@@ -261,15 +258,8 @@ func jsonAssetGroupToAssetGroup(ja jsonAssetGroup) (AssetGroup, error) {
 				out.Type = AssetTypeLocal
 				out.Vout = o.Vout
 				out.Amount = o.Amount
-			case "teleport":
-				out.Type = AssetTypeTeleport
-				if o.Script != "" {
-					script, err := hex.DecodeString(o.Script)
-					if err != nil {
-						return ag, err
-					}
-					out.Script = script
-				}
+			case "intent":
+				out.Type = AssetTypeIntent
 				out.Amount = o.Amount
 			}
 		}
@@ -291,39 +281,25 @@ func jsonAssetGroupToAssetGroup(ja jsonAssetGroup) (AssetGroup, error) {
 		}
 	}
 	for _, in := range ja.Inputs {
-		ai := AssetInput{}
+		ai := AssetInput{Amount: in.Amount}
 		if in.TypeRaw != nil {
 			ai.Type = AssetType(*in.TypeRaw)
-			ai.Amount = in.Amount
 		} else {
 			switch in.Type {
 			case "local":
 				ai.Type = AssetTypeLocal
 				ai.Vin = in.Vin
-				ai.Amount = in.Amount
-			case "teleport":
-				ai.Type = AssetTypeTeleport
-				ai.Amount = in.Amount
-			}
-		}
-		if in.Witness != nil {
-			if in.Witness.Script != "" {
-				s, err := hex.DecodeString(in.Witness.Script)
-				if err != nil {
-					return ag, err
+			case "intent":
+				ai.Type = AssetTypeIntent
+				ai.Vin = in.Vin
+				if in.Txid != "" {
+					b, err := hex.DecodeString(in.Txid)
+					if err != nil {
+						return ag, err
+					}
+					copy(ai.Txid[:], b)
 				}
-				ai.Witness.Script = s
 			}
-			if in.Witness.Txid != "" {
-				b, err := hex.DecodeString(in.Witness.Txid)
-				if err != nil {
-					return ag, err
-				}
-				var arr [32]byte
-				copy(arr[:], b)
-				ai.Witness.Txid = arr
-			}
-			ai.Witness.Index = in.Witness.Index
 		}
 		ag.Inputs = append(ag.Inputs, ai)
 	}

@@ -352,7 +352,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input asset.Asse
 			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error retrieving intent for intent input validation: %w", err).
 				WithMetadata(errors.IntentValidationMetadata{
 					IntentTxid:  intentTxid,
-					AssetId:     grpAsset.AssetId.ToString(),
+					AssetId:     grpAsset.AssetId.String(),
 					OutputIndex: input.Vin,
 				})
 		}
@@ -485,7 +485,7 @@ func (s *service) validateIntentOutput(
 	if err != nil {
 		return errors.INTENT_ASSET_VALIDATION_FAILED.New("error deriving asset packet from intent proof: %s", err).
 			WithMetadata(errors.IntentValidationMetadata{
-				AssetId:    assetId.ToString(),
+				AssetId:    assetId.String(),
 				IntentTxid: intentProof.UnsignedTx.TxHash().String(),
 			})
 	}
@@ -509,10 +509,10 @@ func (s *service) validateIntentOutput(
 	if !intentOutputFound {
 		return errors.INTENT_ASSET_VALIDATION_FAILED.New(
 			"intent output not found in intent proof for asset %s index %d",
-			assetId.ToString(),
+			assetId.String(),
 			vout,
 		).WithMetadata(errors.IntentValidationMetadata{
-			AssetId:     assetId.ToString(),
+			AssetId:     assetId.String(),
 			IntentTxid:  intentProof.UnsignedTx.TxHash().String(),
 			OutputIndex: vout,
 		})

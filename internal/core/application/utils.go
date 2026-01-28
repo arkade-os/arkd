@@ -321,8 +321,8 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				continue
 			}
 
-			if extension.ContainsAssetPacket(out.PkScript) {
-				decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+			if asset.ContainsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset packet")
 					continue
@@ -333,7 +333,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 						assetsMap[out.Vout] = append(
 							assetsMap[out.Vout],
 							domain.Asset{
-								AssetID: asst.AssetId.ToString(),
+								AssetID: asst.AssetId.String(),
 								Amount:  uint64(out.Amount),
 							},
 						)

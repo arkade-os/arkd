@@ -293,8 +293,6 @@ func assetGroupsEqual(a, b []AssetGroup) bool {
 		for idx, o := range a[i].Outputs {
 			if o.Type != b[i].Outputs[idx].Type ||
 				o.Vout != b[i].Outputs[idx].Vout ||
-				len(o.Script) != len(b[i].Outputs[idx].Script) ||
-				!bytes.Equal(o.Script, b[i].Outputs[idx].Script) ||
 				o.Amount != b[i].Outputs[idx].Amount {
 				return false
 			}
@@ -318,10 +316,8 @@ func assetGroupsEqual(a, b []AssetGroup) bool {
 			if in.Type != b[i].Inputs[idx].Type ||
 				in.Vin != b[i].Inputs[idx].Vin ||
 				// check Witness fields
-				len(in.Witness.Script) != len(b[i].Inputs[idx].Witness.Script) ||
-				!bytes.Equal(in.Witness.Script, b[i].Inputs[idx].Witness.Script) ||
-				len(in.Witness.Txid) != len(b[i].Inputs[idx].Witness.Txid) ||
-				!bytes.Equal(in.Witness.Txid[:], b[i].Inputs[idx].Witness.Txid[:]) ||
+				len(in.Txid) != len(b[i].Inputs[idx].Txid) ||
+				!bytes.Equal(in.Txid[:], b[i].Inputs[idx].Txid[:]) ||
 				in.Amount != b[i].Inputs[idx].Amount {
 				return false
 			}

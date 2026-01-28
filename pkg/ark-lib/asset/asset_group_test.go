@@ -75,15 +75,8 @@ func fixtureToAssetGroupSingle(ja jsonAssetGroup) (AssetGroup, error) {
 		case "local":
 			out.Type = AssetTypeLocal
 			out.Vout = o.Vout
-		case "teleport":
-			out.Type = AssetTypeTeleport
-			if o.Script != "" {
-				script, err := hex.DecodeString(o.Script)
-				if err != nil {
-					return ag, err
-				}
-				out.Script = script
-			}
+		case "intent":
+			out.Type = AssetTypeIntent
 		}
 		ag.Outputs = append(ag.Outputs, out)
 	}
@@ -112,29 +105,17 @@ func fixtureToAssetGroupSingle(ja jsonAssetGroup) (AssetGroup, error) {
 			case "local":
 				ai.Type = AssetTypeLocal
 				ai.Vin = in.Vin
-			case "teleport":
-				ai.Type = AssetTypeTeleport
-			}
-		}
-
-		if in.Witness != nil {
-			if in.Witness.Script != "" {
-				s, err := hex.DecodeString(in.Witness.Script)
-				if err != nil {
-					return ag, err
+			case "intent":
+				ai.Type = AssetTypeIntent
+				ai.Vin = in.Vin
+				if in.Txid != "" {
+					b, err := hex.DecodeString(in.Txid)
+					if err != nil {
+						return ag, err
+					}
+					copy(ai.Txid[:], b)
 				}
-				ai.Witness.Script = s
 			}
-			if in.Witness.Txid != "" {
-				b, err := hex.DecodeString(in.Witness.Txid)
-				if err != nil {
-					return ag, err
-				}
-				var arr [32]byte
-				copy(arr[:], b)
-				ai.Witness.Txid = arr
-			}
-			ai.Witness.Index = in.Witness.Index
 		}
 		ag.Inputs = append(ag.Inputs, ai)
 	}

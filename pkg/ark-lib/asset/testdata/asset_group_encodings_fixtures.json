@@ -82,20 +82,20 @@
         "inputs": [
           { "type": "local", "vin": 3, "amount": 1000 },
           { "type": "local", "vin": 0, "amount": 0 },
-          { "type": "teleport", "amount": 2000 },
-          { "type": "teleport", "vin": 3, "amount": 2000 },
-          { "type": "teleport", "vin": 3, "amount": 2000, "witness": { "script": "deadbeef", "txid": "cafebabe00000000000000000000000000000000000000000000000000000000", "index": 42 } },
-          { "type": "teleport", "witness": { "script": "", "txid": "cafebabe00000000000000000000000000000000000000000000000000000000", "index": 99 } },
-          { "type": "teleport", "witness": { "txid": "cafebabe00000000000000000000000000000000000000000000000000000000", "index": 100 } },
-          { "type": "teleport", "witness": { "script": "deadbeef", "txid": "0000000000000000000000000000000000000000000000000000000000000000", "index": 101 } },
-          { "type": "teleport", "witness": { "script": "deadbeef", "txid": "0000000000000000000000000000000000000000000000000000000000000000", "index": 4294967295 } }
+          { "type": "intent", "amount": 2000, "txid": "0000000000000000000000000000000000000000000000000000000000000000", "vin": 0 },
+          { "type": "intent", "vin": 3, "amount": 2000, "txid": "cafebabe00000000000000000000000000000000000000000000000000000000" },
+          { "type": "intent", "vin": 42, "amount": 2000, "txid": "cafebabe00000000000000000000000000000000000000000000000000000000" },
+          { "type": "intent", "vin": 99, "txid": "cafebabe00000000000000000000000000000000000000000000000000000000" },
+          { "type": "intent", "vin": 100, "txid": "cafebabe00000000000000000000000000000000000000000000000000000000" },
+          { "type": "intent", "vin": 101, "txid": "0000000000000000000000000000000000000000000000000000000000000000" },
+          { "type": "intent", "vin": 4294967295, "txid": "0000000000000000000000000000000000000000000000000000000000000000" }
         ]
       },
       {
         "name": "simple_pair",
         "inputs": [
           { "type": "local", "vin": 1, "amount": 80 },
-          { "type": "teleport", "vin": 0, "amount": 20, "witness": { "script": "deadbeef", "txid": "1111111111111111111111111111111111111111111111111111111111111111", "index": 456 } }
+          { "type": "intent", "vin": 456, "amount": 20, "txid": "1111111111111111111111111111111111111111111111111111111111111111" }
         ]
       },
       {
@@ -105,15 +105,15 @@
         ]
       },
       {
-        "name": "single_teleport",
+        "name": "single_intent",
         "inputs": [
-          { "type": "teleport", "amount": 500, "witness": { "script": "aabbccdd", "txid": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", "index": 77 } }
+          { "type": "intent", "amount": 500, "txid": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", "vin": 77 }
         ]
       },
       {
-        "name": "single_teleport_empty_witness",
+        "name": "single_intent_zero_txid",
         "inputs": [
-          { "type": "teleport", "amount": 100 }
+          { "type": "intent", "amount": 100, "txid": "0000000000000000000000000000000000000000000000000000000000000000", "vin": 0 }
         ]
       }
     ],
@@ -142,25 +142,25 @@
         "outputs": [
           { "type": "local", "vout": 3, "amount": 1000 },
           { "type": "local", "vout": 0, "amount": 0 },
-          { "type": "teleport", "amount": 2000 },
-          { "type": "teleport", "vout": 3, "amount": 2000 },
-          { "type": "teleport", "vout": 3, "amount": 2000, "script": "deadbeef" },
-          { "type": "teleport", "script": "" },
-          { "type": "teleport" },
-          { "type": "local", "vout": 3, "amount": 2000, "script": "deadbeef" },
-          { "type": "local", "script": "" },
-          { "type": "local" },
-          { "type": "local", "amount": 18446744073709551614 },
-          { "type": "teleport", "amount": 18446744073709551614, "script": "deadbeef" },
+          { "type": "intent", "amount": 2000 },
+          { "type": "intent", "amount": 3000 },
+          { "type": "intent", "amount": 4000 },
+          { "type": "intent", "amount": 0 },
+          { "type": "intent", "amount": 1 },
+          { "type": "local", "vout": 3, "amount": 2000 },
+          { "type": "local", "vout": 0, "amount": 0 },
+          { "type": "local", "vout": 1, "amount": 1 },
+          { "type": "local", "vout": 0, "amount": 18446744073709551614 },
+          { "type": "intent", "amount": 18446744073709551614 },
           { "type": "local", "vout": 4294967295, "amount": 5000 },
-          { "type": "teleport", "vout": 4294967295, "amount": 5000, "script": "deadbeef" }
+          { "type": "intent", "amount": 6000 }
         ]
       },
       {
         "name": "simple_pair",
         "outputs": [
           { "type": "local", "vout": 0, "amount": 100 },
-          { "type": "teleport", "script": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "amount": 200 }
+          { "type": "intent", "amount": 200 }
         ]
       },
       {
@@ -170,15 +170,15 @@
         ]
       },
       {
-        "name": "single_teleport",
+        "name": "single_intent",
         "outputs": [
-          { "type": "teleport", "script": "aabbccdd", "amount": 500 }
+          { "type": "intent", "amount": 500 }
         ]
       },
       {
-        "name": "single_teleport_empty_script",
+        "name": "single_intent_zero",
         "outputs": [
-          { "type": "teleport", "amount": 100 }
+          { "type": "intent", "amount": 0 }
         ]
       }
     ],
@@ -320,15 +320,15 @@
       "asset_groups": [{}]
     },
     {
-      "name": "teleport_assets",
-      "description": "Asset group with teleport inputs and outputs",
+      "name": "intent_assets",
+      "description": "Asset group with intent inputs and outputs",
       "asset_groups": [
         {
           "inputs": [
-            { "type": "teleport", "amount": 100, "witness": { "script": "aa", "txid": "0100000000000000000000000000000000000000000000000000000000000000", "index": 1 } }
+            { "type": "intent", "amount": 100, "txid": "0100000000000000000000000000000000000000000000000000000000000000", "vin": 1 }
           ],
           "outputs": [
-            { "type": "teleport", "script": "bbcc", "amount": 100 }
+            { "type": "intent", "amount": 100 }
           ]
         }
       ]
@@ -350,9 +350,9 @@
       { "key": "", "value": "testvalue" }
     ],
     "input_local": { "type": "local", "vin": 1, "amount": 10 },
-    "input_teleport": { "type": "teleport", "amount": 100 },
-    "input_teleport_with_witness": { "type": "teleport", "amount": 100, "witness": { "script": "aabb", "txid": "0102030000000000000000000000000000000000000000000000000000000000", "index": 5 } },
+    "input_intent": { "type": "intent", "amount": 100, "txid": "0000000000000000000000000000000000000000000000000000000000000000", "vin": 0 },
+    "input_intent_with_txid": { "type": "intent", "amount": 100, "txid": "0102030000000000000000000000000000000000000000000000000000000000", "vin": 5 },
     "output_local": { "type": "local", "vout": 1, "amount": 10 },
-    "output_teleport": { "type": "teleport", "script": "aabb", "amount": 100 }
+    "output_intent": { "type": "intent", "amount": 100 }
   }
 }

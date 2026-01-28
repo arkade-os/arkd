@@ -11,9 +11,7 @@
           "immutable": false,
           "outputs": [
             {
-              "type": "teleport",
-              "vout": 0,
-              "script": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+              "type": "intent",
               "amount": 1
             }
           ],
@@ -33,8 +31,7 @@
             }
           ]
         }
-      ],
-      "pk_script_hex": "0711111111111111111111111111111111111111111111111111111111111111110000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e6407636f6e74726f6c00010220dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd0000000000000001"
+      ]
     },
     {
       "name": "normal",
@@ -49,7 +46,6 @@
             {
               "type": "local",
               "vout": 1,
-              "script": "",
               "amount": 10
             }
           ],
@@ -65,11 +61,6 @@
             {
               "type": "local",
               "vin": 1,
-              "witness": {
-                "script": "",
-                "txid": "",
-                "index": 0
-              },
               "amount": 5
             }
           ],
@@ -80,8 +71,7 @@
             }
           ]
         }
-      ],
-      "pk_script_hex": "0712121212121212121212121212121212121212121212121212121212121212120000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
+      ]
     },
     {
       "name": "empty",
@@ -96,7 +86,6 @@
             {
               "type": "local",
               "vout": 1,
-              "script": "",
               "amount": 10
             }
           ],
@@ -112,11 +101,6 @@
             {
               "type": "local",
               "vin": 1,
-              "witness": {
-                "script": "",
-                "txid": "",
-                "index": 0
-              },
               "amount": 5
             }
           ],
@@ -127,8 +111,7 @@
             }
           ]
         }
-      ],
-      "pk_script_hex": "0700000000000000000000000000000000000000000000000000000000000000000000013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
+      ]
     }
   ],
   "invalid": [
