@@ -126,6 +126,20 @@ type jsonWriteTestData struct {
 	OutputIntent      jsonOutput          `json:"output_intent"`
 }
 
+type jsonIntentTruncationInput struct {
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Input       jsonInput `json:"input"`
+	TruncateAt  int       `json:"truncate_at"`
+}
+
+type jsonIntentRoundtripCase struct {
+	Name        string       `json:"name"`
+	Description string       `json:"description,omitempty"`
+	Inputs      []jsonInput  `json:"inputs"`
+	Outputs     []jsonOutput `json:"outputs"`
+}
+
 type encodingsFixturesJSON struct {
 	AssetRefs               jsonAssetRefsFixtures            `json:"asset_refs"`
 	MetadataLists           []jsonMetadataListFixture        `json:"metadata_lists"`
@@ -136,6 +150,8 @@ type encodingsFixturesJSON struct {
 	EncodeAssetGroupsErrors []jsonEncodeAssetGroupsErrorCase `json:"encode_asset_groups_errors"`
 	EncodeAssetGroupsValid  []jsonEncodeAssetGroupsValidCase `json:"encode_asset_groups_valid"`
 	WriteTestData           jsonWriteTestData                `json:"write_test_data"`
+	IntentTruncationInputs  []jsonIntentTruncationInput      `json:"intent_truncation_inputs"`
+	IntentRoundtripCases    []jsonIntentRoundtripCase        `json:"intent_roundtrip_cases"`
 }
 
 var encodingsFixtures encodingsFixturesJSON
@@ -982,6 +998,21 @@ func TestDecodeAssetInputList_TruncatedAtVariousPoints(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), invalidFixture.ExpectedError)
 	})
+
+	// Test Intent truncation cases from fixtures
+	for _, tc := range encodingsFixtures.IntentTruncationInputs {
+		t.Run(tc.Name, func(t *testing.T) {
+			inputs, err := fixtureToAssetInputs([]jsonInput{tc.Input})
+			require.NoError(t, err)
+
+			var encodeBuf bytes.Buffer
+			require.NoError(t, encodeAssetInputList(&encodeBuf, inputs, &scratch))
+
+			truncated := encodeBuf.Bytes()[:tc.TruncateAt]
+			_, err = decodeAssetInputList(bytes.NewBuffer(truncated), &scratch)
+			require.Error(t, err)
+		})
+	}
 }
 
 func TestPresenceBitCombinations(t *testing.T) {

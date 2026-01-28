@@ -405,3 +405,187 @@ func TestExtensionPacketEncode_EmptyPacket(t *testing.T) {
 	require.Equal(t, "empty op_return packet", err.Error())
 	require.Equal(t, int64(0), txOut.Value)
 }
+
+func TestIntentOnlyAssetGroupRoundtrip(t *testing.T) {
+	t.Parallel()
+
+	// Load fixtures from asset_group_encodings_fixtures.json
+	file, err := os.ReadFile("testdata/asset_group_encodings_fixtures.json")
+	require.NoError(t, err)
+
+	var fixtures struct {
+		IntentRoundtripCases []struct {
+			Name        string       `json:"name"`
+			Description string       `json:"description,omitempty"`
+			Inputs      []jsonInput  `json:"inputs"`
+			Outputs     []jsonOutput `json:"outputs"`
+		} `json:"intent_roundtrip_cases"`
+	}
+	require.NoError(t, json.Unmarshal(file, &fixtures))
+
+	for _, tc := range fixtures.IntentRoundtripCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			// Build AssetGroup from fixture using shared helper
+			ja := jsonAssetGroup{Inputs: tc.Inputs, Outputs: tc.Outputs}
+			ag, err := jsonAssetGroupToAssetGroup(ja)
+			require.NoError(t, err)
+
+			// Encode and decode
+			encoded, err := ag.Encode()
+			require.NoError(t, err)
+
+			var decoded AssetGroup
+			require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
+
+			// Verify inputs match
+			require.Len(t, decoded.Inputs, len(ag.Inputs))
+			for i, original := range ag.Inputs {
+				require.Equal(t, original.Type, decoded.Inputs[i].Type)
+				require.Equal(t, original.Amount, decoded.Inputs[i].Amount)
+				require.Equal(t, original.Vin, decoded.Inputs[i].Vin)
+				if original.Type == AssetTypeIntent {
+					require.Equal(t, original.Txid, decoded.Inputs[i].Txid)
+				}
+			}
+
+			// Verify outputs match
+			require.Len(t, decoded.Outputs, len(ag.Outputs))
+			for i, original := range ag.Outputs {
+				require.Equal(t, original.Type, decoded.Outputs[i].Type)
+				require.Equal(t, original.Amount, decoded.Outputs[i].Amount)
+				if original.Type == AssetTypeLocal {
+					require.Equal(t, original.Vout, decoded.Outputs[i].Vout)
+				}
+			}
+		})
+	}
+
+	// Test extension packet roundtrip separately
+	t.Run("extension_packet_roundtrip", func(t *testing.T) {
+		// Find the intent_extension_packet fixture
+		var tc *struct {
+			Name        string       `json:"name"`
+			Description string       `json:"description,omitempty"`
+			Inputs      []jsonInput  `json:"inputs"`
+			Outputs     []jsonOutput `json:"outputs"`
+		}
+		for i := range fixtures.IntentRoundtripCases {
+			if fixtures.IntentRoundtripCases[i].Name == "intent_extension_packet" {
+				tc = &fixtures.IntentRoundtripCases[i]
+				break
+			}
+		}
+		require.NotNil(t, tc, "intent_extension_packet fixture not found")
+
+		ja := jsonAssetGroup{Inputs: tc.Inputs, Outputs: tc.Outputs}
+		ag, err := jsonAssetGroupToAssetGroup(ja)
+		require.NoError(t, err)
+
+		packet := AssetPacket{Assets: []AssetGroup{ag}}
+		extPacket := &ExtensionPacket{Asset: &packet}
+
+		txOut, err := extPacket.Encode()
+		require.NoError(t, err)
+
+		decoded, err := DecodeToExtensionPacket(txOut)
+		require.NoError(t, err)
+		require.NotNil(t, decoded.Asset)
+		require.Len(t, decoded.Asset.Assets, 1)
+
+		decodedAG := decoded.Asset.Assets[0]
+		require.Equal(t, ag.Inputs, decodedAG.Inputs)
+		require.Equal(t, ag.Outputs, decodedAG.Outputs)
+	})
+}
+
+func TestIsExtensionPacket(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid_asset_packet", func(t *testing.T) {
+		packet := &AssetPacket{
+			Assets: []AssetGroup{{
+				Inputs:  []AssetInput{{Type: AssetTypeLocal, Vin: 0, Amount: 100}},
+				Outputs: []AssetOutput{{Type: AssetTypeLocal, Vout: 0, Amount: 100}},
+			}},
+		}
+		extPacket := &ExtensionPacket{Asset: packet}
+		txOut, err := extPacket.Encode()
+		require.NoError(t, err)
+
+		require.True(t, IsExtensionPacket(txOut.PkScript))
+	})
+
+	t.Run("valid_subdust_only", func(t *testing.T) {
+		pub := deterministicPubKey(t, 0x33)
+		extPacket := &ExtensionPacket{
+			SubDust: &SubDustPacket{Key: &pub, Amount: 100},
+		}
+		txOut, err := extPacket.Encode()
+		require.NoError(t, err)
+
+		require.True(t, IsExtensionPacket(txOut.PkScript))
+	})
+
+	t.Run("valid_asset_and_subdust", func(t *testing.T) {
+		pub := deterministicPubKey(t, 0x44)
+		packet := &AssetPacket{
+			Assets: []AssetGroup{{
+				Inputs:  []AssetInput{{Type: AssetTypeLocal, Vin: 0, Amount: 100}},
+				Outputs: []AssetOutput{{Type: AssetTypeLocal, Vout: 0, Amount: 100}},
+			}},
+		}
+		extPacket := &ExtensionPacket{
+			Asset:   packet,
+			SubDust: &SubDustPacket{Key: &pub, Amount: 50},
+		}
+		txOut, err := extPacket.Encode()
+		require.NoError(t, err)
+
+		require.True(t, IsExtensionPacket(txOut.PkScript))
+	})
+
+	t.Run("empty_data", func(t *testing.T) {
+		require.False(t, IsExtensionPacket([]byte{}))
+	})
+
+	t.Run("nil_data", func(t *testing.T) {
+		require.False(t, IsExtensionPacket(nil))
+	})
+
+	t.Run("non_opreturn", func(t *testing.T) {
+		// Random bytes that don't start with OP_RETURN
+		require.False(t, IsExtensionPacket([]byte{0x01, 0x02, 0x03}))
+	})
+
+	t.Run("opreturn_without_arkade_magic", func(t *testing.T) {
+		// OP_RETURN followed by random data (no ArkadeMagic)
+		script := []byte{0x6a, 0x04, 0x01, 0x02, 0x03, 0x04}
+		require.False(t, IsExtensionPacket(script))
+	})
+
+	t.Run("opreturn_with_arkade_magic_but_no_payload", func(t *testing.T) {
+		// OP_RETURN + ArkadeMagic but no TLV payload
+		payload := append([]byte{}, ArkadeMagic...)
+		script := []byte{0x6a, byte(len(payload))}
+		script = append(script, payload...)
+		require.False(t, IsExtensionPacket(script))
+	})
+
+	t.Run("opreturn_with_unknown_marker_only", func(t *testing.T) {
+		// OP_RETURN + ArkadeMagic + unknown marker (0x99)
+		payload := append([]byte{}, ArkadeMagic...)
+		payload = append(payload, 0x99, 0x01, 0x00) // unknown type, len=1, value=0
+		script := []byte{0x6a, byte(len(payload))}
+		script = append(script, payload...)
+		require.False(t, IsExtensionPacket(script))
+	})
+
+	t.Run("truncated_script", func(t *testing.T) {
+		// Valid start but truncated
+		payload := append([]byte{}, ArkadeMagic...)
+		payload = append(payload, MarkerAssetPayload, 0x10) // type + length but no data
+		script := []byte{0x6a, byte(len(payload))}
+		script = append(script, payload...)
+		require.False(t, IsExtensionPacket(script))
+	})
+}

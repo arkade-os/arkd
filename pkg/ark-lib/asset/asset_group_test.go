@@ -2,7 +2,6 @@ package asset
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -54,92 +53,22 @@ func parseAssetGroupFixtures() ([]assetGroupFixture, []assetGroupFixture, error)
 	return jsonData.Valid, jsonData.Invalid, nil
 }
 
-func fixtureToAssetGroupSingle(ja jsonAssetGroup) (AssetGroup, error) {
-	var ag AssetGroup
-
-	if ja.AssetId != nil && ja.AssetId.Txid != "" {
-		b, err := hex.DecodeString(ja.AssetId.Txid)
-		if err != nil {
-			return ag, err
-		}
-		var arr [32]byte
-		copy(arr[:], b)
-		ag.AssetId = &AssetId{Txid: arr, Index: ja.AssetId.Index}
-	}
-
-	ag.Immutable = ja.Immutable
-
-	for _, o := range ja.Outputs {
-		out := AssetOutput{Amount: o.Amount}
-		switch o.Type {
-		case "local":
-			out.Type = AssetTypeLocal
-			out.Vout = o.Vout
-		case "intent":
-			out.Type = AssetTypeIntent
-		}
-		ag.Outputs = append(ag.Outputs, out)
-	}
-
-	if ja.Control != nil {
-		if ja.Control.Type == "AssetRefByGroup" {
-			ag.ControlAsset = AssetRefFromGroupIndex(ja.Control.GroupIndex)
-		} else if ja.Control.AssetId != nil && ja.Control.AssetId.Txid != "" {
-			b, err := hex.DecodeString(ja.Control.AssetId.Txid)
-			if err != nil {
-				return ag, err
-			}
-			var arr [32]byte
-			copy(arr[:], b)
-			ag.ControlAsset = AssetRefFromId(AssetId{Txid: arr, Index: ja.Control.AssetId.Index})
-		}
-	}
-
-	for _, in := range ja.Inputs {
-		ai := AssetInput{Amount: in.Amount}
-
-		if in.TypeRaw != nil {
-			ai.Type = AssetType(*in.TypeRaw)
-		} else {
-			switch in.Type {
-			case "local":
-				ai.Type = AssetTypeLocal
-				ai.Vin = in.Vin
-			case "intent":
-				ai.Type = AssetTypeIntent
-				ai.Vin = in.Vin
-				if in.Txid != "" {
-					b, err := hex.DecodeString(in.Txid)
-					if err != nil {
-						return ag, err
-					}
-					copy(ai.Txid[:], b)
-				}
-			}
-		}
-		ag.Inputs = append(ag.Inputs, ai)
-	}
-
-	if len(ja.Metadata) > 0 {
-		ag.Metadata = ja.Metadata
-	}
-
-	return ag, nil
-}
-
+// GetAssetGroupFixture returns an AssetGroup by name from fixtures.
+// Uses jsonAssetGroupToAssetGroup from extension_packet_test.go.
 func GetAssetGroupFixture(name string, fixtures []assetGroupFixture) (AssetGroup, error) {
 	for _, f := range fixtures {
 		if f.Name == name {
-			return fixtureToAssetGroupSingle(f.AssetGroup)
+			return jsonAssetGroupToAssetGroup(f.AssetGroup)
 		}
 	}
 	return AssetGroup{}, fmt.Errorf("fixture not found: %s", name)
 }
 
+// GetInvalidAssetGroupFixture returns an invalid AssetGroup fixture for error testing.
 func GetInvalidAssetGroupFixture(name string, fixtures []assetGroupFixture) (AssetGroup, string, error) {
 	for _, f := range fixtures {
 		if f.Name == name {
-			ag, err := fixtureToAssetGroupSingle(f.AssetGroup)
+			ag, err := jsonAssetGroupToAssetGroup(f.AssetGroup)
 			return ag, f.ExpectedError, err
 		}
 	}

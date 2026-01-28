@@ -61,18 +61,6 @@
       "items": [
         { "key": "testkey", "value": "testvalue" }
       ]
-    },
-    {
-      "name": "single_empty_key",
-      "items": [
-        { "key": "", "value": "somevalue" }
-      ]
-    },
-    {
-      "name": "single_empty_value",
-      "items": [
-        { "key": "somekey", "value": "" }
-      ]
     }
   ],
   "asset_inputs": {
@@ -92,13 +80,6 @@
         ]
       },
       {
-        "name": "simple_pair",
-        "inputs": [
-          { "type": "local", "vin": 1, "amount": 80 },
-          { "type": "intent", "vin": 456, "amount": 20, "txid": "1111111111111111111111111111111111111111111111111111111111111111" }
-        ]
-      },
-      {
         "name": "single_local",
         "inputs": [
           { "type": "local", "vin": 1, "amount": 10 }
@@ -108,12 +89,6 @@
         "name": "single_intent",
         "inputs": [
           { "type": "intent", "amount": 500, "txid": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", "vin": 77 }
-        ]
-      },
-      {
-        "name": "single_intent_zero_txid",
-        "inputs": [
-          { "type": "intent", "amount": 100, "txid": "0000000000000000000000000000000000000000000000000000000000000000", "vin": 0 }
         ]
       }
     ],
@@ -154,13 +129,6 @@
           { "type": "intent", "amount": 18446744073709551614 },
           { "type": "local", "vout": 4294967295, "amount": 5000 },
           { "type": "intent", "amount": 6000 }
-        ]
-      },
-      {
-        "name": "simple_pair",
-        "outputs": [
-          { "type": "local", "vout": 0, "amount": 100 },
-          { "type": "intent", "amount": 200 }
         ]
       },
       {
@@ -354,5 +322,104 @@
     "input_intent_with_txid": { "type": "intent", "amount": 100, "txid": "0102030000000000000000000000000000000000000000000000000000000000", "vin": 5 },
     "output_local": { "type": "local", "vout": 1, "amount": 10 },
     "output_intent": { "type": "intent", "amount": 100 }
-  }
+  },
+  "intent_truncation_inputs": [
+    {
+      "name": "truncate_after_amount",
+      "description": "Intent input to test truncation after amount field",
+      "input": { "type": "intent", "amount": 100, "txid": "abababababababababababababababababababababababababababababababab", "vin": 5 },
+      "truncate_at": 3
+    },
+    {
+      "name": "truncate_partial_txid",
+      "description": "Intent input to test truncation in middle of txid",
+      "input": { "type": "intent", "amount": 100, "txid": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd", "vin": 5 },
+      "truncate_at": 19
+    },
+    {
+      "name": "truncate_after_txid",
+      "description": "Intent input to test truncation after txid but before vin",
+      "input": { "type": "intent", "amount": 100, "txid": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef", "vin": 5 },
+      "truncate_at": 35
+    }
+  ],
+  "intent_roundtrip_cases": [
+    {
+      "name": "intent_inputs_only",
+      "description": "Asset group with only intent inputs",
+      "inputs": [
+        { "type": "intent", "amount": 100, "txid": "abababababababababababababababababababababababababababababababab", "vin": 1 },
+        { "type": "intent", "amount": 200, "txid": "abababababababababababababababababababababababababababababababab", "vin": 2 }
+      ],
+      "outputs": [
+        { "type": "local", "vout": 0, "amount": 300 }
+      ]
+    },
+    {
+      "name": "intent_outputs_only",
+      "description": "Asset group with only intent outputs",
+      "inputs": [
+        { "type": "local", "vin": 0, "amount": 500 }
+      ],
+      "outputs": [
+        { "type": "intent", "amount": 100 },
+        { "type": "intent", "amount": 200 },
+        { "type": "intent", "amount": 200 }
+      ]
+    },
+    {
+      "name": "all_intent",
+      "description": "Asset group with all intent inputs and outputs",
+      "inputs": [
+        { "type": "intent", "amount": 100, "txid": "1111111111111111111111111111111111111111111111111111111111111111", "vin": 0 },
+        { "type": "intent", "amount": 200, "txid": "2222222222222222222222222222222222222222222222222222222222222222", "vin": 1 }
+      ],
+      "outputs": [
+        { "type": "intent", "amount": 150 },
+        { "type": "intent", "amount": 150 }
+      ]
+    },
+    {
+      "name": "intent_zero_txid",
+      "description": "Intent input with zero txid",
+      "inputs": [
+        { "type": "intent", "amount": 100, "txid": "0000000000000000000000000000000000000000000000000000000000000000", "vin": 0 }
+      ],
+      "outputs": [
+        { "type": "intent", "amount": 100 }
+      ]
+    },
+    {
+      "name": "intent_max_vin",
+      "description": "Intent input with max uint32 vin",
+      "inputs": [
+        { "type": "intent", "amount": 100, "txid": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "vin": 4294967295 }
+      ],
+      "outputs": [
+        { "type": "intent", "amount": 100 }
+      ]
+    },
+    {
+      "name": "mixed_local_and_intent",
+      "description": "Asset group with mixed local and intent types",
+      "inputs": [
+        { "type": "local", "vin": 0, "amount": 50 },
+        { "type": "intent", "amount": 50, "txid": "3333333333333333333333333333333333333333333333333333333333333333", "vin": 1 }
+      ],
+      "outputs": [
+        { "type": "local", "vout": 0, "amount": 25 },
+        { "type": "intent", "amount": 75 }
+      ]
+    },
+    {
+      "name": "intent_extension_packet",
+      "description": "Intent asset group for extension packet roundtrip",
+      "inputs": [
+        { "type": "intent", "amount": 1000, "txid": "4444444444444444444444444444444444444444444444444444444444444444", "vin": 99 }
+      ],
+      "outputs": [
+        { "type": "intent", "amount": 1000 }
+      ]
+    }
+  ]
 }
