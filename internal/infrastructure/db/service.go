@@ -17,11 +17,14 @@ import (
 	badgerdb "github.com/arkade-os/arkd/internal/infrastructure/db/badger"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
 	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -68,6 +71,11 @@ var (
 		"sqlite":   sqlitedb.NewConvictionRepository,
 		"postgres": pgdb.NewConvictionRepository,
 	}
+	assetStoreTypes = map[string]func(...interface{}) (domain.AssetRepository, error){
+		"sqlite":   sqlitedb.NewAssetRepository,
+		"badger":   badgerdb.NewAssetRepository,
+		"postgres": pgdb.NewAssetRepository,
+	}
 	intentFeesStoreTypes = map[string]func(...interface{}) (domain.FeeRepository, error){
 		"badger":   badgerdb.NewIntentFeesRepository,
 		"sqlite":   sqlitedb.NewIntentFeesRepository,
@@ -94,6 +102,7 @@ type service struct {
 	scheduledSessionStore domain.ScheduledSessionRepo
 	offchainTxStore       domain.OffchainTxRepository
 	convictionStore       domain.ConvictionRepository
+	assetStore            domain.AssetRepository
 	intentFeesStore       domain.FeeRepository
 	txDecoder             ports.TxDecoder
 }
@@ -123,6 +132,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
+	assetStoreFactory, ok := assetStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
+
 	intentFeesStoreFactory, ok := intentFeesStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
@@ -134,6 +148,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var scheduledSessionStore domain.ScheduledSessionRepo
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
+	var assetStore domain.AssetRepository
 	var intentFeesStore domain.FeeRepository
 	var err error
 
@@ -192,6 +207,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		convictionStore, err = convictionStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
+		}
+		assetStore, err = assetStoreFactory(config.DataStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
 		intentFeesStore, err = intentFeesStoreFactory(config.DataStoreConfig...)
 		if err != nil {
@@ -264,6 +283,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
+		assetStore, err = assetStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
+		}
 		intentFeesStore, err = intentFeesStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
@@ -328,6 +351,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
+		assetStore, err = assetStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
+		}
 		intentFeesStore, err = intentFeesStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
@@ -342,6 +369,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		offchainTxStore:       offchainTxStore,
 		txDecoder:             txDecoder,
 		convictionStore:       convictionStore,
+		assetStore:            assetStore,
 		intentFeesStore:       intentFeesStore,
 	}
 
@@ -362,6 +390,10 @@ func (s *service) Events() domain.EventRepository {
 
 func (s *service) Rounds() domain.RoundRepository {
 	return s.roundStore
+}
+
+func (s *service) Assets() domain.AssetRepository {
+	return s.assetStore
 }
 
 func (s *service) Vtxos() domain.VtxoRepository {
@@ -429,7 +461,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	}
 
 	spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
-	newVtxos := getNewVtxosFromRound(round)
+	newVtxos, newAssetAnchors := getNewVtxosFromRound(round)
 
 	if len(spentVtxos) > 0 {
 		for {
@@ -450,7 +482,22 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
+
 			log.Debugf("added %d new vtxos", len(newVtxos))
+			break
+		}
+
+	}
+
+	if len(newAssetAnchors) > 0 {
+		for _, anchor := range newAssetAnchors {
+			if err := s.assetStore.InsertAssetAnchor(ctx, anchor); err != nil {
+				log.WithError(err).Warn("failed to add new asset anchors, retrying soon")
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			log.Debugf("added %d new asset anchors", len(newAssetAnchors))
 			break
 		}
 	}
@@ -497,20 +544,88 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
+		assetMapped := make(map[uint32][]domain.Asset)
 		for outIndex, out := range outs {
+			var isSubDust bool
+			var pubKey []byte
+
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
 
-			isDust := script.IsSubDustScript(out.PkScript)
+			// ignore asset anchor
+			if asset.IsExtensionPacket(out.PkScript) {
+				txOut := wire.TxOut{
+					Value:    int64(out.Amount),
+					PkScript: out.PkScript,
+				}
+
+				packet, err := asset.DecodeToExtensionPacket(txOut)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode asset group from opret")
+					continue
+				}
+
+				if packet.Asset != nil {
+					for i, grp := range packet.Asset.Assets {
+						var assetId string
+						if grp.AssetId == nil {
+							txhash, err := chainhash.NewHashFromStr(txid)
+							if err != nil {
+								log.WithError(err).Warn("failed to generate asset id from txid")
+								continue
+							}
+
+							assetId = asset.AssetId{
+								Txid:  *txhash,
+								Index: uint16(i),
+							}.String()
+						} else {
+							assetId = grp.AssetId.String()
+						}
+
+						for _, assetOut := range grp.Outputs {
+							assetMapped[assetOut.Vout] = append(
+								assetMapped[assetOut.Vout],
+								domain.Asset{
+									AssetID: assetId,
+									Amount:  uint64(assetOut.Amount),
+								},
+							)
+						}
+					}
+				}
+
+				if packet.SubDust == nil {
+					continue
+				} else {
+					isSubDust = true
+					pubKey = schnorr.SerializePubKey(packet.SubDust.Key)
+				}
+
+			}
+
+			if !isSubDust && script.IsSubDustScript(out.PkScript) {
+				isSubDust = true
+				pubKey = out.PkScript[2:]
+			}
+
+			if !isSubDust {
+				vtxoTapKey, err := schnorr.ParsePubKey(out.PkScript[2:])
+				if err != nil {
+					log.WithError(err).Warn("failed to parse vtxo tap key")
+					continue
+				}
+				pubKey = schnorr.SerializePubKey(vtxoTapKey)
+			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
 				Outpoint: domain.Outpoint{
 					Txid: txid,
 					VOut: uint32(outIndex),
 				},
-				PubKey:             hex.EncodeToString(out.PkScript[2:]),
+				PubKey:             hex.EncodeToString(pubKey),
 				Amount:             uint64(out.Amount),
 				ExpiresAt:          offchainTx.ExpiryTimestamp,
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
@@ -520,14 +635,21 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-				Swept: isDust,
+				Swept: isSubDust,
 			})
+		}
+
+		for i, newVtxo := range newVtxos {
+			if assets, found := assetMapped[newVtxo.VOut]; found {
+				newVtxos[i].Assets = assets
+			}
 		}
 
 		if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
 			log.WithError(err).Warn("failed to add vtxos")
 			return
 		}
+
 		log.Debugf("added %d vtxos", len(newVtxos))
 	}
 }
@@ -563,21 +685,47 @@ func getSpentVtxoKeysFromRound(
 	return spentVtxos
 }
 
-func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
+func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnchor) {
 	if len(round.VtxoTree) <= 0 {
-		return nil
+		return nil, nil
 	}
 
-	vtxos := make([]domain.Vtxo, 0)
+	totalVtxos := make([]domain.Vtxo, 0)
+	totolAssetAnchors := make([]domain.AssetAnchor, 0)
+
 	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
 		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
 		}
+
+		assetsMap := make(map[uint32]domain.Asset, 0)
+		assetAnchorIndex := -1
+
+		vtxos := make([]domain.Vtxo, 0)
 		for i, out := range tx.UnsignedTx.TxOut {
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+				continue
+			}
+
+			if asset.ContainsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode asset packet")
+					continue
+				}
+				assetAnchorIndex = i
+
+				for _, asst := range decodedAssetPacket.Assets {
+					for _, out := range asst.Outputs {
+						assetsMap[out.Vout] = domain.Asset{
+							AssetID: asst.AssetId.String(),
+							Amount:  uint64(out.Amount),
+						}
+					}
+				}
 				continue
 			}
 
@@ -598,8 +746,38 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				ExpiresAt:          round.ExpiryTimestamp(),
 			})
 		}
+
+		if assetAnchorIndex > -1 {
+			assetAnchor := domain.AssetAnchor{
+				Outpoint: domain.Outpoint{
+					Txid: tx.UnsignedTx.TxID(),
+					VOut: uint32(assetAnchorIndex),
+				},
+			}
+
+			normalAssets := make([]domain.NormalAsset, 0)
+
+			if len(assetsMap) > 0 {
+				for i, vtxo := range vtxos {
+					if asset, found := assetsMap[vtxo.VOut]; found {
+						vtxos[i].Assets = []domain.Asset{asset}
+
+						normalAssets = append(normalAssets, domain.NormalAsset{
+							Outpoint: vtxo.Outpoint,
+							Amount:   asset.Amount,
+							AssetID:  asset.AssetID,
+						})
+					}
+				}
+			}
+
+			assetAnchor.Assets = normalAssets
+			totolAssetAnchors = append(totolAssetAnchors, assetAnchor)
+		}
+
+		totalVtxos = append(totalVtxos, vtxos...)
 	}
-	return vtxos
+	return totalVtxos, totolAssetAnchors
 }
 
 func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {

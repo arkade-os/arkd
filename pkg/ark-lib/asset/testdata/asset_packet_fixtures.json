@@ -1,0 +1,84 @@
+{
+  "tx_outs": {
+    "valid": [],
+    "invalid": [
+      {
+        "name": "empty",
+        "pk_script_hex": "",
+        "value": 0,
+        "expected_error": "OP_RETURN not present"
+      },
+      {
+        "name": "missing_op_return",
+        "pk_script_hex": "010203",
+        "value": 0,
+        "expected_error": "OP_RETURN not present"
+      }
+    ]
+  },
+  "decode_to_asset_packet": {
+    "valid": [],
+    "invalid": [
+      {
+        "name": "invalid_asset_group_count",
+        "description": "Asset payload with invalid varint for group count",
+        "build_type": "invalid_group_count_varint",
+        "expected_error": "invalid asset group count"
+      },
+      {
+        "name": "failed_to_decode_asset_group",
+        "description": "Asset payload with valid count but corrupted group data",
+        "build_type": "corrupted_asset_group",
+        "expected_error": "failed to decode asset group"
+      }
+    ]
+  },
+  "derive_asset_packet_decode": {
+    "valid": [],
+    "invalid": [
+      {
+        "name": "contains_but_fails_decode",
+        "description": "Transaction with output that passes ContainsAssetPacket but fails decode",
+        "build_type": "contains_but_invalid",
+        "expected_error": "error decoding asset Opreturn"
+      }
+    ]
+  },
+  "msg_txs": {
+    "valid": [
+      {
+        "name": "mixed_with_valid_at_index_1",
+        "description": "First valid asset packet at index 1, second at index 4 (never reached)",
+        "tx_outs": [
+          { "value": 1000, "pk_script_hex": "0001", "is_asset_packet": false },
+          { "value": 0, "pk_script_hex": "", "is_asset_packet": true },
+          { "value": 2000, "pk_script_hex": "6a0203", "is_asset_packet": false },
+          { "value": 2000, "pk_script_hex": "bad_magic", "is_asset_packet": false },
+          { "value": 0, "pk_script_hex": "", "is_asset_packet": true }
+        ],
+        "expected_index": 1
+      }
+    ],
+    "invalid": [
+      {
+        "name": "empty",
+        "tx_outs": [],
+        "expected_error": "no asset opreturn found in transaction"
+      },
+      {
+        "name": "no_asset_packets",
+        "tx_outs": [
+          { "value": 1000, "pk_script_hex": "" }
+        ],
+        "expected_error": "no asset opreturn found in transaction"
+      },
+      {
+        "name": "with_non_asset_op_return",
+        "tx_outs": [
+          { "value": 1000, "pk_script_hex": "6a0102" }
+        ],
+        "expected_error": "no asset opreturn found in transaction"
+      }
+    ]
+  }
+}

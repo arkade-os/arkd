@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -330,7 +331,6 @@ func NewService(
 				}
 			}
 
-			// ark tx event
 			txEvent := TransactionEvent{
 				TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
 				Type:           ArkTxType,
@@ -349,9 +349,9 @@ func NewService(
 		},
 	)
 
-	if err := svc.restoreWatchingVtxos(); err != nil {
-		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	}
+	// if err := svc.restoreWatchingVtxos(); err != nil {
+	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	// }
 	go svc.listenToScannerNotifications()
 	return svc, nil
 }
@@ -911,8 +911,31 @@ func (s *service) SubmitOffchainTx(
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	foundOpReturn := false
+	assetOutputIndex := -1
+	var rebuiltArkTx *psbt.Packet
+	var rebuiltCheckpointTxs []*psbt.Packet
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
+		// validate asset packet if present
+		if asset.ContainsAssetPacket(out.PkScript) {
+			if foundOpReturn {
+				return nil, errors.MALFORMED_ARK_TX.New(
+					"tx %s has multiple op return outputs, not allowed for assets", txid,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			foundOpReturn = true
+
+			err := s.validateAssetTransition(ctx, *arkPtx.UnsignedTx, checkpointTxs, *out)
+			if err != nil {
+				log.WithError(err).Warn("asset transaction validation failed")
+				return nil, errors.ASSET_VALIDATION_FAILED.Wrap(err)
+			}
+
+			outputs = append(outputs, out)
+			assetOutputIndex = outIndex
+			continue
+		}
+
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
 				return nil, errors.MALFORMED_ARK_TX.New(
@@ -979,9 +1002,10 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// recompute all txs (checkpoint txs + ark tx)
-	rebuiltArkTx, rebuiltCheckpointTxs, err := offchain.BuildTxs(
+	rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
 		ins, outputs, s.checkpointTapscript,
 	)
+
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
 			WithMetadata(map[string]any{
@@ -1100,6 +1124,16 @@ func (s *service) SubmitOffchainTx(
 
 	// apply Accepted event only after verifying the spent vtxos
 	changes = append(changes, change)
+
+	if assetOutputIndex >= 0 {
+		if err := s.storeAssetDetailsFromArkTx(
+			ctx, *arkPtx.UnsignedTx, assetOutputIndex,
+		); err != nil {
+			log.WithError(err).Errorf(
+				"failed to store asset details for offchain tx %s", txid,
+			)
+		}
+	}
 
 	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
@@ -1483,6 +1517,200 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
+	assetInputMap := make(map[uint32][]domain.Asset)
+
+	hasOffChainReceiver := false
+	receivers := make([]domain.Receiver, 0)
+	onchainOutputs := make([]wire.TxOut, 0)
+	offchainOutputs := make([]wire.TxOut, 0)
+
+	var assetPacket *asset.AssetPacket
+
+	for outputIndex, output := range proof.UnsignedTx.TxOut {
+
+		if asset.ContainsAssetPacket(output.PkScript) {
+			assetPacket, err = asset.DecodeOutputToAssetPacket(*output)
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"failed to decode asset packet: %w", err,
+				).WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   encodedProof,
+					Message: encodedMessage,
+				})
+			}
+
+			// validate asset
+			err := s.validateAssetTransition(ctx, *proof.UnsignedTx, nil, *output)
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New("failed to validate asset transition: %w", err).
+					WithMetadata(errors.InvalidIntentProofMetadata{
+						Proof:   encodedProof,
+						Message: encodedMessage,
+					})
+			}
+
+			// build asset input map for indexing asset vtxos
+			for _, grp := range assetPacket.Assets {
+
+				for _, input := range grp.Inputs {
+					if _, ok := assetInputMap[input.Vin]; !ok {
+						assetInputMap[input.Vin] = make([]domain.Asset, 0)
+					}
+
+					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], domain.Asset{
+						Amount:  input.Amount,
+						AssetID: grp.AssetId.String(),
+					})
+				}
+			}
+
+			continue
+		}
+
+		amount := uint64(output.Value)
+		rcv := domain.Receiver{
+			Amount:     amount,
+			IntentVout: outputIndex,
+		}
+
+		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
+		if isOnchainOutput {
+			if s.utxoMaxAmount >= 0 {
+				if amount > uint64(s.utxoMaxAmount) {
+					return "", errors.AMOUNT_TOO_HIGH.New(
+						"output %d amount is higher than max utxo amount: %d",
+						outputIndex,
+						s.utxoMaxAmount,
+					).WithMetadata(errors.AmountTooHighMetadata{
+						OutputIndex: outputIndex,
+						Amount:      int(amount),
+						MaxAmount:   int(s.utxoMaxAmount),
+					})
+				}
+			}
+			if amount < uint64(s.utxoMinAmount) {
+				return "", errors.AMOUNT_TOO_LOW.New(
+					"output %d amount is lower than min utxo amount: %d",
+					outputIndex,
+					s.utxoMinAmount,
+				).WithMetadata(errors.AmountTooLowMetadata{
+					OutputIndex: outputIndex,
+					Amount:      int(amount),
+					MinAmount:   int(s.utxoMinAmount),
+				})
+			}
+
+			chainParams := s.chainParams()
+			if chainParams == nil {
+				return "", errors.INTERNAL_ERROR.New("unsupported network: %s", s.network.Name).
+					WithMetadata(map[string]any{
+						"network": s.network.Name,
+					})
+			}
+			scriptType, addrs, _, err := txscript.ExtractPkScriptAddrs(
+				output.PkScript, chainParams,
+			)
+			if err != nil {
+				return "", errors.INVALID_PKSCRIPT.New(
+					"failed to get onchain address from script of output %d: %w", outputIndex, err,
+				).WithMetadata(errors.InvalidPkScriptMetadata{
+					Script: hex.EncodeToString(output.PkScript),
+				})
+			}
+
+			if len(addrs) == 0 {
+				return "", errors.INVALID_PKSCRIPT.New(
+					"invalid script type for output %d: %s", outputIndex, scriptType,
+				).WithMetadata(errors.InvalidPkScriptMetadata{
+					Script: hex.EncodeToString(output.PkScript),
+				})
+			}
+
+			rcv.OnchainAddress = addrs[0].EncodeAddress()
+			onchainOutputs = append(onchainOutputs, *output)
+		} else {
+			if s.vtxoMaxAmount >= 0 {
+				if amount > uint64(s.vtxoMaxAmount) {
+					return "", errors.AMOUNT_TOO_HIGH.New(
+						"output %d amount is higher than max vtxo amount: %d",
+						outputIndex, s.vtxoMaxAmount,
+					).WithMetadata(errors.AmountTooHighMetadata{
+						OutputIndex: outputIndex,
+						Amount:      int(amount),
+						MaxAmount:   int(s.vtxoMaxAmount),
+					})
+				}
+			}
+			if amount < uint64(s.vtxoMinSettlementAmount) {
+				return "", errors.AMOUNT_TOO_LOW.New(
+					"output %d amount is lower than min vtxo amount: %d",
+					outputIndex, s.vtxoMinSettlementAmount,
+				).WithMetadata(errors.AmountTooLowMetadata{
+					OutputIndex: outputIndex,
+					Amount:      int(amount),
+					MinAmount:   int(s.vtxoMinSettlementAmount),
+				})
+			}
+
+			hasOffChainReceiver = true
+			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
+		}
+
+		receivers = append(receivers, rcv)
+		offchainOutputs = append(offchainOutputs, *output)
+	}
+
+	// add asset packet to asset receivers
+	if assetPacket != nil {
+		for i := range receivers {
+			assetGroupList := make([]asset.AssetGroup, 0)
+
+			for _, grp := range assetPacket.Assets {
+
+				for _, out := range grp.Outputs {
+					if uint32(receivers[i].IntentVout) == out.Vout {
+
+						assetGrp := asset.AssetGroup{
+							AssetId: grp.AssetId,
+
+							Inputs: []asset.AssetInput{{
+								Type:   asset.AssetTypeIntent,
+								Amount: out.Amount,
+								Txid:   proof.UnsignedTx.TxHash(),
+								Vin:    out.Vout,
+							}},
+
+							Outputs: []asset.AssetOutput{{
+								Type:   asset.AssetTypeLocal,
+								Amount: out.Amount,
+								Vout:   0,
+							}},
+						}
+
+						assetGroupList = append(assetGroupList, assetGrp)
+
+						break
+					}
+				}
+			}
+
+			if len(assetGroupList) > 0 {
+				newAssetPacket := asset.AssetPacket{
+					Assets: assetGroupList,
+				}
+				encodedPacket, err := newAssetPacket.Encode()
+				if err != nil {
+					return "", errors.INTERNAL_ERROR.New("failed to encode asset packet").
+						WithMetadata(map[string]any{"error": err.Error()})
+				}
+
+				receivers[i].AssetPacket = encodedPacket.PkScript
+
+			}
+		}
+
+	}
+
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
 			return "", errors.INVALID_INTENT_PROOF.New(
@@ -1575,6 +1803,14 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
+
+		// verify asset input if present
+		// +1 to account for proof fake input at index 0
+		if assetInputList, ok := assetInputMap[uint32(i+1)]; ok {
+			vtxo.Assets = assetInputList
+
+		}
+
 		if err := s.checkIfBanned(ctx, vtxo); err != nil {
 			return "", errors.VTXO_BANNED.Wrap(err).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
@@ -1716,104 +1952,6 @@ func (s *service) RegisterIntent(
 				Proof:   signedProof,
 				Message: encodedMessage,
 			})
-	}
-
-	hasOffChainReceiver := false
-	receivers := make([]domain.Receiver, 0)
-	onchainOutputs := make([]wire.TxOut, 0)
-	offchainOutputs := make([]wire.TxOut, 0)
-
-	for outputIndex, output := range proof.UnsignedTx.TxOut {
-		amount := uint64(output.Value)
-		rcv := domain.Receiver{
-			Amount: amount,
-		}
-
-		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
-		if isOnchainOutput {
-			if s.utxoMaxAmount >= 0 {
-				if amount > uint64(s.utxoMaxAmount) {
-					return "", errors.AMOUNT_TOO_HIGH.New(
-						"output %d amount is higher than max utxo amount: %d",
-						outputIndex,
-						s.utxoMaxAmount,
-					).WithMetadata(errors.AmountTooHighMetadata{
-						OutputIndex: outputIndex,
-						Amount:      int(amount),
-						MaxAmount:   int(s.utxoMaxAmount),
-					})
-				}
-			}
-			if amount < uint64(s.utxoMinAmount) {
-				return "", errors.AMOUNT_TOO_LOW.New(
-					"output %d amount is lower than min utxo amount: %d",
-					outputIndex,
-					s.utxoMinAmount,
-				).WithMetadata(errors.AmountTooLowMetadata{
-					OutputIndex: outputIndex,
-					Amount:      int(amount),
-					MinAmount:   int(s.utxoMinAmount),
-				})
-			}
-
-			chainParams := s.chainParams()
-			if chainParams == nil {
-				return "", errors.INTERNAL_ERROR.New("unsupported network: %s", s.network.Name).
-					WithMetadata(map[string]any{
-						"network": s.network.Name,
-					})
-			}
-			scriptType, addrs, _, err := txscript.ExtractPkScriptAddrs(
-				output.PkScript, chainParams,
-			)
-			if err != nil {
-				return "", errors.INVALID_PKSCRIPT.New(
-					"failed to get onchain address from script of output %d: %w", outputIndex, err,
-				).WithMetadata(errors.InvalidPkScriptMetadata{
-					Script: hex.EncodeToString(output.PkScript),
-				})
-			}
-
-			if len(addrs) == 0 {
-				return "", errors.INVALID_PKSCRIPT.New(
-					"invalid script type for output %d: %s", outputIndex, scriptType,
-				).WithMetadata(errors.InvalidPkScriptMetadata{
-					Script: hex.EncodeToString(output.PkScript),
-				})
-			}
-
-			rcv.OnchainAddress = addrs[0].EncodeAddress()
-			onchainOutputs = append(onchainOutputs, *output)
-		} else {
-			if s.vtxoMaxAmount >= 0 {
-				if amount > uint64(s.vtxoMaxAmount) {
-					return "", errors.AMOUNT_TOO_HIGH.New(
-						"output %d amount is higher than max vtxo amount: %d",
-						outputIndex, s.vtxoMaxAmount,
-					).WithMetadata(errors.AmountTooHighMetadata{
-						OutputIndex: outputIndex,
-						Amount:      int(amount),
-						MaxAmount:   int(s.vtxoMaxAmount),
-					})
-				}
-			}
-			if amount < uint64(s.vtxoMinSettlementAmount) {
-				return "", errors.AMOUNT_TOO_LOW.New(
-					"output %d amount is lower than min vtxo amount: %d",
-					outputIndex, s.vtxoMinSettlementAmount,
-				).WithMetadata(errors.AmountTooLowMetadata{
-					OutputIndex: outputIndex,
-					Amount:      int(amount),
-					MinAmount:   int(s.vtxoMinSettlementAmount),
-				})
-			}
-
-			hasOffChainReceiver = true
-			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
-		}
-
-		receivers = append(receivers, rcv)
-		offchainOutputs = append(offchainOutputs, *output)
 	}
 
 	if hasOffChainReceiver {
@@ -3648,39 +3786,6 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 	}
 }
 
-func (s *service) restoreWatchingVtxos() error {
-	ctx := context.Background()
-
-	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
-	if err != nil {
-		return err
-	}
-
-	scripts := make([]string, 0)
-
-	for _, commitmentTxId := range commitmentTxIds {
-		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-		if err != nil {
-			return err
-		}
-
-		for _, key := range tapKeys {
-			scripts = append(scripts, fmt.Sprintf("5120%s", key))
-		}
-	}
-
-	if len(scripts) <= 0 {
-		return nil
-	}
-
-	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
-		return err
-	}
-
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
-	return nil
-}
-
 // extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner
 // it excludes subdust vtxos scripts and duplicates
 // it logs errors and continues in order to not block the start/stop watching vtxos operations
@@ -3694,6 +3799,11 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 	scripts := make([]string, 0)
 
 	for _, vtxo := range vtxos {
+		// skip OP_RETURN outputs
+		if vtxo.Amount < dustLimit {
+			continue
+		}
+
 		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
 			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
@@ -3703,10 +3813,6 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
 		if err != nil {
 			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		if vtxo.Amount < dustLimit {
 			continue
 		}
 
@@ -4166,4 +4272,171 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
+}
+
+func (s *service) storeAssetDetailsFromArkTx(
+	ctx context.Context,
+	arkTx wire.MsgTx,
+	assetPacketIndex int,
+) error {
+	assetPkt, err := asset.DecodeOutputToAssetPacket(*arkTx.TxOut[assetPacketIndex])
+	if err != nil {
+		return fmt.Errorf("error decoding asset from opreturn: %s", err)
+	}
+
+	if err := s.storeAssetGroups(ctx, assetPacketIndex, assetPkt.Assets, arkTx); err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
+func (s *service) storeAssetGroups(
+	ctx context.Context,
+	assetPacketIndex int,
+	assetGroupList []asset.AssetGroup,
+	arkTx wire.MsgTx,
+) error {
+	anchorPoint := domain.Outpoint{
+		Txid: arkTx.TxID(),
+		VOut: uint32(assetPacketIndex),
+	}
+
+	assetList := make([]domain.NormalAsset, 0)
+
+	for i, asstGp := range assetGroupList {
+		totalIn := sumAssetInputs(asstGp.Inputs)
+		totalOut := sumAssetOutputs(asstGp.Outputs)
+
+		metadataList := assetMetadataFromGroup(asstGp.Metadata)
+
+		assetId := asstGp.AssetId
+
+		// For Issuance
+		if assetId == nil {
+			var controlAsset string
+			txHash := arkTx.TxHash()
+			var txHashBytes [32]byte
+			copy(txHashBytes[:], txHash[:])
+
+			assetId := asset.AssetId{
+				Txid:  txHashBytes,
+				Index: uint16(i),
+			}
+
+			if asstGp.ControlAsset != nil {
+				switch asstGp.ControlAsset.Type {
+				case asset.AssetRefByID:
+					controlAsset = asstGp.ControlAsset.AssetId.String()
+				case asset.AssetRefByGroup:
+					controlAsset = asset.AssetId{
+						Txid:  txHashBytes,
+						Index: asstGp.ControlAsset.GroupIndex,
+					}.String()
+				}
+			}
+
+			err := s.repoManager.Assets().InsertAssetGroup(ctx, domain.AssetGroup{
+				ID:             assetId.String(),
+				Quantity:       totalOut,
+				Immutable:      asstGp.Immutable,
+				Metadata:       metadataList,
+				ControlAssetID: controlAsset,
+			})
+			if err != nil {
+				return fmt.Errorf("error storing new asset: %s", err)
+			}
+
+			log.Infof("stored new asset with id %s and total quantity %d",
+				assetId.String(),
+				totalOut,
+			)
+
+			for _, out := range asstGp.Outputs {
+				if out.Type == asset.AssetTypeIntent {
+					continue
+				}
+
+				asst := domain.NormalAsset{
+					Outpoint: domain.Outpoint{
+						Txid: arkTx.TxID(),
+						VOut: uint32(out.Vout),
+					},
+					AssetID: assetId.String(),
+					Amount:  out.Amount,
+				}
+				assetList = append(assetList, asst)
+			}
+
+			continue
+		}
+
+		assetGp, err := s.repoManager.Assets().GetAssetGroupByID(ctx, assetId.String())
+		if err != nil {
+			return fmt.Errorf("error retrieving asset data: %s", err)
+		}
+		if assetGp == nil {
+			return fmt.Errorf("asset with id %s not found for update", assetId.String())
+		}
+
+		if err := s.updateAssetQuantity(ctx, assetId.String(), totalIn, totalOut); err != nil {
+			return err
+		}
+
+		for _, out := range asstGp.Outputs {
+			asst := domain.NormalAsset{
+				Outpoint: domain.Outpoint{
+					Txid: arkTx.TxID(),
+					VOut: uint32(out.Vout),
+				},
+				AssetID: assetId.String(),
+				Amount:  out.Amount,
+			}
+			assetList = append(assetList, asst)
+		}
+	}
+
+	if err := s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
+		Outpoint: anchorPoint,
+		Assets:   assetList,
+	}); err != nil {
+		return fmt.Errorf("error storing asset anchor: %s", err)
+	}
+
+	return nil
+}
+
+func assetMetadataFromGroup(metadata []asset.Metadata) []domain.AssetMetadata {
+	metadataList := make([]domain.AssetMetadata, 0, len(metadata))
+	for _, meta := range metadata {
+		metadataList = append(metadataList, domain.AssetMetadata{
+			Key:   meta.Key,
+			Value: meta.Value,
+		})
+	}
+	return metadataList
+}
+
+func (s *service) updateAssetQuantity(
+	ctx context.Context,
+	assetID string,
+	totalIn, totalOut uint64,
+) error {
+	if totalOut > totalIn {
+		delta := totalOut - totalIn
+		if err := s.repoManager.Assets().IncreaseAssetGroupQuantity(ctx, assetID, delta); err != nil {
+			return fmt.Errorf("error updating asset quantity: %s", err)
+		}
+		return nil
+	}
+
+	if totalIn > totalOut {
+		delta := totalIn - totalOut
+		if err := s.repoManager.Assets().DecreaseAssetGroupQuantity(ctx, assetID, delta); err != nil {
+			return fmt.Errorf("error updating asset quantity: %s", err)
+		}
+	}
+
+	return nil
 }
