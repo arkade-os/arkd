@@ -2,33 +2,45 @@
   "asset_ids": [
     {
       "name": "deterministic",
-      "txid_seed": 1,
-      "index": 12345
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 12345,
+      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3039"
     },
     {
       "name": "zero_index",
-      "txid_seed": 170,
-      "index": 0
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 0,
+      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000"
     },
     {
       "name": "max_index",
-      "txid_seed": 255,
-      "index": 65535
+      "txid": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "index": 65535,
+      "serialized_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
     },
     {
       "name": "high_byte_index",
-      "txid_seed": 85,
-      "index": 256
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 256,
+      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100"
     },
     {
       "name": "low_byte_only",
-      "txid_seed": 204,
-      "index": 255
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 255,
+      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00ff"
     },
     {
       "name": "zero_txid",
-      "txid_seed": 0,
-      "index": 1
+      "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+      "index": 1,
+      "serialized_hex": "00000000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "name": "max_uint16_asset_id_index",
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 65535,
+      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffff"
     }
   ],
   "invalid_strings": [

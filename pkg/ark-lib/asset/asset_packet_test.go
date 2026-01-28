@@ -242,7 +242,11 @@ func TestDeriveAssetPacketFromTx(t *testing.T) {
 func TestDecodeOutputToAssetPacket_MissingAssetPayload(t *testing.T) {
 	t.Parallel()
 	// Create a TxOut with only subdust payload (no asset)
-	key := deterministicPubKey(t, 0x42)
+	pubFixture := getExtPubKeyFixture("corrupted_payload_0x42")
+	require.NotNil(t, pubFixture)
+	keyPtr, err := fixtureToExtPubKey(pubFixture)
+	require.NoError(t, err)
+	key := *keyPtr
 	extPacket := &ExtensionPacket{
 		Asset:   nil,
 		SubDust: &SubDustPacket{Key: &key, Amount: 100},

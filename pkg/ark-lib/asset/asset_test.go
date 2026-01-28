@@ -12,9 +12,10 @@ import (
 )
 
 type jsonAssetIdFixture struct {
-	Name     string `json:"name"`
-	TxidSeed byte   `json:"txid_seed"`
-	Index    uint16 `json:"index"`
+	Name          string `json:"name"`
+	Txid          string `json:"txid"`
+	Index         uint16 `json:"index"`
+	SerializedHex string `json:"serialized_hex,omitempty"`
 }
 
 type jsonInvalidStringFixture struct {
@@ -60,11 +61,17 @@ func getInvalidStringFixture(name string) *jsonInvalidStringFixture {
 	return nil
 }
 
-func fixtureToAssetId(f *jsonAssetIdFixture) AssetId {
-	return AssetId{
-		Txid:  deterministicBytesArray(f.TxidSeed),
-		Index: f.Index,
+func fixtureToAssetId(f *jsonAssetIdFixture) (AssetId, error) {
+	b, err := hex.DecodeString(f.Txid)
+	if err != nil {
+		return AssetId{}, err
 	}
+	var txid [32]byte
+	copy(txid[:], b)
+	return AssetId{
+		Txid:  txid,
+		Index: f.Index,
+	}, nil
 }
 
 func TestAssetIdFromString_InvalidLength(t *testing.T) {
@@ -82,7 +89,8 @@ func TestAssetIdFromString_InvalidLength(t *testing.T) {
 func TestAssetIdStringConversion(t *testing.T) {
 	fixture := getAssetIdFixture("deterministic")
 	require.NotNil(t, fixture)
-	assetId := fixtureToAssetId(fixture)
+	assetId, err := fixtureToAssetId(fixture)
+	require.NoError(t, err)
 
 	s := assetId.String()
 	decoded, err := NewAssetIdFromString(s)
@@ -108,7 +116,8 @@ func TestNewAssetIdFromBytes(t *testing.T) {
 	t.Run("valid_bytes", func(t *testing.T) {
 		fixture := getAssetIdFixture("deterministic")
 		require.NotNil(t, fixture)
-		expected := fixtureToAssetId(fixture)
+		expected, err := fixtureToAssetId(fixture)
+		require.NoError(t, err)
 
 		// Build the expected bytes manually
 		buf := make([]byte, ASSET_ID_SIZE)
@@ -161,7 +170,8 @@ func TestAssetId_Serialize_BigEndianIndex(t *testing.T) {
 		// Index 256 = 0x0100 in big endian should be [0x01, 0x00]
 		fixture := getAssetIdFixture("high_byte_index")
 		require.NotNil(t, fixture)
-		assetId := fixtureToAssetId(fixture)
+		assetId, err := fixtureToAssetId(fixture)
+		require.NoError(t, err)
 
 		serialized := assetId.Serialize()
 		require.Len(t, serialized, ASSET_ID_SIZE)
@@ -175,7 +185,8 @@ func TestAssetId_Serialize_BigEndianIndex(t *testing.T) {
 		// Index 255 = 0x00FF in big endian should be [0x00, 0xFF]
 		fixture := getAssetIdFixture("low_byte_only")
 		require.NotNil(t, fixture)
-		assetId := fixtureToAssetId(fixture)
+		assetId, err := fixtureToAssetId(fixture)
+		require.NoError(t, err)
 
 		serialized := assetId.Serialize()
 		require.Len(t, serialized, ASSET_ID_SIZE)
@@ -188,7 +199,8 @@ func TestAssetId_Serialize_BigEndianIndex(t *testing.T) {
 		// Index 65535 = 0xFFFF in big endian should be [0xFF, 0xFF]
 		fixture := getAssetIdFixture("max_index")
 		require.NotNil(t, fixture)
-		assetId := fixtureToAssetId(fixture)
+		assetId, err := fixtureToAssetId(fixture)
+		require.NoError(t, err)
 
 		serialized := assetId.Serialize()
 		require.Len(t, serialized, ASSET_ID_SIZE)
@@ -201,7 +213,8 @@ func TestAssetId_Serialize_BigEndianIndex(t *testing.T) {
 		// Index 0 = 0x0000 in big endian should be [0x00, 0x00]
 		fixture := getAssetIdFixture("zero_index")
 		require.NotNil(t, fixture)
-		assetId := fixtureToAssetId(fixture)
+		assetId, err := fixtureToAssetId(fixture)
+		require.NoError(t, err)
 
 		serialized := assetId.Serialize()
 		require.Len(t, serialized, ASSET_ID_SIZE)
@@ -220,7 +233,8 @@ func TestAssetId_SerializeRoundtrip(t *testing.T) {
 			t.Parallel()
 			fixture := getAssetIdFixture(fixtureName)
 			require.NotNil(t, fixture)
-			original := fixtureToAssetId(fixture)
+			original, err := fixtureToAssetId(fixture)
+			require.NoError(t, err)
 
 			serialized := original.Serialize()
 			decoded, err := NewAssetIdFromBytes(serialized)
@@ -236,13 +250,36 @@ func TestAssetId_SerializeRoundtrip(t *testing.T) {
 	}
 }
 
+func TestAssetId_SerializeMatchesExpected(t *testing.T) {
+	t.Parallel()
+
+	for _, fixture := range assetFixtures.AssetIds {
+		if fixture.SerializedHex == "" {
+			continue
+		}
+		fixture := fixture
+		t.Run(fixture.Name, func(t *testing.T) {
+			t.Parallel()
+			assetId, err := fixtureToAssetId(&fixture)
+			require.NoError(t, err)
+
+			serialized := assetId.Serialize()
+			actualHex := hex.EncodeToString(serialized)
+
+			require.Equal(t, fixture.SerializedHex, actualHex,
+				"serialized hex mismatch for %s", fixture.Name)
+		})
+	}
+}
+
 func TestAssetId_String(t *testing.T) {
 	t.Parallel()
 
 	t.Run("deterministic", func(t *testing.T) {
 		fixture := getAssetIdFixture("deterministic")
 		require.NotNil(t, fixture)
-		assetId := fixtureToAssetId(fixture)
+		assetId, err := fixtureToAssetId(fixture)
+		require.NoError(t, err)
 
 		s := assetId.String()
 		// String should be hex encoded, so 34 bytes * 2 = 68 characters
@@ -257,7 +294,8 @@ func TestAssetId_String(t *testing.T) {
 	t.Run("zero_txid", func(t *testing.T) {
 		fixture := getAssetIdFixture("zero_txid")
 		require.NotNil(t, fixture)
-		assetId := fixtureToAssetId(fixture)
+		assetId, err := fixtureToAssetId(fixture)
+		require.NoError(t, err)
 
 		s := assetId.String()
 		// First 64 chars should be all zeros (32 bytes of 0x00)

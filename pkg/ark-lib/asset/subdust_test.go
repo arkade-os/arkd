@@ -6,15 +6,16 @@ import (
 	"os"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
 
 type jsonSubDustPacketFixture struct {
-	Name          string `json:"name"`
-	KeySeed       *byte  `json:"key_seed"`
-	Amount        uint64 `json:"amount"`
-	ExpectedError string `json:"expected_error,omitempty"`
+	Name          string  `json:"name"`
+	PrivKeyBytes  *string `json:"priv_key_bytes"`
+	Amount        uint64  `json:"amount"`
+	ExpectedError string  `json:"expected_error,omitempty"`
 }
 
 type jsonSubDustPacketsFixtures struct {
@@ -96,8 +97,12 @@ func TestEncodeDecodeSubDustPacket(t *testing.T) {
 	// Test valid packet
 	validFixture := getValidSubDustPacketFixture("default")
 	require.NotNil(t, validFixture)
+	require.NotNil(t, validFixture.PrivKeyBytes)
 
-	key := deterministicPubKey(t, *validFixture.KeySeed)
+	privKeyBytes, err := hex.DecodeString(*validFixture.PrivKeyBytes)
+	require.NoError(t, err)
+	_, pub := btcec.PrivKeyFromBytes(privKeyBytes)
+	key := *pub
 	packet := &SubDustPacket{
 		Key:    &key,
 		Amount: validFixture.Amount,

@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/tlv"
@@ -59,9 +60,15 @@ type fixture struct {
 	ExpectedError string           `json:"expected_error,omitempty"`
 }
 
+type jsonExtPubKeyFixture struct {
+	Name         string `json:"name"`
+	PrivKeyBytes string `json:"priv_key_bytes"`
+}
+
 type verifyFixturesJSON struct {
-	Valid   []fixture `json:"valid"`
-	Invalid []fixture `json:"invalid"`
+	Valid   []fixture              `json:"valid"`
+	Invalid []fixture              `json:"invalid"`
+	PubKeys []jsonExtPubKeyFixture `json:"pub_keys"`
 }
 
 // make a Control Asset from fixture
@@ -99,7 +106,8 @@ func TestVerifyAssetGroupFixtures(t *testing.T) {
 						require.NoError(t, err)
 						expectedAgBytes, err := hex.DecodeString(validFixture.PkScriptHex)
 						require.NoError(t, err)
-						require.True(t, bytes.Equal(expectedAgBytes, agBytes))
+						require.Equal(t, hex.EncodeToString(expectedAgBytes), hex.EncodeToString(agBytes),
+							"pk_script_hex mismatch - actual: %s", hex.EncodeToString(agBytes))
 					}
 				}
 
@@ -191,7 +199,11 @@ func TestDecodeToExtensionPacket_InvalidOpReturn(t *testing.T) {
 func TestDecodeToExtensionPacket_CorruptedPayload(t *testing.T) {
 	t.Parallel()
 	// build a valid packet then corrupt PkScript
-	pub := deterministicPubKey(t, 0x42)
+	pubFixture := getExtPubKeyFixture("corrupted_payload_0x42")
+	require.NotNil(t, pubFixture)
+	pubPtr, err := fixtureToExtPubKey(pubFixture)
+	require.NoError(t, err)
+	pub := *pubPtr
 	sd := &SubDustPacket{Key: &pub, Amount: 5}
 	packet := AssetPacket{Assets: []AssetGroup{controlAsset}}
 	extPacket := &ExtensionPacket{Asset: &packet, SubDust: sd}
@@ -207,6 +219,8 @@ func TestDecodeToExtensionPacket_CorruptedPayload(t *testing.T) {
 	require.Nil(t, ep)
 }
 
+var extPubKeyFixtures []jsonExtPubKeyFixture
+
 func parseFixtures() ([]fixture, []fixture, error) {
 	file, err := os.ReadFile("testdata/extension_fixtures.json")
 	if err != nil {
@@ -217,7 +231,29 @@ func parseFixtures() ([]fixture, []fixture, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	extPubKeyFixtures = jsonData.PubKeys
 	return jsonData.Valid, jsonData.Invalid, nil
+}
+
+func getExtPubKeyFixture(name string) *jsonExtPubKeyFixture {
+	for _, f := range extPubKeyFixtures {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func fixtureToExtPubKey(f *jsonExtPubKeyFixture) (*btcec.PublicKey, error) {
+	if f == nil {
+		return nil, nil
+	}
+	privKeyBytes, err := hex.DecodeString(f.PrivKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+	_, pub := btcec.PrivKeyFromBytes(privKeyBytes)
+	return pub, nil
 }
 
 // convert all jsonAssetGroups from fixture to []AssetGroup
@@ -516,7 +552,11 @@ func TestIsExtensionPacket(t *testing.T) {
 	})
 
 	t.Run("valid_subdust_only", func(t *testing.T) {
-		pub := deterministicPubKey(t, 0x33)
+		pubFixture := getExtPubKeyFixture("subdust_only_0x33")
+		require.NotNil(t, pubFixture)
+		pubPtr, err := fixtureToExtPubKey(pubFixture)
+		require.NoError(t, err)
+		pub := *pubPtr
 		extPacket := &ExtensionPacket{
 			SubDust: &SubDustPacket{Key: &pub, Amount: 100},
 		}
@@ -527,7 +567,11 @@ func TestIsExtensionPacket(t *testing.T) {
 	})
 
 	t.Run("valid_asset_and_subdust", func(t *testing.T) {
-		pub := deterministicPubKey(t, 0x44)
+		pubFixture := getExtPubKeyFixture("asset_and_subdust_0x44")
+		require.NotNil(t, pubFixture)
+		pubPtr, err := fixtureToExtPubKey(pubFixture)
+		require.NoError(t, err)
+		pub := *pubPtr
 		packet := &AssetPacket{
 			Assets: []AssetGroup{{
 				Inputs:  []AssetInput{{Type: AssetTypeLocal, Vin: 0, Amount: 100}},

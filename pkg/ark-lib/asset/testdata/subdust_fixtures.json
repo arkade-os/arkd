@@ -3,14 +3,14 @@
     "valid": [
       {
         "name": "default",
-        "key_seed": 85,
+        "priv_key_bytes": "5555555555555555555555555555555555555555555555555555555555555555",
         "amount": 150
       }
     ],
     "invalid": [
       {
         "name": "empty",
-        "key_seed": null,
+        "priv_key_bytes": null,
         "amount": 0,
         "expected_error": "empty op_return packet"
       }

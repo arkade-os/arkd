@@ -5,7 +5,7 @@
       "assets": [
         {
           "asset_id": {
-            "txid": "11111111111111111111111111111111111111111111111111111111111111110000",
+            "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "index": 0
           },
           "immutable": false,
@@ -18,7 +18,7 @@
           "control_asset": {
             "type": "AssetRefByID",
             "asset_id": {
-              "txid": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c0000",
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "index": 0
             },
             "group_index": 0
@@ -31,14 +31,15 @@
             }
           ]
         }
-      ]
+      ],
+      "pk_script_hex": "07aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000001046b696e6407636f6e74726f6c0001020000000000000001"
     },
     {
       "name": "normal",
       "assets": [
         {
           "asset_id": {
-            "txid": "12121212121212121212121212121212121212121212121212121212121212120000",
+            "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "index": 0
           },
           "immutable": false,
@@ -52,7 +53,7 @@
           "control_asset": {
             "type": "AssetRefByID",
             "asset_id": {
-              "txid": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c0000",
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "index": 0
             },
             "group_index": 0
@@ -71,14 +72,15 @@
             }
           ]
         }
-      ]
+      ],
+      "pk_script_hex": "07aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
     },
     {
       "name": "empty",
       "assets": [
         {
           "asset_id": {
-            "txid": "00000000000000000000000000000000000000000000000000000000000000000000",
+            "txid": "0000000000000000000000000000000000000000000000000000000000000000",
             "index": 0
           },
           "immutable": false,
@@ -92,7 +94,7 @@
           "control_asset": {
             "type": "AssetRefByID",
             "asset_id": {
-              "txid": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c0000",
+              "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               "index": 0
             },
             "group_index": 0
@@ -111,7 +113,24 @@
             }
           ]
         }
-      ]
+      ],
+      "pk_script_hex": "070000000000000000000000000000000000000000000000000000000000000000000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000001046b696e64066e6f726d616c0101000000010000000000000005010100000001000000000000000a"
+    },
+    {
+      "name": "minimal",
+      "description": "Minimal asset group with only one local output, no other fields",
+      "assets": [
+        {
+          "outputs": [
+            {
+              "type": "local",
+              "vout": 0,
+              "amount": 100
+            }
+          ]
+        }
+      ],
+      "pk_script_hex": "00000101000000000000000000000064"
     }
   ],
   "invalid": [
@@ -121,7 +140,7 @@
       "assets": [
         {
           "asset_id": {
-            "txid": "1111111111111111111111111111111111111111111111111111111111111111",
+            "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "index": 0
           },
           "inputs": [
@@ -147,7 +166,7 @@
       "assets": [
         {
           "asset_id": {
-            "txid": "2222222222222222222222222222222222222222222222222222222222222222",
+            "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "index": 0
           },
           "inputs": [
@@ -174,7 +193,7 @@
       "assets": [
         {
           "asset_id": {
-            "txid": "3333333333333333333333333333333333333333333333333333333333333333",
+            "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "index": 0
           },
           "control_asset": {
@@ -204,6 +223,20 @@
       "assets": [],
       "pk_script_hex": "07111111111111111111111111",
       "expected_error": "unexpected EOF"
+    }
+  ],
+  "pub_keys": [
+    {
+      "name": "corrupted_payload_0x42",
+      "priv_key_bytes": "4242424242424242424242424242424242424242424242424242424242424242"
+    },
+    {
+      "name": "subdust_only_0x33",
+      "priv_key_bytes": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    {
+      "name": "asset_and_subdust_0x44",
+      "priv_key_bytes": "4444444444444444444444444444444444444444444444444444444444444444"
     }
   ]
 }

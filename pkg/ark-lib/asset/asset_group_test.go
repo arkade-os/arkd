@@ -2,6 +2,7 @@ package asset
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ type assetGroupFixture struct {
 	Name          string         `json:"name"`
 	AssetGroup    jsonAssetGroup `json:"asset_group"`
 	ExpectedError string         `json:"expected_error,omitempty"`
+	SerializedHex string         `json:"serialized_hex,omitempty"`
 }
 
 type assetGroupFixturesJSON struct {
@@ -120,6 +122,31 @@ func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
 	_, err = nilAssetGroup.Encode()
 	require.Error(t, err)
 	require.Equal(t, "cannot encode nil AssetGroup", fmt.Sprint(err))
+}
+
+func TestAssetGroup_Encode_MatchesExpected(t *testing.T) {
+	t.Parallel()
+	valid, _, err := parseAssetGroupFixtures()
+	require.NoError(t, err)
+
+	for _, fixture := range valid {
+		if fixture.SerializedHex == "" {
+			continue
+		}
+		fixture := fixture
+		t.Run(fixture.Name, func(t *testing.T) {
+			t.Parallel()
+			ag, err := jsonAssetGroupToAssetGroup(fixture.AssetGroup)
+			require.NoError(t, err)
+
+			encoded, err := ag.Encode()
+			require.NoError(t, err)
+			actualHex := hex.EncodeToString(encoded)
+
+			require.Equal(t, fixture.SerializedHex, actualHex,
+				"serialized hex mismatch for %s", fixture.Name)
+		})
+	}
 }
 
 func TestAssetGroup_Decode_TruncatedAtVariousPoints(t *testing.T) {

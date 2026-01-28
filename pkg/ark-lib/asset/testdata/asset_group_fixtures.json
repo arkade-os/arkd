@@ -5,7 +5,8 @@
       "asset_group": {
         "inputs": [{ "type": "local", "vin": 5, "amount": 555 }],
         "outputs": [{ "type": "local", "vout": 6, "amount": 666 }]
-      }
+      },
+      "serialized_hex": "00010100000005000000000000022b010100000006000000000000029a"
     },
     {
       "name": "full_roundtrip",
@@ -31,7 +32,8 @@
           { "key": "purpose", "value": "roundtrip" },
           { "key": "owner", "value": "arkade" }
         ]
-      }
+      },
+      "serialized_hex": "0f3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c0002013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c00010207707572706f736509726f756e6474726970056f776e65720661726b616465020100000007000000000000001402000000000000002855555555555555555555555555555555555555555555555555555555555555550000007b020100000000000000000000000b020000000000000016"
     }
   ],
   "invalid": [

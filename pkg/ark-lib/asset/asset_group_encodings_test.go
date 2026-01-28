@@ -17,12 +17,13 @@ import (
 
 // Fixture types for asset_group_encodings tests
 type jsonAssetRefFixture struct {
-	Name        string       `json:"name"`
-	Type        string       `json:"type"`
-	TypeRaw     *uint8       `json:"type_raw,omitempty"`
-	AssetId     *jsonAssetId `json:"asset_id,omitempty"`
-	GroupIndex  uint16       `json:"group_index,omitempty"`
-	Description string       `json:"description,omitempty"`
+	Name          string       `json:"name"`
+	Type          string       `json:"type"`
+	TypeRaw       *uint8       `json:"type_raw,omitempty"`
+	AssetId       *jsonAssetId `json:"asset_id,omitempty"`
+	GroupIndex    uint16       `json:"group_index,omitempty"`
+	Description   string       `json:"description,omitempty"`
+	SerializedHex string       `json:"serialized_hex,omitempty"`
 }
 
 type jsonAssetRefInvalidFixture struct {
@@ -37,14 +38,16 @@ type jsonAssetRefsFixtures struct {
 }
 
 type jsonMetadataListFixture struct {
-	Name  string     `json:"name"`
-	Items []Metadata `json:"items"`
+	Name          string     `json:"name"`
+	Items         []Metadata `json:"items"`
+	SerializedHex string     `json:"serialized_hex,omitempty"`
 }
 
 type jsonAssetInputsFixture struct {
 	Name          string      `json:"name"`
 	Inputs        []jsonInput `json:"inputs"`
 	ExpectedError string      `json:"expected_error,omitempty"`
+	SerializedHex string      `json:"serialized_hex,omitempty"`
 }
 
 type jsonAssetInputsFixtures struct {
@@ -56,6 +59,7 @@ type jsonAssetOutputsFixture struct {
 	Name          string       `json:"name"`
 	Outputs       []jsonOutput `json:"outputs"`
 	ExpectedError string       `json:"expected_error,omitempty"`
+	SerializedHex string       `json:"serialized_hex,omitempty"`
 }
 
 type jsonAssetOutputsFixtures struct {
@@ -72,15 +76,25 @@ type jsonPresenceBitCase struct {
 }
 
 type jsonNormalizeSlicesCase struct {
-	Name        string      `json:"name"`
-	Seed        byte        `json:"seed"`
-	HasOutputs  bool        `json:"has_outputs"`
-	HasInputs   bool        `json:"has_inputs"`
-	HasMetadata bool        `json:"has_metadata"`
-	UseNil      bool        `json:"use_nil,omitempty"`
-	Output      *jsonOutput `json:"output,omitempty"`
-	Input       *jsonInput  `json:"input,omitempty"`
-	Metadata    *Metadata   `json:"metadata,omitempty"`
+	Name        string       `json:"name"`
+	AssetId     *jsonAssetId `json:"asset_id,omitempty"`
+	HasOutputs  bool         `json:"has_outputs"`
+	HasInputs   bool         `json:"has_inputs"`
+	HasMetadata bool         `json:"has_metadata"`
+	UseNil      bool         `json:"use_nil,omitempty"`
+	Output      *jsonOutput  `json:"output,omitempty"`
+	Input       *jsonInput   `json:"input,omitempty"`
+	Metadata    *Metadata    `json:"metadata,omitempty"`
+}
+
+type jsonEncodingAssetIdRefFixture struct {
+	Name    string       `json:"name"`
+	AssetId *jsonAssetId `json:"asset_id"`
+}
+
+type jsonPubKeyFixture struct {
+	Name         string `json:"name"`
+	PrivKeyBytes string `json:"priv_key_bytes"`
 }
 
 type jsonEncodeAssetGroupsErrorCase struct {
@@ -93,9 +107,10 @@ type jsonEncodeAssetGroupsErrorCase struct {
 }
 
 type jsonEncodeAssetGroupsValidCase struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
-	AssetGroups []jsonEncodeAssetGroup `json:"asset_groups"`
+	Name          string                 `json:"name"`
+	Description   string                 `json:"description,omitempty"`
+	AssetGroups   []jsonEncodeAssetGroup `json:"asset_groups"`
+	SerializedHex string                 `json:"serialized_hex,omitempty"`
 }
 
 type jsonEncodeAssetGroup struct {
@@ -115,15 +130,15 @@ type jsonControlAssetRef struct {
 }
 
 type jsonWriteTestData struct {
-	AssetRefByID      jsonAssetRefFixture `json:"asset_ref_by_id"`
-	AssetRefByGroup   jsonAssetRefFixture `json:"asset_ref_by_group"`
-	MetadataSingle    []Metadata          `json:"metadata_single"`
-	MetadataEmptyKey  []Metadata          `json:"metadata_empty_key"`
-	InputLocal        jsonInput           `json:"input_local"`
-	InputIntent       jsonInput           `json:"input_intent"`
-	InputIntentTxid   jsonInput           `json:"input_intent_with_txid"`
-	OutputLocal       jsonOutput          `json:"output_local"`
-	OutputIntent      jsonOutput          `json:"output_intent"`
+	AssetRefByID     jsonAssetRefFixture `json:"asset_ref_by_id"`
+	AssetRefByGroup  jsonAssetRefFixture `json:"asset_ref_by_group"`
+	MetadataSingle   []Metadata          `json:"metadata_single"`
+	MetadataEmptyKey []Metadata          `json:"metadata_empty_key"`
+	InputLocal       jsonInput           `json:"input_local"`
+	InputIntent      jsonInput           `json:"input_intent"`
+	InputIntentTxid  jsonInput           `json:"input_intent_with_txid"`
+	OutputLocal      jsonOutput          `json:"output_local"`
+	OutputIntent     jsonOutput          `json:"output_intent"`
 }
 
 type jsonIntentTruncationInput struct {
@@ -152,6 +167,9 @@ type encodingsFixturesJSON struct {
 	WriteTestData           jsonWriteTestData                `json:"write_test_data"`
 	IntentTruncationInputs  []jsonIntentTruncationInput      `json:"intent_truncation_inputs"`
 	IntentRoundtripCases    []jsonIntentRoundtripCase        `json:"intent_roundtrip_cases"`
+	ControlAssetRefs        []jsonEncodingAssetIdRefFixture  `json:"control_asset_refs"`
+	PresenceBitAssetIds     []jsonEncodingAssetIdRefFixture  `json:"presence_bit_asset_ids"`
+	PubKeys                 []jsonPubKeyFixture              `json:"pub_keys"`
 }
 
 var encodingsFixtures encodingsFixturesJSON
@@ -411,6 +429,69 @@ func getWriteTestMetadata(name string) []Metadata {
 	}
 }
 
+func getControlAssetRefFixture(name string) *jsonEncodingAssetIdRefFixture {
+	for _, f := range encodingsFixtures.ControlAssetRefs {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func getPresenceBitAssetIdFixture(name string) *jsonEncodingAssetIdRefFixture {
+	for _, f := range encodingsFixtures.PresenceBitAssetIds {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func fixtureToEncodingAssetId(f *jsonEncodingAssetIdRefFixture) (*AssetId, error) {
+	if f == nil || f.AssetId == nil {
+		return nil, nil
+	}
+	b, err := hex.DecodeString(f.AssetId.Txid)
+	if err != nil {
+		return nil, err
+	}
+	var txid [32]byte
+	copy(txid[:], b)
+	return &AssetId{Txid: txid, Index: f.AssetId.Index}, nil
+}
+
+func fixtureToEncodingAssetRef(f *jsonEncodingAssetIdRefFixture) (*AssetRef, error) {
+	assetId, err := fixtureToEncodingAssetId(f)
+	if err != nil {
+		return nil, err
+	}
+	if assetId == nil {
+		return nil, nil
+	}
+	return AssetRefFromId(*assetId), nil
+}
+
+func getPubKeyFixture(name string) *jsonPubKeyFixture {
+	for _, f := range encodingsFixtures.PubKeys {
+		if f.Name == name {
+			return &f
+		}
+	}
+	return nil
+}
+
+func fixtureToPubKey(f *jsonPubKeyFixture) (*btcec.PublicKey, error) {
+	if f == nil {
+		return nil, nil
+	}
+	privKeyBytes, err := hex.DecodeString(f.PrivKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+	_, pub := btcec.PrivKeyFromBytes(privKeyBytes)
+	return pub, nil
+}
+
 func TestEncodeAssetGroups(t *testing.T) {
 	t.Parallel()
 
@@ -480,6 +561,33 @@ func TestEncodeAssetGroups_ValidCases(t *testing.T) {
 			data, err := encodeAssetGroups(assetGroups)
 			require.NoError(t, err)
 			require.NotEmpty(t, data)
+		})
+	}
+}
+
+func TestEncodeAssetGroups_MatchesExpected(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range encodingsFixtures.EncodeAssetGroupsValid {
+		if tc.SerializedHex == "" {
+			continue
+		}
+		tc := tc
+		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
+			var assetGroups []AssetGroup
+			for _, jag := range tc.AssetGroups {
+				ag, err := fixtureToEncodeAssetGroup(jag)
+				require.NoError(t, err)
+				assetGroups = append(assetGroups, ag)
+			}
+
+			data, err := encodeAssetGroups(assetGroups)
+			require.NoError(t, err)
+			actualHex := hex.EncodeToString(data)
+
+			require.Equal(t, tc.SerializedHex, actualHex,
+				"serialized hex mismatch for %s", tc.Name)
 		})
 	}
 }
@@ -557,6 +665,30 @@ func TestEncodeDecodeAssetRef(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, invalidFixture.ExpectedError, err.Error())
 	require.Nil(t, decoded5)
+}
+
+func TestEncodeAssetRef_MatchesExpected(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	for _, fixture := range encodingsFixtures.AssetRefs.Valid {
+		if fixture.SerializedHex == "" {
+			continue
+		}
+		fixture := fixture
+		t.Run(fixture.Name, func(t *testing.T) {
+			t.Parallel()
+			ref, err := fixtureToAssetRef(&fixture)
+			require.NoError(t, err)
+
+			buf := bytes.NewBuffer(nil)
+			require.NoError(t, encodeAssetRef(buf, ref, &scratch))
+			actualHex := hex.EncodeToString(buf.Bytes())
+
+			require.Equal(t, fixture.SerializedHex, actualHex,
+				"serialized hex mismatch for %s", fixture.Name)
+		})
+	}
 }
 
 func TestEncodeAssetRef_WriteFails(t *testing.T) {
@@ -696,6 +828,27 @@ func TestEncodeDecodeMetadataList(t *testing.T) {
 	require.Len(t, out, 1)
 	require.Equal(t, longMeta[0].Key, out[0].Key)
 	require.Equal(t, longMeta[0].Value, out[0].Value)
+}
+
+func TestEncodeMetadataList_MatchesExpected(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	for _, fixture := range encodingsFixtures.MetadataLists {
+		if fixture.SerializedHex == "" {
+			continue
+		}
+		fixture := fixture
+		t.Run(fixture.Name, func(t *testing.T) {
+			t.Parallel()
+			buf := bytes.NewBuffer(nil)
+			require.NoError(t, encodeMetadataList(buf, fixture.Items, &scratch))
+			actualHex := hex.EncodeToString(buf.Bytes())
+
+			require.Equal(t, fixture.SerializedHex, actualHex,
+				"serialized hex mismatch for %s", fixture.Name)
+		})
+	}
 }
 
 func TestEncodeMetadataList_WriteFails(t *testing.T) {
@@ -854,6 +1007,30 @@ func TestEncodeDecodeAssetInputList(t *testing.T) {
 		_, err := decodeAssetInputList(tr, &scratch)
 		require.Error(t, err)
 		require.Equal(t, "unexpected EOF", err.Error())
+	}
+}
+
+func TestEncodeAssetInputList_MatchesExpected(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	for _, fixture := range encodingsFixtures.AssetInputs.Valid {
+		if fixture.SerializedHex == "" {
+			continue
+		}
+		fixture := fixture
+		t.Run(fixture.Name, func(t *testing.T) {
+			t.Parallel()
+			inputs, err := fixtureToAssetInputs(fixture.Inputs)
+			require.NoError(t, err)
+
+			buf := bytes.NewBuffer(nil)
+			require.NoError(t, encodeAssetInputList(buf, inputs, &scratch))
+			actualHex := hex.EncodeToString(buf.Bytes())
+
+			require.Equal(t, fixture.SerializedHex, actualHex,
+				"serialized hex mismatch for %s", fixture.Name)
+		})
 	}
 }
 
@@ -1138,6 +1315,30 @@ func TestEncodeDecodeAssetOutputList(t *testing.T) {
 	}
 }
 
+func TestEncodeAssetOutputList_MatchesExpected(t *testing.T) {
+	t.Parallel()
+	var scratch [8]byte
+
+	for _, fixture := range encodingsFixtures.AssetOutputs.Valid {
+		if fixture.SerializedHex == "" {
+			continue
+		}
+		fixture := fixture
+		t.Run(fixture.Name, func(t *testing.T) {
+			t.Parallel()
+			outputs, err := fixtureToAssetOutputs(fixture.Outputs)
+			require.NoError(t, err)
+
+			buf := bytes.NewBuffer(nil)
+			require.NoError(t, encodeAssetOutputList(buf, outputs, &scratch))
+			actualHex := hex.EncodeToString(buf.Bytes())
+
+			require.Equal(t, fixture.SerializedHex, actualHex,
+				"serialized hex mismatch for %s", fixture.Name)
+		})
+	}
+}
+
 func TestEncodeAssetOutputList_WriteFails(t *testing.T) {
 	t.Parallel()
 	var scratch [8]byte
@@ -1256,7 +1457,11 @@ func TestDecodeAssetOutputList_TruncatedAtVariousPoints(t *testing.T) {
 }
 
 func TestAssetGroupEncodeDecodeWithSubDustKey(t *testing.T) {
-	subDustKey := deterministicPubKey(t, 0x55)
+	pubKeyFixture := getPubKeyFixture("subdust_key_0x55")
+	require.NotNil(t, pubKeyFixture)
+	subDustKeyPtr, err := fixtureToPubKey(pubKeyFixture)
+	require.NoError(t, err)
+	subDustKey := *subDustKeyPtr
 	assetPacket := AssetPacket{
 		Assets: []AssetGroup{normalAsset},
 	}
@@ -1335,12 +1540,26 @@ func TestAssetGroupEncodeDecodeWithGroupIndexRef(t *testing.T) {
 func TestNormalizeAssetSlices(t *testing.T) {
 	t.Parallel()
 
+	controlRefFixture := getControlAssetRefFixture("default")
+	require.NotNil(t, controlRefFixture)
+	controlAssetRef, err := fixtureToEncodingAssetRef(controlRefFixture)
+	require.NoError(t, err)
+
 	for _, c := range encodingsFixtures.NormalizeSlicesCases {
 		t.Run(c.Name, func(t *testing.T) {
 			t.Parallel()
 
+			var assetId *AssetId
+			if c.AssetId != nil {
+				b, err := hex.DecodeString(c.AssetId.Txid)
+				require.NoError(t, err)
+				var txid [32]byte
+				copy(txid[:], b)
+				assetId = &AssetId{Txid: txid, Index: c.AssetId.Index}
+			}
+
 			ag := AssetGroup{
-				AssetId: ptrAssetId(deterministicAssetId(c.Seed)),
+				AssetId: assetId,
 			}
 
 			if c.HasOutputs && c.Output != nil {
@@ -1366,7 +1585,7 @@ func TestNormalizeAssetSlices(t *testing.T) {
 			}
 
 			if c.HasOutputs || c.HasInputs || c.HasMetadata {
-				ag.ControlAsset = deterministicAssetRefId(0x3c)
+				ag.ControlAsset = controlAssetRef
 			}
 
 			ag.normalizeAssetSlices()
@@ -1510,8 +1729,10 @@ func TestBoundaryValues(t *testing.T) {
 	})
 
 	t.Run("max_uint16_asset_id_index", func(t *testing.T) {
-		maxIndex := uint16(65535)
-		assetId := AssetId{Txid: deterministicBytesArray(0xAA), Index: maxIndex}
+		fixture := getAssetIdFixture("max_uint16_asset_id_index")
+		require.NotNil(t, fixture)
+		assetId, err := fixtureToAssetId(fixture)
+		require.NoError(t, err)
 		ref := AssetRefFromId(assetId)
 
 		buf := bytes.NewBuffer(nil)
@@ -1519,7 +1740,7 @@ func TestBoundaryValues(t *testing.T) {
 
 		decoded, err := decodeAssetRef(buf, &scratch)
 		require.NoError(t, err)
-		require.Equal(t, maxIndex, decoded.AssetId.Index)
+		require.Equal(t, assetId.Index, decoded.AssetId.Index)
 	})
 }
 
@@ -1646,8 +1867,13 @@ func TestPresenceBitDecodeVerification(t *testing.T) {
 	})
 
 	t.Run("only_asset_id_set", func(t *testing.T) {
+		presenceBitFixture := getPresenceBitAssetIdFixture("default")
+		require.NotNil(t, presenceBitFixture)
+		assetIdPtr, err := fixtureToEncodingAssetId(presenceBitFixture)
+		require.NoError(t, err)
+
 		ag := AssetGroup{
-			AssetId: ptrAssetId(deterministicAssetId(0x11)),
+			AssetId: assetIdPtr,
 			Inputs:  []AssetInput{{Type: AssetTypeLocal, Vin: 1, Amount: 100}},
 			Outputs: []AssetOutput{{Type: AssetTypeLocal, Vout: 1, Amount: 100}},
 		}
@@ -1739,40 +1965,4 @@ func TestPresenceBitDecodeVerification(t *testing.T) {
 		require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
 		require.False(t, decoded.Immutable)
 	})
-}
-
-func deterministicPubKey(t *testing.T, seed byte) btcec.PublicKey {
-	t.Helper()
-
-	keyBytes := bytes.Repeat([]byte{seed}, 32)
-	priv, pub := btcec.PrivKeyFromBytes(keyBytes)
-	require.NotNil(t, priv)
-	require.NotNil(t, pub)
-
-	return *pub
-}
-
-func deterministicTxhash(seed byte) []byte {
-	return bytes.Repeat([]byte{seed}, 32)
-}
-
-func deterministicBytesArray(seed byte) [32]byte {
-	var arr [32]byte
-	copy(arr[:], deterministicTxhash(seed))
-	return arr
-}
-
-func deterministicAssetId(seed byte) AssetId {
-	return AssetId{
-		Txid:  deterministicBytesArray(seed),
-		Index: 0,
-	}
-}
-
-func ptrAssetId(id AssetId) *AssetId {
-	return &id
-}
-
-func deterministicAssetRefId(seed byte) *AssetRef {
-	return AssetRefFromId(deterministicAssetId(seed))
 }
