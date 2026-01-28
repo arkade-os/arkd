@@ -11,7 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -129,13 +129,13 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		var pubKey string
 		var isSubDust bool
 
-		if extension.ContainsAssetPacket(out.PkScript) {
+		if asset.ContainsAssetPacket(out.PkScript) {
 			if assetOpReturnProcessed {
 				continue
 			}
 			assetOpReturnProcessed = true
 
-			decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+			decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf(
 					"failed to decode asset group from opreturn: %s",
@@ -146,10 +146,10 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 			allAssets := decodedAssetPacket.Assets
 
 			for i, grpAsset := range allAssets {
-				var assetId extension.AssetId
+				var assetId asset.AssetId
 
 				if grpAsset.AssetId == nil {
-					assetId = extension.AssetId{
+					assetId = asset.AssetId{
 						Txid:  ptx.UnsignedTx.TxHash(),
 						Index: uint16(i),
 					}
@@ -157,7 +157,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 					assetId = *grpAsset.AssetId
 				}
 				for _, assetOut := range grpAsset.Outputs {
-					if assetOut.Type != extension.AssetTypeLocal {
+					if assetOut.Type != asset.AssetTypeLocal {
 						continue
 					}
 					if _, exists := assetVouts[assetOut.Vout]; exists {
@@ -174,12 +174,12 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 							VOut: assetOut.Vout,
 						},
 						Amount:  assetOut.Amount,
-						AssetID: assetId.ToString(),
+						AssetID: assetId.String(),
 					})
 				}
 			}
 
-			subDustPacket, err := extension.DecodeSubDustPacket(*out)
+			subDustPacket, err := asset.DecodeToSubDustPacket(*out)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf(
 					"failed to decode sub-dust key from opreturn: %s",
@@ -321,8 +321,8 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				continue
 			}
 
-			if extension.ContainsAssetPacket(out.PkScript) {
-				decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+			if asset.ContainsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset packet")
 					continue
@@ -333,7 +333,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 						assetsMap[out.Vout] = append(
 							assetsMap[out.Vout],
 							domain.Asset{
-								AssetID: asst.AssetId.ToString(),
+								AssetID: asst.AssetId.String(),
 								Amount:  uint64(out.Amount),
 							},
 						)

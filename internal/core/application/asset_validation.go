@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -25,7 +25,7 @@ type assetValidationMachine struct {
 	arkTx           wire.MsgTx
 	checkpointTxMap map[string]string
 	opReturnOutput  wire.TxOut
-	assets          []extension.AssetGroup
+	assets          []asset.AssetGroup
 	groupIndex      int
 }
 
@@ -40,8 +40,8 @@ const (
 
 type controlAssetMachine struct {
 	ctx    context.Context
-	assets []extension.AssetGroup
-	asset  extension.AssetGroup
+	assets []asset.AssetGroup
+	asset  asset.AssetGroup
 	state  controlAssetState
 }
 
@@ -66,7 +66,7 @@ func (m *assetValidationMachine) run(s *service) error {
 	for {
 		switch state {
 		case assetValidationDecode:
-			decodedAssetPacket, err := extension.DecodeAssetPacket(m.opReturnOutput)
+			decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(m.opReturnOutput)
 			if err != nil {
 				return errors.ASSET_PACKET_INVALID.New("error decoding asset from opreturn: %s", err).
 					WithMetadata(errors.AssetValidationMetadata{Message: err.Error()})
@@ -100,7 +100,7 @@ func (m *assetValidationMachine) run(s *service) error {
 	}
 }
 
-func (s *service) validateControlAssets(ctx context.Context, assets []extension.AssetGroup) error {
+func (s *service) validateControlAssets(ctx context.Context, assets []asset.AssetGroup) error {
 	for _, asst := range assets {
 		machine := controlAssetMachine{
 			ctx:    ctx,
@@ -153,7 +153,7 @@ func (m *controlAssetMachine) validateIssuance(s *service) error {
 	}
 
 	switch m.asset.ControlAsset.Type {
-	case extension.AssetRefByGroup:
+	case asset.AssetRefByGroup:
 		if int(m.asset.ControlAsset.GroupIndex) >= len(m.assets) {
 			return errors.CONTROL_ASSET_INVALID.New(
 				"control asset group index %d out of range for issuance",
@@ -162,8 +162,8 @@ func (m *controlAssetMachine) validateIssuance(s *service) error {
 				GroupIndex: int(m.asset.ControlAsset.GroupIndex),
 			})
 		}
-	case extension.AssetRefByID:
-		controlAssetIDStr := m.asset.ControlAsset.AssetId.ToString()
+	case asset.AssetRefByID:
+		controlAssetIDStr := m.asset.ControlAsset.AssetId.String()
 		assetGroup, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, controlAssetIDStr)
 		if err != nil {
 			return errors.CONTROL_ASSET_INVALID.New(
@@ -202,7 +202,7 @@ func (m *controlAssetMachine) validateReissuance(s *service) error {
 			WithMetadata(errors.AssetValidationMetadata{Message: "asset ID required for reissuance"})
 	}
 
-	assetID := m.asset.AssetId.ToString()
+	assetID := m.asset.AssetId.String()
 	controlAssetDetails, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, assetID)
 	if err != nil {
 		return errors.ASSET_VALIDATION_FAILED.New("error retrieving asset %s: %w", assetID, err).
@@ -219,7 +219,7 @@ func (m *controlAssetMachine) validateReissuance(s *service) error {
 			WithMetadata(errors.ControlAssetMetadata{AssetID: assetID})
 	}
 
-	decodedControlAssetId, err := extension.AssetIdFromString(controlAssetId)
+	decodedControlAssetId, err := asset.NewAssetIdFromString(controlAssetId)
 	if err != nil {
 		return errors.CONTROL_ASSET_INVALID.New("error decoding control asset ID %s: %w", controlAssetId, err).
 			WithMetadata(errors.ControlAssetMetadata{AssetID: assetID, ControlAssetID: controlAssetId})
@@ -229,7 +229,7 @@ func (m *controlAssetMachine) validateReissuance(s *service) error {
 			WithMetadata(errors.ControlAssetMetadata{AssetID: assetID, ControlAssetID: controlAssetId})
 	}
 
-	if err := s.ensureAssetPresence(m.ctx, m.assets, *decodedControlAssetId); err != nil {
+	if err := s.ensureAssetPresence(m.assets, *decodedControlAssetId); err != nil {
 		return err
 	}
 
@@ -249,7 +249,7 @@ type assetGroupValidationMachine struct {
 	ctx             context.Context
 	arkTx           wire.MsgTx
 	checkpointTxMap map[string]string
-	assets          []extension.AssetGroup
+	assets          []asset.AssetGroup
 	groupIndex      int
 	state           assetGroupValidationState
 	inputIndex      int
@@ -259,7 +259,7 @@ func (s *service) validateAssetGroup(
 	ctx context.Context,
 	arkTx wire.MsgTx,
 	checkpointTxMap map[string]string,
-	assetPacketList []extension.AssetGroup,
+	assetPacketList []asset.AssetGroup,
 	groupIndex int,
 ) error {
 	machine := assetGroupValidationMachine{
@@ -279,7 +279,7 @@ func (m *assetGroupValidationMachine) run(s *service) error {
 		switch m.state {
 		case assetGroupValidateExists:
 			if grpAsset.AssetId != nil {
-				assetID := grpAsset.AssetId.ToString()
+				assetID := grpAsset.AssetId.String()
 				gp, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, assetID)
 				if err != nil {
 					return errors.ASSET_VALIDATION_FAILED.New(
@@ -319,7 +319,7 @@ func (m *assetGroupValidationMachine) run(s *service) error {
 	}
 }
 
-func (m *assetGroupValidationMachine) group() extension.AssetGroup {
+func (m *assetGroupValidationMachine) group() asset.AssetGroup {
 	return m.assets[m.groupIndex]
 }
 
@@ -334,9 +334,9 @@ func (m *assetGroupValidationMachine) validateOutputs(s *service) error {
 	return machine.run(s)
 }
 
-func (m *assetGroupValidationMachine) validateInput(s *service, input extension.AssetInput) error {
+func (m *assetGroupValidationMachine) validateInput(s *service, input asset.AssetInput) error {
 	grpAsset := m.group()
-	if input.Type == extension.AssetTypeIntent {
+	if input.Type == asset.AssetTypeIntent {
 		intentTxid := chainhash.Hash(input.Txid).String()
 
 		if grpAsset.AssetId == nil {
@@ -352,7 +352,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input extension.
 			return errors.INTENT_ASSET_VALIDATION_FAILED.New("error retrieving intent for intent input validation: %w", err).
 				WithMetadata(errors.IntentValidationMetadata{
 					IntentTxid:  intentTxid,
-					AssetId:     grpAsset.AssetId.ToString(),
+					AssetId:     grpAsset.AssetId.String(),
 					OutputIndex: input.Vin,
 				})
 		}
@@ -428,8 +428,8 @@ const (
 type assetOutputValidationMachine struct {
 	ctx        context.Context
 	arkTx      wire.MsgTx
-	assetsList []extension.AssetGroup
-	assetGp    extension.AssetGroup
+	assetsList []asset.AssetGroup
+	assetGp    asset.AssetGroup
 	state      assetOutputValidationState
 	processed  int
 	sumInputs  uint64
@@ -477,15 +477,15 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 
 func (s *service) validateIntentOutput(
 	intentProof psbt.Packet,
-	assetId extension.AssetId,
+	assetId asset.AssetId,
 	vout uint32,
 ) error {
 	// validate intent output exists in intent proof
-	assetPacket, _, err := extension.DeriveAssetPacketFromTx(*intentProof.UnsignedTx)
+	assetPacket, _, err := asset.DeriveAssetPacketFromTx(*intentProof.UnsignedTx)
 	if err != nil {
 		return errors.INTENT_ASSET_VALIDATION_FAILED.New("error deriving asset packet from intent proof: %s", err).
 			WithMetadata(errors.IntentValidationMetadata{
-				AssetId:    assetId.ToString(),
+				AssetId:    assetId.String(),
 				IntentTxid: intentProof.UnsignedTx.TxHash().String(),
 			})
 	}
@@ -498,7 +498,7 @@ func (s *service) validateIntentOutput(
 	intentOutputFound := false
 	for _, assetGroup := range assetPacket.Assets {
 		for _, assetOutput := range assetGroup.Outputs {
-			if assetOutput.Type == extension.AssetTypeIntent && assetId == *assetGroup.AssetId &&
+			if assetOutput.Type == asset.AssetTypeIntent && assetId == *assetGroup.AssetId &&
 				vout == assetOutput.Vout {
 				intentOutputFound = true
 				break
@@ -509,10 +509,10 @@ func (s *service) validateIntentOutput(
 	if !intentOutputFound {
 		return errors.INTENT_ASSET_VALIDATION_FAILED.New(
 			"intent output not found in intent proof for asset %s index %d",
-			assetId.ToString(),
+			assetId.String(),
 			vout,
 		).WithMetadata(errors.IntentValidationMetadata{
-			AssetId:     assetId.ToString(),
+			AssetId:     assetId.String(),
 			IntentTxid:  intentProof.UnsignedTx.TxHash().String(),
 			OutputIndex: vout,
 		})
@@ -524,7 +524,7 @@ func (s *service) validateIntentOutput(
 
 func (s *service) verifyAssetInputPrevOut(
 	ctx context.Context,
-	input extension.AssetInput,
+	input asset.AssetInput,
 	prev wire.OutPoint,
 ) error {
 	txid := prev.Hash.String()
@@ -591,11 +591,11 @@ func (s *service) verifyAssetInputPrevOut(
 		}
 	}
 
-	var assetGroup *extension.AssetPacket
+	var assetGroup *asset.AssetPacket
 
 	for _, output := range decodedArkTx.UnsignedTx.TxOut {
-		if extension.ContainsAssetPacket(output.PkScript) {
-			assetGp, err := extension.DecodeAssetPacket(*output)
+		if asset.ContainsAssetPacket(output.PkScript) {
+			assetGp, err := asset.DecodeOutputToAssetPacket(*output)
 			if err != nil {
 				return errors.ASSET_PACKET_INVALID.New("error decoding asset Opreturn: %s", err).
 					WithMetadata(errors.AssetValidationMetadata{})
@@ -610,7 +610,7 @@ func (s *service) verifyAssetInputPrevOut(
 	}
 
 	// verify asset input in present in assetGroup.Inputs
-	totalAssetOuts := make([]extension.AssetOutput, 0)
+	totalAssetOuts := make([]asset.AssetOutput, 0)
 	for _, asset := range assetGroup.Assets {
 		totalAssetOuts = append(totalAssetOuts, asset.Outputs...)
 	}
@@ -627,9 +627,8 @@ func (s *service) verifyAssetInputPrevOut(
 }
 
 func (s *service) ensureAssetPresence(
-	ctx context.Context,
-	assets []extension.AssetGroup,
-	asset extension.AssetId,
+	assets []asset.AssetGroup,
+	asset asset.AssetId,
 ) error {
 	if len(assets) == 0 {
 		return errors.CONTROL_ASSET_INVALID.New("no assets provided for control asset validation").
@@ -642,12 +641,12 @@ func (s *service) ensureAssetPresence(
 		}
 	}
 
-	assetID := asset.ToString()
+	assetID := asset.String()
 	return errors.CONTROL_ASSET_NOT_FOUND.New("missing control asset %s in transaction", assetID).
 		WithMetadata(errors.ControlAssetMetadata{ControlAssetID: assetID})
 }
 
-func sumAssetInputs(inputs []extension.AssetInput) uint64 {
+func sumAssetInputs(inputs []asset.AssetInput) uint64 {
 	total := uint64(0)
 	for _, in := range inputs {
 		total += in.Amount
@@ -655,7 +654,7 @@ func sumAssetInputs(inputs []extension.AssetInput) uint64 {
 	return total
 }
 
-func sumAssetOutputs(outputs []extension.AssetOutput) uint64 {
+func sumAssetOutputs(outputs []asset.AssetOutput) uint64 {
 	total := uint64(0)
 	for _, out := range outputs {
 		total += out.Amount

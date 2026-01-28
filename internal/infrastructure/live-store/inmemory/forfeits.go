@@ -87,7 +87,7 @@ func (m *forfeitTxsStore) Init(
 	return nil
 }
 
-func (m *forfeitTxsStore) Verify(_ context.Context, txs []string) error {
+func (m *forfeitTxsStore) Sign(_ context.Context, txs []string) error {
 	if len(txs) == 0 {
 		return nil
 	}

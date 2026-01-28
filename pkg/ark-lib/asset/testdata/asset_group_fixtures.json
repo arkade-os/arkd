@@ -1,0 +1,48 @@
+{
+  "valid": [
+    {
+      "name": "local_input_output",
+      "asset_group": {
+        "inputs": [{ "type": "local", "vin": 5, "amount": 555 }],
+        "outputs": [{ "type": "local", "vout": 6, "amount": 666 }]
+      },
+      "serialized_hex": "00010100000005000000000000022b010100000006000000000000029a"
+    },
+    {
+      "name": "full_roundtrip",
+      "asset_group": {
+        "asset_id": {
+          "txid": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+          "index": 2
+        },
+        "immutable": true,
+        "outputs": [
+          { "type": "local", "vout": 0, "amount": 11 },
+          { "type": "intent", "amount": 22 }
+        ],
+        "control_asset": {
+          "type": "AssetRefByID",
+          "asset_id": { "txid": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c", "index": 1 }
+        },
+        "inputs": [
+          { "type": "local", "vin": 7, "amount": 20 },
+          { "type": "intent", "amount": 40, "txid": "5555555555555555555555555555555555555555555555555555555555555555", "vin": 123 }
+        ],
+        "metadata": [
+          { "key": "purpose", "value": "roundtrip" },
+          { "key": "owner", "value": "arkade" }
+        ]
+      },
+      "serialized_hex": "0f3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c0002013c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c00010207707572706f736509726f756e6474726970056f776e65720661726b616465020100000007000000000000001402000000000000002855555555555555555555555555555555555555555555555555555555555555550000007b020100000000000000000000000b020000000000000016"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "unknown_input_type",
+      "asset_group": {
+        "inputs": [{ "type_raw": 99 }]
+      },
+      "expected_error": "unknown asset input type"
+    }
+  ]
+}

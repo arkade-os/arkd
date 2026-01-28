@@ -113,6 +113,9 @@ func (l *leaf) getInputScript() []byte {
 }
 
 func (l *leaf) getCosigners() []*btcec.PublicKey {
+	if l.cosigners == nil {
+		return []*btcec.PublicKey{}
+	}
 	return l.cosigners
 }
 
@@ -122,6 +125,9 @@ func (l *leaf) getChildren() []node {
 
 func (l *leaf) getAmount() int64 {
 	totalAmount := int64(0)
+	if l.outputs == nil {
+		return totalAmount
+	}
 	for _, output := range l.outputs {
 		totalAmount += output.Value
 	}
@@ -129,6 +135,9 @@ func (l *leaf) getAmount() int64 {
 }
 
 func (l *leaf) getOutputs() ([]*wire.TxOut, error) {
+	if l.outputs == nil {
+		return nil, fmt.Errorf("leaf has no outputs")
+	}
 	outputs := l.outputs
 	outputs = append(outputs, txutils.AnchorOutput())
 	return outputs, nil
@@ -156,6 +165,9 @@ func (b *branch) getInputScript() []byte {
 }
 
 func (b *branch) getCosigners() []*btcec.PublicKey {
+	if b.cosigners == nil {
+		return []*btcec.PublicKey{}
+	}
 	return b.cosigners
 }
 

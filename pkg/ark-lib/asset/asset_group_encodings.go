@@ -1,7 +1,8 @@
-package extension
+package asset
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 
@@ -16,131 +17,32 @@ const (
 	maskImmutable    uint8 = 1 << 3 // 0x08
 )
 
-func (a *AssetGroup) Encode() ([]byte, error) {
-	var buf bytes.Buffer
+func encodeAssetGroups(assets []AssetGroup) ([]byte, error) {
 	var scratch [8]byte
+	var buf bytes.Buffer
 
-	// 1. Calculate and write Presence Byte
-	var presence uint8
-	if a.AssetId != nil {
-		presence |= maskAssetId
+	totalCount := uint64(len(assets))
+	if totalCount == 0 {
+		return nil, errors.New("cannot encode empty asset group")
 	}
-	if a.ControlAsset != nil {
-		presence |= maskControlAsset
-	}
-	if len(a.Metadata) > 0 {
-		presence |= maskMetadata
-	}
-	if a.Immutable {
-		presence |= maskImmutable
-	}
-	if err := buf.WriteByte(presence); err != nil {
+
+	if err := tlv.WriteVarInt(&buf, totalCount, &scratch); err != nil {
 		return nil, err
 	}
 
-	// 2. Write fields in fixed order based on presence
+	for idx, assetGroup := range assets {
+		encodedAssetGroup, err := assetGroup.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode asset group: %d: %w", idx, err)
+		}
 
-	// AssetId
-	if (presence & maskAssetId) != 0 {
-		if _, err := buf.Write(a.AssetId.Txid[:]); err != nil {
+		// No length prefix, groups are self-delimiting/known
+		if _, err := buf.Write(encodedAssetGroup); err != nil {
 			return nil, err
 		}
-		if err := tlv.EUint16(&buf, &a.AssetId.Index, &scratch); err != nil {
-			return nil, err
-		}
-	}
-
-	// ControlAsset
-	if (presence & maskControlAsset) != 0 {
-		if err := encodeAssetRef(&buf, a.ControlAsset, &scratch); err != nil {
-			return nil, err
-		}
-	}
-
-	// Metadata
-	if (presence & maskMetadata) != 0 {
-		if err := encodeMetadataList(&buf, a.Metadata, &scratch); err != nil {
-			return nil, err
-		}
-	}
-
-	// Immutable: No payload, presence bit is the value (true).
-
-	// 3. Inputs
-	if err := encodeAssetInputList(&buf, a.Inputs, &scratch); err != nil {
-		return nil, err
-	}
-
-	// 4. Outputs
-	if err := encodeAssetOutputList(&buf, a.Outputs, &scratch); err != nil {
-		return nil, err
 	}
 
 	return buf.Bytes(), nil
-}
-
-func (a *AssetGroup) Decode(r io.Reader) error {
-	var scratch [8]byte
-
-	// 1. Read Presence Byte
-	var presenceBuf [1]byte
-	if _, err := io.ReadFull(r, presenceBuf[:]); err != nil {
-		return err
-	}
-	presence := presenceBuf[0]
-
-	// 2. Read fields
-
-	// AssetId
-	if (presence & maskAssetId) != 0 {
-		a.AssetId = &AssetId{}
-		if _, err := io.ReadFull(r, a.AssetId.Txid[:]); err != nil {
-			return err
-		}
-		if err := tlv.DUint16(r, &a.AssetId.Index, &scratch, 2); err != nil {
-			return err
-		}
-	}
-
-	// ControlAsset
-	if (presence & maskControlAsset) != 0 {
-		var err error
-		a.ControlAsset, err = decodeAssetRef(r, &scratch)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Metadata
-	if (presence & maskMetadata) != 0 {
-		var err error
-		a.Metadata, err = decodeMetadataList(r, &scratch)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Immutable
-	if (presence & maskImmutable) != 0 {
-		a.Immutable = true
-	} else {
-		a.Immutable = false
-	}
-
-	// 3. Inputs
-	var err error
-	a.Inputs, err = decodeAssetInputList(r, &scratch)
-	if err != nil {
-		return err
-	}
-
-	// 4. Outputs
-	a.Outputs, err = decodeAssetOutputList(r, &scratch)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func encodeAssetRef(w io.Writer, ref *AssetRef, scratch *[8]byte) error {

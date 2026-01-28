@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -39,54 +39,54 @@ func TestRebuildAssetTxs(t *testing.T) {
 	var caID [32]byte
 	copy(caID[:], caInputTxId[:])
 
-	controlAsset := extension.AssetGroup{
-		AssetId: &extension.AssetId{Txid: caID, Index: 0},
-		Inputs: []extension.AssetInput{{
-			Type:   extension.AssetTypeLocal,
+	controlAsset := asset.AssetGroup{
+		AssetId: &asset.AssetId{Txid: caID, Index: 0},
+		Inputs: []asset.AssetInput{{
+			Type:   asset.AssetTypeLocal,
 			Vin:    0,
 			Amount: 7,
 		}},
-		Outputs: []extension.AssetOutput{
+		Outputs: []asset.AssetOutput{
 			{
-				Type:   extension.AssetTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Amount: 1,
 				Vout:   0,
 			},
 		},
-		Metadata: []extension.Metadata{{Key: "type", Value: "control"}},
+		Metadata: []asset.Metadata{{Key: "type", Value: "control"}},
 	}
 
-	normalAsset := extension.AssetGroup{
-		AssetId:      &extension.AssetId{Txid: assetInTxId, Index: 0},
-		ControlAsset: extension.AssetRefFromId(extension.AssetId{Txid: caID, Index: 0}),
-		Inputs: []extension.AssetInput{{
-			Type:   extension.AssetTypeLocal,
+	normalAsset := asset.AssetGroup{
+		AssetId:      &asset.AssetId{Txid: assetInTxId, Index: 0},
+		ControlAsset: asset.AssetRefFromId(asset.AssetId{Txid: caID, Index: 0}),
+		Inputs: []asset.AssetInput{{
+			Type:   asset.AssetTypeLocal,
 			Vin:    1,
 			Amount: 5,
 		}},
-		Outputs: []extension.AssetOutput{
+		Outputs: []asset.AssetOutput{
 			{
-				Type:   extension.AssetTypeLocal,
+				Type:   asset.AssetTypeLocal,
 				Amount: 100,
 				Vout:   1,
 			},
 		},
-		Metadata: []extension.Metadata{{Key: "type", Value: "normal"}},
+		Metadata: []asset.Metadata{{Key: "type", Value: "normal"}},
 	}
 
-	assetGroup := &extension.AssetPacket{
-		Assets:  []extension.AssetGroup{controlAsset, normalAsset},
-		Version: extension.AssetVersion,
+	assetGroup := &asset.AssetPacket{
+		Assets:  []asset.AssetGroup{controlAsset, normalAsset},
+		Version: asset.AssetVersion,
 	}
 
-	opPacket := &extension.ExtensionPacket{
+	opPacket := &asset.ExtensionPacket{
 		Asset: assetGroup,
-		SubDust: &extension.SubDustPacket{
+		SubDust: &asset.SubDustPacket{
 			Key:    normalTapKey,
 			Amount: 220,
 		},
 	}
-	opret, err := opPacket.EncodeExtensionPacket()
+	opret, err := opPacket.Encode()
 	require.NoError(t, err)
 
 	changeValue := changeVtxo.Amount - opret.Value
@@ -144,7 +144,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 			continue
 		}
 		outputsNoAnchor = append(outputsNoAnchor, out)
-		if extension.ContainsAssetPacket(out.PkScript) {
+		if asset.ContainsAssetPacket(out.PkScript) {
 			assetGroupIndex = idx
 		}
 	}
@@ -158,9 +158,9 @@ func TestRebuildAssetTxs(t *testing.T) {
 	require.Equal(t, arkTx.UnsignedTx.TxID(), rebuiltArk.UnsignedTx.TxID())
 
 	// Verify asset group matches and points to rebuilt checkpoints.
-	origPacket, err := extension.DecodeAssetPacket(*outputsNoAnchor[assetGroupIndex])
+	origPacket, err := asset.DecodeOutputToAssetPacket(*outputsNoAnchor[assetGroupIndex])
 	require.NoError(t, err)
-	rebuiltPacket, err := extension.DecodeAssetPacket(*rebuiltArk.UnsignedTx.TxOut[assetGroupIndex])
+	rebuiltPacket, err := asset.DecodeOutputToAssetPacket(*rebuiltArk.UnsignedTx.TxOut[assetGroupIndex])
 	require.NoError(t, err)
 
 	require.NotNil(t, rebuiltPacket)
@@ -175,11 +175,11 @@ func TestRebuildAssetTxs(t *testing.T) {
 	}
 
 	for _, in := range rebuiltPacket.Assets[0].Inputs {
-		require.Equal(t, extension.AssetTypeLocal, in.Type)
+		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}
 	for _, in := range rebuiltPacket.Assets[1].Inputs {
-		require.Equal(t, extension.AssetTypeLocal, in.Type)
+		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}
 }

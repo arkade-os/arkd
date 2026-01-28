@@ -17,7 +17,7 @@ import (
 	badgerdb "github.com/arkade-os/arkd/internal/infrastructure/db/badger"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -182,7 +182,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
-
 	default:
 		return nil, fmt.Errorf("unknown event store db type")
 	}
@@ -556,13 +555,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 
 			// ignore asset anchor
-			if extension.IsExtensionPacket(out.PkScript) {
+			if asset.IsExtensionPacket(out.PkScript) {
 				txOut := wire.TxOut{
 					Value:    int64(out.Amount),
 					PkScript: out.PkScript,
 				}
 
-				packet, err := extension.DecodeExtensionPacket(txOut)
+				packet, err := asset.DecodeToExtensionPacket(txOut)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
@@ -578,12 +577,12 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 								continue
 							}
 
-							assetId = extension.AssetId{
+							assetId = asset.AssetId{
 								Txid:  *txhash,
 								Index: uint16(i),
-							}.ToString()
+							}.String()
 						} else {
-							assetId = grp.AssetId.ToString()
+							assetId = grp.AssetId.String()
 						}
 
 						for _, assetOut := range grp.Outputs {
@@ -711,8 +710,8 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 				continue
 			}
 
-			if extension.ContainsAssetPacket(out.PkScript) {
-				decodedAssetPacket, err := extension.DecodeAssetPacket(*out)
+			if asset.ContainsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset packet")
 					continue
@@ -722,7 +721,7 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 				for _, asst := range decodedAssetPacket.Assets {
 					for _, out := range asst.Outputs {
 						assetsMap[out.Vout] = domain.Asset{
-							AssetID: asst.AssetId.ToString(),
+							AssetID: asst.AssetId.String(),
 							Amount:  uint64(out.Amount),
 						}
 					}
