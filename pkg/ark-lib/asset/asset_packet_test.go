@@ -22,7 +22,8 @@ type jsonTxOutFixture struct {
 }
 
 type jsonTxOutsFixtures struct {
-	ErrorCases []jsonTxOutFixture `json:"error_cases"`
+	Valid   []jsonTxOutFixture `json:"valid"`
+	Invalid []jsonTxOutFixture `json:"invalid"`
 }
 
 type jsonMsgTxFixture struct {
@@ -34,29 +35,32 @@ type jsonMsgTxFixture struct {
 }
 
 type jsonMsgTxsFixtures struct {
-	ErrorCases []jsonMsgTxFixture `json:"error_cases"`
-	ValidCases []jsonMsgTxFixture `json:"valid_cases"`
+	Valid   []jsonMsgTxFixture `json:"valid"`
+	Invalid []jsonMsgTxFixture `json:"invalid"`
 }
 
-type jsonDecodeAssetPacketErrorCase struct {
+type jsonDecodeAssetPacketCase struct {
 	Name          string `json:"name"`
 	Description   string `json:"description,omitempty"`
 	BuildType     string `json:"build_type"`
-	ExpectedError string `json:"expected_error"`
+	ExpectedError string `json:"expected_error,omitempty"`
 }
 
-type jsonDeriveAssetPacketDecodeErrorCase struct {
-	Name          string `json:"name"`
-	Description   string `json:"description,omitempty"`
-	BuildType     string `json:"build_type"`
-	ExpectedError string `json:"expected_error"`
+type jsonDecodeAssetPacketFixtures struct {
+	Valid   []jsonDecodeAssetPacketCase `json:"valid"`
+	Invalid []jsonDecodeAssetPacketCase `json:"invalid"`
+}
+
+type jsonDeriveAssetPacketDecodeFixtures struct {
+	Valid   []jsonDecodeAssetPacketCase `json:"valid"`
+	Invalid []jsonDecodeAssetPacketCase `json:"invalid"`
 }
 
 type assetPacketFixturesJSON struct {
-	TxOuts                       jsonTxOutsFixtures                     `json:"tx_outs"`
-	MsgTxs                       jsonMsgTxsFixtures                     `json:"msg_txs"`
-	DecodeToAssetPacketErrors    []jsonDecodeAssetPacketErrorCase       `json:"decode_to_asset_packet_errors"`
-	DeriveAssetPacketDecodeErrors []jsonDeriveAssetPacketDecodeErrorCase `json:"derive_asset_packet_decode_errors"`
+	TxOuts                  jsonTxOutsFixtures                  `json:"tx_outs"`
+	MsgTxs                  jsonMsgTxsFixtures                  `json:"msg_txs"`
+	DecodeToAssetPacket     jsonDecodeAssetPacketFixtures       `json:"decode_to_asset_packet"`
+	DeriveAssetPacketDecode jsonDeriveAssetPacketDecodeFixtures `json:"derive_asset_packet_decode"`
 }
 
 var assetPacketFixtures assetPacketFixturesJSON
@@ -72,7 +76,7 @@ func init() {
 }
 
 func getTxOutErrorFixture(name string) *jsonTxOutFixture {
-	for _, f := range assetPacketFixtures.TxOuts.ErrorCases {
+	for _, f := range assetPacketFixtures.TxOuts.Invalid {
 		if f.Name == name {
 			return &f
 		}
@@ -81,7 +85,7 @@ func getTxOutErrorFixture(name string) *jsonTxOutFixture {
 }
 
 func getMsgTxErrorFixture(name string) *jsonMsgTxFixture {
-	for _, f := range assetPacketFixtures.MsgTxs.ErrorCases {
+	for _, f := range assetPacketFixtures.MsgTxs.Invalid {
 		if f.Name == name {
 			return &f
 		}
@@ -90,7 +94,7 @@ func getMsgTxErrorFixture(name string) *jsonMsgTxFixture {
 }
 
 func getMsgTxValidFixture(name string) *jsonMsgTxFixture {
-	for _, f := range assetPacketFixtures.MsgTxs.ValidCases {
+	for _, f := range assetPacketFixtures.MsgTxs.Valid {
 		if f.Name == name {
 			return &f
 		}
@@ -376,7 +380,7 @@ func buildAssetPacketTestScript(buildType string) ([]byte, error) {
 func TestDecodeToAssetPacket_InvalidGroupCount(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range assetPacketFixtures.DecodeToAssetPacketErrors {
+	for _, tc := range assetPacketFixtures.DecodeToAssetPacket.Invalid {
 		t.Run(tc.Name, func(t *testing.T) {
 			pkScript, err := buildAssetPacketTestScript(tc.BuildType)
 			require.NoError(t, err)
@@ -393,7 +397,7 @@ func TestDecodeToAssetPacket_InvalidGroupCount(t *testing.T) {
 func TestDeriveAssetPacketFromTx_DecodeError(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range assetPacketFixtures.DeriveAssetPacketDecodeErrors {
+	for _, tc := range assetPacketFixtures.DeriveAssetPacketDecode.Invalid {
 		t.Run(tc.Name, func(t *testing.T) {
 			pkScript, err := buildAssetPacketTestScript(tc.BuildType)
 			require.NoError(t, err)

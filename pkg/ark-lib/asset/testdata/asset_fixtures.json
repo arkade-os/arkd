@@ -1,73 +1,75 @@
 {
-  "asset_ids": [
-    {
-      "name": "deterministic",
-      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "index": 12345,
-      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3039"
-    },
-    {
-      "name": "zero_index",
-      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "index": 0,
-      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000"
-    },
-    {
-      "name": "max_index",
-      "txid": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-      "index": 65535,
-      "serialized_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-    },
-    {
-      "name": "high_byte_index",
-      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "index": 256,
-      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100"
-    },
-    {
-      "name": "low_byte_only",
-      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "index": 255,
-      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00ff"
-    },
-    {
-      "name": "zero_txid",
-      "txid": "0000000000000000000000000000000000000000000000000000000000000000",
-      "index": 1,
-      "serialized_hex": "00000000000000000000000000000000000000000000000000000000000000000001"
-    },
-    {
-      "name": "max_uint16_asset_id_index",
-      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "index": 65535,
-      "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffff"
-    }
-  ],
-  "invalid_strings": [
-    {
-      "name": "short",
-      "value": "0123",
-      "expected_error_format": "invalid asset id length: %d"
-    },
-    {
-      "name": "invalid_hex",
-      "value": "invalid",
-      "expected_error_contains": "encoding/hex"
-    },
-    {
-      "name": "wrong_length",
-      "byte_length": 35,
-      "expected_error_format": "invalid asset id length: %d"
-    },
-    {
-      "name": "too_short_bytes",
-      "byte_length": 33,
-      "expected_error_format": "invalid asset id length: %d"
-    },
-    {
-      "name": "empty",
-      "byte_length": 0,
-      "expected_error_format": "invalid asset id length: %d"
-    }
-  ]
+  "asset_ids": {
+    "valid": [
+      {
+        "name": "deterministic",
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index": 12345,
+        "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3039"
+      },
+      {
+        "name": "zero_index",
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index": 0,
+        "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000"
+      },
+      {
+        "name": "max_index",
+        "txid": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "index": 65535,
+        "serialized_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      {
+        "name": "high_byte_index",
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index": 256,
+        "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100"
+      },
+      {
+        "name": "low_byte_only",
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index": 255,
+        "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00ff"
+      },
+      {
+        "name": "zero_txid",
+        "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+        "index": 1,
+        "serialized_hex": "00000000000000000000000000000000000000000000000000000000000000000001"
+      },
+      {
+        "name": "max_uint16_asset_id_index",
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index": 65535,
+        "serialized_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffff"
+      }
+    ],
+    "invalid": [
+      {
+        "name": "short",
+        "value": "0123",
+        "expected_error_format": "invalid asset id length: %d"
+      },
+      {
+        "name": "invalid_hex",
+        "value": "invalid",
+        "expected_error_contains": "encoding/hex"
+      },
+      {
+        "name": "wrong_length",
+        "byte_length": 35,
+        "expected_error_format": "invalid asset id length: %d"
+      },
+      {
+        "name": "too_short_bytes",
+        "byte_length": 33,
+        "expected_error_format": "invalid asset id length: %d"
+      },
+      {
+        "name": "empty",
+        "byte_length": 0,
+        "expected_error_format": "invalid asset id length: %d"
+      }
+    ]
+  }
 }

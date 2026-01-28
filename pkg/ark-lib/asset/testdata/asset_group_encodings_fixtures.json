@@ -237,61 +237,8 @@
       "asset_id": { "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "index": 0 }
     }
   ],
-  "encode_asset_groups_errors": [
-    {
-      "name": "invalid_input_type_first",
-      "description": "First asset group has invalid input type",
-      "asset_groups": [
-        {
-          "inputs": [{ "type_raw": 99, "amount": 100 }]
-        }
-      ],
-      "expected_error": "failed to encode asset group: 0"
-    },
-    {
-      "name": "invalid_input_type_second",
-      "description": "Second asset group has invalid input type",
-      "use_normal_asset_first": true,
-      "asset_groups": [
-        {
-          "inputs": [{ "type_raw": 88, "amount": 100 }]
-        }
-      ],
-      "expected_error": "failed to encode asset group: 1"
-    },
-    {
-      "name": "invalid_output_type",
-      "description": "Asset group has invalid output type",
-      "asset_groups": [
-        {
-          "outputs": [{ "type_raw": 77, "amount": 100 }]
-        }
-      ],
-      "expected_error": "failed to encode asset group: 0"
-    },
-    {
-      "name": "invalid_control_asset_type",
-      "description": "Asset group has invalid control asset ref type",
-      "asset_groups": [
-        {
-          "control_asset": { "type_raw": 66 }
-        }
-      ],
-      "expected_error": "failed to encode asset group: 0"
-    },
-    {
-      "name": "multiple_valid_then_invalid",
-      "description": "Two valid asset groups followed by invalid",
-      "use_control_and_normal_first": true,
-      "asset_groups": [
-        {
-          "inputs": [{ "type_raw": 55, "amount": 100 }]
-        }
-      ],
-      "expected_error": "failed to encode asset group: 2"
-    }
-  ],
-  "encode_asset_groups_valid": [
+  "encode_asset_groups": {
+    "valid": [
     {
       "name": "full_asset_group",
       "description": "Asset group with all fields populated",
@@ -328,7 +275,62 @@
       ],
       "serialized_hex": "010001020000000000000064aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000101020000000000000064"
     }
-  ],
+    ],
+    "invalid": [
+      {
+        "name": "invalid_input_type_first",
+        "description": "First asset group has invalid input type",
+        "asset_groups": [
+          {
+            "inputs": [{ "type_raw": 99, "amount": 100 }]
+          }
+        ],
+        "expected_error": "failed to encode asset group: 0"
+      },
+      {
+        "name": "invalid_input_type_second",
+        "description": "Second asset group has invalid input type",
+        "use_normal_asset_first": true,
+        "asset_groups": [
+          {
+            "inputs": [{ "type_raw": 88, "amount": 100 }]
+          }
+        ],
+        "expected_error": "failed to encode asset group: 1"
+      },
+      {
+        "name": "invalid_output_type",
+        "description": "Asset group has invalid output type",
+        "asset_groups": [
+          {
+            "outputs": [{ "type_raw": 77, "amount": 100 }]
+          }
+        ],
+        "expected_error": "failed to encode asset group: 0"
+      },
+      {
+        "name": "invalid_control_asset_type",
+        "description": "Asset group has invalid control asset ref type",
+        "asset_groups": [
+          {
+            "control_asset": { "type_raw": 66 }
+          }
+        ],
+        "expected_error": "failed to encode asset group: 0"
+      },
+      {
+        "name": "multiple_valid_then_invalid",
+        "description": "Two valid asset groups followed by invalid",
+        "use_control_and_normal_first": true,
+        "asset_groups": [
+          {
+            "inputs": [{ "type_raw": 55, "amount": 100 }]
+          }
+        ],
+        "expected_error": "failed to encode asset group: 2"
+      }
+    ]
+  },
   "write_test_data": {
     "asset_ref_by_id": {
       "type": "AssetRefByID",

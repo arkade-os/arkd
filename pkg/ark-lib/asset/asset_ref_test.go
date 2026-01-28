@@ -21,9 +21,19 @@ type jsonGroupIndexFixture struct {
 	Index uint16 `json:"index"`
 }
 
+type assetIdRefFixturesJSON struct {
+	Valid   []jsonAssetIdRefFixture `json:"valid"`
+	Invalid []jsonAssetIdRefFixture `json:"invalid"`
+}
+
+type groupIndexFixturesJSON struct {
+	Valid   []jsonGroupIndexFixture `json:"valid"`
+	Invalid []jsonGroupIndexFixture `json:"invalid"`
+}
+
 type assetRefFixturesJSON struct {
-	AssetIds     []jsonAssetIdRefFixture `json:"asset_ids"`
-	GroupIndices []jsonGroupIndexFixture `json:"group_indices"`
+	AssetIds     assetIdRefFixturesJSON `json:"asset_ids"`
+	GroupIndices groupIndexFixturesJSON `json:"group_indices"`
 }
 
 var assetRefFixtures assetRefFixturesJSON
@@ -39,7 +49,7 @@ func init() {
 }
 
 func getAssetIdRefFixture(name string) *jsonAssetIdRefFixture {
-	for _, f := range assetRefFixtures.AssetIds {
+	for _, f := range assetRefFixtures.AssetIds.Valid {
 		if f.Name == name {
 			return &f
 		}
@@ -48,7 +58,7 @@ func getAssetIdRefFixture(name string) *jsonAssetIdRefFixture {
 }
 
 func getGroupIndexFixture(name string) *jsonGroupIndexFixture {
-	for _, f := range assetRefFixtures.GroupIndices {
+	for _, f := range assetRefFixtures.GroupIndices.Valid {
 		if f.Name == name {
 			return &f
 		}

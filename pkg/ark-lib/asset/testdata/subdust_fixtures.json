@@ -17,7 +17,8 @@
     ]
   },
   "tx_outs": {
-    "error_cases": [
+    "valid": [],
+    "invalid": [
       {
         "name": "empty",
         "pk_script_hex": "",

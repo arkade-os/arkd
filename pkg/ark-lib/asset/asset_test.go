@@ -26,9 +26,13 @@ type jsonInvalidStringFixture struct {
 	ExpectedErrorContains string `json:"expected_error_contains,omitempty"`
 }
 
+type assetIdFixturesJSON struct {
+	Valid   []jsonAssetIdFixture       `json:"valid"`
+	Invalid []jsonInvalidStringFixture `json:"invalid"`
+}
+
 type assetFixturesJSON struct {
-	AssetIds       []jsonAssetIdFixture       `json:"asset_ids"`
-	InvalidStrings []jsonInvalidStringFixture `json:"invalid_strings"`
+	AssetIds assetIdFixturesJSON `json:"asset_ids"`
 }
 
 var assetFixtures assetFixturesJSON
@@ -44,7 +48,7 @@ func init() {
 }
 
 func getAssetIdFixture(name string) *jsonAssetIdFixture {
-	for _, f := range assetFixtures.AssetIds {
+	for _, f := range assetFixtures.AssetIds.Valid {
 		if f.Name == name {
 			return &f
 		}
@@ -53,7 +57,7 @@ func getAssetIdFixture(name string) *jsonAssetIdFixture {
 }
 
 func getInvalidStringFixture(name string) *jsonInvalidStringFixture {
-	for _, f := range assetFixtures.InvalidStrings {
+	for _, f := range assetFixtures.AssetIds.Invalid {
 		if f.Name == name {
 			return &f
 		}
@@ -253,7 +257,7 @@ func TestAssetId_SerializeRoundtrip(t *testing.T) {
 func TestAssetId_SerializeMatchesExpected(t *testing.T) {
 	t.Parallel()
 
-	for _, fixture := range assetFixtures.AssetIds {
+	for _, fixture := range assetFixtures.AssetIds.Valid {
 		if fixture.SerializedHex == "" {
 			continue
 		}

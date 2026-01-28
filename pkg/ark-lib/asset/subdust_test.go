@@ -31,7 +31,8 @@ type jsonSubDustTxOutFixture struct {
 }
 
 type jsonSubDustTxOutsFixtures struct {
-	ErrorCases []jsonSubDustTxOutFixture `json:"error_cases"`
+	Valid   []jsonSubDustTxOutFixture `json:"valid"`
+	Invalid []jsonSubDustTxOutFixture `json:"invalid"`
 }
 
 type subdustFixturesJSON struct {
@@ -70,7 +71,7 @@ func getInvalidSubDustPacketFixture(name string) *jsonSubDustPacketFixture {
 }
 
 func getSubDustTxOutErrorFixture(name string) *jsonSubDustTxOutFixture {
-	for _, f := range subdustFixtures.TxOuts.ErrorCases {
+	for _, f := range subdustFixtures.TxOuts.Invalid {
 		if f.Name == name {
 			return &f
 		}

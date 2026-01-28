@@ -19,17 +19,27 @@ type jsonContainsAssetPacketCase struct {
 	Description string `json:"description,omitempty"`
 }
 
-type jsonParsePacketOpReturnErrorCase struct {
+type jsonParsePacketOpReturnCase struct {
 	Name          string `json:"name"`
 	Description   string `json:"description,omitempty"`
 	PkScriptHex   string `json:"pk_script_hex,omitempty"`
 	BuildType     string `json:"build_type,omitempty"`
-	ExpectedError string `json:"expected_error"`
+	ExpectedError string `json:"expected_error,omitempty"`
+}
+
+type jsonParsePacketOpReturnFixtures struct {
+	Valid   []jsonParsePacketOpReturnCase `json:"valid"`
+	Invalid []jsonParsePacketOpReturnCase `json:"invalid"`
+}
+
+type jsonContainsAssetPacketFixtures struct {
+	Valid   []jsonContainsAssetPacketCase `json:"valid"`
+	Invalid []jsonContainsAssetPacketCase `json:"invalid"`
 }
 
 type opreturnFixturesJSON struct {
-	ParsePacketOpReturnErrors []jsonParsePacketOpReturnErrorCase `json:"parse_packet_opreturn_errors"`
-	ContainsAssetPacketCases  []jsonContainsAssetPacketCase      `json:"contains_asset_packet_cases"`
+	ParsePacketOpReturn  jsonParsePacketOpReturnFixtures `json:"parse_packet_opreturn"`
+	ContainsAssetPacket  jsonContainsAssetPacketFixtures `json:"contains_asset_packet"`
 }
 
 var opreturnFixtures opreturnFixturesJSON
@@ -118,8 +128,8 @@ func buildPkScriptFromParams(buildType, pkScriptHex string, zeroCount, byteCount
 }
 
 func TestContainsAssetPacket(t *testing.T) {
-	// Test all cases from fixtures
-	for _, fixture := range opreturnFixtures.ContainsAssetPacketCases {
+	// Test all invalid cases from fixtures
+	for _, fixture := range opreturnFixtures.ContainsAssetPacket.Invalid {
 		t.Run(fixture.Name, func(t *testing.T) {
 			pkScript, err := buildPkScript(&fixture)
 			require.NoError(t, err)
@@ -147,7 +157,7 @@ func TestContainsAssetPacket(t *testing.T) {
 func TestParsePacketOpReturn_Errors(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range opreturnFixtures.ParsePacketOpReturnErrors {
+	for _, tc := range opreturnFixtures.ParsePacketOpReturn.Invalid {
 		t.Run(tc.Name, func(t *testing.T) {
 			pkScript, err := buildPkScriptFromParams(tc.BuildType, tc.PkScriptHex, 0, 0)
 			require.NoError(t, err)

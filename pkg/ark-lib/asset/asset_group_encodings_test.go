@@ -97,20 +97,19 @@ type jsonPubKeyFixture struct {
 	PrivKeyBytes string `json:"priv_key_bytes"`
 }
 
-type jsonEncodeAssetGroupsErrorCase struct {
+type jsonEncodeAssetGroupsCase struct {
 	Name                     string                 `json:"name"`
 	Description              string                 `json:"description,omitempty"`
 	AssetGroups              []jsonEncodeAssetGroup `json:"asset_groups"`
 	UseNormalAssetFirst      bool                   `json:"use_normal_asset_first,omitempty"`
 	UseControlAndNormalFirst bool                   `json:"use_control_and_normal_first,omitempty"`
-	ExpectedError            string                 `json:"expected_error"`
+	ExpectedError            string                 `json:"expected_error,omitempty"`
+	SerializedHex            string                 `json:"serialized_hex,omitempty"`
 }
 
-type jsonEncodeAssetGroupsValidCase struct {
-	Name          string                 `json:"name"`
-	Description   string                 `json:"description,omitempty"`
-	AssetGroups   []jsonEncodeAssetGroup `json:"asset_groups"`
-	SerializedHex string                 `json:"serialized_hex,omitempty"`
+type jsonEncodeAssetGroupsFixtures struct {
+	Valid   []jsonEncodeAssetGroupsCase `json:"valid"`
+	Invalid []jsonEncodeAssetGroupsCase `json:"invalid"`
 }
 
 type jsonEncodeAssetGroup struct {
@@ -156,20 +155,19 @@ type jsonIntentRoundtripCase struct {
 }
 
 type encodingsFixturesJSON struct {
-	AssetRefs               jsonAssetRefsFixtures            `json:"asset_refs"`
-	MetadataLists           []jsonMetadataListFixture        `json:"metadata_lists"`
-	AssetInputs             jsonAssetInputsFixtures          `json:"asset_inputs"`
-	AssetOutputs            jsonAssetOutputsFixtures         `json:"asset_outputs"`
-	PresenceBitCases        []jsonPresenceBitCase            `json:"presence_bit_cases"`
-	NormalizeSlicesCases    []jsonNormalizeSlicesCase        `json:"normalize_slices_cases"`
-	EncodeAssetGroupsErrors []jsonEncodeAssetGroupsErrorCase `json:"encode_asset_groups_errors"`
-	EncodeAssetGroupsValid  []jsonEncodeAssetGroupsValidCase `json:"encode_asset_groups_valid"`
-	WriteTestData           jsonWriteTestData                `json:"write_test_data"`
-	IntentTruncationInputs  []jsonIntentTruncationInput      `json:"intent_truncation_inputs"`
-	IntentRoundtripCases    []jsonIntentRoundtripCase        `json:"intent_roundtrip_cases"`
-	ControlAssetRefs        []jsonEncodingAssetIdRefFixture  `json:"control_asset_refs"`
-	PresenceBitAssetIds     []jsonEncodingAssetIdRefFixture  `json:"presence_bit_asset_ids"`
-	PubKeys                 []jsonPubKeyFixture              `json:"pub_keys"`
+	AssetRefs              jsonAssetRefsFixtures           `json:"asset_refs"`
+	MetadataLists          []jsonMetadataListFixture       `json:"metadata_lists"`
+	AssetInputs            jsonAssetInputsFixtures         `json:"asset_inputs"`
+	AssetOutputs           jsonAssetOutputsFixtures        `json:"asset_outputs"`
+	PresenceBitCases       []jsonPresenceBitCase           `json:"presence_bit_cases"`
+	NormalizeSlicesCases   []jsonNormalizeSlicesCase       `json:"normalize_slices_cases"`
+	EncodeAssetGroups      jsonEncodeAssetGroupsFixtures   `json:"encode_asset_groups"`
+	WriteTestData          jsonWriteTestData               `json:"write_test_data"`
+	IntentTruncationInputs []jsonIntentTruncationInput     `json:"intent_truncation_inputs"`
+	IntentRoundtripCases   []jsonIntentRoundtripCase       `json:"intent_roundtrip_cases"`
+	ControlAssetRefs       []jsonEncodingAssetIdRefFixture `json:"control_asset_refs"`
+	PresenceBitAssetIds    []jsonEncodingAssetIdRefFixture `json:"presence_bit_asset_ids"`
+	PubKeys                []jsonPubKeyFixture             `json:"pub_keys"`
 }
 
 var encodingsFixtures encodingsFixturesJSON
@@ -520,7 +518,7 @@ func TestEncodeAssetGroups_Single(t *testing.T) {
 func TestEncodeAssetGroups_Errors(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range encodingsFixtures.EncodeAssetGroupsErrors {
+	for _, tc := range encodingsFixtures.EncodeAssetGroups.Invalid {
 		t.Run(tc.Name, func(t *testing.T) {
 			var assetGroups []AssetGroup
 
@@ -549,7 +547,7 @@ func TestEncodeAssetGroups_Errors(t *testing.T) {
 func TestEncodeAssetGroups_ValidCases(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range encodingsFixtures.EncodeAssetGroupsValid {
+	for _, tc := range encodingsFixtures.EncodeAssetGroups.Valid {
 		t.Run(tc.Name, func(t *testing.T) {
 			var assetGroups []AssetGroup
 			for _, jag := range tc.AssetGroups {
@@ -568,7 +566,7 @@ func TestEncodeAssetGroups_ValidCases(t *testing.T) {
 func TestEncodeAssetGroups_MatchesExpected(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range encodingsFixtures.EncodeAssetGroupsValid {
+	for _, tc := range encodingsFixtures.EncodeAssetGroups.Valid {
 		if tc.SerializedHex == "" {
 			continue
 		}

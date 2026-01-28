@@ -1,81 +1,87 @@
 {
-  "parse_packet_opreturn_errors": [
-    {
-      "name": "invalid_op_return_data_push",
-      "description": "OP_RETURN followed by OP_1 (not a data push)",
-      "pk_script_hex": "6a51",
-      "expected_error": "invalid OP_RETURN data push"
-    },
-    {
-      "name": "invalid_tlv_length_exceeds_remaining",
-      "description": "ArkadeMagic + type byte + length that exceeds remaining data",
-      "build_type": "arkade_magic_invalid_tlv_length",
-      "expected_error": "invalid TLV length for OP_RETURN payload"
-    },
-    {
-      "name": "missing_op_return_payload_no_markers",
-      "description": "ArkadeMagic + unknown type marker (0x99) + valid TLV - no asset or subdust",
-      "build_type": "arkade_magic_unknown_marker",
-      "expected_error": "missing op_return payload"
-    },
-    {
-      "name": "empty_payload_no_tlv",
-      "description": "ArkadeMagic only, no TLV entries - loop never entered",
-      "build_type": "arkade_magic_only",
-      "expected_error": "missing op_return payload"
-    },
-    {
-      "name": "truncated_tlv_length",
-      "description": "ArkadeMagic + type byte but no length",
-      "build_type": "arkade_magic_type_only",
-      "expected_error": "EOF"
-    },
-    {
-      "name": "truncated_tlv_value",
-      "description": "ArkadeMagic + type + length but incomplete value",
-      "build_type": "arkade_magic_incomplete_value",
-      "expected_error": "invalid TLV length for OP_RETURN payload"
-    }
-  ],
-  "contains_asset_packet_cases": [
-    {
-      "name": "empty",
-      "pk_script_hex": "",
-      "expected": false
-    },
-    {
-      "name": "no_opreturn_prefix",
-      "pk_script_hex": "010203",
-      "expected": false
-    },
-    {
-      "name": "only_opreturn_prefix",
-      "pk_script_hex": "6a",
-      "expected": false
-    },
-    {
-      "name": "tokenizer_error",
-      "pk_script_hex": "6a010203",
-      "expected": false
-    },
-    {
-      "name": "missing_arkade_magic",
-      "pk_script_hex": "6a01020304050607",
-      "expected": false
-    },
-    {
-      "name": "with_arkade_magic_bad_data",
-      "description": "OP_RETURN + ArkadeMagic + 66 zero bytes",
-      "build_type": "arkade_magic_with_zeros",
-      "zero_count": 66,
-      "expected": false
-    },
-    {
-      "name": "with_arkade_magic_bad_length",
-      "description": "OP_RETURN + ArkadeMagic + 67 sequential bytes (tokenizer error)",
-      "build_type": "arkade_magic_with_sequential",
-      "byte_count": 67,
-      "expected": false
-    }
-  ]
+  "parse_packet_opreturn": {
+    "valid": [],
+    "invalid": [
+      {
+        "name": "invalid_op_return_data_push",
+        "description": "OP_RETURN followed by OP_1 (not a data push)",
+        "pk_script_hex": "6a51",
+        "expected_error": "invalid OP_RETURN data push"
+      },
+      {
+        "name": "invalid_tlv_length_exceeds_remaining",
+        "description": "ArkadeMagic + type byte + length that exceeds remaining data",
+        "build_type": "arkade_magic_invalid_tlv_length",
+        "expected_error": "invalid TLV length for OP_RETURN payload"
+      },
+      {
+        "name": "missing_op_return_payload_no_markers",
+        "description": "ArkadeMagic + unknown type marker (0x99) + valid TLV - no asset or subdust",
+        "build_type": "arkade_magic_unknown_marker",
+        "expected_error": "missing op_return payload"
+      },
+      {
+        "name": "empty_payload_no_tlv",
+        "description": "ArkadeMagic only, no TLV entries - loop never entered",
+        "build_type": "arkade_magic_only",
+        "expected_error": "missing op_return payload"
+      },
+      {
+        "name": "truncated_tlv_length",
+        "description": "ArkadeMagic + type byte but no length",
+        "build_type": "arkade_magic_type_only",
+        "expected_error": "EOF"
+      },
+      {
+        "name": "truncated_tlv_value",
+        "description": "ArkadeMagic + type + length but incomplete value",
+        "build_type": "arkade_magic_incomplete_value",
+        "expected_error": "invalid TLV length for OP_RETURN payload"
+      }
+    ]
+  },
+  "contains_asset_packet": {
+    "valid": [],
+    "invalid": [
+      {
+        "name": "empty",
+        "pk_script_hex": "",
+        "expected": false
+      },
+      {
+        "name": "no_opreturn_prefix",
+        "pk_script_hex": "010203",
+        "expected": false
+      },
+      {
+        "name": "only_opreturn_prefix",
+        "pk_script_hex": "6a",
+        "expected": false
+      },
+      {
+        "name": "tokenizer_error",
+        "pk_script_hex": "6a010203",
+        "expected": false
+      },
+      {
+        "name": "missing_arkade_magic",
+        "pk_script_hex": "6a01020304050607",
+        "expected": false
+      },
+      {
+        "name": "with_arkade_magic_bad_data",
+        "description": "OP_RETURN + ArkadeMagic + 66 zero bytes",
+        "build_type": "arkade_magic_with_zeros",
+        "zero_count": 66,
+        "expected": false
+      },
+      {
+        "name": "with_arkade_magic_bad_length",
+        "description": "OP_RETURN + ArkadeMagic + 67 sequential bytes (tokenizer error)",
+        "build_type": "arkade_magic_with_sequential",
+        "byte_count": 67,
+        "expected": false
+      }
+    ]
+  }
 }
