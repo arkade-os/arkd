@@ -1,239 +1,208 @@
-package asset
+package asset_test
 
 import (
-	"bytes"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"os"
 	"testing"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/stretchr/testify/require"
 )
 
-type assetGroupFixture struct {
-	Name          string         `json:"name"`
-	AssetGroup    jsonAssetGroup `json:"asset_group"`
-	ExpectedError string         `json:"expected_error,omitempty"`
-	SerializedHex string         `json:"serialized_hex,omitempty"`
+func TestAssetGroup(t *testing.T) {
+	var fixtures assetGroupFixturesJSON
+	buf, err := os.ReadFile("testdata/asset_group_fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(buf, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("valid", func(t *testing.T) {
+		for _, v := range fixtures.Valid {
+			t.Run(v.Name, func(t *testing.T) {
+				assetId, controlAsset, ins, outs, md := v.parse()
+				assetGroup, err := asset.NewAssetGroup(assetId, controlAsset, ins, outs, md)
+				require.NoError(t, err)
+				require.NotNil(t, assetGroup)
+
+				got, err := assetGroup.Serialize()
+				require.NoError(t, err)
+				require.NotEmpty(t, got)
+				require.Equal(t, v.SerializedHex, assetGroup.String())
+
+				assetGroup, err = asset.NewAssetGroupFromString(v.SerializedHex)
+				require.NoError(t, err)
+				if assetId != nil {
+					require.Equal(t, assetId.String(), assetGroup.AssetId.String())
+				} else {
+					require.Nil(t, assetGroup.AssetId)
+				}
+				if controlAsset != nil {
+					require.Equal(t, controlAsset.String(), assetGroup.ControlAsset.String())
+				} else {
+					require.Nil(t, assetGroup.ControlAsset)
+				}
+				require.Equal(t, ins, assetGroup.Inputs)
+				require.Equal(t, outs, assetGroup.Outputs)
+				require.Equal(t, md, assetGroup.Metadata)
+				require.True(t, assetGroup.Immutable)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Run("Serialize", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.NewAssetGroup {
+				t.Run(v.Name, func(t *testing.T) {
+					ins := make([]asset.AssetInput, 0, len(v.Inputs))
+					for _, vv := range v.Inputs {
+						ins = append(ins, *vv.parse())
+					}
+					assetGroup := asset.AssetGroup{
+						AssetId:   v.AssetId.parse(),
+						Inputs:    ins,
+						Immutable: v.Immutable,
+					}
+					got, err := assetGroup.Serialize()
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
+		t.Run("NewAssetGroupFromString", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.NewAssetGroupFromString {
+				t.Run(v.Name, func(t *testing.T) {
+					got, err := asset.NewAssetGroupFromString(v.SerializedHex)
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
+	})
 }
 
 type assetGroupFixturesJSON struct {
-	Valid   []assetGroupFixture `json:"valid"`
-	Invalid []assetGroupFixture `json:"invalid"`
+	Valid   []assetGroupValidFixture `json:"valid"`
+	Invalid struct {
+		NewAssetGroup []struct {
+			Name          string              `json:"name"`
+			ExpectedError string              `json:"expectedError"`
+			AssetId       assetIdFixture      `json:"assetId,omitempty"`
+			Inputs        []assetInputFixture `json:"inputs"`
+			Immutable     bool                `json:"immutable"`
+		} `json:"newAssetGroup"`
+		NewAssetGroupFromString []struct {
+			Name          string `json:"name"`
+			ExpectedError string `json:"expectedError"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newAssetGroupFromString"`
+	} `json:"invalid"`
 }
 
-var (
-	localInputOutputFixture AssetGroup
-	fullRoundtripFixture    AssetGroup
-)
-
-func init() {
-	valid, _, err := parseAssetGroupFixtures()
-	if err != nil {
-		panic(err)
-	}
-	localInputOutputFixture, err = GetAssetGroupFixture("local_input_output", valid)
-	if err != nil {
-		panic(err)
-	}
-	fullRoundtripFixture, err = GetAssetGroupFixture("full_roundtrip", valid)
-	if err != nil {
-		panic(err)
-	}
+type assetGroupValidFixture struct {
+	Name          string               `json:"name"`
+	AssetId       assetIdFixture       `json:"assetId,omitempty"`
+	ControlAsset  assetRefFixture      `json:"controlAsset,omitempty"`
+	Metadata      []metadataFixture    `json:"metadata,omitempty"`
+	Inputs        []assetInputFixture  `json:"inputs"`
+	Outputs       []assetOutputFixture `json:"outputs"`
+	SerializedHex string               `json:"serializedHex"`
 }
 
-func parseAssetGroupFixtures() ([]assetGroupFixture, []assetGroupFixture, error) {
-	file, err := os.ReadFile("testdata/asset_group_fixtures.json")
-	if err != nil {
-		return nil, nil, err
+func (f assetGroupValidFixture) parse() (
+	*asset.AssetId, *asset.AssetRef, []asset.AssetInput, []asset.AssetOutput, []asset.Metadata,
+) {
+	ins := make([]asset.AssetInput, 0, len(f.Inputs))
+	for _, in := range f.Inputs {
+		ins = append(ins, *in.parse())
 	}
-	var jsonData assetGroupFixturesJSON
-	if err := json.Unmarshal(file, &jsonData); err != nil {
-		return nil, nil, err
+	outs := make([]asset.AssetOutput, 0, len(f.Outputs))
+	for _, out := range f.Outputs {
+		outs = append(outs, *out.parse())
 	}
-	return jsonData.Valid, jsonData.Invalid, nil
-}
-
-// GetAssetGroupFixture returns an AssetGroup by name from fixtures.
-// Uses jsonAssetGroupToAssetGroup from extension_packet_test.go.
-func GetAssetGroupFixture(name string, fixtures []assetGroupFixture) (AssetGroup, error) {
-	for _, f := range fixtures {
-		if f.Name == name {
-			return jsonAssetGroupToAssetGroup(f.AssetGroup)
-		}
+	md := make([]asset.Metadata, 0, len(f.Metadata))
+	for _, m := range f.Metadata {
+		md = append(md, *m.parse())
 	}
-	return AssetGroup{}, fmt.Errorf("fixture not found: %s", name)
-}
-
-// GetInvalidAssetGroupFixture returns an invalid AssetGroup fixture for error testing.
-func GetInvalidAssetGroupFixture(name string, fixtures []assetGroupFixture) (AssetGroup, string, error) {
-	for _, f := range fixtures {
-		if f.Name == name {
-			ag, err := jsonAssetGroupToAssetGroup(f.AssetGroup)
-			return ag, f.ExpectedError, err
-		}
+	if len(ins) == 0 {
+		ins = nil
 	}
-	return AssetGroup{}, "", fmt.Errorf("fixture not found: %s", name)
-}
-
-func TestAssetGroup_Encode_ErrorUnknownInputType(t *testing.T) {
-	t.Parallel()
-	_, invalid, err := parseAssetGroupFixtures()
-	require.NoError(t, err)
-
-	ag, expectedErr, err := GetInvalidAssetGroupFixture("unknown_input_type", invalid)
-	require.NoError(t, err)
-
-	_, encErr := ag.Encode()
-	require.Error(t, encErr)
-	require.Contains(t, encErr.Error(), expectedErr)
-}
-
-func TestAssetGroup_Decode_Truncated(t *testing.T) {
-	t.Parallel()
-	ag := localInputOutputFixture
-	data, err := ag.Encode()
-	require.NoError(t, err)
-	if len(data) < 5 {
-		t.Skip("encoded data too small to truncate")
+	if len(outs) == 0 {
+		outs = nil
 	}
-	// Truncate last 3 bytes to simulate incomplete data
-	tr := data[:len(data)-3]
-	var out AssetGroup
-	err = out.Decode(bytes.NewReader(tr))
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unexpected EOF")
-}
-
-func TestAssetEncodeDecodeRoundTrip(t *testing.T) {
-	ag := fullRoundtripFixture
-
-	encoded, err := ag.Encode()
-	require.NoError(t, err)
-	require.NotEmpty(t, encoded)
-
-	var decoded AssetGroup
-
-	require.NoError(t, decoded.Decode(bytes.NewReader(encoded)))
-	require.Equal(t, ag, decoded)
-
-	var nilAssetGroup *AssetGroup
-	_, err = nilAssetGroup.Encode()
-	require.Error(t, err)
-	require.Equal(t, "cannot encode nil AssetGroup", fmt.Sprint(err))
-}
-
-func TestAssetGroup_Encode_MatchesExpected(t *testing.T) {
-	t.Parallel()
-	valid, _, err := parseAssetGroupFixtures()
-	require.NoError(t, err)
-
-	for _, fixture := range valid {
-		if fixture.SerializedHex == "" {
-			continue
-		}
-		fixture := fixture
-		t.Run(fixture.Name, func(t *testing.T) {
-			t.Parallel()
-			ag, err := jsonAssetGroupToAssetGroup(fixture.AssetGroup)
-			require.NoError(t, err)
-
-			encoded, err := ag.Encode()
-			require.NoError(t, err)
-			actualHex := hex.EncodeToString(encoded)
-
-			require.Equal(t, fixture.SerializedHex, actualHex,
-				"serialized hex mismatch for %s", fixture.Name)
-		})
+	if len(md) == 0 {
+		md = nil
 	}
+	return f.AssetId.parse(), f.ControlAsset.parse(), ins, outs, md
 }
 
-func TestAssetGroup_Decode_TruncatedAtVariousPoints(t *testing.T) {
-	t.Parallel()
+type assetIdFixture struct {
+	Txid  string `json:"txid"`
+	Index uint16 `json:"index"`
+}
 
-	// Test empty buffer (no presence byte)
-	t.Run("empty_buffer", func(t *testing.T) {
-		var ag AssetGroup
-		err := ag.Decode(bytes.NewReader([]byte{}))
-		require.Error(t, err)
-		require.Equal(t, "EOF", err.Error())
-	})
+func (f assetIdFixture) parse() *asset.AssetId {
+	if f.Txid == "" && f.Index == 0 {
+		return nil
+	}
+	id, _ := asset.NewAssetId(f.Txid, f.Index)
+	return id
+}
 
-	// Test with AssetId present but truncated
-	t.Run("truncated_asset_id_txid", func(t *testing.T) {
-		// presence byte with AssetId flag, but only partial Txid
-		data := []byte{0x01} // maskAssetId
-		data = append(data, bytes.Repeat([]byte{0xaa}, 16)...) // only 16 bytes of Txid (need 32)
-		var ag AssetGroup
-		err := ag.Decode(bytes.NewReader(data))
-		require.Error(t, err)
-		require.Equal(t, "unexpected EOF", err.Error())
-	})
+type assetRefFixture struct {
+	AssetId    assetIdFixture `json:"assetId,omitempty"`
+	GroupIndex uint16         `json:"groupIndex,omitempty"`
+}
 
-	t.Run("truncated_asset_id_index", func(t *testing.T) {
-		// presence byte with AssetId flag, full Txid but no Index
-		data := []byte{0x01} // maskAssetId
-		data = append(data, bytes.Repeat([]byte{0xaa}, 32)...) // 32 bytes Txid
-		// missing 2 bytes for Index
-		var ag AssetGroup
-		err := ag.Decode(bytes.NewReader(data))
-		require.Error(t, err)
-		require.Equal(t, "EOF", err.Error())
-	})
+func (f assetRefFixture) parse() *asset.AssetRef {
+	if f.AssetId.Txid == "" && f.AssetId.Index == 0 && f.GroupIndex == 0 {
+		return nil
+	}
+	if f.AssetId.Txid == "" {
+		ref, _ := asset.NewAssetRefFromGroupIndex(f.GroupIndex)
+		return ref
+	}
+	ref, _ := asset.NewAssetRefFromId(*f.AssetId.parse())
+	return ref
+}
 
-	// Test with ControlAsset present but truncated
-	t.Run("truncated_control_asset", func(t *testing.T) {
-		// presence byte with ControlAsset flag, but no control asset data
-		data := []byte{0x02} // maskControlAsset
-		var ag AssetGroup
-		err := ag.Decode(bytes.NewReader(data))
-		require.Error(t, err)
-		require.Equal(t, "EOF", err.Error())
-	})
+type assetInputFixture struct {
+	Type   string `json:"type"`
+	Vin    uint16 `json:"vin"`
+	Txid   string `json:"txid"`
+	Amount uint64 `json:"amount"`
+}
 
-	// Test with Metadata present but truncated
-	t.Run("truncated_metadata", func(t *testing.T) {
-		// presence byte with Metadata flag, but no metadata data
-		data := []byte{0x04} // maskMetadata
-		var ag AssetGroup
-		err := ag.Decode(bytes.NewReader(data))
-		require.Error(t, err)
-		require.Equal(t, "EOF", err.Error())
-	})
+func (f assetInputFixture) parse() *asset.AssetInput {
+	if f.Type == asset.AssetTypeLocal.String() {
+		in, _ := asset.NewAssetInput(f.Vin, f.Amount)
+		return in
+	}
+	in, _ := asset.NewIntentAssetInput(f.Txid, f.Vin, f.Amount)
+	return in
+}
 
-	// Test with valid presence but truncated inputs
-	t.Run("truncated_inputs", func(t *testing.T) {
-		// presence byte with no flags, then truncated input list
-		data := []byte{0x00}        // no flags
-		data = append(data, 0x01)   // input count = 1
-		// but no actual input data
-		var ag AssetGroup
-		err := ag.Decode(bytes.NewReader(data))
-		require.Error(t, err)
-		require.Equal(t, "EOF", err.Error())
-	})
+type assetOutputFixture struct {
+	Type   string `json:"type"`
+	Vout   uint16 `json:"vout"`
+	Amount uint64 `json:"amount"`
+}
 
-	// Test with valid inputs but truncated outputs
-	t.Run("truncated_outputs", func(t *testing.T) {
-		// Use fixture for minimal valid asset group
-		ag := localInputOutputFixture
-		encoded, err := ag.Encode()
-		require.NoError(t, err)
+func (f assetOutputFixture) parse() *asset.AssetOutput {
+	out, _ := asset.NewAssetOutput(f.Vout, f.Amount)
+	return out
+}
 
-		// Find where outputs start and truncate there
-		// Structure: presence(1) + inputs(count + data) + outputs(count + data)
-		// We need to truncate after inputs but before outputs complete
-		// Truncate to just presence + inputs + output count but no output data
-		truncateAt := len(encoded) - 10 // remove last 10 bytes
-		if truncateAt < 5 {
-			truncateAt = 5
-		}
-		truncated := encoded[:truncateAt]
+type metadataFixture struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
 
-		var decoded AssetGroup
-		err = decoded.Decode(bytes.NewReader(truncated))
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "unexpected EOF")
-	})
+func (f metadataFixture) parse() *asset.Metadata {
+	md, _ := asset.NewMetadata(f.Key, f.Value)
+	return md
 }

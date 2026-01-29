@@ -1,123 +1,90 @@
-package asset
+package asset_test
 
 import (
-	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"testing"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/stretchr/testify/require"
 )
 
-type jsonAssetIdRefFixture struct {
-	Name  string `json:"name"`
-	Txid  string `json:"txid"`
-	Index uint16 `json:"index"`
+type assetRefFixtures struct {
+	Valid struct {
+		AssetRefFromId []struct {
+			Name          string `json:"name"`
+			Txid          string `json:"txid"`
+			Index         uint16 `json:"index"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newAssetRefFromId"`
+		AssetRefFromGroupIndex []struct {
+			Name          string `json:"name"`
+			Index         uint16 `json:"index"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newAssetRefFromGroupIndex"`
+	} `json:"valid"`
+	Invalid struct {
+		AssetRefFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newAssetRefFromString"`
+	} `json:"invalid"`
 }
 
-type jsonGroupIndexFixture struct {
-	Name  string `json:"name"`
-	Index uint16 `json:"index"`
-}
-
-type assetIdRefFixturesJSON struct {
-	Valid   []jsonAssetIdRefFixture `json:"valid"`
-	Invalid []jsonAssetIdRefFixture `json:"invalid"`
-}
-
-type groupIndexFixturesJSON struct {
-	Valid   []jsonGroupIndexFixture `json:"valid"`
-	Invalid []jsonGroupIndexFixture `json:"invalid"`
-}
-
-type assetRefFixturesJSON struct {
-	AssetIds     assetIdRefFixturesJSON `json:"asset_ids"`
-	GroupIndices groupIndexFixturesJSON `json:"group_indices"`
-}
-
-var assetRefFixtures assetRefFixturesJSON
-
-func init() {
-	file, err := os.ReadFile("testdata/asset_ref_fixtures.json")
-	if err != nil {
-		panic(err)
-	}
-	if err := json.Unmarshal(file, &assetRefFixtures); err != nil {
-		panic(err)
-	}
-}
-
-func getAssetIdRefFixture(name string) *jsonAssetIdRefFixture {
-	for _, f := range assetRefFixtures.AssetIds.Valid {
-		if f.Name == name {
-			return &f
-		}
-	}
-	return nil
-}
-
-func getGroupIndexFixture(name string) *jsonGroupIndexFixture {
-	for _, f := range assetRefFixtures.GroupIndices.Valid {
-		if f.Name == name {
-			return &f
-		}
-	}
-	return nil
-}
-
-func fixtureToAssetIdRef(f *jsonAssetIdRefFixture) (AssetId, error) {
-	b, err := hex.DecodeString(f.Txid)
-	if err != nil {
-		return AssetId{}, err
-	}
-	var arr [32]byte
-	copy(arr[:], b)
-	return AssetId{Txid: arr, Index: f.Index}, nil
-}
-
-func TestAssetRefFromIdAndGroupIndex(t *testing.T) {
-	t.Parallel()
-
-	// deterministic AssetId from fixture
-	idFixture := getAssetIdRefFixture("sequential_bytes")
-	require.NotNil(t, idFixture)
-	id, err := fixtureToAssetIdRef(idFixture)
+func TestAssetRef(t *testing.T) {
+	var fixtures assetRefFixtures
+	f, err := os.ReadFile("testdata/asset_ref_fixtures.json")
+	require.NoError(t, err)
+	err = json.Unmarshal(f, &fixtures)
 	require.NoError(t, err)
 
-	ref := AssetRefFromId(id)
-	require.NotNil(t, ref)
-	require.Equal(t, AssetRefByID, ref.Type)
-	require.Equal(t, id.Index, ref.AssetId.Index)
-	require.True(t, bytes.Equal(id.Txid[:], ref.AssetId.Txid[:]))
+	t.Run("valid", func(t *testing.T) {
+		t.Run("from id", func(t *testing.T) {
+			for _, v := range fixtures.Valid.AssetRefFromId {
+				t.Run(v.Name, func(t *testing.T) {
+					assetId, err := asset.NewAssetId(v.Txid, v.Index)
+					require.NoError(t, err)
 
-	groupFixture := getGroupIndexFixture("default")
-	require.NotNil(t, groupFixture)
-	gref := AssetRefFromGroupIndex(groupFixture.Index)
-	require.NotNil(t, gref)
-	require.Equal(t, AssetRefByGroup, gref.Type)
-	require.Equal(t, groupFixture.Index, gref.GroupIndex)
-}
+					assetRef, err := asset.NewAssetRefFromId(*assetId)
+					require.NoError(t, err)
+					require.NotNil(t, assetRef)
+					require.Equal(t, int(assetRef.Type), int(asset.AssetRefByID))
 
-func TestAssetRef_ConstructorsIndependence(t *testing.T) {
-	t.Parallel()
+					got, err := assetRef.Serialize()
+					require.NoError(t, err)
+					require.NotEmpty(t, got)
+					require.Equal(t, v.SerializedHex, assetRef.String())
+				})
+			}
+		})
+		t.Run("from group index", func(t *testing.T) {
+			for _, v := range fixtures.Valid.AssetRefFromGroupIndex {
+				t.Run(v.Name, func(t *testing.T) {
+					assetRef, err := asset.NewAssetRefFromGroupIndex(v.Index)
+					require.NoError(t, err)
+					require.NotNil(t, assetRef)
+					require.Equal(t, int(assetRef.Type), int(asset.AssetRefByID))
 
-	// ensure that modifying returned refs does not mutate originals
-	idFixture := getAssetIdRefFixture("simple")
-	require.NotNil(t, idFixture)
-	id, err := fixtureToAssetIdRef(idFixture)
-	require.NoError(t, err)
+					got, err := assetRef.Serialize()
+					require.NoError(t, err)
+					require.NotEmpty(t, got)
+					require.Equal(t, v.SerializedHex, assetRef.String())
+				})
+			}
+		})
+	})
 
-	ref := AssetRefFromId(id)
-	ref.AssetId.Index = 99
-	// original id unchanged
-	require.Equal(t, idFixture.Index, id.Index)
-
-	groupFixture := getGroupIndexFixture("independence_test")
-	require.NotNil(t, groupFixture)
-	g := AssetRefFromGroupIndex(groupFixture.Index)
-	g.GroupIndex = 123
-	// ensure original group index unchanged
-	g2 := AssetRefFromGroupIndex(groupFixture.Index)
-	require.Equal(t, groupFixture.Index, g2.GroupIndex)
+	t.Run("invalid", func(t *testing.T) {
+		t.Run("from string", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.AssetRefFromString {
+				t.Run(v.Name, func(t *testing.T) {
+					got, err := asset.NewAssetRefFromString(v.SerializedHex)
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
+	})
 }
