@@ -388,7 +388,11 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, aliceBalance)
 			require.Greater(t, int(aliceBalance.OffchainBalance.SatsBalance.TotalAmount), 0)
-			require.Less(t, int(aliceBalance.OffchainBalance.SatsBalance.TotalAmount), prevTotalBalance)
+			require.Less(
+				t,
+				int(aliceBalance.OffchainBalance.SatsBalance.TotalAmount),
+				prevTotalBalance,
+			)
 
 			bobBalance, err = bob.Balance(t.Context())
 			require.NoError(t, err)
@@ -4149,8 +4153,11 @@ func TestAsset(t *testing.T) {
 
 		// 1. Create Control Asset (regular asset used for control)
 		controlAssetParams := types.AssetCreationParams{
-			Quantity:    1,
-			MetadataMap: map[string]string{"name": "Control Token", "desc": "Controls other assets"},
+			Quantity: 1,
+			MetadataMap: map[string]string{
+				"name": "Control Token",
+				"desc": "Controls other assets",
+			},
 		}
 		_, assetIds, err := issuer.CreateAsset(
 			ctx,
@@ -4216,8 +4223,11 @@ func TestAsset(t *testing.T) {
 
 		// 1. Create Control Asset (regular asset used for control)
 		controlAssetParams := types.AssetCreationParams{
-			Quantity:    1,
-			MetadataMap: map[string]string{"name": "Control Token", "desc": "Controls other assets"},
+			Quantity: 1,
+			MetadataMap: map[string]string{
+				"name": "Control Token",
+				"desc": "Controls other assets",
+			},
 		}
 		_, assetIds, err := issuer.CreateAsset(
 			ctx,
