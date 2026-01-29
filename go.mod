@@ -21,13 +21,13 @@ replace github.com/arkade-os/arkd/pkg/errors => ./pkg/errors
 require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260102141947-c66f85422174
+	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260128235928-8737e57bae12
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/arkd-wallet-btcwallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.8.2-0.20260121032947-a50889351829
+	github.com/arkade-os/go-sdk v0.8.2-0.20260129131611-839f2653923a
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/docker/docker v27.1.1+incompatible
@@ -49,7 +49,7 @@ require (
 	github.com/sqlc-dev/pqtype v0.3.0
 	github.com/stretchr/testify v1.11.1
 	github.com/timshannon/badgerhold/v4 v4.0.3
-	github.com/urfave/cli/v2 v2.27.4
+	github.com/urfave/cli/v2 v2.27.7
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.14.0
@@ -95,7 +95,7 @@ require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/decred/dcrd/lru v1.1.3 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
