@@ -122,20 +122,20 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
 
 	assetList := make([]domain.NormalAsset, 0)
-	assetVouts := make(map[uint32]struct{})
+	assetVouts := make(map[uint16]struct{})
 	assetOpReturnProcessed := false
 
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
 		var pubKey string
 		var isSubDust bool
 
-		if asset.ContainsAssetPacket(out.PkScript) {
+		if asset.IsAssetPacket(out.PkScript) {
 			if assetOpReturnProcessed {
 				continue
 			}
 			assetOpReturnProcessed = true
 
-			decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
+			decodedAssetPacket, err := asset.NewPacketFromTxOut(*out)
 			if err != nil {
 				return "", nil, nil, fmt.Errorf(
 					"failed to decode asset group from opreturn: %s",
@@ -143,7 +143,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				)
 			}
 
-			allAssets := decodedAssetPacket.Assets
+			allAssets := decodedAssetPacket
 
 			for i, grpAsset := range allAssets {
 				var assetId asset.AssetId
@@ -171,7 +171,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 					assetList = append(assetList, domain.NormalAsset{
 						Outpoint: domain.Outpoint{
 							Txid: txid,
-							VOut: assetOut.Vout,
+							VOut: uint32(assetOut.Vout),
 						},
 						Amount:  assetOut.Amount,
 						AssetID: assetId.String(),
@@ -179,19 +179,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				}
 			}
 
-			subDustPacket, err := asset.DecodeToSubDustPacket(*out)
-			if err != nil {
-				return "", nil, nil, fmt.Errorf(
-					"failed to decode sub-dust key from opreturn: %s",
-					err,
-				)
-			}
-			if subDustPacket == nil || subDustPacket.Key == nil {
-				continue
-			}
-
-			pubKey = hex.EncodeToString(schnorr.SerializePubKey(subDustPacket.Key))
-			isSubDust = true
+			continue
 		} else {
 			pubKey = hex.EncodeToString(out.PkScript[2:])
 			isSubDust = script.IsSubDustScript(out.PkScript)
@@ -321,17 +309,17 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				continue
 			}
 
-			if asset.ContainsAssetPacket(out.PkScript) {
-				decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
+			if asset.IsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := asset.NewPacketFromTxOut(*out)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset packet")
 					continue
 				}
 
-				for _, asst := range decodedAssetPacket.Assets {
+				for _, asst := range decodedAssetPacket {
 					for _, out := range asst.Outputs {
-						assetsMap[out.Vout] = append(
-							assetsMap[out.Vout],
+						assetsMap[uint32(out.Vout)] = append(
+							assetsMap[uint32(out.Vout)],
 							domain.Asset{
 								AssetID: asst.AssetId.String(),
 								Amount:  uint64(out.Amount),

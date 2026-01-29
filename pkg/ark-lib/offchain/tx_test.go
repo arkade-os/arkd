@@ -53,12 +53,15 @@ func TestRebuildAssetTxs(t *testing.T) {
 				Vout:   0,
 			},
 		},
-		Metadata: []asset.Metadata{{Key: "type", Value: "control"}},
+		Metadata: []asset.Metadata{{Key: []byte("type"), Value: []byte("control")}},
 	}
 
 	normalAsset := asset.AssetGroup{
-		AssetId:      &asset.AssetId{Txid: assetInTxId, Index: 0},
-		ControlAsset: asset.AssetRefFromId(asset.AssetId{Txid: caID, Index: 0}),
+		AssetId: &asset.AssetId{Txid: assetInTxId, Index: 0},
+		ControlAsset: &asset.AssetRef{
+			Type:    asset.AssetRefByID,
+			AssetId: asset.AssetId{Txid: caID, Index: 0},
+		},
 		Inputs: []asset.AssetInput{{
 			Type:   asset.AssetTypeLocal,
 			Vin:    1,
@@ -71,22 +74,12 @@ func TestRebuildAssetTxs(t *testing.T) {
 				Vout:   1,
 			},
 		},
-		Metadata: []asset.Metadata{{Key: "type", Value: "normal"}},
+		Metadata: []asset.Metadata{{Key: []byte("type"), Value: []byte("normal")}},
 	}
 
-	assetGroup := &asset.AssetPacket{
-		Assets:  []asset.AssetGroup{controlAsset, normalAsset},
-		Version: asset.AssetVersion,
-	}
+	assetPacket := &asset.Packet{controlAsset, normalAsset}
 
-	opPacket := &asset.ExtensionPacket{
-		Asset: assetGroup,
-		SubDust: &asset.SubDustPacket{
-			Key:    normalTapKey,
-			Amount: 220,
-		},
-	}
-	opret, err := opPacket.Encode()
+	opret, err := assetPacket.TxOut()
 	require.NoError(t, err)
 
 	changeValue := changeVtxo.Amount - opret.Value
@@ -95,7 +88,7 @@ func TestRebuildAssetTxs(t *testing.T) {
 	outputs := []*wire.TxOut{
 		{Value: controlVtxo.Amount, PkScript: mustP2TRScript(t, controlTapKey)},
 		{Value: normalVtxo.Amount, PkScript: mustP2TRScript(t, normalTapKey)},
-		&opret,
+		opret,
 		{Value: changeValue, PkScript: mustP2TRScript(t, changeTapKey)},
 	}
 
@@ -144,11 +137,11 @@ func TestRebuildAssetTxs(t *testing.T) {
 			continue
 		}
 		outputsNoAnchor = append(outputsNoAnchor, out)
-		if asset.ContainsAssetPacket(out.PkScript) {
+		if asset.IsAssetPacket(out.PkScript) {
 			assetGroupIndex = idx
 		}
 	}
-	require.NotEqual(t, -1, assetGroupIndex)
+	require.Greater(t, assetGroupIndex, -1)
 
 	rebuiltArk, rebuiltCheckpoints, err := BuildTxs(
 		ins, outputsNoAnchor, signerScript,
@@ -158,15 +151,15 @@ func TestRebuildAssetTxs(t *testing.T) {
 	require.Equal(t, arkTx.UnsignedTx.TxID(), rebuiltArk.UnsignedTx.TxID())
 
 	// Verify asset group matches and points to rebuilt checkpoints.
-	origPacket, err := asset.DecodeOutputToAssetPacket(*outputsNoAnchor[assetGroupIndex])
+	origPacket, err := asset.NewPacketFromTxOut(*outputsNoAnchor[assetGroupIndex])
 	require.NoError(t, err)
-	rebuiltPacket, err := asset.DecodeOutputToAssetPacket(*rebuiltArk.UnsignedTx.TxOut[assetGroupIndex])
+	rebuiltPacket, err := asset.NewPacketFromTxOut(*rebuiltArk.UnsignedTx.TxOut[assetGroupIndex])
 	require.NoError(t, err)
 
 	require.NotNil(t, rebuiltPacket)
-	require.Len(t, rebuiltPacket.Assets, 2)
-	require.Equal(t, len(origPacket.Assets[0].Inputs), len(rebuiltPacket.Assets[0].Inputs))
-	require.Equal(t, len(origPacket.Assets[1].Inputs), len(rebuiltPacket.Assets[1].Inputs))
+	require.Len(t, rebuiltPacket, 2)
+	require.Equal(t, len(origPacket[0].Inputs), len(rebuiltPacket[0].Inputs))
+	require.Equal(t, len(origPacket[1].Inputs), len(rebuiltPacket[1].Inputs))
 
 	// Map rebuilt checkpoint txids for quick lookup.
 	rebuiltCheckpointIDs := make(map[string]struct{})
@@ -174,11 +167,11 @@ func TestRebuildAssetTxs(t *testing.T) {
 		rebuiltCheckpointIDs[cp.UnsignedTx.TxHash().String()] = struct{}{}
 	}
 
-	for _, in := range rebuiltPacket.Assets[0].Inputs {
+	for _, in := range rebuiltPacket[0].Inputs {
 		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}
-	for _, in := range rebuiltPacket.Assets[1].Inputs {
+	for _, in := range rebuiltPacket[1].Inputs {
 		require.Equal(t, asset.AssetTypeLocal, in.Type)
 		require.Less(t, int(in.Vin), len(rebuiltArk.UnsignedTx.TxIn))
 	}

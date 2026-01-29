@@ -917,7 +917,7 @@ func (s *service) SubmitOffchainTx(
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		// validate asset packet if present
-		if asset.ContainsAssetPacket(out.PkScript) {
+		if asset.IsAssetPacket(out.PkScript) {
 			if foundOpReturn {
 				return nil, errors.MALFORMED_ARK_TX.New(
 					"tx %s has multiple op return outputs, not allowed for assets", txid,
@@ -1517,19 +1517,19 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
-	assetInputMap := make(map[uint32][]domain.Asset)
+	assetInputMap := make(map[uint16][]domain.Asset)
 
 	hasOffChainReceiver := false
 	receivers := make([]domain.Receiver, 0)
 	onchainOutputs := make([]wire.TxOut, 0)
 	offchainOutputs := make([]wire.TxOut, 0)
 
-	var assetPacket *asset.AssetPacket
+	var assetPacket asset.Packet
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
 
-		if asset.ContainsAssetPacket(output.PkScript) {
-			assetPacket, err = asset.DecodeOutputToAssetPacket(*output)
+		if asset.IsAssetPacket(output.PkScript) {
+			assetPacket, err = asset.NewPacketFromTxOut(*output)
 			if err != nil {
 				return "", errors.INVALID_INTENT_PROOF.New(
 					"failed to decode asset packet: %w", err,
@@ -1550,8 +1550,7 @@ func (s *service) RegisterIntent(
 			}
 
 			// build asset input map for indexing asset vtxos
-			for _, grp := range assetPacket.Assets {
-
+			for _, grp := range assetPacket {
 				for _, input := range grp.Inputs {
 					if _, ok := assetInputMap[input.Vin]; !ok {
 						assetInputMap[input.Vin] = make([]domain.Asset, 0)
@@ -1665,10 +1664,10 @@ func (s *service) RegisterIntent(
 		for i := range receivers {
 			assetGroupList := make([]asset.AssetGroup, 0)
 
-			for _, grp := range assetPacket.Assets {
+			for _, grp := range assetPacket {
 
 				for _, out := range grp.Outputs {
-					if uint32(receivers[i].IntentVout) == out.Vout {
+					if uint32(receivers[i].IntentVout) == uint32(out.Vout) {
 
 						assetGrp := asset.AssetGroup{
 							AssetId: grp.AssetId,
@@ -1695,10 +1694,8 @@ func (s *service) RegisterIntent(
 			}
 
 			if len(assetGroupList) > 0 {
-				newAssetPacket := asset.AssetPacket{
-					Assets: assetGroupList,
-				}
-				encodedPacket, err := newAssetPacket.Encode()
+				newAssetPacket := asset.Packet(assetGroupList)
+				encodedPacket, err := newAssetPacket.TxOut()
 				if err != nil {
 					return "", errors.INTERNAL_ERROR.New("failed to encode asset packet").
 						WithMetadata(map[string]any{"error": err.Error()})
@@ -1806,7 +1803,7 @@ func (s *service) RegisterIntent(
 
 		// verify asset input if present
 		// +1 to account for proof fake input at index 0
-		if assetInputList, ok := assetInputMap[uint32(i+1)]; ok {
+		if assetInputList, ok := assetInputMap[uint16(i+1)]; ok {
 			vtxo.Assets = assetInputList
 
 		}
@@ -4279,12 +4276,12 @@ func (s *service) storeAssetDetailsFromArkTx(
 	arkTx wire.MsgTx,
 	assetPacketIndex int,
 ) error {
-	assetPkt, err := asset.DecodeOutputToAssetPacket(*arkTx.TxOut[assetPacketIndex])
+	assetPacket, err := asset.NewPacketFromTxOut(*arkTx.TxOut[assetPacketIndex])
 	if err != nil {
 		return fmt.Errorf("error decoding asset from opreturn: %s", err)
 	}
 
-	if err := s.storeAssetGroups(ctx, assetPacketIndex, assetPkt.Assets, arkTx); err != nil {
+	if err := s.storeAssetGroups(ctx, assetPacketIndex, assetPacket, arkTx); err != nil {
 		return err
 	}
 
@@ -4411,8 +4408,8 @@ func assetMetadataFromGroup(metadata []asset.Metadata) []domain.AssetMetadata {
 	metadataList := make([]domain.AssetMetadata, 0, len(metadata))
 	for _, meta := range metadata {
 		metadataList = append(metadataList, domain.AssetMetadata{
-			Key:   meta.Key,
-			Value: meta.Value,
+			Key:   string(meta.Key),
+			Value: string(meta.Value),
 		})
 	}
 	return metadataList
