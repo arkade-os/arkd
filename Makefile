@@ -64,31 +64,6 @@ run-light: clean
 	$(call setup_env, envs/arkd.light.env)
 	@go run ./cmd/arkd
 
-## run-local: run arkd locally with explicit env vars (no container hostnames)
-run-local: clean
-	@echo "Running arkd locally with explicit environment variables..."
-	@ARKD_LOG_LEVEL=6 \
-	 ARKD_NO_MACAROONS=true \
-	 ARKD_VTXO_TREE_EXPIRY=511 \
-	 ARKD_SCHEDULER_TYPE=block \
-	 ARKD_UNILATERAL_EXIT_DELAY=512 \
-	 ARKD_BOARDING_EXIT_DELAY=1024 \
-	 ARKD_CHECKPOINT_EXIT_DELAY=10 \
-	 ARKD_DATADIR=./data/regtest \
-	 ARKD_WALLET_ADDR=127.0.0.1:6060 \
-	 ARKD_ESPLORA_URL=http://localhost:3000 \
-	 ARKD_ROUND_MIN_PARTICIPANTS_COUNT=$${ARKD_ROUND_MIN_PARTICIPANTS_COUNT:-1} \
-	 ARKD_ROUND_MAX_PARTICIPANTS_COUNT=$${ARKD_ROUND_MAX_PARTICIPANTS_COUNT:-128} \
-	 ARKD_VTXO_MIN_AMOUNT=1 \
-	 ARKD_LIVE_STORE_TYPE=inmemory \
-	 ARKD_EVENT_DB_TYPE=badger \
-	 ARKD_DB_TYPE=sqlite \
-	 ARKD_SESSION_DURATION=$${ARKD_SESSION_DURATION:-10} \
-	 ARKD_ROUND_REPORT_ENABLED=$${ARKD_ROUND_REPORT_ENABLED:-true} \
-	 ARKD_BAN_THRESHOLD=1 \
-	 ARKD_ONCHAIN_OUTPUT_FEE=100 \
-	 go run ./cmd/arkd
-
 ## test: runs unit and component tests
 test: pgtest redis-test-up
 	@sleep 2
