@@ -53,29 +53,42 @@ func getOutputVtxosLeaves(
 
 	leaves := make([]tree.Leaf, 0)
 	for i, intent := range intents {
+		cosigners := cosignersPublicKeys[i]
+
 		for _, receiver := range intent.Receivers {
-			if !receiver.IsOnchain() {
-				pubkeyBytes, err := hex.DecodeString(receiver.PubKey)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode pubkey: %s", err)
-				}
-
-				pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse pubkey: %s", err)
-				}
-
-				vtxoScript, err := script.P2TRScript(pubkey)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create script: %s", err)
-				}
-
-				leaves = append(leaves, tree.Leaf{
-					Script:              hex.EncodeToString(vtxoScript),
-					Amount:              receiver.Amount,
-					CosignersPublicKeys: cosignersPublicKeys[i],
-				})
+			if receiver.IsOnchain() {
+				// Onchain outputs are not part of the vtxo tree.
+				continue
 			}
+
+			// Decode and parse receiver pubkey once for both asset and non-asset cases.
+			pubkeyBytes, err := hex.DecodeString(receiver.PubKey)
+			if err != nil {
+				return nil, fmt.Errorf("receiver pubkey hex decode failed: %w", err)
+			}
+
+			pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+			if err != nil {
+				return nil, fmt.Errorf("receiver pubkey parse failed: %w", err)
+			}
+
+			vtxoScript, err := script.P2TRScript(pubkey)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create P2TR script: %w", err)
+			}
+
+			leaf := tree.Leaf{
+				Script:              hex.EncodeToString(vtxoScript),
+				Amount:              receiver.Amount,
+				CosignersPublicKeys: cosigners,
+			}
+
+			// AssetGroup intent case
+			if len(receiver.AssetPacket) > 0 {
+				leaf.ExtensionScript = receiver.AssetPacket
+			}
+
+			leaves = append(leaves, leaf)
 		}
 	}
 	return leaves, nil

@@ -11,6 +11,7 @@ require (
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.9
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/btcsuite/btcwallet v0.16.10-0.20240718224643-db3a4a2543bd
+	github.com/lightningnetwork/lnd/tlv v1.2.6
 	github.com/stretchr/testify v1.10.0
 )
 
@@ -23,7 +24,6 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
 	github.com/lightningnetwork/lnd/fn v1.2.1 // indirect
-	github.com/lightningnetwork/lnd/tlv v1.2.6 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/stoewer/go-strcase v1.2.0 // indirect
 	go.etcd.io/bbolt v1.3.10 // indirect

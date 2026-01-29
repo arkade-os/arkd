@@ -28,6 +28,12 @@ message Vtxo {
   string spent_by = 11;
   string settled_by = 12;
   string ark_txid = 13;
+  repeated Asset assets = 14;
+}
+
+message Asset {
+  string asset_id = 1;
+  uint64 amount = 2;
 }
 
 message TxData {

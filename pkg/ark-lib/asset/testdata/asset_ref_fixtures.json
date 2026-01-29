@@ -1,0 +1,68 @@
+{
+  "valid": {
+    "newAssetRefFromId": [
+      {
+        "name": "random",
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "index": 42,
+        "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2a00"
+      }
+    ],
+    "newAssetRefFromGroup": [
+      {
+        "name": "zero index",
+        "index": 0,
+        "serializedHex": "020000"
+      },
+      {
+        "name": "random index",
+        "index": 5,
+        "serializedHex": "020005"
+      },
+      {
+        "name": "max index",
+        "index": 65535,
+        "serializedHex": "02ffff"
+      },
+      {
+        "name": "index overflow",
+        "index": 65536,
+        "serializedHex": "020000"
+      },
+      {
+        "name": "index underflow",
+        "index": -1,
+        "serializedHex": "02ffff"
+      }
+    ]
+  },
+  "invalid": {
+    "newAssetRefFromString": [
+      {
+        "name": "empty ref",
+        "serializedHex": "",
+        "expectedError": "missing asset ref"
+      },
+      {
+        "name": "invalid ref",
+        "serializedHex": "invalid",
+        "expectedError": "invalid asset ref format"
+      },
+      {
+        "name": "invalid ref length",
+        "serializedHex": "0200",
+        "expectedError": "invalid asset ref length"
+      },
+      {
+        "name": "unspecified ref type",
+        "serializedHex": "000005",
+        "expectedError": "asset ref type unspecified"
+      },
+      {
+        "name": "unknown ref type",
+        "serializedHex": "030005",
+        "expectedError": "asset ref type unknown"
+      }
+    ]
+  }
+}

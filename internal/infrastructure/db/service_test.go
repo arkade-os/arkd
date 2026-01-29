@@ -181,7 +181,7 @@ func TestService(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc, err := db.NewService(tt.config, nil)
 			require.NoError(t, err)
-			defer svc.Close()
+			require.NotNil(t, svc)
 
 			testEventRepository(t, svc)
 			testRoundRepository(t, svc)
@@ -189,7 +189,10 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
+			testAssetRepository(t, svc)
 			testFeeRepository(t, svc)
+
+			svc.Close()
 		})
 	}
 }
@@ -1502,6 +1505,243 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 
 		_, err = repo.GetActiveScriptConvictions(ctx, script1)
 		require.NoError(t, err)
+	})
+}
+
+func testAssetRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("insert and get asset anchor", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Create asset groups first to satisfy FK constraints
+		err := svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-1", Quantity: 1000})
+		require.NoError(t, err)
+		err = svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-2", Quantity: 2000})
+		require.NoError(t, err)
+
+		anchor := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-123",
+				VOut: 2,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-123", VOut: 0},
+					Amount:   1000,
+					AssetID:  "asset-1",
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-123", VOut: 1},
+					Amount:   2000,
+					AssetID:  "asset-2",
+				},
+			},
+		}
+
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		got, err := svc.Assets().GetAssetAnchorByTxId(ctx, anchor.Txid)
+		require.NoError(t, err, "GetAssetAnchorByTxId should succeed")
+		require.NotNil(t, got)
+
+		require.Equal(t, anchor.Txid, got.Txid)
+		require.Equal(t, anchor.VOut, got.VOut)
+		require.ElementsMatch(t, anchor.Assets, got.Assets)
+	})
+
+	t.Run("insert and get asset group", func(t *testing.T) {
+		ctx := context.Background()
+		asset := domain.AssetGroup{
+			ID:        "asset-group-123",
+			Quantity:  5000,
+			Immutable: false,
+			Metadata: []domain.AssetMetadata{
+				{Key: "name", Value: "My Asset"},
+				{Key: "symbol", Value: "MAS"},
+			},
+			ControlAssetID: "control-asset-123",
+		}
+
+		err := svc.Assets().InsertAssetGroup(ctx, asset)
+		require.NoError(t, err, "InsertAssetGroup should succeed")
+
+		got, err := svc.Assets().GetAssetGroupByID(ctx, asset.ID)
+		require.NoError(t, err, "GetAssetGroupByID should succeed")
+		require.NotNil(t, got)
+
+		require.Equal(t, asset.ID, got.ID)
+		require.Equal(t, asset.Quantity, got.Quantity)
+		require.Equal(t, asset.Immutable, got.Immutable)
+		require.ElementsMatch(t, asset.Metadata, got.Metadata)
+		require.Equal(t, asset.ControlAssetID, got.ControlAssetID)
+	})
+
+	t.Run("insert asset anchor accepts duplicate vout", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Create asset groups first to satisfy FK constraints
+		err := svc.Assets().
+			InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-dup-1", Quantity: 1000})
+		require.NoError(t, err)
+		err = svc.Assets().
+			InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-dup-2", Quantity: 2000})
+		require.NoError(t, err)
+
+		anchor := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-dup-vout",
+				VOut: 0,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
+					Amount:   1000,
+					AssetID:  "asset-dup-1",
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
+					Amount:   2000,
+					AssetID:  "asset-dup-2",
+				},
+			},
+		}
+
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.NoError(t, err, "InsertAssetAnchor should succeed even with duplicate vout")
+	})
+
+	t.Run("list asset anchors by asset id", func(t *testing.T) {
+		ctx := context.Background()
+
+		assetListID := "asset-list-1"
+		otherAssetID := "asset-list-2"
+
+		// Create asset groups first to satisfy FK constraints
+		err := svc.Assets().
+			InsertAssetGroup(ctx, domain.AssetGroup{ID: assetListID, Quantity: 10000})
+		require.NoError(t, err)
+		err = svc.Assets().
+			InsertAssetGroup(ctx, domain.AssetGroup{ID: otherAssetID, Quantity: 5000})
+		require.NoError(t, err)
+
+		anchor1 := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-asset-1",
+				VOut: 0,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 0},
+					Amount:   5000,
+					AssetID:  assetListID,
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 1},
+					Amount:   2500,
+					AssetID:  otherAssetID,
+				},
+			},
+		}
+		anchor2 := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-asset-2",
+				VOut: 1,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-asset-2", VOut: 2},
+					Amount:   7500,
+					AssetID:  assetListID,
+				},
+			},
+		}
+
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor1)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor2)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		anchors, err := svc.Assets().ListAssetAnchorsByAssetID(ctx, assetListID)
+		require.NoError(t, err, "ListAssetAnchorsByAssetID should succeed")
+		require.Len(t, anchors, 2)
+
+		gotTxids := make(map[string]struct{})
+		for _, anchor := range anchors {
+			gotTxids[anchor.Txid] = struct{}{}
+		}
+		require.Contains(t, gotTxids, anchor1.Txid)
+		require.Contains(t, gotTxids, anchor2.Txid)
+	})
+
+	t.Run("get asset by outpoint", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Create asset group first to satisfy FK constraints
+		err := svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-42", Quantity: 5000})
+		require.NoError(t, err)
+
+		anchor := domain.AssetAnchor{
+			Outpoint: domain.Outpoint{
+				Txid: "txid-by-outpoint",
+				VOut: 3,
+			},
+			Assets: []domain.NormalAsset{
+				{
+					Outpoint: domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0},
+					Amount:   1234,
+					AssetID:  "asset-42",
+				},
+			},
+		}
+
+		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
+		require.NoError(t, err, "InsertAssetAnchor should succeed")
+
+		got, err := svc.Assets().
+			GetAssetByOutpoint(ctx, domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0})
+		require.NoError(t, err, "GetAssetByOutpoint should succeed")
+		require.NotNil(t, got)
+		require.Equal(t, anchor.Assets[0], *got)
+	})
+
+	t.Run("insert and update asset quantity", func(t *testing.T) {
+		ctx := context.Background()
+
+		asset := domain.AssetGroup{
+			ID:        "asset-3",
+			Quantity:  10,
+			Immutable: true,
+			Metadata: []domain.AssetMetadata{
+				{Key: "name", Value: "Test AssetGroup"},
+				{Key: "symbol", Value: "TST"},
+			},
+			ControlAssetID: "controlAssetId",
+		}
+
+		err := svc.Assets().InsertAssetGroup(ctx, asset)
+		require.NoError(t, err, "InsertAssetDetails should succeed")
+
+		// Increase by 5 -> 15
+		err = svc.Assets().IncreaseAssetGroupQuantity(ctx, asset.ID, 5)
+		require.NoError(t, err, "IncreaseAssetQuantity should succeed")
+
+		// Decrease by 3 -> 12
+		err = svc.Assets().DecreaseAssetGroupQuantity(ctx, asset.ID, 3)
+		require.NoError(t, err, "DecreaseAssetQuantity should succeed")
+
+		// Assert final value in DB
+		assetD, err := svc.Assets().GetAssetGroupByID(ctx, asset.ID)
+		require.NoError(t, err, "GetAsseGroupByID should succeed")
+
+		require.Equal(t, uint64(12), assetD.Quantity)
+		require.True(t, assetD.Immutable)
+
+		md, err := svc.Assets().ListMetadataByAssetID(ctx, asset.ID)
+		require.NoError(t, err, "ListMetadataByAssetID should succeed")
+
+		require.Len(t, md, len(asset.Metadata))
+		require.ElementsMatch(t, asset.Metadata, md)
 	})
 }
 

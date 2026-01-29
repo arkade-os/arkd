@@ -124,9 +124,17 @@ func SubDustScript(taprootKey *btcec.PublicKey) ([]byte, error) {
 }
 
 func IsSubDustScript(script []byte) bool {
-	return len(script) == 32+1+1 &&
-		script[0] == txscript.OP_RETURN &&
-		script[1] == 0x20
+	tokenizer := txscript.MakeScriptTokenizer(0, script)
+	if !tokenizer.Next() || tokenizer.Opcode() != txscript.OP_RETURN {
+		return false
+	}
+
+	if !tokenizer.Next() {
+		return false
+	}
+
+	data := tokenizer.Data()
+	return data != nil && len(data) == schnorr.PubKeyBytesLen
 }
 
 func EncodeTaprootSignature(sig []byte, sigHashType txscript.SigHashType) []byte {
