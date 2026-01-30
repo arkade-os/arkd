@@ -4141,6 +4141,24 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, err)
 		_, err = receiver.Settle(ctx)
 		require.NoError(t, err)
+
+		// verify balances after settlement
+		issuerBalance, err := issuer.Balance(ctx)
+		require.NoError(t, err)
+		issuerAssetBalance, ok := issuerBalance.OffchainBalance.AssetBalances[assetIds[0]]
+		require.True(t, ok)
+		require.Equal(t, int(issuerAssetBalance.TotalAmount), int(supply-transferAmount))
+
+		_, err = fetchAssetVtxo(ctx, issuer, assetIds[0], supply-transferAmount)
+		require.NoError(t, err)
+
+		receiverBalance, err = receiver.Balance(ctx)
+		require.NoError(t, err)
+		receiverAssetBalance, ok := receiverBalance.OffchainBalance.AssetBalances[assetIds[0]]
+		require.True(t, ok)
+		require.Equal(t, int(receiverAssetBalance.TotalAmount), int(transferAmount))
+
+		// unroll confirmed vtxos
 	})
 
 	t.Run("asset reissuance", func(t *testing.T) {
@@ -4211,6 +4229,14 @@ func TestAsset(t *testing.T) {
 
 		_, err = fetchAssetVtxo(ctx, issuer, targetAssetId, mintAmount)
 		require.NoError(t, err)
+
+		// verify balance
+		balance, err := issuer.Balance(ctx)
+		require.NoError(t, err)
+
+		assetBalance, ok := balance.OffchainBalance.AssetBalances[targetAssetId]
+		require.True(t, ok)
+		require.GreaterOrEqual(t, int(assetBalance.TotalAmount), int(6000))
 	})
 
 	t.Run("asset burn", func(t *testing.T) {
@@ -4275,6 +4301,211 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, assetResponse.Quantity, uint64(3500)) // Original 5000 - 1500 burned
+
+		// verify balance
+		balance, err := issuer.Balance(ctx)
+		require.NoError(t, err)
+
+		assetBalance, ok := balance.OffchainBalance.AssetBalances[targetAssetId]
+		require.True(t, ok)
+		require.GreaterOrEqual(t, int(assetBalance.TotalAmount), int(3500))
+	})
+
+	t.Run("asset multi leaf settle", func(t *testing.T) {
+		// setup ark sdk
+		ctx := t.Context()
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+		charlie := setupArkSDK(t)
+		dave := setupArkSDK(t)
+
+		// Fund all clients so they can pay for settlement.
+		faucetOffchain(t, alice, 0.002)
+		faucetOffchain(t, bob, 0.001)
+		faucetOffchain(t, charlie, 0.001)
+		faucetOffchain(t, dave, 0.001)
+
+		const supply uint64 = 6_000
+		createParams := types.AssetCreationParams{
+			Quantity:    supply,
+			MetadataMap: map[string]string{"name": "Test Asset", "symbol": "TST"},
+		}
+
+		_, assetIds, err := alice.CreateAsset(
+			ctx,
+			types.AssetCreationRequest{Params: createParams},
+		)
+
+		require.NoError(t, err)
+
+		time.Sleep(5 * time.Second) // Wait for server indexer
+
+		issuerAssetVtxo, err := fetchAssetVtxo(ctx, alice, assetIds[0], supply)
+		require.NoError(t, err)
+
+		require.EqualValues(t, supply, issuerAssetVtxo.Assets[0].Amount)
+
+		// send asset to bob, charlie, dave in unrolled fashion
+		const transferAmount uint64 = 1_000
+		receivers := []types.Receiver{}
+
+		_, bobOffchainAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+		receivers = append(receivers, types.Receiver{
+			To:     bobOffchainAddr,
+			Amount: transferAmount,
+		})
+
+		_, charlieOffchainAddr, _, err := charlie.Receive(ctx)
+		require.NoError(t, err)
+		receivers = append(receivers, types.Receiver{
+			To:     charlieOffchainAddr,
+			Amount: transferAmount,
+		})
+
+		_, daveOffchainAddr, _, err := dave.Receive(ctx)
+		require.NoError(t, err)
+		receivers = append(receivers, types.Receiver{
+			To:     daveOffchainAddr,
+			Amount: transferAmount,
+		})
+
+		_, err = alice.SendAsset(
+			ctx,
+			receivers,
+			assetIds[0],
+		)
+		require.NoError(t, err)
+
+		// Allow some time for the indexer to process the transfer
+		time.Sleep(5 * time.Second)
+
+		aliceAssets, err := fetchAssetVtxo(ctx, alice, assetIds[0], 3000)
+		require.NoError(t, err)
+		require.Equal(t, uint64(3000), aliceAssets.Assets[0].Amount)
+
+		wg := &sync.WaitGroup{}
+		var aliceErr, bobErr, charlieErr, daveErr error
+		var aliceTxid, bobTxid, charlieTxid, daveTxid string
+
+		wg.Go(func() {
+			aliceTxid, aliceErr = alice.Settle(ctx)
+		})
+		wg.Go(func() {
+			bobTxid, bobErr = bob.Settle(ctx)
+		})
+		wg.Go(func() {
+			charlieTxid, charlieErr = charlie.Settle(ctx)
+		})
+		wg.Go(func() {
+			daveTxid, daveErr = dave.Settle(ctx)
+		})
+
+		wg.Wait()
+
+		require.NoError(t, aliceErr)
+		require.NoError(t, bobErr)
+		require.NoError(t, charlieErr)
+		require.NoError(t, daveErr)
+
+		require.NotEmpty(t, aliceTxid)
+		require.NotEmpty(t, bobTxid)
+		require.NotEmpty(t, charlieTxid)
+		require.NotEmpty(t, daveTxid)
+
+		time.Sleep(10 * time.Second)
+
+		// verify assets leafs
+		aliceAssets, err = fetchAssetVtxo(ctx, alice, assetIds[0], 3000)
+		require.NoError(t, err)
+		require.Equal(t, uint64(3000), aliceAssets.Assets[0].Amount)
+
+		bobAssets, err := fetchAssetVtxo(ctx, bob, assetIds[0], transferAmount)
+		require.NoError(t, err)
+		require.Equal(t, uint64(transferAmount), bobAssets.Assets[0].Amount)
+
+		charlieAssets, err := fetchAssetVtxo(ctx, charlie, assetIds[0], transferAmount)
+		require.NoError(t, err)
+		require.Equal(t, uint64(transferAmount), charlieAssets.Assets[0].Amount)
+
+		daveAssets, err := fetchAssetVtxo(ctx, dave, assetIds[0], transferAmount)
+		require.NoError(t, err)
+		require.Equal(t, uint64(transferAmount), daveAssets.Assets[0].Amount)
+
+	})
+
+	// test unrolled asset
+	t.Run("asset unroll preconfirmed", func(t *testing.T) {
+		// setup ark sdk
+		ctx := t.Context()
+		alice := setupArkSDK(t)
+
+		// Fund all clients so they can pay for settlement.
+		faucetOffchain(t, alice, 0.002)
+
+		const supply uint64 = 6_000
+		createParams := types.AssetCreationParams{
+			Quantity:    supply,
+			MetadataMap: map[string]string{"name": "Test Asset", "symbol": "TST"},
+		}
+
+		_, assetIds, err := alice.CreateAsset(
+			ctx,
+			types.AssetCreationRequest{Params: createParams},
+		)
+
+		require.NoError(t, err)
+
+		time.Sleep(5 * time.Second) // Wait for server indexer
+
+		issuerAssetVtxo, err := fetchAssetVtxo(ctx, alice, assetIds[0], supply)
+		require.NoError(t, err)
+
+		require.EqualValues(t, supply, issuerAssetVtxo.Assets[0].Amount)
+
+		//unroll alice's asset vtxos
+		onchainAddr, _, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		// Faucet onchain addr to cover network fees for the unroll.
+		faucetOnchain(t, onchainAddr, 0.01)
+
+		time.Sleep(5 * time.Second)
+
+		// confirm the commitment tx (time t)
+		// sweeper schedules a sweep task at t+20 blocks
+		err = generateBlocks(10)
+		require.NoError(t, err)
+
+		err = alice.Unroll(ctx)
+
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Second)
+
+		// t + 1 to confirm the first unroll tx
+		// split the root batch in two, "reset" the CSV
+		// sweeper schedules 2 sweep tasks at t+20+1 and t+20+1
+		err = generateBlocks(10)
+		require.NoError(t, err)
+
+		// give time for the server to process the unroll
+		time.Sleep(1 * time.Minute)
+
+		err = alice.Unroll(ctx)
+
+		require.NoError(t, err)
+
+		err = generateBlocks(6)
+		require.NoError(t, err)
+
+		time.Sleep(10 * time.Second)
+
+		// alice vtxos should not be swept yet
+		aliceAssets, err := fetchAssetVtxo(ctx, alice, assetIds[0], 3000)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2000), aliceAssets.Assets[0].Amount)
+
 	})
 
 }
