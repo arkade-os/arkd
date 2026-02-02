@@ -515,6 +515,44 @@ type intentFees struct {
 	IntentOnchainOutputFeeProgram  string `json:"onchainOutputFee"`
 }
 
+type intentFeesResponse struct {
+	Fees intentFees `json:"fees"`
+}
+
+func getIntentFees() (*intentFees, error) {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees", adminUrl)
+	resp, err := get[intentFeesResponse](adminHttpClient, url, "intent fees")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get intent fees: %w", err)
+	}
+
+	return &resp.Fees, nil
+}
+
+func clearIntentFees() error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees/clear", adminUrl)
+	if err := post(adminHttpClient, url, "{}", "intentFees"); err != nil {
+		return fmt.Errorf("failed to clear intent fees: %w", err)
+	}
+
+	return nil
+}
+
+func isEmptyIntentFees(fees intentFees) bool {
+	return fees.IntentOffchainInputFeeProgram == "" &&
+		fees.IntentOnchainInputFeeProgram == "" &&
+		fees.IntentOffchainOutputFeeProgram == "" &&
+		fees.IntentOnchainOutputFeeProgram == ""
+}
+
 func updateIntentFees(intentFees intentFees) error {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,
