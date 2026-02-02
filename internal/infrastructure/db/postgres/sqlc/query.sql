@@ -377,102 +377,82 @@ SELECT * FROM conviction
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
 
--- name: CreateAssetAnchor :exec
-INSERT INTO asset_anchor (anchor_txid, anchor_vout)
-VALUES (@anchor_txid, @anchor_vout);
+-- name: CreateAsset :exec
+INSERT INTO asset (genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index)
+VALUES (@genesis_txid, @genesis_group_index, @is_immutable, @metadata_hash, @metadata, @control_asset_id, @control_asset_group_index);
 
--- name: ListAssetAnchorsByAssetID :many
-SELECT DISTINCT aa.anchor_txid, aa.anchor_vout
-FROM asset_anchor aa
-JOIN asset a ON aa.anchor_txid = a.anchor_id
-WHERE a.asset_id = @asset_id
-ORDER BY aa.anchor_txid;
 
--- name: GetAssetAnchor :one
-SELECT anchor_txid, anchor_vout
-FROM asset_anchor
-WHERE anchor_txid = @anchor_txid;
-
--- name: DeleteAssetAnchor :exec
-DELETE FROM asset_anchor
-WHERE anchor_txid = @anchor_txid;
-
--- name: UpsertAssetMetadata :exec
-INSERT INTO asset_metadata (asset_id, meta_key, meta_value)
-VALUES (@asset_id, @meta_key, @meta_value)
-ON CONFLICT (asset_id, meta_key)
-DO UPDATE SET meta_value = EXCLUDED.meta_value;
-
--- name: GetAssetMetadata :one
-SELECT asset_id, meta_key, meta_value
-FROM asset_metadata
-WHERE asset_id = @asset_id AND meta_key = @meta_key;
-
--- name: ListAssetMetadata :many
-SELECT asset_id, meta_key, meta_value
-FROM asset_metadata
-WHERE asset_id = @asset_id
-ORDER BY meta_key;
-
--- name: AddAsset :exec
-INSERT INTO asset (anchor_id, asset_id, vout, amount)
-VALUES (@anchor_id, @asset_id, @vout, @amount)
-ON CONFLICT (anchor_id, vout)
-DO UPDATE SET amount = EXCLUDED.amount
-WHERE asset.asset_id = EXCLUDED.asset_id;
-
--- name: GetAsset :one
-SELECT anchor_id, asset_id, vout, amount
-FROM asset
-WHERE anchor_id = @anchor_id AND vout = @vout;
 
 -- name: DeleteAsset :exec
 DELETE FROM asset
-WHERE anchor_id = @anchor_id AND vout = @vout;
+WHERE genesis_txid = @genesis_txid AND genesis_group_index = @genesis_group_index;
 
--- name: ListAsset :many
-SELECT anchor_id, asset_id, vout, amount
+
+-- name: GetAssetEntry :one
+SELECT genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index
 FROM asset
-WHERE anchor_id = @anchor_id
-ORDER BY vout;
+WHERE genesis_txid = @genesis_txid AND genesis_group_index = @genesis_group_index;
 
--- name: GetAssetGroup :one
-SELECT id, quantity, immutable, control_id
-FROM asset_group
-WHERE id = @id;
+-- name: GetAssetEntryByTxid :one
+SELECT genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index
+FROM asset
+WHERE genesis_txid = @genesis_txid;
 
--- name: ListAssetGroup :many
-SELECT id, quantity, immutable, control_id
-FROM asset_group
-ORDER BY id;
+-- name: GetAssetByAssetID :one
+SELECT * FROM asset WHERE control_asset_id = @asset_id;
 
--- name: AddToAssetQuantity :exec
-UPDATE asset_group
-SET quantity = quantity + @quantity
-WHERE id = @id;
+-- name: UpsertAssetMetadataUpdate :exec
+INSERT INTO asset_metadata_update (fk_asset_id, fk_asset_index, fk_intent_txid, fk_intent_vout, fk_txid, metadata_hash)
+VALUES (@fk_asset_id, @fk_asset_index, @fk_intent_txid, @fk_intent_vout, @fk_txid, @metadata_hash)
+ON CONFLICT (fk_asset_id, fk_asset_index) DO UPDATE SET
+    fk_intent_txid = EXCLUDED.fk_intent_txid,
+    fk_intent_vout = EXCLUDED.fk_intent_vout,
+    fk_txid = EXCLUDED.fk_txid,
+    metadata_hash = EXCLUDED.metadata_hash;
 
--- name: SubtractFromAssetQuantity :exec
-UPDATE asset_group
-SET quantity = quantity - @quantity
-WHERE id = @id AND quantity >= @quantity;
 
--- name: CreateAsset :exec
-INSERT INTO asset_group (id, quantity, immutable, control_id)
-VALUES (@id, @quantity, @immutable, @control_id);
+-- name: AddAssetProjection :exec
+INSERT INTO asset_projection (fk_intent_txid, fk_intent_vout, fk_asset_id, fk_asset_index, fk_vtxo_txid, fk_vtxo_vout, amount)
+VALUES (@fk_intent_txid, @fk_intent_vout, @fk_asset_id, @fk_asset_index, @fk_vtxo_txid, @fk_vtxo_vout, @amount)
+ON CONFLICT (fk_intent_txid, fk_intent_vout, fk_asset_id, fk_asset_index)
+DO UPDATE SET
+    fk_vtxo_txid = EXCLUDED.fk_vtxo_txid,
+    fk_vtxo_vout = EXCLUDED.fk_vtxo_vout,
+    amount = EXCLUDED.amount;
 
--- name: CreateTeleportAsset :exec
-INSERT INTO teleport_asset (script, intent_id, asset_id, group_index, amount, is_claimed)
-VALUES (@script, @intent_id, @asset_id, @group_index, @amount, @is_claimed);
+-- name: ListAssetAnchorsByAssetID :many
+SELECT DISTINCT aa.fk_intent_txid, aa.fk_intent_vout
+FROM asset_projection aa
+JOIN asset a ON aa.fk_intent_txid = a.genesis_txid
+WHERE aa.fk_asset_id = @asset_id
+ORDER BY aa.fk_intent_txid;
 
--- name: GetTeleportAsset :one
-SELECT script, intent_id, asset_id, group_index, amount, is_claimed
-FROM teleport_asset
-WHERE script = @script AND intent_id = @intent_id AND asset_id = @asset_id AND group_index = @group_index;
+-- name: GetAssetProjectionsByTxId :many
+SELECT *
+FROM asset_projection
+WHERE fk_intent_txid = @txid;
 
--- name: UpdateTeleportAsset :exec
-UPDATE teleport_asset
-SET is_claimed = @is_claimed
-WHERE script = @script AND intent_id = @intent_id AND asset_id = @asset_id AND group_index = @group_index;
+-- name: GetAssetProjectionAmountByAssetId :many
+SELECT amount FROM asset_projection
+WHERE fk_asset_id = @asset_id;
+
+-- name: GetAssetProjectionsByOutpoint :one
+SELECT *
+FROM asset_projection
+WHERE fk_intent_txid = @txid AND fk_intent_vout = @vout;
+
+-- name: GetAssetMetadataByAssetID :one
+SELECT DISTINCT a.metadata
+FROM asset_projection ap
+JOIN asset a ON ap.fk_asset_id = a.genesis_txid AND ap.fk_asset_index = a.genesis_group_index
+WHERE ap.fk_asset_id = @asset_id;
+
+-- name: UpsertAssetEntry :exec
+INSERT INTO asset (genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index)
+VALUES (@genesis_txid, @genesis_group_index, @is_immutable, @metadata_hash, @metadata, @control_asset_id, @control_asset_group_index)
+ON CONFLICT (genesis_txid, genesis_group_index) DO NOTHING;
+
+
 -- name: SelectLatestIntentFees :one
 SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
 

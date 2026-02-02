@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 )
 
 type vtxoRepository struct {
@@ -80,6 +82,34 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 			}
 		}
 
+		// new for loop to update asset projection table
+		for _, vtxo := range vtxos {
+			for _, ast := range vtxo.Assets {
+				// derive txid and index from AssetID
+				assetId, err := asset.NewAssetIdFromString(ast.AssetID)
+				if err != nil {
+					return err
+				}
+				genesisTxid := assetId.Txid.String()
+				genesisIndex := strconv.FormatUint(uint64(assetId.Index), 10)
+				if err := querierWithTx.AddAssetProjection(ctx, queries.AddAssetProjectionParams{
+					// the FkIntentTxid and FkVtxoTxid field should they be same here?
+					// same question for FkIntentVout and FkVtxoVout.
+					// should they use ArkTxid?
+					FkIntentTxid: sql.NullString{String: vtxo.Txid, Valid: true},
+					FkIntentVout: sql.NullInt64{Int64: int64(vtxo.VOut), Valid: true},
+					FkAssetID:    genesisTxid,
+					FkAssetIndex: genesisIndex,
+					FkVtxoTxid:   sql.NullString{String: vtxo.Txid, Valid: true},
+					FkVtxoVout:   sql.NullInt64{Int64: int64(vtxo.VOut), Valid: true},
+					// the domain.Asset struct has no Amount field anymore,
+					// where should we get it from?
+					// Amount:       int64(ast.Amount),
+				}); err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	}
 
@@ -514,7 +544,7 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		Amount:             uint64(row.Amount),
 		PubKey:             row.Pubkey,
 		RootCommitmentTxid: row.CommitmentTxid,
-		CommitmentTxids:    parseCommitments(row.Commitments, []byte(",")),
+		CommitmentTxids:    parseCommitments(row.Commitments.([]byte), []byte(",")),
 		SettledBy:          row.SettledBy.String,
 		ArkTxid:            row.ArkTxid.String,
 		SpentBy:            row.SpentBy.String,
