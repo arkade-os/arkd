@@ -216,7 +216,6 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 func (h *delegateBatchEventsHandler) OnStreamStartedEvent(
 	event client.StreamStartedEvent,
 ) {
-	fmt.Printf("delegate_utils_test OnStreamStartedEvent: %+v\n", event)
 }
 
 type customBatchEventsHandler struct {

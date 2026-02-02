@@ -555,20 +555,20 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 
 			// ignore asset anchor
-			if asset.IsExtensionPacket(out.PkScript) {
+			if asset.IsAssetPacket(out.PkScript) {
 				txOut := wire.TxOut{
 					Value:    int64(out.Amount),
 					PkScript: out.PkScript,
 				}
 
-				packet, err := asset.DecodeToExtensionPacket(txOut)
+				packet, err := asset.NewPacketFromTxOut(txOut)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset group from opret")
 					continue
 				}
 
-				if packet.Asset != nil {
-					for i, grp := range packet.Asset.Assets {
+				if len(packet) > 0 {
+					for i, grp := range packet {
 						var assetId string
 						if grp.AssetId == nil {
 							txhash, err := chainhash.NewHashFromStr(txid)
@@ -586,8 +586,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 						}
 
 						for _, assetOut := range grp.Outputs {
-							assetMapped[assetOut.Vout] = append(
-								assetMapped[assetOut.Vout],
+							assetMapped[uint32(assetOut.Vout)] = append(
+								assetMapped[uint32(assetOut.Vout)],
 								domain.Asset{
 									AssetID: assetId,
 									Amount:  uint64(assetOut.Amount),
@@ -596,14 +596,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 						}
 					}
 				}
-
-				if packet.SubDust == nil {
-					continue
-				} else {
-					isSubDust = true
-					pubKey = schnorr.SerializePubKey(packet.SubDust.Key)
-				}
-
+				continue
 			}
 
 			if !isSubDust && script.IsSubDustScript(out.PkScript) {
@@ -710,17 +703,17 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 				continue
 			}
 
-			if asset.ContainsAssetPacket(out.PkScript) {
-				decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(*out)
+			if asset.IsAssetPacket(out.PkScript) {
+				decodedAssetPacket, err := asset.NewPacketFromTxOut(*out)
 				if err != nil {
 					log.WithError(err).Warn("failed to decode asset packet")
 					continue
 				}
 				assetAnchorIndex = i
 
-				for _, asst := range decodedAssetPacket.Assets {
+				for _, asst := range decodedAssetPacket {
 					for _, out := range asst.Outputs {
-						assetsMap[out.Vout] = domain.Asset{
+						assetsMap[uint32(out.Vout)] = domain.Asset{
 							AssetID: asst.AssetId.String(),
 							Amount:  uint64(out.Amount),
 						}

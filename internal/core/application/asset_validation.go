@@ -66,13 +66,13 @@ func (m *assetValidationMachine) run(s *service) error {
 	for {
 		switch state {
 		case assetValidationDecode:
-			decodedAssetPacket, err := asset.DecodeOutputToAssetPacket(m.opReturnOutput)
+			decodedAssetPacket, err := asset.NewPacketFromTxOut(m.opReturnOutput)
 			if err != nil {
 				return errors.ASSET_PACKET_INVALID.New("error decoding asset from opreturn: %s", err).
 					WithMetadata(errors.AssetValidationMetadata{Message: err.Error()})
 			}
 
-			m.assets = decodedAssetPacket.Assets
+			m.assets = decodedAssetPacket
 			m.groupIndex = 0
 			state = assetValidationControl
 		case assetValidationControl:
@@ -343,7 +343,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input asset.Asse
 			return errors.INTENT_ASSET_VALIDATION_FAILED.New("asset ID is required for intent input validation").
 				WithMetadata(errors.IntentValidationMetadata{
 					IntentTxid:  intentTxid,
-					OutputIndex: input.Vin,
+					OutputIndex: uint32(input.Vin),
 				})
 		}
 
@@ -353,7 +353,7 @@ func (m *assetGroupValidationMachine) validateInput(s *service, input asset.Asse
 				WithMetadata(errors.IntentValidationMetadata{
 					IntentTxid:  intentTxid,
 					AssetId:     grpAsset.AssetId.String(),
-					OutputIndex: input.Vin,
+					OutputIndex: uint32(input.Vin),
 				})
 		}
 
@@ -478,10 +478,10 @@ func (m *assetOutputValidationMachine) run(s *service) error {
 func (s *service) validateIntentOutput(
 	intentProof psbt.Packet,
 	assetId asset.AssetId,
-	vout uint32,
+	vout uint16,
 ) error {
 	// validate intent output exists in intent proof
-	assetPacket, _, err := asset.DeriveAssetPacketFromTx(*intentProof.UnsignedTx)
+	assetPacket, err := asset.NewPacketFromTx(intentProof.UnsignedTx)
 	if err != nil {
 		return errors.INTENT_ASSET_VALIDATION_FAILED.New("error deriving asset packet from intent proof: %s", err).
 			WithMetadata(errors.IntentValidationMetadata{
@@ -496,7 +496,7 @@ func (s *service) validateIntentOutput(
 	}
 
 	intentOutputFound := false
-	for _, assetGroup := range assetPacket.Assets {
+	for _, assetGroup := range assetPacket {
 		for _, assetOutput := range assetGroup.Outputs {
 			if assetOutput.Type == asset.AssetTypeIntent && assetId == *assetGroup.AssetId &&
 				vout == assetOutput.Vout {
@@ -514,7 +514,7 @@ func (s *service) validateIntentOutput(
 		).WithMetadata(errors.IntentValidationMetadata{
 			AssetId:     assetId.String(),
 			IntentTxid:  intentProof.UnsignedTx.TxHash().String(),
-			OutputIndex: vout,
+			OutputIndex: uint32(vout),
 		})
 	}
 
@@ -591,11 +591,11 @@ func (s *service) verifyAssetInputPrevOut(
 		}
 	}
 
-	var assetGroup *asset.AssetPacket
+	var assetGroup asset.Packet
 
 	for _, output := range decodedArkTx.UnsignedTx.TxOut {
-		if asset.ContainsAssetPacket(output.PkScript) {
-			assetGp, err := asset.DecodeOutputToAssetPacket(*output)
+		if asset.IsAssetPacket(output.PkScript) {
+			assetGp, err := asset.NewPacketFromTxOut(*output)
 			if err != nil {
 				return errors.ASSET_PACKET_INVALID.New("error decoding asset Opreturn: %s", err).
 					WithMetadata(errors.AssetValidationMetadata{})
@@ -611,12 +611,12 @@ func (s *service) verifyAssetInputPrevOut(
 
 	// verify asset input in present in assetGroup.Inputs
 	totalAssetOuts := make([]asset.AssetOutput, 0)
-	for _, asset := range assetGroup.Assets {
+	for _, asset := range assetGroup {
 		totalAssetOuts = append(totalAssetOuts, asset.Outputs...)
 	}
 
 	for _, assetOut := range totalAssetOuts {
-		if assetOut.Vout == prev.Index && input.Amount == assetOut.Amount {
+		if uint32(assetOut.Vout) == prev.Index && input.Amount == assetOut.Amount {
 			return nil
 		}
 	}
