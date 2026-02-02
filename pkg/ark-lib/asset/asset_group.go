@@ -46,6 +46,21 @@ type AssetGroup struct {
 	Metadata []Metadata
 }
 
+func (ag AssetGroup) IsIssuance() bool {
+	return ag.AssetId == nil
+}
+
+func (ag AssetGroup) IsReissuance() bool {
+	outputsAmount, inputsAmount := uint64(0), uint64(0)
+	for _, out := range ag.Outputs {
+		outputsAmount += out.Amount
+	}
+	for _, in := range ag.Inputs {
+		inputsAmount += in.Amount
+	}
+	return !ag.IsIssuance() && inputsAmount < outputsAmount
+}
+
 // NewAssetGroup creates a new asset group and validates it
 func NewAssetGroup(
 	assetId *AssetId, controlAsset *AssetRef, ins []AssetInput, outs []AssetOutput, md []Metadata,
@@ -112,6 +127,17 @@ func (ag AssetGroup) validate() error {
 			return err
 		}
 	}
+
+	if ag.IsIssuance() {
+		if len(ag.Inputs) != 0 {
+			return fmt.Errorf("issuance must have no inputs")
+		}
+	} else {
+		if ag.ControlAsset != nil {
+			return fmt.Errorf("only issuance can have a control asset")
+		}
+	}
+
 	for _, in := range ag.Inputs {
 		if err := in.validate(); err != nil {
 			return err

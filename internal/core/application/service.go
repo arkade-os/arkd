@@ -916,26 +916,6 @@ func (s *service) SubmitOffchainTx(
 	var rebuiltCheckpointTxs []*psbt.Packet
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
-		// validate asset packet if present
-		if asset.IsAssetPacket(out.PkScript) {
-			if foundOpReturn {
-				return nil, errors.MALFORMED_ARK_TX.New(
-					"tx %s has multiple op return outputs, not allowed for assets", txid,
-				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-			}
-			foundOpReturn = true
-
-			err := s.validateAssetTransition(ctx, *arkPtx.UnsignedTx, checkpointTxs, *out)
-			if err != nil {
-				log.WithError(err).Warn("asset transaction validation failed")
-				return nil, errors.ASSET_VALIDATION_FAILED.Wrap(err)
-			}
-
-			outputs = append(outputs, out)
-			assetOutputIndex = outIndex
-			continue
-		}
-
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
 				return nil, errors.MALFORMED_ARK_TX.New(
@@ -954,6 +934,23 @@ func (s *service) SubmitOffchainTx(
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
 			foundOpReturn = true
+
+			// validate asset packet if present
+			if asset.IsAssetPacket(out.PkScript) {
+				assetPacket, err := asset.NewPacketFromTxOut(*out)
+				if err != nil {
+					return nil, errors.MALFORMED_ARK_TX.New("failed to decode asset packet: %w", err).
+						WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+				}
+
+				if err := s.validateAssetTransaction(ctx, arkPtx, assetPacket, spentVtxos); err != nil {
+					return nil, err
+				}
+
+				outputs = append(outputs, out)
+				assetOutputIndex = outIndex
+				continue
+			}
 		}
 
 		if s.vtxoMaxAmount >= 0 {
@@ -1527,7 +1524,6 @@ func (s *service) RegisterIntent(
 	var assetPacket asset.Packet
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
-
 		if asset.IsAssetPacket(output.PkScript) {
 			assetPacket, err = asset.NewPacketFromTxOut(*output)
 			if err != nil {
@@ -1537,16 +1533,6 @@ func (s *service) RegisterIntent(
 					Proof:   encodedProof,
 					Message: encodedMessage,
 				})
-			}
-
-			// validate asset
-			err := s.validateAssetTransition(ctx, *proof.UnsignedTx, nil, *output)
-			if err != nil {
-				return "", errors.INVALID_INTENT_PROOF.New("failed to validate asset transition: %w", err).
-					WithMetadata(errors.InvalidIntentProofMetadata{
-						Proof:   encodedProof,
-						Message: encodedMessage,
-					})
 			}
 
 			// build asset input map for indexing asset vtxos
@@ -1908,6 +1894,12 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxoInputs = append(vtxoInputs, vtxo)
+	}
+
+	if len(assetPacket) > 0 {
+		if err := s.validateAssetTransaction(ctx, &proof.Packet, assetPacket, vtxoInputs); err != nil {
+			return "", err
+		}
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
@@ -4303,8 +4295,13 @@ func (s *service) storeAssetGroups(
 	assetList := make([]domain.NormalAsset, 0)
 
 	for i, asstGp := range assetGroupList {
-		totalIn := sumAssetInputs(asstGp.Inputs)
-		totalOut := sumAssetOutputs(asstGp.Outputs)
+		totalIn, totalOut := uint64(0), uint64(0)
+		for _, in := range asstGp.Inputs {
+			totalIn += in.Amount
+		}
+		for _, out := range asstGp.Outputs {
+			totalOut += out.Amount
+		}
 
 		metadataList := assetMetadataFromGroup(asstGp.Metadata)
 

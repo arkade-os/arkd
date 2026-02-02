@@ -20,6 +20,7 @@ type NormalAsset struct {
 	AssetID string
 }
 
+// TODO: rename, misleading with ark-lib asset_group.go
 type AssetGroup struct {
 	ID             string
 	Quantity       uint64
