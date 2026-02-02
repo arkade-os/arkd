@@ -36,6 +36,16 @@ func (k Outpoint) String() string {
 }
 
 type Asset struct {
+	AssetID        string
+	Metadata       map[string]string
+	ControlAssetId string
+	Immutable      bool
+}
+
+// I recall being told to add this but now the Asset struct has no Amount field,
+// so when used in Vtxo, we can't tell how much of the asset is in the vtxo. not sure where
+// to use this new struct.
+type AssetWithAmount struct {
 	AssetID string
 	Amount  uint64
 }

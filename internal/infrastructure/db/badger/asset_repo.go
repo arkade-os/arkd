@@ -403,77 +403,6 @@ func (r *assetRepository) GetAssetGroupByID(
 	}, nil
 }
 
-func (r *assetRepository) IncreaseAssetGroupQuantity(
-	ctx context.Context,
-	assetID string,
-	amount uint64,
-) error {
-	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
-		dbAsset, err := r.getAssetDetailsWithTx(tx, assetID)
-		if err != nil {
-			if errors.Is(err, badgerhold.ErrNotFound) {
-				return nil
-			}
-			return err
-		}
-
-		dbAsset.Quantity += amount
-
-		return r.store.TxUpsert(tx, assetID, dbAsset)
-	})
-}
-
-func (r *assetRepository) DecreaseAssetGroupQuantity(
-	ctx context.Context,
-	assetID string,
-	amount uint64,
-) error {
-	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
-		dbAsset, err := r.getAssetDetailsWithTx(tx, assetID)
-		if err != nil {
-			if errors.Is(err, badgerhold.ErrNotFound) {
-				return nil
-			}
-			return err
-		}
-
-		if dbAsset.Quantity < amount {
-			return fmt.Errorf("insufficient quantity for asset %s", assetID)
-		}
-
-		dbAsset.Quantity -= amount
-
-		return r.store.TxUpsert(tx, assetID, dbAsset)
-	})
-}
-
-func (r *assetRepository) UpdateAssetMetadataList(
-	ctx context.Context,
-	assetId string,
-	metadatalist []domain.AssetMetadata,
-) error {
-	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
-		_, err := r.getAssetDetailsWithTx(tx, assetId)
-		if err != nil {
-			return err
-		}
-
-		for _, md := range metadatalist {
-			meta := assetMetadata{
-				Key:       assetMetadataKey(assetId, md.Key),
-				AssetID:   assetId,
-				MetaKey:   md.Key,
-				MetaValue: md.Value,
-			}
-
-			if err := r.store.TxUpsert(tx, meta.Key, meta); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-}
 
 func (r *assetRepository) listAnchorAssets(
 	ctx context.Context,
@@ -579,4 +508,18 @@ func anchorAssetKey(anchorID string, vout uint32) string {
 
 func assetMetadataKey(assetID, metaKey string) string {
 	return fmt.Sprintf("%s:%s", assetID, metaKey)
+}
+
+func (r *assetRepository) AddAssets(
+	ctx context.Context,
+	assets []domain.Asset,
+) (int, error) {
+	return 0, nil
+}
+
+func (r *assetRepository) GetAssets(
+	ctx context.Context,
+	assetIDs []string,
+) ([]domain.Asset, error) {
+	return nil, nil
 }

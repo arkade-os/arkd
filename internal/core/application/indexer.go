@@ -245,13 +245,14 @@ func (i *indexerService) GetVtxos(
 
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
 
+	// should we be iterating over vtxos instead?
 	for j, v := range allVtxos {
 		// add asset to vtxo if present
 		asset, err := i.repoManager.Assets().GetAssetByOutpoint(ctx, v.Outpoint)
 		if err == nil && asset != nil {
 			allVtxos[j].Assets = append(allVtxos[j].Assets, domain.Asset{
 				AssetID: asset.AssetID,
-				Amount:  asset.Amount,
+				// Amount:  asset.Amount,
 			})
 		}
 	}
@@ -276,7 +277,7 @@ func (i *indexerService) GetVtxosByOutpoint(
 		if err == nil && asset != nil {
 			allVtxos[j].Assets = append(allVtxos[j].Assets, domain.Asset{
 				AssetID: asset.AssetID,
-				Amount:  0,
+				// Amount:  0,
 			})
 		}
 	}

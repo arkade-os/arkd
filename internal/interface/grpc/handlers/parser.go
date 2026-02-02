@@ -181,7 +181,8 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 		for _, asset := range vv.Assets {
 			assets = append(assets, &arkv1.Asset{
 				AssetId: asset.AssetID,
-				Amount:  asset.Amount,
+				// Amount:  asset.Amount,
+				// get amount here
 			})
 		}
 		return assets

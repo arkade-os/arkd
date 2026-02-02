@@ -1557,7 +1557,7 @@ func (s *service) RegisterIntent(
 					}
 
 					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], domain.Asset{
-						Amount:  input.Amount,
+						// Amount:  input.Amount,
 						AssetID: grp.AssetId.String(),
 					})
 				}
@@ -4303,7 +4303,6 @@ func (s *service) storeAssetGroups(
 	assetList := make([]domain.NormalAsset, 0)
 
 	for i, asstGp := range assetGroupList {
-		totalIn := sumAssetInputs(asstGp.Inputs)
 		totalOut := sumAssetOutputs(asstGp.Outputs)
 
 		metadataList := assetMetadataFromGroup(asstGp.Metadata)
@@ -4377,10 +4376,6 @@ func (s *service) storeAssetGroups(
 			return fmt.Errorf("asset with id %s not found for update", assetId.String())
 		}
 
-		if err := s.updateAssetQuantity(ctx, assetId.String(), totalIn, totalOut); err != nil {
-			return err
-		}
-
 		for _, out := range asstGp.Outputs {
 			asst := domain.NormalAsset{
 				Outpoint: domain.Outpoint{
@@ -4413,27 +4408,4 @@ func assetMetadataFromGroup(metadata []asset.Metadata) []domain.AssetMetadata {
 		})
 	}
 	return metadataList
-}
-
-func (s *service) updateAssetQuantity(
-	ctx context.Context,
-	assetID string,
-	totalIn, totalOut uint64,
-) error {
-	if totalOut > totalIn {
-		delta := totalOut - totalIn
-		if err := s.repoManager.Assets().IncreaseAssetGroupQuantity(ctx, assetID, delta); err != nil {
-			return fmt.Errorf("error updating asset quantity: %s", err)
-		}
-		return nil
-	}
-
-	if totalIn > totalOut {
-		delta := totalIn - totalOut
-		if err := s.repoManager.Assets().DecreaseAssetGroupQuantity(ctx, assetID, delta); err != nil {
-			return fmt.Errorf("error updating asset quantity: %s", err)
-		}
-	}
-
-	return nil
 }

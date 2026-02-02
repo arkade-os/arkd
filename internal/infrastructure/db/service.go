@@ -477,6 +477,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	if len(newVtxos) > 0 {
 		for {
+			// this will take care of updating asset projections as well
 			if err := repo.AddVtxos(ctx, newVtxos); err != nil {
 				log.WithError(err).Warn("failed to add new vtxos, retrying soon")
 				time.Sleep(100 * time.Millisecond)
@@ -489,6 +490,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	}
 
+	// can we get rid of this if AddVtxos handles asset projection updates?
 	if len(newAssetAnchors) > 0 {
 		for _, anchor := range newAssetAnchors {
 			if err := s.assetStore.InsertAssetAnchor(ctx, anchor); err != nil {
@@ -590,7 +592,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 								assetMapped[uint32(assetOut.Vout)],
 								domain.Asset{
 									AssetID: assetId,
-									Amount:  uint64(assetOut.Amount),
+									// Amount:  uint64(assetOut.Amount),
 								},
 							)
 						}
@@ -629,19 +631,32 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
 				Swept: isSubDust,
+				// add new asset info we extract here ( I think this is already covered in the loop right below this?)
 			})
 		}
 
+		// map assets to vtxos
 		for i, newVtxo := range newVtxos {
 			if assets, found := assetMapped[newVtxo.VOut]; found {
 				newVtxos[i].Assets = assets
 			}
 		}
 
+		// store assets if they are an issuance (how can we tell if issuance?)
+		for _, a := range assetMapped {
+			_, err := s.assetStore.AddAssets(ctx, a)
+			if err != nil {
+				log.WithError(err).Warn("failed to add asset issuances for offchain tx")
+				return
+			}
+		}
+
+		// this will take care of adding new asset_projection rows here
 		if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
 			log.WithError(err).Warn("failed to add vtxos")
 			return
 		}
+		// extra logic for updating the asset tables goes here
 
 		log.Debugf("added %d vtxos", len(newVtxos))
 	}
@@ -715,7 +730,7 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 					for _, out := range asst.Outputs {
 						assetsMap[uint32(out.Vout)] = domain.Asset{
 							AssetID: asst.AssetId.String(),
-							Amount:  uint64(out.Amount),
+							// Amount:  uint64(out.Amount),
 						}
 					}
 				}
@@ -737,6 +752,7 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          round.EndingTimestamp,
 				ExpiresAt:          round.ExpiryTimestamp(),
+				// add asset info here
 			})
 		}
 
@@ -757,8 +773,8 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 
 						normalAssets = append(normalAssets, domain.NormalAsset{
 							Outpoint: vtxo.Outpoint,
-							Amount:   asset.Amount,
-							AssetID:  asset.AssetID,
+							// Amount:   asset.Amount,
+							AssetID: asset.AssetID,
 						})
 					}
 				}

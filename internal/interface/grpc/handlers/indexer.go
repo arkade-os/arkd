@@ -734,7 +734,8 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 	for _, asset := range vtxo.Assets {
 		assets = append(assets, &arkv1.IndexerAsset{
 			AssetId: asset.AssetID,
-			Amount:  asset.Amount,
+			// Amount:  asset.Amount,
+			// get amount here
 		})
 	}
 

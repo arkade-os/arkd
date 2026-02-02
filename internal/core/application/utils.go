@@ -213,7 +213,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 
 		outs[idx].Assets = append(outs[idx].Assets, domain.Asset{
 			AssetID: asst.AssetID,
-			Amount:  asst.Amount,
+			// Amount:  asst.Amount,
 		})
 	}
 
@@ -322,7 +322,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 							assetsMap[uint32(out.Vout)],
 							domain.Asset{
 								AssetID: asst.AssetId.String(),
-								Amount:  uint64(out.Amount),
+								// Amount:  uint64(out.Amount),
 							},
 						)
 					}

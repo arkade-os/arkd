@@ -277,44 +277,16 @@ func (r *assetRepository) GetAssetGroupByID(
 	}, nil
 }
 
-func (r *assetRepository) IncreaseAssetGroupQuantity(
+func (r *assetRepository) AddAssets(
 	ctx context.Context,
-	assetID string,
-	amount uint64,
-) error {
-	return r.querier.AddToAssetQuantity(ctx, queries.AddToAssetQuantityParams{
-		ID:       assetID,
-		Quantity: int64(amount),
-	})
+	assets []domain.Asset,
+) (int, error) {
+	return 0, nil
 }
 
-func (r *assetRepository) DecreaseAssetGroupQuantity(
+func (r *assetRepository) GetAssets(
 	ctx context.Context,
-	assetID string,
-	amount uint64,
-) error {
-	return r.querier.SubtractFromAssetQuantity(ctx, queries.SubtractFromAssetQuantityParams{
-		ID:       assetID,
-		Quantity: int64(amount),
-	})
-}
-
-func (r *assetRepository) UpdateAssetMetadataList(
-	ctx context.Context,
-	assetId string,
-	metadatalist []domain.AssetMetadata,
-) error {
-	for _, md := range metadatalist {
-		err := r.querier.UpsertAssetMetadata(ctx, queries.UpsertAssetMetadataParams{
-			AssetID:   assetId,
-			MetaKey:   md.Key,
-			MetaValue: md.Value,
-		})
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	assetIDs []string,
+) ([]domain.Asset, error) {
+	return nil, nil
 }
