@@ -25,7 +25,10 @@ func ValidateAssetTransaction(
 ) errors.Error {
 	packet, err := NewPacketFromTx(tx)
 	if err != nil {
-		if errs.Is(err, AssetPacketNotFoundError{}) {
+		if errs.Is(err, AssetPacketNotFoundError{tx.TxID()}) {
+			if len(assetPrevouts) > 0 {
+				return errors.ASSET_VALIDATION_FAILED.New("asset packet not found in tx %s", tx.TxID())
+			}
 			return nil
 		}
 		return errors.ASSET_VALIDATION_FAILED.New("error creating asset packet: %w", err)
@@ -80,6 +83,10 @@ func validateReissuance(
 	group AssetGroup,
 	ctrlAssetSource ControlAssetSource,
 ) errors.Error {
+	if ctrlAssetSource == nil {
+		return errors.ASSET_VALIDATION_FAILED.New("control asset source is nil, cannot validate reissuance")
+	}
+
 	assetID := group.AssetId.String()
 
 	ctrlAssetID, err := ctrlAssetSource.GetControlAsset(ctx, assetID)
@@ -131,6 +138,8 @@ func validateIssuance(packet Packet, grp AssetGroup) errors.Error {
 				grp.ControlAsset.GroupIndex,
 			)
 		}
+
+		return nil
 	}
 
 	return errors.ASSET_VALIDATION_FAILED.New("invalid control asset reference type for issuance")
@@ -249,7 +258,7 @@ func validateGroupInputs(
 		assets, ok := inputAssets[int(input.Vin)]
 		if !ok {
 			return errors.ASSET_INPUT_INVALID.New(
-				"asset input %d references input index %d which is not a valid vtxo", i, int(input.Vin)).
+				"asset input %d references input %d which does not contain any assets", i, int(input.Vin)).
 				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
 		}
 
@@ -271,8 +280,8 @@ func validateGroupInputs(
 
 		if !vtxoHasAsset {
 			return errors.ASSET_INPUT_INVALID.New(
-				"asset input %d references input with asset %s but asset not found",
-				i, assetID,
+				"asset input %d references input with asset %s but asset not found in tx input %d",
+				i, assetID, int(input.Vin),
 			).
 				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
 		}
