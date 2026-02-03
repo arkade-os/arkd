@@ -559,7 +559,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// index by ark input index for asset packet validation
-	vtxoInputsMap := make(map[int]domain.Vtxo)
+	assetInputs := make(map[int][]domain.Asset)
 
 	// Loop over the inputs of the given ark tx to ensure the order of inputs is preserved when
 	// rebuilding the txs.
@@ -638,7 +638,9 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		vtxo, exists := indexedSpentVtxos[outpoint]
-		vtxoInputsMap[inputIndex] = vtxo
+		if len(vtxo.Assets) > 0 {
+			assetInputs[inputIndex] = vtxo.Assets
+		}
 		if !exists {
 			return nil, errors.INTERNAL_ERROR.New(
 				"can't find vtxo associated with checkpoint input %s", outpoint,
@@ -912,6 +914,10 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
 	}
 
+	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, assetInputs); err != nil {
+		return nil, err
+	}
+
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	foundOpReturn := false
@@ -941,16 +947,6 @@ func (s *service) SubmitOffchainTx(
 
 			// validate asset packet if present
 			if asset.IsAssetPacket(out.PkScript) {
-				assetPacket, err := asset.NewPacketFromTxOut(*out)
-				if err != nil {
-					return nil, errors.MALFORMED_ARK_TX.New("failed to decode asset packet: %w", err).
-						WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-				}
-
-				if err := s.validateAssetTransaction(ctx, arkPtx, assetPacket, vtxoInputsMap); err != nil {
-					return nil, err
-				}
-
 				outputs = append(outputs, out)
 				assetOutputIndex = outIndex
 				continue
@@ -1468,8 +1464,8 @@ func (s *service) RegisterIntent(
 ) (string, errors.Error) {
 	// the vtxo to swap for new ones, require forfeit transactions
 	vtxoInputs := make([]domain.Vtxo, 0)
-	// vtxo inputs map by input index
-	vtxoInputsMap := make(map[int]domain.Vtxo)
+	// assets inputs map by input index
+	assetInputs := make(map[int][]domain.Asset)
 	// the boarding utxos to add in the commitment tx
 	boardingUtxos := make([]boardingIntentInput, 0)
 
@@ -1900,11 +1896,11 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxoInputs = append(vtxoInputs, vtxo)
-		vtxoInputsMap[i+1] = vtxo
+		assetInputs[i+1] = vtxo.Assets
 	}
 
 	if len(assetPacket) > 0 {
-		if err := s.validateAssetTransaction(ctx, &proof.Packet, assetPacket, vtxoInputsMap); err != nil {
+		if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs); err != nil {
 			return "", err
 		}
 	}
