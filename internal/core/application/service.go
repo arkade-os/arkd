@@ -1899,10 +1899,8 @@ func (s *service) RegisterIntent(
 		assetInputs[i+1] = vtxo.Assets
 	}
 
-	if len(assetPacket) > 0 {
-		if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs); err != nil {
-			return "", err
-		}
+	if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs); err != nil {
+		return "", err
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)

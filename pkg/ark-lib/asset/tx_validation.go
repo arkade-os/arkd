@@ -21,7 +21,7 @@ type ControlAssetSource interface {
 
 // validateAssetTransaction validates that asset packet data matches the transaction inputs and outputs
 func ValidateAssetTransaction(
-	ctx context.Context, tx *wire.MsgTx, inputAssets map[int][]AssetTxo, ctrlSrc ControlAssetSource,
+	ctx context.Context, tx *wire.MsgTx, assetPrevouts map[int][]AssetTxo, ctrlSrc ControlAssetSource,
 ) errors.Error {
 	packet, err := NewPacketFromTx(tx)
 	if err != nil {
@@ -32,7 +32,7 @@ func ValidateAssetTransaction(
 	}
 	
 	// validate every asset in the input assets list is present in the packet
-	if err := validateInputAssets(tx, inputAssets, packet); err != nil {
+	if err := validateInputAssets(assetPrevouts, packet); err != nil {
 		return err
 	}
 
@@ -64,7 +64,7 @@ func ValidateAssetTransaction(
 		if err := validateGroupOutputs(tx, assetID, group); err != nil {
 			return err
 		}
-		if err := validateGroupInputs(tx, assetID, inputAssets, group); err != nil {
+		if err := validateGroupInputs(tx, assetID, assetPrevouts, group); err != nil {
 			return err
 		}
 	}
@@ -137,12 +137,8 @@ func validateIssuance(packet Packet, grp AssetGroup) errors.Error {
 }
 
 // validateInputVtxoAssets ensures every asset in the spentVtxos list is present in the packet, and that the amounts match
-func validateInputAssets(
-	tx *wire.MsgTx,
-	inputAssets map[int][]AssetTxo,
-	packet Packet,
-) errors.Error {
-	for inputIndex, assets := range inputAssets {
+func validateInputAssets(assetPrevouts map[int][]AssetTxo, packet Packet) errors.Error {
+	for inputIndex, assets := range assetPrevouts {
 		for _, asst := range assets {
 			assetGroup := findAssetGroupByAssetId(packet, asst.AssetID)
 			if assetGroup == nil {
