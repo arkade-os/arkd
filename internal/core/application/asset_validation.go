@@ -14,10 +14,10 @@ import (
 
 // validateAssetTransaction validates that asset packet data matches the transaction inputs and outputs
 func (s *service) validateAssetTransaction(
-	ctx context.Context, arkPtx *psbt.Packet, packet asset.Packet, spentVtxos []domain.Vtxo,
+	ctx context.Context, arkPtx *psbt.Packet, packet asset.Packet, inputVtxos map[int]domain.Vtxo,
 ) errors.Error {
 	// validate every asset in the spentVtxos list is present in the packet
-	if err := validateInputVtxoAssets(arkPtx, spentVtxos, packet); err != nil {
+	if err := validateInputVtxoAssets(arkPtx, inputVtxos, packet); err != nil {
 		return err
 	}
 
@@ -49,7 +49,7 @@ func (s *service) validateAssetTransaction(
 		if err := validateGroupOutputs(arkPtx.UnsignedTx, assetID, group); err != nil {
 			return err
 		}
-		if err := validateGroupInputs(arkPtx.UnsignedTx, assetID, spentVtxos, group); err != nil {
+		if err := validateGroupInputs(arkPtx.UnsignedTx, assetID, inputVtxos, group); err != nil {
 			return err
 		}
 	}
@@ -128,32 +128,10 @@ func validateIssuance(packet asset.Packet, grp asset.AssetGroup) errors.Error {
 // validateInputVtxoAssets ensures every asset in the spentVtxos list is present in the packet, and that the amounts match
 func validateInputVtxoAssets(
 	arkPtx *psbt.Packet,
-	spentVtxos []domain.Vtxo,
+	inputVtxos map[int]domain.Vtxo,
 	packet asset.Packet,
 ) errors.Error {
-	outpointToInputIndex := make(map[wire.OutPoint]int)
-	for inputIndex, input := range arkPtx.UnsignedTx.TxIn {
-		outpointToInputIndex[input.PreviousOutPoint] = inputIndex
-	}
-
-	for _, vtxo := range spentVtxos {
-		outpoint, err := wire.NewOutPointFromString(vtxo.Outpoint.String())
-		if err != nil {
-			return errors.INTERNAL_ERROR.New(
-				"error parsing outpoint %s: %w",
-				vtxo.Outpoint.String(),
-				err,
-			)
-		}
-
-		vtxoInputIndex, ok := outpointToInputIndex[*outpoint]
-		if !ok {
-			return errors.INTERNAL_ERROR.New(
-				"vtxo %s is not present in the ark tx",
-				vtxo.Outpoint.String(),
-			)
-		}
-
+	for inputIndex, vtxo := range inputVtxos {
 		for _, asst := range vtxo.Assets {
 			assetGroup := findAssetGroupByAssetId(packet, asst.AssetID)
 			if assetGroup == nil {
@@ -167,7 +145,7 @@ func validateInputVtxoAssets(
 
 			foundVtxoInput := false
 			for _, input := range assetGroup.Inputs {
-				if input.Vin == uint16(vtxoInputIndex) {
+				if input.Vin == uint16(inputIndex) {
 					foundVtxoInput = true
 					if input.Amount != asst.Amount {
 						return errors.ASSET_INPUT_INVALID.New(
@@ -242,30 +220,13 @@ func validateGroupOutputs(arkTx *wire.MsgTx, assetID string, grp asset.AssetGrou
 // validateGroupInputs ensures every input index referenced in the asset group is present in the ark tx
 // and it matches the amount of the vtxo asset referenced by the input
 func validateGroupInputs(
-	arkTx *wire.MsgTx,
-	assetID string,
-	spentVtxos []domain.Vtxo,
-	grp asset.AssetGroup,
+	arkTx *wire.MsgTx, assetID string, inputVtxos map[int]domain.Vtxo, grp asset.AssetGroup,
 ) errors.Error {
 	if len(grp.Inputs) == 0 {
 		return nil
 	}
 
-	indexedVtxos := make(map[wire.OutPoint]domain.Vtxo)
-	for _, vtxo := range spentVtxos {
-		outpoint, err := wire.NewOutPointFromString(vtxo.Outpoint.String())
-		if err != nil {
-			return errors.INTERNAL_ERROR.New(
-				"error parsing outpoint %s: %w",
-				vtxo.Outpoint.String(),
-				err,
-			)
-		}
-
-		indexedVtxos[*outpoint] = vtxo
-	}
-
-	for _, input := range grp.Inputs {
+	for i, input := range grp.Inputs {
 		// intent input type is always created by arkd operator, so if we receive one from tx submitted by user, it's invalid
 		if input.Type == asset.AssetTypeIntent {
 			return errors.ASSET_INPUT_INVALID.New("unexpected asset input type: %s", input.Type).
@@ -278,11 +239,10 @@ func validateGroupInputs(
 				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
 		}
 
-		inputOutpoint := arkTx.TxIn[input.Vin].PreviousOutPoint
-		vtxo, ok := indexedVtxos[inputOutpoint]
+		vtxo, ok := inputVtxos[int(input.Vin)]
 		if !ok {
 			return errors.ASSET_INPUT_INVALID.New(
-				"asset input %d references outpoint %s which is not a valid vtxo", input.Vin, inputOutpoint.String()).
+				"asset input %d references input index %d which is not a valid vtxo", i, int(input.Vin)).
 				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
 		}
 
@@ -293,7 +253,7 @@ func validateGroupInputs(
 				if asst.Amount != input.Amount {
 					return errors.ASSET_INPUT_INVALID.New(
 						"asset input %d references vtxo with asset %s but amount mismatch: %d != %d",
-						input.Vin, asst.AssetID, asst.Amount, input.Amount).
+						i, asst.AssetID, asst.Amount, input.Amount).
 						WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
 				}
 
@@ -305,7 +265,8 @@ func validateGroupInputs(
 		if !vtxoHasAsset {
 			return errors.ASSET_INPUT_INVALID.New(
 				"asset input %d references vtxo with asset %s but asset not found",
-				input.Vin, assetID).
+				i, assetID,
+			).
 				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
 		}
 	}
