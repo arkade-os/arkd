@@ -169,7 +169,15 @@
     {
       "name": "vtxo asset amount mismatch",
       "tx": "03000000029a81ef47efe29175029b3cbee69d748ffd281a4d960f13433dbdb813ed468db70000000000ffffffffb98b471affef956f96a1f3b45be27a4d015a49d444427d78cdf98e61b1a1b4540000000000ffffffff0490010000000000002251208ac2792cbd8538a58b8972e70c39ec794b44dc132d5ad32a7b996949b070a076b00b030000000000225120f2dbfa16f37ed98f57c9a3444a5b39db10c3324a2c4bcc0d4d67098032e8f22000000000000000003b6a3941524b000101f198dd7d13d47ea5b167d272113bf9349f716d354fb4a985970754bb719d2e7c000001010000882702010000b009010100d81d00000000000000000451024e7300000000",
-      "expectedError": "ASSET_INPUT_INVALID (35): asset input 0 references input 0 which does not contain any assets"
+      "prevouts": {
+        "0": [
+          {
+            "assetId": "f198dd7d13d47ea5b167d272113bf9349f716d354fb4a985970754bb719d2e7c0000",
+            "amount": 4000
+          }
+        ]
+      },
+      "expectedError": "ASSET_INPUT_INVALID (35): input 0 owns asset f198dd7d13d47ea5b167d272113bf9349f716d354fb4a985970754bb719d2e7c0000 but amount mismatch: 5000 != 4000"
     },
     {
       "name": "reissuance wrong control asset id",

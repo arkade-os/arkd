@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math/big"
 )
 
 const (
@@ -50,15 +51,21 @@ func (ag AssetGroup) IsIssuance() bool {
 	return ag.AssetId == nil
 }
 
+// IsReissuance detect if the group is a reissuance by comparing the sum of the inputs and outputs
+// a reissuance is a group that is not an issuance and where sum(outputs) > sum(inputs)
 func (ag AssetGroup) IsReissuance() bool {
-	outputsAmount, inputsAmount := uint64(0), uint64(0)
-	for _, out := range ag.Outputs {
-		outputsAmount += out.Amount
+	outAmounts := make([]uint64, len(ag.Outputs))
+	inAmounts := make([]uint64, len(ag.Inputs))
+	for i, out := range ag.Outputs {
+		outAmounts[i] = out.Amount
 	}
-	for _, in := range ag.Inputs {
-		inputsAmount += in.Amount
+	for i, in := range ag.Inputs {
+		inAmounts[i] = in.Amount
 	}
-	return !ag.IsIssuance() && inputsAmount < outputsAmount
+	sumOutputs := safeSumUint64(outAmounts)
+	sumInputs := safeSumUint64(inAmounts)
+
+	return !ag.IsIssuance() && sumInputs.Cmp(sumOutputs) < 0
 }
 
 // NewAssetGroup creates a new asset group and validates it
@@ -274,4 +281,12 @@ func newAssetGroupFromReader(r *bytes.Reader) (*AssetGroup, error) {
 	}
 
 	return &ag, nil
+}
+
+func safeSumUint64(values []uint64) *big.Int {
+	sum := new(big.Int)
+	for _, value := range values {
+		sum.Add(sum, new(big.Int).SetUint64(value))
+	}
+	return sum
 }
