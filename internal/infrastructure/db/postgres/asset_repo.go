@@ -171,18 +171,19 @@ func (r *assetRepository) InsertAssetGroup(
 	assetGroup domain.AssetGroup,
 ) error {
 	controlID := sql.NullString{}
+	controlAssetGroupIndex := sql.NullInt64{}
 	if assetGroup.ControlAssetID != "" {
 		controlID = sql.NullString{
 			String: assetGroup.ControlAssetID,
 			Valid:  true,
 		}
+		// derive control asset asset index from control asset id
+		controlAssetId, err := asset.NewAssetIdFromString(assetGroup.ControlAssetID)
+		if err != nil {
+			return err
+		}
+		controlAssetGroupIndex = sql.NullInt64{Int64: int64(controlAssetId.Index), Valid: true}
 	}
-	// derive control asset asset index from control asset id
-	controlAssetId, err := asset.NewAssetIdFromString(assetGroup.ControlAssetID)
-	if err != nil {
-		return err
-	}
-	controlAssetGroupIndex := sql.NullInt64{Int64: int64(controlAssetId.Index), Valid: true}
 
 	var metadata pqtype.NullRawMessage
 	if len(assetGroup.Metadata) == 0 {
@@ -213,12 +214,21 @@ func (r *assetRepository) InsertAssetGroup(
 
 	metadataHash := sql.NullString{String: hex.EncodeToString(metadataHashBytes), Valid: true}
 
-	// derive txid from assetGroup.ID
-	assetId, err := asset.NewAssetIdFromString(assetGroup.ID)
+	genesisTxid := ""
+	genesisGroupIndex := int64(0)
+	if assetGroup.ID != "" {
+		// derive txid and index from AssetID
+		producedAssetId, err := asset.NewAssetIdFromString(assetGroup.ID)
+		if err != nil {
+			return err
+		}
+		genesisTxid = producedAssetId.Txid.String()
+		genesisGroupIndex = int64(producedAssetId.Index)
+	}
 
 	err = r.querier.CreateAsset(ctx, queries.CreateAssetParams{
-		GenesisTxid:            assetId.Txid.String(),
-		GenesisGroupIndex:      int64(assetId.Index),
+		GenesisTxid:            genesisTxid,
+		GenesisGroupIndex:      genesisGroupIndex,
 		IsImmutable:            assetGroup.Immutable,
 		Metadata:               metadata,
 		MetadataHash:           metadataHash,
@@ -229,6 +239,10 @@ func (r *assetRepository) InsertAssetGroup(
 	if err != nil {
 		return err
 	}
+
+	// derive txid from assetGroup.ID
+	// what do we do if its empty? the FkAssetID/FkAssetIndex are required fields
+	assetId, err := asset.NewAssetIdFromString(assetGroup.ID)
 
 	err = r.querier.UpsertAssetMetadataUpdate(ctx, queries.UpsertAssetMetadataUpdateParams{
 		// should this be the controlAssetId or genesis txid (as specified in the schema)?
@@ -296,6 +310,21 @@ func (r *assetRepository) AddAssets(
 
 	addedCount := 0
 	for _, ast := range assets {
+		controlID := sql.NullString{}
+		controlAssetGroupIndex := sql.NullInt64{}
+		if ast.ControlAssetId != "" {
+			controlID = sql.NullString{
+				String: ast.ControlAssetId,
+				Valid:  true,
+			}
+			// derive control asset asset index from control asset id
+			controlAssetId, err := asset.NewAssetIdFromString(ast.ControlAssetId)
+			if err != nil {
+				return addedCount, err
+			}
+			controlAssetGroupIndex = sql.NullInt64{Int64: int64(controlAssetId.Index), Valid: true}
+		}
+
 		var metadata pqtype.NullRawMessage
 		if len(ast.Metadata) == 0 {
 			metadata.Valid = false
@@ -323,24 +352,31 @@ func (r *assetRepository) AddAssets(
 		if err != nil {
 			return addedCount, err
 		}
-		metadataHash := sql.NullString{String: hex.EncodeToString(metadataHashBytes), Valid: true}
 
-		// derive txid and index from AssetID
-		producedAssetId, err := asset.NewAssetIdFromString(ast.AssetID)
-		if err != nil {
-			return addedCount, err
+		genesisTxid := ""
+		genesisGroupIndex := int64(0)
+		if ast.AssetID != "" {
+			// derive txid and index from AssetID
+			producedAssetId, err := asset.NewAssetIdFromString(ast.AssetID)
+			if err != nil {
+				return addedCount, err
+			}
+			genesisTxid = producedAssetId.Txid.String()
+			genesisGroupIndex = int64(producedAssetId.Index)
 		}
 
 		// should we be using the upsert query?
 		// should the control fields not be as i have them set here?
 		params := queries.CreateAssetParams{
-			GenesisTxid:            producedAssetId.Txid.String(),
-			GenesisGroupIndex:      int64(producedAssetId.Index),
-			IsImmutable:            ast.Immutable,
-			Metadata:               metadata,
-			MetadataHash:           metadataHash,
-			ControlAssetID:         sql.NullString{String: producedAssetId.Txid.String(), Valid: true},
-			ControlAssetGroupIndex: sql.NullInt64{Int64: int64(producedAssetId.Index), Valid: true},
+			// can we just use ast.AssetID here?
+			GenesisTxid:       genesisTxid,
+			GenesisGroupIndex: genesisGroupIndex,
+			IsImmutable:       ast.Immutable,
+			Metadata:          metadata,
+			MetadataHash:      sql.NullString{String: hex.EncodeToString(metadataHashBytes), Valid: true},
+			// can we just use ast.ControlAssetId here? possible the control asset not provided and we have to set Valid: false
+			ControlAssetID:         controlID,
+			ControlAssetGroupIndex: controlAssetGroupIndex,
 		}
 		err = r.querier.CreateAsset(ctx, params)
 		if err != nil {
