@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math/big"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
@@ -46,6 +47,27 @@ type AssetGroup struct {
 	Inputs []AssetInput
 	// Used to encode extra data
 	Metadata []Metadata
+}
+
+func (ag AssetGroup) IsIssuance() bool {
+	return ag.AssetId == nil
+}
+
+// IsReissuance detect if the group is a reissuance by comparing the sum of the inputs and outputs
+// a reissuance is a group that is not an issuance and where sum(outputs) > sum(inputs)
+func (ag AssetGroup) IsReissuance() bool {
+	outAmounts := make([]uint64, len(ag.Outputs))
+	inAmounts := make([]uint64, len(ag.Inputs))
+	for i, out := range ag.Outputs {
+		outAmounts[i] = out.Amount
+	}
+	for i, in := range ag.Inputs {
+		inAmounts[i] = in.Amount
+	}
+	sumOutputs := safeSumUint64(outAmounts)
+	sumInputs := safeSumUint64(inAmounts)
+
+	return !ag.IsIssuance() && sumInputs.Cmp(sumOutputs) < 0
 }
 
 // NewAssetGroup creates a new asset group and validates it
@@ -114,6 +136,17 @@ func (ag AssetGroup) validate() error {
 			return err
 		}
 	}
+
+	if ag.IsIssuance() {
+		if len(ag.Inputs) != 0 {
+			return fmt.Errorf("issuance must have no inputs")
+		}
+	} else {
+		if ag.ControlAsset != nil {
+			return fmt.Errorf("only issuance can have a control asset")
+		}
+	}
+
 	for _, in := range ag.Inputs {
 		if err := in.validate(); err != nil {
 			return err
@@ -264,4 +297,12 @@ func newAssetGroupFromReader(r *bytes.Reader) (*AssetGroup, error) {
 	}
 
 	return &ag, nil
+}
+
+func safeSumUint64(values []uint64) *big.Int {
+	sum := new(big.Int)
+	for _, value := range values {
+		sum.Add(sum, new(big.Int).SetUint64(value))
+	}
+	return sum
 }

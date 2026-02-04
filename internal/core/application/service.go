@@ -558,6 +558,9 @@ func (s *service) SubmitOffchainTx(
 		}
 	}
 
+	// index by ark input index for asset packet validation
+	assetInputs := make(map[int][]domain.AssetDenomination)
+
 	// Loop over the inputs of the given ark tx to ensure the order of inputs is preserved when
 	// rebuilding the txs.
 	for inputIndex, in := range arkPtx.UnsignedTx.TxIn {
@@ -635,6 +638,9 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		vtxo, exists := indexedSpentVtxos[outpoint]
+		if len(vtxo.Assets) > 0 {
+			assetInputs[inputIndex] = vtxo.Assets
+		}
 		if !exists {
 			return nil, errors.INTERNAL_ERROR.New(
 				"can't find vtxo associated with checkpoint input %s", outpoint,
@@ -908,6 +914,10 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
 	}
 
+	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, assetInputs); err != nil {
+		return nil, err
+	}
+
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	foundOpReturn := false
@@ -915,25 +925,6 @@ func (s *service) SubmitOffchainTx(
 	var rebuiltCheckpointTxs []*psbt.Packet
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
-		// validate asset packet if present
-		if asset.IsAssetPacket(out.PkScript) {
-			if foundOpReturn {
-				return nil, errors.MALFORMED_ARK_TX.New(
-					"tx %s has multiple op return outputs, not allowed for assets", txid,
-				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-			}
-			foundOpReturn = true
-
-			err := s.validateAssetTransition(ctx, *arkPtx.UnsignedTx, checkpointTxs, *out)
-			if err != nil {
-				log.WithError(err).Warn("asset transaction validation failed")
-				return nil, errors.ASSET_VALIDATION_FAILED.Wrap(err)
-			}
-
-			outputs = append(outputs, out)
-			continue
-		}
-
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			if foundAnchor {
 				return nil, errors.MALFORMED_ARK_TX.New(
@@ -952,6 +943,12 @@ func (s *service) SubmitOffchainTx(
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
 			foundOpReturn = true
+
+			// if the OP_RETURN is asset packet, add it to outputs list and skip other checks related to vtxo
+			if asset.IsAssetPacket(out.PkScript) {
+				outputs = append(outputs, out)
+				continue
+			}
 		}
 
 		if s.vtxoMaxAmount >= 0 {
@@ -1455,6 +1452,8 @@ func (s *service) RegisterIntent(
 ) (string, errors.Error) {
 	// the vtxo to swap for new ones, require forfeit transactions
 	vtxoInputs := make([]domain.Vtxo, 0)
+	// assets inputs map by input index
+	assetInputs := make(map[int][]domain.AssetDenomination)
 	// the boarding utxos to add in the commitment tx
 	boardingUtxos := make([]boardingIntentInput, 0)
 
@@ -1697,6 +1696,7 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxoInputs = append(vtxoInputs, vtxo)
+		assetInputs[i+1] = vtxo.Assets
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
@@ -1866,7 +1866,10 @@ func (s *service) RegisterIntent(
 				})
 		}
 
-		// TODO move validation once asset-validation branch is merged
+		if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs); err != nil {
+			return "", err
+		}
+
 		leafTxPacket = intentPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
 	}
 

@@ -16,6 +16,14 @@ var (
 	MarkerAssetPayload = byte(0)
 )
 
+type AssetPacketNotFoundError struct {
+	Txid string
+}
+
+func (e AssetPacketNotFoundError) Error() string {
+	return fmt.Sprintf("asset packet not found in tx %s", e.Txid)
+}
+
 type Packet []AssetGroup
 
 func NewPacket(assets []AssetGroup) (Packet, error) {
@@ -32,7 +40,7 @@ func NewPacketFromTx(tx *wire.MsgTx) (Packet, error) {
 			return NewPacketFromTxOut(*out)
 		}
 	}
-	return nil, fmt.Errorf("asset packet not found in tx %s", tx.TxHash().String())
+	return nil, AssetPacketNotFoundError{Txid: tx.TxID()}
 }
 
 func NewPacketFromTxOut(txOut wire.TxOut) (Packet, error) {
