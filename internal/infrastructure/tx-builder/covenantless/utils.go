@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -53,43 +54,52 @@ func getOutputVtxosLeaves(
 
 	leaves := make([]tree.Leaf, 0)
 	for i, intent := range intents {
-		cosigners := cosignersPublicKeys[i]
+		leafOutputs := make([]tree.LeafOutput, 0)
 
 		for _, receiver := range intent.Receivers {
-			if receiver.IsOnchain() {
-				// Onchain outputs are not part of the vtxo tree.
-				continue
-			}
+			if !receiver.IsOnchain() {
+				pubkeyBytes, err := hex.DecodeString(receiver.PubKey)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decode pubkey: %s", err)
+				}
 
-			// Decode and parse receiver pubkey once for both asset and non-asset cases.
-			pubkeyBytes, err := hex.DecodeString(receiver.PubKey)
-			if err != nil {
-				return nil, fmt.Errorf("receiver pubkey hex decode failed: %w", err)
-			}
+				pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse pubkey: %s", err)
+				}
 
-			pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
-			if err != nil {
-				return nil, fmt.Errorf("receiver pubkey parse failed: %w", err)
-			}
+				vtxoScript, err := script.P2TRScript(pubkey)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create script: %s", err)
+				}
 
-			vtxoScript, err := script.P2TRScript(pubkey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create P2TR script: %w", err)
+				leafOutputs = append(leafOutputs, tree.LeafOutput{
+					Amount: receiver.Amount,
+					Script: hex.EncodeToString(vtxoScript),
+				})
 			}
-
-			leaf := tree.Leaf{
-				Script:              hex.EncodeToString(vtxoScript),
-				Amount:              receiver.Amount,
-				CosignersPublicKeys: cosigners,
-			}
-
-			// AssetGroup intent case
-			if len(receiver.AssetPacket) > 0 {
-				leaf.ExtensionScript = receiver.AssetPacket
-			}
-
-			leaves = append(leaves, leaf)
 		}
+
+		if len(intent.LeafTxPacket) > 0 {
+			assetPacket, err := asset.NewPacketFromString(intent.LeafTxPacket)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse asset packet: %s", err)
+			}
+			assetPacketOut, err := assetPacket.TxOut()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get asset packet output: %s", err)
+			}
+			leafOutputs = append(leafOutputs, tree.LeafOutput{
+				Amount: uint64(assetPacketOut.Value),
+				Script: hex.EncodeToString(assetPacketOut.PkScript),
+			})
+		}
+
+		leaves = append(leaves, tree.Leaf{
+			Outputs:             leafOutputs,
+			CosignersPublicKeys: cosignersPublicKeys[i],
+		})
 	}
+
 	return leaves, nil
 }
