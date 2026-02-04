@@ -13,17 +13,17 @@ import (
 func (s *service) validateAssetTransaction(
 	ctx context.Context, tx *wire.MsgTx, inputAssets map[int][]domain.AssetDenomination,
 ) errors.Error {
-	assetTxos := make(map[int][]asset.Asset)
+	assetsPrevout := make(map[int][]asset.Asset)
 	for inputIndex, assets := range inputAssets {
 		assetTxs := make([]asset.Asset, 0)
 		for _, a := range assets {
 			assetTxs = append(assetTxs, asset.Asset{AssetID: a.AssetId, Amount: a.Amount})
 		}
-		assetTxos[inputIndex] = assetTxs
+		assetsPrevout[inputIndex] = assetTxs
 	}
 
 	return asset.ValidateAssetTransaction(
-		ctx, tx, assetTxos, assetSource{s.repoManager.Assets()},
+		ctx, tx, assetsPrevout, assetSource{s.repoManager.Assets()},
 	)
 }
 
