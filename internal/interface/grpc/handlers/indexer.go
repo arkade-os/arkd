@@ -52,27 +52,27 @@ func (e *indexerService) GetAssetGroup(ctx context.Context, request *arkv1.GetAs
 		return nil, status.Errorf(codes.InvalidArgument, "missing asset id")
 	}
 
-	resp, err := e.indexerSvc.GetAssetGroup(ctx, assetId)
+	assets, err := e.indexerSvc.GetAssetGroup(ctx, assetId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
-	if resp == nil {
-		return nil, status.Errorf(codes.NotFound, "asset not found: %s", assetId)
+	if len(assets) <= 0 {
+		return nil, status.Errorf(codes.NotFound, "asset %s not found", assetId)
 	}
+	asset := assets[0]
 
-	assetMetadata := make([]*arkv1.AssetMetadata, 0)
-	for _, metadata := range resp.AssetGroup.Metadata {
+	assetMetadata := make([]*arkv1.AssetMetadata, 0, len(asset.Metadata))
+	for _, metadata := range asset.Metadata {
 		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
-			Key:   metadata.Key,
-			Value: metadata.Value,
+			Key:   string(metadata.Key),
+			Value: string(metadata.Value),
 		})
 	}
 
 	return &arkv1.GetAssetGroupResponse{
 		AssetId: assetId,
 		AssetGroup: &arkv1.AssetGroup{
-			Id:       resp.AssetGroup.ID,
-			Quantity: resp.AssetGroup.Quantity,
+			Id:       asset.Id,
 			Metadata: assetMetadata,
 		},
 	}, nil
@@ -730,10 +730,10 @@ func parseTimeRange(after, before int64) (int64, int64, error) {
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
-	assets := make([]*arkv1.IndexerAsset, 0)
+	assets := make([]*arkv1.IndexerAsset, 0, len(vtxo.Assets))
 	for _, asset := range vtxo.Assets {
 		assets = append(assets, &arkv1.IndexerAsset{
-			AssetId: asset.AssetID,
+			AssetId: asset.AssetId,
 			Amount:  asset.Amount,
 		})
 	}

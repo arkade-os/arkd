@@ -42,6 +42,28 @@ func NewMetadataFromBytes(buf []byte) (*Metadata, error) {
 	return newMetadataFromReader(r)
 }
 
+func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
+	if len(md) <= 0 {
+		return nil, nil
+	}
+
+	var buf []byte
+	// sort metadata lexicographically by key in descending order
+	sort.SliceStable(md, func(i, j int) bool {
+		return string(md[i].Key) > string(md[j].Key)
+	})
+
+	for _, m := range md {
+		if err := m.validate(); err != nil {
+			return nil, err
+		}
+		hash := m.Hash()
+		buf = append(buf, hash[:]...)
+	}
+	hash := sha256.Sum256(buf)
+	return hash[:], nil
+}
+
 func (md Metadata) Hash() [32]byte {
 	return sha256.Sum256(append(md.Key, md.Value...))
 }

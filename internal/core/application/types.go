@@ -183,15 +183,7 @@ type VirtualTxsResp struct {
 	Page PageResp
 }
 
-type AssetGroupResp struct {
-	AssetID         string
-	AssetGroup      AssetGroup
-	AnchorOutpoints []Outpoint
-}
-
-type AssetGroup = domain.AssetGroup
-
-type AssetAnchor = domain.AssetAnchor
+type Asset = domain.Asset
 
 type Outpoint = domain.Outpoint
 

@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -149,15 +150,6 @@ func TestService(t *testing.T) {
 		config db.ServiceConfig
 	}{
 		{
-			name: "repo_manager_with_badger_stores",
-			config: db.ServiceConfig{
-				EventStoreType:   "badger",
-				DataStoreType:    "badger",
-				EventStoreConfig: []interface{}{"", nil},
-				DataStoreConfig:  []interface{}{"", nil},
-			},
-		},
-		{
 			name: "repo_manager_with_sqlite_stores",
 			config: db.ServiceConfig{
 				EventStoreType:   "badger",
@@ -183,13 +175,16 @@ func TestService(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, svc)
 
+			// Since we use the same db for all tests and given the constraints on the db tables,
+			// we need to run the tests in this specific order to ensure batch and offchain txs
+			// records are added before the asset ones, and vtxos are added after assets.
 			testEventRepository(t, svc)
 			testRoundRepository(t, svc)
-			testVtxoRepository(t, svc)
 			testOffchainTxRepository(t, svc)
+			testAssetRepository(t, svc)
+			testVtxoRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
-			testAssetRepository(t, svc)
 			testFeeRepository(t, svc)
 
 			svc.Close()
@@ -668,7 +663,44 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				CommitmentTxids:    []string{commitmentTxid},
 			},
 		}
-		newVtxos := append(userVtxos, domain.Vtxo{
+		assetVtxos := append(userVtxos, []domain.Vtxo{
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 0,
+				},
+				PubKey:             pubkey,
+				Amount:             330,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Preconfirmed:       true,
+				Assets: []domain.AssetDenomination{{
+					AssetId: "asset1",
+					Amount:  3000,
+				}},
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 1,
+				},
+				PubKey:             pubkey,
+				Amount:             330,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Assets: []domain.AssetDenomination{
+					{
+						AssetId: "asset1",
+						Amount:  1000,
+					},
+					{
+						AssetId: "asset2",
+						Amount:  4000,
+					},
+				},
+			},
+		}...)
+		newVtxos := append(assetVtxos, domain.Vtxo{
 			Outpoint: domain.Outpoint{
 				Txid: randomString(32),
 				VOut: 1,
@@ -699,15 +731,15 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, "")
 		require.NoError(t, err)
-
-		numberOfVtxos := len(spendableVtxos) + len(spentVtxos)
+		require.NotEmpty(t, spendableVtxos)
+		require.Empty(t, spentVtxos)
 
 		err = svc.Vtxos().AddVtxos(ctx, newVtxos)
 		require.NoError(t, err)
 
-		vtxos, err = svc.Vtxos().GetAllVtxos(ctx)
+		allVtxos, err := svc.Vtxos().GetAllVtxos(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 5, len(vtxos))
+		require.Equal(t, 8, len(allVtxos))
 
 		vtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.NoError(t, err)
@@ -716,34 +748,32 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
 
-		sortedVtxos := sortVtxos(userVtxos)
-		sort.Sort(sortedVtxos)
-
-		sortedSpendableVtxos := sortVtxos(spendableVtxos)
-		sort.Sort(sortedSpendableVtxos)
-
-		checkVtxos(t, sortedSpendableVtxos, sortedVtxos)
+		checkVtxos(t, spendableVtxos, userVtxos)
 		require.Empty(t, spentVtxos)
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, "")
 		require.NoError(t, err)
-		require.Len(t, append(spendableVtxos, spentVtxos...), numberOfVtxos+len(newVtxos))
+		require.Len(t, append(spendableVtxos, spentVtxos...), 8)
 
 		err = svc.Vtxos().SpendVtxos(ctx, spentVtxoMap, arkTxid)
 		require.NoError(t, err)
 
-		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys[:1])
+		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.NoError(t, err)
-		require.Len(t, spentVtxos, len(vtxoKeys[:1]))
+		require.Len(t, spentVtxos, len(vtxoKeys))
 		for _, v := range spentVtxos {
 			require.True(t, v.Spent)
 			require.Equal(t, spentVtxoMap[v.Outpoint], v.SpentBy)
 			require.Equal(t, arkTxid, v.ArkTxid)
 		}
 
+		allVtxos, err = svc.Vtxos().GetAllVtxos(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 8, len(allVtxos))
+
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
-		checkVtxos(t, vtxos[1:], spendableVtxos)
+		checkVtxos(t, allVtxos, spendableVtxos)
 		require.Len(t, spentVtxos, len(userVtxos))
 
 		spentVtxoMap = map[domain.Outpoint]string{
@@ -1509,239 +1539,61 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 }
 
 func testAssetRepository(t *testing.T, svc ports.RepoManager) {
-	t.Run("insert and get asset anchor", func(t *testing.T) {
-		ctx := context.Background()
+	t.Run("test_asset_repository", func(t *testing.T) {
+		ctx := t.Context()
+		repo := svc.Assets()
 
-		// Create asset groups first to satisfy FK constraints
-		err := svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-1", Quantity: 1000})
+		newAssets := []domain.Asset{
+			{
+				Id:             "asset1",
+				Immutable:      true,
+				ControlAssetId: "asset2",
+				Metadata: []asset.Metadata{
+					{
+						Key:   []byte("key1"),
+						Value: []byte("value1"),
+					},
+					{
+						Key:   []byte("abc"),
+						Value: []byte("cde"),
+					},
+				},
+			},
+			{
+				Id:        "asset2",
+				Immutable: true,
+				Metadata: []asset.Metadata{
+					{
+						Key:   []byte("this is"),
+						Value: []byte("control asset"),
+					},
+				},
+			},
+		}
+		assetIds := []string{"asset1", "asset2", "non-existent-asset"}
+
+		// assets should not exist yet
+		assets, err := repo.GetAssets(ctx, assetIds)
 		require.NoError(t, err)
-		err = svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-2", Quantity: 2000})
+		require.Len(t, assets, 0)
+
+		assetsByTx := map[string][]domain.Asset{arkTxid: newAssets}
+		count, err := repo.AddAssets(ctx, assetsByTx, nil)
 		require.NoError(t, err)
+		require.Equal(t, 2, count)
 
-		anchor := domain.AssetAnchor{
-			Outpoint: domain.Outpoint{
-				Txid: "txid-123",
-				VOut: 2,
-			},
-			Assets: []domain.NormalAsset{
-				{
-					Outpoint: domain.Outpoint{Txid: "txid-123", VOut: 0},
-					Amount:   1000,
-					AssetID:  "asset-1",
-				},
-				{
-					Outpoint: domain.Outpoint{Txid: "txid-123", VOut: 1},
-					Amount:   2000,
-					AssetID:  "asset-2",
-				},
-			},
-		}
-
-		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
-		require.NoError(t, err, "InsertAssetAnchor should succeed")
-
-		got, err := svc.Assets().GetAssetAnchorByTxId(ctx, anchor.Txid)
-		require.NoError(t, err, "GetAssetAnchorByTxId should succeed")
-		require.NotNil(t, got)
-
-		require.Equal(t, anchor.Txid, got.Txid)
-		require.Equal(t, anchor.VOut, got.VOut)
-		require.ElementsMatch(t, anchor.Assets, got.Assets)
-	})
-
-	t.Run("insert and get asset group", func(t *testing.T) {
-		ctx := context.Background()
-		asset := domain.AssetGroup{
-			ID:        "asset-group-123",
-			Quantity:  5000,
-			Immutable: false,
-			Metadata: []domain.AssetMetadata{
-				{Key: "name", Value: "My Asset"},
-				{Key: "symbol", Value: "MAS"},
-			},
-			ControlAssetID: "control-asset-123",
-		}
-
-		err := svc.Assets().InsertAssetGroup(ctx, asset)
-		require.NoError(t, err, "InsertAssetGroup should succeed")
-
-		got, err := svc.Assets().GetAssetGroupByID(ctx, asset.ID)
-		require.NoError(t, err, "GetAssetGroupByID should succeed")
-		require.NotNil(t, got)
-
-		require.Equal(t, asset.ID, got.ID)
-		require.Equal(t, asset.Quantity, got.Quantity)
-		require.Equal(t, asset.Immutable, got.Immutable)
-		require.ElementsMatch(t, asset.Metadata, got.Metadata)
-		require.Equal(t, asset.ControlAssetID, got.ControlAssetID)
-	})
-
-	t.Run("insert asset anchor accepts duplicate vout", func(t *testing.T) {
-		ctx := context.Background()
-
-		// Create asset groups first to satisfy FK constraints
-		err := svc.Assets().
-			InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-dup-1", Quantity: 1000})
+		count, err = repo.AddAssets(ctx, assetsByTx, nil)
 		require.NoError(t, err)
-		err = svc.Assets().
-			InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-dup-2", Quantity: 2000})
+		require.Zero(t, count)
+
+		assets, err = repo.GetAssets(ctx, assetIds)
 		require.NoError(t, err)
+		require.Len(t, assets, 2)
+		require.ElementsMatch(t, newAssets, assets)
 
-		anchor := domain.AssetAnchor{
-			Outpoint: domain.Outpoint{
-				Txid: "txid-dup-vout",
-				VOut: 0,
-			},
-			Assets: []domain.NormalAsset{
-				{
-					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
-					Amount:   1000,
-					AssetID:  "asset-dup-1",
-				},
-				{
-					Outpoint: domain.Outpoint{Txid: "txid-dup-vout", VOut: 0},
-					Amount:   2000,
-					AssetID:  "asset-dup-2",
-				},
-			},
-		}
-
-		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
-		require.NoError(t, err, "InsertAssetAnchor should succeed even with duplicate vout")
-	})
-
-	t.Run("list asset anchors by asset id", func(t *testing.T) {
-		ctx := context.Background()
-
-		assetListID := "asset-list-1"
-		otherAssetID := "asset-list-2"
-
-		// Create asset groups first to satisfy FK constraints
-		err := svc.Assets().
-			InsertAssetGroup(ctx, domain.AssetGroup{ID: assetListID, Quantity: 10000})
+		assets, err = repo.GetAssets(ctx, assetIds[2:])
 		require.NoError(t, err)
-		err = svc.Assets().
-			InsertAssetGroup(ctx, domain.AssetGroup{ID: otherAssetID, Quantity: 5000})
-		require.NoError(t, err)
-
-		anchor1 := domain.AssetAnchor{
-			Outpoint: domain.Outpoint{
-				Txid: "txid-asset-1",
-				VOut: 0,
-			},
-			Assets: []domain.NormalAsset{
-				{
-					Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 0},
-					Amount:   5000,
-					AssetID:  assetListID,
-				},
-				{
-					Outpoint: domain.Outpoint{Txid: "txid-asset-1", VOut: 1},
-					Amount:   2500,
-					AssetID:  otherAssetID,
-				},
-			},
-		}
-		anchor2 := domain.AssetAnchor{
-			Outpoint: domain.Outpoint{
-				Txid: "txid-asset-2",
-				VOut: 1,
-			},
-			Assets: []domain.NormalAsset{
-				{
-					Outpoint: domain.Outpoint{Txid: "txid-asset-2", VOut: 2},
-					Amount:   7500,
-					AssetID:  assetListID,
-				},
-			},
-		}
-
-		err = svc.Assets().InsertAssetAnchor(ctx, anchor1)
-		require.NoError(t, err, "InsertAssetAnchor should succeed")
-
-		err = svc.Assets().InsertAssetAnchor(ctx, anchor2)
-		require.NoError(t, err, "InsertAssetAnchor should succeed")
-
-		anchors, err := svc.Assets().ListAssetAnchorsByAssetID(ctx, assetListID)
-		require.NoError(t, err, "ListAssetAnchorsByAssetID should succeed")
-		require.Len(t, anchors, 2)
-
-		gotTxids := make(map[string]struct{})
-		for _, anchor := range anchors {
-			gotTxids[anchor.Txid] = struct{}{}
-		}
-		require.Contains(t, gotTxids, anchor1.Txid)
-		require.Contains(t, gotTxids, anchor2.Txid)
-	})
-
-	t.Run("get asset by outpoint", func(t *testing.T) {
-		ctx := context.Background()
-
-		// Create asset group first to satisfy FK constraints
-		err := svc.Assets().InsertAssetGroup(ctx, domain.AssetGroup{ID: "asset-42", Quantity: 5000})
-		require.NoError(t, err)
-
-		anchor := domain.AssetAnchor{
-			Outpoint: domain.Outpoint{
-				Txid: "txid-by-outpoint",
-				VOut: 3,
-			},
-			Assets: []domain.NormalAsset{
-				{
-					Outpoint: domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0},
-					Amount:   1234,
-					AssetID:  "asset-42",
-				},
-			},
-		}
-
-		err = svc.Assets().InsertAssetAnchor(ctx, anchor)
-		require.NoError(t, err, "InsertAssetAnchor should succeed")
-
-		got, err := svc.Assets().
-			GetAssetByOutpoint(ctx, domain.Outpoint{Txid: "txid-by-outpoint", VOut: 0})
-		require.NoError(t, err, "GetAssetByOutpoint should succeed")
-		require.NotNil(t, got)
-		require.Equal(t, anchor.Assets[0], *got)
-	})
-
-	t.Run("insert and update asset quantity", func(t *testing.T) {
-		ctx := context.Background()
-
-		asset := domain.AssetGroup{
-			ID:        "asset-3",
-			Quantity:  10,
-			Immutable: true,
-			Metadata: []domain.AssetMetadata{
-				{Key: "name", Value: "Test AssetGroup"},
-				{Key: "symbol", Value: "TST"},
-			},
-			ControlAssetID: "controlAssetId",
-		}
-
-		err := svc.Assets().InsertAssetGroup(ctx, asset)
-		require.NoError(t, err, "InsertAssetDetails should succeed")
-
-		// Increase by 5 -> 15
-		err = svc.Assets().IncreaseAssetGroupQuantity(ctx, asset.ID, 5)
-		require.NoError(t, err, "IncreaseAssetQuantity should succeed")
-
-		// Decrease by 3 -> 12
-		err = svc.Assets().DecreaseAssetGroupQuantity(ctx, asset.ID, 3)
-		require.NoError(t, err, "DecreaseAssetQuantity should succeed")
-
-		// Assert final value in DB
-		assetD, err := svc.Assets().GetAssetGroupByID(ctx, asset.ID)
-		require.NoError(t, err, "GetAsseGroupByID should succeed")
-
-		require.Equal(t, uint64(12), assetD.Quantity)
-		require.True(t, assetD.Immutable)
-
-		md, err := svc.Assets().ListMetadataByAssetID(ctx, asset.ID)
-		require.NoError(t, err, "ListMetadataByAssetID should succeed")
-
-		require.Len(t, md, len(asset.Metadata))
-		require.ElementsMatch(t, asset.Metadata, md)
+		require.Empty(t, assets)
 	})
 }
 
@@ -1903,20 +1755,9 @@ func roundsMatch(t *testing.T, expected, got domain.Round) {
 		gotValue, ok := got.Intents[k]
 		require.True(t, ok)
 
-		expectedVtxos := sortVtxos(v.Inputs)
-		gotVtxos := sortVtxos(gotValue.Inputs)
-
-		sort.Sort(expectedVtxos)
-		sort.Sort(gotVtxos)
-
-		expectedReceivers := sortReceivers(v.Receivers)
-		gotReceivers := sortReceivers(gotValue.Receivers)
-
-		sort.Sort(expectedReceivers)
-		sort.Sort(gotReceivers)
-
-		require.Exactly(t, expectedReceivers, gotReceivers)
-		require.Exactly(t, expectedVtxos, gotVtxos)
+		require.ElementsMatch(t, v.Receivers, gotValue.Receivers)
+		require.ElementsMatch(t, v.Inputs, gotValue.Inputs)
+		require.Equal(t, v.Txid, gotValue.Txid)
 		require.Equal(t, v.Proof, gotValue.Proof)
 		require.Equal(t, v.Message, gotValue.Message)
 	}
@@ -2022,25 +1863,18 @@ func randomTx() string {
 	return b64
 }
 
-type sortVtxos []domain.Vtxo
-
-func (a sortVtxos) String() string {
-	buf, _ := json.Marshal(a)
-	return string(buf)
-}
-
-func (a sortVtxos) Len() int           { return len(a) }
-func (a sortVtxos) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a sortVtxos) Less(i, j int) bool { return a[i].Txid < a[j].Txid }
-
-type sortReceivers []domain.Receiver
-
-func (a sortReceivers) Len() int           { return len(a) }
-func (a sortReceivers) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a sortReceivers) Less(i, j int) bool { return a[i].Amount < a[j].Amount }
-
-func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
-	for i, v := range gotVtxos {
+func checkVtxos(t *testing.T, expectedVtxos, gotVtxos []domain.Vtxo) {
+	sort.SliceStable(expectedVtxos, func(i, j int) bool {
+		return expectedVtxos[i].Txid < expectedVtxos[j].Txid
+	})
+	sort.SliceStable(gotVtxos, func(i, j int) bool {
+		return gotVtxos[i].Txid < gotVtxos[j].Txid
+	})
+	for _, v := range gotVtxos {
+		i := slices.IndexFunc(expectedVtxos, func(e domain.Vtxo) bool {
+			return e.Outpoint == v.Outpoint
+		})
+		require.Greater(t, i, -1)
 		expected := expectedVtxos[i]
 		require.Exactly(t, expected.Outpoint, v.Outpoint)
 		require.Exactly(t, expected.Amount, v.Amount)
@@ -2054,5 +1888,6 @@ func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
 		require.Exactly(t, expected.SpentBy, v.SpentBy)
 		require.Exactly(t, expected.Swept, v.Swept)
 		require.ElementsMatch(t, expected.CommitmentTxids, v.CommitmentTxids)
+		require.ElementsMatch(t, expected.Assets, v.Assets)
 	}
 }

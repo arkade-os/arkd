@@ -3,10 +3,15 @@ package pgdb
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/sqlc-dev/pqtype"
 )
 
 type assetRepository struct {
@@ -33,280 +38,162 @@ func (r *assetRepository) Close() {
 	_ = r.db.Close()
 }
 
-func (r *assetRepository) ListAssetAnchorsByAssetID(
-	ctx context.Context,
-	assetID string,
-) ([]domain.AssetAnchor, error) {
-	anchorsDB, err := r.querier.ListAssetAnchorsByAssetID(ctx, assetID)
-	if err != nil {
-		return nil, err
+func (r *assetRepository) AddAssets(
+	ctx context.Context, assetsByTx, assetsByIntent map[string][]domain.Asset,
+) (count int, err error) {
+	if len(assetsByTx) == 0 && len(assetsByIntent) == 0 {
+		return -1, nil
+	}
+	if len(assetsByIntent) > 0 && len(assetsByTx) > 0 {
+		return -1, fmt.Errorf("cannot add assets by both tx and intent")
 	}
 
-	anchors := make([]domain.AssetAnchor, 0, len(anchorsDB))
-	for _, anchorDB := range anchorsDB {
-		anchor, err := r.GetAssetAnchorByTxId(ctx, anchorDB.AnchorTxid)
-		if err != nil {
-			return nil, err
-		}
-		anchors = append(anchors, *anchor)
-	}
-
-	return anchors, nil
-}
-
-func (r *assetRepository) GetAssetByOutpoint(
-	ctx context.Context,
-	outpoint domain.Outpoint,
-) (*domain.NormalAsset, error) {
-	assetDB, err := r.querier.GetAsset(ctx, queries.GetAssetParams{
-		AnchorID: outpoint.Txid,
-		Vout:     int64(outpoint.VOut),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &domain.NormalAsset{
-		Outpoint: domain.Outpoint{
-			Txid: assetDB.AnchorID,
-			VOut: uint32(assetDB.Vout),
-		},
-		Amount:  uint64(assetDB.Amount),
-		AssetID: assetDB.AssetID,
-	}, nil
-}
-
-func (r *assetRepository) InsertTeleportAsset(
-	ctx context.Context,
-	teleport domain.TeleportAsset,
-) error {
-	return r.querier.CreateTeleportAsset(ctx, queries.CreateTeleportAssetParams{
-		Script:     teleport.Script,
-		IntentID:   teleport.IntentID,
-		GroupIndex: int64(teleport.OutputIndex),
-		AssetID:    teleport.AssetID,
-		Amount:     int64(teleport.Amount),
-		IsClaimed:  teleport.IsClaimed,
-	})
-}
-
-func (r *assetRepository) GetTeleportAsset(
-	ctx context.Context,
-	script string, intentID string, assetID string, outputIndex uint32,
-) (*domain.TeleportAsset, error) {
-	teleportDB, err := r.querier.GetTeleportAsset(ctx, queries.GetTeleportAssetParams{
-		Script:     script,
-		IntentID:   intentID,
-		AssetID:    assetID,
-		GroupIndex: int64(outputIndex),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &domain.TeleportAsset{
-		Script:      teleportDB.Script,
-		AssetID:     teleportDB.AssetID,
-		IntentID:    teleportDB.IntentID,
-		OutputIndex: uint32(teleportDB.GroupIndex),
-		Amount:      uint64(teleportDB.Amount),
-		IsClaimed:   teleportDB.IsClaimed,
-	}, nil
-}
-
-func (r *assetRepository) UpdateTeleportAsset(
-	ctx context.Context,
-	script string, intentID string, assetID string, outputIndex uint32, isClaimed bool,
-) error {
-	return r.querier.UpdateTeleportAsset(ctx, queries.UpdateTeleportAssetParams{
-		IsClaimed:  isClaimed,
-		Script:     script,
-		IntentID:   intentID,
-		AssetID:    assetID,
-		GroupIndex: int64(outputIndex),
-	})
-}
-
-func (r *assetRepository) ListMetadataByAssetID(
-	ctx context.Context,
-	assetID string,
-) ([]domain.AssetMetadata, error) {
-	res, err := r.querier.ListAssetMetadata(ctx, assetID)
-	if err != nil {
-		return nil, err
-	}
-	metadata := make([]domain.AssetMetadata, 0, len(res))
-	for _, m := range res {
-		metadata = append(metadata, domain.AssetMetadata{
-			Key:   m.MetaKey,
-			Value: m.MetaValue,
-		})
-	}
-	return metadata, nil
-}
-
-func (r *assetRepository) InsertAssetAnchor(ctx context.Context, anchor domain.AssetAnchor) error {
-	err := r.querier.CreateAssetAnchor(ctx, queries.CreateAssetAnchorParams{
-		AnchorTxid: anchor.Txid,
-		AnchorVout: int64(anchor.VOut),
-	})
-	if err != nil {
-		return err
-	}
-
-	for _, asst := range anchor.Assets {
-		err := r.querier.AddAsset(ctx, queries.AddAssetParams{
-			AnchorID: anchor.Txid,
-			AssetID:  asst.AssetID,
-			Vout:     int64(asst.VOut),
-			Amount:   int64(asst.Amount),
-		})
-		if err != nil {
-			return err
+	assets := make([]domain.Asset, 0)
+	seen := make(map[string]struct{})
+	for _, assetList := range assetsByTx {
+		for _, ast := range assetList {
+			if _, exists := seen[ast.Id]; !exists {
+				assets = append(assets, ast)
+				seen[ast.Id] = struct{}{}
+				continue
+			}
+			return -1, fmt.Errorf("duplicated asset %s", ast.Id)
 		}
 	}
-
-	return nil
-}
-
-func (r *assetRepository) GetAssetAnchorByTxId(
-	ctx context.Context,
-	txId string,
-) (*domain.AssetAnchor, error) {
-	anchor, err := r.querier.GetAssetAnchor(ctx, txId)
-	if err != nil {
-		return nil, err
-	}
-
-	assetListResp, err := r.querier.ListAsset(ctx, anchor.AnchorTxid)
-	if err != nil {
-		return nil, err
-	}
-
-	assetList := make([]domain.NormalAsset, 0, len(assetListResp))
-	for _, asst := range assetListResp {
-		assetList = append(assetList, domain.NormalAsset{
-			Outpoint: domain.Outpoint{
-				Txid: asst.AnchorID,
-				VOut: uint32(asst.Vout),
-			},
-			Amount:  uint64(asst.Amount),
-			AssetID: asst.AssetID,
-		})
-	}
-
-	return &domain.AssetAnchor{
-		Outpoint: domain.Outpoint{
-			Txid: anchor.AnchorTxid,
-			VOut: uint32(anchor.AnchorVout),
-		},
-		Assets: assetList,
-	}, nil
-}
-
-func (r *assetRepository) InsertAssetGroup(
-	ctx context.Context,
-	assetGroup domain.AssetGroup,
-) error {
-	controlID := sql.NullString{}
-	if assetGroup.ControlAssetID != "" {
-		controlID = sql.NullString{
-			String: assetGroup.ControlAssetID,
-			Valid:  true,
-		}
-	}
-	err := r.querier.CreateAsset(ctx, queries.CreateAssetParams{
-		ID:        assetGroup.ID,
-		Quantity:  int64(assetGroup.Quantity),
-		Immutable: assetGroup.Immutable,
-		ControlID: controlID,
+	// Make sure all control assets are added first
+	sort.SliceStable(assets, func(i, j int) bool {
+		return assets[i].ControlAssetId == "" && assets[j].ControlAssetId != ""
 	})
 
-	if err != nil {
-		return err
-	}
+	txBody := func(querierWithTx *queries.Queries) error {
+		mdHashByAssetId := make(map[string]string)
+		for _, ast := range assets {
+			found, err := querierWithTx.SelectAssetsByIds(ctx, []string{ast.Id})
+			if err != nil && err != sql.ErrNoRows {
+				return fmt.Errorf("failed to check existing asset: %w", err)
+			}
+			if len(found) > 0 {
+				continue
+			}
 
-	for _, md := range assetGroup.Metadata {
-		err := r.querier.UpsertAssetMetadata(ctx, queries.UpsertAssetMetadataParams{
-			AssetID:   assetGroup.ID,
-			MetaKey:   md.Key,
-			MetaValue: md.Value,
-		})
-		if err != nil {
-			return err
+			var mdHash []byte
+			var md pqtype.NullRawMessage
+			if len(ast.Metadata) > 0 {
+				mdHash, err = asset.GenerateMetadataListHash(ast.Metadata)
+				if err != nil {
+					return fmt.Errorf("failed to compute metadata hash: %w", err)
+				}
+				// store metadata as JSON {key [string]: value [string]}
+				buf, _ := json.Marshal(toMetadataDTO(ast.Metadata))
+				md = pqtype.NullRawMessage{
+					RawMessage: buf,
+					Valid:      true,
+				}
+				mdHashByAssetId[ast.Id] = hex.EncodeToString(mdHash)
+			}
+			if err := querierWithTx.InsertAsset(
+				ctx, queries.InsertAssetParams{
+					ID:          ast.Id,
+					IsImmutable: ast.Immutable,
+					Metadata:    md,
+					MetadataHash: sql.NullString{
+						String: hex.EncodeToString(mdHash),
+						Valid:  len(mdHash) > 0,
+					},
+					ControlAssetID: sql.NullString{
+						String: ast.ControlAssetId,
+						Valid:  len(ast.ControlAssetId) > 0,
+					},
+				},
+			); err != nil {
+				return err
+			}
+			count++
 		}
+
+		for txid, assets := range assetsByTx {
+			for _, asset := range assets {
+				if err := querierWithTx.InsertAssetMetadataUpdateByTx(
+					ctx, queries.InsertAssetMetadataUpdateByTxParams{
+						FkAssetID:    asset.Id,
+						MetadataHash: mdHashByAssetId[asset.Id],
+						FkTxid:       sql.NullString{String: txid, Valid: true},
+					},
+				); err != nil {
+					return err
+				}
+			}
+		}
+		for txid, assets := range assetsByIntent {
+			for _, asset := range assets {
+				if err := querierWithTx.InsertAssetMetadataUpdateByIntent(
+					ctx, queries.InsertAssetMetadataUpdateByIntentParams{
+						FkAssetID:    asset.Id,
+						MetadataHash: mdHashByAssetId[asset.Id],
+						FkIntentTxid: sql.NullString{String: txid, Valid: true},
+					},
+				); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	}
 
-	return nil
+	if err := execTx(ctx, r.db, txBody); err != nil {
+		return -1, err
+	}
+	return count, nil
 }
 
-func (r *assetRepository) GetAssetGroupByID(
-	ctx context.Context,
-	assetID string,
-) (*domain.AssetGroup, error) {
-	assetDB, err := r.querier.GetAssetGroup(ctx, assetID)
+func (r *assetRepository) GetAssets(
+	ctx context.Context, assetIds []string,
+) ([]domain.Asset, error) {
+	if len(assetIds) == 0 {
+		return nil, nil
+	}
+	rows, err := r.querier.SelectAssetsByIds(ctx, assetIds)
 	if err != nil {
 		return nil, err
 	}
 
-	metadataDB, err := r.querier.ListAssetMetadata(ctx, assetID)
-	if err != nil {
-		return nil, err
-	}
-
-	metadata := make([]domain.AssetMetadata, 0, len(metadataDB))
-	for _, mdDB := range metadataDB {
-		metadata = append(metadata, domain.AssetMetadata{
-			Key:   mdDB.MetaKey,
-			Value: mdDB.MetaValue,
-		})
-	}
-
-	return &domain.AssetGroup{
-		ID:             assetDB.ID,
-		Quantity:       uint64(assetDB.Quantity),
-		Immutable:      assetDB.Immutable,
-		Metadata:       metadata,
-		ControlAssetID: assetDB.ControlID.String,
-	}, nil
-}
-
-func (r *assetRepository) IncreaseAssetGroupQuantity(
-	ctx context.Context,
-	assetID string,
-	amount uint64,
-) error {
-	return r.querier.AddToAssetQuantity(ctx, queries.AddToAssetQuantityParams{
-		ID:       assetID,
-		Quantity: int64(amount),
-	})
-}
-
-func (r *assetRepository) DecreaseAssetGroupQuantity(
-	ctx context.Context,
-	assetID string,
-	amount uint64,
-) error {
-	return r.querier.SubtractFromAssetQuantity(ctx, queries.SubtractFromAssetQuantityParams{
-		ID:       assetID,
-		Quantity: int64(amount),
-	})
-}
-
-func (r *assetRepository) UpdateAssetMetadataList(
-	ctx context.Context,
-	assetId string,
-	metadatalist []domain.AssetMetadata,
-) error {
-	for _, md := range metadatalist {
-		err := r.querier.UpsertAssetMetadata(ctx, queries.UpsertAssetMetadataParams{
-			AssetID:   assetId,
-			MetaKey:   md.Key,
-			MetaValue: md.Value,
-		})
-		if err != nil {
-			return err
+	assets := make([]domain.Asset, 0, len(rows))
+	for _, row := range rows {
+		var metadata []asset.Metadata
+		if row.Metadata.Valid {
+			md := make([]metadataDTO, 0)
+			if err := json.Unmarshal(row.Metadata.RawMessage, &md); err != nil {
+				return nil, fmt.Errorf("failed to decode asset metadata: %w", err)
+			}
+			for _, dto := range md {
+				metadata = append(metadata, asset.Metadata{
+					Key:   []byte(dto.Key),
+					Value: []byte(dto.Value),
+				})
+			}
 		}
+		assets = append(assets, domain.Asset{
+			Id:             row.ID,
+			Metadata:       metadata,
+			ControlAssetId: row.ControlAssetID.String,
+			Immutable:      row.IsImmutable,
+		})
 	}
+	return assets, nil
+}
 
-	return nil
+type metadataDTO struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+func toMetadataDTO(mdList []asset.Metadata) []metadataDTO {
+	metadataDTOs := make([]metadataDTO, 0, len(mdList))
+	for _, md := range mdList {
+		metadataDTOs = append(metadataDTOs, metadataDTO{
+			Key:   string(md.Key),
+			Value: string(md.Value),
+		})
+	}
+	return metadataDTOs
 }
