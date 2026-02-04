@@ -66,16 +66,16 @@ func TestTxValidation(t *testing.T) {
 }
 
 func parseTxFixture(t *testing.T, fixture txFixture) (
-	*wire.MsgTx, map[int][]asset.AssetTxo, asset.AssetSource,
+	*wire.MsgTx, map[int][]asset.Asset, asset.AssetSource,
 ) {
 	var tx wire.MsgTx
 	err := tx.Deserialize(hex.NewDecoder(strings.NewReader(fixture.Tx)))
 	require.NoError(t, err)
-	assetPrevouts := make(map[int][]asset.AssetTxo)
+	assetPrevouts := make(map[int][]asset.Asset)
 	for inputIndex, prevouts := range fixture.Prevouts {
-		assetTxs := make([]asset.AssetTxo, 0)
+		assetTxs := make([]asset.Asset, 0)
 		for _, prevout := range prevouts {
-			assetTxs = append(assetTxs, asset.AssetTxo{AssetID: prevout.AssetID, Amount: prevout.Amount})
+			assetTxs = append(assetTxs, asset.Asset{AssetID: prevout.AssetID, Amount: prevout.Amount})
 		}
 		assetPrevouts[inputIndex] = assetTxs
 	}

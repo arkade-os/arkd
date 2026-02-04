@@ -10,7 +10,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-type AssetTxo struct {
+type Asset struct {
 	AssetID string
 	Amount uint64
 }
@@ -22,7 +22,7 @@ type AssetSource interface {
 
 // validateAssetTransaction validates that asset packet data matches the transaction inputs and outputs
 func ValidateAssetTransaction(
-	ctx context.Context, tx *wire.MsgTx, assetPrevouts map[int][]AssetTxo, assetSrc AssetSource,
+	ctx context.Context, tx *wire.MsgTx, assetPrevouts map[int][]Asset, assetSrc AssetSource,
 ) errors.Error {
 	packet, err := NewPacketFromTx(tx)
 	if err != nil {
@@ -148,7 +148,7 @@ func validateIssuance(ctx context.Context, packet Packet, grp AssetGroup, assetS
 }
 
 // validateInputVtxoAssets ensures every asset in the spentVtxos list is present in the packet, and that the amounts match
-func validateInputAssets(assetPrevouts map[int][]AssetTxo, packet Packet) errors.Error {
+func validateInputAssets(assetPrevouts map[int][]Asset, packet Packet) errors.Error {
 	for inputIndex, assets := range assetPrevouts {
 		for _, asst := range assets {
 			assetGroup := findAssetGroupByAssetId(packet, asst.AssetID)
@@ -238,7 +238,7 @@ func validateGroupOutputs(arkTx *wire.MsgTx, assetID string, grp AssetGroup) err
 // validateGroupInputs ensures every input index referenced in the asset group is present in the ark tx
 // and it matches the amount of the vtxo asset referenced by the input
 func validateGroupInputs(
-	arkTx *wire.MsgTx, assetID string, inputAssets map[int][]AssetTxo, grp AssetGroup,
+	arkTx *wire.MsgTx, assetID string, inputAssets map[int][]Asset, grp AssetGroup,
 ) errors.Error {
 	if len(grp.Inputs) == 0 {
 		return nil
