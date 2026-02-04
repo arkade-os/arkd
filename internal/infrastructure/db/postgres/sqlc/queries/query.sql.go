@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/sqlc-dev/pqtype"
 )
@@ -84,6 +85,17 @@ DELETE FROM scheduled_session
 func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, clearScheduledSession)
 	return err
+}
+
+const insertVirtualTxsRequest = `-- name: InsertVirtualTxsRequest :one
+INSERT INTO virtual_txs_requests (expiry) VALUES (CAST($1 AS BIGINT)) RETURNING auth_code
+`
+
+func (q *Queries) InsertVirtualTxsRequest(ctx context.Context, expiry int64) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, insertVirtualTxsRequest, expiry)
+	var auth_code uuid.UUID
+	err := row.Scan(&auth_code)
+	return auth_code, err
 }
 
 const insertVtxoCommitmentTxid = `-- name: InsertVtxoCommitmentTxid :exec
@@ -2031,4 +2043,19 @@ func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
 		arg.CreatedAt,
 	)
 	return err
+}
+
+const validateVirtualTxsRequest = `-- name: ValidateVirtualTxsRequest :one
+SELECT EXISTS(
+    SELECT 1 FROM virtual_txs_requests
+    WHERE auth_code = CAST($1 AS UUID)
+      AND expiry > (EXTRACT(EPOCH FROM NOW())::BIGINT)
+) AS valid
+`
+
+func (q *Queries) ValidateVirtualTxsRequest(ctx context.Context, authCode uuid.UUID) (bool, error) {
+	row := q.db.QueryRowContext(ctx, validateVirtualTxsRequest, authCode)
+	var valid bool
+	err := row.Scan(&valid)
+	return valid, err
 }

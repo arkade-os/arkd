@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -20,6 +21,19 @@ const (
 	maxPageSizeVirtualTxs     = 100
 )
 
+type TxExposure string
+
+const (
+	TxExposurePublic   TxExposure = "public"
+	TxExposureWithheld TxExposure = "withheld"
+	TxExposurePrivate  TxExposure = "private"
+)
+
+type Intent struct {
+	Proof   string
+	Message string
+}
+
 type IndexerService interface {
 	GetCommitmentTxInfo(ctx context.Context, txid string) (*CommitmentTxInfo, error)
 	GetVtxoTree(ctx context.Context, batchOutpoint Outpoint, page *Page) (*TreeTxResp, error)
@@ -35,8 +49,8 @@ type IndexerService interface {
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
 	) (*GetVtxosResp, error)
-	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error)
-	GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error)
+	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, intent Intent, page *Page) (*VtxoChainResp, error)
+	GetVirtualTxs(ctx context.Context, authCode string, txids []string, page *Page) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 }
 
@@ -233,7 +247,7 @@ func (i *indexerService) GetVtxosByOutpoint(
 }
 
 func (i *indexerService) GetVtxoChain(
-	ctx context.Context, vtxoKey Outpoint, page *Page,
+	ctx context.Context, vtxoKey Outpoint, intent Intent, page *Page,
 ) (*VtxoChainResp, error) {
 	chain := make([]ChainTx, 0)
 	nextVtxos := []domain.Outpoint{vtxoKey}
@@ -362,15 +376,53 @@ func (i *indexerService) GetVtxoChain(
 		nextVtxos = newNextVtxos
 	}
 
+	someExposureFromConfig := "public" // this would come from config
+	if someExposureFromConfig == "" {
+		return nil, fmt.Errorf("indexer exposure value is required")
+	}
+
+	authCode := ""
+	var err error
+	// turn into TxExposure enum
+	switch TxExposure(someExposureFromConfig) {
+	case TxExposurePublic:
+		// no need to do anything
+	case TxExposureWithheld:
+		// validate the intent proof/message to allow access to the full chain
+		if intent.Proof == "" || intent.Message == "" {
+			return nil, fmt.Errorf("intent proof and message are required for withheld exposure")
+		}
+		// validate proof here...
+		// expiry from config?
+		authCode, err = i.repoManager.Vtxos().AddVirtualTxsRequest(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+	case TxExposurePrivate:
+		// validate the intent proof/message to allow access to the full chain
+		if intent.Proof == "" || intent.Message == "" {
+			return nil, fmt.Errorf("intent proof and message are required for private exposure")
+		}
+		// validate proof here...
+		// expiry from config?
+		authCode, err = i.repoManager.Vtxos().AddVirtualTxsRequest(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("invalid exposure value: %s", someExposureFromConfig)
+	}
+
 	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
 	return &VtxoChainResp{
-		Chain: txChain,
-		Page:  pageResp,
+		Chain:    txChain,
+		Page:     pageResp,
+		AuthCode: authCode,
 	}, nil
 }
 
 func (i *indexerService) GetVirtualTxs(
-	ctx context.Context, txids []string, page *Page,
+	ctx context.Context, authCode string, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
 	txs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
 	if err != nil {
@@ -378,6 +430,73 @@ func (i *indexerService) GetVirtualTxs(
 	}
 
 	virtualTxs, reps := paginate(txs, page, maxPageSizeVirtualTxs)
+
+	someExposureFromConfig := "public" // this would come from config
+	if someExposureFromConfig == "" {
+		return nil, fmt.Errorf("indexer exposure value is required")
+	}
+
+	// turn into TxExposure enum
+	switch TxExposure(someExposureFromConfig) {
+	case TxExposurePublic:
+		// no need to validate auth
+	case TxExposureWithheld:
+		if authCode == "" {
+			return nil, fmt.Errorf("auth code is required for withheld exposure")
+		}
+		isValid := false
+		// optional auth code can be passed, if it was lets check if valid
+		if authCode != "" {
+			isValid, err = i.repoManager.Vtxos().ValidateVirtualTxsRequest(ctx, authCode)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// if no auth code or invalid auth code, remove from each PSBT the signature of arkd
+		// so user cannot constuct the full broadcastable txn
+		if !isValid {
+			for i := range virtualTxs {
+				ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[i]), true)
+				if err != nil {
+					return nil, fmt.Errorf("failed to deserialize virtual tx: %s", err)
+				}
+
+				// remove arkd signature from each input
+				for j := range ptx.Inputs {
+					// what key do we use here?
+					arkdPubkey := []byte("arkd_pubkey")
+					newSigs := make([]*psbt.PartialSig, 0)
+					for _, sig := range ptx.Inputs[j].PartialSigs {
+						// if the signature is not from arkd, keep it, otherwise remove it
+						if !bytes.Equal(sig.PubKey, arkdPubkey) {
+							newSigs = append(newSigs, sig)
+						}
+					}
+					ptx.Inputs[j].PartialSigs = newSigs
+				}
+
+				var b strings.Builder
+				if err := ptx.Serialize(&b); err != nil {
+					return nil, fmt.Errorf("failed to serialize virtual tx: %s", err)
+				}
+				virtualTxs[i] = b.String()
+			}
+		}
+	case TxExposurePrivate:
+		if authCode == "" {
+			return nil, fmt.Errorf("auth code is required for private exposure")
+		}
+		// require valid auth code to proceed
+		isValid, err := i.repoManager.Vtxos().ValidateVirtualTxsRequest(ctx, authCode)
+		if err != nil {
+			return nil, err
+		}
+		if !isValid {
+			return nil, fmt.Errorf("invalid auth code for withheld exposure")
+		}
+	default:
+		return nil, fmt.Errorf("invalid exposure value: %s", someExposureFromConfig)
+	}
 
 	return &VirtualTxsResp{
 		Txs:  virtualTxs,

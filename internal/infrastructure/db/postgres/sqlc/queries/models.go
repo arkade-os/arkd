@@ -7,6 +7,7 @@ package queries
 import (
 	"database/sql"
 
+	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
 )
 
@@ -193,6 +194,13 @@ type Tx struct {
 	Type     string
 	Position int32
 	Children pqtype.NullRawMessage
+}
+
+type VirtualTxsRequest struct {
+	ID        int32
+	AuthCode  uuid.UUID
+	CreatedAt int64
+	Expiry    int64
 }
 
 type Vtxo struct {

@@ -487,6 +487,13 @@
             }
           },
           {
+            "name": "authCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -566,6 +573,20 @@
             "schema": {
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -876,6 +897,9 @@
         "title": "GetVirtualTxsRequest",
         "type": "object",
         "properties": {
+          "authCode": {
+            "type": "string"
+          },
           "page": {
             "$ref": "#/components/schemas/IndexerPageRequest"
           },
@@ -906,6 +930,9 @@
         "title": "GetVtxoChainRequest",
         "type": "object",
         "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
+          },
           "outpoint": {
             "$ref": "#/components/schemas/IndexerOutpoint"
           },
@@ -918,6 +945,9 @@
         "title": "GetVtxoChainResponse",
         "type": "object",
         "properties": {
+          "authCode": {
+            "type": "string"
+          },
           "chain": {
             "type": "array",
             "items": {
@@ -1308,6 +1338,18 @@
             "type": "string"
           },
           "spentBy": {
+            "type": "string"
+          }
+        }
+      },
+      "Intent": {
+        "title": "Intent",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "proof": {
             "type": "string"
           }
         }
