@@ -43,6 +43,10 @@ func NewMetadataFromBytes(buf []byte) (*Metadata, error) {
 }
 
 func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
+	if len(md) <= 0 {
+		return nil, nil
+	}
+
 	var buf []byte
 	// sort metadata lexicographically by key in descending order
 	sort.SliceStable(md, func(i, j int) bool {
