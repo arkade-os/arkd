@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -17,47 +16,6 @@ const assetStoreDir = "assets"
 
 type assetRepository struct {
 	store *badgerhold.Store
-}
-
-type assetGroup struct {
-	ID             string `badgerhold:"key"`
-	Quantity       uint64
-	Immutable      bool
-	ControlAssetId string
-}
-
-type assetMetadata struct {
-	Key       string `badgerhold:"key"`
-	AssetID   string `badgerhold:"index"`
-	MetaKey   string
-	MetaValue string
-}
-
-type assetAnchor struct {
-	AnchorTxid string `badgerhold:"key"`
-	AnchorVout uint32
-}
-
-type anchorAsset struct {
-	Key      string `badgerhold:"key"`
-	AnchorID string `badgerhold:"index"`
-	AssetID  string `badgerhold:"index"`
-	Vout     uint32
-	Amount   uint64
-}
-
-type teleportAsset struct {
-	Key         string `badgerhold:"key"`
-	Script      string `badgerhold:"index"`
-	IntentID    string `badgerhold:"index"`
-	AssetID     string `badgerhold:"index"`
-	OutputIndex uint32
-	Amount      uint64
-	IsClaimed   bool
-}
-
-func teleportAssetKey(script, intentID, assetID string, outputIndex uint32) string {
-	return fmt.Sprintf("%s:%s:%s:%d", script, intentID, assetID, outputIndex)
 }
 
 func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
@@ -93,428 +51,10 @@ func (r *assetRepository) Close() {
 	r.store.Close()
 }
 
-func (r *assetRepository) ListAssetAnchorsByAssetID(
-	ctx context.Context,
-	assetID string,
-) ([]domain.AssetAnchor, error) {
-	query := badgerhold.Where("AssetID").Eq(assetID)
-
-	var assets []anchorAsset
-	var err error
-	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxFind(tx, &assets, query)
-	} else {
-		err = r.store.Find(&assets, query)
-	}
-	if err != nil {
-		if errors.Is(err, badgerhold.ErrNotFound) {
-			return []domain.AssetAnchor{}, nil
-		}
-		return nil, err
-	}
-
-	anchorIDs := make(map[string]struct{})
-	for _, asst := range assets {
-		anchorIDs[asst.AnchorID] = struct{}{}
-	}
-
-	anchors := make([]domain.AssetAnchor, 0, len(anchorIDs))
-	for anchorID := range anchorIDs {
-		anchor, err := r.GetAssetAnchorByTxId(ctx, anchorID)
-		if err != nil {
-			return nil, err
-		}
-		anchors = append(anchors, *anchor)
-	}
-
-	return anchors, nil
-}
-
-func (r *assetRepository) GetAssetByOutpoint(
-	ctx context.Context,
-	outpoint domain.Outpoint,
-) (*domain.NormalAsset, error) {
-	key := anchorAssetKey(outpoint.Txid, outpoint.VOut)
-	var record anchorAsset
-
-	var err error
-	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxGet(tx, key, &record)
-	} else {
-		err = r.store.Get(key, &record)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &domain.NormalAsset{
-		Outpoint: domain.Outpoint{
-			Txid: record.AnchorID,
-			VOut: record.Vout,
-		},
-		Amount:  record.Amount,
-		AssetID: record.AssetID,
-	}, nil
-}
-
-func (r *assetRepository) ListMetadataByAssetID(
-	ctx context.Context,
-	assetID string,
-) ([]domain.AssetMetadata, error) {
-	query := badgerhold.Where("AssetID").Eq(assetID)
-
-	var metadata []assetMetadata
-	var err error
-	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxFind(tx, &metadata, query)
-	} else {
-		err = r.store.Find(&metadata, query)
-	}
-	if err != nil {
-		if errors.Is(err, badgerhold.ErrNotFound) {
-			return []domain.AssetMetadata{}, nil
-		}
-		return nil, err
-	}
-
-	meta := make([]domain.AssetMetadata, 0, len(metadata))
-	for _, m := range metadata {
-		meta = append(meta, domain.AssetMetadata{
-			Key:   m.MetaKey,
-			Value: m.MetaValue,
-		})
-	}
-
-	return meta, nil
-}
-
-func (r *assetRepository) InsertAssetAnchor(ctx context.Context, anchor domain.AssetAnchor) error {
-	anchorRecord := assetAnchor{
-		AnchorTxid: anchor.Txid,
-		AnchorVout: anchor.VOut,
-	}
-
-	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
-		if err := r.store.TxInsert(tx, anchorRecord.AnchorTxid, anchorRecord); err != nil {
-			return err
-		}
-
-		for _, asst := range anchor.Assets {
-			record := anchorAsset{
-				Key:      anchorAssetKey(anchorRecord.AnchorTxid, asst.VOut),
-				AnchorID: anchorRecord.AnchorTxid,
-				AssetID:  asst.AssetID,
-				Vout:     asst.VOut,
-				Amount:   asst.Amount,
-			}
-
-			if err := r.store.TxUpsert(tx, record.Key, record); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-}
-
-func (r *assetRepository) GetAssetAnchorByTxId(
-	ctx context.Context,
-	txId string,
-) (*domain.AssetAnchor, error) {
-	var anchor assetAnchor
-
-	var err error
-	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxGet(tx, txId, &anchor)
-	} else {
-		err = r.store.Get(txId, &anchor)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	assets, err := r.listAnchorAssets(ctx, txId)
-	if err != nil {
-		return nil, err
-	}
-
-	anchorAssets := make([]domain.NormalAsset, 0, len(assets))
-	for _, asst := range assets {
-		anchorAssets = append(anchorAssets, domain.NormalAsset{
-			Outpoint: domain.Outpoint{
-				Txid: asst.AnchorID,
-				VOut: asst.Vout,
-			},
-			Amount:  asst.Amount,
-			AssetID: asst.AssetID,
-		})
-	}
-
-	return &domain.AssetAnchor{
-		Outpoint: domain.Outpoint{
-			Txid: anchor.AnchorTxid,
-			VOut: anchor.AnchorVout,
-		},
-		Assets: anchorAssets,
-	}, nil
-}
-
-func (r *assetRepository) InsertTeleportAsset(
-	ctx context.Context,
-	teleport domain.TeleportAsset,
-) error {
-	key := teleportAssetKey(
-		teleport.Script,
-		teleport.IntentID,
-		teleport.AssetID,
-		teleport.OutputIndex,
-	)
-	record := teleportAsset{
-		Key:         key,
-		Script:      teleport.Script,
-		IntentID:    teleport.IntentID,
-		AssetID:     teleport.AssetID,
-		OutputIndex: teleport.OutputIndex,
-		Amount:      teleport.Amount,
-		IsClaimed:   teleport.IsClaimed,
-	}
-
-	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
-		return r.store.TxInsert(tx, record.Key, record)
-	})
-}
-
-func (r *assetRepository) UpdateTeleportAsset(
-	ctx context.Context,
-	script string,
-	intentID string,
-	assetID string,
-	outputIndex uint32,
-	isClaimed bool,
-) error {
-	var teleport teleportAsset
-	key := teleportAssetKey(script, intentID, assetID, outputIndex)
-
-	var err error
-	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxGet(tx, key, &teleport)
-	} else {
-		err = r.store.Get(key, &teleport)
-	}
-	if err != nil {
-		return err
-	}
-
-	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
-		record := teleportAsset{
-			Key:         key,
-			Script:      teleport.Script,
-			IntentID:    teleport.IntentID,
-			AssetID:     teleport.AssetID,
-			OutputIndex: teleport.OutputIndex,
-			Amount:      teleport.Amount,
-			IsClaimed:   isClaimed,
-		}
-
-		return r.store.TxUpsert(tx, key, record)
-	})
-}
-
-func (r *assetRepository) GetTeleportAsset(
-	ctx context.Context,
-	script string,
-	intentID string,
-	assetID string,
-	outputIndex uint32,
-) (*domain.TeleportAsset, error) {
-	var teleport teleportAsset
-	key := teleportAssetKey(script, intentID, assetID, outputIndex)
-
-	var err error
-	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxGet(tx, key, &teleport)
-	} else {
-		err = r.store.Get(key, &teleport)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &domain.TeleportAsset{
-		Script:      teleport.Script,
-		IntentID:    teleport.IntentID,
-		AssetID:     teleport.AssetID,
-		OutputIndex: teleport.OutputIndex,
-		Amount:      teleport.Amount,
-		IsClaimed:   teleport.IsClaimed,
-	}, nil
-}
-
-func (r *assetRepository) InsertAssetGroup(ctx context.Context, a domain.AssetGroup) error {
-	record := assetGroup{
-		ID:             a.ID,
-		Quantity:       a.Quantity,
-		Immutable:      a.Immutable,
-		ControlAssetId: a.ControlAssetID,
-	}
-
-	return r.withRetryableWrite(ctx, func(tx *badger.Txn) error {
-		if err := r.store.TxInsert(tx, record.ID, record); err != nil {
-			return err
-		}
-
-		for _, md := range a.Metadata {
-			meta := assetMetadata{
-				Key:       assetMetadataKey(a.ID, md.Key),
-				AssetID:   a.ID,
-				MetaKey:   md.Key,
-				MetaValue: md.Value,
-			}
-
-			if err := r.store.TxUpsert(tx, meta.Key, meta); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-}
-
-func (r *assetRepository) GetAssetGroupByID(
-	ctx context.Context,
-	assetID string,
-) (*domain.AssetGroup, error) {
-	dbAsset, err := r.getAssetGroup(ctx, assetID)
-	if err != nil {
-		return nil, err
-	}
-
-	metadata, err := r.ListMetadataByAssetID(ctx, assetID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &domain.AssetGroup{
-		ID:             dbAsset.ID,
-		Quantity:       dbAsset.Quantity,
-		Immutable:      dbAsset.Immutable,
-		ControlAssetID: dbAsset.ControlAssetId,
-		Metadata:       metadata,
-	}, nil
-}
-
-
-func (r *assetRepository) listAnchorAssets(
-	ctx context.Context,
-	anchorID string,
-) ([]anchorAsset, error) {
-	var assets []anchorAsset
-	query := badgerhold.Where("AnchorID").Eq(anchorID)
-
-	var err error
-	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxFind(tx, &assets, query)
-	} else {
-		err = r.store.Find(&assets, query)
-	}
-	if err != nil {
-		if errors.Is(err, badgerhold.ErrNotFound) {
-			return []anchorAsset{}, nil
-		}
-		return nil, err
-	}
-
-	sort.Slice(assets, func(i, j int) bool {
-		return assets[i].Vout < assets[j].Vout
-	})
-
-	return assets, nil
-}
-
-func (r *assetRepository) getAssetGroup(ctx context.Context, assetID string) (*assetGroup, error) {
-	var record assetGroup
-	var err error
-	if tx := getTxFromContext(ctx); tx != nil {
-		err = r.store.TxGet(tx, assetID, &record)
-	} else {
-		err = r.store.Get(assetID, &record)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &record, nil
-}
-
-func (r *assetRepository) getAssetDetailsWithTx(
-	tx *badger.Txn,
-	assetID string,
-) (*assetGroup, error) {
-	var record assetGroup
-	if err := r.store.TxGet(tx, assetID, &record); err != nil {
-		return nil, err
-	}
-	return &record, nil
-}
-
-func (r *assetRepository) withRetryableWrite(
-	ctx context.Context,
-	fn func(tx *badger.Txn) error,
-) error {
-	if tx := getTxFromContext(ctx); tx != nil {
-		return fn(tx)
-	}
-
-	var err error
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		err = func() error {
-			tx := r.store.Badger().NewTransaction(true)
-			defer tx.Discard()
-
-			if err := fn(tx); err != nil {
-				return err
-			}
-
-			return tx.Commit()
-		}()
-		if err == nil {
-			return nil
-		}
-
-		if errors.Is(err, badger.ErrConflict) {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		return err
-	}
-
-	return err
-}
-
-func getTxFromContext(ctx context.Context) *badger.Txn {
-	tx, ok := ctx.Value("tx").(*badger.Txn)
-	if !ok {
-		return nil
-	}
-
-	return tx
-}
-
-func anchorAssetKey(anchorID string, vout uint32) string {
-	return fmt.Sprintf("%s:%d", anchorID, vout)
-}
-
-func assetMetadataKey(assetID, metaKey string) string {
-	return fmt.Sprintf("%s:%s", assetID, metaKey)
-}
-
 func (r *assetRepository) AddAssets(
-	ctx context.Context,
-	assets []domain.Asset,
+	ctx context.Context, assetsByTx, assetsByIntents map[string][]domain.Asset,
 ) (int, error) {
-	return 0, nil
+	return r.addAssets(ctx, assetsByTx, assetsByIntents)
 }
 
 func (r *assetRepository) GetAssets(
@@ -522,4 +62,71 @@ func (r *assetRepository) GetAssets(
 	assetIDs []string,
 ) ([]domain.Asset, error) {
 	return nil, nil
+}
+
+func (r *assetRepository) addAssets(
+	ctx context.Context, assetsByTx, assetsByIntents map[string][]domain.Asset,
+) (int, error) {
+	count := 0
+	for _, assets := range assetsByTx {
+		for _, asset := range assets {
+			var insertFn func() error
+			if ctx.Value("tx") != nil {
+				tx := ctx.Value("tx").(*badger.Txn)
+				insertFn = func() error {
+					return r.store.TxInsert(tx, asset.Id, asset)
+				}
+			} else {
+				insertFn = func() error {
+					return r.store.Insert(asset.Id, asset)
+				}
+			}
+			if err := insertFn(); err != nil {
+				if errors.Is(err, badgerhold.ErrKeyExists) {
+					continue
+				}
+				if errors.Is(err, badger.ErrConflict) {
+					attempts := 1
+					for errors.Is(err, badger.ErrConflict) && attempts <= maxRetries {
+						time.Sleep(100 * time.Millisecond)
+						err = insertFn()
+						attempts++
+					}
+				}
+				return -1, err
+			}
+			count++
+		}
+	}
+	for _, assets := range assetsByIntents {
+		for _, asset := range assets {
+			var insertFn func() error
+			if ctx.Value("tx") != nil {
+				tx := ctx.Value("tx").(*badger.Txn)
+				insertFn = func() error {
+					return r.store.TxInsert(tx, asset.Id, asset)
+				}
+			} else {
+				insertFn = func() error {
+					return r.store.Insert(asset.Id, asset)
+				}
+			}
+			if err := insertFn(); err != nil {
+				if errors.Is(err, badgerhold.ErrKeyExists) {
+					continue
+				}
+				if errors.Is(err, badger.ErrConflict) {
+					attempts := 1
+					for errors.Is(err, badger.ErrConflict) && attempts <= maxRetries {
+						time.Sleep(100 * time.Millisecond)
+						err = insertFn()
+						attempts++
+					}
+				}
+				return -1, err
+			}
+			count++
+		}
+	}
+	return count, nil
 }

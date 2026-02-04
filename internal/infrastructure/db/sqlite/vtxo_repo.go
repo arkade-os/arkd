@@ -70,6 +70,19 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					return err
 				}
 			}
+
+			for _, asset := range vtxo.Assets {
+				if err := querierWithTx.InsertVtxoAssetProjection(
+					ctx, queries.InsertVtxoAssetProjectionParams{
+						FkAssetID:  asset.AssetId,
+						Amount:     int64(asset.Amount),
+						FkVtxoTxid: sql.NullString{String: vtxo.Txid, Valid: true},
+						FkVtxoVout: sql.NullInt64{Int64: int64(vtxo.VOut), Valid: true},
+					},
+				); err != nil {
+					return err
+				}
+			}
 		}
 
 		return nil
@@ -363,7 +376,7 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	}
 	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
 		Pubkeys: pubkeys,
-		After:   after,
+		After:   sql.NullInt64{Int64: after, Valid: true},
 		Before:  before,
 	})
 	if err != nil {
@@ -458,7 +471,7 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 		ctx,
 		queries.SelectPendingSpentVtxosWithPubkeysParams{
 			Pubkeys: pubkeys,
-			After:   after,
+			After:   sql.NullInt64{Int64: after, Valid: true},
 			Before:  before,
 		},
 	)

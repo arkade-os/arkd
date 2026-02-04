@@ -13,39 +13,6 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
-const addAssetProjection = `-- name: AddAssetProjection :exec
-INSERT INTO asset_projection (fk_intent_txid, fk_intent_vout, fk_asset_id, fk_asset_index, fk_vtxo_txid, fk_vtxo_vout, amount)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (fk_intent_txid, fk_intent_vout, fk_asset_id, fk_asset_index)
-DO UPDATE SET
-    fk_vtxo_txid = EXCLUDED.fk_vtxo_txid,
-    fk_vtxo_vout = EXCLUDED.fk_vtxo_vout,
-    amount = EXCLUDED.amount
-`
-
-type AddAssetProjectionParams struct {
-	FkIntentTxid sql.NullString
-	FkIntentVout sql.NullInt64
-	FkAssetID    string
-	FkAssetIndex string
-	FkVtxoTxid   sql.NullString
-	FkVtxoVout   sql.NullInt64
-	Amount       int64
-}
-
-func (q *Queries) AddAssetProjection(ctx context.Context, arg AddAssetProjectionParams) error {
-	_, err := q.db.ExecContext(ctx, addAssetProjection,
-		arg.FkIntentTxid,
-		arg.FkIntentVout,
-		arg.FkAssetID,
-		arg.FkAssetIndex,
-		arg.FkVtxoTxid,
-		arg.FkVtxoVout,
-		arg.Amount,
-	)
-	return err
-}
-
 const addIntentFees = `-- name: AddIntentFees :exec
 INSERT INTO intent_fees (
   offchain_input_fee_program,
@@ -119,222 +86,82 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 	return err
 }
 
-const createAsset = `-- name: CreateAsset :exec
-INSERT INTO asset (genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+const insertAsset = `-- name: InsertAsset :exec
+INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
+VALUES ($1, $2, $3, $4, $5)
 `
 
-type CreateAssetParams struct {
-	GenesisTxid            string
-	GenesisGroupIndex      int64
-	IsImmutable            bool
-	MetadataHash           sql.NullString
-	Metadata               pqtype.NullRawMessage
-	ControlAssetID         sql.NullString
-	ControlAssetGroupIndex sql.NullInt64
+type InsertAssetParams struct {
+	ID             string
+	IsImmutable    bool
+	MetadataHash   sql.NullString
+	Metadata       pqtype.NullRawMessage
+	ControlAssetID sql.NullString
 }
 
-func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) error {
-	_, err := q.db.ExecContext(ctx, createAsset,
-		arg.GenesisTxid,
-		arg.GenesisGroupIndex,
+func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error {
+	_, err := q.db.ExecContext(ctx, insertAsset,
+		arg.ID,
 		arg.IsImmutable,
 		arg.MetadataHash,
 		arg.Metadata,
 		arg.ControlAssetID,
-		arg.ControlAssetGroupIndex,
 	)
 	return err
 }
 
-const deleteAsset = `-- name: DeleteAsset :exec
-DELETE FROM asset
-WHERE genesis_txid = $1 AND genesis_group_index = $2
+const insertAssetMetadataUpdateByIntent = `-- name: InsertAssetMetadataUpdateByIntent :exec
+INSERT INTO asset_metadata_update (fk_asset_id, fk_intent_txid, metadata_hash)
+VALUES ($1, $2, $3)
 `
 
-type DeleteAssetParams struct {
-	GenesisTxid       string
-	GenesisGroupIndex int64
+type InsertAssetMetadataUpdateByIntentParams struct {
+	FkAssetID    string
+	FkIntentTxid sql.NullString
+	MetadataHash string
 }
 
-func (q *Queries) DeleteAsset(ctx context.Context, arg DeleteAssetParams) error {
-	_, err := q.db.ExecContext(ctx, deleteAsset, arg.GenesisTxid, arg.GenesisGroupIndex)
+func (q *Queries) InsertAssetMetadataUpdateByIntent(ctx context.Context, arg InsertAssetMetadataUpdateByIntentParams) error {
+	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByIntent, arg.FkAssetID, arg.FkIntentTxid, arg.MetadataHash)
 	return err
 }
 
-const getAssetByAssetID = `-- name: GetAssetByAssetID :one
-SELECT genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index FROM asset WHERE control_asset_id = $1
+const insertAssetMetadataUpdateByTx = `-- name: InsertAssetMetadataUpdateByTx :exec
+INSERT INTO asset_metadata_update (fk_asset_id, fk_txid, metadata_hash)
+VALUES ($1, $2, $3)
 `
 
-func (q *Queries) GetAssetByAssetID(ctx context.Context, assetID sql.NullString) (Asset, error) {
-	row := q.db.QueryRowContext(ctx, getAssetByAssetID, assetID)
-	var i Asset
-	err := row.Scan(
-		&i.GenesisTxid,
-		&i.GenesisGroupIndex,
-		&i.IsImmutable,
-		&i.MetadataHash,
-		&i.Metadata,
-		&i.ControlAssetID,
-		&i.ControlAssetGroupIndex,
+type InsertAssetMetadataUpdateByTxParams struct {
+	FkAssetID    string
+	FkTxid       sql.NullString
+	MetadataHash string
+}
+
+func (q *Queries) InsertAssetMetadataUpdateByTx(ctx context.Context, arg InsertAssetMetadataUpdateByTxParams) error {
+	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByTx, arg.FkAssetID, arg.FkTxid, arg.MetadataHash)
+	return err
+}
+
+const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
+INSERT INTO asset_projection (fk_asset_id, fk_vtxo_txid, fk_vtxo_vout, amount, type)
+VALUES ($1, $2, $3, $4, 'local')
+`
+
+type InsertVtxoAssetProjectionParams struct {
+	FkAssetID  string
+	FkVtxoTxid sql.NullString
+	FkVtxoVout sql.NullInt64
+	Amount     int64
+}
+
+func (q *Queries) InsertVtxoAssetProjection(ctx context.Context, arg InsertVtxoAssetProjectionParams) error {
+	_, err := q.db.ExecContext(ctx, insertVtxoAssetProjection,
+		arg.FkAssetID,
+		arg.FkVtxoTxid,
+		arg.FkVtxoVout,
+		arg.Amount,
 	)
-	return i, err
-}
-
-const getAssetEntry = `-- name: GetAssetEntry :one
-SELECT genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index
-FROM asset
-WHERE genesis_txid = $1 AND genesis_group_index = $2
-`
-
-type GetAssetEntryParams struct {
-	GenesisTxid       string
-	GenesisGroupIndex int64
-}
-
-func (q *Queries) GetAssetEntry(ctx context.Context, arg GetAssetEntryParams) (Asset, error) {
-	row := q.db.QueryRowContext(ctx, getAssetEntry, arg.GenesisTxid, arg.GenesisGroupIndex)
-	var i Asset
-	err := row.Scan(
-		&i.GenesisTxid,
-		&i.GenesisGroupIndex,
-		&i.IsImmutable,
-		&i.MetadataHash,
-		&i.Metadata,
-		&i.ControlAssetID,
-		&i.ControlAssetGroupIndex,
-	)
-	return i, err
-}
-
-const getAssetEntryByTxid = `-- name: GetAssetEntryByTxid :one
-SELECT genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index
-FROM asset
-WHERE genesis_txid = $1
-`
-
-func (q *Queries) GetAssetEntryByTxid(ctx context.Context, genesisTxid string) (Asset, error) {
-	row := q.db.QueryRowContext(ctx, getAssetEntryByTxid, genesisTxid)
-	var i Asset
-	err := row.Scan(
-		&i.GenesisTxid,
-		&i.GenesisGroupIndex,
-		&i.IsImmutable,
-		&i.MetadataHash,
-		&i.Metadata,
-		&i.ControlAssetID,
-		&i.ControlAssetGroupIndex,
-	)
-	return i, err
-}
-
-const getAssetMetadataByAssetID = `-- name: GetAssetMetadataByAssetID :one
-SELECT DISTINCT a.metadata
-FROM asset_projection ap
-JOIN asset a ON ap.fk_asset_id = a.genesis_txid AND ap.fk_asset_index = a.genesis_group_index
-WHERE ap.fk_asset_id = $1
-`
-
-func (q *Queries) GetAssetMetadataByAssetID(ctx context.Context, assetID string) (pqtype.NullRawMessage, error) {
-	row := q.db.QueryRowContext(ctx, getAssetMetadataByAssetID, assetID)
-	var metadata pqtype.NullRawMessage
-	err := row.Scan(&metadata)
-	return metadata, err
-}
-
-const getAssetProjectionAmountByAssetId = `-- name: GetAssetProjectionAmountByAssetId :many
-SELECT amount FROM asset_projection
-WHERE fk_asset_id = $1
-`
-
-func (q *Queries) GetAssetProjectionAmountByAssetId(ctx context.Context, assetID string) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, getAssetProjectionAmountByAssetId, assetID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []int64
-	for rows.Next() {
-		var amount int64
-		if err := rows.Scan(&amount); err != nil {
-			return nil, err
-		}
-		items = append(items, amount)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getAssetProjectionsByOutpoint = `-- name: GetAssetProjectionsByOutpoint :one
-SELECT id, type, fk_intent_txid, fk_intent_vout, fk_asset_id, fk_asset_index, fk_vtxo_txid, fk_vtxo_vout, amount
-FROM asset_projection
-WHERE fk_intent_txid = $1 AND fk_intent_vout = $2
-`
-
-type GetAssetProjectionsByOutpointParams struct {
-	Txid sql.NullString
-	Vout sql.NullInt64
-}
-
-func (q *Queries) GetAssetProjectionsByOutpoint(ctx context.Context, arg GetAssetProjectionsByOutpointParams) (AssetProjection, error) {
-	row := q.db.QueryRowContext(ctx, getAssetProjectionsByOutpoint, arg.Txid, arg.Vout)
-	var i AssetProjection
-	err := row.Scan(
-		&i.ID,
-		&i.Type,
-		&i.FkIntentTxid,
-		&i.FkIntentVout,
-		&i.FkAssetID,
-		&i.FkAssetIndex,
-		&i.FkVtxoTxid,
-		&i.FkVtxoVout,
-		&i.Amount,
-	)
-	return i, err
-}
-
-const getAssetProjectionsByTxId = `-- name: GetAssetProjectionsByTxId :many
-SELECT id, type, fk_intent_txid, fk_intent_vout, fk_asset_id, fk_asset_index, fk_vtxo_txid, fk_vtxo_vout, amount
-FROM asset_projection
-WHERE fk_intent_txid = $1
-`
-
-func (q *Queries) GetAssetProjectionsByTxId(ctx context.Context, txid sql.NullString) ([]AssetProjection, error) {
-	rows, err := q.db.QueryContext(ctx, getAssetProjectionsByTxId, txid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AssetProjection
-	for rows.Next() {
-		var i AssetProjection
-		if err := rows.Scan(
-			&i.ID,
-			&i.Type,
-			&i.FkIntentTxid,
-			&i.FkIntentVout,
-			&i.FkAssetID,
-			&i.FkAssetIndex,
-			&i.FkVtxoTxid,
-			&i.FkVtxoVout,
-			&i.Amount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return err
 }
 
 const insertVtxoCommitmentTxid = `-- name: InsertVtxoCommitmentTxid :exec
@@ -351,42 +178,6 @@ type InsertVtxoCommitmentTxidParams struct {
 func (q *Queries) InsertVtxoCommitmentTxid(ctx context.Context, arg InsertVtxoCommitmentTxidParams) error {
 	_, err := q.db.ExecContext(ctx, insertVtxoCommitmentTxid, arg.VtxoTxid, arg.VtxoVout, arg.CommitmentTxid)
 	return err
-}
-
-const listAssetAnchorsByAssetID = `-- name: ListAssetAnchorsByAssetID :many
-SELECT DISTINCT aa.fk_intent_txid, aa.fk_intent_vout
-FROM asset_projection aa
-JOIN asset a ON aa.fk_intent_txid = a.genesis_txid
-WHERE aa.fk_asset_id = $1
-ORDER BY aa.fk_intent_txid
-`
-
-type ListAssetAnchorsByAssetIDRow struct {
-	FkIntentTxid sql.NullString
-	FkIntentVout sql.NullInt64
-}
-
-func (q *Queries) ListAssetAnchorsByAssetID(ctx context.Context, assetID string) ([]ListAssetAnchorsByAssetIDRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAssetAnchorsByAssetID, assetID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListAssetAnchorsByAssetIDRow
-	for rows.Next() {
-		var i ListAssetAnchorsByAssetIDRow
-		if err := rows.Scan(&i.FkIntentTxid, &i.FkIntentVout); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const selectActiveScriptConvictions = `-- name: SelectActiveScriptConvictions :many
@@ -463,7 +254,7 @@ func (q *Queries) SelectAllRoundIds(ctx context.Context) ([]string, error) {
 }
 
 const selectAllVtxos = `-- name: SelectAllVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.fk_asset_id, vtxo_vw.fk_asset_index FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
 `
 
 type SelectAllVtxosRow struct {
@@ -497,8 +288,41 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
 			&i.VtxoVw.Commitments,
-			&i.VtxoVw.FkAssetID,
-			&i.VtxoVw.FkAssetIndex,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectAssetsByIds = `-- name: SelectAssetsByIds :many
+SELECT id, is_immutable, metadata_hash, metadata, control_asset_id FROM asset WHERE asset.id = ANY($1::varchar[])
+`
+
+func (q *Queries) SelectAssetsByIds(ctx context.Context, dollar_1 []string) ([]Asset, error) {
+	rows, err := q.db.QueryContext(ctx, selectAssetsByIds, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.IsImmutable,
+			&i.MetadataHash,
+			&i.Metadata,
+			&i.ControlAssetID,
 		); err != nil {
 			return nil, err
 		}
@@ -702,7 +526,7 @@ func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSe
 }
 
 const selectNotUnrolledVtxos = `-- name: SelectNotUnrolledVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.fk_asset_id, vtxo_vw.fk_asset_index FROM vtxo_vw WHERE unrolled = false
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE unrolled = false
 `
 
 type SelectNotUnrolledVtxosRow struct {
@@ -736,8 +560,8 @@ func (q *Queries) SelectNotUnrolledVtxos(ctx context.Context) ([]SelectNotUnroll
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
 			&i.VtxoVw.Commitments,
-			&i.VtxoVw.FkAssetID,
-			&i.VtxoVw.FkAssetIndex,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
 		); err != nil {
 			return nil, err
 		}
@@ -753,7 +577,7 @@ func (q *Queries) SelectNotUnrolledVtxos(ctx context.Context) ([]SelectNotUnroll
 }
 
 const selectNotUnrolledVtxosWithPubkey = `-- name: SelectNotUnrolledVtxosWithPubkey :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.fk_asset_id, vtxo_vw.fk_asset_index FROM vtxo_vw WHERE unrolled = false AND pubkey = $1
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE unrolled = false AND pubkey = $1
 `
 
 type SelectNotUnrolledVtxosWithPubkeyRow struct {
@@ -787,8 +611,8 @@ func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey s
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
 			&i.VtxoVw.Commitments,
-			&i.VtxoVw.FkAssetID,
-			&i.VtxoVw.FkAssetIndex,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
 		); err != nil {
 			return nil, err
 		}
@@ -848,7 +672,7 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 }
 
 const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :one
-SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.commitments, v.fk_asset_id, v.fk_asset_index
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.commitments, v.asset_id, v.asset_amount
 FROM vtxo_vw v
 WHERE v.txid = $1 AND v.vout = $2
     AND v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
@@ -883,14 +707,14 @@ func (q *Queries) SelectPendingSpentVtxo(ctx context.Context, arg SelectPendingS
 		&i.IntentID,
 		&i.UpdatedAt,
 		&i.Commitments,
-		&i.FkAssetID,
-		&i.FkAssetIndex,
+		&i.AssetID,
+		&i.AssetAmount,
 	)
 	return i, err
 }
 
 const selectPendingSpentVtxosWithPubkeys = `-- name: SelectPendingSpentVtxosWithPubkeys :many
-SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.commitments, v.fk_asset_id, v.fk_asset_index
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.commitments, v.asset_id, v.asset_amount
 FROM vtxo_vw v
 WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.pubkey = ANY($1::varchar[])
@@ -934,8 +758,8 @@ func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, arg Se
 			&i.IntentID,
 			&i.UpdatedAt,
 			&i.Commitments,
-			&i.FkAssetID,
-			&i.FkAssetIndex,
+			&i.AssetID,
+			&i.AssetAmount,
 		); err != nil {
 			return nil, err
 		}
@@ -1234,7 +1058,7 @@ func (q *Queries) SelectRoundVtxoTree(ctx context.Context, txid string) ([]Tx, e
 }
 
 const selectRoundVtxoTreeLeaves = `-- name: SelectRoundVtxoTreeLeaves :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.fk_asset_id, vtxo_vw.fk_asset_index FROM vtxo_vw WHERE commitment_txid = $1 AND preconfirmed = false
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE commitment_txid = $1 AND preconfirmed = false
 `
 
 type SelectRoundVtxoTreeLeavesRow struct {
@@ -1268,8 +1092,8 @@ func (q *Queries) SelectRoundVtxoTreeLeaves(ctx context.Context, commitmentTxid 
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
 			&i.VtxoVw.Commitments,
-			&i.VtxoVw.FkAssetID,
-			&i.VtxoVw.FkAssetIndex,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
 		); err != nil {
 			return nil, err
 		}
@@ -1289,7 +1113,7 @@ SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, 
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
     intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message,
-    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.commitments, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message
+    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.commitments, intent_with_inputs_vw.asset_id, intent_with_inputs_vw.asset_amount, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message, intent_with_inputs_vw.intent_txid
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
@@ -1362,10 +1186,13 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 			&i.IntentWithInputsVw.IntentID,
 			&i.IntentWithInputsVw.UpdatedAt,
 			&i.IntentWithInputsVw.Commitments,
+			&i.IntentWithInputsVw.AssetID,
+			&i.IntentWithInputsVw.AssetAmount,
 			&i.IntentWithInputsVw.ID,
 			&i.IntentWithInputsVw.RoundID,
 			&i.IntentWithInputsVw.Proof,
 			&i.IntentWithInputsVw.Message,
+			&i.IntentWithInputsVw.IntentTxid,
 		); err != nil {
 			return nil, err
 		}
@@ -1385,7 +1212,7 @@ SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, 
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
     intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message,
-    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.commitments, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message
+    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.commitments, intent_with_inputs_vw.asset_id, intent_with_inputs_vw.asset_amount, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message, intent_with_inputs_vw.intent_txid
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
@@ -1460,10 +1287,13 @@ func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]Selec
 			&i.IntentWithInputsVw.IntentID,
 			&i.IntentWithInputsVw.UpdatedAt,
 			&i.IntentWithInputsVw.Commitments,
+			&i.IntentWithInputsVw.AssetID,
+			&i.IntentWithInputsVw.AssetAmount,
 			&i.IntentWithInputsVw.ID,
 			&i.IntentWithInputsVw.RoundID,
 			&i.IntentWithInputsVw.Proof,
 			&i.IntentWithInputsVw.Message,
+			&i.IntentWithInputsVw.IntentTxid,
 		); err != nil {
 			return nil, err
 		}
@@ -1538,7 +1368,7 @@ func (q *Queries) SelectSweepableRounds(ctx context.Context) ([]string, error) {
 }
 
 const selectSweepableUnrolledVtxos = `-- name: SelectSweepableUnrolledVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.fk_asset_id, vtxo_vw.fk_asset_index FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND COALESCE(settled_by, '') = ''
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND COALESCE(settled_by, '') = ''
 `
 
 type SelectSweepableUnrolledVtxosRow struct {
@@ -1572,8 +1402,8 @@ func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSwe
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
 			&i.VtxoVw.Commitments,
-			&i.VtxoVw.FkAssetID,
-			&i.VtxoVw.FkAssetIndex,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
 		); err != nil {
 			return nil, err
 		}
@@ -1689,7 +1519,7 @@ func (q *Queries) SelectTxs(ctx context.Context, dollar_1 []string) ([]SelectTxs
 }
 
 const selectVtxo = `-- name: SelectVtxo :one
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.fk_asset_id, vtxo_vw.fk_asset_index FROM vtxo_vw WHERE txid = $1 AND vout = $2
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE txid = $1 AND vout = $2
 `
 
 type SelectVtxoParams struct {
@@ -1722,8 +1552,8 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 		&i.VtxoVw.IntentID,
 		&i.VtxoVw.UpdatedAt,
 		&i.VtxoVw.Commitments,
-		&i.VtxoVw.FkAssetID,
-		&i.VtxoVw.FkAssetIndex,
+		&i.VtxoVw.AssetID,
+		&i.VtxoVw.AssetAmount,
 	)
 	return i, err
 }
@@ -1826,7 +1656,7 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 }
 
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.fk_asset_id, vtxo_vw.fk_asset_index FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
 WHERE vtxo_vw.pubkey = ANY($1::varchar[])
     AND vtxo_vw.updated_at >= $2::bigint
     AND ($3::bigint = 0 OR vtxo_vw.updated_at <= $3::bigint)
@@ -1869,8 +1699,8 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWit
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
 			&i.VtxoVw.Commitments,
-			&i.VtxoVw.FkAssetID,
-			&i.VtxoVw.FkAssetIndex,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
 		); err != nil {
 			return nil, err
 		}
@@ -1996,66 +1826,6 @@ type UpdateVtxoUnrolledParams struct {
 
 func (q *Queries) UpdateVtxoUnrolled(ctx context.Context, arg UpdateVtxoUnrolledParams) error {
 	_, err := q.db.ExecContext(ctx, updateVtxoUnrolled, arg.Txid, arg.Vout)
-	return err
-}
-
-const upsertAssetEntry = `-- name: UpsertAssetEntry :exec
-INSERT INTO asset (genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (genesis_txid, genesis_group_index) DO NOTHING
-`
-
-type UpsertAssetEntryParams struct {
-	GenesisTxid            string
-	GenesisGroupIndex      int64
-	IsImmutable            bool
-	MetadataHash           sql.NullString
-	Metadata               pqtype.NullRawMessage
-	ControlAssetID         sql.NullString
-	ControlAssetGroupIndex sql.NullInt64
-}
-
-func (q *Queries) UpsertAssetEntry(ctx context.Context, arg UpsertAssetEntryParams) error {
-	_, err := q.db.ExecContext(ctx, upsertAssetEntry,
-		arg.GenesisTxid,
-		arg.GenesisGroupIndex,
-		arg.IsImmutable,
-		arg.MetadataHash,
-		arg.Metadata,
-		arg.ControlAssetID,
-		arg.ControlAssetGroupIndex,
-	)
-	return err
-}
-
-const upsertAssetMetadataUpdate = `-- name: UpsertAssetMetadataUpdate :exec
-INSERT INTO asset_metadata_update (fk_asset_id, fk_asset_index, fk_intent_txid, fk_intent_vout, fk_txid, metadata_hash)
-VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (fk_asset_id, fk_asset_index) DO UPDATE SET
-    fk_intent_txid = EXCLUDED.fk_intent_txid,
-    fk_intent_vout = EXCLUDED.fk_intent_vout,
-    fk_txid = EXCLUDED.fk_txid,
-    metadata_hash = EXCLUDED.metadata_hash
-`
-
-type UpsertAssetMetadataUpdateParams struct {
-	FkAssetID    string
-	FkAssetIndex string
-	FkIntentTxid sql.NullString
-	FkIntentVout sql.NullInt64
-	FkTxid       sql.NullString
-	MetadataHash string
-}
-
-func (q *Queries) UpsertAssetMetadataUpdate(ctx context.Context, arg UpsertAssetMetadataUpdateParams) error {
-	_, err := q.db.ExecContext(ctx, upsertAssetMetadataUpdate,
-		arg.FkAssetID,
-		arg.FkAssetIndex,
-		arg.FkIntentTxid,
-		arg.FkIntentVout,
-		arg.FkTxid,
-		arg.MetadataHash,
-	)
 	return err
 }
 

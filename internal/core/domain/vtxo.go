@@ -35,18 +35,8 @@ func (k Outpoint) String() string {
 	return fmt.Sprintf("%s:%d", k.Txid, k.VOut)
 }
 
-type Asset struct {
-	AssetID        string
-	Metadata       map[string]string
-	ControlAssetId string
-	Immutable      bool
-}
-
-// I recall being told to add this but now the Asset struct has no Amount field,
-// so when used in Vtxo, we can't tell how much of the asset is in the vtxo. not sure where
-// to use this new struct.
-type AssetWithAmount struct {
-	AssetID string
+type AssetDenomination struct {
+	AssetId string
 	Amount  uint64
 }
 
@@ -65,7 +55,7 @@ type Vtxo struct {
 	Preconfirmed       bool
 	ExpiresAt          int64
 	CreatedAt          int64
-	Assets             []Asset
+	Assets             []AssetDenomination
 }
 
 func (v Vtxo) String() string {

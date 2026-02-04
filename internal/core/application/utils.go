@@ -15,7 +15,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -119,73 +118,15 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	}
 	txid := ptx.UnsignedTx.TxID()
 
+	assets, err := getAssetsFromTx(ptx)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
-
-	assetList := make([]domain.NormalAsset, 0)
-	assetVouts := make(map[uint16]struct{})
-	assetOpReturnProcessed := false
-
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
-		var pubKey string
-		var isSubDust bool
-
-		if asset.IsAssetPacket(out.PkScript) {
-			if assetOpReturnProcessed {
-				continue
-			}
-			assetOpReturnProcessed = true
-
-			decodedAssetPacket, err := asset.NewPacketFromTxOut(*out)
-			if err != nil {
-				return "", nil, nil, fmt.Errorf(
-					"failed to decode asset group from opreturn: %s",
-					err,
-				)
-			}
-
-			allAssets := decodedAssetPacket
-
-			for i, grpAsset := range allAssets {
-				var assetId asset.AssetId
-
-				if grpAsset.AssetId == nil {
-					assetId = asset.AssetId{
-						Txid:  ptx.UnsignedTx.TxHash(),
-						Index: uint16(i),
-					}
-				} else {
-					assetId = *grpAsset.AssetId
-				}
-				for _, assetOut := range grpAsset.Outputs {
-					if assetOut.Type != asset.AssetTypeLocal {
-						continue
-					}
-					if _, exists := assetVouts[assetOut.Vout]; exists {
-						return "", nil, nil, fmt.Errorf(
-							"duplicate asset output vout %d",
-							assetOut.Vout,
-						)
-					}
-					assetVouts[assetOut.Vout] = struct{}{}
-
-					assetList = append(assetList, domain.NormalAsset{
-						Outpoint: domain.Outpoint{
-							Txid: txid,
-							VOut: uint32(assetOut.Vout),
-						},
-						Amount:  assetOut.Amount,
-						AssetID: assetId.String(),
-					})
-				}
-			}
-
-			continue
-		} else {
-			pubKey = hex.EncodeToString(out.PkScript[2:])
-			isSubDust = script.IsSubDustScript(out.PkScript)
-		}
-
-		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+			asset.IsAssetPacket(out.PkScript) {
 			continue
 		}
 		outs = append(outs, domain.Vtxo{
@@ -193,27 +134,15 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 				Txid: txid,
 				VOut: uint32(outIndex),
 			},
-			PubKey:             pubKey,
+			PubKey:             hex.EncodeToString(out.PkScript[2:]),
 			Amount:             uint64(out.Value),
 			ExpiresAt:          offchainTx.ExpiryTimestamp,
 			CommitmentTxids:    offchainTx.CommitmentTxidsList(),
 			RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 			Preconfirmed:       true,
-			Swept:              isSubDust,
+			Swept:              script.IsSubDustScript(out.PkScript),
 			CreatedAt:          offchainTx.StartingTimestamp,
-		})
-	}
-
-	// Add AssetGroup if Present
-	for _, asst := range assetList {
-		idx := int(asst.VOut)
-		if idx < 0 || idx >= len(outs) {
-			continue
-		}
-
-		outs[idx].Assets = append(outs[idx].Assets, domain.Asset{
-			AssetID: asst.AssetID,
-			// Amount:  asst.Amount,
+			Assets:             assets[uint32(outIndex)],
 		})
 	}
 
@@ -223,42 +152,39 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 func newBoardingInput(
 	tx wire.MsgTx, input ports.Input, signerPubkey *btcec.PublicKey,
 	boardingExitDelay arklib.RelativeLocktime, blockTypeCSVAllowed bool,
-) (*ports.BoardingInput, errors.Error) {
+) (*ports.BoardingInput, error) {
 	if len(tx.TxOut) <= int(input.VOut) {
-		return nil, errors.INVALID_PSBT_INPUT.New("output index out of range [0, %d]", len(tx.TxOut)-1).
-			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, fmt.Errorf("output index out of range [0, %d]", len(tx.TxOut)-1)
 	}
 
 	output := tx.TxOut[input.VOut]
 
 	boardingScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
-		return nil, errors.INVALID_PSBT_INPUT.New("failed to parse boarding utxo taproot tree: %w", err).
-			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, fmt.Errorf("failed to parse boarding utxo taproot tree: %w", err)
 	}
 
 	tapKey, _, err := boardingScript.TapTree()
 	if err != nil {
-		return nil, errors.INVALID_PSBT_INPUT.New("failed to compute taproot tree: %w", err).
-			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, fmt.Errorf("failed to compute taproot tree: %w", err)
 	}
 
 	expectedScriptPubkey, err := script.P2TRScript(tapKey)
 	if err != nil {
-		return nil, errors.INVALID_PSBT_INPUT.New("failed to compute P2TR script from tapkey: %w", err).
-			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, fmt.Errorf("failed to compute P2TR script from tapkey: %w", err)
 	}
 
 	if !bytes.Equal(output.PkScript, expectedScriptPubkey) {
-		return nil, errors.INVALID_PSBT_INPUT.New("invalid boarding utxo taproot key: got %x expected %x", output.PkScript, expectedScriptPubkey).
-			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, fmt.Errorf(
+			"invalid boarding utxo taproot key: got %x expected %x",
+			output.PkScript, expectedScriptPubkey,
+		)
 	}
 
 	if err := boardingScript.Validate(
 		signerPubkey, boardingExitDelay, blockTypeCSVAllowed,
 	); err != nil {
-		return nil, errors.INVALID_PSBT_INPUT.New("invalid boarding utxo taproot tree: %w", err).
-			WithMetadata(errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)})
+		return nil, fmt.Errorf("invalid boarding utxo taproot tree: %w", err)
 	}
 
 	return &ports.BoardingInput{
@@ -301,32 +227,16 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 			continue
 		}
 
-		assetsMap := make(map[uint32][]domain.Asset, 0)
+		assets, err := getAssetsFromTx(tx)
+		if err != nil {
+			log.WithError(err).Warn("failed to get assets from tx")
+			continue
+		}
+
 		vtxos := make([]domain.Vtxo, 0)
-
 		for i, out := range tx.UnsignedTx.TxOut {
-			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
-				continue
-			}
-
-			if asset.IsAssetPacket(out.PkScript) {
-				decodedAssetPacket, err := asset.NewPacketFromTxOut(*out)
-				if err != nil {
-					log.WithError(err).Warn("failed to decode asset packet")
-					continue
-				}
-
-				for _, asst := range decodedAssetPacket {
-					for _, out := range asst.Outputs {
-						assetsMap[uint32(out.Vout)] = append(
-							assetsMap[uint32(out.Vout)],
-							domain.Asset{
-								AssetID: asst.AssetId.String(),
-								// Amount:  uint64(out.Amount),
-							},
-						)
-					}
-				}
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+				asset.IsAssetPacket(out.PkScript) {
 				continue
 			}
 
@@ -345,21 +255,49 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          createdAt,
 				ExpiresAt:          expireAt,
+				Assets:             assets[uint32(i)],
 			})
-		}
-
-		if len(assetsMap) > 0 {
-			for i, vtxo := range vtxos {
-				if assets, found := assetsMap[vtxo.VOut]; found {
-					vtxos[i].Assets = assets
-				}
-			}
 		}
 
 		totalVtxos = append(totalVtxos, vtxos...)
 	}
 
 	return totalVtxos
+}
+
+func getAssetsFromTx(ptx *psbt.Packet) (map[uint32][]domain.AssetDenomination, error) {
+	assets, err := asset.NewPacketFromTx(ptx.UnsignedTx)
+	// TODO: Move to !errors.Is(err, asset.ErrAssetPacketNotFound)
+	if err != nil {
+		if strings.Contains(err.Error(), "packet not found") {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	assetDenominations := make(map[uint32][]domain.AssetDenomination)
+	for _, a := range assets {
+		for _, out := range a.Outputs {
+			var assetId string
+			// In case of issuance, the asset id is empty and we derive it from the txid and vout
+			if a.AssetId == nil {
+				id, err := asset.NewAssetId(ptx.UnsignedTx.TxID(), out.Vout)
+				if err != nil {
+					return nil, fmt.Errorf("failed to compute asset id: %s", err)
+				}
+				assetId = id.String()
+			} else {
+				assetId = a.AssetId.String()
+			}
+			assetDenominations[uint32(out.Vout)] = append(
+				assetDenominations[uint32(out.Vout)], domain.AssetDenomination{
+					AssetId: assetId,
+					Amount:  out.Amount,
+				},
+			)
+		}
+	}
+	return assetDenominations, nil
 }
 
 func fancyTime(timestamp int64, unit ports.TimeUnit) (fancyTime string) {

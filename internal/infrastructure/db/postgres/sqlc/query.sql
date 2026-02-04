@@ -377,82 +377,6 @@ SELECT * FROM conviction
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
 
--- name: CreateAsset :exec
-INSERT INTO asset (genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index)
-VALUES (@genesis_txid, @genesis_group_index, @is_immutable, @metadata_hash, @metadata, @control_asset_id, @control_asset_group_index);
-
-
-
--- name: DeleteAsset :exec
-DELETE FROM asset
-WHERE genesis_txid = @genesis_txid AND genesis_group_index = @genesis_group_index;
-
-
--- name: GetAssetEntry :one
-SELECT genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index
-FROM asset
-WHERE genesis_txid = @genesis_txid AND genesis_group_index = @genesis_group_index;
-
--- name: GetAssetEntryByTxid :one
-SELECT genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index
-FROM asset
-WHERE genesis_txid = @genesis_txid;
-
--- name: GetAssetByAssetID :one
-SELECT * FROM asset WHERE control_asset_id = @asset_id;
-
--- name: UpsertAssetMetadataUpdate :exec
-INSERT INTO asset_metadata_update (fk_asset_id, fk_asset_index, fk_intent_txid, fk_intent_vout, fk_txid, metadata_hash)
-VALUES (@fk_asset_id, @fk_asset_index, @fk_intent_txid, @fk_intent_vout, @fk_txid, @metadata_hash)
-ON CONFLICT (fk_asset_id, fk_asset_index) DO UPDATE SET
-    fk_intent_txid = EXCLUDED.fk_intent_txid,
-    fk_intent_vout = EXCLUDED.fk_intent_vout,
-    fk_txid = EXCLUDED.fk_txid,
-    metadata_hash = EXCLUDED.metadata_hash;
-
-
--- name: AddAssetProjection :exec
-INSERT INTO asset_projection (fk_intent_txid, fk_intent_vout, fk_asset_id, fk_asset_index, fk_vtxo_txid, fk_vtxo_vout, amount)
-VALUES (@fk_intent_txid, @fk_intent_vout, @fk_asset_id, @fk_asset_index, @fk_vtxo_txid, @fk_vtxo_vout, @amount)
-ON CONFLICT (fk_intent_txid, fk_intent_vout, fk_asset_id, fk_asset_index)
-DO UPDATE SET
-    fk_vtxo_txid = EXCLUDED.fk_vtxo_txid,
-    fk_vtxo_vout = EXCLUDED.fk_vtxo_vout,
-    amount = EXCLUDED.amount;
-
--- name: ListAssetAnchorsByAssetID :many
-SELECT DISTINCT aa.fk_intent_txid, aa.fk_intent_vout
-FROM asset_projection aa
-JOIN asset a ON aa.fk_intent_txid = a.genesis_txid
-WHERE aa.fk_asset_id = @asset_id
-ORDER BY aa.fk_intent_txid;
-
--- name: GetAssetProjectionsByTxId :many
-SELECT *
-FROM asset_projection
-WHERE fk_intent_txid = @txid;
-
--- name: GetAssetProjectionAmountByAssetId :many
-SELECT amount FROM asset_projection
-WHERE fk_asset_id = @asset_id;
-
--- name: GetAssetProjectionsByOutpoint :one
-SELECT *
-FROM asset_projection
-WHERE fk_intent_txid = @txid AND fk_intent_vout = @vout;
-
--- name: GetAssetMetadataByAssetID :one
-SELECT DISTINCT a.metadata
-FROM asset_projection ap
-JOIN asset a ON ap.fk_asset_id = a.genesis_txid AND ap.fk_asset_index = a.genesis_group_index
-WHERE ap.fk_asset_id = @asset_id;
-
--- name: UpsertAssetEntry :exec
-INSERT INTO asset (genesis_txid, genesis_group_index, is_immutable, metadata_hash, metadata, control_asset_id, control_asset_group_index)
-VALUES (@genesis_txid, @genesis_group_index, @is_immutable, @metadata_hash, @metadata, @control_asset_id, @control_asset_group_index)
-ON CONFLICT (genesis_txid, genesis_group_index) DO NOTHING;
-
-
 -- name: SelectLatestIntentFees :one
 SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
 
@@ -500,3 +424,22 @@ VALUES ('', '', '', '');
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
+
+-- name: InsertAsset :exec
+INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
+VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
+
+-- name: InsertAssetMetadataUpdateByTx :exec
+INSERT INTO asset_metadata_update (fk_asset_id, fk_txid, metadata_hash)
+VALUES (@fk_asset_id, @fk_txid, @metadata_hash);
+
+-- name: InsertAssetMetadataUpdateByIntent :exec
+INSERT INTO asset_metadata_update (fk_asset_id, fk_intent_txid, metadata_hash)
+VALUES (@fk_asset_id, @fk_intent_txid, @metadata_hash);
+
+-- name: InsertVtxoAssetProjection :exec
+INSERT INTO asset_projection (fk_asset_id, fk_vtxo_txid, fk_vtxo_vout, amount, type)
+VALUES (@fk_asset_id, @fk_vtxo_txid, @fk_vtxo_vout, @amount, 'local');
+
+-- name: SelectAssetsByIds :many
+SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
