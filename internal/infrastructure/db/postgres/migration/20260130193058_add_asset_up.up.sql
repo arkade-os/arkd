@@ -1,10 +1,9 @@
 CREATE TABLE IF NOT EXISTS asset (
-    id TEXT NOT NULL,
+    id TEXT NOT NULL PRIMARY KEY,
     is_immutable BOOLEAN NOT NULL,
     metadata_hash TEXT,
     metadata JSONB,
     control_asset_id TEXT,
-    PRIMARY KEY (id),
     FOREIGN KEY (control_asset_id) REFERENCES asset(id)
 );
 
