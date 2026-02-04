@@ -276,18 +276,18 @@ func getAssetsFromTx(ptx *psbt.Packet) (map[uint32][]domain.AssetDenomination, e
 	}
 
 	assetDenominations := make(map[uint32][]domain.AssetDenomination)
-	for _, a := range assets {
-		for _, out := range a.Outputs {
+	for grpIndex, ast := range assets {
+		for _, out := range ast.Outputs {
 			var assetId string
 			// In case of issuance, the asset id is empty and we derive it from the txid and vout
-			if a.AssetId == nil {
-				id, err := asset.NewAssetId(ptx.UnsignedTx.TxID(), out.Vout)
+			if ast.AssetId == nil {
+				id, err := asset.NewAssetId(ptx.UnsignedTx.TxID(), uint16(grpIndex))
 				if err != nil {
 					return nil, fmt.Errorf("failed to compute asset id: %s", err)
 				}
 				assetId = id.String()
 			} else {
-				assetId = a.AssetId.String()
+				assetId = ast.AssetId.String()
 			}
 			assetDenominations[uint32(out.Vout)] = append(
 				assetDenominations[uint32(out.Vout)], domain.AssetDenomination{

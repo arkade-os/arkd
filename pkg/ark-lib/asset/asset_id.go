@@ -32,7 +32,11 @@ func NewAssetId(txid string, index uint16) (*AssetId, error) {
 			"invalid txid length, got %d want %d", len(txid), chainhash.HashSize,
 		)
 	}
-	assetId := AssetId{Txid: chainhash.Hash(buf), Index: index}
+	txHash, err := chainhash.NewHashFromStr(txid)
+	if err != nil {
+		return nil, err
+	}
+	assetId := AssetId{Txid: *txHash, Index: index}
 	if err := assetId.validate(); err != nil {
 		return nil, err
 	}
