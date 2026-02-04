@@ -11,21 +11,17 @@ import (
 )
 
 type Asset struct {
-	GenesisTxid            string
-	GenesisGroupIndex      int64
-	IsImmutable            bool
-	MetadataHash           sql.NullString
-	Metadata               pqtype.NullRawMessage
-	ControlAssetID         sql.NullString
-	ControlAssetGroupIndex sql.NullInt64
+	ID             string
+	IsImmutable    bool
+	MetadataHash   sql.NullString
+	Metadata       pqtype.NullRawMessage
+	ControlAssetID sql.NullString
 }
 
 type AssetMetadataUpdate struct {
 	ID           int64
 	FkAssetID    string
-	FkAssetIndex string
 	FkIntentTxid sql.NullString
-	FkIntentVout sql.NullInt64
 	FkTxid       sql.NullString
 	MetadataHash string
 }
@@ -36,7 +32,6 @@ type AssetProjection struct {
 	FkIntentTxid sql.NullString
 	FkIntentVout sql.NullInt64
 	FkAssetID    string
-	FkAssetIndex string
 	FkVtxoTxid   sql.NullString
 	FkVtxoVout   sql.NullInt64
 	Amount       int64
@@ -97,10 +92,13 @@ type IntentWithInputsVw struct {
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
 	Commitments    []byte
+	AssetID        sql.NullString
+	AssetAmount    sql.NullInt64
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	IntentTxid     sql.NullString
 }
 
 type IntentWithReceiversVw struct {
@@ -269,7 +267,7 @@ type VtxoVw struct {
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      int64
-	Commitments    interface{}
-	FkAssetID      sql.NullString
-	FkAssetIndex   sql.NullString
+	Commitments    []byte
+	AssetID        string
+	AssetAmount    int64
 }
