@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -702,7 +701,6 @@ func getAssetsFromTxOuts(
 					return nil, nil, fmt.Errorf("failed to compute asset id: %w", err)
 				}
 				var controlAssetId string
-				isIssuance := len(ast.Inputs) <= 0
 				if ast.ControlAsset != nil {
 					// If the issued asset has a control one ref by group index this is an issuance
 					if ast.ControlAsset.Type == asset.AssetRefByGroup {
@@ -712,26 +710,20 @@ func getAssetsFromTxOuts(
 								"failed to compute control asset id: %w", err,
 							)
 						}
-						isIssuance = true
 						controlAssetId = id.String()
 					} else {
 						// If the control asset is ref by id, this is an issuance only if the
 						// control asset is not included in the packet, that would mean reissuance
 						controlAssetId = ast.ControlAsset.AssetId.String()
-						isIssuance = !slices.ContainsFunc(assets, func(ast asset.AssetGroup) bool {
-							return ast.AssetId == &ast.ControlAsset.AssetId
-						})
 					}
 				}
 				assetId = id.String()
-				if isIssuance {
-					issuances = append(issuances, domain.Asset{
-						Id:             assetId,
-						Immutable:      ast.Immutable,
-						ControlAssetId: controlAssetId,
-						Metadata:       ast.Metadata,
-					})
-				}
+				issuances = append(issuances, domain.Asset{
+					Id:             assetId,
+					Immutable:      ast.Immutable,
+					ControlAssetId: controlAssetId,
+					Metadata:       ast.Metadata,
+				})
 			} else {
 				assetId = ast.AssetId.String()
 			}

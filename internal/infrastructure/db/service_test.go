@@ -1757,6 +1757,7 @@ func roundsMatch(t *testing.T, expected, got domain.Round) {
 
 		require.ElementsMatch(t, v.Receivers, gotValue.Receivers)
 		require.ElementsMatch(t, v.Inputs, gotValue.Inputs)
+		require.Equal(t, v.Txid, gotValue.Txid)
 		require.Equal(t, v.Proof, gotValue.Proof)
 		require.Equal(t, v.Message, gotValue.Message)
 	}
@@ -1887,5 +1888,6 @@ func checkVtxos(t *testing.T, expectedVtxos, gotVtxos []domain.Vtxo) {
 		require.Exactly(t, expected.SpentBy, v.SpentBy)
 		require.Exactly(t, expected.Swept, v.Swept)
 		require.ElementsMatch(t, expected.CommitmentTxids, v.CommitmentTxids)
+		require.ElementsMatch(t, expected.Assets, v.Assets)
 	}
 }

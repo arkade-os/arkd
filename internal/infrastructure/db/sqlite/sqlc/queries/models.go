@@ -108,6 +108,7 @@ type IntentWithReceiversVw struct {
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	Txid           sql.NullString
 }
 
 type OffchainTx struct {
@@ -161,6 +162,7 @@ type RoundIntentsVw struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type RoundTxsVw struct {

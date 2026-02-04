@@ -1,8 +1,22 @@
-ALTER TABLE intent
-ADD COLUMN txid TEXT;
+ALTER TABLE intent ADD COLUMN txid TEXT;
 
+DROP VIEW IF EXISTS round_intents_vw;
+DROP VIEW IF EXISTS intent_with_receivers_vw;
 DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
+
+CREATE VIEW round_intents_vw AS
+SELECT intent.*
+FROM round
+LEFT OUTER JOIN intent
+ON round.id=intent.round_id;
+
+CREATE VIEW intent_with_receivers_vw AS
+SELECT receiver.*, intent.*
+FROM intent
+LEFT OUTER JOIN receiver
+ON intent.id=receiver.intent_id;
+
 CREATE VIEW vtxo_vw AS
 SELECT v.*, COALESCE(group_concat(vc.commitment_txid), '') AS commitments
 FROM vtxo v
