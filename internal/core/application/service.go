@@ -944,7 +944,7 @@ func (s *service) SubmitOffchainTx(
 			}
 			foundOpReturn = true
 
-			// validate asset packet if present
+			// if the OP_RETURN is asset packet, add it to outputs list and skip other checks related to vtxo
 			if asset.IsAssetPacket(out.PkScript) {
 				outputs = append(outputs, out)
 				continue
