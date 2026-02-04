@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -22,8 +22,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -461,7 +459,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	}
 
 	spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
-	newVtxos, newAssetAnchors := getNewVtxosFromRound(round)
+	newVtxos := getNewVtxosFromRound(*round, s.txDecoder)
 
 	if len(spentVtxos) > 0 {
 		for {
@@ -488,20 +486,6 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 			break
 		}
 
-	}
-
-	// can we get rid of this if AddVtxos handles asset projection updates?
-	if len(newAssetAnchors) > 0 {
-		for _, anchor := range newAssetAnchors {
-			if err := s.assetStore.InsertAssetAnchor(ctx, anchor); err != nil {
-				log.WithError(err).Warn("failed to add new asset anchors, retrying soon")
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-
-			log.Debugf("added %d new asset anchors", len(newAssetAnchors))
-			break
-		}
 	}
 }
 
@@ -543,84 +527,29 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			return
 		}
 
+		issuances, assets, err := getAssetsFromTxOuts(txid, outs)
+		if err != nil {
+			log.WithError(err).Warn("failed to get assets from tx")
+		}
+
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
-		assetMapped := make(map[uint32][]domain.Asset)
 		for outIndex, out := range outs {
-			var isSubDust bool
-			var pubKey []byte
-
 			// ignore anchors
-			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+				asset.IsAssetPacket(out.PkScript) {
 				continue
 			}
 
-			// ignore asset anchor
-			if asset.IsAssetPacket(out.PkScript) {
-				txOut := wire.TxOut{
-					Value:    int64(out.Amount),
-					PkScript: out.PkScript,
-				}
-
-				packet, err := asset.NewPacketFromTxOut(txOut)
-				if err != nil {
-					log.WithError(err).Warn("failed to decode asset group from opret")
-					continue
-				}
-
-				if len(packet) > 0 {
-					for i, grp := range packet {
-						var assetId string
-						if grp.AssetId == nil {
-							txhash, err := chainhash.NewHashFromStr(txid)
-							if err != nil {
-								log.WithError(err).Warn("failed to generate asset id from txid")
-								continue
-							}
-
-							assetId = asset.AssetId{
-								Txid:  *txhash,
-								Index: uint16(i),
-							}.String()
-						} else {
-							assetId = grp.AssetId.String()
-						}
-
-						for _, assetOut := range grp.Outputs {
-							assetMapped[uint32(assetOut.Vout)] = append(
-								assetMapped[uint32(assetOut.Vout)],
-								domain.Asset{
-									AssetID: assetId,
-									// Amount:  uint64(assetOut.Amount),
-								},
-							)
-						}
-					}
-				}
-				continue
-			}
-
-			if !isSubDust && script.IsSubDustScript(out.PkScript) {
-				isSubDust = true
-				pubKey = out.PkScript[2:]
-			}
-
-			if !isSubDust {
-				vtxoTapKey, err := schnorr.ParsePubKey(out.PkScript[2:])
-				if err != nil {
-					log.WithError(err).Warn("failed to parse vtxo tap key")
-					continue
-				}
-				pubKey = schnorr.SerializePubKey(vtxoTapKey)
-			}
+			isDust := script.IsSubDustScript(out.PkScript)
 
 			newVtxos = append(newVtxos, domain.Vtxo{
 				Outpoint: domain.Outpoint{
 					Txid: txid,
 					VOut: uint32(outIndex),
 				},
-				PubKey:             hex.EncodeToString(pubKey),
+				PubKey:             hex.EncodeToString(out.PkScript[2:]),
 				Amount:             uint64(out.Amount),
 				ExpiresAt:          offchainTx.ExpiryTimestamp,
 				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
@@ -630,34 +559,31 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-				Swept: isSubDust,
-				// add new asset info we extract here ( I think this is already covered in the loop right below this?)
+				Swept:  isDust,
+				Assets: assets[uint32(outIndex)],
 			})
 		}
 
-		// map assets to vtxos
-		for i, newVtxo := range newVtxos {
-			if assets, found := assetMapped[newVtxo.VOut]; found {
-				newVtxos[i].Assets = assets
+		if len(issuances) > 0 {
+			assetsByTx := map[string][]domain.Asset{
+				offchainTx.ArkTxid: issuances,
 			}
-		}
-
-		// store assets if they are an issuance (how can we tell if issuance?)
-		for _, a := range assetMapped {
-			_, err := s.assetStore.AddAssets(ctx, a)
+			count, err := s.assetStore.AddAssets(ctx, assetsByTx, nil)
 			if err != nil {
-				log.WithError(err).Warn("failed to add asset issuances for offchain tx")
+				log.WithError(err).Warnf(
+					"failed to add issued assets in offchain tx %s", offchainTx.ArkTxid,
+				)
 				return
 			}
+			if count > 0 {
+				log.Infof("added %d issued assets", count)
+			}
 		}
 
-		// this will take care of adding new asset_projection rows here
 		if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
 			log.WithError(err).Warn("failed to add vtxos")
 			return
 		}
-		// extra logic for updating the asset tables goes here
-
 		log.Debugf("added %d vtxos", len(newVtxos))
 	}
 }
@@ -693,47 +619,31 @@ func getSpentVtxoKeysFromRound(
 	return spentVtxos
 }
 
-func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnchor) {
+func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domain.Vtxo {
 	if len(round.VtxoTree) <= 0 {
-		return nil, nil
+		return nil
 	}
 
-	totalVtxos := make([]domain.Vtxo, 0)
-	totolAssetAnchors := make([]domain.AssetAnchor, 0)
-
+	vtxos := make([]domain.Vtxo, 0)
 	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
-		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
+		txid, _, outs, err := txDecoder.DecodeTx(node.Tx)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
 		}
 
-		assetsMap := make(map[uint32]domain.Asset, 0)
-		assetAnchorIndex := -1
+		// TODO: This works but, actually, we must retrieve the asset packet from the intent
+		// related to this leaf tx so we decode that tx
+		_, assets, err := getAssetsFromTxOuts(txid, outs)
+		if err != nil {
+			log.WithError(err).Warn("failed to get assets from tx")
+			continue
+		}
 
-		vtxos := make([]domain.Vtxo, 0)
-		for i, out := range tx.UnsignedTx.TxOut {
+		for i, out := range outs {
 			// ignore anchors
-			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
-				continue
-			}
-
-			if asset.IsAssetPacket(out.PkScript) {
-				decodedAssetPacket, err := asset.NewPacketFromTxOut(*out)
-				if err != nil {
-					log.WithError(err).Warn("failed to decode asset packet")
-					continue
-				}
-				assetAnchorIndex = i
-
-				for _, asst := range decodedAssetPacket {
-					for _, out := range asst.Outputs {
-						assetsMap[uint32(out.Vout)] = domain.Asset{
-							AssetID: asst.AssetId.String(),
-							// Amount:  uint64(out.Amount),
-						}
-					}
-				}
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+				asset.IsAssetPacket(out.PkScript) {
 				continue
 			}
 
@@ -745,48 +655,95 @@ func getNewVtxosFromRound(round *domain.Round) ([]domain.Vtxo, []domain.AssetAnc
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
 			vtxos = append(vtxos, domain.Vtxo{
-				Outpoint:           domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
+				Outpoint:           domain.Outpoint{Txid: txid, VOut: uint32(i)},
 				PubKey:             vtxoPubkey,
-				Amount:             uint64(out.Value),
+				Amount:             out.Amount,
 				CommitmentTxids:    []string{round.CommitmentTxid},
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          round.EndingTimestamp,
 				ExpiresAt:          round.ExpiryTimestamp(),
-				// add asset info here
+				Assets:             assets[uint32(i)],
 			})
 		}
+	}
+	return vtxos
+}
 
-		if assetAnchorIndex > -1 {
-			assetAnchor := domain.AssetAnchor{
-				Outpoint: domain.Outpoint{
-					Txid: tx.UnsignedTx.TxID(),
-					VOut: uint32(assetAnchorIndex),
-				},
+func getAssetsFromTxOuts(
+	txid string, txOuts []ports.TxOut,
+) ([]domain.Asset, map[uint32][]domain.AssetDenomination, error) {
+	var assets asset.Packet
+	for _, out := range txOuts {
+		if asset.IsAssetPacket(out.PkScript) {
+			packet, err := asset.NewPacketFromTxOut(wire.TxOut{
+				Value:    int64(out.Amount),
+				PkScript: out.PkScript,
+			})
+			if err != nil {
+				return nil, nil, err
 			}
+			assets = packet
+			break
+		}
+	}
+	if len(assets) <= 0 {
+		return nil, nil, nil
+	}
 
-			normalAssets := make([]domain.NormalAsset, 0)
-
-			if len(assetsMap) > 0 {
-				for i, vtxo := range vtxos {
-					if asset, found := assetsMap[vtxo.VOut]; found {
-						vtxos[i].Assets = []domain.Asset{asset}
-
-						normalAssets = append(normalAssets, domain.NormalAsset{
-							Outpoint: vtxo.Outpoint,
-							// Amount:   asset.Amount,
-							AssetID: asset.AssetID,
+	issuances := make([]domain.Asset, 0)
+	assetDenominations := make(map[uint32][]domain.AssetDenomination)
+	for _, a := range assets {
+		for _, out := range a.Outputs {
+			var assetId string
+			// If asset id is not present this might be an issuance
+			if a.AssetId == nil {
+				id, err := asset.NewAssetId(txid, out.Vout)
+				if err != nil {
+					return nil, nil, fmt.Errorf("failed to compute asset id: %w", err)
+				}
+				var controlAssetId string
+				isIssuance := len(a.Inputs) <= 0
+				if a.ControlAsset != nil {
+					// If the issued asset has a control one ref by group index this is an issuance
+					if a.ControlAsset.Type == asset.AssetRefByGroup {
+						id, err := asset.NewAssetId(txid, assets[a.ControlAsset.GroupIndex].Outputs[0].Vout)
+						if err != nil {
+							return nil, nil, fmt.Errorf(
+								"failed to compute control asset id: %w", err,
+							)
+						}
+						isIssuance = true
+						controlAssetId = id.String()
+					} else {
+						// If the control asset is ref by id, this is an issuance only if the
+						// control asset is not included in the packet, that means reissuance
+						controlAssetId = a.ControlAsset.AssetId.String()
+						isIssuance = !slices.ContainsFunc(assets, func(ast asset.AssetGroup) bool {
+							return ast.AssetId == &a.ControlAsset.AssetId
 						})
 					}
 				}
+				assetId = id.String()
+				if isIssuance {
+					issuances = append(issuances, domain.Asset{
+						Id:             assetId,
+						Immutable:      a.Immutable,
+						ControlAssetId: controlAssetId,
+						Metadata:       a.Metadata,
+					})
+				}
+			} else {
+				assetId = a.AssetId.String()
 			}
-
-			assetAnchor.Assets = normalAssets
-			totolAssetAnchors = append(totolAssetAnchors, assetAnchor)
+			assetDenominations[uint32(out.Vout)] = append(
+				assetDenominations[uint32(out.Vout)], domain.AssetDenomination{
+					AssetId: assetId,
+					Amount:  out.Amount,
+				},
+			)
 		}
-
-		totalVtxos = append(totalVtxos, vtxos...)
 	}
-	return totalVtxos, totolAssetAnchors
+	return issuances, assetDenominations, nil
 }
 
 func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {
