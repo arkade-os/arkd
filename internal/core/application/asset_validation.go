@@ -164,7 +164,7 @@ func (m *controlAssetMachine) validateIssuance(s *service) error {
 		}
 	case asset.AssetRefByID:
 		controlAssetIDStr := m.asset.ControlAsset.AssetId.String()
-		assetGroup, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, controlAssetIDStr)
+		assetGroup, err := s.repoManager.Assets().GetAssets(m.ctx, []string{controlAssetIDStr})
 		if err != nil {
 			return errors.CONTROL_ASSET_INVALID.New(
 				"error retrieving control asset %s for issuance: %w",
@@ -203,17 +203,17 @@ func (m *controlAssetMachine) validateReissuance(s *service) error {
 	}
 
 	assetID := m.asset.AssetId.String()
-	controlAssetDetails, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, assetID)
+	controlAssetDetails, err := s.repoManager.Assets().GetAssets(m.ctx, []string{assetID})
 	if err != nil {
 		return errors.ASSET_VALIDATION_FAILED.New("error retrieving asset %s: %w", assetID, err).
 			WithMetadata(errors.AssetValidationMetadata{AssetID: assetID})
 	}
-	if controlAssetDetails == nil {
+	if len(controlAssetDetails) <= 0 {
 		return errors.ASSET_NOT_FOUND.New("asset %s does not exist", assetID).
 			WithMetadata(errors.AssetValidationMetadata{AssetID: assetID})
 	}
 
-	controlAssetId := controlAssetDetails.ControlAssetID
+	controlAssetId := controlAssetDetails[0].ControlAssetId
 	if controlAssetId == "" {
 		return errors.CONTROL_ASSET_INVALID.New("asset %s does not have a control asset", assetID).
 			WithMetadata(errors.ControlAssetMetadata{AssetID: assetID})
@@ -280,7 +280,7 @@ func (m *assetGroupValidationMachine) run(s *service) error {
 		case assetGroupValidateExists:
 			if grpAsset.AssetId != nil {
 				assetID := grpAsset.AssetId.String()
-				gp, err := s.repoManager.Assets().GetAssetGroupByID(m.ctx, assetID)
+				gp, err := s.repoManager.Assets().GetAssets(m.ctx, []string{assetID})
 				if err != nil {
 					return errors.ASSET_VALIDATION_FAILED.New(
 						"error retrieving asset group %s: %w",

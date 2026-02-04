@@ -911,7 +911,6 @@ func (s *service) SubmitOffchainTx(
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	foundOpReturn := false
-	assetOutputIndex := -1
 	var rebuiltArkTx *psbt.Packet
 	var rebuiltCheckpointTxs []*psbt.Packet
 
@@ -932,7 +931,6 @@ func (s *service) SubmitOffchainTx(
 			}
 
 			outputs = append(outputs, out)
-			assetOutputIndex = outIndex
 			continue
 		}
 
@@ -1124,16 +1122,6 @@ func (s *service) SubmitOffchainTx(
 
 	// apply Accepted event only after verifying the spent vtxos
 	changes = append(changes, change)
-
-	if assetOutputIndex >= 0 {
-		if err := s.storeAssetDetailsFromArkTx(
-			ctx, *arkPtx.UnsignedTx, assetOutputIndex,
-		); err != nil {
-			log.WithError(err).Errorf(
-				"failed to store asset details for offchain tx %s", txid,
-			)
-		}
-	}
 
 	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
@@ -1517,7 +1505,7 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
-	assetInputMap := make(map[uint16][]domain.Asset)
+	assetInputMap := make(map[uint16][]domain.AssetDenomination)
 
 	hasOffChainReceiver := false
 	receivers := make([]domain.Receiver, 0)
@@ -1527,7 +1515,6 @@ func (s *service) RegisterIntent(
 	var assetPacket asset.Packet
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
-
 		if asset.IsAssetPacket(output.PkScript) {
 			assetPacket, err = asset.NewPacketFromTxOut(*output)
 			if err != nil {
@@ -1550,16 +1537,17 @@ func (s *service) RegisterIntent(
 			}
 
 			// build asset input map for indexing asset vtxos
-			for _, grp := range assetPacket {
-				for _, input := range grp.Inputs {
+			for _, asset := range assetPacket {
+				for _, input := range asset.Inputs {
 					if _, ok := assetInputMap[input.Vin]; !ok {
-						assetInputMap[input.Vin] = make([]domain.Asset, 0)
+						assetInputMap[input.Vin] = make([]domain.AssetDenomination, 0)
 					}
 
-					assetInputMap[input.Vin] = append(assetInputMap[input.Vin], domain.Asset{
-						// Amount:  input.Amount,
-						AssetID: grp.AssetId.String(),
-					})
+					assetInputMap[input.Vin] = append(
+						assetInputMap[input.Vin], domain.AssetDenomination{
+							Amount:  input.Amount,
+							AssetId: asset.AssetId.String(),
+						})
 				}
 			}
 
@@ -3975,7 +3963,9 @@ func (s *service) processBoardingInputs(
 			tx, input.Input, s.signerPubkey, s.boardingExitDelay, s.allowCSVBlockType,
 		)
 		if err != nil {
-			return nil, err
+			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).WithMetadata(
+				errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)},
+			)
 		}
 
 		boardingInputs = append(boardingInputs, *boardingInput)
@@ -4269,143 +4259,4 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
-}
-
-func (s *service) storeAssetDetailsFromArkTx(
-	ctx context.Context,
-	arkTx wire.MsgTx,
-	assetPacketIndex int,
-) error {
-	assetPacket, err := asset.NewPacketFromTxOut(*arkTx.TxOut[assetPacketIndex])
-	if err != nil {
-		return fmt.Errorf("error decoding asset from opreturn: %s", err)
-	}
-
-	if err := s.storeAssetGroups(ctx, assetPacketIndex, assetPacket, arkTx); err != nil {
-		return err
-	}
-
-	return nil
-
-}
-
-func (s *service) storeAssetGroups(
-	ctx context.Context,
-	assetPacketIndex int,
-	assetGroupList []asset.AssetGroup,
-	arkTx wire.MsgTx,
-) error {
-	anchorPoint := domain.Outpoint{
-		Txid: arkTx.TxID(),
-		VOut: uint32(assetPacketIndex),
-	}
-
-	assetList := make([]domain.NormalAsset, 0)
-
-	for i, asstGp := range assetGroupList {
-		totalOut := sumAssetOutputs(asstGp.Outputs)
-
-		metadataList := assetMetadataFromGroup(asstGp.Metadata)
-
-		assetId := asstGp.AssetId
-
-		// For Issuance
-		if assetId == nil {
-			var controlAsset string
-			txHash := arkTx.TxHash()
-			var txHashBytes [32]byte
-			copy(txHashBytes[:], txHash[:])
-
-			assetId := asset.AssetId{
-				Txid:  txHashBytes,
-				Index: uint16(i),
-			}
-
-			if asstGp.ControlAsset != nil {
-				switch asstGp.ControlAsset.Type {
-				case asset.AssetRefByID:
-					controlAsset = asstGp.ControlAsset.AssetId.String()
-				case asset.AssetRefByGroup:
-					controlAsset = asset.AssetId{
-						Txid:  txHashBytes,
-						Index: asstGp.ControlAsset.GroupIndex,
-					}.String()
-				}
-			}
-
-			err := s.repoManager.Assets().InsertAssetGroup(ctx, domain.AssetGroup{
-				ID:             assetId.String(),
-				Quantity:       totalOut,
-				Immutable:      asstGp.Immutable,
-				Metadata:       metadataList,
-				ControlAssetID: controlAsset,
-			})
-			if err != nil {
-				return fmt.Errorf("error storing new asset: %s", err)
-			}
-
-			log.Infof("stored new asset with id %s and total quantity %d",
-				assetId.String(),
-				totalOut,
-			)
-
-			for _, out := range asstGp.Outputs {
-				if out.Type == asset.AssetTypeIntent {
-					continue
-				}
-
-				asst := domain.NormalAsset{
-					Outpoint: domain.Outpoint{
-						Txid: arkTx.TxID(),
-						VOut: uint32(out.Vout),
-					},
-					AssetID: assetId.String(),
-					Amount:  out.Amount,
-				}
-				assetList = append(assetList, asst)
-			}
-
-			continue
-		}
-
-		assetGp, err := s.repoManager.Assets().GetAssetGroupByID(ctx, assetId.String())
-		if err != nil {
-			return fmt.Errorf("error retrieving asset data: %s", err)
-		}
-		if assetGp == nil {
-			return fmt.Errorf("asset with id %s not found for update", assetId.String())
-		}
-
-		for _, out := range asstGp.Outputs {
-			asst := domain.NormalAsset{
-				Outpoint: domain.Outpoint{
-					Txid: arkTx.TxID(),
-					VOut: uint32(out.Vout),
-				},
-				AssetID: assetId.String(),
-				Amount:  out.Amount,
-			}
-			assetList = append(assetList, asst)
-		}
-	}
-
-	if err := s.repoManager.Assets().InsertAssetAnchor(ctx, domain.AssetAnchor{
-		Outpoint: anchorPoint,
-		Assets:   assetList,
-	}); err != nil {
-		return fmt.Errorf("error storing asset anchor: %s", err)
-	}
-
-	return nil
-}
-
-func assetMetadataFromGroup(metadata []asset.Metadata) []domain.AssetMetadata {
-	metadataList := make([]domain.AssetMetadata, 0, len(metadata))
-	for _, meta := range metadata {
-		metadataList = append(metadataList, domain.AssetMetadata{
-			Key:   string(meta.Key),
-			Value: string(meta.Value),
-		})
-	}
-	return metadataList
 }
