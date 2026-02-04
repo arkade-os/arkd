@@ -114,8 +114,7 @@ func validateIssuance(ctx context.Context, packet Packet, grp AssetGroup, assetS
 	}
 
 	if grp.ControlAsset.Type == AssetRefByID {
-		// by id means the control asset is an existing asset
-		// no need to validate anything, not the operator's responsibility if you specify non existent asset id
+		// by id means the control asset is an existing asset, so we need to check if it exists
 		if !assetSrc.AssetExists(ctx, grp.ControlAsset.AssetId.String()) {
 			return errors.ASSET_VALIDATION_FAILED.New("control asset %s does not exist", grp.ControlAsset.AssetId.String()).
 				WithMetadata(errors.AssetValidationMetadata{AssetID: grp.ControlAsset.AssetId.String()})
