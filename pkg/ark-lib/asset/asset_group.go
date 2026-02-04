@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
 const (
@@ -185,6 +187,20 @@ func (ag AssetGroup) serialize(w io.Writer) error {
 	}
 
 	return nil
+}
+
+func (ag AssetGroup) toBatchLeafAssetGroup(intentTxid chainhash.Hash) AssetGroup {
+	return AssetGroup{
+		AssetId: ag.AssetId,
+		Outputs: ag.Outputs,
+		Immutable: ag.Immutable,
+		ControlAsset: ag.ControlAsset,
+		Metadata: ag.Metadata,
+		Inputs: []AssetInput{{
+			Type: AssetTypeIntent,
+			Txid: intentTxid,
+		}},
+	}
 }
 
 func newAssetGroupFromReader(r *bytes.Reader) (*AssetGroup, error) {

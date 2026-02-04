@@ -7,11 +7,15 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
-// Leaf represents the output of a leaf transaction.
+// LeafOutput represents the output of a leaf transaction.
+type LeafOutput struct {
+	Amount    uint64
+	Script string
+}
+
+// Leaf represents the level of vtxo tree.
 type Leaf struct {
-	Script              string
-	ExtensionScript     []byte
-	Amount              uint64
+	Outputs             []LeafOutput
 	CosignersPublicKeys []string
 }
 

@@ -1505,197 +1505,6 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
-	assetInputMap := make(map[uint16][]domain.AssetDenomination)
-
-	hasOffChainReceiver := false
-	receivers := make([]domain.Receiver, 0)
-	onchainOutputs := make([]wire.TxOut, 0)
-	offchainOutputs := make([]wire.TxOut, 0)
-
-	var assetPacket asset.Packet
-
-	for outputIndex, output := range proof.UnsignedTx.TxOut {
-		if asset.IsAssetPacket(output.PkScript) {
-			assetPacket, err = asset.NewPacketFromTxOut(*output)
-			if err != nil {
-				return "", errors.INVALID_INTENT_PROOF.New(
-					"failed to decode asset packet: %w", err,
-				).WithMetadata(errors.InvalidIntentProofMetadata{
-					Proof:   encodedProof,
-					Message: encodedMessage,
-				})
-			}
-
-			// validate asset
-			err := s.validateAssetTransition(ctx, *proof.UnsignedTx, nil, *output)
-			if err != nil {
-				return "", errors.INVALID_INTENT_PROOF.New("failed to validate asset transition: %w", err).
-					WithMetadata(errors.InvalidIntentProofMetadata{
-						Proof:   encodedProof,
-						Message: encodedMessage,
-					})
-			}
-
-			// build asset input map for indexing asset vtxos
-			for _, asset := range assetPacket {
-				for _, input := range asset.Inputs {
-					if _, ok := assetInputMap[input.Vin]; !ok {
-						assetInputMap[input.Vin] = make([]domain.AssetDenomination, 0)
-					}
-
-					assetInputMap[input.Vin] = append(
-						assetInputMap[input.Vin], domain.AssetDenomination{
-							Amount:  input.Amount,
-							AssetId: asset.AssetId.String(),
-						})
-				}
-			}
-
-			continue
-		}
-
-		amount := uint64(output.Value)
-		rcv := domain.Receiver{
-			Amount:     amount,
-			IntentVout: outputIndex,
-		}
-
-		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
-		if isOnchainOutput {
-			if s.utxoMaxAmount >= 0 {
-				if amount > uint64(s.utxoMaxAmount) {
-					return "", errors.AMOUNT_TOO_HIGH.New(
-						"output %d amount is higher than max utxo amount: %d",
-						outputIndex,
-						s.utxoMaxAmount,
-					).WithMetadata(errors.AmountTooHighMetadata{
-						OutputIndex: outputIndex,
-						Amount:      int(amount),
-						MaxAmount:   int(s.utxoMaxAmount),
-					})
-				}
-			}
-			if amount < uint64(s.utxoMinAmount) {
-				return "", errors.AMOUNT_TOO_LOW.New(
-					"output %d amount is lower than min utxo amount: %d",
-					outputIndex,
-					s.utxoMinAmount,
-				).WithMetadata(errors.AmountTooLowMetadata{
-					OutputIndex: outputIndex,
-					Amount:      int(amount),
-					MinAmount:   int(s.utxoMinAmount),
-				})
-			}
-
-			chainParams := s.chainParams()
-			if chainParams == nil {
-				return "", errors.INTERNAL_ERROR.New("unsupported network: %s", s.network.Name).
-					WithMetadata(map[string]any{
-						"network": s.network.Name,
-					})
-			}
-			scriptType, addrs, _, err := txscript.ExtractPkScriptAddrs(
-				output.PkScript, chainParams,
-			)
-			if err != nil {
-				return "", errors.INVALID_PKSCRIPT.New(
-					"failed to get onchain address from script of output %d: %w", outputIndex, err,
-				).WithMetadata(errors.InvalidPkScriptMetadata{
-					Script: hex.EncodeToString(output.PkScript),
-				})
-			}
-
-			if len(addrs) == 0 {
-				return "", errors.INVALID_PKSCRIPT.New(
-					"invalid script type for output %d: %s", outputIndex, scriptType,
-				).WithMetadata(errors.InvalidPkScriptMetadata{
-					Script: hex.EncodeToString(output.PkScript),
-				})
-			}
-
-			rcv.OnchainAddress = addrs[0].EncodeAddress()
-			onchainOutputs = append(onchainOutputs, *output)
-		} else {
-			if s.vtxoMaxAmount >= 0 {
-				if amount > uint64(s.vtxoMaxAmount) {
-					return "", errors.AMOUNT_TOO_HIGH.New(
-						"output %d amount is higher than max vtxo amount: %d",
-						outputIndex, s.vtxoMaxAmount,
-					).WithMetadata(errors.AmountTooHighMetadata{
-						OutputIndex: outputIndex,
-						Amount:      int(amount),
-						MaxAmount:   int(s.vtxoMaxAmount),
-					})
-				}
-			}
-			if amount < uint64(s.vtxoMinSettlementAmount) {
-				return "", errors.AMOUNT_TOO_LOW.New(
-					"output %d amount is lower than min vtxo amount: %d",
-					outputIndex, s.vtxoMinSettlementAmount,
-				).WithMetadata(errors.AmountTooLowMetadata{
-					OutputIndex: outputIndex,
-					Amount:      int(amount),
-					MinAmount:   int(s.vtxoMinSettlementAmount),
-				})
-			}
-
-			hasOffChainReceiver = true
-			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
-		}
-
-		receivers = append(receivers, rcv)
-		offchainOutputs = append(offchainOutputs, *output)
-	}
-
-	// add asset packet to asset receivers
-	if assetPacket != nil {
-		for i := range receivers {
-			assetGroupList := make([]asset.AssetGroup, 0)
-
-			for _, grp := range assetPacket {
-
-				for _, out := range grp.Outputs {
-					if uint32(receivers[i].IntentVout) == uint32(out.Vout) {
-
-						assetGrp := asset.AssetGroup{
-							AssetId: grp.AssetId,
-
-							Inputs: []asset.AssetInput{{
-								Type:   asset.AssetTypeIntent,
-								Amount: out.Amount,
-								Txid:   proof.UnsignedTx.TxHash(),
-								Vin:    out.Vout,
-							}},
-
-							Outputs: []asset.AssetOutput{{
-								Type:   asset.AssetTypeLocal,
-								Amount: out.Amount,
-								Vout:   0,
-							}},
-						}
-
-						assetGroupList = append(assetGroupList, assetGrp)
-
-						break
-					}
-				}
-			}
-
-			if len(assetGroupList) > 0 {
-				newAssetPacket := asset.Packet(assetGroupList)
-				encodedPacket, err := newAssetPacket.TxOut()
-				if err != nil {
-					return "", errors.INTERNAL_ERROR.New("failed to encode asset packet").
-						WithMetadata(map[string]any{"error": err.Error()})
-				}
-
-				receivers[i].AssetPacket = encodedPacket.PkScript
-
-			}
-		}
-
-	}
-
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
 			return "", errors.INVALID_INTENT_PROOF.New(
@@ -1788,14 +1597,6 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
-
-		// verify asset input if present
-		// +1 to account for proof fake input at index 0
-		if assetInputList, ok := assetInputMap[uint16(i+1)]; ok {
-			vtxo.Assets = assetInputList
-
-		}
-
 		if err := s.checkIfBanned(ctx, vtxo); err != nil {
 			return "", errors.VTXO_BANNED.Wrap(err).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
@@ -1919,16 +1720,6 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	intent, err := domain.NewIntent(proofTxid, signedProof, encodedMessage, vtxoInputs)
-	if err != nil {
-		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
-			WithMetadata(map[string]any{
-				"proof":       signedProof,
-				"message":     encodedMessage,
-				"vtxo_inputs": vtxoInputs,
-			})
-	}
-
 	// reject if proof does not specify outputs
 	// TODO remove if blinded credentials are supported
 	if !proof.ContainsOutputs() {
@@ -1937,6 +1728,109 @@ func (s *service) RegisterIntent(
 				Proof:   signedProof,
 				Message: encodedMessage,
 			})
+	}
+
+	hasOffChainReceiver, hasAssetPacket := false, false
+	receivers := make([]domain.Receiver, 0)
+	onchainOutputs := make([]wire.TxOut, 0)
+	offchainOutputs := make([]wire.TxOut, 0)
+
+	for outputIndex, output := range proof.UnsignedTx.TxOut {
+		if asset.IsAssetPacket(output.PkScript) {
+			hasAssetPacket = true
+			continue
+		}
+
+		amount := uint64(output.Value)
+		rcv := domain.Receiver{
+			Amount: amount,
+		}
+
+		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
+		if isOnchainOutput {
+			if s.utxoMaxAmount >= 0 {
+				if amount > uint64(s.utxoMaxAmount) {
+					return "", errors.AMOUNT_TOO_HIGH.New(
+						"output %d amount is higher than max utxo amount: %d",
+						outputIndex,
+						s.utxoMaxAmount,
+					).WithMetadata(errors.AmountTooHighMetadata{
+						OutputIndex: outputIndex,
+						Amount:      int(amount),
+						MaxAmount:   int(s.utxoMaxAmount),
+					})
+				}
+			}
+			if amount < uint64(s.utxoMinAmount) {
+				return "", errors.AMOUNT_TOO_LOW.New(
+					"output %d amount is lower than min utxo amount: %d",
+					outputIndex,
+					s.utxoMinAmount,
+				).WithMetadata(errors.AmountTooLowMetadata{
+					OutputIndex: outputIndex,
+					Amount:      int(amount),
+					MinAmount:   int(s.utxoMinAmount),
+				})
+			}
+
+			chainParams := s.chainParams()
+			if chainParams == nil {
+				return "", errors.INTERNAL_ERROR.New("unsupported network: %s", s.network.Name).
+					WithMetadata(map[string]any{
+						"network": s.network.Name,
+					})
+			}
+			scriptType, addrs, _, err := txscript.ExtractPkScriptAddrs(
+				output.PkScript, chainParams,
+			)
+			if err != nil {
+				return "", errors.INVALID_PKSCRIPT.New(
+					"failed to get onchain address from script of output %d: %w", outputIndex, err,
+				).WithMetadata(errors.InvalidPkScriptMetadata{
+					Script: hex.EncodeToString(output.PkScript),
+				})
+			}
+
+			if len(addrs) == 0 {
+				return "", errors.INVALID_PKSCRIPT.New(
+					"invalid script type for output %d: %s", outputIndex, scriptType,
+				).WithMetadata(errors.InvalidPkScriptMetadata{
+					Script: hex.EncodeToString(output.PkScript),
+				})
+			}
+
+			rcv.OnchainAddress = addrs[0].EncodeAddress()
+			onchainOutputs = append(onchainOutputs, *output)
+		} else {
+			if s.vtxoMaxAmount >= 0 {
+				if amount > uint64(s.vtxoMaxAmount) {
+					return "", errors.AMOUNT_TOO_HIGH.New(
+						"output %d amount is higher than max vtxo amount: %d",
+						outputIndex, s.vtxoMaxAmount,
+					).WithMetadata(errors.AmountTooHighMetadata{
+						OutputIndex: outputIndex,
+						Amount:      int(amount),
+						MaxAmount:   int(s.vtxoMaxAmount),
+					})
+				}
+			}
+			if amount < uint64(s.vtxoMinSettlementAmount) {
+				return "", errors.AMOUNT_TOO_LOW.New(
+					"output %d amount is lower than min vtxo amount: %d",
+					outputIndex, s.vtxoMinSettlementAmount,
+				).WithMetadata(errors.AmountTooLowMetadata{
+					OutputIndex: outputIndex,
+					Amount:      int(amount),
+					MinAmount:   int(s.vtxoMinSettlementAmount),
+				})
+			}
+
+			hasOffChainReceiver = true
+			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
+		}
+
+		receivers = append(receivers, rcv)
+		offchainOutputs = append(offchainOutputs, *output)
 	}
 
 	if hasOffChainReceiver {
@@ -1959,6 +1853,37 @@ func (s *service) RegisterIntent(
 				})
 			}
 		}
+	}
+
+	leafTxPacket := ""
+	if hasAssetPacket {
+		intentPacket, err := asset.NewPacketFromTx(proof.UnsignedTx)
+		if err != nil {
+			return "", errors.INVALID_INTENT_PROOF.New("invalid asset packet: %w", err).
+				WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   signedProof,
+					Message: encodedMessage,
+				})
+		}
+
+		// TODO move validation once asset-validation branch is merged
+		leafTxPacket = intentPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
+	}
+
+	intent, err := domain.NewIntent(
+		proofTxid,
+		signedProof,
+		encodedMessage,
+		vtxoInputs,
+		leafTxPacket,
+	)
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
+			WithMetadata(map[string]any{
+				"proof":       signedProof,
+				"message":     encodedMessage,
+				"vtxo_inputs": vtxoInputs,
+			})
 	}
 
 	if err := intent.AddReceivers(receivers); err != nil {
