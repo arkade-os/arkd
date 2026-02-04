@@ -739,3 +739,19 @@ func refill(httpClient *http.Client) error {
 	}
 	return nil
 }
+
+func listVtxosWithAsset(t *testing.T, client arksdk.ArkClient, assetID string) []types.Vtxo {
+	vtxos, err := client.ListSpendableVtxos(t.Context())
+	require.NoError(t, err)
+
+	assetVtxos := make([]types.Vtxo, 0, len(vtxos))
+	for _, vtxo := range vtxos {
+		for _, asset := range vtxo.Assets {
+			if asset.AssetId == assetID {
+				assetVtxos = append(assetVtxos, vtxo)
+				break
+			}
+		}
+	}
+	return assetVtxos
+}
