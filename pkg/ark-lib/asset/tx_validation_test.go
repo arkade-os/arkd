@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -22,6 +23,7 @@ type txFixture struct {
 		Amount uint64 `json:"amount"`
 	} `json:"prevouts"`
 	ControlAssets map[string]string `json:"controlAssets,omitempty"`
+	ExistingAssets []string `json:"existingAssets,omitempty"`
 }
 
 type txValidationFixtures struct {
@@ -44,8 +46,8 @@ func TestTxValidation(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		for _, v := range fixtures.Valid {
 			t.Run(v.Name, func(t *testing.T) {
-				tx, assetPrevouts, ctrlSrc := parseTxFixture(t, v)
-				err := asset.ValidateAssetTransaction(ctx, tx, assetPrevouts, ctrlSrc)
+				tx, assetPrevouts, assetSrc := parseTxFixture(t, v)
+				err := asset.ValidateAssetTransaction(ctx, tx, assetPrevouts, assetSrc)
 				require.NoError(t, err)
 			})
 		}
@@ -54,8 +56,8 @@ func TestTxValidation(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		for _, v := range fixtures.Invalid {
 			t.Run(v.Name, func(t *testing.T) {
-				tx, assetPrevouts, ctrlSrc := parseTxFixture(t, v.txFixture)
-				err := asset.ValidateAssetTransaction(ctx, tx, assetPrevouts, ctrlSrc)
+				tx, assetPrevouts, assetSrc := parseTxFixture(t, v.txFixture)
+				err := asset.ValidateAssetTransaction(ctx, tx, assetPrevouts, assetSrc)
 				require.Error(t, err)
 				require.ErrorContains(t, err, v.ExpectedError)
 			})
@@ -64,7 +66,7 @@ func TestTxValidation(t *testing.T) {
 }
 
 func parseTxFixture(t *testing.T, fixture txFixture) (
-	*wire.MsgTx, map[int][]asset.AssetTxo, asset.ControlAssetSource,
+	*wire.MsgTx, map[int][]asset.AssetTxo, asset.AssetSource,
 ) {
 	var tx wire.MsgTx
 	err := tx.Deserialize(hex.NewDecoder(strings.NewReader(fixture.Tx)))
@@ -82,14 +84,18 @@ func parseTxFixture(t *testing.T, fixture txFixture) (
 		controlAssets[assetID] = controlAssetID
 	}
 
-	return &tx, assetPrevouts, ctrlAssetSource{controlAssets}
+	return &tx, assetPrevouts, &assetSrc{controlAssets, fixture.ExistingAssets}
 }
 
-type ctrlAssetSource struct {
+type assetSrc struct {
 	controlAssets map[string]string
+	existingAssets []string
+}
+func (s *assetSrc) AssetExists(_ context.Context, assetID string) bool {
+	return slices.Contains(s.existingAssets, assetID)
 }
 
-func (s ctrlAssetSource) GetControlAsset(_ context.Context, assetID string) (string, error) {
+func (s *assetSrc) GetControlAsset(_ context.Context, assetID string) (string, error) {
 	controlAssetID, ok := s.controlAssets[assetID]
 	if !ok {
 		return "", fmt.Errorf("control asset not found for asset %s", assetID)

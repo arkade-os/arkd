@@ -15,13 +15,14 @@ type AssetTxo struct {
 	Amount uint64
 }
 
-type ControlAssetSource interface {
+type AssetSource interface {
 	GetControlAsset(ctx context.Context, assetID string) (string, error)
+	AssetExists(ctx context.Context, assetID string) bool
 }
 
 // validateAssetTransaction validates that asset packet data matches the transaction inputs and outputs
 func ValidateAssetTransaction(
-	ctx context.Context, tx *wire.MsgTx, assetPrevouts map[int][]AssetTxo, ctrlSrc ControlAssetSource,
+	ctx context.Context, tx *wire.MsgTx, assetPrevouts map[int][]AssetTxo, assetSrc AssetSource,
 ) errors.Error {
 	packet, err := NewPacketFromTx(tx)
 	if err != nil {
@@ -49,7 +50,7 @@ func ValidateAssetTransaction(
 				Index: uint16(groupIndex),
 			}.String()
 
-			if err := validateIssuance(packet, group); err != nil {
+			if err := validateIssuance(ctx, packet, group, assetSrc); err != nil {
 				return err
 			}
 		} else {
@@ -58,7 +59,7 @@ func ValidateAssetTransaction(
 
 		// verify the reissuance has the associated control asset present in the packet
 		if group.IsReissuance() {
-			if err := validateReissuance(ctx, packet, group, ctrlSrc); err != nil {
+			if err := validateReissuance(ctx, packet, group, assetSrc); err != nil {
 				return err
 			}
 		}
@@ -78,18 +79,15 @@ func ValidateAssetTransaction(
 // validateReissuance validates the control asset of a reissuance asset group
 // it verifies the control asset of the reissuance is present in the packet
 func validateReissuance(
-	ctx context.Context,
-	packet Packet,
-	group AssetGroup,
-	ctrlAssetSource ControlAssetSource,
+	ctx context.Context, packet Packet, group AssetGroup, assetSrc AssetSource,
 ) errors.Error {
-	if ctrlAssetSource == nil {
+	if assetSrc == nil {
 		return errors.ASSET_VALIDATION_FAILED.New("control asset source is nil, cannot validate reissuance")
 	}
 
 	assetID := group.AssetId.String()
 
-	ctrlAssetID, err := ctrlAssetSource.GetControlAsset(ctx, assetID)
+	ctrlAssetID, err := assetSrc.GetControlAsset(ctx, assetID)
 	if err != nil {
 		return errors.ASSET_VALIDATION_FAILED.New("error retrieving asset %s: %w", assetID, err).
 			WithMetadata(errors.AssetValidationMetadata{AssetID: assetID})
@@ -110,7 +108,7 @@ func validateReissuance(
 
 // validateIssuance validates the control asset of an issuance asset group
 // if it's present and referenced by group, it must be issued in the same transaction
-func validateIssuance(packet Packet, grp AssetGroup) errors.Error {
+func validateIssuance(ctx context.Context, packet Packet, grp AssetGroup, assetSrc AssetSource) errors.Error {
 	if grp.ControlAsset == nil {
 		return nil
 	}
@@ -118,6 +116,11 @@ func validateIssuance(packet Packet, grp AssetGroup) errors.Error {
 	if grp.ControlAsset.Type == AssetRefByID {
 		// by id means the control asset is an existing asset
 		// no need to validate anything, not the operator's responsibility if you specify non existent asset id
+		if !assetSrc.AssetExists(ctx, grp.ControlAsset.AssetId.String()) {
+			return errors.ASSET_VALIDATION_FAILED.New("control asset %s does not exist", grp.ControlAsset.AssetId.String()).
+				WithMetadata(errors.AssetValidationMetadata{AssetID: grp.ControlAsset.AssetId.String()})
+		}
+
 		return nil
 	}
 

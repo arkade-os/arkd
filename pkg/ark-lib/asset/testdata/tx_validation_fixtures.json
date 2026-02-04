@@ -22,7 +22,10 @@
             "amount": 10
           }
         ]
-      }
+      },
+      "existingAssets": [
+        "a2d957e51f05023c3e691ed642be794102a8b6514af183f2d1f6e9d6f7b5f7b70000"
+      ]
     },
     {
       "name": "transfer single asset",

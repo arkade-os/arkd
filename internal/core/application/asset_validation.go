@@ -23,15 +23,15 @@ func (s *service) validateAssetTransaction(
 	}
 
 	return asset.ValidateAssetTransaction(
-		ctx, tx, assetTxos, ctrlAssetSource{s.repoManager.Assets()},
+		ctx, tx, assetTxos, assetSource{s.repoManager.Assets()},
 	)
 }
 
-type ctrlAssetSource struct {
+type assetSource struct {
 	domain.AssetRepository
 }
 
-func (s ctrlAssetSource) GetControlAsset(ctx context.Context, assetID string) (string, error) {
+func (s assetSource) GetControlAsset(ctx context.Context, assetID string) (string, error) {
 	assetGroup, err := s.GetAssetGroupByID(ctx, assetID)
 	if err != nil {
 		return "", err
@@ -40,4 +40,9 @@ func (s ctrlAssetSource) GetControlAsset(ctx context.Context, assetID string) (s
 		return "", fmt.Errorf("no control asset found")
 	}
 	return assetGroup.ControlAssetID, nil
+}
+
+func (s assetSource) AssetExists(ctx context.Context, assetID string) bool {
+	_, err := s.GetAssetGroupByID(ctx, assetID)
+	return err == nil
 }
