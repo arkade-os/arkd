@@ -576,8 +576,12 @@ func (b *txBuilder) BuildCommitmentTx(
 
 		for i := 0; i < nbOfConnectors; i++ {
 			connectorsTreeLeaves = append(connectorsTreeLeaves, tree.Leaf{
-				Amount:              uint64(dustAmount),
-				Script:              hex.EncodeToString(connectorPkScript),
+				Outputs: []tree.LeafOutput{
+					{
+						Amount: uint64(dustAmount),
+						Script: hex.EncodeToString(connectorPkScript),
+					},
+				},
 				CosignersPublicKeys: cosigners,
 			})
 		}

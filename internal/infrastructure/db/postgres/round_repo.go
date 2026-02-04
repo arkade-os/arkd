@@ -494,6 +494,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 					Message:   v.intent.Message.String,
 					Inputs:    make([]domain.Vtxo, 0),
 					Receivers: make([]domain.Receiver, 0),
+					Txid:      v.intent.Txid.String,
 				}
 				round.Intents[v.intent.ID.String] = intent
 			}
@@ -507,6 +508,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 						Message:   v.vtxo.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
 						Receivers: make([]domain.Receiver, 0),
+						Txid:      v.vtxo.IntentTxid.String,
 					}
 				}
 
@@ -534,6 +536,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 						Message:   v.receiver.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
 						Receivers: make([]domain.Receiver, 0),
+						Txid:      v.receiver.Txid.String,
 					}
 				}
 

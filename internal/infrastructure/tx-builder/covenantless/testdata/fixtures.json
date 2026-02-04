@@ -53,7 +53,7 @@
           }
         ],
         "expectedNumOfNodes": 3,
-        "expectedNumOfLeaves": 2
+        "expectedNumOfLeaves": 1
       },
       {
         "intents": [
@@ -128,7 +128,7 @@
           }
         ],
         "expectedNumOfNodes": 11,
-        "expectedNumOfLeaves": 6
+        "expectedNumOfLeaves": 3
       },
       {
         "intents": [
@@ -201,7 +201,7 @@
           }
         ],
         "expectedNumOfNodes": 9,
-        "expectedNumOfLeaves": 5
+        "expectedNumOfLeaves": 1
       }
     ],
     "invalid": []
