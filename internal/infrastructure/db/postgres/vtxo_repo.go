@@ -166,13 +166,19 @@ func (v *vtxoRepository) GetVtxos(
 			ctx, queries.SelectVtxoParams{Txid: o.Txid, Vout: int32(o.VOut)},
 		)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil, nil
-			}
 			return nil, err
 		}
 
-		result, err := readRows([]queries.VtxoVw{res.VtxoVw})
+		if len(res) == 0 {
+			return nil, nil
+		}
+
+		rows := make([]queries.VtxoVw, 0, len(res))
+		for _, row := range res {
+			rows = append(rows, row.VtxoVw)
+		}
+
+		result, err := readRows(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -496,13 +502,14 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 			},
 		)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
 			return nil, err
 		}
 
-		result, err := readRows([]queries.VtxoVw{res})
+		if len(res) == 0 {
+			continue
+		}
+
+		result, err := readRows(res)
 		if err != nil {
 			return nil, err
 		}
