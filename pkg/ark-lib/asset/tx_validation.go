@@ -116,7 +116,7 @@ func validateIssuance(packet Packet, grp AssetGroup) errors.Error {
 	}
 
 	if grp.ControlAsset.Type == AssetRefByID {
-		// by id means the control asset is an existing asset, it must be present in the packet
+		// by id means the control asset is an existing asset
 		// no need to validate anything, not the operator's responsibility if you specify non existent asset id
 		return nil
 	}
