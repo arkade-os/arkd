@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
@@ -85,6 +86,24 @@ func TestPacket(t *testing.T) {
 				})
 			}
 		})
+
+		t.Run("LeafTxPacket", func(t *testing.T) {
+			for _, v := range fixtures.Valid.LeafTxPacket {
+				t.Run(v.Name, func(t *testing.T) {
+					intentTxHash, err := chainhash.NewHashFromStr(v.IntentTxid)
+					require.NoError(t, err)
+					require.NotNil(t, intentTxHash)
+
+					packet, err := asset.NewPacketFromString(v.Script)
+					require.NoError(t, err)
+					require.NotEmpty(t, packet)
+				
+					leafTxPacket := packet.LeafTxPacket(*intentTxHash)
+					require.NotEmpty(t, leafTxPacket)
+					require.Equal(t, v.ExpectedLeafTxPacket, leafTxPacket.String())
+				})
+			}
+		})
 	})
 
 	t.Run("invalid", func(t *testing.T) {
@@ -150,6 +169,12 @@ type packetFixtures struct {
 			Amount   int64  `json:"amount"`
 			Expected bool   `json:"expected"`
 		} `json:"newPacketFromTxOut"`
+		LeafTxPacket []struct {
+			Name          string `json:"name"`
+			Script        string `json:"script"`
+			IntentTxid    string `json:"intentTxid"`
+			ExpectedLeafTxPacket string `json:"expectedLeafTxPacket"`
+		} `json:"leafTxPacket"`
 	} `json:"valid"`
 	Invalid struct {
 		NewPacket []struct {

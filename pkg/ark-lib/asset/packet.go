@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
@@ -65,6 +66,14 @@ func NewPacketFromString(s string) (Packet, error) {
 func IsAssetPacket(script []byte) bool {
 	_, err := rawPacketFromScript(script)
 	return err == nil
+}
+
+func (p Packet) LeafTxPacket(intentTxid chainhash.Hash) Packet {
+	batchLeafPacket := make(Packet, 0, len(p))
+	for _, assetGroup := range p {
+		batchLeafPacket = append(batchLeafPacket, assetGroup.toBatchLeafAssetGroup(intentTxid))
+	}
+	return batchLeafPacket
 }
 
 func (p Packet) TxOut() (*wire.TxOut, error) {
