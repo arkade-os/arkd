@@ -381,104 +381,6 @@ SELECT * FROM conviction
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
 
--- name: CreateAssetAnchor :exec
-INSERT INTO asset_anchor (anchor_txid, anchor_vout)
-VALUES (?, ?);
-
--- name: ListAssetAnchorsByAssetID :many
-SELECT DISTINCT aa.anchor_txid, aa.anchor_vout
-FROM asset_anchor aa
-JOIN asset a ON aa.anchor_txid = a.anchor_id
-WHERE a.asset_id = ?
-ORDER BY aa.anchor_txid;
-
--- name: GetAssetAnchor :one
-SELECT anchor_txid, anchor_vout
-FROM asset_anchor
-WHERE anchor_txid = ?;
-
--- name: DeleteAssetAnchor :exec
-DELETE FROM asset_anchor
-WHERE anchor_txid = ?;
-
--- name: UpsertAssetMetadata :exec
-INSERT INTO asset_metadata (asset_id, meta_key, meta_value)
-VALUES (?, ?, ?)
-ON CONFLICT(asset_id, meta_key)
-DO UPDATE SET meta_value = excluded.meta_value;
-
--- name: GetAssetMetadata :one
-SELECT asset_id, meta_key, meta_value
-FROM asset_metadata
-WHERE asset_id = ? AND meta_key = ?;
-
-
--- name: ListAssetMetadata :many
-SELECT asset_id, meta_key, meta_value
-FROM asset_metadata
-WHERE asset_id = ?
-ORDER BY meta_key;
-
--- name: AddAsset :exec
-INSERT INTO asset (anchor_id, asset_id, vout, amount)
-VALUES (?, ?, ?, ?)
-ON CONFLICT(anchor_id, vout)
-DO UPDATE SET amount = excluded.amount
-WHERE asset.asset_id = excluded.asset_id;
-
--- name: GetAsset :one
-SELECT anchor_id, asset_id, vout, amount
-FROM asset
-WHERE anchor_id = ? AND vout = ?;
-
--- name: DeleteAsset :exec
-DELETE FROM asset
-WHERE anchor_id = ? AND vout = ?;
-
--- name: ListAsset :many
-SELECT anchor_id, asset_id, vout, amount
-FROM asset
-WHERE anchor_id = ?
-ORDER BY vout;
-
--- name: GetAssetGroup :one
-SELECT id, quantity, immutable, control_id
-FROM asset_group
-WHERE id = ?;
-
-
--- name: ListAssetGroup :many
-SELECT id, quantity, immutable, control_id
-FROM asset_group
-ORDER BY id;
-
--- name: AddToAssetQuantity :exec
-UPDATE asset_group
-SET quantity = quantity + ?
-WHERE id = ?;
-
--- name: SubtractFromAssetQuantity :exec
-UPDATE asset_group
-SET quantity = quantity - ?
-WHERE id = ? AND quantity >= ?;
-
--- name: CreateAsset :exec
-INSERT INTO asset_group (id, quantity, immutable, control_id)
-VALUES (?, ?, ?, ?);
-
--- name: CreateTeleportAsset :exec
-INSERT INTO teleport_asset (script, intent_id, asset_id, group_index, amount, is_claimed)
-VALUES (?, ?, ?, ?, ?, ?);
-
--- name: GetTeleportAsset :one
-SELECT script, intent_id, asset_id, group_index, amount, is_claimed
-FROM teleport_asset
-WHERE script = ? AND intent_id = ? AND asset_id = ? AND group_index = ?;
-
--- name: UpdateTeleportAsset :exec
-UPDATE teleport_asset
-SET is_claimed = ?
-WHERE script = ? AND intent_id = ? AND asset_id = ? AND group_index = ?;
 -- name: SelectLatestIntentFees :one
 SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
 
@@ -525,3 +427,22 @@ VALUES ('', '', '', '');
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
+
+-- name: InsertAsset :exec
+INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
+VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
+
+-- name: InsertAssetMetadataUpdateByTx :exec
+INSERT INTO asset_metadata_update (fk_asset_id, fk_txid, metadata_hash)
+VALUES (@fk_asset_id, @fk_txid, @metadata_hash);
+
+-- name: InsertAssetMetadataUpdateByIntent :exec
+INSERT INTO asset_metadata_update (fk_asset_id, fk_intent_txid, metadata_hash)
+VALUES (@fk_asset_id, @fk_intent_txid, @metadata_hash);
+
+-- name: InsertVtxoAssetProjection :exec
+INSERT INTO asset_projection (fk_asset_id, fk_vtxo_txid, fk_vtxo_vout, amount, type)
+VALUES (@fk_asset_id, @fk_vtxo_txid, @fk_vtxo_vout, @amount, 'local');
+
+-- name: SelectAssetsByIds :many
+SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));
