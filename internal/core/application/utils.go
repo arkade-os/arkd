@@ -235,7 +235,8 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 
 		vtxos := make([]domain.Vtxo, 0)
 		for i, out := range tx.UnsignedTx.TxOut {
-			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) || asset.IsAssetPacket(out.PkScript) {
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+				asset.IsAssetPacket(out.PkScript) {
 				continue
 			}
 

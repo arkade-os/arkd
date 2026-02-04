@@ -18,20 +18,6 @@ type assetRepository struct {
 	store *badgerhold.Store
 }
 
-type assetGroup struct {
-	ID             string `badgerhold:"key"`
-	Quantity       uint64
-	Immutable      bool
-	ControlAssetId string
-}
-
-type assetMetadata struct {
-	Key       string `badgerhold:"key"`
-	AssetID   string `badgerhold:"index"`
-	MetaKey   string
-	MetaValue string
-}
-
 func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 	if len(config) != 2 {
 		return nil, fmt.Errorf("invalid config")

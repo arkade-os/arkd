@@ -706,7 +706,9 @@ func getAssetsFromTxOuts(
 				if a.ControlAsset != nil {
 					// If the issued asset has a control one ref by group index this is an issuance
 					if a.ControlAsset.Type == asset.AssetRefByGroup {
-						id, err := asset.NewAssetId(txid, assets[a.ControlAsset.GroupIndex].Outputs[0].Vout)
+						id, err := asset.NewAssetId(
+							txid, assets[a.ControlAsset.GroupIndex].Outputs[0].Vout,
+						)
 						if err != nil {
 							return nil, nil, fmt.Errorf(
 								"failed to compute control asset id: %w", err,
