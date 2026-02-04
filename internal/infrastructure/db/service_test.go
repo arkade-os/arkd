@@ -734,12 +734,18 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotEmpty(t, spendableVtxos)
 		require.Empty(t, spentVtxos)
 
+		initialVtxos, err := svc.Vtxos().GetAllVtxos(ctx)
+		require.NoError(t, err)
+		require.Greater(t, len(initialVtxos), 0)
+
+		totVtxos := len(initialVtxos) + len(newVtxos)
+
 		err = svc.Vtxos().AddVtxos(ctx, newVtxos)
 		require.NoError(t, err)
 
 		allVtxos, err := svc.Vtxos().GetAllVtxos(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 8, len(allVtxos))
+		require.Len(t, allVtxos, totVtxos)
 
 		vtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.NoError(t, err)
@@ -753,7 +759,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, "")
 		require.NoError(t, err)
-		require.Len(t, append(spendableVtxos, spentVtxos...), 8)
+		require.Len(t, append(spendableVtxos, spentVtxos...), totVtxos)
 
 		err = svc.Vtxos().SpendVtxos(ctx, spentVtxoMap, arkTxid)
 		require.NoError(t, err)
@@ -769,7 +775,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		allVtxos, err = svc.Vtxos().GetAllVtxos(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 8, len(allVtxos))
+		require.Len(t, allVtxos, totVtxos)
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)

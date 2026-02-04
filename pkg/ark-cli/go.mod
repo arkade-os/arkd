@@ -6,6 +6,8 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
+replace github.com/arkade-os/arkd/pkg/errors => ../errors
+
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260204162732-487698dc67f1
 	github.com/arkade-os/go-sdk v0.8.2-0.20260204182239-27c751f3e04a
@@ -19,6 +21,7 @@ require (
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
+	github.com/arkade-os/arkd/pkg/errors v0.0.0-20260204162732-487698dc67f1 // indirect
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.5 // indirect
