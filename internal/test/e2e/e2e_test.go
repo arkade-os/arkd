@@ -4090,6 +4090,7 @@ func TestFee(t *testing.T) {
 }
 
 func TestAsset(t *testing.T) {
+	// This test ensures that an asset vtxo can be issued, transfered and then refreshed
 	t.Run("transfer and renew", func(t *testing.T) {
 		ctx := t.Context()
 		const supply = 5_000
@@ -4166,6 +4167,7 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, bobErr)
 	})
 
+	// These tests ensure many type of issuances can done offchain
 	t.Run("issuance", func(t *testing.T) {
 		t.Run("without control asset", func(t *testing.T) {
 			ctx := t.Context()
@@ -4218,6 +4220,8 @@ func TestAsset(t *testing.T) {
 		})
 	})
 
+	// This test ensures that an already issued asset can be reissued with the usage of its
+	// control asset
 	t.Run("reissuance", func(t *testing.T) {
 		ctx := t.Context()
 
@@ -4256,6 +4260,7 @@ func TestAsset(t *testing.T) {
 		require.Len(t, assetVtxos, 2)
 	})
 
+	// This test ensures that an asset can be burned for any given amount
 	t.Run("burn", func(t *testing.T) {
 		ctx := t.Context()
 
@@ -4285,7 +4290,7 @@ func TestAsset(t *testing.T) {
 		require.Equal(t, uint64(3500), assetVtxos[0].Assets[0].Amount)
 	})
 
-	// test unrolled asset
+	// This test ensures that Alice can unroll her asset vtxos onchain
 	t.Run("unroll", func(t *testing.T) {
 		ctx := t.Context()
 		alice := setupArkSDK(t)
