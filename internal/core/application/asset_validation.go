@@ -11,13 +11,13 @@ import (
 )
 
 func (s *service) validateAssetTransaction(
-	ctx context.Context, tx *wire.MsgTx, inputAssets map[int][]domain.Asset,
+	ctx context.Context, tx *wire.MsgTx, inputAssets map[int][]domain.AssetDenomination,
 ) errors.Error {
 	assetTxos := make(map[int][]asset.AssetTxo)
 	for inputIndex, assets := range inputAssets {
 		assetTxs := make([]asset.AssetTxo, 0)
 		for _, a := range assets {
-			assetTxs = append(assetTxs, asset.AssetTxo{AssetID: a.AssetID, Amount: a.Amount})
+			assetTxs = append(assetTxs, asset.AssetTxo{AssetID: a.AssetId, Amount: a.Amount})
 		}
 		assetTxos[inputIndex] = assetTxs
 	}
@@ -32,17 +32,17 @@ type assetSource struct {
 }
 
 func (s assetSource) GetControlAsset(ctx context.Context, assetID string) (string, error) {
-	assetGroup, err := s.GetAssetGroupByID(ctx, assetID)
+	assets, err := s.GetAssets(ctx, []string{assetID})
 	if err != nil {
 		return "", err
 	}
-	if assetGroup == nil {
+	if len(assets) == 0 {
 		return "", fmt.Errorf("no control asset found")
 	}
-	return assetGroup.ControlAssetID, nil
+	return assets[0].ControlAssetId, nil
 }
 
 func (s assetSource) AssetExists(ctx context.Context, assetID string) bool {
-	_, err := s.GetAssetGroupByID(ctx, assetID)
+	_, err := s.GetAssets(ctx, []string{assetID})
 	return err == nil
 }
