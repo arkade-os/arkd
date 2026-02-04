@@ -557,11 +557,13 @@ func issue(ctx *cli.Context) error {
 		return err
 	}
 
+	var controlAssetPolicy types.ControlAsset = nil
+	if controlAssetAmount > 0 {
+		controlAssetPolicy = types.NewControlAsset{Amount: controlAssetAmount}
+	}
+
 	arkTxid, assetIds, err := arkSdkClient.IssueAsset(
-		ctx.Context,
-		amount,
-		controlAssetAmount,
-		metadataList,
+		ctx.Context, amount, controlAssetPolicy, metadataList,
 	)
 	if err != nil {
 		return err
