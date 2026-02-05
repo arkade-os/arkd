@@ -4113,7 +4113,7 @@ func TestAsset(t *testing.T) {
 		require.Len(t, assetIds, 1)
 		assetId := assetIds[0].String()
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 
 		assetVtxos := listVtxosWithAsset(t, alice, assetId)
 		require.Len(t, assetVtxos, 1)
@@ -4135,7 +4135,7 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, err)
 
 		// Allow some time for bob to receive the vtxo from indexer
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 
 		receiverAssetVtxos := listVtxosWithAsset(t, bob, assetId)
 		require.Len(t, receiverAssetVtxos, 1)
@@ -4211,7 +4211,7 @@ func TestAsset(t *testing.T) {
 			require.Len(t, assetIds, 1)
 			controlAssetId := assetIds[0].String()
 
-			time.Sleep(2 * time.Second)
+			time.Sleep(3 * time.Second)
 
 			// issue another asset	 with existing control asset
 			_, assetIds2, err := alice.IssueAsset(
@@ -4244,7 +4244,7 @@ func TestAsset(t *testing.T) {
 		assetId := assetIds[1].String()
 		require.NotEqual(t, controlAssetId, assetId)
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 
 		controlVtxos := listVtxosWithAsset(t, alice, controlAssetId)
 		require.Len(t, controlVtxos, 1)
@@ -4259,7 +4259,7 @@ func TestAsset(t *testing.T) {
 		_, err = alice.ReissueAsset(ctx, controlAssetId, assetId, 1000)
 		require.NoError(t, err)
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 
 		assetVtxos := listVtxosWithAsset(t, alice, assetId)
 		require.Len(t, assetVtxos, 2)
@@ -4287,7 +4287,7 @@ func TestAsset(t *testing.T) {
 		_, err = alice.BurnAsset(ctx, assetId, 1500)
 		require.NoError(t, err)
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 
 		assetVtxos = listVtxosWithAsset(t, alice, assetId)
 		require.Len(t, assetVtxos, 1)
@@ -4310,7 +4310,7 @@ func TestAsset(t *testing.T) {
 		require.Len(t, assetIds, 1)
 		assetId := assetIds[0].String()
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(3 * time.Second)
 
 		assetVtxos, spentVtxos, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
