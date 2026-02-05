@@ -109,54 +109,54 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 }
 
 const insertAssetMetadataUpdateByIntent = `-- name: InsertAssetMetadataUpdateByIntent :exec
-INSERT INTO asset_metadata_update (fk_asset_id, fk_intent_txid, metadata_hash)
+INSERT INTO asset_metadata_update (asset_id, intent_id, metadata_hash)
 VALUES (?1, ?2, ?3)
 `
 
 type InsertAssetMetadataUpdateByIntentParams struct {
-	FkAssetID    string
-	FkIntentTxid sql.NullString
+	AssetID      string
+	IntentID     sql.NullString
 	MetadataHash string
 }
 
 func (q *Queries) InsertAssetMetadataUpdateByIntent(ctx context.Context, arg InsertAssetMetadataUpdateByIntentParams) error {
-	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByIntent, arg.FkAssetID, arg.FkIntentTxid, arg.MetadataHash)
+	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByIntent, arg.AssetID, arg.IntentID, arg.MetadataHash)
 	return err
 }
 
 const insertAssetMetadataUpdateByTx = `-- name: InsertAssetMetadataUpdateByTx :exec
-INSERT INTO asset_metadata_update (fk_asset_id, fk_txid, metadata_hash)
+INSERT INTO asset_metadata_update (asset_id, txid, metadata_hash)
 VALUES (?1, ?2, ?3)
 `
 
 type InsertAssetMetadataUpdateByTxParams struct {
-	FkAssetID    string
-	FkTxid       sql.NullString
+	AssetID      string
+	Txid         sql.NullString
 	MetadataHash string
 }
 
 func (q *Queries) InsertAssetMetadataUpdateByTx(ctx context.Context, arg InsertAssetMetadataUpdateByTxParams) error {
-	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByTx, arg.FkAssetID, arg.FkTxid, arg.MetadataHash)
+	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByTx, arg.AssetID, arg.Txid, arg.MetadataHash)
 	return err
 }
 
 const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
-INSERT INTO asset_projection (fk_asset_id, fk_vtxo_txid, fk_vtxo_vout, amount, type)
-VALUES (?1, ?2, ?3, ?4, 'local')
+INSERT INTO asset_projection (asset_id, txid, vout, amount)
+VALUES (?1, ?2, ?3, ?4)
 `
 
 type InsertVtxoAssetProjectionParams struct {
-	FkAssetID  string
-	FkVtxoTxid sql.NullString
-	FkVtxoVout sql.NullInt64
-	Amount     int64
+	AssetID string
+	Txid    string
+	Vout    int64
+	Amount  int64
 }
 
 func (q *Queries) InsertVtxoAssetProjection(ctx context.Context, arg InsertVtxoAssetProjectionParams) error {
 	_, err := q.db.ExecContext(ctx, insertVtxoAssetProjection,
-		arg.FkAssetID,
-		arg.FkVtxoTxid,
-		arg.FkVtxoVout,
+		arg.AssetID,
+		arg.Txid,
+		arg.Vout,
 		arg.Amount,
 	)
 	return err
@@ -679,7 +679,7 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 	return items, nil
 }
 
-const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :one
+const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :many
 SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.commitments, v.asset_id, v.asset_amount
 FROM vtxo_vw v
 WHERE v.txid = ?1 AND v.vout = ?2
@@ -694,31 +694,47 @@ type SelectPendingSpentVtxoParams struct {
 	Vout int64
 }
 
-func (q *Queries) SelectPendingSpentVtxo(ctx context.Context, arg SelectPendingSpentVtxoParams) (VtxoVw, error) {
-	row := q.db.QueryRowContext(ctx, selectPendingSpentVtxo, arg.Txid, arg.Vout)
-	var i VtxoVw
-	err := row.Scan(
-		&i.Txid,
-		&i.Vout,
-		&i.Pubkey,
-		&i.Amount,
-		&i.ExpiresAt,
-		&i.CreatedAt,
-		&i.CommitmentTxid,
-		&i.SpentBy,
-		&i.Spent,
-		&i.Unrolled,
-		&i.Swept,
-		&i.Preconfirmed,
-		&i.SettledBy,
-		&i.ArkTxid,
-		&i.IntentID,
-		&i.UpdatedAt,
-		&i.Commitments,
-		&i.AssetID,
-		&i.AssetAmount,
-	)
-	return i, err
+func (q *Queries) SelectPendingSpentVtxo(ctx context.Context, arg SelectPendingSpentVtxoParams) ([]VtxoVw, error) {
+	rows, err := q.db.QueryContext(ctx, selectPendingSpentVtxo, arg.Txid, arg.Vout)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VtxoVw
+	for rows.Next() {
+		var i VtxoVw
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.CommitmentTxid,
+			&i.SpentBy,
+			&i.Spent,
+			&i.Unrolled,
+			&i.Swept,
+			&i.Preconfirmed,
+			&i.SettledBy,
+			&i.ArkTxid,
+			&i.IntentID,
+			&i.UpdatedAt,
+			&i.Commitments,
+			&i.AssetID,
+			&i.AssetAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const selectPendingSpentVtxosWithPubkeys = `-- name: SelectPendingSpentVtxosWithPubkeys :many
@@ -1589,7 +1605,7 @@ func (q *Queries) SelectTxs(ctx context.Context, arg SelectTxsParams) ([]SelectT
 	return items, nil
 }
 
-const selectVtxo = `-- name: SelectVtxo :one
+const selectVtxo = `-- name: SelectVtxo :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE txid = ?1 AND vout = ?2
 `
 
@@ -1602,31 +1618,47 @@ type SelectVtxoRow struct {
 	VtxoVw VtxoVw
 }
 
-func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectVtxoRow, error) {
-	row := q.db.QueryRowContext(ctx, selectVtxo, arg.Txid, arg.Vout)
-	var i SelectVtxoRow
-	err := row.Scan(
-		&i.VtxoVw.Txid,
-		&i.VtxoVw.Vout,
-		&i.VtxoVw.Pubkey,
-		&i.VtxoVw.Amount,
-		&i.VtxoVw.ExpiresAt,
-		&i.VtxoVw.CreatedAt,
-		&i.VtxoVw.CommitmentTxid,
-		&i.VtxoVw.SpentBy,
-		&i.VtxoVw.Spent,
-		&i.VtxoVw.Unrolled,
-		&i.VtxoVw.Swept,
-		&i.VtxoVw.Preconfirmed,
-		&i.VtxoVw.SettledBy,
-		&i.VtxoVw.ArkTxid,
-		&i.VtxoVw.IntentID,
-		&i.VtxoVw.UpdatedAt,
-		&i.VtxoVw.Commitments,
-		&i.VtxoVw.AssetID,
-		&i.VtxoVw.AssetAmount,
-	)
-	return i, err
+func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) ([]SelectVtxoRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxo, arg.Txid, arg.Vout)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxoRow
+	for rows.Next() {
+		var i SelectVtxoRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Commitments,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const selectVtxoPubKeysByCommitmentTxid = `-- name: SelectVtxoPubKeysByCommitmentTxid :many

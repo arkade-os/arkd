@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
@@ -14,6 +15,14 @@ var (
 	ArkadeMagic        = []byte{0x41, 0x52, 0x4B} // "ARK"
 	MarkerAssetPayload = byte(0)
 )
+
+type AssetPacketNotFoundError struct {
+	Txid string
+}
+
+func (e AssetPacketNotFoundError) Error() string {
+	return fmt.Sprintf("asset packet not found in tx %s", e.Txid)
+}
 
 type Packet []AssetGroup
 
@@ -31,7 +40,7 @@ func NewPacketFromTx(tx *wire.MsgTx) (Packet, error) {
 			return NewPacketFromTxOut(*out)
 		}
 	}
-	return nil, fmt.Errorf("asset packet not found in tx %s", tx.TxHash().String())
+	return nil, AssetPacketNotFoundError{Txid: tx.TxID()}
 }
 
 func NewPacketFromTxOut(txOut wire.TxOut) (Packet, error) {
@@ -57,6 +66,14 @@ func NewPacketFromString(s string) (Packet, error) {
 func IsAssetPacket(script []byte) bool {
 	_, err := rawPacketFromScript(script)
 	return err == nil
+}
+
+func (p Packet) LeafTxPacket(intentTxid chainhash.Hash) Packet {
+	batchLeafPacket := make(Packet, 0, len(p))
+	for _, assetGroup := range p {
+		batchLeafPacket = append(batchLeafPacket, assetGroup.toBatchLeafAssetGroup(intentTxid))
+	}
+	return batchLeafPacket
 }
 
 func (p Packet) TxOut() (*wire.TxOut, error) {

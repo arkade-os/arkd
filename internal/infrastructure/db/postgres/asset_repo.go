@@ -39,13 +39,10 @@ func (r *assetRepository) Close() {
 }
 
 func (r *assetRepository) AddAssets(
-	ctx context.Context, assetsByTx, assetsByIntent map[string][]domain.Asset,
+	ctx context.Context, assetsByTx map[string][]domain.Asset,
 ) (count int, err error) {
-	if len(assetsByTx) == 0 && len(assetsByIntent) == 0 {
+	if len(assetsByTx) == 0 {
 		return -1, nil
-	}
-	if len(assetsByIntent) > 0 && len(assetsByTx) > 0 {
-		return -1, fmt.Errorf("cannot add assets by both tx and intent")
 	}
 
 	assets := make([]domain.Asset, 0)
@@ -115,22 +112,9 @@ func (r *assetRepository) AddAssets(
 			for _, asset := range assets {
 				if err := querierWithTx.InsertAssetMetadataUpdateByTx(
 					ctx, queries.InsertAssetMetadataUpdateByTxParams{
-						FkAssetID:    asset.Id,
+						AssetID:      asset.Id,
 						MetadataHash: mdHashByAssetId[asset.Id],
-						FkTxid:       sql.NullString{String: txid, Valid: true},
-					},
-				); err != nil {
-					return err
-				}
-			}
-		}
-		for txid, assets := range assetsByIntent {
-			for _, asset := range assets {
-				if err := querierWithTx.InsertAssetMetadataUpdateByIntent(
-					ctx, queries.InsertAssetMetadataUpdateByIntentParams{
-						FkAssetID:    asset.Id,
-						MetadataHash: mdHashByAssetId[asset.Id],
-						FkIntentTxid: sql.NullString{String: txid, Valid: true},
+						Txid:         sql.NullString{String: txid, Valid: true},
 					},
 				); err != nil {
 					return err

@@ -567,7 +567,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			assetsByTx := map[string][]domain.Asset{
 				offchainTx.ArkTxid: issuances,
 			}
-			count, err := s.assetStore.AddAssets(ctx, assetsByTx, nil)
+			count, err := s.assetStore.AddAssets(ctx, assetsByTx)
 			if err != nil {
 				log.WithError(err).Warnf(
 					"failed to add issued assets in offchain tx %s", offchainTx.ArkTxid,

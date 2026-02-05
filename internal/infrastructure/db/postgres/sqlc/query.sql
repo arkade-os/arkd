@@ -243,7 +243,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 -- name: SelectNotUnrolledVtxosWithPubkey :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND pubkey = @pubkey;
 
--- name: SelectVtxo :one
+-- name: SelectVtxo :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectAllVtxos :many
@@ -336,7 +336,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.updated_at >= @after::bigint
     AND (@before::bigint = 0 OR v.updated_at <= @before::bigint);
 
--- name: SelectPendingSpentVtxo :one
+-- name: SelectPendingSpentVtxo :many
 SELECT v.*
 FROM vtxo_vw v
 WHERE v.txid = @txid AND v.vout = @vout
@@ -430,16 +430,12 @@ INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
 VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
 
 -- name: InsertAssetMetadataUpdateByTx :exec
-INSERT INTO asset_metadata_update (fk_asset_id, fk_txid, metadata_hash)
-VALUES (@fk_asset_id, @fk_txid, @metadata_hash);
-
--- name: InsertAssetMetadataUpdateByIntent :exec
-INSERT INTO asset_metadata_update (fk_asset_id, fk_intent_txid, metadata_hash)
-VALUES (@fk_asset_id, @fk_intent_txid, @metadata_hash);
+INSERT INTO asset_metadata_update (asset_id, txid, metadata_hash)
+VALUES (@asset_id, @txid, @metadata_hash);
 
 -- name: InsertVtxoAssetProjection :exec
-INSERT INTO asset_projection (fk_asset_id, fk_vtxo_txid, fk_vtxo_vout, amount, type)
-VALUES (@fk_asset_id, @fk_vtxo_txid, @fk_vtxo_vout, @amount, 'local');
+INSERT INTO asset_projection (asset_id, txid, vout, amount)
+VALUES (@asset_id, @txid, @vout, @amount);
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
