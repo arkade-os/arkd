@@ -52,9 +52,9 @@ func (r *assetRepository) Close() {
 }
 
 func (r *assetRepository) AddAssets(
-	ctx context.Context, assetsByTx, assetsByIntents map[string][]domain.Asset,
+	ctx context.Context, assetsByTx map[string][]domain.Asset,
 ) (int, error) {
-	return r.addAssets(ctx, assetsByTx, assetsByIntents)
+	return r.addAssets(ctx, assetsByTx)
 }
 
 func (r *assetRepository) GetAssets(
@@ -65,7 +65,7 @@ func (r *assetRepository) GetAssets(
 }
 
 func (r *assetRepository) addAssets(
-	ctx context.Context, assetsByTx, assetsByIntents map[string][]domain.Asset,
+	ctx context.Context, assetsByTx map[string][]domain.Asset,
 ) (int, error) {
 	count := 0
 	for _, assets := range assetsByTx {
@@ -98,35 +98,6 @@ func (r *assetRepository) addAssets(
 			count++
 		}
 	}
-	for _, assets := range assetsByIntents {
-		for _, asset := range assets {
-			var insertFn func() error
-			if ctx.Value("tx") != nil {
-				tx := ctx.Value("tx").(*badger.Txn)
-				insertFn = func() error {
-					return r.store.TxInsert(tx, asset.Id, asset)
-				}
-			} else {
-				insertFn = func() error {
-					return r.store.Insert(asset.Id, asset)
-				}
-			}
-			if err := insertFn(); err != nil {
-				if errors.Is(err, badgerhold.ErrKeyExists) {
-					continue
-				}
-				if errors.Is(err, badger.ErrConflict) {
-					attempts := 1
-					for errors.Is(err, badger.ErrConflict) && attempts <= maxRetries {
-						time.Sleep(100 * time.Millisecond)
-						err = insertFn()
-						attempts++
-					}
-				}
-				return -1, err
-			}
-			count++
-		}
-	}
+
 	return count, nil
 }

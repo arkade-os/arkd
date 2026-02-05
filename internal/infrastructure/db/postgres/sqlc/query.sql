@@ -433,13 +433,9 @@ VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
 INSERT INTO asset_metadata_update (fk_asset_id, fk_txid, metadata_hash)
 VALUES (@fk_asset_id, @fk_txid, @metadata_hash);
 
--- name: InsertAssetMetadataUpdateByIntent :exec
-INSERT INTO asset_metadata_update (fk_asset_id, fk_intent_txid, metadata_hash)
-VALUES (@fk_asset_id, @fk_intent_txid, @metadata_hash);
-
 -- name: InsertVtxoAssetProjection :exec
-INSERT INTO asset_projection (fk_asset_id, fk_vtxo_txid, fk_vtxo_vout, amount, type)
-VALUES (@fk_asset_id, @fk_vtxo_txid, @fk_vtxo_vout, @amount, 'local');
+INSERT INTO asset_projection (asset_id, txid, vout, amount)
+VALUES (@asset_id, @txid, @vout, @amount);
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);

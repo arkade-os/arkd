@@ -82,10 +82,10 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 			for _, asset := range vtxo.Assets {
 				if err := querierWithTx.InsertVtxoAssetProjection(
 					ctx, queries.InsertVtxoAssetProjectionParams{
-						FkAssetID:  asset.AssetId,
-						Amount:     int64(asset.Amount),
-						FkVtxoTxid: sql.NullString{String: vtxo.Txid, Valid: true},
-						FkVtxoVout: sql.NullInt64{Int64: int64(vtxo.VOut), Valid: true},
+						AssetID: asset.AssetId,
+						Txid:    vtxo.Txid,
+						Vout:    int64(vtxo.VOut),
+						Amount:  int64(asset.Amount),
 					},
 				); err != nil {
 					return err

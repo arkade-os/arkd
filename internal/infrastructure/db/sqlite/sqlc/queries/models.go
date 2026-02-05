@@ -25,14 +25,10 @@ type AssetMetadataUpdate struct {
 }
 
 type AssetProjection struct {
-	ID           int64
-	Type         string
-	FkIntentTxid sql.NullString
-	FkIntentVout sql.NullInt64
-	FkAssetID    string
-	FkVtxoTxid   sql.NullString
-	FkVtxoVout   sql.NullInt64
-	Amount       int64
+	AssetID string
+	Txid    string
+	Vout    int64
+	Amount  int64
 }
 
 type CheckpointTx struct {

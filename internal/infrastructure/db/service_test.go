@@ -1584,11 +1584,11 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.Len(t, assets, 0)
 
 		assetsByTx := map[string][]domain.Asset{arkTxid: newAssets}
-		count, err := repo.AddAssets(ctx, assetsByTx, nil)
+		count, err := repo.AddAssets(ctx, assetsByTx)
 		require.NoError(t, err)
 		require.Equal(t, 2, count)
 
-		count, err = repo.AddAssets(ctx, assetsByTx, nil)
+		count, err = repo.AddAssets(ctx, assetsByTx)
 		require.NoError(t, err)
 		require.Zero(t, count)
 

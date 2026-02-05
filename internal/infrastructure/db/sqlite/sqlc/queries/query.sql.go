@@ -141,22 +141,22 @@ func (q *Queries) InsertAssetMetadataUpdateByTx(ctx context.Context, arg InsertA
 }
 
 const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
-INSERT INTO asset_projection (fk_asset_id, fk_vtxo_txid, fk_vtxo_vout, amount, type)
-VALUES (?1, ?2, ?3, ?4, 'local')
+INSERT INTO asset_projection (asset_id, txid, vout, amount)
+VALUES (?1, ?2, ?3, ?4)
 `
 
 type InsertVtxoAssetProjectionParams struct {
-	FkAssetID  string
-	FkVtxoTxid sql.NullString
-	FkVtxoVout sql.NullInt64
-	Amount     int64
+	AssetID string
+	Txid    string
+	Vout    int64
+	Amount  int64
 }
 
 func (q *Queries) InsertVtxoAssetProjection(ctx context.Context, arg InsertVtxoAssetProjectionParams) error {
 	_, err := q.db.ExecContext(ctx, insertVtxoAssetProjection,
-		arg.FkAssetID,
-		arg.FkVtxoTxid,
-		arg.FkVtxoVout,
+		arg.AssetID,
+		arg.Txid,
+		arg.Vout,
 		arg.Amount,
 	)
 	return err

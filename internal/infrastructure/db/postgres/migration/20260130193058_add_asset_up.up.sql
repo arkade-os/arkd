@@ -8,17 +8,13 @@ CREATE TABLE IF NOT EXISTS asset (
 );
 
 CREATE TABLE IF NOT EXISTS asset_projection (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    type TEXT NOT NULL,
-    fk_intent_txid TEXT,
-    fk_intent_vout BIGINT,
-    fk_asset_id TEXT NOT NULL,
-    fk_vtxo_txid TEXT,
-    fk_vtxo_vout BIGINT,
+    asset_id TEXT NOT NULL,
+    txid TEXT NOT NULL,
+    vout BIGINT NOT NULL,
     amount BIGINT NOT NULL,
-    FOREIGN KEY (fk_asset_id) REFERENCES asset(id) ON DELETE CASCADE,
-    FOREIGN KEY (fk_vtxo_txid, fk_vtxo_vout) REFERENCES vtxo(txid, vout) ON DELETE CASCADE,
-    FOREIGN KEY (fk_intent_txid) REFERENCES intent(id) ON DELETE CASCADE
+    PRIMARY KEY (asset_id, txid, vout),
+    FOREIGN KEY (asset_id) REFERENCES asset(id) ON DELETE CASCADE,
+    FOREIGN KEY (txid, vout) REFERENCES vtxo(txid, vout) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS asset_metadata_update (
@@ -39,7 +35,7 @@ CREATE VIEW vtxo_vw AS
 SELECT
   v.*,
   COALESCE(vc.commitments, '') AS commitments,
-  COALESCE(ap.fk_asset_id, '') AS asset_id,
+  COALESCE(ap.asset_id, '') AS asset_id,
   COALESCE(ap.amount, 0) AS asset_amount
 FROM vtxo v
 LEFT JOIN LATERAL (
@@ -48,11 +44,11 @@ LEFT JOIN LATERAL (
   WHERE vtxo_txid = v.txid AND vtxo_vout = v.vout
 ) vc ON true
 LEFT JOIN (
-  SELECT fk_vtxo_txid, fk_vtxo_vout, fk_asset_id, amount
+  SELECT txid, vout, asset_id, amount
   FROM asset_projection
-  GROUP BY fk_vtxo_txid, fk_vtxo_vout, fk_asset_id, amount
+  GROUP BY txid, vout, asset_id, amount
 ) ap
-ON ap.fk_vtxo_txid = v.txid AND ap.fk_vtxo_vout = v.vout;
+ON ap.txid = v.txid AND ap.vout = v.vout;
 
 CREATE VIEW intent_with_inputs_vw AS
 SELECT vtxo_vw.*, intent.id, intent.round_id, intent.proof, intent.message, intent.txid AS intent_txid
