@@ -568,9 +568,15 @@ func issue(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
+
+	assetIdsString := make([]string, 0, len(assetIds))
+	for _, assetId := range assetIds {
+		assetIdsString = append(assetIdsString, assetId.String())
+	}
+
 	return printJSON(map[string]any{
 		"txid":      arkTxid,
-		"asset_ids": assetIds,
+		"asset_ids": assetIdsString,
 	})
 }
 
