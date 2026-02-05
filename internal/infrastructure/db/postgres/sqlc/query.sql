@@ -430,8 +430,8 @@ INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
 VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
 
 -- name: InsertAssetMetadataUpdateByTx :exec
-INSERT INTO asset_metadata_update (fk_asset_id, fk_txid, metadata_hash)
-VALUES (@fk_asset_id, @fk_txid, @metadata_hash);
+INSERT INTO asset_metadata_update (asset_id, txid, metadata_hash)
+VALUES (@asset_id, @txid, @metadata_hash);
 
 -- name: InsertVtxoAssetProjection :exec
 INSERT INTO asset_projection (asset_id, txid, vout, amount)

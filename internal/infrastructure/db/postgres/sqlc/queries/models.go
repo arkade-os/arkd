@@ -20,9 +20,9 @@ type Asset struct {
 
 type AssetMetadataUpdate struct {
 	ID           int64
-	FkAssetID    string
-	FkIntentTxid sql.NullString
-	FkTxid       sql.NullString
+	AssetID      string
+	IntentID     sql.NullString
+	Txid         sql.NullString
 	MetadataHash string
 }
 

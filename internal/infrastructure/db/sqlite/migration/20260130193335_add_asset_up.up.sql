@@ -19,13 +19,13 @@ CREATE TABLE IF NOT EXISTS asset_projection (
 
 CREATE TABLE IF NOT EXISTS asset_metadata_update (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fk_asset_id TEXT NOT NULL,
-    fk_intent_txid TEXT,
-    fk_txid TEXT,
+    asset_id TEXT NOT NULL,
+    intent_id TEXT,
+    txid TEXT,
     metadata_hash TEXT NOT NULL,
-    FOREIGN KEY (fk_asset_id) REFERENCES asset(id),
-    FOREIGN KEY (fk_txid) REFERENCES offchain_tx(txid),
-    FOREIGN KEY (fk_intent_txid) REFERENCES intent(id)
+    FOREIGN KEY (asset_id) REFERENCES asset(id),
+    FOREIGN KEY (txid) REFERENCES offchain_tx(txid),
+    FOREIGN KEY (intent_id) REFERENCES intent(id)
 );
 
 DROP VIEW IF EXISTS intent_with_inputs_vw;

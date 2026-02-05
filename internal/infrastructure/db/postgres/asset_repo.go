@@ -112,9 +112,9 @@ func (r *assetRepository) AddAssets(
 			for _, asset := range assets {
 				if err := querierWithTx.InsertAssetMetadataUpdateByTx(
 					ctx, queries.InsertAssetMetadataUpdateByTxParams{
-						FkAssetID:    asset.Id,
+						AssetID:      asset.Id,
 						MetadataHash: mdHashByAssetId[asset.Id],
-						FkTxid:       sql.NullString{String: txid, Valid: true},
+						Txid:         sql.NullString{String: txid, Valid: true},
 					},
 				); err != nil {
 					return err

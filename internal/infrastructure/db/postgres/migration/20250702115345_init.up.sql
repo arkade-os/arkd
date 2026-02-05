@@ -95,10 +95,10 @@ CREATE TABLE IF NOT EXISTS market_hour (
    updated_at BIGINT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS fk_intent_round_id ON intent(round_id);
-CREATE INDEX IF NOT EXISTS fk_tx_round_id ON tx(round_id);
-CREATE INDEX IF NOT EXISTS fk_receiver_intent_id ON receiver(intent_id);
-CREATE INDEX IF NOT EXISTS fk_vtxo_intent_id ON vtxo(intent_id);
+CREATE INDEX IF NOT EXISTS intent_round_id ON intent(round_id);
+CREATE INDEX IF NOT EXISTS tx_round_id ON tx(round_id);
+CREATE INDEX IF NOT EXISTS receiver_intent_id ON receiver(intent_id);
+CREATE INDEX IF NOT EXISTS vtxo_intent_id ON vtxo(intent_id);
 
 CREATE VIEW vtxo_vw AS
 SELECT v.*, string_agg(vc.commitment_txid, ',') AS commitments
