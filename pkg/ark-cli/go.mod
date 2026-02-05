@@ -10,7 +10,7 @@ replace github.com/arkade-os/arkd/pkg/errors => ../errors
 
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260204162732-487698dc67f1
-	github.com/arkade-os/go-sdk v0.8.2-0.20260205083740-61790c03bd4c
+	github.com/arkade-os/go-sdk v0.8.2-0.20260205134544-292e39a6e1db
 	github.com/urfave/cli/v2 v2.27.7
 	golang.org/x/term v0.36.0
 )
