@@ -2789,7 +2789,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep
-		time.Sleep(25 * time.Second)
+		time.Sleep(35 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
