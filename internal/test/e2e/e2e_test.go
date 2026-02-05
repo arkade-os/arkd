@@ -4118,8 +4118,7 @@ func TestAsset(t *testing.T) {
 		assetVtxos := listVtxosWithAsset(t, alice, assetId)
 		require.Len(t, assetVtxos, 1)
 		require.Len(t, assetVtxos[0].Assets, 1)
-		require.Equal(t, supply, int(assetVtxos[0].Assets[0].Amount))
-		require.Equal(t, assetId, assetVtxos[0].Assets[0].AssetId)
+		requireVtxoHasAsset(t, assetVtxos[0], assetId, uint64(supply))
 		require.Equal(t, txid, assetVtxos[0].Txid)
 
 		_, bobAddr, _, err := bob.Receive(ctx)
@@ -4141,8 +4140,7 @@ func TestAsset(t *testing.T) {
 		receiverAssetVtxos := listVtxosWithAsset(t, bob, assetId)
 		require.Len(t, receiverAssetVtxos, 1)
 		require.Len(t, receiverAssetVtxos[0].Assets, 1)
-		require.Equal(t, transferAmount, int(receiverAssetVtxos[0].Assets[0].Amount))
-		require.Equal(t, assetId, receiverAssetVtxos[0].Assets[0].AssetId)
+		requireVtxoHasAsset(t, receiverAssetVtxos[0], assetId, uint64(transferAmount))
 
 		receiverBalance, err := bob.Balance(ctx)
 		require.NoError(t, err)
@@ -4246,10 +4244,8 @@ func TestAsset(t *testing.T) {
 			controlVtxos[0].Assets,
 			2,
 		) // should hold both the control asset and the issued asset
-		require.Equal(t, controlAssetId, controlVtxos[0].Assets[0].AssetId)
-		require.Equal(t, uint64(1), controlVtxos[0].Assets[0].Amount)
-		require.Equal(t, assetId, controlVtxos[0].Assets[1].AssetId)
-		require.Equal(t, uint64(1), controlVtxos[0].Assets[1].Amount)
+		requireVtxoHasAsset(t, controlVtxos[0], controlAssetId, 1)
+		requireVtxoHasAsset(t, controlVtxos[0], assetId, 1)
 
 		_, err = alice.ReissueAsset(ctx, controlAssetId, assetId, 1000)
 		require.NoError(t, err)
@@ -4277,7 +4273,7 @@ func TestAsset(t *testing.T) {
 		assetVtxos := listVtxosWithAsset(t, alice, assetId)
 		require.Len(t, assetVtxos, 1)
 		require.Len(t, assetVtxos[0].Assets, 1)
-		require.Equal(t, uint64(5000), assetVtxos[0].Assets[0].Amount)
+		requireVtxoHasAsset(t, assetVtxos[0], assetId, 5000)
 
 		_, err = alice.BurnAsset(ctx, assetId, 1500)
 		require.NoError(t, err)
@@ -4287,7 +4283,7 @@ func TestAsset(t *testing.T) {
 		assetVtxos = listVtxosWithAsset(t, alice, assetId)
 		require.Len(t, assetVtxos, 1)
 		require.Len(t, assetVtxos[0].Assets, 1)
-		require.Equal(t, uint64(3500), assetVtxos[0].Assets[0].Amount)
+		requireVtxoHasAsset(t, assetVtxos[0], assetId, 3500)
 	})
 
 	// This test ensures that Alice can unroll her asset vtxos onchain
@@ -4312,8 +4308,7 @@ func TestAsset(t *testing.T) {
 		require.Len(t, spentVtxos, 1)
 		require.Len(t, assetVtxos, 1)
 		require.Len(t, assetVtxos[0].Assets, 1)
-		require.Equal(t, int(supply), int(assetVtxos[0].Assets[0].Amount))
-		require.Equal(t, assetId, assetVtxos[0].Assets[0].AssetId)
+		requireVtxoHasAsset(t, assetVtxos[0], assetId, supply)
 		require.Equal(t, txid, assetVtxos[0].Txid)
 
 		// Fund alice's onchain address to cover network fees for the unroll
