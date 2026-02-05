@@ -513,6 +513,20 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	return vtxos, nil
 }
 
+func (v *vtxoRepository) AddVirtualTxsRequest(
+	ctx context.Context, expiry int64,
+) (string, error) {
+	// TODO
+	return "", nil
+}
+
+func (v *vtxoRepository) ValidateVirtualTxsRequest(
+	ctx context.Context, authCode string,
+) (bool, error) {
+	// TODO
+	return false, nil
+}
+
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 	var commitmentTxids []string
 	if commitments, ok := row.Commitments.(string); ok && commitments != "" {

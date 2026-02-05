@@ -123,7 +123,8 @@ type Config struct {
 	VtxoMinAmount             int64
 	SettlementMinExpiryGap    int64
 
-	EnablePprof bool
+	EnablePprof       bool
+	IndexerTxExposure string
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -210,6 +211,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
+	IndexerTxExposure             = "INDEXER_TX_EXPOSURE"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -245,6 +247,7 @@ var (
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultIndexerTxExposure             = "public"
 )
 
 func LoadConfig() (*Config, error) {
@@ -285,6 +288,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(IndexerTxExposure, defaultIndexerTxExposure)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -395,6 +399,7 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		IndexerTxExposure:             viper.GetString(IndexerTxExposure),
 	}, nil
 }
 
@@ -559,6 +564,11 @@ func (c *Config) Validate() error {
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
+
+	if c.IndexerTxExposure != "public" && c.IndexerTxExposure != "withheld" || c.IndexerTxExposure != "private" {
+		return fmt.Errorf("indexer tx exposure must be either 'public', 'withheld', or 'private'")
+	}
+
 	if err := c.repoManager(); err != nil {
 		return err
 	}
@@ -617,7 +627,7 @@ func (c *Config) UnlockerService() ports.Unlocker {
 }
 
 func (c *Config) IndexerService() application.IndexerService {
-	return application.NewIndexerService(c.repo)
+	return application.NewIndexerService(c.repo, c.IndexerTxExposure)
 }
 
 func (c *Config) SignerService() (ports.SignerService, error) {

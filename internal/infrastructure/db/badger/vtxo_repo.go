@@ -653,6 +653,20 @@ func (r *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	return outpoints, nil
 }
 
+func (v *vtxoRepository) AddVirtualTxsRequest(
+	ctx context.Context, expiry int64,
+) (string, error) {
+	// TODO
+	return "", nil
+}
+
+func (v *vtxoRepository) ValidateVirtualTxsRequest(
+	ctx context.Context, authCode string,
+) (bool, error) {
+	// TODO
+	return false, nil
+}
+
 func (r *vtxoRepository) GetAllChildrenVtxos(
 	ctx context.Context,
 	txid string,

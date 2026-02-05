@@ -3,14 +3,21 @@ package application
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/wire"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -56,11 +63,13 @@ type IndexerService interface {
 
 type indexerService struct {
 	repoManager ports.RepoManager
+	txExposure  string
 }
 
-func NewIndexerService(repoManager ports.RepoManager) IndexerService {
+func NewIndexerService(repoManager ports.RepoManager, TxExposure string) IndexerService {
 	return &indexerService{
 		repoManager: repoManager,
+		txExposure:  TxExposure,
 	}
 }
 
@@ -247,7 +256,7 @@ func (i *indexerService) GetVtxosByOutpoint(
 }
 
 func (i *indexerService) GetVtxoChain(
-	ctx context.Context, vtxoKey Outpoint, intent Intent, page *Page,
+	ctx context.Context, vtxoKey Outpoint, intentForProof Intent, page *Page,
 ) (*VtxoChainResp, error) {
 	chain := make([]ChainTx, 0)
 	nextVtxos := []domain.Outpoint{vtxoKey}
@@ -385,27 +394,30 @@ func (i *indexerService) GetVtxoChain(
 	var err error
 	// turn into TxExposure enum
 	switch TxExposure(someExposureFromConfig) {
-	case TxExposurePublic:
-		// no need to do anything
+	case TxExposurePublic: // no need to do anything
 	case TxExposureWithheld:
 		// validate the intent proof/message to allow access to the full chain
-		if intent.Proof == "" || intent.Message == "" {
-			return nil, fmt.Errorf("intent proof and message are required for withheld exposure")
+		err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof)
+		if err == nil {
+			// expiry from config?
+			expiry := int64(0)
+			authCode, err = i.repoManager.Vtxos().AddVirtualTxsRequest(ctx, expiry)
+			if err != nil {
+				return nil, err
+			}
 		}
-		// validate proof here...
-		// expiry from config?
-		authCode, err = i.repoManager.Vtxos().AddVirtualTxsRequest(ctx, 0)
-		if err != nil {
-			return nil, err
-		}
+		// if intent failed validation, we just dont supply an auth code
+
 	case TxExposurePrivate:
 		// validate the intent proof/message to allow access to the full chain
-		if intent.Proof == "" || intent.Message == "" {
-			return nil, fmt.Errorf("intent proof and message are required for private exposure")
+		err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof)
+		if err != nil {
+			return nil, fmt.Errorf("invalid intent proof or message: %s", err)
 		}
-		// validate proof here...
+
 		// expiry from config?
-		authCode, err = i.repoManager.Vtxos().AddVirtualTxsRequest(ctx, 0)
+		expiry := int64(0)
+		authCode, err = i.repoManager.Vtxos().AddVirtualTxsRequest(ctx, expiry)
 		if err != nil {
 			return nil, err
 		}
@@ -421,6 +433,141 @@ func (i *indexerService) GetVtxoChain(
 	}, nil
 }
 
+func (i *indexerService) ValidateIntentWithProof(ctx context.Context, vtxoKey Outpoint, intentForProof Intent) error {
+	if intentForProof.Proof == "" || intentForProof.Message == "" {
+		return fmt.Errorf("intent proof and message are required for private exposure")
+	}
+	// validate proof
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(intentForProof.Proof), true)
+	if err != nil {
+		return fmt.Errorf("failed to parse proof tx: %s", err)
+	}
+	if ptx == nil {
+		return fmt.Errorf("proof PSBT is nil")
+	}
+	if len(ptx.Inputs) <= 1 {
+		return errors.INVALID_PSBT_INPUT.New("not enough inputs in proof PSBT")
+	}
+	proof := intent.Proof{
+		Packet: *ptx,
+	}
+	outpoints := proof.GetOutpoints()
+	proofTxid := proof.UnsignedTx.TxID()
+	boardingTxs := make(map[string]wire.MsgTx)
+	for idx, outpoint := range outpoints {
+		psbtInput := proof.Inputs[idx+1]
+
+		if len(psbtInput.TaprootLeafScript) == 0 {
+			return errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", idx+1).
+				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
+		}
+
+		vtxoOutpoint := domain.Outpoint{
+			Txid: outpoint.Hash.String(),
+			VOut: outpoint.Index,
+		}
+
+		vtxosResult, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
+		if err != nil || len(vtxosResult) == 0 {
+			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
+				// txhex, err := s.wallet.GetTransaction(ctx, outpoint.Hash.String())
+				txhex := vtxoKey.Txid
+				var tx wire.MsgTx
+				if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
+					return errors.INVALID_PSBT_INPUT.New(
+						"failed to deserialize boarding tx %s: %s", vtxoOutpoint.Txid, err,
+					).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
+				}
+
+				boardingTxs[vtxoOutpoint.Txid] = tx
+			}
+
+			tx := boardingTxs[vtxoOutpoint.Txid]
+			if int(vtxoOutpoint.VOut) >= len(tx.TxOut) {
+				return errors.INVALID_PSBT_INPUT.New(
+					"invalid vout index %d for tx %s (tx has %d outputs)",
+					vtxoOutpoint.VOut, vtxoOutpoint.Txid, len(tx.TxOut),
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
+			}
+			prevout := tx.TxOut[vtxoOutpoint.VOut]
+
+			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
+				return errors.INVALID_PSBT_INPUT.New(
+					"pkscript mismatch: got %x expected %x",
+					prevout.PkScript,
+					psbtInput.WitnessUtxo.PkScript,
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
+			}
+
+			if prevout.Value != int64(psbtInput.WitnessUtxo.Value) {
+				return errors.INVALID_PSBT_INPUT.New(
+					"invalid witness utxo value: got %d expected %d",
+					prevout.Value,
+					psbtInput.WitnessUtxo.Value,
+				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
+			}
+
+			continue
+		}
+
+		vtxo := vtxosResult[0]
+
+		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
+			return errors.INVALID_PSBT_INPUT.New(
+				"invalid witness utxo value: got %d expected %d",
+				psbtInput.WitnessUtxo.Value,
+				vtxo.Amount,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
+		}
+
+		pubkeyBytes, err := hex.DecodeString(vtxo.PubKey)
+		if err != nil {
+			return errors.INTERNAL_ERROR.New("failed to decode vtxo pubkey: %w", err).
+				WithMetadata(map[string]any{
+					"vtxo_pubkey": vtxo.PubKey,
+				})
+		}
+
+		pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
+		if err != nil {
+			return errors.INTERNAL_ERROR.New("failed to parse vtxo pubkey: %w", err).
+				WithMetadata(map[string]any{
+					"vtxo_pubkey": vtxo.PubKey,
+				})
+		}
+
+		pkScript, err := script.P2TRScript(pubkey)
+		if err != nil {
+			return errors.INTERNAL_ERROR.New(
+				"failed to compute P2TR script from vtxo pubkey: %w", err,
+			).WithMetadata(map[string]any{
+				"vtxo_pubkey": vtxo.PubKey,
+			})
+		}
+
+		if !bytes.Equal(pkScript, psbtInput.WitnessUtxo.PkScript) {
+			return errors.INVALID_PSBT_INPUT.New(
+				"invalid witness utxo script: got %x expected %x",
+				psbtInput.WitnessUtxo.PkScript,
+				pkScript,
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
+		}
+	}
+
+	if err := intent.Verify(intentForProof.Proof, intentForProof.Message); err != nil {
+		log.
+			WithField("signedProof", intentForProof.Proof).
+			WithField("encodedMessage", intentForProof.Message).
+			Tracef("failed to verify intent proof: %s", err)
+		return errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
+			WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   intentForProof.Proof,
+				Message: intentForProof.Message,
+			})
+	}
+	return nil
+}
+
 func (i *indexerService) GetVirtualTxs(
 	ctx context.Context, authCode string, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
@@ -431,19 +578,11 @@ func (i *indexerService) GetVirtualTxs(
 
 	virtualTxs, reps := paginate(txs, page, maxPageSizeVirtualTxs)
 
-	someExposureFromConfig := "public" // this would come from config
-	if someExposureFromConfig == "" {
-		return nil, fmt.Errorf("indexer exposure value is required")
-	}
-
 	// turn into TxExposure enum
-	switch TxExposure(someExposureFromConfig) {
+	switch TxExposure(i.txExposure) {
 	case TxExposurePublic:
 		// no need to validate auth
 	case TxExposureWithheld:
-		if authCode == "" {
-			return nil, fmt.Errorf("auth code is required for withheld exposure")
-		}
 		isValid := false
 		// optional auth code can be passed, if it was lets check if valid
 		if authCode != "" {
@@ -463,7 +602,7 @@ func (i *indexerService) GetVirtualTxs(
 
 				// remove arkd signature from each input
 				for j := range ptx.Inputs {
-					// what key do we use here?
+					// what key do we use here? grab from config?
 					arkdPubkey := []byte("arkd_pubkey")
 					newSigs := make([]*psbt.PartialSig, 0)
 					for _, sig := range ptx.Inputs[j].PartialSigs {
@@ -495,7 +634,7 @@ func (i *indexerService) GetVirtualTxs(
 			return nil, fmt.Errorf("invalid auth code for withheld exposure")
 		}
 	default:
-		return nil, fmt.Errorf("invalid exposure value: %s", someExposureFromConfig)
+		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
 	}
 
 	return &VirtualTxsResp{
