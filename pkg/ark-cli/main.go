@@ -49,6 +49,7 @@ func main() {
 		&issueCommand,
 		&reissueCommand,
 		&burnCommand,
+		&vtxosCommand,
 	)
 	app.Flags = []cli.Flag{datadirFlag, verboseFlag}
 	app.Before = func(ctx *cli.Context) error {
@@ -166,6 +167,10 @@ var (
 		Name:  "asset-id",
 		Usage: "asset id to send",
 	}
+	spentFlag = &cli.BoolFlag{
+		Name:  "spent",
+		Usage: "show spent vtxos instead of spendable",
+	}
 )
 
 var (
@@ -276,6 +281,14 @@ var (
 		Flags: []cli.Flag{amountFlag, assetIDFlag, passwordFlag},
 		Action: func(ctx *cli.Context) error {
 			return burn(ctx)
+		},
+	}
+	vtxosCommand = cli.Command{
+		Name:  "vtxos",
+		Usage: "List vtxos (spendable by default, or spent with --spent flag)",
+		Flags: []cli.Flag{spentFlag},
+		Action: func(ctx *cli.Context) error {
+			return listVtxos(ctx)
 		},
 	}
 	versionCommand = cli.Command{
@@ -635,6 +648,17 @@ func burn(ctx *cli.Context) error {
 	return printJSON(map[string]any{
 		"txid": arkTxid,
 	})
+}
+
+func listVtxos(ctx *cli.Context) error {
+	spendable, spent, err := arkSdkClient.ListVtxos(ctx.Context)
+	if err != nil {
+		return err
+	}
+	if ctx.Bool(spentFlag.Name) {
+		return printJSON(spent)
+	}
+	return printJSON(spendable)
 }
 
 func getArkSdkClient(ctx *cli.Context) (arksdk.ArkClient, error) {
