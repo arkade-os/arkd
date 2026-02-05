@@ -248,7 +248,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 -- name: SelectNotUnrolledVtxosWithPubkey :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND pubkey = @pubkey;
 
--- name: SelectVtxo :one
+-- name: SelectVtxo :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectAllVtxos :many
@@ -340,7 +340,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
     AND v.updated_at >= :after
     AND (CAST(:before AS INTEGER) = 0 OR v.updated_at <= CAST(:before AS INTEGER));
 
--- name: SelectPendingSpentVtxo :one
+-- name: SelectPendingSpentVtxo :many
 SELECT v.*
 FROM vtxo_vw v
 WHERE v.txid = @txid AND v.vout = @vout

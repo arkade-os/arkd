@@ -388,7 +388,11 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, aliceBalance)
 			require.Greater(t, int(aliceBalance.OffchainBalance.Total), 0)
-			require.Less(t, int(aliceBalance.OffchainBalance.Total), prevTotalBalance)
+			require.Less(
+				t,
+				int(aliceBalance.OffchainBalance.Total),
+				prevTotalBalance,
+			)
 
 			bobBalance, err = bob.Balance(t.Context())
 			require.NoError(t, err)
