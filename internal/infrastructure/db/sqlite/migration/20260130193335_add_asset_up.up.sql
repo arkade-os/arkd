@@ -17,17 +17,6 @@ CREATE TABLE IF NOT EXISTS asset_projection (
     FOREIGN KEY (txid, vout) REFERENCES vtxo(txid, vout) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS asset_metadata_update (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    asset_id TEXT NOT NULL,
-    intent_id TEXT,
-    txid TEXT,
-    metadata_hash TEXT NOT NULL,
-    FOREIGN KEY (asset_id) REFERENCES asset(id),
-    FOREIGN KEY (txid) REFERENCES offchain_tx(txid),
-    FOREIGN KEY (intent_id) REFERENCES intent(id)
-);
-
 DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 

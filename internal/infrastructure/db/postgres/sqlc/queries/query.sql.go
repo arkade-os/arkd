@@ -110,22 +110,6 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 	return err
 }
 
-const insertAssetMetadataUpdateByTx = `-- name: InsertAssetMetadataUpdateByTx :exec
-INSERT INTO asset_metadata_update (asset_id, txid, metadata_hash)
-VALUES ($1, $2, $3)
-`
-
-type InsertAssetMetadataUpdateByTxParams struct {
-	AssetID      string
-	Txid         sql.NullString
-	MetadataHash string
-}
-
-func (q *Queries) InsertAssetMetadataUpdateByTx(ctx context.Context, arg InsertAssetMetadataUpdateByTxParams) error {
-	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByTx, arg.AssetID, arg.Txid, arg.MetadataHash)
-	return err
-}
-
 const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES ($1, $2, $3, $4)

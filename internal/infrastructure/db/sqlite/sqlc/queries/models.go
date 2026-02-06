@@ -16,14 +16,6 @@ type Asset struct {
 	ControlAssetID sql.NullString
 }
 
-type AssetMetadataUpdate struct {
-	ID           int64
-	AssetID      string
-	IntentID     sql.NullString
-	Txid         sql.NullString
-	MetadataHash string
-}
-
 type AssetProjection struct {
 	AssetID string
 	Txid    string

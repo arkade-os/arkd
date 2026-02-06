@@ -108,38 +108,6 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 	return err
 }
 
-const insertAssetMetadataUpdateByIntent = `-- name: InsertAssetMetadataUpdateByIntent :exec
-INSERT INTO asset_metadata_update (asset_id, intent_id, metadata_hash)
-VALUES (?1, ?2, ?3)
-`
-
-type InsertAssetMetadataUpdateByIntentParams struct {
-	AssetID      string
-	IntentID     sql.NullString
-	MetadataHash string
-}
-
-func (q *Queries) InsertAssetMetadataUpdateByIntent(ctx context.Context, arg InsertAssetMetadataUpdateByIntentParams) error {
-	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByIntent, arg.AssetID, arg.IntentID, arg.MetadataHash)
-	return err
-}
-
-const insertAssetMetadataUpdateByTx = `-- name: InsertAssetMetadataUpdateByTx :exec
-INSERT INTO asset_metadata_update (asset_id, txid, metadata_hash)
-VALUES (?1, ?2, ?3)
-`
-
-type InsertAssetMetadataUpdateByTxParams struct {
-	AssetID      string
-	Txid         sql.NullString
-	MetadataHash string
-}
-
-func (q *Queries) InsertAssetMetadataUpdateByTx(ctx context.Context, arg InsertAssetMetadataUpdateByTxParams) error {
-	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByTx, arg.AssetID, arg.Txid, arg.MetadataHash)
-	return err
-}
-
 const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES (?1, ?2, ?3, ?4)
