@@ -65,8 +65,8 @@ func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRe
 	assetMetadata := make([]*arkv1.AssetMetadata, 0, len(asset.Metadata))
 	for _, metadata := range asset.Metadata {
 		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
-			Key:   string(metadata.Key),
-			Value: string(metadata.Value),
+			Key:   hex.EncodeToString(metadata.Key),
+			Value: hex.EncodeToString(metadata.Value),
 		})
 	}
 
