@@ -1565,7 +1565,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				},
 			},
 			{
-				Id:        "asset2",
+				Id: "asset2",
 				Metadata: []asset.Metadata{
 					{
 						Key:   []byte("this is"),

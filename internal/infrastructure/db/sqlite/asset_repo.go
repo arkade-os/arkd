@@ -89,8 +89,8 @@ func (r *assetRepository) AddAssets(
 			}
 			if err := querierWithTx.InsertAsset(
 				ctx, queries.InsertAssetParams{
-					ID:          ast.Id,
-					Metadata:    md,
+					ID:       ast.Id,
+					Metadata: md,
 					MetadataHash: sql.NullString{
 						String: hex.EncodeToString(mdHash),
 						Valid:  len(mdHash) > 0,
