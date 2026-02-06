@@ -46,3 +46,12 @@ func (s assetSource) AssetExists(ctx context.Context, assetID string) bool {
 	_, err := s.GetAssets(ctx, []string{assetID})
 	return err == nil
 }
+
+func hasIssuance(packet asset.Packet) bool {
+	for _, group := range packet {
+		if group.IsIssuance() {
+			return true
+		}
+	}
+	return false
+}

@@ -1870,6 +1870,15 @@ func (s *service) RegisterIntent(
 			return "", err
 		}
 
+		// disable issuance
+		if hasIssuance(intentPacket) {
+			return "", errors.INVALID_INTENT_PROOF.New("intent contains asset issuance").
+				WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   signedProof,
+					Message: encodedMessage,
+				})
+		}
+
 		leafTxPacket = intentPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
 	}
 
