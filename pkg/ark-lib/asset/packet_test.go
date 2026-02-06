@@ -3,6 +3,7 @@ package asset_test
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -11,6 +12,16 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTemp(t *testing.T) {
+	script, err := hex.DecodeString("6a0c41524b000100000100008827")
+	require.NoError(t, err)
+	require.NotNil(t, script)
+	packet, err := asset.NewPacketFromScript(script)
+	require.NoError(t, err)
+	require.NotNil(t, packet)
+	fmt.Println(packet.String())
+}
 
 func TestPacket(t *testing.T) {
 	var fixtures packetFixtures

@@ -58,7 +58,7 @@ func TestAssetInput(t *testing.T) {
 			for _, v := range fixtures.Valid.NewInput {
 				t.Run(v.Name, func(t *testing.T) {
 					in, err := asset.NewAssetInput(v.Vin, v.Amount)
-					if v.Type == asset.AssetTypeIntent.String() {
+					if v.Type == asset.AssetInputTypeIntent.String() {
 						in, err = asset.NewIntentAssetInput(v.Txid, v.Vin, v.Amount)
 					}
 					require.NoError(t, err)
@@ -83,7 +83,7 @@ func TestAssetInput(t *testing.T) {
 					ins := make([]asset.AssetInput, 0, len(v.Inputs))
 					for _, vv := range v.Inputs {
 						in, err := asset.NewAssetInput(vv.Vin, vv.Amount)
-						if vv.Type == asset.AssetTypeIntent.String() {
+						if vv.Type == asset.AssetInputTypeIntent.String() {
 							in, err = asset.NewIntentAssetInput(vv.Txid, vv.Vin, vv.Amount)
 						}
 						require.NoError(t, err)

@@ -47,7 +47,6 @@ func TestAssetGroup(t *testing.T) {
 				require.Equal(t, ins, assetGroup.Inputs)
 				require.Equal(t, outs, assetGroup.Outputs)
 				require.Equal(t, md, assetGroup.Metadata)
-				require.True(t, assetGroup.Immutable)
 			})
 		}
 	})
@@ -63,7 +62,6 @@ func TestAssetGroup(t *testing.T) {
 					assetGroup := asset.AssetGroup{
 						AssetId:   v.AssetId.parse(),
 						Inputs:    ins,
-						Immutable: v.Immutable,
 					}
 					got, err := assetGroup.Serialize()
 					require.Error(t, err)
@@ -93,7 +91,6 @@ type assetGroupFixturesJSON struct {
 			ExpectedError string              `json:"expectedError"`
 			AssetId       assetIdFixture      `json:"assetId,omitempty"`
 			Inputs        []assetInputFixture `json:"inputs"`
-			Immutable     bool                `json:"immutable"`
 		} `json:"newAssetGroup"`
 		NewAssetGroupFromString []struct {
 			Name          string `json:"name"`
@@ -178,7 +175,7 @@ type assetInputFixture struct {
 }
 
 func (f assetInputFixture) parse() *asset.AssetInput {
-	if f.Type == asset.AssetTypeLocal.String() {
+	if f.Type == asset.AssetInputTypeLocal.String() {
 		in, _ := asset.NewAssetInput(f.Vin, f.Amount)
 		return in
 	}

@@ -3,7 +3,7 @@
     {
       "name": "send (with local inputs and outputs)",
       "assetId": {
-        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
         "index": 0
       },
       "inputs": [
@@ -23,7 +23,7 @@
           "amount": 40
         }
       ],
-      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000101000064020100003c01010028"
+      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1000001010000640200003c010028"
     },
     {
       "name": "refresh (with intent inputs)",
@@ -45,7 +45,7 @@
           "vout": 0
         }
       ],
-      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000102bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0000640101000064"
+      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000102bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb00006401000064"
     },
     {
       "name": "issuance (simple)",
@@ -55,7 +55,7 @@
           "vout": 2
         }
       ],
-      "serializedHex": "00000101020064"
+      "serializedHex": "000001020064"
     },
     {
       "name": "issuance (with metadata)",
@@ -72,10 +72,10 @@
         },
         {
           "key": "key2",
-          "value": "value2"
+          "value": "👾"
         }
       ],
-      "serializedHex": "0402046b6579320676616c756532046b6579310676616c756531000101020064"
+      "serializedHex": "0402046b65793204f09f91be046b6579310676616c7565310001020064"
     },
     {
       "name": "issuance (with metadata and control asset ref by group index)",
@@ -102,7 +102,7 @@
           "value": "value2"
         }
       ],
-      "serializedHex": "0602010002046b6579320676616c756532046b6579310676616c75653100020101006401000001"
+      "serializedHex": "0602010002046b6579320676616c756532046b6579310676616c7565310002010064000001"
     },
     {
       "name": "issuance (with metadata and control asset ref by id)",
@@ -132,7 +132,7 @@
           "value": "value2"
         }
       ],
-      "serializedHex": "0601aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa020002046b6579320676616c756532046b6579310676616c75653100020101006401000001"
+      "serializedHex": "0601aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa020002046b6579320676616c756532046b6579310676616c7565310002010064000001"
     },
     {
       "name": "reissuance offchain (with local inputs and outputs",
@@ -162,7 +162,7 @@
           "vout": 2
         }
       ],
-      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000002010100010100006402010100d80401020001"
+      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000020101000101000064020100d804020001"
     },
     {
       "name": "reissuance in batch (with intent inputs and outputs",
@@ -194,7 +194,7 @@
           "vout": 2
         }
       ],
-      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000202dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd01000102dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd00006402010100d80401020001"
+      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000202dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd01000102dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd000064020100d804020001"
     },
     {
       "name": "burn some (with outputs)",
@@ -215,7 +215,7 @@
           "vout": 3
         }
       ],
-      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000001010000640101030050"
+      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000010100006401030050"
     },
     {
       "name": "burn all (without outputs)",
@@ -234,24 +234,6 @@
     }
   ],
   "invalid": {
-    "newAssetGroup": [
-      {
-        "name": "mutable",
-        "assetId": {
-          "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "index": 0
-        },
-        "inputs": [
-          {
-            "type": "local",
-            "vin": 0,
-            "amount": 100
-          }
-        ],
-        "immutable": false,
-        "expectedError": "asset must be immutable"
-      }
-    ],
     "newAssetGroupFromString": [
       {
         "name": "empty",

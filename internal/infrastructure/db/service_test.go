@@ -1552,7 +1552,6 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		newAssets := []domain.Asset{
 			{
 				Id:             "asset1",
-				Immutable:      true,
 				ControlAssetId: "asset2",
 				Metadata: []asset.Metadata{
 					{
@@ -1567,7 +1566,6 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 			},
 			{
 				Id:        "asset2",
-				Immutable: true,
 				Metadata: []asset.Metadata{
 					{
 						Key:   []byte("this is"),

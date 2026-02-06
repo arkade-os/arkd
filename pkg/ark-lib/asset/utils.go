@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
 // serializeUint16 serializes a uint16 to the writer
@@ -82,4 +84,29 @@ func deserializeVarSlice(r *bytes.Reader) ([]byte, error) {
 		return nil, err
 	}
 	return buf, nil
+}
+
+// deserializeTxHash deserializes a chainhash.Hash from the reader as reversed bytes
+func deserializeTxHash(r *bytes.Reader) (chainhash.Hash, error) {
+	buf, err := deserializeSlice(r, chainhash.HashSize)
+	if err != nil {
+		return chainhash.Hash{}, err
+	}
+	return chainhash.Hash(reverseBytes(buf)), nil
+}
+
+// serializeHash serializes a chainhash.Hash to the write as reversed bytes
+// it ensures the encoded result is the txid
+func serializeTxHash(w io.Writer, hash chainhash.Hash) error {
+	clone := hash.CloneBytes()
+	reversedBytes := reverseBytes(clone) // reverse the bytes to get the txid
+	return serializeSlice(w, reversedBytes)
+}
+
+// reverseBytes reverses the bytes of a slice
+func reverseBytes(buf []byte) []byte {
+	for i := 0; i < len(buf)/2; i++ {
+		buf[i], buf[len(buf)-1-i] = buf[len(buf)-1-i], buf[i]
+	}
+	return buf
 }

@@ -90,7 +90,6 @@ func (r *assetRepository) AddAssets(
 			if err := querierWithTx.InsertAsset(
 				ctx, queries.InsertAssetParams{
 					ID:          ast.Id,
-					IsImmutable: ast.Immutable,
 					Metadata:    md,
 					MetadataHash: sql.NullString{
 						String: hex.EncodeToString(mdHash),
@@ -159,7 +158,6 @@ func (r *assetRepository) GetAssets(
 			Id:             row.ID,
 			Metadata:       metadata,
 			ControlAssetId: row.ControlAssetID.String,
-			Immutable:      row.IsImmutable,
 		})
 	}
 	return assets, nil

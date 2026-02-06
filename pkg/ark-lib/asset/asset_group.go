@@ -11,36 +11,17 @@ import (
 )
 
 const (
-	AssetTypeUnspecified AssetType = iota
-	AssetTypeLocal
-	AssetTypeIntent
-
 	// Presence byte masks
 	maskAssetId      uint8 = 1 << 0 // 0x01
 	maskControlAsset uint8 = 1 << 1 // 0x02
 	maskMetadata     uint8 = 1 << 2 // 0x04
 )
 
-type AssetType uint8
-
-func (t AssetType) String() string {
-	switch t {
-	case AssetTypeLocal:
-		return "local"
-	case AssetTypeIntent:
-		return "intent"
-	default:
-		return "unspecified"
-	}
-}
-
 type AssetGroup struct {
 	// Can be nil in case of issuance
 	AssetId *AssetId
 	// Can be nil if not created in a issuance
 	ControlAsset *AssetRef
-	// Always true
-	Immutable bool
 	// Can be empty in case of burn
 	Outputs []AssetOutput
 	// Can be empty in case of issuance
@@ -77,7 +58,6 @@ func NewAssetGroup(
 	ag := AssetGroup{
 		AssetId:      assetId,
 		ControlAsset: controlAsset,
-		Immutable:    true,
 		Outputs:      outs,
 		Inputs:       ins,
 		Metadata:     md,
@@ -162,9 +142,6 @@ func (ag AssetGroup) validate() error {
 			return err
 		}
 	}
-	if !ag.Immutable {
-		return fmt.Errorf("asset must be immutable")
-	}
 	return nil
 }
 
@@ -226,11 +203,10 @@ func (ag AssetGroup) toBatchLeafAssetGroup(intentTxid chainhash.Hash) AssetGroup
 	return AssetGroup{
 		AssetId: ag.AssetId,
 		Outputs: ag.Outputs,
-		Immutable: ag.Immutable,
 		ControlAsset: ag.ControlAsset,
 		Metadata: ag.Metadata,
 		Inputs: []AssetInput{{
-			Type: AssetTypeIntent,
+			Type: AssetInputTypeIntent,
 			Txid: intentTxid,
 		}},
 	}
@@ -288,7 +264,6 @@ func newAssetGroupFromReader(r *bytes.Reader) (*AssetGroup, error) {
 		AssetId:      assetId,
 		ControlAsset: controlAsset,
 		Metadata:     metadata,
-		Immutable:    true,
 		Inputs:       inputs,
 		Outputs:      outputs,
 	}

@@ -3,8 +3,10 @@ package asset
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
@@ -13,6 +15,8 @@ const TX_HASH_SIZE = chainhash.HashSize
 const ASSET_ID_SIZE = 34
 
 const AssetVersion byte = 0x01
+
+var emptyTxHash = chainhash.Hash(make([]byte, chainhash.HashSize))
 
 type AssetId struct {
 	Txid  chainhash.Hash
@@ -23,17 +27,19 @@ func NewAssetId(txid string, index uint16) (*AssetId, error) {
 	if len(txid) <= 0 {
 		return nil, fmt.Errorf("missing txid")
 	}
-	buf, err := hex.DecodeString(txid)
-	if err != nil {
-		return nil, fmt.Errorf("invalid txid format, must be hex")
+	if len(txid) != chainhash.HashSize * 2 {
+		return nil, fmt.Errorf("invalid txid length, got %d want %d", len(txid), chainhash.HashSize * 2)
 	}
-	if len(buf) != chainhash.HashSize {
-		return nil, fmt.Errorf(
-			"invalid txid length, got %d want %d", len(txid), chainhash.HashSize,
-		)
-	}
+	
 	txHash, err := chainhash.NewHashFromStr(txid)
 	if err != nil {
+		if strings.Contains(err.Error(), "encoding/hex") {
+			return nil, fmt.Errorf("invalid txid format")
+		}
+		if errors.Is(err, chainhash.ErrHashStrSize) {
+			return nil, fmt.Errorf(
+				"invalid txid length, got %d want 64", len(txid))
+		}
 		return nil, err
 	}
 	assetId := AssetId{Txid: *txHash, Index: index}
@@ -75,14 +81,14 @@ func (a AssetId) String() string {
 }
 
 func (a AssetId) validate() error {
-	if bytes.Equal(a.Txid[:], make([]byte, chainhash.HashSize)) {
+	if a.Txid.IsEqual(&emptyTxHash) {
 		return fmt.Errorf("empty txid")
 	}
 	return nil
 }
 
 func (a AssetId) serialize(w io.Writer) error {
-	if err := serializeSlice(w, a.Txid[:]); err != nil {
+	if err := serializeTxHash(w, a.Txid); err != nil {
 		return err
 	}
 	return serializeUint16(w, a.Index)
@@ -93,7 +99,7 @@ func newAssetIdFromReader(r *bytes.Reader) (*AssetId, error) {
 		return nil, fmt.Errorf("invalid asset id length: got %d, want %d", r.Len(), ASSET_ID_SIZE)
 	}
 
-	txid, err := deserializeSlice(r, chainhash.HashSize)
+	txid, err := deserializeTxHash(r)
 	if err != nil {
 		return nil, err
 	}
@@ -102,9 +108,9 @@ func newAssetIdFromReader(r *bytes.Reader) (*AssetId, error) {
 		return nil, err
 	}
 
-	assetId := AssetId{Txid: chainhash.Hash(txid), Index: index}
+	assetId := AssetId{Txid: txid, Index: index}
 
-	// Make sure the txid is not a slice of 0x0000.. 32-bytes
+	// make sure the txid is not a slice of 0x0000.. 32-bytes
 	if err := assetId.validate(); err != nil {
 		return nil, err
 	}

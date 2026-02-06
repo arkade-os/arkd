@@ -6,13 +6,33 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
+type AssetInputType uint8
+
+const (
+	AssetInputTypeUnspecified AssetInputType = iota
+	AssetInputTypeLocal
+	AssetInputTypeIntent
+)
+
+func (t AssetInputType) String() string {
+	switch t {
+	case AssetInputTypeLocal:
+		return "local"
+	case AssetInputTypeIntent:
+		return "intent"
+	default:
+		return "unspecified"
+	}
+}
+
 type AssetInput struct {
 	// Can be either 'local' or 'intent'
-	Type AssetType
+	Type AssetInputType
 	// Always present
 	Vin uint16
 	// Can be empty if type is 'local'
@@ -41,7 +61,7 @@ func NewAssetInputsFromString(s string) (AssetInputs, error) {
 }
 
 func NewAssetInput(index uint16, amount uint64) (*AssetInput, error) {
-	in := AssetInput{Type: AssetTypeLocal, Vin: index, Amount: amount}
+	in := AssetInput{Type: AssetInputTypeLocal, Vin: index, Amount: amount}
 	if err := in.validate(); err != nil {
 		return nil, err
 	}
@@ -52,17 +72,22 @@ func NewIntentAssetInput(txid string, index uint16, amount uint64) (*AssetInput,
 	if len(txid) <= 0 {
 		return nil, fmt.Errorf("missing input intent txid")
 	}
-	buf, err := hex.DecodeString(txid)
+
+	txhash, err := chainhash.NewHashFromStr(txid)
 	if err != nil {
-		return nil, fmt.Errorf("invalid input intent txid format, must be hex")
+		if strings.Contains(err.Error(), "encoding/hex") {
+			return nil, fmt.Errorf("invalid input intent txid format")
+		}
+		if errors.Is(err, chainhash.ErrHashStrSize) {
+			return nil, fmt.Errorf("invalid input intent txid length")
+		}
+		return nil, err
 	}
-	if len(buf) != chainhash.HashSize {
-		return nil, fmt.Errorf("invalid input intent txid length")
-	}
+	
 	in := AssetInput{
-		Type:   AssetTypeIntent,
+		Type:   AssetInputTypeIntent,
 		Vin:    index,
-		Txid:   chainhash.Hash(buf),
+		Txid:   *txhash,
 		Amount: amount,
 	}
 	if err := in.validate(); err != nil {
@@ -100,15 +125,15 @@ func (in AssetInput) String() string {
 
 func (in AssetInput) validate() error {
 	switch in.Type {
-	case AssetTypeLocal:
+	case AssetInputTypeLocal:
 		// nothing to do
 		return nil
-	case AssetTypeIntent:
+	case AssetInputTypeIntent:
 		if bytes.Equal(in.Txid[:], make([]byte, chainhash.HashSize)) {
 			return fmt.Errorf("missing input intent txid")
 		}
 		return nil
-	case AssetTypeUnspecified:
+	case AssetInputTypeUnspecified:
 		return fmt.Errorf("asset input type unspecified")
 	default:
 		return fmt.Errorf("asset input type %d unknown", in.Type)
@@ -120,15 +145,15 @@ func (in AssetInput) serialize(w io.Writer) error {
 		return err
 	}
 	switch in.Type {
-	case AssetTypeLocal:
+	case AssetInputTypeLocal:
 		if err := serializeUint16(w, in.Vin); err != nil {
 			return err
 		}
 		if err := serializeVarUint(w, in.Amount); err != nil {
 			return err
 		}
-	case AssetTypeIntent:
-		if err := serializeSlice(w, in.Txid[:]); err != nil {
+	case AssetInputTypeIntent:
+		if err := serializeTxHash(w, in.Txid); err != nil {
 			return err
 		}
 		if err := serializeUint16(w, in.Vin); err != nil {
@@ -137,7 +162,7 @@ func (in AssetInput) serialize(w io.Writer) error {
 		if err := serializeVarUint(w, in.Amount); err != nil {
 			return err
 		}
-	case AssetTypeUnspecified:
+	case AssetInputTypeUnspecified:
 		return fmt.Errorf("asset input type unspecified")
 	default:
 		return fmt.Errorf("asset input type %d unknown", in.Type)
@@ -163,14 +188,14 @@ func (ins AssetInputs) String() string {
 
 func (ins AssetInputs) validate() error {
 	m := make(map[uint16]struct{})
-	var inType AssetType
+	var inType AssetInputType
 	for _, in := range ins {
 		if _, ok := m[in.Vin]; ok {
 			return fmt.Errorf("duplicated input vin %d", in.Vin)
 		}
 		m[in.Vin] = struct{}{}
 
-		if inType == AssetTypeUnspecified {
+		if inType == AssetInputTypeUnspecified {
 			inType = in.Type
 		}
 		if in.Type != inType {
@@ -201,9 +226,9 @@ func newAssetInputFromReader(r *bytes.Reader) (*AssetInput, error) {
 		return nil, err
 	}
 
-	in := AssetInput{Type: AssetType(typ)}
+	in := AssetInput{Type: AssetInputType(typ)}
 	switch in.Type {
-	case AssetTypeLocal:
+	case AssetInputTypeLocal:
 		index, err := deserializeUint16(r)
 		if err != nil {
 			return nil, err
@@ -214,8 +239,8 @@ func newAssetInputFromReader(r *bytes.Reader) (*AssetInput, error) {
 		}
 		in.Vin = index
 		in.Amount = amount
-	case AssetTypeIntent:
-		txid, err := deserializeSlice(r, chainhash.HashSize)
+	case AssetInputTypeIntent:
+		txid, err := deserializeTxHash(r)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil, fmt.Errorf("invalid input intent txid length")
@@ -230,10 +255,10 @@ func newAssetInputFromReader(r *bytes.Reader) (*AssetInput, error) {
 		if err != nil {
 			return nil, err
 		}
-		in.Txid = chainhash.Hash(txid)
+		in.Txid = txid
 		in.Vin = index
 		in.Amount = amount
-	case AssetTypeUnspecified:
+	case AssetInputTypeUnspecified:
 		return nil, fmt.Errorf("asset input type unspecified")
 	default:
 		return nil, fmt.Errorf("asset input type %d unknown", in.Type)

@@ -720,7 +720,6 @@ func getAssetsFromTxOuts(
 				assetId = id.String()
 				issuances = append(issuances, domain.Asset{
 					Id:             assetId,
-					Immutable:      ast.Immutable,
 					ControlAssetId: controlAssetId,
 					Metadata:       ast.Metadata,
 				})
