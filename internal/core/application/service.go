@@ -1883,11 +1883,7 @@ func (s *service) RegisterIntent(
 	}
 
 	intent, err := domain.NewIntent(
-		proofTxid,
-		signedProof,
-		encodedMessage,
-		vtxoInputs,
-		leafTxPacket,
+		proofTxid, signedProof, encodedMessage, vtxoInputs, leafTxPacket,
 	)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
