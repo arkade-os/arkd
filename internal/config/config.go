@@ -565,7 +565,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
 
-	if c.IndexerTxExposure != "public" && c.IndexerTxExposure != "withheld" || c.IndexerTxExposure != "private" {
+	if c.IndexerTxExposure != "public" && c.IndexerTxExposure != "withheld" && c.IndexerTxExposure != "private" {
 		return fmt.Errorf("indexer tx exposure must be either 'public', 'withheld', or 'private'")
 	}
 
