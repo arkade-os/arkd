@@ -62,15 +62,25 @@ type IndexerService interface {
 }
 
 type indexerService struct {
-	repoManager ports.RepoManager
-	txExposure  string
+	repoManager  ports.RepoManager
+	signerPubkey []byte
+	txExposure   string
 }
 
-func NewIndexerService(repoManager ports.RepoManager, TxExposure string) IndexerService {
-	return &indexerService{
-		repoManager: repoManager,
-		txExposure:  TxExposure,
+func NewIndexerService(
+	repoManager ports.RepoManager,
+	signer ports.SignerService,
+	txExposure string,
+) (IndexerService, error) {
+	pubkey, err := signer.GetPubkey(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get signer pubkey: %w", err)
 	}
+	return &indexerService{
+		repoManager:  repoManager,
+		signerPubkey: schnorr.SerializePubKey(pubkey),
+		txExposure:   txExposure,
+	}, nil
 }
 
 func (i *indexerService) GetCommitmentTxInfo(
@@ -553,7 +563,8 @@ func (i *indexerService) ValidateIntentWithProof(ctx context.Context, vtxoKey Ou
 			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
 		}
 	}
-
+	// do we need to call SignTransactionTapscript(ctx, intentForProof.Proof) here?
+	// and then pass the result into Verify()?
 	if err := intent.Verify(intentForProof.Proof, intentForProof.Message); err != nil {
 		log.
 			WithField("signedProof", intentForProof.Proof).
@@ -594,20 +605,18 @@ func (i *indexerService) GetVirtualTxs(
 		// if no auth code or invalid auth code, remove from each PSBT the signature of arkd
 		// so user cannot constuct the full broadcastable txn
 		if !isValid {
-			for i := range virtualTxs {
-				ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[i]), true)
+			for idx := range virtualTxs {
+				ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[idx]), true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to deserialize virtual tx: %s", err)
 				}
 
 				// remove arkd signature from each input
 				for j := range ptx.Inputs {
-					// what key do we use here? grab from config?
-					arkdPubkey := []byte("arkd_pubkey")
 					newSigs := make([]*psbt.PartialSig, 0)
 					for _, sig := range ptx.Inputs[j].PartialSigs {
 						// if the signature is not from arkd, keep it, otherwise remove it
-						if !bytes.Equal(sig.PubKey, arkdPubkey) {
+						if !bytes.Equal(sig.PubKey, i.signerPubkey) {
 							newSigs = append(newSigs, sig)
 						}
 					}
@@ -618,7 +627,7 @@ func (i *indexerService) GetVirtualTxs(
 				if err := ptx.Serialize(&b); err != nil {
 					return nil, fmt.Errorf("failed to serialize virtual tx: %s", err)
 				}
-				virtualTxs[i] = b.String()
+				virtualTxs[idx] = b.String()
 			}
 		}
 	case TxExposurePrivate:

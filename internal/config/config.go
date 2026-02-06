@@ -626,8 +626,13 @@ func (c *Config) UnlockerService() ports.Unlocker {
 	return c.unlocker
 }
 
-func (c *Config) IndexerService() application.IndexerService {
-	return application.NewIndexerService(c.repo, c.IndexerTxExposure)
+func (c *Config) IndexerService() (application.IndexerService, error) {
+	if c.signer == nil {
+		if err := c.signerService(); err != nil {
+			return nil, err
+		}
+	}
+	return application.NewIndexerService(c.repo, c.signer, c.IndexerTxExposure)
 }
 
 func (c *Config) SignerService() (ports.SignerService, error) {
