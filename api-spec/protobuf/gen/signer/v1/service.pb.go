@@ -488,15 +488,15 @@ const file_signer_v1_service_proto_rawDesc = "" +
 	"\x12SignMessageRequest\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\fR\amessage\"3\n" +
 	"\x13SignMessageResponse\x12\x1c\n" +
-	"\tsignature\x18\x01 \x01(\fR\tsignature2\xbf\x04\n" +
+	"\tsignature\x18\x01 \x01(\fR\tsignature2\xa7\x04\n" +
 	"\rSignerService\x12W\n" +
 	"\tGetStatus\x12\x1b.signer.v1.GetStatusRequest\x1a\x1c.signer.v1.GetStatusResponse\"\x0f\xb2J\f\x12\n" +
 	"/v1/status\x12W\n" +
 	"\tGetPubkey\x12\x1b.signer.v1.GetPubkeyRequest\x1a\x1c.signer.v1.GetPubkeyResponse\"\x0f\xb2J\f\x12\n" +
 	"/v1/pubkey\x12v\n" +
 	"\x0fSignTransaction\x12!.signer.v1.SignTransactionRequest\x1a\".signer.v1.SignTransactionResponse\"\x1c\xb2J\x19B\x01*\"\x14/v1/sign-transaction\x12\x9b\x01\n" +
-	"\x18SignTransactionTapscript\x12*.signer.v1.SignTransactionTapscriptRequest\x1a+.signer.v1.SignTransactionTapscriptResponse\"&\xb2J#B\x01*\"\x1e/v1/sign-transaction-tapscript\x12f\n" +
-	"\vSignMessage\x12\x1d.signer.v1.SignMessageRequest\x1a\x1e.signer.v1.SignMessageResponse\"\x18\xb2J\x15B\x01*\"\x10/v1/sign-messageB\x90\x01\n" +
+	"\x18SignTransactionTapscript\x12*.signer.v1.SignTransactionTapscriptRequest\x1a+.signer.v1.SignTransactionTapscriptResponse\"&\xb2J#B\x01*\"\x1e/v1/sign-transaction-tapscript\x12N\n" +
+	"\vSignMessage\x12\x1d.signer.v1.SignMessageRequest\x1a\x1e.signer.v1.SignMessageResponse\"\x00B\x90\x01\n" +
 	"\rcom.signer.v1B\fServiceProtoP\x01Z,github.com/arkade-os/arkd/signer/v1;signerv1\xa2\x02\x03SXX\xaa\x02\tSigner.V1\xca\x02\tSigner\\V1\xe2\x02\x15Signer\\V1\\GPBMetadata\xea\x02\n" +
 	"Signer::V1b\x06proto3"
 

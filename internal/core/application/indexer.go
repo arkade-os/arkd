@@ -78,6 +78,7 @@ type IndexerService interface {
 type indexerService struct {
 	repoManager  ports.RepoManager
 	signer       ports.SignerService
+	wallet       ports.WalletService
 	signerPubkey []byte
 	txExposure   string
 }
@@ -85,6 +86,7 @@ type indexerService struct {
 func NewIndexerService(
 	repoManager ports.RepoManager,
 	signer ports.SignerService,
+	wallet ports.WalletService,
 	txExposure string,
 ) (IndexerService, error) {
 	pubkey, err := signer.GetPubkey(context.Background())
@@ -94,7 +96,8 @@ func NewIndexerService(
 	return &indexerService{
 		repoManager:  repoManager,
 		signer:       signer,
-		signerPubkey: schnorr.SerializePubKey(pubkey),
+		wallet:       wallet,
+		signerPubkey: pubkey.SerializeCompressed(),
 		txExposure:   txExposure,
 	}, nil
 }
@@ -411,15 +414,10 @@ func (i *indexerService) GetVtxoChain(
 		nextVtxos = newNextVtxos
 	}
 
-	someExposureFromConfig := "public" // this would come from config
-	if someExposureFromConfig == "" {
-		return nil, fmt.Errorf("indexer exposure value is required")
-	}
-
 	authToken := ""
 	var err error
 	// turn into TxExposure enum
-	switch TxExposure(someExposureFromConfig) {
+	switch TxExposure(i.txExposure) {
 	case TxExposurePublic: // no need to do anything
 	case TxExposureWithheld:
 		// validate the intent proof/message to allow access to the full chain
@@ -444,7 +442,7 @@ func (i *indexerService) GetVtxoChain(
 			return nil, err
 		}
 	default:
-		return nil, fmt.Errorf("invalid exposure value: %s", someExposureFromConfig)
+		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
 	}
 
 	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
@@ -481,6 +479,12 @@ func (i *indexerService) ValidateIntentWithProof(
 	proofTxid := proof.UnsignedTx.TxID()
 	boardingTxs := make(map[string]wire.MsgTx)
 	for idx, outpoint := range outpoints {
+		if idx+1 >= len(proof.Inputs) {
+			return errors.INVALID_PSBT_INPUT.New(
+				"outpoint index %d exceeds proof inputs count",
+				idx,
+			)
+		}
 		psbtInput := proof.Inputs[idx+1]
 
 		if len(psbtInput.TaprootLeafScript) == 0 {
@@ -496,8 +500,12 @@ func (i *indexerService) ValidateIntentWithProof(
 		vtxosResult, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
 		if err != nil || len(vtxosResult) == 0 {
 			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
-				// txhex, err := s.wallet.GetTransaction(ctx, outpoint.Hash.String())
-				txhex := vtxoKey.Txid
+				txhex, err := i.wallet.GetTransaction(ctx, outpoint.Hash.String())
+				if err != nil {
+					return errors.TX_NOT_FOUND.New(
+						"failed to get boarding input tx %s: %s", vtxoOutpoint.Txid, err,
+					).WithMetadata(errors.TxNotFoundMetadata{Txid: vtxoOutpoint.Txid})
+				}
 				var tx wire.MsgTx
 				if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
 					return errors.INVALID_PSBT_INPUT.New(
@@ -579,16 +587,22 @@ func (i *indexerService) ValidateIntentWithProof(
 			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
 		}
 	}
-	// do we need to call SignTransactionTapscript(ctx, intentForProof.Proof) here?
-	// and then pass the result into Verify()?
-	if err := intent.Verify(intentForProof.Proof, intentForProof.Message); err != nil {
+
+	signedProof, err := i.signer.SignTransactionTapscript(ctx, intentForProof.Proof, nil)
+	if err != nil {
+		return errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
+			WithMetadata(map[string]any{
+				"proof": proof.UnsignedTx.TxID(),
+			})
+	}
+	if err := intent.Verify(signedProof, intentForProof.Message); err != nil {
 		log.
-			WithField("signedProof", intentForProof.Proof).
+			WithField("signedProof", signedProof).
 			WithField("encodedMessage", intentForProof.Message).
 			Tracef("failed to verify intent proof: %s", err)
 		return errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   intentForProof.Proof,
+				Proof:   signedProof,
 				Message: intentForProof.Message,
 			})
 	}
@@ -619,7 +633,7 @@ func (i *indexerService) GetVirtualTxs(
 			}
 		}
 		// if no auth token or invalid auth token, remove from each PSBT the signature of arkd
-		// so user cannot constuct the full broadcastable txn
+		// so user cannot construct the full broadcastable txn
 		if !isValid {
 			for idx := range virtualTxs {
 				ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[idx]), true)

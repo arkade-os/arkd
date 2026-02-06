@@ -633,7 +633,7 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 			return nil, err
 		}
 	}
-	return application.NewIndexerService(c.repo, c.signer, c.IndexerTxExposure)
+	return application.NewIndexerService(c.repo, c.signer, c.wallet, c.IndexerTxExposure)
 }
 
 func (c *Config) SignerService() (ports.SignerService, error) {
