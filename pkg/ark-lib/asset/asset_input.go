@@ -73,6 +73,10 @@ func NewIntentAssetInput(txid string, index uint16, amount uint64) (*AssetInput,
 		return nil, fmt.Errorf("missing input intent txid")
 	}
 
+	if len(txid) != chainhash.HashSize * 2 {
+		return nil, fmt.Errorf("invalid input intent txid length, got %d want %d", len(txid), chainhash.HashSize * 2)
+	}
+
 	txhash, err := chainhash.NewHashFromStr(txid)
 	if err != nil {
 		if strings.Contains(err.Error(), "encoding/hex") {

@@ -36,8 +36,6 @@ func NewPacket(assets []AssetGroup) (Packet, error) {
 
 func NewPacketFromTx(tx *wire.MsgTx) (Packet, error) {
 	for _, out := range tx.TxOut {
-		fmt.Println("out.PkScript", hex.EncodeToString(out.PkScript))
-
 		if IsAssetPacket(out.PkScript) {
 			return NewPacketFromTxOut(*out)
 		}
