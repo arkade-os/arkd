@@ -56,8 +56,18 @@ type IndexerService interface {
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
 	) (*GetVtxosResp, error)
-	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, intent Intent, page *Page) (*VtxoChainResp, error)
-	GetVirtualTxs(ctx context.Context, authCode string, txids []string, page *Page) (*VirtualTxsResp, error)
+	GetVtxoChain(
+		ctx context.Context,
+		vtxoKey Outpoint,
+		intent Intent,
+		page *Page,
+	) (*VtxoChainResp, error)
+	GetVirtualTxs(
+		ctx context.Context,
+		authCode string,
+		txids []string,
+		page *Page,
+	) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 }
 
@@ -443,7 +453,11 @@ func (i *indexerService) GetVtxoChain(
 	}, nil
 }
 
-func (i *indexerService) ValidateIntentWithProof(ctx context.Context, vtxoKey Outpoint, intentForProof Intent) error {
+func (i *indexerService) ValidateIntentWithProof(
+	ctx context.Context,
+	vtxoKey Outpoint,
+	intentForProof Intent,
+) error {
 	if intentForProof.Proof == "" || intentForProof.Message == "" {
 		return fmt.Errorf("intent proof and message are required for private exposure")
 	}
