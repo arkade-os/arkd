@@ -182,6 +182,13 @@ type Tx struct {
 	Children sql.NullString
 }
 
+type VirtualTxsRequest struct {
+	ID        int64
+	AuthCode  string
+	CreatedAt int64
+	Expiry    int64
+}
+
 type Vtxo struct {
 	Txid           string
 	Vout           int64
@@ -198,7 +205,7 @@ type Vtxo struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
-	UpdatedAt      int64
+	UpdatedAt      sql.NullInt64
 }
 
 type VtxoCommitmentTxid struct {
@@ -223,6 +230,6 @@ type VtxoVw struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
-	UpdatedAt      int64
+	UpdatedAt      sql.NullInt64
 	Commitments    interface{}
 }

@@ -427,3 +427,13 @@ VALUES ('', '', '', '');
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
+
+-- name: InsertVirtualTxsRequest :one
+INSERT INTO virtual_txs_requests (expiry) VALUES (@expiry) RETURNING auth_code;
+
+-- name: ValidateVirtualTxsRequest :one
+SELECT EXISTS(
+    SELECT 1 FROM virtual_txs_requests
+    WHERE auth_code = @auth_code
+      AND expiry > CAST(strftime('%s', 'now') AS INTEGER)
+) AS valid;

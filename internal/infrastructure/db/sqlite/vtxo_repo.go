@@ -363,7 +363,7 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	}
 	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
 		Pubkeys: pubkeys,
-		After:   after,
+		After:   sql.NullInt64{Int64: after, Valid: true},
 		Before:  before,
 	})
 	if err != nil {
@@ -458,7 +458,7 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 		ctx,
 		queries.SelectPendingSpentVtxosWithPubkeysParams{
 			Pubkeys: pubkeys,
-			After:   after,
+			After:   sql.NullInt64{Int64: after, Valid: true},
 			Before:  before,
 		},
 	)
@@ -516,15 +516,24 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 func (v *vtxoRepository) AddVirtualTxsRequest(
 	ctx context.Context, expiry int64,
 ) (string, error) {
-	// TODO
-	return "", nil
+	authUuid, err := v.querier.InsertVirtualTxsRequest(ctx, expiry)
+	if err != nil {
+		return "", err
+	}
+	return authUuid, nil
 }
 
 func (v *vtxoRepository) ValidateVirtualTxsRequest(
 	ctx context.Context, authCode string,
 ) (bool, error) {
-	// TODO
-	return false, nil
+	res, err := v.querier.ValidateVirtualTxsRequest(ctx, authCode)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return res > 0, nil
 }
 
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
