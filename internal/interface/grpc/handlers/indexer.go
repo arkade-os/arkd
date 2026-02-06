@@ -331,9 +331,9 @@ func (e *indexerService) GetVtxoChain(
 	}
 
 	return &arkv1.GetVtxoChainResponse{
-		Chain:    chain,
-		Page:     protoPage(resp.Page),
-		AuthCode: resp.AuthCode,
+		Chain:     chain,
+		Page:      protoPage(resp.Page),
+		AuthToken: resp.AuthToken,
 	}, nil
 }
 
@@ -349,7 +349,7 @@ func (e *indexerService) GetVirtualTxs(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resp, err := e.indexerSvc.GetVirtualTxs(ctx, request.GetAuthCode(), txids, page)
+	resp, err := e.indexerSvc.GetVirtualTxs(ctx, request.GetAuthToken(), txids, page)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}

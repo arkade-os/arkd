@@ -35,6 +35,46 @@
         }
       }
     },
+    "/v1/sign-message": {
+      "post": {
+        "tags": [
+          "SignerService"
+        ],
+        "operationId": "SignerService_SignMessage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignMessageResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/sign-transaction": {
       "post": {
         "tags": [
@@ -181,6 +221,26 @@
         "properties": {
           "ready": {
             "type": "boolean"
+          }
+        }
+      },
+      "SignMessageRequest": {
+        "title": "SignMessageRequest",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "format": "byte"
+          }
+        }
+      },
+      "SignMessageResponse": {
+        "title": "SignMessageResponse",
+        "type": "object",
+        "properties": {
+          "signature": {
+            "type": "string",
+            "format": "byte"
           }
         }
       },

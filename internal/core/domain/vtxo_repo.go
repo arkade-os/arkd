@@ -36,7 +36,5 @@ type VtxoRepository interface {
 		after, before int64,
 	) ([]Vtxo, error)
 	GetPendingSpentVtxosWithOutpoints(ctx context.Context, outpoints []Outpoint) ([]Vtxo, error)
-	AddVirtualTxsRequest(ctx context.Context, expiry int64) (string, error)
-	ValidateVirtualTxsRequest(ctx context.Context, authCode string) (bool, error)
 	Close()
 }

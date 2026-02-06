@@ -123,9 +123,9 @@ type TransactionEvent struct {
 }
 
 type VtxoChainResp struct {
-	Chain    []ChainTx
-	Page     PageResp
-	AuthCode string
+	Chain     []ChainTx
+	Page      PageResp
+	AuthToken string
 }
 
 type VOut int

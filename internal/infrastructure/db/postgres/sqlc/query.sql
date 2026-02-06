@@ -424,13 +424,3 @@ VALUES ('', '', '', '');
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
-
--- name: InsertVirtualTxsRequest :one
-INSERT INTO virtual_txs_requests (expiry) VALUES (CAST(@expiry AS BIGINT)) RETURNING auth_code;
-
--- name: ValidateVirtualTxsRequest :one
-SELECT EXISTS(
-    SELECT 1 FROM virtual_txs_requests
-    WHERE auth_code = CAST(@auth_code AS UUID)
-      AND expiry > (EXTRACT(EPOCH FROM NOW())::BIGINT)
-) AS valid;

@@ -11,7 +11,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/dgraph-io/badger/v4"
-	"github.com/google/uuid"
 	"github.com/timshannon/badgerhold/v4"
 )
 
@@ -24,12 +23,6 @@ type vtxoRepository struct {
 type vtxoDTO struct {
 	domain.Vtxo
 	UpdatedAt int64
-}
-
-type virtualTxsRequestDTO struct {
-	AuthCode  string
-	CreatedAt int64
-	Expiry    int64
 }
 
 func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
@@ -658,34 +651,6 @@ func (r *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	}
 
 	return outpoints, nil
-}
-
-func (r *vtxoRepository) AddVirtualTxsRequest(
-	ctx context.Context, expiry int64,
-) (string, error) {
-	authCode := uuid.New().String()
-	dto := virtualTxsRequestDTO{
-		AuthCode:  authCode,
-		CreatedAt: time.Now().Unix(),
-		Expiry:    expiry,
-	}
-	if err := r.store.Insert(authCode, dto); err != nil {
-		return "", err
-	}
-	return authCode, nil
-}
-
-func (r *vtxoRepository) ValidateVirtualTxsRequest(
-	ctx context.Context, authCode string,
-) (bool, error) {
-	var dto virtualTxsRequestDTO
-	if err := r.store.Get(authCode, &dto); err != nil {
-		if errors.Is(err, badgerhold.ErrNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	return dto.Expiry > time.Now().Unix(), nil
 }
 
 func (r *vtxoRepository) GetAllChildrenVtxos(

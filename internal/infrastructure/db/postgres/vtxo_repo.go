@@ -9,7 +9,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
-	"github.com/google/uuid"
 )
 
 type vtxoRepository struct {
@@ -504,34 +503,6 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	})
 
 	return vtxos, nil
-}
-
-func (v *vtxoRepository) AddVirtualTxsRequest(
-	ctx context.Context, expiry int64,
-) (string, error) {
-	authUuid, err := v.querier.InsertVirtualTxsRequest(ctx, expiry)
-	if err != nil {
-		return "", err
-	}
-	return authUuid.String(), nil
-}
-
-func (v *vtxoRepository) ValidateVirtualTxsRequest(
-	ctx context.Context, authCode string,
-) (bool, error) {
-	// convert authCode from string to UUID
-	uuidAuthCode, err := uuid.Parse(authCode)
-	if err != nil {
-		return false, fmt.Errorf("invalid auth code format: %v", err)
-	}
-	isValid, err := v.querier.ValidateVirtualTxsRequest(ctx, uuidAuthCode)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-	return isValid, nil
 }
 
 func rowToVtxo(row queries.VtxoVw) domain.Vtxo {

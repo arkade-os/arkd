@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/coinset"
@@ -725,6 +726,16 @@ func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) er
 
 	w.SignerKey = prvkey
 	return nil
+}
+
+func (w *wallet) SignMessage(ctx context.Context, message []byte) ([]byte, error) {
+	if w.SignerKey == nil {
+		return nil, fmt.Errorf("signer key not loaded")
+	}
+
+	msgHash := chainhash.DoubleHashB(message)
+	sig := ecdsa.Sign(w.SignerKey, msgHash)
+	return sig.Serialize(), nil
 }
 
 func (w *wallet) Close() {

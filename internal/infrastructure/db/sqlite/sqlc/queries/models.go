@@ -182,13 +182,6 @@ type Tx struct {
 	Children sql.NullString
 }
 
-type VirtualTxsRequest struct {
-	ID        int64
-	AuthCode  string
-	CreatedAt int64
-	Expiry    int64
-}
-
 type Vtxo struct {
 	Txid           string
 	Vout           int64

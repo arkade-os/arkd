@@ -209,13 +209,13 @@ message GetVtxoChainRequest {
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
   IndexerPageResponse page = 2;
-  string auth_code = 3;
+  string auth_token = 3;
 }
 
 message GetVirtualTxsRequest {
   repeated string txids = 1;
   IndexerPageRequest page = 2;
-  string auth_code = 3;
+  string auth_token = 3;
 
 }
 message GetVirtualTxsResponse {

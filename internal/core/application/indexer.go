@@ -3,6 +3,8 @@ package application
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -14,8 +16,10 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
@@ -64,7 +68,7 @@ type IndexerService interface {
 	) (*VtxoChainResp, error)
 	GetVirtualTxs(
 		ctx context.Context,
-		authCode string,
+		authToken string,
 		txids []string,
 		page *Page,
 	) (*VirtualTxsResp, error)
@@ -73,6 +77,7 @@ type IndexerService interface {
 
 type indexerService struct {
 	repoManager  ports.RepoManager
+	signer       ports.SignerService
 	signerPubkey []byte
 	txExposure   string
 }
@@ -88,6 +93,7 @@ func NewIndexerService(
 	}
 	return &indexerService{
 		repoManager:  repoManager,
+		signer:       signer,
 		signerPubkey: schnorr.SerializePubKey(pubkey),
 		txExposure:   txExposure,
 	}, nil
@@ -410,7 +416,7 @@ func (i *indexerService) GetVtxoChain(
 		return nil, fmt.Errorf("indexer exposure value is required")
 	}
 
-	authCode := ""
+	authToken := ""
 	var err error
 	// turn into TxExposure enum
 	switch TxExposure(someExposureFromConfig) {
@@ -419,14 +425,12 @@ func (i *indexerService) GetVtxoChain(
 		// validate the intent proof/message to allow access to the full chain
 		err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof)
 		if err == nil {
-			// expiry from config?
-			expiry := int64(0)
-			authCode, err = i.repoManager.Vtxos().AddVirtualTxsRequest(ctx, expiry)
+			authToken, err = i.createAuthToken(ctx, vtxoKey)
 			if err != nil {
 				return nil, err
 			}
 		}
-		// if intent failed validation, we just dont supply an auth code
+		// if intent failed validation, we just dont supply an auth token
 
 	case TxExposurePrivate:
 		// validate the intent proof/message to allow access to the full chain
@@ -435,9 +439,7 @@ func (i *indexerService) GetVtxoChain(
 			return nil, fmt.Errorf("invalid intent proof or message: %s", err)
 		}
 
-		// expiry from config?
-		expiry := int64(0)
-		authCode, err = i.repoManager.Vtxos().AddVirtualTxsRequest(ctx, expiry)
+		authToken, err = i.createAuthToken(ctx, vtxoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -447,9 +449,9 @@ func (i *indexerService) GetVtxoChain(
 
 	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
 	return &VtxoChainResp{
-		Chain:    txChain,
-		Page:     pageResp,
-		AuthCode: authCode,
+		Chain:     txChain,
+		Page:      pageResp,
+		AuthToken: authToken,
 	}, nil
 }
 
@@ -594,7 +596,7 @@ func (i *indexerService) ValidateIntentWithProof(
 }
 
 func (i *indexerService) GetVirtualTxs(
-	ctx context.Context, authCode string, txids []string, page *Page,
+	ctx context.Context, authToken string, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
 	txs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
 	if err != nil {
@@ -609,14 +611,14 @@ func (i *indexerService) GetVirtualTxs(
 		// no need to validate auth
 	case TxExposureWithheld:
 		isValid := false
-		// optional auth code can be passed, if it was lets check if valid
-		if authCode != "" {
-			isValid, err = i.repoManager.Vtxos().ValidateVirtualTxsRequest(ctx, authCode)
+		// optional auth token can be passed, if it was lets check if valid
+		if authToken != "" {
+			isValid, err = i.validateAuthToken(authToken)
 			if err != nil {
 				return nil, err
 			}
 		}
-		// if no auth code or invalid auth code, remove from each PSBT the signature of arkd
+		// if no auth token or invalid auth token, remove from each PSBT the signature of arkd
 		// so user cannot constuct the full broadcastable txn
 		if !isValid {
 			for idx := range virtualTxs {
@@ -645,16 +647,16 @@ func (i *indexerService) GetVirtualTxs(
 			}
 		}
 	case TxExposurePrivate:
-		if authCode == "" {
-			return nil, fmt.Errorf("auth code is required for private exposure")
+		if authToken == "" {
+			return nil, fmt.Errorf("auth token is required for private exposure")
 		}
-		// require valid auth code to proceed
-		isValid, err := i.repoManager.Vtxos().ValidateVirtualTxsRequest(ctx, authCode)
+		// require valid auth token to proceed
+		isValid, err := i.validateAuthToken(authToken)
 		if err != nil {
 			return nil, err
 		}
 		if !isValid {
-			return nil, fmt.Errorf("invalid auth code for withheld exposure")
+			return nil, fmt.Errorf("invalid auth token for private exposure")
 		}
 	default:
 		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
@@ -719,4 +721,66 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 	}
 
 	return items[startIndex:endIndex], resp
+}
+
+// createAuthToken creates a signed auth token for accessing virtual txs.
+// Format: base64(outpoint_txid|outpoint_vout|signature)
+func (i *indexerService) createAuthToken(ctx context.Context, outpoint Outpoint) (string, error) {
+	// Build message: txid (32 bytes) + vout (4 bytes)
+	txidBytes, err := hex.DecodeString(outpoint.Txid)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode txid: %w", err)
+	}
+
+	msg := make([]byte, 32+4)
+	copy(msg[0:32], txidBytes)
+	binary.BigEndian.PutUint32(msg[32:36], outpoint.VOut)
+
+	// Sign the message
+	sig, err := i.signer.SignMessage(ctx, msg)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign auth token: %w", err)
+	}
+
+	// Combine message + signature and encode as base64
+	token := make([]byte, len(msg)+len(sig))
+	copy(token[0:len(msg)], msg)
+	copy(token[len(msg):], sig)
+
+	return base64.StdEncoding.EncodeToString(token), nil
+}
+
+// validateAuthToken validates a signed auth token.
+// Returns true if the signature is valid.
+func (i *indexerService) validateAuthToken(authToken string) (bool, error) {
+	if authToken == "" {
+		return false, nil
+	}
+
+	tokenBytes, err := base64.StdEncoding.DecodeString(authToken)
+	if err != nil {
+		return false, nil // Invalid base64, treat as invalid token
+	}
+
+	// Token format: msg (36 bytes) + signature (64 bytes for ECDSA)
+	if len(tokenBytes) < 36+64 {
+		return false, nil
+	}
+
+	msg := tokenBytes[0:36]
+	sigBytes := tokenBytes[36:]
+
+	// Verify signature
+	msgHash := chainhash.DoubleHashB(msg)
+	sig, err := ecdsa.ParseDERSignature(sigBytes)
+	if err != nil {
+		return false, nil // Invalid signature format
+	}
+
+	pubkey, err := schnorr.ParsePubKey(i.signerPubkey)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse signer pubkey: %w", err)
+	}
+
+	return sig.Verify(msgHash, pubkey), nil
 }

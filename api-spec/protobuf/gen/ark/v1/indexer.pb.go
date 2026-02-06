@@ -913,7 +913,7 @@ type GetVtxoChainResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Chain         []*IndexerChain        `protobuf:"bytes,1,rep,name=chain,proto3" json:"chain,omitempty"`
 	Page          *IndexerPageResponse   `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
-	AuthCode      string                 `protobuf:"bytes,3,opt,name=auth_code,json=authCode,proto3" json:"auth_code,omitempty"`
+	AuthToken     string                 `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -962,9 +962,9 @@ func (x *GetVtxoChainResponse) GetPage() *IndexerPageResponse {
 	return nil
 }
 
-func (x *GetVtxoChainResponse) GetAuthCode() string {
+func (x *GetVtxoChainResponse) GetAuthToken() string {
 	if x != nil {
-		return x.AuthCode
+		return x.AuthToken
 	}
 	return ""
 }
@@ -973,7 +973,7 @@ type GetVirtualTxsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Txids         []string               `protobuf:"bytes,1,rep,name=txids,proto3" json:"txids,omitempty"`
 	Page          *IndexerPageRequest    `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
-	AuthCode      string                 `protobuf:"bytes,3,opt,name=auth_code,json=authCode,proto3" json:"auth_code,omitempty"`
+	AuthToken     string                 `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1022,9 +1022,9 @@ func (x *GetVirtualTxsRequest) GetPage() *IndexerPageRequest {
 	return nil
 }
 
-func (x *GetVirtualTxsRequest) GetAuthCode() string {
+func (x *GetVirtualTxsRequest) GetAuthToken() string {
 	if x != nil {
-		return x.AuthCode
+		return x.AuthToken
 	}
 	return ""
 }
@@ -2338,15 +2338,17 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x13GetVtxoChainRequest\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12.\n" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12&\n" +
-	"\x06intent\x18\x03 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"\x90\x01\n" +
+	"\x06intent\x18\x03 \x01(\v2\x0e.ark.v1.IntentR\x06intent\"\x92\x01\n" +
 	"\x14GetVtxoChainResponse\x12*\n" +
 	"\x05chain\x18\x01 \x03(\v2\x14.ark.v1.IndexerChainR\x05chain\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\x12\x1b\n" +
-	"\tauth_code\x18\x03 \x01(\tR\bauthCode\"y\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\x12\x1d\n" +
+	"\n" +
+	"auth_token\x18\x03 \x01(\tR\tauthToken\"{\n" +
 	"\x14GetVirtualTxsRequest\x12\x14\n" +
 	"\x05txids\x18\x01 \x03(\tR\x05txids\x12.\n" +
-	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12\x1b\n" +
-	"\tauth_code\x18\x03 \x01(\tR\bauthCode\"Z\n" +
+	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12\x1d\n" +
+	"\n" +
+	"auth_token\x18\x03 \x01(\tR\tauthToken\"Z\n" +
 	"\x15GetVirtualTxsResponse\x12\x10\n" +
 	"\x03txs\x18\x01 \x03(\tR\x03txs\x12/\n" +
 	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"b\n" +

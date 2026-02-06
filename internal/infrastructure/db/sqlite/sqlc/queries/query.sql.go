@@ -84,17 +84,6 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 	return err
 }
 
-const insertVirtualTxsRequest = `-- name: InsertVirtualTxsRequest :one
-INSERT INTO virtual_txs_requests (expiry) VALUES (?1) RETURNING auth_code
-`
-
-func (q *Queries) InsertVirtualTxsRequest(ctx context.Context, expiry int64) (string, error) {
-	row := q.db.QueryRowContext(ctx, insertVirtualTxsRequest, expiry)
-	var auth_code string
-	err := row.Scan(&auth_code)
-	return auth_code, err
-}
-
 const insertVtxoCommitmentTxid = `-- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
 VALUES (?1, ?2, ?3)
@@ -2109,19 +2098,4 @@ func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
 		arg.CreatedAt,
 	)
 	return err
-}
-
-const validateVirtualTxsRequest = `-- name: ValidateVirtualTxsRequest :one
-SELECT EXISTS(
-    SELECT 1 FROM virtual_txs_requests
-    WHERE auth_code = ?1
-      AND expiry > CAST(strftime('%s', 'now') AS INTEGER)
-) AS valid
-`
-
-func (q *Queries) ValidateVirtualTxsRequest(ctx context.Context, authCode string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, validateVirtualTxsRequest, authCode)
-	var valid int64
-	err := row.Scan(&valid)
-	return valid, err
 }
