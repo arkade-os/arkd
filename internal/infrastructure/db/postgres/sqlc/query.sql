@@ -441,3 +441,9 @@ SELECT (COALESCE(SUM(ap.amount), 0)::NUMERIC)::TEXT AS supply
 FROM asset_projection ap
 INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
 WHERE ap.asset_id = $1 AND v.spent = false;
+
+-- name: SelectControlAssetByID :one
+SELECT control_asset_id FROM asset WHERE id = $1;
+
+-- name: SelectAssetExists :one
+SELECT 1 FROM asset WHERE id = $1 LIMIT 1;

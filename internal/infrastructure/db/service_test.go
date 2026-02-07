@@ -1615,6 +1615,28 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		assets, err = repo.GetAssets(ctx, assetIds[2:])
 		require.NoError(t, err)
 		require.Empty(t, assets)
+
+		// GetControlAsset: asset1 has control asset asset2, asset2 is control asset (no parent)
+		controlID, err := repo.GetControlAsset(ctx, "asset1")
+		require.NoError(t, err)
+		require.Equal(t, "asset2", controlID)
+		controlID, err = repo.GetControlAsset(ctx, "asset2")
+		require.NoError(t, err)
+		require.Empty(t, controlID)
+		_, err = repo.GetControlAsset(ctx, "non-existent-asset")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no control asset found")
+
+		// AssetExists
+		exists, err := repo.AssetExists(ctx, "asset1")
+		require.NoError(t, err)
+		require.True(t, exists)
+		exists, err = repo.AssetExists(ctx, "asset2")
+		require.NoError(t, err)
+		require.True(t, exists)
+		exists, err = repo.AssetExists(ctx, "non-existent-asset")
+		require.NoError(t, err)
+		require.False(t, exists)
 	})
 }
 

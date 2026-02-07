@@ -128,9 +128,18 @@ func (r *assetRepository) GetAssets(
 		}
 		assets = make([]domain.Asset, 0, len(rows))
 		for _, row := range rows {
-			supply, err := querierWithTx.SelectAssetSupply(ctx, row.ID)
+			supplyVal, err := querierWithTx.SelectAssetSupply(ctx, row.ID)
 			if err != nil {
 				return fmt.Errorf("failed to compute supply for asset %s: %w", row.ID, err)
+			}
+			var supply int64
+			switch v := supplyVal.(type) {
+			case int64:
+				supply = v
+			case int:
+				supply = int64(v)
+			default:
+				return fmt.Errorf("unexpected supply type for asset %s: %T", row.ID, supplyVal)
 			}
 			var metadata []asset.Metadata
 			if row.Metadata.Valid {
@@ -158,6 +167,31 @@ func (r *assetRepository) GetAssets(
 		return nil, err
 	}
 	return assets, nil
+}
+
+func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (string, error) {
+	controlID, err := r.querier.SelectControlAssetByID(ctx, assetID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no control asset found")
+		}
+		return "", err
+	}
+	if !controlID.Valid {
+		return "", nil
+	}
+	return controlID.String, nil
+}
+
+func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool, error) {
+	_, err := r.querier.SelectAssetExists(ctx, assetID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 type metadataDTO struct {

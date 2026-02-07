@@ -445,3 +445,9 @@ SELECT COALESCE(SUM(ap.amount), 0) AS supply
 FROM asset_projection ap
 INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
 WHERE ap.asset_id = ? AND v.spent = 0;
+
+-- name: SelectControlAssetByID :one
+SELECT control_asset_id FROM asset WHERE id = ?;
+
+-- name: SelectAssetExists :one
+SELECT 1 FROM asset WHERE id = ? LIMIT 1;

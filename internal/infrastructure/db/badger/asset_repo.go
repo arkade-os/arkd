@@ -93,6 +93,30 @@ func (r *assetRepository) GetAssets(
 	return result, nil
 }
 
+func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (string, error) {
+	var a domain.Asset
+	err := r.store.Get(assetID, &a)
+	if err != nil {
+		if errors.Is(err, badgerhold.ErrNotFound) {
+			return "", fmt.Errorf("no control asset found")
+		}
+		return "", err
+	}
+	return a.ControlAssetId, nil
+}
+
+func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool, error) {
+	var a domain.Asset
+	err := r.store.Get(assetID, &a)
+	if err != nil {
+		if errors.Is(err, badgerhold.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // computeSupply returns the sum of unspent vtxo amounts for the asset (big.Int to avoid overflow).
 func (r *assetRepository) computeSupply(ctx context.Context, assetID string) *big.Int {
 	vtxos, err := r.vtxoRepo.GetAllVtxos(ctx)

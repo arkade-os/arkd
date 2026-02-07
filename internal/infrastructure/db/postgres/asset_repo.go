@@ -167,6 +167,31 @@ func (r *assetRepository) GetAssets(
 	return assets, nil
 }
 
+func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (string, error) {
+	controlID, err := r.querier.SelectControlAssetByID(ctx, assetID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no control asset found")
+		}
+		return "", err
+	}
+	if !controlID.Valid {
+		return "", nil
+	}
+	return controlID.String, nil
+}
+
+func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool, error) {
+	_, err := r.querier.SelectAssetExists(ctx, assetID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 type metadataDTO struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`

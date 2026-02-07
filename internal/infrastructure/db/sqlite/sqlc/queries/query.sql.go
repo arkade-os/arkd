@@ -270,9 +270,16 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 	return items, nil
 }
 
-const selectAssetsByIds = `-- name: SelectAssetsByIds :many
-SELECT id, is_immutable, metadata_hash, metadata, control_asset_id FROM asset WHERE asset.id IN (/*SLICE:ids*/?)
+const selectAssetExists = `-- name: SelectAssetExists :one
+SELECT 1 FROM asset WHERE id = ? LIMIT 1
 `
+
+func (q *Queries) SelectAssetExists(ctx context.Context, id string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, selectAssetExists, id)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
 
 const selectAssetSupply = `-- name: SelectAssetSupply :one
 SELECT COALESCE(SUM(ap.amount), 0) AS supply
@@ -281,12 +288,17 @@ INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
 WHERE ap.asset_id = ? AND v.spent = 0
 `
 
-func (q *Queries) SelectAssetSupply(ctx context.Context, assetID string) (int64, error) {
+// Sum of unspent vtxo amounts for the asset. SQLite INTEGER may overflow for supply > 2^63-1.
+func (q *Queries) SelectAssetSupply(ctx context.Context, assetID string) (interface{}, error) {
 	row := q.db.QueryRowContext(ctx, selectAssetSupply, assetID)
-	var supply int64
+	var supply interface{}
 	err := row.Scan(&supply)
 	return supply, err
 }
+
+const selectAssetsByIds = `-- name: SelectAssetsByIds :many
+SELECT id, is_immutable, metadata_hash, metadata, control_asset_id FROM asset WHERE asset.id IN (/*SLICE:ids*/?)
+`
 
 func (q *Queries) SelectAssetsByIds(ctx context.Context, ids []string) ([]Asset, error) {
 	query := selectAssetsByIds
@@ -325,6 +337,17 @@ func (q *Queries) SelectAssetsByIds(ctx context.Context, ids []string) ([]Asset,
 		return nil, err
 	}
 	return items, nil
+}
+
+const selectControlAssetByID = `-- name: SelectControlAssetByID :one
+SELECT control_asset_id FROM asset WHERE id = ?
+`
+
+func (q *Queries) SelectControlAssetByID(ctx context.Context, id string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, selectControlAssetByID, id)
+	var control_asset_id sql.NullString
+	err := row.Scan(&control_asset_id)
+	return control_asset_id, err
 }
 
 const selectConviction = `-- name: SelectConviction :one
