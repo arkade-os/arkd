@@ -15,7 +15,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/coinset"
@@ -733,8 +732,11 @@ func (w *wallet) SignMessage(ctx context.Context, message []byte) ([]byte, error
 		return nil, fmt.Errorf("signer key not loaded")
 	}
 
-	msgHash := chainhash.DoubleHashB(message)
-	sig := ecdsa.Sign(w.SignerKey, msgHash)
+	msgHash := chainhash.HashB(message)
+	sig, err := schnorr.Sign(w.SignerKey, msgHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign message: %w", err)
+	}
 	return sig.Serialize(), nil
 }
 

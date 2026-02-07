@@ -16,7 +16,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/errors"
-	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -776,17 +775,17 @@ func (i *indexerService) validateAuthToken(authToken string) (bool, error) {
 		return false, nil // Invalid base64, treat as invalid token
 	}
 
-	// Token format: msg (36 bytes) + signature (64 bytes for ECDSA)
-	if len(tokenBytes) < 36+64 {
+	// Token format: msg (36 bytes) + schnorr signature (64 bytes)
+	if len(tokenBytes) != 36+64 {
 		return false, nil
 	}
 
 	msg := tokenBytes[0:36]
 	sigBytes := tokenBytes[36:]
 
-	// Verify signature
-	msgHash := chainhash.DoubleHashB(msg)
-	sig, err := ecdsa.ParseDERSignature(sigBytes)
+	// Verify schnorr signature
+	msgHash := chainhash.HashB(msg)
+	sig, err := schnorr.ParseSignature(sigBytes)
 	if err != nil {
 		return false, nil // Invalid signature format
 	}
