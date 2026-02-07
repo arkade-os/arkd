@@ -42,3 +42,5 @@ SELECT vtxo_vw.*, intent.id, intent.round_id, intent.proof, intent.message, inte
 FROM intent
 LEFT OUTER JOIN vtxo_vw
 ON intent.id = vtxo_vw.intent_id;
+
+CREATE INDEX IF NOT EXISTS idx_vtxo_spent ON vtxo(spent);

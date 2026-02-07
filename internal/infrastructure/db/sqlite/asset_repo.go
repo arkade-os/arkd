@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"sort"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -119,31 +120,42 @@ func (r *assetRepository) GetAssets(
 	if len(assetIds) == 0 {
 		return nil, nil
 	}
-	rows, err := r.querier.SelectAssetsByIds(ctx, assetIds)
-	if err != nil {
-		return nil, err
-	}
-
-	assets := make([]domain.Asset, 0, len(rows))
-	for _, row := range rows {
-		var metadata []asset.Metadata
-		if row.Metadata.Valid {
-			md := make([]metadataDTO, 0)
-			if err := json.Unmarshal([]byte(row.Metadata.String), &md); err != nil {
-				return nil, fmt.Errorf("failed to decode asset metadata: %w", err)
-			}
-			for _, dto := range md {
-				metadata = append(metadata, asset.Metadata{
-					Key:   []byte(dto.Key),
-					Value: []byte(dto.Value),
-				})
-			}
+	var assets []domain.Asset
+	txBody := func(querierWithTx *queries.Queries) error {
+		rows, err := querierWithTx.SelectAssetsByIds(ctx, assetIds)
+		if err != nil {
+			return err
 		}
-		assets = append(assets, domain.Asset{
-			Id:             row.ID,
-			Metadata:       metadata,
-			ControlAssetId: row.ControlAssetID.String,
-		})
+		assets = make([]domain.Asset, 0, len(rows))
+		for _, row := range rows {
+			supply, err := querierWithTx.SelectAssetSupply(ctx, row.ID)
+			if err != nil {
+				return fmt.Errorf("failed to compute supply for asset %s: %w", row.ID, err)
+			}
+			var metadata []asset.Metadata
+			if row.Metadata.Valid {
+				md := make([]metadataDTO, 0)
+				if err := json.Unmarshal([]byte(row.Metadata.String), &md); err != nil {
+					return fmt.Errorf("failed to decode asset metadata: %w", err)
+				}
+				for _, dto := range md {
+					metadata = append(metadata, asset.Metadata{
+						Key:   []byte(dto.Key),
+						Value: []byte(dto.Value),
+					})
+				}
+			}
+			assets = append(assets, domain.Asset{
+				Id:             row.ID,
+				Metadata:       metadata,
+				ControlAssetId: row.ControlAssetID.String,
+				Supply:         *new(big.Int).SetInt64(supply),
+			})
+		}
+		return nil
+	}
+	if err := execTx(ctx, r.db, txBody); err != nil {
+		return nil, err
 	}
 	return assets, nil
 }

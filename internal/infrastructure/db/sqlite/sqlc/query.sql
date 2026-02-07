@@ -438,3 +438,10 @@ VALUES (@asset_id, @txid, @vout, @amount);
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));
+
+-- name: SelectAssetSupply :one
+-- Sum of unspent vtxo amounts for the asset. SQLite INTEGER may overflow for supply > 2^63-1.
+SELECT COALESCE(SUM(ap.amount), 0) AS supply
+FROM asset_projection ap
+INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
+WHERE ap.asset_id = ? AND v.spent = 0;

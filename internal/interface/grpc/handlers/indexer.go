@@ -72,7 +72,7 @@ func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRe
 
 	return &arkv1.GetAssetResponse{
 		AssetId:      assetId,
-		Supply:       0, // TODO
+		Supply:       asset.Supply.String(),
 		Metadata:     assetMetadata,
 		ControlAsset: asset.ControlAssetId,
 	}, nil

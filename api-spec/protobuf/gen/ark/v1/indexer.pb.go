@@ -1104,7 +1104,7 @@ func (x *GetAssetRequest) GetAssetId() string {
 type GetAssetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
-	Supply        uint64                 `protobuf:"varint,2,opt,name=supply,proto3" json:"supply,omitempty"`
+	Supply        string                 `protobuf:"bytes,2,opt,name=supply,proto3" json:"supply,omitempty"`
 	Metadata      []*AssetMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
 	ControlAsset  string                 `protobuf:"bytes,4,opt,name=control_asset,json=controlAsset,proto3" json:"control_asset,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1148,11 +1148,11 @@ func (x *GetAssetResponse) GetAssetId() string {
 	return ""
 }
 
-func (x *GetAssetResponse) GetSupply() uint64 {
+func (x *GetAssetResponse) GetSupply() string {
 	if x != nil {
 		return x.Supply
 	}
-	return 0
+	return ""
 }
 
 func (x *GetAssetResponse) GetMetadata() []*AssetMetadata {
@@ -2643,7 +2643,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\"\x9d\x01\n" +
 	"\x10GetAssetResponse\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x16\n" +
-	"\x06supply\x18\x02 \x01(\x04R\x06supply\x121\n" +
+	"\x06supply\x18\x02 \x01(\tR\x06supply\x121\n" +
 	"\bmetadata\x18\x03 \x03(\v2\x15.ark.v1.AssetMetadataR\bmetadata\x12#\n" +
 	"\rcontrol_asset\x18\x04 \x01(\tR\fcontrolAsset\"7\n" +
 	"\rAssetMetadata\x12\x10\n" +

@@ -274,6 +274,20 @@ const selectAssetsByIds = `-- name: SelectAssetsByIds :many
 SELECT id, is_immutable, metadata_hash, metadata, control_asset_id FROM asset WHERE asset.id IN (/*SLICE:ids*/?)
 `
 
+const selectAssetSupply = `-- name: SelectAssetSupply :one
+SELECT COALESCE(SUM(ap.amount), 0) AS supply
+FROM asset_projection ap
+INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
+WHERE ap.asset_id = ? AND v.spent = 0
+`
+
+func (q *Queries) SelectAssetSupply(ctx context.Context, assetID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, selectAssetSupply, assetID)
+	var supply int64
+	err := row.Scan(&supply)
+	return supply, err
+}
+
 func (q *Queries) SelectAssetsByIds(ctx context.Context, ids []string) ([]Asset, error) {
 	query := selectAssetsByIds
 	var queryParams []interface{}

@@ -810,8 +810,8 @@
             }
           },
           "supply": {
-            "type": "integer",
-            "format": "uint64"
+            "type": "string",
+            "description": "Decimal string for bigint supply"
           }
         }
       },

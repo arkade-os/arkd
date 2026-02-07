@@ -43,8 +43,8 @@ func (s assetSource) GetControlAsset(ctx context.Context, assetID string) (strin
 }
 
 func (s assetSource) AssetExists(ctx context.Context, assetID string) bool {
-	_, err := s.GetAssets(ctx, []string{assetID})
-	return err == nil
+	assets, err := s.GetAssets(ctx, []string{assetID})
+	return err == nil && len(assets) > 0
 }
 
 func hasIssuance(packet asset.Packet) bool {

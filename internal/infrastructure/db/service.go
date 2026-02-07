@@ -205,7 +205,8 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
-		assetStore, err = assetStoreFactory(config.DataStoreConfig...)
+		assetStoreConfig := append(config.DataStoreConfig, vtxoStore)
+		assetStore, err = assetStoreFactory(assetStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}

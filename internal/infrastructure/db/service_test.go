@@ -1544,6 +1544,23 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// requireAssetsMatch compares two asset slices by Id, ControlAssetId, Metadata, and Supply (using big.Int.Cmp).
+func requireAssetsMatch(t *testing.T, expected, actual []domain.Asset) {
+	t.Helper()
+	require.Len(t, actual, len(expected))
+	byId := make(map[string]domain.Asset)
+	for _, a := range actual {
+		byId[a.Id] = a
+	}
+	for _, exp := range expected {
+		got, ok := byId[exp.Id]
+		require.True(t, ok)
+		require.Equal(t, exp.ControlAssetId, got.ControlAssetId)
+		require.Equal(t, exp.Metadata, got.Metadata)
+		require.Zero(t, (&exp.Supply).Cmp(&got.Supply))
+	}
+}
+
 func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_asset_repository", func(t *testing.T) {
 		ctx := t.Context()
@@ -1593,7 +1610,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		assets, err = repo.GetAssets(ctx, assetIds)
 		require.NoError(t, err)
 		require.Len(t, assets, 2)
-		require.ElementsMatch(t, newAssets, assets)
+		requireAssetsMatch(t, newAssets, assets)
 
 		assets, err = repo.GetAssets(ctx, assetIds[2:])
 		require.NoError(t, err)
