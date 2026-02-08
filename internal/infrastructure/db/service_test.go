@@ -937,6 +937,57 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Empty(t, tapKeys)
 
+		t.Run("test_get_txids_with_pubkeys", func(t *testing.T) {
+			ctx := t.Context()
+			getTxidsPubkey := "99" + randomString(30)
+			txid1 := randomString(32)
+			txid2 := randomString(32)
+			txid3 := randomString(32)
+			arkTxidVal := randomString(32)
+			settledByVal := randomString(32)
+			vtxos := []domain.Vtxo{
+				{
+					Outpoint: domain.Outpoint{Txid: txid1, VOut: 0},
+					PubKey:   getTxidsPubkey,
+					Amount:   1000,
+				},
+				{
+					Outpoint: domain.Outpoint{Txid: txid2, VOut: 0},
+					PubKey:   getTxidsPubkey,
+					Amount:   2000,
+					ArkTxid:  arkTxidVal,
+				},
+				{
+					Outpoint:  domain.Outpoint{Txid: txid3, VOut: 0},
+					PubKey:    getTxidsPubkey,
+					Amount:    3000,
+					SettledBy: settledByVal,
+				},
+			}
+			txids, err := svc.Vtxos().GetTxidsWithPubKeys(ctx, []string{getTxidsPubkey})
+			require.NoError(t, err)
+			require.Empty(t, txids)
+
+			err = svc.Vtxos().AddVtxos(ctx, vtxos)
+			require.NoError(t, err)
+
+			txids, err = svc.Vtxos().GetTxidsWithPubKeys(ctx, []string{getTxidsPubkey})
+			require.NoError(t, err)
+			expected := []string{txid1, txid2, txid3, arkTxidVal, settledByVal}
+			sort.Strings(expected)
+			sort.Strings(txids)
+			require.Equal(t, expected, txids)
+
+			txids, err = svc.Vtxos().GetTxidsWithPubKeys(ctx, []string{"other"})
+			require.NoError(t, err)
+			require.Empty(t, txids)
+
+			txids, err = svc.Vtxos().GetTxidsWithPubKeys(ctx, []string{getTxidsPubkey, "other"})
+			require.NoError(t, err)
+			sort.Strings(txids)
+			require.Equal(t, expected, txids)
+		})
+
 		t.Run("test_get_pending_spent_vtxos", func(t *testing.T) {
 			ctx := t.Context()
 

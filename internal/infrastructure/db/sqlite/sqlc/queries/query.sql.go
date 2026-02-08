@@ -326,6 +326,53 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
+const selectDistinctTxidsWithPubkeys = `-- name: SelectDistinctTxidsWithPubkeys :many
+WITH filtered AS (
+  SELECT v.txid, v.ark_txid, v.settled_by FROM vtxo_vw v
+  WHERE v.pubkey IN (/*SLICE:pubkeys*/?)
+)
+SELECT DISTINCT t.txid FROM (
+  SELECT txid AS txid FROM filtered
+  UNION ALL
+  SELECT ark_txid AS txid FROM filtered WHERE COALESCE(ark_txid, '') != ''
+  UNION ALL
+  SELECT settled_by AS txid FROM filtered WHERE COALESCE(settled_by, '') != ''
+) t
+`
+
+func (q *Queries) SelectDistinctTxidsWithPubkeys(ctx context.Context, pubkeys []string) ([]string, error) {
+	query := selectDistinctTxidsWithPubkeys
+	var queryParams []interface{}
+	if len(pubkeys) > 0 {
+		for _, v := range pubkeys {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(pubkeys))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var txid string
+		if err := rows.Scan(&txid); err != nil {
+			return nil, err
+		}
+		items = append(items, txid)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectExpiringLiquidityAmount = `-- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0) AS amount
 FROM vtxo
@@ -606,7 +653,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
 
 type SelectPendingSpentVtxosWithPubkeysParams struct {
 	Pubkeys []string
-	After   int64
+	After   sql.NullInt64
 	Before  int64
 }
 
@@ -1586,7 +1633,7 @@ SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expir
 
 type SelectVtxosWithPubkeysParams struct {
 	Pubkeys []string
-	After   int64
+	After   sql.NullInt64
 	Before  int64
 }
 

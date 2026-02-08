@@ -259,6 +259,19 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkeys'))
     AND updated_at >= :after
     AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER));
 
+-- name: SelectDistinctTxidsWithPubkeys :many
+WITH filtered AS (
+  SELECT v.txid, v.ark_txid, v.settled_by FROM vtxo_vw v
+  WHERE v.pubkey IN (sqlc.slice('pubkeys'))
+)
+SELECT DISTINCT t.txid FROM (
+  SELECT txid AS txid FROM filtered
+  UNION ALL
+  SELECT ark_txid AS txid FROM filtered WHERE COALESCE(ark_txid, '') != ''
+  UNION ALL
+  SELECT settled_by AS txid FROM filtered WHERE COALESCE(settled_by, '') != ''
+) t;
+
 -- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0) AS amount
 FROM vtxo

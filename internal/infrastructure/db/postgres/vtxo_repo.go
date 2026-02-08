@@ -382,6 +382,19 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	return vtxos, nil
 }
 
+func (v *vtxoRepository) GetTxidsWithPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]string, error) {
+	txids, err := v.querier.SelectDistinctTxidsWithPubkeys(ctx, pubkeys)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return txids, nil
+}
+
 func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	ctx context.Context,
 	commitmentTxid string,

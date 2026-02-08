@@ -254,6 +254,32 @@ func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 	return allVtxos, nil
 }
 
+func (r *vtxoRepository) GetTxidsWithPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]string, error) {
+	vtxos, err := r.GetAllVtxosWithPubKeys(ctx, pubkeys, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	for _, v := range vtxos {
+		if v.Txid != "" {
+			seen[v.Txid] = struct{}{}
+		}
+		if v.ArkTxid != "" {
+			seen[v.ArkTxid] = struct{}{}
+		}
+		if v.SettledBy != "" {
+			seen[v.SettledBy] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for txid := range seen {
+		out = append(out, txid)
+	}
+	return out, nil
+}
+
 func (r *vtxoRepository) GetExpiringLiquidity(
 	ctx context.Context, after, before int64,
 ) (uint64, error) {
