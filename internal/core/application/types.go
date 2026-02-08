@@ -173,6 +173,11 @@ type VirtualTxsResp struct {
 	Page PageResp
 }
 
+type GetHistoryResp struct {
+	Txids []string
+	Page  PageResp
+}
+
 type Outpoint = domain.Outpoint
 
 type TxType int

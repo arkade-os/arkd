@@ -282,6 +282,34 @@ func (e *indexerService) GetVtxos(
 	}, nil
 }
 
+func (e *indexerService) GetHistory(
+	ctx context.Context, request *arkv1.GetHistoryRequest,
+) (*arkv1.GetHistoryResponse, error) {
+	if len(request.GetScripts()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing scripts filter")
+	}
+	pubkeys := make([]string, 0, len(request.GetScripts()))
+	for _, script := range request.GetScripts() {
+		parsed, err := parseScript(script)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		pubkeys = append(pubkeys, parsed[4:])
+	}
+	page, err := parsePage(request.GetPage())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	resp, err := e.indexerSvc.GetHistory(ctx, pubkeys, page)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+	return &arkv1.GetHistoryResponse{
+		Txids: resp.Txids,
+		Page:  protoPage(resp.Page),
+	}, nil
+}
+
 func (e *indexerService) GetVtxoChain(
 	ctx context.Context, request *arkv1.GetVtxoChainRequest,
 ) (*arkv1.GetVtxoChainResponse, error) {
