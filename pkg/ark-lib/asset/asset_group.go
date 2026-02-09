@@ -77,7 +77,7 @@ func NewAssetGroupFromString(s string) (*AssetGroup, error) {
 	return NewAssetGroupFromBytes(buf)
 }
 
-// NewAssetGroupFromString creates a new asset group from its raw serialization in bytes
+// NewAssetGroupFromBytes creates a new asset group from its raw serialization in bytes.
 func NewAssetGroupFromBytes(buf []byte) (*AssetGroup, error) {
 	if len(buf) <= 0 {
 		return nil, fmt.Errorf("missing asset")
