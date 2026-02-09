@@ -140,7 +140,7 @@
       "expectedError": "ASSET_NOT_FOUND (34): input 0 owns asset f198dd7d13d47ea5b167d272113bf9349f716d354fb4a985970754bb719d2e7c0100 but it's not present in the packet"
     },
     {
-      "name": "vtxo asset not found in packet",
+      "name": "vtxo asset not found in asset group inputs",
       "tx": "030000000206d0ee0ff1c33afc43b322dfa8f8e8863e42992c77c8f122df6141904d53273f0000000000fffffffff7343795594055d5cea31315276d5d5e0686585ad21c03a59757d5cf983a8c300000000000ffffffff044b01000000000000225120c34cc94e4cd8d05cc0f2a7800572dacfa8d248876d095745a556af2252bc28e4f5400f0000000000225120c34cc94e4cd8d05cc0f2a7800572dacfa8d248876d095745a556af2252bc28e40000000000000000596a4c5641524b0002020156385c28873d8c3fe421543df9353e5b45d406dbc032be5dbb8ee5977412b244000000010000010156385c28873d8c3fe421543df9353e5b45d406dbc032be5dbb8ee5977412b2440000000100000100000000000000000451024e7300000000",
       "prevouts": {
         "0": [
@@ -186,7 +186,7 @@
       "controlAssets": {
         "1ed3e6bd37912cbea133b01cbb62ce9c840400624608a73b6f9c835c2f2efe1b0100": "1ed3e6bd37912cbea133b01cbb62ce9c840400624608a73b6f9c835c2f2efe1b0001"
       },
-      "expectedError": "ASSET_NOT_FOUND (34): control asset 1ed3e6bd37912cbea133b01cbb62ce9c840400624608a73b6f9c835c2f2efe1b0001 not found in the packe"
+      "expectedError": "ASSET_NOT_FOUND (34): control asset 1ed3e6bd37912cbea133b01cbb62ce9c840400624608a73b6f9c835c2f2efe1b0001 not found in the packet"
     },
     {
       "name": "no control asset",
