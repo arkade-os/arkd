@@ -571,7 +571,10 @@ func (c *Config) Validate() error {
 	}
 
 	if !supportedIndexerTxExposures.supports(c.IndexerTxExposure) {
-		return fmt.Errorf("indexer txn exposure type not supported, please select one of: %s", supportedIndexerTxExposures)
+		return fmt.Errorf(
+			"indexer txn exposure type not supported, please select one of: %s",
+			supportedIndexerTxExposures,
+		)
 	}
 
 	if err := c.repoManager(); err != nil {

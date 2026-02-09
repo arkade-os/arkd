@@ -67,11 +67,19 @@ func (m *mockSignerService) GetPubkey(ctx context.Context) (*btcec.PublicKey, er
 	return m.publicKey, nil
 }
 
-func (m *mockSignerService) SignTransaction(ctx context.Context, partialTx string, extractRawTx bool) (string, error) {
+func (m *mockSignerService) SignTransaction(
+	ctx context.Context,
+	partialTx string,
+	extractRawTx bool,
+) (string, error) {
 	return "", nil
 }
 
-func (m *mockSignerService) SignTransactionTapscript(ctx context.Context, partialTx string, inputIndexes []int) (string, error) {
+func (m *mockSignerService) SignTransactionTapscript(
+	ctx context.Context,
+	partialTx string,
+	inputIndexes []int,
+) (string, error) {
 	return "", nil
 }
 
@@ -162,7 +170,9 @@ func TestValidateAuthToken_WrongSigner(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create second signer with different key
-	mockSigner2, err := newMockSignerService("0000000000000000000000000000000000000000000000000000000000000002")
+	mockSigner2, err := newMockSignerService(
+		"0000000000000000000000000000000000000000000000000000000000000002",
+	)
 	require.NoError(t, err)
 
 	// Create indexer with signer1
