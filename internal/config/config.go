@@ -56,6 +56,11 @@ var (
 		"inmemory": {},
 		"redis":    {},
 	}
+	supportedIndexerTxExposures = supportedType{
+		"public":   {},
+		"withheld": {},
+		"private":  {},
+	}
 )
 
 type Config struct {
@@ -565,9 +570,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
 
-	if c.IndexerTxExposure != "public" && c.IndexerTxExposure != "withheld" &&
-		c.IndexerTxExposure != "private" {
-		return fmt.Errorf("indexer tx exposure must be either 'public', 'withheld', or 'private'")
+	if !supportedIndexerTxExposures.supports(c.IndexerTxExposure) {
+		return fmt.Errorf("indexer txn exposure type not supported, please select one of: %s", supportedIndexerTxExposures)
 	}
 
 	if err := c.repoManager(); err != nil {

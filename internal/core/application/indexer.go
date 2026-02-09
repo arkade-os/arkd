@@ -415,10 +415,10 @@ func (i *indexerService) GetVtxoChain(
 
 	authToken := ""
 	var err error
-	// turn into TxExposure enum
+
 	switch TxExposure(i.txExposure) {
 	case TxExposurePublic: // no need to do anything
-	case TxExposureWithheld:
+	case TxExposureWithheld, TxExposurePrivate:
 		// validate the intent proof/message to allow access to the full chain
 		err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof)
 		if err == nil {
@@ -429,17 +429,6 @@ func (i *indexerService) GetVtxoChain(
 		}
 		// if intent failed validation, we just dont supply an auth token
 
-	case TxExposurePrivate:
-		// validate the intent proof/message to allow access to the full chain
-		err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof)
-		if err != nil {
-			return nil, fmt.Errorf("invalid intent proof or message: %s", err)
-		}
-
-		authToken, err = i.createAuthToken(ctx, vtxoKey)
-		if err != nil {
-			return nil, err
-		}
 	default:
 		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
 	}
@@ -787,7 +776,7 @@ func (i *indexerService) validateAuthToken(authToken string) (bool, error) {
 	msgHash := chainhash.HashB(msg)
 	sig, err := schnorr.ParseSignature(sigBytes)
 	if err != nil {
-		return false, nil // Invalid signature format
+		return false, fmt.Errorf("failed to parse signature: %w", err)
 	}
 
 	pubkey, err := schnorr.ParsePubKey(i.signerPubkey)
