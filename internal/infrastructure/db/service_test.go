@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"math"
+	"math/big"
 	"os"
 	"reflect"
 	"slices"
@@ -1565,6 +1567,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_asset_repository", func(t *testing.T) {
 		ctx := t.Context()
 		repo := svc.Assets()
+		vtxoRepo := svc.Vtxos()
 
 		newAssets := []domain.Asset{
 			{
@@ -1637,6 +1640,54 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		exists, err = repo.AssetExists(ctx, "non-existent-asset")
 		require.NoError(t, err)
 		require.False(t, exists)
+
+		// test asset supply overflow
+		vtxos := []domain.Vtxo{{
+			Outpoint: domain.Outpoint{
+				Txid: "supplyOverflowVtxo1",
+				VOut: 0,
+			},
+			Amount: 1000000000000000000,
+			Assets: []domain.AssetDenomination{
+				{
+					AssetId: "assetSupplyOverflow",
+					Amount:  math.MaxInt64,
+				},
+			},
+		},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: "supplyOverflowVtxo2",
+					VOut: 0,
+				},
+				Amount: 1000000000000000000,
+				Assets: []domain.AssetDenomination{
+					{
+						AssetId: "assetSupplyOverflow",
+						Amount:  math.MaxInt64,
+					},
+				},
+			}}
+		count, err = repo.AddAssets(ctx, map[string][]domain.Asset{"assetSupplyOverflowTx": {
+			{
+				Id:       "assetSupplyOverflow",
+				Metadata: []asset.Metadata{},
+			},
+		}})
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
+
+		err = vtxoRepo.AddVtxos(ctx, vtxos)
+		require.NoError(t, err)
+
+		assets, err = repo.GetAssets(ctx, []string{"assetSupplyOverflow"})
+		require.NoError(t, err)
+		require.Len(t, assets, 1)
+
+		expectedSupply := new(big.Int).
+			Mul(new(big.Int).SetUint64(math.MaxInt64), big.NewInt(2))
+
+		require.Equal(t, expectedSupply.String(), assets[0].Supply.String())
 	})
 }
 

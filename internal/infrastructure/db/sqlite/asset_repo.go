@@ -128,19 +128,16 @@ func (r *assetRepository) GetAssets(
 		}
 		assets = make([]domain.Asset, 0, len(rows))
 		for _, row := range rows {
-			supplyVal, err := querierWithTx.SelectAssetSupply(ctx, row.ID)
+			// TODO: this is not efficient, but avoids overflows
+			amounts, err := querierWithTx.SelectAssetAmounts(ctx, row.ID)
 			if err != nil {
 				return fmt.Errorf("failed to compute supply for asset %s: %w", row.ID, err)
 			}
-			var supply int64
-			switch v := supplyVal.(type) {
-			case int64:
-				supply = v
-			case int:
-				supply = int64(v)
-			default:
-				return fmt.Errorf("unexpected supply type for asset %s: %T", row.ID, supplyVal)
+			supply := new(big.Int)
+			for _, amount := range amounts {
+				supply.Add(supply, new(big.Int).SetInt64(amount))
 			}
+
 			var metadata []asset.Metadata
 			if row.Metadata.Valid {
 				md := make([]metadataDTO, 0)
@@ -158,7 +155,7 @@ func (r *assetRepository) GetAssets(
 				Id:             row.ID,
 				Metadata:       metadata,
 				ControlAssetId: row.ControlAssetID.String,
-				Supply:         *new(big.Int).SetInt64(supply),
+				Supply:         *supply,
 			})
 		}
 		return nil

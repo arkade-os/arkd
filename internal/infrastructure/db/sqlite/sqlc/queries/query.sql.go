@@ -270,6 +270,34 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 	return items, nil
 }
 
+const selectAssetAmounts = `-- name: SelectAssetAmounts :many
+SELECT v.asset_amount FROM vtxo_vw v
+WHERE v.asset_id = ? AND v.spent = false AND v.asset_amount > 0
+`
+
+func (q *Queries) SelectAssetAmounts(ctx context.Context, assetID string) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, selectAssetAmounts, assetID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var asset_amount int64
+		if err := rows.Scan(&asset_amount); err != nil {
+			return nil, err
+		}
+		items = append(items, asset_amount)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectAssetExists = `-- name: SelectAssetExists :one
 SELECT 1 FROM asset WHERE id = ? LIMIT 1
 `
@@ -279,21 +307,6 @@ func (q *Queries) SelectAssetExists(ctx context.Context, id string) (int64, erro
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
-}
-
-const selectAssetSupply = `-- name: SelectAssetSupply :one
-SELECT COALESCE(SUM(ap.amount), 0) AS supply
-FROM asset_projection ap
-INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
-WHERE ap.asset_id = ? AND v.spent = 0
-`
-
-// Sum of unspent vtxo amounts for the asset. SQLite INTEGER may overflow for supply > 2^63-1.
-func (q *Queries) SelectAssetSupply(ctx context.Context, assetID string) (interface{}, error) {
-	row := q.db.QueryRowContext(ctx, selectAssetSupply, assetID)
-	var supply interface{}
-	err := row.Scan(&supply)
-	return supply, err
 }
 
 const selectAssetsByIds = `-- name: SelectAssetsByIds :many

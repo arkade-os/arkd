@@ -284,7 +284,7 @@ func (q *Queries) SelectAssetExists(ctx context.Context, id string) (int32, erro
 }
 
 const selectAssetSupply = `-- name: SelectAssetSupply :one
-SELECT (COALESCE(SUM(ap.amount), 0)::NUMERIC)::TEXT AS supply
+SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply
 FROM asset_projection ap
 INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
 WHERE ap.asset_id = $1 AND v.spent = false
