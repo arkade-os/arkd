@@ -64,7 +64,6 @@ func (r *assetRepository) AddAssets(
 	})
 
 	txBody := func(querierWithTx *queries.Queries) error {
-		mdHashByAssetId := make(map[string]string)
 		for _, ast := range assets {
 			found, err := querierWithTx.SelectAssetsByIds(ctx, []string{ast.Id})
 			if err != nil && err != sql.ErrNoRows {
@@ -87,7 +86,6 @@ func (r *assetRepository) AddAssets(
 					RawMessage: buf,
 					Valid:      true,
 				}
-				mdHashByAssetId[ast.Id] = hex.EncodeToString(mdHash)
 			}
 			if err := querierWithTx.InsertAsset(
 				ctx, queries.InsertAssetParams{
