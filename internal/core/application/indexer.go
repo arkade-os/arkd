@@ -645,11 +645,11 @@ func (i *indexerService) GetVirtualTxs(
 					ptx.Inputs[j].TaprootScriptSpendSig = newSigs
 				}
 
-				var b strings.Builder
+				var b bytes.Buffer
 				if err := ptx.Serialize(&b); err != nil {
 					return nil, fmt.Errorf("failed to serialize virtual tx: %s", err)
 				}
-				virtualTxs[idx] = b.String()
+				virtualTxs[idx] = base64.StdEncoding.EncodeToString(b.Bytes())
 			}
 		}
 	case TxExposurePrivate:
