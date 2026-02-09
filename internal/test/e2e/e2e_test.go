@@ -3908,6 +3908,21 @@ func TestBan(t *testing.T) {
 // TestFee tests the fee calculation for the onboarding and settlement of the funds.
 // It first updates the 4 fee programs for intents.
 func TestFee(t *testing.T) {
+	originalFees, err := getIntentFees()
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, clearIntentFees())
+		if !isEmptyIntentFees(*originalFees) {
+			require.NoError(t, updateIntentFees(*originalFees))
+		}
+
+		// verify the fees have been restored
+		restoredFees, err := getIntentFees()
+		require.NoError(t, err)
+		require.Equal(t, originalFees, restoredFees)
+	})
+
 	fees := intentFees{
 		// for input: free in case of recoverable or note, 1% of the amount otherwise
 		// for output: 200 satoshis for onchain output, 0 for vtxo output
@@ -3917,7 +3932,7 @@ func TestFee(t *testing.T) {
 		IntentOnchainOutputFeeProgram:  "200.0",
 	}
 
-	err := updateIntentFees(fees)
+	err = updateIntentFees(fees)
 	require.NoError(t, err)
 
 	ctx := t.Context()
