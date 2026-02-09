@@ -1696,7 +1696,9 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxoInputs = append(vtxoInputs, vtxo)
-		assetInputs[i+1] = vtxo.Assets
+		if len(vtxo.Assets) > 0 {
+			assetInputs[i+1] = vtxo.Assets
+		}
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
