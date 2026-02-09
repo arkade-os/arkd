@@ -64,6 +64,7 @@ func (r *assetRepository) AddAssets(
 	})
 
 	txBody := func(querierWithTx *queries.Queries) error {
+		count = 0
 		for _, ast := range assets {
 			found, err := querierWithTx.SelectAssetsByIds(ctx, []string{ast.Id})
 			if err != nil && err != sql.ErrNoRows {
