@@ -441,6 +441,7 @@ func (i *indexerService) GetVtxoChain(
 	}, nil
 }
 
+// similar flow in DeleteIntentsByProof inside internal/core/application/service.go
 func (i *indexerService) ValidateIntentWithProof(
 	ctx context.Context,
 	vtxoKey Outpoint,
@@ -607,6 +608,9 @@ func (i *indexerService) GetVirtualTxs(
 
 	virtualTxs, reps := paginate(txs, page, maxPageSizeVirtualTxs)
 
+	// depending on the exposure level, we may need to validate the auth token and/or remove arkd signatures from the virtual txs.
+	// We can prevent griefing attacks by stripping arkd signatures from the virtual txs for users without valid auth tokens,
+	//  as they won't be able to construct the full broadcastable transaction without arkd signatures.
 	// turn into TxExposure enum
 	switch TxExposure(i.txExposure) {
 	case TxExposurePublic:
