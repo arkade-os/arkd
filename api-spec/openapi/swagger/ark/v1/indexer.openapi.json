@@ -811,7 +811,7 @@
           },
           "supply": {
             "type": "string",
-            "description": "Decimal string for bigint supply"
+            "description": "bigint integer"
           }
         }
       },
@@ -1455,37 +1455,6 @@
         "type": "object",
         "properties": {
           "subscriptionId": {
-            "type": "string"
-          }
-        }
-      },
-      "TeleportEvent": {
-        "title": "TeleportEvent",
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "integer",
-            "format": "uint64"
-          },
-          "anchorOutpoint": {
-            "type": "string"
-          },
-          "assetId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "expiresAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "outputVout": {
-            "type": "integer",
-            "format": "uint32"
-          },
-          "teleportHash": {
             "type": "string"
           }
         }
