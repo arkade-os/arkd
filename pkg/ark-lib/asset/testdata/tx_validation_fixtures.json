@@ -231,7 +231,8 @@
             "amount": 1
           }
         ]
-      }
+      },
+      "expectedError": "ASSET_VALIDATION_FAILED (33): control asset dc155e24e900bd3db2a22501b853e4083ba3425c3f8db3e80d3ecb696d33cd0a0000 does not exist"
     }
   ]
 }
