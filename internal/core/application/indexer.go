@@ -96,7 +96,7 @@ func NewIndexerService(
 		repoManager:  repoManager,
 		signer:       signer,
 		wallet:       wallet,
-		signerPubkey: pubkey.SerializeCompressed(),
+		signerPubkey: schnorr.SerializePubKey(pubkey),
 		txExposure:   txExposure,
 	}, nil
 }
@@ -633,16 +633,16 @@ func (i *indexerService) GetVirtualTxs(
 					return nil, fmt.Errorf("failed to deserialize virtual tx: %s", err)
 				}
 
-				// remove arkd signature from each input
+				// remove arkd taproot script spend signatures from each input
 				for j := range ptx.Inputs {
-					newSigs := make([]*psbt.PartialSig, 0)
-					for _, sig := range ptx.Inputs[j].PartialSigs {
+					newSigs := make([]*psbt.TaprootScriptSpendSig, 0)
+					for _, sig := range ptx.Inputs[j].TaprootScriptSpendSig {
 						// if the signature is not from arkd, keep it, otherwise remove it
-						if !bytes.Equal(sig.PubKey, i.signerPubkey) {
+						if !bytes.Equal(sig.XOnlyPubKey, i.signerPubkey) {
 							newSigs = append(newSigs, sig)
 						}
 					}
-					ptx.Inputs[j].PartialSigs = newSigs
+					ptx.Inputs[j].TaprootScriptSpendSig = newSigs
 				}
 
 				var b strings.Builder
