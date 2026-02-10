@@ -1431,11 +1431,6 @@ func (s *service) GetPendingOffchainTxs(
 			continue
 		}
 
-		if !offchainTx.IsAccepted() {
-			// the tx must be in the "accepted" stage to be considered as pending
-			continue
-		}
-
 		seen[vtxo.ArkTxid] = struct{}{}
 		acceptedOffchainTxs = append(acceptedOffchainTxs, AcceptedOffchainTx{
 			TxId:                offchainTx.ArkTxid,
