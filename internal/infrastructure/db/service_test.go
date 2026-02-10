@@ -1540,6 +1540,87 @@ func testMarkerSweep(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.False(t, isSwept)
 	})
+
+	t.Run("test_sweep_marker_with_descendants", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+
+		// Create a marker hierarchy:
+		// root -> child1 -> grandchild1
+		//      -> child2
+		root := domain.Marker{
+			ID:              "sweep_desc_root_" + randomString(16),
+			Depth:           0,
+			ParentMarkerIDs: nil,
+		}
+		child1 := domain.Marker{
+			ID:              "sweep_desc_child1_" + randomString(16),
+			Depth:           100,
+			ParentMarkerIDs: []string{root.ID},
+		}
+		child2 := domain.Marker{
+			ID:              "sweep_desc_child2_" + randomString(16),
+			Depth:           100,
+			ParentMarkerIDs: []string{root.ID},
+		}
+		grandchild1 := domain.Marker{
+			ID:              "sweep_desc_grandchild1_" + randomString(16),
+			Depth:           200,
+			ParentMarkerIDs: []string{child1.ID},
+		}
+
+		err := svc.Markers().AddMarker(ctx, root)
+		require.NoError(t, err)
+		err = svc.Markers().AddMarker(ctx, child1)
+		require.NoError(t, err)
+		err = svc.Markers().AddMarker(ctx, child2)
+		require.NoError(t, err)
+		err = svc.Markers().AddMarker(ctx, grandchild1)
+		require.NoError(t, err)
+
+		// Verify none are swept initially
+		isSwept, err := svc.Markers().IsMarkerSwept(ctx, root.ID)
+		require.NoError(t, err)
+		require.False(t, isSwept)
+
+		// Sweep root with descendants
+		sweptAt := time.Now().UnixMilli()
+		count, err := svc.Markers().SweepMarkerWithDescendants(ctx, root.ID, sweptAt)
+		require.NoError(t, err)
+		require.Equal(t, int64(4), count) // root + child1 + child2 + grandchild1
+
+		// Verify all markers are now swept
+		for _, m := range []domain.Marker{root, child1, child2, grandchild1} {
+			isSwept, err := svc.Markers().IsMarkerSwept(ctx, m.ID)
+			require.NoError(t, err)
+			require.True(t, isSwept, "Marker %s should be swept", m.ID)
+		}
+
+		// Test idempotency - calling again should return 0
+		count, err = svc.Markers().SweepMarkerWithDescendants(ctx, root.ID, sweptAt+1000)
+		require.NoError(t, err)
+		require.Equal(t, int64(0), count)
+
+		// Test sweeping a leaf node (no descendants)
+		leaf := domain.Marker{
+			ID:              "sweep_desc_leaf_" + randomString(16),
+			Depth:           300,
+			ParentMarkerIDs: []string{grandchild1.ID},
+		}
+		err = svc.Markers().AddMarker(ctx, leaf)
+		require.NoError(t, err)
+
+		count, err = svc.Markers().SweepMarkerWithDescendants(ctx, leaf.ID, sweptAt)
+		require.NoError(t, err)
+		require.Equal(t, int64(1), count) // Just the leaf itself
+
+		// Test with non-existent marker (should return 0)
+		count, err = svc.Markers().SweepMarkerWithDescendants(ctx, "nonexistent", sweptAt)
+		require.NoError(t, err)
+		require.Equal(t, int64(0), count)
+	})
 }
 
 func testVtxoMarkerAssociation(t *testing.T, svc ports.RepoManager) {
