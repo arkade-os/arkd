@@ -579,8 +579,9 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 						maxDepth = v.Depth
 					}
 					// Collect parent marker IDs for marker linking (will be used at boundary)
-					// Note: We need to get marker_id from the VTXO, which requires the field to be added to domain.Vtxo
-					// For now, we'll create markers without parent links - this can be enhanced in a follow-up
+					if v.MarkerID != "" {
+						parentMarkerSet[v.MarkerID] = struct{}{}
+					}
 				}
 				newDepth = maxDepth + 1
 				for id := range parentMarkerSet {
@@ -589,22 +590,27 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 		}
 
-		// Create marker if at boundary depth
+		// Create marker if at boundary depth, or inherit from parent
 		var markerID string
-		if s.markerStore != nil && domain.IsAtMarkerBoundary(newDepth) {
-			// Create marker ID from the first output (the ark tx id + first vtxo vout)
-			markerID = fmt.Sprintf("%s:marker:%d", txid, newDepth)
-			marker := domain.Marker{
-				ID:              markerID,
-				Depth:           newDepth,
-				ParentMarkerIDs: parentMarkerIDs,
-			}
-			if err := s.markerStore.AddMarker(ctx, marker); err != nil {
-				log.WithError(err).Warn("failed to create marker for chained vtxo")
-				// Continue without marker - non-fatal
-				markerID = ""
-			} else {
-				log.Debugf("created marker %s at depth %d", markerID, newDepth)
+		if s.markerStore != nil {
+			if domain.IsAtMarkerBoundary(newDepth) {
+				// Create marker ID from the first output (the ark tx id + first vtxo vout)
+				markerID = fmt.Sprintf("%s:marker:%d", txid, newDepth)
+				marker := domain.Marker{
+					ID:              markerID,
+					Depth:           newDepth,
+					ParentMarkerIDs: parentMarkerIDs,
+				}
+				if err := s.markerStore.AddMarker(ctx, marker); err != nil {
+					log.WithError(err).Warn("failed to create marker for chained vtxo")
+					// Continue without marker - non-fatal
+					markerID = ""
+				} else {
+					log.Debugf("created marker %s at depth %d", markerID, newDepth)
+				}
+			} else if len(parentMarkerIDs) > 0 {
+				// Inherit marker from parent at non-boundary depth
+				markerID = parentMarkerIDs[0]
 			}
 		}
 
@@ -645,7 +651,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 		log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
 
-		// Update marker_id for VTXOs at boundary depth
+		// Update marker_id for VTXOs (new marker at boundary, inherited at non-boundary)
 		if markerID != "" && s.markerStore != nil {
 			for _, vtxo := range newVtxos {
 				if err := s.markerStore.UpdateVtxoMarker(ctx, vtxo.Outpoint, markerID); err != nil {

@@ -461,6 +461,21 @@ SELECT * FROM swept_marker WHERE marker_id = ANY(@marker_ids::text[]);
 -- name: IsMarkerSwept :one
 SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swept;
 
+-- name: GetDescendantMarkerIds :many
+-- Recursively get a marker and all its descendants (markers whose parent_markers contain it)
+WITH RECURSIVE descendant_markers(id) AS (
+    -- Base case: the marker being swept
+    SELECT marker.id FROM marker WHERE marker.id = @root_marker_id
+    UNION ALL
+    -- Recursive case: find markers whose parent_markers jsonb array contains any descendant
+    SELECT m.id FROM marker m
+    INNER JOIN descendant_markers dm ON (
+        m.parent_markers @> jsonb_build_array(dm.id)
+    )
+)
+SELECT descendant_markers.id AS marker_id FROM descendant_markers
+WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm);
+
 -- name: UpdateVtxoMarkerId :exec
 UPDATE vtxo SET marker_id = @marker_id WHERE txid = @txid AND vout = @vout;
 

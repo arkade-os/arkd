@@ -133,6 +133,29 @@ func (m *markerRepository) SweepMarker(ctx context.Context, markerID string, swe
 	})
 }
 
+func (m *markerRepository) SweepMarkerWithDescendants(ctx context.Context, markerID string, sweptAt int64) (int64, error) {
+	// Get all descendant marker IDs (including the root marker) that are not already swept
+	descendantIDs, err := m.querier.GetDescendantMarkerIds(ctx, markerID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get descendant markers: %w", err)
+	}
+
+	// Insert each descendant into swept_marker
+	var count int64
+	for _, id := range descendantIDs {
+		err := m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
+			MarkerID: id,
+			SweptAt:  sweptAt,
+		})
+		if err != nil {
+			return count, fmt.Errorf("failed to sweep marker %s: %w", id, err)
+		}
+		count++
+	}
+
+	return count, nil
+}
+
 func (m *markerRepository) IsMarkerSwept(ctx context.Context, markerID string) (bool, error) {
 	result, err := m.querier.IsMarkerSwept(ctx, markerID)
 	if err != nil {

@@ -86,6 +86,45 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 	return err
 }
 
+const getDescendantMarkerIds = `-- name: GetDescendantMarkerIds :many
+WITH RECURSIVE descendant_markers(id) AS (
+    -- Base case: the marker being swept
+    SELECT marker.id FROM marker WHERE marker.id = $1
+    UNION ALL
+    -- Recursive case: find markers whose parent_markers jsonb array contains any descendant
+    SELECT m.id FROM marker m
+    INNER JOIN descendant_markers dm ON (
+        m.parent_markers @> jsonb_build_array(dm.id)
+    )
+)
+SELECT descendant_markers.id AS marker_id FROM descendant_markers
+WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm)
+`
+
+// Recursively get a marker and all its descendants (markers whose parent_markers contain it)
+func (q *Queries) GetDescendantMarkerIds(ctx context.Context, rootMarkerID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getDescendantMarkerIds, rootMarkerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var marker_id string
+		if err := rows.Scan(&marker_id); err != nil {
+			return nil, err
+		}
+		items = append(items, marker_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertSweptMarker = `-- name: InsertSweptMarker :exec
 INSERT INTO swept_marker (marker_id, swept_at)
 VALUES ($1, $2)

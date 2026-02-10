@@ -239,8 +239,11 @@ func (i *indexerService) GetVtxoChain(
 	nextVtxos := []domain.Outpoint{vtxoKey}
 	visited := make(map[string]bool)
 
+	// Pre-fetch VTXOs using markers for optimization (reduces DB calls for deep chains)
+	vtxoCache := i.prefetchVtxosByMarkers(ctx, vtxoKey)
+
 	for len(nextVtxos) > 0 {
-		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
+		vtxos, err := i.getVtxosFromCacheOrDB(ctx, nextVtxos, vtxoCache)
 		if err != nil {
 			return nil, err
 		}
@@ -367,6 +370,92 @@ func (i *indexerService) GetVtxoChain(
 		Chain: txChain,
 		Page:  pageResp,
 	}, nil
+}
+
+// prefetchVtxosByMarkers pre-fetches VTXOs using markers for optimization.
+// This reduces the number of DB calls for deep chains by bulk fetching VTXOs
+// associated with the marker chain instead of fetching one at a time.
+func (i *indexerService) prefetchVtxosByMarkers(
+	ctx context.Context, startKey Outpoint,
+) map[string]domain.Vtxo {
+	cache := make(map[string]domain.Vtxo)
+
+	if i.repoManager.Markers() == nil {
+		return cache
+	}
+
+	// Get starting VTXO to find its marker
+	startVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{startKey})
+	if err != nil || len(startVtxos) == 0 {
+		return cache
+	}
+
+	startVtxo := startVtxos[0]
+	// Add starting VTXO to cache
+	cache[startVtxo.Outpoint.String()] = startVtxo
+
+	if startVtxo.MarkerID == "" {
+		return cache
+	}
+
+	// Collect marker chain by following ParentMarkerIDs
+	markerIDs := []string{startVtxo.MarkerID}
+	marker, err := i.repoManager.Markers().GetMarker(ctx, startVtxo.MarkerID)
+	if err != nil {
+		return cache
+	}
+
+	// Follow the marker chain up to the root (depth 0)
+	for marker != nil && len(marker.ParentMarkerIDs) > 0 {
+		markerIDs = append(markerIDs, marker.ParentMarkerIDs...)
+		// Follow first parent marker to continue chain
+		marker, _ = i.repoManager.Markers().GetMarker(ctx, marker.ParentMarkerIDs[0])
+	}
+
+	// Bulk fetch VTXOs for all markers in the chain
+	vtxos, err := i.repoManager.Markers().GetVtxoChainByMarkers(ctx, markerIDs)
+	if err != nil {
+		return cache
+	}
+
+	for _, v := range vtxos {
+		cache[v.Outpoint.String()] = v
+	}
+
+	return cache
+}
+
+// getVtxosFromCacheOrDB retrieves VTXOs from cache first, falling back to DB for cache misses.
+// This is used in conjunction with prefetchVtxosByMarkers to reduce DB calls.
+func (i *indexerService) getVtxosFromCacheOrDB(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	cache map[string]domain.Vtxo,
+) ([]domain.Vtxo, error) {
+	result := make([]domain.Vtxo, 0, len(outpoints))
+	missingOutpoints := make([]domain.Outpoint, 0)
+
+	for _, op := range outpoints {
+		if v, ok := cache[op.String()]; ok {
+			result = append(result, v)
+		} else {
+			missingOutpoints = append(missingOutpoints, op)
+		}
+	}
+
+	if len(missingOutpoints) > 0 {
+		dbVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, missingOutpoints)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, dbVtxos...)
+		// Add to cache for future lookups in this chain traversal
+		for _, v := range dbVtxos {
+			cache[v.Outpoint.String()] = v
+		}
+	}
+
+	return result, nil
 }
 
 func (i *indexerService) GetVirtualTxs(
