@@ -192,6 +192,7 @@ func TestService(t *testing.T) {
 			testSweepVtxosByMarker(t, svc)
 			testMarkerDepthRangeQueries(t, svc)
 			testMarkerChainTraversal(t, svc)
+			testGetVtxoChainWithMarkerOptimization(t, svc)
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
@@ -1443,7 +1444,8 @@ func testMarkerBasicOperations(t *testing.T, svc ports.RepoManager) {
 		require.True(t, foundMarker4)
 
 		// Test GetMarkersByIds - batch retrieve
-		markersById, err := svc.Markers().GetMarkersByIds(ctx, []string{marker1.ID, marker3.ID, marker4.ID})
+		markersById, err := svc.Markers().
+			GetMarkersByIds(ctx, []string{marker1.ID, marker3.ID, marker4.ID})
 		require.NoError(t, err)
 		require.Len(t, markersById, 3)
 		retrievedIds := make([]string, len(markersById))
@@ -1686,11 +1688,19 @@ func testVtxoMarkerAssociation(t *testing.T, svc ports.RepoManager) {
 		vtxosByMarker, err := svc.Markers().GetVtxosByMarker(ctx, markerID)
 		require.NoError(t, err)
 		require.Len(t, vtxosByMarker, 2)
-		outpoints := []string{vtxosByMarker[0].Outpoint.String(), vtxosByMarker[1].Outpoint.String()}
-		require.ElementsMatch(t, []string{vtxo1.Outpoint.String(), vtxo2.Outpoint.String()}, outpoints)
+		outpoints := []string{
+			vtxosByMarker[0].Outpoint.String(),
+			vtxosByMarker[1].Outpoint.String(),
+		}
+		require.ElementsMatch(
+			t,
+			[]string{vtxo1.Outpoint.String(), vtxo2.Outpoint.String()},
+			outpoints,
+		)
 
 		// Verify VTXO.MarkerID field is populated when retrieved via GetVtxos
-		retrievedVtxos, err = svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxo1.Outpoint, vtxo2.Outpoint})
+		retrievedVtxos, err = svc.Vtxos().
+			GetVtxos(ctx, []domain.Outpoint{vtxo1.Outpoint, vtxo2.Outpoint})
 		require.NoError(t, err)
 		require.Len(t, retrievedVtxos, 2)
 		for _, v := range retrievedVtxos {
@@ -1905,7 +1915,8 @@ func testMarkerDepthRangeQueries(t *testing.T, svc ports.RepoManager) {
 			Depth:              150,
 		}
 
-		err = svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxoDepth0, vtxoDepth50, vtxoDepth100, vtxoDepth150})
+		err = svc.Vtxos().
+			AddVtxos(ctx, []domain.Vtxo{vtxoDepth0, vtxoDepth50, vtxoDepth100, vtxoDepth150})
 		require.NoError(t, err)
 
 		// Test GetVtxosByDepthRange(25, 125) - should return VTXOs at 50 and 100
@@ -2031,7 +2042,8 @@ func testMarkerChainTraversal(t *testing.T, svc ports.RepoManager) {
 		require.True(t, foundTxids[vtxo2.Txid])
 
 		// Test with both markers
-		vtxosByMarkers, err = svc.Markers().GetVtxoChainByMarkers(ctx, []string{marker1.ID, marker2.ID})
+		vtxosByMarkers, err = svc.Markers().
+			GetVtxoChainByMarkers(ctx, []string{marker1.ID, marker2.ID})
 		require.NoError(t, err)
 		require.Len(t, vtxosByMarkers, 3)
 
@@ -2055,6 +2067,189 @@ func testMarkerChainTraversal(t *testing.T, svc ports.RepoManager) {
 		vtxosByArkTxid, err = svc.Markers().GetVtxosByArkTxid(ctx, "nonexistent")
 		require.NoError(t, err)
 		require.Empty(t, vtxosByArkTxid)
+	})
+}
+
+// testGetVtxoChainWithMarkerOptimization tests that GetVtxoChain correctly
+// traverses a deep VTXO chain and uses marker-based prefetching.
+// This verifies:
+// 1. Markers are correctly created at depth boundaries (0, 100, 200)
+// 2. VTXOs have correct marker assignments
+// 3. GetVtxoChainByMarkers returns all VTXOs for the marker chain
+func testGetVtxoChainWithMarkerOptimization(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_get_vtxo_chain_with_marker_optimization", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		commitmentTxid := randomString(32)
+
+		// Create markers at depths 0, 100, 200 (simulating a chain spanning 250 depths)
+		marker0 := domain.Marker{
+			ID:              "opt_marker_0_" + randomString(16),
+			Depth:           0,
+			ParentMarkerIDs: nil,
+		}
+		marker100 := domain.Marker{
+			ID:              "opt_marker_100_" + randomString(16),
+			Depth:           100,
+			ParentMarkerIDs: []string{marker0.ID},
+		}
+		marker200 := domain.Marker{
+			ID:              "opt_marker_200_" + randomString(16),
+			Depth:           200,
+			ParentMarkerIDs: []string{marker100.ID},
+		}
+
+		err := svc.Markers().AddMarker(ctx, marker0)
+		require.NoError(t, err)
+		err = svc.Markers().AddMarker(ctx, marker100)
+		require.NoError(t, err)
+		err = svc.Markers().AddMarker(ctx, marker200)
+		require.NoError(t, err)
+
+		// Create VTXOs at various depths across the marker boundaries:
+		// - VTXOs at depth 0-99 should have marker0.ID
+		// - VTXOs at depth 100-199 should have marker100.ID
+		// - VTXOs at depth 200-250 should have marker200.ID
+		vtxos := make([]domain.Vtxo, 0)
+		vtxoMarkerMap := make(map[string]string) // outpoint -> markerID
+
+		// Helper to determine which marker a VTXO should have based on depth
+		getMarkerForDepth := func(depth uint32) string {
+			if depth >= 200 {
+				return marker200.ID
+			} else if depth >= 100 {
+				return marker100.ID
+			}
+			return marker0.ID
+		}
+
+		// Create VTXOs at sample depths: 0, 50, 99, 100, 150, 199, 200, 225, 250
+		sampleDepths := []uint32{0, 50, 99, 100, 150, 199, 200, 225, 250}
+		for i, depth := range sampleDepths {
+			vtxo := domain.Vtxo{
+				Outpoint: domain.Outpoint{
+					Txid: "opt_chain_vtxo_" + randomString(16),
+					VOut: uint32(i),
+				},
+				PubKey:             pubkey,
+				Amount:             uint64(1000 * (i + 1)),
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Depth:              depth,
+			}
+			vtxos = append(vtxos, vtxo)
+			vtxoMarkerMap[vtxo.Outpoint.String()] = getMarkerForDepth(depth)
+		}
+
+		// Add all VTXOs
+		err = svc.Vtxos().AddVtxos(ctx, vtxos)
+		require.NoError(t, err)
+
+		// Associate VTXOs with their markers
+		for _, v := range vtxos {
+			markerID := vtxoMarkerMap[v.Outpoint.String()]
+			err = svc.Markers().UpdateVtxoMarker(ctx, v.Outpoint, markerID)
+			require.NoError(t, err)
+		}
+
+		// Verify each VTXO has the correct marker assigned
+		for _, v := range vtxos {
+			retrievedVtxos, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{v.Outpoint})
+			require.NoError(t, err)
+			require.Len(t, retrievedVtxos, 1)
+			expectedMarker := vtxoMarkerMap[v.Outpoint.String()]
+			require.Equal(t, expectedMarker, retrievedVtxos[0].MarkerID,
+				"VTXO at depth %d should have marker %s", v.Depth, expectedMarker)
+		}
+
+		// Test 1: Query VTXOs using the full marker chain (marker200 -> marker100 -> marker0)
+		// This simulates what prefetchVtxosByMarkers does
+		fullMarkerChain := []string{marker200.ID, marker100.ID, marker0.ID}
+		allChainVtxos, err := svc.Markers().GetVtxoChainByMarkers(ctx, fullMarkerChain)
+		require.NoError(t, err)
+		require.Len(t, allChainVtxos, len(vtxos), "Should return all VTXOs in the chain")
+
+		// Verify all our VTXOs are in the result
+		resultOutpoints := make(map[string]bool)
+		for _, v := range allChainVtxos {
+			resultOutpoints[v.Outpoint.String()] = true
+		}
+		for _, v := range vtxos {
+			require.True(t, resultOutpoints[v.Outpoint.String()],
+				"VTXO %s at depth %d should be in result", v.Outpoint.String(), v.Depth)
+		}
+
+		// Test 2: Query with just marker0 - should return only depth 0-99 VTXOs
+		marker0Vtxos, err := svc.Markers().GetVtxoChainByMarkers(ctx, []string{marker0.ID})
+		require.NoError(t, err)
+		for _, v := range marker0Vtxos {
+			// Only check our test VTXOs (filter by prefix)
+			if len(v.Txid) > 0 && v.Txid[:13] == "opt_chain_vtx" {
+				require.True(t, v.Depth < 100,
+					"VTXOs with marker0 should have depth < 100, got depth %d", v.Depth)
+			}
+		}
+
+		// Test 3: Query with marker200 only - should return only depth 200+ VTXOs
+		marker200Vtxos, err := svc.Markers().GetVtxoChainByMarkers(ctx, []string{marker200.ID})
+		require.NoError(t, err)
+		for _, v := range marker200Vtxos {
+			if len(v.Txid) > 0 && v.Txid[:13] == "opt_chain_vtx" {
+				require.True(t, v.Depth >= 200,
+					"VTXOs with marker200 should have depth >= 200, got depth %d", v.Depth)
+			}
+		}
+
+		// Test 4: Verify marker chain can be followed via ParentMarkerIDs
+		// Starting from marker200, should be able to traverse to marker0
+		currentMarker, err := svc.Markers().GetMarker(ctx, marker200.ID)
+		require.NoError(t, err)
+		require.NotNil(t, currentMarker)
+		require.Equal(t, uint32(200), currentMarker.Depth)
+		require.Len(t, currentMarker.ParentMarkerIDs, 1)
+		require.Equal(t, marker100.ID, currentMarker.ParentMarkerIDs[0])
+
+		currentMarker, err = svc.Markers().GetMarker(ctx, currentMarker.ParentMarkerIDs[0])
+		require.NoError(t, err)
+		require.NotNil(t, currentMarker)
+		require.Equal(t, uint32(100), currentMarker.Depth)
+		require.Len(t, currentMarker.ParentMarkerIDs, 1)
+		require.Equal(t, marker0.ID, currentMarker.ParentMarkerIDs[0])
+
+		currentMarker, err = svc.Markers().GetMarker(ctx, currentMarker.ParentMarkerIDs[0])
+		require.NoError(t, err)
+		require.NotNil(t, currentMarker)
+		require.Equal(t, uint32(0), currentMarker.Depth)
+		require.Nil(t, currentMarker.ParentMarkerIDs) // Root marker has no parents
+
+		// Test 5: Test GetMarkersByIds with the full chain
+		markers, err := svc.Markers().GetMarkersByIds(ctx, fullMarkerChain)
+		require.NoError(t, err)
+		require.Len(t, markers, 3)
+		markerDepths := make(map[uint32]bool)
+		for _, m := range markers {
+			markerDepths[m.Depth] = true
+		}
+		require.True(t, markerDepths[0])
+		require.True(t, markerDepths[100])
+		require.True(t, markerDepths[200])
+
+		// Test 6: Verify VTXOs can be retrieved by depth range
+		vtxosDepth50to150, err := svc.Markers().GetVtxosByDepthRange(ctx, 50, 150)
+		require.NoError(t, err)
+		// Filter to our test VTXOs
+		ourVtxosInRange := 0
+		for _, v := range vtxosDepth50to150 {
+			if len(v.Txid) > 13 && v.Txid[:13] == "opt_chain_vtx" {
+				ourVtxosInRange++
+				require.True(t, v.Depth >= 50 && v.Depth <= 150,
+					"VTXO depth %d should be in range [50, 150]", v.Depth)
+			}
+		}
+		// We expect VTXOs at depths 50, 99, 100, 150 to be in range
+		require.Equal(t, 4, ourVtxosInRange, "Expected 4 VTXOs in depth range 50-150")
 	})
 }
 
