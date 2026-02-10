@@ -739,3 +739,6 @@ func refill(httpClient *http.Client) error {
 	}
 	return nil
 }
+
+// TODO: setupRawIndexerClient and getVtxoDepthByOutpoint are commented out until
+// the SDK proto package includes the Depth field on IndexerVtxo.
