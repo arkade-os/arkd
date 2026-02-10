@@ -321,6 +321,17 @@ func NewService(
 				return
 			}
 
+			// Calculate depth for new vtxos: max(parent depths) + 1
+			var maxDepth uint32
+			for _, v := range spentVtxos {
+				if v.Depth > maxDepth {
+					maxDepth = v.Depth
+				}
+			}
+			for i := range newVtxos {
+				newVtxos[i].Depth = maxDepth + 1
+			}
+
 			checkpointTxsByOutpoint := make(map[string]TxData)
 			for txid, tx := range offchainTx.CheckpointTxs {
 				// nolint

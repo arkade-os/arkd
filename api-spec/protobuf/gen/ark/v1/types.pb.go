@@ -140,6 +140,7 @@ type Vtxo struct {
 	SpentBy         string                 `protobuf:"bytes,11,opt,name=spent_by,json=spentBy,proto3" json:"spent_by,omitempty"`
 	SettledBy       string                 `protobuf:"bytes,12,opt,name=settled_by,json=settledBy,proto3" json:"settled_by,omitempty"`
 	ArkTxid         string                 `protobuf:"bytes,13,opt,name=ark_txid,json=arkTxid,proto3" json:"ark_txid,omitempty"`
+	Depth           uint32                 `protobuf:"varint,14,opt,name=depth,proto3" json:"depth,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -263,6 +264,13 @@ func (x *Vtxo) GetArkTxid() string {
 		return x.ArkTxid
 	}
 	return ""
+}
+
+func (x *Vtxo) GetDepth() uint32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
 }
 
 type TxData struct {
@@ -1512,7 +1520,7 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\"l\n" +
 	"\x05Input\x12,\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x10.ark.v1.OutpointR\boutpoint\x125\n" +
-	"\ftaproot_tree\x18\x02 \x01(\v2\x12.ark.v1.TapscriptsR\vtaprootTree\"\xa2\x03\n" +
+	"\ftaproot_tree\x18\x02 \x01(\v2\x12.ark.v1.TapscriptsR\vtaprootTree\"\xb8\x03\n" +
 	"\x04Vtxo\x12,\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x10.ark.v1.OutpointR\boutpoint\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\x12\x16\n" +
@@ -1531,7 +1539,8 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\bspent_by\x18\v \x01(\tR\aspentBy\x12\x1d\n" +
 	"\n" +
 	"settled_by\x18\f \x01(\tR\tsettledBy\x12\x19\n" +
-	"\bark_txid\x18\r \x01(\tR\aarkTxid\",\n" +
+	"\bark_txid\x18\r \x01(\tR\aarkTxid\x12\x14\n" +
+	"\x05depth\x18\x0e \x01(\rR\x05depth\",\n" +
 	"\x06TxData\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x0e\n" +
 	"\x02tx\x18\x02 \x01(\tR\x02tx\"\xbe\x02\n" +
