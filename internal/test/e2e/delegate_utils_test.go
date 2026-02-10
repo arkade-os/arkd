@@ -213,9 +213,10 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	)
 }
 
-func (h *delegateBatchEventsHandler) OnStreamStartedEvent(
-	event client.StreamStartedEvent,
-) {
+func (h *delegateBatchEventsHandler) OnStreamStarted(
+	ctx context.Context, event client.StreamStartedEvent,
+) error {
+	return nil
 }
 
 type customBatchEventsHandler struct {
@@ -320,10 +321,11 @@ func (h *customBatchEventsHandler) OnTreeNonces(
 	return false, nil
 }
 
-func (h *customBatchEventsHandler) OnStreamStartedEvent(
-	event client.StreamStartedEvent,
-) {
+func (h *customBatchEventsHandler) OnStreamStarted(
+	ctx context.Context, event client.StreamStartedEvent,
+) error {
 	if h.onStreamStartedEvent != nil {
 		h.onStreamStartedEvent(event)
 	}
+	return nil
 }
