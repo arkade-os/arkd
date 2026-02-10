@@ -64,7 +64,10 @@ func (m *markerRepository) GetMarker(ctx context.Context, id string) (*domain.Ma
 	return &marker, nil
 }
 
-func (m *markerRepository) GetMarkersByDepth(ctx context.Context, depth uint32) ([]domain.Marker, error) {
+func (m *markerRepository) GetMarkersByDepth(
+	ctx context.Context,
+	depth uint32,
+) ([]domain.Marker, error) {
 	rows, err := m.querier.SelectMarkersByDepth(ctx, int64(depth))
 	if err != nil {
 		return nil, err
@@ -81,7 +84,10 @@ func (m *markerRepository) GetMarkersByDepth(ctx context.Context, depth uint32) 
 	return markers, nil
 }
 
-func (m *markerRepository) GetMarkersByDepthRange(ctx context.Context, minDepth, maxDepth uint32) ([]domain.Marker, error) {
+func (m *markerRepository) GetMarkersByDepthRange(
+	ctx context.Context,
+	minDepth, maxDepth uint32,
+) ([]domain.Marker, error) {
 	rows, err := m.querier.SelectMarkersByDepthRange(ctx, queries.SelectMarkersByDepthRangeParams{
 		MinDepth: int64(minDepth),
 		MaxDepth: int64(maxDepth),
@@ -101,7 +107,10 @@ func (m *markerRepository) GetMarkersByDepthRange(ctx context.Context, minDepth,
 	return markers, nil
 }
 
-func (m *markerRepository) GetMarkersByIds(ctx context.Context, ids []string) ([]domain.Marker, error) {
+func (m *markerRepository) GetMarkersByIds(
+	ctx context.Context,
+	ids []string,
+) ([]domain.Marker, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -129,7 +138,11 @@ func (m *markerRepository) SweepMarker(ctx context.Context, markerID string, swe
 	})
 }
 
-func (m *markerRepository) SweepMarkerWithDescendants(ctx context.Context, markerID string, sweptAt int64) (int64, error) {
+func (m *markerRepository) SweepMarkerWithDescendants(
+	ctx context.Context,
+	markerID string,
+	sweptAt int64,
+) (int64, error) {
 	// Get all descendant marker IDs (including the root marker) that are not already swept
 	descendantIDs, err := m.querier.GetDescendantMarkerIds(ctx, markerID)
 	if err != nil {
@@ -160,7 +173,10 @@ func (m *markerRepository) IsMarkerSwept(ctx context.Context, markerID string) (
 	return result == 1, nil
 }
 
-func (m *markerRepository) GetSweptMarkers(ctx context.Context, markerIDs []string) ([]domain.SweptMarker, error) {
+func (m *markerRepository) GetSweptMarkers(
+	ctx context.Context,
+	markerIDs []string,
+) ([]domain.SweptMarker, error) {
 	if len(markerIDs) == 0 {
 		return nil, nil
 	}
@@ -180,7 +196,11 @@ func (m *markerRepository) GetSweptMarkers(ctx context.Context, markerIDs []stri
 	return sweptMarkers, nil
 }
 
-func (m *markerRepository) UpdateVtxoMarker(ctx context.Context, outpoint domain.Outpoint, markerID string) error {
+func (m *markerRepository) UpdateVtxoMarker(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+	markerID string,
+) error {
 	return m.querier.UpdateVtxoMarkerId(ctx, queries.UpdateVtxoMarkerIdParams{
 		MarkerID: sql.NullString{String: markerID, Valid: len(markerID) > 0},
 		Txid:     outpoint.Txid,
@@ -188,8 +208,14 @@ func (m *markerRepository) UpdateVtxoMarker(ctx context.Context, outpoint domain
 	})
 }
 
-func (m *markerRepository) GetVtxosByMarker(ctx context.Context, markerID string) ([]domain.Vtxo, error) {
-	rows, err := m.querier.SelectVtxosByMarkerId(ctx, sql.NullString{String: markerID, Valid: len(markerID) > 0})
+func (m *markerRepository) GetVtxosByMarker(
+	ctx context.Context,
+	markerID string,
+) ([]domain.Vtxo, error) {
+	rows, err := m.querier.SelectVtxosByMarkerId(
+		ctx,
+		sql.NullString{String: markerID, Valid: len(markerID) > 0},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -202,10 +228,16 @@ func (m *markerRepository) GetVtxosByMarker(ctx context.Context, markerID string
 }
 
 func (m *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	return m.querier.SweepVtxosByMarkerId(ctx, sql.NullString{String: markerID, Valid: len(markerID) > 0})
+	return m.querier.SweepVtxosByMarkerId(
+		ctx,
+		sql.NullString{String: markerID, Valid: len(markerID) > 0},
+	)
 }
 
-func (m *markerRepository) GetVtxosByDepthRange(ctx context.Context, minDepth, maxDepth uint32) ([]domain.Vtxo, error) {
+func (m *markerRepository) GetVtxosByDepthRange(
+	ctx context.Context,
+	minDepth, maxDepth uint32,
+) ([]domain.Vtxo, error) {
 	rows, err := m.querier.SelectVtxosByDepthRange(ctx, queries.SelectVtxosByDepthRangeParams{
 		MinDepth: int64(minDepth),
 		MaxDepth: int64(maxDepth),
@@ -221,7 +253,10 @@ func (m *markerRepository) GetVtxosByDepthRange(ctx context.Context, minDepth, m
 	return vtxos, nil
 }
 
-func (m *markerRepository) GetVtxosByArkTxid(ctx context.Context, arkTxid string) ([]domain.Vtxo, error) {
+func (m *markerRepository) GetVtxosByArkTxid(
+	ctx context.Context,
+	arkTxid string,
+) ([]domain.Vtxo, error) {
 	rows, err := m.querier.SelectVtxosByArkTxid(ctx, arkTxid)
 	if err != nil {
 		return nil, err
@@ -234,7 +269,10 @@ func (m *markerRepository) GetVtxosByArkTxid(ctx context.Context, arkTxid string
 	return vtxos, nil
 }
 
-func (m *markerRepository) GetVtxoChainByMarkers(ctx context.Context, markerIDs []string) ([]domain.Vtxo, error) {
+func (m *markerRepository) GetVtxoChainByMarkers(
+	ctx context.Context,
+	markerIDs []string,
+) ([]domain.Vtxo, error) {
 	if len(markerIDs) == 0 {
 		return nil, nil
 	}

@@ -502,11 +502,13 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 					ParentMarkerIDs: nil, // Root markers have no parents
 				}
 				if err := s.markerStore.AddMarker(ctx, marker); err != nil {
-					log.WithError(err).Warnf("failed to create root marker for vtxo %s", vtxo.Outpoint.String())
+					log.WithError(err).
+						Warnf("failed to create root marker for vtxo %s", vtxo.Outpoint.String())
 					continue
 				}
 				if err := s.markerStore.UpdateVtxoMarker(ctx, vtxo.Outpoint, markerID); err != nil {
-					log.WithError(err).Warnf("failed to update marker_id for vtxo %s", vtxo.Outpoint.String())
+					log.WithError(err).
+						Warnf("failed to update marker_id for vtxo %s", vtxo.Outpoint.String())
 				}
 			}
 			log.Debugf("created %d root markers for batch vtxos", len(newVtxos))
@@ -655,7 +657,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		if markerID != "" && s.markerStore != nil {
 			for _, vtxo := range newVtxos {
 				if err := s.markerStore.UpdateVtxoMarker(ctx, vtxo.Outpoint, markerID); err != nil {
-					log.WithError(err).Warnf("failed to update marker_id for vtxo %s", vtxo.Outpoint.String())
+					log.WithError(err).
+						Warnf("failed to update marker_id for vtxo %s", vtxo.Outpoint.String())
 				}
 			}
 		}
@@ -735,7 +738,10 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 // sweepVtxosWithMarkers performs marker-based sweeping for VTXOs.
 // It groups VTXOs by their marker, sweeps each marker, then bulk-updates all VTXOs.
 // Returns the total count of VTXOs swept.
-func (s *service) sweepVtxosWithMarkers(ctx context.Context, vtxoOutpoints []domain.Outpoint) int64 {
+func (s *service) sweepVtxosWithMarkers(
+	ctx context.Context,
+	vtxoOutpoints []domain.Outpoint,
+) int64 {
 	if len(vtxoOutpoints) == 0 {
 		return 0
 	}
