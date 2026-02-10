@@ -10,11 +10,12 @@ CREATE TABLE IF NOT EXISTS asset (
 CREATE TABLE IF NOT EXISTS asset_projection (
     asset_id TEXT NOT NULL,
     txid TEXT NOT NULL,
-    vout BIGINT NOT NULL,
-    amount BIGINT NOT NULL,
-    PRIMARY KEY (asset_id, txid, vout),
-    FOREIGN KEY (asset_id) REFERENCES asset(id) ON DELETE CASCADE,
-    FOREIGN KEY (txid, vout) REFERENCES vtxo(txid, vout) ON DELETE CASCADE
+    vout INTEGER NOT NULL,
+    amount NUMERIC(20,0) NOT NULL,
+    CONSTRAINT asset_projection_pkey PRIMARY KEY (asset_id, txid, vout),
+    CONSTRAINT asset_projection_asset_fkey FOREIGN KEY (asset_id) REFERENCES asset(id) ON DELETE CASCADE,
+    CONSTRAINT asset_projection_vtxo_fkey FOREIGN KEY (txid, vout) REFERENCES vtxo(txid, vout) ON DELETE CASCADE,
+    CONSTRAINT asset_projection_amount_u64_check CHECK (amount >= 0 AND amount <= 18446744073709551615::numeric)
 );
 
 DROP VIEW IF EXISTS intent_with_inputs_vw;

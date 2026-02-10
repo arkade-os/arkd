@@ -117,7 +117,7 @@ type InsertVtxoAssetProjectionParams struct {
 	AssetID string
 	Txid    string
 	Vout    int64
-	Amount  int64
+	Amount  string
 }
 
 func (q *Queries) InsertVtxoAssetProjection(ctx context.Context, arg InsertVtxoAssetProjectionParams) error {
@@ -275,15 +275,15 @@ SELECT v.asset_amount FROM vtxo_vw v
 WHERE v.asset_id = ? AND v.spent = false AND v.asset_amount > 0
 `
 
-func (q *Queries) SelectAssetAmounts(ctx context.Context, assetID string) ([]int64, error) {
+func (q *Queries) SelectAssetAmounts(ctx context.Context, assetID string) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, selectAssetAmounts, assetID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []int64
+	var items []string
 	for rows.Next() {
-		var asset_amount int64
+		var asset_amount string
 		if err := rows.Scan(&asset_amount); err != nil {
 			return nil, err
 		}

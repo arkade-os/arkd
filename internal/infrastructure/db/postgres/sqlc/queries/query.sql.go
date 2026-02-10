@@ -118,8 +118,8 @@ VALUES ($1, $2, $3, $4)
 type InsertVtxoAssetProjectionParams struct {
 	AssetID string
 	Txid    string
-	Vout    int64
-	Amount  int64
+	Vout    int32
+	Amount  string
 }
 
 func (q *Queries) InsertVtxoAssetProjection(ctx context.Context, arg InsertVtxoAssetProjectionParams) error {

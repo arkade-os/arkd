@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS asset_projection (
     asset_id TEXT NOT NULL,
     txid TEXT NOT NULL,
     vout INTEGER NOT NULL,
-    amount INTEGER NOT NULL,
+    amount TEXT NOT NULL,
     PRIMARY KEY (asset_id, txid, vout),
     FOREIGN KEY (asset_id) REFERENCES asset(id) ON DELETE CASCADE,
     FOREIGN KEY (txid, vout) REFERENCES vtxo(txid, vout) ON DELETE CASCADE

@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"sort"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/shopspring/decimal"
 )
 
 type assetRepository struct {
@@ -133,9 +133,11 @@ func (r *assetRepository) GetAssets(
 			if err != nil {
 				return fmt.Errorf("failed to compute supply for asset %s: %w", row.ID, err)
 			}
-			supply := new(big.Int)
+			supply := decimal.NewFromFloat(0)
 			for _, amount := range amounts {
-				supply.Add(supply, new(big.Int).SetInt64(amount))
+				// nolint
+				dec, _ := decimal.NewFromString(amount)
+				supply = supply.Add(dec)
 			}
 
 			var metadata []asset.Metadata
@@ -155,7 +157,7 @@ func (r *assetRepository) GetAssets(
 				Id:             row.ID,
 				Metadata:       metadata,
 				ControlAssetId: row.ControlAssetID.String,
-				Supply:         *supply,
+				Supply:         *supply.BigInt(),
 			})
 		}
 		return nil

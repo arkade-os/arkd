@@ -633,8 +633,6 @@ func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domai
 			continue
 		}
 
-		// TODO: This works but, actually, we must retrieve the asset packet from the intent
-		// related to this leaf tx so we decode that tx
 		_, assets, err := getAssetsFromTxOuts(txid, outs)
 		if err != nil {
 			log.WithError(err).Warn("failed to get assets from tx")

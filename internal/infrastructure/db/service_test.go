@@ -1647,11 +1647,11 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				Txid: "supplyOverflowVtxo1",
 				VOut: 0,
 			},
-			Amount: 1000000000000000000,
+			Amount: 330,
 			Assets: []domain.AssetDenomination{
 				{
 					AssetId: "assetSupplyOverflow",
-					Amount:  math.MaxInt64,
+					Amount:  math.MaxUint64,
 				},
 			},
 		},
@@ -1660,11 +1660,11 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 					Txid: "supplyOverflowVtxo2",
 					VOut: 0,
 				},
-				Amount: 1000000000000000000,
+				Amount: 330,
 				Assets: []domain.AssetDenomination{
 					{
 						AssetId: "assetSupplyOverflow",
-						Amount:  math.MaxInt64,
+						Amount:  math.MaxUint64,
 					},
 				},
 			}}
@@ -1685,7 +1685,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		require.Len(t, assets, 1)
 
 		expectedSupply := new(big.Int).
-			Mul(new(big.Int).SetUint64(math.MaxInt64), big.NewInt(2))
+			Mul(new(big.Int).SetUint64(math.MaxUint64), big.NewInt(2))
 
 		require.Equal(t, expectedSupply.String(), assets[0].Supply.String())
 	})
