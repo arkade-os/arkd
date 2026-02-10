@@ -27,7 +27,7 @@ require (
 	github.com/arkade-os/arkd/pkg/errors v0.0.0-20260204162732-487698dc67f1
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/go-sdk v0.8.2-0.20260206145135-338c435f7050
+	github.com/arkade-os/go-sdk v0.8.2-0.20260210072500-6d24051232bc
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/docker/docker v27.1.1+incompatible
