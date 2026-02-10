@@ -74,6 +74,7 @@ var (
 		"postgres": pgdb.NewIntentFeesRepository,
 	}
 	markerStoreTypes = map[string]func(...interface{}) (domain.MarkerRepository, error){
+		"badger":   badgerdb.NewMarkerRepository,
 		"sqlite":   sqlitedb.NewMarkerRepository,
 		"postgres": pgdb.NewMarkerRepository,
 	}
@@ -132,7 +133,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
-	markerStoreFactory := markerStoreTypes[config.DataStoreType] // optional, may be nil for badger
+	markerStoreFactory := markerStoreTypes[config.DataStoreType]
 
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
@@ -203,6 +204,19 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		intentFeesStore, err = intentFeesStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+		}
+		if markerStoreFactory != nil {
+			// For badger, pass the vtxo store to marker repo to share the same database
+			badgerVtxoRepo, ok := vtxoStore.(*badgerdb.VtxoRepository)
+			if ok {
+				markerConfig := append(config.DataStoreConfig, badgerVtxoRepo.Store())
+				markerStore, err = markerStoreFactory(markerConfig...)
+			} else {
+				markerStore, err = markerStoreFactory(config.DataStoreConfig...)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("failed to create marker store: %w", err)
+			}
 		}
 	case "postgres":
 		if len(config.DataStoreConfig) != 2 {
