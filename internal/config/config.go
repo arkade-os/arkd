@@ -635,6 +635,11 @@ func (c *Config) UnlockerService() ports.Unlocker {
 }
 
 func (c *Config) IndexerService() (application.IndexerService, error) {
+	if c.wallet == nil {
+		if err := c.walletService(); err != nil {
+			return nil, err
+		}
+	}
 	if c.signer == nil {
 		if err := c.signerService(); err != nil {
 			return nil, err

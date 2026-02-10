@@ -88,6 +88,13 @@ func NewIndexerService(
 	wallet ports.WalletService,
 	txExposure string,
 ) (IndexerService, error) {
+	// validate txExposure
+	switch TxExposure(txExposure) {
+	case TxExposurePublic, TxExposureWithheld, TxExposurePrivate:
+	default:
+		return nil, fmt.Errorf("invalid tx exposure value: %q", txExposure)
+	}
+	// set signerPubkey at initialization since it's needed for auth token generation and validation, and signer is guaranteed to be available at this point
 	pubkey, err := signer.GetPubkey(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get signer pubkey: %w", err)
@@ -480,6 +487,10 @@ func (i *indexerService) ValidateIntentWithProof(
 			return errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", idx+1).
 				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
 		}
+		if psbtInput.WitnessUtxo == nil {
+			return errors.INVALID_PSBT_INPUT.New("missing witness utxo on input %d", idx+1).
+				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: idx + 1})
+		}
 
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
@@ -601,13 +612,11 @@ func (i *indexerService) ValidateIntentWithProof(
 func (i *indexerService) GetVirtualTxs(
 	ctx context.Context, authToken string, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
-	txs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
-	if err != nil {
-		return nil, err
-	}
 
-	virtualTxs, reps := paginate(txs, page, maxPageSizeVirtualTxs)
-
+	var err error
+	var txs []string
+	var virtualTxs []string
+	var reps PageResp
 	// depending on the exposure level, we may need to validate the auth token and/or remove arkd signatures from the virtual txs.
 	// We can prevent griefing attacks by stripping arkd signatures from the virtual txs for users without valid auth tokens,
 	//  as they won't be able to construct the full broadcastable transaction without arkd signatures.
@@ -624,6 +633,12 @@ func (i *indexerService) GetVirtualTxs(
 				return nil, err
 			}
 		}
+		txs, err = i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
+		if err != nil {
+			return nil, err
+		}
+
+		virtualTxs, reps = paginate(txs, page, maxPageSizeVirtualTxs)
 		// if no auth token or invalid auth token, remove from each PSBT the signature of arkd
 		// so user cannot construct the full broadcastable txn
 		if !isValid {
@@ -664,6 +679,12 @@ func (i *indexerService) GetVirtualTxs(
 		if !isValid {
 			return nil, fmt.Errorf("invalid auth token for private exposure")
 		}
+		txs, err = i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
+		if err != nil {
+			return nil, err
+		}
+
+		virtualTxs, reps = paginate(txs, page, maxPageSizeVirtualTxs)
 	default:
 		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
 	}
