@@ -242,6 +242,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          createdAt,
 				ExpiresAt:          expireAt,
+				Depth:              0, // new vtxo from batch starts at depth 0
 			})
 		}
 	}

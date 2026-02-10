@@ -64,6 +64,8 @@ type IntentWithInputsVw struct {
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
+	Depth          sql.NullInt32
+	MarkerID       sql.NullString
 	Commitments    []byte
 	ID             sql.NullString
 	RoundID        sql.NullString
@@ -80,6 +82,12 @@ type IntentWithReceiversVw struct {
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+}
+
+type Marker struct {
+	ID            string
+	Depth         int32
+	ParentMarkers pqtype.NullRawMessage
 }
 
 type MarketHour struct {
@@ -186,6 +194,11 @@ type ScheduledSession struct {
 	UpdatedAt            int64
 }
 
+type SweptMarker struct {
+	MarkerID string
+	SweptAt  int64
+}
+
 type Tx struct {
 	Txid     string
 	Tx       string
@@ -212,6 +225,8 @@ type Vtxo struct {
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      int64
+	Depth          int32
+	MarkerID       sql.NullString
 }
 
 type VtxoCommitmentTxid struct {
@@ -237,5 +252,7 @@ type VtxoVw struct {
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      int64
+	Depth          int32
+	MarkerID       sql.NullString
 	Commitments    []byte
 }

@@ -57,6 +57,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					CreatedAt:      vtxo.CreatedAt,
 					ArkTxid:        sql.NullString{String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0},
 					SettledBy:      sql.NullString{String: vtxo.SettledBy, Valid: len(vtxo.SettledBy) > 0},
+					Depth:          int64(vtxo.Depth),
 				},
 			); err != nil {
 				return err
@@ -363,7 +364,7 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	}
 	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
 		Pubkeys: pubkeys,
-		After:   after,
+		After:   sql.NullInt64{Int64: after, Valid: true},
 		Before:  before,
 	})
 	if err != nil {
@@ -458,7 +459,7 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 		ctx,
 		queries.SelectPendingSpentVtxosWithPubkeysParams{
 			Pubkeys: pubkeys,
-			After:   after,
+			After:   sql.NullInt64{Int64: after, Valid: true},
 			Before:  before,
 		},
 	)
@@ -536,6 +537,8 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		Preconfirmed:       row.Preconfirmed,
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
+		Depth:              uint32(row.Depth),
+		MarkerID:           row.MarkerID.String,
 	}
 }
 

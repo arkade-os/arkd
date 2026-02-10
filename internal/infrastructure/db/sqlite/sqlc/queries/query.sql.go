@@ -84,6 +84,22 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 	return err
 }
 
+const insertSweptMarker = `-- name: InsertSweptMarker :exec
+INSERT INTO swept_marker (marker_id, swept_at)
+VALUES (?1, ?2)
+ON CONFLICT(marker_id) DO NOTHING
+`
+
+type InsertSweptMarkerParams struct {
+	MarkerID string
+	SweptAt  int64
+}
+
+func (q *Queries) InsertSweptMarker(ctx context.Context, arg InsertSweptMarkerParams) error {
+	_, err := q.db.ExecContext(ctx, insertSweptMarker, arg.MarkerID, arg.SweptAt)
+	return err
+}
+
 const insertVtxoCommitmentTxid = `-- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
 VALUES (?1, ?2, ?3)
@@ -98,6 +114,17 @@ type InsertVtxoCommitmentTxidParams struct {
 func (q *Queries) InsertVtxoCommitmentTxid(ctx context.Context, arg InsertVtxoCommitmentTxidParams) error {
 	_, err := q.db.ExecContext(ctx, insertVtxoCommitmentTxid, arg.VtxoTxid, arg.VtxoVout, arg.CommitmentTxid)
 	return err
+}
+
+const isMarkerSwept = `-- name: IsMarkerSwept :one
+SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = ?1) AS is_swept
+`
+
+func (q *Queries) IsMarkerSwept(ctx context.Context, markerID string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, isMarkerSwept, markerID)
+	var is_swept int64
+	err := row.Scan(&is_swept)
+	return is_swept, err
 }
 
 const selectActiveScriptConvictions = `-- name: SelectActiveScriptConvictions :many
@@ -174,7 +201,7 @@ func (q *Queries) SelectAllRoundIds(ctx context.Context) ([]string, error) {
 }
 
 const selectAllVtxos = `-- name: SelectAllVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw
 `
 
 type SelectAllVtxosRow struct {
@@ -207,6 +234,8 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -410,8 +439,115 @@ func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSe
 	return i, err
 }
 
+const selectMarker = `-- name: SelectMarker :one
+SELECT id, depth, parent_markers FROM marker WHERE id = ?1
+`
+
+func (q *Queries) SelectMarker(ctx context.Context, id string) (Marker, error) {
+	row := q.db.QueryRowContext(ctx, selectMarker, id)
+	var i Marker
+	err := row.Scan(&i.ID, &i.Depth, &i.ParentMarkers)
+	return i, err
+}
+
+const selectMarkersByDepth = `-- name: SelectMarkersByDepth :many
+SELECT id, depth, parent_markers FROM marker WHERE depth = ?1
+`
+
+func (q *Queries) SelectMarkersByDepth(ctx context.Context, depth int64) ([]Marker, error) {
+	rows, err := q.db.QueryContext(ctx, selectMarkersByDepth, depth)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Marker
+	for rows.Next() {
+		var i Marker
+		if err := rows.Scan(&i.ID, &i.Depth, &i.ParentMarkers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectMarkersByDepthRange = `-- name: SelectMarkersByDepthRange :many
+SELECT id, depth, parent_markers FROM marker WHERE depth >= ?1 AND depth <= ?2 ORDER BY depth
+`
+
+type SelectMarkersByDepthRangeParams struct {
+	MinDepth int64
+	MaxDepth int64
+}
+
+func (q *Queries) SelectMarkersByDepthRange(ctx context.Context, arg SelectMarkersByDepthRangeParams) ([]Marker, error) {
+	rows, err := q.db.QueryContext(ctx, selectMarkersByDepthRange, arg.MinDepth, arg.MaxDepth)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Marker
+	for rows.Next() {
+		var i Marker
+		if err := rows.Scan(&i.ID, &i.Depth, &i.ParentMarkers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectMarkersByIds = `-- name: SelectMarkersByIds :many
+SELECT id, depth, parent_markers FROM marker WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) SelectMarkersByIds(ctx context.Context, ids []string) ([]Marker, error) {
+	query := selectMarkersByIds
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Marker
+	for rows.Next() {
+		var i Marker
+		if err := rows.Scan(&i.ID, &i.Depth, &i.ParentMarkers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectNotUnrolledVtxos = `-- name: SelectNotUnrolledVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = false
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = false
 `
 
 type SelectNotUnrolledVtxosRow struct {
@@ -444,6 +580,8 @@ func (q *Queries) SelectNotUnrolledVtxos(ctx context.Context) ([]SelectNotUnroll
 			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -460,7 +598,7 @@ func (q *Queries) SelectNotUnrolledVtxos(ctx context.Context) ([]SelectNotUnroll
 }
 
 const selectNotUnrolledVtxosWithPubkey = `-- name: SelectNotUnrolledVtxosWithPubkey :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = false AND pubkey = ?1
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw WHERE unrolled = false AND pubkey = ?1
 `
 
 type SelectNotUnrolledVtxosWithPubkeyRow struct {
@@ -493,6 +631,8 @@ func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey s
 			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -553,7 +693,7 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 }
 
 const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :one
-SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.commitments
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.depth, v.marker_id, v.commitments
 FROM vtxo_vw v
 WHERE v.txid = ?1 AND v.vout = ?2
     AND v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
@@ -587,13 +727,15 @@ func (q *Queries) SelectPendingSpentVtxo(ctx context.Context, arg SelectPendingS
 		&i.ArkTxid,
 		&i.IntentID,
 		&i.UpdatedAt,
+		&i.Depth,
+		&i.MarkerID,
 		&i.Commitments,
 	)
 	return i, err
 }
 
 const selectPendingSpentVtxosWithPubkeys = `-- name: SelectPendingSpentVtxosWithPubkeys :many
-SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.commitments
+SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.depth, v.marker_id, v.commitments
 FROM vtxo_vw v
 WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
     AND v.pubkey IN (/*SLICE:pubkeys*/?)
@@ -606,7 +748,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
 
 type SelectPendingSpentVtxosWithPubkeysParams struct {
 	Pubkeys []string
-	After   int64
+	After   sql.NullInt64
 	Before  int64
 }
 
@@ -648,6 +790,8 @@ func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, arg Se
 			&i.ArkTxid,
 			&i.IntentID,
 			&i.UpdatedAt,
+			&i.Depth,
+			&i.MarkerID,
 			&i.Commitments,
 		); err != nil {
 			return nil, err
@@ -865,7 +1009,7 @@ SELECT
     r.ending_timestamp,
     (
         SELECT COALESCE(SUM(amount), 0) FROM (
-            SELECT DISTINCT v2.txid, v2.vout, v2.pubkey, v2.amount, v2.expires_at, v2.created_at, v2.commitment_txid, v2.spent_by, v2.spent, v2.unrolled, v2.swept, v2.preconfirmed, v2.settled_by, v2.ark_txid, v2.intent_id, v2.updated_at FROM vtxo v2 JOIN intent i2 ON i2.id = v2.intent_id WHERE i2.round_id = r.id
+            SELECT DISTINCT v2.txid, v2.vout, v2.pubkey, v2.amount, v2.expires_at, v2.created_at, v2.commitment_txid, v2.spent_by, v2.spent, v2.unrolled, v2.swept, v2.preconfirmed, v2.settled_by, v2.ark_txid, v2.intent_id, v2.updated_at, v2.depth, v2.marker_id FROM vtxo v2 JOIN intent i2 ON i2.id = v2.intent_id WHERE i2.round_id = r.id
         ) as intent_with_inputs_amount
     ) AS total_forfeit_amount,
     (
@@ -952,7 +1096,7 @@ func (q *Queries) SelectRoundVtxoTree(ctx context.Context, txid string) ([]Tx, e
 }
 
 const selectRoundVtxoTreeLeaves = `-- name: SelectRoundVtxoTreeLeaves :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE commitment_txid = ?1 AND preconfirmed = false
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw WHERE commitment_txid = ?1 AND preconfirmed = false
 `
 
 type SelectRoundVtxoTreeLeavesRow struct {
@@ -985,6 +1129,8 @@ func (q *Queries) SelectRoundVtxoTreeLeaves(ctx context.Context, commitmentTxid 
 			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -1005,7 +1151,7 @@ SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, 
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
     intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message,
-    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.commitments, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message
+    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.depth, intent_with_inputs_vw.marker_id, intent_with_inputs_vw.commitments, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
@@ -1077,6 +1223,8 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 			&i.IntentWithInputsVw.ArkTxid,
 			&i.IntentWithInputsVw.IntentID,
 			&i.IntentWithInputsVw.UpdatedAt,
+			&i.IntentWithInputsVw.Depth,
+			&i.IntentWithInputsVw.MarkerID,
 			&i.IntentWithInputsVw.Commitments,
 			&i.IntentWithInputsVw.ID,
 			&i.IntentWithInputsVw.RoundID,
@@ -1101,7 +1249,7 @@ SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, 
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
     intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message,
-    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.commitments, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message
+    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.swept, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.depth, intent_with_inputs_vw.marker_id, intent_with_inputs_vw.commitments, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
@@ -1175,6 +1323,8 @@ func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]Selec
 			&i.IntentWithInputsVw.ArkTxid,
 			&i.IntentWithInputsVw.IntentID,
 			&i.IntentWithInputsVw.UpdatedAt,
+			&i.IntentWithInputsVw.Depth,
+			&i.IntentWithInputsVw.MarkerID,
 			&i.IntentWithInputsVw.Commitments,
 			&i.IntentWithInputsVw.ID,
 			&i.IntentWithInputsVw.RoundID,
@@ -1264,7 +1414,7 @@ func (q *Queries) SelectSweepableRounds(ctx context.Context) ([]string, error) {
 }
 
 const selectSweepableUnrolledVtxos = `-- name: SelectSweepableUnrolledVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '')
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '')
 `
 
 type SelectSweepableUnrolledVtxosRow struct {
@@ -1297,6 +1447,8 @@ func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSwe
 			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -1335,6 +1487,54 @@ func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Conte
 	for rows.Next() {
 		var i SelectSweepableVtxoOutpointsByCommitmentTxidRow
 		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectSweptMarker = `-- name: SelectSweptMarker :one
+SELECT marker_id, swept_at FROM swept_marker WHERE marker_id = ?1
+`
+
+func (q *Queries) SelectSweptMarker(ctx context.Context, markerID string) (SweptMarker, error) {
+	row := q.db.QueryRowContext(ctx, selectSweptMarker, markerID)
+	var i SweptMarker
+	err := row.Scan(&i.MarkerID, &i.SweptAt)
+	return i, err
+}
+
+const selectSweptMarkersByIds = `-- name: SelectSweptMarkersByIds :many
+SELECT marker_id, swept_at FROM swept_marker WHERE marker_id IN (/*SLICE:marker_ids*/?)
+`
+
+func (q *Queries) SelectSweptMarkersByIds(ctx context.Context, markerIds []string) ([]SweptMarker, error) {
+	query := selectSweptMarkersByIds
+	var queryParams []interface{}
+	if len(markerIds) > 0 {
+		for _, v := range markerIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:marker_ids*/?", strings.Repeat(",?", len(markerIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:marker_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SweptMarker
+	for rows.Next() {
+		var i SweptMarker
+		if err := rows.Scan(&i.MarkerID, &i.SweptAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1445,7 +1645,7 @@ func (q *Queries) SelectTxs(ctx context.Context, arg SelectTxsParams) ([]SelectT
 }
 
 const selectVtxo = `-- name: SelectVtxo :one
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE txid = ?1 AND vout = ?2
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw WHERE txid = ?1 AND vout = ?2
 `
 
 type SelectVtxoParams struct {
@@ -1477,9 +1677,75 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) (SelectV
 		&i.VtxoVw.ArkTxid,
 		&i.VtxoVw.IntentID,
 		&i.VtxoVw.UpdatedAt,
+		&i.VtxoVw.Depth,
+		&i.VtxoVw.MarkerID,
 		&i.VtxoVw.Commitments,
 	)
 	return i, err
+}
+
+const selectVtxoChainByMarker = `-- name: SelectVtxoChainByMarker :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw
+WHERE marker_id IN (/*SLICE:marker_ids*/?)
+ORDER BY depth DESC
+`
+
+type SelectVtxoChainByMarkerRow struct {
+	VtxoVw VtxoVw
+}
+
+// Get VTXOs that share the same marker or have markers in the parent chain
+func (q *Queries) SelectVtxoChainByMarker(ctx context.Context, markerIds []sql.NullString) ([]SelectVtxoChainByMarkerRow, error) {
+	query := selectVtxoChainByMarker
+	var queryParams []interface{}
+	if len(markerIds) > 0 {
+		for _, v := range markerIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:marker_ids*/?", strings.Repeat(",?", len(markerIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:marker_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxoChainByMarkerRow
+	for rows.Next() {
+		var i SelectVtxoChainByMarkerRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const selectVtxoPubKeysByCommitmentTxid = `-- name: SelectVtxoPubKeysByCommitmentTxid :many
@@ -1508,6 +1774,170 @@ func (q *Queries) SelectVtxoPubKeysByCommitmentTxid(ctx context.Context, arg Sel
 			return nil, err
 		}
 		items = append(items, pubkey)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectVtxosByArkTxid = `-- name: SelectVtxosByArkTxid :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw WHERE txid = ?1
+`
+
+type SelectVtxosByArkTxidRow struct {
+	VtxoVw VtxoVw
+}
+
+// Get all VTXOs created by a specific ark tx (offchain tx)
+func (q *Queries) SelectVtxosByArkTxid(ctx context.Context, arkTxid string) ([]SelectVtxosByArkTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosByArkTxid, arkTxid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxosByArkTxidRow
+	for rows.Next() {
+		var i SelectVtxosByArkTxidRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectVtxosByDepthRange = `-- name: SelectVtxosByDepthRange :many
+
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw
+WHERE depth >= ?1 AND depth <= ?2
+ORDER BY depth DESC
+`
+
+type SelectVtxosByDepthRangeParams struct {
+	MinDepth int64
+	MaxDepth int64
+}
+
+type SelectVtxosByDepthRangeRow struct {
+	VtxoVw VtxoVw
+}
+
+// Chain traversal queries for GetVtxoChain optimization
+// Get all VTXOs within a depth range, useful for filling gaps between markers
+func (q *Queries) SelectVtxosByDepthRange(ctx context.Context, arg SelectVtxosByDepthRangeParams) ([]SelectVtxosByDepthRangeRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosByDepthRange, arg.MinDepth, arg.MaxDepth)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxosByDepthRangeRow
+	for rows.Next() {
+		var i SelectVtxosByDepthRangeRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectVtxosByMarkerId = `-- name: SelectVtxosByMarkerId :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw WHERE marker_id = ?1
+`
+
+type SelectVtxosByMarkerIdRow struct {
+	VtxoVw VtxoVw
+}
+
+func (q *Queries) SelectVtxosByMarkerId(ctx context.Context, markerID sql.NullString) ([]SelectVtxosByMarkerIdRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosByMarkerId, markerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxosByMarkerIdRow
+	for rows.Next() {
+		var i SelectVtxosByMarkerIdRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
+			&i.VtxoVw.Commitments,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1579,14 +2009,14 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 }
 
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkeys*/?)
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.marker_id, vtxo_vw.commitments FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkeys*/?)
     AND updated_at >= ?2
     AND (CAST(?3 AS INTEGER) = 0 OR updated_at <= CAST(?3 AS INTEGER))
 `
 
 type SelectVtxosWithPubkeysParams struct {
 	Pubkeys []string
-	After   int64
+	After   sql.NullInt64
 	Before  int64
 }
 
@@ -1632,6 +2062,8 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWit
 			&i.VtxoVw.ArkTxid,
 			&i.VtxoVw.IntentID,
 			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.MarkerID,
 			&i.VtxoVw.Commitments,
 		); err != nil {
 			return nil, err
@@ -1645,6 +2077,19 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWit
 		return nil, err
 	}
 	return items, nil
+}
+
+const sweepVtxosByMarkerId = `-- name: SweepVtxosByMarkerId :execrows
+UPDATE vtxo SET swept = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+WHERE marker_id = ?1 AND swept = false
+`
+
+func (q *Queries) SweepVtxosByMarkerId(ctx context.Context, markerID sql.NullString) (int64, error) {
+	result, err := q.db.ExecContext(ctx, sweepVtxosByMarkerId, markerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateConvictionPardoned = `-- name: UpdateConvictionPardoned :exec
@@ -1683,6 +2128,21 @@ type UpdateVtxoIntentIdParams struct {
 
 func (q *Queries) UpdateVtxoIntentId(ctx context.Context, arg UpdateVtxoIntentIdParams) error {
 	_, err := q.db.ExecContext(ctx, updateVtxoIntentId, arg.IntentID, arg.Txid, arg.Vout)
+	return err
+}
+
+const updateVtxoMarkerId = `-- name: UpdateVtxoMarkerId :exec
+UPDATE vtxo SET marker_id = ?1 WHERE txid = ?2 AND vout = ?3
+`
+
+type UpdateVtxoMarkerIdParams struct {
+	MarkerID sql.NullString
+	Txid     string
+	Vout     int64
+}
+
+func (q *Queries) UpdateVtxoMarkerId(ctx context.Context, arg UpdateVtxoMarkerIdParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoMarkerId, arg.MarkerID, arg.Txid, arg.Vout)
 	return err
 }
 
@@ -1852,6 +2312,27 @@ func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) erro
 		arg.Message,
 		arg.Txid,
 	)
+	return err
+}
+
+const upsertMarker = `-- name: UpsertMarker :exec
+
+INSERT INTO marker (id, depth, parent_markers)
+VALUES (?1, ?2, ?3)
+ON CONFLICT(id) DO UPDATE SET
+    depth = EXCLUDED.depth,
+    parent_markers = EXCLUDED.parent_markers
+`
+
+type UpsertMarkerParams struct {
+	ID            string
+	Depth         int64
+	ParentMarkers sql.NullString
+}
+
+// Marker queries
+func (q *Queries) UpsertMarker(ctx context.Context, arg UpsertMarkerParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMarker, arg.ID, arg.Depth, arg.ParentMarkers)
 	return err
 }
 
@@ -2042,11 +2523,11 @@ func (q *Queries) UpsertTx(ctx context.Context, arg UpsertTxParams) error {
 const upsertVtxo = `-- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at
+    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at, depth
 )
 VALUES (
     ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-    ?8, ?9, ?10, ?11, ?12, ?13, ?14, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+    ?8, ?9, ?10, ?11, ?12, ?13, ?14, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)), ?15
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -2060,7 +2541,8 @@ VALUES (
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)),
+    depth = EXCLUDED.depth
 `
 
 type UpsertVtxoParams struct {
@@ -2078,6 +2560,7 @@ type UpsertVtxoParams struct {
 	Preconfirmed   bool
 	ExpiresAt      int64
 	CreatedAt      int64
+	Depth          int64
 }
 
 func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
@@ -2096,6 +2579,7 @@ func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
 		arg.Preconfirmed,
 		arg.ExpiresAt,
 		arg.CreatedAt,
+		arg.Depth,
 	)
 	return err
 }

@@ -1332,6 +1332,7 @@ type IndexerVtxo struct {
 	CommitmentTxids []string               `protobuf:"bytes,11,rep,name=commitment_txids,json=commitmentTxids,proto3" json:"commitment_txids,omitempty"`
 	SettledBy       string                 `protobuf:"bytes,12,opt,name=settled_by,json=settledBy,proto3" json:"settled_by,omitempty"`
 	ArkTxid         string                 `protobuf:"bytes,13,opt,name=ark_txid,json=arkTxid,proto3" json:"ark_txid,omitempty"`
+	Depth           uint32                 `protobuf:"varint,14,opt,name=depth,proto3" json:"depth,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1455,6 +1456,13 @@ func (x *IndexerVtxo) GetArkTxid() string {
 		return x.ArkTxid
 	}
 	return ""
+}
+
+func (x *IndexerVtxo) GetDepth() uint32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
 }
 
 type IndexerChain struct {
@@ -2341,7 +2349,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\bchildren\x18\x02 \x03(\v2!.ark.v1.IndexerNode.ChildrenEntryR\bchildren\x1a;\n" +
 	"\rChildrenEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\rR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb0\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc6\x03\n" +
 	"\vIndexerVtxo\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12\x1d\n" +
 	"\n" +
@@ -2360,7 +2368,8 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x10commitment_txids\x18\v \x03(\tR\x0fcommitmentTxids\x12\x1d\n" +
 	"\n" +
 	"settled_by\x18\f \x01(\tR\tsettledBy\x12\x19\n" +
-	"\bark_txid\x18\r \x01(\tR\aarkTxid\"\x8b\x01\n" +
+	"\bark_txid\x18\r \x01(\tR\aarkTxid\x12\x14\n" +
+	"\x05depth\x18\x0e \x01(\rR\x05depth\"\x8b\x01\n" +
 	"\fIndexerChain\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x1d\n" +
 	"\n" +

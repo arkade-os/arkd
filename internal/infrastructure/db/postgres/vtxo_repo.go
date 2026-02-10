@@ -62,6 +62,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					ArkTxid: sql.NullString{
 						String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0,
 					},
+					Depth: int32(vtxo.Depth),
 				},
 			); err != nil {
 				return err
@@ -524,6 +525,8 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		Preconfirmed:       row.Preconfirmed,
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
+		Depth:              uint32(row.Depth),
+		MarkerID:           row.MarkerID.String,
 	}
 }
 

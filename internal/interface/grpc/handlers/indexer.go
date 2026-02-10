@@ -713,5 +713,6 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
+		Depth:           vtxo.Depth,
 	}
 }

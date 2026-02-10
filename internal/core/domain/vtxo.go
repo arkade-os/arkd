@@ -50,6 +50,8 @@ type Vtxo struct {
 	Preconfirmed       bool
 	ExpiresAt          int64
 	CreatedAt          int64
+	Depth              uint32 // chain depth: 0 for vtxos from batch, increments on each chain
+	MarkerID           string // marker ID for DAG traversal optimization
 }
 
 func (v Vtxo) String() string {

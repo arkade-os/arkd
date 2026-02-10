@@ -48,11 +48,11 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at
+    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at, depth
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)), @depth
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -66,7 +66,8 @@ VALUES (
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER));
+    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)),
+    depth = EXCLUDED.depth;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
@@ -427,3 +428,66 @@ VALUES ('', '', '', '');
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
+
+-- Marker queries
+
+-- name: UpsertMarker :exec
+INSERT INTO marker (id, depth, parent_markers)
+VALUES (@id, @depth, @parent_markers)
+ON CONFLICT(id) DO UPDATE SET
+    depth = EXCLUDED.depth,
+    parent_markers = EXCLUDED.parent_markers;
+
+-- name: SelectMarker :one
+SELECT * FROM marker WHERE id = @id;
+
+-- name: SelectMarkersByDepth :many
+SELECT * FROM marker WHERE depth = @depth;
+
+-- name: SelectMarkersByDepthRange :many
+SELECT * FROM marker WHERE depth >= @min_depth AND depth <= @max_depth ORDER BY depth;
+
+-- name: SelectMarkersByIds :many
+SELECT * FROM marker WHERE id IN (sqlc.slice('ids'));
+
+-- name: InsertSweptMarker :exec
+INSERT INTO swept_marker (marker_id, swept_at)
+VALUES (@marker_id, @swept_at)
+ON CONFLICT(marker_id) DO NOTHING;
+
+-- name: SelectSweptMarker :one
+SELECT * FROM swept_marker WHERE marker_id = @marker_id;
+
+-- name: SelectSweptMarkersByIds :many
+SELECT * FROM swept_marker WHERE marker_id IN (sqlc.slice('marker_ids'));
+
+-- name: IsMarkerSwept :one
+SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swept;
+
+-- name: UpdateVtxoMarkerId :exec
+UPDATE vtxo SET marker_id = @marker_id WHERE txid = @txid AND vout = @vout;
+
+-- name: SelectVtxosByMarkerId :many
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE marker_id = @marker_id;
+
+-- name: SweepVtxosByMarkerId :execrows
+UPDATE vtxo SET swept = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+WHERE marker_id = @marker_id AND swept = false;
+
+-- Chain traversal queries for GetVtxoChain optimization
+
+-- name: SelectVtxosByDepthRange :many
+-- Get all VTXOs within a depth range, useful for filling gaps between markers
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE depth >= @min_depth AND depth <= @max_depth
+ORDER BY depth DESC;
+
+-- name: SelectVtxosByArkTxid :many
+-- Get all VTXOs created by a specific ark tx (offchain tx)
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @ark_txid;
+
+-- name: SelectVtxoChainByMarker :many
+-- Get VTXOs that share the same marker or have markers in the parent chain
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE marker_id IN (sqlc.slice('marker_ids'))
+ORDER BY depth DESC;
