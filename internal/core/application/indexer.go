@@ -428,14 +428,17 @@ func (i *indexerService) GetVtxoChain(
 	case TxExposureWithheld, TxExposurePrivate:
 		// validate the intent proof/message to allow access to the full chain
 		err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof)
-		if err == nil {
+		if err != nil {
+			if TxExposure(i.txExposure) == TxExposurePrivate {
+				return nil, err
+			}
+			// withheld: swallow error, proceed without auth token
+		} else {
 			authToken, err = i.createAuthToken(ctx, vtxoKey)
 			if err != nil {
 				return nil, err
 			}
 		}
-		// if intent failed validation, we just dont supply an auth token
-
 	default:
 		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
 	}
@@ -612,7 +615,6 @@ func (i *indexerService) ValidateIntentWithProof(
 func (i *indexerService) GetVirtualTxs(
 	ctx context.Context, authToken string, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
-
 	var err error
 	var txs []string
 	var virtualTxs []string
@@ -624,6 +626,11 @@ func (i *indexerService) GetVirtualTxs(
 	switch TxExposure(i.txExposure) {
 	case TxExposurePublic:
 		// no need to validate auth
+		txs, err = i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
+		if err != nil {
+			return nil, err
+		}
+		virtualTxs, reps = paginate(txs, page, maxPageSizeVirtualTxs)
 	case TxExposureWithheld:
 		isValid := false
 		// optional auth token can be passed, if it was lets check if valid
@@ -637,8 +644,8 @@ func (i *indexerService) GetVirtualTxs(
 		if err != nil {
 			return nil, err
 		}
-
 		virtualTxs, reps = paginate(txs, page, maxPageSizeVirtualTxs)
+
 		// if no auth token or invalid auth token, remove from each PSBT the signature of arkd
 		// so user cannot construct the full broadcastable txn
 		if !isValid {
@@ -683,7 +690,6 @@ func (i *indexerService) GetVirtualTxs(
 		if err != nil {
 			return nil, err
 		}
-
 		virtualTxs, reps = paginate(txs, page, maxPageSizeVirtualTxs)
 	default:
 		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
