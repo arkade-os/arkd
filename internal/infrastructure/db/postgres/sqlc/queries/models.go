@@ -65,7 +65,7 @@ type IntentWithInputsVw struct {
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
 	Depth          sql.NullInt32
-	MarkerID       sql.NullString
+	Markers        pqtype.NullRawMessage
 	Commitments    []byte
 	ID             sql.NullString
 	RoundID        sql.NullString
@@ -226,7 +226,7 @@ type Vtxo struct {
 	IntentID       sql.NullString
 	UpdatedAt      int64
 	Depth          int32
-	MarkerID       sql.NullString
+	Markers        pqtype.NullRawMessage
 }
 
 type VtxoCommitmentTxid struct {
@@ -253,6 +253,6 @@ type VtxoVw struct {
 	IntentID       sql.NullString
 	UpdatedAt      int64
 	Depth          int32
-	MarkerID       sql.NullString
+	Markers        pqtype.NullRawMessage
 	Commitments    []byte
 }

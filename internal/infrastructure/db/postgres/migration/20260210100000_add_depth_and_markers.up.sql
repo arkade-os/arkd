@@ -1,4 +1,7 @@
--- Create markers table
+-- Add depth column
+ALTER TABLE vtxo ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0;
+
+-- Create marker table
 CREATE TABLE IF NOT EXISTS marker (
     id TEXT PRIMARY KEY,
     depth INTEGER NOT NULL,
@@ -6,17 +9,17 @@ CREATE TABLE IF NOT EXISTS marker (
 );
 CREATE INDEX IF NOT EXISTS idx_marker_depth ON marker(depth);
 
--- Create swept_markers table (append-only)
+-- Create swept_marker table (append-only)
 CREATE TABLE IF NOT EXISTS swept_marker (
     marker_id TEXT PRIMARY KEY REFERENCES marker(id),
     swept_at BIGINT NOT NULL
 );
 
--- Add marker_id column to vtxo table
-ALTER TABLE vtxo ADD COLUMN marker_id TEXT REFERENCES marker(id);
-CREATE INDEX IF NOT EXISTS idx_vtxo_marker_id ON vtxo(marker_id);
+-- Add markers column (JSONB array)
+ALTER TABLE vtxo ADD COLUMN IF NOT EXISTS markers JSONB;
+CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo USING GIN (markers);
 
--- Recreate views to include the new marker_id column
+-- Recreate views to include the new columns
 DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 
@@ -38,19 +41,14 @@ LEFT OUTER JOIN vtxo_vw
 ON intent.id = vtxo_vw.intent_id;
 
 -- Backfill markers for existing VTXOs based on their depth
--- VTXOs at depth 0, 100, 200, ... get their own markers
--- Other VTXOs will have their marker_id set during PR 5 (marker assignment logic)
-
--- First, create markers for all existing VTXOs at marker boundary depths (depth % 100 == 0)
 INSERT INTO marker (id, depth, parent_markers)
 SELECT
-    v.txid || ':' || v.vout,  -- Use VTXO outpoint as marker ID
+    v.txid || ':' || v.vout,
     v.depth,
-    '[]'::jsonb  -- Empty parent markers for initial backfill
+    '[]'::jsonb
 FROM vtxo v
 WHERE v.depth % 100 = 0;
 
--- Assign marker_id to VTXOs at boundary depths
-UPDATE vtxo
-SET marker_id = txid || ':' || vout
+-- Assign markers array to VTXOs at boundary depths
+UPDATE vtxo SET markers = jsonb_build_array(txid || ':' || vout)
 WHERE depth % 100 = 0;

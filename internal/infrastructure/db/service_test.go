@@ -1672,16 +1672,16 @@ func testVtxoMarkerAssociation(t *testing.T, svc ports.RepoManager) {
 		err = svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxo1, vtxo2, vtxo3})
 		require.NoError(t, err)
 
-		// Verify VTXOs initially have no marker_id
+		// Verify VTXOs initially have no markers
 		retrievedVtxos, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxo1.Outpoint})
 		require.NoError(t, err)
 		require.Len(t, retrievedVtxos, 1)
-		require.Empty(t, retrievedVtxos[0].MarkerID)
+		require.Empty(t, retrievedVtxos[0].MarkerIDs)
 
-		// Call UpdateVtxoMarker to associate VTXOs with marker
-		err = svc.Markers().UpdateVtxoMarker(ctx, vtxo1.Outpoint, markerID)
+		// Call UpdateVtxoMarkers to associate VTXOs with marker
+		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxo1.Outpoint, []string{markerID})
 		require.NoError(t, err)
-		err = svc.Markers().UpdateVtxoMarker(ctx, vtxo2.Outpoint, markerID)
+		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxo2.Outpoint, []string{markerID})
 		require.NoError(t, err)
 
 		// Verify GetVtxosByMarker returns the associated VTXOs
@@ -1698,20 +1698,20 @@ func testVtxoMarkerAssociation(t *testing.T, svc ports.RepoManager) {
 			outpoints,
 		)
 
-		// Verify VTXO.MarkerID field is populated when retrieved via GetVtxos
+		// Verify VTXO.MarkerIDs field is populated when retrieved via GetVtxos
 		retrievedVtxos, err = svc.Vtxos().
 			GetVtxos(ctx, []domain.Outpoint{vtxo1.Outpoint, vtxo2.Outpoint})
 		require.NoError(t, err)
 		require.Len(t, retrievedVtxos, 2)
 		for _, v := range retrievedVtxos {
-			require.Equal(t, markerID, v.MarkerID)
+			require.Contains(t, v.MarkerIDs, markerID)
 		}
 
-		// Verify vtxo3 still has no marker
+		// Verify vtxo3 still has no markers
 		retrievedVtxos, err = svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxo3.Outpoint})
 		require.NoError(t, err)
 		require.Len(t, retrievedVtxos, 1)
-		require.Empty(t, retrievedVtxos[0].MarkerID)
+		require.Empty(t, retrievedVtxos[0].MarkerIDs)
 
 		// Test GetVtxosByMarker with non-existent marker
 		vtxosByNonExistent, err := svc.Markers().GetVtxosByMarker(ctx, "nonexistent")
@@ -1757,7 +1757,7 @@ func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
 
 		// Associate all VTXOs with the marker
 		for _, v := range vtxos {
-			err = svc.Markers().UpdateVtxoMarker(ctx, v.Outpoint, markerID)
+			err = svc.Markers().UpdateVtxoMarkers(ctx, v.Outpoint, []string{markerID})
 			require.NoError(t, err)
 		}
 
@@ -2022,12 +2022,12 @@ func testMarkerChainTraversal(t *testing.T, svc ports.RepoManager) {
 		err = svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxo1, vtxo2, vtxo3})
 		require.NoError(t, err)
 
-		// Associate VTXOs with their markers using UpdateVtxoMarker
-		err = svc.Markers().UpdateVtxoMarker(ctx, vtxo1.Outpoint, marker1.ID)
+		// Associate VTXOs with their markers using UpdateVtxoMarkers
+		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxo1.Outpoint, []string{marker1.ID})
 		require.NoError(t, err)
-		err = svc.Markers().UpdateVtxoMarker(ctx, vtxo2.Outpoint, marker1.ID)
+		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxo2.Outpoint, []string{marker1.ID})
 		require.NoError(t, err)
-		err = svc.Markers().UpdateVtxoMarker(ctx, vtxo3.Outpoint, marker2.ID)
+		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxo3.Outpoint, []string{marker2.ID})
 		require.NoError(t, err)
 
 		// Test GetVtxoChainByMarkers - returns VTXOs for given marker list
@@ -2150,7 +2150,7 @@ func testGetVtxoChainWithMarkerOptimization(t *testing.T, svc ports.RepoManager)
 		// Associate VTXOs with their markers
 		for _, v := range vtxos {
 			markerID := vtxoMarkerMap[v.Outpoint.String()]
-			err = svc.Markers().UpdateVtxoMarker(ctx, v.Outpoint, markerID)
+			err = svc.Markers().UpdateVtxoMarkers(ctx, v.Outpoint, []string{markerID})
 			require.NoError(t, err)
 		}
 
@@ -2160,7 +2160,7 @@ func testGetVtxoChainWithMarkerOptimization(t *testing.T, svc ports.RepoManager)
 			require.NoError(t, err)
 			require.Len(t, retrievedVtxos, 1)
 			expectedMarker := vtxoMarkerMap[v.Outpoint.String()]
-			require.Equal(t, expectedMarker, retrievedVtxos[0].MarkerID,
+			require.Contains(t, retrievedVtxos[0].MarkerIDs, expectedMarker,
 				"VTXO at depth %d should have marker %s", v.Depth, expectedMarker)
 		}
 

@@ -196,15 +196,19 @@ func (m *markerRepository) GetSweptMarkers(
 	return sweptMarkers, nil
 }
 
-func (m *markerRepository) UpdateVtxoMarker(
+func (m *markerRepository) UpdateVtxoMarkers(
 	ctx context.Context,
 	outpoint domain.Outpoint,
-	markerID string,
+	markerIDs []string,
 ) error {
-	return m.querier.UpdateVtxoMarkerId(ctx, queries.UpdateVtxoMarkerIdParams{
-		MarkerID: sql.NullString{String: markerID, Valid: len(markerID) > 0},
-		Txid:     outpoint.Txid,
-		Vout:     int64(outpoint.VOut),
+	markersJSON, err := json.Marshal(markerIDs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal markers: %w", err)
+	}
+	return m.querier.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
+		Markers: sql.NullString{String: string(markersJSON), Valid: len(markerIDs) > 0},
+		Txid:    outpoint.Txid,
+		Vout:    int64(outpoint.VOut),
 	})
 }
 
@@ -277,20 +281,24 @@ func (m *markerRepository) GetVtxoChainByMarkers(
 		return nil, nil
 	}
 
-	// Convert string slice to sql.NullString slice
-	nullStringIDs := make([]sql.NullString, len(markerIDs))
-	for i, id := range markerIDs {
-		nullStringIDs[i] = sql.NullString{String: id, Valid: true}
-	}
+	// Since SQLite query handles one marker at a time, we need to query for each marker
+	// and deduplicate results
+	seen := make(map[string]bool)
+	vtxos := make([]domain.Vtxo, 0)
 
-	rows, err := m.querier.SelectVtxoChainByMarker(ctx, nullStringIDs)
-	if err != nil {
-		return nil, err
-	}
+	for _, markerID := range markerIDs {
+		rows, err := m.querier.SelectVtxoChainByMarker(ctx, sql.NullString{String: markerID, Valid: true})
+		if err != nil {
+			return nil, err
+		}
 
-	vtxos := make([]domain.Vtxo, 0, len(rows))
-	for _, row := range rows {
-		vtxos = append(vtxos, rowToVtxoFromChainQuery(row))
+		for _, row := range rows {
+			key := row.VtxoVw.Txid + ":" + fmt.Sprintf("%d", row.VtxoVw.Vout)
+			if !seen[key] {
+				seen[key] = true
+				vtxos = append(vtxos, rowToVtxoFromChainQuery(row))
+			}
+		}
 	}
 	return vtxos, nil
 }
@@ -334,7 +342,7 @@ func rowToVtxoFromMarkerQuery(row queries.SelectVtxosByMarkerIdRow) domain.Vtxo 
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerID:           row.VtxoVw.MarkerID.String,
+		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers.String),
 	}
 }
 
@@ -362,7 +370,7 @@ func rowToVtxoFromDepthRangeQuery(row queries.SelectVtxosByDepthRangeRow) domain
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerID:           row.VtxoVw.MarkerID.String,
+		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers.String),
 	}
 }
 
@@ -390,7 +398,7 @@ func rowToVtxoFromArkTxidQuery(row queries.SelectVtxosByArkTxidRow) domain.Vtxo 
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerID:           row.VtxoVw.MarkerID.String,
+		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers.String),
 	}
 }
 
@@ -418,6 +426,18 @@ func rowToVtxoFromChainQuery(row queries.SelectVtxoChainByMarkerRow) domain.Vtxo
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerID:           row.VtxoVw.MarkerID.String,
+		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers.String),
 	}
+}
+
+// parseMarkersJSON parses a JSON array string into a slice of strings
+func parseMarkersJSON(markersJSON string) []string {
+	if markersJSON == "" {
+		return nil
+	}
+	var markerIDs []string
+	if err := json.Unmarshal([]byte(markersJSON), &markerIDs); err != nil {
+		return nil
+	}
+	return markerIDs
 }

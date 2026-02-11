@@ -520,9 +520,9 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 						Warnf("failed to create root marker for vtxo %s", vtxo.Outpoint.String())
 					continue
 				}
-				if err := s.markerStore.UpdateVtxoMarker(ctx, vtxo.Outpoint, markerID); err != nil {
+				if err := s.markerStore.UpdateVtxoMarkers(ctx, vtxo.Outpoint, []string{markerID}); err != nil {
 					log.WithError(err).
-						Warnf("failed to update marker_id for vtxo %s", vtxo.Outpoint.String())
+						Warnf("failed to update markers for vtxo %s", vtxo.Outpoint.String())
 				}
 			}
 			log.Debugf("created %d root markers for batch vtxos", len(newVtxos))
@@ -594,9 +594,11 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					if v.Depth > maxDepth {
 						maxDepth = v.Depth
 					}
-					// Collect parent marker IDs for marker linking (will be used at boundary)
-					if v.MarkerID != "" {
-						parentMarkerSet[v.MarkerID] = struct{}{}
+					// Collect ALL parent marker IDs for marker linking
+					for _, markerID := range v.MarkerIDs {
+						if markerID != "" {
+							parentMarkerSet[markerID] = struct{}{}
+						}
 					}
 				}
 				newDepth = maxDepth + 1
@@ -606,27 +608,27 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 		}
 
-		// Create marker if at boundary depth, or inherit from parent
-		var markerID string
+		// Create marker if at boundary depth, or inherit ALL parent markers
+		var markerIDs []string
 		if s.markerStore != nil {
 			if domain.IsAtMarkerBoundary(newDepth) {
 				// Create marker ID from the first output (the ark tx id + first vtxo vout)
-				markerID = fmt.Sprintf("%s:marker:%d", txid, newDepth)
+				newMarkerID := fmt.Sprintf("%s:marker:%d", txid, newDepth)
 				marker := domain.Marker{
-					ID:              markerID,
+					ID:              newMarkerID,
 					Depth:           newDepth,
 					ParentMarkerIDs: parentMarkerIDs,
 				}
 				if err := s.markerStore.AddMarker(ctx, marker); err != nil {
 					log.WithError(err).Warn("failed to create marker for chained vtxo")
 					// Continue without marker - non-fatal
-					markerID = ""
 				} else {
-					log.Debugf("created marker %s at depth %d", markerID, newDepth)
+					log.Debugf("created marker %s at depth %d", newMarkerID, newDepth)
+					markerIDs = []string{newMarkerID}
 				}
 			} else if len(parentMarkerIDs) > 0 {
-				// Inherit marker from parent at non-boundary depth
-				markerID = parentMarkerIDs[0]
+				// Inherit ALL markers from parents at non-boundary depth
+				markerIDs = parentMarkerIDs
 			}
 		}
 
@@ -667,12 +669,12 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 		log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
 
-		// Update marker_id for VTXOs (new marker at boundary, inherited at non-boundary)
-		if markerID != "" && s.markerStore != nil {
+		// Update markers for VTXOs (new marker at boundary, inherited at non-boundary)
+		if len(markerIDs) > 0 && s.markerStore != nil {
 			for _, vtxo := range newVtxos {
-				if err := s.markerStore.UpdateVtxoMarker(ctx, vtxo.Outpoint, markerID); err != nil {
+				if err := s.markerStore.UpdateVtxoMarkers(ctx, vtxo.Outpoint, markerIDs); err != nil {
 					log.WithError(err).
-						Warnf("failed to update marker_id for vtxo %s", vtxo.Outpoint.String())
+						Warnf("failed to update markers for vtxo %s", vtxo.Outpoint.String())
 				}
 			}
 		}
@@ -769,13 +771,15 @@ func (s *service) sweepVtxosWithMarkers(
 		return int64(count)
 	}
 
-	// Group VTXOs by marker ID
+	// Group VTXOs by their first marker ID (for sweep optimization)
+	// We use first marker to avoid duplicate sweeps when vtxo has multiple markers
 	markerVtxos := make(map[string][]domain.Outpoint)
 	noMarkerVtxos := make([]domain.Outpoint, 0)
 
 	for _, vtxo := range vtxos {
-		if vtxo.MarkerID != "" {
-			markerVtxos[vtxo.MarkerID] = append(markerVtxos[vtxo.MarkerID], vtxo.Outpoint)
+		if len(vtxo.MarkerIDs) > 0 {
+			// Use first marker ID for grouping
+			markerVtxos[vtxo.MarkerIDs[0]] = append(markerVtxos[vtxo.MarkerIDs[0]], vtxo.Outpoint)
 		} else {
 			noMarkerVtxos = append(noMarkerVtxos, vtxo.Outpoint)
 		}

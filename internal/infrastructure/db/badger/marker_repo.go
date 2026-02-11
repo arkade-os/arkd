@@ -367,10 +367,10 @@ func (r *markerRepository) GetSweptMarkers(
 	return sweptMarkers, nil
 }
 
-func (r *markerRepository) UpdateVtxoMarker(
+func (r *markerRepository) UpdateVtxoMarkers(
 	ctx context.Context,
 	outpoint domain.Outpoint,
-	markerID string,
+	markerIDs []string,
 ) error {
 	var dto vtxoDTO
 	err := r.vtxoStore.Get(outpoint.String(), &dto)
@@ -381,7 +381,7 @@ func (r *markerRepository) UpdateVtxoMarker(
 		return err
 	}
 
-	dto.MarkerID = markerID
+	dto.MarkerIDs = markerIDs
 	dto.UpdatedAt = time.Now().UnixMilli()
 
 	err = r.vtxoStore.Update(outpoint.String(), dto)
@@ -403,29 +403,47 @@ func (r *markerRepository) GetVtxosByMarker(
 	ctx context.Context,
 	markerID string,
 ) ([]domain.Vtxo, error) {
+	// For badger, we need to scan all VTXOs and filter by MarkerIDs slice membership
 	var dtos []vtxoDTO
-	err := r.vtxoStore.Find(&dtos, badgerhold.Where("MarkerID").Eq(markerID))
+	err := r.vtxoStore.Find(&dtos, &badgerhold.Query{})
 	if err != nil {
 		return nil, err
 	}
 
-	vtxos := make([]domain.Vtxo, 0, len(dtos))
+	vtxos := make([]domain.Vtxo, 0)
 	for _, dto := range dtos {
-		vtxos = append(vtxos, dto.Vtxo)
+		for _, id := range dto.MarkerIDs {
+			if id == markerID {
+				vtxos = append(vtxos, dto.Vtxo)
+				break
+			}
+		}
 	}
 	return vtxos, nil
 }
 
 func (r *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	var dtos []vtxoDTO
-	err := r.vtxoStore.Find(&dtos,
-		badgerhold.Where("MarkerID").Eq(markerID).And("Swept").Eq(false))
+	// Find all VTXOs whose MarkerIDs contains markerID and are not swept
+	var allDtos []vtxoDTO
+	err := r.vtxoStore.Find(&allDtos, badgerhold.Where("Swept").Eq(false))
 	if err != nil {
 		return 0, err
 	}
 
 	var count int64
-	for _, dto := range dtos {
+	for _, dto := range allDtos {
+		// Check if this VTXO has the markerID
+		hasMarker := false
+		for _, id := range dto.MarkerIDs {
+			if id == markerID {
+				hasMarker = true
+				break
+			}
+		}
+		if !hasMarker {
+			continue
+		}
+
 		dto.Swept = true
 		dto.UpdatedAt = time.Now().UnixMilli()
 
@@ -498,7 +516,7 @@ func (r *markerRepository) GetVtxoChainByMarkers(
 		markerIDSet[id] = true
 	}
 
-	// Find all VTXOs that have a marker_id in our set
+	// Find all VTXOs that have any marker_id in our set
 	var dtos []vtxoDTO
 	err := r.vtxoStore.Find(&dtos, &badgerhold.Query{})
 	if err != nil {
@@ -507,8 +525,12 @@ func (r *markerRepository) GetVtxoChainByMarkers(
 
 	vtxos := make([]domain.Vtxo, 0)
 	for _, dto := range dtos {
-		if dto.MarkerID != "" && markerIDSet[dto.MarkerID] {
-			vtxos = append(vtxos, dto.Vtxo)
+		// Check if any of the VTXO's markers are in our set
+		for _, markerID := range dto.MarkerIDs {
+			if markerIDSet[markerID] {
+				vtxos = append(vtxos, dto.Vtxo)
+				break
+			}
 		}
 	}
 	return vtxos, nil

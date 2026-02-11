@@ -394,22 +394,39 @@ func (i *indexerService) prefetchVtxosByMarkers(
 	// Add starting VTXO to cache
 	cache[startVtxo.Outpoint.String()] = startVtxo
 
-	if startVtxo.MarkerID == "" {
+	if len(startVtxo.MarkerIDs) == 0 {
 		return cache
 	}
 
-	// Collect marker chain by following ParentMarkerIDs
-	markerIDs := []string{startVtxo.MarkerID}
-	marker, err := i.repoManager.Markers().GetMarker(ctx, startVtxo.MarkerID)
-	if err != nil {
-		return cache
+	// Collect marker chain by following ParentMarkerIDs from all markers
+	markerIDs := make([]string, 0, len(startVtxo.MarkerIDs))
+	markerIDs = append(markerIDs, startVtxo.MarkerIDs...)
+
+	// BFS to follow all parent markers
+	visited := make(map[string]bool)
+	for _, id := range startVtxo.MarkerIDs {
+		visited[id] = true
 	}
 
-	// Follow the marker chain up to the root (depth 0)
-	for marker != nil && len(marker.ParentMarkerIDs) > 0 {
-		markerIDs = append(markerIDs, marker.ParentMarkerIDs...)
-		// Follow first parent marker to continue chain
-		marker, _ = i.repoManager.Markers().GetMarker(ctx, marker.ParentMarkerIDs[0])
+	queue := make([]string, 0, len(startVtxo.MarkerIDs))
+	queue = append(queue, startVtxo.MarkerIDs...)
+
+	for len(queue) > 0 {
+		currentID := queue[0]
+		queue = queue[1:]
+
+		marker, err := i.repoManager.Markers().GetMarker(ctx, currentID)
+		if err != nil || marker == nil {
+			continue
+		}
+
+		for _, parentID := range marker.ParentMarkerIDs {
+			if !visited[parentID] {
+				visited[parentID] = true
+				markerIDs = append(markerIDs, parentID)
+				queue = append(queue, parentID)
+			}
+		}
 	}
 
 	// Bulk fetch VTXOs for all markers in the chain

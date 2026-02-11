@@ -3,12 +3,14 @@ package pgdb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
+	"github.com/sqlc-dev/pqtype"
 )
 
 type vtxoRepository struct {
@@ -526,8 +528,20 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
 		Depth:              uint32(row.Depth),
-		MarkerID:           row.MarkerID.String,
+		MarkerIDs:          parseMarkersJSONBFromVtxo(row.Markers),
 	}
+}
+
+// parseMarkersJSONBFromVtxo parses a JSONB array into a slice of strings for vtxo repo
+func parseMarkersJSONBFromVtxo(markers pqtype.NullRawMessage) []string {
+	if !markers.Valid || len(markers.RawMessage) == 0 {
+		return nil
+	}
+	var markerIDs []string
+	if err := json.Unmarshal(markers.RawMessage, &markerIDs); err != nil {
+		return nil
+	}
+	return markerIDs
 }
 
 func readRows(rows []queries.VtxoVw) ([]domain.Vtxo, error) {
