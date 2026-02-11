@@ -199,15 +199,19 @@ func (m *markerRepository) GetSweptMarkers(
 	return sweptMarkers, nil
 }
 
-func (m *markerRepository) UpdateVtxoMarker(
+func (m *markerRepository) UpdateVtxoMarkers(
 	ctx context.Context,
 	outpoint domain.Outpoint,
-	markerID string,
+	markerIDs []string,
 ) error {
-	return m.querier.UpdateVtxoMarkerId(ctx, queries.UpdateVtxoMarkerIdParams{
-		MarkerID: sql.NullString{String: markerID, Valid: len(markerID) > 0},
-		Txid:     outpoint.Txid,
-		Vout:     int32(outpoint.VOut),
+	markersJSON, err := json.Marshal(markerIDs)
+	if err != nil {
+		return fmt.Errorf("failed to marshal markers: %w", err)
+	}
+	return m.querier.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
+		Markers: markersJSON,
+		Txid:    outpoint.Txid,
+		Vout:    int32(outpoint.VOut),
 	})
 }
 
@@ -215,10 +219,7 @@ func (m *markerRepository) GetVtxosByMarker(
 	ctx context.Context,
 	markerID string,
 ) ([]domain.Vtxo, error) {
-	rows, err := m.querier.SelectVtxosByMarkerId(
-		ctx,
-		sql.NullString{String: markerID, Valid: len(markerID) > 0},
-	)
+	rows, err := m.querier.SelectVtxosByMarkerId(ctx, markerID)
 	if err != nil {
 		return nil, err
 	}
@@ -231,10 +232,7 @@ func (m *markerRepository) GetVtxosByMarker(
 }
 
 func (m *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	return m.querier.SweepVtxosByMarkerId(
-		ctx,
-		sql.NullString{String: markerID, Valid: len(markerID) > 0},
-	)
+	return m.querier.SweepVtxosByMarkerId(ctx, markerID)
 }
 
 func (m *markerRepository) GetVtxosByDepthRange(
@@ -313,7 +311,7 @@ func rowToVtxoFromVtxoVw(row queries.VtxoVw) domain.Vtxo {
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
 		Depth:              uint32(row.Depth),
-		MarkerID:           row.MarkerID.String,
+		MarkerIDs:          parseMarkersJSONB(row.Markers),
 	}
 }
 
@@ -352,6 +350,18 @@ func rowToVtxoFromMarkerQuery(row queries.SelectVtxosByMarkerIdRow) domain.Vtxo 
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerID:           row.VtxoVw.MarkerID.String,
+		MarkerIDs:          parseMarkersJSONB(row.VtxoVw.Markers),
 	}
+}
+
+// parseMarkersJSONB parses a JSONB array into a slice of strings
+func parseMarkersJSONB(markers pqtype.NullRawMessage) []string {
+	if !markers.Valid || len(markers.RawMessage) == 0 {
+		return nil
+	}
+	var markerIDs []string
+	if err := json.Unmarshal(markers.RawMessage, &markerIDs); err != nil {
+		return nil
+	}
+	return markerIDs
 }

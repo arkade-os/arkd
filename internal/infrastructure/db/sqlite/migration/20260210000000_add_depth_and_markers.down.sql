@@ -1,10 +1,10 @@
 -- SQLite doesn't support DROP COLUMN directly, so we need to recreate the table
--- This migration creates a new table without the depth column and copies data
 
 DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 
-CREATE TABLE vtxo_new (
+-- Create temp table without depth and markers columns
+CREATE TABLE vtxo_temp (
     txid TEXT NOT NULL,
     vout INTEGER NOT NULL,
     pubkey TEXT NOT NULL,
@@ -20,22 +20,30 @@ CREATE TABLE vtxo_new (
     settled_by TEXT,
     ark_txid TEXT,
     intent_id TEXT,
-    updated_at BIGINT,
+    updated_at INTEGER,
     PRIMARY KEY (txid, vout),
     FOREIGN KEY (intent_id) REFERENCES intent(id)
 );
 
-INSERT INTO vtxo_new (txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, swept, preconfirmed, settled_by, ark_txid, intent_id, updated_at)
-SELECT txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, swept, preconfirmed, settled_by, ark_txid, intent_id, updated_at
+-- Copy data
+INSERT INTO vtxo_temp SELECT
+    txid, vout, pubkey, amount, expires_at, created_at, commitment_txid,
+    spent_by, spent, unrolled, swept, preconfirmed, settled_by, ark_txid,
+    intent_id, updated_at
 FROM vtxo;
 
+-- Drop old table and rename
 DROP TABLE vtxo;
-ALTER TABLE vtxo_new RENAME TO vtxo;
+ALTER TABLE vtxo_temp RENAME TO vtxo;
 
--- Recreate foreign key index
+-- Recreate indexes
 CREATE INDEX IF NOT EXISTS fk_vtxo_intent_id ON vtxo(intent_id);
 
--- Recreate views without depth column
+-- Drop marker tables
+DROP TABLE IF EXISTS swept_marker;
+DROP TABLE IF EXISTS marker;
+
+-- Recreate views without depth and markers columns
 CREATE VIEW vtxo_vw AS
 SELECT v.*, COALESCE(group_concat(vc.commitment_txid), '') AS commitments
 FROM vtxo v

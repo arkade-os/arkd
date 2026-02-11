@@ -479,15 +479,17 @@ WITH RECURSIVE descendant_markers(id) AS (
 SELECT descendant_markers.id AS marker_id FROM descendant_markers
 WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm);
 
--- name: UpdateVtxoMarkerId :exec
-UPDATE vtxo SET marker_id = @marker_id WHERE txid = @txid AND vout = @vout;
+-- name: UpdateVtxoMarkers :exec
+UPDATE vtxo SET markers = @markers WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectVtxosByMarkerId :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE marker_id = @marker_id;
+-- Find VTXOs whose markers JSON array contains the given marker_id
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers LIKE '%"' || @marker_id || '"%';
 
 -- name: SweepVtxosByMarkerId :execrows
+-- Sweep VTXOs whose markers JSON array contains the given marker_id
 UPDATE vtxo SET swept = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
-WHERE marker_id = @marker_id AND swept = false;
+WHERE markers LIKE '%"' || @marker_id || '"%' AND swept = false;
 
 -- Chain traversal queries for GetVtxoChain optimization
 
@@ -502,7 +504,8 @@ ORDER BY depth DESC;
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @ark_txid;
 
 -- name: SelectVtxoChainByMarker :many
--- Get VTXOs that share the same marker or have markers in the parent chain
+-- Get VTXOs whose markers array contains the given marker_id
+-- For multiple markers, call this multiple times and deduplicate in Go
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
-WHERE marker_id IN (sqlc.slice('marker_ids'))
-ORDER BY depth DESC;
+WHERE markers LIKE '%"' || @marker_id || '"%'
+ORDER BY vtxo_vw.depth DESC;

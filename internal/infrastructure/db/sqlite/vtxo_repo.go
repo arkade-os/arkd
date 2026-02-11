@@ -3,6 +3,7 @@ package sqlitedb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -538,8 +539,20 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
 		Depth:              uint32(row.Depth),
-		MarkerID:           row.MarkerID.String,
+		MarkerIDs:          parseMarkersJSONFromVtxo(row.Markers.String),
 	}
+}
+
+// parseMarkersJSONFromVtxo parses a JSON array string into a slice of strings for vtxo repo
+func parseMarkersJSONFromVtxo(markersJSON string) []string {
+	if markersJSON == "" {
+		return nil
+	}
+	var markerIDs []string
+	if err := json.Unmarshal([]byte(markersJSON), &markerIDs); err != nil {
+		return nil
+	}
+	return markerIDs
 }
 
 func readRows(rows []queries.VtxoVw) ([]domain.Vtxo, error) {

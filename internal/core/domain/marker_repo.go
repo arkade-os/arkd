@@ -24,8 +24,8 @@ type MarkerRepository interface {
 	// GetSweptMarkers retrieves swept marker records for the given marker IDs
 	GetSweptMarkers(ctx context.Context, markerIDs []string) ([]SweptMarker, error)
 
-	// UpdateVtxoMarker updates the marker_id for a VTXO
-	UpdateVtxoMarker(ctx context.Context, outpoint Outpoint, markerID string) error
+	// UpdateVtxoMarkers updates the markers array for a VTXO
+	UpdateVtxoMarkers(ctx context.Context, outpoint Outpoint, markerIDs []string) error
 	// GetVtxosByMarker retrieves all VTXOs associated with a marker
 	GetVtxosByMarker(ctx context.Context, markerID string) ([]Vtxo, error)
 	// SweepVtxosByMarker marks all VTXOs with the given marker_id as swept

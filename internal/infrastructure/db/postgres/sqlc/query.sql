@@ -476,15 +476,17 @@ WITH RECURSIVE descendant_markers(id) AS (
 SELECT descendant_markers.id AS marker_id FROM descendant_markers
 WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm);
 
--- name: UpdateVtxoMarkerId :exec
-UPDATE vtxo SET marker_id = @marker_id WHERE txid = @txid AND vout = @vout;
+-- name: UpdateVtxoMarkers :exec
+UPDATE vtxo SET markers = @markers::jsonb WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectVtxosByMarkerId :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE marker_id = @marker_id;
+-- Find VTXOs whose markers JSONB array contains the given marker_id
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT);
 
 -- name: SweepVtxosByMarkerId :execrows
+-- Sweep VTXOs whose markers JSONB array contains the given marker_id
 UPDATE vtxo SET swept = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
-WHERE marker_id = @marker_id AND swept = false;
+WHERE markers @> jsonb_build_array(@marker_id::TEXT) AND swept = false;
 
 -- Chain traversal queries for GetVtxoChain optimization
 
@@ -499,7 +501,7 @@ ORDER BY depth DESC;
 SELECT * FROM vtxo_vw WHERE txid = @ark_txid;
 
 -- name: SelectVtxoChainByMarker :many
--- Get VTXOs that share the same marker or have markers in the parent chain
+-- Get VTXOs whose markers JSONB array contains any of the given marker IDs
 SELECT * FROM vtxo_vw
-WHERE marker_id = ANY(@marker_ids::TEXT[])
+WHERE markers ?| @marker_ids::TEXT[]
 ORDER BY depth DESC;
