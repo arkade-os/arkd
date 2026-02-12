@@ -63,6 +63,22 @@ func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) er
 	return err
 }
 
+const bulkInsertSweptMarkers = `-- name: BulkInsertSweptMarkers :exec
+INSERT INTO swept_marker (marker_id, swept_at)
+SELECT unnest($1::text[]), $2
+ON CONFLICT(marker_id) DO NOTHING
+`
+
+type BulkInsertSweptMarkersParams struct {
+	MarkerIds []string
+	SweptAt   int64
+}
+
+func (q *Queries) BulkInsertSweptMarkers(ctx context.Context, arg BulkInsertSweptMarkersParams) error {
+	_, err := q.db.ExecContext(ctx, bulkInsertSweptMarkers, pq.Array(arg.MarkerIds), arg.SweptAt)
+	return err
+}
+
 const clearIntentFees = `-- name: ClearIntentFees :exec
 INSERT INTO intent_fees (
   offchain_input_fee_program,

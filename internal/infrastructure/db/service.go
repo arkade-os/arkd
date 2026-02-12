@@ -768,15 +768,16 @@ func (s *service) sweepVtxosWithMarkers(
 		return 0
 	}
 
-	// Group VTXOs by their first marker ID (for sweep optimization)
-	// We use first marker to avoid duplicate sweeps when vtxo has multiple markers
-	markerVtxos := make(map[string][]domain.Outpoint)
+	// Collect all unique markers from all VTXOs
+	uniqueMarkers := make(map[string]struct{})
 	noMarkerVtxos := make([]domain.Outpoint, 0)
 
 	for _, vtxo := range vtxos {
 		if len(vtxo.MarkerIDs) > 0 {
-			// Use first marker ID for grouping
-			markerVtxos[vtxo.MarkerIDs[0]] = append(markerVtxos[vtxo.MarkerIDs[0]], vtxo.Outpoint)
+			// Collect all markers for this vtxo
+			for _, markerID := range vtxo.MarkerIDs {
+				uniqueMarkers[markerID] = struct{}{}
+			}
 		} else {
 			noMarkerVtxos = append(noMarkerVtxos, vtxo.Outpoint)
 		}
@@ -785,23 +786,26 @@ func (s *service) sweepVtxosWithMarkers(
 	var totalSwept int64
 	sweptAt := time.Now().Unix()
 
-	// Sweep each marker
-	for markerID := range markerVtxos {
-		// Mark the marker as swept
-		if err := s.markerStore.SweepMarker(ctx, markerID, sweptAt); err != nil {
-			log.WithError(err).Warnf("failed to sweep marker %s", markerID)
-			continue
+	// Bulk sweep all markers at once
+	if len(uniqueMarkers) > 0 {
+		// Convert marker set to slice for bulk sweeping
+		markerIDs := make([]string, 0, len(uniqueMarkers))
+		for markerID := range uniqueMarkers {
+			markerIDs = append(markerIDs, markerID)
 		}
 
-		// Count VTXOs that will be swept by this marker
-		count, err := s.markerStore.SweepVtxosByMarker(ctx, markerID)
-		if err != nil {
-			log.WithError(err).Warnf("failed to process sweep for marker %s", markerID)
-			continue
+		if err := s.markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
+			log.WithError(err).Warn("failed to bulk sweep markers")
+		} else {
+			// Count VTXOs that have at least one marker (they're all swept now)
+			totalSwept = int64(len(vtxos) - len(noMarkerVtxos))
+			log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), totalSwept)
 		}
-		totalSwept += count
-		log.Debugf("swept marker %s with %d vtxos", markerID, count)
 	}
+
+	// Bob: I dont quite understand this part. If there are VTXOs without markers, does that mean they were not swept by the marker-based sweeping? Why do we need to sweep them with unique dust markers? Are these VTXOs that were missed by the marker-based sweeping, or are they a different category of VTXOs that require special handling?
+	// Bob: I think we cant get rid of this is we assume that every vtxo has >=1 marker.
+	// Bob: In the current implementation, we create a root marker for every batch VTXO at depth 0, but if there are any VTXOs that for some reason dont have markers (maybe they were created before we implemented marker-based sweeping), we need to sweep them as well. Since they dont have markers, we can create unique dust markers for each of them to mark them as swept. This way, we ensure that all VTXOs are accounted for in the sweeping process, even if they dont have markers.
 
 	// Sweep VTXOs without markers by creating unique dust markers for each
 	for _, outpoint := range noMarkerVtxos {
