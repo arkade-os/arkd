@@ -741,7 +741,8 @@ func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, bo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := n.httpClient.Do(req) // #nosec G704 -- base URL is validated in New()
+	// #nosec G704 -- base URL is validated in New()
+	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
