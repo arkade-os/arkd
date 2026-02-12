@@ -38,6 +38,10 @@ type MarkerRepository interface {
 	// Used for dust vtxos that need to be marked swept immediately on creation
 	MarkDustVtxoSwept(ctx context.Context, outpoint Outpoint, sweptAt int64) error
 
+	// CreateRootMarkersForVtxos creates root markers for batch VTXOs and updates their marker references
+	// in a single transaction. Each VTXO gets a marker with ID equal to its outpoint string.
+	CreateRootMarkersForVtxos(ctx context.Context, vtxos []Vtxo) error
+
 	// Chain traversal methods for GetVtxoChain optimization
 	// GetVtxosByDepthRange retrieves VTXOs within a depth range
 	GetVtxosByDepthRange(ctx context.Context, minDepth, maxDepth uint32) ([]Vtxo, error)

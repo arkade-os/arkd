@@ -491,23 +491,8 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		}
 
 		// Create root markers for batch VTXOs (depth 0 is always at marker boundary)
-		for _, vtxo := range newVtxos {
-			// Each batch VTXO at depth 0 gets its own root marker
-			markerID := vtxo.Outpoint.String()
-			marker := domain.Marker{
-				ID:              markerID,
-				Depth:           0,
-				ParentMarkerIDs: nil, // Root markers have no parents
-			}
-			if err := s.markerStore.AddMarker(ctx, marker); err != nil {
-				log.WithError(err).
-					Warnf("failed to create root marker for vtxo %s", vtxo.Outpoint.String())
-				continue
-			}
-			if err := s.markerStore.UpdateVtxoMarkers(ctx, vtxo.Outpoint, []string{markerID}); err != nil {
-				log.WithError(err).
-					Warnf("failed to update markers for vtxo %s", vtxo.Outpoint.String())
-			}
+		if err := s.markerStore.CreateRootMarkersForVtxos(ctx, newVtxos); err != nil {
+			log.WithError(err).Warn("failed to create root markers for vtxos")
 		}
 	}
 }

@@ -273,6 +273,49 @@ func (m *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID stri
 	return count, nil
 }
 
+func (m *markerRepository) CreateRootMarkersForVtxos(
+	ctx context.Context,
+	vtxos []domain.Vtxo,
+) error {
+	if len(vtxos) == 0 {
+		return nil
+	}
+
+	txBody := func(querierWithTx *queries.Queries) error {
+		for _, vtxo := range vtxos {
+			markerID := vtxo.Outpoint.String()
+
+			// Create the root marker (depth 0, no parents)
+			if err := querierWithTx.UpsertMarker(ctx, queries.UpsertMarkerParams{
+				ID:    markerID,
+				Depth: 0,
+				ParentMarkers: pqtype.NullRawMessage{
+					RawMessage: []byte("[]"),
+					Valid:      true,
+				},
+			}); err != nil {
+				return fmt.Errorf("failed to create marker for vtxo %s: %w", markerID, err)
+			}
+
+			// Update the vtxo's markers
+			markersJSON, err := json.Marshal([]string{markerID})
+			if err != nil {
+				return fmt.Errorf("failed to marshal markers: %w", err)
+			}
+			if err := querierWithTx.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
+				Markers: markersJSON,
+				Txid:    vtxo.Txid,
+				Vout:    int32(vtxo.VOut),
+			}); err != nil {
+				return fmt.Errorf("failed to update markers for vtxo %s: %w", markerID, err)
+			}
+		}
+		return nil
+	}
+
+	return execTx(ctx, m.db, txBody)
+}
+
 func (m *markerRepository) MarkDustVtxoSwept(
 	ctx context.Context,
 	outpoint domain.Outpoint,
