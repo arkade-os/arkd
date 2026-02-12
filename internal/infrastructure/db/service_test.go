@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"sort"
@@ -204,6 +205,7 @@ func TestService(t *testing.T) {
 			testGetVtxosByArkTxidMultipleOutputs(t, svc)
 			testCreateRootMarkersForEmptyVtxos(t, svc)
 			testSweepVtxosWithMarkersIntegration(t, svc)
+			testDeepChain20kMarkers(t, svc)
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
@@ -3661,6 +3663,132 @@ func randomTx() string {
 	return b64
 }
 
+// testDeepChain20kMarkers creates a 200-marker chain (depth 0 to 20000) in the
+// database, associates VTXOs at various depths, verifies GetVtxoChainByMarkers
+// retrieves all VTXOs across the full chain, and then bulk sweeps all markers.
+// This validates the system can handle the target maximum depth of 20000.
+func testDeepChain20kMarkers(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_deep_chain_20k_markers", func(t *testing.T) {
+		ctx := context.Background()
+
+		const maxDepth = 20000
+		const markerInterval = 100
+		const numMarkers = maxDepth/markerInterval + 1 // 201 markers (0, 100, ..., 20000)
+
+		// Create a round for VTXO commitment references
+		roundId := uuid.New().String()
+		commitmentTxid := randomString(32)
+		round := domain.NewRoundFromEvents([]domain.Event{
+			domain.RoundStarted{
+				RoundEvent: domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundStarted},
+				Timestamp:  time.Now().Unix(),
+			},
+			domain.RoundFinalizationStarted{
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalizationStarted,
+				},
+				CommitmentTxid:     commitmentTxid,
+				CommitmentTx:       emptyTx,
+				VtxoTree:           vtxoTree,
+				Connectors:         connectorsTree,
+				VtxoTreeExpiration: 3600,
+			},
+			domain.RoundFinalized{
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalized,
+				},
+				FinalCommitmentTx: emptyTx,
+				Timestamp:         time.Now().Unix(),
+			},
+		})
+		require.NoError(t, svc.Rounds().AddOrUpdateRound(ctx, *round))
+
+		// Build the 201-marker chain: marker-0 (root) -> marker-100 -> ... -> marker-20000
+		allMarkerIDs := make([]string, 0, numMarkers)
+		for depth := uint32(0); depth <= maxDepth; depth += markerInterval {
+			markerID := fmt.Sprintf("deep20k-%s-marker-%d", roundId[:8], depth)
+			allMarkerIDs = append(allMarkerIDs, markerID)
+
+			var parentMarkerIDs []string
+			if depth > 0 {
+				parentMarkerIDs = []string{
+					fmt.Sprintf("deep20k-%s-marker-%d", roundId[:8], depth-markerInterval),
+				}
+			}
+
+			require.NoError(t, svc.Markers().AddMarker(ctx, domain.Marker{
+				ID:              markerID,
+				Depth:           depth,
+				ParentMarkerIDs: parentMarkerIDs,
+			}))
+		}
+		require.Len(t, allMarkerIDs, numMarkers)
+
+		// Create VTXOs at selected depths across the chain: every 1000th depth
+		// Each VTXO is associated with the marker at the nearest boundary below it
+		vtxosToAdd := make([]domain.Vtxo, 0)
+		vtxoOutpoints := make([]domain.Outpoint, 0)
+		for depth := uint32(0); depth <= maxDepth; depth += 1000 {
+			txid := fmt.Sprintf("deep20k-%s-vtxo-%d", roundId[:8], depth)
+			outpoint := domain.Outpoint{Txid: txid, VOut: 0}
+			// Nearest marker at or below this depth
+			nearestMarkerDepth := (depth / markerInterval) * markerInterval
+			markerID := fmt.Sprintf("deep20k-%s-marker-%d", roundId[:8], nearestMarkerDepth)
+
+			vtxosToAdd = append(vtxosToAdd, domain.Vtxo{
+				Outpoint:           outpoint,
+				PubKey:             pubkey,
+				Amount:             1000,
+				CommitmentTxids:    []string{commitmentTxid},
+				RootCommitmentTxid: commitmentTxid,
+				CreatedAt:          time.Now().Unix(),
+				ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+				Depth:              depth,
+				MarkerIDs:          []string{markerID},
+			})
+			vtxoOutpoints = append(vtxoOutpoints, outpoint)
+		}
+		require.NoError(t, svc.Vtxos().AddVtxos(ctx, vtxosToAdd))
+
+		// Associate each VTXO with its marker
+		for _, vtxo := range vtxosToAdd {
+			require.NoError(t, svc.Markers().UpdateVtxoMarkers(ctx, vtxo.Outpoint, vtxo.MarkerIDs))
+		}
+
+		// Verify: GetVtxoChainByMarkers with ALL markers returns ALL VTXOs
+		chainVtxos, err := svc.Markers().GetVtxoChainByMarkers(ctx, allMarkerIDs)
+		require.NoError(t, err)
+		require.Len(t, chainVtxos, len(vtxosToAdd),
+			"GetVtxoChainByMarkers should return all %d VTXOs across 200 markers", len(vtxosToAdd))
+
+		// Verify: VTXOs are not swept initially
+		fetchedVtxos, err := svc.Vtxos().GetVtxos(ctx, vtxoOutpoints)
+		require.NoError(t, err)
+		for _, v := range fetchedVtxos {
+			require.False(t, v.Swept, "vtxo at depth %d should not be swept yet", v.Depth)
+		}
+
+		// Bulk sweep ALL 201 markers at once
+		sweptAt := time.Now().Unix()
+		require.NoError(t, svc.Markers().BulkSweepMarkers(ctx, allMarkerIDs, sweptAt))
+
+		// Verify: all VTXOs now appear as swept
+		fetchedAfter, err := svc.Vtxos().GetVtxos(ctx, vtxoOutpoints)
+		require.NoError(t, err)
+		for _, v := range fetchedAfter {
+			require.True(t, v.Swept, "vtxo at depth %d should be swept after bulk sweep", v.Depth)
+		}
+
+		// Verify: all markers are recorded as swept
+		sweptMarkers, err := svc.Markers().GetSweptMarkers(ctx, allMarkerIDs)
+		require.NoError(t, err)
+		require.Len(t, sweptMarkers, numMarkers,
+			"all %d markers should be swept", numMarkers)
+	})
+}
+
 // testSweepVtxosWithMarkersIntegration tests the full marker-based sweep flow:
 // create VTXOs with markers, then bulk sweep the markers and verify VTXOs
 // appear as swept via the marker-based view.
@@ -3678,7 +3806,10 @@ func testSweepVtxosWithMarkersIntegration(t *testing.T, svc ports.RepoManager) {
 				Timestamp:  now.Unix(),
 			},
 			domain.RoundFinalizationStarted{
-				RoundEvent: domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundFinalizationStarted},
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalizationStarted,
+				},
 				CommitmentTxid:     commitmentTxid,
 				CommitmentTx:       emptyTx,
 				VtxoTree:           vtxoTree,
@@ -3686,7 +3817,10 @@ func testSweepVtxosWithMarkersIntegration(t *testing.T, svc ports.RepoManager) {
 				VtxoTreeExpiration: 3600,
 			},
 			domain.RoundFinalized{
-				RoundEvent:        domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundFinalized},
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalized,
+				},
 				FinalCommitmentTx: emptyTx,
 				Timestamp:         now.Unix(),
 			},

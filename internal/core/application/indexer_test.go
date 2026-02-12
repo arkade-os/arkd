@@ -948,3 +948,80 @@ func TestPrefetchVtxosByMarkers_StartVtxoNotFound(t *testing.T) {
 	markerRepo.AssertNotCalled(t, "GetMarker", mock.Anything, mock.Anything)
 	markerRepo.AssertNotCalled(t, "GetVtxoChainByMarkers", mock.Anything, mock.Anything)
 }
+
+// TestPrefetchVtxosByMarkers_Depth20k verifies that the BFS traversal in
+// prefetchVtxosByMarkers correctly handles a VTXO at depth 20000 with a chain
+// of 200 markers (one every 100 depths). This is the target maximum depth.
+func TestPrefetchVtxosByMarkers_Depth20k(t *testing.T) {
+	vtxoRepo := &mockVtxoRepoForIndexer{}
+	markerRepo := &mockMarkerRepoForIndexer{}
+	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
+
+	indexer := &indexerService{repoManager: repoManager}
+
+	ctx := context.Background()
+	startKey := Outpoint{Txid: "deep-20k-vtxo", VOut: 0}
+
+	const maxDepth = 20000
+	const markerInterval = 100
+	const numMarkers = maxDepth / markerInterval // 200 markers
+
+	// Starting VTXO at depth 20000 with marker at depth 20000
+	startVtxo := domain.Vtxo{
+		Outpoint:  domain.Outpoint{Txid: "deep-20k-vtxo", VOut: 0},
+		MarkerIDs: []string{fmt.Sprintf("marker-%d", maxDepth)},
+		Depth:     maxDepth,
+	}
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "deep-20k-vtxo", VOut: 0}}).
+		Return([]domain.Vtxo{startVtxo}, nil)
+
+	// Build the 200-marker chain: marker-20000 -> marker-19900 -> ... -> marker-100 -> marker-0
+	for depth := uint32(maxDepth); depth > 0; depth -= markerInterval {
+		parentDepth := depth - markerInterval
+		markerID := fmt.Sprintf("marker-%d", depth)
+		parentMarkerID := fmt.Sprintf("marker-%d", parentDepth)
+		markerRepo.On("GetMarker", ctx, markerID).Return(&domain.Marker{
+			ID:              markerID,
+			Depth:           depth,
+			ParentMarkerIDs: []string{parentMarkerID},
+		}, nil)
+	}
+	// Root marker at depth 0 has no parents
+	markerRepo.On("GetMarker", ctx, "marker-0").Return(&domain.Marker{
+		ID:              "marker-0",
+		Depth:           0,
+		ParentMarkerIDs: []string{},
+	}, nil)
+
+	// Generate VTXOs that would be returned by GetVtxoChainByMarkers
+	// One VTXO per marker interval midpoint to simulate a populated chain
+	chainVtxos := make([]domain.Vtxo, 0, numMarkers)
+	for i := 0; i < numMarkers; i++ {
+		chainVtxos = append(chainVtxos, domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: fmt.Sprintf("chain-vtxo-%d", i),
+				VOut: 0,
+			},
+			Depth: uint32(i*markerInterval + 50), // midpoint of each interval
+		})
+	}
+
+	// All 201 markers (0, 100, 200, ..., 20000) should be collected
+	markerRepo.On("GetVtxoChainByMarkers", ctx, mock.MatchedBy(func(ids []string) bool {
+		return len(ids) == numMarkers+1 // 201 markers total
+	})).Return(chainVtxos, nil)
+
+	cache := indexer.prefetchVtxosByMarkers(ctx, startKey)
+
+	// 200 chain VTXOs + 1 start VTXO = 201
+	require.Len(t, cache, numMarkers+1)
+	require.Contains(t, cache, "deep-20k-vtxo:0")
+
+	// Verify a sample of chain VTXOs are in cache
+	require.Contains(t, cache, "chain-vtxo-0:0")
+	require.Contains(t, cache, "chain-vtxo-99:0")
+	require.Contains(t, cache, "chain-vtxo-199:0")
+
+	// All 201 markers should have been visited via GetMarker (200 non-root + 1 root)
+	markerRepo.AssertNumberOfCalls(t, "GetMarker", numMarkers+1)
+}
