@@ -40,46 +40,26 @@ FROM intent
 LEFT OUTER JOIN vtxo_vw
 ON intent.id = vtxo_vw.intent_id;
 
--- Backfill markers for existing VTXOs based on their depth
--- VTXOs at depth 0, 100, 200, ... get their own markers
-
--- First, create markers for all existing VTXOs at marker boundary depths (depth % 100 == 0)
+-- Backfill: Create a marker for every existing VTXO using its outpoint as marker ID
+-- This ensures every VTXO has at least 1 marker
 INSERT INTO marker (id, depth, parent_markers)
 SELECT
-    v.txid || ':' || v.vout,  -- Use VTXO outpoint as marker ID
+    v.txid || ':' || v.vout,
     v.depth,
-    '[]'  -- Empty parent markers for initial backfill
-FROM vtxo v
-WHERE v.depth % 100 = 0;
+    '[]'
+FROM vtxo v;
 
--- Assign markers array to VTXOs at boundary depths
-UPDATE vtxo SET markers = '["' || txid || ':' || vout || '"]'
-WHERE depth % 100 = 0;
+-- Assign the marker to every VTXO
+UPDATE vtxo SET markers = '["' || txid || ':' || vout || '"]';
 
 -- Migrate existing swept VTXOs to swept_marker table before dropping column
--- For each swept VTXO, create a unique dust marker and insert into swept_marker
-INSERT OR IGNORE INTO marker (id, depth, parent_markers)
-SELECT
-    v.txid || ':' || v.vout || ':dust',
-    v.depth,
-    COALESCE(v.markers, '[]')
-FROM vtxo v
-WHERE v.swept = 1;
-
+-- Insert the VTXO's marker into swept_marker
 INSERT OR IGNORE INTO swept_marker (marker_id, swept_at)
 SELECT
-    v.txid || ':' || v.vout || ':dust',
+    v.txid || ':' || v.vout,
     strftime('%s', 'now')
 FROM vtxo v
 WHERE v.swept = 1;
-
--- Update swept VTXOs to include the dust marker in their markers array
-UPDATE vtxo SET markers =
-    CASE
-        WHEN markers IS NULL OR markers = '' THEN '["' || txid || ':' || vout || ':dust"]'
-        ELSE substr(markers, 1, length(markers)-1) || ',"' || txid || ':' || vout || ':dust"]'
-    END
-WHERE swept = 1;
 
 -- SQLite doesn't support DROP COLUMN easily, so we recreate the table
 -- Create new vtxo table without swept column

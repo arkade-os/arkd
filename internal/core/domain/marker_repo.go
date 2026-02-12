@@ -34,10 +34,6 @@ type MarkerRepository interface {
 	// Returns the number of VTXOs that will now be considered swept
 	SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error)
 
-	// MarkDustVtxoSwept creates a unique dust marker for a vtxo and marks it as swept
-	// Used for dust vtxos that need to be marked swept immediately on creation
-	MarkDustVtxoSwept(ctx context.Context, outpoint Outpoint, sweptAt int64) error
-
 	// CreateRootMarkersForVtxos creates root markers for batch VTXOs and updates their marker references
 	// in a single transaction. Each VTXO gets a marker with ID equal to its outpoint string.
 	CreateRootMarkersForVtxos(ctx context.Context, vtxos []Vtxo) error

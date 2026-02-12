@@ -769,45 +769,33 @@ func (s *sweeper) createCheckpointSweepTask(
 			return err
 		}
 
-		// Collect all unique markers and vtxos without markers
+		// Collect all unique markers from all VTXOs
+		// Every VTXO is guaranteed to have at least 1 marker after migration
+		uniqueMarkers := make(map[string]struct{})
+		for _, v := range vtxos {
+			for _, markerID := range v.MarkerIDs {
+				uniqueMarkers[markerID] = struct{}{}
+			}
+		}
+
+		if len(uniqueMarkers) == 0 {
+			return nil
+		}
+
+		// Convert marker set to slice for bulk sweeping
+		markerIDs := make([]string, 0, len(uniqueMarkers))
+		for markerID := range uniqueMarkers {
+			markerIDs = append(markerIDs, markerID)
+		}
+
 		sweptAt := time.Now().Unix()
 		markerStore := s.repoManager.Markers()
-		uniqueMarkers := make(map[string]struct{})
-		var noMarkerVtxos []domain.Outpoint
-		for _, v := range vtxos {
-			if len(v.MarkerIDs) > 0 {
-				for _, markerID := range v.MarkerIDs {
-					uniqueMarkers[markerID] = struct{}{}
-				}
-			} else {
-				noMarkerVtxos = append(noMarkerVtxos, v.Outpoint)
-			}
+		if err := markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
+			log.WithError(err).Warn("failed to bulk sweep markers")
+			return err
 		}
 
-		// Bulk sweep all markers at once
-		sweptCount := 0
-		if len(uniqueMarkers) > 0 {
-			markerIDs := make([]string, 0, len(uniqueMarkers))
-			for markerID := range uniqueMarkers {
-				markerIDs = append(markerIDs, markerID)
-			}
-			if err := markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
-				log.WithError(err).Warn("failed to bulk sweep markers")
-			} else {
-				sweptCount = len(vtxos) - len(noMarkerVtxos)
-				log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), sweptCount)
-			}
-		}
-
-		// Sweep VTXOs without markers by creating unique dust markers
-		for _, outpoint := range noMarkerVtxos {
-			if err := markerStore.MarkDustVtxoSwept(ctx, outpoint, sweptAt); err != nil {
-				log.WithError(err).Warnf("failed to mark vtxo %s as swept", outpoint.String())
-				continue
-			}
-			sweptCount++
-		}
-		log.Debugf("swept %d vtxos", sweptCount)
+		log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), len(vtxos))
 		return nil
 	}
 }

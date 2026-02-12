@@ -1226,8 +1226,18 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		// Mark the swept vtxo via markers (if marker store is available)
 		if svc.Markers() != nil {
+			// Create a marker for the VTXO and sweep it
+			markerID := expiringVtxoToSweep.Outpoint.String()
+			err = svc.Markers().AddMarker(ctx, domain.Marker{
+				ID:    markerID,
+				Depth: 0,
+			})
+			require.NoError(t, err)
+			err = svc.Markers().
+				UpdateVtxoMarkers(ctx, expiringVtxoToSweep.Outpoint, []string{markerID})
+			require.NoError(t, err)
 			sweptAt := time.Now().Unix()
-			err = svc.Markers().MarkDustVtxoSwept(ctx, expiringVtxoToSweep.Outpoint, sweptAt)
+			err = svc.Markers().SweepMarker(ctx, markerID, sweptAt)
 			require.NoError(t, err)
 		}
 
@@ -1284,10 +1294,23 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		// Mark first two vtxos as swept via markers (if marker store is available)
 		if svc.Markers() != nil {
-			sweptAt := time.Now().Unix()
-			err = svc.Markers().MarkDustVtxoSwept(ctx, recoverableVtxo1.Outpoint, sweptAt)
+			// Create markers for VTXOs and sweep them
+			marker1ID := recoverableVtxo1.Outpoint.String()
+			marker2ID := recoverableVtxo2.Outpoint.String()
+			err = svc.Markers().AddMarker(ctx, domain.Marker{ID: marker1ID, Depth: 0})
 			require.NoError(t, err)
-			err = svc.Markers().MarkDustVtxoSwept(ctx, recoverableVtxo2.Outpoint, sweptAt)
+			err = svc.Markers().AddMarker(ctx, domain.Marker{ID: marker2ID, Depth: 0})
+			require.NoError(t, err)
+			err = svc.Markers().
+				UpdateVtxoMarkers(ctx, recoverableVtxo1.Outpoint, []string{marker1ID})
+			require.NoError(t, err)
+			err = svc.Markers().
+				UpdateVtxoMarkers(ctx, recoverableVtxo2.Outpoint, []string{marker2ID})
+			require.NoError(t, err)
+			sweptAt := time.Now().Unix()
+			err = svc.Markers().SweepMarker(ctx, marker1ID, sweptAt)
+			require.NoError(t, err)
+			err = svc.Markers().SweepMarker(ctx, marker2ID, sweptAt)
 			require.NoError(t, err)
 		}
 
@@ -1787,11 +1810,22 @@ func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 		}
 
-		// Mark vtxos[3] and vtxos[4] as swept via MarkDustVtxoSwept
-		sweptAt := time.Now().Unix()
-		err = svc.Markers().MarkDustVtxoSwept(ctx, vtxos[3].Outpoint, sweptAt)
+		// Mark vtxos[3] and vtxos[4] as swept via individual markers
+		// Create individual markers for these VTXOs and sweep them
+		marker3ID := vtxos[3].Outpoint.String()
+		marker4ID := vtxos[4].Outpoint.String()
+		err = svc.Markers().AddMarker(ctx, domain.Marker{ID: marker3ID, Depth: vtxos[3].Depth})
 		require.NoError(t, err)
-		err = svc.Markers().MarkDustVtxoSwept(ctx, vtxos[4].Outpoint, sweptAt)
+		err = svc.Markers().AddMarker(ctx, domain.Marker{ID: marker4ID, Depth: vtxos[4].Depth})
+		require.NoError(t, err)
+		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxos[3].Outpoint, []string{markerID, marker3ID})
+		require.NoError(t, err)
+		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxos[4].Outpoint, []string{markerID, marker4ID})
+		require.NoError(t, err)
+		sweptAt := time.Now().Unix()
+		err = svc.Markers().SweepMarker(ctx, marker3ID, sweptAt)
+		require.NoError(t, err)
+		err = svc.Markers().SweepMarker(ctx, marker4ID, sweptAt)
 		require.NoError(t, err)
 
 		// Verify initial state - vtxos[3] and vtxos[4] should be swept

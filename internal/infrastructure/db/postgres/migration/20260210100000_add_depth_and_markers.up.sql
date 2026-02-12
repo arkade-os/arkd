@@ -39,41 +39,27 @@ FROM intent
 LEFT OUTER JOIN vtxo_vw
 ON intent.id = vtxo_vw.intent_id;
 
--- Backfill markers for existing VTXOs based on their depth
+-- Backfill: Create a marker for every existing VTXO using its outpoint as marker ID
+-- This ensures every VTXO has at least 1 marker
 INSERT INTO marker (id, depth, parent_markers)
 SELECT
     v.txid || ':' || v.vout,
     v.depth,
     '[]'::jsonb
-FROM vtxo v
-WHERE v.depth % 100 = 0;
+FROM vtxo v;
 
--- Assign markers array to VTXOs at boundary depths
-UPDATE vtxo SET markers = jsonb_build_array(txid || ':' || vout)
-WHERE depth % 100 = 0;
+-- Assign the marker to every VTXO
+UPDATE vtxo SET markers = jsonb_build_array(txid || ':' || vout);
 
 -- Migrate existing swept VTXOs to swept_marker table before dropping column
--- For each swept VTXO, create a unique dust marker and insert into swept_marker
-INSERT INTO marker (id, depth, parent_markers)
-SELECT
-    v.txid || ':' || v.vout || ':dust',
-    v.depth,
-    COALESCE(v.markers, '[]'::jsonb)
-FROM vtxo v
-WHERE v.swept = true
-ON CONFLICT (id) DO NOTHING;
-
+-- Insert the VTXO's marker into swept_marker
 INSERT INTO swept_marker (marker_id, swept_at)
 SELECT
-    v.txid || ':' || v.vout || ':dust',
+    v.txid || ':' || v.vout,
     EXTRACT(EPOCH FROM NOW())::BIGINT
 FROM vtxo v
 WHERE v.swept = true
 ON CONFLICT (marker_id) DO NOTHING;
-
--- Update swept VTXOs to include the dust marker in their markers array
-UPDATE vtxo SET markers = COALESCE(markers, '[]'::jsonb) || jsonb_build_array(txid || ':' || vout || ':dust')
-WHERE swept = true;
 
 -- Drop views before dropping the swept column (views depend on it via v.*)
 DROP VIEW IF EXISTS intent_with_inputs_vw;
