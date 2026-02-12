@@ -888,7 +888,11 @@ func (c *Config) alertsService() error {
 		return nil
 	}
 
-	c.alerts = alertsmanager.NewService(c.AlertManagerURL, c.EsploraURL)
+	alerts, err := alertsmanager.NewService(c.AlertManagerURL, c.EsploraURL)
+	if err != nil {
+		return err
+	}
+	c.alerts = alerts
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -31,14 +32,28 @@ type service struct {
 	httpClient *http.Client
 }
 
-func NewService(alertManagerURL, esploraURL string) ports.Alerts {
+func NewService(alertManagerURL, esploraURL string) (ports.Alerts, error) {
+	u, err := url.Parse(alertManagerURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid alert manager URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf(
+			"invalid alert manager URL scheme %q: only http and https are allowed",
+			u.Scheme,
+		)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("invalid alert manager URL: missing host")
+	}
+
 	return &service{
 		baseUrl:    alertManagerURL,
 		esploraUrl: esploraURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
-	}
+	}, nil
 }
 
 func (s *service) Publish(ctx context.Context, topic ports.Topic, message any) error {
@@ -94,7 +109,7 @@ func (s *service) sendAlert(ctx context.Context, alerts Alert) error {
 		}
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := s.httpClient.Do(req)
+		resp, err := s.httpClient.Do(req) // #nosec G704 -- base URL is validated in NewService()
 		if err != nil {
 			// Network error - retry with backoff
 			if attempt < maxRetries-1 {
