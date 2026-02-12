@@ -480,7 +480,8 @@ func (n *nbxplorer) broadcastSingleTransaction(ctx context.Context, txHex string
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := n.httpClient.Do(req) // #nosec G704 -- base URL is validated in New()
+	// #nosec G704 -- base URL is validated in New()
+	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
 	}
