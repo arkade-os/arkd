@@ -612,9 +612,22 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				VOut: uint32(outIndex),
 			}
 
+			vtxoMarkerIDs := markerIDs
 			isDust := script.IsSubDustScript(out.PkScript)
 			if isDust {
 				dustVtxoOutpoints = append(dustVtxoOutpoints, outpoint)
+				// Dust VTXOs get their own outpoint-based marker so they can be
+				// swept individually without affecting sibling non-dust VTXOs
+				// that share the same inherited parent markers.
+				dustMarkerID := outpoint.String()
+				if err := s.markerStore.AddMarker(ctx, domain.Marker{
+					ID:              dustMarkerID,
+					Depth:           newDepth,
+					ParentMarkerIDs: markerIDs,
+				}); err != nil {
+					log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
+				}
+				vtxoMarkerIDs = append(append([]string{}, markerIDs...), dustMarkerID)
 			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
@@ -627,7 +640,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				Preconfirmed:       true,
 				CreatedAt:          offchainTx.StartingTimestamp,
 				Depth:              newDepth,
-				MarkerIDs:          markerIDs,
+				MarkerIDs:          vtxoMarkerIDs,
 			})
 		}
 
