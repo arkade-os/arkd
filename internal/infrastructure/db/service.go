@@ -569,6 +569,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					}
 				}
 				newDepth = maxDepth + 1
+				// Convert parent marker set to slice
 				for id := range parentMarkerSet {
 					parentMarkerIDs = append(parentMarkerIDs, id)
 				}
@@ -599,8 +600,6 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 		}
 
-		// once the offchain tx is finalized, the user signed the checkpoint txs
-		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
 		dustVtxoOutpoints := make([]domain.Outpoint, 0)
 		for outIndex, out := range outs {
@@ -629,7 +628,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				Preconfirmed:       true,
 				CreatedAt:          offchainTx.StartingTimestamp,
 				Depth:              newDepth,
-				// Swept is now computed via markers, not stored directly
+				MarkerIDs:          markerIDs,
 			})
 		}
 
@@ -638,16 +637,6 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			return
 		}
 		log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
-
-		// Update markers for VTXOs (new marker at boundary, inherited at non-boundary)
-		if len(markerIDs) > 0 && s.markerStore != nil {
-			for _, vtxo := range newVtxos {
-				if err := s.markerStore.UpdateVtxoMarkers(ctx, vtxo.Outpoint, markerIDs); err != nil {
-					log.WithError(err).
-						Warnf("failed to update markers for vtxo %s", vtxo.Outpoint.String())
-				}
-			}
-		}
 
 		// Mark dust VTXOs as swept via marker
 		// Dust vtxos are below dust limit and can't be spent again in future offchain tx

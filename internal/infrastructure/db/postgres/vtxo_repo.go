@@ -42,6 +42,15 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 		for i := range vtxos {
 			vtxo := vtxos[i]
 
+			var markersJSON pqtype.NullRawMessage
+			if len(vtxo.MarkerIDs) > 0 {
+				data, err := json.Marshal(vtxo.MarkerIDs)
+				if err != nil {
+					return fmt.Errorf("failed to marshal markers: %w", err)
+				}
+				markersJSON = pqtype.NullRawMessage{RawMessage: data, Valid: true}
+			}
+
 			if err := querierWithTx.UpsertVtxo(
 				ctx, queries.UpsertVtxoParams{
 					Txid:           vtxo.Txid,
@@ -63,7 +72,8 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					ArkTxid: sql.NullString{
 						String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0,
 					},
-					Depth: int32(vtxo.Depth),
+					Depth:   int32(vtxo.Depth),
+					Markers: markersJSON,
 				},
 			); err != nil {
 				return err
