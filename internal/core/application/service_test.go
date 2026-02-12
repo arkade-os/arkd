@@ -481,3 +481,92 @@ func TestMarkerCreationAtBoundary(t *testing.T) {
 		})
 	}
 }
+
+// TestAllNewVtxosGetSameDepth verifies that when a single offchain tx produces
+// multiple output VTXOs, all of them receive the same depth (max parent depth + 1)
+// and the same marker IDs. This mirrors the logic in updateProjectionsAfterOffchainTxEvents
+// where newDepth is computed once and applied to all new VTXOs from the same tx.
+func TestAllNewVtxosGetSameDepth(t *testing.T) {
+	testCases := []struct {
+		name              string
+		parentDepths      []uint32
+		parentMarkerSets  [][]string
+		numOutputVtxos    int
+		expectedDepth     uint32
+		expectedMarkerLen int
+		description       string
+	}{
+		{
+			name:              "3 outputs from single parent at depth 0",
+			parentDepths:      []uint32{0},
+			parentMarkerSets:  [][]string{{"root-marker-1"}},
+			numOutputVtxos:    3,
+			expectedDepth:     1,
+			expectedMarkerLen: 1,
+			description:       "all 3 outputs get depth 1 and inherit root marker",
+		},
+		{
+			name:              "5 outputs from two parents at different depths",
+			parentDepths:      []uint32{30, 50},
+			parentMarkerSets:  [][]string{{"marker-A"}, {"marker-B", "marker-C"}},
+			numOutputVtxos:    5,
+			expectedDepth:     51,
+			expectedMarkerLen: 3,
+			description:       "all 5 outputs get depth 51 (max+1) and inherit union of markers",
+		},
+		{
+			name:              "2 outputs at marker boundary",
+			parentDepths:      []uint32{99},
+			parentMarkerSets:  [][]string{{"root-marker"}},
+			numOutputVtxos:    2,
+			expectedDepth:     100,
+			expectedMarkerLen: 1,
+			description:       "both outputs get depth 100 and the same new marker",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			spentVtxos := make([]domain.Vtxo, len(tc.parentDepths))
+			for i, depth := range tc.parentDepths {
+				spentVtxos[i] = domain.Vtxo{
+					Depth:     depth,
+					MarkerIDs: tc.parentMarkerSets[i],
+				}
+			}
+
+			maxDepth := calculateMaxDepth(spentVtxos)
+			newDepth := maxDepth + 1
+			require.Equal(t, tc.expectedDepth, newDepth)
+
+			parentMarkers := collectParentMarkers(spentVtxos)
+			markerIDs, _ := deriveMarkerIDs(newDepth, parentMarkers, "tx-with-multiple-outputs")
+
+			// Simulate creating multiple output VTXOs — each gets the same depth and markers
+			outputs := make([]domain.Vtxo, tc.numOutputVtxos)
+			for i := 0; i < tc.numOutputVtxos; i++ {
+				outputs[i] = domain.Vtxo{
+					Outpoint:  domain.Outpoint{Txid: "tx-with-multiple-outputs", VOut: uint32(i)},
+					Depth:     newDepth,
+					MarkerIDs: markerIDs,
+				}
+			}
+
+			// All outputs must have the same depth
+			for i, v := range outputs {
+				require.Equal(t, tc.expectedDepth, v.Depth,
+					"output %d has wrong depth", i)
+			}
+
+			// All outputs must have the same marker IDs
+			for i := 1; i < len(outputs); i++ {
+				sort.Strings(outputs[0].MarkerIDs)
+				sort.Strings(outputs[i].MarkerIDs)
+				require.Equal(t, outputs[0].MarkerIDs, outputs[i].MarkerIDs,
+					"output %d has different markers than output 0", i)
+			}
+
+			require.Len(t, outputs[0].MarkerIDs, tc.expectedMarkerLen, tc.description)
+		})
+	}
+}

@@ -200,6 +200,10 @@ func TestService(t *testing.T) {
 			testDustVtxoMarkersSweptImmediately(t, svc)
 			testSweepVtxosWithMarkersEmptyInput(t, svc)
 			testSweepVtxosWithMarkersNoMarkersOnVtxos(t, svc)
+			testVtxoMarkerIDsRoundTrip(t, svc)
+			testGetVtxosByArkTxidMultipleOutputs(t, svc)
+			testCreateRootMarkersForEmptyVtxos(t, svc)
+			testSweepVtxosWithMarkersIntegration(t, svc)
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
@@ -2947,6 +2951,198 @@ func testSweepVtxosWithMarkersNoMarkersOnVtxos(t *testing.T, svc ports.RepoManag
 	})
 }
 
+func testVtxoMarkerIDsRoundTrip(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_vtxo_marker_ids_round_trip", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		commitmentTxid := randomString(32)
+
+		// VTXOs with various MarkerIDs configurations
+		vtxoSingle := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             1000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              0,
+			MarkerIDs:          []string{"single-marker"},
+		}
+		vtxoMulti := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             2000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              150,
+			MarkerIDs:          []string{"marker-A", "marker-B", "marker-C"},
+		}
+		vtxoEmpty := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             3000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              0,
+			MarkerIDs:          []string{},
+		}
+		vtxoNil := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             4000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              0,
+			MarkerIDs:          nil,
+		}
+		vtxoDeep := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             5000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              500,
+			MarkerIDs:          []string{"marker-500", "marker-400"},
+		}
+
+		allVtxos := []domain.Vtxo{vtxoSingle, vtxoMulti, vtxoEmpty, vtxoNil, vtxoDeep}
+		err := svc.Vtxos().AddVtxos(ctx, allVtxos)
+		require.NoError(t, err)
+
+		// Retrieve all and verify
+		outpoints := make([]domain.Outpoint, len(allVtxos))
+		for i, v := range allVtxos {
+			outpoints[i] = v.Outpoint
+		}
+		retrieved, err := svc.Vtxos().GetVtxos(ctx, outpoints)
+		require.NoError(t, err)
+		require.Len(t, retrieved, 5)
+
+		byOutpoint := make(map[string]domain.Vtxo)
+		for _, v := range retrieved {
+			byOutpoint[v.Outpoint.String()] = v
+		}
+
+		// Single marker
+		got := byOutpoint[vtxoSingle.Outpoint.String()]
+		require.Equal(t, uint32(0), got.Depth)
+		require.Equal(t, []string{"single-marker"}, got.MarkerIDs)
+
+		// Multiple markers — order may vary, use ElementsMatch
+		got = byOutpoint[vtxoMulti.Outpoint.String()]
+		require.Equal(t, uint32(150), got.Depth)
+		require.ElementsMatch(t, []string{"marker-A", "marker-B", "marker-C"}, got.MarkerIDs)
+
+		// Empty markers — should come back as empty or nil (both acceptable)
+		got = byOutpoint[vtxoEmpty.Outpoint.String()]
+		require.Equal(t, uint32(0), got.Depth)
+		require.Empty(t, got.MarkerIDs)
+
+		// Nil markers — should come back as empty or nil
+		got = byOutpoint[vtxoNil.Outpoint.String()]
+		require.Empty(t, got.MarkerIDs)
+
+		// Deep VTXO with two markers
+		got = byOutpoint[vtxoDeep.Outpoint.String()]
+		require.Equal(t, uint32(500), got.Depth)
+		require.ElementsMatch(t, []string{"marker-500", "marker-400"}, got.MarkerIDs)
+	})
+}
+
+func testGetVtxosByArkTxidMultipleOutputs(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_get_vtxos_by_ark_txid_multiple_outputs", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		commitmentTxid := randomString(32)
+
+		// An ark txid producing multiple VTXOs (different vouts) at the same depth
+		arkTxid := randomString(32)
+		sharedMarkers := []string{"shared-marker-" + randomString(8)}
+		sharedDepth := uint32(100)
+
+		vtxoOut0 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: arkTxid, VOut: 0},
+			PubKey:             pubkey,
+			Amount:             1000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Preconfirmed:       true,
+			ArkTxid:            arkTxid,
+			Depth:              sharedDepth,
+			MarkerIDs:          sharedMarkers,
+		}
+		vtxoOut1 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: arkTxid, VOut: 1},
+			PubKey:             pubkey2,
+			Amount:             2000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Preconfirmed:       true,
+			ArkTxid:            arkTxid,
+			Depth:              sharedDepth,
+			MarkerIDs:          sharedMarkers,
+		}
+		vtxoOut2 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: arkTxid, VOut: 2},
+			PubKey:             pubkey,
+			Amount:             500,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Preconfirmed:       true,
+			ArkTxid:            arkTxid,
+			Depth:              sharedDepth,
+			MarkerIDs:          sharedMarkers,
+		}
+
+		err := svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxoOut0, vtxoOut1, vtxoOut2})
+		require.NoError(t, err)
+
+		// Query by ark txid
+		results, err := svc.Markers().GetVtxosByArkTxid(ctx, arkTxid)
+		require.NoError(t, err)
+		require.Len(t, results, 3)
+
+		// Verify all outputs are returned with correct depth and markers
+		for _, v := range results {
+			require.Equal(t, arkTxid, v.Txid)
+			require.Equal(t, sharedDepth, v.Depth)
+			require.ElementsMatch(t, sharedMarkers, v.MarkerIDs)
+		}
+
+		// Verify all vouts are present
+		vouts := make([]uint32, len(results))
+		for i, v := range results {
+			vouts[i] = v.VOut
+		}
+		require.ElementsMatch(t, []uint32{0, 1, 2}, vouts)
+
+		// Non-existent ark txid returns empty
+		empty, err := svc.Markers().GetVtxosByArkTxid(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, empty)
+	})
+}
+
+func testCreateRootMarkersForEmptyVtxos(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_create_root_markers_for_empty_vtxos", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+
+		// Empty slice should not error and have no side effects
+		err := svc.Markers().CreateRootMarkersForVtxos(ctx, []domain.Vtxo{})
+		require.NoError(t, err)
+
+		// Nil slice should also not error
+		err = svc.Markers().CreateRootMarkersForVtxos(ctx, nil)
+		require.NoError(t, err)
+	})
+}
+
 func testScheduledSessionRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_scheduled_session_repository", func(t *testing.T) {
 		ctx := context.Background()
@@ -3463,6 +3659,146 @@ func randomTx() string {
 
 	b64, _ := ptx.B64Encode()
 	return b64
+}
+
+// testSweepVtxosWithMarkersIntegration tests the full marker-based sweep flow:
+// create VTXOs with markers, then bulk sweep the markers and verify VTXOs
+// appear as swept via the marker-based view.
+func testSweepVtxosWithMarkersIntegration(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_sweep_vtxos_with_markers_integration", func(t *testing.T) {
+		ctx := context.Background()
+
+		// Create a finalized round so VTXOs have a valid commitment txid
+		roundId := uuid.New().String()
+		commitmentTxid := randomString(32)
+		now := time.Now()
+		round := domain.NewRoundFromEvents([]domain.Event{
+			domain.RoundStarted{
+				RoundEvent: domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundStarted},
+				Timestamp:  now.Unix(),
+			},
+			domain.RoundFinalizationStarted{
+				RoundEvent: domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundFinalizationStarted},
+				CommitmentTxid:     commitmentTxid,
+				CommitmentTx:       emptyTx,
+				VtxoTree:           vtxoTree,
+				Connectors:         connectorsTree,
+				VtxoTreeExpiration: 3600,
+			},
+			domain.RoundFinalized{
+				RoundEvent:        domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundFinalized},
+				FinalCommitmentTx: emptyTx,
+				Timestamp:         now.Unix(),
+			},
+		})
+		require.NoError(t, svc.Rounds().AddOrUpdateRound(ctx, *round))
+
+		// Create 3 VTXOs, two sharing a marker and one with its own
+		txidA := randomString(32)
+		txidB := randomString(32)
+		txidC := randomString(32)
+		sharedMarkerID := "shared-marker-sweep-" + randomString(8)
+		uniqueMarkerID := "unique-marker-sweep-" + randomString(8)
+
+		vtxosToAdd := []domain.Vtxo{
+			{
+				Outpoint:           domain.Outpoint{Txid: txidA, VOut: 0},
+				PubKey:             pubkey,
+				Amount:             1000,
+				CommitmentTxids:    []string{commitmentTxid},
+				RootCommitmentTxid: commitmentTxid,
+				CreatedAt:          time.Now().Unix(),
+				ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+				Depth:              50,
+				MarkerIDs:          []string{sharedMarkerID},
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: txidB, VOut: 0},
+				PubKey:             pubkey,
+				Amount:             2000,
+				CommitmentTxids:    []string{commitmentTxid},
+				RootCommitmentTxid: commitmentTxid,
+				CreatedAt:          time.Now().Unix(),
+				ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+				Depth:              50,
+				MarkerIDs:          []string{sharedMarkerID},
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: txidC, VOut: 0},
+				PubKey:             pubkey,
+				Amount:             3000,
+				CommitmentTxids:    []string{commitmentTxid},
+				RootCommitmentTxid: commitmentTxid,
+				CreatedAt:          time.Now().Unix(),
+				ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+				Depth:              75,
+				MarkerIDs:          []string{uniqueMarkerID},
+			},
+		}
+		require.NoError(t, svc.Vtxos().AddVtxos(ctx, vtxosToAdd))
+
+		// Create the markers
+		require.NoError(t, svc.Markers().AddMarker(ctx, domain.Marker{
+			ID:    sharedMarkerID,
+			Depth: 50,
+		}))
+		require.NoError(t, svc.Markers().AddMarker(ctx, domain.Marker{
+			ID:    uniqueMarkerID,
+			Depth: 75,
+		}))
+
+		// Associate VTXOs with their markers
+		require.NoError(t, svc.Markers().UpdateVtxoMarkers(ctx,
+			domain.Outpoint{Txid: txidA, VOut: 0}, []string{sharedMarkerID}))
+		require.NoError(t, svc.Markers().UpdateVtxoMarkers(ctx,
+			domain.Outpoint{Txid: txidB, VOut: 0}, []string{sharedMarkerID}))
+		require.NoError(t, svc.Markers().UpdateVtxoMarkers(ctx,
+			domain.Outpoint{Txid: txidC, VOut: 0}, []string{uniqueMarkerID}))
+
+		// Verify VTXOs are not swept before
+		fetchedBefore, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{
+			{Txid: txidA, VOut: 0}, {Txid: txidB, VOut: 0}, {Txid: txidC, VOut: 0},
+		})
+		require.NoError(t, err)
+		require.Len(t, fetchedBefore, 3)
+		for _, v := range fetchedBefore {
+			require.False(t, v.Swept, "vtxo %s should not be swept yet", v.Txid)
+		}
+
+		// Simulate sweepVtxosWithMarkers: collect unique markers, then bulk sweep
+		uniqueMarkers := make(map[string]struct{})
+		for _, vtxo := range vtxosToAdd {
+			for _, markerID := range vtxo.MarkerIDs {
+				uniqueMarkers[markerID] = struct{}{}
+			}
+		}
+		markerIDs := make([]string, 0, len(uniqueMarkers))
+		for markerID := range uniqueMarkers {
+			markerIDs = append(markerIDs, markerID)
+		}
+		require.Len(t, markerIDs, 2, "should deduplicate to 2 unique markers")
+
+		sweptAt := time.Now().Unix()
+		require.NoError(t, svc.Markers().BulkSweepMarkers(ctx, markerIDs, sweptAt))
+
+		// Verify all VTXOs now appear as swept
+		fetchedAfter, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{
+			{Txid: txidA, VOut: 0}, {Txid: txidB, VOut: 0}, {Txid: txidC, VOut: 0},
+		})
+		require.NoError(t, err)
+		require.Len(t, fetchedAfter, 3)
+		for _, v := range fetchedAfter {
+			require.True(t, v.Swept, "vtxo %s should be swept", v.Txid)
+		}
+
+		// Verify both markers are recorded as swept
+		sweptMarkers, err := svc.Markers().GetSweptMarkers(ctx, markerIDs)
+		require.NoError(t, err)
+		require.Len(t, sweptMarkers, 2)
+		for _, sm := range sweptMarkers {
+			require.Equal(t, sweptAt, sm.SweptAt)
+		}
+	})
 }
 
 type sortVtxos []domain.Vtxo
