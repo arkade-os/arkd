@@ -16,6 +16,8 @@ type MarkerRepository interface {
 
 	// SweepMarker marks a marker as swept at the given timestamp
 	SweepMarker(ctx context.Context, markerID string, sweptAt int64) error
+	// BulkSweepMarkers marks multiple markers as swept in a single operation
+	BulkSweepMarkers(ctx context.Context, markerIDs []string, sweptAt int64) error
 	// SweepMarkerWithDescendants marks a marker and all its descendants as swept
 	// Returns the number of markers swept (including descendants)
 	SweepMarkerWithDescendants(ctx context.Context, markerID string, sweptAt int64) (int64, error)

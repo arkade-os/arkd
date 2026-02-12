@@ -139,6 +139,28 @@ func (m *markerRepository) SweepMarker(ctx context.Context, markerID string, swe
 	})
 }
 
+func (m *markerRepository) BulkSweepMarkers(
+	ctx context.Context,
+	markerIDs []string,
+	sweptAt int64,
+) error {
+	if len(markerIDs) == 0 {
+		return nil
+	}
+	txBody := func(querierWithTx *queries.Queries) error {
+		for _, markerID := range markerIDs {
+			if err := querierWithTx.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
+				MarkerID: markerID,
+				SweptAt:  sweptAt,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return execTx(ctx, m.db, txBody)
+}
+
 func (m *markerRepository) SweepMarkerWithDescendants(
 	ctx context.Context,
 	markerID string,

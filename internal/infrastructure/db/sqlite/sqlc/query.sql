@@ -457,6 +457,7 @@ INSERT INTO swept_marker (marker_id, swept_at)
 VALUES (@marker_id, @swept_at)
 ON CONFLICT(marker_id) DO NOTHING;
 
+
 -- name: SelectSweptMarker :one
 SELECT * FROM swept_marker WHERE marker_id = @marker_id;
 

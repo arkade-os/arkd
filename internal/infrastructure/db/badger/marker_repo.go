@@ -253,6 +253,19 @@ func (r *markerRepository) SweepMarker(ctx context.Context, markerID string, swe
 	return nil
 }
 
+func (r *markerRepository) BulkSweepMarkers(
+	ctx context.Context,
+	markerIDs []string,
+	sweptAt int64,
+) error {
+	for _, markerID := range markerIDs {
+		if err := r.SweepMarker(ctx, markerID, sweptAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *markerRepository) SweepMarkerWithDescendants(
 	ctx context.Context,
 	markerID string,
