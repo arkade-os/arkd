@@ -257,7 +257,8 @@ func post[T any](
 		},
 	}
 
-	resp, err := client.Do(req) // #nosec G704 -- URL is validated above
+	// #nosec G704 -- URL is validated above
+	resp, err := client.Do(req)
 	if err != nil {
 		return
 	}
