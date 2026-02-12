@@ -863,3 +863,88 @@ func TestGetVtxosFromCacheOrDB_EmptyOutpoints(t *testing.T) {
 	// DB should never be called for empty input
 	vtxoRepo.AssertNotCalled(t, "GetVtxos", mock.Anything, mock.Anything)
 }
+
+// TestPrefetchVtxosByMarkers_CycleInMarkerDAG verifies that the BFS in
+// prefetchVtxosByMarkers terminates when there is a cycle in the marker DAG
+// (marker-A → parent marker-B → parent marker-A).
+func TestPrefetchVtxosByMarkers_CycleInMarkerDAG(t *testing.T) {
+	vtxoRepo := &mockVtxoRepoForIndexer{}
+	markerRepo := &mockMarkerRepoForIndexer{}
+	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
+
+	indexer := &indexerService{repoManager: repoManager}
+
+	ctx := context.Background()
+	startKey := Outpoint{Txid: "cycle-vtxo", VOut: 0}
+
+	// Starting VTXO references marker-A
+	startVtxo := domain.Vtxo{
+		Outpoint:  domain.Outpoint{Txid: "cycle-vtxo", VOut: 0},
+		MarkerIDs: []string{"marker-A"},
+		Depth:     200,
+	}
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "cycle-vtxo", VOut: 0}}).
+		Return([]domain.Vtxo{startVtxo}, nil)
+
+	// marker-A points to marker-B as parent
+	markerRepo.On("GetMarker", ctx, "marker-A").Return(&domain.Marker{
+		ID:              "marker-A",
+		Depth:           200,
+		ParentMarkerIDs: []string{"marker-B"},
+	}, nil)
+
+	// marker-B points BACK to marker-A (cycle!)
+	markerRepo.On("GetMarker", ctx, "marker-B").Return(&domain.Marker{
+		ID:              "marker-B",
+		Depth:           100,
+		ParentMarkerIDs: []string{"marker-A"},
+	}, nil)
+
+	// Both markers should be collected despite the cycle
+	markerRepo.On("GetVtxoChainByMarkers", ctx, mock.MatchedBy(func(ids []string) bool {
+		if len(ids) != 2 {
+			return false
+		}
+		idSet := make(map[string]bool)
+		for _, id := range ids {
+			idSet[id] = true
+		}
+		return idSet["marker-A"] && idSet["marker-B"]
+	})).Return([]domain.Vtxo{
+		{Outpoint: domain.Outpoint{Txid: "chain-vtxo-1", VOut: 0}, Depth: 150},
+	}, nil)
+
+	cache := indexer.prefetchVtxosByMarkers(ctx, startKey)
+
+	// Should terminate and contain the start VTXO + chain VTXO
+	require.Len(t, cache, 2)
+	require.Contains(t, cache, "cycle-vtxo:0")
+	require.Contains(t, cache, "chain-vtxo-1:0")
+
+	// Each marker should be visited exactly once
+	markerRepo.AssertNumberOfCalls(t, "GetMarker", 2)
+}
+
+// TestPrefetchVtxosByMarkers_StartVtxoNotFound verifies that when the starting
+// VTXO is not found in the database, an empty cache is returned.
+func TestPrefetchVtxosByMarkers_StartVtxoNotFound(t *testing.T) {
+	vtxoRepo := &mockVtxoRepoForIndexer{}
+	markerRepo := &mockMarkerRepoForIndexer{}
+	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
+
+	indexer := &indexerService{repoManager: repoManager}
+
+	ctx := context.Background()
+	startKey := Outpoint{Txid: "nonexistent", VOut: 0}
+
+	// GetVtxos returns empty slice (VTXO not found)
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "nonexistent", VOut: 0}}).
+		Return([]domain.Vtxo{}, nil)
+
+	cache := indexer.prefetchVtxosByMarkers(ctx, startKey)
+
+	require.Empty(t, cache)
+	// Marker repo should never be touched
+	markerRepo.AssertNotCalled(t, "GetMarker", mock.Anything, mock.Anything)
+	markerRepo.AssertNotCalled(t, "GetVtxoChainByMarkers", mock.Anything, mock.Anything)
+}
