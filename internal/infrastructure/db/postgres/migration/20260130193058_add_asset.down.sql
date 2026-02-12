@@ -1,4 +1,3 @@
-DROP TABLE IF EXISTS asset_metadata_update;
 DROP TABLE IF EXISTS asset_projection;
 DROP TABLE IF EXISTS asset;
 

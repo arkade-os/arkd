@@ -104,7 +104,7 @@
                 "name": "invalid txid format",
                 "type": "intent",
                 "amount": 500,
-                "txid": "invalid intent txid format",
+                "txid": "z000000000000000000000000000000000000000000000000000000000000000",
                 "vin": 10,
                 "expectedError": "invalid input intent txid format"
             },

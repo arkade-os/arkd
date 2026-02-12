@@ -246,7 +246,7 @@ func validateGroupInputs(
 
 	for i, input := range grp.Inputs {
 		// intent input type is always created by arkd operator, so if we receive one from tx submitted by user, it's invalid
-		if input.Type == AssetTypeIntent {
+		if input.Type == AssetInputTypeIntent {
 			return errors.ASSET_INPUT_INVALID.New("unexpected asset input type: %s", input.Type).
 				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
 		}

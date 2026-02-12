@@ -47,7 +47,7 @@
       },
       {
         "name": "invalid txid hex",
-        "txid": "invalid",
+        "txid": "invalid000000000000000000000000000000000000000000000000000000000",
         "index": 0,
         "expectedError": "invalid txid format"
       },

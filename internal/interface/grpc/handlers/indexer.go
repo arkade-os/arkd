@@ -45,14 +45,15 @@ func NewIndexerService(
 	return svc
 }
 
-func (e *indexerService) GetAssetGroup(ctx context.Context, request *arkv1.GetAssetGroupRequest,
-) (*arkv1.GetAssetGroupResponse, error) {
+func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRequest) (
+	*arkv1.GetAssetResponse, error,
+) {
 	assetId := request.GetAssetId()
 	if assetId == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "missing asset id")
 	}
 
-	assets, err := e.indexerSvc.GetAssetGroup(ctx, assetId)
+	assets, err := e.indexerSvc.GetAsset(ctx, assetId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
@@ -64,17 +65,16 @@ func (e *indexerService) GetAssetGroup(ctx context.Context, request *arkv1.GetAs
 	assetMetadata := make([]*arkv1.AssetMetadata, 0, len(asset.Metadata))
 	for _, metadata := range asset.Metadata {
 		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
-			Key:   string(metadata.Key),
-			Value: string(metadata.Value),
+			Key:   hex.EncodeToString(metadata.Key),
+			Value: hex.EncodeToString(metadata.Value),
 		})
 	}
 
-	return &arkv1.GetAssetGroupResponse{
-		AssetId: assetId,
-		AssetGroup: &arkv1.AssetGroup{
-			Id:       asset.Id,
-			Metadata: assetMetadata,
-		},
+	return &arkv1.GetAssetResponse{
+		AssetId:      assetId,
+		Supply:       asset.Supply.String(),
+		Metadata:     assetMetadata,
+		ControlAsset: asset.ControlAssetId,
 	}, nil
 }
 

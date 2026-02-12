@@ -9,7 +9,6 @@ import (
 )
 
 type AssetOutput struct {
-	Type   AssetType
 	Vout   uint16
 	Amount uint64
 }
@@ -34,7 +33,7 @@ func NewAssetOutputsFromString(s string) (AssetOutputs, error) {
 }
 
 func NewAssetOutput(vout uint16, amount uint64) (*AssetOutput, error) {
-	out := AssetOutput{Type: AssetTypeLocal, Vout: vout, Amount: amount}
+	out := AssetOutput{Vout: vout, Amount: amount}
 	if err := out.validate(); err != nil {
 		return nil, err
 	}
@@ -76,75 +75,35 @@ func (out AssetOutput) String() string {
 }
 
 func (out AssetOutput) validate() error {
-	switch out.Type {
-	case AssetTypeUnspecified:
-		return fmt.Errorf("asset output type unspecified")
-	case AssetTypeLocal:
-		return nil
-	case AssetTypeIntent:
-		return fmt.Errorf("asset output type not supported %d", out.Type)
-	default:
-		return fmt.Errorf("asset output type unknown %d", out.Type)
+	if out.Amount == 0 {
+		return fmt.Errorf("asset output amount must be greater than 0")
 	}
+	return nil
 }
 
 func (out AssetOutput) serialize(w io.Writer) error {
-	if _, err := w.Write([]byte{byte(out.Type)}); err != nil {
+	if err := serializeUint16(w, out.Vout); err != nil {
 		return err
 	}
-	switch out.Type {
-	case AssetTypeLocal:
-		if err := serializeUint16(w, out.Vout); err != nil {
-			return err
-		}
-		if err := serializeVarUint(w, out.Amount); err != nil {
-			return err
-		}
-	case AssetTypeIntent:
-		return fmt.Errorf("asset output type not supported %d", out.Type)
-	case AssetTypeUnspecified:
-		return fmt.Errorf("asset output type unspecified")
-	default:
-		return fmt.Errorf("asset output type unknown %d", out.Type)
+	if err := serializeVarUint(w, out.Amount); err != nil {
+		return err
 	}
 	return nil
 }
 
 func newAssetOutputFromReader(r *bytes.Reader) (*AssetOutput, error) {
-	typ, err := r.ReadByte()
+	index, err := deserializeUint16(r)
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("invalid asset output vout length")
+		}
+		return nil, err
+	}
+	amount, err := deserializeVarUint(r)
 	if err != nil {
 		return nil, err
 	}
-
-	out := AssetOutput{Type: AssetType(typ)}
-	switch out.Type {
-	case AssetTypeLocal:
-		index, err := deserializeUint16(r)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil, fmt.Errorf("invalid asset output vout length")
-			}
-			return nil, err
-		}
-		amount, err := deserializeVarUint(r)
-		if err != nil {
-			return nil, err
-		}
-		out.Vout = index
-		out.Amount = amount
-	case AssetTypeIntent:
-		return nil, fmt.Errorf("asset output type not supported %d", out.Type)
-	case AssetTypeUnspecified:
-		return nil, fmt.Errorf("asset output type unspecified")
-	default:
-		return nil, fmt.Errorf("asset output type unknown %d", out.Type)
-	}
-
-	if err := out.validate(); err != nil {
-		return nil, err
-	}
-
-	return &out, nil
+	return NewAssetOutput(index, amount)
 }
 
 type AssetOutputs []AssetOutput
@@ -181,24 +140,16 @@ func (outs AssetOutputs) serialize(w io.Writer) error {
 
 func (outs AssetOutputs) validate() error {
 	m := make(map[uint16]struct{})
-	var outType AssetType
 	for _, out := range outs {
 		if _, ok := m[out.Vout]; ok {
 			return fmt.Errorf("duplicated output vout %d", out.Vout)
 		}
 		m[out.Vout] = struct{}{}
 
-		if outType == AssetTypeUnspecified {
-			outType = out.Type
-		}
-		if out.Type != outType {
-			return fmt.Errorf("all outputs must be of the same type")
-		}
 		if err := out.validate(); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 

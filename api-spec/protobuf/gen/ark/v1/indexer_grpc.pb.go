@@ -27,7 +27,7 @@ const (
 	IndexerService_GetVtxos_FullMethodName                  = "/ark.v1.IndexerService/GetVtxos"
 	IndexerService_GetVtxoChain_FullMethodName              = "/ark.v1.IndexerService/GetVtxoChain"
 	IndexerService_GetVirtualTxs_FullMethodName             = "/ark.v1.IndexerService/GetVirtualTxs"
-	IndexerService_GetAssetGroup_FullMethodName             = "/ark.v1.IndexerService/GetAssetGroup"
+	IndexerService_GetAsset_FullMethodName                  = "/ark.v1.IndexerService/GetAsset"
 	IndexerService_GetBatchSweepTransactions_FullMethodName = "/ark.v1.IndexerService/GetBatchSweepTransactions"
 	IndexerService_SubscribeForScripts_FullMethodName       = "/ark.v1.IndexerService/SubscribeForScripts"
 	IndexerService_UnsubscribeForScripts_FullMethodName     = "/ark.v1.IndexerService/UnsubscribeForScripts"
@@ -69,7 +69,7 @@ type IndexerServiceClient interface {
 	// The response may be paginated if the results span multiple pages.
 	GetVirtualTxs(ctx context.Context, in *GetVirtualTxsRequest, opts ...grpc.CallOption) (*GetVirtualTxsResponse, error)
 	// GetAsset returns the asset information and metadata for the specified asset ID.
-	GetAssetGroup(ctx context.Context, in *GetAssetGroupRequest, opts ...grpc.CallOption) (*GetAssetGroupResponse, error)
+	GetAsset(ctx context.Context, in *GetAssetRequest, opts ...grpc.CallOption) (*GetAssetResponse, error)
 	// GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
 	// output.
 	// In most cases the list contains only one txid, meaning that all the amount locked for a
@@ -181,10 +181,10 @@ func (c *indexerServiceClient) GetVirtualTxs(ctx context.Context, in *GetVirtual
 	return out, nil
 }
 
-func (c *indexerServiceClient) GetAssetGroup(ctx context.Context, in *GetAssetGroupRequest, opts ...grpc.CallOption) (*GetAssetGroupResponse, error) {
+func (c *indexerServiceClient) GetAsset(ctx context.Context, in *GetAssetRequest, opts ...grpc.CallOption) (*GetAssetResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(GetAssetGroupResponse)
-	err := c.cc.Invoke(ctx, IndexerService_GetAssetGroup_FullMethodName, in, out, cOpts...)
+	out := new(GetAssetResponse)
+	err := c.cc.Invoke(ctx, IndexerService_GetAsset_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +275,7 @@ type IndexerServiceServer interface {
 	// The response may be paginated if the results span multiple pages.
 	GetVirtualTxs(context.Context, *GetVirtualTxsRequest) (*GetVirtualTxsResponse, error)
 	// GetAsset returns the asset information and metadata for the specified asset ID.
-	GetAssetGroup(context.Context, *GetAssetGroupRequest) (*GetAssetGroupResponse, error)
+	GetAsset(context.Context, *GetAssetRequest) (*GetAssetResponse, error)
 	// GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
 	// output.
 	// In most cases the list contains only one txid, meaning that all the amount locked for a
@@ -330,8 +330,8 @@ func (UnimplementedIndexerServiceServer) GetVtxoChain(context.Context, *GetVtxoC
 func (UnimplementedIndexerServiceServer) GetVirtualTxs(context.Context, *GetVirtualTxsRequest) (*GetVirtualTxsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVirtualTxs not implemented")
 }
-func (UnimplementedIndexerServiceServer) GetAssetGroup(context.Context, *GetAssetGroupRequest) (*GetAssetGroupResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetAssetGroup not implemented")
+func (UnimplementedIndexerServiceServer) GetAsset(context.Context, *GetAssetRequest) (*GetAssetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAsset not implemented")
 }
 func (UnimplementedIndexerServiceServer) GetBatchSweepTransactions(context.Context, *GetBatchSweepTransactionsRequest) (*GetBatchSweepTransactionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBatchSweepTransactions not implemented")
@@ -509,20 +509,20 @@ func _IndexerService_GetVirtualTxs_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _IndexerService_GetAssetGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetAssetGroupRequest)
+func _IndexerService_GetAsset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAssetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(IndexerServiceServer).GetAssetGroup(ctx, in)
+		return srv.(IndexerServiceServer).GetAsset(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: IndexerService_GetAssetGroup_FullMethodName,
+		FullMethod: IndexerService_GetAsset_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexerServiceServer).GetAssetGroup(ctx, req.(*GetAssetGroupRequest))
+		return srv.(IndexerServiceServer).GetAsset(ctx, req.(*GetAssetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -632,8 +632,8 @@ var IndexerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _IndexerService_GetVirtualTxs_Handler,
 		},
 		{
-			MethodName: "GetAssetGroup",
-			Handler:    _IndexerService_GetAssetGroup_Handler,
+			MethodName: "GetAsset",
+			Handler:    _IndexerService_GetAsset_Handler,
 		},
 		{
 			MethodName: "GetBatchSweepTransactions",

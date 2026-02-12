@@ -1691,7 +1691,9 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxoInputs = append(vtxoInputs, vtxo)
-		assetInputs[i+1] = vtxo.Assets
+		if len(vtxo.Assets) > 0 {
+			assetInputs[i+1] = vtxo.Assets
+		}
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
@@ -1865,15 +1867,20 @@ func (s *service) RegisterIntent(
 			return "", err
 		}
 
+		// disable issuance
+		if hasIssuance(intentPacket) {
+			return "", errors.INVALID_INTENT_PROOF.New("intent contains asset issuance").
+				WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   signedProof,
+					Message: encodedMessage,
+				})
+		}
+
 		leafTxPacket = intentPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
 	}
 
 	intent, err := domain.NewIntent(
-		proofTxid,
-		signedProof,
-		encodedMessage,
-		vtxoInputs,
-		leafTxPacket,
+		proofTxid, signedProof, encodedMessage, vtxoInputs, leafTxPacket,
 	)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).

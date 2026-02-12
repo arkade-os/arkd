@@ -205,7 +205,8 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
-		assetStore, err = assetStoreFactory(config.DataStoreConfig...)
+		assetStoreConfig := append(config.DataStoreConfig, vtxoStore)
+		assetStore, err = assetStoreFactory(assetStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
@@ -529,6 +530,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		issuances, assets, err := getAssetsFromTxOuts(txid, outs)
 		if err != nil {
 			log.WithError(err).Warn("failed to get assets from tx")
+			return
 		}
 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
@@ -631,8 +633,6 @@ func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domai
 			continue
 		}
 
-		// TODO: This works but, actually, we must retrieve the asset packet from the intent
-		// related to this leaf tx so we decode that tx
 		_, assets, err := getAssetsFromTxOuts(txid, outs)
 		if err != nil {
 			log.WithError(err).Warn("failed to get assets from tx")
@@ -668,10 +668,10 @@ func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domai
 	return vtxos
 }
 
-func getAssetsFromTxOuts(
-	txid string, txOuts []ports.TxOut,
-) ([]domain.Asset, map[uint32][]domain.AssetDenomination, error) {
-	var assets asset.Packet
+func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
+	[]domain.Asset, map[uint32][]domain.AssetDenomination, error,
+) {
+	assets := make(asset.Packet, 0)
 	for _, out := range txOuts {
 		if asset.IsAssetPacket(out.PkScript) {
 			packet, err := asset.NewPacketFromTxOut(wire.TxOut{
@@ -685,48 +685,62 @@ func getAssetsFromTxOuts(
 			break
 		}
 	}
+
 	if len(assets) <= 0 {
 		return nil, nil, nil
+	}
+
+	getAssetId := func(groupIndex uint16) (string, error) {
+		if groupIndex >= uint16(len(assets)) {
+			return "", fmt.Errorf("group index %d out of range", groupIndex)
+		}
+		group := assets[groupIndex]
+		if group.IsIssuance() {
+			id, err := asset.NewAssetId(txid, groupIndex)
+			if err != nil {
+				return "", fmt.Errorf("failed to compute asset id: %w", err)
+			}
+			return id.String(), nil
+		}
+		return group.AssetId.String(), nil
+
 	}
 
 	issuances := make([]domain.Asset, 0)
 	assetDenominations := make(map[uint32][]domain.AssetDenomination)
 	for grpIndex, ast := range assets {
 		for _, out := range ast.Outputs {
-			var assetId string
-			// If asset id is not present this might be an issuance
-			if ast.AssetId == nil {
-				id, err := asset.NewAssetId(txid, uint16(grpIndex))
+			assetId := ""
+
+			if ast.IsIssuance() {
+				var err error
+				assetId, err = getAssetId(uint16(grpIndex))
 				if err != nil {
-					return nil, nil, fmt.Errorf("failed to compute asset id: %w", err)
+					return nil, nil, err
 				}
-				var controlAssetId string
+
+				issuance := domain.Asset{
+					Id:       assetId,
+					Metadata: ast.Metadata,
+				}
+
 				if ast.ControlAsset != nil {
-					// If the issued asset has a control one ref by group index this is an issuance
-					if ast.ControlAsset.Type == asset.AssetRefByGroup {
-						id, err := asset.NewAssetId(txid, ast.ControlAsset.GroupIndex)
+					switch ast.ControlAsset.Type {
+					case asset.AssetRefByID:
+						issuance.ControlAssetId = ast.ControlAsset.AssetId.String()
+					case asset.AssetRefByGroup:
+						issuance.ControlAssetId, err = getAssetId(ast.ControlAsset.GroupIndex)
 						if err != nil {
-							return nil, nil, fmt.Errorf(
-								"failed to compute control asset id: %w", err,
-							)
+							return nil, nil, err
 						}
-						controlAssetId = id.String()
-					} else {
-						// If the control asset is ref by id, this is an issuance only if the
-						// control asset is not included in the packet, that would mean reissuance
-						controlAssetId = ast.ControlAsset.AssetId.String()
 					}
 				}
-				assetId = id.String()
-				issuances = append(issuances, domain.Asset{
-					Id:             assetId,
-					Immutable:      ast.Immutable,
-					ControlAssetId: controlAssetId,
-					Metadata:       ast.Metadata,
-				})
+
+				issuances = append(issuances, issuance)
 			} else {
 				assetId = ast.AssetId.String()
 			}
+
 			assetDenominations[uint32(out.Vout)] = append(
 				assetDenominations[uint32(out.Vout)], domain.AssetDenomination{
 					AssetId: assetId,

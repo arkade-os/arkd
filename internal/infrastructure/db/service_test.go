@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"math"
+	"math/big"
 	"os"
 	"reflect"
 	"slices"
@@ -1544,15 +1546,32 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// requireAssetsMatch compares two asset slices by Id, ControlAssetId, Metadata, and Supply (using big.Int.Cmp).
+func requireAssetsMatch(t *testing.T, expected, actual []domain.Asset) {
+	t.Helper()
+	require.Len(t, actual, len(expected))
+	byId := make(map[string]domain.Asset)
+	for _, a := range actual {
+		byId[a.Id] = a
+	}
+	for _, exp := range expected {
+		got, ok := byId[exp.Id]
+		require.True(t, ok)
+		require.Equal(t, exp.ControlAssetId, got.ControlAssetId)
+		require.Equal(t, exp.Metadata, got.Metadata)
+		require.Zero(t, (&exp.Supply).Cmp(&got.Supply))
+	}
+}
+
 func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_asset_repository", func(t *testing.T) {
 		ctx := t.Context()
 		repo := svc.Assets()
+		vtxoRepo := svc.Vtxos()
 
 		newAssets := []domain.Asset{
 			{
 				Id:             "asset1",
-				Immutable:      true,
 				ControlAssetId: "asset2",
 				Metadata: []asset.Metadata{
 					{
@@ -1566,8 +1585,7 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 				},
 			},
 			{
-				Id:        "asset2",
-				Immutable: true,
+				Id: "asset2",
 				Metadata: []asset.Metadata{
 					{
 						Key:   []byte("this is"),
@@ -1595,11 +1613,81 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 		assets, err = repo.GetAssets(ctx, assetIds)
 		require.NoError(t, err)
 		require.Len(t, assets, 2)
-		require.ElementsMatch(t, newAssets, assets)
+		requireAssetsMatch(t, newAssets, assets)
 
 		assets, err = repo.GetAssets(ctx, assetIds[2:])
 		require.NoError(t, err)
 		require.Empty(t, assets)
+
+		// GetControlAsset: asset1 has control asset asset2, asset2 is control asset (no parent)
+		controlID, err := repo.GetControlAsset(ctx, "asset1")
+		require.NoError(t, err)
+		require.Equal(t, "asset2", controlID)
+		controlID, err = repo.GetControlAsset(ctx, "asset2")
+		require.NoError(t, err)
+		require.Empty(t, controlID)
+		_, err = repo.GetControlAsset(ctx, "non-existent-asset")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no control asset found")
+
+		// AssetExists
+		exists, err := repo.AssetExists(ctx, "asset1")
+		require.NoError(t, err)
+		require.True(t, exists)
+		exists, err = repo.AssetExists(ctx, "asset2")
+		require.NoError(t, err)
+		require.True(t, exists)
+		exists, err = repo.AssetExists(ctx, "non-existent-asset")
+		require.NoError(t, err)
+		require.False(t, exists)
+
+		// test asset supply overflow
+		vtxos := []domain.Vtxo{{
+			Outpoint: domain.Outpoint{
+				Txid: "supplyOverflowVtxo1",
+				VOut: 0,
+			},
+			Amount: 330,
+			Assets: []domain.AssetDenomination{
+				{
+					AssetId: "assetSupplyOverflow",
+					Amount:  math.MaxUint64,
+				},
+			},
+		},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: "supplyOverflowVtxo2",
+					VOut: 0,
+				},
+				Amount: 330,
+				Assets: []domain.AssetDenomination{
+					{
+						AssetId: "assetSupplyOverflow",
+						Amount:  math.MaxUint64,
+					},
+				},
+			}}
+		count, err = repo.AddAssets(ctx, map[string][]domain.Asset{"assetSupplyOverflowTx": {
+			{
+				Id:       "assetSupplyOverflow",
+				Metadata: []asset.Metadata{},
+			},
+		}})
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
+
+		err = vtxoRepo.AddVtxos(ctx, vtxos)
+		require.NoError(t, err)
+
+		assets, err = repo.GetAssets(ctx, []string{"assetSupplyOverflow"})
+		require.NoError(t, err)
+		require.Len(t, assets, 1)
+
+		expectedSupply := new(big.Int).
+			Mul(new(big.Int).SetUint64(math.MaxUint64), big.NewInt(2))
+
+		require.Equal(t, expectedSupply.String(), assets[0].Supply.String())
 	})
 }
 

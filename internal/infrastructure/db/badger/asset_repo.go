@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"path/filepath"
 	"time"
 
@@ -15,11 +16,12 @@ import (
 const assetStoreDir = "assets"
 
 type assetRepository struct {
-	store *badgerhold.Store
+	store    *badgerhold.Store
+	vtxoRepo domain.VtxoRepository
 }
 
 func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
-	if len(config) != 2 {
+	if len(config) != 2 && len(config) != 3 {
 		return nil, fmt.Errorf("invalid config")
 	}
 	baseDir, ok := config[0].(string)
@@ -33,6 +35,13 @@ func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 			return nil, fmt.Errorf("invalid logger")
 		}
 	}
+	var vtxoRepo domain.VtxoRepository
+	if len(config) == 3 && config[2] != nil {
+		vtxoRepo, ok = config[2].(domain.VtxoRepository)
+		if !ok {
+			return nil, fmt.Errorf("invalid vtxo repository")
+		}
+	}
 
 	var dir string
 	if len(baseDir) > 0 {
@@ -43,7 +52,7 @@ func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 		return nil, fmt.Errorf("failed to open asset store: %s", err)
 	}
 
-	return &assetRepository{store}, nil
+	return &assetRepository{store: store, vtxoRepo: vtxoRepo}, nil
 }
 
 func (r *assetRepository) Close() {
@@ -61,7 +70,71 @@ func (r *assetRepository) GetAssets(
 	ctx context.Context,
 	assetIDs []string,
 ) ([]domain.Asset, error) {
-	return nil, nil
+	if len(assetIDs) == 0 {
+		return nil, nil
+	}
+	var result []domain.Asset
+	for _, id := range assetIDs {
+		var a domain.Asset
+		err := r.store.Get(id, &a)
+		if err != nil {
+			if errors.Is(err, badgerhold.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if r.vtxoRepo != nil {
+			if supply := r.computeSupply(ctx, id); supply != nil {
+				a.Supply.Set(supply)
+			}
+		}
+		result = append(result, a)
+	}
+	return result, nil
+}
+
+func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (string, error) {
+	var a domain.Asset
+	err := r.store.Get(assetID, &a)
+	if err != nil {
+		if errors.Is(err, badgerhold.ErrNotFound) {
+			return "", fmt.Errorf("no control asset found")
+		}
+		return "", err
+	}
+	return a.ControlAssetId, nil
+}
+
+func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool, error) {
+	var a domain.Asset
+	err := r.store.Get(assetID, &a)
+	if err != nil {
+		if errors.Is(err, badgerhold.ErrNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// computeSupply returns the sum of unspent vtxo amounts for the asset (big.Int to avoid overflow).
+func (r *assetRepository) computeSupply(ctx context.Context, assetID string) *big.Int {
+	vtxos, err := r.vtxoRepo.GetAllVtxos(ctx)
+	if err != nil {
+		return nil
+	}
+	sum := new(big.Int)
+	for _, v := range vtxos {
+		if v.Spent {
+			continue
+		}
+		for _, ad := range v.Assets {
+			if ad.AssetId == assetID {
+				sum.Add(sum, new(big.Int).SetUint64(ad.Amount))
+			}
+		}
+	}
+	return sum
 }
 
 func (r *assetRepository) addAssets(

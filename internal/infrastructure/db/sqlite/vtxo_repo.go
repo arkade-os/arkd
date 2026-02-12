@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -77,7 +78,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 						AssetID: asset.AssetId,
 						Txid:    vtxo.Txid,
 						Vout:    int64(vtxo.VOut),
-						Amount:  int64(asset.Amount),
+						Amount:  strconv.FormatUint(asset.Amount, 10),
 					},
 				); err != nil {
 					return err
@@ -565,9 +566,11 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 }
 
 func rowToAsset(row queries.VtxoVw) domain.AssetDenomination {
+	// nolint
+	amount, _ := strconv.ParseUint(row.AssetAmount, 10, 64)
 	return domain.AssetDenomination{
 		AssetId: row.AssetID,
-		Amount:  uint64(row.AssetAmount),
+		Amount:  amount,
 	}
 }
 

@@ -76,9 +76,9 @@ service IndexerService {
   }
 
   // GetAsset returns the asset information and metadata for the specified asset ID.
-  rpc GetAssetGroup(GetAssetGroupRequest) returns (GetAssetGroupResponse) {
+  rpc GetAsset(GetAssetRequest) returns (GetAssetResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/indexer/assetGroup/{asset_id}"
+      get: "/v1/indexer/asset/{asset_id}"
     };
   }
 
@@ -226,19 +226,15 @@ message GetVirtualTxsResponse {
   IndexerPageResponse page = 2;
 }
 
-message GetAssetGroupRequest {
+message GetAssetRequest {
   string asset_id = 1;
 }
 
-message GetAssetGroupResponse {
+message GetAssetResponse {
   string asset_id = 1;
-  AssetGroup asset_group = 2;
-}
-
-message AssetGroup {
-  string id = 1;
-  uint64 quantity = 2;
-  repeated AssetMetadata metadata = 4;
+  string supply = 2;  // bigint integer
+  repeated AssetMetadata metadata = 3;
+  string control_asset = 4;
 }
 
 message AssetMetadata {
@@ -356,15 +352,6 @@ message UnsubscribeForScriptsRequest {
 
 message UnsubscribeForScriptsResponse {}
 
-message TeleportEvent {
-  string teleport_hash = 1;
-  string anchor_outpoint = 2;
-  string asset_id = 3;
-  uint64 amount = 4;
-  uint32 output_vout = 5;
-  int64 created_at = 6;
-  int64 expires_at = 7;
-}
 
 message GetSubscriptionRequest {
   string subscription_id = 1;

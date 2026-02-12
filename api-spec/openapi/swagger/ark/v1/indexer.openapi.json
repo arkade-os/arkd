@@ -5,13 +5,13 @@
     "version": "version not set"
   },
   "paths": {
-    "/v1/indexer/assetGroup/{asset_id}": {
+    "/v1/indexer/asset/{asset_id}": {
       "get": {
         "tags": [
           "IndexerService"
         ],
         "description": "GetAsset returns the asset information and metadata for the specified asset ID.",
-        "operationId": "IndexerService_GetAssetGroup",
+        "operationId": "IndexerService_GetAsset",
         "parameters": [
           {
             "name": "assetId",
@@ -28,7 +28,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GetAssetGroupResponse"
+                  "$ref": "#/components/schemas/GetAssetResponse"
                 }
               }
             }
@@ -772,25 +772,6 @@
           }
         }
       },
-      "AssetGroup": {
-        "title": "AssetGroup",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "metadata": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AssetMetadata"
-            }
-          },
-          "quantity": {
-            "type": "integer",
-            "format": "uint64"
-          }
-        }
-      },
       "AssetMetadata": {
         "title": "AssetMetadata",
         "type": "object",
@@ -803,8 +784,8 @@
           }
         }
       },
-      "GetAssetGroupRequest": {
-        "title": "GetAssetGroupRequest",
+      "GetAssetRequest": {
+        "title": "GetAssetRequest",
         "type": "object",
         "properties": {
           "assetId": {
@@ -812,15 +793,25 @@
           }
         }
       },
-      "GetAssetGroupResponse": {
-        "title": "GetAssetGroupResponse",
+      "GetAssetResponse": {
+        "title": "GetAssetResponse",
         "type": "object",
         "properties": {
-          "assetGroup": {
-            "$ref": "#/components/schemas/AssetGroup"
-          },
           "assetId": {
             "type": "string"
+          },
+          "controlAsset": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetMetadata"
+            }
+          },
+          "supply": {
+            "type": "string",
+            "description": "bigint integer"
           }
         }
       },
@@ -1464,37 +1455,6 @@
         "type": "object",
         "properties": {
           "subscriptionId": {
-            "type": "string"
-          }
-        }
-      },
-      "TeleportEvent": {
-        "title": "TeleportEvent",
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "integer",
-            "format": "uint64"
-          },
-          "anchorOutpoint": {
-            "type": "string"
-          },
-          "assetId": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "expiresAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "outputVout": {
-            "type": "integer",
-            "format": "uint32"
-          },
-          "teleportHash": {
             "type": "string"
           }
         }

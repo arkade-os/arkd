@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"sort"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -63,7 +64,7 @@ func (r *assetRepository) AddAssets(
 	})
 
 	txBody := func(querierWithTx *queries.Queries) error {
-		mdHashByAssetId := make(map[string]string)
+		count = 0
 		for _, ast := range assets {
 			found, err := querierWithTx.SelectAssetsByIds(ctx, []string{ast.Id})
 			if err != nil && err != sql.ErrNoRows {
@@ -86,13 +87,11 @@ func (r *assetRepository) AddAssets(
 					RawMessage: buf,
 					Valid:      true,
 				}
-				mdHashByAssetId[ast.Id] = hex.EncodeToString(mdHash)
 			}
 			if err := querierWithTx.InsertAsset(
 				ctx, queries.InsertAssetParams{
-					ID:          ast.Id,
-					IsImmutable: ast.Immutable,
-					Metadata:    md,
+					ID:       ast.Id,
+					Metadata: md,
 					MetadataHash: sql.NullString{
 						String: hex.EncodeToString(mdHash),
 						Valid:  len(mdHash) > 0,
@@ -108,19 +107,6 @@ func (r *assetRepository) AddAssets(
 			count++
 		}
 
-		for txid, assets := range assetsByTx {
-			for _, asset := range assets {
-				if err := querierWithTx.InsertAssetMetadataUpdateByTx(
-					ctx, queries.InsertAssetMetadataUpdateByTxParams{
-						AssetID:      asset.Id,
-						MetadataHash: mdHashByAssetId[asset.Id],
-						Txid:         sql.NullString{String: txid, Valid: true},
-					},
-				); err != nil {
-					return err
-				}
-			}
-		}
 		return nil
 	}
 
@@ -136,34 +122,73 @@ func (r *assetRepository) GetAssets(
 	if len(assetIds) == 0 {
 		return nil, nil
 	}
-	rows, err := r.querier.SelectAssetsByIds(ctx, assetIds)
-	if err != nil {
+	var assets []domain.Asset
+	txBody := func(querierWithTx *queries.Queries) error {
+		rows, err := querierWithTx.SelectAssetsByIds(ctx, assetIds)
+		if err != nil {
+			return err
+		}
+		assets = make([]domain.Asset, 0, len(rows))
+		for _, row := range rows {
+			supplyStr, err := querierWithTx.SelectAssetSupply(ctx, row.ID)
+			if err != nil {
+				return fmt.Errorf("failed to compute supply for asset %s: %w", row.ID, err)
+			}
+			supply := new(big.Int)
+			if _, ok := supply.SetString(supplyStr, 10); !ok {
+				return fmt.Errorf("invalid supply value: %s", supplyStr)
+			}
+			var metadata []asset.Metadata
+			if row.Metadata.Valid {
+				md := make([]metadataDTO, 0)
+				if err := json.Unmarshal(row.Metadata.RawMessage, &md); err != nil {
+					return fmt.Errorf("failed to decode asset metadata: %w", err)
+				}
+				for _, dto := range md {
+					metadata = append(metadata, asset.Metadata{
+						Key:   []byte(dto.Key),
+						Value: []byte(dto.Value),
+					})
+				}
+			}
+			assets = append(assets, domain.Asset{
+				Id:             row.ID,
+				Metadata:       metadata,
+				ControlAssetId: row.ControlAssetID.String,
+				Supply:         *supply,
+			})
+		}
+		return nil
+	}
+	if err := execTx(ctx, r.db, txBody); err != nil {
 		return nil, err
 	}
-
-	assets := make([]domain.Asset, 0, len(rows))
-	for _, row := range rows {
-		var metadata []asset.Metadata
-		if row.Metadata.Valid {
-			md := make([]metadataDTO, 0)
-			if err := json.Unmarshal(row.Metadata.RawMessage, &md); err != nil {
-				return nil, fmt.Errorf("failed to decode asset metadata: %w", err)
-			}
-			for _, dto := range md {
-				metadata = append(metadata, asset.Metadata{
-					Key:   []byte(dto.Key),
-					Value: []byte(dto.Value),
-				})
-			}
-		}
-		assets = append(assets, domain.Asset{
-			Id:             row.ID,
-			Metadata:       metadata,
-			ControlAssetId: row.ControlAssetID.String,
-			Immutable:      row.IsImmutable,
-		})
-	}
 	return assets, nil
+}
+
+func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (string, error) {
+	controlID, err := r.querier.SelectControlAssetByID(ctx, assetID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no control asset found")
+		}
+		return "", err
+	}
+	if !controlID.Valid {
+		return "", nil
+	}
+	return controlID.String, nil
+}
+
+func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool, error) {
+	_, err := r.querier.SelectAssetExists(ctx, assetID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 type metadataDTO struct {

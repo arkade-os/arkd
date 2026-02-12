@@ -5,7 +5,7 @@
                 "name": "random",
                 "vout": 5,
                 "amount": 10,
-                "serializedHex": "0105000a"
+                "serializedHex": "05000a"
             }
         ],
         "newOutputs": [
@@ -17,7 +17,7 @@
                         "amount": 10
                     }
                 ],
-                "serializedHex": "010105000a"
+                "serializedHex": "0105000a"
             },
             {
                 "name": "many outputs",
@@ -35,7 +35,7 @@
                         "amount": 8400000000000
                     }
                 ],
-                "serializedHex": "030101000a01000080eaade90701190080c090b8bcf401"
+                "serializedHex": "0301000a000080eaade907190080c090b8bcf401"
             }
         ]
     },
@@ -52,23 +52,13 @@
                 "expectedError": "invalid asset output format"
             },
             {
-                "name": "unspecified type",
-                "serializedHex": "0005000a",
-                "expectedError": "asset output type unspecified"
-            },
-            {
-                "name": "unsupported type",
-                "serializedHex": "0205000a",
-                "expectedError": "asset output type not supported"
-            },
-            {
-                "name": "unknown type",
-                "serializedHex": "0305000a",
-                "expectedError": "asset output type unknown"
+                "name": "zero amount",
+                "serializedHex": "01050000",
+                "expectedError": "asset output amount must be greater than 0"
             },
             {
                 "name": "invalid vout length",
-                "serializedHex": "0105",
+                "serializedHex": "05",
                 "expectedError": "invalid asset output vout length"
             }
         ],

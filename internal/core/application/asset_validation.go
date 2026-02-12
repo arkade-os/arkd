@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -31,18 +30,16 @@ type assetSource struct {
 	domain.AssetRepository
 }
 
-func (s assetSource) GetControlAsset(ctx context.Context, assetID string) (string, error) {
-	assets, err := s.GetAssets(ctx, []string{assetID})
-	if err != nil {
-		return "", err
-	}
-	if len(assets) == 0 {
-		return "", fmt.Errorf("no control asset found")
-	}
-	return assets[0].ControlAssetId, nil
+func (s assetSource) AssetExists(ctx context.Context, assetID string) bool {
+	exists, err := s.AssetRepository.AssetExists(ctx, assetID)
+	return err == nil && exists
 }
 
-func (s assetSource) AssetExists(ctx context.Context, assetID string) bool {
-	_, err := s.GetAssets(ctx, []string{assetID})
-	return err == nil
+func hasIssuance(packet asset.Packet) bool {
+	for _, group := range packet {
+		if group.IsIssuance() {
+			return true
+		}
+	}
+	return false
 }

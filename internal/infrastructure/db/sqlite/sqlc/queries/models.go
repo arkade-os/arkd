@@ -16,19 +16,11 @@ type Asset struct {
 	ControlAssetID sql.NullString
 }
 
-type AssetMetadataUpdate struct {
-	ID           int64
-	AssetID      string
-	IntentID     sql.NullString
-	Txid         sql.NullString
-	MetadataHash string
-}
-
 type AssetProjection struct {
 	AssetID string
 	Txid    string
 	Vout    int64
-	Amount  int64
+	Amount  string
 }
 
 type CheckpointTx struct {
@@ -87,7 +79,7 @@ type IntentWithInputsVw struct {
 	UpdatedAt      sql.NullInt64
 	Commitments    interface{}
 	AssetID        sql.NullString
-	AssetAmount    sql.NullInt64
+	AssetAmount    sql.NullString
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString
@@ -254,5 +246,5 @@ type VtxoVw struct {
 	UpdatedAt      sql.NullInt64
 	Commitments    interface{}
 	AssetID        string
-	AssetAmount    int64
+	AssetAmount    string
 }

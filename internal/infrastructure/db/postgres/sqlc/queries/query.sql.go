@@ -110,22 +110,6 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 	return err
 }
 
-const insertAssetMetadataUpdateByTx = `-- name: InsertAssetMetadataUpdateByTx :exec
-INSERT INTO asset_metadata_update (asset_id, txid, metadata_hash)
-VALUES ($1, $2, $3)
-`
-
-type InsertAssetMetadataUpdateByTxParams struct {
-	AssetID      string
-	Txid         sql.NullString
-	MetadataHash string
-}
-
-func (q *Queries) InsertAssetMetadataUpdateByTx(ctx context.Context, arg InsertAssetMetadataUpdateByTxParams) error {
-	_, err := q.db.ExecContext(ctx, insertAssetMetadataUpdateByTx, arg.AssetID, arg.Txid, arg.MetadataHash)
-	return err
-}
-
 const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES ($1, $2, $3, $4)
@@ -134,8 +118,8 @@ VALUES ($1, $2, $3, $4)
 type InsertVtxoAssetProjectionParams struct {
 	AssetID string
 	Txid    string
-	Vout    int64
-	Amount  int64
+	Vout    int32
+	Amount  string
 }
 
 func (q *Queries) InsertVtxoAssetProjection(ctx context.Context, arg InsertVtxoAssetProjectionParams) error {
@@ -288,6 +272,31 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 	return items, nil
 }
 
+const selectAssetExists = `-- name: SelectAssetExists :one
+SELECT 1 FROM asset WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) SelectAssetExists(ctx context.Context, id string) (int32, error) {
+	row := q.db.QueryRowContext(ctx, selectAssetExists, id)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const selectAssetSupply = `-- name: SelectAssetSupply :one
+SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply
+FROM asset_projection ap
+INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
+WHERE ap.asset_id = $1 AND v.spent = false
+`
+
+func (q *Queries) SelectAssetSupply(ctx context.Context, assetID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, selectAssetSupply, assetID)
+	var supply string
+	err := row.Scan(&supply)
+	return supply, err
+}
+
 const selectAssetsByIds = `-- name: SelectAssetsByIds :many
 SELECT id, is_immutable, metadata_hash, metadata, control_asset_id FROM asset WHERE asset.id = ANY($1::varchar[])
 `
@@ -319,6 +328,17 @@ func (q *Queries) SelectAssetsByIds(ctx context.Context, dollar_1 []string) ([]A
 		return nil, err
 	}
 	return items, nil
+}
+
+const selectControlAssetByID = `-- name: SelectControlAssetByID :one
+SELECT control_asset_id FROM asset WHERE id = $1
+`
+
+func (q *Queries) SelectControlAssetByID(ctx context.Context, id string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, selectControlAssetByID, id)
+	var control_asset_id sql.NullString
+	err := row.Scan(&control_asset_id)
+	return control_asset_id, err
 }
 
 const selectConviction = `-- name: SelectConviction :one
