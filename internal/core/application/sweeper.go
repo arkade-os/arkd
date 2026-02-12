@@ -187,7 +187,11 @@ func (s *sweeper) start(ctx context.Context) error {
 					return
 				}
 
-				if err := s.scheduleCheckpointSweep(vtxo.Outpoint, checkpointTx, blockTimestamp); err != nil {
+				if err := s.scheduleCheckpointSweep(
+					vtxo.Outpoint,
+					checkpointTx,
+					blockTimestamp,
+				); err != nil {
 					log.WithError(err).Errorf(
 						"failed to schedule sweep task for checkpoint %s", checkpointTxid,
 					)
@@ -480,7 +484,11 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				expirationTimestamp = blockTimestamp.Time + vtxoTreeExpiry.Seconds()
 			}
 
-			if err := s.scheduleBatchSweep(expirationTimestamp, txid, tree.Root.UnsignedTx.TxID()); err != nil {
+			if err := s.scheduleBatchSweep(
+				expirationTimestamp,
+				txid,
+				tree.Root.UnsignedTx.TxID(),
+			); err != nil {
 				log.WithError(err).Errorf(
 					"failed to schedule sweep for vtxo tree %s of batch %s",
 					tree.Root.UnsignedTx.TxID(), commitmentTxid,

@@ -156,9 +156,12 @@ var (
 		Name:  "update",
 		Usage: "Update the scheduled session configuration",
 		Flags: []cli.Flag{
-			scheduledSessionStartDateFlag, scheduledSessionEndDateFlag,
-			scheduledSessionDurationFlag, scheduledSessionPeriodFlag,
-			scheduledSessionRoundMinParticipantsCountFlag, scheduledSessionRoundMaxParticipantsCountFlag,
+			scheduledSessionStartDateFlag,
+			scheduledSessionEndDateFlag,
+			scheduledSessionDurationFlag,
+			scheduledSessionPeriodFlag,
+			scheduledSessionRoundMinParticipantsCountFlag,
+			scheduledSessionRoundMaxParticipantsCountFlag,
 		},
 		Action: updateScheduledSessionAction,
 	}

@@ -61,7 +61,11 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 					return
 				}
 			}
-			if err := s.sweeper.scheduleCheckpointSweep(vtxo.Outpoint, ptx, blockTimestamp); err != nil {
+			if err := s.sweeper.scheduleCheckpointSweep(
+				vtxo.Outpoint,
+				ptx,
+				blockTimestamp,
+			); err != nil {
 				log.Errorf("failed to schedule checkpoint sweep: %s", err)
 			}
 		}()
