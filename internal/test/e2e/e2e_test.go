@@ -4256,7 +4256,7 @@ func TestAsset(t *testing.T) {
 		requireVtxoHasAsset(t, controlVtxos[0], controlAssetId, 1)
 		requireVtxoHasAsset(t, controlVtxos[0], assetId, 1)
 
-		_, err = alice.ReissueAsset(ctx, controlAssetId, assetId, 1000)
+		_, err = alice.ReissueAsset(ctx, assetId, 1000)
 		require.NoError(t, err)
 
 		time.Sleep(3 * time.Second)

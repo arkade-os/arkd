@@ -141,12 +141,6 @@ var (
 		Aliases: []string{"n"},
 		Usage:   "notes to redeem",
 	}
-	restFlag = &cli.BoolFlag{
-		Name:        "rest",
-		Usage:       "use REST client instead of gRPC",
-		Value:       false,
-		DefaultText: "false",
-	}
 	completeFlag = &cli.BoolFlag{
 		Name:        "complete",
 		Usage:       "complete the unilateral exit after timelock expired",
@@ -181,7 +175,7 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return initArkSdk(ctx)
 		},
-		Flags: []cli.Flag{passwordFlag, privateKeyFlag, urlFlag, explorerFlag, restFlag},
+		Flags: []cli.Flag{passwordFlag, privateKeyFlag, urlFlag, explorerFlag},
 	}
 	configCommand = cli.Command{
 		Name:  "config",
@@ -273,7 +267,7 @@ var (
 	reissueCommand = cli.Command{
 		Name:  "reissue",
 		Usage: "Reissue more of an existing asset",
-		Flags: []cli.Flag{controlAssetIdFlag, assetIdFlag, amountFlag, passwordFlag},
+		Flags: []cli.Flag{assetIdFlag, amountFlag, passwordFlag},
 		Action: func(ctx *cli.Context) error {
 			return reissue(ctx)
 		},
@@ -310,14 +304,9 @@ func initArkSdk(ctx *cli.Context) error {
 		return err
 	}
 
-	clientType := arksdk.GrpcClient
-	if ctx.Bool(restFlag.Name) {
-		clientType = arksdk.RestClient
-	}
-
 	return arkSdkClient.Init(
 		ctx.Context, arksdk.InitArgs{
-			ClientType:  clientType,
+			ClientType:  arksdk.GrpcClient,
 			WalletType:  arksdk.SingleKeyWallet,
 			ServerUrl:   ctx.String(urlFlag.Name),
 			Seed:        ctx.String(privateKeyFlag.Name),
@@ -609,13 +598,9 @@ func issue(ctx *cli.Context) error {
 }
 
 func reissue(ctx *cli.Context) error {
-	controlAssetId := ctx.String(controlAssetIdFlag.Name)
 	assetId := ctx.String(assetIdFlag.Name)
 	amount := ctx.Uint64(amountFlag.Name)
 
-	if controlAssetId == "" {
-		return errors.New("control-asset-id is required")
-	}
 	if assetId == "" {
 		return errors.New("asset-id is required")
 	}
@@ -631,7 +616,7 @@ func reissue(ctx *cli.Context) error {
 		return err
 	}
 
-	arkTxid, err := arkSdkClient.ReissueAsset(ctx.Context, controlAssetId, assetId, amount)
+	arkTxid, err := arkSdkClient.ReissueAsset(ctx.Context, assetId, amount)
 	if err != nil {
 		return err
 	}

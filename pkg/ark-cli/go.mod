@@ -9,8 +9,8 @@ replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 replace github.com/arkade-os/arkd/pkg/errors => ../errors
 
 require (
-	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260209145235-c94b335d4cde
-	github.com/arkade-os/go-sdk v0.8.2-0.20260210081147-b2efdae6fc08
+	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260210151408-67ee91bbd639
+	github.com/arkade-os/go-sdk v0.8.2-0.20260212163732-4d8f2cf7af87
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.36.0
 )
@@ -103,5 +103,4 @@ require (
 	modernc.org/sqlite v1.33.1 // indirect
 	modernc.org/strutil v1.2.0 // indirect
 	modernc.org/token v1.1.0 // indirect
-	resty.dev/v3 v3.0.0-beta.3 // indirect
 )
