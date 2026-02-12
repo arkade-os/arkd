@@ -287,7 +287,10 @@ func (m *markerRepository) GetVtxoChainByMarkers(
 	vtxos := make([]domain.Vtxo, 0)
 
 	for _, markerID := range markerIDs {
-		rows, err := m.querier.SelectVtxoChainByMarker(ctx, sql.NullString{String: markerID, Valid: true})
+		rows, err := m.querier.SelectVtxoChainByMarker(
+			ctx,
+			sql.NullString{String: markerID, Valid: true},
+		)
 		if err != nil {
 			return nil, err
 		}

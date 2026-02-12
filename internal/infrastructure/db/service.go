@@ -133,8 +133,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
-	markerStoreFactory := markerStoreTypes[config.DataStoreType]
-
+	markerStoreFactory, ok := markerStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
 	var vtxoStore domain.VtxoRepository
@@ -205,19 +207,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
-		if markerStoreFactory != nil {
-			// For badger, pass the vtxo store to marker repo to share the same database
-			badgerVtxoRepo, ok := vtxoStore.(*badgerdb.VtxoRepository)
-			if ok {
-				markerConfig := append(config.DataStoreConfig, badgerVtxoRepo.Store())
-				markerStore, err = markerStoreFactory(markerConfig...)
-			} else {
-				markerStore, err = markerStoreFactory(config.DataStoreConfig...)
-			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to create marker store: %w", err)
-			}
+		markerStore, err = markerStoreFactory(config.DataStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
 		}
+
 	case "postgres":
 		if len(config.DataStoreConfig) != 2 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
@@ -289,12 +283,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
-		if markerStoreFactory != nil {
-			markerStore, err = markerStoreFactory(db)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create marker store: %w", err)
-			}
+		markerStore, err = markerStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
 		}
+
 	case "sqlite":
 		if len(config.DataStoreConfig) != 1 {
 			return nil, fmt.Errorf("invalid data store config")
@@ -359,11 +352,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
-		if markerStoreFactory != nil {
-			markerStore, err = markerStoreFactory(db)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create marker store: %w", err)
-			}
+		markerStore, err = markerStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
 		}
 	}
 
@@ -426,9 +417,7 @@ func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
 	s.vtxoStore.Close()
-	if s.markerStore != nil {
-		s.markerStore.Close()
-	}
+	s.markerStore.Close()
 	s.scheduledSessionStore.Close()
 	s.offchainTxStore.Close()
 	s.convictionStore.Close()
@@ -455,20 +444,10 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		event := lastEvent.(domain.BatchSwept)
 		allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
 
-		// Try marker-based sweeping first if marker store is available
-		if s.markerStore != nil {
-			sweptCount := s.sweepVtxosWithMarkers(ctx, allSweptVtxos)
-			if sweptCount > 0 {
-				log.Debugf("swept %d vtxos using marker-based sweeping", sweptCount)
-			}
-		} else {
-			// Fall back to individual VTXO sweeping
-			sweptCount, err := repo.SweepVtxos(ctx, allSweptVtxos)
-			if err != nil {
-				log.WithError(err).Warn("failed to sweep vtxos")
-			} else {
-				log.Debugf("swept %d vtxos", sweptCount)
-			}
+		// marker-based sweeping
+		sweptCount := s.sweepVtxosWithMarkers(ctx, allSweptVtxos)
+		if sweptCount > 0 {
+			log.Debugf("swept %d vtxos using marker-based sweeping", sweptCount)
 		}
 
 		if event.FullySwept {
@@ -506,26 +485,23 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		}
 
 		// Create root markers for batch VTXOs (depth 0 is always at marker boundary)
-		if s.markerStore != nil {
-			for _, vtxo := range newVtxos {
-				// Each batch VTXO at depth 0 gets its own root marker
-				markerID := vtxo.Outpoint.String()
-				marker := domain.Marker{
-					ID:              markerID,
-					Depth:           0,
-					ParentMarkerIDs: nil, // Root markers have no parents
-				}
-				if err := s.markerStore.AddMarker(ctx, marker); err != nil {
-					log.WithError(err).
-						Warnf("failed to create root marker for vtxo %s", vtxo.Outpoint.String())
-					continue
-				}
-				if err := s.markerStore.UpdateVtxoMarkers(ctx, vtxo.Outpoint, []string{markerID}); err != nil {
-					log.WithError(err).
-						Warnf("failed to update markers for vtxo %s", vtxo.Outpoint.String())
-				}
+		for _, vtxo := range newVtxos {
+			// Each batch VTXO at depth 0 gets its own root marker
+			markerID := vtxo.Outpoint.String()
+			marker := domain.Marker{
+				ID:              markerID,
+				Depth:           0,
+				ParentMarkerIDs: nil, // Root markers have no parents
 			}
-			log.Debugf("created %d root markers for batch vtxos", len(newVtxos))
+			if err := s.markerStore.AddMarker(ctx, marker); err != nil {
+				log.WithError(err).
+					Warnf("failed to create root marker for vtxo %s", vtxo.Outpoint.String())
+				continue
+			}
+			if err := s.markerStore.UpdateVtxoMarkers(ctx, vtxo.Outpoint, []string{markerID}); err != nil {
+				log.WithError(err).
+					Warnf("failed to update markers for vtxo %s", vtxo.Outpoint.String())
+			}
 		}
 	}
 }
