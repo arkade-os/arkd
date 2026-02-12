@@ -41,7 +41,7 @@ jobs:
       - name: check linting
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.6.2
+          version: latest
           args: --timeout 5m
 
       - name: check code integrity
