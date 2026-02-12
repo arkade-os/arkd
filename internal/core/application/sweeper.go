@@ -761,28 +761,41 @@ func (s *sweeper) createCheckpointSweepTask(
 			return err
 		}
 
-		// Sweep each VTXO by marking its markers as swept
+		// Collect all unique markers and vtxos without markers
 		sweptAt := time.Now().Unix()
 		markerStore := s.repoManager.Markers()
-		sweptCount := 0
+		uniqueMarkers := make(map[string]struct{})
+		var noMarkerVtxos []domain.Outpoint
 		for _, v := range vtxos {
 			if len(v.MarkerIDs) > 0 {
-				// Sweep via first marker
-				if err := markerStore.SweepMarker(ctx, v.MarkerIDs[0], sweptAt); err != nil {
-					log.WithError(err).Warnf("failed to sweep marker %s", v.MarkerIDs[0])
-					continue
-				}
-				if _, err := markerStore.SweepVtxosByMarker(ctx, v.MarkerIDs[0]); err != nil {
-					log.WithError(err).
-						Warnf("failed to process sweep for marker %s", v.MarkerIDs[0])
-					continue
+				for _, markerID := range v.MarkerIDs {
+					uniqueMarkers[markerID] = struct{}{}
 				}
 			} else {
-				// Create a dust marker for vtxos without markers
-				if err := markerStore.MarkDustVtxoSwept(ctx, v.Outpoint, sweptAt); err != nil {
-					log.WithError(err).Warnf("failed to mark vtxo %s as swept", v.Outpoint.String())
-					continue
-				}
+				noMarkerVtxos = append(noMarkerVtxos, v.Outpoint)
+			}
+		}
+
+		// Bulk sweep all markers at once
+		sweptCount := 0
+		if len(uniqueMarkers) > 0 {
+			markerIDs := make([]string, 0, len(uniqueMarkers))
+			for markerID := range uniqueMarkers {
+				markerIDs = append(markerIDs, markerID)
+			}
+			if err := markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
+				log.WithError(err).Warn("failed to bulk sweep markers")
+			} else {
+				sweptCount = len(vtxos) - len(noMarkerVtxos)
+				log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), sweptCount)
+			}
+		}
+
+		// Sweep VTXOs without markers by creating unique dust markers
+		for _, outpoint := range noMarkerVtxos {
+			if err := markerStore.MarkDustVtxoSwept(ctx, outpoint, sweptAt); err != nil {
+				log.WithError(err).Warnf("failed to mark vtxo %s as swept", outpoint.String())
+				continue
 			}
 			sweptCount++
 		}

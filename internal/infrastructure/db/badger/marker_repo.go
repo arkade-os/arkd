@@ -504,17 +504,13 @@ func (r *markerRepository) CreateRootMarkersForVtxos(
 		markerID := vtxo.Outpoint.String()
 
 		// Create the root marker (depth 0, no parents)
+		// Note: vtxo.MarkerIDs should already be set before AddVtxos is called
 		if err := r.AddMarker(ctx, domain.Marker{
 			ID:              markerID,
 			Depth:           0,
 			ParentMarkerIDs: nil,
 		}); err != nil {
 			return fmt.Errorf("failed to create marker for vtxo %s: %w", markerID, err)
-		}
-
-		// Update the vtxo's markers
-		if err := r.UpdateVtxoMarkers(ctx, vtxo.Outpoint, []string{markerID}); err != nil {
-			return fmt.Errorf("failed to update markers for vtxo %s: %w", markerID, err)
 		}
 	}
 

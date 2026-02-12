@@ -378,6 +378,7 @@ func (i *indexerService) GetVtxoChain(
 func (i *indexerService) prefetchVtxosByMarkers(
 	ctx context.Context, startKey Outpoint,
 ) map[string]domain.Vtxo {
+	// outpoint string -> VTXO cache
 	cache := make(map[string]domain.Vtxo)
 
 	if i.repoManager.Markers() == nil {
@@ -402,6 +403,7 @@ func (i *indexerService) prefetchVtxosByMarkers(
 	markerIDs := make([]string, 0, len(startVtxo.MarkerIDs))
 	markerIDs = append(markerIDs, startVtxo.MarkerIDs...)
 
+	// Bob: we have to follow all parent markers because a vtxo can be associated with multiple markers if it was created at a depth that is a multiple of the marker interval. For example, if the marker interval is 100, a vtxo created at depth 200 would be associated with the markers at depth 100 and 200. To ensure we prefetch all relevant VTXOs, we need to follow all parent markers up the chain until we reach the root marker (depth 0).
 	// BFS to follow all parent markers
 	visited := make(map[string]bool)
 	for _, id := range startVtxo.MarkerIDs {

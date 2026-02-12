@@ -638,6 +638,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 		log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
 
+		// Bob: do we need to handle dust differently? same question in sweepVtxosWithMarkers
+		// where we do it as well.
 		// Mark dust VTXOs as swept via marker
 		// Dust vtxos are below dust limit and can't be spent again in future offchain tx
 		// The only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle
@@ -710,14 +712,17 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 			}
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
+			outpoint := domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)}
 			vtxos = append(vtxos, domain.Vtxo{
-				Outpoint:           domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
+				Outpoint:           outpoint,
 				PubKey:             vtxoPubkey,
 				Amount:             uint64(out.Value),
 				CommitmentTxids:    []string{round.CommitmentTxid},
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          round.EndingTimestamp,
 				ExpiresAt:          round.ExpiryTimestamp(),
+				Depth:              0,
+				MarkerIDs:          []string{outpoint.String()},
 			})
 		}
 	}
