@@ -28,9 +28,13 @@ type MarkerRepository interface {
 	UpdateVtxoMarkers(ctx context.Context, outpoint Outpoint, markerIDs []string) error
 	// GetVtxosByMarker retrieves all VTXOs associated with a marker
 	GetVtxosByMarker(ctx context.Context, markerID string) ([]Vtxo, error)
-	// SweepVtxosByMarker marks all VTXOs with the given marker_id as swept
-	// Returns the number of VTXOs that were swept (not already swept)
+	// SweepVtxosByMarker inserts the marker into swept_marker table
+	// Returns the number of VTXOs that will now be considered swept
 	SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error)
+
+	// MarkDustVtxoSwept creates a unique dust marker for a vtxo and marks it as swept
+	// Used for dust vtxos that need to be marked swept immediately on creation
+	MarkDustVtxoSwept(ctx context.Context, outpoint Outpoint, sweptAt int64) error
 
 	// Chain traversal methods for GetVtxoChain optimization
 	// GetVtxosByDepthRange retrieves VTXOs within a depth range

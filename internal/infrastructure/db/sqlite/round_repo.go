@@ -670,7 +670,7 @@ func combinedRowToVtxo(row queries.IntentWithInputsVw) domain.Vtxo {
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent.Bool,
 		Unrolled:           row.Unrolled.Bool,
-		Swept:              row.Swept.Bool,
+		Swept:              row.Swept.Int64 != 0,
 		Preconfirmed:       row.Preconfirmed.Bool,
 		ExpiresAt:          row.ExpiresAt.Int64,
 		CreatedAt:          row.CreatedAt.Int64,

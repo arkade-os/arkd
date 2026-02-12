@@ -51,7 +51,6 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					CommitmentTxid: vtxo.RootCommitmentTxid,
 					Spent:          vtxo.Spent,
 					Unrolled:       vtxo.Unrolled,
-					Swept:          vtxo.Swept,
 					Preconfirmed:   vtxo.Preconfirmed,
 					ExpiresAt:      vtxo.ExpiresAt,
 					CreatedAt:      vtxo.CreatedAt,
@@ -298,35 +297,6 @@ func (v *vtxoRepository) SpendVtxos(
 	}
 
 	return execTx(ctx, v.db, txBody)
-}
-
-func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint) (int, error) {
-	sweptCount := 0
-	txBody := func(querierWithTx *queries.Queries) error {
-		for _, outpoint := range vtxos {
-			affectedRows, err := querierWithTx.UpdateVtxoSweptIfNotSwept(
-				ctx,
-				queries.UpdateVtxoSweptIfNotSweptParams{
-					Txid: outpoint.Txid,
-					Vout: int32(outpoint.VOut),
-				},
-			)
-			if err != nil {
-				return err
-			}
-			if affectedRows > 0 {
-				sweptCount++
-			}
-		}
-
-		return nil
-	}
-
-	if err := execTx(ctx, v.db, txBody); err != nil {
-		return -1, err
-	}
-
-	return sweptCount, nil
 }
 
 func (v *vtxoRepository) UpdateVtxosExpiration(
