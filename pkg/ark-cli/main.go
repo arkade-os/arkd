@@ -111,13 +111,14 @@ var (
 		Usage: "amount to send in sats",
 	}
 	controlAssetAmountFlag = &cli.Uint64Flag{
-		Name:  "control-amount",
-		Usage: "amount of the control asset in sats",
-		Value: 0,
+		Name: "control-asset-amount",
+		Usage: "amount of the control asset to be issued in sats " +
+			"(mutually exclusive with --control-asset-id)",
 	}
-	controlAssetIDFlag = &cli.StringFlag{
-		Name:  "control-asset-id",
-		Usage: "asset id of the control asset to spend for reissue",
+	controlAssetIdFlag = &cli.StringFlag{
+		Name: "control-asset-id",
+		Usage: "id of the existing asset that controls the one to be issued " +
+			"(mutually exclusive with --control-asset-amount)",
 	}
 	enableExpiryCoinselectFlag = &cli.BoolFlag{
 		Name:  "enable-expiry-coinselect",
@@ -163,9 +164,9 @@ var (
 		Aliases: []string{"m"},
 		Usage:   "metadata to add to the asset",
 	}
-	assetIDFlag = &cli.StringFlag{
+	assetIdFlag = &cli.StringFlag{
 		Name:  "asset-id",
-		Usage: "asset id to send",
+		Usage: "asset id to send, burn or reissue",
 	}
 	spentFlag = &cli.BoolFlag{
 		Name:  "spent",
@@ -231,7 +232,7 @@ var (
 			toFlag,
 			amountFlag,
 			enableExpiryCoinselectFlag,
-			assetIDFlag,
+			assetIdFlag,
 			passwordFlag,
 		},
 	}
@@ -262,7 +263,9 @@ var (
 	issueCommand = cli.Command{
 		Name:  "issue",
 		Usage: "Issue a new asset",
-		Flags: []cli.Flag{amountFlag, metadataFlag, passwordFlag, controlAssetAmountFlag},
+		Flags: []cli.Flag{
+			amountFlag, metadataFlag, passwordFlag, controlAssetAmountFlag, controlAssetIdFlag,
+		},
 		Action: func(ctx *cli.Context) error {
 			return issue(ctx)
 		},
@@ -270,7 +273,7 @@ var (
 	reissueCommand = cli.Command{
 		Name:  "reissue",
 		Usage: "Reissue more of an existing asset",
-		Flags: []cli.Flag{controlAssetIDFlag, assetIDFlag, amountFlag, passwordFlag},
+		Flags: []cli.Flag{controlAssetIdFlag, assetIdFlag, amountFlag, passwordFlag},
 		Action: func(ctx *cli.Context) error {
 			return reissue(ctx)
 		},
@@ -278,7 +281,7 @@ var (
 	burnCommand = cli.Command{
 		Name:  "burn",
 		Usage: "Burn an asset",
-		Flags: []cli.Flag{amountFlag, assetIDFlag, passwordFlag},
+		Flags: []cli.Flag{amountFlag, assetIdFlag, passwordFlag},
 		Action: func(ctx *cli.Context) error {
 			return burn(ctx)
 		},
@@ -403,8 +406,8 @@ func send(ctx *cli.Context) error {
 	receiversJSON := ctx.String(receiversFlag.Name)
 	to := ctx.String(toFlag.Name)
 	amount := ctx.Uint64(amountFlag.Name)
-	assetID := ctx.String(assetIDFlag.Name)
-	if receiversJSON == "" && to == "" && amount == 0 && assetID == "" {
+	assetId := ctx.String(assetIdFlag.Name)
+	if receiversJSON == "" && to == "" && amount == 0 && assetId == "" {
 		return fmt.Errorf("missing destination, use --to and --amount or --receivers")
 	}
 
@@ -417,15 +420,15 @@ func send(ctx *cli.Context) error {
 			return err
 		}
 	} else {
-		// if assetID is provided we send dust+1 with the asset
-		if len(assetID) > 0 {
+		// if assetId is provided we send dust+1 with the asset
+		if len(assetId) > 0 {
 			cfg, err := arkSdkClient.GetConfigData(ctx.Context)
 			if err != nil {
 				return err
 			}
 			receivers = []types.Receiver{{
 				To: to, Amount: cfg.Dust + 1,
-				Assets: []types.Asset{{AssetId: assetID, Amount: amount}},
+				Assets: []types.Asset{{AssetId: assetId, Amount: amount}},
 			}}
 		} else {
 			// otherwise, we treat the amount as a bitcoin amount
@@ -539,10 +542,17 @@ func redeemNotes(ctx *cli.Context) error {
 func issue(ctx *cli.Context) error {
 	amount := ctx.Uint64(amountFlag.Name)
 	controlAssetAmount := ctx.Uint64(controlAssetAmountFlag.Name)
+	controlAssetId := ctx.String(controlAssetIdFlag.Name)
 	metadata := ctx.StringSlice(metadataFlag.Name)
 
 	if amount == 0 {
 		return errors.New("amount must be greater than zero")
+	}
+	if controlAssetAmount == 0 && controlAssetId == "" {
+		return errors.New("missing control-asset-amount or control-asset-id")
+	}
+	if controlAssetAmount > 0 && controlAssetId != "" {
+		return errors.New("only one of control-asset-amount and control-asset-id can be set")
 	}
 
 	metadataList := make([]asset.Metadata, 0)
@@ -555,6 +565,9 @@ func issue(ctx *cli.Context) error {
 		v = strings.TrimSpace(v)
 		if k == "" {
 			return fmt.Errorf("empty key in %q", meta)
+		}
+		if v == "" {
+			return fmt.Errorf("empty value in %q", meta)
 		}
 		metadataList = append(metadataList, asset.Metadata{
 			Key:   []byte(k),
@@ -570,7 +583,7 @@ func issue(ctx *cli.Context) error {
 		return err
 	}
 
-	var controlAssetPolicy types.ControlAsset = nil
+	controlAssetPolicy := types.ControlAsset(types.ExistingControlAsset{ID: controlAssetId})
 	if controlAssetAmount > 0 {
 		controlAssetPolicy = types.NewControlAsset{Amount: controlAssetAmount}
 	}
@@ -582,26 +595,28 @@ func issue(ctx *cli.Context) error {
 		return err
 	}
 
-	assetIdsString := make([]string, 0, len(assetIds))
-	for _, assetId := range assetIds {
-		assetIdsString = append(assetIdsString, assetId.String())
+	resControlAssetId := controlAssetId
+	assetId := assetIds[0].String()
+	if len(assetIds) == 2 {
+		resControlAssetId = assetIds[0].String()
+		assetId = assetIds[1].String()
 	}
-
 	return printJSON(map[string]any{
-		"txid":      arkTxid,
-		"asset_ids": assetIdsString,
+		"txid":             arkTxid,
+		"asset_id":         assetId,
+		"control_asset_id": resControlAssetId,
 	})
 }
 
 func reissue(ctx *cli.Context) error {
-	controlAssetID := ctx.String(controlAssetIDFlag.Name)
-	assetID := ctx.String(assetIDFlag.Name)
+	controlAssetId := ctx.String(controlAssetIdFlag.Name)
+	assetId := ctx.String(assetIdFlag.Name)
 	amount := ctx.Uint64(amountFlag.Name)
 
-	if controlAssetID == "" {
+	if controlAssetId == "" {
 		return errors.New("control-asset-id is required")
 	}
-	if assetID == "" {
+	if assetId == "" {
 		return errors.New("asset-id is required")
 	}
 	if amount == 0 {
@@ -616,7 +631,7 @@ func reissue(ctx *cli.Context) error {
 		return err
 	}
 
-	arkTxid, err := arkSdkClient.ReissueAsset(ctx.Context, controlAssetID, assetID, amount)
+	arkTxid, err := arkSdkClient.ReissueAsset(ctx.Context, controlAssetId, assetId, amount)
 	if err != nil {
 		return err
 	}
@@ -627,8 +642,11 @@ func reissue(ctx *cli.Context) error {
 
 func burn(ctx *cli.Context) error {
 	amount := ctx.Uint64(amountFlag.Name)
-	assetID := ctx.String(assetIDFlag.Name)
+	assetId := ctx.String(assetIdFlag.Name)
 
+	if assetId == "" {
+		return errors.New("asset-id is required")
+	}
 	if amount == 0 {
 		return errors.New("amount must be greater than zero")
 	}
@@ -641,7 +659,7 @@ func burn(ctx *cli.Context) error {
 		return err
 	}
 
-	arkTxid, err := arkSdkClient.BurnAsset(ctx.Context, assetID, amount)
+	arkTxid, err := arkSdkClient.BurnAsset(ctx.Context, assetId, amount)
 	if err != nil {
 		return err
 	}
