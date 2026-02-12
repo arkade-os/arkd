@@ -124,7 +124,8 @@ func getStatus(targetURL string, tlsConfig *tls.Config) (*status, error) {
 			TLSClientConfig: tlsConfig,
 		},
 	}
-	resp, err := client.Do(req) // #nosec G704 -- URL is validated above
+	// #nosec G704 -- URL is validated above
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
