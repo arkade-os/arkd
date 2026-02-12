@@ -1,5 +1,8 @@
--- Add depth column
-ALTER TABLE vtxo ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0;
+-- Add depth and markers columns to vtxo
+ALTER TABLE vtxo
+    ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS markers JSONB;
+CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo USING GIN (markers);
 
 -- Create marker table
 CREATE TABLE IF NOT EXISTS marker (
@@ -14,10 +17,6 @@ CREATE TABLE IF NOT EXISTS swept_marker (
     marker_id TEXT PRIMARY KEY REFERENCES marker(id),
     swept_at BIGINT NOT NULL
 );
-
--- Add markers column (JSONB array)
-ALTER TABLE vtxo ADD COLUMN IF NOT EXISTS markers JSONB;
-CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo USING GIN (markers);
 
 -- Recreate views to include the new columns
 DROP VIEW IF EXISTS intent_with_inputs_vw;
