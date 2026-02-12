@@ -2542,11 +2542,11 @@ func (q *Queries) UpsertTx(ctx context.Context, arg UpsertTxParams) error {
 const upsertVtxo = `-- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, preconfirmed, expires_at, created_at, updated_at, depth
+    spent_by, spent, unrolled, preconfirmed, expires_at, created_at, updated_at, depth, markers
 )
 VALUES (
     ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-    ?8, ?9, ?10, ?11, ?12, ?13, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)), ?14
+    ?8, ?9, ?10, ?11, ?12, ?13, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)), ?14, ?15
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -2560,7 +2560,8 @@ VALUES (
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
     updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)),
-    depth = EXCLUDED.depth
+    depth = EXCLUDED.depth,
+    markers = EXCLUDED.markers
 `
 
 type UpsertVtxoParams struct {
@@ -2578,6 +2579,7 @@ type UpsertVtxoParams struct {
 	ExpiresAt      int64
 	CreatedAt      int64
 	Depth          int64
+	Markers        sql.NullString
 }
 
 func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
@@ -2596,6 +2598,7 @@ func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {
 		arg.ExpiresAt,
 		arg.CreatedAt,
 		arg.Depth,
+		arg.Markers,
 	)
 	return err
 }
