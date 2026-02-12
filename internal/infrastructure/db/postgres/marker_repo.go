@@ -304,67 +304,6 @@ func (m *markerRepository) CreateRootMarkersForVtxos(
 	return execTx(ctx, m.db, txBody)
 }
 
-func (m *markerRepository) MarkDustVtxoSwept(
-	ctx context.Context,
-	outpoint domain.Outpoint,
-	sweptAt int64,
-) error {
-	// Create a unique dust marker for this vtxo
-	dustMarkerID := outpoint.String() + ":dust"
-
-	// First, get the vtxo to find its depth and current markers
-	vtxoRow, err := m.querier.SelectVtxo(ctx, queries.SelectVtxoParams{
-		Txid: outpoint.Txid,
-		Vout: int32(outpoint.VOut),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get vtxo: %w", err)
-	}
-
-	// Create the dust marker
-	parentMarkers := parseMarkersJSONB(vtxoRow.VtxoVw.Markers)
-	parentMarkersJSON, err := json.Marshal(parentMarkers)
-	if err != nil {
-		return fmt.Errorf("failed to marshal parent markers: %w", err)
-	}
-
-	if err := m.querier.UpsertMarker(ctx, queries.UpsertMarkerParams{
-		ID:    dustMarkerID,
-		Depth: vtxoRow.VtxoVw.Depth,
-		ParentMarkers: pqtype.NullRawMessage{
-			RawMessage: parentMarkersJSON,
-			Valid:      true,
-		},
-	}); err != nil {
-		return fmt.Errorf("failed to create dust marker: %w", err)
-	}
-
-	// Insert into swept_marker
-	if err := m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
-		MarkerID: dustMarkerID,
-		SweptAt:  sweptAt,
-	}); err != nil {
-		return fmt.Errorf("failed to insert swept marker: %w", err)
-	}
-
-	// Update the vtxo's markers to include the dust marker
-	newMarkers := append(parentMarkers, dustMarkerID)
-	newMarkersJSON, err := json.Marshal(newMarkers)
-	if err != nil {
-		return fmt.Errorf("failed to marshal new markers: %w", err)
-	}
-
-	if err := m.querier.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
-		Markers: newMarkersJSON,
-		Txid:    outpoint.Txid,
-		Vout:    int32(outpoint.VOut),
-	}); err != nil {
-		return fmt.Errorf("failed to update vtxo markers: %w", err)
-	}
-
-	return nil
-}
-
 func (m *markerRepository) GetVtxosByDepthRange(
 	ctx context.Context,
 	minDepth, maxDepth uint32,

@@ -578,26 +578,25 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 		// Create marker if at boundary depth, or inherit ALL parent markers
 		var markerIDs []string
-		if s.markerStore != nil {
-			if domain.IsAtMarkerBoundary(newDepth) {
-				// Create marker ID from the first output (the ark tx id + first vtxo vout)
-				newMarkerID := fmt.Sprintf("%s:marker:%d", txid, newDepth)
-				marker := domain.Marker{
-					ID:              newMarkerID,
-					Depth:           newDepth,
-					ParentMarkerIDs: parentMarkerIDs,
-				}
-				if err := s.markerStore.AddMarker(ctx, marker); err != nil {
-					log.WithError(err).Warn("failed to create marker for chained vtxo")
-					// Continue without marker - non-fatal
-				} else {
-					log.Debugf("created marker %s at depth %d", newMarkerID, newDepth)
-					markerIDs = []string{newMarkerID}
-				}
-			} else if len(parentMarkerIDs) > 0 {
-				// Inherit ALL markers from parents at non-boundary depth
-				markerIDs = parentMarkerIDs
+
+		if domain.IsAtMarkerBoundary(newDepth) {
+			// Create marker ID from the first output (the ark tx id + first vtxo vout)
+			newMarkerID := fmt.Sprintf("%s:marker:%d", txid, newDepth)
+			marker := domain.Marker{
+				ID:              newMarkerID,
+				Depth:           newDepth,
+				ParentMarkerIDs: parentMarkerIDs,
 			}
+			if err := s.markerStore.AddMarker(ctx, marker); err != nil {
+				log.WithError(err).Warn("failed to create marker for chained vtxo")
+				// Continue without marker - non-fatal
+			} else {
+				log.Debugf("created marker %s at depth %d", newMarkerID, newDepth)
+				markerIDs = []string{newMarkerID}
+			}
+		} else if len(parentMarkerIDs) > 0 {
+			// Inherit ALL markers from parents at non-boundary depth
+			markerIDs = parentMarkerIDs
 		}
 
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
@@ -638,19 +637,17 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 		log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
 
-		// Bob: do we need to handle dust differently? same question in sweepVtxosWithMarkers
-		// where we do it as well.
-		// Mark dust VTXOs as swept via marker
+		// Mark dust VTXOs as swept via their markers
 		// Dust vtxos are below dust limit and can't be spent again in future offchain tx
-		// The only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle
 		// Because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited
-		if s.markerStore != nil {
-			sweptAt := time.Now().Unix()
+		if len(dustVtxoOutpoints) > 0 {
+			dustMarkerIDs := make([]string, 0, len(dustVtxoOutpoints))
 			for _, outpoint := range dustVtxoOutpoints {
-				if err := s.markerStore.MarkDustVtxoSwept(ctx, outpoint, sweptAt); err != nil {
-					log.WithError(err).
-						Warnf("failed to mark dust vtxo %s as swept", outpoint.String())
-				}
+				dustMarkerIDs = append(dustMarkerIDs, outpoint.String())
+			}
+			sweptAt := time.Now().Unix()
+			if err := s.markerStore.BulkSweepMarkers(ctx, dustMarkerIDs, sweptAt); err != nil {
+				log.WithError(err).Warnf("failed to sweep %d dust vtxo markers", len(dustMarkerIDs))
 			}
 		}
 	}
@@ -748,53 +745,32 @@ func (s *service) sweepVtxosWithMarkers(
 	}
 
 	// Collect all unique markers from all VTXOs
+	// Every VTXO is guaranteed to have at least 1 marker after migration
 	uniqueMarkers := make(map[string]struct{})
-	noMarkerVtxos := make([]domain.Outpoint, 0)
-
 	for _, vtxo := range vtxos {
-		if len(vtxo.MarkerIDs) > 0 {
-			// Collect all markers for this vtxo
-			for _, markerID := range vtxo.MarkerIDs {
-				uniqueMarkers[markerID] = struct{}{}
-			}
-		} else {
-			noMarkerVtxos = append(noMarkerVtxos, vtxo.Outpoint)
+		for _, markerID := range vtxo.MarkerIDs {
+			uniqueMarkers[markerID] = struct{}{}
 		}
 	}
 
-	var totalSwept int64
+	if len(uniqueMarkers) == 0 {
+		return 0
+	}
+
+	// Convert marker set to slice for bulk sweeping
+	markerIDs := make([]string, 0, len(uniqueMarkers))
+	for markerID := range uniqueMarkers {
+		markerIDs = append(markerIDs, markerID)
+	}
+
 	sweptAt := time.Now().Unix()
-
-	// Bulk sweep all markers at once
-	if len(uniqueMarkers) > 0 {
-		// Convert marker set to slice for bulk sweeping
-		markerIDs := make([]string, 0, len(uniqueMarkers))
-		for markerID := range uniqueMarkers {
-			markerIDs = append(markerIDs, markerID)
-		}
-
-		if err := s.markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
-			log.WithError(err).Warn("failed to bulk sweep markers")
-		} else {
-			// Count VTXOs that have at least one marker (they're all swept now)
-			totalSwept = int64(len(vtxos) - len(noMarkerVtxos))
-			log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), totalSwept)
-		}
+	if err := s.markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
+		log.WithError(err).Warn("failed to bulk sweep markers")
+		return 0
 	}
 
-	// Bob: I dont quite understand this part. If there are VTXOs without markers, does that mean they were not swept by the marker-based sweeping? Why do we need to sweep them with unique dust markers? Are these VTXOs that were missed by the marker-based sweeping, or are they a different category of VTXOs that require special handling?
-	// Bob: I think we cant get rid of this is we assume that every vtxo has >=1 marker.
-	// Bob: In the current implementation, we create a root marker for every batch VTXO at depth 0, but if there are any VTXOs that for some reason dont have markers (maybe they were created before we implemented marker-based sweeping), we need to sweep them as well. Since they dont have markers, we can create unique dust markers for each of them to mark them as swept. This way, we ensure that all VTXOs are accounted for in the sweeping process, even if they dont have markers.
-
-	// Sweep VTXOs without markers by creating unique dust markers for each
-	for _, outpoint := range noMarkerVtxos {
-		if err := s.markerStore.MarkDustVtxoSwept(ctx, outpoint, sweptAt); err != nil {
-			log.WithError(err).Warnf("failed to sweep vtxo without marker: %s", outpoint.String())
-			continue
-		}
-		totalSwept++
-	}
-
+	totalSwept := int64(len(vtxos))
+	log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), totalSwept)
 	return totalSwept
 }
 
