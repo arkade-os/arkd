@@ -20,6 +20,11 @@ type VtxoRepository struct {
 	store *badgerhold.Store
 }
 
+// GetStore returns the underlying badgerhold store for use by marker repository
+func (r *VtxoRepository) GetStore() *badgerhold.Store {
+	return r.store
+}
+
 type vtxoDTO struct {
 	domain.Vtxo
 	UpdatedAt int64
@@ -160,29 +165,6 @@ func (r *VtxoRepository) GetAllSweepableUnrolledVtxos(
 
 func (r *VtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	return r.findVtxos(ctx, &badgerhold.Query{})
-}
-
-func (r *VtxoRepository) SweepVtxos(
-	ctx context.Context, outpoints []domain.Outpoint,
-) (int, error) {
-	sweptCount := 0
-	for _, outpoint := range outpoints {
-		vtxo, err := r.getVtxo(ctx, outpoint)
-		if err != nil {
-			return -1, err
-		}
-		if vtxo.Swept {
-			continue // Skip already swept vtxos
-		}
-
-		// Mark as swept
-		vtxo.Swept = true
-		if err := r.updateVtxo(ctx, vtxo); err != nil {
-			return -1, err
-		}
-		sweptCount++
-	}
-	return sweptCount, nil
 }
 
 func (r *VtxoRepository) UpdateVtxosExpiration(

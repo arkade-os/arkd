@@ -207,7 +207,13 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
-		markerStore, err = markerStoreFactory(config.DataStoreConfig...)
+		// Pass the vtxo store to the marker repository so they share the same data
+		badgerVtxoRepo, ok := vtxoStore.(*badgerdb.VtxoRepository)
+		if !ok {
+			return nil, fmt.Errorf("failed to get badger vtxo repository")
+		}
+		markerConfig := append(config.DataStoreConfig, badgerVtxoRepo.GetStore())
+		markerStore, err = markerStoreFactory(markerConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create marker store: %w", err)
 		}
@@ -611,19 +617,25 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
+		dustVtxoOutpoints := make([]domain.Outpoint, 0)
 		for outIndex, out := range outs {
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
 				continue
 			}
 
+			outpoint := domain.Outpoint{
+				Txid: txid,
+				VOut: uint32(outIndex),
+			}
+
 			isDust := script.IsSubDustScript(out.PkScript)
+			if isDust {
+				dustVtxoOutpoints = append(dustVtxoOutpoints, outpoint)
+			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
-				Outpoint: domain.Outpoint{
-					Txid: txid,
-					VOut: uint32(outIndex),
-				},
+				Outpoint:           outpoint,
 				PubKey:             hex.EncodeToString(out.PkScript[2:]),
 				Amount:             uint64(out.Amount),
 				ExpiresAt:          offchainTx.ExpiryTimestamp,
@@ -632,10 +644,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				Preconfirmed:       true,
 				CreatedAt:          offchainTx.StartingTimestamp,
 				Depth:              newDepth,
-				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
-				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
-				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-				Swept: isDust,
+				// Swept is now computed via markers, not stored directly
 			})
 		}
 
@@ -651,6 +660,20 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				if err := s.markerStore.UpdateVtxoMarkers(ctx, vtxo.Outpoint, markerIDs); err != nil {
 					log.WithError(err).
 						Warnf("failed to update markers for vtxo %s", vtxo.Outpoint.String())
+				}
+			}
+		}
+
+		// Mark dust VTXOs as swept via marker
+		// Dust vtxos are below dust limit and can't be spent again in future offchain tx
+		// The only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle
+		// Because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited
+		if s.markerStore != nil {
+			sweptAt := time.Now().Unix()
+			for _, outpoint := range dustVtxoOutpoints {
+				if err := s.markerStore.MarkDustVtxoSwept(ctx, outpoint, sweptAt); err != nil {
+					log.WithError(err).
+						Warnf("failed to mark dust vtxo %s as swept", outpoint.String())
 				}
 			}
 		}
@@ -728,7 +751,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 }
 
 // sweepVtxosWithMarkers performs marker-based sweeping for VTXOs.
-// It groups VTXOs by their marker, sweeps each marker, then bulk-updates all VTXOs.
+// It groups VTXOs by their marker, sweeps each marker via swept_marker table.
 // Returns the total count of VTXOs swept.
 func (s *service) sweepVtxosWithMarkers(
 	ctx context.Context,
@@ -742,9 +765,7 @@ func (s *service) sweepVtxosWithMarkers(
 	vtxos, err := s.vtxoStore.GetVtxos(ctx, vtxoOutpoints)
 	if err != nil {
 		log.WithError(err).Warn("failed to get vtxos for marker-based sweep")
-		// Fall back to individual sweep
-		count, _ := s.vtxoStore.SweepVtxos(ctx, vtxoOutpoints)
-		return int64(count)
+		return 0
 	}
 
 	// Group VTXOs by their first marker ID (for sweep optimization)
@@ -769,32 +790,26 @@ func (s *service) sweepVtxosWithMarkers(
 		// Mark the marker as swept
 		if err := s.markerStore.SweepMarker(ctx, markerID, sweptAt); err != nil {
 			log.WithError(err).Warnf("failed to sweep marker %s", markerID)
-			// Fall back to individual sweep for this marker's VTXOs
-			count, _ := s.vtxoStore.SweepVtxos(ctx, markerVtxos[markerID])
-			totalSwept += int64(count)
 			continue
 		}
 
-		// Bulk sweep all VTXOs with this marker
+		// Count VTXOs that will be swept by this marker
 		count, err := s.markerStore.SweepVtxosByMarker(ctx, markerID)
 		if err != nil {
-			log.WithError(err).Warnf("failed to bulk sweep vtxos for marker %s", markerID)
-			// Fall back to individual sweep
-			count, _ := s.vtxoStore.SweepVtxos(ctx, markerVtxos[markerID])
-			totalSwept += int64(count)
+			log.WithError(err).Warnf("failed to process sweep for marker %s", markerID)
 			continue
 		}
 		totalSwept += count
 		log.Debugf("swept marker %s with %d vtxos", markerID, count)
 	}
 
-	// Sweep VTXOs without markers individually
-	if len(noMarkerVtxos) > 0 {
-		count, err := s.vtxoStore.SweepVtxos(ctx, noMarkerVtxos)
-		if err != nil {
-			log.WithError(err).Warn("failed to sweep vtxos without markers")
+	// Sweep VTXOs without markers by creating unique dust markers for each
+	for _, outpoint := range noMarkerVtxos {
+		if err := s.markerStore.MarkDustVtxoSwept(ctx, outpoint, sweptAt); err != nil {
+			log.WithError(err).Warnf("failed to sweep vtxo without marker: %s", outpoint.String())
+			continue
 		}
-		totalSwept += int64(count)
+		totalSwept++
 	}
 
 	return totalSwept

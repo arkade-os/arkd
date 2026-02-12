@@ -55,3 +55,94 @@ WHERE v.depth % 100 = 0;
 -- Assign markers array to VTXOs at boundary depths
 UPDATE vtxo SET markers = '["' || txid || ':' || vout || '"]'
 WHERE depth % 100 = 0;
+
+-- Migrate existing swept VTXOs to swept_marker table before dropping column
+-- For each swept VTXO, create a unique dust marker and insert into swept_marker
+INSERT OR IGNORE INTO marker (id, depth, parent_markers)
+SELECT
+    v.txid || ':' || v.vout || ':dust',
+    v.depth,
+    COALESCE(v.markers, '[]')
+FROM vtxo v
+WHERE v.swept = 1;
+
+INSERT OR IGNORE INTO swept_marker (marker_id, swept_at)
+SELECT
+    v.txid || ':' || v.vout || ':dust',
+    strftime('%s', 'now')
+FROM vtxo v
+WHERE v.swept = 1;
+
+-- Update swept VTXOs to include the dust marker in their markers array
+UPDATE vtxo SET markers =
+    CASE
+        WHEN markers IS NULL OR markers = '' THEN '["' || txid || ':' || vout || ':dust"]'
+        ELSE substr(markers, 1, length(markers)-1) || ',"' || txid || ':' || vout || ':dust"]'
+    END
+WHERE swept = 1;
+
+-- SQLite doesn't support DROP COLUMN easily, so we recreate the table
+-- Create new vtxo table without swept column
+CREATE TABLE vtxo_new (
+    txid TEXT NOT NULL,
+    vout INTEGER NOT NULL,
+    pubkey TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    commitment_txid TEXT NOT NULL,
+    spent_by TEXT,
+    spent BOOLEAN NOT NULL DEFAULT FALSE,
+    unrolled BOOLEAN NOT NULL DEFAULT FALSE,
+    preconfirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    settled_by TEXT,
+    ark_txid TEXT,
+    intent_id TEXT,
+    updated_at INTEGER,
+    depth INTEGER NOT NULL DEFAULT 0,
+    markers TEXT,
+    PRIMARY KEY (txid, vout),
+    FOREIGN KEY (intent_id) REFERENCES intent(id)
+);
+
+-- Copy data from old table (excluding swept column)
+INSERT INTO vtxo_new (txid, vout, pubkey, amount, expires_at, created_at, commitment_txid,
+    spent_by, spent, unrolled, preconfirmed, settled_by, ark_txid, intent_id, updated_at, depth, markers)
+SELECT txid, vout, pubkey, amount, expires_at, created_at, commitment_txid,
+    spent_by, spent, unrolled, preconfirmed, settled_by, ark_txid, intent_id, updated_at, depth, markers
+FROM vtxo;
+
+-- Drop old views that depend on vtxo
+DROP VIEW IF EXISTS intent_with_inputs_vw;
+DROP VIEW IF EXISTS vtxo_vw;
+
+-- Drop old table and rename new one
+DROP TABLE vtxo;
+ALTER TABLE vtxo_new RENAME TO vtxo;
+
+-- Recreate indexes
+CREATE INDEX IF NOT EXISTS fk_vtxo_intent_id ON vtxo(intent_id);
+CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo(markers);
+
+-- Recreate views to compute swept status dynamically
+CREATE VIEW vtxo_vw AS
+SELECT v.*,
+    COALESCE(group_concat(vc.commitment_txid), '') AS commitments,
+    EXISTS (
+        SELECT 1 FROM swept_marker sm
+        WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
+    ) AS swept
+FROM vtxo v
+LEFT JOIN vtxo_commitment_txid vc
+ON v.txid = vc.vtxo_txid AND v.vout = vc.vtxo_vout
+GROUP BY v.txid, v.vout;
+
+CREATE VIEW intent_with_inputs_vw AS
+SELECT vtxo_vw.*,
+       intent.id,
+       intent.round_id,
+       intent.proof,
+       intent.message
+FROM intent
+LEFT OUTER JOIN vtxo_vw
+ON intent.id = vtxo_vw.intent_id;

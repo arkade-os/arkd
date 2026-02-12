@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
@@ -232,7 +233,91 @@ func (m *markerRepository) GetVtxosByMarker(
 }
 
 func (m *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	return m.querier.SweepVtxosByMarkerId(ctx, markerID)
+	// First check if the marker exists (foreign key constraint on swept_marker)
+	marker, err := m.GetMarker(ctx, markerID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to check marker existence: %w", err)
+	}
+	if marker == nil {
+		return 0, nil // Marker doesn't exist, nothing to sweep
+	}
+
+	// Count unswept VTXOs with this marker before inserting to swept_marker
+	count, err := m.querier.CountUnsweptVtxosByMarkerId(ctx, markerID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count unswept vtxos: %w", err)
+	}
+
+	// Insert the marker into swept_marker (sweep state is computed via view)
+	if err := m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
+		MarkerID: markerID,
+		SweptAt:  time.Now().Unix(),
+	}); err != nil {
+		return 0, fmt.Errorf("failed to insert swept marker: %w", err)
+	}
+
+	return count, nil
+}
+
+func (m *markerRepository) MarkDustVtxoSwept(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+	sweptAt int64,
+) error {
+	// Create a unique dust marker for this vtxo
+	dustMarkerID := outpoint.String() + ":dust"
+
+	// First, get the vtxo to find its depth and current markers
+	vtxoRow, err := m.querier.SelectVtxo(ctx, queries.SelectVtxoParams{
+		Txid: outpoint.Txid,
+		Vout: int32(outpoint.VOut),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get vtxo: %w", err)
+	}
+
+	// Create the dust marker
+	parentMarkers := parseMarkersJSONB(vtxoRow.VtxoVw.Markers)
+	parentMarkersJSON, err := json.Marshal(parentMarkers)
+	if err != nil {
+		return fmt.Errorf("failed to marshal parent markers: %w", err)
+	}
+
+	if err := m.querier.UpsertMarker(ctx, queries.UpsertMarkerParams{
+		ID:    dustMarkerID,
+		Depth: vtxoRow.VtxoVw.Depth,
+		ParentMarkers: pqtype.NullRawMessage{
+			RawMessage: parentMarkersJSON,
+			Valid:      true,
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to create dust marker: %w", err)
+	}
+
+	// Insert into swept_marker
+	if err := m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
+		MarkerID: dustMarkerID,
+		SweptAt:  sweptAt,
+	}); err != nil {
+		return fmt.Errorf("failed to insert swept marker: %w", err)
+	}
+
+	// Update the vtxo's markers to include the dust marker
+	newMarkers := append(parentMarkers, dustMarkerID)
+	newMarkersJSON, err := json.Marshal(newMarkers)
+	if err != nil {
+		return fmt.Errorf("failed to marshal new markers: %w", err)
+	}
+
+	if err := m.querier.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
+		Markers: newMarkersJSON,
+		Txid:    outpoint.Txid,
+		Vout:    int32(outpoint.VOut),
+	}); err != nil {
+		return fmt.Errorf("failed to update vtxo markers: %w", err)
+	}
+
+	return nil
 }
 
 func (m *markerRepository) GetVtxosByDepthRange(

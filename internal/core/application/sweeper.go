@@ -755,9 +755,39 @@ func (s *sweeper) createCheckpointSweepTask(
 			return err
 		}
 
-		_, err = s.repoManager.Vtxos().SweepVtxos(ctx, childrenVtxos)
-		log.Debugf("swept %d vtxos", len(childrenVtxos))
-		return err
+		// Get the VTXOs to find their markers
+		vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, childrenVtxos)
+		if err != nil {
+			return err
+		}
+
+		// Sweep each VTXO by marking its markers as swept
+		sweptAt := time.Now().Unix()
+		markerStore := s.repoManager.Markers()
+		sweptCount := 0
+		for _, v := range vtxos {
+			if len(v.MarkerIDs) > 0 {
+				// Sweep via first marker
+				if err := markerStore.SweepMarker(ctx, v.MarkerIDs[0], sweptAt); err != nil {
+					log.WithError(err).Warnf("failed to sweep marker %s", v.MarkerIDs[0])
+					continue
+				}
+				if _, err := markerStore.SweepVtxosByMarker(ctx, v.MarkerIDs[0]); err != nil {
+					log.WithError(err).
+						Warnf("failed to process sweep for marker %s", v.MarkerIDs[0])
+					continue
+				}
+			} else {
+				// Create a dust marker for vtxos without markers
+				if err := markerStore.MarkDustVtxoSwept(ctx, v.Outpoint, sweptAt); err != nil {
+					log.WithError(err).Warnf("failed to mark vtxo %s as swept", v.Outpoint.String())
+					continue
+				}
+			}
+			sweptCount++
+		}
+		log.Debugf("swept %d vtxos", sweptCount)
+		return nil
 	}
 }
 

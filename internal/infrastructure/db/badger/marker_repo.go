@@ -423,6 +423,10 @@ func (r *markerRepository) GetVtxosByMarker(
 }
 
 func (r *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
+	// For badger, we need to:
+	// 1. Mark the marker as swept
+	// 2. Update vtxo.Swept field for all VTXOs with this marker (for query compatibility)
+
 	// Find all VTXOs whose MarkerIDs contains markerID and are not swept
 	var allDtos []vtxoDTO
 	err := r.vtxoStore.Find(&allDtos, badgerhold.Where("Swept").Eq(false))
@@ -444,6 +448,7 @@ func (r *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID stri
 			continue
 		}
 
+		// Update the vtxo's Swept field
 		dto.Swept = true
 		dto.UpdatedAt = time.Now().UnixMilli()
 
@@ -464,7 +469,70 @@ func (r *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID stri
 		}
 		count++
 	}
+
+	// Also insert the marker into swept_marker for consistency
+	if err := r.SweepMarker(ctx, markerID, time.Now().Unix()); err != nil {
+		// Non-fatal - the vtxos are already marked as swept
+		_ = err
+	}
+
 	return count, nil
+}
+
+func (r *markerRepository) MarkDustVtxoSwept(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+	sweptAt int64,
+) error {
+	// Create a unique dust marker for this vtxo
+	dustMarkerID := outpoint.String() + ":dust"
+
+	// Get the vtxo to find its depth and current markers
+	var dto vtxoDTO
+	err := r.vtxoStore.Get(outpoint.String(), &dto)
+	if err != nil {
+		if err == badgerhold.ErrNotFound {
+			return fmt.Errorf("vtxo not found: %s", outpoint.String())
+		}
+		return fmt.Errorf("failed to get vtxo: %w", err)
+	}
+
+	// Create the dust marker
+	if err := r.AddMarker(ctx, domain.Marker{
+		ID:              dustMarkerID,
+		Depth:           dto.Depth,
+		ParentMarkerIDs: dto.MarkerIDs,
+	}); err != nil {
+		return fmt.Errorf("failed to create dust marker: %w", err)
+	}
+
+	// Insert into swept_marker
+	if err := r.SweepMarker(ctx, dustMarkerID, sweptAt); err != nil {
+		return fmt.Errorf("failed to insert swept marker: %w", err)
+	}
+
+	// Update the vtxo's markers to include the dust marker and mark as swept
+	dto.MarkerIDs = append(dto.MarkerIDs, dustMarkerID)
+	dto.Swept = true
+	dto.UpdatedAt = time.Now().UnixMilli()
+
+	err = r.vtxoStore.Update(outpoint.String(), dto)
+	if err != nil {
+		if errors.Is(err, badger.ErrConflict) {
+			for attempts := 1; attempts <= maxRetries; attempts++ {
+				time.Sleep(100 * time.Millisecond)
+				err = r.vtxoStore.Update(outpoint.String(), dto)
+				if err == nil {
+					break
+				}
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("failed to update vtxo: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (r *markerRepository) GetVtxosByDepthRange(

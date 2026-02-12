@@ -58,7 +58,6 @@ type IntentWithInputsVw struct {
 	SpentBy        sql.NullString
 	Spent          sql.NullBool
 	Unrolled       sql.NullBool
-	Swept          sql.NullBool
 	Preconfirmed   sql.NullBool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
@@ -67,6 +66,7 @@ type IntentWithInputsVw struct {
 	Depth          sql.NullInt32
 	Markers        pqtype.NullRawMessage
 	Commitments    []byte
+	Swept          sql.NullBool
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString
@@ -219,7 +219,6 @@ type Vtxo struct {
 	SpentBy        sql.NullString
 	Spent          bool
 	Unrolled       bool
-	Swept          bool
 	Preconfirmed   bool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
@@ -246,7 +245,6 @@ type VtxoVw struct {
 	SpentBy        sql.NullString
 	Spent          bool
 	Unrolled       bool
-	Swept          bool
 	Preconfirmed   bool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
@@ -255,4 +253,5 @@ type VtxoVw struct {
 	Depth          int32
 	Markers        pqtype.NullRawMessage
 	Commitments    []byte
+	Swept          bool
 }

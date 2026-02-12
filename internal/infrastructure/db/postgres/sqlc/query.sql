@@ -48,11 +48,11 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at, depth
+    spent_by, spent, unrolled, preconfirmed, expires_at, created_at, updated_at, depth
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, @depth
+    @spent_by, @spent, @unrolled, @preconfirmed, @expires_at, @created_at, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, @depth
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -62,7 +62,6 @@ VALUES (
     spent_by = EXCLUDED.spent_by,
     spent = EXCLUDED.spent,
     unrolled = EXCLUDED.unrolled,
-    swept = EXCLUDED.swept,
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
@@ -116,9 +115,6 @@ UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout;
-
--- name: UpdateVtxoSweptIfNotSwept :execrows
-UPDATE vtxo SET swept = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
@@ -257,19 +253,25 @@ WHERE vtxo_vw.pubkey = ANY($1::varchar[])
     AND (@before::bigint = 0 OR vtxo_vw.updated_at <= @before::bigint);
 
 -- name: SelectExpiringLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0)::bigint AS amount
-FROM vtxo
-WHERE swept = false
-  AND spent = false
-  AND unrolled = false
-  AND expires_at > @after
-  AND (@before <= 0 OR expires_at < @before);
+SELECT COALESCE(SUM(v.amount), 0)::bigint AS amount
+FROM vtxo v
+WHERE NOT EXISTS (
+        SELECT 1 FROM swept_marker sm
+        WHERE v.markers @> jsonb_build_array(sm.marker_id)
+    )
+  AND v.spent = false
+  AND v.unrolled = false
+  AND v.expires_at > @after
+  AND (@before <= 0 OR v.expires_at < @before);
 
 -- name: SelectRecoverableLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0)::bigint AS amount
-FROM vtxo
-WHERE swept = true
-  AND spent = false;
+SELECT COALESCE(SUM(v.amount), 0)::bigint AS amount
+FROM vtxo v
+WHERE EXISTS (
+        SELECT 1 FROM swept_marker sm
+        WHERE v.markers @> jsonb_build_array(sm.marker_id)
+    )
+  AND v.spent = false;
 
 -- name: SelectOffchainTx :many
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
@@ -483,10 +485,9 @@ UPDATE vtxo SET markers = @markers::jsonb WHERE txid = @txid AND vout = @vout;
 -- Find VTXOs whose markers JSONB array contains the given marker_id
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT);
 
--- name: SweepVtxosByMarkerId :execrows
--- Sweep VTXOs whose markers JSONB array contains the given marker_id
-UPDATE vtxo SET swept = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
-WHERE markers @> jsonb_build_array(@marker_id::TEXT) AND swept = false;
+-- name: CountUnsweptVtxosByMarkerId :one
+-- Count VTXOs whose markers JSONB array contains the given marker_id and are not swept
+SELECT COUNT(*) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT) AND swept = false;
 
 -- Chain traversal queries for GetVtxoChain optimization
 

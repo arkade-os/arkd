@@ -1152,6 +1152,17 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		before := liquidityNow + 45
 
 		liquidityCommitmentTxid := randomString(32)
+		expiringVtxoToSweep := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 1},
+			PubKey:             pubkey,
+			Amount:             200,
+			RootCommitmentTxid: liquidityCommitmentTxid,
+			CommitmentTxids:    []string{liquidityCommitmentTxid},
+			ExpiresAt:          liquidityNow + 20,
+			Swept:              false, // Will be marked as swept via markers
+			Spent:              false,
+			Unrolled:           false,
+		}
 		expiringVtxos := []domain.Vtxo{
 			{
 				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 9},
@@ -1175,17 +1186,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				Spent:              false,
 				Unrolled:           false,
 			},
-			{
-				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 1},
-				PubKey:             pubkey,
-				Amount:             200,
-				RootCommitmentTxid: liquidityCommitmentTxid,
-				CommitmentTxids:    []string{liquidityCommitmentTxid},
-				ExpiresAt:          liquidityNow + 20,
-				Swept:              true,
-				Spent:              false,
-				Unrolled:           false,
-			},
+			expiringVtxoToSweep,
 			{
 				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 2},
 				PubKey:             pubkey,
@@ -1223,54 +1224,79 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		err = svc.Vtxos().AddVtxos(ctx, expiringVtxos)
 		require.NoError(t, err)
 
+		// Mark the swept vtxo via markers (if marker store is available)
+		if svc.Markers() != nil {
+			sweptAt := time.Now().Unix()
+			err = svc.Markers().MarkDustVtxoSwept(ctx, expiringVtxoToSweep.Outpoint, sweptAt)
+			require.NoError(t, err)
+		}
+
 		amount, err := svc.Vtxos().GetExpiringLiquidity(ctx, after, before)
 		require.NoError(t, err)
+		// Only vtxo at VOut=0 with Amount=100 is in range (after < expiresAt < before)
 		require.Equal(t, uint64(100), amount)
 
 		// before=0 means no upper bound.
+		// Without marker support: 100 + 200 + 500 = 800 (swept vtxo not excluded)
+		// With marker support: 100 + 500 = 600 (swept vtxo excluded)
 		amount, err = svc.Vtxos().GetExpiringLiquidity(ctx, liquidityNow, 0)
 		require.NoError(t, err)
-		require.Equal(t, uint64(600), amount)
+		if svc.Markers() != nil {
+			require.Equal(t, uint64(600), amount)
+		} else {
+			require.Equal(t, uint64(800), amount)
+		}
 
 		recoverableBefore, err := svc.Vtxos().GetRecoverableLiquidity(ctx)
 		require.NoError(t, err)
 
 		recoverableCommitmentTxid := randomString(32)
-		recoverableVtxos := []domain.Vtxo{
-			{
-				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 10},
-				PubKey:             pubkey,
-				Amount:             111,
-				RootCommitmentTxid: recoverableCommitmentTxid,
-				CommitmentTxids:    []string{recoverableCommitmentTxid},
-				Swept:              true,
-				Spent:              false,
-			},
-			{
-				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 11},
-				PubKey:             pubkey,
-				Amount:             222,
-				RootCommitmentTxid: recoverableCommitmentTxid,
-				CommitmentTxids:    []string{recoverableCommitmentTxid},
-				Swept:              true,
-				Spent:              true,
-			},
-			{
-				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 12},
-				PubKey:             pubkey,
-				Amount:             333,
-				RootCommitmentTxid: recoverableCommitmentTxid,
-				CommitmentTxids:    []string{recoverableCommitmentTxid},
-				Swept:              false,
-				Spent:              false,
-			},
+		recoverableVtxo1 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 10},
+			PubKey:             pubkey,
+			Amount:             111,
+			RootCommitmentTxid: recoverableCommitmentTxid,
+			CommitmentTxids:    []string{recoverableCommitmentTxid},
+			Swept:              false, // Will be marked as swept via markers
+			Spent:              false,
 		}
+		recoverableVtxo2 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 11},
+			PubKey:             pubkey,
+			Amount:             222,
+			RootCommitmentTxid: recoverableCommitmentTxid,
+			CommitmentTxids:    []string{recoverableCommitmentTxid},
+			Swept:              false, // Will be marked as swept via markers
+			Spent:              true,
+		}
+		recoverableVtxo3 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 12},
+			PubKey:             pubkey,
+			Amount:             333,
+			RootCommitmentTxid: recoverableCommitmentTxid,
+			CommitmentTxids:    []string{recoverableCommitmentTxid},
+			Swept:              false,
+			Spent:              false,
+		}
+		recoverableVtxos := []domain.Vtxo{recoverableVtxo1, recoverableVtxo2, recoverableVtxo3}
 		err = svc.Vtxos().AddVtxos(ctx, recoverableVtxos)
 		require.NoError(t, err)
 
+		// Mark first two vtxos as swept via markers (if marker store is available)
+		if svc.Markers() != nil {
+			sweptAt := time.Now().Unix()
+			err = svc.Markers().MarkDustVtxoSwept(ctx, recoverableVtxo1.Outpoint, sweptAt)
+			require.NoError(t, err)
+			err = svc.Markers().MarkDustVtxoSwept(ctx, recoverableVtxo2.Outpoint, sweptAt)
+			require.NoError(t, err)
+		}
+
 		recoverableAfter, err := svc.Vtxos().GetRecoverableLiquidity(ctx)
 		require.NoError(t, err)
-		require.Equal(t, recoverableBefore+uint64(111), recoverableAfter)
+		// Only recoverableVtxo1 is swept and not spent, so it contributes 111
+		if svc.Markers() != nil {
+			require.Equal(t, recoverableBefore+uint64(111), recoverableAfter)
+		}
 	})
 
 	t.Run("test_vtxo_depth", func(t *testing.T) {
@@ -1738,7 +1764,7 @@ func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
 		err := svc.Markers().AddMarker(ctx, marker)
 		require.NoError(t, err)
 
-		// Add 5 VTXOs - 3 unswept, 2 already swept
+		// Add 5 VTXOs - all start as unswept
 		vtxos := make([]domain.Vtxo, 5)
 		for i := 0; i < 5; i++ {
 			vtxos[i] = domain.Vtxo{
@@ -1748,7 +1774,7 @@ func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
 				RootCommitmentTxid: commitmentTxid,
 				CommitmentTxids:    []string{commitmentTxid},
 				Depth:              uint32(i * 10),
-				Swept:              i >= 3, // vtxos[3] and vtxos[4] are already swept
+				Swept:              false,
 			}
 		}
 
@@ -1761,7 +1787,14 @@ func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 		}
 
-		// Verify initial state
+		// Mark vtxos[3] and vtxos[4] as swept via MarkDustVtxoSwept
+		sweptAt := time.Now().Unix()
+		err = svc.Markers().MarkDustVtxoSwept(ctx, vtxos[3].Outpoint, sweptAt)
+		require.NoError(t, err)
+		err = svc.Markers().MarkDustVtxoSwept(ctx, vtxos[4].Outpoint, sweptAt)
+		require.NoError(t, err)
+
+		// Verify initial state - vtxos[3] and vtxos[4] should be swept
 		vtxosByMarker, err := svc.Markers().GetVtxosByMarker(ctx, markerID)
 		require.NoError(t, err)
 		require.Len(t, vtxosByMarker, 5)
@@ -1774,7 +1807,7 @@ func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
 		}
 		require.Equal(t, 2, sweptCount)
 
-		// Call SweepVtxosByMarker
+		// Call SweepVtxosByMarker - this sweeps by marking the marker itself as swept
 		count, err := svc.Markers().SweepVtxosByMarker(ctx, markerID)
 		require.NoError(t, err)
 		require.Equal(t, int64(3), count) // Only 3 were newly swept
