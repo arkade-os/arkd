@@ -332,7 +332,10 @@ func (m *markerRepository) MarkDustVtxoSwept(
 	// Get current markers from the vtxo
 	var parentMarkers []string
 	if vtxoRow.VtxoVw.Markers.Valid && vtxoRow.VtxoVw.Markers.String != "" {
-		if err := json.Unmarshal([]byte(vtxoRow.VtxoVw.Markers.String), &parentMarkers); err != nil {
+		if err := json.Unmarshal(
+			[]byte(vtxoRow.VtxoVw.Markers.String),
+			&parentMarkers,
+		); err != nil {
 			parentMarkers = nil
 		}
 	}
