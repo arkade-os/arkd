@@ -1,6 +1,6 @@
 module github.com/arkade-os/pkg/ark-cli
 
-go 1.25.6
+go 1.25.7
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 
@@ -9,9 +9,9 @@ replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 replace github.com/arkade-os/arkd/pkg/errors => ../errors
 
 require (
-	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260204162732-487698dc67f1
-	github.com/arkade-os/go-sdk v0.8.2-0.20260205134544-292e39a6e1db
-	github.com/urfave/cli/v2 v2.27.7
+	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260209145235-c94b335d4cde
+	github.com/arkade-os/go-sdk v0.8.2-0.20260210081147-b2efdae6fc08
+	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.36.0
 )
 
