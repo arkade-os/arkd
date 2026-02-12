@@ -18,6 +18,7 @@ const (
 	maxPageSizeSpendableVtxos = 100
 	maxPageSizeVtxoChain      = 100
 	maxPageSizeVirtualTxs     = 100
+	maxPageSizeHistory        = 500
 )
 
 type IndexerService interface {
@@ -38,6 +39,7 @@ type IndexerService interface {
 	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error)
 	GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
+	GetHistory(ctx context.Context, pubkeys []string, page *Page) (*GetHistoryResp, error)
 }
 
 type indexerService struct {
@@ -399,6 +401,23 @@ func (i *indexerService) GetBatchSweepTxs(
 	}
 
 	return txids, nil
+}
+
+func (i *indexerService) GetHistory(
+	ctx context.Context, pubkeys []string, page *Page,
+) (*GetHistoryResp, error) {
+	if len(pubkeys) == 0 {
+		return nil, fmt.Errorf("missing scripts filter")
+	}
+	txids, err := i.repoManager.Vtxos().GetTxidsWithPubKeys(ctx, pubkeys)
+	if err != nil {
+		return nil, err
+	}
+	pagedTxids, pageResp := paginate(txids, page, maxPageSizeHistory)
+	return &GetHistoryResp{
+		Txids: pagedTxids,
+		Page:  pageResp,
+	}, nil
 }
 
 func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {

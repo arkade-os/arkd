@@ -198,7 +198,7 @@ type Vtxo struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
-	UpdatedAt      int64
+	UpdatedAt      sql.NullInt64
 }
 
 type VtxoCommitmentTxid struct {
@@ -223,6 +223,6 @@ type VtxoVw struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
-	UpdatedAt      int64
+	UpdatedAt      sql.NullInt64
 	Commitments    interface{}
 }

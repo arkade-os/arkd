@@ -58,6 +58,13 @@ service IndexerService {
     };
   };
   
+  // GetHistory returns the history of txids involving the provided scripts.
+  rpc GetHistory(GetHistoryRequest) returns (GetHistoryResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/history"
+    };
+  };
+  
   // GetVtxoChain returns the the chain of ark txs that starts from spending any vtxo leaf and ends
   // with the creation of the provided vtxo outpoint.
   // The response may be paginated if the results span multiple pages.
@@ -267,18 +274,6 @@ message IndexerChain {
   repeated string spends = 4;
 }
 
-message IndexerTxHistoryRecord {
-  oneof key {
-    string commitment_txid = 1;
-    string virtual_txid = 2;
-  }
-  IndexerTxType type = 3;
-  uint64 amount = 4;
-  int64 created_at = 5;
-  bool is_settled = 6;
-  string settled_by = 7;
-}
-
 enum IndexerTxType {
   INDEXER_TX_TYPE_UNSPECIFIED = 0;
   INDEXER_TX_TYPE_RECEIVED = 1;
@@ -349,4 +344,13 @@ message IndexerSubscriptionEvent {
   string tx = 5;
   map<string, IndexerTxData> checkpoint_txs = 6;
   repeated IndexerVtxo swept_vtxos = 7;
+}
+
+message GetHistoryRequest {
+  repeated string scripts = 1;
+  IndexerPageRequest page = 2;
+}
+message GetHistoryResponse {
+  repeated string txids = 1;
+  IndexerPageResponse page = 2;
 }

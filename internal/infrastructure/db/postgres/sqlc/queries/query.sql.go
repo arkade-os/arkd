@@ -328,6 +328,44 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
+const selectDistinctTxidsWithPubkeys = `-- name: SelectDistinctTxidsWithPubkeys :many
+SELECT DISTINCT t.txid FROM (
+  SELECT vtxo_vw.txid AS txid FROM vtxo_vw
+  WHERE vtxo_vw.pubkey = ANY($1::varchar[])
+  UNION
+  SELECT vtxo_vw.ark_txid AS txid FROM vtxo_vw
+  WHERE vtxo_vw.pubkey = ANY($1::varchar[])
+    AND COALESCE(vtxo_vw.ark_txid, '') != ''
+  UNION
+  SELECT vtxo_vw.settled_by AS txid FROM vtxo_vw
+  WHERE vtxo_vw.pubkey = ANY($1::varchar[])
+    AND COALESCE(vtxo_vw.settled_by, '') != ''
+) t
+`
+
+func (q *Queries) SelectDistinctTxidsWithPubkeys(ctx context.Context, dollar_1 []string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectDistinctTxidsWithPubkeys, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var txid string
+		if err := rows.Scan(&txid); err != nil {
+			return nil, err
+		}
+		items = append(items, txid)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectExpiringLiquidityAmount = `-- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0)::bigint AS amount
 FROM vtxo

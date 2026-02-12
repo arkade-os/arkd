@@ -363,7 +363,7 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	}
 	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
 		Pubkeys: pubkeys,
-		After:   after,
+		After:   sql.NullInt64{Int64: after, Valid: true},
 		Before:  before,
 	})
 	if err != nil {
@@ -386,6 +386,19 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	})
 
 	return vtxos, nil
+}
+
+func (v *vtxoRepository) GetTxidsWithPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]string, error) {
+	txids, err := v.querier.SelectDistinctTxidsWithPubkeys(ctx, pubkeys)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return txids, nil
 }
 
 func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
@@ -458,7 +471,7 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 		ctx,
 		queries.SelectPendingSpentVtxosWithPubkeysParams{
 			Pubkeys: pubkeys,
-			After:   after,
+			After:   sql.NullInt64{Int64: after, Valid: true},
 			Before:  before,
 		},
 	)

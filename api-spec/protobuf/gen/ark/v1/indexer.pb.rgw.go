@@ -125,7 +125,7 @@ func request_IndexerService_GetConnectors_0(ctx context.Context, marshaler gatew
 
 var (
 	query_params_IndexerService_GetVtxoTree_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("txid", "vout", "batch_outpoint.txid", "batch_outpoint.vout"),
+		Filter: trie.New("vout", "batch_outpoint.vout", "batch_outpoint.txid", "txid"),
 	}
 )
 
@@ -237,6 +237,28 @@ func request_IndexerService_GetVtxos_0(ctx context.Context, marshaler gateway.Ma
 	}
 
 	msg, err := client.GetVtxos(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+var (
+	query_params_IndexerService_GetHistory_0 = gateway.QueryParameterParseOptions{
+		Filter: trie.New(),
+	}
+)
+
+func request_IndexerService_GetHistory_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetHistoryRequest
+	var metadata gateway.ServerMetadata
+
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_IndexerService_GetHistory_0); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+
+	msg, err := client.GetHistory(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 
 }
@@ -583,6 +605,28 @@ func RegisterIndexerServiceHandlerClient(ctx context.Context, mux *gateway.Serve
 		}
 
 		resp, md, err := request_IndexerService_GetVtxos_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/indexer/history", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/GetHistory", gateway.WithHTTPPathPattern("/v1/indexer/history"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_IndexerService_GetHistory_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)

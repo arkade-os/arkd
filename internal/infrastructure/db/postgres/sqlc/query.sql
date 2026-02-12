@@ -255,6 +255,20 @@ WHERE vtxo_vw.pubkey = ANY($1::varchar[])
     AND vtxo_vw.updated_at >= @after::bigint
     AND (@before::bigint = 0 OR vtxo_vw.updated_at <= @before::bigint);
 
+-- name: SelectDistinctTxidsWithPubkeys :many
+SELECT DISTINCT t.txid FROM (
+  SELECT vtxo_vw.txid AS txid FROM vtxo_vw
+  WHERE vtxo_vw.pubkey = ANY($1::varchar[])
+  UNION
+  SELECT vtxo_vw.ark_txid AS txid FROM vtxo_vw
+  WHERE vtxo_vw.pubkey = ANY($1::varchar[])
+    AND COALESCE(vtxo_vw.ark_txid, '') != ''
+  UNION
+  SELECT vtxo_vw.settled_by AS txid FROM vtxo_vw
+  WHERE vtxo_vw.pubkey = ANY($1::varchar[])
+    AND COALESCE(vtxo_vw.settled_by, '') != ''
+) t;
+
 -- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0)::bigint AS amount
 FROM vtxo
