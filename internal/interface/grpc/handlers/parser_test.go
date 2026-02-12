@@ -69,7 +69,11 @@ func TestVtxoListToProto_DepthAndNewFields(t *testing.T) {
 	require.Equal(t, "settler-tx", p0.SettledBy)
 	require.Equal(t, "ark-tx-1", p0.ArkTxid)
 	require.Equal(t, uint32(42), p0.Depth)
-	require.Equal(t, "512025a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967", p0.Script)
+	require.Equal(
+		t,
+		"512025a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+		p0.Script,
+	)
 
 	// Second VTXO: different depth, spent/swept/unrolled flags
 	p1 := protos[1]
@@ -121,7 +125,11 @@ func TestNewIndexerVtxo_DepthMapping(t *testing.T) {
 	require.Equal(t, "ark-tx-idx", proto.ArkTxid)
 	require.Equal(t, uint32(150), proto.Depth)
 	require.Equal(t, []string{"commit-a"}, proto.CommitmentTxids)
-	require.Equal(t, "512025a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967", proto.Script)
+	require.Equal(
+		t,
+		"512025a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+		proto.Script,
+	)
 }
 
 func TestNewIndexerVtxo_ZeroDepth(t *testing.T) {

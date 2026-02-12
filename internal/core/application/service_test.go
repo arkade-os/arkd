@@ -570,3 +570,95 @@ func TestAllNewVtxosGetSameDepth(t *testing.T) {
 		})
 	}
 }
+
+// TestDepth20k_MarkerBoundaryAndInheritance verifies marker behavior at the
+// target maximum depth of 20000. Tests boundary transitions, inheritance with
+// large marker sets, and depth calculation with deeply chained VTXOs.
+func TestDepth20k_MarkerBoundaryAndInheritance(t *testing.T) {
+	t.Run("depth 19999 inherits markers, depth 20000 creates new marker", func(t *testing.T) {
+		// Parent at depth 19999 => child at 20000 (boundary)
+		parent := domain.Vtxo{Depth: 19999, MarkerIDs: []string{"marker-19900"}}
+		parentMarkers := collectParentMarkers([]domain.Vtxo{parent})
+
+		newDepth := calculateMaxDepth([]domain.Vtxo{parent}) + 1
+		require.Equal(t, uint32(20000), newDepth)
+		require.True(t, domain.IsAtMarkerBoundary(newDepth))
+
+		markerIDs, createdMarker := deriveMarkerIDs(newDepth, parentMarkers, "tx-at-20k")
+		require.NotNil(t, createdMarker, "marker should be created at depth 20000")
+		require.Equal(t, uint32(20000), createdMarker.Depth)
+		require.Equal(t, []string{"marker-19900"}, createdMarker.ParentMarkerIDs)
+		require.Len(t, markerIDs, 1)
+		require.Equal(t, createdMarker.ID, markerIDs[0])
+	})
+
+	t.Run("depth 20001 inherits markers from boundary parent", func(t *testing.T) {
+		parent := domain.Vtxo{Depth: 20000, MarkerIDs: []string{"marker-20000"}}
+		parentMarkers := collectParentMarkers([]domain.Vtxo{parent})
+
+		newDepth := calculateMaxDepth([]domain.Vtxo{parent}) + 1
+		require.Equal(t, uint32(20001), newDepth)
+		require.False(t, domain.IsAtMarkerBoundary(newDepth))
+
+		markerIDs, createdMarker := deriveMarkerIDs(newDepth, parentMarkers, "tx-at-20001")
+		require.Nil(t, createdMarker, "no marker at non-boundary depth")
+		require.Equal(t, []string{"marker-20000"}, markerIDs)
+	})
+
+	t.Run("VTXO with 200 inherited markers from deep chain", func(t *testing.T) {
+		// Simulate a VTXO at depth 19950 that has accumulated 200 marker IDs
+		// from a chain where markers were created at every boundary
+		markers := make([]string, 200)
+		for i := range markers {
+			markers[i] = fmt.Sprintf("marker-%d", i*100)
+		}
+
+		parent := domain.Vtxo{Depth: 19950, MarkerIDs: markers}
+		collected := collectParentMarkers([]domain.Vtxo{parent})
+		sort.Strings(collected)
+		sort.Strings(markers)
+		require.Equal(t, markers, collected, "all 200 markers should be collected")
+	})
+
+	t.Run("multiple deep parents merge 200+ markers correctly", func(t *testing.T) {
+		// Two parents deep in the chain with overlapping markers
+		markersA := make([]string, 100)
+		markersB := make([]string, 150)
+		for i := range markersA {
+			markersA[i] = fmt.Sprintf("marker-%d", i*100) // 0, 100, ..., 9900
+		}
+		for i := range markersB {
+			markersB[i] = fmt.Sprintf("marker-%d", i*100) // 0, 100, ..., 14900
+		}
+
+		parents := []domain.Vtxo{
+			{Depth: 10000, MarkerIDs: markersA},
+			{Depth: 15000, MarkerIDs: markersB},
+		}
+		collected := collectParentMarkers(parents)
+
+		// Union should be 150 unique markers (0..14900)
+		require.Len(t, collected, 150)
+
+		newDepth := calculateMaxDepth(parents) + 1
+		require.Equal(t, uint32(15001), newDepth)
+		require.False(t, domain.IsAtMarkerBoundary(newDepth))
+
+		markerIDs, createdMarker := deriveMarkerIDs(newDepth, collected, "merge-tx")
+		require.Nil(t, createdMarker)
+		require.Len(t, markerIDs, 150, "child inherits all 150 unique markers")
+	})
+
+	t.Run("depth calculation with max uint32 near boundary", func(t *testing.T) {
+		// Verify depth arithmetic doesn't overflow for large values
+		parent := domain.Vtxo{Depth: 20000, MarkerIDs: []string{"marker-20000"}}
+		newDepth := calculateMaxDepth([]domain.Vtxo{parent}) + 1
+		require.Equal(t, uint32(20001), newDepth)
+
+		// Depth 20100 should also be a boundary
+		require.True(t, domain.IsAtMarkerBoundary(20100))
+		require.True(t, domain.IsAtMarkerBoundary(20200))
+		require.False(t, domain.IsAtMarkerBoundary(20001))
+		require.False(t, domain.IsAtMarkerBoundary(20099))
+	})
+}

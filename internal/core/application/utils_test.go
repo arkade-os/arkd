@@ -73,7 +73,7 @@ func TestGetNewVtxosFromRound_MarkerIDsAndDepth(t *testing.T) {
 	round := &domain.Round{
 		CommitmentTxid:     "test-commitment-txid",
 		VtxoTreeExpiration: 3600,
-		EndingTimestamp:     1700000000,
+		EndingTimestamp:    1700000000,
 		Stage:              domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true},
 		VtxoTree: tree.FlatTxTree{
 			{
@@ -144,7 +144,7 @@ func TestGetNewVtxosFromRound_SingleOutput(t *testing.T) {
 	round := &domain.Round{
 		CommitmentTxid:     "single-output-commitment",
 		VtxoTreeExpiration: 7200,
-		EndingTimestamp:     1700000000,
+		EndingTimestamp:    1700000000,
 		Stage:              domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true},
 		VtxoTree: tree.FlatTxTree{
 			{
