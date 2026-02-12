@@ -306,7 +306,8 @@ func get[T any](targetURL, key, macaroon string, tlsConfig *tls.Config) (result 
 			TLSClientConfig: tlsConfig,
 		},
 	}
-	resp, err := client.Do(req) // #nosec G704 -- URL is validated above
+	// #nosec G704 -- URL is validated above
+	resp, err := client.Do(req)
 	if err != nil {
 		return
 	}
