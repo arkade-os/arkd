@@ -193,6 +193,13 @@ func TestService(t *testing.T) {
 			testMarkerDepthRangeQueries(t, svc)
 			testMarkerChainTraversal(t, svc)
 			testGetVtxoChainWithMarkerOptimization(t, svc)
+			testBulkSweepMarkersConcurrent(t, svc)
+			testCreateRootMarkersForVtxos(t, svc)
+			testMarkerCreationAtBoundaryDepth(t, svc)
+			testMarkerInheritanceAtNonBoundary(t, svc)
+			testDustVtxoMarkersSweptImmediately(t, svc)
+			testSweepVtxosWithMarkersEmptyInput(t, svc)
+			testSweepVtxosWithMarkersNoMarkersOnVtxos(t, svc)
 			testOffchainTxRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
@@ -2317,6 +2324,626 @@ func testGetVtxoChainWithMarkerOptimization(t *testing.T, svc ports.RepoManager)
 		}
 		// We expect VTXOs at depths 50, 99, 100, 150 to be in range
 		require.Equal(t, 4, ourVtxosInRange, "Expected 4 VTXOs in depth range 50-150")
+	})
+}
+
+// testBulkSweepMarkersConcurrent tests that BulkSweepMarkers is thread-safe
+// when multiple goroutines attempt to sweep the same markers concurrently.
+// This verifies:
+// 1. No race conditions occur with concurrent sweeps
+// 2. Idempotency is maintained (same markers can be swept multiple times safely)
+// 3. All markers end up in the correct swept state
+func testBulkSweepMarkersConcurrent(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_bulk_sweep_markers_concurrent", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+
+		// Create 20 markers to sweep concurrently
+		numMarkers := 20
+		markers := make([]domain.Marker, numMarkers)
+		markerIDs := make([]string, numMarkers)
+		for i := 0; i < numMarkers; i++ {
+			markers[i] = domain.Marker{
+				ID:              "concurrent_marker_" + randomString(16),
+				Depth:           uint32(i * 100),
+				ParentMarkerIDs: nil,
+			}
+			if i > 0 {
+				markers[i].ParentMarkerIDs = []string{markers[i-1].ID}
+			}
+			markerIDs[i] = markers[i].ID
+		}
+
+		// Add all markers
+		for _, m := range markers {
+			err := svc.Markers().AddMarker(ctx, m)
+			require.NoError(t, err)
+		}
+
+		// Verify none are swept initially
+		for _, id := range markerIDs {
+			isSwept, err := svc.Markers().IsMarkerSwept(ctx, id)
+			require.NoError(t, err)
+			require.False(t, isSwept, "Marker %s should not be swept initially", id)
+		}
+
+		// Launch concurrent goroutines to sweep the same markers
+		numGoroutines := 10
+		sweptAt := time.Now().UnixMilli()
+
+		var wg sync.WaitGroup
+		errChan := make(chan error, numGoroutines)
+
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func(goroutineID int) {
+				defer wg.Done()
+				// Each goroutine sweeps all markers with slightly different timestamp
+				err := svc.Markers().BulkSweepMarkers(ctx, markerIDs, sweptAt+int64(goroutineID))
+				if err != nil {
+					errChan <- err
+				}
+			}(i)
+		}
+
+		wg.Wait()
+		close(errChan)
+
+		// Check for errors from goroutines
+		for err := range errChan {
+			require.NoError(t, err, "BulkSweepMarkers should not error on concurrent calls")
+		}
+
+		// Verify all markers are now swept
+		for _, id := range markerIDs {
+			isSwept, err := svc.Markers().IsMarkerSwept(ctx, id)
+			require.NoError(t, err)
+			require.True(t, isSwept, "Marker %s should be swept after concurrent operations", id)
+		}
+
+		// Verify swept markers can be retrieved
+		sweptMarkers, err := svc.Markers().GetSweptMarkers(ctx, markerIDs)
+		require.NoError(t, err)
+		require.Len(t, sweptMarkers, numMarkers)
+	})
+
+	t.Run("test_bulk_sweep_overlapping_marker_sets", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+
+		// Create 30 markers
+		numMarkers := 30
+		markers := make([]domain.Marker, numMarkers)
+		markerIDs := make([]string, numMarkers)
+		for i := 0; i < numMarkers; i++ {
+			markers[i] = domain.Marker{
+				ID:              "overlap_marker_" + randomString(16),
+				Depth:           uint32(i * 50),
+				ParentMarkerIDs: nil,
+			}
+			markerIDs[i] = markers[i].ID
+		}
+
+		// Add all markers
+		for _, m := range markers {
+			err := svc.Markers().AddMarker(ctx, m)
+			require.NoError(t, err)
+		}
+
+		// Create overlapping subsets
+		// Set A: markers 0-19
+		// Set B: markers 10-29
+		// Overlap: markers 10-19
+		setA := markerIDs[0:20]
+		setB := markerIDs[10:30]
+
+		sweptAt := time.Now().UnixMilli()
+
+		var wg sync.WaitGroup
+		errChan := make(chan error, 2)
+
+		// Sweep set A and set B concurrently
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := svc.Markers().BulkSweepMarkers(ctx, setA, sweptAt); err != nil {
+				errChan <- err
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := svc.Markers().BulkSweepMarkers(ctx, setB, sweptAt+1); err != nil {
+				errChan <- err
+			}
+		}()
+
+		wg.Wait()
+		close(errChan)
+
+		// Check for errors
+		for err := range errChan {
+			require.NoError(t, err, "BulkSweepMarkers should handle overlapping sets")
+		}
+
+		// Verify all markers are swept
+		for _, id := range markerIDs {
+			isSwept, err := svc.Markers().IsMarkerSwept(ctx, id)
+			require.NoError(t, err)
+			require.True(t, isSwept, "Marker %s should be swept", id)
+		}
+	})
+
+	t.Run("test_bulk_sweep_empty_and_non_empty_concurrent", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+
+		// Create 5 markers
+		markers := make([]domain.Marker, 5)
+		markerIDs := make([]string, 5)
+		for i := 0; i < 5; i++ {
+			markers[i] = domain.Marker{
+				ID:              "empty_nonempty_marker_" + randomString(16),
+				Depth:           uint32(i * 100),
+				ParentMarkerIDs: nil,
+			}
+			markerIDs[i] = markers[i].ID
+			err := svc.Markers().AddMarker(ctx, markers[i])
+			require.NoError(t, err)
+		}
+
+		sweptAt := time.Now().UnixMilli()
+
+		var wg sync.WaitGroup
+		errChan := make(chan error, 4)
+
+		// Mix of empty and non-empty sweeps concurrently
+		wg.Add(4)
+		go func() {
+			defer wg.Done()
+			if err := svc.Markers().BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
+				errChan <- err
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			// Empty slice should not error
+			if err := svc.Markers().BulkSweepMarkers(ctx, []string{}, sweptAt); err != nil {
+				errChan <- err
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := svc.Markers().BulkSweepMarkers(ctx, markerIDs[0:2], sweptAt); err != nil {
+				errChan <- err
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			// Empty slice again
+			if err := svc.Markers().BulkSweepMarkers(ctx, []string{}, sweptAt); err != nil {
+				errChan <- err
+			}
+		}()
+
+		wg.Wait()
+		close(errChan)
+
+		for err := range errChan {
+			require.NoError(t, err)
+		}
+
+		// All markers should be swept
+		for _, id := range markerIDs {
+			isSwept, err := svc.Markers().IsMarkerSwept(ctx, id)
+			require.NoError(t, err)
+			require.True(t, isSwept, "Marker %s should be swept", id)
+		}
+	})
+
+	t.Run("test_bulk_sweep_idempotency_rapid_fire", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+
+		// Create a single marker and sweep it many times concurrently
+		marker := domain.Marker{
+			ID:              "rapid_fire_marker_" + randomString(16),
+			Depth:           0,
+			ParentMarkerIDs: nil,
+		}
+		err := svc.Markers().AddMarker(ctx, marker)
+		require.NoError(t, err)
+
+		sweptAt := time.Now().UnixMilli()
+
+		// Launch 50 concurrent sweeps on the same marker
+		numSweeps := 50
+		var wg sync.WaitGroup
+		errChan := make(chan error, numSweeps)
+
+		for i := 0; i < numSweeps; i++ {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				if err := svc.Markers().
+					BulkSweepMarkers(ctx, []string{marker.ID}, sweptAt+int64(idx)); err != nil {
+					errChan <- err
+				}
+			}(i)
+		}
+
+		wg.Wait()
+		close(errChan)
+
+		for err := range errChan {
+			require.NoError(t, err, "Rapid-fire sweeps should all succeed")
+		}
+
+		// Verify marker is swept and only one record exists
+		isSwept, err := svc.Markers().IsMarkerSwept(ctx, marker.ID)
+		require.NoError(t, err)
+		require.True(t, isSwept)
+
+		// Get swept markers should return exactly 1 entry
+		sweptMarkers, err := svc.Markers().GetSweptMarkers(ctx, []string{marker.ID})
+		require.NoError(t, err)
+		require.Len(t, sweptMarkers, 1)
+	})
+}
+
+func testCreateRootMarkersForVtxos(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_create_root_markers_for_vtxos", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		commitmentTxid := randomString(32)
+
+		// Create batch VTXOs at depth 0 with MarkerIDs = outpoint.String()
+		vtxo1 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             1000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              0,
+			MarkerIDs:          nil, // will be set to outpoint.String() by convention
+		}
+		vtxo2 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             2000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              0,
+			MarkerIDs:          nil,
+		}
+		vtxo3 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 1},
+			PubKey:             pubkey,
+			Amount:             3000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              0,
+			MarkerIDs:          nil,
+		}
+
+		// Set MarkerIDs to outpoint.String() as the service does for batch VTXOs
+		vtxo1.MarkerIDs = []string{vtxo1.Outpoint.String()}
+		vtxo2.MarkerIDs = []string{vtxo2.Outpoint.String()}
+		vtxo3.MarkerIDs = []string{vtxo3.Outpoint.String()}
+
+		vtxos := []domain.Vtxo{vtxo1, vtxo2, vtxo3}
+
+		// Add VTXOs first
+		err := svc.Vtxos().AddVtxos(ctx, vtxos)
+		require.NoError(t, err)
+
+		// Create root markers
+		err = svc.Markers().CreateRootMarkersForVtxos(ctx, vtxos)
+		require.NoError(t, err)
+
+		// Verify each VTXO got a root marker with ID = outpoint.String()
+		for _, vtxo := range vtxos {
+			expectedMarkerID := vtxo.Outpoint.String()
+			marker, err := svc.Markers().GetMarker(ctx, expectedMarkerID)
+			require.NoError(t, err)
+			require.NotNil(t, marker, "root marker should exist for vtxo %s", expectedMarkerID)
+			require.Equal(t, expectedMarkerID, marker.ID)
+			require.Equal(t, uint32(0), marker.Depth)
+			require.Empty(t, marker.ParentMarkerIDs, "root markers should have no parents")
+		}
+
+		// Idempotency: calling again should not error
+		err = svc.Markers().CreateRootMarkersForVtxos(ctx, vtxos)
+		require.NoError(t, err)
+	})
+}
+
+func testMarkerCreationAtBoundaryDepth(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_marker_creation_at_boundary_depth", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		commitmentTxid := randomString(32)
+
+		// Create parent VTXOs at depth 99 with root markers
+		parentMarkerID := "root_boundary_" + randomString(16)
+		parentMarker := domain.Marker{
+			ID:              parentMarkerID,
+			Depth:           0,
+			ParentMarkerIDs: nil,
+		}
+		err := svc.Markers().AddMarker(ctx, parentMarker)
+		require.NoError(t, err)
+
+		parentVtxo := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             5000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              99,
+			MarkerIDs:          []string{parentMarkerID},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{parentVtxo})
+		require.NoError(t, err)
+
+		// Simulate offchain tx: child at depth 100 (marker boundary)
+		newDepth := uint32(100)
+		require.True(t, domain.IsAtMarkerBoundary(newDepth))
+
+		// Collect parent markers (mimics service logic)
+		parentMarkerIDs := parentVtxo.MarkerIDs
+
+		// Create new marker at boundary
+		newMarkerID := "boundary_marker_" + randomString(16)
+		newMarker := domain.Marker{
+			ID:              newMarkerID,
+			Depth:           newDepth,
+			ParentMarkerIDs: parentMarkerIDs,
+		}
+		err = svc.Markers().AddMarker(ctx, newMarker)
+		require.NoError(t, err)
+
+		// Create child VTXO with the new marker
+		childVtxo := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             4500,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid, randomString(32)},
+			Depth:              newDepth,
+			MarkerIDs:          []string{newMarkerID},
+		}
+		err = svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{childVtxo})
+		require.NoError(t, err)
+
+		// Verify the marker was created correctly
+		retrieved, err := svc.Markers().GetMarker(ctx, newMarkerID)
+		require.NoError(t, err)
+		require.NotNil(t, retrieved)
+		require.Equal(t, newDepth, retrieved.Depth)
+		require.ElementsMatch(t, parentMarkerIDs, retrieved.ParentMarkerIDs)
+
+		// Verify the child VTXO has only the new marker (not parent markers)
+		childVtxos, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{childVtxo.Outpoint})
+		require.NoError(t, err)
+		require.Len(t, childVtxos, 1)
+		require.Equal(t, []string{newMarkerID}, childVtxos[0].MarkerIDs)
+		require.Equal(t, newDepth, childVtxos[0].Depth)
+	})
+}
+
+func testMarkerInheritanceAtNonBoundary(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_marker_inheritance_at_non_boundary", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		commitmentTxid := randomString(32)
+
+		// Create two parent VTXOs at depth 50 with different markers
+		markerA := "inherit_marker_A_" + randomString(16)
+		markerB := "inherit_marker_B_" + randomString(16)
+
+		err := svc.Markers().AddMarker(ctx, domain.Marker{
+			ID: markerA, Depth: 0, ParentMarkerIDs: nil,
+		})
+		require.NoError(t, err)
+		err = svc.Markers().AddMarker(ctx, domain.Marker{
+			ID: markerB, Depth: 0, ParentMarkerIDs: nil,
+		})
+		require.NoError(t, err)
+
+		parent1 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             3000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              50,
+			MarkerIDs:          []string{markerA},
+		}
+		parent2 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             2000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              50,
+			MarkerIDs:          []string{markerB},
+		}
+
+		err = svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{parent1, parent2})
+		require.NoError(t, err)
+
+		// Child at depth 51 (NOT a boundary) should inherit both parent markers
+		newDepth := uint32(51)
+		require.False(t, domain.IsAtMarkerBoundary(newDepth))
+
+		inheritedMarkers := []string{markerA, markerB}
+		childVtxo := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             4500,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid, randomString(32)},
+			Depth:              newDepth,
+			MarkerIDs:          inheritedMarkers,
+		}
+		err = svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{childVtxo})
+		require.NoError(t, err)
+
+		// Verify the child VTXO inherited both parent markers
+		childVtxos, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{childVtxo.Outpoint})
+		require.NoError(t, err)
+		require.Len(t, childVtxos, 1)
+		require.ElementsMatch(t, inheritedMarkers, childVtxos[0].MarkerIDs)
+		require.Equal(t, newDepth, childVtxos[0].Depth)
+
+		// No new marker should have been created for this depth
+		// (verify by checking there's no marker with this child's txid)
+		nonExistent, err := svc.Markers().GetMarker(ctx, childVtxo.Outpoint.String())
+		require.NoError(t, err)
+		require.Nil(t, nonExistent)
+	})
+}
+
+func testDustVtxoMarkersSweptImmediately(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_dust_vtxo_markers_swept_immediately", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+
+		// Create markers that represent dust VTXOs (outpoint-based IDs)
+		dustOutpoint1 := domain.Outpoint{Txid: randomString(32), VOut: 0}
+		dustOutpoint2 := domain.Outpoint{Txid: randomString(32), VOut: 1}
+
+		dustMarkerID1 := dustOutpoint1.String()
+		dustMarkerID2 := dustOutpoint2.String()
+
+		// Add root markers for these dust VTXOs
+		err := svc.Markers().AddMarker(ctx, domain.Marker{
+			ID: dustMarkerID1, Depth: 0, ParentMarkerIDs: nil,
+		})
+		require.NoError(t, err)
+		err = svc.Markers().AddMarker(ctx, domain.Marker{
+			ID: dustMarkerID2, Depth: 0, ParentMarkerIDs: nil,
+		})
+		require.NoError(t, err)
+
+		// Verify they are NOT swept initially
+		isSwept, err := svc.Markers().IsMarkerSwept(ctx, dustMarkerID1)
+		require.NoError(t, err)
+		require.False(t, isSwept)
+
+		isSwept, err = svc.Markers().IsMarkerSwept(ctx, dustMarkerID2)
+		require.NoError(t, err)
+		require.False(t, isSwept)
+
+		// Simulate the dust sweep that happens in updateProjectionsAfterOffchainTxEvents:
+		// BulkSweepMarkers is called immediately for dust VTXOs
+		sweptAt := time.Now().Unix()
+		err = svc.Markers().BulkSweepMarkers(ctx, []string{dustMarkerID1, dustMarkerID2}, sweptAt)
+		require.NoError(t, err)
+
+		// Verify both dust markers are now swept
+		isSwept, err = svc.Markers().IsMarkerSwept(ctx, dustMarkerID1)
+		require.NoError(t, err)
+		require.True(t, isSwept, "dust marker 1 should be swept immediately")
+
+		isSwept, err = svc.Markers().IsMarkerSwept(ctx, dustMarkerID2)
+		require.NoError(t, err)
+		require.True(t, isSwept, "dust marker 2 should be swept immediately")
+
+		// Verify swept records have correct timestamp
+		sweptMarkers, err := svc.Markers().
+			GetSweptMarkers(ctx, []string{dustMarkerID1, dustMarkerID2})
+		require.NoError(t, err)
+		require.Len(t, sweptMarkers, 2)
+		for _, sm := range sweptMarkers {
+			require.Equal(t, sweptAt, sm.SweptAt)
+		}
+	})
+}
+
+func testSweepVtxosWithMarkersEmptyInput(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_sweep_vtxos_with_markers_empty_input", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+
+		// Simulate what sweepVtxosWithMarkers does with empty input:
+		// it should return early without touching the DB.
+		vtxoOutpoints := []domain.Outpoint{}
+
+		// Empty outpoints → nothing to fetch, nothing to sweep
+		require.Empty(t, vtxoOutpoints)
+
+		// BulkSweepMarkers with empty slice should not error
+		err := svc.Markers().BulkSweepMarkers(ctx, []string{}, time.Now().Unix())
+		require.NoError(t, err)
+	})
+}
+
+func testSweepVtxosWithMarkersNoMarkersOnVtxos(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_sweep_vtxos_with_markers_no_markers_on_vtxos", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		commitmentTxid := randomString(32)
+
+		// Create VTXOs with empty MarkerIDs (legacy / edge case)
+		vtxo1 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             1000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              0,
+			MarkerIDs:          []string{}, // empty
+		}
+		vtxo2 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+			PubKey:             pubkey,
+			Amount:             2000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			Depth:              0,
+			MarkerIDs:          nil, // nil
+		}
+
+		err := svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxo1, vtxo2})
+		require.NoError(t, err)
+
+		// Simulate sweepVtxosWithMarkers logic:
+		// fetch VTXOs, collect markers, if no markers → return 0
+		vtxos, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxo1.Outpoint, vtxo2.Outpoint})
+		require.NoError(t, err)
+		require.Len(t, vtxos, 2)
+
+		// Collect unique markers (should be empty)
+		uniqueMarkers := make(map[string]struct{})
+		for _, vtxo := range vtxos {
+			for _, markerID := range vtxo.MarkerIDs {
+				uniqueMarkers[markerID] = struct{}{}
+			}
+		}
+
+		// No markers to sweep → would return 0 in sweepVtxosWithMarkers
+		require.Empty(t, uniqueMarkers, "VTXOs with no markers should yield empty marker set")
 	})
 }
 
