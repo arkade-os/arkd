@@ -286,6 +286,7 @@ func (m *markerRepository) CreateRootMarkersForVtxos(
 			markerID := vtxo.Outpoint.String()
 
 			// Create the root marker (depth 0, no parents)
+			// Note: vtxo.MarkerIDs should already be set before AddVtxos is called
 			if err := querierWithTx.UpsertMarker(ctx, queries.UpsertMarkerParams{
 				ID:    markerID,
 				Depth: 0,
@@ -295,19 +296,6 @@ func (m *markerRepository) CreateRootMarkersForVtxos(
 				},
 			}); err != nil {
 				return fmt.Errorf("failed to create marker for vtxo %s: %w", markerID, err)
-			}
-
-			// Update the vtxo's markers
-			markersJSON, err := json.Marshal([]string{markerID})
-			if err != nil {
-				return fmt.Errorf("failed to marshal markers: %w", err)
-			}
-			if err := querierWithTx.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
-				Markers: markersJSON,
-				Txid:    vtxo.Txid,
-				Vout:    int32(vtxo.VOut),
-			}); err != nil {
-				return fmt.Errorf("failed to update markers for vtxo %s: %w", markerID, err)
 			}
 		}
 		return nil
