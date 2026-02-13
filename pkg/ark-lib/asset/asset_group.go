@@ -17,25 +17,30 @@ const (
 	maskMetadata     uint8 = 1 << 2 // 0x04
 )
 
+// AssetGroup represents a set of inputs and outputs for a single asset within a packet.
+// It can represent an issuance (no AssetId), a transfer, a reissuance, or a burn (no outputs).
 type AssetGroup struct {
-	// Can be nil in case of issuance
+	// AssetId identifies the asset. Nil when the group represents a new issuance
+	// (the id is derived from the transaction hash and group index).
 	AssetId *AssetId
-	// Can be nil if not created in a issuance
+	// ControlAsset references the control asset that authorizes reissuance (optional).
+	// Only valid for issuances; must be nil for all other group types.
 	ControlAsset *AssetRef
-	// Can be empty in case of burn
+	// Outputs lists the asset amounts assigned to transaction outputs. Can be empty for burns.
 	Outputs []AssetOutput
-	// Can be empty in case of issuance
+	// Inputs lists the asset amounts consumed from transaction inputs. Empty for issuances.
 	Inputs []AssetInput
-	// Used to encode extra data
+	// Metadata holds arbitrary key-value pairs attached to the asset group.
 	Metadata []Metadata
 }
 
+// IsIssuance returns true when the group has no AssetId, meaning it creates a new asset.
 func (ag AssetGroup) IsIssuance() bool {
 	return ag.AssetId == nil
 }
 
-// IsReissuance detect if the group is a reissuance by comparing the sum of the inputs and outputs
-// a reissuance is a group that is not an issuance and where sum(outputs) > sum(inputs)
+// IsReissuance returns whether the group is a reissuance by comparing the sum of inputs and
+// outputs. A reissuance is a group that is not an issuance and where sum(outputs) > sum(inputs).
 func (ag AssetGroup) IsReissuance() bool {
 	outAmounts := make([]uint64, len(ag.Outputs))
 	inAmounts := make([]uint64, len(ag.Inputs))
@@ -51,7 +56,7 @@ func (ag AssetGroup) IsReissuance() bool {
 	return !ag.IsIssuance() && sumInputs.Cmp(sumOutputs) < 0
 }
 
-// NewAssetGroup creates a new asset group and validates it
+// NewAssetGroup creates a new asset group and validates it.
 func NewAssetGroup(
 	assetId *AssetId, controlAsset *AssetRef, ins []AssetInput, outs []AssetOutput, md []Metadata,
 ) (*AssetGroup, error) {
@@ -68,7 +73,7 @@ func NewAssetGroup(
 	return &ag, nil
 }
 
-// NewAssetGroupFromString creates a new asset group from its string serialization in hex format
+// NewAssetGroupFromString creates a new asset group from its hex-encoded serialization.
 func NewAssetGroupFromString(s string) (*AssetGroup, error) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
@@ -86,7 +91,7 @@ func NewAssetGroupFromBytes(buf []byte) (*AssetGroup, error) {
 	return newAssetGroupFromReader(r)
 }
 
-// Serialize returns the raw serialization in bytes of the asset group upon its validation
+// Serialize validates the asset group and returns its raw byte serialization.
 func (ag AssetGroup) Serialize() ([]byte, error) {
 	if err := ag.validate(); err != nil {
 		return nil, err
@@ -99,12 +104,15 @@ func (ag AssetGroup) Serialize() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
+// String returns the hex-encoded representation of the serialized AssetGroup.
 func (ag AssetGroup) String() string {
 	// nolint
 	buf, _ := ag.Serialize()
 	return hex.EncodeToString(buf)
 }
 
+// validate checks that the group's fields are consistent (e.g. issuances have no inputs,
+// non-issuances have no control asset) and that all nested elements are valid.
 func (ag AssetGroup) validate() error {
 	if ag.AssetId != nil {
 		if err := ag.AssetId.validate(); err != nil {
@@ -145,6 +153,7 @@ func (ag AssetGroup) validate() error {
 	return nil
 }
 
+// serialize writes the presence byte, optional fields, inputs, and outputs to the writer.
 func (ag AssetGroup) serialize(w io.Writer) error {
 	// 1. Calculate and write Presence Byte
 	var presence uint8
@@ -199,12 +208,14 @@ func (ag AssetGroup) serialize(w io.Writer) error {
 	return nil
 }
 
+// toBatchLeafAssetGroup converts the group into its batch-leaf form by replacing the
+// inputs with a single intent input referencing the given transaction hash.
 func (ag AssetGroup) toBatchLeafAssetGroup(intentTxid chainhash.Hash) AssetGroup {
 	return AssetGroup{
-		AssetId: ag.AssetId,
-		Outputs: ag.Outputs,
+		AssetId:      ag.AssetId,
+		Outputs:      ag.Outputs,
 		ControlAsset: ag.ControlAsset,
-		Metadata: ag.Metadata,
+		Metadata:     ag.Metadata,
 		Inputs: []AssetInput{{
 			Type: AssetInputTypeIntent,
 			Txid: intentTxid,
@@ -212,6 +223,8 @@ func (ag AssetGroup) toBatchLeafAssetGroup(intentTxid chainhash.Hash) AssetGroup
 	}
 }
 
+// newAssetGroupFromReader deserializes an AssetGroup by reading the presence byte,
+// optional fields, inputs, and outputs from the reader.
 func newAssetGroupFromReader(r *bytes.Reader) (*AssetGroup, error) {
 	// 1. Read Presence Byte
 	presence, err := r.ReadByte()
@@ -274,6 +287,7 @@ func newAssetGroupFromReader(r *bytes.Reader) (*AssetGroup, error) {
 	return &ag, nil
 }
 
+// safeSumUint64 sums uint64 values using big.Int to avoid overflow.
 func safeSumUint64(values []uint64) *big.Int {
 	sum := new(big.Int)
 	for _, value := range values {

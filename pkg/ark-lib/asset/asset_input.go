@@ -11,14 +11,19 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
+// AssetInputType distinguishes how an asset input references its source.
 type AssetInputType uint8
 
 const (
+	// AssetInputTypeUnspecified is the zero value, representing an invalid input type.
 	AssetInputTypeUnspecified AssetInputType = iota
+	// AssetInputTypeLocal references an input of the same transaction.
 	AssetInputTypeLocal
+	// AssetInputTypeIntent references an input from an external (intent) transaction.
 	AssetInputTypeIntent
 )
 
+// String returns the human-readable name of the input type ("local", "intent", or "unspecified").
 func (t AssetInputType) String() string {
 	switch t {
 	case AssetInputTypeLocal:
@@ -30,17 +35,19 @@ func (t AssetInputType) String() string {
 	}
 }
 
+// AssetInput describes an asset amount consumed from a transaction input.
 type AssetInput struct {
-	// Can be either 'local' or 'intent'
+	// Type is the input kind, either 'local' (referencing a tx input) or 'intent' (referencing an external tx).
 	Type AssetInputType
-	// Always present
+	// Vin is the transaction input index this asset input refers to.
 	Vin uint16
-	// Can be empty if type is 'local'
+	// Txid is the hash of the referenced transaction. Only set when Type is 'intent'; empty for 'local' inputs.
 	Txid chainhash.Hash
-	// Always present
+	// Amount is the quantity of the asset consumed by this input.
 	Amount uint64
 }
 
+// NewAssetInputs creates a validated AssetInputs list from the given slice.
 func NewAssetInputs(ins []AssetInput) (AssetInputs, error) {
 	list := AssetInputs(ins)
 	if err := list.validate(); err != nil {
@@ -49,6 +56,7 @@ func NewAssetInputs(ins []AssetInput) (AssetInputs, error) {
 	return list, nil
 }
 
+// NewAssetInputsFromString parses a hex-encoded string into an AssetInputs list.
 func NewAssetInputsFromString(s string) (AssetInputs, error) {
 	if len(s) <= 0 {
 		return nil, fmt.Errorf("missing asset inputs")
@@ -60,6 +68,7 @@ func NewAssetInputsFromString(s string) (AssetInputs, error) {
 	return newAssetInputsFromReader(bytes.NewReader(buf))
 }
 
+// NewAssetInput creates a local asset input for the given transaction input index and amount.
 func NewAssetInput(index uint16, amount uint64) (*AssetInput, error) {
 	in := AssetInput{Type: AssetInputTypeLocal, Vin: index, Amount: amount}
 	if err := in.validate(); err != nil {
@@ -68,6 +77,8 @@ func NewAssetInput(index uint16, amount uint64) (*AssetInput, error) {
 	return &in, nil
 }
 
+// NewIntentAssetInput creates an intent asset input referencing an external transaction
+// by its hex-encoded txid, input index, and amount.
 func NewIntentAssetInput(txid string, index uint16, amount uint64) (*AssetInput, error) {
 	if len(txid) <= 0 {
 		return nil, fmt.Errorf("missing input intent txid")
@@ -100,6 +111,7 @@ func NewIntentAssetInput(txid string, index uint16, amount uint64) (*AssetInput,
 	return &in, nil
 }
 
+// NewAssetInputFromString parses a hex-encoded string into a single AssetInput.
 func NewAssetInputFromString(s string) (*AssetInput, error) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
@@ -108,11 +120,13 @@ func NewAssetInputFromString(s string) (*AssetInput, error) {
 	return NewAssetInputFromBytes(buf)
 }
 
+// NewAssetInputFromBytes deserializes a single AssetInput from a raw byte slice.
 func NewAssetInputFromBytes(buf []byte) (*AssetInput, error) {
 	r := bytes.NewReader(buf)
 	return newAssetInputFromReader(r)
 }
 
+// Serialize encodes the AssetInput into a byte slice.
 func (in AssetInput) Serialize() ([]byte, error) {
 	w := bytes.NewBuffer(nil)
 	if err := in.serialize(w); err != nil {
@@ -121,12 +135,14 @@ func (in AssetInput) Serialize() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
+// String returns the hex-encoded representation of the serialized AssetInput.
 func (in AssetInput) String() string {
 	// nolint
 	buf, _ := in.Serialize()
 	return hex.EncodeToString(buf)
 }
 
+// validate checks the AssetInput type is specified and, for intent inputs, that the txid is non-empty.
 func (in AssetInput) validate() error {
 	switch in.Type {
 	case AssetInputTypeLocal:
@@ -144,6 +160,7 @@ func (in AssetInput) validate() error {
 	}
 }
 
+// serialize writes the AssetInput type byte and type-specific fields to the writer.
 func (in AssetInput) serialize(w io.Writer) error {
 	if _, err := w.Write([]byte{byte(in.Type)}); err != nil {
 		return err
@@ -174,8 +191,10 @@ func (in AssetInput) serialize(w io.Writer) error {
 	return nil
 }
 
+// AssetInputs is an ordered list of AssetInput that serializes with a varint length prefix.
 type AssetInputs []AssetInput
 
+// Serialize encodes the full input list (length-prefixed) into a byte slice.
 func (ins AssetInputs) Serialize() ([]byte, error) {
 	w := bytes.NewBuffer(nil)
 	if err := ins.serialize(w); err != nil {
@@ -184,12 +203,14 @@ func (ins AssetInputs) Serialize() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
+// String returns the hex-encoded representation of the serialized input list.
 func (ins AssetInputs) String() string {
 	// nolint
 	buf, _ := ins.Serialize()
 	return hex.EncodeToString(buf)
 }
 
+// validate ensures all inputs share the same type, have unique vin values, and are individually valid.
 func (ins AssetInputs) validate() error {
 	m := make(map[uint16]struct{})
 	var inType AssetInputType
@@ -212,6 +233,7 @@ func (ins AssetInputs) validate() error {
 	return nil
 }
 
+// serialize writes the varint count followed by each serialized input to the writer.
 func (ins AssetInputs) serialize(w io.Writer) error {
 	if err := serializeVarUint(w, uint64(len(ins))); err != nil {
 		return err
@@ -224,6 +246,7 @@ func (ins AssetInputs) serialize(w io.Writer) error {
 	return nil
 }
 
+// newAssetInputFromReader deserializes a single AssetInput from the reader.
 func newAssetInputFromReader(r *bytes.Reader) (*AssetInput, error) {
 	typ, err := r.ReadByte()
 	if err != nil {
@@ -274,6 +297,7 @@ func newAssetInputFromReader(r *bytes.Reader) (*AssetInput, error) {
 	return &in, nil
 }
 
+// newAssetInputsFromReader deserializes a length-prefixed list of AssetInput from the reader.
 func newAssetInputsFromReader(r *bytes.Reader) ([]AssetInput, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {

@@ -10,17 +10,25 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+// Asset represents a specific asset amount held by a transaction input.
 type Asset struct {
-	AssetID string
+	// AssetId is the hex-encoded identifier of the asset.
+	AssetId string
+	// Amount is the quantity of the asset held.
 	Amount uint64
 }
 
+// AssetSource provides lookups for existing assets and their control assets.
+// It is used during transaction validation to verify issuance and reissuance rules.
 type AssetSource interface {
-	GetControlAsset(ctx context.Context, assetID string) (string, error)
-	AssetExists(ctx context.Context, assetID string) bool
+	// GetControlAsset returns the control asset id for the given asset, or an error.
+	GetControlAsset(ctx context.Context, assetId string) (string, error)
+	// AssetExists reports whether the given asset id has been previously issued.
+	AssetExists(ctx context.Context, assetId string) bool
 }
 
-// validateAssetTransaction validates that asset packet data matches the transaction inputs and outputs
+// ValidateAssetTransaction validates that the asset packet embedded in the transaction
+// is consistent with the transaction inputs/outputs and the given prevout asset map.
 func ValidateAssetTransaction(
 	ctx context.Context, tx *wire.MsgTx, assetPrevouts map[int][]Asset, assetSrc AssetSource,
 ) errors.Error {
@@ -28,24 +36,26 @@ func ValidateAssetTransaction(
 	if err != nil {
 		if errs.Is(err, AssetPacketNotFoundError{tx.TxID()}) {
 			if len(assetPrevouts) > 0 {
-				return errors.ASSET_VALIDATION_FAILED.New("asset packet not found in tx %s", tx.TxID())
+				return errors.ASSET_VALIDATION_FAILED.New(
+					"asset packet not found in tx %s", tx.TxID(),
+				)
 			}
 			return nil
 		}
-		return errors.ASSET_VALIDATION_FAILED.New("error creating asset packet: %w", err)
+		return errors.ASSET_VALIDATION_FAILED.New("failed to get asset packet from tx: %w", err)
 	}
-	
-	// validate every asset in the input assets list is present in the packet
+
+	// verify that every asset in the prevouts is present in the packet
 	if err := validateInputAssets(assetPrevouts, packet); err != nil {
 		return err
 	}
 
 	for groupIndex, group := range packet {
-		assetID := ""
+		assetId := ""
 
-		// verify the issuance transaction references a valid control asset
+		// derive the asset ID from the tx hash and validate the control asset if present
 		if group.IsIssuance() {
-			assetID = AssetId{
+			assetId = AssetId{
 				Txid:  tx.TxHash(),
 				Index: uint16(groupIndex),
 			}.String()
@@ -54,7 +64,7 @@ func ValidateAssetTransaction(
 				return err
 			}
 		} else {
-			assetID = group.AssetId.String()
+			assetId = group.AssetId.String()
 		}
 
 		// verify the reissuance has the associated control asset present in the packet
@@ -64,11 +74,11 @@ func ValidateAssetTransaction(
 			}
 		}
 
-		// validate inputs and outputs are related to real transaction ins/outs
-		if err := validateGroupOutputs(tx, assetID, group); err != nil {
+		// validate that inputs and outputs reference actual transaction inputs/outputs
+		if err := validateGroupOutputs(tx, assetId, group); err != nil {
 			return err
 		}
-		if err := validateGroupInputs(tx, assetID, assetPrevouts, group); err != nil {
+		if err := validateGroupInputs(tx, assetId, assetPrevouts, group); err != nil {
 			return err
 		}
 	}
@@ -76,8 +86,8 @@ func ValidateAssetTransaction(
 	return nil
 }
 
-// validateReissuance validates the control asset of a reissuance asset group
-// it verifies the control asset of the reissuance is present in the packet
+// validateReissuance verifies that the control asset of a reissuance group
+// is present in the packet.
 func validateReissuance(
 	ctx context.Context, packet Packet, group AssetGroup, assetSrc AssetSource,
 ) errors.Error {
@@ -106,8 +116,9 @@ func validateReissuance(
 	return nil
 }
 
-// validateIssuance validates the control asset of an issuance asset group
-// if it's present and referenced by group, it must be issued in the same transaction
+// validateIssuance validates the control asset of an issuance group.
+// If a control asset is present and referenced by group index, it must be issued
+// in the same transaction.
 func validateIssuance(ctx context.Context, packet Packet, grp AssetGroup, assetSrc AssetSource) errors.Error {
 	if grp.ControlAsset == nil {
 		return nil
@@ -147,18 +158,19 @@ func validateIssuance(ctx context.Context, packet Packet, grp AssetGroup, assetS
 	return errors.ASSET_VALIDATION_FAILED.New("invalid control asset reference type for issuance")
 }
 
-// validateInputVtxoAssets ensures every asset in the spentVtxos list is present in the packet, and that the amounts match
+// validateInputAssets ensures every asset in the prevouts map is present in the packet
+// with a matching input and amount.
 func validateInputAssets(assetPrevouts map[int][]Asset, packet Packet) errors.Error {
 	for inputIndex, assets := range assetPrevouts {
 		for _, asst := range assets {
-			assetGroup := findAssetGroupByAssetId(packet, asst.AssetID)
+			assetGroup := findAssetGroupByAssetId(packet, asst.AssetId)
 			if assetGroup == nil {
 				return errors.ASSET_NOT_FOUND.New(
 					"input %d owns asset %s but it's not present in the packet",
 					inputIndex,
-					asst.AssetID,
+					asst.AssetId,
 				).
-					WithMetadata(errors.AssetValidationMetadata{AssetID: asst.AssetID})
+					WithMetadata(errors.AssetValidationMetadata{AssetID: asst.AssetId})
 			}
 
 			foundVtxoInput := false
@@ -168,8 +180,8 @@ func validateInputAssets(assetPrevouts map[int][]Asset, packet Packet) errors.Er
 					if input.Amount != asst.Amount {
 						return errors.ASSET_INPUT_INVALID.New(
 							"input %d owns asset %s but amount mismatch: %d != %d",
-							inputIndex, asst.AssetID, input.Amount, asst.Amount).
-							WithMetadata(errors.AssetInputMetadata{AssetID: asst.AssetID})
+							inputIndex, asst.AssetId, input.Amount, asst.Amount,
+						).WithMetadata(errors.AssetInputMetadata{AssetID: asst.AssetId})
 					}
 					break
 				}
@@ -178,8 +190,8 @@ func validateInputAssets(assetPrevouts map[int][]Asset, packet Packet) errors.Er
 			if !foundVtxoInput {
 				return errors.ASSET_INPUT_INVALID.New(
 					"input %d owns asset %s but it's not present in the asset group inputs",
-					inputIndex, asst.AssetID).
-					WithMetadata(errors.AssetInputMetadata{AssetID: asst.AssetID})
+					inputIndex, asst.AssetId).
+					WithMetadata(errors.AssetInputMetadata{AssetID: asst.AssetId})
 			}
 		}
 	}
@@ -187,7 +199,8 @@ func validateInputAssets(assetPrevouts map[int][]Asset, packet Packet) errors.Er
 	return nil
 }
 
-// validateGroupOutputs ensures every output index referenced in the asset group is present in the ark tx
+// validateGroupOutputs ensures every output index referenced in the asset group
+// maps to a valid transaction output (not the anchor or packet output).
 func validateGroupOutputs(arkTx *wire.MsgTx, assetID string, grp AssetGroup) errors.Error {
 	if len(grp.Outputs) == 0 {
 		return nil
@@ -235,8 +248,8 @@ func validateGroupOutputs(arkTx *wire.MsgTx, assetID string, grp AssetGroup) err
 	return nil
 }
 
-// validateGroupInputs ensures every input index referenced in the asset group is present in the ark tx
-// and it matches the amount of the vtxo asset referenced by the input
+// validateGroupInputs ensures every input index referenced in the asset group is present
+// in the transaction and that the amount matches the corresponding prevout asset.
 func validateGroupInputs(
 	arkTx *wire.MsgTx, assetID string, inputAssets map[int][]Asset, grp AssetGroup,
 ) errors.Error {
@@ -245,7 +258,6 @@ func validateGroupInputs(
 	}
 
 	for i, input := range grp.Inputs {
-		// intent input type is always created by arkd operator, so if we receive one from tx submitted by user, it's invalid
 		if input.Type == AssetInputTypeIntent {
 			return errors.ASSET_INPUT_INVALID.New("unexpected asset input type: %s", input.Type).
 				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
@@ -267,11 +279,11 @@ func validateGroupInputs(
 		// verify vtxo holds the referenced asset, and amount matches
 		vtxoHasAsset := false
 		for _, asst := range assets {
-			if asst.AssetID == assetID {
+			if asst.AssetId == assetID {
 				if asst.Amount != input.Amount {
 					return errors.ASSET_INPUT_INVALID.New(
 						"asset input %d references input with asset %s but amount mismatch: %d != %d",
-						i, asst.AssetID, asst.Amount, input.Amount).
+						i, asst.AssetId, asst.Amount, input.Amount).
 						WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
 				}
 
@@ -292,6 +304,8 @@ func validateGroupInputs(
 	return nil
 }
 
+// findAssetGroupByAssetId returns the first group in the packet whose AssetId matches
+// the given hex string, or nil if none is found.
 func findAssetGroupByAssetId(packet Packet, assetId string) *AssetGroup {
 	for _, g := range packet {
 		if g.AssetId != nil && g.AssetId.String() == assetId {

@@ -10,11 +10,15 @@ import (
 	"sort"
 )
 
+// Metadata is a key-value pair attached to an asset group.
 type Metadata struct {
-	Key   []byte
+	// Key is the metadata entry name.
+	Key []byte
+	// Value is the metadata entry content.
 	Value []byte
 }
 
+// NewMetadata creates a Metadata entry from string key and value. Both must be non-empty.
 func NewMetadata(key, value string) (*Metadata, error) {
 	md := Metadata{
 		Key:   []byte(key),
@@ -26,6 +30,7 @@ func NewMetadata(key, value string) (*Metadata, error) {
 	return &md, nil
 }
 
+// NewMetadataFromString parses a hex-encoded string into a Metadata entry.
 func NewMetadataFromString(s string) (*Metadata, error) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
@@ -34,6 +39,7 @@ func NewMetadataFromString(s string) (*Metadata, error) {
 	return NewMetadataFromBytes(buf)
 }
 
+// NewMetadataFromBytes deserializes a Metadata entry from a raw byte slice.
 func NewMetadataFromBytes(buf []byte) (*Metadata, error) {
 	if len(buf) <= 0 {
 		return nil, fmt.Errorf("missing metadata")
@@ -42,6 +48,9 @@ func NewMetadataFromBytes(buf []byte) (*Metadata, error) {
 	return newMetadataFromReader(r)
 }
 
+// GenerateMetadataListHash computes a deterministic SHA-256 hash over all metadata entries.
+// Each entry is individually hashed, the hashes are sorted lexicographically, concatenated,
+// and hashed again to produce the final digest.
 func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
 	if len(md) <= 0 {
 		return nil, nil
@@ -56,7 +65,7 @@ func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
 		hashes = append(hashes, m.Hash())
 	}
 
-	// Sort the resulting hashing in lexicographic order
+	// Sort the resulting hashes in lexicographic order
 	sort.SliceStable(hashes, func(i, j int) bool {
 		return bytes.Compare(hashes[i][:], hashes[j][:]) < 0
 	})
@@ -71,6 +80,7 @@ func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
 	return hash[:], nil
 }
 
+// Hash returns the SHA-256 digest of the concatenated key and value bytes.
 func (md Metadata) Hash() [32]byte {
 	buf := make([]byte, 0, len(md.Key)+len(md.Value))
 	buf = append(buf, md.Key...)
@@ -78,6 +88,7 @@ func (md Metadata) Hash() [32]byte {
 	return sha256.Sum256(buf)
 }
 
+// Serialize encodes the Metadata entry into a byte slice.
 func (md Metadata) Serialize() ([]byte, error) {
 	w := bytes.NewBuffer(nil)
 	if err := md.serialize(w); err != nil {
@@ -86,12 +97,14 @@ func (md Metadata) Serialize() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
+// String returns the hex-encoded representation of the serialized Metadata entry.
 func (md Metadata) String() string {
 	// nolint
 	buf, _ := md.Serialize()
 	return hex.EncodeToString(buf)
 }
 
+// validate checks that both key and value are non-empty.
 func (md Metadata) validate() error {
 	if len(md.Key) <= 0 {
 		return fmt.Errorf("missing metadata key")
@@ -102,6 +115,7 @@ func (md Metadata) validate() error {
 	return nil
 }
 
+// serialize writes the key and value as variable-length slices to the writer.
 func (md Metadata) serialize(w io.Writer) error {
 	key := []byte(md.Key)
 	value := []byte(md.Value)
@@ -115,6 +129,7 @@ func (md Metadata) serialize(w io.Writer) error {
 	return nil
 }
 
+// newMetadataFromReader deserializes a single Metadata entry from the reader.
 func newMetadataFromReader(r *bytes.Reader) (*Metadata, error) {
 	key, err := deserializeVarSlice(r)
 	if err != nil {
@@ -139,8 +154,10 @@ func newMetadataFromReader(r *bytes.Reader) (*Metadata, error) {
 	return &md, nil
 }
 
+// metadataList is a sortable list of Metadata used for deterministic serialization.
 type metadataList []Metadata
 
+// newMetadataListFromReader deserializes a length-prefixed list of Metadata entries from the reader.
 func newMetadataListFromReader(r *bytes.Reader) ([]Metadata, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
@@ -158,12 +175,14 @@ func newMetadataListFromReader(r *bytes.Reader) ([]Metadata, error) {
 	return l, nil
 }
 
+// serialize sorts the entries by key in descending order and writes the length-prefixed
+// list to the writer.
 func (l metadataList) serialize(w io.Writer) error {
 	if err := serializeVarUint(w, uint64(len(l))); err != nil {
 		return err
 	}
 	sort.SliceStable(l, func(i, j int) bool {
-		return string(l[i].Key) > string(l[j].Key)
+		return string(l[i].Key)+string(l[i].Value) > string(l[j].Key)+string(l[j].Value)
 	})
 	for _, md := range l {
 		if err := md.serialize(w); err != nil {

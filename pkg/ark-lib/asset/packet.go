@@ -12,20 +12,27 @@ import (
 )
 
 var (
-	ArkadeMagic        = []byte{0x41, 0x52, 0x4B} // "ARK"
+	// ArkadeMagic is the 3-byte magic prefix ("ARK") that identifies an asset packet in an OP_RETURN output.
+	ArkadeMagic = []byte{0x41, 0x52, 0x4B} // "ARK"
+	// MarkerAssetPayload is the marker byte that follows ArkadeMagic and indicates an asset payload.
 	MarkerAssetPayload = byte(0)
 )
 
+// AssetPacketNotFoundError is returned when a transaction does not contain an asset packet.
 type AssetPacketNotFoundError struct {
+	// Txid is the transaction ID that was expected to contain an asset packet.
 	Txid string
 }
 
+// Error implements the error interface.
 func (e AssetPacketNotFoundError) Error() string {
 	return fmt.Sprintf("asset packet not found in tx %s", e.Txid)
 }
 
+// Packet represents a list of AssetGroup entries embedded in a transaction's OP_RETURN output.
 type Packet []AssetGroup
 
+// NewPacket creates a validated Packet from the given asset groups.
 func NewPacket(assets []AssetGroup) (Packet, error) {
 	p := Packet(assets)
 	if err := p.validate(); err != nil {
@@ -34,6 +41,8 @@ func NewPacket(assets []AssetGroup) (Packet, error) {
 	return p, nil
 }
 
+// NewPacketFromTx extracts and deserializes a Packet from the first OP_RETURN output
+// in the transaction that contains an asset packet.
 func NewPacketFromTx(tx *wire.MsgTx) (Packet, error) {
 	for _, out := range tx.TxOut {
 		if IsAssetPacket(out.PkScript) {
@@ -43,10 +52,12 @@ func NewPacketFromTx(tx *wire.MsgTx) (Packet, error) {
 	return nil, AssetPacketNotFoundError{Txid: tx.TxID()}
 }
 
+// NewPacketFromTxOut deserializes a Packet from a transaction output's script.
 func NewPacketFromTxOut(txOut wire.TxOut) (Packet, error) {
 	return NewPacketFromScript(txOut.PkScript)
 }
 
+// NewPacketFromScript deserializes a Packet from a raw OP_RETURN script.
 func NewPacketFromScript(script []byte) (Packet, error) {
 	rawPacket, err := rawPacketFromScript(script)
 	if err != nil {
@@ -55,6 +66,7 @@ func NewPacketFromScript(script []byte) (Packet, error) {
 	return newPacketFromReader(bytes.NewReader(rawPacket))
 }
 
+// NewPacketFromString parses a hex-encoded OP_RETURN script into a Packet.
 func NewPacketFromString(s string) (Packet, error) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
@@ -63,11 +75,14 @@ func NewPacketFromString(s string) (Packet, error) {
 	return NewPacketFromScript(buf)
 }
 
+// IsAssetPacket returns whether the given script is a valid OP_RETURN containing an asset packet.
 func IsAssetPacket(script []byte) bool {
 	_, err := rawPacketFromScript(script)
 	return err == nil
 }
 
+// LeafTxPacket converts the packet into its batch-leaf form where each group's inputs
+// are replaced by a single intent input referencing the given transaction hash.
 func (p Packet) LeafTxPacket(intentTxid chainhash.Hash) Packet {
 	batchLeafPacket := make(Packet, 0, len(p))
 	for _, assetGroup := range p {
@@ -76,6 +91,7 @@ func (p Packet) LeafTxPacket(intentTxid chainhash.Hash) Packet {
 	return batchLeafPacket
 }
 
+// TxOut serializes the packet into a zero-value OP_RETURN transaction output.
 func (p Packet) TxOut() (*wire.TxOut, error) {
 	script, err := p.Serialize()
 	if err != nil {
@@ -84,6 +100,7 @@ func (p Packet) TxOut() (*wire.TxOut, error) {
 	return wire.NewTxOut(0, script), nil
 }
 
+// Serialize encodes the packet as a complete OP_RETURN script (magic + marker + groups).
 func (p Packet) Serialize() ([]byte, error) {
 	w := bytes.NewBuffer(nil)
 	if err := serializeSlice(w, ArkadeMagic); err != nil {
@@ -101,12 +118,15 @@ func (p Packet) Serialize() ([]byte, error) {
 	return txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN).AddData(data).Script()
 }
 
+// String returns the hex-encoded representation of the serialized packet script.
 func (p Packet) String() string {
 	// nolint
 	buf, _ := p.Serialize()
 	return hex.EncodeToString(buf)
 }
 
+// validate checks that the packet is non-empty, all groups are valid, and control asset
+// group index references are within bounds.
 func (p Packet) validate() error {
 	if len(p) <= 0 {
 		return fmt.Errorf("missing assets")
@@ -126,6 +146,7 @@ func (p Packet) validate() error {
 	return nil
 }
 
+// serialize writes the varint group count followed by each serialized group to the writer.
 func (p Packet) serialize(w io.Writer) error {
 	if err := serializeVarUint(w, uint64(len(p))); err != nil {
 		return err
@@ -140,6 +161,7 @@ func (p Packet) serialize(w io.Writer) error {
 	return nil
 }
 
+// newPacketFromReader deserializes a Packet from the reader, ensuring all bytes are consumed.
 func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
@@ -154,7 +176,7 @@ func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 		assets = append(assets, *ag)
 	}
 
-	// Make sure we read all packet with no extra bytes left
+	// Make sure we read the entire packet with no extra bytes left
 	if r.Len() > 0 {
 		return nil, fmt.Errorf("invalid packet length, left %d unknown bytes to read", r.Len())
 	}
@@ -166,6 +188,8 @@ func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 	return packet, nil
 }
 
+// rawPacketFromScript extracts the raw packet bytes from an OP_RETURN script
+// after validating the magic prefix and asset marker.
 func rawPacketFromScript(script []byte) ([]byte, error) {
 	if len(script) <= 0 {
 		return nil, fmt.Errorf("missing output script")
@@ -212,7 +236,7 @@ func rawPacketFromScript(script []byte) ([]byte, error) {
 		return nil, err
 	}
 	if marker != MarkerAssetPayload {
-		return nil, fmt.Errorf("invalid aset marker, got %d want %d", marker, MarkerAssetPayload)
+		return nil, fmt.Errorf("invalid asset marker, got %d want %d", marker, MarkerAssetPayload)
 	}
 
 	if r.Len() <= 0 {

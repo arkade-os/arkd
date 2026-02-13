@@ -16,7 +16,7 @@ func (s *service) validateAssetTransaction(
 	for inputIndex, assets := range inputAssets {
 		assetTxs := make([]asset.Asset, 0)
 		for _, a := range assets {
-			assetTxs = append(assetTxs, asset.Asset{AssetID: a.AssetId, Amount: a.Amount})
+			assetTxs = append(assetTxs, asset.Asset{AssetId: a.AssetId, Amount: a.Amount})
 		}
 		assetsPrevout[inputIndex] = assetTxs
 	}

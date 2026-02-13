@@ -8,11 +8,15 @@ import (
 	"io"
 )
 
+// AssetOutput describes an asset amount assigned to a transaction output.
 type AssetOutput struct {
-	Vout   uint16
+	// Vout is the transaction output index this asset output is assigned to.
+	Vout uint16
+	// Amount is the quantity of the asset assigned to this output.
 	Amount uint64
 }
 
+// NewAssetOutputs creates a validated AssetOutputs list from the given slice.
 func NewAssetOutputs(outs []AssetOutput) (AssetOutputs, error) {
 	list := AssetOutputs(outs)
 	if err := list.validate(); err != nil {
@@ -21,6 +25,7 @@ func NewAssetOutputs(outs []AssetOutput) (AssetOutputs, error) {
 	return list, nil
 }
 
+// NewAssetOutputsFromString parses a hex-encoded string into an AssetOutputs list.
 func NewAssetOutputsFromString(s string) (AssetOutputs, error) {
 	if len(s) <= 0 {
 		return nil, fmt.Errorf("missing asset outputs")
@@ -32,6 +37,7 @@ func NewAssetOutputsFromString(s string) (AssetOutputs, error) {
 	return newAssetOutputsFromReader(bytes.NewReader(buf))
 }
 
+// NewAssetOutput creates a single validated AssetOutput for the given output index and amount.
 func NewAssetOutput(vout uint16, amount uint64) (*AssetOutput, error) {
 	out := AssetOutput{Vout: vout, Amount: amount}
 	if err := out.validate(); err != nil {
@@ -40,6 +46,7 @@ func NewAssetOutput(vout uint16, amount uint64) (*AssetOutput, error) {
 	return &out, nil
 }
 
+// NewAssetOutputFromString parses a hex-encoded string into a single AssetOutput.
 func NewAssetOutputFromString(s string) (*AssetOutput, error) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
@@ -48,6 +55,7 @@ func NewAssetOutputFromString(s string) (*AssetOutput, error) {
 	return NewAssetOutputFromBytes(buf)
 }
 
+// NewAssetOutputFromBytes deserializes a single AssetOutput from a raw byte slice.
 func NewAssetOutputFromBytes(buf []byte) (*AssetOutput, error) {
 	if len(buf) <= 0 {
 		return nil, fmt.Errorf("missing asset output")
@@ -61,6 +69,7 @@ func NewAssetOutputFromBytes(buf []byte) (*AssetOutput, error) {
 	return out, nil
 }
 
+// Serialize encodes the AssetOutput into a byte slice.
 func (out AssetOutput) Serialize() ([]byte, error) {
 	var buf bytes.Buffer
 	if err := out.serialize(&buf); err != nil {
@@ -69,11 +78,13 @@ func (out AssetOutput) Serialize() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// String returns the hex-encoded representation of the serialized AssetOutput.
 func (out AssetOutput) String() string {
 	buf, _ := out.Serialize()
 	return hex.EncodeToString(buf)
 }
 
+// validate checks that the output amount is greater than zero.
 func (out AssetOutput) validate() error {
 	if out.Amount == 0 {
 		return fmt.Errorf("asset output amount must be greater than 0")
@@ -81,6 +92,7 @@ func (out AssetOutput) validate() error {
 	return nil
 }
 
+// serialize writes the vout and amount fields to the writer.
 func (out AssetOutput) serialize(w io.Writer) error {
 	if err := serializeUint16(w, out.Vout); err != nil {
 		return err
@@ -91,6 +103,7 @@ func (out AssetOutput) serialize(w io.Writer) error {
 	return nil
 }
 
+// newAssetOutputFromReader deserializes a single AssetOutput from the reader.
 func newAssetOutputFromReader(r *bytes.Reader) (*AssetOutput, error) {
 	index, err := deserializeUint16(r)
 	if err != nil {
@@ -106,14 +119,17 @@ func newAssetOutputFromReader(r *bytes.Reader) (*AssetOutput, error) {
 	return NewAssetOutput(index, amount)
 }
 
+// AssetOutputs is an ordered list of AssetOutput that serializes with a varint length prefix.
 type AssetOutputs []AssetOutput
 
+// String returns the hex-encoded representation of the serialized output list.
 func (outs AssetOutputs) String() string {
 	// nolint
 	buf, _ := outs.Serialize()
 	return hex.EncodeToString(buf)
 }
 
+// Serialize encodes the full output list (length-prefixed) into a byte slice.
 func (outs AssetOutputs) Serialize() ([]byte, error) {
 	var buf bytes.Buffer
 	if err := outs.serialize(&buf); err != nil {
@@ -122,6 +138,7 @@ func (outs AssetOutputs) Serialize() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// serialize validates the list and writes the varint count followed by each output to the writer.
 func (outs AssetOutputs) serialize(w io.Writer) error {
 	if err := outs.validate(); err != nil {
 		return err
@@ -138,6 +155,7 @@ func (outs AssetOutputs) serialize(w io.Writer) error {
 	return nil
 }
 
+// validate ensures all outputs have unique vout values and are individually valid.
 func (outs AssetOutputs) validate() error {
 	m := make(map[uint16]struct{})
 	for _, out := range outs {
@@ -153,6 +171,7 @@ func (outs AssetOutputs) validate() error {
 	return nil
 }
 
+// newAssetOutputsFromReader deserializes a length-prefixed list of AssetOutput from the reader.
 func newAssetOutputsFromReader(r *bytes.Reader) ([]AssetOutput, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {

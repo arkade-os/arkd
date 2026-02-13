@@ -16,24 +16,23 @@ import (
 )
 
 type txFixture struct {
-	Name string `json:"name"`
-	Tx string `json:"tx"`
-	Prevouts map[int][]struct{
+	Name     string `json:"name"`
+	Tx       string `json:"tx"`
+	Prevouts map[int][]struct {
 		AssetID string `json:"assetId"`
-		Amount uint64 `json:"amount"`
+		Amount  uint64 `json:"amount"`
 	} `json:"prevouts"`
-	ControlAssets map[string]string `json:"controlAssets,omitempty"`
-	ExistingAssets []string `json:"existingAssets,omitempty"`
+	ControlAssets  map[string]string `json:"controlAssets,omitempty"`
+	ExistingAssets []string          `json:"existingAssets,omitempty"`
 }
 
 type txValidationFixtures struct {
-	Valid []txFixture `json:"valid"`
+	Valid   []txFixture `json:"valid"`
 	Invalid []struct {
 		txFixture
 		ExpectedError string `json:"expectedError"`
 	} `json:"invalid"`
 }
-
 
 func TestTxValidation(t *testing.T) {
 	ctx := t.Context()
@@ -75,7 +74,7 @@ func parseTxFixture(t *testing.T, fixture txFixture) (
 	for inputIndex, prevouts := range fixture.Prevouts {
 		assetTxs := make([]asset.Asset, 0)
 		for _, prevout := range prevouts {
-			assetTxs = append(assetTxs, asset.Asset{AssetID: prevout.AssetID, Amount: prevout.Amount})
+			assetTxs = append(assetTxs, asset.Asset{AssetId: prevout.AssetID, Amount: prevout.Amount})
 		}
 		assetPrevouts[inputIndex] = assetTxs
 	}
@@ -88,9 +87,10 @@ func parseTxFixture(t *testing.T, fixture txFixture) (
 }
 
 type assetSrc struct {
-	controlAssets map[string]string
+	controlAssets  map[string]string
 	existingAssets []string
 }
+
 func (s *assetSrc) AssetExists(_ context.Context, assetID string) bool {
 	return slices.Contains(s.existingAssets, assetID)
 }
