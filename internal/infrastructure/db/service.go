@@ -563,12 +563,14 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// Get spent VTXOs to calculate new depth
 		var newDepth uint32
 		var parentMarkerIDs []string
+		depthKnown := true
 		if len(spentOutpoints) > 0 {
 			spentVtxos, err := s.vtxoStore.GetVtxos(ctx, spentOutpoints)
 			if err != nil {
 				log.WithError(err).
-					Warn("failed to get spent vtxos for depth calculation, aborting finalization")
-				return
+					Warn("failed to get spent vtxos for depth calculation, skipping marker creation")
+				// Continue with depth 0 but mark as unknown to avoid creating misleading root markers
+				depthKnown = false
 			} else {
 				// Calculate depth: max(parent depths) + 1
 				var maxDepth uint32
@@ -593,9 +595,10 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 
 		// Create marker if at boundary depth, or inherit ALL parent markers
+		// Skip marker creation if depth is unknown (GetVtxos failed) to avoid misleading root markers
 		var markerIDs []string
 
-		if domain.IsAtMarkerBoundary(newDepth) {
+		if depthKnown && domain.IsAtMarkerBoundary(newDepth) {
 			// Create marker ID from the first output (the ark tx id + first vtxo vout)
 			newMarkerID := fmt.Sprintf("%s:marker:%d", txid, newDepth)
 			marker := domain.Marker{
