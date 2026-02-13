@@ -1718,7 +1718,6 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	// compute weight
 	finalizedProofTx, err := proof.FinalizeAndExtract()
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
