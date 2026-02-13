@@ -37,7 +37,11 @@ func (m *markerRepository) Close() {
 }
 
 func (m *markerRepository) AddMarker(ctx context.Context, marker domain.Marker) error {
-	parentMarkersJSON, err := json.Marshal(marker.ParentMarkerIDs)
+	parentMarkerIDs := marker.ParentMarkerIDs
+	if parentMarkerIDs == nil {
+		parentMarkerIDs = []string{}
+	}
+	parentMarkersJSON, err := json.Marshal(parentMarkerIDs)
 	if err != nil {
 		return fmt.Errorf("failed to marshal parent markers: %w", err)
 	}

@@ -652,8 +652,8 @@ func TestDepth20k_MarkerBoundaryAndInheritance(t *testing.T) {
 		require.Len(t, markerIDs, 150, "child inherits all 150 unique markers")
 	})
 
-	t.Run("depth calculation with max uint32 near boundary", func(t *testing.T) {
-		// Verify depth arithmetic doesn't overflow for large values
+	t.Run("depth beyond 20k target remains valid", func(t *testing.T) {
+		// Verify depth arithmetic works correctly beyond the 20k boundary
 		parent := domain.Vtxo{Depth: 20000, MarkerIDs: []string{"marker-20000"}}
 		newDepth := calculateMaxDepth([]domain.Vtxo{parent}) + 1
 		require.Equal(t, uint32(20001), newDepth)
