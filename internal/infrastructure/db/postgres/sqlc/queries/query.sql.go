@@ -1768,7 +1768,7 @@ func (q *Queries) SelectVtxoPubKeysByCommitmentTxid(ctx context.Context, arg Sel
 }
 
 const selectVtxosByArkTxid = `-- name: SelectVtxosByArkTxid :many
-SELECT txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, preconfirmed, settled_by, ark_txid, intent_id, updated_at, depth, markers, commitments, swept FROM vtxo_vw WHERE ark_txid = $1
+SELECT txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, preconfirmed, settled_by, ark_txid, intent_id, updated_at, depth, markers, commitments, swept FROM vtxo_vw WHERE txid = $1
 `
 
 // Get all VTXOs created by a specific ark tx (offchain tx)

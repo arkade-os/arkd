@@ -505,7 +505,7 @@ ORDER BY depth DESC;
 
 -- name: SelectVtxosByArkTxid :many
 -- Get all VTXOs created by a specific ark tx (offchain tx)
-SELECT * FROM vtxo_vw WHERE ark_txid = @ark_txid;
+SELECT * FROM vtxo_vw WHERE txid = @ark_txid;
 
 -- name: SelectVtxoChainByMarker :many
 -- Get VTXOs whose markers JSONB array contains any of the given marker IDs
