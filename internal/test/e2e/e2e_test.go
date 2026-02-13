@@ -4301,7 +4301,6 @@ func TestAsset(t *testing.T) {
 		alice := setupArkSDK(t)
 
 		// Fund the client with the exact amount needed for an issuance to not create any change
-		// TODO: use 330 sats = dust
 		faucetOffchain(t, alice, 0.00000330)
 
 		supply := uint64(6_000)
