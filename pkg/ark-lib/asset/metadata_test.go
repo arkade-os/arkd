@@ -10,30 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type metadataFixtures struct {
-	Valid []struct {
-		Name          string `json:"name"`
-		Key           string `json:"key"`
-		Value         string `json:"value"`
-		Hash          string `json:"hash"`
-		SerializedHex string `json:"serializedHex"`
-	} `json:"valid"`
-	Invalid struct {
-		NewMetadataFromKeyValue []struct {
-			Name          string `json:"name"`
-			Key           string `json:"key"`
-			Value         string `json:"value"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newMetadata"`
-		NewMetadataFromString []struct {
-			Name          string `json:"name"`
-			SerializedHex string `json:"serializedHex"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newMetadataFromString"`
-	} `json:"invalid"`
-}
-
-func TestMetada(t *testing.T) {
+func TestMetadata(t *testing.T) {
 	var fixtures metadataFixtures
 	buf, err := os.ReadFile("testdata/metadata_fixtures.json")
 	require.NoError(t, err)
@@ -41,26 +18,44 @@ func TestMetada(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("valid", func(t *testing.T) {
-		for _, v := range fixtures.Valid {
-			t.Run(v.Name, func(t *testing.T) {
-				metadata, err := asset.NewMetadata(v.Key, v.Value)
-				require.NoError(t, err)
-				require.NotNil(t, metadata)
+		t.Run("new metadata", func(t *testing.T) {
+			for _, v := range fixtures.Valid.NewMetadata {
+				t.Run(v.Name, func(t *testing.T) {
+					metadata, err := asset.NewMetadata(v.Key, v.Value)
+					require.NoError(t, err)
+					require.NotNil(t, metadata)
 
-				got, err := metadata.Serialize()
-				require.NoError(t, err)
-				require.NotEmpty(t, got)
-				require.Equal(t, v.SerializedHex, metadata.String())
+					got, err := metadata.Serialize()
+					require.NoError(t, err)
+					require.NotEmpty(t, got)
+					require.Equal(t, v.SerializedHex, metadata.String())
 
-				mdHash := metadata.Hash()
-				require.Equal(t, v.Hash, hex.EncodeToString(mdHash[:]))
+					mdHash := metadata.Hash()
+					require.Equal(t, v.Hash, hex.EncodeToString(mdHash[:]))
 
-				testMetadata, err := asset.NewMetadataFromString(v.SerializedHex)
-				require.NoError(t, err)
-				require.Equal(t, v.Key, string(testMetadata.Key))
-				require.Equal(t, v.Value, string(testMetadata.Value))
-			})
-		}
+					testMetadata, err := asset.NewMetadataFromString(v.SerializedHex)
+					require.NoError(t, err)
+					require.Equal(t, v.Key, string(testMetadata.Key))
+					require.Equal(t, v.Value, string(testMetadata.Value))
+				})
+			}
+		})
+		t.Run("hash", func(t *testing.T) {
+			for _, v := range fixtures.Valid.Hash {
+				t.Run(v.Name, func(t *testing.T) {
+					var metadata []asset.Metadata
+					for _, vv := range v.Metadata {
+						md, err := asset.NewMetadata(vv.Key, vv.Value)
+						require.NoError(t, err)
+						require.NotNil(t, md)
+						metadata = append(metadata, *md)
+					}
+					got, err := asset.GenerateMetadataListHash(metadata)
+					require.NoError(t, err)
+					require.Equal(t, v.ExpectedHash, hex.EncodeToString(got[:]))
+				})
+			}
+		})
 	})
 
 	t.Run("invalid", func(t *testing.T) {
@@ -85,4 +80,37 @@ func TestMetada(t *testing.T) {
 			}
 		})
 	})
+}
+
+type metadataFixtures struct {
+	Valid struct {
+		NewMetadata []struct {
+			Name          string `json:"name"`
+			Key           string `json:"key"`
+			Value         string `json:"value"`
+			Hash          string `json:"hash"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newMetadata"`
+		Hash []struct {
+			Name     string `json:"name"`
+			Metadata []struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			} `json:"metadata"`
+			ExpectedHash string `json:"expectedHash"`
+		} `json:"hash"`
+	} `json:"valid"`
+	Invalid struct {
+		NewMetadataFromKeyValue []struct {
+			Name          string `json:"name"`
+			Key           string `json:"key"`
+			Value         string `json:"value"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newMetadata"`
+		NewMetadataFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newMetadataFromString"`
+	} `json:"invalid"`
 }

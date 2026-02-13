@@ -1,41 +1,114 @@
 {
-    "valid": [
-        {
-            "name": "simple",
-            "key": "testKey",
-            "value": "testValue",
-            "hash": "f5429d6efda7ff6001122b7aca57a2f33e38d00d553dbfbef2d3fe354973689b",
-            "serializedHex": "07746573744b6579097465737456616c7565"
-        },
-        {
-            "name": "nested json",
-            "key": "{\"key\": \"key\"}",
-            "value": "{\"value\": \"value\"}",
-            "hash": "683328a0099898d630b2c6f29b58192bbc94e427ef6ef966678c63bfd9cbd3f9",
-            "serializedHex": "0e7b226b6579223a20226b6579227d127b2276616c7565223a202276616c7565227d"
-        },
-        {
-            "name": "another alphabet",
-            "key": "钥匙",
-            "value": "价值",
-            "hash": "e0cffbed00b360f34e46715480ecdb198f2520068c58cc6b0b99cb680bda328e",
-            "serializedHex": "06e992a5e58c9906e4bbb7e580bc"
-        },
-        {
-            "name": "long key value",
-            "key": "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua",
-            "value": "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua",
-            "hash": "489bc70da925eb59cc44fa4ebb4b4e4261edb1967707e4f28dca1d26c1a3c63e",
-            "serializedHex": "786c6f72656d20697073756d20646f6c6f722073697420616d657420636f6e73656374657475722061646970697363696e6720656c69742073656420646f20656975736d6f642074656d706f7220696e6369646964756e74207574206c61626f726520657420646f6c6f7265206d61676e6120616c69717561786c6f72656d20697073756d20646f6c6f722073697420616d657420636f6e73656374657475722061646970697363696e6720656c69742073656420646f20656975736d6f642074656d706f7220696e6369646964756e74207574206c61626f726520657420646f6c6f7265206d61676e6120616c69717561"
-        },
-        {
-            "name": "short key value",
-            "key": "0",
-            "value": "1",
-            "hash": "938db8c9f82c8cb58d3f3ef4fd250036a48d26a712753d2fde5abd03a85cabf4",
-            "serializedHex": "01300131"
-        }
-    ],
+    "valid": {
+        "newMetadata": [
+            {
+                "name": "simple",
+                "key": "testKey",
+                "value": "testValue",
+                "hash": "f5429d6efda7ff6001122b7aca57a2f33e38d00d553dbfbef2d3fe354973689b",
+                "serializedHex": "07746573744b6579097465737456616c7565"
+            },
+            {
+                "name": "nested json",
+                "key": "{\"key\": \"key\"}",
+                "value": "{\"value\": \"value\"}",
+                "hash": "683328a0099898d630b2c6f29b58192bbc94e427ef6ef966678c63bfd9cbd3f9",
+                "serializedHex": "0e7b226b6579223a20226b6579227d127b2276616c7565223a202276616c7565227d"
+            },
+            {
+                "name": "another alphabet",
+                "key": "钥匙",
+                "value": "价值",
+                "hash": "e0cffbed00b360f34e46715480ecdb198f2520068c58cc6b0b99cb680bda328e",
+                "serializedHex": "06e992a5e58c9906e4bbb7e580bc"
+            },
+            {
+                "name": "emoji",
+                "key": "🔑",
+                "value": "👾",
+                "hash": "08b916d2b78a9c4fc52fe43bd2c299f69e2945873783ed79507dc303a962da90",
+                "serializedHex": "04f09f949104f09f91be"
+            },
+            {
+                "name": "long key value",
+                "key": "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua",
+                "value": "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua",
+                "hash": "489bc70da925eb59cc44fa4ebb4b4e4261edb1967707e4f28dca1d26c1a3c63e",
+                "serializedHex": "786c6f72656d20697073756d20646f6c6f722073697420616d657420636f6e73656374657475722061646970697363696e6720656c69742073656420646f20656975736d6f642074656d706f7220696e6369646964756e74207574206c61626f726520657420646f6c6f7265206d61676e6120616c69717561786c6f72656d20697073756d20646f6c6f722073697420616d657420636f6e73656374657475722061646970697363696e6720656c69742073656420646f20656975736d6f642074656d706f7220696e6369646964756e74207574206c61626f726520657420646f6c6f7265206d61676e6120616c69717561"
+            },
+            {
+                "name": "short key value",
+                "key": "0",
+                "value": "1",
+                "hash": "938db8c9f82c8cb58d3f3ef4fd250036a48d26a712753d2fde5abd03a85cabf4",
+                "serializedHex": "01300131"
+            }
+        ],
+        "hash": [
+            {
+                "name": "asset data (with icon url)",
+                "metadata": [
+                    {
+                        "key": "name",
+                        "value": "testAsset"
+                    },
+                    {
+                        "key": "ticker",
+                        "value": "TST"
+                    },
+                    {
+                        "key": "decimals",
+                        "value": "0"
+                    },
+                    {
+                        "key": "icon",
+                        "value": "https://example.com/icon.png"
+                    }
+                ],
+                "expectedHash": "a203386912100e8702ff13422abc870f18dbe9ad3bc8ffbcfeaf7076d617640a"
+            },
+            {
+                "name": "asset data (with icon embedded)",
+                "metadata": [
+                    {
+                        "key": "name",
+                        "value": "testAsset"
+                    },
+                    {
+                        "key": "ticker",
+                        "value": "TST"
+                    },
+                    {
+                        "key": "decimals",
+                        "value": "0"
+                    },
+                    {
+                        "key": "icon",
+                        "value": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA"
+                    }
+                ],
+                "expectedHash": "843cb5d090d62ef5077a77e839b7a943791665ca21e3aecf24b5956301c7e898"
+            },
+            {
+                "name": "random data",
+                "metadata": [
+                    {
+                        "key": "testKey",
+                        "value": "testValue"
+                    },
+                    {
+                        "key": "{\"key\": \"key\"}",
+                        "value": "{\"value\": \"value\"}"
+                    },
+                    {
+                        "key": "钥匙",
+                        "value": "价值"
+                    }
+                ],
+                "expectedHash": "3d0b928385c0dc73c1efad348e65317941d5a9275972458e170889bb72a1d9d9"
+            }
+        ]
+    },
     "invalid": {
         "newMetadata": [
             {

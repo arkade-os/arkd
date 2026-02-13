@@ -47,25 +47,35 @@ func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
 		return nil, nil
 	}
 
-	var buf []byte
-	// sort metadata lexicographically by key in descending order
-	sort.SliceStable(md, func(i, j int) bool {
-		return string(md[i].Key) > string(md[j].Key)
-	})
-
+	// Hash all metadata
+	hashes := make([][32]byte, 0, len(md))
 	for _, m := range md {
 		if err := m.validate(); err != nil {
 			return nil, err
 		}
-		hash := m.Hash()
-		buf = append(buf, hash[:]...)
+		hashes = append(hashes, m.Hash())
 	}
+
+	// Sort the resulting hashing in lexicographic order
+	sort.SliceStable(hashes, func(i, j int) bool {
+		return bytes.Compare(hashes[i][:], hashes[j][:]) < 0
+	})
+
+	// Concat all hashes
+	buf := make([]byte, 0, len(hashes)*32)
+	for _, h := range hashes {
+		buf = append(buf, h[:]...)
+	}
+	// Compute the resulting hash
 	hash := sha256.Sum256(buf)
 	return hash[:], nil
 }
 
 func (md Metadata) Hash() [32]byte {
-	return sha256.Sum256(append(md.Key, md.Value...))
+	buf := make([]byte, 0, len(md.Key)+len(md.Value))
+	buf = append(buf, md.Key...)
+	buf = append(buf, md.Value...)
+	return sha256.Sum256(buf)
 }
 
 func (md Metadata) Serialize() ([]byte, error) {
