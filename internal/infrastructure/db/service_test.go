@@ -2307,7 +2307,7 @@ func testGetVtxoChainWithMarkerOptimization(t *testing.T, svc ports.RepoManager)
 		require.NoError(t, err)
 		require.NotNil(t, currentMarker)
 		require.Equal(t, uint32(0), currentMarker.Depth)
-		require.Nil(t, currentMarker.ParentMarkerIDs) // Root marker has no parents
+		require.Empty(t, currentMarker.ParentMarkerIDs) // Root marker has no parents
 
 		// Test 5: Test GetMarkersByIds with the full chain
 		markers, err := svc.Markers().GetMarkersByIds(ctx, fullMarkerChain)
