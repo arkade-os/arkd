@@ -4302,7 +4302,7 @@ func TestAsset(t *testing.T) {
 
 		// Fund the client with the exact amount needed for an issuance to not create any change
 		// TODO: use 330 sats = dust
-		faucetOffchain(t, alice, 0.00000331)
+		faucetOffchain(t, alice, 0.00000330)
 
 		supply := uint64(6_000)
 		txid, assetIds, err := alice.IssueAsset(ctx, supply, nil, nil)
