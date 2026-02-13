@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -38,8 +39,25 @@ func (b balance) String() string {
 	)
 }
 
-func getBalance(url, macaroon string, tlsConfig *tls.Config) (*balance, error) {
-	req, err := http.NewRequest("GET", url, nil)
+func validateHTTPURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("invalid URL scheme %q: only http and https are allowed", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("invalid URL: missing host")
+	}
+	return nil
+}
+
+func getBalance(targetURL, macaroon string, tlsConfig *tls.Config) (*balance, error) {
+	if err := validateHTTPURL(targetURL); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -53,6 +71,7 @@ func getBalance(url, macaroon string, tlsConfig *tls.Config) (*balance, error) {
 			TLSClientConfig: tlsConfig,
 		},
 	}
+	// #nosec G704 -- URL is validated above
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -89,8 +108,11 @@ func (s status) String() string {
 	)
 }
 
-func getStatus(url string, tlsConfig *tls.Config) (*status, error) {
-	req, err := http.NewRequest("GET", url, nil)
+func getStatus(targetURL string, tlsConfig *tls.Config) (*status, error) {
+	if err := validateHTTPURL(targetURL); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +124,7 @@ func getStatus(url string, tlsConfig *tls.Config) (*status, error) {
 			TLSClientConfig: tlsConfig,
 		},
 	}
+	// #nosec G704 -- URL is validated above
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -140,8 +163,11 @@ type roundInfo struct {
 	EndedAt          string   `json:"endedAt"`
 }
 
-func getRoundInfo(url, macaroon string, tlsConfig *tls.Config) (*roundInfo, error) {
-	req, err := http.NewRequest("GET", url, nil)
+func getRoundInfo(targetURL, macaroon string, tlsConfig *tls.Config) (*roundInfo, error) {
+	if err := validateHTTPURL(targetURL); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +181,7 @@ func getRoundInfo(url, macaroon string, tlsConfig *tls.Config) (*roundInfo, erro
 			TLSClientConfig: tlsConfig,
 		},
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- URL is validated above
 	if err != nil {
 		return nil, err
 	}
@@ -209,8 +235,14 @@ func getCredentials(ctx *cli.Context) (macaroon string, tlsConfig *tls.Config, e
 	return
 }
 
-func post[T any](url, body, key, macaroon string, tlsConfig *tls.Config) (result T, err error) {
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+func post[T any](
+	targetURL, body, key, macaroon string,
+	tlsConfig *tls.Config,
+) (result T, err error) {
+	if err = validateHTTPURL(targetURL); err != nil {
+		return
+	}
+	req, err := http.NewRequest("POST", targetURL, strings.NewReader(body))
 	if err != nil {
 		return
 	}
@@ -225,6 +257,7 @@ func post[T any](url, body, key, macaroon string, tlsConfig *tls.Config) (result
 		},
 	}
 
+	// #nosec G704 -- URL is validated above
 	resp, err := client.Do(req)
 	if err != nil {
 		return
@@ -257,8 +290,11 @@ func post[T any](url, body, key, macaroon string, tlsConfig *tls.Config) (result
 	return
 }
 
-func get[T any](url, key, macaroon string, tlsConfig *tls.Config) (result T, err error) {
-	req, err := http.NewRequest("GET", url, nil)
+func get[T any](targetURL, key, macaroon string, tlsConfig *tls.Config) (result T, err error) {
+	if err = validateHTTPURL(targetURL); err != nil {
+		return
+	}
+	req, err := http.NewRequest("GET", targetURL, nil)
 	if err != nil {
 		return
 	}
@@ -273,6 +309,7 @@ func get[T any](url, key, macaroon string, tlsConfig *tls.Config) (result T, err
 			TLSClientConfig: tlsConfig,
 		},
 	}
+	// #nosec G704 -- URL is validated above
 	resp, err := client.Do(req)
 	if err != nil {
 		return

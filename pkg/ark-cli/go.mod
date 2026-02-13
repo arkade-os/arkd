@@ -6,9 +6,11 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
+replace github.com/arkade-os/arkd/pkg/errors => ../errors
+
 require (
-	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260209145235-c94b335d4cde
-	github.com/arkade-os/go-sdk v0.8.2-0.20260210081147-b2efdae6fc08
+	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260210151408-67ee91bbd639
+	github.com/arkade-os/go-sdk v0.8.2-0.20260212163732-4d8f2cf7af87
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.36.0
 )
@@ -35,7 +37,7 @@ require (
 	github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd // indirect
 	github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
@@ -101,5 +103,4 @@ require (
 	modernc.org/sqlite v1.33.1 // indirect
 	modernc.org/strutil v1.2.0 // indirect
 	modernc.org/token v1.1.0 // indirect
-	resty.dev/v3 v3.0.0-beta.3 // indirect
 )
