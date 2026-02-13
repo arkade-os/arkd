@@ -546,17 +546,17 @@ func issue(ctx *cli.Context) error {
 
 	metadataList := make([]asset.Metadata, 0)
 	for _, meta := range metadata {
-		k, v, ok := strings.Cut(meta, "=") // Go 1.20+
+		k, v, ok := strings.Cut(meta, "=")
 		if !ok {
-			return fmt.Errorf("invalid meta %q, expected key=value", meta)
+			return fmt.Errorf("invalid meta %s, expected key=value", meta)
 		}
 		k = strings.TrimSpace(k)
 		v = strings.TrimSpace(v)
 		if k == "" {
-			return fmt.Errorf("empty key in %q", meta)
+			return fmt.Errorf("empty key in %s", meta)
 		}
 		if v == "" {
-			return fmt.Errorf("empty value in %q", meta)
+			return fmt.Errorf("empty value in %s", meta)
 		}
 		metadataList = append(metadataList, asset.Metadata{
 			Key:   []byte(k),
