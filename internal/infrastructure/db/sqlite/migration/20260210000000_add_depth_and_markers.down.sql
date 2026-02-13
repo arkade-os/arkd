@@ -25,12 +25,17 @@ CREATE TABLE vtxo_temp (
     FOREIGN KEY (intent_id) REFERENCES intent(id)
 );
 
--- Copy data
+-- Copy data, computing swept from swept_marker since the column was removed in the up migration
 INSERT INTO vtxo_temp SELECT
-    txid, vout, pubkey, amount, expires_at, created_at, commitment_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, settled_by, ark_txid,
-    intent_id, updated_at
-FROM vtxo;
+    v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid,
+    v.spent_by, v.spent, v.unrolled,
+    EXISTS (
+        SELECT 1 FROM swept_marker sm
+        WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
+    ) AS swept,
+    v.preconfirmed, v.settled_by, v.ark_txid,
+    v.intent_id, v.updated_at
+FROM vtxo v;
 
 -- Drop old table and rename
 DROP TABLE vtxo;

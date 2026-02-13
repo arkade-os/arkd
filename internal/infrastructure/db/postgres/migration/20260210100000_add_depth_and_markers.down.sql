@@ -1,18 +1,19 @@
--- Drop markers column from vtxo
+-- Drop views first (they depend on vtxo columns via v.*)
+DROP VIEW IF EXISTS intent_with_inputs_vw;
+DROP VIEW IF EXISTS vtxo_vw;
+
+-- Drop markers index and column from vtxo
 DROP INDEX IF EXISTS idx_vtxo_markers;
 ALTER TABLE vtxo DROP COLUMN IF EXISTS markers;
 
 -- Drop depth column from vtxo
 ALTER TABLE vtxo DROP COLUMN IF EXISTS depth;
 
--- Drop marker tables
+-- Drop marker tables (indexes are dropped automatically with the table)
 DROP TABLE IF EXISTS swept_marker;
 DROP TABLE IF EXISTS marker;
 
 -- Recreate views without depth and markers columns
-DROP VIEW IF EXISTS intent_with_inputs_vw;
-DROP VIEW IF EXISTS vtxo_vw;
-
 CREATE VIEW vtxo_vw AS
 SELECT v.*, string_agg(vc.commitment_txid, ',') AS commitments
 FROM vtxo v

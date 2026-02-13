@@ -161,8 +161,16 @@ func (m *markerRepository) SweepMarkerWithDescendants(
 	markerID string,
 	sweptAt int64,
 ) (int64, error) {
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	txQuerier := m.querier.WithTx(tx)
+
 	// Get all descendant marker IDs (including the root marker) that are not already swept
-	descendantIDs, err := m.querier.GetDescendantMarkerIds(ctx, markerID)
+	descendantIDs, err := txQuerier.GetDescendantMarkerIds(ctx, markerID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get descendant markers: %w", err)
 	}
@@ -170,14 +178,18 @@ func (m *markerRepository) SweepMarkerWithDescendants(
 	// Insert each descendant into swept_marker
 	var count int64
 	for _, id := range descendantIDs {
-		err := m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
+		err := txQuerier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
 			MarkerID: id,
 			SweptAt:  sweptAt,
 		})
 		if err != nil {
-			return count, fmt.Errorf("failed to sweep marker %s: %w", id, err)
+			return 0, fmt.Errorf("failed to sweep marker %s: %w", id, err)
 		}
 		count++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return count, nil

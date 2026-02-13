@@ -255,21 +255,21 @@ func (r *markerRepository) SweepMarker(ctx context.Context, markerID string, swe
 		}
 	}
 
-	// Update Swept field on all VTXOs that have this marker
+	// Update Swept field on VTXOs that contain this marker
 	// This keeps the stored Swept field in sync for query compatibility
-	var allDtos []vtxoDTO
-	if err := r.vtxoStore.Find(&allDtos, &badgerhold.Query{}); err != nil {
+	var filteredDtos []vtxoDTO
+	if err := r.vtxoStore.Find(
+		&filteredDtos,
+		badgerhold.Where("MarkerIDs").Contains(markerID),
+	); err != nil {
 		return nil // Non-fatal, swept_marker is already updated
 	}
 
-	for _, vtxoDto := range allDtos {
-		for _, id := range vtxoDto.MarkerIDs {
-			if id == markerID && !vtxoDto.Swept {
-				vtxoDto.Swept = true
-				vtxoDto.UpdatedAt = time.Now().UnixMilli()
-				_ = r.vtxoStore.Update(vtxoDto.Outpoint.String(), vtxoDto)
-				break
-			}
+	for _, dto := range filteredDtos {
+		if !dto.Swept {
+			dto.Swept = true
+			dto.UpdatedAt = time.Now().UnixMilli()
+			_ = r.vtxoStore.Update(dto.Outpoint.String(), dto)
 		}
 	}
 
@@ -439,24 +439,18 @@ func (r *markerRepository) GetVtxosByMarker(
 	ctx context.Context,
 	markerID string,
 ) ([]domain.Vtxo, error) {
-	// For badger, we need to scan all VTXOs and filter by MarkerIDs slice membership
 	var dtos []vtxoDTO
-	err := r.vtxoStore.Find(&dtos, &badgerhold.Query{})
+	err := r.vtxoStore.Find(&dtos, badgerhold.Where("MarkerIDs").Contains(markerID))
 	if err != nil {
 		return nil, err
 	}
 
-	vtxos := make([]domain.Vtxo, 0)
+	vtxos := make([]domain.Vtxo, 0, len(dtos))
 	for _, dto := range dtos {
-		for _, id := range dto.MarkerIDs {
-			if id == markerID {
-				vtxo := dto.Vtxo
-				// Compute Swept status dynamically by checking if any marker is swept
-				vtxo.Swept = r.isAnyMarkerSwept(dto.MarkerIDs)
-				vtxos = append(vtxos, vtxo)
-				break
-			}
-		}
+		vtxo := dto.Vtxo
+		// Compute Swept status dynamically by checking if any marker is swept
+		vtxo.Swept = r.isAnyMarkerSwept(dto.MarkerIDs)
+		vtxos = append(vtxos, vtxo)
 	}
 	return vtxos, nil
 }
