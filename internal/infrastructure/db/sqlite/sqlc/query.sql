@@ -470,14 +470,15 @@ SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swe
 
 -- name: GetDescendantMarkerIds :many
 -- Recursively get a marker and all its descendants (markers whose parent_markers contain it)
+-- Uses json_each instead of LIKE to avoid false positives with special characters (%, _)
 WITH RECURSIVE descendant_markers(id) AS (
     -- Base case: the marker being swept
     SELECT marker.id FROM marker WHERE marker.id = @root_marker_id
     UNION ALL
     -- Recursive case: find markers whose parent_markers JSON array contains any descendant
     SELECT m.id FROM marker m
-    INNER JOIN descendant_markers dm ON (
-        m.parent_markers LIKE '%"' || dm.id || '"%'
+    INNER JOIN descendant_markers dm ON EXISTS (
+        SELECT 1 FROM json_each(m.parent_markers) j WHERE j.value = dm.id
     )
 )
 SELECT descendant_markers.id AS marker_id FROM descendant_markers
@@ -504,7 +505,7 @@ ORDER BY depth DESC;
 
 -- name: SelectVtxosByArkTxid :many
 -- Get all VTXOs created by a specific ark tx (offchain tx)
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @ark_txid;
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE ark_txid = @ark_txid;
 
 -- name: SelectVtxoChainByMarker :many
 -- Get VTXOs whose markers array contains the given marker_id

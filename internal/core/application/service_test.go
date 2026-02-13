@@ -149,15 +149,18 @@ func TestDepthCalculation(t *testing.T) {
 		{
 			name:          "no spent vtxos (empty)",
 			spentVtxos:    []domain.Vtxo{},
-			expectedDepth: 1,
-			description:   "empty input results in depth 1 (edge case)",
+			expectedDepth: 0,
+			description:   "empty input results in depth 0 (no spent vtxos means maxDepth stays 0, newDepth = 0)",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			maxDepth := calculateMaxDepth(tc.spentVtxos)
-			newDepth := maxDepth + 1
+			var newDepth uint32
+			if len(tc.spentVtxos) > 0 {
+				newDepth = maxDepth + 1
+			}
 			require.Equal(t, tc.expectedDepth, newDepth, tc.description)
 		})
 	}

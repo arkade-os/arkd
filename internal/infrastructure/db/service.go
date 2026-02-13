@@ -212,7 +212,13 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if !ok {
 			return nil, fmt.Errorf("failed to get badger vtxo repository")
 		}
-		markerConfig := append(config.DataStoreConfig, badgerVtxoRepo.GetStore())
+		markerConfig := make(
+			[]interface{},
+			len(config.DataStoreConfig),
+			len(config.DataStoreConfig)+1,
+		)
+		copy(markerConfig, config.DataStoreConfig)
+		markerConfig = append(markerConfig, badgerVtxoRepo.GetStore())
 		markerStore, err = markerStoreFactory(markerConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create marker store: %w", err)
@@ -491,8 +497,16 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		}
 
 		// Create root markers for batch VTXOs (depth 0 is always at marker boundary)
-		if err := s.markerStore.CreateRootMarkersForVtxos(ctx, newVtxos); err != nil {
-			log.WithError(err).Warn("failed to create root markers for vtxos")
+		for {
+			if err := s.markerStore.CreateRootMarkersForVtxos(ctx, newVtxos); err != nil {
+				log.WithError(err).Warnf(
+					"failed to create root markers for %d vtxos, retrying soon", len(newVtxos),
+				)
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			log.Debugf("created root markers for %d vtxos", len(newVtxos))
+			break
 		}
 	}
 }
@@ -552,7 +566,9 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		if len(spentOutpoints) > 0 {
 			spentVtxos, err := s.vtxoStore.GetVtxos(ctx, spentOutpoints)
 			if err != nil {
-				log.WithError(err).Warn("failed to get spent vtxos for depth calculation")
+				log.WithError(err).
+					Warn("failed to get spent vtxos for depth calculation, aborting finalization")
+				return
 			} else {
 				// Calculate depth: max(parent depths) + 1
 				var maxDepth uint32

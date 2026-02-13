@@ -1,7 +1,7 @@
 -- Add depth and markers columns to vtxo
 ALTER TABLE vtxo
     ADD COLUMN IF NOT EXISTS depth INTEGER NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS markers JSONB;
+    ADD COLUMN IF NOT EXISTS markers JSONB NOT NULL DEFAULT '[]'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo USING GIN (markers);
 
 -- Create marker table
@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS marker (
     parent_markers JSONB  -- JSON array of parent marker IDs
 );
 CREATE INDEX IF NOT EXISTS idx_marker_depth ON marker(depth);
+CREATE INDEX IF NOT EXISTS idx_marker_parent_markers ON marker USING GIN (parent_markers);
 
 -- Create swept_marker table (append-only)
 CREATE TABLE IF NOT EXISTS swept_marker (
