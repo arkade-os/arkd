@@ -94,7 +94,7 @@ func Verify(proofB64, message string) error {
 		return ErrInvalidTxWrongOutputIndex
 	}
 
-	tx, err := finalizeAndExtract(proof)
+	tx, err := proof.FinalizeAndExtract()
 	if err != nil {
 		return err
 	}
@@ -202,6 +202,27 @@ func (p Proof) ContainsOutputs() bool {
 	return true
 }
 
+func (p Proof) FinalizeAndExtract() (*wire.MsgTx, error) {
+	ptx := &psbt.Packet{
+		UnsignedTx: p.UnsignedTx,
+		Inputs:     p.Inputs,
+		Outputs:    p.Outputs,
+		Unknowns:   p.Unknowns,
+	}
+
+	// copy the unknowns from the second input to the first input
+	// in order to have the condition witness also in the first "fake" proof input
+	ptx.Inputs[0].Unknowns = ptx.Inputs[1].Unknowns
+
+	for i := range p.Inputs {
+		if err := finalizeInput(ptx, i); err != nil {
+			return nil, err
+		}
+	}
+
+	return psbt.Extract(ptx)
+}
+
 // buildToSpendTx creates the initial transaction that will be spent in the proof
 func buildToSpendTx(message string, pkScript []byte) *wire.MsgTx {
 	messageHash := hashMessage(message)
@@ -292,26 +313,6 @@ func (f *intentProofPrevoutFetcher) FetchPrevOutput(outpoint wire.OutPoint) *wir
 	return f.prevoutFetcher.FetchPrevOutput(outpoint)
 }
 
-func finalizeAndExtract(p Proof) (*wire.MsgTx, error) {
-	ptx := &psbt.Packet{
-		UnsignedTx: p.UnsignedTx,
-		Inputs:     p.Inputs,
-		Outputs:    p.Outputs,
-		Unknowns:   p.Unknowns,
-	}
-
-	// copy the unknowns from the second input to the first input
-	// in order to have the condition witness also in the first "fake" proof input
-	ptx.Inputs[0].Unknowns = ptx.Inputs[1].Unknowns
-
-	for i := range p.Inputs {
-		if err := finalizeInput(ptx, i); err != nil {
-			return nil, err
-		}
-	}
-
-	return psbt.Extract(ptx)
-}
 
 // finalizeInput is a wrapper of script.FinalizeVtxoScript with note support
 func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
