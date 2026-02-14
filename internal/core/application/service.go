@@ -1718,7 +1718,15 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	finalizedProofTx, err := proof.FinalizeAndExtract()
+	signedProofPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedProof), true)
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to create psbt from signed proof: %w", err).
+			WithMetadata(map[string]any{
+				"signed_proof": signedProof,
+			})
+	}
+
+	finalizedProofTx, err := intent.Proof{Packet: *signedProofPtx}.FinalizeAndExtract()
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
 			WithMetadata(map[string]any{
