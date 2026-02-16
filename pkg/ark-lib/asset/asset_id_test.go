@@ -9,28 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type assetIdFixtures struct {
-	Valid []struct {
-		Name          string `json:"name"`
-		Txid          string `json:"txid"`
-		Index         int    `json:"index"`
-		SerializedHex string `json:"serializedHex"`
-	} `json:"valid"`
-	Invalid struct {
-		NewAssetId []struct {
-			Name          string `json:"name"`
-			Txid          string `json:"txid"`
-			Index         int    `json:"index"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newAssetId"`
-		NewAssetIdFromString []struct {
-			Name          string `json:"name"`
-			SerializedHex string `json:"serializedHex"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newAssetIdFromString"`
-	} `json:"invalid"`
-}
-
 func TestAssetId(t *testing.T) {
 	var fixtures assetIdFixtures
 	buf, err := os.ReadFile("testdata/asset_id_fixtures.json")
@@ -81,4 +59,26 @@ func TestAssetId(t *testing.T) {
 			}
 		})
 	})
+}
+
+type assetIdFixtures struct {
+	Valid []struct {
+		Name          string `json:"name"`
+		Txid          string `json:"txid"`
+		Index         int    `json:"index"`
+		SerializedHex string `json:"serializedHex"`
+	} `json:"valid"`
+	Invalid struct {
+		NewAssetId []struct {
+			Name          string `json:"name"`
+			Txid          string `json:"txid"`
+			Index         int    `json:"index"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newAssetId"`
+		NewAssetIdFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newAssetIdFromString"`
+	} `json:"invalid"`
 }

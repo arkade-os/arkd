@@ -9,40 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type assetOutputFixtures struct {
-	Valid struct {
-		NewOutput []struct {
-			Name          string `json:"name"`
-			Vout          uint16 `json:"vout"`
-			Amount        uint64 `json:"amount"`
-			SerializedHex string `json:"serializedHex"`
-		} `json:"newOutput"`
-		NewOutputs []struct {
-			Name    string `json:"name"`
-			Outputs []struct {
-				Vout   uint16 `json:"vout"`
-				Amount uint64 `json:"amount"`
-			} `json:"outputs"`
-			SerializedHex string `json:"serializedHex"`
-		} `json:"newOutputs"`
-	} `json:"valid"`
-	Invalid struct {
-		NewOutputFromString []struct {
-			Name          string `json:"name"`
-			SerializedHex string `json:"serializedHex"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newOutputFromString"`
-		NewOutputs []struct {
-			Name    string `json:"name"`
-			Outputs []struct {
-				Vout   uint16 `json:"vout"`
-				Amount uint64 `json:"amount"`
-			} `json:"outputs"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newOutputs"`
-	} `json:"invalid"`
-}
-
 func TestAssetOutput(t *testing.T) {
 	var fixtures assetOutputFixtures
 	buf, err := os.ReadFile("testdata/asset_output_fixtures.json")
@@ -126,4 +92,38 @@ func TestAssetOutput(t *testing.T) {
 			}
 		})
 	})
+}
+
+type assetOutputFixtures struct {
+	Valid struct {
+		NewOutput []struct {
+			Name          string `json:"name"`
+			Vout          uint16 `json:"vout"`
+			Amount        uint64 `json:"amount"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newOutput"`
+		NewOutputs []struct {
+			Name    string `json:"name"`
+			Outputs []struct {
+				Vout   uint16 `json:"vout"`
+				Amount uint64 `json:"amount"`
+			} `json:"outputs"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newOutputs"`
+	} `json:"valid"`
+	Invalid struct {
+		NewOutputFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newOutputFromString"`
+		NewOutputs []struct {
+			Name    string `json:"name"`
+			Outputs []struct {
+				Vout   uint16 `json:"vout"`
+				Amount uint64 `json:"amount"`
+			} `json:"outputs"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newOutputs"`
+	} `json:"invalid"`
 }

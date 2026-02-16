@@ -12,9 +12,11 @@ import (
 )
 
 var (
-	// ArkadeMagic is the 3-byte magic prefix ("ARK") that identifies an asset packet in an OP_RETURN output.
+	// ArkadeMagic is the 3-byte magic prefix ("ARK") that identifies an asset packet in a
+	// OP_RETURN output.
 	ArkadeMagic = []byte{0x41, 0x52, 0x4B} // "ARK"
-	// MarkerAssetPayload is the marker byte that follows ArkadeMagic and indicates an asset payload.
+	// MarkerAssetPayload is the marker byte that follows ArkadeMagic and indicates an asset
+	// payload.
 	MarkerAssetPayload = byte(0)
 )
 

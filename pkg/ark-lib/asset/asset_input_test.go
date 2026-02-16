@@ -9,43 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type assetInputFixtures struct {
-	Valid struct {
-		NewInput []struct {
-			Name          string `json:"name"`
-			Type          string `json:"type"`
-			Vin           uint16 `json:"vin"`
-			Amount        uint64 `json:"amount"`
-			Txid          string `json:"txid"`
-			SerializedHex string `json:"serializedHex"`
-		} `json:"newInput"`
-		NewInputs []struct {
-			Name   string `json:"name"`
-			Inputs []struct {
-				Type   string `json:"type"`
-				Vin    uint16 `json:"vin"`
-				Amount uint64 `json:"amount"`
-				Txid   string `json:"txid"`
-			} `json:"inputs"`
-			SerializedHex string `json:"serializedHex"`
-		} `json:"newInputs"`
-	} `json:"valid"`
-	Invalid struct {
-		NewInput []struct {
-			Name          string `json:"name"`
-			Type          string `json:"type"`
-			Txid          string `json:"txid"`
-			Vin           int    `json:"vin"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newInput"`
-		NewInputFromString []struct {
-			Name          string `json:"name"`
-			SerializedHex string `json:"serializedHex"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newInputFromString"`
-	} `json:"invalid"`
-}
-
 func TestAssetInput(t *testing.T) {
 	var fixtures assetInputFixtures
 	buf, err := os.ReadFile("testdata/asset_input_fixtures.json")
@@ -117,4 +80,41 @@ func TestAssetInput(t *testing.T) {
 			}
 		})
 	})
+}
+
+type assetInputFixtures struct {
+	Valid struct {
+		NewInput []struct {
+			Name          string `json:"name"`
+			Type          string `json:"type"`
+			Vin           uint16 `json:"vin"`
+			Amount        uint64 `json:"amount"`
+			Txid          string `json:"txid"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newInput"`
+		NewInputs []struct {
+			Name   string `json:"name"`
+			Inputs []struct {
+				Type   string `json:"type"`
+				Vin    uint16 `json:"vin"`
+				Amount uint64 `json:"amount"`
+				Txid   string `json:"txid"`
+			} `json:"inputs"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newInputs"`
+	} `json:"valid"`
+	Invalid struct {
+		NewInput []struct {
+			Name          string `json:"name"`
+			Type          string `json:"type"`
+			Txid          string `json:"txid"`
+			Vin           int    `json:"vin"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newInput"`
+		NewInputFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newInputFromString"`
+	} `json:"invalid"`
 }

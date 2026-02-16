@@ -15,25 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type txFixture struct {
-	Name     string `json:"name"`
-	Tx       string `json:"tx"`
-	Prevouts map[int][]struct {
-		AssetID string `json:"assetId"`
-		Amount  uint64 `json:"amount"`
-	} `json:"prevouts"`
-	ControlAssets  map[string]string `json:"controlAssets,omitempty"`
-	ExistingAssets []string          `json:"existingAssets,omitempty"`
-}
-
-type txValidationFixtures struct {
-	Valid   []txFixture `json:"valid"`
-	Invalid []struct {
-		txFixture
-		ExpectedError string `json:"expectedError"`
-	} `json:"invalid"`
-}
-
 func TestTxValidation(t *testing.T) {
 	ctx := t.Context()
 	var fixtures txValidationFixtures
@@ -74,7 +55,10 @@ func parseTxFixture(t *testing.T, fixture txFixture) (
 	for inputIndex, prevouts := range fixture.Prevouts {
 		assetTxs := make([]asset.Asset, 0)
 		for _, prevout := range prevouts {
-			assetTxs = append(assetTxs, asset.Asset{AssetId: prevout.AssetID, Amount: prevout.Amount})
+			assetTxs = append(assetTxs, asset.Asset{
+				AssetId: prevout.AssetID,
+				Amount:  prevout.Amount,
+			})
 		}
 		assetPrevouts[inputIndex] = assetTxs
 	}
@@ -84,6 +68,25 @@ func parseTxFixture(t *testing.T, fixture txFixture) (
 	}
 
 	return &tx, assetPrevouts, &assetSrc{controlAssets, fixture.ExistingAssets}
+}
+
+type txFixture struct {
+	Name     string `json:"name"`
+	Tx       string `json:"tx"`
+	Prevouts map[int][]struct {
+		AssetID string `json:"assetId"`
+		Amount  uint64 `json:"amount"`
+	} `json:"prevouts"`
+	ControlAssets  map[string]string `json:"controlAssets,omitempty"`
+	ExistingAssets []string          `json:"existingAssets,omitempty"`
+}
+
+type txValidationFixtures struct {
+	Valid   []txFixture `json:"valid"`
+	Invalid []struct {
+		txFixture
+		ExpectedError string `json:"expectedError"`
+	} `json:"invalid"`
 }
 
 type assetSrc struct {

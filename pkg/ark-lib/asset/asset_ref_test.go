@@ -9,29 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type assetRefFixtures struct {
-	Valid struct {
-		AssetRefFromId []struct {
-			Name          string `json:"name"`
-			Txid          string `json:"txid"`
-			Index         uint16 `json:"index"`
-			SerializedHex string `json:"serializedHex"`
-		} `json:"newAssetRefFromId"`
-		AssetRefFromGroupIndex []struct {
-			Name          string `json:"name"`
-			Index         uint16 `json:"index"`
-			SerializedHex string `json:"serializedHex"`
-		} `json:"newAssetRefFromGroupIndex"`
-	} `json:"valid"`
-	Invalid struct {
-		AssetRefFromString []struct {
-			Name          string `json:"name"`
-			SerializedHex string `json:"serializedHex"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newAssetRefFromString"`
-	} `json:"invalid"`
-}
-
 func TestAssetRef(t *testing.T) {
 	var fixtures assetRefFixtures
 	f, err := os.ReadFile("testdata/asset_ref_fixtures.json")
@@ -87,4 +64,27 @@ func TestAssetRef(t *testing.T) {
 			}
 		})
 	})
+}
+
+type assetRefFixtures struct {
+	Valid struct {
+		AssetRefFromId []struct {
+			Name          string `json:"name"`
+			Txid          string `json:"txid"`
+			Index         uint16 `json:"index"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newAssetRefFromId"`
+		AssetRefFromGroupIndex []struct {
+			Name          string `json:"name"`
+			Index         uint16 `json:"index"`
+			SerializedHex string `json:"serializedHex"`
+		} `json:"newAssetRefFromGroupIndex"`
+	} `json:"valid"`
+	Invalid struct {
+		AssetRefFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newAssetRefFromString"`
+	} `json:"invalid"`
 }

@@ -71,7 +71,10 @@ func TestPacket(t *testing.T) {
 					require.NotNil(t, script)
 					require.True(t, asset.IsAssetPacket(script))
 
-					packet, err := asset.NewPacketFromTxOut(wire.TxOut{PkScript: script, Value: v.Amount})
+					packet, err := asset.NewPacketFromTxOut(wire.TxOut{
+						PkScript: script,
+						Value:    v.Amount},
+					)
 					require.NoError(t, err)
 					require.NotNil(t, packet)
 
@@ -97,7 +100,7 @@ func TestPacket(t *testing.T) {
 					packet, err := asset.NewPacketFromString(v.Script)
 					require.NoError(t, err)
 					require.NotEmpty(t, packet)
-				
+
 					leafTxPacket := packet.LeafTxPacket(*intentTxHash)
 					require.NotEmpty(t, leafTxPacket)
 					require.Equal(t, v.ExpectedLeafTxPacket, leafTxPacket.String())
@@ -140,7 +143,10 @@ func TestPacket(t *testing.T) {
 					script, err := hex.DecodeString(v.Script)
 					require.NoError(t, err)
 
-					packet, err := asset.NewPacketFromTxOut(wire.TxOut{PkScript: script, Value: v.Amount})
+					packet, err := asset.NewPacketFromTxOut(wire.TxOut{
+						PkScript: script,
+						Value:    v.Amount,
+					})
 					require.Error(t, err)
 					require.ErrorContains(t, err, v.ExpectedError)
 					require.Nil(t, packet)
@@ -170,9 +176,9 @@ type packetFixtures struct {
 			Expected bool   `json:"expected"`
 		} `json:"newPacketFromTxOut"`
 		LeafTxPacket []struct {
-			Name          string `json:"name"`
-			Script        string `json:"script"`
-			IntentTxid    string `json:"intentTxid"`
+			Name                 string `json:"name"`
+			Script               string `json:"script"`
+			IntentTxid           string `json:"intentTxid"`
 			ExpectedLeafTxPacket string `json:"expectedLeafTxPacket"`
 		} `json:"leafTxPacket"`
 	} `json:"valid"`
