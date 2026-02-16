@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -4742,23 +4741,6 @@ func testSweepMarkerWithDescendantsDeepChain(t *testing.T, svc ports.RepoManager
 		require.Equal(t, int64(0), count, "second call should be idempotent (0 new sweeps)")
 	})
 }
-
-type sortVtxos []domain.Vtxo
-
-func (a sortVtxos) String() string {
-	buf, _ := json.Marshal(a)
-	return string(buf)
-}
-
-func (a sortVtxos) Len() int           { return len(a) }
-func (a sortVtxos) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a sortVtxos) Less(i, j int) bool { return a[i].Txid < a[j].Txid }
-
-type sortReceivers []domain.Receiver
-
-func (a sortReceivers) Len() int           { return len(a) }
-func (a sortReceivers) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a sortReceivers) Less(i, j int) bool { return a[i].Amount < a[j].Amount }
 
 func checkVtxos(t *testing.T, expectedVtxos, gotVtxos []domain.Vtxo) {
 	sort.SliceStable(expectedVtxos, func(i, j int) bool {
