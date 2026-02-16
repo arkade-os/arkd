@@ -8,8 +8,19 @@ import (
 	"io"
 )
 
+// AssetOutputType distinguishes how an asset output references its source.
+type AssetOutputType uint8
+
+const (
+	// AssetOutputTypeUnspecified is the zero value, representing an invalid output type.
+	AssetOutputTypeUnspecified AssetOutputType = iota
+	// AssetOutputTypeLocal references an output of the same transaction.
+	AssetOutputTypeLocal
+)
+
 // AssetOutput describes an asset amount assigned to a transaction output.
 type AssetOutput struct {
+	Type AssetOutputType
 	// Vout is the transaction output index this asset output is assigned to.
 	Vout uint16
 	// Amount is the quantity of the asset assigned to this output.
@@ -39,7 +50,7 @@ func NewAssetOutputsFromString(s string) (AssetOutputs, error) {
 
 // NewAssetOutput creates a single validated AssetOutput for the given output index and amount.
 func NewAssetOutput(vout uint16, amount uint64) (*AssetOutput, error) {
-	out := AssetOutput{Vout: vout, Amount: amount}
+	out := AssetOutput{Type: AssetOutputTypeLocal, Vout: vout, Amount: amount}
 	if err := out.validate(); err != nil {
 		return nil, err
 	}
@@ -94,6 +105,9 @@ func (out AssetOutput) validate() error {
 
 // serialize writes the vout and amount fields to the writer.
 func (out AssetOutput) serialize(w io.Writer) error {
+	if _, err := w.Write([]byte{byte(out.Type)}); err != nil {
+		return err
+	}
 	if err := serializeUint16(w, out.Vout); err != nil {
 		return err
 	}
@@ -105,6 +119,20 @@ func (out AssetOutput) serialize(w io.Writer) error {
 
 // newAssetOutputFromReader deserializes a single AssetOutput from the reader.
 func newAssetOutputFromReader(r *bytes.Reader) (*AssetOutput, error) {
+	typ, err := r.ReadByte()
+	if err != nil {
+		return nil, err
+	}
+
+	out := AssetOutput{Type: AssetOutputType(typ)}
+	switch out.Type {
+	case AssetOutputTypeLocal:
+	case AssetOutputTypeUnspecified:
+		return nil, fmt.Errorf("asset output type unspecified")
+	default:
+		return nil, fmt.Errorf("asset output type %d unknown", out.Type)
+	}
+
 	index, err := deserializeUint16(r)
 	if err != nil {
 		if errors.Is(err, io.EOF) {

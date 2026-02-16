@@ -99,7 +99,7 @@ func validateReissuance(
 
 	ctrlAssetID, err := assetSrc.GetControlAsset(ctx, assetID)
 	if err != nil {
-		return errors.ASSET_VALIDATION_FAILED.New("error retrieving asset %s: %w", assetID, err).
+		return errors.ASSET_VALIDATION_FAILED.Wrap(err).
 			WithMetadata(errors.AssetValidationMetadata{AssetID: assetID})
 	}
 	if len(ctrlAssetID) == 0 {
