@@ -204,7 +204,7 @@ type packetFixtures struct {
 
 type packetAssetFixture struct {
 	AssetId      assetIdFixture       `json:"assetId,omitempty"`
-	ControlAsset assetRefFixture      `json:"controlAsset,omitempty"`
+	ControlAsset *assetRefFixture     `json:"controlAsset,omitempty"`
 	Metadata     []metadataFixture    `json:"metadata,omitempty"`
 	Inputs       []assetInputFixture  `json:"inputs"`
 	Outputs      []assetOutputFixture `json:"outputs"`
@@ -234,5 +234,9 @@ func (f packetAssetFixture) parse() (
 	if len(md) == 0 {
 		md = nil
 	}
-	return f.AssetId.parse(), f.ControlAsset.parse(), ins, outs, md
+	var ctrlAsset *asset.AssetRef
+	if f.ControlAsset != nil {
+		ctrlAsset = f.ControlAsset.parse()
+	}
+	return f.AssetId.parse(), ctrlAsset, ins, outs, md
 }

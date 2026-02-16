@@ -76,6 +76,23 @@
                 ],
                 "expectedAmount": 0,
                 "expectedScript": "6a4c7641524b00040602030001067469636b657204544553540001010100640602030001067469636b65720554455354320001010100ac020602030001067469636b65720554455354330001010000b4100402067469636b657205544553543304646573630d636f6e74726f6c5f6173736574000101020001"
+            },
+            {
+                "name": "issuance of self-controlled asset",
+                "assets": [
+                    {
+                        "controlAsset": {
+                            "groupIndex": 0
+                        },
+                        "outputs": [
+                            {
+                                "amount": 21000000,
+                                "vout": 0
+                            }
+                        ]
+                    }
+                ],
+                "expectedScript": "6a1241524b0001020200000001010000c0de810a"
             }
         ],
         "newPacketFromString": [

@@ -60,8 +60,8 @@ func TestAssetGroup(t *testing.T) {
 						ins = append(ins, *vv.parse())
 					}
 					assetGroup := asset.AssetGroup{
-						AssetId:   v.AssetId.parse(),
-						Inputs:    ins,
+						AssetId: v.AssetId.parse(),
+						Inputs:  ins,
 					}
 					got, err := assetGroup.Serialize()
 					require.Error(t, err)
@@ -103,7 +103,7 @@ type assetGroupFixturesJSON struct {
 type assetGroupValidFixture struct {
 	Name          string               `json:"name"`
 	AssetId       assetIdFixture       `json:"assetId,omitempty"`
-	ControlAsset  assetRefFixture      `json:"controlAsset,omitempty"`
+	ControlAsset  *assetRefFixture     `json:"controlAsset,omitempty"`
 	Metadata      []metadataFixture    `json:"metadata,omitempty"`
 	Inputs        []assetInputFixture  `json:"inputs"`
 	Outputs       []assetOutputFixture `json:"outputs"`
@@ -134,7 +134,11 @@ func (f assetGroupValidFixture) parse() (
 	if len(md) == 0 {
 		md = nil
 	}
-	return f.AssetId.parse(), f.ControlAsset.parse(), ins, outs, md
+	var ctrlAsset *asset.AssetRef
+	if f.ControlAsset != nil {
+		ctrlAsset = f.ControlAsset.parse()
+	}
+	return f.AssetId.parse(), ctrlAsset, ins, outs, md
 }
 
 type assetIdFixture struct {
@@ -156,9 +160,6 @@ type assetRefFixture struct {
 }
 
 func (f assetRefFixture) parse() *asset.AssetRef {
-	if f.AssetId.Txid == "" && f.AssetId.Index == 0 && f.GroupIndex == 0 {
-		return nil
-	}
 	if f.AssetId.Txid == "" {
 		ref, _ := asset.NewAssetRefFromGroupIndex(f.GroupIndex)
 		return ref
