@@ -38,6 +38,7 @@ type IndexerService interface {
 	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error)
 	GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
+	GetAsset(ctx context.Context, assetID string) ([]Asset, error)
 }
 
 type indexerService struct {
@@ -91,6 +92,19 @@ func (i *indexerService) GetVtxoTree(
 		Txs:  txs,
 		Page: pageResp,
 	}, nil
+}
+
+func (i *indexerService) GetAsset(
+	ctx context.Context, assetId string,
+) ([]Asset, error) {
+	assets, err := i.repoManager.Assets().GetAssets(ctx, []string{assetId})
+	if err != nil {
+		return nil, err
+	}
+	if len(assets) == 0 {
+		return nil, fmt.Errorf("asset %s not found", assetId)
+	}
+	return assets, nil
 }
 
 func (i *indexerService) GetVtxoTreeLeaves(

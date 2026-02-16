@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -93,6 +94,19 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					return err
 				}
 			}
+
+			for _, asset := range vtxo.Assets {
+				if err := querierWithTx.InsertVtxoAssetProjection(
+					ctx, queries.InsertVtxoAssetProjectionParams{
+						AssetID: asset.AssetId,
+						Txid:    vtxo.Txid,
+						Vout:    int64(vtxo.VOut),
+						Amount:  strconv.FormatUint(asset.Amount, 10),
+					},
+				); err != nil {
+					return err
+				}
+			}
 		}
 
 		return nil
@@ -174,13 +188,19 @@ func (v *vtxoRepository) GetVtxos(
 			},
 		)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil, nil
-			}
 			return nil, err
 		}
 
-		result, err := readRows([]queries.VtxoVw{res.VtxoVw})
+		if len(res) == 0 {
+			return nil, nil
+		}
+
+		rows := make([]queries.VtxoVw, 0, len(res))
+		for _, row := range res {
+			rows = append(rows, row.VtxoVw)
+		}
+
+		result, err := readRows(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -486,13 +506,14 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 			},
 		)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
 			return nil, err
 		}
 
-		result, err := readRows([]queries.VtxoVw{res})
+		if len(res) == 0 {
+			continue
+		}
+
+		result, err := readRows(res)
 		if err != nil {
 			return nil, err
 		}
@@ -511,6 +532,10 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 	var commitmentTxids []string
 	if commitments, ok := row.Commitments.(string); ok && commitments != "" {
 		commitmentTxids = strings.Split(commitments, ",")
+	}
+	assets := make([]domain.AssetDenomination, 0)
+	if row.AssetID != "" {
+		assets = append(assets, rowToAsset(row))
 	}
 	return domain.Vtxo{
 		Outpoint: domain.Outpoint{
@@ -532,6 +557,16 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		CreatedAt:          row.CreatedAt,
 		Depth:              uint32(row.Depth),
 		MarkerIDs:          parseMarkersJSONFromVtxo(row.Markers.String),
+		Assets:             assets,
+	}
+}
+
+func rowToAsset(row queries.VtxoVw) domain.AssetDenomination {
+	// nolint
+	amount, _ := strconv.ParseUint(row.AssetAmount, 10, 64)
+	return domain.AssetDenomination{
+		AssetId: row.AssetID,
+		Amount:  amount,
 	}
 }
 
@@ -548,9 +583,28 @@ func parseMarkersJSONFromVtxo(markersJSON string) []string {
 }
 
 func readRows(rows []queries.VtxoVw) ([]domain.Vtxo, error) {
+	vtxosByOutpoint := make(map[string]domain.Vtxo)
+	for _, row := range rows {
+		key := fmt.Sprintf("%s:%d", row.Txid, row.Vout)
+		if _, ok := vtxosByOutpoint[key]; !ok {
+			vtxosByOutpoint[key] = rowToVtxo(row)
+			continue
+		}
+
+		asset := rowToAsset(row)
+		emptyAsset := domain.AssetDenomination{}
+		if asset != emptyAsset {
+			vtxo := vtxosByOutpoint[key]
+			vtxo.Assets = append(
+				vtxosByOutpoint[key].Assets, asset,
+			)
+			vtxosByOutpoint[key] = vtxo
+		}
+	}
+
 	vtxos := make([]domain.Vtxo, 0, len(rows))
-	for _, vtxo := range rows {
-		vtxos = append(vtxos, rowToVtxo(vtxo))
+	for _, vtxo := range vtxosByOutpoint {
+		vtxos = append(vtxos, vtxo)
 	}
 
 	return vtxos, nil

@@ -255,6 +255,10 @@ func Whitelist() map[string][]bakery.Op {
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
+		fmt.Sprintf("/%s/GetAsset", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+			Entity: EntityIndexer,
+			Action: "read",
+		}},
 	}
 }
 

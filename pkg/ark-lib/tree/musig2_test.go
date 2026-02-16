@@ -212,8 +212,12 @@ func generateMockedReceivers(num int) (vtxoTreeTestCase, error) {
 			return vtxoTreeTestCase{}, err
 		}
 		receivers = append(receivers, tree.Leaf{
-			Script: "0000000000000000000000000000000000000000000000000000000000000002",
-			Amount: uint64((i + 1) * 1000),
+			Outputs: []tree.LeafOutput{
+				{
+					Amount: uint64((i + 1) * 1000),
+					Script: "0000000000000000000000000000000000000000000000000000000000000002",
+				},
+			},
 			CosignersPublicKeys: []string{
 				hex.EncodeToString(prvkey.PubKey().SerializeCompressed()),
 				hex.EncodeToString(signerPrvkey.PubKey().SerializeCompressed()),

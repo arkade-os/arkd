@@ -27,7 +27,9 @@ func BuildForfeitTxWithOutput(
 	txLocktime uint32,
 ) (*psbt.Packet, error) {
 	version := int32(3)
-	outs := []*wire.TxOut{forfeitOutput, txutils.AnchorOutput()}
+	outs := []*wire.TxOut{forfeitOutput}
+
+	outs = append(outs, txutils.AnchorOutput())
 
 	partialTx, err := psbt.New(
 		inputs,

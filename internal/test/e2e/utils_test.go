@@ -742,3 +742,37 @@ func refill(httpClient *http.Client) error {
 
 // TODO: setupRawIndexerClient and getVtxoDepthByOutpoint are commented out until
 // the SDK proto package includes the Depth field on IndexerVtxo.
+
+func listVtxosWithAsset(t *testing.T, client arksdk.ArkClient, assetID string) []types.Vtxo {
+	t.Helper()
+	vtxos, err := client.ListSpendableVtxos(t.Context())
+	require.NoError(t, err)
+
+	assetVtxos := make([]types.Vtxo, 0, len(vtxos))
+	for _, vtxo := range vtxos {
+		for _, asset := range vtxo.Assets {
+			if asset.AssetId == assetID {
+				assetVtxos = append(assetVtxos, vtxo)
+				break
+			}
+		}
+	}
+	return assetVtxos
+}
+
+func findAssetInVtxo(vtxo types.Vtxo, assetID string) (types.Asset, bool) {
+	for _, asset := range vtxo.Assets {
+		if asset.AssetId == assetID {
+			return asset, true
+		}
+	}
+	return types.Asset{}, false
+}
+
+// requireVtxoHasAsset asserts that the given VTXO contains an asset with the given ID and amount.
+func requireVtxoHasAsset(t *testing.T, vtxo types.Vtxo, assetID string, expectedAmount uint64) {
+	t.Helper()
+	asset, found := findAssetInVtxo(vtxo, assetID)
+	require.True(t, found)
+	require.Equal(t, expectedAmount, asset.Amount, assetID)
+}

@@ -1,7 +1,7 @@
-DROP INDEX IF EXISTS fk_intent_round_id;
-DROP INDEX IF EXISTS fk_tx_round_id;
-DROP INDEX IF EXISTS fk_receiver_intent_id;
-DROP INDEX IF EXISTS fk_vtxo_intent_id;
+DROP INDEX IF EXISTS intent_round_id;
+DROP INDEX IF EXISTS tx_round_id;
+DROP INDEX IF EXISTS receiver_intent_id;
+DROP INDEX IF EXISTS vtxo_intent_id;
 
 DROP VIEW IF EXISTS vtxo_vw;
 DROP VIEW IF EXISTS round_intents_vw;

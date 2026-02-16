@@ -295,6 +295,7 @@ func (m *mockRepoManagerForIndexer) Markers() domain.MarkerRepository {
 func (m *mockRepoManagerForIndexer) ScheduledSession() domain.ScheduledSessionRepo { return nil }
 func (m *mockRepoManagerForIndexer) OffchainTxs() domain.OffchainTxRepository      { return nil }
 func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository      { return nil }
+func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository                { return nil }
 func (m *mockRepoManagerForIndexer) Fees() domain.FeeRepository                    { return nil }
 func (m *mockRepoManagerForIndexer) Close()                                        {}
 

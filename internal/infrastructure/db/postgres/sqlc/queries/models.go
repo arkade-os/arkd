@@ -6,9 +6,25 @@ package queries
 
 import (
 	"database/sql"
+	"encoding/json"
 
 	"github.com/sqlc-dev/pqtype"
 )
+
+type Asset struct {
+	ID             string
+	IsImmutable    bool
+	MetadataHash   sql.NullString
+	Metadata       pqtype.NullRawMessage
+	ControlAssetID sql.NullString
+}
+
+type AssetProjection struct {
+	AssetID string
+	Txid    string
+	Vout    int32
+	Amount  string
+}
 
 type CheckpointTx struct {
 	Txid                 string
@@ -67,10 +83,13 @@ type IntentWithInputsVw struct {
 	Markers        pqtype.NullRawMessage
 	Commitments    []byte
 	Swept          sql.NullBool
+	AssetID        sql.NullString
+	AssetAmount    sql.NullString
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	IntentTxid     sql.NullString
 }
 
 type IntentWithReceiversVw struct {
@@ -82,6 +101,7 @@ type IntentWithReceiversVw struct {
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	Txid           sql.NullString
 }
 
 type Marker struct {
@@ -152,6 +172,7 @@ type RoundIntentsVw struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type RoundTxsVw struct {
@@ -225,7 +246,7 @@ type Vtxo struct {
 	IntentID       sql.NullString
 	UpdatedAt      int64
 	Depth          int32
-	Markers        pqtype.NullRawMessage
+	Markers        json.RawMessage
 }
 
 type VtxoCommitmentTxid struct {
@@ -251,7 +272,9 @@ type VtxoVw struct {
 	IntentID       sql.NullString
 	UpdatedAt      int64
 	Depth          int32
-	Markers        pqtype.NullRawMessage
+	Markers        json.RawMessage
 	Commitments    []byte
 	Swept          bool
+	AssetID        string
+	AssetAmount    string
 }

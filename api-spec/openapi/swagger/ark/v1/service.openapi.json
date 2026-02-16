@@ -615,6 +615,19 @@
           }
         }
       },
+      "Asset": {
+        "title": "Asset",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "assetId": {
+            "type": "string"
+          }
+        }
+      },
       "BatchFailedEvent": {
         "title": "BatchFailedEvent",
         "type": "object",
@@ -1425,6 +1438,12 @@
           },
           "arkTxid": {
             "type": "string"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            }
           },
           "commitmentTxids": {
             "type": "array",

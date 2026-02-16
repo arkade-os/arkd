@@ -246,7 +246,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 -- name: SelectNotUnrolledVtxosWithPubkey :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND pubkey = @pubkey;
 
--- name: SelectVtxo :one
+-- name: SelectVtxo :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectAllVtxos :many
@@ -344,7 +344,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
     AND v.updated_at >= :after
     AND (CAST(:before AS INTEGER) = 0 OR v.updated_at <= CAST(:before AS INTEGER));
 
--- name: SelectPendingSpentVtxo :one
+-- name: SelectPendingSpentVtxo :many
 SELECT v.*
 FROM vtxo_vw v
 WHERE v.txid = @txid AND v.vout = @vout
@@ -510,6 +510,27 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @ark_txid;
 -- name: SelectVtxoChainByMarker :many
 -- Get VTXOs whose markers array contains the given marker_id
 -- For multiple markers, call this multiple times and deduplicate in Go
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+Select sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE markers LIKE '%"' || @marker_id || '"%'
 ORDER BY vtxo_vw.depth DESC;
+
+-- name: InsertAsset :exec
+INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
+VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
+
+-- name: InsertVtxoAssetProjection :exec
+INSERT INTO asset_projection (asset_id, txid, vout, amount)
+VALUES (@asset_id, @txid, @vout, @amount);
+
+-- name: SelectAssetsByIds :many
+SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));
+
+-- name: SelectAssetAmounts :many
+SELECT v.asset_amount FROM vtxo_vw v
+WHERE v.asset_id = ? AND v.spent = false AND v.asset_amount > 0;
+
+-- name: SelectControlAssetByID :one
+SELECT control_asset_id FROM asset WHERE id = ?;
+
+-- name: SelectAssetExists :one
+SELECT 1 FROM asset WHERE id = ? LIMIT 1;

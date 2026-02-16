@@ -1,0 +1,90 @@
+{
+  "valid": [
+    {
+      "name": "zero index",
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 0,
+      "serializedHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000"
+    },
+    {
+      "name": "max index",
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 65535,
+      "serializedHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffff"
+    },
+    {
+      "name": "index overflow",
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 65536,
+      "serializedHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000"
+    },
+    {
+      "name": "index underflow",
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": -1,
+      "serializedHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaffff"
+    },
+    {
+      "name": "random txid and index",
+      "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "index": 2,
+      "serializedHex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0200"
+    }
+  ],
+  "invalid": {
+    "newAssetId": [
+      {
+        "name": "missing txid",
+        "txid": "",
+        "index": 0,
+        "expectedError": "missing txid"
+      },
+      {
+        "name": "empty txid",
+        "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+        "index": 0,
+        "expectedError": "empty txid"
+      },
+      {
+        "name": "invalid txid hex",
+        "txid": "invalid000000000000000000000000000000000000000000000000000000000",
+        "index": 0,
+        "expectedError": "invalid txid format"
+      },
+      {
+        "name": "txid too long",
+        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00",
+        "index": 0,
+        "expectedError": "invalid txid length"
+      },
+      {
+        "name": "txid too short",
+        "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "index": 0,
+        "expectedError": "invalid txid length"
+      }
+    ],
+    "newAssetIdFromString": [
+      {
+        "name": "missing asset id",
+        "serializedHex": "",
+        "expectedError": "missing asset id"
+      },
+      {
+        "name": "empty asset id",
+        "serializedHex": "00000000000000000000000000000000000000000000000000000000000000000100",
+        "expectedError": "empty txid"
+      },
+      {
+        "name": "invalid format",
+        "serializedHex": "invalid",
+        "expectedError": "invalid asset id format"
+      },
+      {
+        "name": "invalid length",
+        "serializedHex": "000000000000000000000000000000000000000000000000000000000000000001",
+        "expectedError": "invalid asset id length"
+      }
+    ]
+  }
+}
