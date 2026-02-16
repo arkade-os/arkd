@@ -234,7 +234,6 @@ func (h *handler) GetEventStream(
 
 	h.eventsListenerHandler.pushListener(listener)
 	defer h.eventsListenerHandler.removeListener(listener.id)
-	defer close(listener.ch)
 
 	// immediately send a stream started event
 	startedEvt := &arkv1.GetEventStreamResponse{
@@ -434,7 +433,6 @@ func (h *handler) GetTransactionsStream(
 
 	defer func() {
 		h.transactionsListenerHandler.removeListener(listener.id)
-		close(listener.ch)
 	}()
 
 	// create a Timer that will fire after one heartbeat interval
@@ -611,18 +609,21 @@ func (h *handler) listenToEvents() {
 
 		// forward all events in the same routine in order to preserve the ordering
 		if len(evs) > 0 {
-			for _, l := range h.eventsListenerHandler.listeners {
+			listeners := h.eventsListenerHandler.getListenersCopy()
+			for _, l := range listeners {
 				go func(l *listener[*arkv1.GetEventStreamResponse]) {
-					count := 0
 					for _, ev := range evs {
 						if l.includesAny(ev.topics) {
-							l.ch <- ev.event
-							count++
+							select {
+							case <-l.done:
+								return
+							case l.ch <- ev.event:
+							}
 						}
 					}
-					log.Debugf("forwarded event to %d listeners", count)
 				}(l)
 			}
+			log.Debugf("forwarded event to %d listeners", len(listeners))
 		}
 	}
 
@@ -649,13 +650,18 @@ func (h *handler) listenToTxEvents() {
 		}
 
 		if msg != nil {
-			for _, l := range h.transactionsListenerHandler.listeners {
+			listeners := h.transactionsListenerHandler.getListenersCopy()
+			for _, l := range listeners {
 				go func(l *listener[*arkv1.GetTransactionsStreamResponse]) {
-					l.ch <- msg
+					select {
+					case <-l.done:
+						return
+					case l.ch <- msg:
+					}
 				}(l)
 			}
 			log.Debugf(
-				"forwarded tx event to %d listeners", len(h.transactionsListenerHandler.listeners),
+				"forwarded tx event to %d listeners", len(listeners),
 			)
 		}
 	}
