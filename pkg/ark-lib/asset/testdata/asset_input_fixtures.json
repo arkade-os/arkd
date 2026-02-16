@@ -1,0 +1,183 @@
+{
+    "valid": {
+        "newInput": [
+            {
+                "name": "local",
+                "type": "local",
+                "vin": 5,
+                "amount": 10,
+                "serializedHex": "0105000a"
+            },
+            {
+                "name": "intent",
+                "type": "intent",
+                "amount": 500,
+                "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "vin": 77,
+                "serializedHex": "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4d00f403"
+            }
+        ],
+        "newInputs": [
+            {
+                "name": "single local input",
+                "inputs": [
+                    {
+                        "type": "local",
+                        "vin": 5,
+                        "amount": 10
+                    }
+                ],
+                "serializedHex": "010105000a"
+            },
+            {
+                "name": "many local inputs",
+                "inputs": [
+                    {
+                        "type": "local",
+                        "vin": 1,
+                        "amount": 10
+                    },
+                    {
+                        "type": "local",
+                        "vin": 0,
+                        "amount": 2100000000
+                    },
+                    {
+                        "type": "local",
+                        "vin": 25,
+                        "amount": 8400000000000
+                    }
+                ],
+                "serializedHex": "030101000a01000080eaade90701190080c090b8bcf401"
+            },
+            {
+                "name": "single intent input",
+                "inputs": [
+                    {
+                        "type": "intent",
+                        "amount": 500,
+                        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "vin": 77
+                    }
+                ],
+                "serializedHex": "0102aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4d00f403"
+            },
+            {
+                "name": "many intent input",
+                "inputs": [
+                    {
+                        "type": "intent",
+                        "amount": 500,
+                        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "vin": 77
+                    },
+                    {
+                        "type": "intent",
+                        "amount": 100000000000,
+                        "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "vin": 1
+                    }
+                ],
+                "serializedHex": "0202aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4d00f40302bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb010080d0dbc3f402"
+            }
+        ]
+    },
+    "invalid": {
+        "newInput": [
+            {
+                "name": "missing txid",
+                "type": "intent",
+                "amount": 500,
+                "txid": "",
+                "vin": 10,
+                "expectedError": "missing input intent txid"
+            },
+            {
+                "name": "empty txid (zero)",
+                "type": "intent",
+                "amount": 500,
+                "txid": "0000000000000000000000000000000000000000000000000000000000000000",
+                "vin": 10,
+                "expectedError": "missing input intent txid"
+            },
+            {
+                "name": "invalid txid format",
+                "type": "intent",
+                "amount": 500,
+                "txid": "z000000000000000000000000000000000000000000000000000000000000000",
+                "vin": 10,
+                "expectedError": "invalid input intent txid format"
+            },
+            {
+                "name": "txid too short",
+                "type": "intent",
+                "amount": 500,
+                "txid": "aaaa",
+                "vin": 10,
+                "expectedError": "invalid input intent txid length"
+            }
+        ],
+        "newInputFromString": [
+            {
+                "name": "empty",
+                "serializedHex": "",
+                "expectedError": "missing asset input"
+            },
+            {
+                "name": "invalid format",
+                "serializedHex": "invalid",
+                "expectedError": "invalid asset input format"
+            },
+            {
+                "name": "unspecified type",
+                "serializedHex": "0005000a",
+                "expectedError": "asset input type unspecified"
+            },
+            {
+                "name": "unknown type",
+                "serializedHex": "0305000a",
+                "expectedError": "asset input type unknown"
+            },
+            {
+                "name": "invalid txid length",
+                "serializedHex": "0205000a",
+                "expectedError": "invalid asset input txid length"
+            }
+        ],
+        "newInputs": [
+            {
+                "name": "mixed input types",
+                "inputs": [
+                    {
+                        "type": "local",
+                        "vin": 1,
+                        "amount": 10
+                    },
+                    {
+                        "type": "intent",
+                        "amount": 500,
+                        "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "vin": 77
+                    }
+                ],
+                "expectedError": "asset inputs must be of the same type"
+            },
+            {
+                "name": "duplicated inputs",
+                "inputs": [
+                    {
+                        "type": "local",
+                        "vin": 1,
+                        "amount": 10
+                    },
+                    {
+                        "type": "local",
+                        "vin": 1,
+                        "amount": 200
+                    }
+                ],
+                "expectedError": "duplicated inputs vin"
+            }
+        ]
+    }
+}

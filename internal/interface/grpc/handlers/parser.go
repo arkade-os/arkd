@@ -172,6 +172,21 @@ type vtxoList []domain.Vtxo
 
 func (v vtxoList) toProto() []*arkv1.Vtxo {
 	list := make([]*arkv1.Vtxo, 0, len(v))
+
+	toAssets := func(vv domain.Vtxo) []*arkv1.Asset {
+		if len(vv.Assets) <= 0 {
+			return nil
+		}
+		assets := make([]*arkv1.Asset, 0, len(vv.Assets))
+		for _, asset := range vv.Assets {
+			assets = append(assets, &arkv1.Asset{
+				AssetId: asset.AssetId,
+				Amount:  asset.Amount,
+			})
+		}
+		return assets
+	}
+
 	for _, vv := range v {
 		list = append(list, &arkv1.Vtxo{
 			Outpoint: &arkv1.Outpoint{
@@ -191,6 +206,7 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 			SettledBy:       vv.SettledBy,
 			ArkTxid:         vv.ArkTxid,
 			Depth:           vv.Depth,
+			Assets:          toAssets(vv),
 		})
 	}
 

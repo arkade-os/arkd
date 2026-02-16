@@ -24,18 +24,24 @@ DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 
 CREATE VIEW vtxo_vw AS
-SELECT v.*, COALESCE(group_concat(vc.commitment_txid), '') AS commitments
+SELECT
+  v.*,
+  COALESCE((
+    SELECT group_concat(commitment_txid, ',')
+    FROM vtxo_commitment_txid
+    WHERE vtxo_txid = v.txid AND vtxo_vout = v.vout
+  ), '') AS commitments,
+  COALESCE(ap.asset_id, '') AS asset_id,
+  COALESCE(ap.amount, 0) AS asset_amount
 FROM vtxo v
-LEFT JOIN vtxo_commitment_txid vc
-ON v.txid = vc.vtxo_txid AND v.vout = vc.vtxo_vout
-GROUP BY v.txid, v.vout;
+LEFT JOIN (
+  SELECT DISTINCT txid, vout, asset_id, amount
+  FROM asset_projection
+) AS ap
+ON ap.txid = v.txid AND ap.vout = v.vout;
 
 CREATE VIEW intent_with_inputs_vw AS
-SELECT vtxo_vw.*,
-       intent.id,
-       intent.round_id,
-       intent.proof,
-       intent.message
+SELECT vtxo_vw.*, intent.id, intent.round_id, intent.proof, intent.message, intent.txid AS intent_txid
 FROM intent
 LEFT OUTER JOIN vtxo_vw
 ON intent.id = vtxo_vw.intent_id;
@@ -107,22 +113,26 @@ CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo(markers);
 -- Recreate views to compute swept status dynamically
 CREATE VIEW vtxo_vw AS
 SELECT v.*,
-    COALESCE(group_concat(vc.commitment_txid), '') AS commitments,
+    COALESCE((
+        SELECT group_concat(commitment_txid, ',')
+        FROM vtxo_commitment_txid
+        WHERE vtxo_txid = v.txid AND vtxo_vout = v.vout
+    ), '') AS commitments,
     EXISTS (
         SELECT 1 FROM swept_marker sm
         WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
-    ) AS swept
+    ) AS swept,
+    COALESCE(ap.asset_id, '') AS asset_id,
+    COALESCE(ap.amount, 0) AS asset_amount
 FROM vtxo v
-LEFT JOIN vtxo_commitment_txid vc
-ON v.txid = vc.vtxo_txid AND v.vout = vc.vtxo_vout
-GROUP BY v.txid, v.vout;
+LEFT JOIN (
+    SELECT DISTINCT txid, vout, asset_id, amount
+    FROM asset_projection
+) AS ap
+ON ap.txid = v.txid AND ap.vout = v.vout;
 
 CREATE VIEW intent_with_inputs_vw AS
-SELECT vtxo_vw.*,
-       intent.id,
-       intent.round_id,
-       intent.proof,
-       intent.message
+SELECT vtxo_vw.*, intent.id, intent.round_id, intent.proof, intent.message, intent.txid AS intent_txid
 FROM intent
 LEFT OUTER JOIN vtxo_vw
 ON intent.id = vtxo_vw.intent_id;

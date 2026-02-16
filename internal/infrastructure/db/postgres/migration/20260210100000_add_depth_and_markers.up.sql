@@ -24,18 +24,26 @@ DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 
 CREATE VIEW vtxo_vw AS
-SELECT v.*, string_agg(vc.commitment_txid, ',') AS commitments
+SELECT
+  v.*,
+  COALESCE(vc.commitments, '') AS commitments,
+  COALESCE(ap.asset_id, '') AS asset_id,
+  COALESCE(ap.amount, 0) AS asset_amount
 FROM vtxo v
-LEFT JOIN vtxo_commitment_txid vc
-ON v.txid = vc.vtxo_txid AND v.vout = vc.vtxo_vout
-GROUP BY v.txid, v.vout;
+LEFT JOIN LATERAL (
+  SELECT string_agg(commitment_txid, ',') AS commitments
+  FROM vtxo_commitment_txid
+  WHERE vtxo_txid = v.txid AND vtxo_vout = v.vout
+) vc ON true
+LEFT JOIN (
+  SELECT txid, vout, asset_id, amount
+  FROM asset_projection
+  GROUP BY txid, vout, asset_id, amount
+) ap
+ON ap.txid = v.txid AND ap.vout = v.vout;
 
 CREATE VIEW intent_with_inputs_vw AS
-SELECT vtxo_vw.*,
-       intent.id,
-       intent.round_id,
-       intent.proof,
-       intent.message
+SELECT vtxo_vw.*, intent.id, intent.round_id, intent.proof, intent.message, intent.txid AS intent_txid
 FROM intent
 LEFT OUTER JOIN vtxo_vw
 ON intent.id = vtxo_vw.intent_id;
@@ -73,22 +81,28 @@ ALTER TABLE vtxo DROP COLUMN IF EXISTS swept;
 
 CREATE VIEW vtxo_vw AS
 SELECT v.*,
-    string_agg(vc.commitment_txid, ',') AS commitments,
+    COALESCE(vc.commitments, '') AS commitments,
     EXISTS (
         SELECT 1 FROM swept_marker sm
         WHERE v.markers @> jsonb_build_array(sm.marker_id)
-    ) AS swept
+    ) AS swept,
+    COALESCE(ap.asset_id, '') AS asset_id,
+    COALESCE(ap.amount, 0) AS asset_amount
 FROM vtxo v
-LEFT JOIN vtxo_commitment_txid vc
-ON v.txid = vc.vtxo_txid AND v.vout = vc.vtxo_vout
-GROUP BY v.txid, v.vout;
+LEFT JOIN LATERAL (
+    SELECT string_agg(commitment_txid, ',') AS commitments
+    FROM vtxo_commitment_txid
+    WHERE vtxo_txid = v.txid AND vtxo_vout = v.vout
+) vc ON true
+LEFT JOIN (
+    SELECT txid, vout, asset_id, amount
+    FROM asset_projection
+    GROUP BY txid, vout, asset_id, amount
+) ap
+ON ap.txid = v.txid AND ap.vout = v.vout;
 
 CREATE VIEW intent_with_inputs_vw AS
-SELECT vtxo_vw.*,
-       intent.id,
-       intent.round_id,
-       intent.proof,
-       intent.message
+SELECT vtxo_vw.*, intent.id, intent.round_id, intent.proof, intent.message, intent.txid AS intent_txid
 FROM intent
 LEFT OUTER JOIN vtxo_vw
 ON intent.id = vtxo_vw.intent_id;

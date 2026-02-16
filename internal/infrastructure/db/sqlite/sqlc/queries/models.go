@@ -8,6 +8,21 @@ import (
 	"database/sql"
 )
 
+type Asset struct {
+	ID             string
+	IsImmutable    bool
+	MetadataHash   sql.NullString
+	Metadata       sql.NullString
+	ControlAssetID sql.NullString
+}
+
+type AssetProjection struct {
+	AssetID string
+	Txid    string
+	Vout    int64
+	Amount  string
+}
+
 type CheckpointTx struct {
 	Txid                 string
 	Tx                   string
@@ -65,10 +80,13 @@ type IntentWithInputsVw struct {
 	Markers        sql.NullString
 	Commitments    interface{}
 	Swept          sql.NullInt64
+	AssetID        sql.NullString
+	AssetAmount    sql.NullString
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	IntentTxid     sql.NullString
 }
 
 type IntentWithReceiversVw struct {
@@ -80,6 +98,7 @@ type IntentWithReceiversVw struct {
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	Txid           sql.NullString
 }
 
 type Marker struct {
@@ -139,6 +158,7 @@ type RoundIntentsVw struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type RoundTxsVw struct {
@@ -241,4 +261,6 @@ type VtxoVw struct {
 	Markers        sql.NullString
 	Commitments    interface{}
 	Swept          int64
+	AssetID        string
+	AssetAmount    string
 }

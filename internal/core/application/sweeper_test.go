@@ -462,6 +462,7 @@ func (m *mockRepoManager) Markers() domain.MarkerRepository              { retur
 func (m *mockRepoManager) ScheduledSession() domain.ScheduledSessionRepo { return nil }
 func (m *mockRepoManager) OffchainTxs() domain.OffchainTxRepository      { return nil }
 func (m *mockRepoManager) Convictions() domain.ConvictionRepository      { return nil }
+func (m *mockRepoManager) Assets() domain.AssetRepository                { return nil }
 func (m *mockRepoManager) Fees() domain.FeeRepository                    { return nil }
 func (m *mockRepoManager) Close()                                        {}
 

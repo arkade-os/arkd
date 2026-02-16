@@ -440,12 +440,12 @@ func rowToVtxoFromMarkerQuery(row queries.SelectVtxosByMarkerIdRow) domain.Vtxo 
 }
 
 // parseMarkersJSONB parses a JSONB array into a slice of strings
-func parseMarkersJSONB(markers pqtype.NullRawMessage) []string {
-	if !markers.Valid || len(markers.RawMessage) == 0 {
+func parseMarkersJSONB(markers json.RawMessage) []string {
+	if len(markers) == 0 {
 		return nil
 	}
 	var markerIDs []string
-	if err := json.Unmarshal(markers.RawMessage, &markerIDs); err != nil {
+	if err := json.Unmarshal(markers, &markerIDs); err != nil {
 		return nil
 	}
 	return markerIDs

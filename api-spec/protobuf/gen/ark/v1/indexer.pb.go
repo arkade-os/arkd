@@ -1057,6 +1057,170 @@ func (x *GetVirtualTxsResponse) GetPage() *IndexerPageResponse {
 	return nil
 }
 
+type GetAssetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAssetRequest) Reset() {
+	*x = GetAssetRequest{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAssetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAssetRequest) ProtoMessage() {}
+
+func (x *GetAssetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAssetRequest.ProtoReflect.Descriptor instead.
+func (*GetAssetRequest) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *GetAssetRequest) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+type GetAssetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	Supply        string                 `protobuf:"bytes,2,opt,name=supply,proto3" json:"supply,omitempty"` // bigint integer
+	Metadata      []*AssetMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
+	ControlAsset  string                 `protobuf:"bytes,4,opt,name=control_asset,json=controlAsset,proto3" json:"control_asset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAssetResponse) Reset() {
+	*x = GetAssetResponse{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAssetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAssetResponse) ProtoMessage() {}
+
+func (x *GetAssetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAssetResponse.ProtoReflect.Descriptor instead.
+func (*GetAssetResponse) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *GetAssetResponse) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *GetAssetResponse) GetSupply() string {
+	if x != nil {
+		return x.Supply
+	}
+	return ""
+}
+
+func (x *GetAssetResponse) GetMetadata() []*AssetMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *GetAssetResponse) GetControlAsset() string {
+	if x != nil {
+		return x.ControlAsset
+	}
+	return ""
+}
+
+type AssetMetadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AssetMetadata) Reset() {
+	*x = AssetMetadata{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AssetMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AssetMetadata) ProtoMessage() {}
+
+func (x *AssetMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AssetMetadata.ProtoReflect.Descriptor instead.
+func (*AssetMetadata) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *AssetMetadata) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *AssetMetadata) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
 type GetBatchSweepTransactionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BatchOutpoint *IndexerOutpoint       `protobuf:"bytes,1,opt,name=batch_outpoint,json=batchOutpoint,proto3" json:"batch_outpoint,omitempty"`
@@ -1066,7 +1230,7 @@ type GetBatchSweepTransactionsRequest struct {
 
 func (x *GetBatchSweepTransactionsRequest) Reset() {
 	*x = GetBatchSweepTransactionsRequest{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[16]
+	mi := &file_ark_v1_indexer_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1078,7 +1242,7 @@ func (x *GetBatchSweepTransactionsRequest) String() string {
 func (*GetBatchSweepTransactionsRequest) ProtoMessage() {}
 
 func (x *GetBatchSweepTransactionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[16]
+	mi := &file_ark_v1_indexer_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1091,7 +1255,7 @@ func (x *GetBatchSweepTransactionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBatchSweepTransactionsRequest.ProtoReflect.Descriptor instead.
 func (*GetBatchSweepTransactionsRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{16}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetBatchSweepTransactionsRequest) GetBatchOutpoint() *IndexerOutpoint {
@@ -1110,7 +1274,7 @@ type GetBatchSweepTransactionsResponse struct {
 
 func (x *GetBatchSweepTransactionsResponse) Reset() {
 	*x = GetBatchSweepTransactionsResponse{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[17]
+	mi := &file_ark_v1_indexer_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1122,7 +1286,7 @@ func (x *GetBatchSweepTransactionsResponse) String() string {
 func (*GetBatchSweepTransactionsResponse) ProtoMessage() {}
 
 func (x *GetBatchSweepTransactionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[17]
+	mi := &file_ark_v1_indexer_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1135,7 +1299,7 @@ func (x *GetBatchSweepTransactionsResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetBatchSweepTransactionsResponse.ProtoReflect.Descriptor instead.
 func (*GetBatchSweepTransactionsResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{17}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *GetBatchSweepTransactionsResponse) GetSweptBy() []string {
@@ -1157,7 +1321,7 @@ type IndexerBatch struct {
 
 func (x *IndexerBatch) Reset() {
 	*x = IndexerBatch{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[18]
+	mi := &file_ark_v1_indexer_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1169,7 +1333,7 @@ func (x *IndexerBatch) String() string {
 func (*IndexerBatch) ProtoMessage() {}
 
 func (x *IndexerBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[18]
+	mi := &file_ark_v1_indexer_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1182,7 +1346,7 @@ func (x *IndexerBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerBatch.ProtoReflect.Descriptor instead.
 func (*IndexerBatch) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{18}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *IndexerBatch) GetTotalOutputAmount() uint64 {
@@ -1223,7 +1387,7 @@ type IndexerOutpoint struct {
 
 func (x *IndexerOutpoint) Reset() {
 	*x = IndexerOutpoint{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[19]
+	mi := &file_ark_v1_indexer_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1235,7 +1399,7 @@ func (x *IndexerOutpoint) String() string {
 func (*IndexerOutpoint) ProtoMessage() {}
 
 func (x *IndexerOutpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[19]
+	mi := &file_ark_v1_indexer_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1248,7 +1412,7 @@ func (x *IndexerOutpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerOutpoint.ProtoReflect.Descriptor instead.
 func (*IndexerOutpoint) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{19}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *IndexerOutpoint) GetTxid() string {
@@ -1275,7 +1439,7 @@ type IndexerNode struct {
 
 func (x *IndexerNode) Reset() {
 	*x = IndexerNode{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[20]
+	mi := &file_ark_v1_indexer_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1287,7 +1451,7 @@ func (x *IndexerNode) String() string {
 func (*IndexerNode) ProtoMessage() {}
 
 func (x *IndexerNode) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[20]
+	mi := &file_ark_v1_indexer_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1300,7 +1464,7 @@ func (x *IndexerNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerNode.ProtoReflect.Descriptor instead.
 func (*IndexerNode) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{20}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *IndexerNode) GetTxid() string {
@@ -1332,14 +1496,15 @@ type IndexerVtxo struct {
 	CommitmentTxids []string               `protobuf:"bytes,11,rep,name=commitment_txids,json=commitmentTxids,proto3" json:"commitment_txids,omitempty"`
 	SettledBy       string                 `protobuf:"bytes,12,opt,name=settled_by,json=settledBy,proto3" json:"settled_by,omitempty"`
 	ArkTxid         string                 `protobuf:"bytes,13,opt,name=ark_txid,json=arkTxid,proto3" json:"ark_txid,omitempty"`
-	Depth           uint32                 `protobuf:"varint,14,opt,name=depth,proto3" json:"depth,omitempty"`
+	Assets          []*IndexerAsset        `protobuf:"bytes,14,rep,name=assets,proto3" json:"assets,omitempty"`
+	Depth           uint32                 `protobuf:"varint,15,opt,name=depth,proto3" json:"depth,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *IndexerVtxo) Reset() {
 	*x = IndexerVtxo{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[21]
+	mi := &file_ark_v1_indexer_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1351,7 +1516,7 @@ func (x *IndexerVtxo) String() string {
 func (*IndexerVtxo) ProtoMessage() {}
 
 func (x *IndexerVtxo) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[21]
+	mi := &file_ark_v1_indexer_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1364,7 +1529,7 @@ func (x *IndexerVtxo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerVtxo.ProtoReflect.Descriptor instead.
 func (*IndexerVtxo) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{21}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *IndexerVtxo) GetOutpoint() *IndexerOutpoint {
@@ -1458,9 +1623,68 @@ func (x *IndexerVtxo) GetArkTxid() string {
 	return ""
 }
 
+func (x *IndexerVtxo) GetAssets() []*IndexerAsset {
+	if x != nil {
+		return x.Assets
+	}
+	return nil
+}
+
 func (x *IndexerVtxo) GetDepth() uint32 {
 	if x != nil {
 		return x.Depth
+	}
+	return 0
+}
+
+type IndexerAsset struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AssetId       string                 `protobuf:"bytes,1,opt,name=asset_id,json=assetId,proto3" json:"asset_id,omitempty"`
+	Amount        uint64                 `protobuf:"varint,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IndexerAsset) Reset() {
+	*x = IndexerAsset{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IndexerAsset) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IndexerAsset) ProtoMessage() {}
+
+func (x *IndexerAsset) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IndexerAsset.ProtoReflect.Descriptor instead.
+func (*IndexerAsset) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *IndexerAsset) GetAssetId() string {
+	if x != nil {
+		return x.AssetId
+	}
+	return ""
+}
+
+func (x *IndexerAsset) GetAmount() uint64 {
+	if x != nil {
+		return x.Amount
 	}
 	return 0
 }
@@ -1478,7 +1702,7 @@ type IndexerChain struct {
 
 func (x *IndexerChain) Reset() {
 	*x = IndexerChain{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[22]
+	mi := &file_ark_v1_indexer_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1490,7 +1714,7 @@ func (x *IndexerChain) String() string {
 func (*IndexerChain) ProtoMessage() {}
 
 func (x *IndexerChain) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[22]
+	mi := &file_ark_v1_indexer_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1503,7 +1727,7 @@ func (x *IndexerChain) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerChain.ProtoReflect.Descriptor instead.
 func (*IndexerChain) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{22}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *IndexerChain) GetTxid() string {
@@ -1552,7 +1776,7 @@ type IndexerTxHistoryRecord struct {
 
 func (x *IndexerTxHistoryRecord) Reset() {
 	*x = IndexerTxHistoryRecord{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[23]
+	mi := &file_ark_v1_indexer_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1564,7 +1788,7 @@ func (x *IndexerTxHistoryRecord) String() string {
 func (*IndexerTxHistoryRecord) ProtoMessage() {}
 
 func (x *IndexerTxHistoryRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[23]
+	mi := &file_ark_v1_indexer_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1577,7 +1801,7 @@ func (x *IndexerTxHistoryRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerTxHistoryRecord.ProtoReflect.Descriptor instead.
 func (*IndexerTxHistoryRecord) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{23}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *IndexerTxHistoryRecord) GetKey() isIndexerTxHistoryRecord_Key {
@@ -1666,7 +1890,7 @@ type IndexerPageRequest struct {
 
 func (x *IndexerPageRequest) Reset() {
 	*x = IndexerPageRequest{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[24]
+	mi := &file_ark_v1_indexer_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1678,7 +1902,7 @@ func (x *IndexerPageRequest) String() string {
 func (*IndexerPageRequest) ProtoMessage() {}
 
 func (x *IndexerPageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[24]
+	mi := &file_ark_v1_indexer_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1691,7 +1915,7 @@ func (x *IndexerPageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerPageRequest.ProtoReflect.Descriptor instead.
 func (*IndexerPageRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{24}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *IndexerPageRequest) GetSize() int32 {
@@ -1719,7 +1943,7 @@ type IndexerPageResponse struct {
 
 func (x *IndexerPageResponse) Reset() {
 	*x = IndexerPageResponse{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[25]
+	mi := &file_ark_v1_indexer_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1731,7 +1955,7 @@ func (x *IndexerPageResponse) String() string {
 func (*IndexerPageResponse) ProtoMessage() {}
 
 func (x *IndexerPageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[25]
+	mi := &file_ark_v1_indexer_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1744,7 +1968,7 @@ func (x *IndexerPageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerPageResponse.ProtoReflect.Descriptor instead.
 func (*IndexerPageResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{25}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *IndexerPageResponse) GetCurrent() int32 {
@@ -1779,7 +2003,7 @@ type SubscribeForScriptsRequest struct {
 
 func (x *SubscribeForScriptsRequest) Reset() {
 	*x = SubscribeForScriptsRequest{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[26]
+	mi := &file_ark_v1_indexer_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1791,7 +2015,7 @@ func (x *SubscribeForScriptsRequest) String() string {
 func (*SubscribeForScriptsRequest) ProtoMessage() {}
 
 func (x *SubscribeForScriptsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[26]
+	mi := &file_ark_v1_indexer_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1804,7 +2028,7 @@ func (x *SubscribeForScriptsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeForScriptsRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeForScriptsRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{26}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SubscribeForScriptsRequest) GetScripts() []string {
@@ -1830,7 +2054,7 @@ type SubscribeForScriptsResponse struct {
 
 func (x *SubscribeForScriptsResponse) Reset() {
 	*x = SubscribeForScriptsResponse{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[27]
+	mi := &file_ark_v1_indexer_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1842,7 +2066,7 @@ func (x *SubscribeForScriptsResponse) String() string {
 func (*SubscribeForScriptsResponse) ProtoMessage() {}
 
 func (x *SubscribeForScriptsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[27]
+	mi := &file_ark_v1_indexer_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1855,7 +2079,7 @@ func (x *SubscribeForScriptsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeForScriptsResponse.ProtoReflect.Descriptor instead.
 func (*SubscribeForScriptsResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{27}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SubscribeForScriptsResponse) GetSubscriptionId() string {
@@ -1876,7 +2100,7 @@ type UnsubscribeForScriptsRequest struct {
 
 func (x *UnsubscribeForScriptsRequest) Reset() {
 	*x = UnsubscribeForScriptsRequest{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[28]
+	mi := &file_ark_v1_indexer_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1888,7 +2112,7 @@ func (x *UnsubscribeForScriptsRequest) String() string {
 func (*UnsubscribeForScriptsRequest) ProtoMessage() {}
 
 func (x *UnsubscribeForScriptsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[28]
+	mi := &file_ark_v1_indexer_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1901,7 +2125,7 @@ func (x *UnsubscribeForScriptsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnsubscribeForScriptsRequest.ProtoReflect.Descriptor instead.
 func (*UnsubscribeForScriptsRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{28}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *UnsubscribeForScriptsRequest) GetSubscriptionId() string {
@@ -1926,7 +2150,7 @@ type UnsubscribeForScriptsResponse struct {
 
 func (x *UnsubscribeForScriptsResponse) Reset() {
 	*x = UnsubscribeForScriptsResponse{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[29]
+	mi := &file_ark_v1_indexer_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1938,7 +2162,7 @@ func (x *UnsubscribeForScriptsResponse) String() string {
 func (*UnsubscribeForScriptsResponse) ProtoMessage() {}
 
 func (x *UnsubscribeForScriptsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[29]
+	mi := &file_ark_v1_indexer_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1951,7 +2175,7 @@ func (x *UnsubscribeForScriptsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnsubscribeForScriptsResponse.ProtoReflect.Descriptor instead.
 func (*UnsubscribeForScriptsResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{29}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{33}
 }
 
 type GetSubscriptionRequest struct {
@@ -1963,7 +2187,7 @@ type GetSubscriptionRequest struct {
 
 func (x *GetSubscriptionRequest) Reset() {
 	*x = GetSubscriptionRequest{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[30]
+	mi := &file_ark_v1_indexer_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1975,7 +2199,7 @@ func (x *GetSubscriptionRequest) String() string {
 func (*GetSubscriptionRequest) ProtoMessage() {}
 
 func (x *GetSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[30]
+	mi := &file_ark_v1_indexer_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1988,7 +2212,7 @@ func (x *GetSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*GetSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{30}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetSubscriptionRequest) GetSubscriptionId() string {
@@ -2011,7 +2235,7 @@ type GetSubscriptionResponse struct {
 
 func (x *GetSubscriptionResponse) Reset() {
 	*x = GetSubscriptionResponse{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[31]
+	mi := &file_ark_v1_indexer_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2023,7 +2247,7 @@ func (x *GetSubscriptionResponse) String() string {
 func (*GetSubscriptionResponse) ProtoMessage() {}
 
 func (x *GetSubscriptionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[31]
+	mi := &file_ark_v1_indexer_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2036,7 +2260,7 @@ func (x *GetSubscriptionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSubscriptionResponse.ProtoReflect.Descriptor instead.
 func (*GetSubscriptionResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{31}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *GetSubscriptionResponse) GetData() isGetSubscriptionResponse_Data {
@@ -2090,7 +2314,7 @@ type IndexerTxData struct {
 
 func (x *IndexerTxData) Reset() {
 	*x = IndexerTxData{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[32]
+	mi := &file_ark_v1_indexer_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2102,7 +2326,7 @@ func (x *IndexerTxData) String() string {
 func (*IndexerTxData) ProtoMessage() {}
 
 func (x *IndexerTxData) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[32]
+	mi := &file_ark_v1_indexer_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2115,7 +2339,7 @@ func (x *IndexerTxData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerTxData.ProtoReflect.Descriptor instead.
 func (*IndexerTxData) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{32}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *IndexerTxData) GetTxid() string {
@@ -2140,7 +2364,7 @@ type IndexerHeartbeat struct {
 
 func (x *IndexerHeartbeat) Reset() {
 	*x = IndexerHeartbeat{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[33]
+	mi := &file_ark_v1_indexer_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2152,7 +2376,7 @@ func (x *IndexerHeartbeat) String() string {
 func (*IndexerHeartbeat) ProtoMessage() {}
 
 func (x *IndexerHeartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[33]
+	mi := &file_ark_v1_indexer_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2165,7 +2389,7 @@ func (x *IndexerHeartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerHeartbeat.ProtoReflect.Descriptor instead.
 func (*IndexerHeartbeat) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{33}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{37}
 }
 
 type IndexerSubscriptionEvent struct {
@@ -2183,7 +2407,7 @@ type IndexerSubscriptionEvent struct {
 
 func (x *IndexerSubscriptionEvent) Reset() {
 	*x = IndexerSubscriptionEvent{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[34]
+	mi := &file_ark_v1_indexer_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2195,7 +2419,7 @@ func (x *IndexerSubscriptionEvent) String() string {
 func (*IndexerSubscriptionEvent) ProtoMessage() {}
 
 func (x *IndexerSubscriptionEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[34]
+	mi := &file_ark_v1_indexer_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2208,7 +2432,7 @@ func (x *IndexerSubscriptionEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerSubscriptionEvent.ProtoReflect.Descriptor instead.
 func (*IndexerSubscriptionEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{34}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *IndexerSubscriptionEvent) GetTxid() string {
@@ -2330,7 +2554,17 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\"Z\n" +
 	"\x15GetVirtualTxsResponse\x12\x10\n" +
 	"\x03txs\x18\x01 \x03(\tR\x03txs\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"b\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\",\n" +
+	"\x0fGetAssetRequest\x12\x19\n" +
+	"\basset_id\x18\x01 \x01(\tR\aassetId\"\x9d\x01\n" +
+	"\x10GetAssetResponse\x12\x19\n" +
+	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x16\n" +
+	"\x06supply\x18\x02 \x01(\tR\x06supply\x121\n" +
+	"\bmetadata\x18\x03 \x03(\v2\x15.ark.v1.AssetMetadataR\bmetadata\x12#\n" +
+	"\rcontrol_asset\x18\x04 \x01(\tR\fcontrolAsset\"7\n" +
+	"\rAssetMetadata\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"b\n" +
 	" GetBatchSweepTransactionsRequest\x12>\n" +
 	"\x0ebatch_outpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\rbatchOutpoint\">\n" +
 	"!GetBatchSweepTransactionsResponse\x12\x19\n" +
@@ -2349,7 +2583,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\bchildren\x18\x02 \x03(\v2!.ark.v1.IndexerNode.ChildrenEntryR\bchildren\x1a;\n" +
 	"\rChildrenEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\rR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc6\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf4\x03\n" +
 	"\vIndexerVtxo\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12\x1d\n" +
 	"\n" +
@@ -2368,8 +2602,12 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x10commitment_txids\x18\v \x03(\tR\x0fcommitmentTxids\x12\x1d\n" +
 	"\n" +
 	"settled_by\x18\f \x01(\tR\tsettledBy\x12\x19\n" +
-	"\bark_txid\x18\r \x01(\tR\aarkTxid\x12\x14\n" +
-	"\x05depth\x18\x0e \x01(\rR\x05depth\"\x8b\x01\n" +
+	"\bark_txid\x18\r \x01(\tR\aarkTxid\x12,\n" +
+	"\x06assets\x18\x0e \x03(\v2\x14.ark.v1.IndexerAssetR\x06assets\x12\x14\n" +
+	"\x05depth\x18\x0f \x01(\rR\x05depth\"A\n" +
+	"\fIndexerAsset\x12\x19\n" +
+	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x16\n" +
+	"\x06amount\x18\x02 \x01(\x04R\x06amount\"\x8b\x01\n" +
 	"\fIndexerChain\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x1d\n" +
 	"\n" +
@@ -2436,7 +2674,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\"INDEXER_CHAINED_TX_TYPE_COMMITMENT\x10\x01\x12\x1f\n" +
 	"\x1bINDEXER_CHAINED_TX_TYPE_ARK\x10\x02\x12 \n" +
 	"\x1cINDEXER_CHAINED_TX_TYPE_TREE\x10\x03\x12&\n" +
-	"\"INDEXER_CHAINED_TX_TYPE_CHECKPOINT\x10\x042\x82\r\n" +
+	"\"INDEXER_CHAINED_TX_TYPE_CHECKPOINT\x10\x042\xe4\r\n" +
 	"\x0eIndexerService\x12x\n" +
 	"\x0fGetCommitmentTx\x12\x1e.ark.v1.GetCommitmentTxRequest\x1a\x1f.ark.v1.GetCommitmentTxResponse\"$\xb2J!\x12\x1f/v1/indexer/commitmentTx/{txid}\x12}\n" +
 	"\rGetForfeitTxs\x12\x1c.ark.v1.GetForfeitTxsRequest\x1a\x1d.ark.v1.GetForfeitTxsResponse\"/\xb2J,\x12*/v1/indexer/commitmentTx/{txid}/forfeitTxs\x12}\n" +
@@ -2445,7 +2683,8 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x11GetVtxoTreeLeaves\x12 .ark.v1.GetVtxoTreeLeavesRequest\x1a!.ark.v1.GetVtxoTreeLeavesResponse\"N\xb2JK\x12I/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/tree/leaves\x12U\n" +
 	"\bGetVtxos\x12\x17.ark.v1.GetVtxosRequest\x1a\x18.ark.v1.GetVtxosResponse\"\x16\xb2J\x13\x12\x11/v1/indexer/vtxos\x12\x86\x01\n" +
 	"\fGetVtxoChain\x12\x1b.ark.v1.GetVtxoChainRequest\x1a\x1c.ark.v1.GetVtxoChainResponse\";\xb2J8\x126/v1/indexer/vtxo/{outpoint.txid}/{outpoint.vout}/chain\x12p\n" +
-	"\rGetVirtualTxs\x12\x1c.ark.v1.GetVirtualTxsRequest\x1a\x1d.ark.v1.GetVirtualTxsResponse\"\"\xb2J\x1f\x12\x1d/v1/indexer/virtualTx/{txids}\x12\xbd\x01\n" +
+	"\rGetVirtualTxs\x12\x1c.ark.v1.GetVirtualTxsRequest\x1a\x1d.ark.v1.GetVirtualTxsResponse\"\"\xb2J\x1f\x12\x1d/v1/indexer/virtualTx/{txids}\x12`\n" +
+	"\bGetAsset\x12\x17.ark.v1.GetAssetRequest\x1a\x18.ark.v1.GetAssetResponse\"!\xb2J\x1e\x12\x1c/v1/indexer/asset/{asset_id}\x12\xbd\x01\n" +
 	"\x19GetBatchSweepTransactions\x12(.ark.v1.GetBatchSweepTransactionsRequest\x1a).ark.v1.GetBatchSweepTransactionsResponse\"K\xb2JH\x12F/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs\x12\x84\x01\n" +
 	"\x13SubscribeForScripts\x12\".ark.v1.SubscribeForScriptsRequest\x1a#.ark.v1.SubscribeForScriptsResponse\"$\xb2J!B\x01*\"\x1c/v1/indexer/script/subscribe\x12\x8c\x01\n" +
 	"\x15UnsubscribeForScripts\x12$.ark.v1.UnsubscribeForScriptsRequest\x1a%.ark.v1.UnsubscribeForScriptsResponse\"&\xb2J#B\x01*\"\x1e/v1/indexer/script/unsubscribe\x12\x92\x01\n" +
@@ -2466,7 +2705,7 @@ func file_ark_v1_indexer_proto_rawDescGZIP() []byte {
 }
 
 var file_ark_v1_indexer_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ark_v1_indexer_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_ark_v1_indexer_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_ark_v1_indexer_proto_goTypes = []any{
 	(IndexerTxType)(0),                        // 0: ark.v1.IndexerTxType
 	(IndexerChainedTxType)(0),                 // 1: ark.v1.IndexerChainedTxType
@@ -2486,95 +2725,103 @@ var file_ark_v1_indexer_proto_goTypes = []any{
 	(*GetVtxoChainResponse)(nil),              // 15: ark.v1.GetVtxoChainResponse
 	(*GetVirtualTxsRequest)(nil),              // 16: ark.v1.GetVirtualTxsRequest
 	(*GetVirtualTxsResponse)(nil),             // 17: ark.v1.GetVirtualTxsResponse
-	(*GetBatchSweepTransactionsRequest)(nil),  // 18: ark.v1.GetBatchSweepTransactionsRequest
-	(*GetBatchSweepTransactionsResponse)(nil), // 19: ark.v1.GetBatchSweepTransactionsResponse
-	(*IndexerBatch)(nil),                      // 20: ark.v1.IndexerBatch
-	(*IndexerOutpoint)(nil),                   // 21: ark.v1.IndexerOutpoint
-	(*IndexerNode)(nil),                       // 22: ark.v1.IndexerNode
-	(*IndexerVtxo)(nil),                       // 23: ark.v1.IndexerVtxo
-	(*IndexerChain)(nil),                      // 24: ark.v1.IndexerChain
-	(*IndexerTxHistoryRecord)(nil),            // 25: ark.v1.IndexerTxHistoryRecord
-	(*IndexerPageRequest)(nil),                // 26: ark.v1.IndexerPageRequest
-	(*IndexerPageResponse)(nil),               // 27: ark.v1.IndexerPageResponse
-	(*SubscribeForScriptsRequest)(nil),        // 28: ark.v1.SubscribeForScriptsRequest
-	(*SubscribeForScriptsResponse)(nil),       // 29: ark.v1.SubscribeForScriptsResponse
-	(*UnsubscribeForScriptsRequest)(nil),      // 30: ark.v1.UnsubscribeForScriptsRequest
-	(*UnsubscribeForScriptsResponse)(nil),     // 31: ark.v1.UnsubscribeForScriptsResponse
-	(*GetSubscriptionRequest)(nil),            // 32: ark.v1.GetSubscriptionRequest
-	(*GetSubscriptionResponse)(nil),           // 33: ark.v1.GetSubscriptionResponse
-	(*IndexerTxData)(nil),                     // 34: ark.v1.IndexerTxData
-	(*IndexerHeartbeat)(nil),                  // 35: ark.v1.IndexerHeartbeat
-	(*IndexerSubscriptionEvent)(nil),          // 36: ark.v1.IndexerSubscriptionEvent
-	nil,                                       // 37: ark.v1.GetCommitmentTxResponse.BatchesEntry
-	nil,                                       // 38: ark.v1.IndexerNode.ChildrenEntry
-	nil,                                       // 39: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
+	(*GetAssetRequest)(nil),                   // 18: ark.v1.GetAssetRequest
+	(*GetAssetResponse)(nil),                  // 19: ark.v1.GetAssetResponse
+	(*AssetMetadata)(nil),                     // 20: ark.v1.AssetMetadata
+	(*GetBatchSweepTransactionsRequest)(nil),  // 21: ark.v1.GetBatchSweepTransactionsRequest
+	(*GetBatchSweepTransactionsResponse)(nil), // 22: ark.v1.GetBatchSweepTransactionsResponse
+	(*IndexerBatch)(nil),                      // 23: ark.v1.IndexerBatch
+	(*IndexerOutpoint)(nil),                   // 24: ark.v1.IndexerOutpoint
+	(*IndexerNode)(nil),                       // 25: ark.v1.IndexerNode
+	(*IndexerVtxo)(nil),                       // 26: ark.v1.IndexerVtxo
+	(*IndexerAsset)(nil),                      // 27: ark.v1.IndexerAsset
+	(*IndexerChain)(nil),                      // 28: ark.v1.IndexerChain
+	(*IndexerTxHistoryRecord)(nil),            // 29: ark.v1.IndexerTxHistoryRecord
+	(*IndexerPageRequest)(nil),                // 30: ark.v1.IndexerPageRequest
+	(*IndexerPageResponse)(nil),               // 31: ark.v1.IndexerPageResponse
+	(*SubscribeForScriptsRequest)(nil),        // 32: ark.v1.SubscribeForScriptsRequest
+	(*SubscribeForScriptsResponse)(nil),       // 33: ark.v1.SubscribeForScriptsResponse
+	(*UnsubscribeForScriptsRequest)(nil),      // 34: ark.v1.UnsubscribeForScriptsRequest
+	(*UnsubscribeForScriptsResponse)(nil),     // 35: ark.v1.UnsubscribeForScriptsResponse
+	(*GetSubscriptionRequest)(nil),            // 36: ark.v1.GetSubscriptionRequest
+	(*GetSubscriptionResponse)(nil),           // 37: ark.v1.GetSubscriptionResponse
+	(*IndexerTxData)(nil),                     // 38: ark.v1.IndexerTxData
+	(*IndexerHeartbeat)(nil),                  // 39: ark.v1.IndexerHeartbeat
+	(*IndexerSubscriptionEvent)(nil),          // 40: ark.v1.IndexerSubscriptionEvent
+	nil,                                       // 41: ark.v1.GetCommitmentTxResponse.BatchesEntry
+	nil,                                       // 42: ark.v1.IndexerNode.ChildrenEntry
+	nil,                                       // 43: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
 }
 var file_ark_v1_indexer_proto_depIdxs = []int32{
-	37, // 0: ark.v1.GetCommitmentTxResponse.batches:type_name -> ark.v1.GetCommitmentTxResponse.BatchesEntry
-	26, // 1: ark.v1.GetForfeitTxsRequest.page:type_name -> ark.v1.IndexerPageRequest
-	27, // 2: ark.v1.GetForfeitTxsResponse.page:type_name -> ark.v1.IndexerPageResponse
-	26, // 3: ark.v1.GetConnectorsRequest.page:type_name -> ark.v1.IndexerPageRequest
-	22, // 4: ark.v1.GetConnectorsResponse.connectors:type_name -> ark.v1.IndexerNode
-	27, // 5: ark.v1.GetConnectorsResponse.page:type_name -> ark.v1.IndexerPageResponse
-	21, // 6: ark.v1.GetVtxoTreeRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
-	26, // 7: ark.v1.GetVtxoTreeRequest.page:type_name -> ark.v1.IndexerPageRequest
-	22, // 8: ark.v1.GetVtxoTreeResponse.vtxo_tree:type_name -> ark.v1.IndexerNode
-	27, // 9: ark.v1.GetVtxoTreeResponse.page:type_name -> ark.v1.IndexerPageResponse
-	21, // 10: ark.v1.GetVtxoTreeLeavesRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
-	26, // 11: ark.v1.GetVtxoTreeLeavesRequest.page:type_name -> ark.v1.IndexerPageRequest
-	21, // 12: ark.v1.GetVtxoTreeLeavesResponse.leaves:type_name -> ark.v1.IndexerOutpoint
-	27, // 13: ark.v1.GetVtxoTreeLeavesResponse.page:type_name -> ark.v1.IndexerPageResponse
-	26, // 14: ark.v1.GetVtxosRequest.page:type_name -> ark.v1.IndexerPageRequest
-	23, // 15: ark.v1.GetVtxosResponse.vtxos:type_name -> ark.v1.IndexerVtxo
-	27, // 16: ark.v1.GetVtxosResponse.page:type_name -> ark.v1.IndexerPageResponse
-	21, // 17: ark.v1.GetVtxoChainRequest.outpoint:type_name -> ark.v1.IndexerOutpoint
-	26, // 18: ark.v1.GetVtxoChainRequest.page:type_name -> ark.v1.IndexerPageRequest
-	24, // 19: ark.v1.GetVtxoChainResponse.chain:type_name -> ark.v1.IndexerChain
-	27, // 20: ark.v1.GetVtxoChainResponse.page:type_name -> ark.v1.IndexerPageResponse
-	26, // 21: ark.v1.GetVirtualTxsRequest.page:type_name -> ark.v1.IndexerPageRequest
-	27, // 22: ark.v1.GetVirtualTxsResponse.page:type_name -> ark.v1.IndexerPageResponse
-	21, // 23: ark.v1.GetBatchSweepTransactionsRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
-	38, // 24: ark.v1.IndexerNode.children:type_name -> ark.v1.IndexerNode.ChildrenEntry
-	21, // 25: ark.v1.IndexerVtxo.outpoint:type_name -> ark.v1.IndexerOutpoint
-	1,  // 26: ark.v1.IndexerChain.type:type_name -> ark.v1.IndexerChainedTxType
-	0,  // 27: ark.v1.IndexerTxHistoryRecord.type:type_name -> ark.v1.IndexerTxType
-	35, // 28: ark.v1.GetSubscriptionResponse.heartbeat:type_name -> ark.v1.IndexerHeartbeat
-	36, // 29: ark.v1.GetSubscriptionResponse.event:type_name -> ark.v1.IndexerSubscriptionEvent
-	23, // 30: ark.v1.IndexerSubscriptionEvent.new_vtxos:type_name -> ark.v1.IndexerVtxo
-	23, // 31: ark.v1.IndexerSubscriptionEvent.spent_vtxos:type_name -> ark.v1.IndexerVtxo
-	39, // 32: ark.v1.IndexerSubscriptionEvent.checkpoint_txs:type_name -> ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
-	23, // 33: ark.v1.IndexerSubscriptionEvent.swept_vtxos:type_name -> ark.v1.IndexerVtxo
-	20, // 34: ark.v1.GetCommitmentTxResponse.BatchesEntry.value:type_name -> ark.v1.IndexerBatch
-	34, // 35: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry.value:type_name -> ark.v1.IndexerTxData
-	2,  // 36: ark.v1.IndexerService.GetCommitmentTx:input_type -> ark.v1.GetCommitmentTxRequest
-	4,  // 37: ark.v1.IndexerService.GetForfeitTxs:input_type -> ark.v1.GetForfeitTxsRequest
-	6,  // 38: ark.v1.IndexerService.GetConnectors:input_type -> ark.v1.GetConnectorsRequest
-	8,  // 39: ark.v1.IndexerService.GetVtxoTree:input_type -> ark.v1.GetVtxoTreeRequest
-	10, // 40: ark.v1.IndexerService.GetVtxoTreeLeaves:input_type -> ark.v1.GetVtxoTreeLeavesRequest
-	12, // 41: ark.v1.IndexerService.GetVtxos:input_type -> ark.v1.GetVtxosRequest
-	14, // 42: ark.v1.IndexerService.GetVtxoChain:input_type -> ark.v1.GetVtxoChainRequest
-	16, // 43: ark.v1.IndexerService.GetVirtualTxs:input_type -> ark.v1.GetVirtualTxsRequest
-	18, // 44: ark.v1.IndexerService.GetBatchSweepTransactions:input_type -> ark.v1.GetBatchSweepTransactionsRequest
-	28, // 45: ark.v1.IndexerService.SubscribeForScripts:input_type -> ark.v1.SubscribeForScriptsRequest
-	30, // 46: ark.v1.IndexerService.UnsubscribeForScripts:input_type -> ark.v1.UnsubscribeForScriptsRequest
-	32, // 47: ark.v1.IndexerService.GetSubscription:input_type -> ark.v1.GetSubscriptionRequest
-	3,  // 48: ark.v1.IndexerService.GetCommitmentTx:output_type -> ark.v1.GetCommitmentTxResponse
-	5,  // 49: ark.v1.IndexerService.GetForfeitTxs:output_type -> ark.v1.GetForfeitTxsResponse
-	7,  // 50: ark.v1.IndexerService.GetConnectors:output_type -> ark.v1.GetConnectorsResponse
-	9,  // 51: ark.v1.IndexerService.GetVtxoTree:output_type -> ark.v1.GetVtxoTreeResponse
-	11, // 52: ark.v1.IndexerService.GetVtxoTreeLeaves:output_type -> ark.v1.GetVtxoTreeLeavesResponse
-	13, // 53: ark.v1.IndexerService.GetVtxos:output_type -> ark.v1.GetVtxosResponse
-	15, // 54: ark.v1.IndexerService.GetVtxoChain:output_type -> ark.v1.GetVtxoChainResponse
-	17, // 55: ark.v1.IndexerService.GetVirtualTxs:output_type -> ark.v1.GetVirtualTxsResponse
-	19, // 56: ark.v1.IndexerService.GetBatchSweepTransactions:output_type -> ark.v1.GetBatchSweepTransactionsResponse
-	29, // 57: ark.v1.IndexerService.SubscribeForScripts:output_type -> ark.v1.SubscribeForScriptsResponse
-	31, // 58: ark.v1.IndexerService.UnsubscribeForScripts:output_type -> ark.v1.UnsubscribeForScriptsResponse
-	33, // 59: ark.v1.IndexerService.GetSubscription:output_type -> ark.v1.GetSubscriptionResponse
-	48, // [48:60] is the sub-list for method output_type
-	36, // [36:48] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	41, // 0: ark.v1.GetCommitmentTxResponse.batches:type_name -> ark.v1.GetCommitmentTxResponse.BatchesEntry
+	30, // 1: ark.v1.GetForfeitTxsRequest.page:type_name -> ark.v1.IndexerPageRequest
+	31, // 2: ark.v1.GetForfeitTxsResponse.page:type_name -> ark.v1.IndexerPageResponse
+	30, // 3: ark.v1.GetConnectorsRequest.page:type_name -> ark.v1.IndexerPageRequest
+	25, // 4: ark.v1.GetConnectorsResponse.connectors:type_name -> ark.v1.IndexerNode
+	31, // 5: ark.v1.GetConnectorsResponse.page:type_name -> ark.v1.IndexerPageResponse
+	24, // 6: ark.v1.GetVtxoTreeRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
+	30, // 7: ark.v1.GetVtxoTreeRequest.page:type_name -> ark.v1.IndexerPageRequest
+	25, // 8: ark.v1.GetVtxoTreeResponse.vtxo_tree:type_name -> ark.v1.IndexerNode
+	31, // 9: ark.v1.GetVtxoTreeResponse.page:type_name -> ark.v1.IndexerPageResponse
+	24, // 10: ark.v1.GetVtxoTreeLeavesRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
+	30, // 11: ark.v1.GetVtxoTreeLeavesRequest.page:type_name -> ark.v1.IndexerPageRequest
+	24, // 12: ark.v1.GetVtxoTreeLeavesResponse.leaves:type_name -> ark.v1.IndexerOutpoint
+	31, // 13: ark.v1.GetVtxoTreeLeavesResponse.page:type_name -> ark.v1.IndexerPageResponse
+	30, // 14: ark.v1.GetVtxosRequest.page:type_name -> ark.v1.IndexerPageRequest
+	26, // 15: ark.v1.GetVtxosResponse.vtxos:type_name -> ark.v1.IndexerVtxo
+	31, // 16: ark.v1.GetVtxosResponse.page:type_name -> ark.v1.IndexerPageResponse
+	24, // 17: ark.v1.GetVtxoChainRequest.outpoint:type_name -> ark.v1.IndexerOutpoint
+	30, // 18: ark.v1.GetVtxoChainRequest.page:type_name -> ark.v1.IndexerPageRequest
+	28, // 19: ark.v1.GetVtxoChainResponse.chain:type_name -> ark.v1.IndexerChain
+	31, // 20: ark.v1.GetVtxoChainResponse.page:type_name -> ark.v1.IndexerPageResponse
+	30, // 21: ark.v1.GetVirtualTxsRequest.page:type_name -> ark.v1.IndexerPageRequest
+	31, // 22: ark.v1.GetVirtualTxsResponse.page:type_name -> ark.v1.IndexerPageResponse
+	20, // 23: ark.v1.GetAssetResponse.metadata:type_name -> ark.v1.AssetMetadata
+	24, // 24: ark.v1.GetBatchSweepTransactionsRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
+	42, // 25: ark.v1.IndexerNode.children:type_name -> ark.v1.IndexerNode.ChildrenEntry
+	24, // 26: ark.v1.IndexerVtxo.outpoint:type_name -> ark.v1.IndexerOutpoint
+	27, // 27: ark.v1.IndexerVtxo.assets:type_name -> ark.v1.IndexerAsset
+	1,  // 28: ark.v1.IndexerChain.type:type_name -> ark.v1.IndexerChainedTxType
+	0,  // 29: ark.v1.IndexerTxHistoryRecord.type:type_name -> ark.v1.IndexerTxType
+	39, // 30: ark.v1.GetSubscriptionResponse.heartbeat:type_name -> ark.v1.IndexerHeartbeat
+	40, // 31: ark.v1.GetSubscriptionResponse.event:type_name -> ark.v1.IndexerSubscriptionEvent
+	26, // 32: ark.v1.IndexerSubscriptionEvent.new_vtxos:type_name -> ark.v1.IndexerVtxo
+	26, // 33: ark.v1.IndexerSubscriptionEvent.spent_vtxos:type_name -> ark.v1.IndexerVtxo
+	43, // 34: ark.v1.IndexerSubscriptionEvent.checkpoint_txs:type_name -> ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
+	26, // 35: ark.v1.IndexerSubscriptionEvent.swept_vtxos:type_name -> ark.v1.IndexerVtxo
+	23, // 36: ark.v1.GetCommitmentTxResponse.BatchesEntry.value:type_name -> ark.v1.IndexerBatch
+	38, // 37: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry.value:type_name -> ark.v1.IndexerTxData
+	2,  // 38: ark.v1.IndexerService.GetCommitmentTx:input_type -> ark.v1.GetCommitmentTxRequest
+	4,  // 39: ark.v1.IndexerService.GetForfeitTxs:input_type -> ark.v1.GetForfeitTxsRequest
+	6,  // 40: ark.v1.IndexerService.GetConnectors:input_type -> ark.v1.GetConnectorsRequest
+	8,  // 41: ark.v1.IndexerService.GetVtxoTree:input_type -> ark.v1.GetVtxoTreeRequest
+	10, // 42: ark.v1.IndexerService.GetVtxoTreeLeaves:input_type -> ark.v1.GetVtxoTreeLeavesRequest
+	12, // 43: ark.v1.IndexerService.GetVtxos:input_type -> ark.v1.GetVtxosRequest
+	14, // 44: ark.v1.IndexerService.GetVtxoChain:input_type -> ark.v1.GetVtxoChainRequest
+	16, // 45: ark.v1.IndexerService.GetVirtualTxs:input_type -> ark.v1.GetVirtualTxsRequest
+	18, // 46: ark.v1.IndexerService.GetAsset:input_type -> ark.v1.GetAssetRequest
+	21, // 47: ark.v1.IndexerService.GetBatchSweepTransactions:input_type -> ark.v1.GetBatchSweepTransactionsRequest
+	32, // 48: ark.v1.IndexerService.SubscribeForScripts:input_type -> ark.v1.SubscribeForScriptsRequest
+	34, // 49: ark.v1.IndexerService.UnsubscribeForScripts:input_type -> ark.v1.UnsubscribeForScriptsRequest
+	36, // 50: ark.v1.IndexerService.GetSubscription:input_type -> ark.v1.GetSubscriptionRequest
+	3,  // 51: ark.v1.IndexerService.GetCommitmentTx:output_type -> ark.v1.GetCommitmentTxResponse
+	5,  // 52: ark.v1.IndexerService.GetForfeitTxs:output_type -> ark.v1.GetForfeitTxsResponse
+	7,  // 53: ark.v1.IndexerService.GetConnectors:output_type -> ark.v1.GetConnectorsResponse
+	9,  // 54: ark.v1.IndexerService.GetVtxoTree:output_type -> ark.v1.GetVtxoTreeResponse
+	11, // 55: ark.v1.IndexerService.GetVtxoTreeLeaves:output_type -> ark.v1.GetVtxoTreeLeavesResponse
+	13, // 56: ark.v1.IndexerService.GetVtxos:output_type -> ark.v1.GetVtxosResponse
+	15, // 57: ark.v1.IndexerService.GetVtxoChain:output_type -> ark.v1.GetVtxoChainResponse
+	17, // 58: ark.v1.IndexerService.GetVirtualTxs:output_type -> ark.v1.GetVirtualTxsResponse
+	19, // 59: ark.v1.IndexerService.GetAsset:output_type -> ark.v1.GetAssetResponse
+	22, // 60: ark.v1.IndexerService.GetBatchSweepTransactions:output_type -> ark.v1.GetBatchSweepTransactionsResponse
+	33, // 61: ark.v1.IndexerService.SubscribeForScripts:output_type -> ark.v1.SubscribeForScriptsResponse
+	35, // 62: ark.v1.IndexerService.UnsubscribeForScripts:output_type -> ark.v1.UnsubscribeForScriptsResponse
+	37, // 63: ark.v1.IndexerService.GetSubscription:output_type -> ark.v1.GetSubscriptionResponse
+	51, // [51:64] is the sub-list for method output_type
+	38, // [38:51] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_indexer_proto_init() }
@@ -2582,11 +2829,11 @@ func file_ark_v1_indexer_proto_init() {
 	if File_ark_v1_indexer_proto != nil {
 		return
 	}
-	file_ark_v1_indexer_proto_msgTypes[23].OneofWrappers = []any{
+	file_ark_v1_indexer_proto_msgTypes[27].OneofWrappers = []any{
 		(*IndexerTxHistoryRecord_CommitmentTxid)(nil),
 		(*IndexerTxHistoryRecord_VirtualTxid)(nil),
 	}
-	file_ark_v1_indexer_proto_msgTypes[31].OneofWrappers = []any{
+	file_ark_v1_indexer_proto_msgTypes[35].OneofWrappers = []any{
 		(*GetSubscriptionResponse_Heartbeat)(nil),
 		(*GetSubscriptionResponse_Event)(nil),
 	}
@@ -2596,7 +2843,7 @@ func file_ark_v1_indexer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_indexer_proto_rawDesc), len(file_ark_v1_indexer_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   38,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

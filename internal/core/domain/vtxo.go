@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -35,6 +36,8 @@ func (k Outpoint) String() string {
 	return fmt.Sprintf("%s:%d", k.Txid, k.VOut)
 }
 
+type AssetDenomination = asset.Asset
+
 type Vtxo struct {
 	Outpoint
 	Amount             uint64
@@ -52,6 +55,7 @@ type Vtxo struct {
 	CreatedAt          int64
 	Depth              uint32   // chain depth: 0 for vtxos from batch, increments on each chain
 	MarkerIDs          []string // marker IDs for DAG traversal optimization (supports multiple parent markers)
+	Assets             []AssetDenomination
 }
 
 func (v Vtxo) String() string {

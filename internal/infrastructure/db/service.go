@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -17,11 +16,12 @@ import (
 	badgerdb "github.com/arkade-os/arkd/internal/infrastructure/db/badger"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
 	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -68,6 +68,11 @@ var (
 		"sqlite":   sqlitedb.NewConvictionRepository,
 		"postgres": pgdb.NewConvictionRepository,
 	}
+	assetStoreTypes = map[string]func(...interface{}) (domain.AssetRepository, error){
+		"sqlite":   sqlitedb.NewAssetRepository,
+		"badger":   badgerdb.NewAssetRepository,
+		"postgres": pgdb.NewAssetRepository,
+	}
 	intentFeesStoreTypes = map[string]func(...interface{}) (domain.FeeRepository, error){
 		"badger":   badgerdb.NewIntentFeesRepository,
 		"sqlite":   sqlitedb.NewIntentFeesRepository,
@@ -100,6 +105,7 @@ type service struct {
 	scheduledSessionStore domain.ScheduledSessionRepo
 	offchainTxStore       domain.OffchainTxRepository
 	convictionStore       domain.ConvictionRepository
+	assetStore            domain.AssetRepository
 	intentFeesStore       domain.FeeRepository
 	txDecoder             ports.TxDecoder
 }
@@ -129,6 +135,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
+	assetStoreFactory, ok := assetStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
+
 	intentFeesStoreFactory, ok := intentFeesStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
@@ -144,6 +155,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var scheduledSessionStore domain.ScheduledSessionRepo
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
+	var assetStore domain.AssetRepository
 	var intentFeesStore domain.FeeRepository
 	var err error
 
@@ -202,6 +214,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		convictionStore, err = convictionStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
+		}
+		assetStoreConfig := append(config.DataStoreConfig, vtxoStore)
+		assetStore, err = assetStoreFactory(assetStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
 		intentFeesStore, err = intentFeesStoreFactory(config.DataStoreConfig...)
 		if err != nil {
@@ -291,6 +308,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
+		assetStore, err = assetStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
+		}
 		intentFeesStore, err = intentFeesStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
@@ -360,6 +381,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
 		}
+		assetStore, err = assetStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create asset store: %w", err)
+		}
 		intentFeesStore, err = intentFeesStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
@@ -379,6 +404,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		offchainTxStore:       offchainTxStore,
 		txDecoder:             txDecoder,
 		convictionStore:       convictionStore,
+		assetStore:            assetStore,
 		intentFeesStore:       intentFeesStore,
 	}
 
@@ -399,6 +425,10 @@ func (s *service) Events() domain.EventRepository {
 
 func (s *service) Rounds() domain.RoundRepository {
 	return s.roundStore
+}
+
+func (s *service) Assets() domain.AssetRepository {
+	return s.assetStore
 }
 
 func (s *service) Vtxos() domain.VtxoRepository {
@@ -471,7 +501,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	}
 
 	spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
-	newVtxos := getNewVtxosFromRound(round)
+	newVtxos := getNewVtxosFromRound(*round, s.txDecoder)
 
 	if len(spentVtxos) > 0 {
 		for {
@@ -487,11 +517,13 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	if len(newVtxos) > 0 {
 		for {
+			// this will take care of updating asset projections as well
 			if err := repo.AddVtxos(ctx, newVtxos); err != nil {
 				log.WithError(err).Warn("failed to add new vtxos, retrying soon")
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
+
 			log.Debugf("added %d new vtxos", len(newVtxos))
 			break
 		}
@@ -618,11 +650,20 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			markerIDs = parentMarkerIDs
 		}
 
+		issuances, assets, err := getAssetsFromTxOuts(txid, outs)
+		if err != nil {
+			log.WithError(err).Warn("failed to get assets from tx")
+			return
+		}
+
+		// once the offchain tx is finalized, the user signed the checkpoint txs
+		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
 		dustVtxoOutpoints := make([]domain.Outpoint, 0)
 		for outIndex, out := range outs {
 			// ignore anchors
-			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+				asset.IsAssetPacket(out.PkScript) {
 				continue
 			}
 
@@ -660,7 +701,24 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				CreatedAt:          offchainTx.StartingTimestamp,
 				Depth:              newDepth,
 				MarkerIDs:          vtxoMarkerIDs,
+				Assets:             assets[uint32(outIndex)],
 			})
+		}
+
+		if len(issuances) > 0 {
+			assetsByTx := map[string][]domain.Asset{
+				offchainTx.ArkTxid: issuances,
+			}
+			count, err := s.assetStore.AddAssets(ctx, assetsByTx)
+			if err != nil {
+				log.WithError(err).Warnf(
+					"failed to add issued assets in offchain tx %s", offchainTx.ArkTxid,
+				)
+				return
+			}
+			if count > 0 {
+				log.Infof("added %d issued assets", count)
+			}
 		}
 
 		if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
@@ -716,21 +774,29 @@ func getSpentVtxoKeysFromRound(
 	return spentVtxos
 }
 
-func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
+func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domain.Vtxo {
 	if len(round.VtxoTree) <= 0 {
 		return nil
 	}
 
 	vtxos := make([]domain.Vtxo, 0)
 	for _, node := range tree.FlatTxTree(round.VtxoTree).Leaves() {
-		tx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
+		txid, _, outs, err := txDecoder.DecodeTx(node.Tx)
 		if err != nil {
 			log.WithError(err).Warn("failed to parse tx")
 			continue
 		}
-		for i, out := range tx.UnsignedTx.TxOut {
+
+		_, assets, err := getAssetsFromTxOuts(txid, outs)
+		if err != nil {
+			log.WithError(err).Warn("failed to get assets from tx")
+			continue
+		}
+
+		for i, out := range outs {
 			// ignore anchors
-			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+				asset.IsAssetPacket(out.PkScript) {
 				continue
 			}
 
@@ -741,17 +807,18 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 			}
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
-			outpoint := domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)}
+			outpoint := domain.Outpoint{Txid: txid, VOut: uint32(i)}
 			vtxos = append(vtxos, domain.Vtxo{
 				Outpoint:           outpoint,
 				PubKey:             vtxoPubkey,
-				Amount:             uint64(out.Value),
+				Amount:             out.Amount,
 				CommitmentTxids:    []string{round.CommitmentTxid},
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          round.EndingTimestamp,
 				ExpiresAt:          round.ExpiryTimestamp(),
 				Depth:              0,
 				MarkerIDs:          []string{outpoint.String()},
+				Assets:             assets[uint32(i)],
 			})
 		}
 	}
@@ -804,6 +871,90 @@ func (s *service) sweepVtxosWithMarkers(
 	totalSwept := int64(len(vtxos))
 	log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), totalSwept)
 	return totalSwept
+}
+
+func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
+	[]domain.Asset, map[uint32][]domain.AssetDenomination, error,
+) {
+	assets := make(asset.Packet, 0)
+	for _, out := range txOuts {
+		if asset.IsAssetPacket(out.PkScript) {
+			packet, err := asset.NewPacketFromTxOut(wire.TxOut{
+				Value:    int64(out.Amount),
+				PkScript: out.PkScript,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			assets = packet
+			break
+		}
+	}
+
+	if len(assets) <= 0 {
+		return nil, nil, nil
+	}
+
+	getAssetId := func(groupIndex uint16) (string, error) {
+		if groupIndex >= uint16(len(assets)) {
+			return "", fmt.Errorf("group index %d out of range", groupIndex)
+		}
+		group := assets[groupIndex]
+		if group.IsIssuance() {
+			id, err := asset.NewAssetId(txid, groupIndex)
+			if err != nil {
+				return "", fmt.Errorf("failed to compute asset id: %w", err)
+			}
+			return id.String(), nil
+		}
+		return group.AssetId.String(), nil
+
+	}
+
+	issuances := make([]domain.Asset, 0)
+	assetDenominations := make(map[uint32][]domain.AssetDenomination)
+	for grpIndex, ast := range assets {
+		for _, out := range ast.Outputs {
+			assetId := ""
+
+			if ast.IsIssuance() {
+				var err error
+				assetId, err = getAssetId(uint16(grpIndex))
+				if err != nil {
+					return nil, nil, err
+				}
+
+				issuance := domain.Asset{
+					Id:       assetId,
+					Metadata: ast.Metadata,
+				}
+
+				if ast.ControlAsset != nil {
+					switch ast.ControlAsset.Type {
+					case asset.AssetRefByID:
+						issuance.ControlAssetId = ast.ControlAsset.AssetId.String()
+					case asset.AssetRefByGroup:
+						issuance.ControlAssetId, err = getAssetId(ast.ControlAsset.GroupIndex)
+						if err != nil {
+							return nil, nil, err
+						}
+					}
+				}
+
+				issuances = append(issuances, issuance)
+			} else {
+				assetId = ast.AssetId.String()
+			}
+
+			assetDenominations[uint32(out.Vout)] = append(
+				assetDenominations[uint32(out.Vout)], domain.AssetDenomination{
+					AssetId: assetId,
+					Amount:  out.Amount,
+				},
+			)
+		}
+	}
+	return issuances, assetDenominations, nil
 }
 
 func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {
