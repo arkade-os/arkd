@@ -52,18 +52,10 @@ func TestAssetGroup(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		t.Run("Serialize", func(t *testing.T) {
+		t.Run("NewAssetGroup", func(t *testing.T) {
 			for _, v := range fixtures.Invalid.NewAssetGroup {
 				t.Run(v.Name, func(t *testing.T) {
-					ins := make([]asset.AssetInput, 0, len(v.Inputs))
-					for _, vv := range v.Inputs {
-						ins = append(ins, *vv.parse())
-					}
-					assetGroup := asset.AssetGroup{
-						AssetId: v.AssetId.parse(),
-						Inputs:  ins,
-					}
-					got, err := assetGroup.Serialize()
+					got, err := asset.NewAssetGroup(v.parse())
 					require.Error(t, err)
 					require.ErrorContains(t, err, v.ExpectedError)
 					require.Nil(t, got)
@@ -84,13 +76,16 @@ func TestAssetGroup(t *testing.T) {
 }
 
 type assetGroupFixturesJSON struct {
-	Valid   []assetGroupValidFixture `json:"valid"`
+	Valid []struct {
+		assetGroupValidationFixture
+		Name          string `json:"name"`
+		SerializedHex string `json:"serializedHex"`
+	} `json:"valid"`
 	Invalid struct {
 		NewAssetGroup []struct {
-			Name          string              `json:"name"`
-			ExpectedError string              `json:"expectedError"`
-			AssetId       assetIdFixture      `json:"assetId,omitempty"`
-			Inputs        []assetInputFixture `json:"inputs"`
+			assetGroupValidationFixture
+			Name          string `json:"name"`
+			ExpectedError string `json:"expectedError"`
 		} `json:"newAssetGroup"`
 		NewAssetGroupFromString []struct {
 			Name          string `json:"name"`
@@ -100,17 +95,15 @@ type assetGroupFixturesJSON struct {
 	} `json:"invalid"`
 }
 
-type assetGroupValidFixture struct {
-	Name          string               `json:"name"`
-	AssetId       assetIdFixture       `json:"assetId,omitempty"`
-	ControlAsset  *assetRefFixture     `json:"controlAsset,omitempty"`
-	Metadata      []metadataFixture    `json:"metadata,omitempty"`
-	Inputs        []assetInputFixture  `json:"inputs"`
-	Outputs       []assetOutputFixture `json:"outputs"`
-	SerializedHex string               `json:"serializedHex"`
+type assetGroupValidationFixture struct {
+	AssetId      assetIdFixture       `json:"assetId,omitempty"`
+	ControlAsset *assetRefFixture     `json:"controlAsset,omitempty"`
+	Metadata     []metadataFixture    `json:"metadata,omitempty"`
+	Inputs       []assetInputFixture  `json:"inputs"`
+	Outputs      []assetOutputFixture `json:"outputs"`
 }
 
-func (f assetGroupValidFixture) parse() (
+func (f assetGroupValidationFixture) parse() (
 	*asset.AssetId, *asset.AssetRef, []asset.AssetInput, []asset.AssetOutput, []asset.Metadata,
 ) {
 	ins := make([]asset.AssetInput, 0, len(f.Inputs))

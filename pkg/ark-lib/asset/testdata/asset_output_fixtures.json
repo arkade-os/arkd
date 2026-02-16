@@ -40,6 +40,14 @@
         ]
     },
     "invalid": {
+        "newOutput": [
+            {
+                "name": "zero amount",
+                "vout": 0,
+                "amount": 0,
+                "expectedError": "asset output amount must be greater than 0"
+            }
+        ],
         "newOutputFromString": [
             {
                 "name": "empty",

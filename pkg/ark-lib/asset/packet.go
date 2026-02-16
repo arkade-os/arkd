@@ -233,6 +233,10 @@ func rawPacketFromScript(script []byte) ([]byte, error) {
 		return nil, fmt.Errorf("invalid magic prefix, got %x want %x", buf, ArkadeMagic)
 	}
 
+	if r.Len() <= 0 {
+		return nil, fmt.Errorf("invalid script length")
+	}
+
 	marker, err := r.ReadByte()
 	if err != nil {
 		return nil, err

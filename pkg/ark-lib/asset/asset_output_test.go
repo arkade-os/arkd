@@ -64,6 +64,16 @@ func TestAssetOutput(t *testing.T) {
 		})
 	})
 	t.Run("invalid", func(t *testing.T) {
+		t.Run("new output", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.NewOutput {
+				t.Run(v.Name, func(t *testing.T) {
+					got, err := asset.NewAssetOutput(v.Vout, v.Amount)
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
 		t.Run("from string", func(t *testing.T) {
 			for _, v := range fixtures.Invalid.NewOutputFromString {
 				t.Run(v.Name, func(t *testing.T) {
@@ -97,33 +107,36 @@ func TestAssetOutput(t *testing.T) {
 type assetOutputFixtures struct {
 	Valid struct {
 		NewOutput []struct {
+			assetOutputValidationFixture
 			Name          string `json:"name"`
-			Vout          uint16 `json:"vout"`
-			Amount        uint64 `json:"amount"`
 			SerializedHex string `json:"serializedHex"`
 		} `json:"newOutput"`
 		NewOutputs []struct {
-			Name    string `json:"name"`
-			Outputs []struct {
-				Vout   uint16 `json:"vout"`
-				Amount uint64 `json:"amount"`
-			} `json:"outputs"`
-			SerializedHex string `json:"serializedHex"`
+			Name          string                         `json:"name"`
+			Outputs       []assetOutputValidationFixture `json:"outputs"`
+			SerializedHex string                         `json:"serializedHex"`
 		} `json:"newOutputs"`
 	} `json:"valid"`
 	Invalid struct {
+		NewOutput []struct {
+			assetOutputValidationFixture
+			Name          string `json:"name"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newOutput"`
 		NewOutputFromString []struct {
 			Name          string `json:"name"`
 			SerializedHex string `json:"serializedHex"`
 			ExpectedError string `json:"expectedError"`
 		} `json:"newOutputFromString"`
 		NewOutputs []struct {
-			Name    string `json:"name"`
-			Outputs []struct {
-				Vout   uint16 `json:"vout"`
-				Amount uint64 `json:"amount"`
-			} `json:"outputs"`
-			ExpectedError string `json:"expectedError"`
+			Name          string                         `json:"name"`
+			Outputs       []assetOutputValidationFixture `json:"outputs"`
+			ExpectedError string                         `json:"expectedError"`
 		} `json:"newOutputs"`
 	} `json:"invalid"`
+}
+
+type assetOutputValidationFixture struct {
+	Vout   uint16 `json:"vout"`
+	Amount uint64 `json:"amount"`
 }

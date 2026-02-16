@@ -85,26 +85,21 @@ func TestMetadata(t *testing.T) {
 type metadataFixtures struct {
 	Valid struct {
 		NewMetadata []struct {
+			metadataValidationFixture
 			Name          string `json:"name"`
-			Key           string `json:"key"`
-			Value         string `json:"value"`
 			Hash          string `json:"hash"`
 			SerializedHex string `json:"serializedHex"`
 		} `json:"newMetadata"`
 		Hash []struct {
-			Name     string `json:"name"`
-			Metadata []struct {
-				Key   string `json:"key"`
-				Value string `json:"value"`
-			} `json:"metadata"`
-			ExpectedHash string `json:"expectedHash"`
+			Name         string                      `json:"name"`
+			Metadata     []metadataValidationFixture `json:"metadata"`
+			ExpectedHash string                      `json:"expectedHash"`
 		} `json:"hash"`
 	} `json:"valid"`
 	Invalid struct {
 		NewMetadataFromKeyValue []struct {
+			metadataValidationFixture
 			Name          string `json:"name"`
-			Key           string `json:"key"`
-			Value         string `json:"value"`
 			ExpectedError string `json:"expectedError"`
 		} `json:"newMetadata"`
 		NewMetadataFromString []struct {
@@ -113,4 +108,9 @@ type metadataFixtures struct {
 			ExpectedError string `json:"expectedError"`
 		} `json:"newMetadataFromString"`
 	} `json:"invalid"`
+}
+
+type metadataValidationFixture struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }

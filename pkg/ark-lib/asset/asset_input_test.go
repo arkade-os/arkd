@@ -85,30 +85,20 @@ func TestAssetInput(t *testing.T) {
 type assetInputFixtures struct {
 	Valid struct {
 		NewInput []struct {
+			assetInputValidationFixture
 			Name          string `json:"name"`
-			Type          string `json:"type"`
-			Vin           uint16 `json:"vin"`
-			Amount        uint64 `json:"amount"`
-			Txid          string `json:"txid"`
 			SerializedHex string `json:"serializedHex"`
 		} `json:"newInput"`
 		NewInputs []struct {
-			Name   string `json:"name"`
-			Inputs []struct {
-				Type   string `json:"type"`
-				Vin    uint16 `json:"vin"`
-				Amount uint64 `json:"amount"`
-				Txid   string `json:"txid"`
-			} `json:"inputs"`
-			SerializedHex string `json:"serializedHex"`
+			Name          string                        `json:"name"`
+			Inputs        []assetInputValidationFixture `json:"inputs"`
+			SerializedHex string                        `json:"serializedHex"`
 		} `json:"newInputs"`
 	} `json:"valid"`
 	Invalid struct {
 		NewInput []struct {
+			assetInputValidationFixture
 			Name          string `json:"name"`
-			Type          string `json:"type"`
-			Txid          string `json:"txid"`
-			Vin           int    `json:"vin"`
 			ExpectedError string `json:"expectedError"`
 		} `json:"newInput"`
 		NewInputFromString []struct {
@@ -117,4 +107,11 @@ type assetInputFixtures struct {
 			ExpectedError string `json:"expectedError"`
 		} `json:"newInputFromString"`
 	} `json:"invalid"`
+}
+
+type assetInputValidationFixture struct {
+	Type   string `json:"type"`
+	Vin    uint16 `json:"vin"`
+	Amount uint64 `json:"amount"`
+	Txid   string `json:"txid"`
 }

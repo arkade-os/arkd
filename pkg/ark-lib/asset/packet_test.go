@@ -160,10 +160,10 @@ func TestPacket(t *testing.T) {
 type packetFixtures struct {
 	Valid struct {
 		NewPacket []struct {
-			Name           string               `json:"name"`
-			Assets         []packetAssetFixture `json:"assets"`
-			ExpectedAmount int64                `json:"expectedAmount"`
-			ExpectedScript string               `json:"expectedScript"`
+			Name           string                    `json:"name"`
+			Assets         []packetValidationFixture `json:"assets"`
+			ExpectedAmount int64                     `json:"expectedAmount"`
+			ExpectedScript string                    `json:"expectedScript"`
 		} `json:"newPacket"`
 		NewPacketFromString []struct {
 			Name   string `json:"name"`
@@ -184,9 +184,9 @@ type packetFixtures struct {
 	} `json:"valid"`
 	Invalid struct {
 		NewPacket []struct {
-			Name          string               `json:"name"`
-			Assets        []packetAssetFixture `json:"assets"`
-			ExpectedError string               `json:"expectedError"`
+			Name          string                    `json:"name"`
+			Assets        []packetValidationFixture `json:"assets"`
+			ExpectedError string                    `json:"expectedError"`
 		} `json:"newPacket"`
 		NewPacketFromString []struct {
 			Name          string `json:"name"`
@@ -197,12 +197,12 @@ type packetFixtures struct {
 			Name          string `json:"name"`
 			Script        string `json:"script"`
 			Amount        int64  `json:"amount"`
-			ExpectedError string `json:"expected"`
+			ExpectedError string `json:"expectedError"`
 		} `json:"newPacketFromTxOut"`
 	} `json:"invalid"`
 }
 
-type packetAssetFixture struct {
+type packetValidationFixture struct {
 	AssetId      assetIdFixture       `json:"assetId,omitempty"`
 	ControlAsset *assetRefFixture     `json:"controlAsset,omitempty"`
 	Metadata     []metadataFixture    `json:"metadata,omitempty"`
@@ -210,7 +210,7 @@ type packetAssetFixture struct {
 	Outputs      []assetOutputFixture `json:"outputs"`
 }
 
-func (f packetAssetFixture) parse() (
+func (f packetValidationFixture) parse() (
 	*asset.AssetId, *asset.AssetRef, []asset.AssetInput, []asset.AssetOutput, []asset.Metadata,
 ) {
 	ins := make([]asset.AssetInput, 0, len(f.Inputs))

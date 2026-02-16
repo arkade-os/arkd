@@ -85,7 +85,7 @@ func NewAssetGroupFromString(s string) (*AssetGroup, error) {
 // NewAssetGroupFromBytes creates a new asset group from its raw serialization in bytes.
 func NewAssetGroupFromBytes(buf []byte) (*AssetGroup, error) {
 	if len(buf) <= 0 {
-		return nil, fmt.Errorf("missing asset")
+		return nil, fmt.Errorf("missing asset group")
 	}
 	r := bytes.NewReader(buf)
 	return newAssetGroupFromReader(r)
@@ -114,6 +114,10 @@ func (ag AssetGroup) String() string {
 // validate checks that the group's fields are consistent (e.g. issuances have no inputs,
 // non-issuances have no control asset) and that all nested elements are valid.
 func (ag AssetGroup) validate() error {
+	if ag.AssetId == nil && len(ag.Inputs) <= 0 && len(ag.Outputs) <= 0 {
+		return fmt.Errorf("empty asset group")
+	}
+
 	if ag.AssetId != nil {
 		if err := ag.AssetId.validate(); err != nil {
 			return err

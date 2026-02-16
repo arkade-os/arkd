@@ -174,13 +174,13 @@
                 "name": "missing script",
                 "script": "",
                 "amount": 0,
-                "expectedError": ""
+                "expectedError": "missing output script"
             },
             {
                 "name": "invalid script",
                 "script": "6a0341524b",
                 "amount": 0,
-                "expectedError": ""
+                "expectedError": "invalid script"
             }
         ]
     }
