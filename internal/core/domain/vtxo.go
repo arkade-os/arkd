@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -35,6 +36,8 @@ func (k Outpoint) String() string {
 	return fmt.Sprintf("%s:%d", k.Txid, k.VOut)
 }
 
+type AssetDenomination = asset.Asset
+
 type Vtxo struct {
 	Outpoint
 	Amount             uint64
@@ -50,6 +53,7 @@ type Vtxo struct {
 	Preconfirmed       bool
 	ExpiresAt          int64
 	CreatedAt          int64
+	Assets             []AssetDenomination
 }
 
 func (v Vtxo) String() string {
