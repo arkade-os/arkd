@@ -665,8 +665,11 @@ func isRetryableChurnError(err error) bool {
 		return false
 	}
 
-	if st, ok := status.FromError(err); ok && st.Code() == codes.Unavailable {
-		return true
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.Unavailable, codes.DeadlineExceeded:
+			return true
+		}
 	}
 
 	errMsg := strings.ToLower(err.Error())

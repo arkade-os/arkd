@@ -618,6 +618,7 @@ func (h *handler) listenToEvents() {
 							case <-l.done:
 								return
 							case l.ch <- ev.event:
+							default:
 							}
 						}
 					}
@@ -657,6 +658,7 @@ func (h *handler) listenToTxEvents() {
 					case <-l.done:
 						return
 					case l.ch <- msg:
+					default:
 					}
 				}(l)
 			}

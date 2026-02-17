@@ -83,6 +83,99 @@ func TestBroker(t *testing.T) {
 		})
 	})
 
+	t.Run("removeListener closes done channel", func(t *testing.T) {
+		broker := newBroker[string]()
+		l := newListener[string]("test-id", []string{"topic1"})
+		broker.pushListener(l)
+
+		// done must not be closed yet
+		select {
+		case <-l.done:
+			require.Fail(t, "done closed before removeListener")
+		default:
+		}
+
+		broker.removeListener("test-id")
+
+		// done must be closed after removal
+		select {
+		case <-l.done:
+		default:
+			require.Fail(t, "done not closed after removeListener")
+		}
+	})
+
+	t.Run("closeDone is idempotent", func(t *testing.T) {
+		l := newListener[string]("test-id", []string{"topic1"})
+		require.NotPanics(t, func() {
+			l.closeDone()
+			l.closeDone()
+			l.closeDone()
+		})
+	})
+
+	t.Run("send after remove does not panic or block", func(t *testing.T) {
+		// Reproduces the core race: fanout gets a listener copy, then
+		// the listener is removed (closing done), then the fanout
+		// attempts to send. The done guard (plus non-blocking default)
+		// ensures the send never panics or blocks. If the buffered
+		// channel has space, Go's select may pick either the done or
+		// send case — both are safe; a stale message in the buffer is
+		// harmless and gets GC'd with the channel.
+		broker := newBroker[string]()
+		l := newListener[string]("test-id", []string{"topic1"})
+		broker.pushListener(l)
+
+		// Simulate fanout: grab a snapshot reference
+		snap := broker.getListenersCopy()
+		ref := snap["test-id"]
+
+		// Client disconnects — listener removed, done closed
+		broker.removeListener("test-id")
+
+		// Fanout goroutine tries to send using the done guard —
+		// must complete without panic or blocking.
+		done := make(chan struct{})
+		require.NotPanics(t, func() {
+			go func() {
+				defer close(done)
+				select {
+				case <-ref.done:
+				case ref.ch <- "msg":
+				default:
+				}
+			}()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				require.Fail(t, "send blocked after removal")
+			}
+		})
+	})
+
+	t.Run("non-blocking send drops message when channel is full", func(t *testing.T) {
+		l := newListener[string]("test-id", []string{"topic1"})
+
+		// Fill the buffered channel to capacity
+		for range cap(l.ch) {
+			l.ch <- "fill"
+		}
+
+		// Simulate the non-blocking fanout send pattern (with default clause).
+		// Must not block — the message is silently dropped.
+		sent := false
+		require.NotPanics(t, func() {
+			select {
+			case <-l.done:
+			case l.ch <- "overflow":
+				sent = true
+			default:
+				// dropped — expected when channel is full
+			}
+		})
+		require.False(t, sent, "message should have been dropped, not sent")
+	})
+
 	t.Run("getListenerChannel", func(t *testing.T) {
 		broker := newBroker[string]()
 		listener := newListener[string]("test-id", []string{"topic1"})
