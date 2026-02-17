@@ -309,9 +309,9 @@ func (i *indexerService) GetVtxoChain(
 			if visited[key] {
 				continue
 			}
-			visited[key] = true
 
 			// Early termination: save unprocessed VTXOs to frontier for next page.
+			// Check before marking visited so the current VTXO is included in the frontier.
 			if len(chain) >= pageSize {
 				remaining := make([]domain.Outpoint, 0)
 				for _, v := range vtxos {
@@ -326,6 +326,8 @@ func (i *indexerService) GetVtxoChain(
 					NextPageToken: token,
 				}, nil
 			}
+
+			visited[key] = true
 
 			// if the vtxo is preconfirmed, it means it has been created by an offchain tx
 			// we need to add the virtual tx + the associated checkpoints txs
