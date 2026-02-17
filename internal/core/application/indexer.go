@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -35,7 +37,12 @@ type IndexerService interface {
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
 	) (*GetVtxosResp, error)
-	GetVtxoChain(ctx context.Context, vtxoKey Outpoint, page *Page) (*VtxoChainResp, error)
+	GetVtxoChain(
+		ctx context.Context,
+		vtxoKey Outpoint,
+		page *Page,
+		pageToken string,
+	) (*VtxoChainResp, error)
 	GetVirtualTxs(ctx context.Context, txids []string, page *Page) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 	GetAsset(ctx context.Context, assetID string) ([]Asset, error)
@@ -247,19 +254,50 @@ func (i *indexerService) GetVtxosByOutpoint(
 }
 
 func (i *indexerService) GetVtxoChain(
-	ctx context.Context, vtxoKey Outpoint, page *Page,
+	ctx context.Context, vtxoKey Outpoint, page *Page, pageToken string,
 ) (*VtxoChainResp, error) {
+	// Determine page size.
+	// Backward compat: nil page + empty token → return full chain (no pagination).
+	pageSize := math.MaxInt32
+	if page != nil {
+		pageSize = int(page.PageSize)
+		if pageSize <= 0 {
+			pageSize = maxPageSizeVtxoChain
+		}
+	} else if pageToken != "" {
+		pageSize = maxPageSizeVtxoChain
+	}
+
+	// Determine frontier: decode pageToken, or use [vtxoKey] for first page.
+	var frontier []domain.Outpoint
+	if pageToken != "" {
+		decoded, err := decodeChainCursor(pageToken)
+		if err != nil {
+			return nil, fmt.Errorf("invalid page_token: %w", err)
+		}
+		frontier = decoded
+	} else {
+		frontier = []domain.Outpoint{vtxoKey}
+	}
+
 	chain := make([]ChainTx, 0)
-	nextVtxos := []domain.Outpoint{vtxoKey}
+	nextVtxos := frontier
 	visited := make(map[string]bool)
 
-	// Pre-fetch VTXOs using markers for optimization (reduces DB calls for deep chains)
-	vtxoCache := i.prefetchVtxosByMarkers(ctx, vtxoKey)
+	// Lazy cache for VTXOs loaded during this page.
+	vtxoCache := make(map[string]domain.Vtxo)
+	loadedMarkers := make(map[string]bool)
 
 	for len(nextVtxos) > 0 {
-		vtxos, err := i.getVtxosFromCacheOrDB(ctx, nextVtxos, vtxoCache)
-		if err != nil {
+		if err := i.ensureVtxosCached(ctx, nextVtxos, vtxoCache, loadedMarkers); err != nil {
 			return nil, err
+		}
+
+		vtxos := make([]domain.Vtxo, 0, len(nextVtxos))
+		for _, op := range nextVtxos {
+			if v, ok := vtxoCache[op.String()]; ok {
+				vtxos = append(vtxos, v)
+			}
 		}
 		if len(vtxos) == 0 {
 			return nil, fmt.Errorf("vtxo not found for outpoint: %v", nextVtxos)
@@ -272,6 +310,22 @@ func (i *indexerService) GetVtxoChain(
 				continue
 			}
 			visited[key] = true
+
+			// Early termination: save unprocessed VTXOs to frontier for next page.
+			if len(chain) >= pageSize {
+				remaining := make([]domain.Outpoint, 0)
+				for _, v := range vtxos {
+					if !visited[v.Outpoint.String()] {
+						remaining = append(remaining, v.Outpoint)
+					}
+				}
+				remaining = append(remaining, newNextVtxos...)
+				token := encodeChainCursor(remaining)
+				return &VtxoChainResp{
+					Chain:         chain,
+					NextPageToken: token,
+				}, nil
+			}
 
 			// if the vtxo is preconfirmed, it means it has been created by an offchain tx
 			// we need to add the virtual tx + the associated checkpoints txs
@@ -379,118 +433,95 @@ func (i *indexerService) GetVtxoChain(
 		nextVtxos = newNextVtxos
 	}
 
-	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
+	// Chain exhausted — no more pages.
 	return &VtxoChainResp{
-		Chain: txChain,
-		Page:  pageResp,
+		Chain: chain,
 	}, nil
 }
 
-// prefetchVtxosByMarkers pre-fetches VTXOs using markers for optimization.
-// This reduces the number of DB calls for deep chains by bulk fetching VTXOs
-// associated with the marker chain instead of fetching one at a time.
-func (i *indexerService) prefetchVtxosByMarkers(
-	ctx context.Context, startKey Outpoint,
-) map[string]domain.Vtxo {
-	// outpoint string -> VTXO cache
-	cache := make(map[string]domain.Vtxo)
-
-	if i.repoManager.Markers() == nil {
-		return cache
+// encodeChainCursor encodes a frontier of outpoints into an opaque page token.
+func encodeChainCursor(frontier []domain.Outpoint) string {
+	if len(frontier) == 0 {
+		return ""
 	}
-
-	// Get starting VTXO to find its marker
-	startVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{startKey})
-	if err != nil || len(startVtxos) == 0 {
-		return cache
+	cur := vtxoChainCursor{Frontier: make([]Outpoint, len(frontier))}
+	for i, op := range frontier {
+		cur.Frontier[i] = Outpoint(op)
 	}
+	data, _ := json.Marshal(cur)
+	return base64.RawURLEncoding.EncodeToString(data)
+}
 
-	startVtxo := startVtxos[0]
-	// Add starting VTXO to cache
-	cache[startVtxo.Outpoint.String()] = startVtxo
-
-	if len(startVtxo.MarkerIDs) == 0 {
-		return cache
+// decodeChainCursor decodes a page token back into a frontier of outpoints.
+func decodeChainCursor(token string) ([]domain.Outpoint, error) {
+	data, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64: %w", err)
 	}
-
-	// Collect marker chain by following ParentMarkerIDs from all markers
-	markerIDs := make([]string, 0, len(startVtxo.MarkerIDs))
-	markerIDs = append(markerIDs, startVtxo.MarkerIDs...)
-
-	// We have to follow all parent markers because a vtxo can be associated with multiple markers if it was created at a depth that is
-	// a multiple of the marker interval. For example, if the marker interval is 100, a vtxo created at depth 200 would be associated
-	// with the markers at depth 100 and 200. To ensure we prefetch all relevant VTXOs, we need to follow all parent markers up the chain until we reach the root marker (depth 0).
-	// BFS to follow all parent markers
-	visited := make(map[string]bool)
-	for _, id := range startVtxo.MarkerIDs {
-		visited[id] = true
+	var cur vtxoChainCursor
+	if err := json.Unmarshal(data, &cur); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
+	outpoints := make([]domain.Outpoint, len(cur.Frontier))
+	for i, op := range cur.Frontier {
+		outpoints[i] = domain.Outpoint(op)
+	}
+	return outpoints, nil
+}
 
-	queue := make([]string, 0, len(startVtxo.MarkerIDs))
-	queue = append(queue, startVtxo.MarkerIDs...)
-
-	for len(queue) > 0 {
-		currentID := queue[0]
-		queue = queue[1:]
-
-		marker, err := i.repoManager.Markers().GetMarker(ctx, currentID)
-		if err != nil || marker == nil {
-			continue
+// ensureVtxosCached loads the given outpoints into the cache if not already present.
+// For each fetched VTXO, it also loads its marker window into the cache to prefetch
+// nearby VTXOs that will likely be needed in subsequent iterations.
+func (i *indexerService) ensureVtxosCached(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	cache map[string]domain.Vtxo,
+	loadedMarkers map[string]bool,
+) error {
+	// Collect cache misses.
+	missingOutpoints := make([]domain.Outpoint, 0)
+	for _, op := range outpoints {
+		if _, ok := cache[op.String()]; !ok {
+			missingOutpoints = append(missingOutpoints, op)
 		}
+	}
+	if len(missingOutpoints) == 0 {
+		return nil
+	}
 
-		for _, parentID := range marker.ParentMarkerIDs {
-			if !visited[parentID] {
-				visited[parentID] = true
-				markerIDs = append(markerIDs, parentID)
-				queue = append(queue, parentID)
+	// Fetch misses from DB.
+	dbVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, missingOutpoints)
+	if err != nil {
+		return err
+	}
+	for _, v := range dbVtxos {
+		cache[v.Outpoint.String()] = v
+	}
+
+	// For each fetched VTXO, load its marker window(s) into cache.
+	if i.repoManager.Markers() == nil {
+		return nil
+	}
+	for _, v := range dbVtxos {
+		for _, markerID := range v.MarkerIDs {
+			if loadedMarkers[markerID] {
+				continue
+			}
+			loadedMarkers[markerID] = true
+
+			windowVtxos, err := i.repoManager.Markers().GetVtxosByMarker(ctx, markerID)
+			if err != nil {
+				continue
+			}
+			for _, wv := range windowVtxos {
+				if _, ok := cache[wv.Outpoint.String()]; !ok {
+					cache[wv.Outpoint.String()] = wv
+				}
 			}
 		}
 	}
 
-	// Bulk fetch VTXOs for all markers in the chain
-	vtxos, err := i.repoManager.Markers().GetVtxoChainByMarkers(ctx, markerIDs)
-	if err != nil {
-		return cache
-	}
-
-	for _, v := range vtxos {
-		cache[v.Outpoint.String()] = v
-	}
-
-	return cache
-}
-
-// getVtxosFromCacheOrDB retrieves VTXOs from cache first, falling back to DB for cache misses.
-// This is used in conjunction with prefetchVtxosByMarkers to reduce DB calls.
-func (i *indexerService) getVtxosFromCacheOrDB(
-	ctx context.Context,
-	outpoints []domain.Outpoint,
-	cache map[string]domain.Vtxo,
-) ([]domain.Vtxo, error) {
-	result := make([]domain.Vtxo, 0, len(outpoints))
-	missingOutpoints := make([]domain.Outpoint, 0)
-
-	for _, op := range outpoints {
-		if v, ok := cache[op.String()]; ok {
-			result = append(result, v)
-		} else {
-			missingOutpoints = append(missingOutpoints, op)
-		}
-	}
-
-	if len(missingOutpoints) > 0 {
-		dbVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, missingOutpoints)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, dbVtxos...)
-		// Add to cache for future lookups in this chain traversal
-		for _, v := range dbVtxos {
-			cache[v.Outpoint.String()] = v
-		}
-	}
-
-	return result, nil
+	return nil
 }
 
 func (i *indexerService) GetVirtualTxs(

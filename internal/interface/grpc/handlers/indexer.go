@@ -327,7 +327,9 @@ func (e *indexerService) GetVtxoChain(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resp, err := e.indexerSvc.GetVtxoChain(ctx, *outpoint, page)
+	pageToken := request.GetPageToken()
+
+	resp, err := e.indexerSvc.GetVtxoChain(ctx, *outpoint, page, pageToken)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
@@ -355,8 +357,9 @@ func (e *indexerService) GetVtxoChain(
 	}
 
 	return &arkv1.GetVtxoChainResponse{
-		Chain: chain,
-		Page:  protoPage(resp.Page),
+		Chain:         chain,
+		Page:          protoPage(resp.Page),
+		NextPageToken: resp.NextPageToken,
 	}, nil
 }
 
