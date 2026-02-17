@@ -1381,6 +1381,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		}
 	})
 
+	// Verifies that the Depth field persists through AddVtxos→GetVtxos for VTXOs
+	// at various chain depths (0, 1, 2, 100).
 	t.Run("test_vtxo_depth", func(t *testing.T) {
 		ctx := context.Background()
 		commitmentTxid := randomString(32)
@@ -1455,6 +1457,10 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testMarkerBasicOperations exercises AddMarker, GetMarker, GetMarkersByDepth, and
+// GetMarkersByIds. Creates a 4-marker DAG (root, two at depth 100, one at depth 200
+// with two parents), verifies field round-trips including ParentMarkerIDs, and tests
+// edge cases: non-existent ID, empty ID slice, and mixed valid/invalid ID queries.
 func testMarkerBasicOperations(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_marker_basic_operations", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -1575,6 +1581,11 @@ func testMarkerBasicOperations(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testMarkerSweep exercises the full marker sweep lifecycle: SweepMarker, IsMarkerSwept,
+// GetSweptMarkers, and SweepMarkerWithDescendants. Verifies idempotency (ON CONFLICT
+// DO NOTHING preserves original timestamp), multi-marker retrieval, empty-slice edge
+// cases, non-existent marker handling, and recursive descendant sweeping with hierarchy
+// (root→child1→grandchild1, root→child2).
 func testMarkerSweep(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_marker_sweep", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -1733,6 +1744,9 @@ func testMarkerSweep(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testVtxoMarkerAssociation verifies UpdateVtxoMarkers correctly links VTXOs to markers
+// and that the association is visible through both GetVtxosByMarker and GetVtxos. Tests
+// that unassociated VTXOs remain marker-free and that non-existent markers return empty.
 func testVtxoMarkerAssociation(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_vtxo_marker_association", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -1828,6 +1842,10 @@ func testVtxoMarkerAssociation(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testSweepVtxosByMarker creates 5 VTXOs sharing a marker, pre-sweeps 2 via individual
+// markers, then calls SweepVtxosByMarker on the shared marker. Verifies only the 3
+// previously-unswept VTXOs are newly swept, tests idempotency (second call returns 0),
+// and checks the non-existent marker edge case.
 func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_sweep_vtxos_by_marker", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -1925,6 +1943,10 @@ func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testMarkerDepthRangeQueries verifies GetMarkersByDepthRange and GetVtxosByDepthRange
+// return correct results for inclusive depth ranges. Tests partial ranges, full ranges,
+// and empty ranges for both markers (at depths 0/100/200/300) and VTXOs (at depths
+// 0/50/100/150).
 func testMarkerDepthRangeQueries(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_marker_depth_range_queries", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -2090,6 +2112,9 @@ func testMarkerDepthRangeQueries(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testMarkerChainTraversal creates a two-marker chain with VTXOs linked by ark txid,
+// then verifies GetVtxoChainByMarkers returns the correct VTXOs for single and
+// multi-marker queries. Also tests GetVtxosByArkTxid and edge cases (empty/non-existent).
 func testMarkerChainTraversal(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_marker_chain_traversal", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -2650,6 +2675,9 @@ func testBulkSweepMarkersConcurrent(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testCreateRootMarkersForVtxos verifies that CreateRootMarkersForVtxos creates a
+// depth-0 root marker for each batch VTXO using the outpoint string as the marker ID.
+// Also tests idempotency — calling again with the same VTXOs does not error.
 func testCreateRootMarkersForVtxos(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_create_root_markers_for_vtxos", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -2719,6 +2747,10 @@ func testCreateRootMarkersForVtxos(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testMarkerCreationAtBoundaryDepth simulates the service logic when a child VTXO
+// lands at a marker boundary (depth 100). Verifies that a new marker is created with
+// the parent's marker IDs as its ParentMarkerIDs, and that the child VTXO carries
+// only the new marker ID.
 func testMarkerCreationAtBoundaryDepth(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_marker_creation_at_boundary_depth", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -2795,6 +2827,10 @@ func testMarkerCreationAtBoundaryDepth(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testMarkerInheritanceAtNonBoundary verifies that a child VTXO at a non-boundary
+// depth (e.g. 51) inherits all parent marker IDs rather than creating a new marker.
+// Confirms the inherited markers persist through a DB round trip and no spurious
+// marker is created.
 func testMarkerInheritanceAtNonBoundary(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_marker_inheritance_at_non_boundary", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -2870,6 +2906,9 @@ func testMarkerInheritanceAtNonBoundary(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testDustVtxoMarkersSweptImmediately simulates the immediate sweep of dust VTXO
+// markers that occurs in updateProjectionsAfterOffchainTxEvents. Verifies that
+// BulkSweepMarkers marks dust markers as swept with the correct timestamp.
 func testDustVtxoMarkersSweptImmediately(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_dust_vtxo_markers_swept_immediately", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -2929,6 +2968,9 @@ func testDustVtxoMarkersSweptImmediately(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testSweepVtxosWithMarkersEmptyInput verifies that BulkSweepMarkers handles an
+// empty marker ID slice without errors, covering the early-return path when there
+// are no VTXOs to sweep.
 func testSweepVtxosWithMarkersEmptyInput(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_sweep_vtxos_with_markers_empty_input", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -2949,6 +2991,9 @@ func testSweepVtxosWithMarkersEmptyInput(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testSweepVtxosWithMarkersNoMarkersOnVtxos verifies that VTXOs with empty or nil
+// MarkerIDs produce an empty marker set when collected, ensuring the sweep logic
+// gracefully skips marker operations for legacy or marker-less VTXOs.
 func testSweepVtxosWithMarkersNoMarkersOnVtxos(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_sweep_vtxos_with_markers_no_markers_on_vtxos", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -2999,6 +3044,9 @@ func testSweepVtxosWithMarkersNoMarkersOnVtxos(t *testing.T, svc ports.RepoManag
 	})
 }
 
+// testVtxoMarkerIDsRoundTrip verifies that MarkerIDs and Depth survive a write→read
+// round trip through the database for various configurations: single marker, multiple
+// markers, empty markers, nil markers, and deep VTXOs with two markers.
 func testVtxoMarkerIDsRoundTrip(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_vtxo_marker_ids_round_trip", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -3098,6 +3146,9 @@ func testVtxoMarkerIDsRoundTrip(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testGetVtxosByArkTxidMultipleOutputs verifies that GetVtxosByArkTxid returns all
+// VTXOs (multiple vouts) produced by a single ark transaction, each with the correct
+// depth, markers, and amounts. Also checks that a non-existent ark txid returns empty.
 func testGetVtxosByArkTxidMultipleOutputs(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_get_vtxos_by_ark_txid_multiple_outputs", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -3174,6 +3225,8 @@ func testGetVtxosByArkTxidMultipleOutputs(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testCreateRootMarkersForEmptyVtxos verifies that CreateRootMarkersForVtxos handles
+// empty and nil VTXO slices gracefully without errors or side effects.
 func testCreateRootMarkersForEmptyVtxos(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_create_root_markers_for_empty_vtxos", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -4115,6 +4168,9 @@ func testSweepVtxosWithMarkersIntegration(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testPartialMarkerSweep creates a 3-marker chain (depth 0→100→200) with 2 VTXOs
+// per marker, sweeps only the deeper two markers, and verifies that VTXOs under the
+// unswept root marker remain unswept while VTXOs under swept markers are marked as swept.
 func testPartialMarkerSweep(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_partial_marker_sweep", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -4253,6 +4309,10 @@ func testPartialMarkerSweep(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testListVtxosMarkerSweptFiltering verifies that GetAllNonUnrolledVtxos correctly
+// classifies VTXOs as spent/unspent based on marker sweep status. Creates 4 VTXOs
+// across two markers, sweeps one marker, and confirms the swept VTXOs appear in the
+// spent list while the unswept ones remain in the unspent list.
 func testListVtxosMarkerSweptFiltering(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_list_vtxos_marker_swept_filtering", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -4387,6 +4447,9 @@ func testListVtxosMarkerSweptFiltering(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testSweepableUnrolledExcludesMarkerSwept verifies that GetAllSweepableUnrolledVtxos
+// excludes VTXOs whose markers have been swept. Creates 3 spent+unrolled VTXOs across
+// two markers, sweeps one marker, and confirms only the unswept VTXOs appear as sweepable.
 func testSweepableUnrolledExcludesMarkerSwept(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_sweepable_unrolled_excludes_marker_swept", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -4516,6 +4579,10 @@ func testSweepableUnrolledExcludesMarkerSwept(t *testing.T, svc ports.RepoManage
 	})
 }
 
+// testConvergentMultiParentMarkerDAG builds a diamond-shaped marker DAG where two
+// independent root→mid branches converge into a single merge marker, then extend
+// to a leaf. Verifies GetVtxoChainByMarkers returns correct VTXOs per marker set,
+// and that sweeping individual markers only affects VTXOs associated with those markers.
 func testConvergentMultiParentMarkerDAG(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_convergent_multi_parent_marker_dag", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -4685,6 +4752,10 @@ func testConvergentMultiParentMarkerDAG(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// testSweepMarkerWithDescendantsDeepChain builds a 201-marker linear chain (depth 0
+// to 20000) and calls SweepMarkerWithDescendants from the root. Verifies all 201
+// markers are swept in a single recursive operation and that a second call is
+// idempotent (returns 0).
 func testSweepMarkerWithDescendantsDeepChain(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_sweep_marker_with_descendants_deep_chain", func(t *testing.T) {
 		if svc.Markers() == nil {

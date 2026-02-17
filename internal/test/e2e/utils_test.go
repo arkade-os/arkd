@@ -740,9 +740,6 @@ func refill(httpClient *http.Client) error {
 	return nil
 }
 
-// TODO: setupRawIndexerClient and getVtxoDepthByOutpoint are commented out until
-// the SDK proto package includes the Depth field on IndexerVtxo.
-
 func listVtxosWithAsset(t *testing.T, client arksdk.ArkClient, assetID string) []types.Vtxo {
 	t.Helper()
 	vtxos, err := client.ListSpendableVtxos(t.Context())
