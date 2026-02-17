@@ -52,6 +52,10 @@ func makeP2TRLeafTx(t *testing.T, outputs []struct {
 	return b64
 }
 
+// TestGetNewVtxosFromRound_MarkerIDsAndDepth verifies that getNewVtxosFromRound
+// correctly assigns Depth=0 and MarkerIDs=[outpoint.String()] to every leaf VTXO
+// produced from a round's VTXO tree. Also checks that commitment references, amounts,
+// pubkeys, and sequential VOut indices are set correctly for multi-output leaf transactions.
 func TestGetNewVtxosFromRound_MarkerIDsAndDepth(t *testing.T) {
 	// Generate two distinct keys for two outputs
 	privKey1, err := btcec.NewPrivateKey()
@@ -120,6 +124,8 @@ func TestGetNewVtxosFromRound_MarkerIDsAndDepth(t *testing.T) {
 	require.Equal(t, vtxos[0].Txid, vtxos[1].Txid)
 }
 
+// TestGetNewVtxosFromRound_EmptyVtxoTree verifies that a round with a nil VTXO tree
+// returns nil, handling the edge case where no leaf transactions exist.
 func TestGetNewVtxosFromRound_EmptyVtxoTree(t *testing.T) {
 	round := &domain.Round{
 		CommitmentTxid: "empty-round",
@@ -130,6 +136,9 @@ func TestGetNewVtxosFromRound_EmptyVtxoTree(t *testing.T) {
 	require.Nil(t, vtxos)
 }
 
+// TestGetNewVtxosFromRound_SingleOutput verifies that a leaf transaction with a single
+// P2TR output produces exactly one VTXO with Depth=0, the correct self-referencing
+// MarkerID, the expected amount, and VOut=0.
 func TestGetNewVtxosFromRound_SingleOutput(t *testing.T) {
 	privKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)

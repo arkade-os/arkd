@@ -474,22 +474,31 @@ func (m *mockScheduler) Unit() ports.TimeUnit                         { return p
 func (m *mockScheduler) AfterNow(expiry int64) bool                   { return false }
 func (m *mockScheduler) ScheduleTaskOnce(at int64, task func()) error { return nil }
 
-// TestCreateCheckpointSweepTask_BulkSweepsMarkers verifies that when a checkpoint
-// is swept, the sweeper correctly collects all unique marker IDs from the affected
-// VTXOs and calls BulkSweepMarkers with the deduplicated set. This tests the core
-// optimization where multiple VTXOs sharing markers result in fewer marker sweep
-// operations (3 VTXOs with overlapping markers should yield only 3 unique markers).
-func TestCreateCheckpointSweepTask_BulkSweepsMarkers(t *testing.T) {
-	// Setup mocks
+// newTestSweeper creates a fresh set of mocks and a sweeper instance for testing.
+func newTestSweeper() (
+	*mockWalletService,
+	*mockVtxoRepository,
+	*mockMarkerRepository,
+	*mockTxBuilder,
+	*sweeper,
+) {
 	wallet := &mockWalletService{}
 	vtxoRepo := &mockVtxoRepository{}
 	markerRepo := &mockMarkerRepository{}
 	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
 	builder := &mockTxBuilder{}
 	scheduler := &mockScheduler{}
-
-	// Create sweeper instance
 	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	return wallet, vtxoRepo, markerRepo, builder, s
+}
+
+// TestCreateCheckpointSweepTask_BulkSweepsMarkers verifies that when a checkpoint
+// is swept, the sweeper correctly collects all unique marker IDs from the affected
+// VTXOs and calls BulkSweepMarkers with the deduplicated set. This tests the core
+// optimization where multiple VTXOs sharing markers result in fewer marker sweep
+// operations (3 VTXOs with overlapping markers should yield only 3 unique markers).
+func TestCreateCheckpointSweepTask_BulkSweepsMarkers(t *testing.T) {
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	// Test data
 	checkpointTxid := "checkpoint123"
@@ -572,16 +581,7 @@ func TestCreateCheckpointSweepTask_BulkSweepsMarkers(t *testing.T) {
 // This is an edge case that could occur with legacy VTXOs or during error recovery,
 // and ensures the sweeper handles it gracefully without attempting empty bulk operations.
 func TestCreateCheckpointSweepTask_NoMarkersSkipsSweep(t *testing.T) {
-	// Setup mocks
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	// Create sweeper instance
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	// Test data
 	checkpointTxid := "checkpoint456"
@@ -639,14 +639,7 @@ func TestCreateCheckpointSweepTask_NoMarkersSkipsSweep(t *testing.T) {
 // marker to every existing VTXO, ensuring backward compatibility with the new marker system.
 func TestCreateCheckpointSweepTask_SingleMarkerPerVtxo(t *testing.T) {
 	// Test case: each VTXO has exactly one marker (post-migration state)
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint789"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo789", VOut: 0}
@@ -716,14 +709,7 @@ func TestCreateCheckpointSweepTask_SingleMarkerPerVtxo(t *testing.T) {
 // 50 VTXOs, only 2 unique markers should be swept, demonstrating the efficiency gain.
 func TestCreateCheckpointSweepTask_ManyVtxosWithSharedMarkers(t *testing.T) {
 	// Test case: many VTXOs share markers (chain with depth > 100)
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_deep"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_deep", VOut: 0}
@@ -792,14 +778,7 @@ func TestCreateCheckpointSweepTask_ManyVtxosWithSharedMarkers(t *testing.T) {
 // than being a stale or incorrect value.
 func TestCreateCheckpointSweepTask_SweptAtTimestamp(t *testing.T) {
 	// Test that the sweptAt timestamp is reasonable (within a few seconds of now)
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_timestamp"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_timestamp", VOut: 0}
@@ -850,14 +829,7 @@ func TestCreateCheckpointSweepTask_SweptAtTimestamp(t *testing.T) {
 // that marker sweep failures are not silently ignored and can be properly handled by
 // the calling code for retry logic or alerting.
 func TestCreateCheckpointSweepTask_BulkSweepMarkersError(t *testing.T) {
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_error"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_error", VOut: 0}
@@ -900,14 +872,7 @@ func TestCreateCheckpointSweepTask_BulkSweepMarkersError(t *testing.T) {
 // retrieve the VTXOs associated with child outpoints, the error is properly propagated.
 // This tests the error handling path before marker collection even begins.
 func TestCreateCheckpointSweepTask_GetVtxosError(t *testing.T) {
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_vtxo_err"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_vtxo_err", VOut: 0}
@@ -944,14 +909,7 @@ func TestCreateCheckpointSweepTask_GetVtxosError(t *testing.T) {
 // GetAllChildrenVtxos fails to retrieve child outpoints, the error is propagated.
 // This tests the earliest error handling path in the sweep task.
 func TestCreateCheckpointSweepTask_GetAllChildrenVtxosError(t *testing.T) {
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_children_err"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_children_err", VOut: 0}
@@ -984,14 +942,7 @@ func TestCreateCheckpointSweepTask_GetAllChildrenVtxosError(t *testing.T) {
 // fails to create the sweep transaction, the error is propagated and no marker
 // operations are attempted. This tests the very first error handling path.
 func TestCreateCheckpointSweepTask_BuildSweepTxError(t *testing.T) {
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_build_err"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_build_err", VOut: 0}
@@ -1019,14 +970,7 @@ func TestCreateCheckpointSweepTask_BuildSweepTxError(t *testing.T) {
 // fails, the error is propagated and marker sweep operations are not attempted.
 // This ensures we don't mark VTXOs as swept if the sweep transaction wasn't actually broadcast.
 func TestCreateCheckpointSweepTask_BroadcastError(t *testing.T) {
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_broadcast_err"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_broadcast_err", VOut: 0}
@@ -1056,14 +1000,7 @@ func TestCreateCheckpointSweepTask_BroadcastError(t *testing.T) {
 // GetAllChildrenVtxos returns an empty slice (no children under the unrolled
 // vtxo), the sweeper does not attempt to fetch VTXOs or sweep markers.
 func TestCreateCheckpointSweepTask_NoChildrenVtxos(t *testing.T) {
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_no_children"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_no_children", VOut: 0}
@@ -1099,14 +1036,7 @@ func TestCreateCheckpointSweepTask_NoChildrenVtxos(t *testing.T) {
 // markers are passed to BulkSweepMarkers. For example, 5 VTXOs each carrying
 // {"marker-X", "marker-Y"} should result in exactly 2 markers being swept.
 func TestCreateCheckpointSweepTask_DuplicateMarkersAcrossVtxos(t *testing.T) {
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_dup"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_dup", VOut: 0}
@@ -1169,14 +1099,7 @@ func TestCreateCheckpointSweepTask_DuplicateMarkersAcrossVtxos(t *testing.T) {
 // or iteration, and that the deduplicated set is passed correctly to
 // BulkSweepMarkers.
 func TestCreateCheckpointSweepTask_LargeMarkerSet(t *testing.T) {
-	wallet := &mockWalletService{}
-	vtxoRepo := &mockVtxoRepository{}
-	markerRepo := &mockMarkerRepository{}
-	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
-	builder := &mockTxBuilder{}
-	scheduler := &mockScheduler{}
-
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
 	checkpointTxid := "checkpoint_large"
 	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_large", VOut: 0}

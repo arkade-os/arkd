@@ -299,15 +299,24 @@ func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository             
 func (m *mockRepoManagerForIndexer) Fees() domain.FeeRepository                    { return nil }
 func (m *mockRepoManagerForIndexer) Close()                                        {}
 
+// newTestIndexer creates a fresh set of mock repos and an indexerService for testing.
+func newTestIndexer() (
+	*mockVtxoRepoForIndexer,
+	*mockMarkerRepoForIndexer,
+	*indexerService,
+) {
+	vtxoRepo := &mockVtxoRepoForIndexer{}
+	markerRepo := &mockMarkerRepoForIndexer{}
+	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
+	indexer := &indexerService{repoManager: repoManager}
+	return vtxoRepo, markerRepo, indexer
+}
+
 // TestPrefetchVtxosByMarkers_BuildsCacheFromMarkerChain verifies that prefetchVtxosByMarkers
 // correctly traverses the marker hierarchy (following ParentMarkerIDs) and bulk fetches
 // all VTXOs associated with those markers into a cache map.
 func TestPrefetchVtxosByMarkers_BuildsCacheFromMarkerChain(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "start-vtxo", VOut: 0}
@@ -369,11 +378,7 @@ func TestPrefetchVtxosByMarkers_BuildsCacheFromMarkerChain(t *testing.T) {
 // TestPrefetchVtxosByMarkers_EmptyMarkersReturnsStartVtxoOnly verifies that when the
 // starting VTXO has no markers, the cache only contains the starting VTXO itself.
 func TestPrefetchVtxosByMarkers_EmptyMarkersReturnsStartVtxoOnly(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "vtxo-no-markers", VOut: 0}
@@ -422,11 +427,7 @@ func TestPrefetchVtxosByMarkers_NilMarkerRepoReturnsEmptyCache(t *testing.T) {
 // TestGetVtxosFromCacheOrDB_CacheHitAvoidsDBCall verifies that when all requested
 // outpoints are in the cache, no database call is made.
 func TestGetVtxosFromCacheOrDB_CacheHitAvoidsDBCall(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, _, indexer := newTestIndexer()
 
 	ctx := context.Background()
 
@@ -459,11 +460,7 @@ func TestGetVtxosFromCacheOrDB_CacheHitAvoidsDBCall(t *testing.T) {
 // TestGetVtxosFromCacheOrDB_CacheMissTriggersDBCall verifies that when outpoints
 // are not in the cache, a database call is made for the missing ones only.
 func TestGetVtxosFromCacheOrDB_CacheMissTriggersDBCall(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, _, indexer := newTestIndexer()
 
 	ctx := context.Background()
 
@@ -498,11 +495,7 @@ func TestGetVtxosFromCacheOrDB_CacheMissTriggersDBCall(t *testing.T) {
 // TestGetVtxosFromCacheOrDB_AllCacheMiss verifies behavior when cache is empty
 // and all outpoints must be fetched from the database.
 func TestGetVtxosFromCacheOrDB_AllCacheMiss(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, _, indexer := newTestIndexer()
 
 	ctx := context.Background()
 
@@ -538,11 +531,7 @@ func TestGetVtxosFromCacheOrDB_AllCacheMiss(t *testing.T) {
 // TestGetVtxosFromCacheOrDB_DBErrorPropagated verifies that database errors
 // are properly propagated to the caller.
 func TestGetVtxosFromCacheOrDB_DBErrorPropagated(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, _, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	cache := make(map[string]domain.Vtxo)
@@ -562,11 +551,7 @@ func TestGetVtxosFromCacheOrDB_DBErrorPropagated(t *testing.T) {
 // traversal correctly handles VTXOs with multiple parent markers (diamond pattern
 // in the marker DAG).
 func TestPrefetchVtxosByMarkers_HandlesMultipleParentMarkers(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "diamond-vtxo", VOut: 0}
@@ -625,11 +610,7 @@ func TestPrefetchVtxosByMarkers_HandlesMultipleParentMarkers(t *testing.T) {
 // to retrieve the starting VTXO, prefetchVtxosByMarkers returns an empty cache
 // gracefully without panicking.
 func TestPrefetchVtxosByMarkers_GetVtxosError(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "vtxo-error", VOut: 0}
@@ -652,11 +633,7 @@ func TestPrefetchVtxosByMarkers_GetVtxosError(t *testing.T) {
 // fails for a marker in the BFS traversal, the function still returns
 // partial results from successfully fetched markers.
 func TestPrefetchVtxosByMarkers_GetMarkerError(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "vtxo-partial", VOut: 0}
@@ -707,11 +684,7 @@ func TestPrefetchVtxosByMarkers_GetMarkerError(t *testing.T) {
 // the bulk fetch of VTXOs by markers fails, the cache still contains at
 // least the starting VTXO.
 func TestPrefetchVtxosByMarkers_GetVtxoChainByMarkersError(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "vtxo-bulk-err", VOut: 0}
@@ -748,11 +721,7 @@ func TestPrefetchVtxosByMarkers_GetVtxoChainByMarkersError(t *testing.T) {
 // correctly handles a deep chain with 5+ markers (depth 500), collecting all
 // markers without off-by-one errors or missed parents.
 func TestPrefetchVtxosByMarkers_DeepChainManyMarkers(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "deep-vtxo", VOut: 0}
@@ -845,11 +814,7 @@ func TestPrefetchVtxosByMarkers_DeepChainManyMarkers(t *testing.T) {
 // TestGetVtxosFromCacheOrDB_EmptyOutpoints verifies that an empty outpoints
 // list returns an empty result without making any database call.
 func TestGetVtxosFromCacheOrDB_EmptyOutpoints(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, _, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	cache := map[string]domain.Vtxo{
@@ -869,11 +834,7 @@ func TestGetVtxosFromCacheOrDB_EmptyOutpoints(t *testing.T) {
 // prefetchVtxosByMarkers terminates when there is a cycle in the marker DAG
 // (marker-A → parent marker-B → parent marker-A).
 func TestPrefetchVtxosByMarkers_CycleInMarkerDAG(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "cycle-vtxo", VOut: 0}
@@ -929,11 +890,7 @@ func TestPrefetchVtxosByMarkers_CycleInMarkerDAG(t *testing.T) {
 // TestPrefetchVtxosByMarkers_StartVtxoNotFound verifies that when the starting
 // VTXO is not found in the database, an empty cache is returned.
 func TestPrefetchVtxosByMarkers_StartVtxoNotFound(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "nonexistent", VOut: 0}
@@ -954,11 +911,7 @@ func TestPrefetchVtxosByMarkers_StartVtxoNotFound(t *testing.T) {
 // prefetchVtxosByMarkers correctly handles a VTXO at depth 20000 with a chain
 // of 200 markers (one every 100 depths). This is the target maximum depth.
 func TestPrefetchVtxosByMarkers_Depth20k(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-
-	indexer := &indexerService{repoManager: repoManager}
+	vtxoRepo, markerRepo, indexer := newTestIndexer()
 
 	ctx := context.Background()
 	startKey := Outpoint{Txid: "deep-20k-vtxo", VOut: 0}

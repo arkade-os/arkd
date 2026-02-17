@@ -4134,10 +4134,6 @@ func TestFee(t *testing.T) {
 	require.Empty(t, bobBalance.OnchainBalance.LockedAmount)
 }
 
-// TODO: TestVtxoDepth is commented out until the SDK proto package includes the Depth field.
-// Once github.com/arkade-os/go-sdk/api-spec/protobuf/gen/ark/v1 has GetDepth() on IndexerVtxo,
-// this test can be re-enabled to verify that VTXO depth increments correctly during offchain transactions.
-
 func TestAsset(t *testing.T) {
 	// This test ensures that an asset vtxo can be issued, transfered and then refreshed
 	t.Run("transfer and renew", func(t *testing.T) {
