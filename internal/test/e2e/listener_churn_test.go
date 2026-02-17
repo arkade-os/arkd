@@ -3,7 +3,6 @@ package e2e_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,10 +19,6 @@ import (
 )
 
 func TestTxListenerChurn(t *testing.T) {
-	if os.Getenv("ARK_CHURN") != "1" {
-		t.Skip("set ARK_CHURN=1 to run TestTxListenerChurn")
-	}
-
 	const (
 		testDuration           = 30 * time.Second
 		churnWorkers           = 8
@@ -291,10 +286,6 @@ func TestTxListenerChurn(t *testing.T) {
 }
 
 func TestEventListenerChurn(t *testing.T) {
-	if os.Getenv("ARK_CHURN") != "1" {
-		t.Skip("set ARK_CHURN=1 to run TestEventListenerChurn")
-	}
-
 	const (
 		testDuration      = 40 * time.Second
 		churnWorkers      = 16
@@ -472,7 +463,10 @@ func TestEventListenerChurn(t *testing.T) {
 				idx := i
 				go func() {
 					defer roundWG.Done()
-					_, notifyErrors[idx] = participants[idx].NotifyIncomingFunds(roundCtx, offchainAddrs[idx])
+					_, notifyErrors[idx] = participants[idx].NotifyIncomingFunds(
+						roundCtx,
+						offchainAddrs[idx],
+					)
 				}()
 				go func() {
 					defer roundWG.Done()
