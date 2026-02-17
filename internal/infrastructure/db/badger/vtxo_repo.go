@@ -418,11 +418,6 @@ func (r *VtxoRepository) Close() {
 	r.store.Close()
 }
 
-// Store returns the underlying badgerhold store for sharing with other repositories.
-func (r *VtxoRepository) Store() *badgerhold.Store {
-	return r.store
-}
-
 func (r *VtxoRepository) addVtxos(
 	ctx context.Context, vtxos []domain.Vtxo,
 ) error {

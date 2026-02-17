@@ -262,7 +262,7 @@ SELECT COALESCE(SUM(v.amount), 0) AS amount
 FROM vtxo v
 WHERE NOT EXISTS (
         SELECT 1 FROM swept_marker sm
-        WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
+        JOIN json_each(v.markers) j ON j.value = sm.marker_id
     )
   AND v.spent = false
   AND v.unrolled = false
@@ -274,7 +274,7 @@ SELECT COALESCE(SUM(v.amount), 0) AS amount
 FROM vtxo v
 WHERE EXISTS (
         SELECT 1 FROM swept_marker sm
-        WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
+        JOIN json_each(v.markers) j ON j.value = sm.marker_id
     )
   AND v.spent = false;
 
@@ -488,11 +488,14 @@ WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm);
 UPDATE vtxo SET markers = @markers WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectVtxosByMarkerId :many
--- Find VTXOs whose markers JSON array contains the given marker_id
+-- Find VTXOs whose markers JSON array contains the given marker_id.
+-- Uses LIKE because sqlc cannot parse json_each with view columns.
+-- Safe for txid:vout format marker IDs (no special characters).
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers LIKE '%"' || @marker_id || '"%';
 
 -- name: CountUnsweptVtxosByMarkerId :one
--- Count VTXOs whose markers JSON array contains the given marker_id and are not swept
+-- Count VTXOs whose markers JSON array contains the given marker_id and are not swept.
+-- Uses LIKE because sqlc cannot parse json_each with view columns.
 SELECT COUNT(*) FROM vtxo_vw WHERE markers LIKE '%"' || @marker_id || '"%' AND swept = false;
 
 -- Chain traversal queries for GetVtxoChain optimization
@@ -508,9 +511,10 @@ ORDER BY depth DESC;
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @ark_txid;
 
 -- name: SelectVtxoChainByMarker :many
--- Get VTXOs whose markers array contains the given marker_id
--- For multiple markers, call this multiple times and deduplicate in Go
-Select sqlc.embed(vtxo_vw) FROM vtxo_vw
+-- Get VTXOs whose markers array contains the given marker_id.
+-- For multiple markers, call this multiple times and deduplicate in Go.
+-- Uses LIKE because sqlc cannot parse json_each with view columns.
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
 WHERE markers LIKE '%"' || @marker_id || '"%'
 ORDER BY vtxo_vw.depth DESC;
 

@@ -120,7 +120,7 @@ SELECT v.*,
     ), '') AS commitments,
     EXISTS (
         SELECT 1 FROM swept_marker sm
-        WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
+        JOIN json_each(v.markers) j ON j.value = sm.marker_id
     ) AS swept,
     COALESCE(ap.asset_id, '') AS asset_id,
     COALESCE(ap.amount, 0) AS asset_amount

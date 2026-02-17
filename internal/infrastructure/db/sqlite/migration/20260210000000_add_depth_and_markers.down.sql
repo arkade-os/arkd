@@ -31,7 +31,7 @@ INSERT INTO vtxo_temp SELECT
     v.spent_by, v.spent, v.unrolled,
     EXISTS (
         SELECT 1 FROM swept_marker sm
-        WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
+        JOIN json_each(v.markers) j ON j.value = sm.marker_id
     ) AS swept,
     v.preconfirmed, v.settled_by, v.ark_txid,
     v.intent_id, v.updated_at
