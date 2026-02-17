@@ -243,7 +243,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 -- name: SelectNotUnrolledVtxosWithPubkey :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND pubkey = @pubkey;
 
--- name: SelectVtxo :one
+-- name: SelectVtxo :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectAllVtxos :many
@@ -336,7 +336,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.updated_at >= @after::bigint
     AND (@before::bigint = 0 OR v.updated_at <= @before::bigint);
 
--- name: SelectPendingSpentVtxo :one
+-- name: SelectPendingSpentVtxo :many
 SELECT v.*
 FROM vtxo_vw v
 WHERE v.txid = @txid AND v.vout = @vout
@@ -424,3 +424,26 @@ VALUES ('', '', '', '');
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
+
+-- name: InsertAsset :exec
+INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
+VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
+
+-- name: InsertVtxoAssetProjection :exec
+INSERT INTO asset_projection (asset_id, txid, vout, amount)
+VALUES (@asset_id, @txid, @vout, @amount);
+
+-- name: SelectAssetsByIds :many
+SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
+
+-- name: SelectAssetSupply :one
+SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply
+FROM asset_projection ap
+INNER JOIN vtxo v ON v.txid = ap.txid AND v.vout = ap.vout
+WHERE ap.asset_id = $1 AND v.spent = false;
+
+-- name: SelectControlAssetByID :one
+SELECT control_asset_id FROM asset WHERE id = $1;
+
+-- name: SelectAssetExists :one
+SELECT 1 FROM asset WHERE id = $1 LIMIT 1;

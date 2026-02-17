@@ -1,0 +1,187 @@
+{
+    "valid": {
+        "newPacket": [
+            {
+                "name": "issuance of many assets controlled by a single one",
+                "assets": [
+                    {
+                        "controlAsset": {
+                            "groupIndex": 3
+                        },
+                        "outputs": [
+                            {
+                                "amount": 100,
+                                "vout": 1
+                            }
+                        ],
+                        "metadata": [
+                            {
+                                "key": "ticker",
+                                "value": "TEST"
+                            }
+                        ]
+                    },
+                    {
+                        "controlAsset": {
+                            "groupIndex": 3
+                        },
+                        "outputs": [
+                            {
+                                "amount": 300,
+                                "vout": 1
+                            }
+                        ],
+                        "metadata": [
+                            {
+                                "key": "ticker",
+                                "value": "TEST2"
+                            }
+                        ]
+                    },
+                    {
+                        "controlAsset": {
+                            "groupIndex": 3
+                        },
+                        "outputs": [
+                            {
+                                "amount": 2100,
+                                "vout": 0
+                            }
+                        ],
+                        "metadata": [
+                            {
+                                "key": "ticker",
+                                "value": "TEST3"
+                            }
+                        ]
+                    },
+                    {
+                        "outputs": [
+                            {
+                                "amount": 1,
+                                "vout": 2
+                            }
+                        ],
+                        "metadata": [
+                            {
+                                "key": "ticker",
+                                "value": "TEST3"
+                            },
+                            {
+                                "key": "desc",
+                                "value": "control_asset"
+                            }
+                        ]
+                    }
+                ],
+                "expectedAmount": 0,
+                "expectedScript": "6a4c7641524b00040602030001067469636b657204544553540001010100640602030001067469636b65720554455354320001010100ac020602030001067469636b65720554455354330001010000b4100402067469636b657205544553543304646573630d636f6e74726f6c5f6173736574000101020001"
+            },
+            {
+                "name": "issuance of self-controlled asset",
+                "assets": [
+                    {
+                        "controlAsset": {
+                            "groupIndex": 0
+                        },
+                        "outputs": [
+                            {
+                                "amount": 21000000,
+                                "vout": 0
+                            }
+                        ]
+                    }
+                ],
+                "expectedScript": "6a1241524b0001020200000001010000c0de810a"
+            }
+        ],
+        "newPacketFromString": [
+            {
+                "name": "issuance of many assets controlled by a single one",
+                "script": "6a4c7641524b00040602030001067469636b657204544553540001010100640602030001067469636b65720554455354320001010100ac020602030001067469636b65720554455354330001010000b4100402067469636b657205544553543304646573630d636f6e74726f6c5f6173736574000101020001"
+            }
+        ],
+        "newPacketFromTxOut": [
+            {
+                "name": "issuance of many assets controlled by a single one",
+                "script": "6a4c7641524b00040602030001067469636b657204544553540001010100640602030001067469636b65720554455354320001010100ac020602030001067469636b65720554455354330001010000b4100402067469636b657205544553543304646573630d636f6e74726f6c5f6173736574000101020001",
+                "amount": 0
+            }
+        ],
+        "leafTxPacket": [
+            {
+                "name": "convert inputs to type intent",
+                "script": "6a4c7641524b00040602030001067469636b657204544553540001010100640602030001067469636b65720554455354320001010100ac020602030001067469636b65720554455354330001010000b4100402067469636b657205544553543304646573630d636f6e74726f6c5f6173736574000101020001",
+                "intentTxid": "09aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "expectedLeafTxPacket": "6a4d060141524b00040602030001067469636b65720454455354010209aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000001010100640602030001067469636b6572055445535432010209aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000001010100ac020602030001067469636b6572055445535433010209aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000001010000b4100402067469636b657205544553543304646573630d636f6e74726f6c5f6173736574010209aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000000101020001"
+            }
+        ]
+    },
+    "invalid": {
+        "newPacket": [
+            {
+                "name": "missing assets",
+                "assets": [],
+                "expectedError": "missing assets"
+            },
+            {
+                "name": "invalid group index",
+                "assets": [
+                    {
+                        "controlAsset": {
+                            "groupIndex": 1
+                        },
+                        "outputs": [
+                            {
+                                "amount": 1,
+                                "vout": 1000
+                            }
+                        ]
+                    }
+                ],
+                "expectedError": "invalid control asset group index"
+            }
+        ],
+        "newPacketFromString": [
+            {
+                "name": "missing script",
+                "script": "",
+                "expectedError": "missing output script"
+            },
+            {
+                "name": "invalid script",
+                "script": "invalid",
+                "expectedError": "invalid output script format"
+            },
+            {
+                "name": "script without OP_RETURN",
+                "script": "5120aea218dfbafdf78db7c6bc58b5916ac65c8705cfa5daef86c478a718da9fc23b",
+                "expectedError": "OP_RETURN not found"
+            },
+            {
+                "name": "invalid OP_RETURN script",
+                "script": "6a41524b00",
+                "expectedError": "invalid OP_RETURN output script"
+            },
+            {
+                "name": "invalid prefix",
+                "script": "6a204152cc0000000000000000000000000000000000000000000000000000000001",
+                "expectedError": "invalid magic prefix"
+            }
+        ],
+        "newPacketFromTxOut": [
+            {
+                "name": "missing script",
+                "script": "",
+                "amount": 0,
+                "expectedError": "missing output script"
+            },
+            {
+                "name": "invalid script",
+                "script": "6a0341524b",
+                "amount": 0,
+                "expectedError": "invalid script"
+            }
+        ]
+    }
+}

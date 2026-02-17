@@ -76,6 +76,13 @@ service IndexerService {
     };
   }
 
+  // GetAsset returns the asset information and metadata for the specified asset ID.
+  rpc GetAsset(GetAssetRequest) returns (GetAssetResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/asset/{asset_id}"
+    };
+  }
+
   // GetBatchSweepTransactions returns the list of transaction (txid) that swept a given batch
   // output.
   // In most cases the list contains only one txid, meaning that all the amount locked for a
@@ -218,9 +225,26 @@ message GetVirtualTxsRequest {
   string auth_token = 3;
 
 }
+
 message GetVirtualTxsResponse {
   repeated string txs = 1;
   IndexerPageResponse page = 2;
+}
+
+message GetAssetRequest {
+  string asset_id = 1;
+}
+
+message GetAssetResponse {
+  string asset_id = 1;
+  string supply = 2;  // bigint integer
+  repeated AssetMetadata metadata = 3;
+  string control_asset = 4;
+}
+
+message AssetMetadata {
+  string key = 1;
+  string value = 2;
 }
 
 message GetBatchSweepTransactionsRequest {
@@ -262,6 +286,12 @@ message IndexerVtxo {
   repeated string commitment_txids = 11;
   string settled_by = 12;
   string ark_txid = 13;
+  repeated IndexerAsset assets = 14;
+}
+
+message IndexerAsset {
+  string asset_id = 1;
+  uint64 amount = 2;
 }
 
 message IndexerChain {
@@ -326,6 +356,7 @@ message UnsubscribeForScriptsRequest {
 }
 
 message UnsubscribeForScriptsResponse {}
+
 
 message GetSubscriptionRequest {
   string subscription_id = 1;

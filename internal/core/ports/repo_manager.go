@@ -9,6 +9,7 @@ type RepoManager interface {
 	ScheduledSession() domain.ScheduledSessionRepo
 	OffchainTxs() domain.OffchainTxRepository
 	Convictions() domain.ConvictionRepository
+	Assets() domain.AssetRepository
 	Fees() domain.FeeRepository
 	Close()
 }

@@ -45,6 +45,39 @@ func NewIndexerService(
 	return svc
 }
 
+func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRequest) (
+	*arkv1.GetAssetResponse, error,
+) {
+	assetId := request.GetAssetId()
+	if assetId == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "missing asset id")
+	}
+
+	assets, err := e.indexerSvc.GetAsset(ctx, assetId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+	if len(assets) <= 0 {
+		return nil, status.Errorf(codes.NotFound, "asset %s not found", assetId)
+	}
+	asset := assets[0]
+
+	assetMetadata := make([]*arkv1.AssetMetadata, 0, len(asset.Metadata))
+	for _, metadata := range asset.Metadata {
+		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
+			Key:   hex.EncodeToString(metadata.Key),
+			Value: hex.EncodeToString(metadata.Value),
+		})
+	}
+
+	return &arkv1.GetAssetResponse{
+		AssetId:      assetId,
+		Supply:       asset.Supply.String(),
+		Metadata:     assetMetadata,
+		ControlAsset: asset.ControlAssetId,
+	}, nil
+}
+
 func (e *indexerService) GetCommitmentTx(
 	ctx context.Context, request *arkv1.GetCommitmentTxRequest,
 ) (*arkv1.GetCommitmentTxResponse, error) {
@@ -391,13 +424,14 @@ func (h *indexerService) GetSubscription(
 		topics := h.scriptSubsHandler.getTopics(subscriptionId)
 		if len(topics) > 0 {
 			h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-			return
+		} else {
+			h.scriptSubsHandler.removeListener(subscriptionId)
 		}
-		h.scriptSubsHandler.removeListener(subscriptionId)
+
 	}()
 
-	ch, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
-	if err != nil {
+	scriptCh, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
+	if err != nil && !strings.Contains(err.Error(), "listener not found") {
 		return status.Error(codes.Internal, err.Error())
 	}
 
@@ -421,7 +455,7 @@ func (h *indexerService) GetSubscription(
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case ev := <-ch:
+		case ev := <-scriptCh:
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
@@ -706,6 +740,14 @@ func parseTimeRange(after, before int64) (int64, int64, error) {
 }
 
 func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
+	assets := make([]*arkv1.IndexerAsset, 0, len(vtxo.Assets))
+	for _, asset := range vtxo.Assets {
+		assets = append(assets, &arkv1.IndexerAsset{
+			AssetId: asset.AssetId,
+			Amount:  asset.Amount,
+		})
+	}
+
 	return &arkv1.IndexerVtxo{
 		Outpoint: &arkv1.IndexerOutpoint{
 			Txid: vtxo.Txid,
@@ -723,5 +765,6 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
+		Assets:          assets,
 	}
 }

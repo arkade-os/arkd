@@ -32,6 +32,12 @@ type delegateBatchEventsHandler struct {
 	cacheBatchId string
 }
 
+func (h *delegateBatchEventsHandler) OnStreamStarted(
+	ctx context.Context, event client.StreamStartedEvent,
+) error {
+	return nil
+}
+
 func (h *delegateBatchEventsHandler) OnBatchStarted(
 	ctx context.Context, event client.BatchStartedEvent,
 ) (bool, error) {
@@ -213,12 +219,8 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	)
 }
 
-func (h *delegateBatchEventsHandler) OnStreamStartedEvent(
-	event client.StreamStartedEvent,
-) {
-}
-
 type customBatchEventsHandler struct {
+	onStreamStarted        func(ctx context.Context, event client.StreamStartedEvent) error
 	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, error)
 	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) error
 	onBatchFinalized       func(ctx context.Context, event client.BatchFinalizedEvent) error
@@ -227,7 +229,16 @@ type customBatchEventsHandler struct {
 	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
 	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
 	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error)
-	onStreamStartedEvent   func(event client.StreamStartedEvent)
+}
+
+func (h *customBatchEventsHandler) OnStreamStarted(
+	ctx context.Context,
+	event client.StreamStartedEvent,
+) error {
+	if h.onStreamStarted != nil {
+		return h.onStreamStarted(ctx, event)
+	}
+	return nil
 }
 
 func (h *customBatchEventsHandler) OnBatchStarted(
@@ -318,12 +329,4 @@ func (h *customBatchEventsHandler) OnTreeNonces(
 	event client.TreeNoncesEvent,
 ) (bool, error) {
 	return false, nil
-}
-
-func (h *customBatchEventsHandler) OnStreamStartedEvent(
-	event client.StreamStartedEvent,
-) {
-	if h.onStreamStartedEvent != nil {
-		h.onStreamStartedEvent(event)
-	}
 }

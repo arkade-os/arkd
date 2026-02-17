@@ -109,7 +109,11 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *script.ConditionMultisigClosure:
-			witnessFields, err := txutils.GetArkPsbtFields(ptx, index, txutils.ConditionWitnessField)
+			witnessFields, err := txutils.GetArkPsbtFields(
+				ptx,
+				index,
+				txutils.ConditionWitnessField,
+			)
 			if err != nil {
 				return false, nil, err
 			}
@@ -576,8 +580,12 @@ func (b *txBuilder) BuildCommitmentTx(
 
 		for i := 0; i < nbOfConnectors; i++ {
 			connectorsTreeLeaves = append(connectorsTreeLeaves, tree.Leaf{
-				Amount:              uint64(dustAmount),
-				Script:              hex.EncodeToString(connectorPkScript),
+				Outputs: []tree.LeafOutput{
+					{
+						Amount: uint64(dustAmount),
+						Script: hex.EncodeToString(connectorPkScript),
+					},
+				},
 				CosignersPublicKeys: cosigners,
 			})
 		}

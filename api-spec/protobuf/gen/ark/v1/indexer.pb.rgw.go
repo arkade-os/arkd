@@ -173,7 +173,7 @@ func request_IndexerService_GetVtxoTree_0(ctx context.Context, marshaler gateway
 
 var (
 	query_params_IndexerService_GetVtxoTreeLeaves_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("vout", "batch_outpoint.txid", "batch_outpoint.vout", "txid"),
+		Filter: trie.New("batch_outpoint.vout", "batch_outpoint.txid", "txid", "vout"),
 	}
 )
 
@@ -243,7 +243,7 @@ func request_IndexerService_GetVtxos_0(ctx context.Context, marshaler gateway.Ma
 
 var (
 	query_params_IndexerService_GetVtxoChain_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("txid", "vout", "outpoint.txid", "outpoint.vout"),
+		Filter: trie.New("outpoint.vout", "outpoint.txid", "txid", "vout"),
 	}
 )
 
@@ -323,6 +323,31 @@ func request_IndexerService_GetVirtualTxs_0(ctx context.Context, marshaler gatew
 	}
 
 	msg, err := client.GetVirtualTxs(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func request_IndexerService_GetAsset_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetAssetRequest
+	var metadata gateway.ServerMetadata
+
+	var (
+		val string
+		err error
+		_   = err
+	)
+
+	val = pathParams.ByName("asset_id")
+	if val == "" {
+		return nil, metadata, gateway.ErrPathParameterMissing{Name: "asset_id"}
+	}
+
+	protoReq.AssetId, err = protoconvert.String(val)
+	if err != nil {
+		return nil, metadata, gateway.ErrPathParameterTypeMismatch{Err: err, Name: "asset_id"}
+	}
+
+	msg, err := client.GetAsset(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 
 }
@@ -627,6 +652,28 @@ func RegisterIndexerServiceHandlerClient(ctx context.Context, mux *gateway.Serve
 		}
 
 		resp, md, err := request_IndexerService_GetVirtualTxs_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/indexer/asset/:asset_id", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/GetAsset", gateway.WithHTTPPathPattern("/v1/indexer/asset/{asset_id}"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_IndexerService_GetAsset_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
