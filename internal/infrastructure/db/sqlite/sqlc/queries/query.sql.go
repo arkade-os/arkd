@@ -88,7 +88,8 @@ const countUnsweptVtxosByMarkerId = `-- name: CountUnsweptVtxosByMarkerId :one
 SELECT COUNT(*) FROM vtxo_vw WHERE markers LIKE '%"' || ?1 || '"%' AND swept = false
 `
 
-// Count VTXOs whose markers JSON array contains the given marker_id and are not swept
+// Count VTXOs whose markers JSON array contains the given marker_id and are not swept.
+// Uses LIKE because sqlc cannot parse json_each with view columns.
 func (q *Queries) CountUnsweptVtxosByMarkerId(ctx context.Context, markerID sql.NullString) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countUnsweptVtxosByMarkerId, markerID)
 	var count int64
@@ -553,7 +554,7 @@ SELECT COALESCE(SUM(v.amount), 0) AS amount
 FROM vtxo v
 WHERE NOT EXISTS (
         SELECT 1 FROM swept_marker sm
-        WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
+        JOIN json_each(v.markers) j ON j.value = sm.marker_id
     )
   AND v.spent = false
   AND v.unrolled = false
@@ -1032,7 +1033,7 @@ SELECT COALESCE(SUM(v.amount), 0) AS amount
 FROM vtxo v
 WHERE EXISTS (
         SELECT 1 FROM swept_marker sm
-        WHERE v.markers LIKE '%"' || sm.marker_id || '"%'
+        JOIN json_each(v.markers) j ON j.value = sm.marker_id
     )
   AND v.spent = false
 `
@@ -1940,7 +1941,7 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) ([]Selec
 }
 
 const selectVtxoChainByMarker = `-- name: SelectVtxoChainByMarker :many
-Select vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
 WHERE markers LIKE '%"' || ?1 || '"%'
 ORDER BY vtxo_vw.depth DESC
 `
@@ -1949,8 +1950,9 @@ type SelectVtxoChainByMarkerRow struct {
 	VtxoVw VtxoVw
 }
 
-// Get VTXOs whose markers array contains the given marker_id
-// For multiple markers, call this multiple times and deduplicate in Go
+// Get VTXOs whose markers array contains the given marker_id.
+// For multiple markers, call this multiple times and deduplicate in Go.
+// Uses LIKE because sqlc cannot parse json_each with view columns.
 func (q *Queries) SelectVtxoChainByMarker(ctx context.Context, markerID sql.NullString) ([]SelectVtxoChainByMarkerRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectVtxoChainByMarker, markerID)
 	if err != nil {
@@ -2157,7 +2159,9 @@ type SelectVtxosByMarkerIdRow struct {
 	VtxoVw VtxoVw
 }
 
-// Find VTXOs whose markers JSON array contains the given marker_id
+// Find VTXOs whose markers JSON array contains the given marker_id.
+// Uses LIKE because sqlc cannot parse json_each with view columns.
+// Safe for txid:vout format marker IDs (no special characters).
 func (q *Queries) SelectVtxosByMarkerId(ctx context.Context, markerID sql.NullString) ([]SelectVtxosByMarkerIdRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectVtxosByMarkerId, markerID)
 	if err != nil {

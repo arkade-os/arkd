@@ -255,21 +255,31 @@ func (r *markerRepository) SweepMarker(ctx context.Context, markerID string, swe
 		}
 	}
 
-	// Update Swept field on VTXOs that contain this marker
-	// This keeps the stored Swept field in sync for query compatibility
+	// Update Swept field on VTXOs that contain this marker.
+	// This keeps the stored Swept field in sync for query compatibility.
+	// Errors here are non-fatal since swept_marker is already recorded.
 	var filteredDtos []vtxoDTO
 	if err := r.vtxoStore.Find(
 		&filteredDtos,
 		badgerhold.Where("MarkerIDs").Contains(markerID),
 	); err != nil {
-		return nil // Non-fatal, swept_marker is already updated
+		return nil
 	}
 
 	for _, dto := range filteredDtos {
 		if !dto.Swept {
 			dto.Swept = true
 			dto.UpdatedAt = time.Now().UnixMilli()
-			_ = r.vtxoStore.Update(dto.Outpoint.String(), dto)
+			if err := r.vtxoStore.Update(dto.Outpoint.String(), dto); err != nil {
+				if errors.Is(err, badger.ErrConflict) {
+					for attempts := 1; attempts <= maxRetries; attempts++ {
+						time.Sleep(100 * time.Millisecond)
+						if err = r.vtxoStore.Update(dto.Outpoint.String(), dto); err == nil {
+							break
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -447,81 +457,26 @@ func (r *markerRepository) GetVtxosByMarker(
 
 	vtxos := make([]domain.Vtxo, 0, len(dtos))
 	for _, dto := range dtos {
-		vtxo := dto.Vtxo
-		// Compute Swept status dynamically by checking if any marker is swept
-		vtxo.Swept = r.isAnyMarkerSwept(dto.MarkerIDs)
-		vtxos = append(vtxos, vtxo)
+		vtxos = append(vtxos, dto.Vtxo)
 	}
 	return vtxos, nil
 }
 
-// isAnyMarkerSwept checks if any of the given markers are in the swept_marker store
-func (r *markerRepository) isAnyMarkerSwept(markerIDs []string) bool {
-	for _, markerID := range markerIDs {
-		var dto sweptMarkerDTO
-		err := r.sweptMarkerStore.Get(markerID, &dto)
-		if err == nil {
-			return true
-		}
-	}
-	return false
-}
-
 func (r *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	// For badger, we need to:
-	// 1. Mark the marker as swept
-	// 2. Update vtxo.Swept field for all VTXOs with this marker (for query compatibility)
+	// Mark the marker as swept (this also updates vtxo Swept fields)
+	if err := r.SweepMarker(ctx, markerID, time.Now().Unix()); err != nil {
+		return 0, err
+	}
 
-	// Find all VTXOs whose MarkerIDs contains markerID and are not swept
-	var allDtos []vtxoDTO
-	err := r.vtxoStore.Find(&allDtos, badgerhold.Where("Swept").Eq(false))
+	// Count VTXOs affected
+	var dtos []vtxoDTO
+	err := r.vtxoStore.Find(&dtos,
+		badgerhold.Where("MarkerIDs").Contains(markerID))
 	if err != nil {
 		return 0, err
 	}
 
-	var count int64
-	for _, dto := range allDtos {
-		// Check if this VTXO has the markerID
-		hasMarker := false
-		for _, id := range dto.MarkerIDs {
-			if id == markerID {
-				hasMarker = true
-				break
-			}
-		}
-		if !hasMarker {
-			continue
-		}
-
-		// Update the vtxo's Swept field
-		dto.Swept = true
-		dto.UpdatedAt = time.Now().UnixMilli()
-
-		err := r.vtxoStore.Update(dto.Outpoint.String(), dto)
-		if err != nil {
-			if errors.Is(err, badger.ErrConflict) {
-				for attempts := 1; attempts <= maxRetries; attempts++ {
-					time.Sleep(100 * time.Millisecond)
-					err = r.vtxoStore.Update(dto.Outpoint.String(), dto)
-					if err == nil {
-						break
-					}
-				}
-			}
-			if err != nil {
-				return count, err
-			}
-		}
-		count++
-	}
-
-	// Also insert the marker into swept_marker for consistency
-	if err := r.SweepMarker(ctx, markerID, time.Now().Unix()); err != nil {
-		// Non-fatal - the vtxos are already marked as swept
-		_ = err
-	}
-
-	return count, nil
+	return int64(len(dtos)), nil
 }
 
 func (r *markerRepository) CreateRootMarkersForVtxos(
@@ -592,26 +547,21 @@ func (r *markerRepository) GetVtxoChainByMarkers(
 		return nil, nil
 	}
 
-	// Build a set of marker IDs for efficient lookup
-	markerIDSet := make(map[string]bool)
-	for _, id := range markerIDs {
-		markerIDSet[id] = true
-	}
-
-	// Find all VTXOs that have any marker_id in our set
-	var dtos []vtxoDTO
-	err := r.vtxoStore.Find(&dtos, &badgerhold.Query{})
-	if err != nil {
-		return nil, err
-	}
-
+	seen := make(map[string]bool)
 	vtxos := make([]domain.Vtxo, 0)
-	for _, dto := range dtos {
-		// Check if any of the VTXO's markers are in our set
-		for _, markerID := range dto.MarkerIDs {
-			if markerIDSet[markerID] {
+
+	for _, markerID := range markerIDs {
+		var dtos []vtxoDTO
+		err := r.vtxoStore.Find(&dtos,
+			badgerhold.Where("MarkerIDs").Contains(markerID))
+		if err != nil {
+			return nil, err
+		}
+		for _, dto := range dtos {
+			key := dto.Outpoint.String()
+			if !seen[key] {
+				seen[key] = true
 				vtxos = append(vtxos, dto.Vtxo)
-				break
 			}
 		}
 	}
