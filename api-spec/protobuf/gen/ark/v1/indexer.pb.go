@@ -2793,55 +2793,56 @@ var file_ark_v1_indexer_proto_depIdxs = []int32{
 	31, // 16: ark.v1.GetVtxosResponse.page:type_name -> ark.v1.IndexerPageResponse
 	24, // 17: ark.v1.GetVtxoChainRequest.outpoint:type_name -> ark.v1.IndexerOutpoint
 	30, // 18: ark.v1.GetVtxoChainRequest.page:type_name -> ark.v1.IndexerPageRequest
-	28, // 19: ark.v1.GetVtxoChainResponse.chain:type_name -> ark.v1.IndexerChain
-	31, // 20: ark.v1.GetVtxoChainResponse.page:type_name -> ark.v1.IndexerPageResponse
-	30, // 21: ark.v1.GetVirtualTxsRequest.page:type_name -> ark.v1.IndexerPageRequest
-	31, // 22: ark.v1.GetVirtualTxsResponse.page:type_name -> ark.v1.IndexerPageResponse
-	24, // 23: ark.v1.GetBatchSweepTransactionsRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
-	42, // 24: ark.v1.IndexerNode.children:type_name -> ark.v1.IndexerNode.ChildrenEntry
-	24, // 25: ark.v1.IndexerVtxo.outpoint:type_name -> ark.v1.IndexerOutpoint
-	27, // 26: ark.v1.IndexerVtxo.assets:type_name -> ark.v1.IndexerAsset
-	1,  // 27: ark.v1.IndexerChain.type:type_name -> ark.v1.IndexerChainedTxType
-	0,  // 28: ark.v1.IndexerTxHistoryRecord.type:type_name -> ark.v1.IndexerTxType
-	39, // 29: ark.v1.GetSubscriptionResponse.heartbeat:type_name -> ark.v1.IndexerHeartbeat
-	40, // 30: ark.v1.GetSubscriptionResponse.event:type_name -> ark.v1.IndexerSubscriptionEvent
-	26, // 31: ark.v1.IndexerSubscriptionEvent.new_vtxos:type_name -> ark.v1.IndexerVtxo
-	26, // 32: ark.v1.IndexerSubscriptionEvent.spent_vtxos:type_name -> ark.v1.IndexerVtxo
-	43, // 33: ark.v1.IndexerSubscriptionEvent.checkpoint_txs:type_name -> ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
-	26, // 34: ark.v1.IndexerSubscriptionEvent.swept_vtxos:type_name -> ark.v1.IndexerVtxo
-	23, // 35: ark.v1.GetCommitmentTxResponse.BatchesEntry.value:type_name -> ark.v1.IndexerBatch
-	38, // 36: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry.value:type_name -> ark.v1.IndexerTxData
-	2,  // 37: ark.v1.IndexerService.GetCommitmentTx:input_type -> ark.v1.GetCommitmentTxRequest
-	4,  // 38: ark.v1.IndexerService.GetForfeitTxs:input_type -> ark.v1.GetForfeitTxsRequest
-	6,  // 39: ark.v1.IndexerService.GetConnectors:input_type -> ark.v1.GetConnectorsRequest
-	8,  // 40: ark.v1.IndexerService.GetVtxoTree:input_type -> ark.v1.GetVtxoTreeRequest
-	10, // 41: ark.v1.IndexerService.GetVtxoTreeLeaves:input_type -> ark.v1.GetVtxoTreeLeavesRequest
-	12, // 42: ark.v1.IndexerService.GetVtxos:input_type -> ark.v1.GetVtxosRequest
-	14, // 43: ark.v1.IndexerService.GetVtxoChain:input_type -> ark.v1.GetVtxoChainRequest
-	16, // 44: ark.v1.IndexerService.GetVirtualTxs:input_type -> ark.v1.GetVirtualTxsRequest
-	18, // 45: ark.v1.IndexerService.GetAsset:input_type -> ark.v1.GetAssetRequest
-	21, // 46: ark.v1.IndexerService.GetBatchSweepTransactions:input_type -> ark.v1.GetBatchSweepTransactionsRequest
-	32, // 47: ark.v1.IndexerService.SubscribeForScripts:input_type -> ark.v1.SubscribeForScriptsRequest
-	34, // 48: ark.v1.IndexerService.UnsubscribeForScripts:input_type -> ark.v1.UnsubscribeForScriptsRequest
-	36, // 49: ark.v1.IndexerService.GetSubscription:input_type -> ark.v1.GetSubscriptionRequest
-	3,  // 50: ark.v1.IndexerService.GetCommitmentTx:output_type -> ark.v1.GetCommitmentTxResponse
-	5,  // 51: ark.v1.IndexerService.GetForfeitTxs:output_type -> ark.v1.GetForfeitTxsResponse
-	7,  // 52: ark.v1.IndexerService.GetConnectors:output_type -> ark.v1.GetConnectorsResponse
-	9,  // 53: ark.v1.IndexerService.GetVtxoTree:output_type -> ark.v1.GetVtxoTreeResponse
-	11, // 54: ark.v1.IndexerService.GetVtxoTreeLeaves:output_type -> ark.v1.GetVtxoTreeLeavesResponse
-	13, // 55: ark.v1.IndexerService.GetVtxos:output_type -> ark.v1.GetVtxosResponse
-	15, // 56: ark.v1.IndexerService.GetVtxoChain:output_type -> ark.v1.GetVtxoChainResponse
-	17, // 57: ark.v1.IndexerService.GetVirtualTxs:output_type -> ark.v1.GetVirtualTxsResponse
-	19, // 58: ark.v1.IndexerService.GetAsset:output_type -> ark.v1.GetAssetResponse
-	22, // 59: ark.v1.IndexerService.GetBatchSweepTransactions:output_type -> ark.v1.GetBatchSweepTransactionsResponse
-	33, // 60: ark.v1.IndexerService.SubscribeForScripts:output_type -> ark.v1.SubscribeForScriptsResponse
-	35, // 61: ark.v1.IndexerService.UnsubscribeForScripts:output_type -> ark.v1.UnsubscribeForScriptsResponse
-	37, // 62: ark.v1.IndexerService.GetSubscription:output_type -> ark.v1.GetSubscriptionResponse
-	50, // [50:63] is the sub-list for method output_type
-	37, // [37:50] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	44, // 19: ark.v1.GetVtxoChainRequest.intent:type_name -> ark.v1.Intent
+	28, // 20: ark.v1.GetVtxoChainResponse.chain:type_name -> ark.v1.IndexerChain
+	31, // 21: ark.v1.GetVtxoChainResponse.page:type_name -> ark.v1.IndexerPageResponse
+	30, // 22: ark.v1.GetVirtualTxsRequest.page:type_name -> ark.v1.IndexerPageRequest
+	31, // 23: ark.v1.GetVirtualTxsResponse.page:type_name -> ark.v1.IndexerPageResponse
+	24, // 24: ark.v1.GetBatchSweepTransactionsRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
+	42, // 25: ark.v1.IndexerNode.children:type_name -> ark.v1.IndexerNode.ChildrenEntry
+	24, // 26: ark.v1.IndexerVtxo.outpoint:type_name -> ark.v1.IndexerOutpoint
+	27, // 27: ark.v1.IndexerVtxo.assets:type_name -> ark.v1.IndexerAsset
+	1,  // 28: ark.v1.IndexerChain.type:type_name -> ark.v1.IndexerChainedTxType
+	0,  // 29: ark.v1.IndexerTxHistoryRecord.type:type_name -> ark.v1.IndexerTxType
+	39, // 30: ark.v1.GetSubscriptionResponse.heartbeat:type_name -> ark.v1.IndexerHeartbeat
+	40, // 31: ark.v1.GetSubscriptionResponse.event:type_name -> ark.v1.IndexerSubscriptionEvent
+	26, // 32: ark.v1.IndexerSubscriptionEvent.new_vtxos:type_name -> ark.v1.IndexerVtxo
+	26, // 33: ark.v1.IndexerSubscriptionEvent.spent_vtxos:type_name -> ark.v1.IndexerVtxo
+	43, // 34: ark.v1.IndexerSubscriptionEvent.checkpoint_txs:type_name -> ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
+	26, // 35: ark.v1.IndexerSubscriptionEvent.swept_vtxos:type_name -> ark.v1.IndexerVtxo
+	23, // 36: ark.v1.GetCommitmentTxResponse.BatchesEntry.value:type_name -> ark.v1.IndexerBatch
+	38, // 37: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry.value:type_name -> ark.v1.IndexerTxData
+	2,  // 38: ark.v1.IndexerService.GetCommitmentTx:input_type -> ark.v1.GetCommitmentTxRequest
+	4,  // 39: ark.v1.IndexerService.GetForfeitTxs:input_type -> ark.v1.GetForfeitTxsRequest
+	6,  // 40: ark.v1.IndexerService.GetConnectors:input_type -> ark.v1.GetConnectorsRequest
+	8,  // 41: ark.v1.IndexerService.GetVtxoTree:input_type -> ark.v1.GetVtxoTreeRequest
+	10, // 42: ark.v1.IndexerService.GetVtxoTreeLeaves:input_type -> ark.v1.GetVtxoTreeLeavesRequest
+	12, // 43: ark.v1.IndexerService.GetVtxos:input_type -> ark.v1.GetVtxosRequest
+	14, // 44: ark.v1.IndexerService.GetVtxoChain:input_type -> ark.v1.GetVtxoChainRequest
+	16, // 45: ark.v1.IndexerService.GetVirtualTxs:input_type -> ark.v1.GetVirtualTxsRequest
+	18, // 46: ark.v1.IndexerService.GetAsset:input_type -> ark.v1.GetAssetRequest
+	21, // 47: ark.v1.IndexerService.GetBatchSweepTransactions:input_type -> ark.v1.GetBatchSweepTransactionsRequest
+	32, // 48: ark.v1.IndexerService.SubscribeForScripts:input_type -> ark.v1.SubscribeForScriptsRequest
+	34, // 49: ark.v1.IndexerService.UnsubscribeForScripts:input_type -> ark.v1.UnsubscribeForScriptsRequest
+	36, // 50: ark.v1.IndexerService.GetSubscription:input_type -> ark.v1.GetSubscriptionRequest
+	3,  // 51: ark.v1.IndexerService.GetCommitmentTx:output_type -> ark.v1.GetCommitmentTxResponse
+	5,  // 52: ark.v1.IndexerService.GetForfeitTxs:output_type -> ark.v1.GetForfeitTxsResponse
+	7,  // 53: ark.v1.IndexerService.GetConnectors:output_type -> ark.v1.GetConnectorsResponse
+	9,  // 54: ark.v1.IndexerService.GetVtxoTree:output_type -> ark.v1.GetVtxoTreeResponse
+	11, // 55: ark.v1.IndexerService.GetVtxoTreeLeaves:output_type -> ark.v1.GetVtxoTreeLeavesResponse
+	13, // 56: ark.v1.IndexerService.GetVtxos:output_type -> ark.v1.GetVtxosResponse
+	15, // 57: ark.v1.IndexerService.GetVtxoChain:output_type -> ark.v1.GetVtxoChainResponse
+	17, // 58: ark.v1.IndexerService.GetVirtualTxs:output_type -> ark.v1.GetVirtualTxsResponse
+	19, // 59: ark.v1.IndexerService.GetAsset:output_type -> ark.v1.GetAssetResponse
+	22, // 60: ark.v1.IndexerService.GetBatchSweepTransactions:output_type -> ark.v1.GetBatchSweepTransactionsResponse
+	33, // 61: ark.v1.IndexerService.SubscribeForScripts:output_type -> ark.v1.SubscribeForScriptsResponse
+	35, // 62: ark.v1.IndexerService.UnsubscribeForScripts:output_type -> ark.v1.UnsubscribeForScriptsResponse
+	37, // 63: ark.v1.IndexerService.GetSubscription:output_type -> ark.v1.GetSubscriptionResponse
+	51, // [51:64] is the sub-list for method output_type
+	38, // [38:51] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_indexer_proto_init() }
