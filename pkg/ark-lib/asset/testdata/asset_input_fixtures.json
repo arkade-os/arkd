@@ -147,7 +147,7 @@
         "newInputs": [
             {
                 "name": "empty",
-                "outputs": [],
+                "inputs": [],
                 "expectedError": "missing asset inputs"
             },
             {

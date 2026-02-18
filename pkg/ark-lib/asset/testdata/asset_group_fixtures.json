@@ -135,7 +135,7 @@
       "serializedHex": "0601aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa020002046b6579320676616c756532046b6579310676616c75653100020101006401000001"
     },
     {
-      "name": "reissuance offchain (with local inputs and outputs",
+      "name": "reissuance offchain (with local inputs and outputs)",
       "assetId": {
         "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "index": 0
@@ -165,7 +165,7 @@
       "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000002010100010100006402010100d80401020001"
     },
     {
-      "name": "reissuance in batch (with intent inputs and outputs",
+      "name": "reissuance in batch (with intent inputs and outputs)",
       "assetId": {
         "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "index": 0
