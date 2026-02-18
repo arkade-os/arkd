@@ -44,6 +44,70 @@
                 "serializedHex": "01300131"
             }
         ],
+        "newMetadataList": [
+            {
+                "name": "asset data (with icon url)",
+                "metadata": [
+                    {
+                        "key": "name",
+                        "value": "testAsset"
+                    },
+                    {
+                        "key": "ticker",
+                        "value": "TST"
+                    },
+                    {
+                        "key": "decimals",
+                        "value": "0"
+                    },
+                    {
+                        "key": "icon",
+                        "value": "https://example.com/icon.png"
+                    }
+                ],
+                "serializedHex": "04067469636b657203545354046e616d65097465737441737365740469636f6e1c68747470733a2f2f6578616d706c652e636f6d2f69636f6e2e706e6708646563696d616c730130"
+            },
+            {
+                "name": "asset data (with icon embedded)",
+                "metadata": [
+                    {
+                        "key": "name",
+                        "value": "testAsset"
+                    },
+                    {
+                        "key": "ticker",
+                        "value": "TST"
+                    },
+                    {
+                        "key": "decimals",
+                        "value": "0"
+                    },
+                    {
+                        "key": "icon",
+                        "value": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA"
+                    }
+                ],
+                "serializedHex": "04067469636b657203545354046e616d65097465737441737365740469636f6e32646174613a696d6167652f706e673b6261736536342c6956424f5277304b47676f414141414e53556845556741414141554108646563696d616c730130"
+            },
+            {
+                "name": "random data",
+                "metadata": [
+                    {
+                        "key": "testKey",
+                        "value": "testValue"
+                    },
+                    {
+                        "key": "{\"key\": \"key\"}",
+                        "value": "{\"value\": \"value\"}"
+                    },
+                    {
+                        "key": "钥匙",
+                        "value": "价值"
+                    }
+                ],
+                "serializedHex": "0306e992a5e58c9906e4bbb7e580bc0e7b226b6579223a20226b6579227d127b2276616c7565223a202276616c7565227d07746573744b6579097465737456616c7565"
+            }
+        ],
         "hash": [
             {
                 "name": "asset data (with icon url)",
@@ -131,8 +195,30 @@
                 "expectedError": "missing metadata"
             },
             {
+                "name": "invalid format",
+                "serializedHex": "invalid",
+                "expectedError": "invalid metadata format"
+            },
+            {
                 "name": "invalid length",
                 "serializedHex": "013101",
+                "expectedError": "invalid metadata length"
+            }
+        ],
+        "newMetadataListFromString": [
+            {
+                "name": "empty",
+                "serializedHex": "",
+                "expectedError": "missing metadata list"
+            },
+            {
+                "name": "invalid format",
+                "serializedHex": "invalid",
+                "expectedError": "invalid metadata list format"
+            },
+            {
+                "name": "invalid length",
+                "serializedHex": "01013101",
                 "expectedError": "invalid metadata length"
             }
         ]

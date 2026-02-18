@@ -79,6 +79,40 @@ func TestAssetInput(t *testing.T) {
 				})
 			}
 		})
+		t.Run("NewInputFromString", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.NewInputFromString {
+				t.Run(v.Name, func(t *testing.T) {
+					got, err := asset.NewAssetInputFromString(v.SerializedHex)
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
+		t.Run("NewInputs", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.NewInputs {
+				t.Run(v.Name, func(t *testing.T) {
+					ins := make([]asset.AssetInput, 0, len(v.Inputs))
+					for _, vv := range v.Inputs {
+						ins = append(ins, vv.parse())
+					}
+					got, err := asset.NewAssetInputs(ins)
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
+		t.Run("NewInputsFromString", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.NewInputsFromString {
+				t.Run(v.Name, func(t *testing.T) {
+					got, err := asset.NewAssetInputsFromString(v.SerializedHex)
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
 	})
 }
 
@@ -106,6 +140,16 @@ type assetInputFixtures struct {
 			SerializedHex string `json:"serializedHex"`
 			ExpectedError string `json:"expectedError"`
 		} `json:"newInputFromString"`
+		NewInputs []struct {
+			Name          string                        `json:"name"`
+			Inputs        []assetInputValidationFixture `json:"inputs"`
+			ExpectedError string                        `json:"expectedError"`
+		} `json:"newInputs"`
+		NewInputsFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newInputsFromString"`
 	} `json:"invalid"`
 }
 
@@ -114,4 +158,13 @@ type assetInputValidationFixture struct {
 	Vin    uint16 `json:"vin"`
 	Amount uint64 `json:"amount"`
 	Txid   string `json:"txid"`
+}
+
+func (v assetInputValidationFixture) parse() asset.AssetInput {
+	if v.Type == asset.AssetInputTypeLocal.String() {
+		in, _ := asset.NewAssetInput(v.Vin, v.Amount)
+		return *in
+	}
+	in, _ := asset.NewIntentAssetInput(v.Txid, v.Vin, v.Amount)
+	return *in
 }

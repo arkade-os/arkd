@@ -120,7 +120,7 @@
     "invalid": {
         "newPacket": [
             {
-                "name": "missing assets",
+                "name": "empty",
                 "assets": [],
                 "expectedError": "missing assets"
             },
@@ -144,7 +144,7 @@
         ],
         "newPacketFromString": [
             {
-                "name": "missing script",
+                "name": "empty",
                 "script": "",
                 "expectedError": "missing output script"
             },
@@ -167,6 +167,11 @@
                 "name": "invalid prefix",
                 "script": "6a204152cc0000000000000000000000000000000000000000000000000000000001",
                 "expectedError": "invalid magic prefix"
+            },
+            {
+                "name": "invalid group index",
+                "script": "6a0f41524b000102020100000101e80301",
+                "expectedError": "invalid control asset group index"
             }
         ],
         "newPacketFromTxOut": [
