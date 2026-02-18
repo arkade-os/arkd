@@ -181,7 +181,7 @@ func (s *sweeper) start(ctx context.Context) error {
 				)
 				if err != nil {
 					log.WithError(err).Errorf(
-						"cannot schedule sweept task, failed to wait for confirmation of "+
+						"cannot schedule sweep task, failed to wait for confirmation of "+
 							"checkpoint tx %s", checkpointTxid,
 					)
 					return
