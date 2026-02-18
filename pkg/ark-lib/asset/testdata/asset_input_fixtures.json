@@ -90,7 +90,7 @@
                 "amount": 500,
                 "txid": "",
                 "vin": 10,
-                "expectedError": "missing input intent txid"
+                "expectedError": "missing asset input txid"
             },
             {
                 "name": "empty txid (zero)",
@@ -98,7 +98,7 @@
                 "amount": 500,
                 "txid": "0000000000000000000000000000000000000000000000000000000000000000",
                 "vin": 10,
-                "expectedError": "missing input intent txid"
+                "expectedError": "missing asset input txid"
             },
             {
                 "name": "invalid txid format",
@@ -106,7 +106,7 @@
                 "amount": 500,
                 "txid": "z000000000000000000000000000000000000000000000000000000000000000",
                 "vin": 10,
-                "expectedError": "invalid input intent txid format"
+                "expectedError": "invalid asset input txid format"
             },
             {
                 "name": "txid too short",
@@ -114,7 +114,7 @@
                 "amount": 500,
                 "txid": "aaaa",
                 "vin": 10,
-                "expectedError": "invalid input intent txid length"
+                "expectedError": "invalid asset input txid length"
             }
         ],
         "newInputFromString": [
@@ -146,6 +146,11 @@
         ],
         "newInputs": [
             {
+                "name": "empty",
+                "outputs": [],
+                "expectedError": "missing asset inputs"
+            },
+            {
                 "name": "mixed input types",
                 "inputs": [
                     {
@@ -160,7 +165,7 @@
                         "vin": 77
                     }
                 ],
-                "expectedError": "asset inputs must be of the same type"
+                "expectedError": "all inputs must be of the same type"
             },
             {
                 "name": "duplicated inputs",
@@ -176,7 +181,29 @@
                         "amount": 200
                     }
                 ],
-                "expectedError": "duplicated inputs vin"
+                "expectedError": "all inputs must have unique vin"
+            }
+        ],
+        "newInputsFromString": [
+            {
+                "name": "empty",
+                "serializedHex": "",
+                "expectedError": "missing asset inputs"
+            },
+            {
+                "name": "invalid format",
+                "serializedHex": "invalid",
+                "expectedError": "invalid asset inputs format"
+            },
+            {
+                "name": "mixed input types",
+                "serializedHex": "0202aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa010090030100008827",
+                "expectedError": "all inputs must be of the same type"
+            },
+            {
+                "name": "duplicated inputs",
+                "serializedHex": "0201000088270100008827",
+                "expectedError": "all inputs must have unique vin"
             }
         ]
     }

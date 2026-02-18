@@ -18,7 +18,7 @@ func TestMetadata(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("valid", func(t *testing.T) {
-		t.Run("new metadata", func(t *testing.T) {
+		t.Run("NewMetadata", func(t *testing.T) {
 			for _, v := range fixtures.Valid.NewMetadata {
 				t.Run(v.Name, func(t *testing.T) {
 					metadata, err := asset.NewMetadata(v.Key, v.Value)
@@ -40,7 +40,7 @@ func TestMetadata(t *testing.T) {
 				})
 			}
 		})
-		t.Run("hash", func(t *testing.T) {
+		t.Run("GenerateMetadataListHash", func(t *testing.T) {
 			for _, v := range fixtures.Valid.Hash {
 				t.Run(v.Name, func(t *testing.T) {
 					var metadata []asset.Metadata
@@ -59,7 +59,7 @@ func TestMetadata(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		t.Run("from key value", func(t *testing.T) {
+		t.Run("NewMetadata", func(t *testing.T) {
 			for _, v := range fixtures.Invalid.NewMetadataFromKeyValue {
 				t.Run(v.Name, func(t *testing.T) {
 					got, err := asset.NewMetadata(v.Key, v.Value)
@@ -69,7 +69,7 @@ func TestMetadata(t *testing.T) {
 				})
 			}
 		})
-		t.Run("from string", func(t *testing.T) {
+		t.Run("NewMetadataFromString", func(t *testing.T) {
 			for _, v := range fixtures.Invalid.NewMetadataFromString {
 				t.Run(v.Name, func(t *testing.T) {
 					got, err := asset.NewMetadataFromString(v.SerializedHex)

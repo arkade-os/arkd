@@ -29,6 +29,10 @@ type AssetOutput struct {
 
 // NewAssetOutputs creates a validated AssetOutputs list from the given slice.
 func NewAssetOutputs(outs []AssetOutput) (AssetOutputs, error) {
+	if len(outs) <= 0 {
+		return nil, fmt.Errorf("missing asset outputs")
+	}
+
 	list := AssetOutputs(outs)
 	if err := list.validate(); err != nil {
 		return nil, err
@@ -130,7 +134,7 @@ func newAssetOutputFromReader(r *bytes.Reader) (*AssetOutput, error) {
 	case AssetOutputTypeUnspecified:
 		return nil, fmt.Errorf("asset output type unspecified")
 	default:
-		return nil, fmt.Errorf("asset output type %d unknown", out.Type)
+		return nil, fmt.Errorf("asset output type unknown %d", out.Type)
 	}
 
 	index, err := deserializeUint16(r)
@@ -188,7 +192,7 @@ func (outs AssetOutputs) validate() error {
 	m := make(map[uint16]struct{})
 	for _, out := range outs {
 		if _, ok := m[out.Vout]; ok {
-			return fmt.Errorf("duplicated output vout %d", out.Vout)
+			return fmt.Errorf("all outputs must have unique vout")
 		}
 		m[out.Vout] = struct{}{}
 
@@ -200,7 +204,7 @@ func (outs AssetOutputs) validate() error {
 }
 
 // newAssetOutputsFromReader deserializes a length-prefixed list of AssetOutput from the reader.
-func newAssetOutputsFromReader(r *bytes.Reader) ([]AssetOutput, error) {
+func newAssetOutputsFromReader(r *bytes.Reader) (AssetOutputs, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
 		return nil, err
@@ -209,13 +213,16 @@ func newAssetOutputsFromReader(r *bytes.Reader) ([]AssetOutput, error) {
 		return nil, nil
 	}
 
-	outputs := make([]AssetOutput, 0, count)
+	outputs := make(AssetOutputs, 0, count)
 	for range count {
 		out, err := newAssetOutputFromReader(r)
 		if err != nil {
 			return nil, err
 		}
 		outputs = append(outputs, *out)
+	}
+	if err := outputs.validate(); err != nil {
+		return nil, err
 	}
 	return outputs, nil
 }

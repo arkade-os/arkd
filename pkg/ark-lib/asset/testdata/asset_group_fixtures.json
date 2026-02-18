@@ -294,6 +294,16 @@
         "name": "invalid format",
         "serializedHex": "must be hex!",
         "expectedError": "invalid format, must be hex"
+      },
+      {
+        "name": "issuance with input",
+        "serializedHex": "00010100000101010000b410",
+        "expectedError": "issuance must have no inputs"
+      },
+      {
+        "name": "transfer with control asset",
+        "serializedHex": "03aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100010100000101010000b410",
+        "expectedError": "only issuance can have a control asset"
       }
     ]
   }
