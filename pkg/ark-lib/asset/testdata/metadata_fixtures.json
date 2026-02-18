@@ -140,6 +140,23 @@
                 "serializedHex": "013101",
                 "expectedError": "invalid metadata length"
             }
+        ],
+        "newMetadataListFromString": [
+            {
+                "name": "empty",
+                "serializedHex": "",
+                "expectedError": "missing metadata list"
+            },
+            {
+                "name": "invalid format",
+                "serializedHex": "invalid",
+                "expectedError": "invalid metadata list format"
+            },
+            {
+                "name": "invalid length",
+                "serializedHex": "01013101",
+                "expectedError": "invalid metadata length"
+            }
         ]
     }
 }

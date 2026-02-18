@@ -192,7 +192,7 @@ func (ag AssetGroup) serialize(w io.Writer) error {
 
 	// Metadata
 	if (presence & maskMetadata) != 0 {
-		if err := metadataList(ag.Metadata).serialize(w); err != nil {
+		if err := MetadataList(ag.Metadata).serialize(w); err != nil {
 			return err
 		}
 	}

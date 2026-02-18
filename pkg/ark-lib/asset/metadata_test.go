@@ -79,6 +79,16 @@ func TestMetadata(t *testing.T) {
 				})
 			}
 		})
+		t.Run("NewMetadataListFromString", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.NewMetadataListFromString {
+				t.Run(v.Name, func(t *testing.T) {
+					got, err := asset.NewMetadataListFromString(v.SerializedHex)
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
 	})
 }
 
@@ -107,6 +117,11 @@ type metadataFixtures struct {
 			SerializedHex string `json:"serializedHex"`
 			ExpectedError string `json:"expectedError"`
 		} `json:"newMetadataFromString"`
+		NewMetadataListFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newMetadataListFromString"`
 	} `json:"invalid"`
 }
 
