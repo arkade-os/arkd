@@ -40,6 +40,26 @@ func TestMetadata(t *testing.T) {
 				})
 			}
 		})
+		t.Run("NewMetadataList", func(t *testing.T) {
+			for _, v := range fixtures.Valid.NewMetadataList {
+				t.Run(v.Name, func(t *testing.T) {
+					var metadata []asset.Metadata
+					for _, vv := range v.Metadata {
+						md, err := asset.NewMetadata(vv.Key, vv.Value)
+						require.NoError(t, err)
+						require.NotNil(t, md)
+						metadata = append(metadata, *md)
+					}
+					got, err := asset.NewMetadataList(metadata)
+					require.NoError(t, err)
+					require.Equal(t, v.SerializedHex, got.String())
+
+					testMetadata, err := asset.NewMetadataListFromString(v.SerializedHex)
+					require.NoError(t, err)
+					require.ElementsMatch(t, metadata, testMetadata)
+				})
+			}
+		})
 		t.Run("GenerateMetadataListHash", func(t *testing.T) {
 			for _, v := range fixtures.Valid.Hash {
 				t.Run(v.Name, func(t *testing.T) {
@@ -100,6 +120,11 @@ type metadataFixtures struct {
 			Hash          string `json:"hash"`
 			SerializedHex string `json:"serializedHex"`
 		} `json:"newMetadata"`
+		NewMetadataList []struct {
+			Name          string                      `json:"name"`
+			Metadata      []metadataValidationFixture `json:"metadata"`
+			SerializedHex string                      `json:"serializedHex"`
+		} `json:"newMetadataList"`
 		Hash []struct {
 			Name         string                      `json:"name"`
 			Metadata     []metadataValidationFixture `json:"metadata"`
