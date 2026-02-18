@@ -176,12 +176,6 @@
           "vin": 1,
           "amount": 1,
           "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-        },
-        {
-          "type": "intent",
-          "vin": 0,
-          "amount": 100,
-          "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
         }
       ],
       "outputs": [
@@ -194,7 +188,7 @@
           "vout": 2
         }
       ],
-      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000202dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd01000102dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd00006402010100d80401020001"
+      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000102dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd01000102010100d80401020001"
     },
     {
       "name": "burn some (with outputs)",
