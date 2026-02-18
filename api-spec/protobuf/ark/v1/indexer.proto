@@ -234,8 +234,8 @@ message GetAssetRequest {
 
 message GetAssetResponse {
   string asset_id = 1;
-  string supply = 2;  // bigint integer
-  repeated AssetMetadata metadata = 3;
+  string supply = 2;
+  string metadata = 3;
   string control_asset = 4;
 }
 

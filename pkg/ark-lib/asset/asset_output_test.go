@@ -17,7 +17,7 @@ func TestAssetOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("valid", func(t *testing.T) {
-		t.Run("newOutput", func(t *testing.T) {
+		t.Run("NewOutput", func(t *testing.T) {
 			for _, v := range fixtures.Valid.NewOutput {
 				t.Run(v.Name, func(t *testing.T) {
 					out, err := asset.NewAssetOutput(v.Vout, v.Amount)
@@ -37,7 +37,7 @@ func TestAssetOutput(t *testing.T) {
 				})
 			}
 		})
-		t.Run("newOutputs", func(t *testing.T) {
+		t.Run("NewOutputs", func(t *testing.T) {
 			for _, v := range fixtures.Valid.NewOutputs {
 				t.Run(v.Name, func(t *testing.T) {
 					outs := make([]asset.AssetOutput, 0, len(v.Outputs))
@@ -64,7 +64,7 @@ func TestAssetOutput(t *testing.T) {
 		})
 	})
 	t.Run("invalid", func(t *testing.T) {
-		t.Run("new output", func(t *testing.T) {
+		t.Run("NewOutput", func(t *testing.T) {
 			for _, v := range fixtures.Invalid.NewOutput {
 				t.Run(v.Name, func(t *testing.T) {
 					got, err := asset.NewAssetOutput(v.Vout, v.Amount)
@@ -74,7 +74,7 @@ func TestAssetOutput(t *testing.T) {
 				})
 			}
 		})
-		t.Run("from string", func(t *testing.T) {
+		t.Run("NewOutputFromString", func(t *testing.T) {
 			for _, v := range fixtures.Invalid.NewOutputFromString {
 				t.Run(v.Name, func(t *testing.T) {
 					got, err := asset.NewAssetOutputFromString(v.SerializedHex)
@@ -84,7 +84,7 @@ func TestAssetOutput(t *testing.T) {
 				})
 			}
 		})
-		t.Run("from outputs", func(t *testing.T) {
+		t.Run("NewOutputs", func(t *testing.T) {
 			for _, v := range fixtures.Invalid.NewOutputs {
 				t.Run(v.Name, func(t *testing.T) {
 					outs := make([]asset.AssetOutput, 0, len(v.Outputs))
@@ -95,6 +95,16 @@ func TestAssetOutput(t *testing.T) {
 						outs = append(outs, *out)
 					}
 					got, err := asset.NewAssetOutputs(outs)
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+				})
+			}
+		})
+		t.Run("NewOutputsFromString", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.NewOutputsFromString {
+				t.Run(v.Name, func(t *testing.T) {
+					got, err := asset.NewAssetOutputsFromString(v.SerializedHex)
 					require.Error(t, err)
 					require.ErrorContains(t, err, v.ExpectedError)
 					require.Nil(t, got)
@@ -133,6 +143,11 @@ type assetOutputFixtures struct {
 			Outputs       []assetOutputValidationFixture `json:"outputs"`
 			ExpectedError string                         `json:"expectedError"`
 		} `json:"newOutputs"`
+		NewOutputsFromString []struct {
+			Name          string `json:"name"`
+			SerializedHex string `json:"serializedHex"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"newOutputsFromString"`
 	} `json:"invalid"`
 }
 

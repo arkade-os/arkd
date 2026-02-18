@@ -181,16 +181,14 @@ func (s *sweeper) start(ctx context.Context) error {
 				)
 				if err != nil {
 					log.WithError(err).Errorf(
-						"cannot schedule sweept task, failed to wait for confirmation of checkpoint tx %s",
-						checkpointTxid,
+						"cannot schedule sweep task, failed to wait for confirmation of "+
+							"checkpoint tx %s", checkpointTxid,
 					)
 					return
 				}
 
 				if err := s.scheduleCheckpointSweep(
-					vtxo.Outpoint,
-					checkpointTx,
-					blockTimestamp,
+					vtxo.Outpoint, checkpointTx, blockTimestamp,
 				); err != nil {
 					log.WithError(err).Errorf(
 						"failed to schedule sweep task for checkpoint %s", checkpointTxid,
@@ -422,7 +420,8 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) func() error {
 	return func() error {
 		log.WithField("root", vtxoTreeRootTxid).Debugf(
-			"sweeper: start analyzing batch %s", commitmentTxid)
+			"sweeper: start analyzing batch %s", commitmentTxid,
+		)
 
 		ctx := context.Background()
 		round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
@@ -472,8 +471,8 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			blockTimestamp, err := waitForConfirmation(context.Background(), rootInput, s.wallet)
 			if err != nil {
 				log.WithError(err).Warnf(
-					"failed to wait for confirmation of batch input tx %s, schedule task time may be inaccurate",
-					rootInput,
+					"failed to wait for confirmation of batch input tx %s, schedule task time "+
+						"may be inaccurate", rootInput,
 				)
 			}
 
@@ -485,9 +484,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			}
 
 			if err := s.scheduleBatchSweep(
-				expirationTimestamp,
-				txid,
-				tree.Root.UnsignedTx.TxID(),
+				expirationTimestamp, txid, tree.Root.UnsignedTx.TxID(),
 			); err != nil {
 				log.WithError(err).Errorf(
 					"failed to schedule sweep for vtxo tree %s of batch %s",

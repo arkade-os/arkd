@@ -84,8 +84,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 			}
 			for _, txid := range vtxo.CommitmentTxids {
 				if err := querierWithTx.InsertVtxoCommitmentTxid(
-					ctx,
-					queries.InsertVtxoCommitmentTxidParams{
+					ctx, queries.InsertVtxoCommitmentTxidParams{
 						VtxoTxid:       vtxo.Txid,
 						VtxoVout:       int64(vtxo.VOut),
 						CommitmentTxid: txid,

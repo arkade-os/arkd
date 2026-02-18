@@ -49,6 +49,10 @@ type AssetInput struct {
 
 // NewAssetInputs creates a validated AssetInputs list from the given slice.
 func NewAssetInputs(ins []AssetInput) (AssetInputs, error) {
+	if len(ins) <= 0 {
+		return nil, fmt.Errorf("missing asset inputs")
+	}
+
 	list := AssetInputs(ins)
 	if err := list.validate(); err != nil {
 		return nil, err
@@ -81,22 +85,22 @@ func NewAssetInput(index uint16, amount uint64) (*AssetInput, error) {
 // by its hex-encoded txid, input index, and amount.
 func NewIntentAssetInput(txid string, index uint16, amount uint64) (*AssetInput, error) {
 	if len(txid) <= 0 {
-		return nil, fmt.Errorf("missing input intent txid")
+		return nil, fmt.Errorf("missing asset input txid")
 	}
 
 	if len(txid) != chainhash.HashSize*2 {
 		return nil, fmt.Errorf(
-			"invalid input intent txid length, got %d want %d", len(txid), chainhash.HashSize*2,
+			"invalid asset input txid length, got %d want %d", len(txid), chainhash.HashSize*2,
 		)
 	}
 
 	txhash, err := chainhash.NewHashFromStr(txid)
 	if err != nil {
 		if strings.Contains(err.Error(), "encoding/hex") {
-			return nil, fmt.Errorf("invalid input intent txid format")
+			return nil, fmt.Errorf("invalid asset input txid format")
 		}
 		if errors.Is(err, chainhash.ErrHashStrSize) {
-			return nil, fmt.Errorf("invalid input intent txid length")
+			return nil, fmt.Errorf("invalid asset input txid length")
 		}
 		return nil, err
 	}
@@ -117,13 +121,16 @@ func NewIntentAssetInput(txid string, index uint16, amount uint64) (*AssetInput,
 func NewAssetInputFromString(s string) (*AssetInput, error) {
 	buf, err := hex.DecodeString(s)
 	if err != nil {
-		return nil, fmt.Errorf("invalid format, must be hex")
+		return nil, fmt.Errorf("invalid asset input format, must be hex")
 	}
 	return NewAssetInputFromBytes(buf)
 }
 
 // NewAssetInputFromBytes deserializes a single AssetInput from a raw byte slice.
 func NewAssetInputFromBytes(buf []byte) (*AssetInput, error) {
+	if len(buf) <= 0 {
+		return nil, fmt.Errorf("missing asset input")
+	}
 	r := bytes.NewReader(buf)
 	return newAssetInputFromReader(r)
 }
@@ -152,13 +159,13 @@ func (in AssetInput) validate() error {
 		return nil
 	case AssetInputTypeIntent:
 		if bytes.Equal(in.Txid[:], make([]byte, chainhash.HashSize)) {
-			return fmt.Errorf("missing input intent txid")
+			return fmt.Errorf("missing asset input txid")
 		}
 		return nil
 	case AssetInputTypeUnspecified:
 		return fmt.Errorf("asset input type unspecified")
 	default:
-		return fmt.Errorf("asset input type %d unknown", in.Type)
+		return fmt.Errorf("asset input type unknown %d", in.Type)
 	}
 }
 
@@ -188,7 +195,7 @@ func (in AssetInput) serialize(w io.Writer) error {
 	case AssetInputTypeUnspecified:
 		return fmt.Errorf("asset input type unspecified")
 	default:
-		return fmt.Errorf("asset input type %d unknown", in.Type)
+		return fmt.Errorf("asset input type unknown %d", in.Type)
 	}
 	return nil
 }
@@ -218,7 +225,7 @@ func (ins AssetInputs) validate() error {
 	var inType AssetInputType
 	for _, in := range ins {
 		if _, ok := m[in.Vin]; ok {
-			return fmt.Errorf("duplicated input vin %d", in.Vin)
+			return fmt.Errorf("all inputs must have unique vin")
 		}
 		m[in.Vin] = struct{}{}
 
@@ -272,7 +279,7 @@ func newAssetInputFromReader(r *bytes.Reader) (*AssetInput, error) {
 		txid, err := deserializeTxHash(r)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return nil, fmt.Errorf("invalid input intent txid length")
+				return nil, fmt.Errorf("invalid asset input txid length")
 			}
 			return nil, err
 		}
@@ -290,7 +297,7 @@ func newAssetInputFromReader(r *bytes.Reader) (*AssetInput, error) {
 	case AssetInputTypeUnspecified:
 		return nil, fmt.Errorf("asset input type unspecified")
 	default:
-		return nil, fmt.Errorf("asset input type %d unknown", in.Type)
+		return nil, fmt.Errorf("asset input type unknown %d", in.Type)
 	}
 
 	if err := in.validate(); err != nil {
@@ -300,7 +307,7 @@ func newAssetInputFromReader(r *bytes.Reader) (*AssetInput, error) {
 }
 
 // newAssetInputsFromReader deserializes a length-prefixed list of AssetInput from the reader.
-func newAssetInputsFromReader(r *bytes.Reader) ([]AssetInput, error) {
+func newAssetInputsFromReader(r *bytes.Reader) (AssetInputs, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
 		return nil, err
@@ -309,13 +316,16 @@ func newAssetInputsFromReader(r *bytes.Reader) ([]AssetInput, error) {
 		return nil, nil
 	}
 
-	inputs := make([]AssetInput, 0, count)
+	inputs := make(AssetInputs, 0, count)
 	for range count {
 		in, err := newAssetInputFromReader(r)
 		if err != nil {
 			return nil, err
 		}
 		inputs = append(inputs, *in)
+	}
+	if err := inputs.validate(); err != nil {
+		return nil, err
 	}
 	return inputs, nil
 }

@@ -110,9 +110,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 			}
 		case *script.ConditionMultisigClosure:
 			witnessFields, err := txutils.GetArkPsbtFields(
-				ptx,
-				index,
-				txutils.ConditionWitnessField,
+				ptx, index, txutils.ConditionWitnessField,
 			)
 			if err != nil {
 				return false, nil, err

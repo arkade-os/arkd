@@ -48,6 +48,32 @@ func NewMetadataFromBytes(buf []byte) (*Metadata, error) {
 	return newMetadataFromReader(r)
 }
 
+func NewMetadataList(md []Metadata) (MetadataList, error) {
+	if len(md) <= 0 {
+		return nil, fmt.Errorf("missing metadata")
+	}
+	if err := MetadataList(md).validate(); err != nil {
+		return nil, err
+	}
+	return md, nil
+}
+
+func NewMetadataListFromString(s string) (MetadataList, error) {
+	buf, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid metadata list format, must be hex")
+	}
+	return NewMetadataListFromBytes(buf)
+}
+
+func NewMetadataListFromBytes(buf []byte) (MetadataList, error) {
+	if len(buf) <= 0 {
+		return nil, fmt.Errorf("missing metadata list")
+	}
+	r := bytes.NewReader(buf)
+	return newMetadataListFromReader(r)
+}
+
 // GenerateMetadataListHash computes a deterministic SHA-256 hash over all metadata entries.
 // Each entry is individually hashed, the hashes are sorted lexicographically, concatenated,
 // and hashed again to produce the final digest.
@@ -129,6 +155,49 @@ func (md Metadata) serialize(w io.Writer) error {
 	return nil
 }
 
+// MetadataList is a sortable list of Metadata used for deterministic serialization.
+type MetadataList []Metadata
+
+func (l MetadataList) String() string {
+	buf, _ := l.Serialize()
+	return hex.EncodeToString(buf)
+}
+
+func (l MetadataList) Serialize() ([]byte, error) {
+	r := bytes.NewBuffer(nil)
+	if err := l.serialize(r); err != nil {
+		return nil, err
+	}
+	return r.Bytes(), nil
+}
+
+// validate ensures all metadata have non-empty keys and values.
+func (l MetadataList) validate() error {
+	for _, md := range l {
+		if err := md.validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// serialize sorts the entries by key in descending order and writes the length-prefixed
+// list to the writer.
+func (l MetadataList) serialize(w io.Writer) error {
+	if err := serializeVarUint(w, uint64(len(l))); err != nil {
+		return err
+	}
+	sort.SliceStable(l, func(i, j int) bool {
+		return string(l[i].Key)+string(l[i].Value) > string(l[j].Key)+string(l[j].Value)
+	})
+	for _, md := range l {
+		if err := md.serialize(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // newMetadataFromReader deserializes a single Metadata entry from the reader.
 func newMetadataFromReader(r *bytes.Reader) (*Metadata, error) {
 	key, err := deserializeVarSlice(r)
@@ -154,17 +223,14 @@ func newMetadataFromReader(r *bytes.Reader) (*Metadata, error) {
 	return &md, nil
 }
 
-// metadataList is a sortable list of Metadata used for deterministic serialization.
-type metadataList []Metadata
-
 // newMetadataListFromReader deserializes a length-prefixed list of Metadata entries from the reader.
-func newMetadataListFromReader(r *bytes.Reader) ([]Metadata, error) {
+func newMetadataListFromReader(r *bytes.Reader) (MetadataList, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
 		return nil, err
 	}
 
-	l := make([]Metadata, 0, count)
+	l := make(MetadataList, 0, count)
 	for range count {
 		md, err := newMetadataFromReader(r)
 		if err != nil {
@@ -172,22 +238,9 @@ func newMetadataListFromReader(r *bytes.Reader) ([]Metadata, error) {
 		}
 		l = append(l, *md)
 	}
-	return l, nil
-}
 
-// serialize sorts the entries by key in descending order and writes the length-prefixed
-// list to the writer.
-func (l metadataList) serialize(w io.Writer) error {
-	if err := serializeVarUint(w, uint64(len(l))); err != nil {
-		return err
+	if err := l.validate(); err != nil {
+		return nil, err
 	}
-	sort.SliceStable(l, func(i, j int) bool {
-		return string(l[i].Key)+string(l[i].Value) > string(l[j].Key)+string(l[j].Value)
-	})
-	for _, md := range l {
-		if err := md.serialize(w); err != nil {
-			return err
-		}
-	}
-	return nil
+	return l, nil
 }

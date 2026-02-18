@@ -135,7 +135,7 @@
       "serializedHex": "0601aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa020002046b6579320676616c756532046b6579310676616c75653100020101006401000001"
     },
     {
-      "name": "reissuance offchain (with local inputs and outputs",
+      "name": "reissuance offchain (with local inputs and outputs)",
       "assetId": {
         "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "index": 0
@@ -165,7 +165,7 @@
       "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000002010100010100006402010100d80401020001"
     },
     {
-      "name": "reissuance in batch (with intent inputs and outputs",
+      "name": "reissuance in batch (with intent inputs and outputs)",
       "assetId": {
         "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "index": 0
@@ -175,12 +175,6 @@
           "type": "intent",
           "vin": 1,
           "amount": 1,
-          "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-        },
-        {
-          "type": "intent",
-          "vin": 0,
-          "amount": 100,
           "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
         }
       ],
@@ -194,7 +188,7 @@
           "vout": 2
         }
       ],
-      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000202dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd01000102dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd00006402010100d80401020001"
+      "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa00000102dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd01000102010100d80401020001"
     },
     {
       "name": "burn some (with outputs)",
@@ -294,6 +288,16 @@
         "name": "invalid format",
         "serializedHex": "must be hex!",
         "expectedError": "invalid format, must be hex"
+      },
+      {
+        "name": "issuance with input",
+        "serializedHex": "00010100000101010000b410",
+        "expectedError": "issuance must have no inputs"
+      },
+      {
+        "name": "transfer with control asset",
+        "serializedHex": "03aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa000001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0100010100000101010000b410",
+        "expectedError": "only issuance can have a control asset"
       }
     ]
   }

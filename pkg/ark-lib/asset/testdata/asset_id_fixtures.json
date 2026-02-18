@@ -71,11 +71,6 @@
         "expectedError": "missing asset id"
       },
       {
-        "name": "empty asset id",
-        "serializedHex": "00000000000000000000000000000000000000000000000000000000000000000100",
-        "expectedError": "empty txid"
-      },
-      {
         "name": "invalid format",
         "serializedHex": "invalid",
         "expectedError": "invalid asset id format"
@@ -84,6 +79,11 @@
         "name": "invalid length",
         "serializedHex": "000000000000000000000000000000000000000000000000000000000000000001",
         "expectedError": "invalid asset id length"
+      },
+      {
+        "name": "empty txid",
+        "serializedHex": "00000000000000000000000000000000000000000000000000000000000000000100",
+        "expectedError": "empty txid"
       }
     ]
   }

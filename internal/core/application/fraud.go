@@ -52,8 +52,8 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 			)
 			if err != nil {
 				log.WithError(err).Warnf(
-					"failed to wait for confirmation of checkpoint tx %s, using current block time to schedule sweep instead",
-					ptx.UnsignedTx.TxID(),
+					"failed to wait for confirmation of checkpoint tx %s, using current block "+
+						"time to schedule sweep instead", ptx.UnsignedTx.TxID(),
 				)
 				blockTimestamp, err = s.wallet.GetCurrentBlockTime(ctx)
 				if err != nil {
@@ -62,9 +62,7 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 				}
 			}
 			if err := s.sweeper.scheduleCheckpointSweep(
-				vtxo.Outpoint,
-				ptx,
-				blockTimestamp,
+				vtxo.Outpoint, ptx, blockTimestamp,
 			); err != nil {
 				log.Errorf("failed to schedule checkpoint sweep: %s", err)
 			}
