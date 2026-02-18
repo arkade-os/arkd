@@ -34,28 +34,6 @@ type AssetGroup struct {
 	Metadata []Metadata
 }
 
-// IsIssuance returns true when the group has no AssetId, meaning it creates a new asset.
-func (ag AssetGroup) IsIssuance() bool {
-	return ag.AssetId == nil
-}
-
-// IsReissuance returns whether the group is a reissuance by comparing the sum of inputs and
-// outputs. A reissuance is a group that is not an issuance and where sum(outputs) > sum(inputs).
-func (ag AssetGroup) IsReissuance() bool {
-	outAmounts := make([]uint64, len(ag.Outputs))
-	inAmounts := make([]uint64, len(ag.Inputs))
-	for i, out := range ag.Outputs {
-		outAmounts[i] = out.Amount
-	}
-	for i, in := range ag.Inputs {
-		inAmounts[i] = in.Amount
-	}
-	sumOutputs := safeSumUint64(outAmounts)
-	sumInputs := safeSumUint64(inAmounts)
-
-	return !ag.IsIssuance() && sumInputs.Cmp(sumOutputs) < 0
-}
-
 // NewAssetGroup creates a new asset group and validates it.
 func NewAssetGroup(
 	assetId *AssetId, controlAsset *AssetRef, ins []AssetInput, outs []AssetOutput, md []Metadata,
@@ -89,6 +67,28 @@ func NewAssetGroupFromBytes(buf []byte) (*AssetGroup, error) {
 	}
 	r := bytes.NewReader(buf)
 	return newAssetGroupFromReader(r)
+}
+
+// IsIssuance returns true when the group has no AssetId, meaning it creates a new asset.
+func (ag AssetGroup) IsIssuance() bool {
+	return ag.AssetId == nil
+}
+
+// IsReissuance returns whether the group is a reissuance by comparing the sum of inputs and
+// outputs. A reissuance is a group that is not an issuance and where sum(outputs) > sum(inputs).
+func (ag AssetGroup) IsReissuance() bool {
+	outAmounts := make([]uint64, len(ag.Outputs))
+	inAmounts := make([]uint64, len(ag.Inputs))
+	for i, out := range ag.Outputs {
+		outAmounts[i] = out.Amount
+	}
+	for i, in := range ag.Inputs {
+		inAmounts[i] = in.Amount
+	}
+	sumOutputs := safeSumUint64(outAmounts)
+	sumInputs := safeSumUint64(inAmounts)
+
+	return !ag.IsIssuance() && sumInputs.Cmp(sumOutputs) < 0
 }
 
 // Serialize validates the asset group and returns its raw byte serialization.
@@ -192,7 +192,7 @@ func (ag AssetGroup) serialize(w io.Writer) error {
 
 	// Metadata
 	if (presence & maskMetadata) != 0 {
-		if err := metadataList(ag.Metadata).serialize(w); err != nil {
+		if err := MetadataList(ag.Metadata).serialize(w); err != nil {
 			return err
 		}
 	}
