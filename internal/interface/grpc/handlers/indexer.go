@@ -11,6 +11,7 @@ import (
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/google/uuid"
@@ -60,21 +61,18 @@ func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRe
 	if len(assets) <= 0 {
 		return nil, status.Errorf(codes.NotFound, "asset %s not found", assetId)
 	}
-	asset := assets[0]
-
-	assetMetadata := make([]*arkv1.AssetMetadata, 0, len(asset.Metadata))
-	for _, metadata := range asset.Metadata {
-		assetMetadata = append(assetMetadata, &arkv1.AssetMetadata{
-			Key:   hex.EncodeToString(metadata.Key),
-			Value: hex.EncodeToString(metadata.Value),
-		})
+	ast := assets[0]
+	var metadata string
+	if len(ast.Metadata) > 0 {
+		md, _ := asset.NewMetadataList(ast.Metadata)
+		metadata = md.String()
 	}
 
 	return &arkv1.GetAssetResponse{
 		AssetId:      assetId,
-		Supply:       asset.Supply.String(),
-		Metadata:     assetMetadata,
-		ControlAsset: asset.ControlAssetId,
+		Supply:       ast.Supply.String(),
+		Metadata:     metadata,
+		ControlAsset: ast.ControlAssetId,
 	}, nil
 }
 

@@ -17,7 +17,7 @@ func TestAssetRef(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("valid", func(t *testing.T) {
-		t.Run("from id", func(t *testing.T) {
+		t.Run("NewAssetRefFromId", func(t *testing.T) {
 			for _, v := range fixtures.Valid.AssetRefFromId {
 				t.Run(v.Name, func(t *testing.T) {
 					assetId, err := asset.NewAssetId(v.Txid, v.Index)
@@ -35,13 +35,13 @@ func TestAssetRef(t *testing.T) {
 				})
 			}
 		})
-		t.Run("from group index", func(t *testing.T) {
+		t.Run("NewAssetRefFromGroupIndex", func(t *testing.T) {
 			for _, v := range fixtures.Valid.AssetRefFromGroupIndex {
 				t.Run(v.Name, func(t *testing.T) {
-					assetRef, err := asset.NewAssetRefFromGroupIndex(v.Index)
+					assetRef, err := asset.NewAssetRefFromGroupIndex(uint16(v.Index))
 					require.NoError(t, err)
 					require.NotNil(t, assetRef)
-					require.Equal(t, int(assetRef.Type), int(asset.AssetRefByID))
+					require.Equal(t, int(asset.AssetRefByGroup), int(assetRef.Type))
 
 					got, err := assetRef.Serialize()
 					require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestAssetRef(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		t.Run("from string", func(t *testing.T) {
+		t.Run("NewAssetRefFromString", func(t *testing.T) {
 			for _, v := range fixtures.Invalid.AssetRefFromString {
 				t.Run(v.Name, func(t *testing.T) {
 					got, err := asset.NewAssetRefFromString(v.SerializedHex)
@@ -76,7 +76,7 @@ type assetRefFixtures struct {
 		} `json:"newAssetRefFromId"`
 		AssetRefFromGroupIndex []struct {
 			Name          string `json:"name"`
-			Index         uint16 `json:"index"`
+			Index         int    `json:"index"`
 			SerializedHex string `json:"serializedHex"`
 		} `json:"newAssetRefFromGroupIndex"`
 	} `json:"valid"`

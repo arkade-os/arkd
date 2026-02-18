@@ -5,6 +5,10 @@ define setup_env
     $(eval export)
 endef
 
+GOLANGCI_LINT ?= $(shell \
+	echo "docker run --rm -v $$(pwd):/app -w /app golangci/golangci-lint:v2.9.0 golangci-lint"; \
+)
+
 ## build: build arkd for your platforms
 build:
 	@echo "Building arkd binary..."
@@ -49,7 +53,7 @@ integrationtest:
 ## lint: lint codebase
 lint:
 	@echo "Linting code..."
-	@golangci-lint run --fix
+	@$(GOLANGCI_LINT) run --fix --tests=false
 
 ## run: run arkd in regtest
 run: clean pg redis-up

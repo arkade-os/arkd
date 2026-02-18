@@ -811,14 +811,10 @@
             "type": "string"
           },
           "metadata": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AssetMetadata"
-            }
+            "type": "string"
           },
           "supply": {
-            "type": "string",
-            "description": "bigint integer"
+            "type": "string"
           }
         }
       },

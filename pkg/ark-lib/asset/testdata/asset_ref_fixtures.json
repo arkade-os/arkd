@@ -8,7 +8,7 @@
         "serializedHex": "01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2a00"
       }
     ],
-    "newAssetRefFromGroup": [
+    "newAssetRefFromGroupIndex": [
       {
         "name": "zero index",
         "index": 0,
@@ -39,12 +39,12 @@
   "invalid": {
     "newAssetRefFromString": [
       {
-        "name": "empty ref",
+        "name": "empty",
         "serializedHex": "",
         "expectedError": "missing asset ref"
       },
       {
-        "name": "invalid ref",
+        "name": "invalid format",
         "serializedHex": "invalid",
         "expectedError": "invalid asset ref format"
       },
