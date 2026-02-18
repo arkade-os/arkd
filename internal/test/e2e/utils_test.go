@@ -273,7 +273,6 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 
 	err = client.Init(t.Context(), arksdk.InitArgs{
 		WalletType: arksdk.SingleKeyWallet,
-		ClientType: arksdk.GrpcClient,
 		ServerUrl:  serverUrl,
 		Password:   password,
 		Seed:       privkeyHex,
@@ -346,11 +345,10 @@ func setupArkSDKwithPublicKey(
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	err = client.InitWithWallet(context.Background(), arksdk.InitWithWalletArgs{
-		Wallet:     wallet,
-		ClientType: arksdk.GrpcClient,
-		ServerUrl:  serverUrl,
-		Password:   password,
-		Seed:       privkeyHex,
+		Wallet:    wallet,
+		ServerUrl: serverUrl,
+		Password:  password,
+		Seed:      privkeyHex,
 	})
 	require.NoError(t, err)
 

@@ -28,7 +28,6 @@ type Config struct {
 	SignerPubKey        *btcec.PublicKey
 	ForfeitPubKey       *btcec.PublicKey
 	WalletType          string
-	ClientType          string
 	Network             arklib.Network
 	SessionDuration     int64
 	UnilateralExitDelay arklib.RelativeLocktime

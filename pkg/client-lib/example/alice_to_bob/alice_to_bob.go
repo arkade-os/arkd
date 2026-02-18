@@ -17,7 +17,6 @@ import (
 
 var (
 	serverUrl  = "127.0.0.1:7070"
-	clientType = arksdk.GrpcClient
 	password   = "password"
 	walletType = arksdk.SingleKeyWallet
 )
@@ -172,7 +171,6 @@ func setupArkClient() (arksdk.ArkClient, error) {
 
 	if err := client.Init(context.Background(), arksdk.InitArgs{
 		WalletType: walletType,
-		ClientType: clientType,
 		ServerUrl:  serverUrl,
 		Password:   password,
 	}); err != nil {

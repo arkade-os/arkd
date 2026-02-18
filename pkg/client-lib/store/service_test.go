@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
@@ -21,7 +20,6 @@ var (
 		SignerPubKey:        key.PubKey(),
 		ForfeitPubKey:       forfeitkKey.PubKey(),
 		WalletType:          wallet.SingleKeyWallet,
-		ClientType:          client.GrpcClient,
 		Network:             arklib.BitcoinRegTest,
 		SessionDuration:     10,
 		UnilateralExitDelay: arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512},

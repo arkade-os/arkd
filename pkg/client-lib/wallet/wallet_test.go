@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/store/inmemory"
 	sdktypes "github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
@@ -24,7 +23,6 @@ func TestWallet(t *testing.T) {
 		ServerUrl:           "127.0.0.1:7070",
 		SignerPubKey:        key.PubKey(),
 		WalletType:          wallet.SingleKeyWallet,
-		ClientType:          client.GrpcClient,
 		Network:             arklib.BitcoinRegTest,
 		SessionDuration:     10,
 		UnilateralExitDelay: arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512},

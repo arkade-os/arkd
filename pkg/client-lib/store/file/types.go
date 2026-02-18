@@ -28,7 +28,6 @@ type storeData struct {
 	SignerPubKey        string  `json:"signer_pubkey"`
 	ForfeitPubKey       string  `json:"forfeit_pubkey"`
 	WalletType          string  `json:"wallet_type"`
-	ClientType          string  `json:"client_type"`
 	Network             string  `json:"network"`
 	SessionDuration     string  `json:"session_duration"`
 	UnilateralExitDelay string  `json:"unilateral_exit_delay"`
@@ -95,7 +94,6 @@ func (d storeData) decode() types.Config {
 		SignerPubKey:  signerPubkey,
 		ForfeitPubKey: forfeitPubkey,
 		WalletType:    d.WalletType,
-		ClientType:    d.ClientType,
 		Network:       network,
 		UnilateralExitDelay: arklib.RelativeLocktime{
 			Type:  unilateralExitDelayType,
@@ -124,7 +122,6 @@ func (d storeData) asMap() map[string]any {
 		"signer_pubkey":         d.SignerPubKey,
 		"forfeit_pubkey":        d.ForfeitPubKey,
 		"wallet_type":           d.WalletType,
-		"client_type":           d.ClientType,
 		"network":               d.Network,
 		"session_duration":      d.SessionDuration,
 		"unilateral_exit_delay": d.UnilateralExitDelay,

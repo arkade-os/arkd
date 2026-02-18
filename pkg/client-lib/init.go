@@ -6,24 +6,11 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
-	restclient "github.com/arkade-os/arkd/pkg/client-lib/client/rest"
 	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
-	restindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/rest"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
-)
-
-var (
-	supportedClients = utils.SupportedType[utils.ClientFactory]{
-		GrpcClient: grpcclient.NewClient,
-		RestClient: restclient.NewClient,
-	}
-	supportedIndexers = utils.SupportedType[utils.IndexerFactory]{
-		GrpcClient: grpcindexer.NewClient,
-		RestClient: restindexer.NewClient,
-	}
 )
 
 func (a *service) Init(ctx context.Context, args InitArgs) error {
@@ -56,9 +43,7 @@ func (a *service) InitWithWallet(ctx context.Context, args InitWithWalletArgs) e
 }
 
 func (a *service) init(ctx context.Context, args args, walletSvc wallet.WalletService) error {
-	clientSvc, err := getClient(
-		supportedClients, args.clientType, args.serverUrl, a.withMonitorConn,
-	)
+	clientSvc, err := grpcclient.NewClient(args.serverUrl, a.withMonitorConn)
 	if err != nil {
 		return fmt.Errorf("failed to setup client: %s", err)
 	}
@@ -68,9 +53,7 @@ func (a *service) init(ctx context.Context, args args, walletSvc wallet.WalletSe
 		return fmt.Errorf("failed to connect to server: %s", err)
 	}
 
-	indexerSvc, err := getIndexer(
-		supportedIndexers, args.clientType, args.serverUrl, a.withMonitorConn,
-	)
+	indexerSvc, err := grpcindexer.NewClient(args.serverUrl, a.withMonitorConn)
 	if err != nil {
 		return fmt.Errorf("failed to setup indexer: %s", err)
 	}
@@ -115,7 +98,6 @@ func (a *service) init(ctx context.Context, args args, walletSvc wallet.WalletSe
 		SignerPubKey:    signerPubkey,
 		ForfeitPubKey:   forfeitPubkey,
 		WalletType:      args.walletType,
-		ClientType:      args.clientType,
 		Network:         network,
 		SessionDuration: info.SessionDuration,
 		UnilateralExitDelay: arklib.RelativeLocktime{
@@ -150,7 +132,6 @@ func (a *service) init(ctx context.Context, args args, walletSvc wallet.WalletSe
 }
 
 type InitArgs struct {
-	ClientType  string
 	WalletType  string
 	ServerUrl   string
 	Seed        string
@@ -169,16 +150,6 @@ func (a InitArgs) validate() error {
 		)
 	}
 
-	if len(a.ClientType) <= 0 {
-		return fmt.Errorf("missing client type")
-	}
-	if !supportedClients.Supports(a.ClientType) {
-		return fmt.Errorf(
-			"client type '%s' not supported, please select one of: %s",
-			a.ClientType, supportedClients,
-		)
-	}
-
 	if len(a.ServerUrl) <= 0 {
 		return fmt.Errorf("missing server url")
 	}
@@ -190,11 +161,10 @@ func (a InitArgs) validate() error {
 }
 
 func (a InitArgs) parse() args {
-	return args{a.ClientType, a.WalletType, a.ServerUrl, a.Seed, a.Password, a.ExplorerURL}
+	return args{a.WalletType, a.ServerUrl, a.Seed, a.Password, a.ExplorerURL}
 }
 
 type InitWithWalletArgs struct {
-	ClientType  string
 	Wallet      wallet.WalletService
 	ServerUrl   string
 	Seed        string
@@ -207,13 +177,6 @@ func (a InitWithWalletArgs) validate() error {
 		return fmt.Errorf("missing wallet")
 	}
 
-	if len(a.ClientType) <= 0 {
-		return fmt.Errorf("missing client type")
-	}
-	if !supportedClients.Supports(a.ClientType) {
-		return fmt.Errorf("client type not supported, please select one of: %s", supportedClients)
-	}
-
 	if len(a.ServerUrl) <= 0 {
 		return fmt.Errorf("missing server url")
 	}
@@ -224,11 +187,10 @@ func (a InitWithWalletArgs) validate() error {
 }
 
 func (a InitWithWalletArgs) parse() args {
-	return args{a.ClientType, a.Wallet.GetType(), a.ServerUrl, a.Seed, a.Password, a.ExplorerURL}
+	return args{a.Wallet.GetType(), a.ServerUrl, a.Seed, a.Password, a.ExplorerURL}
 }
 
 type args struct {
-	clientType  string
 	walletType  string
 	serverUrl   string
 	seed        string

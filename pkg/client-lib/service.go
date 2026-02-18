@@ -9,9 +9,11 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
@@ -19,9 +21,6 @@ import (
 )
 
 const (
-	// transport
-	GrpcClient = client.GrpcClient
-	RestClient = client.RestClient
 	// wallet
 	SingleKeyWallet = wallet.SingleKeyWallet
 	// store
@@ -116,15 +115,11 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 		client.explorer = explorerSvc
 	}
 
-	clientSvc, err := getClient(
-		supportedClients, cfgData.ClientType, cfgData.ServerUrl, client.withMonitorConn,
-	)
+	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl, client.withMonitorConn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup transport client: %s", err)
 	}
-	indexerSvc, err := getIndexer(
-		supportedIndexers, cfgData.ClientType, cfgData.ServerUrl, client.withMonitorConn,
-	)
+	indexerSvc, err := grpcindexer.NewClient(cfgData.ServerUrl, client.withMonitorConn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup indexer: %s", err)
 	}
@@ -178,15 +173,11 @@ func LoadArkClientWithWallet(
 		client.explorer = explorerSvc
 	}
 
-	clientSvc, err := getClient(
-		supportedClients, cfgData.ClientType, cfgData.ServerUrl, client.withMonitorConn,
-	)
+	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl, client.withMonitorConn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup transport client: %s", err)
 	}
-	indexerSvc, err := getIndexer(
-		supportedIndexers, cfgData.ClientType, cfgData.ServerUrl, client.withMonitorConn,
-	)
+	indexerSvc, err := grpcindexer.NewClient(cfgData.ServerUrl, client.withMonitorConn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup indexer: %s", err)
 	}
