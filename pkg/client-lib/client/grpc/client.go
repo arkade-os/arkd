@@ -35,6 +35,7 @@ type grpcClient struct {
 	conn             *grpc.ClientConn
 	connMu           *sync.RWMutex
 	monitoringCancel context.CancelFunc
+	listenerId       string
 }
 
 func NewClient(serverUrl string, withMonitorConn bool) (client.TransportClient, error) {
@@ -308,6 +309,13 @@ func (a *grpcClient) GetEventStream(
 				return
 			}
 
+			switch resp.Event.(type) {
+			case *arkv1.GetEventStreamResponse_StreamStarted:
+				event := resp.Event.(*arkv1.GetEventStreamResponse_StreamStarted)
+				a.listenerId = event.StreamStarted.Id
+			default:
+			}
+
 			ev, err := event{resp}.toBatchEvent()
 			if err != nil {
 				eventsCh <- client.BatchEventChannel{Err: err}
@@ -489,6 +497,53 @@ func (c *grpcClient) GetTransactionsStream(
 	}
 
 	return eventsCh, closeFn, nil
+}
+
+func (c *grpcClient) ModifyStreamTopics(
+	ctx context.Context, addTopics, removeTopics []string,
+) (addedTopics, removedTopics, allTopics []string, err error) {
+	if c.listenerId == "" {
+		return nil, nil, nil, fmt.Errorf("listenerId is not set; cannot modify stream topics")
+	}
+
+	req := &arkv1.UpdateStreamTopicsRequest{
+		StreamId: c.listenerId,
+		TopicsChange: &arkv1.UpdateStreamTopicsRequest_Modify{
+			Modify: &arkv1.ModifyTopics{
+				AddTopics:    addTopics,
+				RemoveTopics: removeTopics,
+			},
+		},
+	}
+	updateRes, err := c.svc().UpdateStreamTopics(ctx, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return updateRes.GetTopicsAdded(), updateRes.GetTopicsRemoved(), updateRes.GetAllTopics(), nil
+}
+
+func (c *grpcClient) OverwriteStreamTopics(
+	ctx context.Context, topics []string,
+) (addedTopics, removedTopics, allTopics []string, err error) {
+	if c.listenerId == "" {
+		return nil, nil, nil, fmt.Errorf("listenerId is not set; cannot overwrite stream topics")
+	}
+
+	req := &arkv1.UpdateStreamTopicsRequest{
+		StreamId: c.listenerId,
+		TopicsChange: &arkv1.UpdateStreamTopicsRequest_Overwrite{
+			Overwrite: &arkv1.OverwriteTopics{
+				Topics: topics,
+			},
+		},
+	}
+	updateRes, err := c.svc().UpdateStreamTopics(ctx, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return updateRes.GetTopicsAdded(), updateRes.GetTopicsRemoved(), updateRes.GetAllTopics(), nil
 }
 
 func (c *grpcClient) Close() {

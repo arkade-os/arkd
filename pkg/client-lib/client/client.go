@@ -46,6 +46,12 @@ type TransportClient interface {
 	FinalizeTx(ctx context.Context, arkTxid string, finalCheckpointTxs []string) error
 	GetPendingTx(ctx context.Context, proof, message string) ([]AcceptedOffchainTx, error)
 	GetTransactionsStream(ctx context.Context) (<-chan TransactionEvent, func(), error)
+	ModifyStreamTopics(
+		ctx context.Context, addTopics, removeTopics []string,
+	) (addedTopics, removedTopics, allTopics []string, err error)
+	OverwriteStreamTopics(
+		ctx context.Context, topics []string,
+	) (addedTopics, removedTopics, allTopics []string, err error)
 	Close()
 }
 
@@ -131,6 +137,10 @@ type TreeSignatureEvent struct {
 	BatchIndex int32
 	Txid       string
 	Signature  string
+}
+
+type StreamStartedEvent struct {
+	Id string
 }
 
 type BatchStartedEvent struct {
