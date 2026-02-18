@@ -37,6 +37,8 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const adminUrl = "http://127.0.0.1:7071"
@@ -772,4 +774,40 @@ func requireVtxoHasAsset(t *testing.T, vtxo types.Vtxo, assetID string, expected
 	asset, found := findAssetInVtxo(vtxo, assetID)
 	require.True(t, found)
 	require.Equal(t, expectedAmount, asset.Amount, assetID)
+}
+
+func churnWorkerBackoff(workerID int) time.Duration {
+	return time.Duration(5+workerID%11) * time.Millisecond
+}
+
+func isRetryableChurnError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.Unavailable, codes.DeadlineExceeded:
+			return true
+		}
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	// edge cases not caught by gRPC status codes
+	signatures := []string{
+		"assign requested address",
+		"error reading server preface",
+		"connection reset by peer",
+		"transport is closing",
+		"broken pipe",
+		"eof",
+	}
+
+	for _, sig := range signatures {
+		if strings.Contains(errMsg, sig) {
+			return true
+		}
+	}
+
+	return false
 }

@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	arksdk "github.com/arkade-os/go-sdk"
 	"github.com/arkade-os/go-sdk/client"
+	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
 	mempool_explorer "github.com/arkade-os/go-sdk/explorer/mempool"
 	"github.com/arkade-os/go-sdk/indexer"
 	"github.com/arkade-os/go-sdk/redemption"
@@ -4408,4 +4410,564 @@ func TestAsset(t *testing.T) {
 		_, ok := aliceBalance.AssetBalances[assetId]
 		require.False(t, ok)
 	})
+}
+
+// TestTxListenerChurn verifies that the gRPC transaction stream fanout is
+// resilient to subscription churn. It runs three concurrent activities:
+//
+//  1. A "sentinel" stream that stays open for the full test duration and counts
+//     every tx event it receives. If the server panics or the fanout breaks, the
+//     sentinel's gRPC connection will error out and the assertions at the end
+//     will catch it.
+//  2. N churn workers that each open a tx stream, optionally read one event,
+//     then immediately close the stream — repeating as fast as possible. This
+//     simulates a DoS-style load on the subscribe/unsubscribe path.
+//  3. A tx producer that periodically sends offchain payments so there is a
+//     steady flow of events for the sentinel to observe.
+//
+// The test passes when the sentinel stream observes at least one event and
+// reports no errors, proving the fanout survived the churn.
+func TestTxListenerChurn(t *testing.T) {
+	const (
+		testDuration           = 30 * time.Second
+		churnWorkers           = 8
+		txProducerDelay        = 200 * time.Millisecond
+		minimumTxEvents        = 1
+		sendAmount      uint64 = 1000
+	)
+
+	ctx := t.Context()
+
+	// Bootstrap sender/receiver clients and fund sender for repeated tx production.
+	sender := setupArkSDK(t)
+	receiver := setupArkSDK(t)
+	alice, transport := setupArkSDKWithTransport(t)
+	defer alice.Stop()
+	defer transport.Close()
+
+	faucetOffchain(t, sender, 0.01)
+
+	stressCtx, cancel := context.WithTimeout(ctx, testDuration)
+	defer cancel()
+
+	// Open the sentinel stream — this subscription must survive the entire
+	// stress window. Any server-side panic in the fanout will sever this
+	// connection and surface as an error on the channel.
+	stream, closeSentinelStream, err := transport.GetTransactionsStream(stressCtx)
+	require.NoError(t, err)
+
+	var sentinelTxEvents atomic.Int64
+	var producedTxEvents atomic.Int64
+	var retryableSubscribeErrors atomic.Int64
+	sentinelDone := make(chan struct{})
+	errCh := make(chan error, churnWorkers+8)
+
+	reportErr := func(err error) {
+		select {
+		case errCh <- err:
+		default:
+		}
+	}
+
+	// Consume the sentinel stream in the background. Every ArkTx or
+	// CommitmentTx event increments the counter. If the stream breaks
+	// (server crash, fanout bug), the error is captured and the goroutine
+	// exits, which will cause the assertions below to fail.
+	go func() {
+		defer close(sentinelDone)
+		for {
+			select {
+			case <-stressCtx.Done():
+				return
+			case ev, ok := <-stream:
+				if !ok {
+					return
+				}
+				if ev.Err != nil {
+					reportErr(ev.Err)
+					return
+				}
+				if ev.ArkTx != nil {
+					sentinelTxEvents.Add(1)
+				}
+				if ev.CommitmentTx != nil {
+					sentinelTxEvents.Add(1)
+				}
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+
+	// Launch churn workers. Each worker creates its own gRPC client, opens a
+	// tx stream, waits up to 10ms, then tears it down — repeating for the
+	// full stress window. This hammers the server's subscribe/unsubscribe
+	// path with concurrent mutations to the listener map. Transient network
+	// errors (port exhaustion, connection resets) are expected under this
+	// load and are counted rather than treated as failures.
+	wg.Add(churnWorkers)
+	for i := range churnWorkers {
+		go func(workerID int) {
+			defer wg.Done()
+
+			streamClient, err := grpcclient.NewClient(serverUrl)
+			if err != nil {
+				if stressCtx.Err() != nil {
+					return
+				}
+				if isRetryableChurnError(err) {
+					retryableSubscribeErrors.Add(1)
+					time.Sleep(churnWorkerBackoff(workerID))
+				} else {
+					reportErr(fmt.Errorf("churn worker %d create client: %w", workerID, err))
+					return
+				}
+			}
+			defer func() {
+				if streamClient != nil {
+					streamClient.Close()
+				}
+			}()
+
+			for {
+				select {
+				case <-stressCtx.Done():
+					return
+				default:
+				}
+
+				// Reconnect if the previous iteration tore down the client
+				// due to a transient error.
+				if streamClient == nil {
+					streamClient, err = grpcclient.NewClient(serverUrl)
+					if err != nil {
+						if stressCtx.Err() != nil {
+							return
+						}
+						if isRetryableChurnError(err) {
+							retryableSubscribeErrors.Add(1)
+							time.Sleep(churnWorkerBackoff(workerID))
+							continue
+						}
+						reportErr(fmt.Errorf("churn worker %d create client: %w", workerID, err))
+						return
+					}
+				}
+
+				// Subscribe, optionally read one event, then immediately
+				// close — this is the core churn action.
+				churnStream, closeChurnStream, err := streamClient.GetTransactionsStream(stressCtx)
+				if err != nil {
+					if stressCtx.Err() != nil {
+						return
+					}
+					if isRetryableChurnError(err) {
+						retryableSubscribeErrors.Add(1)
+						streamClient.Close()
+						streamClient = nil
+						time.Sleep(churnWorkerBackoff(workerID))
+						continue
+					}
+					reportErr(fmt.Errorf("churn worker %d subscribe: %w", workerID, err))
+					return
+				}
+
+				select {
+				case <-stressCtx.Done():
+				case <-time.After(10 * time.Millisecond):
+				case <-churnStream:
+				}
+
+				closeChurnStream()
+				time.Sleep(churnWorkerBackoff(workerID))
+			}
+		}(i)
+	}
+
+	// Produce a steady stream of offchain transactions while the churn
+	// workers are running. Without real tx events flowing through the
+	// fanout, the sentinel would have nothing to observe and the test
+	// would be meaningless.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(txProducerDelay)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-stressCtx.Done():
+				return
+			case <-ticker.C:
+				_, receiverOffchainAddr, _, err := receiver.Receive(stressCtx)
+				if err != nil {
+					reportErr(fmt.Errorf("tx producer receive address: %w", err))
+					return
+				}
+
+				txid, err := sender.SendOffChain(stressCtx, []types.Receiver{{
+					To:     receiverOffchainAddr,
+					Amount: sendAmount,
+				}})
+				if err != nil {
+					if stressCtx.Err() != nil {
+						return
+					}
+					reportErr(fmt.Errorf("tx producer send offchain: %w", err))
+					return
+				}
+				if txid == "" {
+					reportErr(fmt.Errorf("tx producer got empty txid"))
+					return
+				}
+				producedTxEvents.Add(1)
+			}
+		}
+	}()
+
+	// Wait for the stress window to expire, then drain all goroutines and
+	// close the sentinel stream.
+	<-stressCtx.Done()
+	wg.Wait()
+	closeSentinelStream()
+	<-sentinelDone
+
+	// Drain the error channel — any non-retryable error from a churn
+	// worker or the tx producer is a test failure.
+	var firstRunErr error
+	select {
+	case runErr := <-errCh:
+		firstRunErr = runErr
+	default:
+	}
+
+	// The producer must have submitted events and the sentinel must have
+	// observed them. If the server panicked, the sentinel's gRPC stream
+	// would have broken and sentinelTxEvents would be 0.
+	require.GreaterOrEqual(
+		t,
+		producedTxEvents.Load(),
+		int64(minimumTxEvents),
+		"producer did not submit tx events during churn",
+	)
+
+	require.GreaterOrEqual(
+		t,
+		sentinelTxEvents.Load(),
+		int64(minimumTxEvents),
+		"sentinel subscription did not observe tx events during churn",
+	)
+
+	require.NoError(t, firstRunErr)
+
+	for {
+		select {
+		case runErr := <-errCh:
+			require.NoError(t, runErr)
+		default:
+			return
+		}
+	}
+}
+
+// TestEventListenerChurn is the event-stream counterpart of TestTxListenerChurn.
+// Instead of offchain transactions, it uses settlement rounds to generate
+// events. The structure mirrors the tx test:
+//
+//  1. A sentinel event stream stays open for the full duration and counts
+//     round-lifecycle events. A broken fanout will sever this stream.
+//  2. N churn workers rapidly open/close event streams to stress the
+//     subscribe/unsubscribe path.
+//  3. A round producer drives Settle+NotifyIncomingFunds across multiple
+//     participants to generate a steady flow of events.
+//
+// The test passes when at least one round completes, the sentinel observes
+// events, and no sentinel errors are recorded.
+func TestEventListenerChurn(t *testing.T) {
+	const (
+		testDuration      = 40 * time.Second
+		churnWorkers      = 16
+		participantsCount = 4
+		producerLoopDelay = 250 * time.Millisecond
+		roundTimeout      = 20 * time.Second
+		minimumRounds     = 1
+	)
+
+	ctx := t.Context()
+
+	// Set up multiple funded participants so that settlement rounds
+	// produce real on-chain activity and event-stream events.
+	sentinelClient, eventTransport := setupArkSDKWithTransport(t)
+	defer sentinelClient.Stop()
+	defer eventTransport.Close()
+
+	participants := make([]arksdk.ArkClient, 0, participantsCount)
+	offchainAddrs := make([]string, 0, participantsCount)
+
+	participants = append(participants, sentinelClient)
+	for i := 1; i < participantsCount; i++ {
+		participants = append(participants, setupArkSDK(t))
+	}
+
+	for _, participant := range participants {
+		_, offchainAddr, _, err := participant.Receive(ctx)
+		require.NoError(t, err)
+		offchainAddrs = append(offchainAddrs, offchainAddr)
+		faucetOffchain(t, participant, 0.001)
+	}
+
+	stressCtx, cancel := context.WithTimeout(ctx, testDuration)
+	defer cancel()
+
+	// Open the sentinel event stream. Like TestTxListenerChurn's sentinel,
+	// this stays open for the full stress window. A server panic during
+	// fanout will break this stream and cause sentinelErrors > 0.
+	sentinelStream, closeSentinelStream, err := eventTransport.GetEventStream(stressCtx, nil)
+	require.NoError(t, err)
+
+	var sentinelEvents atomic.Int64
+	var sentinelErrors atomic.Int64
+	var producedRounds atomic.Int64
+	var retryableSubscribeErrors atomic.Int64
+	sentinelDone := make(chan struct{})
+
+	// Count events on the sentinel stream. Any stream error is recorded
+	// and the goroutine exits early so the assertion catches it.
+	go func() {
+		defer close(sentinelDone)
+		for {
+			select {
+			case <-stressCtx.Done():
+				return
+			case ev, ok := <-sentinelStream:
+				if !ok {
+					return
+				}
+				if ev.Err != nil {
+					sentinelErrors.Add(1)
+					return
+				}
+				if ev.Event == nil {
+					continue
+				}
+				sentinelEvents.Add(1)
+			}
+		}
+	}()
+
+	var wg sync.WaitGroup
+
+	// Launch churn workers against the event stream. Same pattern as
+	// TestTxListenerChurn's churn workers but targeting GetEventStream
+	// instead of GetTransactionsStream. Each worker uses a short-lived
+	// context (3s) per subscription so the server sees a mix of client-
+	// initiated closes and context deadline cancellations.
+	wg.Add(churnWorkers)
+	for i := range churnWorkers {
+		go func(workerID int) {
+			defer wg.Done()
+
+			streamClient, err := grpcclient.NewClient(serverUrl)
+			if err != nil {
+				if stressCtx.Err() != nil {
+					return
+				}
+				if isRetryableChurnError(err) {
+					retryableSubscribeErrors.Add(1)
+					time.Sleep(churnWorkerBackoff(workerID))
+				} else {
+					return
+				}
+			}
+			defer func() {
+				if streamClient != nil {
+					streamClient.Close()
+				}
+			}()
+
+			for {
+				select {
+				case <-stressCtx.Done():
+					return
+				default:
+				}
+
+				// Reconnect after a transient error tore down the client.
+				if streamClient == nil {
+					streamClient, err = grpcclient.NewClient(serverUrl)
+					if err != nil {
+						if stressCtx.Err() != nil {
+							return
+						}
+						if isRetryableChurnError(err) {
+							retryableSubscribeErrors.Add(1)
+							time.Sleep(churnWorkerBackoff(workerID))
+							continue
+						}
+						return
+					}
+				}
+
+				// Subscribe with a short deadline, optionally read one
+				// event, then tear down — the core churn action.
+				churnCtx, cancelChurn := context.WithTimeout(stressCtx, 3*time.Second)
+				churnStream, closeChurnStream, err := streamClient.GetEventStream(churnCtx, nil)
+				if err != nil {
+					cancelChurn()
+					if stressCtx.Err() != nil {
+						return
+					}
+					if isRetryableChurnError(err) {
+						retryableSubscribeErrors.Add(1)
+						streamClient.Close()
+						streamClient = nil
+						time.Sleep(churnWorkerBackoff(workerID))
+						continue
+					}
+					continue
+				}
+
+				select {
+				case <-stressCtx.Done():
+				case <-time.After(10 * time.Millisecond):
+				case <-churnStream:
+				}
+
+				closeChurnStream()
+				cancelChurn()
+				time.Sleep(churnWorkerBackoff(workerID))
+			}
+		}(i)
+	}
+
+	// Drive settlement rounds in a loop. Each iteration asks all
+	// participants to Settle and NotifyIncomingFunds concurrently. A round
+	// is counted as successful only if every participant settles with the
+	// same commitment txid. Failed rounds (timeouts, mismatched txids) are
+	// silently skipped — we only need at least one to succeed to prove the
+	// event stream delivered events under churn.
+	runRoundProducer := func() {
+		defer wg.Done()
+
+		for {
+			if stressCtx.Err() != nil {
+				return
+			}
+
+			roundCtx, cancelRound := context.WithTimeout(stressCtx, roundTimeout)
+			notifyErrors := make([]error, len(participants))
+			settleErrors := make([]error, len(participants))
+			commitmentTxids := make([]string, len(participants))
+
+			// Kick off Settle + NotifyIncomingFunds for every participant
+			// in parallel — this is what triggers event-stream events.
+			roundWG := &sync.WaitGroup{}
+			roundWG.Add(len(participants) * 2)
+			for i := range participants {
+				idx := i
+				go func() {
+					defer roundWG.Done()
+					_, notifyErrors[idx] = participants[idx].NotifyIncomingFunds(
+						roundCtx,
+						offchainAddrs[idx],
+					)
+				}()
+				go func() {
+					defer roundWG.Done()
+					commitmentTxids[idx], settleErrors[idx] = participants[idx].Settle(roundCtx)
+				}()
+			}
+
+			roundDone := make(chan struct{})
+			go func() {
+				roundWG.Wait()
+				close(roundDone)
+			}()
+
+			select {
+			case <-roundDone:
+			case <-time.After(roundTimeout + 2*time.Second):
+				cancelRound()
+				continue
+			}
+			cancelRound()
+
+			if stressCtx.Err() != nil {
+				return
+			}
+
+			for _, notifyErr := range notifyErrors {
+				if notifyErr != nil {
+					continue
+				}
+			}
+
+			// Validate the round: all participants must have settled with
+			// the same commitment txid.
+			var expectedCommitmentTxid string
+			roundOK := true
+			for i, settleErr := range settleErrors {
+				if settleErr != nil {
+					roundOK = false
+					break
+				}
+				if commitmentTxids[i] == "" {
+					roundOK = false
+					break
+				}
+				if expectedCommitmentTxid == "" {
+					expectedCommitmentTxid = commitmentTxids[i]
+					continue
+				}
+				if commitmentTxids[i] != expectedCommitmentTxid {
+					roundOK = false
+					break
+				}
+			}
+
+			if roundOK {
+				producedRounds.Add(1)
+			}
+
+			select {
+			case <-stressCtx.Done():
+				return
+			case <-time.After(producerLoopDelay):
+			}
+		}
+	}
+	wg.Add(1)
+	go runRoundProducer()
+
+	// Wait for the stress window to expire, then drain all goroutines and
+	// close the sentinel stream.
+	<-stressCtx.Done()
+	wg.Wait()
+	closeSentinelStream()
+	<-sentinelDone
+
+	// At least one round must have completed, the sentinel must have
+	// observed events, and the sentinel stream must not have errored. If
+	// the server panicked during fanout, the sentinel's gRPC connection
+	// would have broken and sentinelErrors would be > 0.
+	require.GreaterOrEqual(
+		t,
+		producedRounds.Load(),
+		int64(minimumRounds),
+		"round producer did not complete rounds during churn",
+	)
+
+	require.Greater(
+		t,
+		sentinelEvents.Load(),
+		int64(0),
+		"sentinel event stream did not observe events during churn",
+	)
+
+	require.Equal(
+		t,
+		int64(0),
+		sentinelErrors.Load(),
+		"sentinel event stream returned errors during churn",
+	)
 }
