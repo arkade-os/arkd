@@ -113,6 +113,26 @@
                 "expectedError": "invalid asset outputs format"
             },
             {
+                "name": "zero amount",
+                "serializedHex": "0101050000",
+                "expectedError": "asset output amount must be greater than 0"
+            },
+            {
+                "name": "unspecified type",
+                "serializedHex": "0100050000",
+                "expectedError": "asset output type unspecified"
+            },
+            {
+                "name": "unknown type",
+                "serializedHex": "0103050000",
+                "expectedError": "asset output type unknown"
+            },
+            {
+                "name": "invalid vout length",
+                "serializedHex": "010105",
+                "expectedError": "invalid asset output vout length"
+            },
+            {
                 "name": "duplicated outputs",
                 "serializedHex": "0201000090030100008827",
                 "expectedError": "all outputs must have unique vout"

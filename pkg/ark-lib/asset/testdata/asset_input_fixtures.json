@@ -196,6 +196,21 @@
                 "expectedError": "invalid asset inputs format"
             },
             {
+                "name": "unspecified type",
+                "serializedHex": "010005000a",
+                "expectedError": "asset input type unspecified"
+            },
+            {
+                "name": "unknown type",
+                "serializedHex": "010305000a",
+                "expectedError": "asset input type unknown"
+            },
+            {
+                "name": "invalid txid length",
+                "serializedHex": "010205000a",
+                "expectedError": "invalid asset input txid length"
+            },
+            {
                 "name": "mixed input types",
                 "serializedHex": "0202aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa010090030100008827",
                 "expectedError": "all inputs must be of the same type"

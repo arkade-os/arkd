@@ -131,6 +131,11 @@
                 "expectedError": "missing metadata"
             },
             {
+                "name": "invalid format",
+                "serializedHex": "invalid",
+                "expectedError": "invalid metadata format"
+            },
+            {
                 "name": "invalid length",
                 "serializedHex": "013101",
                 "expectedError": "invalid metadata length"

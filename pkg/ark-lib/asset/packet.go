@@ -104,6 +104,10 @@ func (p Packet) TxOut() (*wire.TxOut, error) {
 
 // Serialize encodes the packet as a complete OP_RETURN script (magic + marker + groups).
 func (p Packet) Serialize() ([]byte, error) {
+	if len(p) <= 0 {
+		return nil, nil
+	}
+
 	w := bytes.NewBuffer(nil)
 	if err := serializeSlice(w, ArkadeMagic); err != nil {
 		return nil, fmt.Errorf("failed to serialize magic prefix: %w", err)
