@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	arksdk "github.com/arkade-os/go-sdk"
 	"github.com/arkade-os/go-sdk/store"
 	"github.com/arkade-os/go-sdk/types"
@@ -44,6 +46,10 @@ func main() {
 		&notesCommand,
 		&recoverCommand,
 		&versionCommand,
+		&issueCommand,
+		&reissueCommand,
+		&burnCommand,
+		&vtxosCommand,
 	)
 	app.Flags = []cli.Flag{datadirFlag, verboseFlag}
 	app.Before = func(ctx *cli.Context) error {
@@ -104,11 +110,15 @@ var (
 		Name:  "amount",
 		Usage: "amount to send in sats",
 	}
-	zeroFeesFlag = &cli.BoolFlag{
-		Name:    "zero-fees",
-		Aliases: []string{"z"},
-		Usage:   "UNSAFE: allow sending offchain transactions with zero fees, disable unilateral exit",
-		Value:   false,
+	controlAssetAmountFlag = &cli.Uint64Flag{
+		Name: "control-asset-amount",
+		Usage: "amount of the control asset to be issued in sats " +
+			"(mutually exclusive with --control-asset-id)",
+	}
+	controlAssetIdFlag = &cli.StringFlag{
+		Name: "control-asset-id",
+		Usage: "id of the existing asset that controls the one to be issued " +
+			"(mutually exclusive with --control-asset-amount)",
 	}
 	enableExpiryCoinselectFlag = &cli.BoolFlag{
 		Name:  "enable-expiry-coinselect",
@@ -131,12 +141,6 @@ var (
 		Aliases: []string{"n"},
 		Usage:   "notes to redeem",
 	}
-	restFlag = &cli.BoolFlag{
-		Name:        "rest",
-		Usage:       "use REST client instead of gRPC",
-		Value:       false,
-		DefaultText: "false",
-	}
 	completeFlag = &cli.BoolFlag{
 		Name:        "complete",
 		Usage:       "complete the unilateral exit after timelock expired",
@@ -149,6 +153,19 @@ var (
 		Value:       false,
 		DefaultText: "false",
 	}
+	metadataFlag = &cli.StringSliceFlag{
+		Name:    "metadata",
+		Aliases: []string{"m"},
+		Usage:   "metadata to add to the asset",
+	}
+	assetIdFlag = &cli.StringFlag{
+		Name:  "asset-id",
+		Usage: "asset id to send, burn or reissue",
+	}
+	spentFlag = &cli.BoolFlag{
+		Name:  "spent",
+		Usage: "show spent vtxos instead of spendable",
+	}
 )
 
 var (
@@ -158,7 +175,7 @@ var (
 		Action: func(ctx *cli.Context) error {
 			return initArkSdk(ctx)
 		},
-		Flags: []cli.Flag{passwordFlag, privateKeyFlag, urlFlag, explorerFlag, restFlag},
+		Flags: []cli.Flag{passwordFlag, privateKeyFlag, urlFlag, explorerFlag},
 	}
 	configCommand = cli.Command{
 		Name:  "config",
@@ -209,8 +226,8 @@ var (
 			toFlag,
 			amountFlag,
 			enableExpiryCoinselectFlag,
+			assetIdFlag,
 			passwordFlag,
-			zeroFeesFlag,
 		},
 	}
 	redeemCommand = cli.Command{
@@ -229,7 +246,6 @@ var (
 			return redeemNotes(ctx)
 		},
 	}
-
 	recoverCommand = cli.Command{
 		Name:  "recover",
 		Usage: "Recover unspent and swept vtxos",
@@ -238,7 +254,40 @@ var (
 			return recoverVtxos(ctx)
 		},
 	}
-
+	issueCommand = cli.Command{
+		Name:  "issue",
+		Usage: "Issue a new asset",
+		Flags: []cli.Flag{
+			amountFlag, metadataFlag, passwordFlag, controlAssetAmountFlag, controlAssetIdFlag,
+		},
+		Action: func(ctx *cli.Context) error {
+			return issue(ctx)
+		},
+	}
+	reissueCommand = cli.Command{
+		Name:  "reissue",
+		Usage: "Reissue more of an existing asset",
+		Flags: []cli.Flag{assetIdFlag, amountFlag, passwordFlag},
+		Action: func(ctx *cli.Context) error {
+			return reissue(ctx)
+		},
+	}
+	burnCommand = cli.Command{
+		Name:  "burn",
+		Usage: "Burn an asset",
+		Flags: []cli.Flag{amountFlag, assetIdFlag, passwordFlag},
+		Action: func(ctx *cli.Context) error {
+			return burn(ctx)
+		},
+	}
+	vtxosCommand = cli.Command{
+		Name:  "vtxos",
+		Usage: "List vtxos (spendable by default, or spent with --spent flag)",
+		Flags: []cli.Flag{spentFlag},
+		Action: func(ctx *cli.Context) error {
+			return listVtxos(ctx)
+		},
+	}
 	versionCommand = cli.Command{
 		Name:  "version",
 		Usage: "Display version information",
@@ -255,14 +304,9 @@ func initArkSdk(ctx *cli.Context) error {
 		return err
 	}
 
-	clientType := arksdk.GrpcClient
-	if ctx.Bool(restFlag.Name) {
-		clientType = arksdk.RestClient
-	}
-
 	return arkSdkClient.Init(
 		ctx.Context, arksdk.InitArgs{
-			ClientType:  clientType,
+			ClientType:  arksdk.GrpcClient,
 			WalletType:  arksdk.SingleKeyWallet,
 			ServerUrl:   ctx.String(urlFlag.Name),
 			Seed:        ctx.String(privateKeyFlag.Name),
@@ -278,7 +322,7 @@ func config(ctx *cli.Context) error {
 		return err
 	}
 
-	cfg := map[string]interface{}{
+	cfg := map[string]any{
 		"server_url":            cfgData.ServerUrl,
 		"signer_pubkey":         hex.EncodeToString(cfgData.SignerPubKey.SerializeCompressed()),
 		"wallet_type":           cfgData.WalletType,
@@ -351,20 +395,34 @@ func send(ctx *cli.Context) error {
 	receiversJSON := ctx.String(receiversFlag.Name)
 	to := ctx.String(toFlag.Name)
 	amount := ctx.Uint64(amountFlag.Name)
-	zeroFees := ctx.Bool(zeroFeesFlag.Name)
-	if receiversJSON == "" && to == "" && amount == 0 {
+	assetId := ctx.String(assetIdFlag.Name)
+	if receiversJSON == "" && to == "" && amount == 0 && assetId == "" {
 		return fmt.Errorf("missing destination, use --to and --amount or --receivers")
 	}
 
 	var receivers []types.Receiver
 	var err error
 	if receiversJSON != "" {
+		// set of receivers from JSON
 		receivers, err = parseReceivers(receiversJSON)
 		if err != nil {
 			return err
 		}
 	} else {
-		receivers = []types.Receiver{{To: to, Amount: amount}}
+		// if assetId is provided we send dust+1 with the asset
+		if len(assetId) > 0 {
+			cfg, err := arkSdkClient.GetConfigData(ctx.Context)
+			if err != nil {
+				return err
+			}
+			receivers = []types.Receiver{{
+				To: to, Amount: cfg.Dust + 1,
+				Assets: []types.Asset{{AssetId: assetId, Amount: amount}},
+			}}
+		} else {
+			// otherwise, we treat the amount as a bitcoin amount
+			receivers = []types.Receiver{{To: to, Amount: amount}}
+		}
 	}
 
 	password, err := readPassword(ctx)
@@ -375,7 +433,7 @@ func send(ctx *cli.Context) error {
 		return err
 	}
 
-	return sendCovenantLess(ctx, receivers, zeroFees)
+	return sendBitcoin(ctx, receivers)
 }
 
 func balance(ctx *cli.Context) error {
@@ -441,7 +499,7 @@ func recoverVtxos(ctx *cli.Context) error {
 		return err
 	}
 
-	txid, err := arkSdkClient.Settle(ctx.Context, arksdk.WithRecoverableVtxos)
+	txid, err := arkSdkClient.Settle(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -468,6 +526,142 @@ func redeemNotes(ctx *cli.Context) error {
 	return printJSON(map[string]interface{}{
 		"txid": txID,
 	})
+}
+
+func issue(ctx *cli.Context) error {
+	amount := ctx.Uint64(amountFlag.Name)
+	controlAssetAmount := ctx.Uint64(controlAssetAmountFlag.Name)
+	controlAssetId := ctx.String(controlAssetIdFlag.Name)
+	metadata := ctx.StringSlice(metadataFlag.Name)
+
+	if amount == 0 {
+		return errors.New("amount must be greater than zero")
+	}
+	if controlAssetAmount == 0 && controlAssetId == "" {
+		return errors.New("missing control-asset-amount or control-asset-id")
+	}
+	if controlAssetAmount > 0 && controlAssetId != "" {
+		return errors.New("only one of control-asset-amount and control-asset-id can be set")
+	}
+
+	metadataList := make([]asset.Metadata, 0)
+	for _, meta := range metadata {
+		k, v, ok := strings.Cut(meta, "=")
+		if !ok {
+			return fmt.Errorf("invalid meta %s, expected key=value", meta)
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" {
+			return fmt.Errorf("empty key in %s", meta)
+		}
+		if v == "" {
+			return fmt.Errorf("empty value in %s", meta)
+		}
+		metadataList = append(metadataList, asset.Metadata{
+			Key:   []byte(k),
+			Value: []byte(v),
+		})
+	}
+
+	password, err := readPassword(ctx)
+	if err != nil {
+		return err
+	}
+	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+		return err
+	}
+
+	controlAssetPolicy := types.ControlAsset(types.ExistingControlAsset{ID: controlAssetId})
+	if controlAssetAmount > 0 {
+		controlAssetPolicy = types.NewControlAsset{Amount: controlAssetAmount}
+	}
+
+	arkTxid, assetIds, err := arkSdkClient.IssueAsset(
+		ctx.Context, amount, controlAssetPolicy, metadataList,
+	)
+	if err != nil {
+		return err
+	}
+
+	resControlAssetId := controlAssetId
+	assetId := assetIds[0].String()
+	if len(assetIds) == 2 {
+		resControlAssetId = assetIds[0].String()
+		assetId = assetIds[1].String()
+	}
+	return printJSON(map[string]any{
+		"txid":             arkTxid,
+		"asset_id":         assetId,
+		"control_asset_id": resControlAssetId,
+	})
+}
+
+func reissue(ctx *cli.Context) error {
+	assetId := ctx.String(assetIdFlag.Name)
+	amount := ctx.Uint64(amountFlag.Name)
+
+	if assetId == "" {
+		return errors.New("asset-id is required")
+	}
+	if amount == 0 {
+		return errors.New("amount must be greater than zero")
+	}
+
+	password, err := readPassword(ctx)
+	if err != nil {
+		return err
+	}
+	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+		return err
+	}
+
+	arkTxid, err := arkSdkClient.ReissueAsset(ctx.Context, assetId, amount)
+	if err != nil {
+		return err
+	}
+	return printJSON(map[string]any{
+		"txid": arkTxid,
+	})
+}
+
+func burn(ctx *cli.Context) error {
+	amount := ctx.Uint64(amountFlag.Name)
+	assetId := ctx.String(assetIdFlag.Name)
+
+	if assetId == "" {
+		return errors.New("asset-id is required")
+	}
+	if amount == 0 {
+		return errors.New("amount must be greater than zero")
+	}
+
+	password, err := readPassword(ctx)
+	if err != nil {
+		return err
+	}
+	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+		return err
+	}
+
+	arkTxid, err := arkSdkClient.BurnAsset(ctx.Context, assetId, amount)
+	if err != nil {
+		return err
+	}
+	return printJSON(map[string]any{
+		"txid": arkTxid,
+	})
+}
+
+func listVtxos(ctx *cli.Context) error {
+	spendable, spent, err := arkSdkClient.ListVtxos(ctx.Context)
+	if err != nil {
+		return err
+	}
+	if ctx.Bool(spentFlag.Name) {
+		return printJSON(spent)
+	}
+	return printJSON(spendable)
 }
 
 func getArkSdkClient(ctx *cli.Context) (arksdk.ArkClient, error) {
@@ -514,22 +708,40 @@ func loadOrCreateClient(
 	return client, err
 }
 
+type receiverJSON struct {
+	To     string      `json:"to"`
+	Amount uint64      `json:"amount"`
+	Assets []assetJSON `json:"assets"`
+}
+
+type assetJSON struct {
+	AssetID string `json:"asset_id"`
+	Amount  uint64 `json:"amount"`
+}
+
 func parseReceivers(receveirsJSON string) ([]types.Receiver, error) {
-	list := make([]map[string]interface{}, 0)
+	list := make([]receiverJSON, 0)
 	if err := json.Unmarshal([]byte(receveirsJSON), &list); err != nil {
 		return nil, err
 	}
 
 	receivers := make([]types.Receiver, 0, len(list))
 	for _, v := range list {
+		assets := make([]types.Asset, 0, len(v.Assets))
+		for _, asset := range v.Assets {
+			assets = append(assets, types.Asset{
+				AssetId: asset.AssetID, Amount: asset.Amount,
+			})
+		}
+
 		receivers = append(receivers, types.Receiver{
-			To: v["to"].(string), Amount: uint64(v["amount"].(float64)),
+			To: v.To, Amount: v.Amount, Assets: assets,
 		})
 	}
 	return receivers, nil
 }
 
-func sendCovenantLess(ctx *cli.Context, receivers []types.Receiver, withZeroFees bool) error {
+func sendBitcoin(ctx *cli.Context, receivers []types.Receiver) error {
 	var onchainReceivers, offchainReceivers []types.Receiver
 
 	for _, receiver := range receivers {
@@ -540,7 +752,6 @@ func sendCovenantLess(ctx *cli.Context, receivers []types.Receiver, withZeroFees
 		}
 	}
 
-	computeExpiration := ctx.Bool(enableExpiryCoinselectFlag.Name)
 	if len(onchainReceivers) > 0 {
 		txid, err := arkSdkClient.CollaborativeExit(
 			ctx.Context, onchainReceivers[0].To, onchainReceivers[0].Amount,
@@ -551,7 +762,7 @@ func sendCovenantLess(ctx *cli.Context, receivers []types.Receiver, withZeroFees
 		return printJSON(map[string]string{"txid": txid})
 	}
 
-	arkTxid, err := arkSdkClient.SendOffChain(ctx.Context, computeExpiration, offchainReceivers)
+	arkTxid, err := arkSdkClient.SendOffChain(ctx.Context, offchainReceivers)
 	if err != nil {
 		return err
 	}

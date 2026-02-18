@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/arkd-wallet
 
-go 1.25.5
+go 1.25.7
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 
@@ -31,7 +31,7 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.14.0
 	go.opentelemetry.io/otel/sdk/metric v1.38.0
 	golang.org/x/net v0.43.0
-	google.golang.org/grpc v1.75.0
+	google.golang.org/grpc v1.76.0
 )
 
 require (

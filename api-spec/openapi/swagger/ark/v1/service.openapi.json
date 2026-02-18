@@ -133,7 +133,7 @@
         "tags": [
           "ArkService"
         ],
-        "description": "GetEventStream is a server-side streaming RPC that allows clients to receive a stream of\nevents related to batch processing.\nClients should use this stream as soon as they are ready to join a batch and can listen for\nvarious events such as batch start, batch finalization, and other related activities.\nThe server pushes these events to the client in real-time as soon as its ready to move to the\nnext phase of the batch processing.",
+        "description": "GetEventStream is a server-side streaming RPC that allows clients to receive a stream of\nevents related to batch processing.\nClients should use this stream as soon as they are ready to join a batch and can listen for\nvarious events such as batch start, batch finalization, and other related activities.\nThe server pushes these events to the client in real-time as soon as its ready to move to the\nnext phase of the batch processing. Upon creation of the stream, the event StreamStartedEvent\nis immediately sent, which passes along the stream id, to be used by the client for future\ncalls to UpdateStreamTopics.",
         "operationId": "ArkService_GetEventStream",
         "parameters": [
           {
@@ -337,6 +337,47 @@
         }
       }
     },
+    "/v1/batch/updateTopics": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,\nremove, or specify a list of topics, providing them control over the events received on the\nevent stream.",
+        "operationId": "ArkService_UpdateStreamTopics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStreamTopicsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStreamTopicsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/info": {
       "get": {
         "tags": [
@@ -351,6 +392,45 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GetInfoResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/intent": {
+      "get": {
+        "tags": [
+          "ArkService"
+        ],
+        "operationId": "ArkService_GetIntent",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIntentResponse"
                 }
               }
             }
@@ -535,6 +615,19 @@
           }
         }
       },
+      "Asset": {
+        "title": "Asset",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "assetId": {
+            "type": "string"
+          }
+        }
+      },
       "BatchFailedEvent": {
         "title": "BatchFailedEvent",
         "type": "object",
@@ -711,6 +804,9 @@
           "heartbeat": {
             "$ref": "#/components/schemas/Heartbeat"
           },
+          "streamStarted": {
+            "$ref": "#/components/schemas/StreamStartedEvent"
+          },
           "treeNonces": {
             "$ref": "#/components/schemas/TreeNoncesEvent"
           },
@@ -811,6 +907,24 @@
           }
         }
       },
+      "GetIntentRequest": {
+        "title": "GetIntentRequest",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "GetIntentResponse": {
+        "title": "GetIntentResponse",
+        "type": "object",
+        "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
+          }
+        }
+      },
       "GetPendingTxRequest": {
         "title": "GetPendingTxRequest",
         "type": "object",
@@ -885,6 +999,24 @@
           }
         }
       },
+      "ModifyTopics": {
+        "title": "ModifyTopics",
+        "type": "object",
+        "properties": {
+          "addTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removeTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "Outpoint": {
         "title": "Outpoint",
         "type": "object",
@@ -895,6 +1027,18 @@
           "vout": {
             "type": "integer",
             "format": "uint32"
+          }
+        }
+      },
+      "OverwriteTopics": {
+        "title": "OverwriteTopics",
+        "type": "object",
+        "properties": {
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -975,6 +1119,15 @@
             }
           },
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "StreamStartedEvent": {
+        "title": "StreamStartedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
             "type": "string"
           }
         }
@@ -1235,6 +1388,46 @@
           }
         }
       },
+      "UpdateStreamTopicsRequest": {
+        "title": "UpdateStreamTopicsRequest",
+        "type": "object",
+        "description": "Adding and removing topics can both be supplied in the same request,\nallowing for simultaneous changes.\noverwrite_topics will take precedence, and if set, then the add/remove\ntopics are ignored. The stream_id is required.",
+        "properties": {
+          "modify": {
+            "$ref": "#/components/schemas/ModifyTopics"
+          },
+          "overwrite": {
+            "$ref": "#/components/schemas/OverwriteTopics"
+          },
+          "streamId": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateStreamTopicsResponse": {
+        "title": "UpdateStreamTopicsResponse",
+        "type": "object",
+        "properties": {
+          "allTopics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "topicsAdded": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "topicsRemoved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "Vtxo": {
         "title": "Vtxo",
         "type": "object",
@@ -1245,6 +1438,12 @@
           },
           "arkTxid": {
             "type": "string"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            }
           },
           "commitmentTxids": {
             "type": "array",

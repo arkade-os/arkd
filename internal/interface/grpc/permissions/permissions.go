@@ -140,6 +140,10 @@ func Whitelist() map[string][]bakery.Op {
 			Entity: EntityArk,
 			Action: "write",
 		}},
+		fmt.Sprintf("/%s/GetIntent", arkv1.ArkService_ServiceDesc.ServiceName): {{
+			Entity: EntityArk,
+			Action: "read",
+		}},
 		fmt.Sprintf("/%s/DeleteIntent", arkv1.ArkService_ServiceDesc.ServiceName): {{
 			Entity: EntityArk,
 			Action: "write",
@@ -155,6 +159,10 @@ func Whitelist() map[string][]bakery.Op {
 		fmt.Sprintf("/%s/GetEventStream", arkv1.ArkService_ServiceDesc.ServiceName): {{
 			Entity: EntityArk,
 			Action: "read",
+		}},
+		fmt.Sprintf("/%s/UpdateStreamTopics", arkv1.ArkService_ServiceDesc.ServiceName): {{
+			Entity: EntityArk,
+			Action: "write",
 		}},
 		fmt.Sprintf("/%s/GetInfo", arkv1.ArkService_ServiceDesc.ServiceName): {{
 			Entity: EntityArk,
@@ -244,6 +252,10 @@ func Whitelist() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/GetSubscription", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+			Entity: EntityIndexer,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetAsset", arkv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},

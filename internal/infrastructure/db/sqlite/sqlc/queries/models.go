@@ -8,6 +8,21 @@ import (
 	"database/sql"
 )
 
+type Asset struct {
+	ID             string
+	IsImmutable    bool
+	MetadataHash   sql.NullString
+	Metadata       sql.NullString
+	ControlAssetID sql.NullString
+}
+
+type AssetProjection struct {
+	AssetID string
+	Txid    string
+	Vout    int64
+	Amount  string
+}
+
 type CheckpointTx struct {
 	Txid                 string
 	Tx                   string
@@ -33,6 +48,7 @@ type Intent struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type IntentFee struct {
@@ -62,10 +78,13 @@ type IntentWithInputsVw struct {
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
 	Commitments    interface{}
+	AssetID        sql.NullString
+	AssetAmount    sql.NullString
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	IntentTxid     sql.NullString
 }
 
 type IntentWithReceiversVw struct {
@@ -77,6 +96,7 @@ type IntentWithReceiversVw struct {
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	Txid           sql.NullString
 }
 
 type OffchainTx struct {
@@ -99,9 +119,9 @@ type OffchainTxVw struct {
 	StageCode            int64
 	CheckpointTxid       string
 	CheckpointTx         string
-	CommitmentTxid       string
-	IsRootCommitmentTxid bool
-	OffchainTxid         string
+	CommitmentTxid       sql.NullString
+	IsRootCommitmentTxid sql.NullBool
+	OffchainTxid         sql.NullString
 }
 
 type Receiver struct {
@@ -130,6 +150,7 @@ type RoundIntentsVw struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type RoundTxsVw struct {
@@ -197,7 +218,7 @@ type Vtxo struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
-	UpdatedAt      int64
+	UpdatedAt      sql.NullInt64
 }
 
 type VtxoCommitmentTxid struct {
@@ -222,6 +243,8 @@ type VtxoVw struct {
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
-	UpdatedAt      int64
+	UpdatedAt      sql.NullInt64
 	Commitments    interface{}
+	AssetID        string
+	AssetAmount    string
 }

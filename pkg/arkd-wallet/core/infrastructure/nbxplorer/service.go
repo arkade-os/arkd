@@ -44,11 +44,22 @@ type nbxplorer struct {
 	groupID string
 }
 
-func New(url string) (ports.Nbxplorer, error) {
-	url = strings.TrimSuffix(url, "/")
+func New(rawURL string) (ports.Nbxplorer, error) {
+	rawURL = strings.TrimSuffix(rawURL, "/")
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid nbxplorer URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("invalid nbxplorer URL scheme %q: only http and https are allowed", u.Scheme)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("invalid nbxplorer URL: missing host")
+	}
 
 	svc := &nbxplorer{
-		url:        url,
+		url:        rawURL,
 		httpClient: &http.Client{},
 		wsDialer:   websocket.Dialer{},
 		wsMutex:    sync.RWMutex{},
@@ -469,6 +480,7 @@ func (n *nbxplorer) broadcastSingleTransaction(ctx context.Context, txHex string
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Accept", "application/json")
 
+	// #nosec G704 -- base URL is validated in New()
 	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to make request: %w", err)
@@ -730,6 +742,7 @@ func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, bo
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
+	// #nosec G704 -- base URL is validated in New()
 	resp, err := n.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)

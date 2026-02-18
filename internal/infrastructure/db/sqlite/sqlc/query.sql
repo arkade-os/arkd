@@ -30,11 +30,12 @@ ON CONFLICT(txid) DO UPDATE SET
     children = EXCLUDED.children;
 
 -- name: UpsertIntent :exec
-INSERT INTO intent (id, round_id, proof, message) VALUES (@id, @round_id, @proof, @message)
+INSERT INTO intent (id, round_id, proof, message, txid) VALUES (@id, @round_id, @proof, @message, @txid)
 ON CONFLICT(id) DO UPDATE SET
     round_id = EXCLUDED.round_id,
     proof = EXCLUDED.proof,
-    message = EXCLUDED.message;
+    message = EXCLUDED.message,
+    txid = EXCLUDED.txid;
 
 -- name: UpsertReceiver :exec
 INSERT INTO receiver (intent_id, pubkey, onchain_address, amount)
@@ -247,7 +248,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 -- name: SelectNotUnrolledVtxosWithPubkey :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND pubkey = @pubkey;
 
--- name: SelectVtxo :one
+-- name: SelectVtxo :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectAllVtxos :many
@@ -274,7 +275,7 @@ WHERE swept = true
   AND spent = false;
 
 -- name: SelectOffchainTx :many
-SELECT  sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
 
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
@@ -339,7 +340,7 @@ WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
     AND v.updated_at >= :after
     AND (CAST(:before AS INTEGER) = 0 OR v.updated_at <= CAST(:before AS INTEGER));
 
--- name: SelectPendingSpentVtxo :one
+-- name: SelectPendingSpentVtxo :many
 SELECT v.*
 FROM vtxo_vw v
 WHERE v.txid = @txid AND v.vout = @vout
@@ -422,3 +423,28 @@ INSERT INTO intent_fees (
   onchain_output_fee_program
 )
 VALUES ('', '', '', '');
+
+-- name: SelectIntentByTxid :one
+SELECT id, txid, proof, message FROM intent
+WHERE txid = @txid;
+
+-- name: InsertAsset :exec
+INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
+VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
+
+-- name: InsertVtxoAssetProjection :exec
+INSERT INTO asset_projection (asset_id, txid, vout, amount)
+VALUES (@asset_id, @txid, @vout, @amount);
+
+-- name: SelectAssetsByIds :many
+SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));
+
+-- name: SelectAssetAmounts :many
+SELECT v.asset_amount FROM vtxo_vw v
+WHERE v.asset_id = ? AND v.spent = false AND v.asset_amount > 0;
+
+-- name: SelectControlAssetByID :one
+SELECT control_asset_id FROM asset WHERE id = ?;
+
+-- name: SelectAssetExists :one
+SELECT 1 FROM asset WHERE id = ? LIMIT 1;

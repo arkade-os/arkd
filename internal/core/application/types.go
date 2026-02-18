@@ -7,6 +7,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/errors"
@@ -55,9 +56,12 @@ type Service interface {
 		proof intent.Proof,
 		message intent.DeleteMessage,
 	) errors.Error
-
 	// TODO: remove when detaching the indexer svc.
 	GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent
+	GetIntentByTxid(
+		ctx context.Context,
+		txid string,
+	) (*domain.Intent, errors.Error)
 }
 
 type ServiceInfo struct {
@@ -119,6 +123,15 @@ type TransactionEvent struct {
 	CheckpointTxs  map[string]TxData
 }
 
+type TeleportAsset struct {
+	AssetID        string
+	Amount         uint64
+	AnchorOutpoint domain.Outpoint
+	OutputVout     uint32
+	CreatedAt      int64
+	ExpiresAt      int64
+}
+
 type VtxoChainResp struct {
 	Chain []ChainTx
 	Page  PageResp
@@ -170,6 +183,8 @@ type VirtualTxsResp struct {
 	Page PageResp
 }
 
+type Asset = domain.Asset
+
 type Outpoint = domain.Outpoint
 
 type TxType int
@@ -213,4 +228,9 @@ type boardingIntentInput struct {
 	locktime         *arklib.RelativeLocktime
 	locktimeDisabled bool
 	witnessUtxo      *wire.TxOut
+}
+
+type AssetInput struct {
+	asset.AssetInput
+	AssetId string
 }

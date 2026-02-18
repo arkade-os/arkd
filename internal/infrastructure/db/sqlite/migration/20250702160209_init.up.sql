@@ -95,10 +95,10 @@ CREATE TABLE IF NOT EXISTS market_hour (
    updated_at INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS fk_intent_round_id ON intent(round_id);
-CREATE INDEX IF NOT EXISTS fk_tx_round_id ON tx(round_id);
-CREATE INDEX IF NOT EXISTS fk_receiver_intent_id ON receiver(intent_id);
-CREATE INDEX IF NOT EXISTS fk_vtxo_intent_id ON vtxo(intent_id);
+CREATE INDEX IF NOT EXISTS intent_round_id ON intent(round_id);
+CREATE INDEX IF NOT EXISTS tx_round_id ON tx(round_id);
+CREATE INDEX IF NOT EXISTS receiver_intent_id ON receiver(intent_id);
+CREATE INDEX IF NOT EXISTS vtxo_intent_id ON vtxo(intent_id);
 
 CREATE VIEW vtxo_vw AS
 SELECT v.*, COALESCE(group_concat(vc.commitment_txid), '') AS commitments
@@ -140,11 +140,11 @@ ON intent.id = vtxo_vw.intent_id;
 CREATE VIEW offchain_tx_vw AS
 SELECT
     offchain_tx.*,
-    checkpoint_tx.txid AS checkpoint_txid,
-    checkpoint_tx.tx AS checkpoint_tx,
+    COALESCE(checkpoint_tx.txid, '') AS checkpoint_txid,
+    COALESCE(checkpoint_tx.tx, '') AS checkpoint_tx,
     checkpoint_tx.commitment_txid,
     checkpoint_tx.is_root_commitment_txid,
     checkpoint_tx.offchain_txid
 FROM offchain_tx
-    INNER JOIN checkpoint_tx
+    LEFT JOIN checkpoint_tx
     ON offchain_tx.txid = checkpoint_tx.offchain_txid;

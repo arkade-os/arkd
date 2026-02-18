@@ -172,6 +172,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 						RoundID: sql.NullString{String: round.Id, Valid: true},
 						Proof:   sql.NullString{String: intent.Proof, Valid: true},
 						Message: sql.NullString{String: intent.Message, Valid: true},
+						Txid:    sql.NullString{String: intent.Txid, Valid: true},
 					},
 				); err != nil {
 					return fmt.Errorf("failed to upsert intent: %w", err)
@@ -422,6 +423,25 @@ func (r *roundRepository) GetRoundsWithCommitmentTxids(
 	return resp, nil
 }
 
+func (r *roundRepository) GetIntentByTxid(
+	ctx context.Context,
+	txid string,
+) (*domain.Intent, error) {
+	intent, err := r.querier.SelectIntentByTxid(ctx, sql.NullString{String: txid, Valid: true})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get intent by txid: %w", err)
+	}
+
+	return &domain.Intent{
+		Id:      intent.ID.String,
+		Txid:    intent.Txid.String,
+		Proof:   intent.Proof.String,
+		Message: intent.Message.String,
+	}, nil
+}
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),
@@ -474,6 +494,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 					Message:   v.intent.Message.String,
 					Inputs:    make([]domain.Vtxo, 0),
 					Receivers: make([]domain.Receiver, 0),
+					Txid:      v.intent.Txid.String,
 				}
 				round.Intents[v.intent.ID.String] = intent
 			}
@@ -487,6 +508,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 						Message:   v.vtxo.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
 						Receivers: make([]domain.Receiver, 0),
+						Txid:      v.vtxo.IntentTxid.String,
 					}
 				}
 
@@ -514,6 +536,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 						Message:   v.receiver.Message.String,
 						Inputs:    make([]domain.Vtxo, 0),
 						Receivers: make([]domain.Receiver, 0),
+						Txid:      v.receiver.Txid.String,
 					}
 				}
 

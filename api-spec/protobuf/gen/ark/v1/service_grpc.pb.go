@@ -28,10 +28,12 @@ const (
 	ArkService_SubmitTreeSignatures_FullMethodName   = "/ark.v1.ArkService/SubmitTreeSignatures"
 	ArkService_SubmitSignedForfeitTxs_FullMethodName = "/ark.v1.ArkService/SubmitSignedForfeitTxs"
 	ArkService_GetEventStream_FullMethodName         = "/ark.v1.ArkService/GetEventStream"
+	ArkService_UpdateStreamTopics_FullMethodName     = "/ark.v1.ArkService/UpdateStreamTopics"
 	ArkService_SubmitTx_FullMethodName               = "/ark.v1.ArkService/SubmitTx"
 	ArkService_FinalizeTx_FullMethodName             = "/ark.v1.ArkService/FinalizeTx"
 	ArkService_GetPendingTx_FullMethodName           = "/ark.v1.ArkService/GetPendingTx"
 	ArkService_GetTransactionsStream_FullMethodName  = "/ark.v1.ArkService/GetTransactionsStream"
+	ArkService_GetIntent_FullMethodName              = "/ark.v1.ArkService/GetIntent"
 )
 
 // ArkServiceClient is the client API for ArkService service.
@@ -78,8 +80,14 @@ type ArkServiceClient interface {
 	// Clients should use this stream as soon as they are ready to join a batch and can listen for
 	// various events such as batch start, batch finalization, and other related activities.
 	// The server pushes these events to the client in real-time as soon as its ready to move to the
-	// next phase of the batch processing.
+	// next phase of the batch processing. Upon creation of the stream, the event StreamStartedEvent
+	// is immediately sent, which passes along the stream id, to be used by the client for future
+	// calls to UpdateStreamTopics.
 	GetEventStream(ctx context.Context, in *GetEventStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetEventStreamResponse], error)
+	// UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,
+	// remove, or specify a list of topics, providing them control over the events received on the
+	// event stream.
+	UpdateStreamTopics(ctx context.Context, in *UpdateStreamTopicsRequest, opts ...grpc.CallOption) (*UpdateStreamTopicsResponse, error)
 	// SubmitTx is the first leg of the process of spending vtxos offchain and allows a client to
 	// submit a signed Ark transaction and the unsigned checkpoint transactions.
 	// The server should verify the signed transactions and return the fully signed Ark tx and the
@@ -99,6 +107,7 @@ type ArkServiceClient interface {
 	// NOTE: the stream doesn't have history support, therefore returns only txs from the moment it's
 	// opened until it's closed.
 	GetTransactionsStream(ctx context.Context, in *GetTransactionsStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetTransactionsStreamResponse], error)
+	GetIntent(ctx context.Context, in *GetIntentRequest, opts ...grpc.CallOption) (*GetIntentResponse, error)
 }
 
 type arkServiceClient struct {
@@ -208,6 +217,16 @@ func (c *arkServiceClient) GetEventStream(ctx context.Context, in *GetEventStrea
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ArkService_GetEventStreamClient = grpc.ServerStreamingClient[GetEventStreamResponse]
 
+func (c *arkServiceClient) UpdateStreamTopics(ctx context.Context, in *UpdateStreamTopicsRequest, opts ...grpc.CallOption) (*UpdateStreamTopicsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateStreamTopicsResponse)
+	err := c.cc.Invoke(ctx, ArkService_UpdateStreamTopics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *arkServiceClient) SubmitTx(ctx context.Context, in *SubmitTxRequest, opts ...grpc.CallOption) (*SubmitTxResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SubmitTxResponse)
@@ -257,6 +276,16 @@ func (c *arkServiceClient) GetTransactionsStream(ctx context.Context, in *GetTra
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ArkService_GetTransactionsStreamClient = grpc.ServerStreamingClient[GetTransactionsStreamResponse]
 
+func (c *arkServiceClient) GetIntent(ctx context.Context, in *GetIntentRequest, opts ...grpc.CallOption) (*GetIntentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIntentResponse)
+	err := c.cc.Invoke(ctx, ArkService_GetIntent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ArkServiceServer is the server API for ArkService service.
 // All implementations should embed UnimplementedArkServiceServer
 // for forward compatibility.
@@ -301,8 +330,14 @@ type ArkServiceServer interface {
 	// Clients should use this stream as soon as they are ready to join a batch and can listen for
 	// various events such as batch start, batch finalization, and other related activities.
 	// The server pushes these events to the client in real-time as soon as its ready to move to the
-	// next phase of the batch processing.
+	// next phase of the batch processing. Upon creation of the stream, the event StreamStartedEvent
+	// is immediately sent, which passes along the stream id, to be used by the client for future
+	// calls to UpdateStreamTopics.
 	GetEventStream(*GetEventStreamRequest, grpc.ServerStreamingServer[GetEventStreamResponse]) error
+	// UpdateStreamTopics allows a client to modify the topics of their event stream. They can add,
+	// remove, or specify a list of topics, providing them control over the events received on the
+	// event stream.
+	UpdateStreamTopics(context.Context, *UpdateStreamTopicsRequest) (*UpdateStreamTopicsResponse, error)
 	// SubmitTx is the first leg of the process of spending vtxos offchain and allows a client to
 	// submit a signed Ark transaction and the unsigned checkpoint transactions.
 	// The server should verify the signed transactions and return the fully signed Ark tx and the
@@ -322,6 +357,7 @@ type ArkServiceServer interface {
 	// NOTE: the stream doesn't have history support, therefore returns only txs from the moment it's
 	// opened until it's closed.
 	GetTransactionsStream(*GetTransactionsStreamRequest, grpc.ServerStreamingServer[GetTransactionsStreamResponse]) error
+	GetIntent(context.Context, *GetIntentRequest) (*GetIntentResponse, error)
 }
 
 // UnimplementedArkServiceServer should be embedded to have
@@ -358,6 +394,9 @@ func (UnimplementedArkServiceServer) SubmitSignedForfeitTxs(context.Context, *Su
 func (UnimplementedArkServiceServer) GetEventStream(*GetEventStreamRequest, grpc.ServerStreamingServer[GetEventStreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method GetEventStream not implemented")
 }
+func (UnimplementedArkServiceServer) UpdateStreamTopics(context.Context, *UpdateStreamTopicsRequest) (*UpdateStreamTopicsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateStreamTopics not implemented")
+}
 func (UnimplementedArkServiceServer) SubmitTx(context.Context, *SubmitTxRequest) (*SubmitTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitTx not implemented")
 }
@@ -369,6 +408,9 @@ func (UnimplementedArkServiceServer) GetPendingTx(context.Context, *GetPendingTx
 }
 func (UnimplementedArkServiceServer) GetTransactionsStream(*GetTransactionsStreamRequest, grpc.ServerStreamingServer[GetTransactionsStreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method GetTransactionsStream not implemented")
+}
+func (UnimplementedArkServiceServer) GetIntent(context.Context, *GetIntentRequest) (*GetIntentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetIntent not implemented")
 }
 func (UnimplementedArkServiceServer) testEmbeddedByValue() {}
 
@@ -545,6 +587,24 @@ func _ArkService_GetEventStream_Handler(srv interface{}, stream grpc.ServerStrea
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ArkService_GetEventStreamServer = grpc.ServerStreamingServer[GetEventStreamResponse]
 
+func _ArkService_UpdateStreamTopics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateStreamTopicsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArkServiceServer).UpdateStreamTopics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArkService_UpdateStreamTopics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArkServiceServer).UpdateStreamTopics(ctx, req.(*UpdateStreamTopicsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ArkService_SubmitTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SubmitTxRequest)
 	if err := dec(in); err != nil {
@@ -610,6 +670,24 @@ func _ArkService_GetTransactionsStream_Handler(srv interface{}, stream grpc.Serv
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ArkService_GetTransactionsStreamServer = grpc.ServerStreamingServer[GetTransactionsStreamResponse]
 
+func _ArkService_GetIntent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIntentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArkServiceServer).GetIntent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArkService_GetIntent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArkServiceServer).GetIntent(ctx, req.(*GetIntentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ArkService_ServiceDesc is the grpc.ServiceDesc for ArkService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -650,6 +728,10 @@ var ArkService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ArkService_SubmitSignedForfeitTxs_Handler,
 		},
 		{
+			MethodName: "UpdateStreamTopics",
+			Handler:    _ArkService_UpdateStreamTopics_Handler,
+		},
+		{
 			MethodName: "SubmitTx",
 			Handler:    _ArkService_SubmitTx_Handler,
 		},
@@ -660,6 +742,10 @@ var ArkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPendingTx",
 			Handler:    _ArkService_GetPendingTx_Handler,
+		},
+		{
+			MethodName: "GetIntent",
+			Handler:    _ArkService_GetIntent_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

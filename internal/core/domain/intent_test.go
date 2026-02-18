@@ -10,10 +10,11 @@ import (
 // x-only pubkey
 
 var (
-	pubkey  = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
-	proof   = "proof"
-	message = "message"
-	inputs  = []domain.Vtxo{
+	pubkey       = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
+	proof        = "proof"
+	message      = "message"
+	leafTxPacket = "assetpacket"
+	inputs       = []domain.Vtxo{
 		{
 			Outpoint: domain.Outpoint{
 				Txid: "0000000000000000000000000000000000000000000000000000000000000000",
@@ -28,12 +29,22 @@ var (
 func TestIntent(t *testing.T) {
 	t.Run("new_intent", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			intent, err := domain.NewIntent(proof, message, inputs)
-			require.NoError(t, err)
-			require.NotNil(t, intent)
-			require.NotEmpty(t, intent.Id)
-			require.Exactly(t, inputs, intent.Inputs)
-			require.Empty(t, intent.Receivers)
+			t.Run("without leaf tx packet", func(t *testing.T) {
+				intent, err := domain.NewIntent(txid, proof, message, inputs, "")
+				require.NoError(t, err)
+				require.NotNil(t, intent)
+				require.NotEmpty(t, intent.Id)
+				require.Exactly(t, inputs, intent.Inputs)
+				require.Empty(t, intent.Receivers)
+			})
+			t.Run("with leaf tx packet", func(t *testing.T) {
+				intent, err := domain.NewIntent(txid, proof, message, inputs, leafTxPacket)
+				require.NoError(t, err)
+				require.NotNil(t, intent)
+				require.NotEmpty(t, intent.Id)
+				require.Exactly(t, inputs, intent.Inputs)
+				require.Empty(t, intent.Receivers)
+			})
 		})
 		t.Run("invalid", func(t *testing.T) {
 			fixtures := []struct {
@@ -57,7 +68,7 @@ func TestIntent(t *testing.T) {
 			}
 			for _, f := range fixtures {
 				t.Run(f.expectedErr, func(t *testing.T) {
-					intent, err := domain.NewIntent(f.proof, f.message, f.inputs)
+					intent, err := domain.NewIntent(txid, f.proof, f.message, f.inputs, "")
 					require.Nil(t, intent)
 					require.Error(t, err)
 					require.Contains(t, err.Error(), f.expectedErr)
@@ -68,7 +79,7 @@ func TestIntent(t *testing.T) {
 
 	t.Run("add_receivers", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			intent, err := domain.NewIntent(proof, message, inputs)
+			intent, err := domain.NewIntent(txid, proof, message, inputs, "")
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 
@@ -95,8 +106,7 @@ func TestIntent(t *testing.T) {
 					expectedErr: "missing outputs",
 				},
 			}
-
-			intent, err := domain.NewIntent(proof, message, inputs)
+			intent, err := domain.NewIntent(txid, proof, message, inputs, "")
 			require.NoError(t, err)
 			require.NotNil(t, intent)
 

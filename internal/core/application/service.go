@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -330,7 +331,6 @@ func NewService(
 				}
 			}
 
-			// ark tx event
 			txEvent := TransactionEvent{
 				TxData:         TxData{Txid: txid, Tx: offchainTx.ArkTx},
 				Type:           ArkTxType,
@@ -349,9 +349,9 @@ func NewService(
 		},
 	)
 
-	if err := svc.restoreWatchingVtxos(); err != nil {
-		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	}
+	// if err := svc.restoreWatchingVtxos(); err != nil {
+	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	// }
 	go svc.listenToScannerNotifications()
 	return svc, nil
 }
@@ -558,6 +558,9 @@ func (s *service) SubmitOffchainTx(
 		}
 	}
 
+	// index by ark input index for asset packet validation
+	assetInputs := make(map[int][]domain.AssetDenomination)
+
 	// Loop over the inputs of the given ark tx to ensure the order of inputs is preserved when
 	// rebuilding the txs.
 	for inputIndex, in := range arkPtx.UnsignedTx.TxIn {
@@ -635,6 +638,9 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		vtxo, exists := indexedSpentVtxos[outpoint]
+		if len(vtxo.Assets) > 0 {
+			assetInputs[inputIndex] = vtxo.Assets
+		}
 		if !exists {
 			return nil, errors.INTERNAL_ERROR.New(
 				"can't find vtxo associated with checkpoint input %s", outpoint,
@@ -908,9 +914,15 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
 	}
 
+	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, assetInputs); err != nil {
+		return nil, err
+	}
+
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
 	foundAnchor := false
 	foundOpReturn := false
+	var rebuiltArkTx *psbt.Packet
+	var rebuiltCheckpointTxs []*psbt.Packet
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
@@ -931,6 +943,12 @@ func (s *service) SubmitOffchainTx(
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
 			foundOpReturn = true
+
+			// if the OP_RETURN is asset packet, add it to outputs list and skip other checks related to vtxo
+			if asset.IsAssetPacket(out.PkScript) {
+				outputs = append(outputs, out)
+				continue
+			}
 		}
 
 		if s.vtxoMaxAmount >= 0 {
@@ -979,9 +997,10 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// recompute all txs (checkpoint txs + ark tx)
-	rebuiltArkTx, rebuiltCheckpointTxs, err := offchain.BuildTxs(
+	rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
 		ins, outputs, s.checkpointTapscript,
 	)
+
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to rebuild ark transaction: %w", err).
 			WithMetadata(map[string]any{
@@ -1412,11 +1431,6 @@ func (s *service) GetPendingOffchainTxs(
 			continue
 		}
 
-		if !offchainTx.IsAccepted() {
-			// the tx must be in the "accepted" stage to be considered as pending
-			continue
-		}
-
 		seen[vtxo.ArkTxid] = struct{}{}
 		acceptedOffchainTxs = append(acceptedOffchainTxs, AcceptedOffchainTx{
 			TxId:                offchainTx.ArkTxid,
@@ -1433,6 +1447,8 @@ func (s *service) RegisterIntent(
 ) (string, errors.Error) {
 	// the vtxo to swap for new ones, require forfeit transactions
 	vtxoInputs := make([]domain.Vtxo, 0)
+	// assets inputs map by input index
+	assetInputs := make(map[int][]domain.AssetDenomination)
 	// the boarding utxos to add in the commitment tx
 	boardingUtxos := make([]boardingIntentInput, 0)
 
@@ -1675,6 +1691,9 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxoInputs = append(vtxoInputs, vtxo)
+		if len(vtxo.Assets) > 0 {
+			assetInputs[i+1] = vtxo.Assets
+		}
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
@@ -1698,16 +1717,6 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	intent, err := domain.NewIntent(signedProof, encodedMessage, vtxoInputs)
-	if err != nil {
-		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
-			WithMetadata(map[string]any{
-				"proof":       signedProof,
-				"message":     encodedMessage,
-				"vtxo_inputs": vtxoInputs,
-			})
-	}
-
 	// reject if proof does not specify outputs
 	// TODO remove if blinded credentials are supported
 	if !proof.ContainsOutputs() {
@@ -1718,12 +1727,17 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	hasOffChainReceiver := false
+	hasOffChainReceiver, hasAssetPacket := false, false
 	receivers := make([]domain.Receiver, 0)
 	onchainOutputs := make([]wire.TxOut, 0)
 	offchainOutputs := make([]wire.TxOut, 0)
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
+		if asset.IsAssetPacket(output.PkScript) {
+			hasAssetPacket = true
+			continue
+		}
+
 		amount := uint64(output.Value)
 		rcv := domain.Receiver{
 			Amount: amount,
@@ -1836,6 +1850,45 @@ func (s *service) RegisterIntent(
 				})
 			}
 		}
+	}
+
+	leafTxPacket := ""
+	if hasAssetPacket {
+		intentPacket, err := asset.NewPacketFromTx(proof.UnsignedTx)
+		if err != nil {
+			return "", errors.INVALID_INTENT_PROOF.New("invalid asset packet: %w", err).
+				WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   signedProof,
+					Message: encodedMessage,
+				})
+		}
+
+		if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs); err != nil {
+			return "", err
+		}
+
+		// disable issuance
+		if hasIssuance(intentPacket) {
+			return "", errors.INVALID_INTENT_PROOF.New("intent contains asset issuance").
+				WithMetadata(errors.InvalidIntentProofMetadata{
+					Proof:   signedProof,
+					Message: encodedMessage,
+				})
+		}
+
+		leafTxPacket = intentPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
+	}
+
+	intent, err := domain.NewIntent(
+		proofTxid, signedProof, encodedMessage, vtxoInputs, leafTxPacket,
+	)
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
+			WithMetadata(map[string]any{
+				"proof":       signedProof,
+				"message":     encodedMessage,
+				"vtxo_inputs": vtxoInputs,
+			})
 	}
 
 	if err := intent.AddReceivers(receivers); err != nil {
@@ -3648,39 +3701,6 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 	}
 }
 
-func (s *service) restoreWatchingVtxos() error {
-	ctx := context.Background()
-
-	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
-	if err != nil {
-		return err
-	}
-
-	scripts := make([]string, 0)
-
-	for _, commitmentTxId := range commitmentTxIds {
-		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-		if err != nil {
-			return err
-		}
-
-		for _, key := range tapKeys {
-			scripts = append(scripts, fmt.Sprintf("5120%s", key))
-		}
-	}
-
-	if len(scripts) <= 0 {
-		return nil
-	}
-
-	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
-		return err
-	}
-
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
-	return nil
-}
-
 // extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner
 // it excludes subdust vtxos scripts and duplicates
 // it logs errors and continues in order to not block the start/stop watching vtxos operations
@@ -3694,6 +3714,11 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 	scripts := make([]string, 0)
 
 	for _, vtxo := range vtxos {
+		// skip OP_RETURN outputs
+		if vtxo.Amount < dustLimit {
+			continue
+		}
+
 		vtxoTapKeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
 			log.WithError(err).Warnf("failed to decode vtxo pubkey: %s", vtxo.PubKey)
@@ -3703,10 +3728,6 @@ func (s *service) extractVtxosScriptsForScanner(vtxos []domain.Vtxo) ([]string, 
 		vtxoTapKey, err := schnorr.ParsePubKey(vtxoTapKeyBytes)
 		if err != nil {
 			log.WithError(err).Warnf("failed to parse vtxo pubkey: %s", vtxo.PubKey)
-			continue
-		}
-
-		if vtxo.Amount < dustLimit {
 			continue
 		}
 
@@ -3872,7 +3893,9 @@ func (s *service) processBoardingInputs(
 			tx, input.Input, s.signerPubkey, s.boardingExitDelay, s.allowCSVBlockType,
 		)
 		if err != nil {
-			return nil, err
+			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).WithMetadata(
+				errors.InputMetadata{Txid: tx.TxID(), InputIndex: int(input.VOut)},
+			)
 		}
 
 		boardingInputs = append(boardingInputs, *boardingInput)
@@ -4094,6 +4117,25 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 	}
 
 	return convictions
+}
+
+func (s *service) GetIntentByTxid(
+	ctx context.Context,
+	txid string,
+) (*domain.Intent, errors.Error) {
+	intent, err := s.repoManager.Rounds().GetIntentByTxid(ctx, txid)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New(
+			"failed to get intent by txid %s: %w", txid, err,
+		)
+	}
+	if intent == nil {
+		return nil, errors.INTENT_NOT_FOUND.New(
+			"intent with txid %s not found", txid,
+		)
+	}
+
+	return intent, nil
 }
 
 func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {
