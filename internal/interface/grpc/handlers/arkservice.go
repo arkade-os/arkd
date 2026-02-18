@@ -267,6 +267,8 @@ func (h *handler) GetEventStream(
 		select {
 		case <-stream.Context().Done():
 			return nil
+		case <-listener.done:
+			return nil
 		case ev := <-listener.ch:
 			if err := stream.Send(ev); err != nil {
 				return err
@@ -455,6 +457,8 @@ func (h *handler) GetTransactionsStream(
 		select {
 		case <-stream.Context().Done():
 			return nil
+		case <-listener.done:
+			return nil
 		case ev := <-listener.ch:
 			if err := stream.Send(ev); err != nil {
 				return err
@@ -607,7 +611,11 @@ func (h *handler) listenToEvents() {
 			}
 		}
 
-		// forward all events in the same routine in order to preserve the ordering
+		// Ordering is preserved within a single batch because one goroutine
+		// iterates over evs sequentially for each listener. However, a new
+		// per-listener goroutine is launched for every batch, so sends to l.ch
+		// from different batches can interleave — ordering across batches is
+		// not guaranteed.
 		if len(evs) > 0 {
 			listeners := h.eventsListenerHandler.getListenersCopy()
 			for _, l := range listeners {
@@ -618,7 +626,9 @@ func (h *handler) listenToEvents() {
 							case <-l.done:
 								return
 							case l.ch <- ev.event:
-							default:
+							case <-time.After(5 * time.Second):
+								l.closeDone()
+								return
 							}
 						}
 					}
@@ -658,7 +668,9 @@ func (h *handler) listenToTxEvents() {
 					case <-l.done:
 						return
 					case l.ch <- msg:
-					default:
+					case <-time.After(5 * time.Second):
+						l.closeDone()
+						return
 					}
 				}(l)
 			}
