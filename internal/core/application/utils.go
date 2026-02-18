@@ -334,7 +334,9 @@ func treeTxNoncesEvents(
 
 			txNonce, ok := noncesForCosigner[txid]
 			if !ok {
-				return false, fmt.Errorf("missing nonce for cosigner key %s and txid %s", keyStr, txid)
+				return false, fmt.Errorf(
+					"missing nonce for cosigner key %s and txid %s", keyStr, txid,
+				)
 			}
 
 			noncesByPubkey[keyStr] = txNonce
