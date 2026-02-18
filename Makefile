@@ -86,7 +86,7 @@ help:
 	@echo "Usage: \n"
 	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' |  sed -e 's/^/ /'
 
-## intergrationtest: run integration tests
+## integrationtest: run integration tests
 integrationtest:
 	@echo "Running integration tests..."
 	@go test -v -count 1 -timeout 800s github.com/arkade-os/arkd/internal/test/e2e
