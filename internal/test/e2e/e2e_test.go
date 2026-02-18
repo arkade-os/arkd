@@ -4701,6 +4701,14 @@ func TestEventListenerChurn(t *testing.T) {
 	var producedRounds atomic.Int64
 	var retryableSubscribeErrors atomic.Int64
 	sentinelDone := make(chan struct{})
+	errCh := make(chan error, churnWorkers+8)
+
+	reportErr := func(err error) {
+		select {
+		case errCh <- err:
+		default:
+		}
+	}
 
 	// The sentinel stream stays open for the full stress window and counts
 	// events. Under heavy churn (especially in CI) the sentinel's own
@@ -4775,6 +4783,7 @@ func TestEventListenerChurn(t *testing.T) {
 					retryableSubscribeErrors.Add(1)
 					time.Sleep(churnWorkerBackoff(workerID))
 				} else {
+					reportErr(fmt.Errorf("churn worker %d create client: %w", workerID, err))
 					return
 				}
 			}
@@ -4803,6 +4812,7 @@ func TestEventListenerChurn(t *testing.T) {
 							time.Sleep(churnWorkerBackoff(workerID))
 							continue
 						}
+						reportErr(fmt.Errorf("churn worker %d create client: %w", workerID, err))
 						return
 					}
 				}
@@ -4823,7 +4833,8 @@ func TestEventListenerChurn(t *testing.T) {
 						time.Sleep(churnWorkerBackoff(workerID))
 						continue
 					}
-					continue
+					reportErr(fmt.Errorf("churn worker %d subscribe: %w", workerID, err))
+					return
 				}
 
 				select {
@@ -4962,4 +4973,15 @@ func TestEventListenerChurn(t *testing.T) {
 		int64(0),
 		"sentinel event stream did not observe events during churn",
 	)
+
+	// Drain the error channel — any non-retryable error from a churn
+	// worker is a test failure.
+	for {
+		select {
+		case runErr := <-errCh:
+			require.NoError(t, runErr)
+		default:
+			return
+		}
+	}
 }
