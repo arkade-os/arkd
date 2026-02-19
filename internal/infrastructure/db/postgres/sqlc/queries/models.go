@@ -80,8 +80,8 @@ type IntentWithInputsVw struct {
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
 	Commitments    []byte
-	AssetID        sql.NullString
-	AssetAmount    sql.NullString
+	AssetID        string
+	AssetAmount    string
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString
