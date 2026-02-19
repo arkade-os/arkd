@@ -5,13 +5,18 @@ DROP VIEW IF EXISTS vtxo_vw;
 CREATE VIEW vtxo_vw AS
 SELECT
   v.*,
-  COALESCE(group_concat(vc.commitment_txid), '') AS commitments,
+  COALESCE((
+    SELECT group_concat(vc.commitment_txid)
+    FROM vtxo_commitment_txid vc
+    WHERE vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+  ), '') AS commitments,
   COALESCE(ap.asset_id, '') AS asset_id,
   COALESCE(ap.amount, 0) AS asset_amount
 FROM vtxo v
-LEFT JOIN vtxo_commitment_txid vc ON v.txid = vc.vtxo_txid AND v.vout = vc.vtxo_vout
-LEFT JOIN asset_projection ap ON v.txid = ap.txid AND v.vout = ap.vout
-GROUP BY v.txid, v.vout;
+LEFT JOIN (
+  SELECT DISTINCT txid, vout, asset_id, amount
+  FROM asset_projection
+) AS ap ON ap.txid = v.txid AND ap.vout = v.vout;
 
 CREATE VIEW intent_with_inputs_vw AS
 SELECT
