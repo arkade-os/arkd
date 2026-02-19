@@ -326,9 +326,10 @@ message GetTransactionsStreamResponse {
 message GetIntentRequest {
   oneof filter {
       string txid = 1;
+      Intent intent = 2;
     }
 }
 
 message GetIntentResponse {
-  Intent intent = 1;
+  repeated Intent intents = 1;
 }

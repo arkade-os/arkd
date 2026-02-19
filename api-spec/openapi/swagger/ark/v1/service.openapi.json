@@ -422,6 +422,20 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -911,6 +925,9 @@
         "title": "GetIntentRequest",
         "type": "object",
         "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
+          },
           "txid": {
             "type": "string"
           }
@@ -920,8 +937,11 @@
         "title": "GetIntentResponse",
         "type": "object",
         "properties": {
-          "intent": {
-            "$ref": "#/components/schemas/Intent"
+          "intents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Intent"
+            }
           }
         }
       },
