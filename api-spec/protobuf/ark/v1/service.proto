@@ -331,7 +331,6 @@ message GetIntentRequest {
 }
 
 message GetIntentResponse {
-  reserved 1;
-  reserved "intent";
+  Intent intent = 1;
   repeated Intent intents = 2;
 }

@@ -673,12 +673,14 @@ func (h *handler) GetIntent(
 		if intent == nil {
 			return nil, arkdErrors.INTENT_NOT_FOUND.New("intent not found")
 		}
-		return &arkv1.GetIntentResponse{Intents: []*arkv1.Intent{
-			{
-				Proof:   intent.Proof,
-				Message: intent.Message,
-			},
-		}}, nil
+		protoIntent := &arkv1.Intent{
+			Proof:   intent.Proof,
+			Message: intent.Message,
+		}
+		return &arkv1.GetIntentResponse{
+			Intent:  protoIntent,
+			Intents: []*arkv1.Intent{protoIntent},
+		}, nil
 	case *arkv1.GetIntentRequest_Intent:
 		proof, message, err := parseGetIntent(filter.Intent)
 		if err != nil {
