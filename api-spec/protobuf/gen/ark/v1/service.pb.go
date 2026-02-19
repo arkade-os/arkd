@@ -2084,9 +2084,9 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x10GetIntentRequest\x12\x14\n" +
 	"\x04txid\x18\x01 \x01(\tH\x00R\x04txid\x12(\n" +
 	"\x06intent\x18\x02 \x01(\v2\x0e.ark.v1.IntentH\x00R\x06intentB\b\n" +
-	"\x06filter\"C\n" +
+	"\x06filter\"K\n" +
 	"\x11GetIntentResponse\x12(\n" +
-	"\aintents\x18\x02 \x03(\v2\x0e.ark.v1.IntentR\aintentsJ\x04\b\x01\x10\x022\x8f\r\n" +
+	"\aintents\x18\x02 \x03(\v2\x0e.ark.v1.IntentR\aintentsJ\x04\b\x01\x10\x02R\x06intent2\x8f\r\n" +
 	"\n" +
 	"ArkService\x12I\n" +
 	"\aGetInfo\x12\x16.ark.v1.GetInfoRequest\x1a\x17.ark.v1.GetInfoResponse\"\r\xb2J\n" +
