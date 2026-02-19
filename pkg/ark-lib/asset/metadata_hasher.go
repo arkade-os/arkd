@@ -43,8 +43,9 @@ func (md Metadata) Hash() [32]byte {
 	return [32]byte(*chainhash.TaggedHash(arkLeafTag, buf.Bytes()))
 }
 
-// "ArkadeAssetBranch" computes the branch hash for the two given leaves.
+// computeBranchHash returns tagged hash "ArkadeAssetBranch" of the two given hashes.
 func computeBranchHash(a, b [32]byte) [32]byte {
+	// BIP-341 spec: ensure a is lexicographically less than b
 	if bytes.Compare(a[:], b[:]) > 0 {
 		a, b = b, a
 	}
