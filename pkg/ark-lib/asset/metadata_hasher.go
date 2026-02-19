@@ -33,7 +33,7 @@ func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
 	return root[:], nil
 }
 
-// "ArkadeAssetLeaf" provides domain separation from Taproot's "TapLeaf" and
+// Hash computes the tagged hash "ArkadeAssetLeaf" of the metadata entry.
 func (md Metadata) Hash() [32]byte {
 	var buf bytes.Buffer
 	buf.WriteByte(byte(arkLeafVersion))
