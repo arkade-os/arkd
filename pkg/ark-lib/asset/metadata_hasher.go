@@ -83,25 +83,26 @@ func sortAndHashMetadataLeaves(md []Metadata) ([][32]byte, error) {
 			return nil, err
 		}
 	}
-
-	// precompute key || value bytes to avoid per-compare allocations
-	keyAndValue := make([][]byte, len(md))
-	for i := range md {
-		buf := make([]byte, len(md[i].Key)+len(md[i].Value))
-		copy(buf, md[i].Key)
-		copy(buf[len(md[i].Key):], md[i].Value)
-		keyAndValue[i] = buf
-	}
-	sort.SliceStable(md, func(i, j int) bool {
-		return bytes.Compare(keyAndValue[i], keyAndValue[j]) < 0
-	})
 	
 	sorted := make([]Metadata, len(md))
 	copy(sorted, md)
 
+	// precompute key || value bytes to avoid per-compare allocations
+	keyAndValue := make([][]byte, len(sorted))
+	for i := range sorted {
+		buf := make([]byte, len(sorted[i].Key)+len(sorted[i].Value))
+		copy(buf, sorted[i].Key)
+		copy(buf[len(sorted[i].Key):], sorted[i].Value)
+		keyAndValue[i] = buf
+	}
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return bytes.Compare(keyAndValue[i], keyAndValue[j]) < 0
+	})
+	
+
 	hashes := make([][32]byte, len(sorted))
-	for pos, orig := range sorted {
-		hashes[pos] = orig.Hash()
+	for i := range sorted {
+		hashes[i] = sorted[i].Hash()
 	}
 	return hashes, nil
 }
