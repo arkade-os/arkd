@@ -421,12 +421,12 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			"sweeper: start analyzing batch %s", commitmentTxid)
 
 		ctx := context.Background()
-		round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
+		flatVtxoTree, err := s.repoManager.Rounds().GetRoundVtxoTree(ctx, commitmentTxid)
 		if err != nil {
 			return err
 		}
 
-		roundVtxoTree, err := tree.NewTxTree(round.VtxoTree)
+		roundVtxoTree, err := tree.NewTxTree(flatVtxoTree)
 		if err != nil {
 			return err
 		}
@@ -662,11 +662,16 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 
 		// if there are outputs to sweep raise a batch swept event to update projection store
 		if len(sweepTxId) > 0 {
+			round, err := s.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
+			if err != nil {
+				return err
+			}
+
 			vtxoRepo := s.repoManager.Vtxos()
 			eventRepo := s.repoManager.Events()
 
 			preconfirmedVtxos := make([]domain.Outpoint, 0)
-			var err error
+			var sweepErr error
 
 			commitmentRootSwept := false
 			for _, output := range outputsToSweep {
@@ -678,7 +683,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 
 			if commitmentRootSwept {
 				// get all vtxos related to the batch commitment txid
-				preconfirmedVtxos, err = vtxoRepo.GetSweepableVtxosByCommitmentTxid(
+				preconfirmedVtxos, sweepErr = vtxoRepo.GetSweepableVtxosByCommitmentTxid(
 					ctx,
 					commitmentTxid,
 				)
@@ -686,9 +691,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				// get all vtxos related to the leaf swept
 				seen := make(map[string]struct{})
 				for _, leafVtxo := range leafVtxoKeys {
-					children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
-					if err != nil {
-						log.WithError(err).Error("error while getting children vtxos")
+					children, childErr := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+					if childErr != nil {
+						log.WithError(childErr).Error("error while getting children vtxos")
 						continue
 					}
 					for _, child := range children {
@@ -699,8 +704,8 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 					}
 				}
 			}
-			if err != nil {
-				log.WithError(err).Error("error while getting children vtxos")
+			if sweepErr != nil {
+				log.WithError(sweepErr).Error("error while getting children vtxos")
 			}
 
 			events, err := round.Sweep(
