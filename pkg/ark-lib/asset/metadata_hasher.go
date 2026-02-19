@@ -24,11 +24,11 @@ func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
 	if len(md) == 0 {
 		return nil, nil
 	}
-	leaves, err := sortedLeaves(md)
+	hashes, err := sortAndHashMetadataLeaves(md)
 	if err != nil {
 		return nil, err
 	}
-	levels := buildMerkleTree(leaves)
+	levels := buildMerkleTree(hashes)
 	root := levels[len(levels)-1][0]
 	return root[:], nil
 }
@@ -75,25 +75,34 @@ func buildMerkleTree(leaves [][32]byte) [][][32]byte {
 	return levels
 }
 
-// sortedLeaves sorts entries by key and returns their leaf hashes in the same order.
-func sortedLeaves(md []Metadata) ([][32]byte, error) {
-	sorted := make([]Metadata, len(md))
-	copy(sorted, md)
-	for _, m := range sorted {
+// sortAndHashMetadataLeaves sorts entries by key and returns their hashes in the same order.
+func sortAndHashMetadataLeaves(md []Metadata) ([][32]byte, error) {
+	for _, m := range md {
 		if err := m.validate(); err != nil {
 			return nil, err
 		}
 	}
-	sort.SliceStable(sorted, func(i, j int) bool {
-		keyValueI := append(sorted[i].Key, sorted[i].Value...)
-		keyValueJ := append(sorted[j].Key, sorted[j].Value...)
-		return bytes.Compare(keyValueI, keyValueJ) < 0
-	})
-	leaves := make([][32]byte, len(sorted))
-	for i, m := range sorted {
-		leaves[i] = m.Hash()
+
+	// precompute key || value bytes to avoid per-compare allocations
+	keyAndValue := make([][]byte, len(md))
+	for i := range md {
+		buf := make([]byte, len(md[i].Key)+len(md[i].Value))
+		copy(buf, md[i].Key)
+		copy(buf[len(md[i].Key):], md[i].Value)
+		keyAndValue[i] = buf
 	}
-	return leaves, nil
+	sort.SliceStable(md, func(i, j int) bool {
+		return bytes.Compare(keyAndValue[i], keyAndValue[j]) < 0
+	})
+	
+	sorted := make([]Metadata, len(md))
+	copy(sorted, md)
+
+	hashes := make([][32]byte, len(sorted))
+	for pos, orig := range sorted {
+		hashes[pos] = orig.Hash()
+	}
+	return hashes, nil
 }
 
 
