@@ -223,11 +223,9 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 	rvs := make([]combinedRow, 0, len(rows))
 	for _, row := range rows {
 		rvs = append(rvs, combinedRow{
-			round:    row.Round,
-			intent:   row.RoundIntentsVw,
-			tx:       row.RoundTxsVw,
-			receiver: row.IntentWithReceiversVw,
-			vtxo:     row.IntentWithInputsVw,
+			round:  row.Round,
+			intent: row.RoundIntentsVw,
+			tx:     row.RoundTxsVw,
 		})
 	}
 
@@ -236,11 +234,30 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 		return nil, err
 	}
 
-	if len(rounds) > 0 {
-		return rounds[0], nil
+	if len(rounds) == 0 {
+		return nil, errors.New("round not found")
 	}
 
-	return nil, errors.New("round not found")
+	round := rounds[0]
+	roundID := sql.NullString{String: round.Id, Valid: true}
+
+	receivers, err := r.querier.SelectIntentReceiversByRoundId(ctx, roundID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range receivers {
+		applyReceiverToRound(round, row.IntentWithReceiversVw)
+	}
+
+	vtxoInputs, err := r.querier.SelectVtxoInputsByRoundId(ctx, roundID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range vtxoInputs {
+		applyVtxoInputToRound(round, row.IntentWithInputsVw)
+	}
+
+	return round, nil
 }
 
 func (r *roundRepository) GetRoundWithCommitmentTxid(
@@ -254,11 +271,9 @@ func (r *roundRepository) GetRoundWithCommitmentTxid(
 	rvs := make([]combinedRow, 0, len(rows))
 	for _, row := range rows {
 		rvs = append(rvs, combinedRow{
-			round:    row.Round,
-			intent:   row.RoundIntentsVw,
-			tx:       row.RoundTxsVw,
-			receiver: row.IntentWithReceiversVw,
-			vtxo:     row.IntentWithInputsVw,
+			round:  row.Round,
+			intent: row.RoundIntentsVw,
+			tx:     row.RoundTxsVw,
 		})
 	}
 
@@ -267,11 +282,30 @@ func (r *roundRepository) GetRoundWithCommitmentTxid(
 		return nil, err
 	}
 
-	if len(rounds) > 0 {
-		return rounds[0], nil
+	if len(rounds) == 0 {
+		return nil, errors.New("round not found")
 	}
 
-	return nil, errors.New("round not found")
+	round := rounds[0]
+	roundID := sql.NullString{String: round.Id, Valid: true}
+
+	receivers, err := r.querier.SelectIntentReceiversByRoundId(ctx, roundID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range receivers {
+		applyReceiverToRound(round, row.IntentWithReceiversVw)
+	}
+
+	vtxoInputs, err := r.querier.SelectVtxoInputsByRoundId(ctx, roundID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range vtxoInputs {
+		applyVtxoInputToRound(round, row.IntentWithInputsVw)
+	}
+
+	return round, nil
 }
 
 func (r *roundRepository) GetRoundStats(
@@ -680,6 +714,47 @@ func combinedRowToVtxo(row queries.IntentWithInputsVw) domain.Vtxo {
 		ArkTxid:            row.ArkTxid.String,
 		SettledBy:          row.SettledBy.String,
 	}
+}
+
+func applyReceiverToRound(round *domain.Round, row queries.IntentWithReceiversVw) {
+	if !row.IntentID.Valid {
+		return
+	}
+	intent, ok := round.Intents[row.IntentID.String]
+	if !ok {
+		return
+	}
+	if !row.Pubkey.Valid && !row.OnchainAddress.Valid {
+		return
+	}
+	rcv := rowToReceiver(row)
+	for _, existing := range intent.Receivers {
+		if existing.PubKey == rcv.PubKey &&
+			existing.OnchainAddress == rcv.OnchainAddress &&
+			existing.Amount == rcv.Amount {
+			return
+		}
+	}
+	intent.Receivers = append(intent.Receivers, rcv)
+	round.Intents[row.IntentID.String] = intent
+}
+
+func applyVtxoInputToRound(round *domain.Round, row queries.IntentWithInputsVw) {
+	if !row.IntentID.Valid {
+		return
+	}
+	intent, ok := round.Intents[row.IntentID.String]
+	if !ok {
+		return
+	}
+	vtxo := combinedRowToVtxo(row)
+	for _, existing := range intent.Inputs {
+		if existing.Txid == vtxo.Txid && existing.VOut == vtxo.VOut {
+			return
+		}
+	}
+	intent.Inputs = append(intent.Inputs, vtxo)
+	round.Intents[row.IntentID.String] = intent
 }
 
 func createUpsertTransactionParams(
