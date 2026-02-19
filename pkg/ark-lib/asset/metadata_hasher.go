@@ -59,6 +59,8 @@ func buildMerkleTree(leaves [][32]byte) [][][32]byte {
 	}
 	levels := [][][32]byte{leaves}
 	current := leaves
+
+	// reduce the leaves by combining pairs into branches
 	for len(current) > 1 {
 		var next [][32]byte
 		for i := 0; i+1 < len(current); i += 2 {
@@ -83,7 +85,9 @@ func sortedLeaves(md []Metadata) ([][32]byte, error) {
 		}
 	}
 	sort.SliceStable(sorted, func(i, j int) bool {
-		return bytes.Compare(sorted[i].Key, sorted[j].Key) < 0
+		keyValueI := append(sorted[i].Key, sorted[i].Value...)
+		keyValueJ := append(sorted[j].Key, sorted[j].Value...)
+		return bytes.Compare(keyValueI, keyValueJ) < 0
 	})
 	leaves := make([][32]byte, len(sorted))
 	for i, m := range sorted {
