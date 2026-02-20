@@ -4161,7 +4161,7 @@ func (s *service) GetIntentByTxid(
 	return intent, nil
 }
 
-func (s *service) GetIntentByProof(
+func (s *service) GetIntentByProofs(
 	ctx context.Context,
 	proof intent.Proof,
 	message intent.GetIntentMessage,

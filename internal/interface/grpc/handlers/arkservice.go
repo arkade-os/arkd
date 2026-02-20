@@ -686,7 +686,7 @@ func (h *handler) GetIntent(
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		intents, svcErr := h.svc.GetIntentByProof(ctx, *proof, *message)
+		intents, svcErr := h.svc.GetIntentByProofs(ctx, *proof, *message)
 		if svcErr != nil {
 			return nil, svcErr
 		}
