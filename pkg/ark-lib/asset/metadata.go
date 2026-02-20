@@ -155,7 +155,7 @@ func (md Metadata) serialize(w io.Writer) error {
 	return nil
 }
 
-// MetadataList is an alias or Metadata slice, expose a serialization methods
+// MetadataList is an alias for a Metadata slice and exposes serialization methods
 type MetadataList []Metadata
 
 func (l MetadataList) String() string {
