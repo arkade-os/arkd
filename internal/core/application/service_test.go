@@ -61,6 +61,71 @@ func TestNextScheduledSession(t *testing.T) {
 	}
 }
 
+func TestResolveMinAmounts(t *testing.T) {
+	const dust int64 = 330
+
+	testCases := []struct {
+		description            string
+		vtxoMinAmount          int64
+		utxoMinAmount          int64
+		expectedVtxoSettlement int64
+		expectedVtxoOffchain   int64
+		expectedUtxoMin        int64
+	}{
+		{
+			description:            "below dust are clamped to dust",
+			vtxoMinAmount:          1,
+			utxoMinAmount:          100,
+			expectedVtxoSettlement: dust,
+			expectedVtxoOffchain:   dust,
+			expectedUtxoMin:        dust,
+		},
+		{
+			description:            "default -1 is clamped to dust",
+			vtxoMinAmount:          -1,
+			utxoMinAmount:          -1,
+			expectedVtxoSettlement: dust,
+			expectedVtxoOffchain:   dust,
+			expectedUtxoMin:        dust,
+		},
+		{
+			description:            "above dust are kept as-is",
+			vtxoMinAmount:          1000,
+			utxoMinAmount:          2000,
+			expectedVtxoSettlement: 1000,
+			expectedVtxoOffchain:   1000,
+			expectedUtxoMin:        2000,
+		},
+		{
+			description:            "exactly dust are kept as-is",
+			vtxoMinAmount:          dust,
+			utxoMinAmount:          dust,
+			expectedVtxoSettlement: dust,
+			expectedVtxoOffchain:   dust,
+			expectedUtxoMin:        dust,
+		},
+		{
+			description:            "zero is clamped to dust",
+			vtxoMinAmount:          0,
+			utxoMinAmount:          0,
+			expectedVtxoSettlement: dust,
+			expectedVtxoOffchain:   dust,
+			expectedUtxoMin:        dust,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			settlement, offchain, utxoMin := resolveMinAmounts(
+				tc.vtxoMinAmount, tc.utxoMinAmount, dust,
+			)
+			require.Equal(t, tc.expectedVtxoSettlement, settlement)
+			require.Equal(t, tc.expectedVtxoOffchain, offchain)
+			require.Equal(t, tc.expectedUtxoMin, utxoMin)
+		})
+	}
+}
+
 func parseTime(t *testing.T, value string) time.Time {
 	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
 	require.NoError(t, err)

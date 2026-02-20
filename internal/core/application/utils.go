@@ -519,6 +519,27 @@ func waitForConfirmation(
 	}
 }
 
+// resolveMinAmounts clamps vtxo and utxo minimum amounts to at least the dust
+// limit. This ensures that GetInfo, RegisterIntent, and offchain TX validation
+// all enforce the same effective minimum.
+func resolveMinAmounts(
+	vtxoMinAmount, utxoMinAmount, dustAmount int64,
+) (vtxoMinSettlement, vtxoMinOffchain, utxoMin int64) {
+	vtxoMinSettlement = vtxoMinAmount
+	vtxoMinOffchain = vtxoMinAmount
+	utxoMin = utxoMinAmount
+	if vtxoMinSettlement < dustAmount {
+		vtxoMinSettlement = dustAmount
+	}
+	if vtxoMinOffchain < dustAmount {
+		vtxoMinOffchain = dustAmount
+	}
+	if utxoMin < dustAmount {
+		utxoMin = dustAmount
+	}
+	return
+}
+
 // validateTimeRange validates time range values. A zero value means unbounded and is allowed.
 func validateTimeRange(after, before int64) error {
 	if after < 0 || before < 0 {

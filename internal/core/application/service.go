@@ -161,16 +161,9 @@ func NewService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dust amount: %s", err)
 	}
-	var vtxoMinSettlementAmount, vtxoMinOffchainTxAmount = vtxoMinAmount, vtxoMinAmount
-	if vtxoMinSettlementAmount < int64(dustAmount) {
-		vtxoMinSettlementAmount = int64(dustAmount)
-	}
-	if vtxoMinOffchainTxAmount == -1 {
-		vtxoMinOffchainTxAmount = int64(dustAmount)
-	}
-	if utxoMinAmount < int64(dustAmount) {
-		utxoMinAmount = int64(dustAmount)
-	}
+	vtxoMinSettlementAmount, vtxoMinOffchainTxAmount, utxoMinAmount := resolveMinAmounts(
+		vtxoMinAmount, utxoMinAmount, int64(dustAmount),
+	)
 
 	forfeitPubkey, err := wallet.GetForfeitPubkey(ctx)
 	if err != nil {
