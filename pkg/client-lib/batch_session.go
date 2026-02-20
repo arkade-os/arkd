@@ -304,23 +304,30 @@ func (a *service) getFundsToSettle(
 		}}
 	}
 	if len(outputs) == 1 && outputs[0].Amount <= 0 {
+		totalAmount, totalFeeAmount := uint64(0), uint64(0)
 		for _, utxo := range boardingUtxos {
-			outputs[0].Amount += utxo.Amount
+			totalAmount += utxo.Amount
 			fees, err := feeEstimator.EvalOnchainInput(utxo.ToArkFeeInput())
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			outputs[0].Amount -= uint64(fees.ToSatoshis())
+			totalFeeAmount += uint64(fees.ToSatoshis())
 		}
 
 		for _, vtxo := range vtxos {
-			outputs[0].Amount += vtxo.Amount
+			totalAmount += vtxo.Amount
 			fees, err := feeEstimator.EvalOffchainInput(vtxo.ToArkFeeInput())
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			outputs[0].Amount -= uint64(fees.ToSatoshis())
+			totalFeeAmount += uint64(fees.ToSatoshis())
 		}
+		if totalFeeAmount >= totalAmount {
+			return nil, nil, nil, fmt.Errorf(
+				"fees (%d) exceed total amount (%d)", totalFeeAmount, totalAmount,
+			)
+		}
+		outputs[0].Amount = totalAmount - totalFeeAmount
 	}
 
 	selectedBoardingUtxos, selectedVtxos, changeAmount, err := utils.CoinSelect(
