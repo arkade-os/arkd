@@ -73,15 +73,15 @@ func TestResolveMinAmounts(t *testing.T) {
 		expectedUtxoMin        int64
 	}{
 		{
-			description:            "below dust are clamped to dust",
+			description:            "below dust: settlement clamped, offchain preserved",
 			vtxoMinAmount:          1,
 			utxoMinAmount:          100,
 			expectedVtxoSettlement: dust,
-			expectedVtxoOffchain:   dust,
+			expectedVtxoOffchain:   1,
 			expectedUtxoMin:        dust,
 		},
 		{
-			description:            "default -1 is clamped to dust",
+			description:            "default -1 is clamped to dust for all",
 			vtxoMinAmount:          -1,
 			utxoMinAmount:          -1,
 			expectedVtxoSettlement: dust,
@@ -105,11 +105,11 @@ func TestResolveMinAmounts(t *testing.T) {
 			expectedUtxoMin:        dust,
 		},
 		{
-			description:            "zero is clamped to dust",
+			description:            "zero: settlement clamped, offchain preserved",
 			vtxoMinAmount:          0,
 			utxoMinAmount:          0,
 			expectedVtxoSettlement: dust,
-			expectedVtxoOffchain:   dust,
+			expectedVtxoOffchain:   0,
 			expectedUtxoMin:        dust,
 		},
 	}

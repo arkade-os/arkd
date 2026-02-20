@@ -519,9 +519,10 @@ func waitForConfirmation(
 	}
 }
 
-// resolveMinAmounts clamps vtxo and utxo minimum amounts to at least the dust
-// limit. This ensures that GetInfo, RegisterIntent, and offchain TX validation
-// all enforce the same effective minimum.
+// resolveMinAmounts clamps vtxo settlement and utxo minimum amounts to at
+// least the dust limit. The offchain minimum is only defaulted when unset (-1)
+// because sub-dust offchain VTXOs are intentionally supported via OP_RETURN
+// scripts.
 func resolveMinAmounts(
 	vtxoMinAmount, utxoMinAmount, dustAmount int64,
 ) (vtxoMinSettlement, vtxoMinOffchain, utxoMin int64) {
@@ -531,7 +532,7 @@ func resolveMinAmounts(
 	if vtxoMinSettlement < dustAmount {
 		vtxoMinSettlement = dustAmount
 	}
-	if vtxoMinOffchain < dustAmount {
+	if vtxoMinOffchain == -1 {
 		vtxoMinOffchain = dustAmount
 	}
 	if utxoMin < dustAmount {
