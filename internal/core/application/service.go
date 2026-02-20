@@ -161,16 +161,9 @@ func NewService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dust amount: %s", err)
 	}
-	var vtxoMinSettlementAmount, vtxoMinOffchainTxAmount = vtxoMinAmount, vtxoMinAmount
-	if vtxoMinSettlementAmount < int64(dustAmount) {
-		vtxoMinSettlementAmount = int64(dustAmount)
-	}
-	if vtxoMinOffchainTxAmount == -1 {
-		vtxoMinOffchainTxAmount = int64(dustAmount)
-	}
-	if utxoMinAmount < int64(dustAmount) {
-		utxoMinAmount = int64(dustAmount)
-	}
+	vtxoMinSettlementAmount, vtxoMinOffchainTxAmount, utxoMinAmount := resolveMinAmounts(
+		vtxoMinAmount, utxoMinAmount, int64(dustAmount),
+	)
 
 	forfeitPubkey, err := wallet.GetForfeitPubkey(ctx)
 	if err != nil {
@@ -2090,7 +2083,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		NextScheduledSession: nextScheduledSession,
 		UtxoMinAmount:        s.utxoMinAmount,
 		UtxoMaxAmount:        s.utxoMaxAmount,
-		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
+		VtxoMinAmount:        s.vtxoMinSettlementAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		Fees: FeeInfo{
