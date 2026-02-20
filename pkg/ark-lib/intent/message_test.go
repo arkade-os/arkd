@@ -22,6 +22,64 @@ func TestIntentMessage(t *testing.T) {
 	}
 }
 
+func TestGetIntentMessageDecode(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		var msg intent.GetIntentMessage
+		err := msg.Decode(`{"type":"get-intent","expire_at":1762862054}`)
+		require.NoError(t, err)
+		require.Equal(t, intent.IntentMessageTypeGetIntent, msg.Type)
+		require.Equal(t, int64(1762862054), msg.ExpireAt)
+	})
+
+	t.Run("wrong_type", func(t *testing.T) {
+		var msg intent.GetIntentMessage
+		err := msg.Decode(`{"type":"delete","expire_at":1762862054}`)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid intent message type")
+	})
+
+	t.Run("invalid_json", func(t *testing.T) {
+		var msg intent.GetIntentMessage
+		err := msg.Decode(`not json`)
+		require.Error(t, err)
+	})
+}
+
+func TestGetIntentMessageAccessors(t *testing.T) {
+	msg := intent.GetIntentMessage{
+		BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeGetIntent},
+		ExpireAt:    1762862054,
+	}
+
+	require.Equal(t, int64(1762862054), msg.GetExpireAt())
+	require.Equal(t, intent.BaseMessage{Type: intent.IntentMessageTypeGetIntent}, msg.GetBaseMessage())
+}
+
+func TestDeleteMessageAccessors(t *testing.T) {
+	msg := intent.DeleteMessage{
+		BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeDelete},
+		ExpireAt:    1762862054,
+	}
+
+	require.Equal(t, int64(1762862054), msg.GetExpireAt())
+	require.Equal(t, intent.BaseMessage{Type: intent.IntentMessageTypeDelete}, msg.GetBaseMessage())
+}
+
+func TestGetIntentMessageRoundtrip(t *testing.T) {
+	original := intent.GetIntentMessage{
+		BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeGetIntent},
+		ExpireAt:    1762862054,
+	}
+
+	encoded, err := original.Encode()
+	require.NoError(t, err)
+
+	var decoded intent.GetIntentMessage
+	err = decoded.Decode(encoded)
+	require.NoError(t, err)
+	require.Equal(t, original, decoded)
+}
+
 type messageFixture struct {
 	Name     string
 	Message  intentMsg
@@ -76,6 +134,11 @@ func parseMessageFixtures(t *testing.T) []messageFixture {
 			err := estimateFeeMsg.Decode(string(jsonFixture.Message))
 			require.NoError(t, err)
 			msg = &estimateFeeMsg
+		case intent.IntentMessageTypeGetIntent:
+			var getIntentMsg intent.GetIntentMessage
+			err := getIntentMsg.Decode(string(jsonFixture.Message))
+			require.NoError(t, err)
+			msg = &getIntentMsg
 		default:
 			t.Fatalf("unknown message type: %s", baseMsg.Type)
 		}

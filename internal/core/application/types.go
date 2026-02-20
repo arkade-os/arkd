@@ -62,6 +62,11 @@ type Service interface {
 		ctx context.Context,
 		txid string,
 	) (*domain.Intent, errors.Error)
+	GetIntentByProofs(
+		ctx context.Context,
+		proof intent.Proof,
+		message intent.GetIntentMessage,
+	) ([]*domain.Intent, errors.Error)
 }
 
 type ServiceInfo struct {

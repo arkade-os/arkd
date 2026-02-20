@@ -491,6 +491,46 @@ func (q *Queries) SelectIntentByTxid(ctx context.Context, txid sql.NullString) (
 	return i, err
 }
 
+const selectIntentsByProof = `-- name: SelectIntentsByProof :many
+SELECT id, txid, proof, message FROM intent
+WHERE proof = $1
+`
+
+type SelectIntentsByProofRow struct {
+	ID      sql.NullString
+	Txid    sql.NullString
+	Proof   sql.NullString
+	Message sql.NullString
+}
+
+func (q *Queries) SelectIntentsByProof(ctx context.Context, proof sql.NullString) ([]SelectIntentsByProofRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectIntentsByProof, proof)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectIntentsByProofRow
+	for rows.Next() {
+		var i SelectIntentsByProofRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Txid,
+			&i.Proof,
+			&i.Message,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
 SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
 `
