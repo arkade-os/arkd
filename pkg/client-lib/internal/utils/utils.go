@@ -25,6 +25,9 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
+// CoinSelect selects among boarding utxos and vtxos to cover the total amount of the outputs
+// it includes fee computation of the input and output thanks to feeEstimator
+// the change is expressed in btc sats
 func CoinSelect(
 	boardingUtxos []types.Utxo, vtxos []types.VtxoWithTapTree,
 	outputs []types.Receiver, dust uint64, withoutExpirySorting bool,
@@ -145,6 +148,59 @@ func CoinSelect(
 	}
 
 	return selectedBoarding, selected, change, nil
+}
+
+// CoinSelectAsset selects a set of vtxos holding a specific asset amount
+// the change is expressed in asset sats
+func CoinSelectAsset(
+	vtxos []types.VtxoWithTapTree, amount uint64,
+	assetID string, withoutExpirySorting bool,
+) ([]types.VtxoWithTapTree, uint64, error) {
+	selected := make([]types.VtxoWithTapTree, 0)
+	selectedAmount := uint64(0)
+
+	filteredVtxos := make([]types.VtxoWithTapTree, 0)
+
+	// filter out vtxos holding other assets (or no assets)
+	for _, vtxo := range vtxos {
+		if len(vtxo.Assets) > 0 {
+			for _, asset := range vtxo.Assets {
+				if asset.AssetId == assetID {
+					filteredVtxos = append(filteredVtxos, vtxo)
+					break
+				}
+			}
+		}
+	}
+
+	vtxos = filteredVtxos
+
+	if !withoutExpirySorting {
+		// sort vtxos by expiration (older first)
+		sort.SliceStable(vtxos, func(i, j int) bool {
+			return vtxos[i].ExpiresAt.Before(vtxos[j].ExpiresAt)
+		})
+	}
+
+	for _, vtxo := range vtxos {
+		if selectedAmount >= amount {
+			break
+		}
+		selected = append(selected, vtxo)
+		for _, asset := range vtxo.Assets {
+			if asset.AssetId == assetID {
+				selectedAmount += asset.Amount
+				break
+			}
+		}
+	}
+
+	if selectedAmount < amount {
+		return nil, 0, fmt.Errorf("not enough funds to cover amount %d", amount)
+	}
+
+	change := selectedAmount - amount
+	return selected, change, nil
 }
 
 func ParseBitcoinAddress(addr string, net chaincfg.Params) (

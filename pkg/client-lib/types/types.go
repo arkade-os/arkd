@@ -8,6 +8,7 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -82,6 +83,12 @@ type Vtxo struct {
 	SpentBy         string
 	SettledBy       string
 	ArkTxid         string
+	Assets          []Asset
+}
+
+type Asset struct {
+	AssetId string
+	Amount  uint64
 }
 
 func (v Vtxo) String() string {
@@ -198,11 +205,12 @@ func (t TransactionKey) String() string {
 
 type Transaction struct {
 	TransactionKey
-	Amount    uint64
-	Type      TxType
-	CreatedAt time.Time
-	Hex       string
-	SettledBy string
+	Amount      uint64
+	Type        TxType
+	CreatedAt   time.Time
+	Hex         string
+	SettledBy   string
+	AssetPacket asset.Packet
 }
 
 func (t Transaction) String() string {
@@ -265,6 +273,7 @@ func (u Utxo) ToArkFeeInput() arkfee.OnchainInput {
 type Receiver struct {
 	To     string
 	Amount uint64
+	Assets []Asset
 }
 
 func (r Receiver) IsOnchain() bool {
@@ -338,4 +347,30 @@ type OnchainAddressEvent struct {
 type SyncEvent struct {
 	Synced bool
 	Err    error
+}
+
+// ControlAsset represents the control asset configuration for issuing new assets.
+// Use either NewControlAsset to create a new control asset, or ExistingControlAsset
+type ControlAsset interface {
+	isControlAsset()
+}
+
+// NewControlAsset creates a new control asset with the specified amount.
+type NewControlAsset struct {
+	Amount uint64
+}
+
+func (NewControlAsset) isControlAsset() {}
+
+// ExistingControlAsset references an existing control asset by its ID.
+type ExistingControlAsset struct {
+	ID string
+}
+
+func (ExistingControlAsset) isControlAsset() {}
+
+type AssetInfo struct {
+	AssetId        string
+	ControlAssetId string
+	Metadata       []asset.Metadata
 }

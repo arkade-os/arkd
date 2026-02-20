@@ -392,6 +392,16 @@ func (a *service) getSpendableVtxos(
 		allVtxos = utils.SortVtxosByExpiry(allVtxos)
 	}
 
+	if opts != nil && opts.excludeAssetVtxos {
+		filteredVtxos := make([]types.Vtxo, 0, len(allVtxos))
+		for _, vtxo := range allVtxos {
+			if len(vtxo.Assets) == 0 {
+				filteredVtxos = append(filteredVtxos, vtxo)
+			}
+		}
+		allVtxos = filteredVtxos
+	}
+
 	return allVtxos, nil
 }
 

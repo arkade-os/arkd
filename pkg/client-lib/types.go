@@ -3,8 +3,9 @@ package arksdk
 import "github.com/arkade-os/arkd/pkg/client-lib/types"
 
 type Balance struct {
-	OnchainBalance  OnchainBalance  `json:"onchain_balance"`
-	OffchainBalance OffchainBalance `json:"offchain_balance"`
+	OnchainBalance  OnchainBalance    `json:"onchain_balance"`
+	OffchainBalance OffchainBalance   `json:"offchain_balance"`
+	AssetBalances   map[string]uint64 `json:"asset_balances,omitempty"`
 }
 
 type OnchainBalance struct {
@@ -33,6 +34,7 @@ type balanceRes struct {
 	onchainSpendableBalance     uint64
 	onchainLockedBalance        map[int64]uint64
 	offchainBalanceByExpiration map[int64]uint64
+	assetBalances               map[string]uint64
 	err                         error
 }
 
@@ -51,4 +53,6 @@ type getVtxosFilter struct {
 	vtxos []types.VtxoWithTapTree
 	// If set, the provided boarding utxo set is used and won't be fetched from network
 	utxos []types.Utxo
+	// If true, coin selection will exclude vtxos holding assets
+	excludeAssetVtxos bool
 }

@@ -138,6 +138,7 @@ func (a *service) CollaborativeExit(
 
 	getVtxosOpts := &getVtxosFilter{
 		withRecoverableVtxos: options.withRecoverableVtxos,
+		excludeAssetVtxos:    true,
 	}
 	spendableVtxos, err := a.getSpendableVtxos(ctx, getVtxosOpts)
 	if err != nil {
@@ -168,6 +169,7 @@ func (a *service) CollaborativeExit(
 			expiryThreshold:      options.expiryThreshold,
 			vtxos:                options.vtxos,
 			utxos:                options.boardingUtxos,
+			excludeAssetVtxos:    true,
 		},
 	)
 	if err != nil {
@@ -190,7 +192,7 @@ func (a *service) RegisterIntent(
 		return "", err
 	}
 
-	inputs, tapLeaves, arkFields, err := toIntentInputs(
+	inputs, tapLeaves, arkFields, assetInputs, err := toIntentInputs(
 		boardingUtxos, vtxosWithTapscripts, notes,
 	)
 	if err != nil {
@@ -198,7 +200,7 @@ func (a *service) RegisterIntent(
 	}
 
 	proofTx, message, err := a.makeRegisterIntent(
-		inputs, tapLeaves, outputs, cosignersPublicKeys, arkFields,
+		inputs, assetInputs, tapLeaves, outputs, cosignersPublicKeys, arkFields,
 	)
 	if err != nil {
 		return "", err
@@ -219,7 +221,7 @@ func (a *service) DeleteIntent(
 		return err
 	}
 
-	inputs, exitLeaves, arkFields, err := toIntentInputs(
+	inputs, exitLeaves, arkFields, _, err := toIntentInputs(
 		boardingUtxos, vtxosWithTapscripts, notes,
 	)
 	if err != nil {
@@ -279,9 +281,26 @@ func (a *service) getFundsToSettle(
 	}
 
 	if len(outputs) <= 0 {
+		// gather all asset balances from vtxos to carry them forward
+		assetBalances := make(map[string]uint64)
+		for _, vtxo := range vtxos {
+			for _, a := range vtxo.Assets {
+				assetBalances[a.AssetId] += a.Amount
+			}
+		}
+
+		assets := make([]types.Asset, 0, len(assetBalances))
+		for assetId, amount := range assetBalances {
+			assets = append(assets, types.Asset{
+				AssetId: assetId,
+				Amount:  amount,
+			})
+		}
+
 		outputs = []types.Receiver{{
 			To:     offchainAddrs[0].Address,
 			Amount: 0,
+			Assets: assets,
 		}}
 	}
 	if len(outputs) == 1 && outputs[0].Amount <= 0 {
@@ -377,7 +396,7 @@ func (a *service) joinBatchWithRetry(
 	ctx context.Context, notes []string, outputs []types.Receiver, options settleOptions,
 	selectedCoins []types.VtxoWithTapTree, selectedBoardingCoins []types.Utxo,
 ) (string, error) {
-	inputs, exitLeaves, arkFields, err := toIntentInputs(
+	inputs, exitLeaves, arkFields, assetInputs, err := toIntentInputs(
 		selectedBoardingCoins, selectedCoins, notes,
 	)
 	if err != nil {
@@ -408,7 +427,7 @@ func (a *service) joinBatchWithRetry(
 	var batchErr error
 	for retryCount < maxRetry {
 		proofTx, message, err := a.makeRegisterIntent(
-			inputs, exitLeaves, outputs, signerPubKeys, arkFields,
+			inputs, assetInputs, exitLeaves, outputs, signerPubKeys, arkFields,
 		)
 		if err != nil {
 			return "", err
@@ -548,10 +567,11 @@ func (a *service) handleBatchEvents(
 }
 
 func (a *service) makeRegisterIntent(
-	inputs []intent.Input, leafProofs []*arklib.TaprootMerkleProof,
-	outputs []types.Receiver, cosignersPublicKeys []string, arkFields [][]*psbt.Unknown,
+	inputs []intent.Input, assetInputs map[int][]types.Asset,
+	leafProofs []*arklib.TaprootMerkleProof, outputs []types.Receiver,
+	cosignersPublicKeys []string, arkFields [][]*psbt.Unknown,
 ) (string, string, error) {
-	message, outputsTxOut, err := registerIntentMessage(outputs, cosignersPublicKeys)
+	message, outputsTxOut, err := registerIntentMessage(assetInputs, outputs, cosignersPublicKeys)
 	if err != nil {
 		return "", "", err
 	}

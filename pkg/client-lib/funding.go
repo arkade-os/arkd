@@ -71,7 +71,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 	}
 
 	if a.UtxoMaxAmount == 0 {
-		balance, amountByExpiration, err := a.getOffchainBalance(ctx)
+		balance, amountByExpiration, assetBalances, err := a.getOffchainBalance(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -84,6 +84,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 				NextExpiration: getFancyTimeExpiration(nextExpiration),
 				Details:        details,
 			},
+			AssetBalances: assetBalances,
 		}, nil
 	}
 
@@ -98,7 +99,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 
 		go func() {
 			defer wg.Done()
-			balance, amountByExpiration, err := a.getOffchainBalance(ctx)
+			balance, amountByExpiration, assetBalances, err := a.getOffchainBalance(ctx)
 			if err != nil {
 				chRes <- balanceRes{err: err}
 				return
@@ -107,6 +108,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 			chRes <- balanceRes{
 				offchainBalance:             balance,
 				offchainBalanceByExpiration: amountByExpiration,
+				assetBalances:               assetBalances,
 			}
 		}()
 
@@ -156,6 +158,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 	details := make([]VtxoDetails, 0)
 	offchainBalance, onchainBalance := uint64(0), uint64(0)
 	nextExpiration := int64(0)
+	assetBalances := make(map[string]uint64)
 	count := 0
 	for res := range chRes {
 		if res.err != nil {
@@ -168,6 +171,12 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 			onchainBalance += res.onchainSpendableBalance
 		}
 		nextExpiration, details = getOffchainBalanceDetails(res.offchainBalanceByExpiration)
+
+		if res.assetBalances != nil {
+			for assetId, amount := range res.assetBalances {
+				assetBalances[assetId] += amount
+			}
+		}
 
 		if res.onchainLockedBalance != nil {
 			for timestamp, amount := range res.onchainLockedBalance {
@@ -188,6 +197,13 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 		}
 	}
 
+	// remove empty asset balances
+	for assetId, amount := range assetBalances {
+		if amount == 0 {
+			delete(assetBalances, assetId)
+		}
+	}
+
 	return &Balance{
 		OnchainBalance: OnchainBalance{
 			SpendableAmount: onchainBalance,
@@ -198,6 +214,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 			NextExpiration: getFancyTimeExpiration(nextExpiration),
 			Details:        details,
 		},
+		AssetBalances: assetBalances,
 	}, nil
 }
 
@@ -269,12 +286,15 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 	return event.NewVtxos, nil
 }
 
-func (a *service) getOffchainBalance(ctx context.Context) (uint64, map[int64]uint64, error) {
+func (a *service) getOffchainBalance(ctx context.Context) (
+	uint64, map[int64]uint64, map[string]uint64, error,
+) {
 	amountByExpiration := make(map[int64]uint64, 0)
+	assetBalances := make(map[string]uint64, 0)
 	opts := &getVtxosFilter{withRecoverableVtxos: true}
 	vtxos, err := a.getSpendableVtxos(ctx, opts)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	var balance uint64
 	for _, vtxo := range vtxos {
@@ -289,9 +309,17 @@ func (a *service) getOffchainBalance(ctx context.Context) (uint64, map[int64]uin
 
 			amountByExpiration[expiration] += vtxo.Amount
 		}
+
+		for _, a := range vtxo.Assets {
+			if _, ok := assetBalances[a.AssetId]; !ok {
+				assetBalances[a.AssetId] = a.Amount
+				continue
+			}
+			assetBalances[a.AssetId] += a.Amount
+		}
 	}
 
-	return balance, amountByExpiration, nil
+	return balance, amountByExpiration, assetBalances, nil
 }
 
 func (a *service) getBoardingTxs(ctx context.Context) ([]types.Transaction, error) {

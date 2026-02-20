@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
 
@@ -31,6 +32,17 @@ type ArkClient interface {
 	ListVtxos(ctx context.Context) (spendable, spent []types.Vtxo, err error)
 	GetTransactionHistory(ctx context.Context) ([]types.Transaction, error)
 	NotifyIncomingFunds(ctx context.Context, address string) ([]types.Vtxo, error)
+	// ** Assets **
+	IssueAsset(
+		ctx context.Context, amount uint64, controlAsset types.ControlAsset,
+		metadata []asset.Metadata, opts ...SendOption,
+	) (string, []asset.AssetId, error)
+	ReissueAsset(
+		ctx context.Context, assetId string, amount uint64, opts ...SendOption,
+	) (string, error)
+	BurnAsset(
+		ctx context.Context, assetID string, amount uint64, opts ...SendOption,
+	) (string, error)
 	// ** Offchain txs **
 	SendOffChain(
 		ctx context.Context, receivers []types.Receiver, opts ...SendOption,

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
@@ -562,6 +563,34 @@ func (a *grpcClient) UnsubscribeForScripts(
 	return nil
 }
 
+func (a *grpcClient) GetAsset(ctx context.Context, assetID string) (
+	*indexer.AssetInfo, error,
+) {
+	req := &arkv1.GetAssetRequest{
+		AssetId: assetID,
+	}
+
+	resp, err := a.svc().GetAsset(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	var metadata []asset.Metadata
+	if md := resp.GetMetadata(); md != "" {
+		metadata, err = asset.NewMetadataListFromString(md)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse metadata: %w", err)
+		}
+	}
+
+	return &indexer.AssetInfo{
+		AssetId:        resp.GetAssetId(),
+		Supply:         resp.GetSupply(),
+		ControlAssetId: resp.GetControlAsset(),
+		Metadata:       metadata,
+	}, nil
+}
+
 func (a *grpcClient) Close() {
 	if a.monitoringCancel != nil {
 		a.monitoringCancel()
@@ -636,6 +665,16 @@ func newIndexerVtxos(vtxos []*arkv1.IndexerVtxo) []types.Vtxo {
 }
 
 func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) types.Vtxo {
+	var assetLists []types.Asset
+	for _, a := range vtxo.GetAssets() {
+		if a != nil {
+			assetLists = append(assetLists, types.Asset{
+				AssetId: a.GetAssetId(),
+				Amount:  a.GetAmount(),
+			})
+		}
+	}
+
 	return types.Vtxo{
 		Outpoint: types.Outpoint{
 			Txid: vtxo.GetOutpoint().GetTxid(),
@@ -653,5 +692,6 @@ func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) types.Vtxo {
 		SpentBy:         vtxo.GetSpentBy(),
 		SettledBy:       vtxo.GetSettledBy(),
 		ArkTxid:         vtxo.GetArkTxid(),
+		Assets:          assetLists,
 	}
 }

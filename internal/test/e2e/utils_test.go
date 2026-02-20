@@ -736,7 +736,7 @@ func refill(httpClient *http.Client) error {
 
 func listVtxosWithAsset(t *testing.T, client arksdk.ArkClient, assetID string) []types.Vtxo {
 	t.Helper()
-	vtxos, err := client.ListSpendableVtxos(t.Context())
+	vtxos, _, err := client.ListVtxos(t.Context())
 	require.NoError(t, err)
 
 	assetVtxos := make([]types.Vtxo, 0, len(vtxos))
