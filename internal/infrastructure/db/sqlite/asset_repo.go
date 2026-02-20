@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -72,28 +71,31 @@ func (r *assetRepository) AddAssets(
 				continue
 			}
 
-			var mdHash []byte
-			var md sql.NullString
+			var md, mdHash sql.NullString
 			if len(ast.Metadata) > 0 {
-				mdHash, err = asset.GenerateMetadataListHash(ast.Metadata)
+				metadataHash, err := asset.GenerateMetadataListHash(ast.Metadata)
 				if err != nil {
 					return fmt.Errorf("failed to compute metadata hash: %w", err)
 				}
-				// store metadata as stringified JSON {key [string]: value [string]}
-				buf, _ := json.Marshal(toMetadataDTO(ast.Metadata))
+				mdHash = sql.NullString{
+					String: hex.EncodeToString(metadataHash),
+					Valid:  true,
+				}
+
+				metadataList, err := asset.NewMetadataList(ast.Metadata)
+				if err != nil {
+					return fmt.Errorf("failed to create metadata list: %w", err)
+				}
 				md = sql.NullString{
-					String: string(buf),
+					String: metadataList.String(),
 					Valid:  true,
 				}
 			}
 			if err := querierWithTx.InsertAsset(
 				ctx, queries.InsertAssetParams{
-					ID:       ast.Id,
-					Metadata: md,
-					MetadataHash: sql.NullString{
-						String: hex.EncodeToString(mdHash),
-						Valid:  len(mdHash) > 0,
-					},
+					ID:           ast.Id,
+					Metadata:     md,
+					MetadataHash: mdHash,
 					ControlAssetID: sql.NullString{
 						String: ast.ControlAssetId,
 						Valid:  len(ast.ControlAssetId) > 0,
@@ -140,25 +142,20 @@ func (r *assetRepository) GetAssets(
 				supply = supply.Add(dec)
 			}
 
-			var metadata []asset.Metadata
-			if row.Metadata.Valid {
-				md := make([]metadataDTO, 0)
-				if err := json.Unmarshal([]byte(row.Metadata.String), &md); err != nil {
-					return fmt.Errorf("failed to decode asset metadata: %w", err)
-				}
-				for _, dto := range md {
-					metadata = append(metadata, asset.Metadata{
-						Key:   []byte(dto.Key),
-						Value: []byte(dto.Value),
-					})
-				}
-			}
-			assets = append(assets, domain.Asset{
+			ast := domain.Asset{
 				Id:             row.ID,
-				Metadata:       metadata,
 				ControlAssetId: row.ControlAssetID.String,
 				Supply:         *supply.BigInt(),
-			})
+			}
+
+			if row.Metadata.Valid {
+				ast.Metadata, err = asset.NewMetadataListFromString(row.Metadata.String)
+				if err != nil {
+					// ignore error, metadata won't be set in the asset but do not fail the query
+					continue
+				}
+			}
+			assets = append(assets, ast)
 		}
 		return nil
 	}
@@ -191,20 +188,4 @@ func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool
 		return false, err
 	}
 	return true, nil
-}
-
-type metadataDTO struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-func toMetadataDTO(mdList []asset.Metadata) []metadataDTO {
-	metadataDTOs := make([]metadataDTO, 0, len(mdList))
-	for _, md := range mdList {
-		metadataDTOs = append(metadataDTOs, metadataDTO{
-			Key:   string(md.Key),
-			Value: string(md.Value),
-		})
-	}
-	return metadataDTOs
 }

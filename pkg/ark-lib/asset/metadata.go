@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
 )
 
 // Metadata is a key-value pair attached to an asset group.
@@ -120,7 +119,7 @@ func (md Metadata) serialize(w io.Writer) error {
 	return serializeVarSlice(w, md.Value)
 }
 
-// MetadataList is a sortable list of Metadata used for deterministic serialization.
+// MetadataList is an alias for a Metadata slice and exposes serialization methods
 type MetadataList []Metadata
 
 func (l MetadataList) String() string {
@@ -146,15 +145,11 @@ func (l MetadataList) validate() error {
 	return nil
 }
 
-// serialize sorts the entries by key in descending order and writes the
-// length-prefixed list to the writer.
+// serialize writes the length-prefixed list to the writer.
 func (l MetadataList) serialize(w io.Writer) error {
 	if err := serializeVarUint(w, uint64(len(l))); err != nil {
 		return err
 	}
-	sort.SliceStable(l, func(i, j int) bool {
-		return string(l[i].Key)+string(l[i].Value) > string(l[j].Key)+string(l[j].Value)
-	})
 	for _, md := range l {
 		if err := md.serialize(w); err != nil {
 			return err
