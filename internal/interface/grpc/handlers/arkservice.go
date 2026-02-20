@@ -697,7 +697,11 @@ func (h *handler) GetIntent(
 				Message: i.Message,
 			})
 		}
-		return &arkv1.GetIntentResponse{Intents: protoIntents}, nil
+		resp := &arkv1.GetIntentResponse{Intents: protoIntents}
+		if len(protoIntents) == 1 {
+			resp.Intent = protoIntents[0]
+		}
+		return resp, nil
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown intent filter provided")
 	}
