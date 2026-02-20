@@ -262,8 +262,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bo
 		appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
 		eventsCh := appSvc.GetIndexerTxChannel(ctx)
 		subscriptionTimeoutDuration := time.Minute // TODO let to be set via config
+		indexerSvc, err := s.appConfig.IndexerService()
+		if err != nil {
+			return err
+		}
 		indexerHandler := handlers.NewIndexerService(
-			s.appConfig.IndexerService(), eventsCh,
+			indexerSvc, eventsCh,
 			subscriptionTimeoutDuration, s.config.HeartbeatInterval,
 		)
 		arkv1.RegisterArkServiceServer(grpcServer, appHandler)

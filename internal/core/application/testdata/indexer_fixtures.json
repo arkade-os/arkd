@@ -1,0 +1,54 @@
+{
+  "auth_token_tests": {
+    "private_key_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+    "public_key_hex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+    "test_cases": [
+      {
+        "name": "valid_token_simple_outpoint",
+        "outpoint": {
+          "txid": "0000000000000000000000000000000000000000000000000000000000000001",
+          "vout": 0
+        },
+        "should_validate": true
+      },
+      {
+        "name": "valid_token_with_vout",
+        "outpoint": {
+          "txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "vout": 42
+        },
+        "should_validate": true
+      },
+      {
+        "name": "valid_token_max_vout",
+        "outpoint": {
+          "txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "vout": 4294967295
+        },
+        "should_validate": true
+      }
+    ]
+  },
+  "invalid_token_tests": [
+    {
+      "name": "empty_token",
+      "token": "",
+      "should_validate": false
+    },
+    {
+      "name": "invalid_base64",
+      "token": "not-valid-base64!!!",
+      "should_validate": false
+    },
+    {
+      "name": "too_short",
+      "token": "YWJjZGVm",
+      "should_validate": false
+    },
+    {
+      "name": "wrong_length",
+      "token": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "should_validate": false
+    }
+  ]
+}

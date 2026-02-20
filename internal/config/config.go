@@ -56,6 +56,11 @@ var (
 		"inmemory": {},
 		"redis":    {},
 	}
+	supportedIndexerTxExposures = supportedType{
+		"public":   {},
+		"withheld": {},
+		"private":  {},
+	}
 )
 
 type Config struct {
@@ -123,7 +128,8 @@ type Config struct {
 	VtxoMinAmount             int64
 	SettlementMinExpiryGap    int64
 
-	EnablePprof bool
+	EnablePprof       bool
+	IndexerTxExposure string
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -210,6 +216,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
+	IndexerTxExposure             = "INDEXER_TX_EXPOSURE"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -245,6 +252,7 @@ var (
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultIndexerTxExposure             = "public"
 )
 
 func LoadConfig() (*Config, error) {
@@ -285,6 +293,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(IndexerTxExposure, defaultIndexerTxExposure)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -395,6 +404,7 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		IndexerTxExposure:             viper.GetString(IndexerTxExposure),
 	}, nil
 }
 
@@ -559,6 +569,14 @@ func (c *Config) Validate() error {
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
+
+	if !supportedIndexerTxExposures.supports(c.IndexerTxExposure) {
+		return fmt.Errorf(
+			"indexer txn exposure type not supported, please select one of: %s",
+			supportedIndexerTxExposures,
+		)
+	}
+
 	if err := c.repoManager(); err != nil {
 		return err
 	}
@@ -616,8 +634,18 @@ func (c *Config) UnlockerService() ports.Unlocker {
 	return c.unlocker
 }
 
-func (c *Config) IndexerService() application.IndexerService {
-	return application.NewIndexerService(c.repo)
+func (c *Config) IndexerService() (application.IndexerService, error) {
+	if c.wallet == nil {
+		if err := c.walletService(); err != nil {
+			return nil, err
+		}
+	}
+	if c.signer == nil {
+		if err := c.signerService(); err != nil {
+			return nil, err
+		}
+	}
+	return application.NewIndexerService(c.repo, c.signer, c.wallet, c.IndexerTxExposure)
 }
 
 func (c *Config) SignerService() (ports.SignerService, error) {

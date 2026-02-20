@@ -184,6 +184,26 @@
           }
         }
       },
+      "SignMessageRequest": {
+        "title": "SignMessageRequest",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "format": "byte"
+          }
+        }
+      },
+      "SignMessageResponse": {
+        "title": "SignMessageResponse",
+        "type": "object",
+        "properties": {
+          "signature": {
+            "type": "string",
+            "format": "byte"
+          }
+        }
+      },
       "SignTransactionRequest": {
         "title": "SignTransactionRequest",
         "type": "object",

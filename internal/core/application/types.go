@@ -133,8 +133,9 @@ type TeleportAsset struct {
 }
 
 type VtxoChainResp struct {
-	Chain []ChainTx
-	Page  PageResp
+	Chain     []ChainTx
+	Page      PageResp
+	AuthToken string
 }
 
 type VOut int
