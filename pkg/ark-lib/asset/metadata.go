@@ -2,12 +2,10 @@ package asset
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"sort"
 )
 
 // Metadata is a key-value pair attached to an asset group.
@@ -74,44 +72,16 @@ func NewMetadataListFromBytes(buf []byte) (MetadataList, error) {
 	return newMetadataListFromReader(r)
 }
 
-// GenerateMetadataListHash computes a deterministic SHA-256 hash over all metadata entries.
-// Each entry is individually hashed, the hashes are sorted lexicographically, concatenated,
-// and hashed again to produce the final digest.
+// GenerateMetadataListHash computes the Merkle root of the
+// asset's metadata entries.
 func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
-	if len(md) <= 0 {
+	if len(md) == 0 {
 		return nil, nil
 	}
 
-	// Hash all metadata
-	hashes := make([][32]byte, 0, len(md))
-	for _, m := range md {
-		if err := m.validate(); err != nil {
-			return nil, err
-		}
-		hashes = append(hashes, m.Hash())
-	}
-
-	// Sort the resulting hashes in lexicographic order
-	sort.SliceStable(hashes, func(i, j int) bool {
-		return bytes.Compare(hashes[i][:], hashes[j][:]) < 0
-	})
-
-	// Concat all hashes
-	buf := make([]byte, 0, len(hashes)*32)
-	for _, h := range hashes {
-		buf = append(buf, h[:]...)
-	}
-	// Compute the resulting hash
-	hash := sha256.Sum256(buf)
-	return hash[:], nil
-}
-
-// Hash returns the SHA-256 digest of the concatenated key and value bytes.
-func (md Metadata) Hash() [32]byte {
-	buf := make([]byte, 0, len(md.Key)+len(md.Value))
-	buf = append(buf, md.Key...)
-	buf = append(buf, md.Value...)
-	return sha256.Sum256(buf)
+	levels := buildMetadataMerkleTree(md)
+	root := levels[len(levels)-1][0]
+	return root[:], nil
 }
 
 // Serialize encodes the Metadata entry into a byte slice.
@@ -143,16 +113,10 @@ func (md Metadata) validate() error {
 
 // serialize writes the key and value as variable-length slices to the writer.
 func (md Metadata) serialize(w io.Writer) error {
-	key := []byte(md.Key)
-	value := []byte(md.Value)
-
-	if err := serializeVarSlice(w, key); err != nil {
+	if err := serializeVarSlice(w, md.Key); err != nil {
 		return err
 	}
-	if err := serializeVarSlice(w, value); err != nil {
-		return err
-	}
-	return nil
+	return serializeVarSlice(w, md.Value)
 }
 
 // MetadataList is an alias for a Metadata slice and exposes serialization methods
@@ -219,7 +183,8 @@ func newMetadataFromReader(r *bytes.Reader) (*Metadata, error) {
 	return &md, nil
 }
 
-// newMetadataListFromReader deserializes a length-prefixed list of Metadata entries from the reader.
+// newMetadataListFromReader deserializes a length-prefixed list of Metadata
+// entries from the reader.
 func newMetadataListFromReader(r *bytes.Reader) (MetadataList, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
