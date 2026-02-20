@@ -569,6 +569,24 @@ func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (*domai
 	return nil, nil
 }
 
+func (r arkRepository) GetIntentsByProof(ctx context.Context, proof string) ([]*domain.Intent, error) {
+	rounds, err := r.findRound(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var intents []*domain.Intent
+	for _, round := range rounds {
+		for _, in := range round.Intents {
+			if in.Proof == proof {
+				i := in
+				intents = append(intents, &i)
+			}
+		}
+	}
+	return intents, nil
+}
+
 func (r *arkRepository) upsertIntentIndex(
 	ctx context.Context,
 	txid, roundId, intentId string,

@@ -428,6 +428,10 @@ VALUES ('', '', '', '');
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
 
+-- name: SelectIntentsByProof :many
+SELECT id, txid, proof, message FROM intent
+WHERE proof = @proof;
+
 -- name: InsertAsset :exec
 INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
 VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);

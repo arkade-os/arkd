@@ -525,6 +525,22 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Nil(t, intent)
 
+		// get intents by proof
+		intents, err := svc.Rounds().GetIntentsByProof(ctx, "proof")
+		require.NoError(t, err)
+		require.Len(t, intents, 2)
+		for _, i := range intents {
+			require.Equal(t, "proof", i.Proof)
+			require.Equal(t, "message", i.Message)
+			require.NotEmpty(t, i.Id)
+			require.NotEmpty(t, i.Txid)
+		}
+
+		// non existing intents by proof
+		intents, err = svc.Rounds().GetIntentsByProof(ctx, "non-existent-proof")
+		require.NoError(t, err)
+		require.Empty(t, intents)
+
 		newEvents = []domain.Event{
 			domain.RoundFinalized{
 				RoundEvent: domain.RoundEvent{
