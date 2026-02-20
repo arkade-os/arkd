@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -10,7 +12,21 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	log "github.com/sirupsen/logrus"
 )
+
+// wrapRepoError sanitizes repository errors for API responses.
+// Returns user-friendly "not found" for missing entities, generic "internal error" for others.
+func wrapRepoError(err error, entity, id string) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%s %s not found", entity, id)
+	}
+	log.WithError(err).Errorf("repo error for %s %s", entity, id)
+	return fmt.Errorf("internal error")
+}
 
 const (
 	maxPageSizeVtxoTree       = 300
@@ -56,7 +72,7 @@ func (i *indexerService) GetCommitmentTxInfo(
 ) (*CommitmentTxInfo, error) {
 	roundStats, err := i.repoManager.Rounds().GetRoundStats(ctx, txid)
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "commitment tx", txid)
 	}
 
 	batches := map[VOut]Batch{
@@ -84,7 +100,7 @@ func (i *indexerService) GetVtxoTree(
 ) (*TreeTxResp, error) {
 	vtxoTree, err := i.repoManager.Rounds().GetRoundVtxoTree(ctx, batchOutpoint.Txid)
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "vtxo tree", batchOutpoint.Txid)
 	}
 
 	txs, pageResp := paginate(vtxoTree, page, maxPageSizeVtxoTree)
@@ -99,7 +115,7 @@ func (i *indexerService) GetAsset(
 ) ([]Asset, error) {
 	assets, err := i.repoManager.Assets().GetAssets(ctx, []string{assetId})
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "asset", assetId)
 	}
 	if len(assets) == 0 {
 		return nil, fmt.Errorf("asset %s not found", assetId)
@@ -112,7 +128,7 @@ func (i *indexerService) GetVtxoTreeLeaves(
 ) (*VtxoTreeLeavesResp, error) {
 	vtxos, err := i.repoManager.Vtxos().GetLeafVtxosForBatch(ctx, outpoint.Txid)
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "vtxo tree leaves", outpoint.Txid)
 	}
 
 	leaves, pageResp := paginate(vtxos, page, maxPageSizeVtxoTree)
@@ -127,7 +143,7 @@ func (i *indexerService) GetForfeitTxs(
 ) (*ForfeitTxsResp, error) {
 	forfeitTxs, err := i.repoManager.Rounds().GetRoundForfeitTxs(ctx, txid)
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "forfeit txs", txid)
 	}
 
 	list := make([]string, 0, len(forfeitTxs))
@@ -148,7 +164,7 @@ func (i *indexerService) GetConnectors(
 ) (*TreeTxResp, error) {
 	connectorTree, err := i.repoManager.Rounds().GetRoundConnectorTree(ctx, txid)
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "connectors", txid)
 	}
 
 	txs, pageResp := paginate(connectorTree, page, maxPageSizeVtxoTree)
@@ -187,12 +203,12 @@ func (i *indexerService) GetVtxos(
 		allVtxos, err = i.repoManager.Vtxos().
 			GetPendingSpentVtxosWithPubKeys(ctx, pubkeys, after, before)
 		if err != nil {
-			return nil, err
+			return nil, wrapRepoError(err, "vtxos", "by pubkeys")
 		}
 	} else {
 		allVtxos, err = i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys, after, before)
 		if err != nil {
-			return nil, err
+			return nil, wrapRepoError(err, "vtxos", "by pubkeys")
 		}
 
 		if spendableOnly {
@@ -236,7 +252,7 @@ func (i *indexerService) GetVtxosByOutpoint(
 ) (*GetVtxosResp, error) {
 	allVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, outpoints)
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "vtxos", "by outpoints")
 	}
 
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
@@ -256,7 +272,7 @@ func (i *indexerService) GetVtxoChain(
 	for len(nextVtxos) > 0 {
 		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
 		if err != nil {
-			return nil, err
+			return nil, wrapRepoError(err, "vtxo chain", vtxoKey.Txid)
 		}
 		if len(vtxos) == 0 {
 			return nil, fmt.Errorf("vtxo not found for outpoint: %v", nextVtxos)
@@ -277,7 +293,7 @@ func (i *indexerService) GetVtxoChain(
 			if vtxo.Preconfirmed {
 				offchainTx, err := i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
 				if err != nil {
-					return nil, fmt.Errorf("failed to retrieve offchain tx: %s", err)
+					return nil, wrapRepoError(err, "offchain tx", vtxo.Txid)
 				}
 
 				chainTx := ChainTx{
@@ -388,7 +404,7 @@ func (i *indexerService) GetVirtualTxs(
 ) (*VirtualTxsResp, error) {
 	txs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "virtual txs", "by txids")
 	}
 
 	virtualTxs, reps := paginate(txs, page, maxPageSizeVirtualTxs)
@@ -404,7 +420,7 @@ func (i *indexerService) GetBatchSweepTxs(
 ) ([]string, error) {
 	round, err := i.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, batchOutpoint.Txid)
 	if err != nil {
-		return nil, err
+		return nil, wrapRepoError(err, "batch sweep txs", batchOutpoint.Txid)
 	}
 
 	txids := make([]string, 0, len(round.SweepTxs))
