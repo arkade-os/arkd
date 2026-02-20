@@ -9,6 +9,13 @@ import (
 	"sort"
 )
 
+type metadataLeafVersion byte
+
+const (
+	arkLeafVersion metadataLeafVersion = 0x00
+)
+
+
 // Metadata is a key-value pair attached to an asset group.
 type Metadata struct {
 	// Key is the metadata entry name.
@@ -71,6 +78,18 @@ func NewMetadataListFromBytes(buf []byte) (MetadataList, error) {
 	}
 	r := bytes.NewReader(buf)
 	return newMetadataListFromReader(r)
+}
+
+// GenerateMetadataListHash computes the Merkle root of the
+// asset's metadata entries.
+func GenerateMetadataListHash(md []Metadata) ([]byte, error) {
+	if len(md) == 0 {
+		return nil, nil
+	}
+
+	levels := buildMetadataMerkleTree(md)
+	root := levels[len(levels)-1][0]
+	return root[:], nil
 }
 
 // Serialize encodes the Metadata entry into a byte slice.

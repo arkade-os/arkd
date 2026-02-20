@@ -112,3 +112,54 @@ func reverseBytes(buf []byte) []byte {
 	}
 	return buf
 }
+
+var (
+	arkLeafTag   = []byte("ArkadeAssetLeaf")
+	arkBranchTag = []byte("ArkadeAssetBranch")
+)
+
+// computeMetadataLeafHash returns tagged hash "ArkadeAssetLeaf" of the given metadata.
+func computeMetadataLeafHash(md Metadata) [32]byte {
+	var buf bytes.Buffer
+	buf.WriteByte(byte(arkLeafVersion))
+	// nolint: errcheck — bytes.Buffer.Write never returns an error
+	_ = serializeVarSlice(&buf, md.Key)
+	_ = serializeVarSlice(&buf, md.Value)
+	return [32]byte(*chainhash.TaggedHash(arkLeafTag, buf.Bytes()))
+}
+
+// computeMetadaBranchHash returns tagged hash "ArkadeAssetBranch" of the two given hashes.
+func computeMetadaBranchHash(a, b [32]byte) [32]byte {
+	// BIP-341 spec: ensure a is lexicographically less than b
+	if bytes.Compare(a[:], b[:]) > 0 {
+		a, b = b, a
+	}
+	return [32]byte(*chainhash.TaggedHash(arkBranchTag, a[:], b[:]))
+}
+
+// buildMetadataMerkleTree constructs a Merkle tree from pre-sorted leaves and returns every level.
+func buildMetadataMerkleTree(leaves []Metadata) [][][32]byte {
+	if len(leaves) == 0 {
+		return nil
+	}
+	hashes := make([][32]byte, 0, len(leaves))
+	for _, leaf := range leaves {
+		hashes = append(hashes, computeMetadataLeafHash(leaf))
+	}
+	levels := [][][32]byte{hashes}
+	current := hashes
+
+	// reduce the leaves by combining pairs into branches
+	for len(current) > 1 {
+		var next [][32]byte
+		for i := 0; i+1 < len(current); i += 2 {
+			next = append(next, computeMetadaBranchHash(current[i], current[i+1]))
+		}
+		if len(current)%2 == 1 {
+			next = append(next, current[len(current)-1])
+		}
+		levels = append(levels, next)
+		current = next
+	}
+	return levels
+}
