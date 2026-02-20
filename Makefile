@@ -238,7 +238,7 @@ test: pgtest redis-test-up
 	@echo "Running unit tests..."
 	@failed=0; \
 	go test -v -count=1 -race $(shell go list ./internal/... | grep -v '/internal/test') || failed=1; \
-	$(MAKE) droppgtest; $(MAKE) redis-down; \
+	$(MAKE) droppgtest; $(MAKE) redis-test-down; \
 	exit $$failed
 
 ## test-pkg: run unit tests for all packages in pkg/
