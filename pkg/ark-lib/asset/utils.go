@@ -8,6 +8,14 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
+
+var (
+	arkLeafTag   = []byte("ArkadeAssetLeaf")
+	arkBranchTag = []byte("ArkadeAssetBranch")
+)
+
+const arkLeafVersion = 0x00
+
 // serializeUint16 writes a uint16 in little-endian byte order to the writer.
 func serializeUint16(w io.Writer, value uint16) error {
 	var buf [2]byte
@@ -112,13 +120,6 @@ func reverseBytes(buf []byte) []byte {
 	}
 	return buf
 }
-
-var (
-	arkLeafTag   = []byte("ArkadeAssetLeaf")
-	arkBranchTag = []byte("ArkadeAssetBranch")
-)
-
-const arkLeafVersion = 0x00
 
 // computeMetadataLeafHash returns tagged hash "ArkadeAssetLeaf" of the given metadata.
 func computeMetadataLeafHash(md Metadata) [32]byte {
