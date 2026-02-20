@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/shopspring/decimal"
+	log "github.com/sirupsen/logrus"
 )
 
 type assetRepository struct {
@@ -149,10 +150,12 @@ func (r *assetRepository) GetAssets(
 			}
 
 			if row.Metadata.Valid {
+				// Parsing metadata should never fail but if it does we just return an empty list
+				// of metadata and log the error
+				// nolint
 				ast.Metadata, err = asset.NewMetadataListFromString(row.Metadata.String)
 				if err != nil {
-					// ignore error, metadata won't be set in the asset but do not fail the query
-					continue
+					log.WithError(err).Warnf("failed to parse metadata or assset %s", row.ID)
 				}
 			}
 			assets = append(assets, ast)
