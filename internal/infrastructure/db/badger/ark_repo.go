@@ -569,7 +569,10 @@ func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (*domai
 	return nil, nil
 }
 
-func (r arkRepository) GetIntentsByProof(ctx context.Context, proof string) ([]*domain.Intent, error) {
+func (r arkRepository) GetIntentsByProof(
+	ctx context.Context,
+	proof string,
+) ([]*domain.Intent, error) {
 	rounds, err := r.findRound(ctx, nil)
 	if err != nil {
 		return nil, err
