@@ -3,6 +3,7 @@ package sqlitedb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -42,6 +43,15 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 		for i := range vtxos {
 			vtxo := vtxos[i]
 
+			var markersJSON sql.NullString
+			if len(vtxo.MarkerIDs) > 0 {
+				data, err := json.Marshal(vtxo.MarkerIDs)
+				if err != nil {
+					return fmt.Errorf("failed to marshal markers: %w", err)
+				}
+				markersJSON = sql.NullString{String: string(data), Valid: true}
+			}
+
 			if err := querierWithTx.UpsertVtxo(
 				ctx, queries.UpsertVtxoParams{
 					Txid:           vtxo.Txid,
@@ -55,7 +65,6 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					},
 					Spent:        vtxo.Spent,
 					Unrolled:     vtxo.Unrolled,
-					Swept:        vtxo.Swept,
 					Preconfirmed: vtxo.Preconfirmed,
 					ExpiresAt:    vtxo.ExpiresAt,
 					CreatedAt:    vtxo.CreatedAt,
@@ -67,6 +76,8 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 						String: vtxo.SettledBy,
 						Valid:  len(vtxo.SettledBy) > 0,
 					},
+					Depth:   int64(vtxo.Depth),
+					Markers: markersJSON,
 				},
 			); err != nil {
 				return err
@@ -334,35 +345,6 @@ func (v *vtxoRepository) SpendVtxos(
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint) (int, error) {
-	sweptCount := 0
-	txBody := func(querierWithTx *queries.Queries) error {
-		for _, outpoint := range vtxos {
-			affectedRows, err := querierWithTx.UpdateVtxoSweptIfNotSwept(
-				ctx,
-				queries.UpdateVtxoSweptIfNotSweptParams{
-					Txid: outpoint.Txid,
-					Vout: int64(outpoint.VOut),
-				},
-			)
-			if err != nil {
-				return err
-			}
-			if affectedRows > 0 {
-				sweptCount++
-			}
-		}
-
-		return nil
-	}
-
-	if err := execTx(ctx, v.db, txBody); err != nil {
-		return -1, err
-	}
-
-	return sweptCount, nil
-}
-
 func (v *vtxoRepository) UpdateVtxosExpiration(
 	ctx context.Context, vtxos []domain.Outpoint, expiresAt int64,
 ) error {
@@ -568,10 +550,12 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent,
 		Unrolled:           row.Unrolled,
-		Swept:              row.Swept,
+		Swept:              row.Swept != 0,
 		Preconfirmed:       row.Preconfirmed,
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
+		Depth:              uint32(row.Depth),
+		MarkerIDs:          parseMarkersJSONFromVtxo(row.Markers.String),
 		Assets:             assets,
 	}
 }
@@ -583,6 +567,18 @@ func rowToAsset(row queries.VtxoVw) domain.AssetDenomination {
 		AssetId: row.AssetID,
 		Amount:  amount,
 	}
+}
+
+// parseMarkersJSONFromVtxo parses a JSON array string into a slice of strings for vtxo repo
+func parseMarkersJSONFromVtxo(markersJSON string) []string {
+	if markersJSON == "" {
+		return nil
+	}
+	var markerIDs []string
+	if err := json.Unmarshal([]byte(markersJSON), &markerIDs); err != nil {
+		return nil
+	}
+	return markerIDs
 }
 
 func readRows(rows []queries.VtxoVw) ([]domain.Vtxo, error) {
