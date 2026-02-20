@@ -9,13 +9,6 @@ import (
 	"sort"
 )
 
-type metadataLeafVersion byte
-
-const (
-	arkLeafVersion metadataLeafVersion = 0x00
-)
-
-
 // Metadata is a key-value pair attached to an asset group.
 type Metadata struct {
 	// Key is the metadata entry name.

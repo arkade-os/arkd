@@ -118,10 +118,12 @@ var (
 	arkBranchTag = []byte("ArkadeAssetBranch")
 )
 
+const arkLeafVersion = 0x00
+
 // computeMetadataLeafHash returns tagged hash "ArkadeAssetLeaf" of the given metadata.
 func computeMetadataLeafHash(md Metadata) [32]byte {
 	var buf bytes.Buffer
-	buf.WriteByte(byte(arkLeafVersion))
+	buf.WriteByte(arkLeafVersion)
 	// nolint: errcheck — bytes.Buffer.Write never returns an error
 	_ = serializeVarSlice(&buf, md.Key)
 	_ = serializeVarSlice(&buf, md.Value)
