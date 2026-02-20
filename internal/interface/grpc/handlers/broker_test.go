@@ -83,6 +83,157 @@ func TestBroker(t *testing.T) {
 		})
 	})
 
+	t.Run("removeListener closes done channel", func(t *testing.T) {
+		broker := newBroker[string]()
+		l := newListener[string]("test-id", []string{"topic1"})
+		broker.pushListener(l)
+
+		// done must not be closed yet
+		select {
+		case <-l.done:
+			require.Fail(t, "done closed before removeListener")
+		default:
+		}
+
+		broker.removeListener("test-id")
+
+		// done must be closed after removal
+		select {
+		case <-l.done:
+		default:
+			require.Fail(t, "done not closed after removeListener")
+		}
+	})
+
+	t.Run("closeDone is idempotent", func(t *testing.T) {
+		l := newListener[string]("test-id", []string{"topic1"})
+		require.NotPanics(t, func() {
+			l.closeDone()
+			l.closeDone()
+			l.closeDone()
+		})
+	})
+
+	t.Run("send after remove does not panic or block", func(t *testing.T) {
+		// Reproduces the core race: fanout gets a listener copy, then
+		// the listener is removed (closing done), then the fanout
+		// attempts to send. The done guard ensures the send exits
+		// immediately. If the buffered channel has space, Go's select
+		// may pick either the done or send case — both are safe; a
+		// stale message in the buffer is harmless and gets GC'd with
+		// the channel.
+		broker := newBroker[string]()
+		l := newListener[string]("test-id", []string{"topic1"})
+		broker.pushListener(l)
+
+		// Simulate fanout: grab a snapshot reference
+		snap := broker.getListenersCopy()
+		ref := snap["test-id"]
+
+		// Client disconnects — listener removed, done closed
+		broker.removeListener("test-id")
+
+		// Fanout goroutine tries to send using the done guard —
+		// must complete without panic or blocking.
+		done := make(chan struct{})
+		require.NotPanics(t, func() {
+			go func() {
+				defer close(done)
+				select {
+				case <-ref.done:
+				case ref.ch <- "msg":
+				case <-time.After(5 * time.Second):
+					ref.closeDone()
+				}
+			}()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				require.Fail(t, "send blocked after removal")
+			}
+		})
+	})
+
+	t.Run("slow listener disconnected after timeout", func(t *testing.T) {
+		l := newListener[string]("test-id", []string{"topic1"})
+
+		// Fill the buffered channel to capacity so the next send blocks.
+		for range cap(l.ch) {
+			l.ch <- "fill"
+		}
+
+		// Simulate the fanout send pattern with a bounded wait. When the
+		// channel is full the send cannot proceed, so the timeout fires
+		// and the listener is disconnected via closeDone.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			select {
+			case <-l.done:
+			case l.ch <- "overflow":
+			case <-time.After(500 * time.Millisecond):
+				l.closeDone()
+				return
+			}
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "fanout goroutine did not exit after timeout")
+		}
+
+		// done must be closed — the listener was disconnected.
+		select {
+		case <-l.done:
+		default:
+			require.Fail(t, "listener done channel should be closed after timeout")
+		}
+	})
+
+	t.Run("slow listener skips remaining batch events after disconnect", func(t *testing.T) {
+		l := newListener[string]("test-id", []string{"topic1"})
+
+		// Fill the channel so the first send in the batch will block.
+		for range cap(l.ch) {
+			l.ch <- "fill"
+		}
+
+		// Simulate the per-listener goroutine iterating over a batch of
+		// events. The first event triggers a timeout and closeDone; the
+		// remaining events should exit immediately via the done guard
+		// without waiting for another timeout.
+		evs := []string{"ev1", "ev2", "ev3"}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for _, ev := range evs {
+				select {
+				case <-l.done:
+					return
+				case l.ch <- ev:
+				case <-time.After(500 * time.Millisecond):
+					l.closeDone()
+					return
+				}
+			}
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "fanout goroutine did not exit")
+		}
+
+		// Only one timeout should have fired — the goroutine must not
+		// have waited 500ms per remaining event.
+		select {
+		case <-l.done:
+		default:
+			require.Fail(t, "listener done channel should be closed")
+		}
+	})
+
 	t.Run("getListenerChannel", func(t *testing.T) {
 		broker := newBroker[string]()
 		listener := newListener[string]("test-id", []string{"topic1"})
