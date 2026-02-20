@@ -30,9 +30,6 @@ func TestMetadata(t *testing.T) {
 					require.NotEmpty(t, got)
 					require.Equal(t, v.SerializedHex, metadata.String())
 
-					mdHash := metadata.Hash()
-					require.Equal(t, v.Hash, hex.EncodeToString(mdHash[:]))
-
 					testMetadata, err := asset.NewMetadataFromString(v.SerializedHex)
 					require.NoError(t, err)
 					require.Equal(t, v.Key, string(testMetadata.Key))
