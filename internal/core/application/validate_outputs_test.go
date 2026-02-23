@@ -1,6 +1,7 @@
 package application
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -60,6 +61,7 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 		wantErrCode             uint16
 		wantErrContains         string
 		wantOutputCount         int
+		wantAmount              int // expected Amount in AmountTooLowMetadata (only checked when wantErrCode == AMOUNT_TOO_LOW)
 	}{
 		{
 			description: "valid: anchor + regular output",
@@ -223,6 +225,7 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 			wantErr:                 true,
 			wantErrCode:             errors.AMOUNT_TOO_LOW.Code,
 			wantErrContains:         "lower than min vtxo amount",
+			wantAmount:              600,
 		},
 		{
 			description: "reject: non-OP_RETURN below dust without subdust script",
@@ -411,6 +414,10 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 				require.NotNil(t, err, "expected error")
 				require.Equal(t, tc.wantErrCode, err.Code())
 				require.Contains(t, err.Error(), tc.wantErrContains)
+				if tc.wantErrCode == errors.AMOUNT_TOO_LOW.Code && tc.wantAmount != 0 {
+					metadata := err.Metadata()
+					require.Equal(t, fmt.Sprintf("%d", tc.wantAmount), metadata["amount"])
+				}
 				return
 			}
 

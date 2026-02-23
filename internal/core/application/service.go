@@ -4263,23 +4263,21 @@ func validateOffchainTxOutputs(
 				outIndex, vtxoMinOffchainTxAmount,
 			).WithMetadata(errors.AmountTooLowMetadata{
 				OutputIndex: outIndex,
-				Amount:      int(vtxoMinOffchainTxAmount),
+				Amount:      int(out.Value),
 				MinAmount:   int(vtxoMinOffchainTxAmount),
 			})
 		}
 
 		if out.Value < int64(dust) {
-			// if the output is below dust limit, it must be using OP_RETURN-style vtxo pkscript
-			if !script.IsSubDustScript(out.PkScript) {
-				return nil, errors.AMOUNT_TOO_LOW.New(
-					"output #%d amount is below dust limit (%d < %d) but is not using "+
-						"OP_RETURN output script", outIndex, out.Value, dust,
-				).WithMetadata(errors.AmountTooLowMetadata{
-					OutputIndex: outIndex,
-					Amount:      int(out.Value),
-					MinAmount:   int(dust),
-				})
-			}
+			// non-OP_RETURN outputs below dust are invalid (OP_RETURN outputs are handled above and continue)
+			return nil, errors.AMOUNT_TOO_LOW.New(
+				"output #%d amount is below dust limit (%d < %d) but is not using "+
+					"OP_RETURN output script", outIndex, out.Value, dust,
+			).WithMetadata(errors.AmountTooLowMetadata{
+				OutputIndex: outIndex,
+				Amount:      int(out.Value),
+				MinAmount:   int(dust),
+			})
 		} else {
 			// all output with amount > dust must be valid taproot scripts
 			scriptClass := txscript.GetScriptClass(out.PkScript)
