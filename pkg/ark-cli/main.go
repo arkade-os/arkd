@@ -12,9 +12,9 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
-	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/store"
-	"github.com/arkade-os/go-sdk/types"
+	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/arkade-os/arkd/pkg/client-lib/store"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/term"
 )
@@ -306,7 +306,6 @@ func initArkSdk(ctx *cli.Context) error {
 
 	return arkSdkClient.Init(
 		ctx.Context, arksdk.InitArgs{
-			ClientType:  arksdk.GrpcClient,
 			WalletType:  arksdk.SingleKeyWallet,
 			ServerUrl:   ctx.String(urlFlag.Name),
 			Seed:        ctx.String(privateKeyFlag.Name),
@@ -326,7 +325,6 @@ func config(ctx *cli.Context) error {
 		"server_url":            cfgData.ServerUrl,
 		"signer_pubkey":         hex.EncodeToString(cfgData.SignerPubKey.SerializeCompressed()),
 		"wallet_type":           cfgData.WalletType,
-		"client_type":           cfgData.ClientType,
 		"network":               cfgData.Network.Name,
 		"unilateral_exit_delay": cfgData.UnilateralExitDelay,
 		"dust":                  cfgData.Dust,
@@ -684,7 +682,7 @@ func getArkSdkClient(ctx *cli.Context) (arksdk.ArkClient, error) {
 		return nil, fmt.Errorf("CLI not initialized, run 'init' cmd to initialize")
 	}
 
-	opts := make([]arksdk.ClientOption, 0)
+	opts := make([]arksdk.ServiceOption, 0)
 	if ctx.Bool(verboseFlag.Name) {
 		opts = append(opts, arksdk.WithVerbose())
 	}
@@ -695,8 +693,8 @@ func getArkSdkClient(ctx *cli.Context) (arksdk.ArkClient, error) {
 }
 
 func loadOrCreateClient(
-	loadFunc, newFunc func(types.Store, ...arksdk.ClientOption) (arksdk.ArkClient, error),
-	sdkRepository types.Store, opts []arksdk.ClientOption,
+	loadFunc, newFunc func(types.Store, ...arksdk.ServiceOption) (arksdk.ArkClient, error),
+	sdkRepository types.Store, opts []arksdk.ServiceOption,
 ) (arksdk.ArkClient, error) {
 	client, err := loadFunc(sdkRepository, opts...)
 	if err != nil {

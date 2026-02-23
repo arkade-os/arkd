@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"sort"
@@ -12,7 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
-	"github.com/sqlc-dev/pqtype"
+	log "github.com/sirupsen/logrus"
 )
 
 type assetRepository struct {
@@ -74,28 +73,32 @@ func (r *assetRepository) AddAssets(
 				continue
 			}
 
-			var mdHash []byte
-			var md pqtype.NullRawMessage
+			var md, mdHash sql.NullString
 			if len(ast.Metadata) > 0 {
-				mdHash, err = asset.GenerateMetadataListHash(ast.Metadata)
+				metadataHash, err := asset.GenerateMetadataListHash(ast.Metadata)
 				if err != nil {
 					return fmt.Errorf("failed to compute metadata hash: %w", err)
 				}
-				// store metadata as JSON {key [string]: value [string]}
-				buf, _ := json.Marshal(toMetadataDTO(ast.Metadata))
-				md = pqtype.NullRawMessage{
-					RawMessage: buf,
-					Valid:      true,
+				mdHash = sql.NullString{
+					String: hex.EncodeToString(metadataHash),
+					Valid:  true,
+				}
+
+				metadataList, err := asset.NewMetadataList(ast.Metadata)
+				if err != nil {
+					return fmt.Errorf("failed to create metadata list: %w", err)
+				}
+				md = sql.NullString{
+					String: metadataList.String(),
+					Valid:  true,
 				}
 			}
+
 			if err := querierWithTx.InsertAsset(
 				ctx, queries.InsertAssetParams{
-					ID:       ast.Id,
-					Metadata: md,
-					MetadataHash: sql.NullString{
-						String: hex.EncodeToString(mdHash),
-						Valid:  len(mdHash) > 0,
-					},
+					ID:           ast.Id,
+					Metadata:     md,
+					MetadataHash: mdHash,
 					ControlAssetID: sql.NullString{
 						String: ast.ControlAssetId,
 						Valid:  len(ast.ControlAssetId) > 0,
@@ -138,25 +141,21 @@ func (r *assetRepository) GetAssets(
 			if _, ok := supply.SetString(supplyStr, 10); !ok {
 				return fmt.Errorf("invalid supply value: %s", supplyStr)
 			}
-			var metadata []asset.Metadata
-			if row.Metadata.Valid {
-				md := make([]metadataDTO, 0)
-				if err := json.Unmarshal(row.Metadata.RawMessage, &md); err != nil {
-					return fmt.Errorf("failed to decode asset metadata: %w", err)
-				}
-				for _, dto := range md {
-					metadata = append(metadata, asset.Metadata{
-						Key:   []byte(dto.Key),
-						Value: []byte(dto.Value),
-					})
-				}
-			}
-			assets = append(assets, domain.Asset{
+			ast := domain.Asset{
 				Id:             row.ID,
-				Metadata:       metadata,
 				ControlAssetId: row.ControlAssetID.String,
 				Supply:         *supply,
-			})
+			}
+			if row.Metadata.Valid {
+				// Parsing metadata should never fail but if it does we just return an empty list
+				// of metadata and log the error
+				ast.Metadata, err = asset.NewMetadataListFromString(row.Metadata.String)
+				if err != nil {
+					log.WithError(err).Warnf("failed to parse metadata for asset %s", row.ID)
+				}
+			}
+
+			assets = append(assets, ast)
 		}
 		return nil
 	}
@@ -189,20 +188,4 @@ func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool
 		return false, err
 	}
 	return true, nil
-}
-
-type metadataDTO struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
-
-func toMetadataDTO(mdList []asset.Metadata) []metadataDTO {
-	metadataDTOs := make([]metadataDTO, 0, len(mdList))
-	for _, md := range mdList {
-		metadataDTOs = append(metadataDTOs, metadataDTO{
-			Key:   string(md.Key),
-			Value: string(md.Value),
-		})
-	}
-	return metadataDTOs
 }

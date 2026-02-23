@@ -28,7 +28,7 @@ jobs:
             exit 1
           fi
 
-  test-server:
+  test:
     name: unit tests
     runs-on: ubuntu-latest
     steps:
@@ -49,5 +49,8 @@ jobs:
         with:
           args: '-severity high -quiet -exclude=G115 ./...'
 
-      - name: unit testing
+      - name: Arkd unit tests
         run: make test
+
+      - name: Packages unit tests
+        run: make test-pkg
