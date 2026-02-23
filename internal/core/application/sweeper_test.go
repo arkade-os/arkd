@@ -805,7 +805,7 @@ func TestCreateCheckpointSweepTask_SweptAtTimestamp(t *testing.T) {
 		Return(vtxos, nil)
 
 	// Capture the sweptAt timestamp
-	beforeExec := time.Now().Unix()
+	beforeExec := time.Now().UnixMilli()
 	var capturedSweptAt int64
 
 	markerRepo.On("BulkSweepMarkers", mock.Anything, mock.Anything, mock.MatchedBy(func(sweptAt int64) bool {
@@ -816,7 +816,7 @@ func TestCreateCheckpointSweepTask_SweptAtTimestamp(t *testing.T) {
 
 	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
 	err := task()
-	afterExec := time.Now().Unix()
+	afterExec := time.Now().UnixMilli()
 
 	require.NoError(t, err)
 	// Verify timestamp is within the execution window

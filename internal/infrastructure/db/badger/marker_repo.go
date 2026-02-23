@@ -527,7 +527,7 @@ func (r *markerRepository) GetVtxosByArkTxid(
 	arkTxid string,
 ) ([]domain.Vtxo, error) {
 	var dtos []vtxoDTO
-	err := r.vtxoStore.Find(&dtos, badgerhold.Where("Txid").Eq(arkTxid))
+	err := r.vtxoStore.Find(&dtos, badgerhold.Where("ArkTxid").Eq(arkTxid))
 	if err != nil {
 		return nil, err
 	}

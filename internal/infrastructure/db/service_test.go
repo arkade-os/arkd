@@ -2211,8 +2211,8 @@ func testMarkerChainTraversal(t *testing.T, svc ports.RepoManager) {
 		// Test GetVtxosByArkTxid - returns VTXOs created by specific ark tx
 		vtxosByArkTxid, err := svc.Markers().GetVtxosByArkTxid(ctx, arkTxid)
 		require.NoError(t, err)
-		require.Len(t, vtxosByArkTxid, 1) // Only vtxo2 has Txid == arkTxid
-		require.Equal(t, vtxo2.Txid, vtxosByArkTxid[0].Txid)
+		require.Len(t, vtxosByArkTxid, 1) // Only vtxo1 has ArkTxid == arkTxid
+		require.Equal(t, vtxo1.Txid, vtxosByArkTxid[0].Txid)
 
 		// Test GetVtxosByArkTxid with non-existent ark txid
 		vtxosByArkTxid, err = svc.Markers().GetVtxosByArkTxid(ctx, "nonexistent")
