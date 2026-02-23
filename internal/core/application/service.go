@@ -65,9 +65,11 @@ type service struct {
 	utxoMaxAmount             int64
 	utxoMinAmount             int64
 	vtxoMaxAmount             int64
+	vtxoMinAmount             int64
 	vtxoMinSettlementAmount   int64
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
+	checkpointExitDelay       arklib.RelativeLocktime
 
 	// fees
 	feeManager ports.FeeManager
@@ -157,38 +159,6 @@ func NewService(
 		return nil, fmt.Errorf("failed to generate ephemeral key: %s", err)
 	}
 
-	dustAmount, err := wallet.GetDustAmount(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dust amount: %s", err)
-	}
-	var vtxoMinSettlementAmount, vtxoMinOffchainTxAmount = vtxoMinAmount, vtxoMinAmount
-	if vtxoMinSettlementAmount < int64(dustAmount) {
-		vtxoMinSettlementAmount = int64(dustAmount)
-	}
-	if vtxoMinOffchainTxAmount == -1 {
-		vtxoMinOffchainTxAmount = int64(dustAmount)
-	}
-	if utxoMinAmount < int64(dustAmount) {
-		utxoMinAmount = int64(dustAmount)
-	}
-
-	forfeitPubkey, err := wallet.GetForfeitPubkey(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
-	}
-
-	checkpointClosure := &script.CSVMultisigClosure{
-		Locktime: checkpointExitDelay,
-		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{forfeitPubkey},
-		},
-	}
-
-	checkpointTapscript, err := checkpointClosure.Script()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
-	}
-
 	roundReportSvc := reportSvc
 	if roundReportSvc == nil {
 		roundReportSvc = roundReportUnimplemented{}
@@ -199,7 +169,6 @@ func NewService(
 	svc := &service{
 		network:                   network,
 		signerPubkey:              signerPubkey,
-		forfeitPubkey:             forfeitPubkey,
 		batchExpiry:               vtxoTreeExpiry,
 		sessionDuration:           time.Duration(sessionDuration) * time.Second,
 		banDuration:               time.Duration(banDuration) * time.Second,
@@ -207,12 +176,14 @@ func NewService(
 		unilateralExitDelay:       unilateralExitDelay,
 		publicUnilateralExitDelay: publicUnilateralExitDelay,
 		allowCSVBlockType:         allowCSVBlockType,
-		wallet:                    wallet,
-		signer:                    signer,
-		repoManager:               repoManager,
-		builder:                   builder,
-		cache:                     cache,
-		scanner:                   scanner,
+		checkpointExitDelay:       checkpointExitDelay,
+
+		wallet:      wallet,
+		signer:      signer,
+		repoManager: repoManager,
+		builder:     builder,
+		cache:       cache,
+		scanner:     scanner,
 		sweeper: newSweeper(
 			wallet, repoManager, builder, scheduler, noteUriPrefix,
 		),
@@ -225,8 +196,7 @@ func NewService(
 		utxoMaxAmount:                 utxoMaxAmount,
 		utxoMinAmount:                 utxoMinAmount,
 		vtxoMaxAmount:                 vtxoMaxAmount,
-		vtxoMinSettlementAmount:       vtxoMinSettlementAmount,
-		vtxoMinOffchainTxAmount:       vtxoMinOffchainTxAmount,
+		vtxoMinAmount:                 vtxoMinAmount,
 		eventsCh:                      make(chan []domain.Event, 64),
 		transactionEventsCh:           make(chan TransactionEvent, 64),
 		indexerTxEventsCh:             make(chan TransactionEvent, 64),
@@ -234,25 +204,90 @@ func NewService(
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
 		offchainTxMu:                  &sync.Mutex{},
-		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		alerts:                        alerts,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 		feeManager:                    feeManager,
 	}
-	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
-	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
+
+	// if err := svc.restoreWatchingVtxos(); err != nil {
+	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	// }
+	return svc, nil
+}
+
+func (s *service) Start() error {
+	ctx := context.Background() //TODO manage context
+	dustAmount, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
-	svc.forfeitAddress = forfeitAddr.String()
+	var vtxoMinSettlementAmount, vtxoMinOffchainTxAmount = s.vtxoMinAmount, s.vtxoMinAmount
+	if vtxoMinSettlementAmount < int64(dustAmount) {
+		vtxoMinSettlementAmount = int64(dustAmount)
+	}
+	if vtxoMinOffchainTxAmount == -1 {
+		vtxoMinOffchainTxAmount = int64(dustAmount)
+	}
+	if s.utxoMinAmount < int64(dustAmount) {
+		s.utxoMinAmount = int64(dustAmount)
+	}
+	s.vtxoMinSettlementAmount = vtxoMinSettlementAmount
+	s.vtxoMinOffchainTxAmount = vtxoMinOffchainTxAmount
 
-	repoManager.Events().RegisterEventsHandler(
+	forfeitPubkey, err := s.wallet.GetForfeitPubkey(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
+	}
+	s.forfeitPubkey = forfeitPubkey
+
+	checkpointClosure := &script.CSVMultisigClosure{
+		Locktime: s.checkpointExitDelay,
+		MultisigClosure: script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{forfeitPubkey},
+		},
+	}
+
+	checkpointTapscript, err := checkpointClosure.Script()
+	if err != nil {
+		return fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
+	}
+	s.checkpointTapscript = checkpointTapscript
+
+	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
+	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, s.chainParams())
+	if err != nil {
+		return err
+	}
+	s.forfeitAddress = forfeitAddr.String()
+
+	s.registerEventHandlers()
+
+	go s.listenToScannerNotifications()
+
+	log.Debug("starting sweeper service...")
+	ctx, cancel := context.WithCancel(ctx)
+	s.sweeperCancel = cancel
+	go func() {
+		if err := s.sweeper.start(ctx); err != nil {
+			log.WithError(err).Warn("failed to start sweeper")
+		}
+		log.Info("sweeper service started")
+	}()
+
+	log.Debug("starting app service...")
+	s.wg.Add(1)
+	go s.start()
+	return nil
+}
+
+func (s *service) registerEventHandlers() {
+	s.repoManager.Events().RegisterEventsHandler(
 		domain.RoundTopic, func(events []domain.Event) {
 			round := domain.NewRoundFromEvents(events)
-			go svc.propagateEvents(context.Background(), round)
+			go s.propagateEvents(context.Background(), round)
 
 			lastEvent := events[len(events)-1]
 			if lastEvent.GetType() == domain.EventTypeBatchSwept {
@@ -267,7 +302,7 @@ func NewService(
 					Type:       SweepTxType,
 					SweptVtxos: sweptVtxosOutpoints,
 				}
-				svc.propagateTransactionEvent(txEvent)
+				s.propagateTransactionEvent(txEvent)
 				return
 			}
 
@@ -275,7 +310,7 @@ func NewService(
 				return
 			}
 
-			spentVtxos := svc.getSpentVtxos(round.Intents)
+			spentVtxos := s.getSpentVtxos(round.Intents)
 			newVtxos := getNewVtxosFromRound(round)
 
 			// commitment tx event
@@ -286,21 +321,21 @@ func NewService(
 				SpendableVtxos: newVtxos,
 			}
 
-			svc.propagateTransactionEvent(txEvent)
+			s.propagateTransactionEvent(txEvent)
 
 			go func() {
-				if err := svc.startWatchingVtxos(newVtxos); err != nil {
+				if err := s.startWatchingVtxos(newVtxos); err != nil {
 					log.WithError(err).Warn("failed to start watching vtxos")
 				}
 			}()
 
 			if lastEvent := events[len(events)-1]; lastEvent.GetType() != domain.EventTypeBatchSwept {
-				go svc.scheduleSweepBatchOutput(round)
+				go s.scheduleSweepBatchOutput(round)
 			}
 		},
 	)
 
-	repoManager.Events().RegisterEventsHandler(
+	s.repoManager.Events().RegisterEventsHandler(
 		domain.OffchainTxTopic, func(events []domain.Event) {
 			offchainTx := domain.NewOffchainTxFromEvents(events)
 
@@ -314,7 +349,7 @@ func NewService(
 				return
 			}
 
-			spentVtxos, err := svc.repoManager.Vtxos().GetVtxos(
+			spentVtxos, err := s.repoManager.Vtxos().GetVtxos(
 				context.Background(), spentVtxoKeys,
 			)
 			if err != nil {
@@ -339,38 +374,15 @@ func NewService(
 				CheckpointTxs:  checkpointTxsByOutpoint,
 			}
 
-			svc.propagateTransactionEvent(txEvent)
+			s.propagateTransactionEvent(txEvent)
 
 			go func() {
-				if err := svc.startWatchingVtxos(newVtxos); err != nil {
+				if err := s.startWatchingVtxos(newVtxos); err != nil {
 					log.WithError(err).Warn("failed to start watching vtxos")
 				}
 			}()
 		},
 	)
-
-	// if err := svc.restoreWatchingVtxos(); err != nil {
-	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	// }
-	go svc.listenToScannerNotifications()
-	return svc, nil
-}
-
-func (s *service) Start() errors.Error {
-	log.Debug("starting sweeper service...")
-	ctx, cancel := context.WithCancel(context.Background())
-	s.sweeperCancel = cancel
-	go func() {
-		if err := s.sweeper.start(ctx); err != nil {
-			log.WithError(err).Warn("failed to start sweeper")
-		}
-		log.Info("sweeper service started")
-	}()
-
-	log.Debug("starting app service...")
-	s.wg.Add(1)
-	go s.start()
-	return nil
 }
 
 func (s *service) Stop() {
@@ -378,7 +390,9 @@ func (s *service) Stop() {
 
 	s.stop()
 	s.wg.Wait()
-	s.sweeperCancel()
+	if s.sweeperCancel != nil {
+		s.sweeperCancel()
+	}
 	s.sweeper.stop()
 
 	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
