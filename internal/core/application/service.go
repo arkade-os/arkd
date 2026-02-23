@@ -960,7 +960,7 @@ func (s *service) SubmitOffchainTx(
 				outIndex, s.vtxoMinAmount,
 			).WithMetadata(errors.AmountTooLowMetadata{
 				OutputIndex: outIndex,
-				Amount:      int(s.vtxoMinAmount),
+				Amount:      int(out.Value),
 				MinAmount:   int(s.vtxoMinAmount),
 			})
 		}
