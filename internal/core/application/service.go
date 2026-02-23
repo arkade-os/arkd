@@ -954,7 +954,7 @@ func (s *service) SubmitOffchainTx(
 				})
 			}
 		}
-		if out.Value < s.vtxoMinAmount {
+		if out.Value < s.vtxoMinAmount && !script.IsSubDustScript(out.PkScript) {
 			return nil, errors.AMOUNT_TOO_LOW.New(
 				"output #%d amount is lower than min vtxo amount: %d",
 				outIndex, s.vtxoMinAmount,
