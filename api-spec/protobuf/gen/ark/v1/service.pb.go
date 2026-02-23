@@ -2097,7 +2097,7 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x06filter\"e\n" +
 	"\x11GetIntentResponse\x12&\n" +
 	"\x06intent\x18\x01 \x01(\v2\x0e.ark.v1.IntentR\x06intent\x12(\n" +
-	"\aintents\x18\x02 \x03(\v2\x0e.ark.v1.IntentR\aintents2\x8f\r\n" +
+	"\aintents\x18\x02 \x03(\v2\x0e.ark.v1.IntentR\aintents2\xa0\r\n" +
 	"\n" +
 	"ArkService\x12I\n" +
 	"\aGetInfo\x12\x16.ark.v1.GetInfoRequest\x1a\x17.ark.v1.GetInfoResponse\"\r\xb2J\n" +
@@ -2115,8 +2115,9 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\n" +
 	"FinalizeTx\x12\x19.ark.v1.FinalizeTxRequest\x1a\x1a.ark.v1.FinalizeTxResponse\"\x17\xb2J\x14B\x01*\"\x0f/v1/tx/finalize\x12a\n" +
 	"\fGetPendingTx\x12\x1b.ark.v1.GetPendingTxRequest\x1a\x1c.ark.v1.GetPendingTxResponse\"\x16\xb2J\x13B\x01*\"\x0e/v1/tx/pending\x12z\n" +
-	"\x15GetTransactionsStream\x12$.ark.v1.GetTransactionsStreamRequest\x1a%.ark.v1.GetTransactionsStreamResponse\"\x12\xb2J\x0fb\x04\b\x01\x18\x01\x12\a/v1/txs0\x01\x12Q\n" +
-	"\tGetIntent\x12\x18.ark.v1.GetIntentRequest\x1a\x19.ark.v1.GetIntentResponse\"\x0f\xb2J\f\x12\n" +
+	"\x15GetTransactionsStream\x12$.ark.v1.GetTransactionsStreamRequest\x1a%.ark.v1.GetTransactionsStreamResponse\"\x12\xb2J\x0fb\x04\b\x01\x18\x01\x12\a/v1/txs0\x01\x12b\n" +
+	"\tGetIntent\x12\x18.ark.v1.GetIntentRequest\x1a\x19.ark.v1.GetIntentResponse\" \xb2J\x1dR\x0fB\x01*\"\n" +
+	"/v1/intent\x12\n" +
 	"/v1/intentB{\n" +
 	"\n" +
 	"com.ark.v1B\fServiceProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
