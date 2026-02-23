@@ -163,7 +163,7 @@ type InsertAssetParams struct {
 	ID             string
 	IsImmutable    bool
 	MetadataHash   sql.NullString
-	Metadata       pqtype.NullRawMessage
+	Metadata       sql.NullString
 	ControlAssetID sql.NullString
 }
 
