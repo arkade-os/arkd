@@ -65,62 +65,62 @@ func TestResolveMinAmounts(t *testing.T) {
 	const dust int64 = 330
 
 	testCases := []struct {
-		description            string
-		vtxoMinAmount          int64
-		utxoMinAmount          int64
-		expectedVtxoSettlement int64
-		expectedVtxoOffchain   int64
-		expectedUtxoMin        int64
+		description       string
+		vtxoMinAmount     int64
+		utxoMinAmount     int64
+		expectedVtxoMin   int64
+		expectedUtxoMin   int64
 	}{
 		{
-			description:            "below dust: settlement clamped, offchain preserved",
-			vtxoMinAmount:          1,
-			utxoMinAmount:          100,
-			expectedVtxoSettlement: dust,
-			expectedVtxoOffchain:   1,
-			expectedUtxoMin:        dust,
+			description:     "sub-dust vtxo min is preserved for offchain",
+			vtxoMinAmount:   1,
+			utxoMinAmount:   100,
+			expectedVtxoMin: 1,
+			expectedUtxoMin: dust,
 		},
 		{
-			description:            "default -1 is clamped to dust for all",
-			vtxoMinAmount:          -1,
-			utxoMinAmount:          -1,
-			expectedVtxoSettlement: dust,
-			expectedVtxoOffchain:   dust,
-			expectedUtxoMin:        dust,
+			description:     "default -1 is defaulted to dust",
+			vtxoMinAmount:   -1,
+			utxoMinAmount:   -1,
+			expectedVtxoMin: dust,
+			expectedUtxoMin: dust,
 		},
 		{
-			description:            "above dust are kept as-is",
-			vtxoMinAmount:          1000,
-			utxoMinAmount:          2000,
-			expectedVtxoSettlement: 1000,
-			expectedVtxoOffchain:   1000,
-			expectedUtxoMin:        2000,
+			description:     "arbitrary negative values are defaulted to dust",
+			vtxoMinAmount:   -99,
+			utxoMinAmount:   -50,
+			expectedVtxoMin: dust,
+			expectedUtxoMin: dust,
 		},
 		{
-			description:            "exactly dust are kept as-is",
-			vtxoMinAmount:          dust,
-			utxoMinAmount:          dust,
-			expectedVtxoSettlement: dust,
-			expectedVtxoOffchain:   dust,
-			expectedUtxoMin:        dust,
+			description:     "above dust are kept as-is",
+			vtxoMinAmount:   1000,
+			utxoMinAmount:   2000,
+			expectedVtxoMin: 1000,
+			expectedUtxoMin: 2000,
 		},
 		{
-			description:            "zero: settlement clamped, offchain preserved",
-			vtxoMinAmount:          0,
-			utxoMinAmount:          0,
-			expectedVtxoSettlement: dust,
-			expectedVtxoOffchain:   0,
-			expectedUtxoMin:        dust,
+			description:     "exactly dust are kept as-is",
+			vtxoMinAmount:   dust,
+			utxoMinAmount:   dust,
+			expectedVtxoMin: dust,
+			expectedUtxoMin: dust,
+		},
+		{
+			description:     "zero vtxo min is preserved for offchain",
+			vtxoMinAmount:   0,
+			utxoMinAmount:   0,
+			expectedVtxoMin: 0,
+			expectedUtxoMin: dust,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
-			settlement, offchain, utxoMin := resolveMinAmounts(
+			vtxoMin, utxoMin := resolveMinAmounts(
 				tc.vtxoMinAmount, tc.utxoMinAmount, dust,
 			)
-			require.Equal(t, tc.expectedVtxoSettlement, settlement)
-			require.Equal(t, tc.expectedVtxoOffchain, offchain)
+			require.Equal(t, tc.expectedVtxoMin, vtxoMin)
 			require.Equal(t, tc.expectedUtxoMin, utxoMin)
 		})
 	}
