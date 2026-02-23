@@ -1914,6 +1914,8 @@ func (*GetIntentRequest_Txid) isGetIntentRequest_Filter() {}
 
 func (*GetIntentRequest_Intent) isGetIntentRequest_Filter() {}
 
+// If response coming from GetIntentRequest call by txid, both fields here will be populated.
+// If response coming from GetIntentRequest call by intent, only intents will be populated.
 type GetIntentResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Intent        *Intent                `protobuf:"bytes,1,opt,name=intent,proto3" json:"intent,omitempty"`

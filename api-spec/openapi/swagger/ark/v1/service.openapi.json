@@ -936,6 +936,7 @@
       "GetIntentResponse": {
         "title": "GetIntentResponse",
         "type": "object",
+        "description": "If response coming from GetIntentRequest call by txid, both fields here will be populated.\nIf response coming from GetIntentRequest call by intent, only intents will be populated.",
         "properties": {
           "intent": {
             "$ref": "#/components/schemas/Intent"

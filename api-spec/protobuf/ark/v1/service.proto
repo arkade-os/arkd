@@ -330,6 +330,8 @@ message GetIntentRequest {
     }
 }
 
+// If response coming from GetIntentRequest call by txid, both fields here will be populated.
+// If response coming from GetIntentRequest call by intent, only intents will be populated.
 message GetIntentResponse {
   Intent intent = 1;
   repeated Intent intents = 2;
