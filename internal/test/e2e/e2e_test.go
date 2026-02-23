@@ -23,16 +23,16 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/client"
-	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
-	mempool_explorer "github.com/arkade-os/go-sdk/explorer/mempool"
-	"github.com/arkade-os/go-sdk/indexer"
-	"github.com/arkade-os/go-sdk/redemption"
-	inmemorystoreconfig "github.com/arkade-os/go-sdk/store/inmemory"
-	"github.com/arkade-os/go-sdk/types"
-	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
-	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
+	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
+	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
+	inmemorystoreconfig "github.com/arkade-os/arkd/pkg/client-lib/store/inmemory"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
+	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -2427,7 +2427,7 @@ func TestSweep(t *testing.T) {
 		}()
 
 		// Test fund recovery
-		txid, err := alice.Settle(ctx)
+		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -2630,7 +2630,7 @@ func TestSweep(t *testing.T) {
 		})
 
 		// Test fund recovery
-		txid, err := alice.Settle(ctx)
+		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -3128,12 +3128,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3258,12 +3256,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3383,12 +3379,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3528,12 +3522,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3724,12 +3716,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
