@@ -785,7 +785,7 @@ func (s *sweeper) createCheckpointSweepTask(
 			markerIDs = append(markerIDs, markerID)
 		}
 
-		sweptAt := time.Now().Unix()
+		sweptAt := time.Now().UnixMilli()
 		markerStore := s.repoManager.Markers()
 		if err := markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
 			log.WithError(err).Warn("failed to bulk sweep markers")

@@ -659,7 +659,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
-		dustVtxoOutpoints := make([]domain.Outpoint, 0)
+		createdDustMarkerIDs := make([]string, 0)
 		for outIndex, out := range outs {
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
@@ -675,7 +675,6 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			vtxoMarkerIDs := markerIDs
 			isDust := script.IsSubDustScript(out.PkScript)
 			if isDust {
-				dustVtxoOutpoints = append(dustVtxoOutpoints, outpoint)
 				// Dust VTXOs get their own outpoint-based marker so they can be
 				// swept individually without affecting sibling non-dust VTXOs
 				// that share the same inherited parent markers.
@@ -686,6 +685,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					ParentMarkerIDs: markerIDs,
 				}); err != nil {
 					log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
+				} else {
+					createdDustMarkerIDs = append(createdDustMarkerIDs, dustMarkerID)
 				}
 				vtxoMarkerIDs = append(append([]string{}, markerIDs...), dustMarkerID)
 			}
@@ -730,14 +731,15 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// Mark dust VTXOs as swept via their markers
 		// Dust vtxos are below dust limit and can't be spent again in future offchain tx
 		// Because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited
-		if len(dustVtxoOutpoints) > 0 {
-			dustMarkerIDs := make([]string, 0, len(dustVtxoOutpoints))
-			for _, outpoint := range dustVtxoOutpoints {
-				dustMarkerIDs = append(dustMarkerIDs, outpoint.String())
-			}
-			sweptAt := time.Now().Unix()
-			if err := s.markerStore.BulkSweepMarkers(ctx, dustMarkerIDs, sweptAt); err != nil {
-				log.WithError(err).Warnf("failed to sweep %d dust vtxo markers", len(dustMarkerIDs))
+		if len(createdDustMarkerIDs) > 0 {
+			sweptAt := time.Now().UnixMilli()
+			if err := s.markerStore.BulkSweepMarkers(
+				ctx,
+				createdDustMarkerIDs,
+				sweptAt,
+			); err != nil {
+				log.WithError(err).
+					Warnf("failed to sweep %d dust vtxo markers", len(createdDustMarkerIDs))
 			}
 		}
 	}
@@ -862,7 +864,7 @@ func (s *service) sweepVtxosWithMarkers(
 		markerIDs = append(markerIDs, markerID)
 	}
 
-	sweptAt := time.Now().Unix()
+	sweptAt := time.Now().UnixMilli()
 	if err := s.markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
 		log.WithError(err).Warn("failed to bulk sweep markers")
 		return 0

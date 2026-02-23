@@ -276,7 +276,7 @@ func (m *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID stri
 	// Insert the marker into swept_marker (sweep state is computed via view)
 	if err := m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
 		MarkerID: markerID,
-		SweptAt:  time.Now().Unix(),
+		SweptAt:  time.Now().UnixMilli(),
 	}); err != nil {
 		return 0, fmt.Errorf("failed to insert swept marker: %w", err)
 	}

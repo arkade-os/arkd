@@ -508,7 +508,7 @@ ORDER BY depth DESC;
 
 -- name: SelectVtxosByArkTxid :many
 -- Get all VTXOs created by a specific ark tx (offchain tx)
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @ark_txid;
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE ark_txid = @ark_txid;
 
 -- name: SelectVtxoChainByMarker :many
 -- Get VTXOs whose markers array contains the given marker_id.
