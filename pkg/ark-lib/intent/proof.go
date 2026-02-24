@@ -209,11 +209,21 @@ func (p Proof) ContainsOutputs() bool {
 }
 
 func (p Proof) FinalizeAndExtract() (*wire.MsgTx, error) {
+	if len(p.Inputs) < 2 {
+		return nil, ErrInvalidTxNumberOfInputs
+	}
+
+	ins := make([]psbt.PInput, len(p.Inputs))
+	copy(ins[:], p.Inputs)
+	outs := make([]psbt.POutput, len(p.Outputs))
+	copy(outs[:], p.Outputs)
+	unknowns := make([]*psbt.Unknown, len(p.Unknowns))
+	copy(unknowns[:], p.Unknowns)
 	ptx := &psbt.Packet{
-		UnsignedTx: p.UnsignedTx,
-		Inputs:     p.Inputs,
-		Outputs:    p.Outputs,
-		Unknowns:   p.Unknowns,
+		UnsignedTx: p.UnsignedTx.Copy(),
+		Inputs:     ins,
+		Outputs:    outs,
+		Unknowns:   unknowns,
 	}
 
 	// copy the unknowns from the second input to the first input
@@ -318,7 +328,6 @@ func (f *intentProofPrevoutFetcher) FetchPrevOutput(outpoint wire.OutPoint) *wir
 	// otherwise, fallback to the original prevoutFetcher
 	return f.prevoutFetcher.FetchPrevOutput(outpoint)
 }
-
 
 // finalizeInput is a wrapper of script.FinalizeVtxoScript with note support
 func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
