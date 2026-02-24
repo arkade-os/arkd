@@ -349,9 +349,9 @@ func NewService(
 		},
 	)
 
-	// if err := svc.restoreWatchingVtxos(); err != nil {
-	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	// }
+	if err := svc.restoreWatchingVtxos(); err != nil {
+		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	}
 	go svc.listenToScannerNotifications()
 	return svc, nil
 }
@@ -985,6 +985,15 @@ func (s *service) SubmitOffchainTx(
 					Amount:      int(out.Value),
 					MinAmount:   int(dust),
 				})
+			}
+		} else {
+			// all output with amount > dust must be valid taproot scripts
+			scriptClass := txscript.GetScriptClass(out.PkScript)
+			if scriptClass != txscript.WitnessV1TaprootTy {
+				return nil, errors.MALFORMED_ARK_TX.New(
+					"output #%d has amount greater than dust but is not a taproot pkscript",
+					outIndex,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
 		}
 
@@ -3677,6 +3686,43 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 	}
 
 	return s.scanner.WatchScripts(context.Background(), scripts)
+}
+
+func (s *service) restoreWatchingVtxos() error {
+	ctx := context.Background()
+
+	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
+	if err != nil {
+		return err
+	}
+
+	scripts := make([]string, 0)
+
+	for _, commitmentTxId := range commitmentTxIds {
+		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
+		if err != nil {
+			return err
+		}
+
+		for _, key := range tapKeys {
+			// skip if the key is not a valid x-only hex encoded pubkey
+			if len(key) != 64 {
+				continue
+			}
+			scripts = append(scripts, fmt.Sprintf("5120%s", key))
+		}
+	}
+
+	if len(scripts) <= 0 {
+		return nil
+	}
+
+	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
+		return err
+	}
+
+	log.Debugf("restored watching %d vtxo scripts", len(scripts))
+	return nil
 }
 
 func (s *service) stopWatchingVtxos(tapkeys []string) {
