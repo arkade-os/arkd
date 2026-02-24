@@ -249,7 +249,7 @@ var (
 	defaultHeartbeatInterval             = 60 // seconds
 	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
-	defaultMaxTxWeight                   = int64(0.1 * bitcoinBlockWeight)
+	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
 )

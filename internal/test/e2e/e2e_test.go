@@ -1007,6 +1007,121 @@ func TestOffchainTx(t *testing.T) {
 		require.Len(t, incomingFunds, 1)
 		require.Equal(t, txid, incomingFunds[0].Txid)
 	})
+
+	// In this test, we ensure that a tx with a too big size gets rejected.
+	// TODO: move to unit tests and add also one for RegisterIntent
+	t.Run("invalid tx size", func(t *testing.T) {
+		ctx := t.Context()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(func() { arkSvc.Close() })
+
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		require.NoError(t, err)
+
+		n := 20_000
+		opRetData := [20_000]byte{}
+
+		// Script: OP_RETURN (0x6a) + OP_PUSHDATA2 (0x4d) + len(2 bytes LE) + data
+		opRetScript := make([]byte, 0, 1+1+2+n)
+		opRetScript = append(opRetScript, 0x6a)                            // OP_RETURN
+		opRetScript = append(opRetScript, 0x4d)                            // OP_PUSHDATA2
+		opRetScript = append(opRetScript, byte(n&0xff), byte((n>>8)&0xff)) // little-endian length
+		opRetScript = append(opRetScript, opRetData[:]...)
+
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			[]*wire.TxOut{
+				{
+					Value:    int64(vtxo.Amount),
+					PkScript: opRetScript,
+				},
+			},
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		// sign the ark transaction
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := aliceWallet.SignTransaction(
+			ctx,
+			explorer,
+			encodedArkTx,
+		)
+		require.NoError(t, err)
+
+		txid, finalArkTx, signedCheckpoints, err := arkSvc.SubmitTx(
+			ctx, signedArkTx, encodedCheckpoints,
+		)
+		require.Error(t, err)
+		require.Empty(t, txid)
+		require.Empty(t, finalArkTx)
+		require.Empty(t, signedCheckpoints)
+	})
 }
 
 // TestDelegateRefresh tests the case where Alice owns a vtxo and delegates Bob to refresh it.
