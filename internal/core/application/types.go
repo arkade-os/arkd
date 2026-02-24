@@ -21,7 +21,7 @@ type AcceptedOffchainTx struct {
 }
 
 type Service interface {
-	Start() errors.Error
+	Start() error
 	Stop()
 	RegisterIntent(
 		ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
