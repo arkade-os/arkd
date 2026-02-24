@@ -49,25 +49,36 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					Pubkey:         vtxo.PubKey,
 					Amount:         int64(vtxo.Amount),
 					CommitmentTxid: vtxo.RootCommitmentTxid,
-					SpentBy:        sql.NullString{String: vtxo.SpentBy, Valid: len(vtxo.SpentBy) > 0},
-					Spent:          vtxo.Spent,
-					Unrolled:       vtxo.Unrolled,
-					Swept:          vtxo.Swept,
-					Preconfirmed:   vtxo.Preconfirmed,
-					ExpiresAt:      vtxo.ExpiresAt,
-					CreatedAt:      vtxo.CreatedAt,
-					ArkTxid:        sql.NullString{String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0},
-					SettledBy:      sql.NullString{String: vtxo.SettledBy, Valid: len(vtxo.SettledBy) > 0},
+					SpentBy: sql.NullString{
+						String: vtxo.SpentBy,
+						Valid:  len(vtxo.SpentBy) > 0,
+					},
+					Spent:        vtxo.Spent,
+					Unrolled:     vtxo.Unrolled,
+					Swept:        vtxo.Swept,
+					Preconfirmed: vtxo.Preconfirmed,
+					ExpiresAt:    vtxo.ExpiresAt,
+					CreatedAt:    vtxo.CreatedAt,
+					ArkTxid: sql.NullString{
+						String: vtxo.ArkTxid,
+						Valid:  len(vtxo.ArkTxid) > 0,
+					},
+					SettledBy: sql.NullString{
+						String: vtxo.SettledBy,
+						Valid:  len(vtxo.SettledBy) > 0,
+					},
 				},
 			); err != nil {
 				return err
 			}
 			for _, txid := range vtxo.CommitmentTxids {
-				if err := querierWithTx.InsertVtxoCommitmentTxid(ctx, queries.InsertVtxoCommitmentTxidParams{
-					VtxoTxid:       vtxo.Txid,
-					VtxoVout:       int64(vtxo.VOut),
-					CommitmentTxid: txid,
-				}); err != nil {
+				if err := querierWithTx.InsertVtxoCommitmentTxid(
+					ctx, queries.InsertVtxoCommitmentTxidParams{
+						VtxoTxid:       vtxo.Txid,
+						VtxoVout:       int64(vtxo.VOut),
+						CommitmentTxid: txid,
+					},
+				); err != nil {
 					return err
 				}
 			}
@@ -169,7 +180,7 @@ func (v *vtxoRepository) GetVtxos(
 		}
 
 		if len(res) == 0 {
-			return nil, nil
+			continue
 		}
 
 		rows := make([]queries.VtxoVw, 0, len(res))
@@ -183,7 +194,7 @@ func (v *vtxoRepository) GetVtxos(
 		}
 
 		if len(result) == 0 {
-			return nil, fmt.Errorf("vtxo not found")
+			continue
 		}
 
 		vtxos = append(vtxos, result[0])

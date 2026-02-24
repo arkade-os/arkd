@@ -68,6 +68,7 @@ type service struct {
 	vtxoMinSettlementAmount   int64
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
+	maxTxWeight               uint64
 
 	// fees
 	feeManager ports.FeeManager
@@ -108,7 +109,7 @@ func NewService(
 	vtxoTreeExpiry, unilateralExitDelay, publicUnilateralExitDelay,
 	boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
-	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
+	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64, maxTxWeight uint64,
 	network arklib.Network,
 	allowCSVBlockType bool,
 	noteUriPrefix string,
@@ -207,6 +208,7 @@ func NewService(
 		unilateralExitDelay:       unilateralExitDelay,
 		publicUnilateralExitDelay: publicUnilateralExitDelay,
 		allowCSVBlockType:         allowCSVBlockType,
+		maxTxWeight:               maxTxWeight,
 		wallet:                    wallet,
 		signer:                    signer,
 		repoManager:               repoManager,
@@ -349,9 +351,9 @@ func NewService(
 		},
 	)
 
-	// if err := svc.restoreWatchingVtxos(); err != nil {
-	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	// }
+	if err := svc.restoreWatchingVtxos(); err != nil {
+		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
+	}
 	go svc.listenToScannerNotifications()
 	return svc, nil
 }
@@ -986,6 +988,15 @@ func (s *service) SubmitOffchainTx(
 					MinAmount:   int(dust),
 				})
 			}
+		} else {
+			// all output with amount > dust must be valid taproot scripts
+			scriptClass := txscript.GetScriptClass(out.PkScript)
+			if scriptClass != txscript.WitnessV1TaprootTy {
+				return nil, errors.MALFORMED_ARK_TX.New(
+					"output #%d has amount greater than dust but is not a taproot pkscript",
+					outIndex,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
 		}
 
 		outputs = append(outputs, out)
@@ -1052,6 +1063,29 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("failed to sign ark tx: %w", err).
 			WithMetadata(map[string]any{
 				"ark_tx": signedArkTx,
+			})
+	}
+
+	txHex, err := s.builder.FinalizeAndExtract(fullySignedArkTx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to finalize ark tx: %w", err).
+			WithMetadata(map[string]any{
+				"ark_tx": fullySignedArkTx,
+			})
+	}
+	var arkTx wire.MsgTx
+	if err := arkTx.Deserialize(hex.NewDecoder(strings.NewReader(txHex))); err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to deserialize ark tx: %w", err).
+			WithMetadata(map[string]any{
+				"ark_tx": txHex,
+			})
+	}
+	weight := computeWeight(&arkTx)
+	if weight > s.maxTxWeight {
+		return nil, errors.TX_TOO_LARGE.New("ark tx weight is too high: %d", weight).
+			WithMetadata(errors.TxTooLargeMetadata{
+				Weight:    int(weight),
+				MaxWeight: int(s.maxTxWeight),
 			})
 	}
 
@@ -1714,6 +1748,30 @@ func (s *service) RegisterIntent(
 			WithMetadata(errors.InvalidIntentProofMetadata{
 				Proof:   signedProof,
 				Message: encodedMessage,
+			})
+	}
+
+	signedProofPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedProof), true)
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to create psbt from signed proof: %w", err).
+			WithMetadata(map[string]any{
+				"signed_proof": signedProof,
+			})
+	}
+
+	finalizedProofTx, err := intent.Proof{Packet: *signedProofPtx}.FinalizeAndExtract()
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
+			WithMetadata(map[string]any{
+				"proof": proof.UnsignedTx.TxID(),
+			})
+	}
+	weight := computeWeight(finalizedProofTx)
+	if weight > s.maxTxWeight {
+		return "", errors.TX_TOO_LARGE.New("proof weight is too high: %d", weight).
+			WithMetadata(errors.TxTooLargeMetadata{
+				Weight:    int(weight),
+				MaxWeight: int(s.maxTxWeight),
 			})
 	}
 
@@ -3677,6 +3735,43 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 	}
 
 	return s.scanner.WatchScripts(context.Background(), scripts)
+}
+
+func (s *service) restoreWatchingVtxos() error {
+	ctx := context.Background()
+
+	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
+	if err != nil {
+		return err
+	}
+
+	scripts := make([]string, 0)
+
+	for _, commitmentTxId := range commitmentTxIds {
+		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
+		if err != nil {
+			return err
+		}
+
+		for _, key := range tapKeys {
+			// skip if the key is not a valid x-only hex encoded pubkey
+			if len(key) != 64 {
+				continue
+			}
+			scripts = append(scripts, fmt.Sprintf("5120%s", key))
+		}
+	}
+
+	if len(scripts) <= 0 {
+		return nil
+	}
+
+	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
+		return err
+	}
+
+	log.Debugf("restored watching %d vtxo scripts", len(scripts))
+	return nil
 }
 
 func (s *service) stopWatchingVtxos(tapkeys []string) {
