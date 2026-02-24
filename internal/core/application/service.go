@@ -351,14 +351,16 @@ func NewService(
 		},
 	)
 
-	if err := svc.restoreWatchingVtxos(); err != nil {
-		return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	}
 	go svc.listenToScannerNotifications()
 	return svc, nil
 }
 
-func (s *service) Start() errors.Error {
+func (s *service) Start() error {
+	log.Debug("starting restore watching vtxos...")
+	if err := s.restoreWatchingVtxos(); err != nil {
+		return fmt.Errorf("failed to restore watching vtxos: %s", err)
+	}
+
 	log.Debug("starting sweeper service...")
 	ctx, cancel := context.WithCancel(context.Background())
 	s.sweeperCancel = cancel
@@ -3745,9 +3747,10 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
+	total := len(commitmentTxIds)
+	lastMilestone := 0
 	scripts := make([]string, 0)
-
-	for _, commitmentTxId := range commitmentTxIds {
+	for i, commitmentTxId := range commitmentTxIds {
 		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
 		if err != nil {
 			return err
@@ -3759,6 +3762,11 @@ func (s *service) restoreWatchingVtxos() error {
 				continue
 			}
 			scripts = append(scripts, fmt.Sprintf("5120%s", key))
+		}
+
+		if milestone := (i + 1) * 100 / total / 10; milestone > lastMilestone {
+			lastMilestone = milestone
+			log.Debugf("restore watching vtxos: %d%%...", milestone*10)
 		}
 	}
 
