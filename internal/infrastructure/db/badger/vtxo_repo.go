@@ -106,7 +106,7 @@ func (r *vtxoRepository) GetVtxos(
 			return nil, err
 		}
 		if vtxo == nil {
-			return nil, nil
+			continue
 		}
 		vtxos = append(vtxos, *vtxo)
 	}
