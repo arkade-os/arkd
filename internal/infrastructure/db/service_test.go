@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+	"math"
+	"math/big"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -149,15 +152,6 @@ func TestService(t *testing.T) {
 		config db.ServiceConfig
 	}{
 		{
-			name: "repo_manager_with_badger_stores",
-			config: db.ServiceConfig{
-				EventStoreType:   "badger",
-				DataStoreType:    "badger",
-				EventStoreConfig: []interface{}{"", nil},
-				DataStoreConfig:  []interface{}{"", nil},
-			},
-		},
-		{
 			name: "repo_manager_with_sqlite_stores",
 			config: db.ServiceConfig{
 				EventStoreType:   "badger",
@@ -181,15 +175,21 @@ func TestService(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc, err := db.NewService(tt.config, nil)
 			require.NoError(t, err)
-			defer svc.Close()
+			require.NotNil(t, svc)
 
+			// Since we use the same db for all tests and given the constraints on the db tables,
+			// we need to run the tests in this specific order to ensure batch and offchain txs
+			// records are added before the asset ones, and vtxos are added after assets.
 			testEventRepository(t, svc)
 			testRoundRepository(t, svc)
-			testVtxoRepository(t, svc)
 			testOffchainTxRepository(t, svc)
+			testAssetRepository(t, svc)
+			testVtxoRepository(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
 			testFeeRepository(t, svc)
+
+			svc.Close()
 		})
 	}
 }
@@ -665,7 +665,44 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				CommitmentTxids:    []string{commitmentTxid},
 			},
 		}
-		newVtxos := append(userVtxos, domain.Vtxo{
+		assetVtxos := append(userVtxos, []domain.Vtxo{
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 0,
+				},
+				PubKey:             pubkey,
+				Amount:             330,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Preconfirmed:       true,
+				Assets: []domain.AssetDenomination{{
+					AssetId: "asset1",
+					Amount:  3000,
+				}},
+			},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: randomString(32),
+					VOut: 1,
+				},
+				PubKey:             pubkey,
+				Amount:             330,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				Assets: []domain.AssetDenomination{
+					{
+						AssetId: "asset1",
+						Amount:  1000,
+					},
+					{
+						AssetId: "asset2",
+						Amount:  4000,
+					},
+				},
+			},
+		}...)
+		newVtxos := append(assetVtxos, domain.Vtxo{
 			Outpoint: domain.Outpoint{
 				Txid: randomString(32),
 				VOut: 1,
@@ -696,15 +733,21 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, "")
 		require.NoError(t, err)
+		require.NotEmpty(t, spendableVtxos)
+		require.Empty(t, spentVtxos)
 
-		numberOfVtxos := len(spendableVtxos) + len(spentVtxos)
+		initialVtxos, err := svc.Vtxos().GetAllVtxos(ctx)
+		require.NoError(t, err)
+		require.Greater(t, len(initialVtxos), 0)
+
+		totVtxos := len(initialVtxos) + len(newVtxos)
 
 		err = svc.Vtxos().AddVtxos(ctx, newVtxos)
 		require.NoError(t, err)
 
-		vtxos, err = svc.Vtxos().GetAllVtxos(ctx)
+		allVtxos, err := svc.Vtxos().GetAllVtxos(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 5, len(vtxos))
+		require.Len(t, allVtxos, totVtxos)
 
 		vtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.NoError(t, err)
@@ -713,34 +756,32 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
 
-		sortedVtxos := sortVtxos(userVtxos)
-		sort.Sort(sortedVtxos)
-
-		sortedSpendableVtxos := sortVtxos(spendableVtxos)
-		sort.Sort(sortedSpendableVtxos)
-
-		checkVtxos(t, sortedSpendableVtxos, sortedVtxos)
+		checkVtxos(t, spendableVtxos, userVtxos)
 		require.Empty(t, spentVtxos)
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, "")
 		require.NoError(t, err)
-		require.Len(t, append(spendableVtxos, spentVtxos...), numberOfVtxos+len(newVtxos))
+		require.Len(t, append(spendableVtxos, spentVtxos...), totVtxos)
 
 		err = svc.Vtxos().SpendVtxos(ctx, spentVtxoMap, arkTxid)
 		require.NoError(t, err)
 
-		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys[:1])
+		spentVtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.NoError(t, err)
-		require.Len(t, spentVtxos, len(vtxoKeys[:1]))
+		require.Len(t, spentVtxos, len(vtxoKeys))
 		for _, v := range spentVtxos {
 			require.True(t, v.Spent)
 			require.Equal(t, spentVtxoMap[v.Outpoint], v.SpentBy)
 			require.Equal(t, arkTxid, v.ArkTxid)
 		}
 
+		allVtxos, err = svc.Vtxos().GetAllVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, allVtxos, totVtxos)
+
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
 		require.NoError(t, err)
-		checkVtxos(t, vtxos[1:], spendableVtxos)
+		checkVtxos(t, allVtxos, spendableVtxos)
 		require.Len(t, spentVtxos, len(userVtxos))
 
 		spentVtxoMap = map[domain.Outpoint]string{
@@ -1505,6 +1546,151 @@ func testConvictionRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+// requireAssetsMatch compares two asset slices by Id, ControlAssetId, Metadata, and Supply (using big.Int.Cmp).
+func requireAssetsMatch(t *testing.T, expected, actual []domain.Asset) {
+	t.Helper()
+	require.Len(t, actual, len(expected))
+	byId := make(map[string]domain.Asset)
+	for _, a := range actual {
+		byId[a.Id] = a
+	}
+	for _, exp := range expected {
+		got, ok := byId[exp.Id]
+		require.True(t, ok)
+		require.Equal(t, exp.ControlAssetId, got.ControlAssetId)
+		require.Equal(t, exp.Metadata, got.Metadata)
+		require.Zero(t, (&exp.Supply).Cmp(&got.Supply))
+	}
+}
+
+func testAssetRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_asset_repository", func(t *testing.T) {
+		ctx := t.Context()
+		repo := svc.Assets()
+		vtxoRepo := svc.Vtxos()
+
+		newAssets := []domain.Asset{
+			{
+				Id:             "asset1",
+				ControlAssetId: "asset2",
+				Metadata: []asset.Metadata{
+					{
+						Key:   []byte("key1"),
+						Value: []byte("value1"),
+					},
+					{
+						Key:   []byte("abc"),
+						Value: []byte("cde"),
+					},
+				},
+			},
+			{
+				Id: "asset2",
+				Metadata: []asset.Metadata{
+					{
+						Key:   []byte("this is"),
+						Value: []byte("control asset"),
+					},
+				},
+			},
+		}
+		assetIds := []string{"asset1", "asset2", "non-existent-asset"}
+
+		// assets should not exist yet
+		assets, err := repo.GetAssets(ctx, assetIds)
+		require.NoError(t, err)
+		require.Len(t, assets, 0)
+
+		assetsByTx := map[string][]domain.Asset{arkTxid: newAssets}
+		count, err := repo.AddAssets(ctx, assetsByTx)
+		require.NoError(t, err)
+		require.Equal(t, 2, count)
+
+		count, err = repo.AddAssets(ctx, assetsByTx)
+		require.NoError(t, err)
+		require.Zero(t, count)
+
+		assets, err = repo.GetAssets(ctx, assetIds)
+		require.NoError(t, err)
+		require.Len(t, assets, 2)
+		requireAssetsMatch(t, newAssets, assets)
+
+		assets, err = repo.GetAssets(ctx, assetIds[2:])
+		require.NoError(t, err)
+		require.Empty(t, assets)
+
+		// GetControlAsset: asset1 has control asset asset2, asset2 is control asset (no parent)
+		controlID, err := repo.GetControlAsset(ctx, "asset1")
+		require.NoError(t, err)
+		require.Equal(t, "asset2", controlID)
+		controlID, err = repo.GetControlAsset(ctx, "asset2")
+		require.NoError(t, err)
+		require.Empty(t, controlID)
+		_, err = repo.GetControlAsset(ctx, "non-existent-asset")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no control asset found")
+
+		// AssetExists
+		exists, err := repo.AssetExists(ctx, "asset1")
+		require.NoError(t, err)
+		require.True(t, exists)
+		exists, err = repo.AssetExists(ctx, "asset2")
+		require.NoError(t, err)
+		require.True(t, exists)
+		exists, err = repo.AssetExists(ctx, "non-existent-asset")
+		require.NoError(t, err)
+		require.False(t, exists)
+
+		// test asset supply overflow
+		vtxos := []domain.Vtxo{{
+			Outpoint: domain.Outpoint{
+				Txid: "supplyOverflowVtxo1",
+				VOut: 0,
+			},
+			Amount: 330,
+			Assets: []domain.AssetDenomination{
+				{
+					AssetId: "assetSupplyOverflow",
+					Amount:  math.MaxUint64,
+				},
+			},
+		},
+			{
+				Outpoint: domain.Outpoint{
+					Txid: "supplyOverflowVtxo2",
+					VOut: 0,
+				},
+				Amount: 330,
+				Assets: []domain.AssetDenomination{
+					{
+						AssetId: "assetSupplyOverflow",
+						Amount:  math.MaxUint64,
+					},
+				},
+			}}
+		count, err = repo.AddAssets(ctx, map[string][]domain.Asset{"assetSupplyOverflowTx": {
+			{
+				Id:       "assetSupplyOverflow",
+				Metadata: []asset.Metadata{},
+			},
+		}})
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
+
+		err = vtxoRepo.AddVtxos(ctx, vtxos)
+		require.NoError(t, err)
+
+		assets, err = repo.GetAssets(ctx, []string{"assetSupplyOverflow"})
+		require.NoError(t, err)
+		require.Len(t, assets, 1)
+
+		expectedSupply := new(big.Int).
+			Mul(new(big.Int).SetUint64(math.MaxUint64), big.NewInt(2))
+
+		require.Equal(t, expectedSupply.String(), assets[0].Supply.String())
+	})
+}
+
 func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_fee_repository", func(t *testing.T) {
 		ctx := context.Background()
@@ -1663,20 +1849,9 @@ func roundsMatch(t *testing.T, expected, got domain.Round) {
 		gotValue, ok := got.Intents[k]
 		require.True(t, ok)
 
-		expectedVtxos := sortVtxos(v.Inputs)
-		gotVtxos := sortVtxos(gotValue.Inputs)
-
-		sort.Sort(expectedVtxos)
-		sort.Sort(gotVtxos)
-
-		expectedReceivers := sortReceivers(v.Receivers)
-		gotReceivers := sortReceivers(gotValue.Receivers)
-
-		sort.Sort(expectedReceivers)
-		sort.Sort(gotReceivers)
-
-		require.Exactly(t, expectedReceivers, gotReceivers)
-		require.Exactly(t, expectedVtxos, gotVtxos)
+		require.ElementsMatch(t, v.Receivers, gotValue.Receivers)
+		require.ElementsMatch(t, v.Inputs, gotValue.Inputs)
+		require.Equal(t, v.Txid, gotValue.Txid)
 		require.Equal(t, v.Proof, gotValue.Proof)
 		require.Equal(t, v.Message, gotValue.Message)
 	}
@@ -1782,25 +1957,18 @@ func randomTx() string {
 	return b64
 }
 
-type sortVtxos []domain.Vtxo
-
-func (a sortVtxos) String() string {
-	buf, _ := json.Marshal(a)
-	return string(buf)
-}
-
-func (a sortVtxos) Len() int           { return len(a) }
-func (a sortVtxos) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a sortVtxos) Less(i, j int) bool { return a[i].Txid < a[j].Txid }
-
-type sortReceivers []domain.Receiver
-
-func (a sortReceivers) Len() int           { return len(a) }
-func (a sortReceivers) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a sortReceivers) Less(i, j int) bool { return a[i].Amount < a[j].Amount }
-
-func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
-	for i, v := range gotVtxos {
+func checkVtxos(t *testing.T, expectedVtxos, gotVtxos []domain.Vtxo) {
+	sort.SliceStable(expectedVtxos, func(i, j int) bool {
+		return expectedVtxos[i].Txid < expectedVtxos[j].Txid
+	})
+	sort.SliceStable(gotVtxos, func(i, j int) bool {
+		return gotVtxos[i].Txid < gotVtxos[j].Txid
+	})
+	for _, v := range gotVtxos {
+		i := slices.IndexFunc(expectedVtxos, func(e domain.Vtxo) bool {
+			return e.Outpoint == v.Outpoint
+		})
+		require.Greater(t, i, -1)
 		expected := expectedVtxos[i]
 		require.Exactly(t, expected.Outpoint, v.Outpoint)
 		require.Exactly(t, expected.Amount, v.Amount)
@@ -1814,5 +1982,6 @@ func checkVtxos(t *testing.T, expectedVtxos sortVtxos, gotVtxos sortVtxos) {
 		require.Exactly(t, expected.SpentBy, v.SpentBy)
 		require.Exactly(t, expected.Swept, v.Swept)
 		require.ElementsMatch(t, expected.CommitmentTxids, v.CommitmentTxids)
+		require.ElementsMatch(t, expected.Assets, v.Assets)
 	}
 }

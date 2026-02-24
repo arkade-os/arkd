@@ -22,15 +22,15 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/client"
-	mempool_explorer "github.com/arkade-os/go-sdk/explorer/mempool"
-	"github.com/arkade-os/go-sdk/indexer"
-	"github.com/arkade-os/go-sdk/redemption"
-	inmemorystoreconfig "github.com/arkade-os/go-sdk/store/inmemory"
-	"github.com/arkade-os/go-sdk/types"
-	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
-	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
+	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
+	inmemorystoreconfig "github.com/arkade-os/arkd/pkg/client-lib/store/inmemory"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
+	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -388,7 +388,11 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, aliceBalance)
 			require.Greater(t, int(aliceBalance.OffchainBalance.Total), 0)
-			require.Less(t, int(aliceBalance.OffchainBalance.Total), prevTotalBalance)
+			require.Less(
+				t,
+				int(aliceBalance.OffchainBalance.Total),
+				prevTotalBalance,
+			)
 
 			bobBalance, err = bob.Balance(t.Context())
 			require.NoError(t, err)
@@ -2536,7 +2540,7 @@ func TestSweep(t *testing.T) {
 		}()
 
 		// Test fund recovery
-		txid, err := alice.Settle(ctx)
+		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -2739,7 +2743,7 @@ func TestSweep(t *testing.T) {
 		})
 
 		// Test fund recovery
-		txid, err := alice.Settle(ctx)
+		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -2900,7 +2904,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep
-		time.Sleep(25 * time.Second)
+		time.Sleep(35 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
@@ -3237,12 +3241,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3367,12 +3369,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3492,12 +3492,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3637,12 +3635,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -3833,12 +3829,10 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 
 		// send should fail
-		_, err = alice.SendOffChain(t.Context(), []types.Receiver{
-			{
-				Amount: aliceVtxo.Amount,
-				To:     aliceAddr,
-			},
-		})
+		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr,
+		}})
 		require.Error(t, err)
 	})
 
@@ -4198,4 +4192,280 @@ func TestFee(t *testing.T) {
 	require.NotZero(t, int(bobBalance.OffchainBalance.Total))
 	require.Zero(t, int(bobBalance.OnchainBalance.SpendableAmount))
 	require.Empty(t, bobBalance.OnchainBalance.LockedAmount)
+}
+
+func TestAsset(t *testing.T) {
+	// This test ensures that an asset vtxo can be issued, transfered and then refreshed
+	t.Run("transfer and renew", func(t *testing.T) {
+		ctx := t.Context()
+		const supply = 5_000
+		const transferAmount = 1_200
+
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+
+		wg := &sync.WaitGroup{}
+		wg.Go(func() {
+			faucetOffchain(t, alice, 0.002)
+		})
+		wg.Go(func() {
+			faucetOffchain(t, bob, 0.001)
+		})
+		wg.Wait()
+
+		txid, assetIds, err := alice.IssueAsset(ctx, supply, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, assetIds, 1)
+		assetId := assetIds[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		assetVtxos := listVtxosWithAsset(t, alice, assetId)
+		require.Len(t, assetVtxos, 1)
+		require.Len(t, assetVtxos[0].Assets, 1)
+		requireVtxoHasAsset(t, assetVtxos[0], assetId, uint64(supply))
+		require.Equal(t, txid, assetVtxos[0].Txid)
+
+		_, bobAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobAddr)
+
+		_, err = alice.SendOffChain(
+			ctx, []types.Receiver{
+				{To: bobAddr, Amount: 400, Assets: []types.Asset{
+					{AssetId: assetId, Amount: transferAmount},
+				}},
+			},
+		)
+		require.NoError(t, err)
+
+		// Allow some time for bob to receive the vtxo from indexer
+		time.Sleep(3 * time.Second)
+
+		receiverAssetVtxos := listVtxosWithAsset(t, bob, assetId)
+		require.Len(t, receiverAssetVtxos, 1)
+		require.Len(t, receiverAssetVtxos[0].Assets, 1)
+		requireVtxoHasAsset(t, receiverAssetVtxos[0], assetId, uint64(transferAmount))
+
+		bobBalance, err := bob.Balance(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, bobBalance)
+		require.NotNil(t, bobBalance.AssetBalances)
+
+		assetBalance, ok := bobBalance.AssetBalances[assetId]
+		require.True(t, ok)
+		require.Equal(t, int(assetBalance), int(transferAmount))
+
+		var aliceErr, bobErr error
+		wg = &sync.WaitGroup{}
+		wg.Go(func() {
+			_, aliceErr = alice.Settle(ctx)
+		})
+		wg.Go(func() {
+			_, bobErr = bob.Settle(ctx)
+		})
+
+		wg.Wait()
+		require.NoError(t, aliceErr)
+		require.NoError(t, bobErr)
+
+		bobBalanceAfterRenew, err := bob.Balance(ctx)
+		require.NoError(t, err)
+
+		assetBalanceAfterRenew, ok := bobBalanceAfterRenew.AssetBalances[assetId]
+		require.True(t, ok)
+		require.Equal(t, int(assetBalanceAfterRenew), int(transferAmount))
+
+		require.Equal(t, int(assetBalance), int(assetBalanceAfterRenew))
+	})
+
+	// These tests ensure many type of issuances can done offchain
+	t.Run("issuance", func(t *testing.T) {
+		t.Run("without control asset", func(t *testing.T) {
+			ctx := t.Context()
+			alice := setupArkSDK(t)
+			faucetOffchain(t, alice, 0.01)
+
+			_, assetIds, err := alice.IssueAsset(ctx, 1, nil, nil)
+			require.NoError(t, err)
+			require.Len(t, assetIds, 1)
+		})
+
+		t.Run("with new control asset", func(t *testing.T) {
+			ctx := t.Context()
+			alice := setupArkSDK(t)
+			faucetOffchain(t, alice, 0.01)
+
+			_, assetIds, err := alice.IssueAsset(ctx, 1, types.NewControlAsset{Amount: 1}, nil)
+			require.NoError(t, err)
+			require.Len(t, assetIds, 2)
+
+			controlAssetId := assetIds[0].String()
+			assetId := assetIds[1].String()
+			require.NotEqual(t, controlAssetId, assetId)
+		})
+
+		t.Run("with existing control asset", func(t *testing.T) {
+			ctx := t.Context()
+			alice := setupArkSDK(t)
+			faucetOffchain(t, alice, 0.01)
+
+			// issue control asset
+			_, assetIds, err := alice.IssueAsset(ctx, 1, nil, nil)
+			require.NoError(t, err)
+			require.Len(t, assetIds, 1)
+			controlAssetId := assetIds[0].String()
+
+			time.Sleep(3 * time.Second)
+
+			// issue another asset	 with existing control asset
+			_, assetIds2, err := alice.IssueAsset(
+				ctx,
+				1,
+				types.ExistingControlAsset{ID: controlAssetId},
+				nil,
+			)
+			require.NoError(t, err)
+			require.Len(t, assetIds2, 1)
+
+			require.NotEqual(t, assetIds[0].String(), assetIds2[0].String())
+		})
+	})
+
+	// This test ensures that an already issued asset can be reissued with the usage of its
+	// control asset
+	t.Run("reissuance", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupArkSDK(t)
+		faucetOffchain(t, alice, 0.01)
+
+		// issue an asset with a control asset
+		_, assetIds, err := alice.IssueAsset(ctx, 1, types.NewControlAsset{Amount: 1}, nil)
+		require.NoError(t, err)
+		require.Len(t, assetIds, 2)
+
+		controlAssetId := assetIds[0].String()
+		assetId := assetIds[1].String()
+		require.NotEqual(t, controlAssetId, assetId)
+
+		time.Sleep(3 * time.Second)
+
+		controlVtxos := listVtxosWithAsset(t, alice, controlAssetId)
+		require.Len(t, controlVtxos, 1)
+		require.Len(
+			t,
+			controlVtxos[0].Assets,
+			2,
+		) // should hold both the control asset and the issued asset
+		requireVtxoHasAsset(t, controlVtxos[0], controlAssetId, 1)
+		requireVtxoHasAsset(t, controlVtxos[0], assetId, 1)
+
+		_, err = alice.ReissueAsset(ctx, assetId, 1000)
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		assetVtxos := listVtxosWithAsset(t, alice, assetId)
+		require.Len(t, assetVtxos, 2)
+	})
+
+	// This test ensures that an asset can be burned for any given amount
+	t.Run("burn", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupArkSDK(t)
+		faucetOffchain(t, alice, 0.01)
+
+		_, assetIds, err := alice.IssueAsset(ctx, 5000, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, assetIds, 1)
+		assetId := assetIds[0].String()
+
+		time.Sleep(2 * time.Second)
+
+		assetVtxos := listVtxosWithAsset(t, alice, assetId)
+		require.Len(t, assetVtxos, 1)
+		require.Len(t, assetVtxos[0].Assets, 1)
+		requireVtxoHasAsset(t, assetVtxos[0], assetId, 5000)
+
+		_, err = alice.BurnAsset(ctx, assetId, 1500)
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		assetVtxos = listVtxosWithAsset(t, alice, assetId)
+		require.Len(t, assetVtxos, 1)
+		require.Len(t, assetVtxos[0].Assets, 1)
+		requireVtxoHasAsset(t, assetVtxos[0], assetId, 3500)
+	})
+
+	// This test ensures that Alice can unroll her asset vtxos onchain
+	t.Run("unroll", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupArkSDK(t)
+
+		// Fund the client with the exact amount needed for an issuance to not create any change
+		faucetOffchain(t, alice, 0.00000330)
+
+		supply := uint64(6_000)
+		txid, assetIds, err := alice.IssueAsset(ctx, supply, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, assetIds, 1)
+		assetId := assetIds[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		assetVtxos, spentVtxos, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, spentVtxos, 1)
+		require.Len(t, assetVtxos, 1)
+		require.Len(t, assetVtxos[0].Assets, 1)
+		requireVtxoHasAsset(t, assetVtxos[0], assetId, supply)
+		require.Equal(t, txid, assetVtxos[0].Txid)
+
+		// Fund alice's onchain address to cover network fees for the unroll
+		onchainAddr, _, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		faucetOnchain(t, onchainAddr, 0.01)
+		time.Sleep(5 * time.Second)
+
+		err = alice.Unroll(ctx)
+		require.NoError(t, err)
+
+		// Generate a block to confirm the leaf tx just unrolled and make the server react by
+		// broadcasting the checkpoint tx that spent the vtxo offchain
+		err = generateBlocks(1)
+		require.NoError(t, err)
+		time.Sleep(5 * time.Second)
+		// Generate another block to confirm the checkpoint tx so that alice can unroll her asset
+		// vtxo
+		err = generateBlocks(1)
+		require.NoError(t, err)
+		time.Sleep(5 * time.Second)
+
+		// Finish the unroll and broadcast the ark issuance tx
+		err = alice.Unroll(ctx)
+		require.NoError(t, err)
+
+		// Generate a block to confirm the issuance tx onchain
+		err = generateBlocks(1)
+		require.NoError(t, err)
+
+		time.Sleep(8 * time.Second)
+
+		// alice vtxos should have been unrolled
+		spendableVtxos, spentVtxos, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Empty(t, spendableVtxos)
+		require.Len(t, spentVtxos, 2)
+		require.True(t, spentVtxos[0].Unrolled)
+
+		aliceBalance, err := alice.Balance(ctx)
+		require.NoError(t, err)
+
+		_, ok := aliceBalance.AssetBalances[assetId]
+		require.False(t, ok)
+	})
 }

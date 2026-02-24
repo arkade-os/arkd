@@ -158,7 +158,8 @@ var (
 		Flags: []cli.Flag{
 			scheduledSessionStartDateFlag, scheduledSessionEndDateFlag,
 			scheduledSessionDurationFlag, scheduledSessionPeriodFlag,
-			scheduledSessionRoundMinParticipantsCountFlag, scheduledSessionRoundMaxParticipantsCountFlag,
+			scheduledSessionRoundMinParticipantsCountFlag,
+			scheduledSessionRoundMaxParticipantsCountFlag,
 		},
 		Action: updateScheduledSessionAction,
 	}

@@ -5,6 +5,47 @@
     "version": "version not set"
   },
   "paths": {
+    "/v1/indexer/asset/{asset_id}": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetAsset returns the asset information and metadata for the specified asset ID.",
+        "operationId": "IndexerService_GetAsset",
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAssetResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs": {
       "get": {
         "tags": [
@@ -731,6 +772,45 @@
           }
         }
       },
+      "AssetMetadata": {
+        "title": "AssetMetadata",
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "GetAssetRequest": {
+        "title": "GetAssetRequest",
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string"
+          }
+        }
+      },
+      "GetAssetResponse": {
+        "title": "GetAssetResponse",
+        "type": "object",
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "controlAsset": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "string"
+          },
+          "supply": {
+            "type": "string"
+          }
+        }
+      },
       "GetBatchSweepTransactionsRequest": {
         "title": "GetBatchSweepTransactionsRequest",
         "type": "object",
@@ -1047,6 +1127,19 @@
           }
         }
       },
+      "IndexerAsset": {
+        "title": "IndexerAsset",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "assetId": {
+            "type": "string"
+          }
+        }
+      },
       "IndexerBatch": {
         "title": "IndexerBatch",
         "type": "object",
@@ -1271,6 +1364,12 @@
           },
           "arkTxid": {
             "type": "string"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexerAsset"
+            }
           },
           "commitmentTxids": {
             "type": "array",

@@ -1,0 +1,220 @@
+{
+    "valid": {
+        "newMetadata": [
+            {
+                "name": "simple",
+                "key": "testKey",
+                "value": "testValue",
+                "serializedHex": "07746573744b6579097465737456616c7565"
+            },
+            {
+                "name": "nested json",
+                "key": "{\"key\": \"key\"}",
+                "value": "{\"value\": \"value\"}",
+                "serializedHex": "0e7b226b6579223a20226b6579227d127b2276616c7565223a202276616c7565227d"
+            },
+            {
+                "name": "another alphabet",
+                "key": "钥匙",
+                "value": "价值",
+                "serializedHex": "06e992a5e58c9906e4bbb7e580bc"
+            },
+            {
+                "name": "emoji",
+                "key": "🔑",
+                "value": "👾",
+                "serializedHex": "04f09f949104f09f91be"
+            },
+            {
+                "name": "long key value",
+                "key": "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua",
+                "value": "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua",
+                "serializedHex": "786c6f72656d20697073756d20646f6c6f722073697420616d657420636f6e73656374657475722061646970697363696e6720656c69742073656420646f20656975736d6f642074656d706f7220696e6369646964756e74207574206c61626f726520657420646f6c6f7265206d61676e6120616c69717561786c6f72656d20697073756d20646f6c6f722073697420616d657420636f6e73656374657475722061646970697363696e6720656c69742073656420646f20656975736d6f642074656d706f7220696e6369646964756e74207574206c61626f726520657420646f6c6f7265206d61676e6120616c69717561"
+            },
+            {
+                "name": "short key value",
+                "key": "0",
+                "value": "1",
+                "serializedHex": "01300131"
+            }
+        ],
+        "newMetadataList": [
+            {
+                "name": "asset data (with icon url)",
+                "metadata": [
+                    {
+                        "key": "name",
+                        "value": "testAsset"
+                    },
+                    {
+                        "key": "ticker",
+                        "value": "TST"
+                    },
+                    {
+                        "key": "decimals",
+                        "value": "0"
+                    },
+                    {
+                        "key": "icon",
+                        "value": "https://example.com/icon.png"
+                    }
+                ],
+                "serializedHex": "04046e616d6509746573744173736574067469636b65720354535408646563696d616c7301300469636f6e1c68747470733a2f2f6578616d706c652e636f6d2f69636f6e2e706e67"
+            },
+            {
+                "name": "asset data (with icon embedded)",
+                "metadata": [
+                    {
+                        "key": "name",
+                        "value": "testAsset"
+                    },
+                    {
+                        "key": "ticker",
+                        "value": "TST"
+                    },
+                    {
+                        "key": "decimals",
+                        "value": "0"
+                    },
+                    {
+                        "key": "icon",
+                        "value": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA"
+                    }
+                ],
+                "serializedHex": "04046e616d6509746573744173736574067469636b65720354535408646563696d616c7301300469636f6e32646174613a696d6167652f706e673b6261736536342c6956424f5277304b47676f414141414e535568455567414141415541"
+            },
+            {
+                "name": "random data",
+                "metadata": [
+                    {
+                        "key": "testKey",
+                        "value": "testValue"
+                    },
+                    {
+                        "key": "{\"key\": \"key\"}",
+                        "value": "{\"value\": \"value\"}"
+                    },
+                    {
+                        "key": "钥匙",
+                        "value": "价值"
+                    }
+                ],
+                "serializedHex": "0307746573744b6579097465737456616c75650e7b226b6579223a20226b6579227d127b2276616c7565223a202276616c7565227d06e992a5e58c9906e4bbb7e580bc"
+            }
+        ],
+        "hash": [
+            {
+                "name": "asset data (with icon url)",
+                "metadata": [
+                    {
+                        "key": "name",
+                        "value": "testAsset"
+                    },
+                    {
+                        "key": "ticker",
+                        "value": "TST"
+                    },
+                    {
+                        "key": "decimals",
+                        "value": "0"
+                    },
+                    {
+                        "key": "icon",
+                        "value": "https://example.com/icon.png"
+                    }
+                ],
+                "expectedHash": "3a95a202409e237d575c8425685daa3a5880cd16e3c069b0df5c6228a234ce7b"
+            },
+            {
+                "name": "asset data (with icon embedded)",
+                "metadata": [
+                    {
+                        "key": "name",
+                        "value": "testAsset"
+                    },
+                    {
+                        "key": "ticker",
+                        "value": "TST"
+                    },
+                    {
+                        "key": "decimals",
+                        "value": "0"
+                    },
+                    {
+                        "key": "icon",
+                        "value": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA"
+                    }
+                ],
+                "expectedHash": "99d136d0240c44d5915bfcc45c63e6030f9d02910956932bcfe7bca63fb582f4"
+            },
+            {
+                "name": "random data",
+                "metadata": [
+                    {
+                        "key": "testKey",
+                        "value": "testValue"
+                    },
+                    {
+                        "key": "{\"key\": \"key\"}",
+                        "value": "{\"value\": \"value\"}"
+                    },
+                    {
+                        "key": "钥匙",
+                        "value": "价值"
+                    }
+                ],
+                "expectedHash": "405828ca96e62f281e1e861e08f92813ac445d5ca2092877078dba25c8654596"
+            }
+        ]
+    },
+    "invalid": {
+        "newMetadata": [
+            {
+                "name": "empty key",
+                "key": "",
+                "value": "value",
+                "expectedError": "missing metadata key"
+            },
+            {
+                "name": "empty value",
+                "key": "key",
+                "value": "",
+                "expectedError": "missing metadata value"
+            }
+        ],
+        "newMetadataFromString": [
+            {
+                "name": "empty",
+                "serializedHex": "",
+                "expectedError": "missing metadata"
+            },
+            {
+                "name": "invalid format",
+                "serializedHex": "invalid",
+                "expectedError": "invalid metadata format"
+            },
+            {
+                "name": "invalid length",
+                "serializedHex": "013101",
+                "expectedError": "invalid metadata length"
+            }
+        ],
+        "newMetadataListFromString": [
+            {
+                "name": "empty",
+                "serializedHex": "",
+                "expectedError": "missing metadata list"
+            },
+            {
+                "name": "invalid format",
+                "serializedHex": "invalid",
+                "expectedError": "invalid metadata list format"
+            },
+            {
+                "name": "invalid length",
+                "serializedHex": "01013101",
+                "expectedError": "invalid metadata length"
+            }
+        ]
+    }
+}

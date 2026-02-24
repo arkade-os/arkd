@@ -337,7 +337,113 @@ var OFFCHAIN_TX_INSUFFICIENT_FEE = Code[OffchainTxInsufficientFeeMetadata]{
 	grpccodes.InvalidArgument,
 }
 
-var INTENT_FEE_EVALUATION_FAILED = Code[any]{33, "INTENT_FEE_EVALUATION_FAILED", grpccodes.Internal}
+// Asset validation metadata types
+type AssetValidationMetadata struct {
+	AssetID string `json:"asset_id,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type AssetInputMetadata struct {
+	AssetID    string `json:"asset_id,omitempty"`
+	InputIndex int    `json:"input_index"`
+	Txid       string `json:"txid,omitempty"`
+}
+
+type AssetOutputMetadata struct {
+	AssetID     string `json:"asset_id,omitempty"`
+	OutputIndex int    `json:"output_index"`
+	OutputType  int    `json:"output_type,omitempty"`
+}
+
+type ControlAssetMetadata struct {
+	AssetID        string `json:"asset_id,omitempty"`
+	ControlAssetID string `json:"control_asset_id,omitempty"`
+	GroupIndex     int    `json:"group_index,omitempty"`
+}
+
+type IntentValidationMetadata struct {
+	AssetId     string `json:"asset_id,omitempty"`
+	IntentTxid  string `json:"intent_txid,omitempty"`
+	OutputIndex uint32 `json:"output_index,omitempty"`
+}
+
+type CheckpointValidationMetadata struct {
+	Txid       string `json:"txid"`
+	InputIndex int    `json:"input_index,omitempty"`
+}
+
+type OffchainTxValidationMetadata struct {
+	Txid        string `json:"txid"`
+	OutputIndex int    `json:"output_index,omitempty"`
+}
+
+var ASSET_VALIDATION_FAILED = Code[AssetValidationMetadata]{
+	33,
+	"ASSET_VALIDATION_FAILED",
+	grpccodes.InvalidArgument,
+}
+
+var ASSET_NOT_FOUND = Code[AssetValidationMetadata]{
+	34,
+	"ASSET_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+var ASSET_INPUT_INVALID = Code[AssetInputMetadata]{
+	35,
+	"ASSET_INPUT_INVALID",
+	grpccodes.InvalidArgument,
+}
+
+var ASSET_OUTPUT_INVALID = Code[AssetOutputMetadata]{
+	36,
+	"ASSET_OUTPUT_INVALID",
+	grpccodes.InvalidArgument,
+}
+
+var CONTROL_ASSET_INVALID = Code[ControlAssetMetadata]{
+	37,
+	"CONTROL_ASSET_INVALID",
+	grpccodes.InvalidArgument,
+}
+
+var CONTROL_ASSET_NOT_FOUND = Code[ControlAssetMetadata]{
+	38,
+	"CONTROL_ASSET_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+var INTENT_ASSET_VALIDATION_FAILED = Code[IntentValidationMetadata]{
+	39,
+	"INTENT_ASSET_VALIDATION_FAILED",
+	grpccodes.InvalidArgument,
+}
+
+var CHECKPOINT_TX_INVALID = Code[CheckpointValidationMetadata]{
+	40,
+	"CHECKPOINT_TX_INVALID",
+	grpccodes.InvalidArgument,
+}
+
+var CHECKPOINT_TX_NOT_FOUND = Code[CheckpointValidationMetadata]{
+	41,
+	"CHECKPOINT_TX_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+var OFFCHAIN_TX_INVALID = Code[OffchainTxValidationMetadata]{
+	42,
+	"OFFCHAIN_TX_INVALID",
+	grpccodes.InvalidArgument,
+}
+
+var ASSET_PACKET_INVALID = Code[AssetValidationMetadata]{
+	43,
+	"ASSET_PACKET_INVALID",
+	grpccodes.InvalidArgument,
+}
+
+var INTENT_FEE_EVALUATION_FAILED = Code[any]{44, "INTENT_FEE_EVALUATION_FAILED", grpccodes.Internal}
 
 var INTENT_NOT_FOUND = Code[any]{34, "INTENT_NOT_FOUND", grpccodes.NotFound}
 

@@ -10,6 +10,21 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
+type Asset struct {
+	ID             string
+	IsImmutable    bool
+	MetadataHash   sql.NullString
+	Metadata       sql.NullString
+	ControlAssetID sql.NullString
+}
+
+type AssetProjection struct {
+	AssetID string
+	Txid    string
+	Vout    int32
+	Amount  string
+}
+
 type CheckpointTx struct {
 	Txid                 string
 	Tx                   string
@@ -65,10 +80,13 @@ type IntentWithInputsVw struct {
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
 	Commitments    []byte
+	AssetID        sql.NullString
+	AssetAmount    sql.NullString
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	IntentTxid     sql.NullString
 }
 
 type IntentWithReceiversVw struct {
@@ -80,6 +98,7 @@ type IntentWithReceiversVw struct {
 	RoundID        sql.NullString
 	Proof          sql.NullString
 	Message        sql.NullString
+	Txid           sql.NullString
 }
 
 type MarketHour struct {
@@ -144,6 +163,7 @@ type RoundIntentsVw struct {
 	RoundID sql.NullString
 	Proof   sql.NullString
 	Message sql.NullString
+	Txid    sql.NullString
 }
 
 type RoundTxsVw struct {
@@ -238,4 +258,6 @@ type VtxoVw struct {
 	IntentID       sql.NullString
 	UpdatedAt      int64
 	Commitments    []byte
+	AssetID        string
+	AssetAmount    string
 }

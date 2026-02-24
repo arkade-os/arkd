@@ -103,7 +103,7 @@ type node interface {
 }
 
 type leaf struct {
-	output      *wire.TxOut
+	outputs      []*wire.TxOut
 	inputScript []byte
 	cosigners   []*btcec.PublicKey
 }
@@ -121,11 +121,15 @@ func (l *leaf) getChildren() []node {
 }
 
 func (l *leaf) getAmount() int64 {
-	return l.output.Value
+	totalAmount := int64(0)
+	for _, output := range l.outputs {
+		totalAmount += output.Value
+	}
+	return totalAmount
 }
 
 func (l *leaf) getOutputs() ([]*wire.TxOut, error) {
-	return []*wire.TxOut{l.output, txutils.AnchorOutput()}, nil
+	return append(l.outputs, txutils.AnchorOutput()), nil
 }
 
 func (l *leaf) tree(
@@ -249,21 +253,15 @@ func getTx(n node, input *wire.OutPoint, expiry *arklib.RelativeLocktime) (*psbt
 
 // createTxTree is a recursive function that creates a tree of transactions from the leaves up to
 // the root.
-func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, err error) {
-	if len(receivers) == 0 {
+func createTxTree(leaves []Leaf, tapTreeRoot []byte, radix int) (root node, err error) {
+	if len(leaves) == 0 {
 		return nil, fmt.Errorf("no receivers provided")
 	}
 
-	nodes := make([]node, 0, len(receivers))
-	for _, r := range receivers {
-		pkScript, err := hex.DecodeString(r.Script)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode cosigner pubkey: %w", err)
-		}
-
+	nodes := make([]node, 0, len(leaves))
+	for _, l := range leaves {
 		cosigners := make([]*btcec.PublicKey, 0)
-
-		for _, cosigner := range r.CosignersPublicKeys {
+		for _, cosigner := range l.CosignersPublicKeys {
 			pubkeyBytes, err := hex.DecodeString(cosigner)
 			if err != nil {
 				return nil, fmt.Errorf("failed to decode cosigner pubkey: %w", err)
@@ -279,7 +277,7 @@ func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, e
 		cosigners = uniqueCosigners(cosigners)
 
 		if len(cosigners) == 0 {
-			return nil, fmt.Errorf("no cosigners for %s", r.Script)
+			return nil, fmt.Errorf("no cosigners for leaf tx outputs %+v", l.Outputs)
 		}
 
 		aggregatedKey, err := AggregateKeys(cosigners, tapTreeRoot)
@@ -292,8 +290,17 @@ func createTxTree(receivers []Leaf, tapTreeRoot []byte, radix int) (root node, e
 			return nil, fmt.Errorf("failed to create script pubkey: %w", err)
 		}
 
+		outputs := make([]*wire.TxOut, 0)
+		for _, output := range l.Outputs {
+			pkScript, err := hex.DecodeString(output.Script)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode output script: %w", err)
+			}
+			outputs = append(outputs, &wire.TxOut{Value: int64(output.Amount), PkScript: pkScript})
+		}
+
 		leafNode := &leaf{
-			output:      &wire.TxOut{Value: int64(r.Amount), PkScript: pkScript},
+			outputs:     outputs,
 			inputScript: inputScript,
 			cosigners:   cosigners,
 		}

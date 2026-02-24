@@ -12,8 +12,8 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/arkade-os/go-sdk/client"
-	"github.com/arkade-os/go-sdk/wallet"
+	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -219,12 +219,6 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	)
 }
 
-func (h *delegateBatchEventsHandler) OnStreamStartedEvent(
-	event client.StreamStartedEvent,
-) {
-	fmt.Printf("delegate_utils_test OnStreamStartedEvent: %+v\n", event)
-}
-
 type customBatchEventsHandler struct {
 	onStreamStarted        func(ctx context.Context, event client.StreamStartedEvent) error
 	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, error)
@@ -235,7 +229,6 @@ type customBatchEventsHandler struct {
 	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
 	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
 	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error)
-	onStreamStartedEvent   func(event client.StreamStartedEvent)
 }
 
 func (h *customBatchEventsHandler) OnStreamStarted(
@@ -336,12 +329,4 @@ func (h *customBatchEventsHandler) OnTreeNonces(
 	event client.TreeNoncesEvent,
 ) (bool, error) {
 	return false, nil
-}
-
-func (h *customBatchEventsHandler) OnStreamStartedEvent(
-	event client.StreamStartedEvent,
-) {
-	if h.onStreamStartedEvent != nil {
-		h.onStreamStartedEvent(event)
-	}
 }
