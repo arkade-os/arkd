@@ -91,6 +91,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				ConnectorAddress:   round.ConnectorAddress,
 				Version:            int32(round.Version),
 				Swept:              round.Swept,
+				CollectedFees:      int64(round.CollectedFees),
 				FailReason: sql.NullString{
 					String: round.FailReason, Valid: len(round.FailReason) > 0,
 				},
@@ -445,6 +446,19 @@ func (r *roundRepository) GetIntentByTxid(
 		Message: intent.Message.String,
 	}, nil
 }
+func (r *roundRepository) GetCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	fees, err := r.querier.SelectCollectedFees(ctx, queries.SelectCollectedFeesParams{
+		After:  after,
+		Before: before,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return uint64(fees), nil
+}
+
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),
@@ -484,6 +498,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				Swept:              v.round.Swept,
 				Intents:            make(map[string]domain.Intent),
 				VtxoTreeExpiration: v.round.VtxoTreeExpiration,
+				CollectedFees:      uint64(v.round.CollectedFees),
 				FailReason:         v.round.FailReason.String,
 			}
 		}

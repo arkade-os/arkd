@@ -74,8 +74,8 @@ func (s *service) getBatchStats(
 		a.OnchainFees = totalIn - totalOut
 	}
 
+	a.CollectedFees = calculateCollectedFees(round, a.BoardingInputAmount)
 	for _, intent := range round.Intents {
-		a.CollectedFees += intent.TotalInputAmount() + a.BoardingInputAmount - intent.TotalOutputAmount()
 		a.ForfeitCount += len(intent.Inputs)
 		a.ForfeitAmount += intent.TotalInputAmount()
 		for _, receiver := range intent.Receivers {
@@ -116,4 +116,25 @@ func (s *service) getBatchStats(
 	a.Duration = duration
 	a.IntentsCount = len(round.Intents)
 	return
+}
+
+func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uint64 {
+	collectedFees := uint64(0)
+	for _, intent := range round.Intents {
+		collectedFees += intent.TotalInputAmount() + boardingInputAmount - intent.TotalOutputAmount()
+	}
+	return collectedFees
+}
+
+func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
+	boardingInputAmount := uint64(0)
+	for _, input := range ptx.Inputs {
+		if input.WitnessUtxo == nil {
+			continue
+		}
+		if len(input.TaprootLeafScript) > 0 {
+			boardingInputAmount += uint64(input.WitnessUtxo.Value)
+		}
+	}
+	return boardingInputAmount
 }

@@ -182,6 +182,7 @@ func TestService(t *testing.T) {
 			// records are added before the asset ones, and vtxos are added after assets.
 			testEventRepository(t, svc)
 			testRoundRepository(t, svc)
+			testCollectedFeesRepository(t, svc)
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
@@ -653,6 +654,109 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// - first round has been swept
 		// - second round has no vtxo tree
 		require.Empty(t, sweepableRounds)
+	})
+}
+
+func testCollectedFeesRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_collected_fees", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Rounds()
+
+		// No fees collected yet for a fresh time range.
+		fees, err := repo.GetCollectedFees(ctx, 0, 0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(0), fees)
+
+		// Create three completed rounds at timestamps 100, 200, 300 with
+		// collected fees 1000, 2000, 3000 respectively.
+		for _, tc := range []struct {
+			ts  int64
+			fee uint64
+		}{
+			{100, 1000},
+			{200, 2000},
+			{300, 3000},
+		} {
+			id := uuid.New().String()
+			round := domain.NewRoundFromEvents([]domain.Event{
+				domain.RoundStarted{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundStarted,
+					},
+					Timestamp: tc.ts,
+				},
+				domain.RoundFinalizationStarted{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundFinalizationStarted,
+					},
+					CommitmentTxid: randomString(32),
+					CommitmentTx:   emptyTx,
+				},
+				domain.RoundFinalized{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundFinalized,
+					},
+					FinalCommitmentTx: emptyTx,
+					CollectedFees:     tc.fee,
+					Timestamp:         tc.ts + 10,
+				},
+			})
+			err := repo.AddOrUpdateRound(ctx, *round)
+			require.NoError(t, err)
+		}
+
+		// Create a failed round at timestamp 250 with fees 9999 — should be excluded.
+		failedId := uuid.New().String()
+		failedRound := domain.NewRoundFromEvents([]domain.Event{
+			domain.RoundStarted{
+				RoundEvent: domain.RoundEvent{
+					Id:   failedId,
+					Type: domain.EventTypeRoundStarted,
+				},
+				Timestamp: 250,
+			},
+			domain.RoundFailed{
+				RoundEvent: domain.RoundEvent{
+					Id:   failedId,
+					Type: domain.EventTypeRoundFailed,
+				},
+				Reason:    "test failure",
+				Timestamp: 260,
+			},
+		})
+		// Manually set CollectedFees on the failed round to verify it's excluded.
+		failedRound.CollectedFees = 9999
+		err = repo.AddOrUpdateRound(ctx, *failedRound)
+		require.NoError(t, err)
+
+		// before=0 means no upper bound: all three completed rounds (after > 0).
+		// Rounds at ts 100, 200, 300 all have starting_timestamp > 0.
+		fees, err = repo.GetCollectedFees(ctx, 0, 0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1000+2000+3000), fees)
+
+		// Only rounds starting after 100 (exclusive): ts 200, 300.
+		fees, err = repo.GetCollectedFees(ctx, 100, 0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2000+3000), fees)
+
+		// Rounds starting after 100 and before 300 (both exclusive): ts 200 only.
+		fees, err = repo.GetCollectedFees(ctx, 100, 300)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2000), fees)
+
+		// Range that includes all three: after 0, before 999.
+		fees, err = repo.GetCollectedFees(ctx, 0, 999)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1000+2000+3000), fees)
+
+		// Range that includes none: after 300 with no upper bound.
+		fees, err = repo.GetCollectedFees(ctx, 300, 0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(0), fees)
 	})
 }
 

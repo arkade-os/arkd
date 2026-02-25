@@ -53,6 +53,7 @@ type Round struct {
 	Version            uint
 	Swept              bool
 	VtxoTreeExpiration int64
+	CollectedFees      uint64
 	SweepTxs           map[string]string
 	FailReason         string
 	Changes            []Event
@@ -162,7 +163,11 @@ func (r *Round) StartFinalization(
 	return []Event{event}, nil
 }
 
-func (r *Round) EndFinalization(forfeitTxs []ForfeitTx, finalCommitmentTx string) ([]Event, error) {
+func (r *Round) EndFinalization(
+	forfeitTxs []ForfeitTx,
+	finalCommitmentTx string,
+	collectedFees uint64,
+) ([]Event, error) {
 	if len(forfeitTxs) <= 0 {
 		for _, intent := range r.Intents {
 			for _, in := range intent.Inputs {
@@ -191,6 +196,7 @@ func (r *Round) EndFinalization(forfeitTxs []ForfeitTx, finalCommitmentTx string
 		},
 		ForfeitTxs:        forfeitTxs,
 		FinalCommitmentTx: finalCommitmentTx,
+		CollectedFees:     collectedFees,
 		Timestamp:         time.Now().Unix(),
 	}
 	r.raise(event)
@@ -287,6 +293,7 @@ func (r *Round) on(event Event, replayed bool) {
 		r.ForfeitTxs = append([]ForfeitTx{}, e.ForfeitTxs...)
 		r.EndingTimestamp = e.Timestamp
 		r.CommitmentTx = e.FinalCommitmentTx
+		r.CollectedFees = e.CollectedFees
 	case RoundFailed:
 		r.Stage.Failed = true
 		r.FailReason = e.Reason

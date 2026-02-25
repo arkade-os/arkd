@@ -3422,7 +3422,9 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 
 	s.roundReportSvc.OpEnded(PublishCommitmentTxOp)
 
-	changes, err = round.EndFinalization(forfeitTxs, signedCommitmentTx)
+	boardingAmount := calculateBoardingInputAmount(commitmentTx)
+	collectedFees := calculateCollectedFees(round, boardingAmount)
+	changes, err = round.EndFinalization(forfeitTxs, signedCommitmentTx, collectedFees)
 	if err != nil {
 		changes = round.Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
 		return

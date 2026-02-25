@@ -124,6 +124,25 @@ func (r *arkRepository) GetRoundStats(
 	return nil, nil
 }
 
+func (r *arkRepository) GetCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	query := badgerhold.Where("Stage.Ended").Eq(true).
+		And("StartingTimestamp").Gt(after)
+	if before > 0 {
+		query = query.And("StartingTimestamp").Lt(before)
+	}
+	rounds, err := r.findRound(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	var total uint64
+	for _, round := range rounds {
+		total += round.CollectedFees
+	}
+	return total, nil
+}
+
 func (r *arkRepository) GetRoundForfeitTxs(
 	ctx context.Context, commitmentTxid string,
 ) ([]domain.ForfeitTx, error) {
