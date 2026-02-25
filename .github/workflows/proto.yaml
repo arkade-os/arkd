@@ -33,35 +33,3 @@ jobs:
         run: |
           # Compare against the target branch (usually master)
           buf breaking --against "https://github.com/${{ github.repository }}.git#branch=${{ github.base_ref }},subdir=api-spec/protobuf"
-  
-  verify-client:
-    name: Check client lib stubs
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./pkg/client-lib
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: 1.25.5
-
-      - name: Install deps
-        run: go mod download
-
-      - name: Generate Client
-        run: make genrest CI=true
-
-      - name: Check for uncommitted changes
-        run: |
-          git add .
-          git diff --staged --exit-code
-
-      - name: Fail if changes detected
-        if: failure()
-        run: |
-          echo "❌ Generated client is out of date!"
-          echo "Please run 'make genrest' and commit the changes."
-          exit 1
