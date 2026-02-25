@@ -313,6 +313,9 @@ func (r *roundRepository) GetRoundStats(
 ) (*domain.RoundStats, error) {
 	rs, err := r.querier.SelectRoundStats(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
