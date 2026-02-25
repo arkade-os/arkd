@@ -48,15 +48,15 @@ func (r *ReadinessService) Check(ctx context.Context, fullMethod string) error {
 	// 1) appStarted gates the Ark backend lifecycle (startup/shutdown races, start failures),
 	// 2) wallet.Status() gates the current runtime condition (locked/syncing after backend started).
 	if !r.appStarted.Load() {
-		return protectedServiceUnavailableErr(fullMethod)
+		return status.Error(codes.Unavailable, "server not ready")
 	}
 	if r.wallet == nil {
-		return status.Error(codes.Unavailable, "wallet status unavailable")
+		return protectedServiceUnavailableErr(fullMethod)
 	}
 
 	walletStatus, err := r.wallet.Status(ctx)
 	if err != nil {
-		return status.Errorf(codes.Unavailable, "wallet status unavailable: %v", err)
+		return protectedServiceUnavailableErr(fullMethod)
 	}
 	if !walletStatus.IsInitialized() || !walletStatus.IsUnlocked() || !walletStatus.IsSynced() {
 		return protectedServiceUnavailableErr(fullMethod)
