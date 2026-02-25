@@ -334,13 +334,14 @@ const selectCollectedFees = `-- name: SelectCollectedFees :one
 SELECT COALESCE(SUM(collected_fees), 0)::bigint AS collected_fees
 FROM round
 WHERE ended = true
-  AND starting_timestamp > $1
-  AND ($2 <= 0 OR starting_timestamp < $2)
+  AND failed = false
+  AND ($1::bigint <= 0 OR starting_timestamp > $1)
+  AND ($2::bigint <= 0 OR starting_timestamp < $2)
 `
 
 type SelectCollectedFeesParams struct {
 	After  int64
-	Before interface{}
+	Before int64
 }
 
 func (q *Queries) SelectCollectedFees(ctx context.Context, arg SelectCollectedFeesParams) (int64, error) {
@@ -472,12 +473,12 @@ WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > $1
-  AND ($2 <= 0 OR expires_at < $2)
+  AND ($2::bigint <= 0 OR expires_at < $2)
 `
 
 type SelectExpiringLiquidityAmountParams struct {
 	After  int64
-	Before interface{}
+	Before int64
 }
 
 func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectExpiringLiquidityAmountParams) (int64, error) {

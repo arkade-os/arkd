@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -77,6 +78,9 @@ func (r *roundRepository) GetRoundIds(
 }
 
 func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Round) error {
+	if round.CollectedFees > uint64(math.MaxInt64) {
+		return fmt.Errorf("collected_fees %d overflows int64", round.CollectedFees)
+	}
 	txBody := func(querierWithTx *queries.Queries) error {
 		if err := querierWithTx.UpsertRound(
 			ctx,
@@ -522,14 +526,10 @@ func (r *roundRepository) GetCollectedFees(
 	if err != nil {
 		return 0, err
 	}
-	switch v := fees.(type) {
-	case int64:
-		return uint64(v), nil
-	case int:
-		return uint64(v), nil
-	default:
-		return 0, nil
+	if fees < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative collected_fees %d", fees)
 	}
+	return uint64(fees), nil
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {

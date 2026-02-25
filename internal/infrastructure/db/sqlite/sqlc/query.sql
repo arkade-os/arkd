@@ -263,13 +263,13 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkeys'))
     AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER));
 
 -- name: SelectExpiringLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0) AS amount
+SELECT CAST(COALESCE(SUM(amount), 0) AS INTEGER) AS amount
 FROM vtxo
 WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > sqlc.arg('after')
-  AND (sqlc.arg('before') <= 0 OR expires_at < sqlc.arg('before'));
+  AND (CAST(sqlc.arg('before') AS INTEGER) <= 0 OR expires_at < sqlc.arg('before'));
 
 -- name: SelectRecoverableLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0) AS amount
@@ -440,11 +440,12 @@ INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES (@asset_id, @txid, @vout, @amount);
 
 -- name: SelectCollectedFees :one
-SELECT COALESCE(SUM(collected_fees), 0) AS collected_fees
+SELECT CAST(COALESCE(SUM(collected_fees), 0) AS INTEGER) AS collected_fees
 FROM round
 WHERE ended = true
-  AND starting_timestamp > sqlc.arg('after')
-  AND (sqlc.arg('before') <= 0 OR starting_timestamp < sqlc.arg('before'));
+  AND failed = false
+  AND (CAST(sqlc.arg('after') AS INTEGER) <= 0 OR starting_timestamp > sqlc.arg('after'))
+  AND (CAST(sqlc.arg('before') AS INTEGER) <= 0 OR starting_timestamp < sqlc.arg('before'));
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));

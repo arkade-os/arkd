@@ -263,7 +263,7 @@ WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > @after
-  AND (@before <= 0 OR expires_at < @before);
+  AND (@before::bigint <= 0 OR expires_at < @before);
 
 -- name: SelectRecoverableLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0)::bigint AS amount
@@ -441,8 +441,9 @@ SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
 SELECT COALESCE(SUM(collected_fees), 0)::bigint AS collected_fees
 FROM round
 WHERE ended = true
-  AND starting_timestamp > @after
-  AND (@before <= 0 OR starting_timestamp < @before);
+  AND failed = false
+  AND (@after::bigint <= 0 OR starting_timestamp > @after)
+  AND (@before::bigint <= 0 OR starting_timestamp < @before);
 
 -- name: SelectAssetSupply :one
 SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply

@@ -1161,6 +1161,7 @@
         "properties": {
           "collectedFees": {
             "type": "integer",
+            "description": "Total collected fees in satoshis.",
             "format": "uint64"
           }
         }

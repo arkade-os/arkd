@@ -757,6 +757,51 @@ func testCollectedFeesRepository(t *testing.T, svc ports.RepoManager) {
 		fees, err = repo.GetCollectedFees(ctx, 300, 0)
 		require.NoError(t, err)
 		require.Equal(t, uint64(0), fees)
+
+		// Create a round that was finalized then failed (ended+failed).
+		// Its collected fees should NOT be included in totals.
+		endedFailedId := uuid.New().String()
+		endedFailedRound := domain.NewRoundFromEvents([]domain.Event{
+			domain.RoundStarted{
+				RoundEvent: domain.RoundEvent{
+					Id:   endedFailedId,
+					Type: domain.EventTypeRoundStarted,
+				},
+				Timestamp: 400,
+			},
+			domain.RoundFinalizationStarted{
+				RoundEvent: domain.RoundEvent{
+					Id:   endedFailedId,
+					Type: domain.EventTypeRoundFinalizationStarted,
+				},
+				CommitmentTxid: randomString(32),
+				CommitmentTx:   emptyTx,
+			},
+			domain.RoundFinalized{
+				RoundEvent: domain.RoundEvent{
+					Id:   endedFailedId,
+					Type: domain.EventTypeRoundFinalized,
+				},
+				FinalCommitmentTx: emptyTx,
+				CollectedFees:     8888,
+				Timestamp:         410,
+			},
+			domain.RoundFailed{
+				RoundEvent: domain.RoundEvent{
+					Id:   endedFailedId,
+					Type: domain.EventTypeRoundFailed,
+				},
+				Reason:    "double-spend detected",
+				Timestamp: 420,
+			},
+		})
+		err = repo.AddOrUpdateRound(ctx, *endedFailedRound)
+		require.NoError(t, err)
+
+		// Totals should still be 6000, not 6000+8888.
+		fees, err = repo.GetCollectedFees(ctx, 0, 0)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1000+2000+3000), fees)
 	})
 }
 

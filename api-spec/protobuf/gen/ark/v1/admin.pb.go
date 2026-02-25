@@ -2712,7 +2712,7 @@ func (x *GetCollectedFeesRequest) GetBefore() int64 {
 
 type GetCollectedFeesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CollectedFees uint64                 `protobuf:"varint,1,opt,name=collected_fees,json=collectedFees,proto3" json:"collected_fees,omitempty"`
+	CollectedFees uint64                 `protobuf:"varint,1,opt,name=collected_fees,json=collectedFees,proto3" json:"collected_fees,omitempty"` // Total collected fees in satoshis.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

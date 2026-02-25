@@ -487,6 +487,38 @@ func testEndFinalization(t *testing.T) {
 			require.Exactly(t, round.EndingTimestamp, event.Timestamp)
 		})
 
+		t.Run("valid_with_collected_fees", func(t *testing.T) {
+			round := domain.NewRound()
+			events, err := round.StartRegistration()
+			require.NoError(t, err)
+			require.NotEmpty(t, events)
+
+			events, err = round.RegisterIntents(intents)
+			require.NoError(t, err)
+			require.NotEmpty(t, events)
+
+			events, err = round.StartFinalization(
+				"",
+				connectors,
+				vtxoTree,
+				"txid",
+				commitmentTx,
+				expiration,
+			)
+			require.NoError(t, err)
+			require.NotEmpty(t, events)
+
+			events, err = round.EndFinalization(forfeitTxs, finalCommitmentTx, 42000)
+			require.NoError(t, err)
+			require.Len(t, events, 1)
+			require.True(t, round.IsEnded())
+			require.Equal(t, uint64(42000), round.CollectedFees)
+
+			event, ok := events[0].(domain.RoundFinalized)
+			require.True(t, ok)
+			require.Equal(t, uint64(42000), event.CollectedFees)
+		})
+
 		t.Run("invalid", func(t *testing.T) {
 			intentsById := map[string]domain.Intent{}
 			for _, p := range intents {

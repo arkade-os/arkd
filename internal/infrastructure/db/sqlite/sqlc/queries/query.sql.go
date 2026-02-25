@@ -353,21 +353,22 @@ func (q *Queries) SelectAssetsByIds(ctx context.Context, ids []string) ([]Asset,
 }
 
 const selectCollectedFees = `-- name: SelectCollectedFees :one
-SELECT COALESCE(SUM(collected_fees), 0) AS collected_fees
+SELECT CAST(COALESCE(SUM(collected_fees), 0) AS INTEGER) AS collected_fees
 FROM round
 WHERE ended = true
-  AND starting_timestamp > ?1
-  AND (?2 <= 0 OR starting_timestamp < ?2)
+  AND failed = false
+  AND (CAST(?1 AS INTEGER) <= 0 OR starting_timestamp > ?1)
+  AND (CAST(?2 AS INTEGER) <= 0 OR starting_timestamp < ?2)
 `
 
 type SelectCollectedFeesParams struct {
 	After  int64
-	Before interface{}
+	Before int64
 }
 
-func (q *Queries) SelectCollectedFees(ctx context.Context, arg SelectCollectedFeesParams) (interface{}, error) {
+func (q *Queries) SelectCollectedFees(ctx context.Context, arg SelectCollectedFeesParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, selectCollectedFees, arg.After, arg.Before)
-	var collected_fees interface{}
+	var collected_fees int64
 	err := row.Scan(&collected_fees)
 	return collected_fees, err
 }
@@ -488,23 +489,23 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 }
 
 const selectExpiringLiquidityAmount = `-- name: SelectExpiringLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0) AS amount
+SELECT CAST(COALESCE(SUM(amount), 0) AS INTEGER) AS amount
 FROM vtxo
 WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > ?1
-  AND (?2 <= 0 OR expires_at < ?2)
+  AND (CAST(?2 AS INTEGER) <= 0 OR expires_at < ?2)
 `
 
 type SelectExpiringLiquidityAmountParams struct {
 	After  int64
-	Before interface{}
+	Before int64
 }
 
-func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectExpiringLiquidityAmountParams) (interface{}, error) {
+func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectExpiringLiquidityAmountParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, selectExpiringLiquidityAmount, arg.After, arg.Before)
-	var amount interface{}
+	var amount int64
 	err := row.Scan(&amount)
 	return amount, err
 }

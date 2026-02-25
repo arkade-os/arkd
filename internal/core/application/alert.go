@@ -119,11 +119,16 @@ func (s *service) getBatchStats(
 }
 
 func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uint64 {
-	collectedFees := uint64(0)
+	totalIn := boardingInputAmount
+	totalOut := uint64(0)
 	for _, intent := range round.Intents {
-		collectedFees += intent.TotalInputAmount() + boardingInputAmount - intent.TotalOutputAmount()
+		totalIn += intent.TotalInputAmount()
+		totalOut += intent.TotalOutputAmount()
 	}
-	return collectedFees
+	if totalOut >= totalIn {
+		return 0
+	}
+	return totalIn - totalOut
 }
 
 func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {

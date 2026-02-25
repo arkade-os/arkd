@@ -128,7 +128,10 @@ func (r *arkRepository) GetCollectedFees(
 	ctx context.Context, after, before int64,
 ) (uint64, error) {
 	query := badgerhold.Where("Stage.Ended").Eq(true).
-		And("StartingTimestamp").Gt(after)
+		And("Stage.Failed").Eq(false)
+	if after > 0 {
+		query = query.And("StartingTimestamp").Gt(after)
+	}
 	if before > 0 {
 		query = query.And("StartingTimestamp").Lt(before)
 	}
@@ -293,6 +296,7 @@ func (r *arkRepository) addOrUpdateRound(
 		Swept:              round.Swept,
 		VtxoTreeExpiration: round.VtxoTreeExpiration,
 		SweepTxs:           round.SweepTxs,
+		CollectedFees:      round.CollectedFees,
 	}
 	var upsertFn func() error
 	if ctx.Value("tx") != nil {
