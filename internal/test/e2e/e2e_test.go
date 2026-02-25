@@ -4638,17 +4638,17 @@ func TestTxListenerChurn(t *testing.T) {
 }
 
 // TestEventListenerChurn is the event-stream counterpart of TestTxListenerChurn.
-// Instead of offchain transactions, it uses settlement rounds to generate
+// Instead of offchain transactions, clients join batches to generate
 // events. The structure mirrors the tx test:
 //
 //  1. A sentinel event stream stays open for the full duration and counts
-//     round-lifecycle events. A broken fanout will sever this stream.
+//     batch-lifecycle events. A broken fanout will sever this stream.
 //  2. N churn workers rapidly open/close event streams to stress the
 //     subscribe/unsubscribe path.
-//  3. A round producer drives Settle+NotifyIncomingFunds across multiple
+//  3. A batch producer drives Settle+NotifyIncomingFunds across multiple
 //     participants to generate a steady flow of events.
 //
-// The test passes when at least one round completes, the sentinel observes
+// The test passes when at least one batch completes, the sentinel observes
 // events, and no sentinel errors are recorded.
 func TestEventListenerChurn(t *testing.T) {
 	const (
