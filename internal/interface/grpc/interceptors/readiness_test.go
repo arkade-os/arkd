@@ -51,8 +51,8 @@ func TestUnaryReadinessHandler(t *testing.T) {
 			},
 		)
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.FailedPrecondition {
-			t.Fatalf("expected FailedPrecondition, got %v", err)
+		if !ok || st.Code() != codes.Unavailable {
+			t.Fatalf("expected Unavailable, got %v", err)
 		}
 		if called {
 			t.Fatalf("expected handler not to be called")
@@ -100,7 +100,7 @@ func TestStreamReadinessHandler(t *testing.T) {
 			},
 		)
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.FailedPrecondition {
+		if !ok || st.Code() != codes.Unavailable {
 			t.Fatalf("expected FailedPrecondition, got %v", err)
 		}
 		if called {
@@ -123,8 +123,8 @@ func TestReadinessServiceCheck(t *testing.T) {
 		})
 		err := r.Check(context.Background(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.FailedPrecondition {
-			t.Fatalf("expected FailedPrecondition, got %v", err)
+		if !ok || st.Code() != codes.Unavailable {
+			t.Fatalf("expected Unavailable, got %v", err)
 		}
 	})
 
@@ -133,8 +133,8 @@ func TestReadinessServiceCheck(t *testing.T) {
 		r.MarkAppServiceStarted()
 		err := r.Check(context.Background(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.Unavailable {
-			t.Fatalf("expected Unavailable, got %v", err)
+		if !ok || st.Code() != codes.FailedPrecondition {
+			t.Fatalf("expected FailedPrecondition, got %v", err)
 		}
 	})
 
