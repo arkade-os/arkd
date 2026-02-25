@@ -59,7 +59,7 @@ func (i *indexerService) GetCommitmentTxInfo(
 		return nil, err
 	}
 	if roundStats == nil {
-		return nil, fmt.Errorf("round not found")
+		return nil, fmt.Errorf("batch not found")
 	}
 
 	batches := map[VOut]Batch{
