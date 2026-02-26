@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -35,6 +36,7 @@ import (
 )
 
 type service struct {
+	started atomic.Bool
 	// services
 	wallet         ports.WalletService
 	signer         ports.SignerService
@@ -216,6 +218,10 @@ func NewService(
 }
 
 func (s *service) Start() error {
+	if !s.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("service already started")
+	}
+
 	ctx := context.Background()
 	dustAmount, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
