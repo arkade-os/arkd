@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -29,12 +30,8 @@ func TestUnaryReadinessHandler(t *testing.T) {
 				return "ok", nil
 			},
 		)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !called {
-			t.Fatalf("expected handler to be called")
-		}
+		require.NoError(t, err)
+		require.True(t, called)
 	})
 
 	t.Run("blocks when checker denies", func(t *testing.T) {
@@ -51,12 +48,9 @@ func TestUnaryReadinessHandler(t *testing.T) {
 			},
 		)
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.Unavailable {
-			t.Fatalf("expected Unavailable, got %v", err)
-		}
-		if called {
-			t.Fatalf("expected handler not to be called")
-		}
+		require.True(t, ok)
+		require.Equal(t, codes.Unavailable, st.Code())
+		require.False(t, called)
 	})
 }
 
@@ -78,12 +72,8 @@ func TestStreamReadinessHandler(t *testing.T) {
 				return nil
 			},
 		)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !called {
-			t.Fatalf("expected handler to be called")
-		}
+		require.NoError(t, err)
+		require.True(t, called)
 	})
 
 	t.Run("blocks when checker denies", func(t *testing.T) {
@@ -100,32 +90,26 @@ func TestStreamReadinessHandler(t *testing.T) {
 			},
 		)
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.Unavailable {
-			t.Fatalf("expected FailedPrecondition, got %v", err)
-		}
-		if called {
-			t.Fatalf("expected handler not to be called")
-		}
+		require.True(t, ok)
+		require.Equal(t, codes.Unavailable, st.Code())
+		require.False(t, called)
 	})
 }
 
 func TestReadinessServiceCheck(t *testing.T) {
 	t.Run("ignores non protected methods", func(t *testing.T) {
 		r := NewReadinessService(nil)
-		if err := r.Check(context.Background(), "/ark.v1.WalletService/Lock"); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		require.NoError(t, r.Check(context.Background(), "/ark.v1.WalletService/Lock"))
 	})
 
-	t.Run("app not started returns failed precondition", func(t *testing.T) {
+	t.Run("app not started returns unavailable", func(t *testing.T) {
 		r := NewReadinessService(&fakeWalletProvider{
 			status: fakeWalletStatus{initialized: true, unlocked: true, synced: true},
 		})
 		err := r.Check(context.Background(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.Unavailable {
-			t.Fatalf("expected Unavailable, got %v", err)
-		}
+		require.True(t, ok)
+		require.Equal(t, codes.Unavailable, st.Code())
 	})
 
 	t.Run("wallet status error returns unavailable", func(t *testing.T) {
@@ -133,9 +117,8 @@ func TestReadinessServiceCheck(t *testing.T) {
 		r.MarkAppServiceStarted()
 		err := r.Check(context.Background(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.FailedPrecondition {
-			t.Fatalf("expected FailedPrecondition, got %v", err)
-		}
+		require.True(t, ok)
+		require.Equal(t, codes.FailedPrecondition, st.Code())
 	})
 
 	t.Run("locked or syncing wallet returns failed precondition", func(t *testing.T) {
@@ -145,9 +128,8 @@ func TestReadinessServiceCheck(t *testing.T) {
 		r.MarkAppServiceStarted()
 		err := r.Check(context.Background(), "/ark.v1.IndexerService/GetAsset")
 		st, ok := status.FromError(err)
-		if !ok || st.Code() != codes.FailedPrecondition {
-			t.Fatalf("expected FailedPrecondition, got %v", err)
-		}
+		require.True(t, ok)
+		require.Equal(t, codes.FailedPrecondition, st.Code())
 	})
 
 	t.Run("ready wallet allows protected methods", func(t *testing.T) {
@@ -155,9 +137,7 @@ func TestReadinessServiceCheck(t *testing.T) {
 			status: fakeWalletStatus{initialized: true, unlocked: true, synced: true},
 		})
 		r.MarkAppServiceStarted()
-		if err := r.Check(context.Background(), "/ark.v1.ArkService/GetInfo"); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		require.NoError(t, r.Check(context.Background(), "/ark.v1.ArkService/GetInfo"))
 	})
 }
 
