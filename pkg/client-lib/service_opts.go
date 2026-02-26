@@ -21,6 +21,7 @@ func WithExplorer(svc explorer.Explorer) ServiceOption {
 	}
 }
 
+// WithMonitorConnection is kept for backward compatibility and is currently a no-op.
 func WithMonitorConnection() ServiceOption {
 	return func(c *service) {
 		c.withMonitorConn = true
