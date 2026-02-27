@@ -8,7 +8,7 @@ import (
 	"net/http/pprof"
 	"path/filepath"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
@@ -50,8 +50,7 @@ type service struct {
 	grpcServer        *grpc.Server
 	adminGrpcSrvr     *grpc.Server
 	readinessSvc      *interceptors.ReadinessService
-	appSvcStartMu     sync.Mutex
-	appSvcStarted     bool
+	appSvcStarted     atomic.Bool
 	macaroonSvc       *macaroons.Service
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func() error
@@ -175,14 +174,8 @@ func (s *service) start() error {
 }
 
 func (s *service) stop() {
-	s.appSvcStartMu.Lock()
-	wasStarted := s.appSvcStarted
-	if wasStarted {
-		s.appSvcStarted = false
-	}
-	s.appSvcStartMu.Unlock()
-
-	if wasStarted {
+	if s.appSvcStarted.CompareAndSwap(true, false) {
+		// app service is started, stop it
 		appSvc, _ := s.appConfig.AppService()
 		if appSvc != nil {
 			appSvc.Stop()
@@ -210,23 +203,22 @@ func (s *service) stop() {
 }
 
 func (s *service) startAppServices() error {
-	s.appSvcStartMu.Lock()
-	defer s.appSvcStartMu.Unlock()
-
-	if s.appSvcStarted {
+	if !s.appSvcStarted.CompareAndSwap(false, true) {
+		// app already started, skip
 		return nil
 	}
 
 	appSvc, err := s.appConfig.AppService()
 	if err != nil {
+		s.appSvcStarted.Store(false)
 		return fmt.Errorf("failed to create app service: %w", err)
 	}
 	if err := appSvc.Start(); err != nil {
+		s.appSvcStarted.Store(false)
 		return fmt.Errorf("failed to start app service: %w", err)
 	}
 	log.Info("started app service")
 
-	s.appSvcStarted = true
 	if s.readinessSvc != nil {
 		s.readinessSvc.MarkAppServiceStarted()
 	}
