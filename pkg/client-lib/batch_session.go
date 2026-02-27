@@ -74,6 +74,16 @@ func (a *service) RedeemNotes(
 		return "", err
 	}
 
+	info, err := a.client.GetInfo(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	feeEstimator, err := arkfee.New(info.Fees.IntentFees)
+	if err != nil {
+		return "", err
+	}
+
 	amount := uint64(0)
 
 	options := newDefaultSettleOptions()
@@ -88,7 +98,22 @@ func (a *service) RedeemNotes(
 		if err != nil {
 			return "", err
 		}
-		amount += uint64(v.Value)
+		fees, err := feeEstimator.EvalOffchainInput(arkfee.OffchainInput{
+			Amount: uint64(v.Value),
+			Type:   arkfee.VtxoTypeNote,
+		})
+		if err != nil {
+			return "", err
+		}
+
+		feesSats := uint64(fees.ToSatoshis())
+		noteValue := uint64(v.Value)
+		if feesSats >= noteValue {
+			// not profitable to redeem this note
+			return "", fmt.Errorf("fees (%d) exceed note value (%d)", feesSats, noteValue)
+		}
+
+		amount += noteValue - feesSats
 	}
 
 	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
@@ -99,10 +124,22 @@ func (a *service) RedeemNotes(
 		return "", fmt.Errorf("no funds detected")
 	}
 
-	receiversOutput := []types.Receiver{{
+	receiver := types.Receiver{
 		To:     offchainAddrs[0].Address,
 		Amount: amount,
-	}}
+	}
+	outputFees, err := feeEstimator.EvalOffchainOutput(receiver.ToArkFeeOutput())
+	if err != nil {
+		return "", err
+	}
+
+	outputFeesSats := uint64(outputFees.ToSatoshis())
+	if outputFeesSats > amount {
+		return "", fmt.Errorf("fees (%d) exceed amount (%d)", outputFeesSats, amount)
+	}
+
+	receiver.Amount = amount - outputFeesSats
+	receiversOutput := []types.Receiver{receiver}
 
 	return a.joinBatchWithRetry(ctx, notes, receiversOutput, *options, nil, nil)
 }
