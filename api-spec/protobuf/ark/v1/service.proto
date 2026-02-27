@@ -194,6 +194,7 @@ message GetInfoResponse {
   repeated DeprecatedSigner deprecated_signers = 17;
   map<string, string> service_status = 18;
   string digest = 19;
+  int64 max_tx_weight = 20;
 }
 
 message RegisterIntentRequest {

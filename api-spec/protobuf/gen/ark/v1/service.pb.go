@@ -79,6 +79,7 @@ type GetInfoResponse struct {
 	DeprecatedSigners   []*DeprecatedSigner    `protobuf:"bytes,17,rep,name=deprecated_signers,json=deprecatedSigners,proto3" json:"deprecated_signers,omitempty"`
 	ServiceStatus       map[string]string      `protobuf:"bytes,18,rep,name=service_status,json=serviceStatus,proto3" json:"service_status,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Digest              string                 `protobuf:"bytes,19,opt,name=digest,proto3" json:"digest,omitempty"`
+	MaxTxWeight         int64                  `protobuf:"varint,20,opt,name=max_tx_weight,json=maxTxWeight,proto3" json:"max_tx_weight,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -244,6 +245,13 @@ func (x *GetInfoResponse) GetDigest() string {
 		return x.Digest
 	}
 	return ""
+}
+
+func (x *GetInfoResponse) GetMaxTxWeight() int64 {
+	if x != nil {
+		return x.MaxTxWeight
+	}
+	return 0
 }
 
 type RegisterIntentRequest struct {
@@ -1973,7 +1981,7 @@ var File_ark_v1_service_proto protoreflect.FileDescriptor
 const file_ark_v1_service_proto_rawDesc = "" +
 	"\n" +
 	"\x14ark/v1/service.proto\x12\x06ark.v1\x1a!meshapi/gateway/annotations.proto\x1a\x12ark/v1/types.proto\"\x10\n" +
-	"\x0eGetInfoRequest\"\x92\a\n" +
+	"\x0eGetInfoRequest\"\xb6\a\n" +
 	"\x0fGetInfoResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12#\n" +
 	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12%\n" +
@@ -1994,7 +2002,8 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x11scheduled_session\x18\x10 \x01(\v2\x18.ark.v1.ScheduledSessionR\x10scheduledSession\x12G\n" +
 	"\x12deprecated_signers\x18\x11 \x03(\v2\x18.ark.v1.DeprecatedSignerR\x11deprecatedSigners\x12Q\n" +
 	"\x0eservice_status\x18\x12 \x03(\v2*.ark.v1.GetInfoResponse.ServiceStatusEntryR\rserviceStatus\x12\x16\n" +
-	"\x06digest\x18\x13 \x01(\tR\x06digest\x1a@\n" +
+	"\x06digest\x18\x13 \x01(\tR\x06digest\x12\"\n" +
+	"\rmax_tx_weight\x18\x14 \x01(\x03R\vmaxTxWeight\x1a@\n" +
 	"\x12ServiceStatusEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"?\n" +

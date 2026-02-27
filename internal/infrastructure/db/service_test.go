@@ -403,6 +403,26 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.Error(t, err)
 		require.Nil(t, round)
 
+		roundByTxid, err := svc.Rounds().GetRoundWithCommitmentTxid(ctx, "nonexistent")
+		require.Error(t, err)
+		require.Nil(t, roundByTxid)
+
+		stats, err := svc.Rounds().GetRoundStats(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Nil(t, stats)
+
+		emptyVtxoTree, err := svc.Rounds().GetRoundVtxoTree(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, emptyVtxoTree)
+
+		emptyForfeitTxs, err := svc.Rounds().GetRoundForfeitTxs(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, emptyForfeitTxs)
+
+		emptyConnectorTree, err := svc.Rounds().GetRoundConnectorTree(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, emptyConnectorTree)
+
 		events := []domain.Event{
 			domain.RoundStarted{
 				RoundEvent: domain.RoundEvent{
@@ -568,7 +588,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, resultTree)
 		require.Equal(t, finalizedRound.VtxoTree, resultTree)
 
-		roundByTxid, err := svc.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
+		roundByTxid, err = svc.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
 		require.NoError(t, err)
 		require.NotNil(t, roundByTxid)
 		roundsMatch(t, *finalizedRound, *roundByTxid)

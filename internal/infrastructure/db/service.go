@@ -543,6 +543,11 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				continue
 			}
 
+			// at that point, we should only have valid taproot script
+			if len(out.PkScript) != 34 {
+				continue
+			}
+
 			isDust := script.IsSubDustScript(out.PkScript)
 
 			newVtxos = append(newVtxos, domain.Vtxo{

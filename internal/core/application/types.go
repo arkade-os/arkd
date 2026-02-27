@@ -21,7 +21,7 @@ type AcceptedOffchainTx struct {
 }
 
 type Service interface {
-	Start() errors.Error
+	Start() error
 	Stop()
 	RegisterIntent(
 		ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
@@ -85,6 +85,7 @@ type ServiceInfo struct {
 	VtxoMaxAmount        int64
 	CheckpointTapscript  string
 	Fees                 FeeInfo
+	MaxTxWeight          int64
 }
 
 type NextScheduledSession struct {

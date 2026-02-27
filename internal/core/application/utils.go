@@ -529,3 +529,9 @@ func validateTimeRange(after, before int64) error {
 	}
 	return nil
 }
+
+func computeWeight(tx *wire.MsgTx) uint64 {
+	baseSize := tx.SerializeSizeStripped()
+	totalSize := tx.SerializeSize()
+	return uint64((baseSize * 3) + totalSize)
+}
