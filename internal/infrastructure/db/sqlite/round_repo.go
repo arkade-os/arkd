@@ -235,7 +235,7 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 	}
 
 	if len(rounds) == 0 {
-		return nil, errors.New("round not found")
+		return nil, errors.New("batch not found")
 	}
 
 	round := rounds[0]
@@ -283,7 +283,7 @@ func (r *roundRepository) GetRoundWithCommitmentTxid(
 	}
 
 	if len(rounds) == 0 {
-		return nil, errors.New("round not found")
+		return nil, errors.New("batch not found")
 	}
 
 	round := rounds[0]
@@ -313,6 +313,9 @@ func (r *roundRepository) GetRoundStats(
 ) (*domain.RoundStats, error) {
 	rs, err := r.querier.SelectRoundStats(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
