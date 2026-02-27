@@ -802,23 +802,25 @@ const selectPendingSpentVtxosWithPubkeys = `-- name: SelectPendingSpentVtxosWith
 SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.swept, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.commitments, v.asset_id, v.asset_amount
 FROM vtxo_vw v
 WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
-    AND v.pubkey IN (/*SLICE:pubkeys*/?)
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
-    AND v.updated_at >= ?2
-    AND (CAST(?3 AS INTEGER) = 0 OR v.updated_at <= CAST(?3 AS INTEGER))
+    AND v.updated_at >= ?1
+    AND (CAST(?2 AS INTEGER) = 0 OR v.updated_at <= CAST(?2 AS INTEGER))
+    AND v.pubkey IN (/*SLICE:pubkeys*/?)
 `
 
 type SelectPendingSpentVtxosWithPubkeysParams struct {
-	Pubkeys []string
 	After   sql.NullInt64
 	Before  int64
+	Pubkeys []string
 }
 
 func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, arg SelectPendingSpentVtxosWithPubkeysParams) ([]VtxoVw, error) {
 	query := selectPendingSpentVtxosWithPubkeys
 	var queryParams []interface{}
+	queryParams = append(queryParams, arg.After)
+	queryParams = append(queryParams, arg.Before)
 	if len(arg.Pubkeys) > 0 {
 		for _, v := range arg.Pubkeys {
 			queryParams = append(queryParams, v)
@@ -827,8 +829,6 @@ func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, arg Se
 	} else {
 		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
 	}
-	queryParams = append(queryParams, arg.After)
-	queryParams = append(queryParams, arg.Before)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
@@ -1799,15 +1799,15 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, tx
 }
 
 const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE pubkey IN (/*SLICE:pubkeys*/?)
-    AND updated_at >= ?2
-    AND (CAST(?3 AS INTEGER) = 0 OR updated_at <= CAST(?3 AS INTEGER))
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE updated_at >= ?1
+    AND (CAST(?2 AS INTEGER) = 0 OR updated_at <= CAST(?2 AS INTEGER))
+    AND pubkey IN (/*SLICE:pubkeys*/?)
 `
 
 type SelectVtxosWithPubkeysParams struct {
-	Pubkeys []string
 	After   sql.NullInt64
 	Before  int64
+	Pubkeys []string
 }
 
 type SelectVtxosWithPubkeysRow struct {
@@ -1817,6 +1817,8 @@ type SelectVtxosWithPubkeysRow struct {
 func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWithPubkeysParams) ([]SelectVtxosWithPubkeysRow, error) {
 	query := selectVtxosWithPubkeys
 	var queryParams []interface{}
+	queryParams = append(queryParams, arg.After)
+	queryParams = append(queryParams, arg.Before)
 	if len(arg.Pubkeys) > 0 {
 		for _, v := range arg.Pubkeys {
 			queryParams = append(queryParams, v)
@@ -1825,8 +1827,6 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWit
 	} else {
 		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
 	}
-	queryParams = append(queryParams, arg.After)
-	queryParams = append(queryParams, arg.Before)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
