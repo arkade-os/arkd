@@ -8,6 +8,7 @@ import (
 	"net/http/pprof"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
@@ -48,6 +49,9 @@ type service struct {
 	adminServer       *http.Server
 	grpcServer        *grpc.Server
 	adminGrpcSrvr     *grpc.Server
+	readinessSvc      *interceptors.ReadinessService
+	appSvcStartMu     sync.Mutex
+	appSvcStarted     bool
 	macaroonSvc       *macaroons.Service
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func() error
@@ -106,8 +110,7 @@ func NewService(
 }
 
 func (s *service) Start() error {
-	withoutAppSvc := false
-	if err := s.start(withoutAppSvc); err != nil {
+	if err := s.start(); err != nil {
 		return err
 	}
 	log.Infof("started listening at %s", s.config.address())
@@ -122,8 +125,7 @@ func (s *service) Start() error {
 }
 
 func (s *service) Stop() {
-	withAppSvc := true
-	s.stop(withAppSvc)
+	s.stop()
 	if s.pyroscopeShutdown != nil {
 		if err := s.pyroscopeShutdown(); err != nil {
 			log.Errorf("failed to shutdown pyroscope: %s", err)
@@ -139,22 +141,14 @@ func (s *service) Stop() {
 	log.Info("shutdown service")
 }
 
-func (s *service) start(withAppSvc bool) error {
+func (s *service) start() error {
 	tlsConfig, err := s.config.tlsConfig()
 	if err != nil {
 		return err
 	}
 
-	if err := s.newServer(tlsConfig, withAppSvc, s.config.EnablePprof); err != nil {
+	if err := s.newServer(tlsConfig, s.config.EnablePprof); err != nil {
 		return err
-	}
-
-	if withAppSvc {
-		appSvc, _ := s.appConfig.AppService()
-		if err := appSvc.Start(); err != nil {
-			return fmt.Errorf("failed to start app service: %s", err)
-		}
-		log.Info("started app service")
 	}
 
 	// Start main server
@@ -180,27 +174,68 @@ func (s *service) start(withAppSvc bool) error {
 	return nil
 }
 
-func (s *service) stop(withAppSvc bool) {
-	if withAppSvc {
+func (s *service) stop() {
+	s.appSvcStartMu.Lock()
+	wasStarted := s.appSvcStarted
+	if wasStarted {
+		s.appSvcStarted = false
+	}
+	s.appSvcStartMu.Unlock()
+
+	if wasStarted {
 		appSvc, _ := s.appConfig.AppService()
 		if appSvc != nil {
 			appSvc.Stop()
-			log.Info("stopped app service")
 		}
-		s.grpcServer.Stop()
-		if s.adminGrpcSrvr != nil {
-			s.adminGrpcSrvr.Stop()
+		if s.readinessSvc != nil {
+			s.readinessSvc.MarkAppServiceStopped()
 		}
 	}
-	// nolint
-	s.server.Shutdown(context.Background())
+
+	// Hard-close HTTP listeners/conns first to avoid mixed HTTP/gRPC window.
+	if s.server != nil {
+		_ = s.server.Close()
+	}
 	if s.adminServer != nil {
-		// nolint
-		s.adminServer.Shutdown(context.Background())
+		_ = s.adminServer.Close()
+	}
+
+	// Then close gRPC servers/transports.
+	if s.grpcServer != nil {
+		s.grpcServer.Stop()
+	}
+	if s.adminGrpcSrvr != nil {
+		s.adminGrpcSrvr.Stop()
 	}
 }
 
-func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bool) error {
+func (s *service) startAppServices() error {
+	s.appSvcStartMu.Lock()
+	defer s.appSvcStartMu.Unlock()
+
+	if s.appSvcStarted {
+		return nil
+	}
+
+	appSvc, err := s.appConfig.AppService()
+	if err != nil {
+		return fmt.Errorf("failed to create app service: %w", err)
+	}
+	if err := appSvc.Start(); err != nil {
+		return fmt.Errorf("failed to start app service: %w", err)
+	}
+	log.Info("started app service")
+
+	s.appSvcStarted = true
+	if s.readinessSvc != nil {
+		s.readinessSvc.MarkAppServiceStarted()
+	}
+
+	log.Info("ark and indexer services are now ready")
+	return nil
+}
+
+func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	ctx := context.Background()
 	if s.appConfig.OtelCollectorEndpoint != "" {
 		pushInteval := time.Duration(s.appConfig.OtelPushInterval) * time.Second
@@ -236,9 +271,11 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bo
 		otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 	)
 
+	s.readinessSvc = interceptors.NewReadinessService(s.appConfig.WalletService())
+
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc),
-		interceptors.StreamInterceptor(s.macaroonSvc),
+		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc),
+		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
@@ -254,25 +291,21 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bo
 	onUnlock := s.onUnlock
 	onReady := s.onReady
 	onLoadSigner := s.onLoadSigner
-	if withAppSvc {
-		appSvc, err := s.appConfig.AppService()
-		if err != nil {
-			return err
-		}
-		appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
-		eventsCh := appSvc.GetIndexerTxChannel(ctx)
-		subscriptionTimeoutDuration := time.Minute // TODO let to be set via config
-		indexerHandler := handlers.NewIndexerService(
-			s.appConfig.IndexerService(), eventsCh,
-			subscriptionTimeoutDuration, s.config.HeartbeatInterval,
-		)
-		arkv1.RegisterArkServiceServer(grpcServer, appHandler)
-		arkv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
-		onInit = nil
-		onUnlock = nil
-		onReady = nil
-		onLoadSigner = nil
+	appSvc, err := s.appConfig.AppService()
+	if err != nil {
+		return fmt.Errorf("failed to create app service: %w", err)
 	}
+	appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
+	eventsCh := appSvc.GetIndexerTxChannel(ctx)
+	subscriptionTimeoutDuration := time.Minute
+	indexerHandler := handlers.NewIndexerService(
+		s.appConfig.IndexerService(),
+		eventsCh,
+		subscriptionTimeoutDuration,
+		s.config.HeartbeatInterval,
+	)
+	arkv1.RegisterArkServiceServer(grpcServer, appHandler)
+	arkv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
 
 	walletSvc := s.appConfig.WalletService()
 	adminHandler := handlers.NewAdminHandler(
@@ -333,16 +366,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bo
 		arkv1.RegisterAdminServiceHandler(ctx, gwmux, conn)
 		arkv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
 		arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn)
-		if !withAppSvc {
-			arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn)
-		}
+		arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn)
 	}
 
-	// Register public services on main gateway
-	if withAppSvc {
-		arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
-		arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
-	}
+	// Register public services on main gateway.
+	arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
+	arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
 
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcServer, grpcGateway)
@@ -380,9 +409,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withAppSvc bool, withPprof bo
 		arkv1.RegisterAdminServiceHandler(ctx, adminGwmux, adminConn)
 		arkv1.RegisterWalletServiceHandler(ctx, adminGwmux, adminConn)
 		arkv1.RegisterWalletInitializerServiceHandler(ctx, adminGwmux, adminConn)
-		if !withAppSvc {
-			arkv1.RegisterSignerManagerServiceHandler(ctx, adminGwmux, adminConn)
-		}
+		arkv1.RegisterSignerManagerServiceHandler(ctx, adminGwmux, adminConn)
 
 		adminGrpcGateway := http.Handler(adminGwmux)
 		adminHandler := router(adminGrpcServer, adminGrpcGateway)
@@ -474,15 +501,8 @@ func (s *service) onReady() {
 		}
 	}
 
-	withoutAppSvc := false
-	s.stop(withoutAppSvc)
-
-	withAppSvc := true
-	if err := s.start(withAppSvc); err != nil {
-		log.WithError(err).Error("failed to start service")
-		withAppSvc := true
-		withoutAppSvc := !withAppSvc
-		s.stop(withoutAppSvc)
+	if err := s.startAppServices(); err != nil {
+		log.WithError(err).Error("failed to activate app services")
 	}
 }
 

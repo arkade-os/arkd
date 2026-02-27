@@ -2,7 +2,6 @@ package e2e_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -289,7 +288,7 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 
 func setupArkSDKWithTransport(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
 	client := setupArkSDK(t)
-	transportClient, err := grpcclient.NewClient(serverUrl, false)
+	transportClient, err := grpcclient.NewClient(serverUrl)
 	require.NoError(t, err)
 	return client, transportClient
 }
@@ -313,7 +312,7 @@ func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, e
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	password := "password"
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = wallet.Create(ctx, password, privkeyHex)
 	require.NoError(t, err)
 
@@ -346,7 +345,7 @@ func setupArkSDKwithPublicKey(
 
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
-	err = client.InitWithWallet(context.Background(), arksdk.InitWithWalletArgs{
+	err = client.InitWithWallet(t.Context(), arksdk.InitWithWalletArgs{
 		Wallet:    wallet,
 		ServerUrl: serverUrl,
 		Password:  password,
@@ -354,17 +353,17 @@ func setupArkSDKwithPublicKey(
 	})
 	require.NoError(t, err)
 
-	err = client.Unlock(context.Background(), password)
+	err = client.Unlock(t.Context(), password)
 	require.NoError(t, err)
 
-	grpcClient, err := grpcclient.NewClient(serverUrl, false)
+	grpcClient, err := grpcclient.NewClient(serverUrl)
 	require.NoError(t, err)
 
 	return client, wallet, privkey.PubKey(), grpcClient
 }
 
 func setupIndexer(t *testing.T) indexer.Indexer {
-	svc, err := grpcindexer.NewClient(serverUrl, false)
+	svc, err := grpcindexer.NewClient(serverUrl)
 	require.NoError(t, err)
 	return svc
 }
