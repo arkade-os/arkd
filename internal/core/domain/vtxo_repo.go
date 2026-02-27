@@ -7,7 +7,6 @@ type VtxoRepository interface {
 	SettleVtxos(ctx context.Context, spentVtxos map[Outpoint]string, commitmentTxid string) error
 	SpendVtxos(ctx context.Context, spentVtxos map[Outpoint]string, arkTxid string) error
 	UnrollVtxos(ctx context.Context, outpoints []Outpoint) error
-	SweepVtxos(ctx context.Context, outpoints []Outpoint) (int, error)
 	GetVtxos(ctx context.Context, outpoints []Outpoint) ([]Vtxo, error)
 	GetAllNonUnrolledVtxos(ctx context.Context, pubkey string) ([]Vtxo, []Vtxo, error)
 	GetAllSweepableUnrolledVtxos(ctx context.Context) ([]Vtxo, error)

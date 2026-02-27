@@ -429,6 +429,10 @@
             "type": "integer",
             "format": "int64"
           },
+          "depth": {
+            "type": "integer",
+            "format": "uint32"
+          },
           "expiresAt": {
             "type": "integer",
             "format": "int64"

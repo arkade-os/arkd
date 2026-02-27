@@ -6,6 +6,7 @@ package queries
 
 import (
 	"database/sql"
+	"encoding/json"
 
 	"github.com/sqlc-dev/pqtype"
 )
@@ -73,13 +74,15 @@ type IntentWithInputsVw struct {
 	SpentBy        sql.NullString
 	Spent          sql.NullBool
 	Unrolled       sql.NullBool
-	Swept          sql.NullBool
 	Preconfirmed   sql.NullBool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
+	Depth          sql.NullInt32
+	Markers        pqtype.NullRawMessage
 	Commitments    []byte
+	Swept          sql.NullBool
 	AssetID        sql.NullString
 	AssetAmount    sql.NullString
 	ID             sql.NullString
@@ -99,6 +102,12 @@ type IntentWithReceiversVw struct {
 	Proof          sql.NullString
 	Message        sql.NullString
 	Txid           sql.NullString
+}
+
+type Marker struct {
+	ID            string
+	Depth         int32
+	ParentMarkers pqtype.NullRawMessage
 }
 
 type MarketHour struct {
@@ -206,6 +215,11 @@ type ScheduledSession struct {
 	UpdatedAt            int64
 }
 
+type SweptMarker struct {
+	MarkerID string
+	SweptAt  int64
+}
+
 type Tx struct {
 	Txid     string
 	Tx       string
@@ -226,12 +240,13 @@ type Vtxo struct {
 	SpentBy        sql.NullString
 	Spent          bool
 	Unrolled       bool
-	Swept          bool
 	Preconfirmed   bool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      int64
+	Depth          int32
+	Markers        json.RawMessage
 }
 
 type VtxoCommitmentTxid struct {
@@ -251,13 +266,15 @@ type VtxoVw struct {
 	SpentBy        sql.NullString
 	Spent          bool
 	Unrolled       bool
-	Swept          bool
 	Preconfirmed   bool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      int64
+	Depth          int32
+	Markers        json.RawMessage
 	Commitments    []byte
+	Swept          bool
 	AssetID        string
 	AssetAmount    string
 }

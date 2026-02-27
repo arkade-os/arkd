@@ -78,6 +78,11 @@ var (
 		"sqlite":   sqlitedb.NewIntentFeesRepository,
 		"postgres": pgdb.NewIntentFeesRepository,
 	}
+	markerStoreTypes = map[string]func(...interface{}) (domain.MarkerRepository, error){
+		"badger":   badgerdb.NewMarkerRepository,
+		"sqlite":   sqlitedb.NewMarkerRepository,
+		"postgres": pgdb.NewMarkerRepository,
+	}
 )
 
 const (
@@ -96,6 +101,7 @@ type service struct {
 	eventStore            domain.EventRepository
 	roundStore            domain.RoundRepository
 	vtxoStore             domain.VtxoRepository
+	markerStore           domain.MarkerRepository
 	scheduledSessionStore domain.ScheduledSessionRepo
 	offchainTxStore       domain.OffchainTxRepository
 	convictionStore       domain.ConvictionRepository
@@ -138,10 +144,14 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
-
+	markerStoreFactory, ok := markerStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
 	var vtxoStore domain.VtxoRepository
+	var markerStore domain.MarkerRepository
 	var scheduledSessionStore domain.ScheduledSessionRepo
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
@@ -214,6 +224,23 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
+		// Pass the vtxo store to the marker repository so they share the same data
+		badgerVtxoRepo, ok := vtxoStore.(*badgerdb.VtxoRepository)
+		if !ok {
+			return nil, fmt.Errorf("failed to get badger vtxo repository")
+		}
+		markerConfig := make(
+			[]interface{},
+			len(config.DataStoreConfig),
+			len(config.DataStoreConfig)+1,
+		)
+		copy(markerConfig, config.DataStoreConfig)
+		markerConfig = append(markerConfig, badgerVtxoRepo.GetStore())
+		markerStore, err = markerStoreFactory(markerConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
+		}
+
 	case "postgres":
 		if len(config.DataStoreConfig) != 2 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
@@ -289,6 +316,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
+		markerStore, err = markerStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
+		}
+
 	case "sqlite":
 		if len(config.DataStoreConfig) != 1 {
 			return nil, fmt.Errorf("invalid data store config")
@@ -357,12 +389,17 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
+		markerStore, err = markerStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
+		}
 	}
 
 	svc := &service{
 		eventStore:            eventStore,
 		roundStore:            roundStore,
 		vtxoStore:             vtxoStore,
+		markerStore:           markerStore,
 		scheduledSessionStore: scheduledSessionStore,
 		offchainTxStore:       offchainTxStore,
 		txDecoder:             txDecoder,
@@ -398,6 +435,10 @@ func (s *service) Vtxos() domain.VtxoRepository {
 	return s.vtxoStore
 }
 
+func (s *service) Markers() domain.MarkerRepository {
+	return s.markerStore
+}
+
 func (s *service) ScheduledSession() domain.ScheduledSessionRepo {
 	return s.scheduledSessionStore
 }
@@ -418,6 +459,7 @@ func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
 	s.vtxoStore.Close()
+	s.markerStore.Close()
 	s.scheduledSessionStore.Close()
 	s.offchainTxStore.Close()
 	s.convictionStore.Close()
@@ -443,11 +485,11 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	if lastEvent.GetType() == domain.EventTypeBatchSwept {
 		event := lastEvent.(domain.BatchSwept)
 		allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
-		sweptCount, err := repo.SweepVtxos(ctx, allSweptVtxos)
-		if err != nil {
-			log.WithError(err).Warn("failed to sweep vtxos")
-		} else {
-			log.Debugf("swept %d vtxos", sweptCount)
+
+		// marker-based sweeping
+		sweptCount := s.sweepVtxosWithMarkers(ctx, allSweptVtxos)
+		if sweptCount > 0 {
+			log.Debugf("swept %d vtxos using marker-based sweeping", sweptCount)
 		}
 
 		if event.FullySwept {
@@ -486,6 +528,18 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 			break
 		}
 
+		// Create root markers for batch VTXOs (depth 0 is always at marker boundary)
+		for {
+			if err := s.markerStore.CreateRootMarkersForVtxos(ctx, newVtxos); err != nil {
+				log.WithError(err).Warnf(
+					"failed to create root markers for %d vtxos, retrying soon", len(newVtxos),
+				)
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			log.Debugf("created root markers for %d vtxos", len(newVtxos))
+			break
+		}
 	}
 }
 
@@ -527,6 +581,75 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			return
 		}
 
+		// Get spent VTXO outpoints from checkpoint txs to calculate depth
+		spentOutpoints := make([]domain.Outpoint, 0)
+		for _, tx := range offchainTx.CheckpointTxs {
+			_, ins, _, err := s.txDecoder.DecodeTx(tx)
+			if err != nil {
+				log.WithError(err).Warn("failed to decode checkpoint tx for depth calculation")
+				continue
+			}
+			spentOutpoints = append(spentOutpoints, ins...)
+		}
+
+		// Get spent VTXOs to calculate new depth
+		var newDepth uint32
+		var parentMarkerIDs []string
+		depthKnown := true
+		if len(spentOutpoints) > 0 {
+			spentVtxos, err := s.vtxoStore.GetVtxos(ctx, spentOutpoints)
+			if err != nil {
+				log.WithError(err).
+					Warn("failed to get spent vtxos for depth calculation, skipping marker creation")
+				// Continue with depth 0 but mark as unknown to avoid creating misleading root markers
+				depthKnown = false
+			} else {
+				// Calculate depth: max(parent depths) + 1
+				var maxDepth uint32
+				parentMarkerSet := make(map[string]struct{})
+				for _, v := range spentVtxos {
+					if v.Depth > maxDepth {
+						maxDepth = v.Depth
+					}
+					// Collect ALL parent marker IDs for marker linking
+					for _, markerID := range v.MarkerIDs {
+						if markerID != "" {
+							parentMarkerSet[markerID] = struct{}{}
+						}
+					}
+				}
+				newDepth = maxDepth + 1
+				// Convert parent marker set to slice
+				for id := range parentMarkerSet {
+					parentMarkerIDs = append(parentMarkerIDs, id)
+				}
+			}
+		}
+
+		// Create marker if at boundary depth, or inherit ALL parent markers
+		// Skip marker creation if depth is unknown (GetVtxos failed) to avoid misleading root markers
+		var markerIDs []string
+
+		if depthKnown && domain.IsAtMarkerBoundary(newDepth) {
+			// Create marker ID from the first output (the ark tx id + first vtxo vout)
+			newMarkerID := fmt.Sprintf("%s:marker:%d", txid, newDepth)
+			marker := domain.Marker{
+				ID:              newMarkerID,
+				Depth:           newDepth,
+				ParentMarkerIDs: parentMarkerIDs,
+			}
+			if err := s.markerStore.AddMarker(ctx, marker); err != nil {
+				log.WithError(err).Warn("failed to create marker for chained vtxo")
+				// Continue without marker - non-fatal
+			} else {
+				log.Debugf("created marker %s at depth %d", newMarkerID, newDepth)
+				markerIDs = []string{newMarkerID}
+			}
+		} else if len(parentMarkerIDs) > 0 {
+			// Inherit ALL markers from parents at non-boundary depth
+			markerIDs = parentMarkerIDs
+		}
+
 		issuances, assets, err := getAssetsFromTxOuts(txid, outs)
 		if err != nil {
 			log.WithError(err).Warn("failed to get assets from tx")
@@ -536,6 +659,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
+		createdDustMarkerIDs := make([]string, 0)
 		for outIndex, out := range outs {
 			// ignore anchors
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
@@ -548,13 +672,32 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				continue
 			}
 
+			outpoint := domain.Outpoint{
+				Txid: txid,
+				VOut: uint32(outIndex),
+			}
+
+			vtxoMarkerIDs := markerIDs
 			isDust := script.IsSubDustScript(out.PkScript)
+			if isDust {
+				// Dust VTXOs get their own outpoint-based marker so they can be
+				// swept individually without affecting sibling non-dust VTXOs
+				// that share the same inherited parent markers.
+				dustMarkerID := outpoint.String()
+				if err := s.markerStore.AddMarker(ctx, domain.Marker{
+					ID:              dustMarkerID,
+					Depth:           newDepth,
+					ParentMarkerIDs: markerIDs,
+				}); err != nil {
+					log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
+				} else {
+					createdDustMarkerIDs = append(createdDustMarkerIDs, dustMarkerID)
+				}
+				vtxoMarkerIDs = append(append([]string{}, markerIDs...), dustMarkerID)
+			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
-				Outpoint: domain.Outpoint{
-					Txid: txid,
-					VOut: uint32(outIndex),
-				},
+				Outpoint:           outpoint,
 				PubKey:             hex.EncodeToString(out.PkScript[2:]),
 				Amount:             uint64(out.Amount),
 				ExpiresAt:          offchainTx.ExpiryTimestamp,
@@ -562,11 +705,9 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 				Preconfirmed:       true,
 				CreatedAt:          offchainTx.StartingTimestamp,
-				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
-				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
-				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-				Swept:  isDust,
-				Assets: assets[uint32(outIndex)],
+				Depth:              newDepth,
+				MarkerIDs:          vtxoMarkerIDs,
+				Assets:             assets[uint32(outIndex)],
 			})
 		}
 
@@ -590,7 +731,22 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			log.WithError(err).Warn("failed to add vtxos")
 			return
 		}
-		log.Debugf("added %d vtxos", len(newVtxos))
+		log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
+
+		// Mark dust VTXOs as swept via their markers
+		// Dust vtxos are below dust limit and can't be spent again in future offchain tx
+		// Because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited
+		if len(createdDustMarkerIDs) > 0 {
+			sweptAt := time.Now().UnixMilli()
+			if err := s.markerStore.BulkSweepMarkers(
+				ctx,
+				createdDustMarkerIDs,
+				sweptAt,
+			); err != nil {
+				log.WithError(err).
+					Warnf("failed to sweep %d dust vtxo markers", len(createdDustMarkerIDs))
+			}
+		}
 	}
 }
 
@@ -658,19 +814,70 @@ func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domai
 			}
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
+			outpoint := domain.Outpoint{Txid: txid, VOut: uint32(i)}
 			vtxos = append(vtxos, domain.Vtxo{
-				Outpoint:           domain.Outpoint{Txid: txid, VOut: uint32(i)},
+				Outpoint:           outpoint,
 				PubKey:             vtxoPubkey,
 				Amount:             out.Amount,
 				CommitmentTxids:    []string{round.CommitmentTxid},
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          round.EndingTimestamp,
 				ExpiresAt:          round.ExpiryTimestamp(),
+				Depth:              0,
+				MarkerIDs:          []string{outpoint.String()},
 				Assets:             assets[uint32(i)],
 			})
 		}
 	}
 	return vtxos
+}
+
+// sweepVtxosWithMarkers performs marker-based sweeping for VTXOs.
+// It groups VTXOs by their marker, sweeps each marker via swept_marker table.
+// Returns the total count of VTXOs swept.
+func (s *service) sweepVtxosWithMarkers(
+	ctx context.Context,
+	vtxoOutpoints []domain.Outpoint,
+) int64 {
+	if len(vtxoOutpoints) == 0 {
+		return 0
+	}
+
+	// Get VTXOs to find their markers
+	vtxos, err := s.vtxoStore.GetVtxos(ctx, vtxoOutpoints)
+	if err != nil {
+		log.WithError(err).Warn("failed to get vtxos for marker-based sweep")
+		return 0
+	}
+
+	// Collect all unique markers from all VTXOs
+	// Every VTXO is guaranteed to have at least 1 marker after migration
+	uniqueMarkers := make(map[string]struct{})
+	for _, vtxo := range vtxos {
+		for _, markerID := range vtxo.MarkerIDs {
+			uniqueMarkers[markerID] = struct{}{}
+		}
+	}
+
+	if len(uniqueMarkers) == 0 {
+		return 0
+	}
+
+	// Convert marker set to slice for bulk sweeping
+	markerIDs := make([]string, 0, len(uniqueMarkers))
+	for markerID := range uniqueMarkers {
+		markerIDs = append(markerIDs, markerID)
+	}
+
+	sweptAt := time.Now().UnixMilli()
+	if err := s.markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
+		log.WithError(err).Warn("failed to bulk sweep markers")
+		return 0
+	}
+
+	totalSwept := int64(len(vtxos))
+	log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), totalSwept)
+	return totalSwept
 }
 
 func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (

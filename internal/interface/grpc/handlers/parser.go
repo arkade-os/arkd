@@ -205,6 +205,7 @@ func (v vtxoList) toProto() []*arkv1.Vtxo {
 			CreatedAt:       vv.CreatedAt,
 			SettledBy:       vv.SettledBy,
 			ArkTxid:         vv.ArkTxid,
+			Depth:           vv.Depth,
 			Assets:          toAssets(vv),
 		})
 	}

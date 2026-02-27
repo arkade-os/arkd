@@ -594,6 +594,13 @@
             }
           },
           {
+            "name": "pageToken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -991,6 +998,9 @@
           },
           "page": {
             "$ref": "#/components/schemas/IndexerPageRequest"
+          },
+          "pageToken": {
+            "type": "string"
           }
         }
       },
@@ -1003,6 +1013,9 @@
             "items": {
               "$ref": "#/components/schemas/IndexerChain"
             }
+          },
+          "nextPageToken": {
+            "type": "string"
           },
           "page": {
             "$ref": "#/components/schemas/IndexerPageResponse"
@@ -1380,6 +1393,10 @@
           "createdAt": {
             "type": "integer",
             "format": "int64"
+          },
+          "depth": {
+            "type": "integer",
+            "format": "uint32"
           },
           "expiresAt": {
             "type": "integer",

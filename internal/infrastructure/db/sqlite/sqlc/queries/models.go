@@ -71,13 +71,15 @@ type IntentWithInputsVw struct {
 	SpentBy        sql.NullString
 	Spent          sql.NullBool
 	Unrolled       sql.NullBool
-	Swept          sql.NullBool
 	Preconfirmed   sql.NullBool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
+	Depth          sql.NullInt64
+	Markers        sql.NullString
 	Commitments    interface{}
+	Swept          int64
 	AssetID        string
 	AssetAmount    string
 	ID             sql.NullString
@@ -97,6 +99,12 @@ type IntentWithReceiversVw struct {
 	Proof          sql.NullString
 	Message        sql.NullString
 	Txid           sql.NullString
+}
+
+type Marker struct {
+	ID            string
+	Depth         int64
+	ParentMarkers sql.NullString
 }
 
 type OffchainTx struct {
@@ -193,6 +201,11 @@ type ScheduledSession struct {
 	UpdatedAt            int64
 }
 
+type SweptMarker struct {
+	MarkerID string
+	SweptAt  int64
+}
+
 type Tx struct {
 	Txid     string
 	Tx       string
@@ -213,12 +226,13 @@ type Vtxo struct {
 	SpentBy        sql.NullString
 	Spent          bool
 	Unrolled       bool
-	Swept          bool
 	Preconfirmed   bool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
+	Depth          int64
+	Markers        sql.NullString
 }
 
 type VtxoCommitmentTxid struct {
@@ -238,13 +252,15 @@ type VtxoVw struct {
 	SpentBy        sql.NullString
 	Spent          bool
 	Unrolled       bool
-	Swept          bool
 	Preconfirmed   bool
 	SettledBy      sql.NullString
 	ArkTxid        sql.NullString
 	IntentID       sql.NullString
 	UpdatedAt      sql.NullInt64
+	Depth          int64
+	Markers        sql.NullString
 	Commitments    interface{}
+	Swept          int64
 	AssetID        string
 	AssetAmount    string
 }

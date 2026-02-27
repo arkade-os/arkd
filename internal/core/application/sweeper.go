@@ -765,9 +765,40 @@ func (s *sweeper) createCheckpointSweepTask(
 			return err
 		}
 
-		_, err = s.repoManager.Vtxos().SweepVtxos(ctx, childrenVtxos)
-		log.Debugf("swept %d vtxos", len(childrenVtxos))
-		return err
+		// Get the VTXOs to find their markers
+		vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, childrenVtxos)
+		if err != nil {
+			return err
+		}
+
+		// Collect all unique markers from all VTXOs
+		// Every VTXO is guaranteed to have at least 1 marker after migration
+		uniqueMarkers := make(map[string]struct{})
+		for _, v := range vtxos {
+			for _, markerID := range v.MarkerIDs {
+				uniqueMarkers[markerID] = struct{}{}
+			}
+		}
+
+		if len(uniqueMarkers) == 0 {
+			return nil
+		}
+
+		// Convert marker set to slice for bulk sweeping
+		markerIDs := make([]string, 0, len(uniqueMarkers))
+		for markerID := range uniqueMarkers {
+			markerIDs = append(markerIDs, markerID)
+		}
+
+		sweptAt := time.Now().UnixMilli()
+		markerStore := s.repoManager.Markers()
+		if err := markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
+			log.WithError(err).Warn("failed to bulk sweep markers")
+			return err
+		}
+
+		log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), len(vtxos))
+		return nil
 	}
 }
 
