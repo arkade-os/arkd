@@ -43,7 +43,7 @@ func (a *service) InitWithWallet(ctx context.Context, args InitWithWalletArgs) e
 }
 
 func (a *service) init(ctx context.Context, args args, walletSvc wallet.WalletService) error {
-	clientSvc, err := grpcclient.NewClient(args.serverUrl, a.withMonitorConn)
+	clientSvc, err := grpcclient.NewClient(args.serverUrl)
 	if err != nil {
 		return fmt.Errorf("failed to setup client: %s", err)
 	}
@@ -53,7 +53,7 @@ func (a *service) init(ctx context.Context, args args, walletSvc wallet.WalletSe
 		return fmt.Errorf("failed to connect to server: %s", err)
 	}
 
-	indexerSvc, err := grpcindexer.NewClient(args.serverUrl, a.withMonitorConn)
+	indexerSvc, err := grpcindexer.NewClient(args.serverUrl)
 	if err != nil {
 		return fmt.Errorf("failed to setup indexer: %s", err)
 	}

@@ -29,7 +29,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-const minAllowedSequence = 512
+const (
+	minAllowedSequence = 512
+	bitcoinBlockWeight = 4_000_000
+)
 
 var (
 	supportedEventDbs = supportedType{
@@ -122,6 +125,7 @@ type Config struct {
 	VtxoMaxAmount             int64
 	VtxoMinAmount             int64
 	SettlementMinExpiryGap    int64
+	MaxTxWeight               uint64
 
 	EnablePprof bool
 
@@ -207,6 +211,8 @@ var (
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	// Max transaction weight accepted by the ark server
+	MaxTxWeight = "MAX_TX_WEIGHT"
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
@@ -243,6 +249,7 @@ var (
 	defaultHeartbeatInterval             = 60 // seconds
 	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
+	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
 )
@@ -283,6 +290,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
+	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 
@@ -393,6 +401,7 @@ func LoadConfig() (*Config, error) {
 		AllowCSVBlockType:             allowCSVBlockType,
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
+		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
 	}, nil
@@ -559,6 +568,14 @@ func (c *Config) Validate() error {
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
+
+	if c.MaxTxWeight > bitcoinBlockWeight {
+		return fmt.Errorf(
+			"max tx weight can't exceed bitcoin block weight (%d)",
+			bitcoinBlockWeight,
+		)
+	}
+
 	if err := c.repoManager(); err != nil {
 		return err
 	}
@@ -824,7 +841,7 @@ func (c *Config) appService() error {
 		c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
-		c.BanDuration, c.BanThreshold,
+		c.BanDuration, c.BanThreshold, c.MaxTxWeight,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,

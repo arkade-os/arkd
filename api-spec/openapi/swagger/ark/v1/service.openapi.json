@@ -861,6 +861,10 @@
           "forfeitPubkey": {
             "type": "string"
           },
+          "maxTxWeight": {
+            "type": "integer",
+            "format": "int64"
+          },
           "network": {
             "type": "string"
           },

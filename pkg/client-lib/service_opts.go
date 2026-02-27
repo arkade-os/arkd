@@ -21,12 +21,6 @@ func WithExplorer(svc explorer.Explorer) ServiceOption {
 	}
 }
 
-func WithMonitorConnection() ServiceOption {
-	return func(c *service) {
-		c.withMonitorConn = true
-	}
-}
-
 func WithoutFinalizePendingTxs() ServiceOption {
 	return func(c *service) {
 		c.withFinalizePendingTxs = false

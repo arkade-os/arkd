@@ -34,6 +34,10 @@ sql:
             go_type: "database/sql.NullString"
           - column: "intent_with_inputs_vw.message"
             go_type: "database/sql.NullString"
+          - column: "intent_with_inputs_vw.asset_id"
+            go_type: "database/sql.NullString"
+          - column: "intent_with_inputs_vw.asset_amount"
+            go_type: "database/sql.NullString"
 
           - column: "intent.id"
             go_type: "database/sql.NullString"

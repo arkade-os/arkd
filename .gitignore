@@ -24,3 +24,5 @@ DS_Store
 .vscode/
 .idea
 test/e2e/batch_test_*
+.worktrees/
+.worktree/

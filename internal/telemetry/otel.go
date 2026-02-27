@@ -116,7 +116,7 @@ func InitOtelSDK(
 
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	go collectGoRuntimeMetrics(context.Background())
+	go collectGoRuntimeMetrics(ctx)
 
 	var rrExporter *RoundReportLogExporter
 	if rrsvc != nil {

@@ -12,6 +12,8 @@ type listener[T any] struct {
 	id           string
 	topics       map[string]struct{}
 	ch           chan T
+	done         chan struct{}
+	closeDoneMux sync.Once
 	timeoutTimer *time.Timer
 	lock         *sync.RWMutex
 }
@@ -25,8 +27,15 @@ func newListener[T any](id string, topics []string) *listener[T] {
 		id:     id,
 		topics: topicsMap,
 		ch:     make(chan T, 100),
+		done:   make(chan struct{}),
 		lock:   &sync.RWMutex{},
 	}
+}
+
+func (l *listener[T]) closeDone() {
+	l.closeDoneMux.Do(func() {
+		close(l.done)
+	})
 }
 
 func (l *listener[T]) includesAny(topics []string) bool {
@@ -120,6 +129,7 @@ func (h *broker[T]) removeListener(id string) {
 	if listener.timeoutTimer != nil {
 		listener.timeoutTimer.Stop()
 	}
+	listener.closeDone()
 	delete(h.listeners, id)
 }
 
@@ -209,6 +219,7 @@ func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 		if listener.timeoutTimer != nil {
 			listener.timeoutTimer.Stop()
 		}
+		listener.closeDone()
 		delete(h.listeners, id)
 	})
 }
