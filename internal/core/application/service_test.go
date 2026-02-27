@@ -61,6 +61,71 @@ func TestNextScheduledSession(t *testing.T) {
 	}
 }
 
+func TestResolveMinAmounts(t *testing.T) {
+	const dust int64 = 330
+
+	testCases := []struct {
+		description       string
+		vtxoMinAmount     int64
+		utxoMinAmount     int64
+		expectedVtxoMin   int64
+		expectedUtxoMin   int64
+	}{
+		{
+			description:     "sub-dust vtxo min is preserved for offchain",
+			vtxoMinAmount:   1,
+			utxoMinAmount:   100,
+			expectedVtxoMin: 1,
+			expectedUtxoMin: dust,
+		},
+		{
+			description:     "default -1 is defaulted to dust",
+			vtxoMinAmount:   -1,
+			utxoMinAmount:   -1,
+			expectedVtxoMin: dust,
+			expectedUtxoMin: dust,
+		},
+		{
+			description:     "arbitrary negative values are defaulted to dust",
+			vtxoMinAmount:   -99,
+			utxoMinAmount:   -50,
+			expectedVtxoMin: dust,
+			expectedUtxoMin: dust,
+		},
+		{
+			description:     "above dust are kept as-is",
+			vtxoMinAmount:   1000,
+			utxoMinAmount:   2000,
+			expectedVtxoMin: 1000,
+			expectedUtxoMin: 2000,
+		},
+		{
+			description:     "exactly dust are kept as-is",
+			vtxoMinAmount:   dust,
+			utxoMinAmount:   dust,
+			expectedVtxoMin: dust,
+			expectedUtxoMin: dust,
+		},
+		{
+			description:     "zero vtxo min is preserved for offchain",
+			vtxoMinAmount:   0,
+			utxoMinAmount:   0,
+			expectedVtxoMin: 0,
+			expectedUtxoMin: dust,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.description, func(t *testing.T) {
+			vtxoMin, utxoMin := resolveMinAmounts(
+				tc.vtxoMinAmount, tc.utxoMinAmount, dust,
+			)
+			require.Equal(t, tc.expectedVtxoMin, vtxoMin)
+			require.Equal(t, tc.expectedUtxoMin, utxoMin)
+		})
+	}
+}
+
 func parseTime(t *testing.T, value string) time.Time {
 	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
 	require.NoError(t, err)

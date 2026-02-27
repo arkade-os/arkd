@@ -519,6 +519,22 @@ func waitForConfirmation(
 	}
 }
 
+// resolveMinAmounts defaults negative min amounts to the dust limit.
+// vtxoMinAmount uses negative values as a sentinel for "unset" (sub-dust
+// offchain VTXOs are intentionally supported via OP_RETURN scripts).
+// utxoMinAmount is always clamped to at least dust.
+func resolveMinAmounts(
+	vtxoMinAmount, utxoMinAmount, dustAmount int64,
+) (int64, int64) {
+	if vtxoMinAmount < 0 {
+		vtxoMinAmount = dustAmount
+	}
+	if utxoMinAmount < dustAmount {
+		utxoMinAmount = dustAmount
+	}
+	return vtxoMinAmount, utxoMinAmount
+}
+
 // validateTimeRange validates time range values. A zero value means unbounded and is allowed.
 func validateTimeRange(after, before int64) error {
 	if after < 0 || before < 0 {

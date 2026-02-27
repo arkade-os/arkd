@@ -68,8 +68,6 @@ type service struct {
 	utxoMinAmount             int64
 	vtxoMaxAmount             int64
 	vtxoMinAmount             int64
-	vtxoMinSettlementAmount   int64
-	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 	checkpointExitDelay       arklib.RelativeLocktime
 	maxTxWeight               uint64
@@ -162,6 +160,14 @@ func NewService(
 		return nil, fmt.Errorf("failed to generate ephemeral key: %s", err)
 	}
 
+	dustAmount, err := wallet.GetDustAmount(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dust amount: %s", err)
+	}
+	vtxoMinAmount, utxoMinAmount = resolveMinAmounts(
+		vtxoMinAmount, utxoMinAmount, int64(dustAmount),
+	)
+
 	roundReportSvc := reportSvc
 	if roundReportSvc == nil {
 		roundReportSvc = roundReportUnimplemented{}
@@ -226,18 +232,9 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
-	var vtxoMinSettlementAmount, vtxoMinOffchainTxAmount = s.vtxoMinAmount, s.vtxoMinAmount
-	if vtxoMinSettlementAmount < int64(dustAmount) {
-		vtxoMinSettlementAmount = int64(dustAmount)
-	}
-	if vtxoMinOffchainTxAmount == -1 {
-		vtxoMinOffchainTxAmount = int64(dustAmount)
-	}
-	if s.utxoMinAmount < int64(dustAmount) {
-		s.utxoMinAmount = int64(dustAmount)
-	}
-	s.vtxoMinSettlementAmount = vtxoMinSettlementAmount
-	s.vtxoMinOffchainTxAmount = vtxoMinOffchainTxAmount
+	s.vtxoMinAmount, s.utxoMinAmount = resolveMinAmounts(
+		s.vtxoMinAmount, s.utxoMinAmount, int64(dustAmount),
+	)
 
 	forfeitPubkey, err := s.wallet.GetForfeitPubkey(ctx)
 	if err != nil {
@@ -985,14 +982,14 @@ func (s *service) SubmitOffchainTx(
 				})
 			}
 		}
-		if out.Value < s.vtxoMinOffchainTxAmount {
+		if out.Value < s.vtxoMinAmount && !script.IsSubDustScript(out.PkScript) {
 			return nil, errors.AMOUNT_TOO_LOW.New(
 				"output #%d amount is lower than min vtxo amount: %d",
-				outIndex, s.vtxoMinOffchainTxAmount,
+				outIndex, s.vtxoMinAmount,
 			).WithMetadata(errors.AmountTooLowMetadata{
 				OutputIndex: outIndex,
-				Amount:      int(s.vtxoMinOffchainTxAmount),
-				MinAmount:   int(s.vtxoMinOffchainTxAmount),
+				Amount:      int(out.Value),
+				MinAmount:   int(s.vtxoMinAmount),
 			})
 		}
 
@@ -1889,14 +1886,14 @@ func (s *service) RegisterIntent(
 					})
 				}
 			}
-			if amount < uint64(s.vtxoMinSettlementAmount) {
+			if amount < uint64(s.vtxoMinAmount) {
 				return "", errors.AMOUNT_TOO_LOW.New(
 					"output %d amount is lower than min vtxo amount: %d",
-					outputIndex, s.vtxoMinSettlementAmount,
+					outputIndex, s.vtxoMinAmount,
 				).WithMetadata(errors.AmountTooLowMetadata{
 					OutputIndex: outputIndex,
 					Amount:      int(amount),
-					MinAmount:   int(s.vtxoMinSettlementAmount),
+					MinAmount:   int(s.vtxoMinAmount),
 				})
 			}
 
@@ -2168,7 +2165,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		NextScheduledSession: nextScheduledSession,
 		UtxoMinAmount:        s.utxoMinAmount,
 		UtxoMaxAmount:        s.utxoMaxAmount,
-		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
+		VtxoMinAmount:        s.vtxoMinAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		MaxTxWeight:          int64(s.maxTxWeight),
