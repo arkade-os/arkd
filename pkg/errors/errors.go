@@ -448,3 +448,10 @@ var INTENT_FEE_EVALUATION_FAILED = Code[any]{44, "INTENT_FEE_EVALUATION_FAILED",
 var INTENT_NOT_FOUND = Code[any]{45, "INTENT_NOT_FOUND", grpccodes.NotFound}
 
 var TX_TOO_LARGE = Code[TxTooLargeMetadata]{46, "TX_TOO_LARGE", grpccodes.InvalidArgument}
+
+var VTXO_TOO_HEAVY = Code[VtxoTooHeavyMetadata]{47, "VTXO_TOO_HEAVY", grpccodes.InvalidArgument}
+
+type VtxoTooHeavyMetadata struct {
+	AssetCount int `json:"asset_count"`
+	MaxAssets  int `json:"max_assets"`
+}

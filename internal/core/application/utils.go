@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -267,9 +268,8 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 
 func getAssetsFromTx(ptx *psbt.Packet) (map[uint32][]domain.AssetDenomination, error) {
 	assets, err := asset.NewPacketFromTx(ptx.UnsignedTx)
-	// TODO: Move to !errors.Is(err, asset.ErrAssetPacketNotFound)
 	if err != nil {
-		if strings.Contains(err.Error(), "packet not found") {
+		if errors.Is(err, asset.AssetPacketNotFoundError{Txid: ptx.UnsignedTx.TxID()}) {
 			return nil, nil
 		}
 		return nil, err

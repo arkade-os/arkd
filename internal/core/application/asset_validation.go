@@ -6,6 +6,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -21,9 +22,31 @@ func (s *service) validateAssetTransaction(
 		assetsPrevout[inputIndex] = assetTxs
 	}
 
-	return asset.ValidateAssetTransaction(
+	if err := asset.ValidateAssetTransaction(
 		ctx, tx, assetsPrevout, assetSource{s.repoManager.Assets()},
-	)
+	); err != nil {
+		return err
+	}
+
+	// assets cannot be nil because we ran the ValidateAssetTransaction first
+	assets, err := getAssetsFromTx(&psbt.Packet{UnsignedTx: tx})
+	if err != nil {
+		return nil
+	}
+
+	for vout, denominations := range assets {
+		if len(denominations) > s.maxAssetsPerVtxo {
+			return errors.VTXO_TOO_HEAVY.New(
+				"output %d has %d assets, exceeds max %d",
+				vout, len(denominations), s.maxAssetsPerVtxo,
+			).WithMetadata(errors.VtxoTooHeavyMetadata{
+				AssetCount: len(denominations),
+				MaxAssets:  s.maxAssetsPerVtxo,
+			})
+		}
+	}
+
+	return nil
 }
 
 type assetSource struct {

@@ -69,6 +69,7 @@ type service struct {
 	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 	maxTxWeight               uint64
+	maxAssetsPerVtxo          int
 
 	// fees
 	feeManager ports.FeeManager
@@ -209,6 +210,7 @@ func NewService(
 		publicUnilateralExitDelay: publicUnilateralExitDelay,
 		allowCSVBlockType:         allowCSVBlockType,
 		maxTxWeight:               maxTxWeight,
+		maxAssetsPerVtxo:          asset.MaxAssetsPerVtxo(maxTxWeight),
 		wallet:                    wallet,
 		signer:                    signer,
 		repoManager:               repoManager,
