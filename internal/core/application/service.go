@@ -2066,7 +2066,7 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 			WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
 	}
 
-	go s.checkForfeitsAndBoardingSigsSent(round.CommitmentTxid)
+	go s.checkForfeitsAndBoardingSigsSent(context.WithoutCancel(ctx), round.CommitmentTxid)
 
 	return nil
 }
@@ -2105,7 +2105,7 @@ func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx strin
 			WithMetadata(map[string]any{"signed_commitment_tx": signedCommitmentTx})
 	}
 
-	go s.checkForfeitsAndBoardingSigsSent(round.CommitmentTxid)
+	go s.checkForfeitsAndBoardingSigsSent(context.WithoutCancel(ctx), round.CommitmentTxid)
 
 	return nil
 }
@@ -3704,8 +3704,7 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 	}
 }
 
-func (s *service) checkForfeitsAndBoardingSigsSent(commitmentTxid string) {
-	ctx := context.Background()
+func (s *service) checkForfeitsAndBoardingSigsSent(ctx context.Context, commitmentTxid string) {
 	// NOTE: This assumes users submit all their signatures in one shot, and whatever
 	// we get from the cache are all required sigs to finalize the boarding inputs
 	// once we also sign them
