@@ -422,8 +422,60 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetIntentResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "operationId": "ArkService_GetIntent2",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GetIntentRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "a successful response.",
@@ -915,6 +967,9 @@
         "title": "GetIntentRequest",
         "type": "object",
         "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/Intent"
+          },
           "txid": {
             "type": "string"
           }
@@ -923,9 +978,16 @@
       "GetIntentResponse": {
         "title": "GetIntentResponse",
         "type": "object",
+        "description": "If response coming from GetIntentRequest call by txid, both fields here will be populated.\nIf response coming from GetIntentRequest call by intent, only intents will be populated.",
         "properties": {
           "intent": {
             "$ref": "#/components/schemas/Intent"
+          },
+          "intents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Intent"
+            }
           }
         }
       },

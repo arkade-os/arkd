@@ -2178,17 +2178,26 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	}, nil
 }
 
-// DeleteIntentsByProof deletes transaction intents matching the proof of ownership.
-func (s *service) DeleteIntentsByProof(
-	ctx context.Context, proof intent.Proof, message intent.DeleteMessage,
-) errors.Error {
-	if message.ExpireAt > 0 {
-		expireAt := time.Unix(message.ExpireAt, 0)
-		if time.Now().After(expireAt) {
-			return errors.INVALID_INTENT_TIMERANGE.New("proof of ownership expired").
+// intentProofMessage is an interface for intent messages that support
+// proof-of-ownership validation (expiration check + encode for signing).
+type intentProofMessage interface {
+	Encode() (string, error)
+	GetExpireAt() int64
+	GetBaseMessage() intent.BaseMessage
+}
+
+// verifyIntentProofAndFindMatches validates proof-of-ownership inputs, signs and
+// verifies the proof, then returns all cached intents whose inputs overlap with
+// the proof outpoints.
+func (s *service) verifyIntentProofAndFindMatches(
+	ctx context.Context, proof intent.Proof, message intentProofMessage,
+) ([]ports.TimedIntent, errors.Error) {
+	if expireAt := message.GetExpireAt(); expireAt > 0 {
+		if time.Now().After(time.Unix(expireAt, 0)) {
+			return nil, errors.INVALID_INTENT_TIMERANGE.New("proof of ownership expired").
 				WithMetadata(errors.IntentTimeRangeMetadata{
 					ValidAt:  0,
-					ExpireAt: message.ExpireAt,
+					ExpireAt: expireAt,
 					Now:      time.Now().Unix(),
 				})
 		}
@@ -2202,7 +2211,7 @@ func (s *service) DeleteIntentsByProof(
 		psbtInput := proof.Inputs[i+1]
 
 		if len(psbtInput.TaprootLeafScript) == 0 {
-			return errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", i+1).
+			return nil, errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", i+1).
 				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
 		}
 
@@ -2216,14 +2225,14 @@ func (s *service) DeleteIntentsByProof(
 			if _, ok := boardingTxs[vtxoOutpoint.Txid]; !ok {
 				txhex, err := s.wallet.GetTransaction(ctx, outpoint.Hash.String())
 				if err != nil {
-					return errors.TX_NOT_FOUND.New(
+					return nil, errors.TX_NOT_FOUND.New(
 						"failed to get boarding input tx %s: %s", vtxoOutpoint.Txid, err,
 					).WithMetadata(errors.TxNotFoundMetadata{Txid: vtxoOutpoint.Txid})
 				}
 
 				var tx wire.MsgTx
 				if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
-					return errors.INVALID_PSBT_INPUT.New(
+					return nil, errors.INVALID_PSBT_INPUT.New(
 						"failed to deserialize boarding tx %s: %s", vtxoOutpoint.Txid, err,
 					).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
 				}
@@ -2233,7 +2242,7 @@ func (s *service) DeleteIntentsByProof(
 
 			tx := boardingTxs[vtxoOutpoint.Txid]
 			if int(vtxoOutpoint.VOut) >= len(tx.TxOut) {
-				return errors.INVALID_PSBT_INPUT.New(
+				return nil, errors.INVALID_PSBT_INPUT.New(
 					"invalid vout index %d for tx %s (tx has %d outputs)",
 					vtxoOutpoint.VOut, vtxoOutpoint.Txid, len(tx.TxOut),
 				).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
@@ -2241,7 +2250,7 @@ func (s *service) DeleteIntentsByProof(
 			prevout := tx.TxOut[vtxoOutpoint.VOut]
 
 			if !bytes.Equal(prevout.PkScript, psbtInput.WitnessUtxo.PkScript) {
-				return errors.INVALID_PSBT_INPUT.New(
+				return nil, errors.INVALID_PSBT_INPUT.New(
 					"pkscript mismatch: got %x expected %x",
 					prevout.PkScript,
 					psbtInput.WitnessUtxo.PkScript,
@@ -2249,7 +2258,7 @@ func (s *service) DeleteIntentsByProof(
 			}
 
 			if prevout.Value != int64(psbtInput.WitnessUtxo.Value) {
-				return errors.INVALID_PSBT_INPUT.New(
+				return nil, errors.INVALID_PSBT_INPUT.New(
 					"invalid witness utxo value: got %d expected %d",
 					prevout.Value,
 					psbtInput.WitnessUtxo.Value,
@@ -2262,7 +2271,7 @@ func (s *service) DeleteIntentsByProof(
 		vtxo := vtxosResult[0]
 
 		if psbtInput.WitnessUtxo.Value != int64(vtxo.Amount) {
-			return errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"invalid witness utxo value: got %d expected %d",
 				psbtInput.WitnessUtxo.Value,
 				vtxo.Amount,
@@ -2271,7 +2280,7 @@ func (s *service) DeleteIntentsByProof(
 
 		pubkeyBytes, err := hex.DecodeString(vtxo.PubKey)
 		if err != nil {
-			return errors.INTERNAL_ERROR.New("failed to decode vtxo pubkey: %w", err).
+			return nil, errors.INTERNAL_ERROR.New("failed to decode vtxo pubkey: %w", err).
 				WithMetadata(map[string]any{
 					"vtxo_pubkey": vtxo.PubKey,
 				})
@@ -2279,7 +2288,7 @@ func (s *service) DeleteIntentsByProof(
 
 		pubkey, err := schnorr.ParsePubKey(pubkeyBytes)
 		if err != nil {
-			return errors.INTERNAL_ERROR.New("failed to parse vtxo pubkey: %w", err).
+			return nil, errors.INTERNAL_ERROR.New("failed to parse vtxo pubkey: %w", err).
 				WithMetadata(map[string]any{
 					"vtxo_pubkey": vtxo.PubKey,
 				})
@@ -2287,7 +2296,7 @@ func (s *service) DeleteIntentsByProof(
 
 		pkScript, err := script.P2TRScript(pubkey)
 		if err != nil {
-			return errors.INTERNAL_ERROR.New(
+			return nil, errors.INTERNAL_ERROR.New(
 				"failed to compute P2TR script from vtxo pubkey: %w", err,
 			).WithMetadata(map[string]any{
 				"vtxo_pubkey": vtxo.PubKey,
@@ -2295,7 +2304,7 @@ func (s *service) DeleteIntentsByProof(
 		}
 
 		if !bytes.Equal(pkScript, psbtInput.WitnessUtxo.PkScript) {
-			return errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"invalid witness utxo script: got %x expected %x",
 				psbtInput.WitnessUtxo.PkScript,
 				pkScript,
@@ -2305,19 +2314,19 @@ func (s *service) DeleteIntentsByProof(
 
 	encodedMessage, err := message.Encode()
 	if err != nil {
-		return errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
-			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
+		return nil, errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
+			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.GetBaseMessage()})
 	}
 
 	encodedProof, err := proof.B64Encode()
 	if err != nil {
-		return errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
+		return nil, errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
 	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
 	if err != nil {
-		return errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
+		return nil, errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
 			WithMetadata(map[string]any{
 				"proof": proof.UnsignedTx.TxID(),
 			})
@@ -2329,7 +2338,7 @@ func (s *service) DeleteIntentsByProof(
 			WithField("signedProof", signedProof).
 			WithField("encodedMessage", encodedMessage).
 			Tracef("failed to verify intent proof: %s", err)
-		return errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
+		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
 				Proof:   signedProof,
 				Message: encodedMessage,
@@ -2338,33 +2347,47 @@ func (s *service) DeleteIntentsByProof(
 
 	allIntents, err := s.cache.Intents().ViewAll(ctx, nil)
 	if err != nil {
-		return errors.INTERNAL_ERROR.New("failed to view all intents: %w", err)
+		return nil, errors.INTERNAL_ERROR.New("failed to view all intents: %w", err)
 	}
 
-	idsToDeleteMap := make(map[string]struct{})
-	for _, intent := range allIntents {
-		for _, in := range intent.Inputs {
+	seen := make(map[string]struct{})
+	var matches []ports.TimedIntent
+	for _, ti := range allIntents {
+		for _, in := range ti.Inputs {
 			for _, op := range outpoints {
 				if in.Txid == op.Hash.String() && in.VOut == op.Index {
-					if _, ok := idsToDeleteMap[intent.Id]; !ok {
-						idsToDeleteMap[intent.Id] = struct{}{}
+					if _, ok := seen[ti.Id]; !ok {
+						seen[ti.Id] = struct{}{}
+						matches = append(matches, ti)
 					}
 				}
 			}
 		}
 	}
 
-	if len(idsToDeleteMap) == 0 {
+	return matches, nil
+}
+
+// DeleteIntentsByProof deletes transaction intents matching the proof of ownership.
+func (s *service) DeleteIntentsByProof(
+	ctx context.Context, proof intent.Proof, message intent.DeleteMessage,
+) errors.Error {
+	matches, err := s.verifyIntentProofAndFindMatches(ctx, proof, message)
+	if err != nil {
+		return err
+	}
+
+	if len(matches) == 0 {
 		return errors.INVALID_INTENT_PROOF.New("no matching intents found for intent proof")
 	}
 
-	idsToDelete := make([]string, 0, len(idsToDeleteMap))
-	for id := range idsToDeleteMap {
-		idsToDelete = append(idsToDelete, id)
+	idsToDelete := make([]string, 0, len(matches))
+	for _, m := range matches {
+		idsToDelete = append(idsToDelete, m.Id)
 	}
 
-	if err := s.cache.Intents().Delete(ctx, idsToDelete); err != nil {
-		return errors.INTERNAL_ERROR.New("failed to delete intents: %w", err).
+	if deleteErr := s.cache.Intents().Delete(ctx, idsToDelete); deleteErr != nil {
+		return errors.INTERNAL_ERROR.New("failed to delete intents: %w", deleteErr).
 			WithMetadata(map[string]any{
 				"ids_to_delete": idsToDelete,
 			})
@@ -4257,6 +4280,25 @@ func (s *service) GetIntentByTxid(
 	}
 
 	return intent, nil
+}
+
+func (s *service) GetIntentByProofs(
+	ctx context.Context,
+	proof intent.Proof,
+	message intent.GetIntentMessage,
+) ([]*domain.Intent, errors.Error) {
+	matches, err := s.verifyIntentProofAndFindMatches(ctx, proof, message)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]*domain.Intent, 0, len(matches))
+	for _, m := range matches {
+		i := m.Intent
+		result = append(result, &i)
+	}
+
+	return result, nil
 }
 
 func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {

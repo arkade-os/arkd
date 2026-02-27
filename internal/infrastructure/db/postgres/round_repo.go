@@ -445,6 +445,28 @@ func (r *roundRepository) GetIntentByTxid(
 		Message: intent.Message.String,
 	}, nil
 }
+
+func (r *roundRepository) GetIntentsByProof(
+	ctx context.Context,
+	proof string,
+) ([]*domain.Intent, error) {
+	rows, err := r.querier.SelectIntentsByProof(ctx, sql.NullString{String: proof, Valid: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get intents by proof: %w", err)
+	}
+
+	intents := make([]*domain.Intent, 0, len(rows))
+	for _, row := range rows {
+		intents = append(intents, &domain.Intent{
+			Id:      row.ID.String,
+			Txid:    row.Txid.String,
+			Proof:   row.Proof.String,
+			Message: row.Message.String,
+		})
+	}
+	return intents, nil
+}
+
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),
