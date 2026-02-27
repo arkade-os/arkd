@@ -2153,6 +2153,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
+		MaxTxWeight:          int64(s.maxTxWeight),
 		Fees: FeeInfo{
 			IntentFees: *currIntentFees,
 		},
