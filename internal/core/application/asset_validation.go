@@ -36,10 +36,10 @@ func (s *service) validateAssetTransaction(
 
 	for vout, denominations := range assets {
 		if len(denominations) > s.maxAssetsPerVtxo {
-			return errors.VTXO_TOO_HEAVY.New(
+			return errors.VTXO_WITH_TOO_MANY_ASSETS.New(
 				"output %d has %d assets, exceeds max %d",
 				vout, len(denominations), s.maxAssetsPerVtxo,
-			).WithMetadata(errors.VtxoTooHeavyMetadata{
+			).WithMetadata(errors.VtxoWithTooManyAssetsMetadata{
 				AssetCount: len(denominations),
 				MaxAssets:  s.maxAssetsPerVtxo,
 			})
