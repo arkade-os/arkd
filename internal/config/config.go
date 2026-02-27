@@ -126,6 +126,7 @@ type Config struct {
 	VtxoMinAmount             int64
 	SettlementMinExpiryGap    int64
 	MaxTxWeight               uint64
+	AssetTxMaxWeightRatio     float64
 
 	EnablePprof bool
 
@@ -213,6 +214,8 @@ var (
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Max transaction weight accepted by the ark server
 	MaxTxWeight = "MAX_TX_WEIGHT"
+	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
+	AssetTxMaxWeightRatio = "ASSET_TX_MAX_WEIGHT_RATIO"
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
@@ -250,6 +253,7 @@ var (
 	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
+	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
 )
@@ -291,6 +295,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
+	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 
@@ -402,6 +407,7 @@ func LoadConfig() (*Config, error) {
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
+		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
 	}, nil
@@ -573,6 +579,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf(
 			"max tx weight can't exceed bitcoin block weight (%d)",
 			bitcoinBlockWeight,
+		)
+	}
+
+	if c.AssetTxMaxWeightRatio <= 0 || c.AssetTxMaxWeightRatio >= 1 {
+		return fmt.Errorf(
+			"asset tx max weight ratio must be between 0 and 1 (exclusive), got %f",
+			c.AssetTxMaxWeightRatio,
 		)
 	}
 
@@ -841,7 +854,7 @@ func (c *Config) appService() error {
 		c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
-		c.BanDuration, c.BanThreshold, c.MaxTxWeight,
+		c.BanDuration, c.BanThreshold, c.MaxTxWeight, c.AssetTxMaxWeightRatio,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
