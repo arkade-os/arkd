@@ -118,6 +118,7 @@ func (s *service) getBatchStats(
 	return
 }
 
+// calculateCollectedFees computes the total fees (sats) collected by the coordinator for a given round.
 func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uint64 {
 	totalIn := boardingInputAmount
 	totalOut := uint64(0)
@@ -131,6 +132,7 @@ func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uin
 	return totalIn - totalOut
 }
 
+// calculateBoardingInputAmount computes the total amount (sats) of boarding inputs in a PSBT.
 func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
 	boardingInputAmount := uint64(0)
 	for _, input := range ptx.Inputs {

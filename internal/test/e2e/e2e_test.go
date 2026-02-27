@@ -4196,6 +4196,73 @@ func TestFee(t *testing.T) {
 	require.Empty(t, bobBalance.OnchainBalance.LockedAmount)
 }
 
+func TestCollectedFees(t *testing.T) {
+	// Record timestamp before rounds so we can query fees in this window.
+	startTime := time.Now().Unix()
+
+	// Configure 1% input fees so rounds generate non-zero collected fees.
+	originalFees, err := getIntentFees()
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, clearIntentFees())
+		if !isEmptyIntentFees(*originalFees) {
+			require.NoError(t, updateIntentFees(*originalFees))
+		}
+	})
+
+	fees := intentFees{
+		IntentOffchainInputFeeProgram:  "0.01 * amount",
+		IntentOnchainInputFeeProgram:   "0.01 * amount",
+		IntentOffchainOutputFeeProgram: "0.0",
+		IntentOnchainOutputFeeProgram:  "0.0",
+	}
+	err = updateIntentFees(fees)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	alice := setupArkSDK(t)
+
+	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	// Fund Alice and settle a round.
+	faucetOnchain(t, aliceBoardingAddr, 0.001)
+	time.Sleep(6 * time.Second)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+
+	var incomingErr error
+	go func() {
+		_, incomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+		wg.Done()
+	}()
+
+	var settleErr error
+	go func() {
+		_, settleErr = alice.Settle(ctx)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	require.NoError(t, incomingErr)
+	require.NoError(t, settleErr)
+
+	time.Sleep(time.Second)
+
+	// Query collected fees for the window that includes our round.
+	endTime := time.Now().Unix() + 10
+	collectedFees, err := getCollectedFees(startTime-1, endTime)
+	require.NoError(t, err)
+	require.NotZero(t, collectedFees, "expected non-zero collected fees after a round with 1%% input fees")
+
+	// Query with a future window — should return zero.
+	futureFees, err := getCollectedFees(endTime, 0)
+	require.NoError(t, err)
+	require.Zero(t, futureFees, "expected zero collected fees for future time range")
+}
+
 func TestAsset(t *testing.T) {
 	// This test ensures that an asset vtxo can be issued, transfered and then refreshed
 	t.Run("transfer and renew", func(t *testing.T) {

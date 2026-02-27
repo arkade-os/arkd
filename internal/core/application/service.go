@@ -3423,6 +3423,7 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 	s.roundReportSvc.OpEnded(PublishCommitmentTxOp)
 
 	boardingAmount := calculateBoardingInputAmount(commitmentTx)
+	// fees in sats
 	collectedFees := calculateCollectedFees(round, boardingAmount)
 	changes, err = round.EndFinalization(forfeitTxs, signedCommitmentTx, collectedFees)
 	if err != nil {
