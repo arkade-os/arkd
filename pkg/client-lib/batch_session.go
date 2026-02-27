@@ -108,7 +108,7 @@ func (a *service) RedeemNotes(
 
 		feesSats := uint64(fees.ToSatoshis())
 		noteValue := uint64(v.Value)
-		if feesSats > noteValue {
+		if feesSats >= noteValue {
 			// not profitable to redeem this note
 			return "", fmt.Errorf("fees (%d) exceed note value (%d)", feesSats, noteValue)
 		}
