@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -571,5 +570,6 @@ func maxAssetsPerVtxo(maxTxWeight uint64, spendingWeightThreshold float64) int {
 		return 0
 	}
 
-	return int(math.Ceil(float64(maxPacketWU-assetPacketOverheadWU) / float64(refGroupWeight)))
+	availableWU := maxPacketWU - assetPacketOverheadWU
+	return int(availableWU / refGroupWeight)
 }
