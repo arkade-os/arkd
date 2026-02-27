@@ -2,19 +2,23 @@ package interceptors
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync/atomic"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-const (
-	arkServiceMethodPrefix     = "/ark.v1.ArkService/"
-	indexerServiceMethodPrefix = "/ark.v1.IndexerService/"
+var (
+	arkServiceMethodPrefix     = fmt.Sprintf("/%s/", arkv1.ArkService_ServiceDesc.ServiceName)
+	indexerServiceMethodPrefix = fmt.Sprintf("/%s/", arkv1.IndexerService_ServiceDesc.ServiceName)
+)
 
+const (
 	arkServiceNotReadyMsg     = "ark service not ready: wallet is locked or syncing"
 	indexerServiceNotReadyMsg = "indexer service not ready: wallet is locked or syncing"
 )
