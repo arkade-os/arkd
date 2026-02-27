@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -20,6 +21,26 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
+)
+
+var (
+	// asset packet overhead: OP_RETURN(1) + push_data(1) + magic_bytes + marker(1) + varuint_count(1)
+	assetPacketOverheadWU uint64 = (1 + 1 + uint64(len(asset.ArkadeMagic)) + 1 + 1) * 4
+
+	// ref group weight
+	refAssetId, _ = asset.NewAssetId(
+		"0100000000000000000000000000000000000000000000000000000000000000", 0,
+	)
+	// we assume that to spend an asset, we need to transfer it to at least 1 output.
+	// the minimum group size is 1 input + 1 output + asset Id (not an issuance)
+	refGroup = asset.AssetGroup{
+		AssetId: refAssetId,
+		Inputs:  []asset.AssetInput{{Type: asset.AssetInputTypeLocal, Vin: 0, Amount: 1}},
+		Outputs: []asset.AssetOutput{{Type: asset.AssetOutputTypeLocal, Vout: 0, Amount: 1}},
+	}
+	groupBytes, _ = refGroup.Serialize()
+	// group is in OP_RETURN, so weight = bytes * 4
+	refGroupWeight = uint64(len(groupBytes)) * 4 // 180 WU
 )
 
 // onchainOutputs iterates over all the nodes' outputs in the vtxo tree and checks their onchain state
@@ -270,9 +291,8 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 
 func getAssetsFromTx(ptx *psbt.Packet) (map[uint32][]domain.AssetDenomination, error) {
 	assets, err := asset.NewPacketFromTx(ptx.UnsignedTx)
-	// TODO: Move to !errors.Is(err, asset.ErrAssetPacketNotFound)
 	if err != nil {
-		if strings.Contains(err.Error(), "packet not found") {
+		if errors.Is(err, asset.AssetPacketNotFoundError{Txid: ptx.UnsignedTx.TxID()}) {
 			return nil, nil
 		}
 		return nil, err
@@ -537,4 +557,22 @@ func computeWeight(tx *wire.MsgTx) uint64 {
 	baseSize := tx.SerializeSizeStripped()
 	totalSize := tx.SerializeSize()
 	return uint64((baseSize * 3) + totalSize)
+}
+
+// maxAssetsPerVtxo computes the maximum number of asset groups (unique assets)
+// that a VTXO can hold while remaining spendable within maxTxWeight.
+// The spendingWeightThreshold parameter controls the fraction of maxTxWeight
+// reserved for the asset packet.
+func maxAssetsPerVtxo(maxTxWeight uint64, spendingWeightThreshold float64) int {
+	if maxTxWeight == 0 {
+		return 0
+	}
+
+	maxPacketWU := uint64(float64(maxTxWeight) * spendingWeightThreshold)
+	if maxPacketWU <= assetPacketOverheadWU {
+		return 0
+	}
+
+	availableWU := maxPacketWU - assetPacketOverheadWU
+	return int(availableWU / refGroupWeight)
 }

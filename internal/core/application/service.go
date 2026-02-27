@@ -73,6 +73,7 @@ type service struct {
 	allowCSVBlockType         bool
 	checkpointExitDelay       arklib.RelativeLocktime
 	maxTxWeight               uint64
+	maxAssetsPerVtxo          int
 
 	// fees
 	feeManager ports.FeeManager
@@ -113,7 +114,8 @@ func NewService(
 	vtxoTreeExpiry, unilateralExitDelay, publicUnilateralExitDelay,
 	boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
-	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64, maxTxWeight uint64,
+	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
+	maxTxWeight uint64, assetTxMaxWeightRatio float64,
 	network arklib.Network,
 	allowCSVBlockType bool,
 	noteUriPrefix string,
@@ -181,6 +183,7 @@ func NewService(
 		allowCSVBlockType:         allowCSVBlockType,
 		checkpointExitDelay:       checkpointExitDelay,
 		maxTxWeight:               maxTxWeight,
+		maxAssetsPerVtxo:          maxAssetsPerVtxo(maxTxWeight, assetTxMaxWeightRatio),
 		wallet:                    wallet,
 		signer:                    signer,
 		repoManager:               repoManager,
