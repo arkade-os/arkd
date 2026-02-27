@@ -727,6 +727,19 @@ func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) er
 	return nil
 }
 
+func (w *wallet) SignMessage(ctx context.Context, message []byte) ([]byte, error) {
+	if w.SignerKey == nil {
+		return nil, fmt.Errorf("signer key not loaded")
+	}
+
+	msgHash := chainhash.HashB(message)
+	sig, err := schnorr.Sign(w.SignerKey, msgHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign message: %w", err)
+	}
+	return sig.Serialize(), nil
+}
+
 func (w *wallet) Close() {
 	// nolint:errcheck
 	w.Nbxplorer.Close()

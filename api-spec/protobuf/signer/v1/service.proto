@@ -28,6 +28,8 @@ service SignerService {
       body: "*"
     };
   }
+  // SignMessage is gRPC-only (no HTTP gateway) to prevent unauthenticated access
+  rpc SignMessage(SignMessageRequest) returns (SignMessageResponse) {}
 }
 
 message GetStatusRequest {}
@@ -54,4 +56,11 @@ message SignTransactionTapscriptRequest {
 }
 message SignTransactionTapscriptResponse {
   string signed_tx = 1;
+}
+
+message SignMessageRequest {
+  bytes message = 1;
+}
+message SignMessageResponse {
+  bytes signature = 1;
 }

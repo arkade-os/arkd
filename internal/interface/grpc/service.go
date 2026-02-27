@@ -290,8 +290,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
 	eventsCh := appSvc.GetIndexerTxChannel(ctx)
 	subscriptionTimeoutDuration := time.Minute
+	indexerSvc, err := s.appConfig.IndexerService()
+	if err != nil {
+		return fmt.Errorf("failed to create indexer service: %w", err)
+	}
 	indexerHandler := handlers.NewIndexerService(
-		s.appConfig.IndexerService(),
+		indexerSvc,
 		eventsCh,
 		subscriptionTimeoutDuration,
 		s.config.HeartbeatInterval,

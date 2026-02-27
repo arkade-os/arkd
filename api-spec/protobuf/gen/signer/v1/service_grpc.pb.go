@@ -23,6 +23,7 @@ const (
 	SignerService_GetPubkey_FullMethodName                = "/signer.v1.SignerService/GetPubkey"
 	SignerService_SignTransaction_FullMethodName          = "/signer.v1.SignerService/SignTransaction"
 	SignerService_SignTransactionTapscript_FullMethodName = "/signer.v1.SignerService/SignTransactionTapscript"
+	SignerService_SignMessage_FullMethodName              = "/signer.v1.SignerService/SignMessage"
 )
 
 // SignerServiceClient is the client API for SignerService service.
@@ -35,6 +36,8 @@ type SignerServiceClient interface {
 	GetPubkey(ctx context.Context, in *GetPubkeyRequest, opts ...grpc.CallOption) (*GetPubkeyResponse, error)
 	SignTransaction(ctx context.Context, in *SignTransactionRequest, opts ...grpc.CallOption) (*SignTransactionResponse, error)
 	SignTransactionTapscript(ctx context.Context, in *SignTransactionTapscriptRequest, opts ...grpc.CallOption) (*SignTransactionTapscriptResponse, error)
+	// SignMessage is gRPC-only (no HTTP gateway) to prevent unauthenticated access
+	SignMessage(ctx context.Context, in *SignMessageRequest, opts ...grpc.CallOption) (*SignMessageResponse, error)
 }
 
 type signerServiceClient struct {
@@ -85,6 +88,16 @@ func (c *signerServiceClient) SignTransactionTapscript(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *signerServiceClient) SignMessage(ctx context.Context, in *SignMessageRequest, opts ...grpc.CallOption) (*SignMessageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SignMessageResponse)
+	err := c.cc.Invoke(ctx, SignerService_SignMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SignerServiceServer is the server API for SignerService service.
 // All implementations should embed UnimplementedSignerServiceServer
 // for forward compatibility.
@@ -95,6 +108,8 @@ type SignerServiceServer interface {
 	GetPubkey(context.Context, *GetPubkeyRequest) (*GetPubkeyResponse, error)
 	SignTransaction(context.Context, *SignTransactionRequest) (*SignTransactionResponse, error)
 	SignTransactionTapscript(context.Context, *SignTransactionTapscriptRequest) (*SignTransactionTapscriptResponse, error)
+	// SignMessage is gRPC-only (no HTTP gateway) to prevent unauthenticated access
+	SignMessage(context.Context, *SignMessageRequest) (*SignMessageResponse, error)
 }
 
 // UnimplementedSignerServiceServer should be embedded to have
@@ -115,6 +130,9 @@ func (UnimplementedSignerServiceServer) SignTransaction(context.Context, *SignTr
 }
 func (UnimplementedSignerServiceServer) SignTransactionTapscript(context.Context, *SignTransactionTapscriptRequest) (*SignTransactionTapscriptResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SignTransactionTapscript not implemented")
+}
+func (UnimplementedSignerServiceServer) SignMessage(context.Context, *SignMessageRequest) (*SignMessageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SignMessage not implemented")
 }
 func (UnimplementedSignerServiceServer) testEmbeddedByValue() {}
 
@@ -208,6 +226,24 @@ func _SignerService_SignTransactionTapscript_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SignerService_SignMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SignerServiceServer).SignMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SignerService_SignMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SignerServiceServer).SignMessage(ctx, req.(*SignMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SignerService_ServiceDesc is the grpc.ServiceDesc for SignerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -230,6 +266,10 @@ var SignerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SignTransactionTapscript",
 			Handler:    _SignerService_SignTransactionTapscript_Handler,
+		},
+		{
+			MethodName: "SignMessage",
+			Handler:    _SignerService_SignMessage_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

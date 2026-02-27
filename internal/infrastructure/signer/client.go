@@ -99,3 +99,15 @@ func (c *signerClient) SignTransactionTapscript(
 	}
 	return resp.GetSignedTx(), nil
 }
+
+func (c *signerClient) SignMessage(
+	ctx context.Context, message []byte,
+) ([]byte, error) {
+	resp, err := c.client.SignMessage(ctx, &signerv1.SignMessageRequest{
+		Message: message,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp.GetSignature(), nil
+}

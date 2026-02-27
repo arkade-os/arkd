@@ -1,0 +1,48 @@
+{
+  "sign_message_tests": {
+    "test_keys": [
+      {
+        "name": "key_1",
+        "private_key_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "public_key_hex": "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+      },
+      {
+        "name": "key_2",
+        "private_key_hex": "0000000000000000000000000000000000000000000000000000000000000002",
+        "public_key_hex": "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+      }
+    ],
+    "test_cases": [
+      {
+        "name": "simple_message",
+        "message_hex": "48656c6c6f20576f726c64",
+        "key_name": "key_1"
+      },
+      {
+        "name": "empty_message",
+        "message_hex": "",
+        "key_name": "key_1"
+      },
+      {
+        "name": "32_byte_message",
+        "message_hex": "0000000000000000000000000000000000000000000000000000000000000001",
+        "key_name": "key_1"
+      },
+      {
+        "name": "36_byte_auth_token_message",
+        "message_hex": "000000000000000000000000000000000000000000000000000000000000000100000000",
+        "key_name": "key_1"
+      },
+      {
+        "name": "large_message",
+        "message_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "key_name": "key_1"
+      },
+      {
+        "name": "message_with_different_key",
+        "message_hex": "48656c6c6f20576f726c64",
+        "key_name": "key_2"
+      }
+    ]
+  }
+}

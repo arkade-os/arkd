@@ -325,7 +325,16 @@ func (e *indexerService) GetVtxoChain(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resp, err := e.indexerSvc.GetVtxoChain(ctx, *outpoint, page)
+	intent := application.Intent{}
+	// intent is optional depending on arkd config for indexer exposure
+	if request.GetIntent() != nil {
+		intent = application.Intent{
+			Proof:   request.GetIntent().GetProof(),
+			Message: request.GetIntent().GetMessage(),
+		}
+	}
+
+	resp, err := e.indexerSvc.GetVtxoChain(ctx, *outpoint, intent, page)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
@@ -353,8 +362,9 @@ func (e *indexerService) GetVtxoChain(
 	}
 
 	return &arkv1.GetVtxoChainResponse{
-		Chain: chain,
-		Page:  protoPage(resp.Page),
+		Chain:     chain,
+		Page:      protoPage(resp.Page),
+		AuthToken: resp.AuthToken,
 	}, nil
 }
 
@@ -370,7 +380,7 @@ func (e *indexerService) GetVirtualTxs(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resp, err := e.indexerSvc.GetVirtualTxs(ctx, txids, page)
+	resp, err := e.indexerSvc.GetVirtualTxs(ctx, request.GetAuthToken(), txids, page)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
