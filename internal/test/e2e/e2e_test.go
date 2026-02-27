@@ -2905,8 +2905,8 @@ func TestSweep(t *testing.T) {
 		err = generateBlocks(25)
 		require.NoError(t, err)
 
-		// give time for the server to process the sweep
-		time.Sleep(35 * time.Second)
+		// give time for the server to process the sweep and indexer to sync the vtxo table
+		time.Sleep(45 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
