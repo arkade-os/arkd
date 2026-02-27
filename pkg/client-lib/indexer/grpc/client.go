@@ -425,7 +425,7 @@ func (a *grpcClient) GetBatchSweepTxs(
 
 func (a *grpcClient) GetSubscription(
 	ctx context.Context, subscriptionId string,
-) (<-chan *indexer.ScriptEvent, func(), error) {
+) (<-chan indexer.ScriptEvent, func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	req := &arkv1.GetSubscriptionRequest{
@@ -437,7 +437,7 @@ func (a *grpcClient) GetSubscription(
 		cancel()
 		return nil, nil, err
 	}
-	eventsCh := make(chan *indexer.ScriptEvent)
+	eventsCh := make(chan indexer.ScriptEvent)
 	streamMu := sync.Mutex{}
 
 	go func() {
@@ -455,7 +455,7 @@ func (a *grpcClient) GetSubscription(
 				if !shouldRetry {
 					select {
 					case <-ctx.Done():
-					case eventsCh <- &indexer.ScriptEvent{Err: err}:
+					case eventsCh <- indexer.ScriptEvent{Err: err}:
 					}
 					return
 				}
@@ -479,7 +479,7 @@ func (a *grpcClient) GetSubscription(
 					if !shouldRetryDial {
 						select {
 						case <-ctx.Done():
-						case eventsCh <- &indexer.ScriptEvent{Err: dialErr}:
+						case eventsCh <- indexer.ScriptEvent{Err: dialErr}:
 						}
 						return
 					}
@@ -516,7 +516,7 @@ func (a *grpcClient) GetSubscription(
 				}
 			}
 			if event != nil {
-				eventsCh <- &indexer.ScriptEvent{
+				eventsCh <- indexer.ScriptEvent{
 					Txid:          event.GetTxid(),
 					Tx:            event.GetTx(),
 					Scripts:       event.GetScripts(),
