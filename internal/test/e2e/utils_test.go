@@ -597,6 +597,29 @@ func restartArkd() error {
 	return nil
 }
 
+func updateSettings(httpClient *http.Client) error {
+	url := fmt.Sprintf("%s/v1/admin/settings", adminUrl)
+	body := `{
+		"settings": {
+			"ban_threshold": 1,
+			"ban_duration": 300,
+			"vtxo_tree_expiry": 20,
+			"unilateral_exit_delay": 512,
+			"public_unilateral_exit_delay": 512,
+			"checkpoint_exit_delay": 10,
+			"boarding_exit_delay": 1024,
+			"round_min_participants_count": 1,
+			"round_max_participants_count": 128,
+			"vtxo_min_amount": 1,
+			"vtxo_max_amount": -1,
+			"utxo_min_amount": -1,
+			"utxo_max_amount": -1,
+			"max_tx_weight": 40000
+		}
+	}`
+	return post(httpClient, url, body, "update settings")
+}
+
 func setupArkd() error {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,
@@ -619,10 +642,17 @@ func setupArkd() error {
 			return err
 		}
 
+		if err := updateSettings(adminHttpClient); err != nil {
+			return err
+		}
+
 		return refill(adminHttpClient)
 	}
 
 	if status.Initialized && status.Unlocked && status.Synced {
+		if err := updateSettings(adminHttpClient); err != nil {
+			return err
+		}
 		return refill(adminHttpClient)
 	}
 
@@ -645,6 +675,10 @@ func setupArkd() error {
 	}
 
 	if err := waitUntilReady(adminHttpClient); err != nil {
+		return err
+	}
+
+	if err := updateSettings(adminHttpClient); err != nil {
 		return err
 	}
 

@@ -364,6 +364,33 @@ func determineLocktimeType(locktime int64) arklib.RelativeLocktime {
 	return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(locktime)}
 }
 
+func (c *Config) defaultSettings() *domain.Settings {
+	vtxoTreeExpiry := int64(604672)      // ~7 days in seconds
+	checkpointExitDelay := int64(86400)  // 24 hours in seconds
+	if c.SchedulerType == "block" {
+		vtxoTreeExpiry = 20      // 20 blocks
+		checkpointExitDelay = 10 // 10 blocks
+	}
+
+	return &domain.Settings{
+		BanThreshold:              3,
+		BanDuration:               300,     // 10 * 30s
+		VtxoTreeExpiry:            vtxoTreeExpiry,
+		UnilateralExitDelay:       86400,   // 24 hours
+		PublicUnilateralExitDelay: 86400,   // 24 hours
+		CheckpointExitDelay:       checkpointExitDelay,
+		BoardingExitDelay:         7776000, // 3 months
+		RoundMinParticipantsCount: 1,
+		RoundMaxParticipantsCount: 128,
+		UtxoMaxAmount:             -1,
+		UtxoMinAmount:             -1,
+		VtxoMaxAmount:             -1,
+		VtxoMinAmount:             -1,
+		MaxTxWeight:               int64(0.01 * bitcoinBlockWeight),
+		UpdatedAt:                 time.Now(),
+	}
+}
+
 func (c *Config) loadSettings() error {
 	ctx := context.Background()
 	settings, err := c.repo.Settings().Get(ctx)
@@ -371,23 +398,7 @@ func (c *Config) loadSettings() error {
 		return fmt.Errorf("failed to get settings: %w", err)
 	}
 	if settings == nil {
-		settings = &domain.Settings{
-			BanThreshold:              3,
-			BanDuration:               300,     // 10 * 30s
-			VtxoTreeExpiry:            604672,  // ~7 days
-			UnilateralExitDelay:       86400,   // 24 hours
-			PublicUnilateralExitDelay: 86400,   // 24 hours
-			CheckpointExitDelay:       86400,   // 24 hours
-			BoardingExitDelay:         7776000, // 3 months
-			RoundMinParticipantsCount: 1,
-			RoundMaxParticipantsCount: 128,
-			UtxoMaxAmount:             -1,
-			UtxoMinAmount:             -1,
-			VtxoMaxAmount:             -1,
-			VtxoMinAmount:             -1,
-			MaxTxWeight:               int64(0.01 * bitcoinBlockWeight),
-			UpdatedAt:                 time.Now(),
-		}
+		settings = c.defaultSettings()
 		if err := c.repo.Settings().Upsert(ctx, *settings); err != nil {
 			return fmt.Errorf("failed to seed default settings: %w", err)
 		}

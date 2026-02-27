@@ -24,8 +24,8 @@ import (
 type singleBatchConfig struct {
 	NumClients              int    // Number of clients to participate in the batch
 	AmountPerVtxo           uint64 // Amount in satoshis per VTXO
-	MinParticipantsPerRound int    // Minimum number of participants per round (ARKD_ROUND_MIN_PARTICIPANTS_COUNT)
-	MaxParticipantsPerRound int    // Maximum number of participants per round (ARKD_ROUND_MAX_PARTICIPANTS_COUNT)
+	MinParticipantsPerRound int    // Minimum number of participants per round
+	MaxParticipantsPerRound int    // Maximum number of participants per round
 }
 
 var (
@@ -42,13 +42,7 @@ var (
 // TestBatchSettleMultipleClients tests multiple clients registering VTXOs in a single batch
 //
 // This test verifies that multiple clients can register VTXOs in a single batch settlement round.
-// It is affected by the following environment variables:
-// - ARKD_ROUND_MIN_PARTICIPANTS_COUNT: Minimum number of participants per round (default: 1)
-// - ARKD_ROUND_MAX_PARTICIPANTS_COUNT: Maximum number of participants per round (default: 128)
-//
-// To run this test with specific round participant limits, set these environment variables before running.
-// For example, to test with exactly 5 participants per round:
-// ARKD_ROUND_MIN_PARTICIPANTS_COUNT=5 ARKD_ROUND_MAX_PARTICIPANTS_COUNT=5 make run-simulation
+// Round participant limits are configured via the admin settings API.
 //
 // To specify the number of clients via command line:
 // go test -v -run TestBatchSettleMultipleClients -args -num-clients=8
