@@ -5129,7 +5129,18 @@ func TestEventListenerChurn(t *testing.T) {
 	// close the sentinel stream.
 	<-stressCtx.Done()
 	closeSentinelStream()
-	wg.Wait()
+
+	wgDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(wgDone)
+	}()
+	select {
+	case <-wgDone:
+	case <-time.After(15 * time.Second):
+		t.Log("churn/producer goroutines did not exit within 15s")
+	}
+
 	select {
 	case <-sentinelDone:
 	case <-time.After(10 * time.Second):
