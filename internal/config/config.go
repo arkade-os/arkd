@@ -365,8 +365,8 @@ func determineLocktimeType(locktime int64) arklib.RelativeLocktime {
 }
 
 func (c *Config) defaultSettings() *domain.Settings {
-	vtxoTreeExpiry := int64(604672)      // ~7 days in seconds
-	checkpointExitDelay := int64(86400)  // 24 hours in seconds
+	vtxoTreeExpiry := int64(604672)     // ~7 days in seconds
+	checkpointExitDelay := int64(86400) // 24 hours in seconds
 	if c.SchedulerType == "block" {
 		vtxoTreeExpiry = 20      // 20 blocks
 		checkpointExitDelay = 10 // 10 blocks
@@ -374,10 +374,10 @@ func (c *Config) defaultSettings() *domain.Settings {
 
 	return &domain.Settings{
 		BanThreshold:              3,
-		BanDuration:               300,     // 10 * 30s
+		BanDuration:               300, // 10 * 30s
 		VtxoTreeExpiry:            vtxoTreeExpiry,
-		UnilateralExitDelay:       86400,   // 24 hours
-		PublicUnilateralExitDelay: 86400,   // 24 hours
+		UnilateralExitDelay:       86400, // 24 hours
+		PublicUnilateralExitDelay: 86400, // 24 hours
 		CheckpointExitDelay:       checkpointExitDelay,
 		BoardingExitDelay:         7776000, // 3 months
 		RoundMinParticipantsCount: 1,
