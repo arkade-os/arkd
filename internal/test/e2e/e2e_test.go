@@ -4271,6 +4271,10 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, aliceErr)
 		require.NoError(t, bobErr)
 
+		// give time to indexer to sync the vtxo table
+		// without this, on postgres/redis CI, the balance check may fail
+		time.Sleep(2 * time.Second)
+
 		bobBalanceAfterRenew, err := bob.Balance(ctx)
 		require.NoError(t, err)
 
