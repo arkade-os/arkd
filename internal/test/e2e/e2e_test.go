@@ -2905,8 +2905,8 @@ func TestSweep(t *testing.T) {
 		err = generateBlocks(25)
 		require.NoError(t, err)
 
-		// give time for the server to process the sweep
-		time.Sleep(35 * time.Second)
+		// give time for the server to process the sweep and indexer to sync the vtxo table
+		time.Sleep(45 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
@@ -4271,6 +4271,10 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, aliceErr)
 		require.NoError(t, bobErr)
 
+		// give time to indexer to sync the vtxo table
+		// without this, on postgres/redis CI, the balance check may fail
+		time.Sleep(2 * time.Second)
+
 		bobBalanceAfterRenew, err := bob.Balance(ctx)
 		require.NoError(t, err)
 
@@ -4591,7 +4595,7 @@ func TestTxListenerChurn(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 
-			streamClient, err := grpcclient.NewClient(serverUrl, false)
+			streamClient, err := grpcclient.NewClient(serverUrl)
 			if err != nil {
 				if stressCtx.Err() != nil {
 					return
@@ -4620,7 +4624,7 @@ func TestTxListenerChurn(t *testing.T) {
 				// Reconnect if the previous iteration tore down the client
 				// due to a transient error.
 				if streamClient == nil {
-					streamClient, err = grpcclient.NewClient(serverUrl, false)
+					streamClient, err = grpcclient.NewClient(serverUrl)
 					if err != nil {
 						if stressCtx.Err() != nil {
 							return
@@ -4879,7 +4883,7 @@ func TestEventListenerChurn(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 
-			streamClient, err := grpcclient.NewClient(serverUrl, false)
+			streamClient, err := grpcclient.NewClient(serverUrl)
 			if err != nil {
 				if stressCtx.Err() != nil {
 					return
@@ -4907,7 +4911,7 @@ func TestEventListenerChurn(t *testing.T) {
 
 				// Reconnect after a transient error tore down the client.
 				if streamClient == nil {
-					streamClient, err = grpcclient.NewClient(serverUrl, false)
+					streamClient, err = grpcclient.NewClient(serverUrl)
 					if err != nil {
 						if stressCtx.Err() != nil {
 							return

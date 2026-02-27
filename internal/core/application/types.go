@@ -80,6 +80,7 @@ type ServiceInfo struct {
 	VtxoMaxAmount        int64
 	CheckpointTapscript  string
 	Fees                 FeeInfo
+	MaxTxWeight          int64
 }
 
 type NextScheduledSession struct {
