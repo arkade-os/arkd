@@ -14,7 +14,7 @@ on:
 
 
 jobs:
-  build:
+  verify-proto:
     runs-on: ubuntu-latest
 
     steps:

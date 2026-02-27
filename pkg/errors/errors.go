@@ -203,6 +203,11 @@ type OffchainTxInsufficientFeeMetadata struct {
 	InputThrottledUntil map[string]any `json:"input_throttled_until"`
 }
 
+type TxTooLargeMetadata struct {
+	Weight int `json:"weight"`
+	MaxWeight int `json:"max_weight"`
+}
+
 var INTERNAL_ERROR = Code[map[string]any]{0, "INTERNAL_ERROR", grpccodes.Internal}
 var INVALID_ARK_PSBT = Code[PsbtMetadata]{1, "INVALID_ARK_PSBT", grpccodes.InvalidArgument}
 
@@ -440,4 +445,6 @@ var ASSET_PACKET_INVALID = Code[AssetValidationMetadata]{
 
 var INTENT_FEE_EVALUATION_FAILED = Code[any]{44, "INTENT_FEE_EVALUATION_FAILED", grpccodes.Internal}
 
-var INTENT_NOT_FOUND = Code[any]{34, "INTENT_NOT_FOUND", grpccodes.NotFound}
+var INTENT_NOT_FOUND = Code[any]{45, "INTENT_NOT_FOUND", grpccodes.NotFound}
+
+var TX_TOO_LARGE = Code[TxTooLargeMetadata]{46, "TX_TOO_LARGE", grpccodes.InvalidArgument}

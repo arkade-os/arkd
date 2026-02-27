@@ -2,7 +2,6 @@ package e2e_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -17,17 +16,17 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	arksdk "github.com/arkade-os/go-sdk"
-	"github.com/arkade-os/go-sdk/client"
-	grpcclient "github.com/arkade-os/go-sdk/client/grpc"
-	"github.com/arkade-os/go-sdk/explorer"
-	"github.com/arkade-os/go-sdk/indexer"
-	grpcindexer "github.com/arkade-os/go-sdk/indexer/grpc"
-	"github.com/arkade-os/go-sdk/store"
-	"github.com/arkade-os/go-sdk/types"
-	"github.com/arkade-os/go-sdk/wallet"
-	singlekeywallet "github.com/arkade-os/go-sdk/wallet/singlekey"
-	inmemorystore "github.com/arkade-os/go-sdk/wallet/singlekey/store/inmemory"
+	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
+	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
+	"github.com/arkade-os/arkd/pkg/client-lib/store"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
+	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
+	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -37,6 +36,8 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const adminUrl = "http://127.0.0.1:7071"
@@ -259,8 +260,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 
 func setupArkSDK(t *testing.T) arksdk.ArkClient {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -273,12 +273,10 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	err = client.Init(t.Context(), arksdk.InitArgs{
-		WalletType:           arksdk.SingleKeyWallet,
-		ClientType:           arksdk.GrpcClient,
-		ServerUrl:            serverUrl,
-		Password:             password,
-		Seed:                 privkeyHex,
-		ExplorerPollInterval: time.Second,
+		WalletType: arksdk.SingleKeyWallet,
+		ServerUrl:  serverUrl,
+		Password:   password,
+		Seed:       privkeyHex,
 	})
 	require.NoError(t, err)
 
@@ -297,8 +295,7 @@ func setupArkSDKWithTransport(t *testing.T) (arksdk.ArkClient, client.TransportC
 
 func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -315,7 +312,7 @@ func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, e
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	password := "password"
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = wallet.Create(ctx, password, privkeyHex)
 	require.NoError(t, err)
 
@@ -329,8 +326,7 @@ func setupArkSDKwithPublicKey(
 	t *testing.T,
 ) (arksdk.ArkClient, wallet.WalletService, *btcec.PublicKey, client.TransportClient) {
 	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType:  types.InMemoryStore,
-		AppDataStoreType: types.KVStore,
+		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
@@ -349,16 +345,15 @@ func setupArkSDKwithPublicKey(
 
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
-	err = client.InitWithWallet(context.Background(), arksdk.InitWithWalletArgs{
-		Wallet:     wallet,
-		ClientType: arksdk.GrpcClient,
-		ServerUrl:  serverUrl,
-		Password:   password,
-		Seed:       privkeyHex,
+	err = client.InitWithWallet(t.Context(), arksdk.InitWithWalletArgs{
+		Wallet:    wallet,
+		ServerUrl: serverUrl,
+		Password:  password,
+		Seed:      privkeyHex,
 	})
 	require.NoError(t, err)
 
-	err = client.Unlock(context.Background(), password)
+	err = client.Unlock(t.Context(), password)
 	require.NoError(t, err)
 
 	grpcClient, err := grpcclient.NewClient(serverUrl)
@@ -481,10 +476,10 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 		wg.Done()
 	}()
 
-	txid, err = client.SendOffChain(
-		t.Context(),
-		[]types.Receiver{{To: addr, Amount: uint64(amount * 1e8)}},
-	)
+	txid, err = client.SendOffChain(t.Context(), []types.Receiver{{
+		To:     addr,
+		Amount: uint64(amount * 1e8),
+	}})
 	require.NoError(t, err)
 	require.NotEmpty(t, txid)
 
@@ -533,19 +528,6 @@ func getIntentFees() (*intentFees, error) {
 	return &resp.Fees, nil
 }
 
-func clearIntentFees() error {
-	adminHttpClient := &http.Client{
-		Timeout: 15 * time.Second,
-	}
-
-	url := fmt.Sprintf("%s/v1/admin/intentFees/clear", adminUrl)
-	if err := post(adminHttpClient, url, "{}", "intentFees"); err != nil {
-		return fmt.Errorf("failed to clear intent fees: %w", err)
-	}
-
-	return nil
-}
-
 func isEmptyIntentFees(fees intentFees) bool {
 	return fees.IntentOffchainInputFeeProgram == "" &&
 		fees.IntentOnchainInputFeeProgram == "" &&
@@ -566,8 +548,21 @@ func updateIntentFees(intentFees intentFees) error {
 	body := fmt.Sprintf(`{"fees": %s}`, feesJson)
 
 	url := fmt.Sprintf("%s/v1/admin/intentFees", adminUrl)
-	if err := post(adminHttpClient, url, body, "intentFees"); err != nil {
+	if err := post(adminHttpClient, url, body, "updateIntentFees"); err != nil {
 		return fmt.Errorf("failed to update intent fees: %s", err)
+	}
+
+	return nil
+}
+
+func clearIntentFees() error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/intentFees/clear", adminUrl)
+	if err := post(adminHttpClient, url, "", "clearIntentFees"); err != nil {
+		return fmt.Errorf("failed to clear intent fees: %s", err)
 	}
 
 	return nil
@@ -742,7 +737,7 @@ func refill(httpClient *http.Client) error {
 
 func listVtxosWithAsset(t *testing.T, client arksdk.ArkClient, assetID string) []types.Vtxo {
 	t.Helper()
-	vtxos, err := client.ListSpendableVtxos(t.Context())
+	vtxos, _, err := client.ListVtxos(t.Context())
 	require.NoError(t, err)
 
 	assetVtxos := make([]types.Vtxo, 0, len(vtxos))
@@ -772,4 +767,40 @@ func requireVtxoHasAsset(t *testing.T, vtxo types.Vtxo, assetID string, expected
 	asset, found := findAssetInVtxo(vtxo, assetID)
 	require.True(t, found)
 	require.Equal(t, expectedAmount, asset.Amount, assetID)
+}
+
+func churnWorkerBackoff(workerID int) time.Duration {
+	return time.Duration(5+workerID%11) * time.Millisecond
+}
+
+func isRetryableChurnError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.Unavailable, codes.DeadlineExceeded:
+			return true
+		}
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	// edge cases not caught by gRPC status codes
+	signatures := []string{
+		"assign requested address",
+		"error reading server preface",
+		"connection reset by peer",
+		"transport is closing",
+		"broken pipe",
+		"eof",
+	}
+
+	for _, sig := range signatures {
+		if strings.Contains(errMsg, sig) {
+			return true
+		}
+	}
+
+	return false
 }
