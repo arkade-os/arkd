@@ -4909,6 +4909,7 @@ func TestEventListenerChurn(t *testing.T) {
 			for {
 				select {
 				case <-stressCtx.Done():
+					closeStream()
 					return
 				case ev, ok := <-sentinelStream:
 					if !ok {
@@ -5068,6 +5069,9 @@ func TestEventListenerChurn(t *testing.T) {
 
 			select {
 			case <-roundDone:
+			case <-stressCtx.Done():
+				cancelRound()
+				return
 			case <-time.After(roundTimeout + 2*time.Second):
 				cancelRound()
 				continue
@@ -5124,9 +5128,13 @@ func TestEventListenerChurn(t *testing.T) {
 	// Wait for the stress window to expire, then drain all goroutines and
 	// close the sentinel stream.
 	<-stressCtx.Done()
-	wg.Wait()
 	closeSentinelStream()
-	<-sentinelDone
+	wg.Wait()
+	select {
+	case <-sentinelDone:
+	case <-time.After(10 * time.Second):
+		t.Log("sentinel goroutine did not exit within 10s")
+	}
 
 	// At least one round must have completed and the sentinel must have
 	// observed events. Transient sentinel errors are tolerated (the
