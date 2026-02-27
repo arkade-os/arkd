@@ -447,3 +447,52 @@ SELECT control_asset_id FROM asset WHERE id = $1;
 
 -- name: SelectAssetExists :one
 SELECT 1 FROM asset WHERE id = $1 LIMIT 1;
+
+-- name: UpsertSettings :exec
+INSERT INTO settings (
+    id, ban_threshold, ban_duration,
+    unilateral_exit_delay, public_unilateral_exit_delay,
+    checkpoint_exit_delay, boarding_exit_delay,
+    vtxo_tree_expiry,
+    round_min_participants_count, round_max_participants_count,
+    vtxo_min_amount, vtxo_max_amount,
+    utxo_min_amount, utxo_max_amount,
+    settlement_min_expiry_gap,
+    vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight, updated_at
+) VALUES (
+    @id, @ban_threshold, @ban_duration,
+    @unilateral_exit_delay, @public_unilateral_exit_delay,
+    @checkpoint_exit_delay, @boarding_exit_delay,
+    @vtxo_tree_expiry,
+    @round_min_participants_count, @round_max_participants_count,
+    @vtxo_min_amount, @vtxo_max_amount,
+    @utxo_min_amount, @utxo_max_amount,
+    @settlement_min_expiry_gap,
+    @vtxo_no_csv_validation_cutoff_date,
+    @max_tx_weight, @updated_at
+)
+ON CONFLICT(id) DO UPDATE SET
+    ban_threshold = EXCLUDED.ban_threshold,
+    ban_duration = EXCLUDED.ban_duration,
+    unilateral_exit_delay = EXCLUDED.unilateral_exit_delay,
+    public_unilateral_exit_delay = EXCLUDED.public_unilateral_exit_delay,
+    checkpoint_exit_delay = EXCLUDED.checkpoint_exit_delay,
+    boarding_exit_delay = EXCLUDED.boarding_exit_delay,
+    vtxo_tree_expiry = EXCLUDED.vtxo_tree_expiry,
+    round_min_participants_count = EXCLUDED.round_min_participants_count,
+    round_max_participants_count = EXCLUDED.round_max_participants_count,
+    vtxo_min_amount = EXCLUDED.vtxo_min_amount,
+    vtxo_max_amount = EXCLUDED.vtxo_max_amount,
+    utxo_min_amount = EXCLUDED.utxo_min_amount,
+    utxo_max_amount = EXCLUDED.utxo_max_amount,
+    settlement_min_expiry_gap = EXCLUDED.settlement_min_expiry_gap,
+    vtxo_no_csv_validation_cutoff_date = EXCLUDED.vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight = EXCLUDED.max_tx_weight,
+    updated_at = EXCLUDED.updated_at;
+
+-- name: SelectLatestSettings :one
+SELECT * FROM settings ORDER BY updated_at DESC LIMIT 1;
+
+-- name: ClearSettings :exec
+DELETE FROM settings;

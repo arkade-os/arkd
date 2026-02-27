@@ -833,6 +833,114 @@
         }
       }
     },
+    "/v1/admin/settings": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetSettings",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSettingsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_UpdateSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSettingsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/settings/clear": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_ClearSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearSettingsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/sweep": {
       "post": {
         "tags": [
@@ -951,6 +1059,14 @@
       },
       "ClearScheduledSessionConfigResponse": {
         "title": "ClearScheduledSessionConfigResponse",
+        "type": "object"
+      },
+      "ClearSettingsRequest": {
+        "title": "ClearSettingsRequest",
+        "type": "object"
+      },
+      "ClearSettingsResponse": {
+        "title": "ClearSettingsResponse",
         "type": "object"
       },
       "Conviction": {
@@ -1335,6 +1451,19 @@
           }
         }
       },
+      "GetSettingsRequest": {
+        "title": "GetSettingsRequest",
+        "type": "object"
+      },
+      "GetSettingsResponse": {
+        "title": "GetSettingsResponse",
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          }
+        }
+      },
       "Intent": {
         "title": "Intent",
         "type": "object",
@@ -1563,6 +1692,80 @@
           }
         }
       },
+      "Settings": {
+        "title": "Settings",
+        "type": "object",
+        "properties": {
+          "banDuration": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "banThreshold": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "boardingExitDelay": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "checkpointExitDelay": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxTxWeight": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "publicUnilateralExitDelay": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundMaxParticipantsCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "roundMinParticipantsCount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "settlementMinExpiryGap": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unilateralExitDelay": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "updatedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "utxoMaxAmount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "utxoMinAmount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vtxoMaxAmount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vtxoMinAmount": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vtxoNoCsvValidationCutoffDate": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "vtxoTreeExpiry": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "Status": {
         "title": "Status",
         "type": "object",
@@ -1653,6 +1856,19 @@
       },
       "UpdateScheduledSessionConfigResponse": {
         "title": "UpdateScheduledSessionConfigResponse",
+        "type": "object"
+      },
+      "UpdateSettingsRequest": {
+        "title": "UpdateSettingsRequest",
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          }
+        }
+      },
+      "UpdateSettingsResponse": {
+        "title": "UpdateSettingsResponse",
         "type": "object"
       }
     }

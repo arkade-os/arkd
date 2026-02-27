@@ -49,6 +49,9 @@ type AdminService interface {
 	) (string, string, error)
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
+	GetSettings(ctx context.Context) (*domain.Settings, error)
+	UpdateSettings(ctx context.Context, settings domain.Settings) error
+	ClearSettings(ctx context.Context) error
 }
 
 type adminService struct {
@@ -588,6 +591,19 @@ func (a *adminService) GetExpiringLiquidity(
 
 func (a *adminService) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
 	return a.repoManager.Vtxos().GetRecoverableLiquidity(ctx)
+}
+
+func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error) {
+	return a.repoManager.Settings().Get(ctx)
+}
+
+func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Settings) error {
+	settings.UpdatedAt = time.Now()
+	return a.repoManager.Settings().Upsert(ctx, settings)
+}
+
+func (a *adminService) ClearSettings(ctx context.Context) error {
+	return a.repoManager.Settings().Clear(ctx)
 }
 
 func (a *adminService) getScheduledSweep(

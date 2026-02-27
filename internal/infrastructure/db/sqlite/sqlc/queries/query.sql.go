@@ -84,6 +84,15 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 	return err
 }
 
+const clearSettings = `-- name: ClearSettings :exec
+DELETE FROM settings
+`
+
+func (q *Queries) ClearSettings(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearSettings)
+	return err
+}
+
 const insertAsset = `-- name: InsertAsset :exec
 INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
 VALUES (?1, ?2, ?3, ?4, ?5)
@@ -589,6 +598,36 @@ func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSe
 		&i.Duration,
 		&i.RoundMinParticipants,
 		&i.RoundMaxParticipants,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const selectLatestSettings = `-- name: SelectLatestSettings :one
+SELECT id, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, updated_at FROM settings ORDER BY updated_at DESC LIMIT 1
+`
+
+func (q *Queries) SelectLatestSettings(ctx context.Context) (Setting, error) {
+	row := q.db.QueryRowContext(ctx, selectLatestSettings)
+	var i Setting
+	err := row.Scan(
+		&i.ID,
+		&i.BanThreshold,
+		&i.BanDuration,
+		&i.UnilateralExitDelay,
+		&i.PublicUnilateralExitDelay,
+		&i.CheckpointExitDelay,
+		&i.BoardingExitDelay,
+		&i.VtxoTreeExpiry,
+		&i.RoundMinParticipantsCount,
+		&i.RoundMaxParticipantsCount,
+		&i.VtxoMinAmount,
+		&i.VtxoMaxAmount,
+		&i.UtxoMinAmount,
+		&i.UtxoMaxAmount,
+		&i.SettlementMinExpiryGap,
+		&i.VtxoNoCsvValidationCutoffDate,
+		&i.MaxTxWeight,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -2223,6 +2262,95 @@ func (q *Queries) UpsertScheduledSession(ctx context.Context, arg UpsertSchedule
 		arg.Duration,
 		arg.RoundMinParticipants,
 		arg.RoundMaxParticipants,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
+const upsertSettings = `-- name: UpsertSettings :exec
+INSERT INTO settings (
+    id, ban_threshold, ban_duration,
+    unilateral_exit_delay, public_unilateral_exit_delay,
+    checkpoint_exit_delay, boarding_exit_delay,
+    vtxo_tree_expiry,
+    round_min_participants_count, round_max_participants_count,
+    vtxo_min_amount, vtxo_max_amount,
+    utxo_min_amount, utxo_max_amount,
+    settlement_min_expiry_gap,
+    vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight, updated_at
+) VALUES (
+    ?1, ?2, ?3,
+    ?4, ?5,
+    ?6, ?7,
+    ?8,
+    ?9, ?10,
+    ?11, ?12,
+    ?13, ?14,
+    ?15,
+    ?16,
+    ?17, ?18
+)
+ON CONFLICT(id) DO UPDATE SET
+    ban_threshold = EXCLUDED.ban_threshold,
+    ban_duration = EXCLUDED.ban_duration,
+    unilateral_exit_delay = EXCLUDED.unilateral_exit_delay,
+    public_unilateral_exit_delay = EXCLUDED.public_unilateral_exit_delay,
+    checkpoint_exit_delay = EXCLUDED.checkpoint_exit_delay,
+    boarding_exit_delay = EXCLUDED.boarding_exit_delay,
+    vtxo_tree_expiry = EXCLUDED.vtxo_tree_expiry,
+    round_min_participants_count = EXCLUDED.round_min_participants_count,
+    round_max_participants_count = EXCLUDED.round_max_participants_count,
+    vtxo_min_amount = EXCLUDED.vtxo_min_amount,
+    vtxo_max_amount = EXCLUDED.vtxo_max_amount,
+    utxo_min_amount = EXCLUDED.utxo_min_amount,
+    utxo_max_amount = EXCLUDED.utxo_max_amount,
+    settlement_min_expiry_gap = EXCLUDED.settlement_min_expiry_gap,
+    vtxo_no_csv_validation_cutoff_date = EXCLUDED.vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight = EXCLUDED.max_tx_weight,
+    updated_at = EXCLUDED.updated_at
+`
+
+type UpsertSettingsParams struct {
+	ID                            int64
+	BanThreshold                  int64
+	BanDuration                   int64
+	UnilateralExitDelay           int64
+	PublicUnilateralExitDelay     int64
+	CheckpointExitDelay           int64
+	BoardingExitDelay             int64
+	VtxoTreeExpiry                int64
+	RoundMinParticipantsCount     int64
+	RoundMaxParticipantsCount     int64
+	VtxoMinAmount                 int64
+	VtxoMaxAmount                 int64
+	UtxoMinAmount                 int64
+	UtxoMaxAmount                 int64
+	SettlementMinExpiryGap        int64
+	VtxoNoCsvValidationCutoffDate int64
+	MaxTxWeight                   int64
+	UpdatedAt                     int64
+}
+
+func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, upsertSettings,
+		arg.ID,
+		arg.BanThreshold,
+		arg.BanDuration,
+		arg.UnilateralExitDelay,
+		arg.PublicUnilateralExitDelay,
+		arg.CheckpointExitDelay,
+		arg.BoardingExitDelay,
+		arg.VtxoTreeExpiry,
+		arg.RoundMinParticipantsCount,
+		arg.RoundMaxParticipantsCount,
+		arg.VtxoMinAmount,
+		arg.VtxoMaxAmount,
+		arg.UtxoMinAmount,
+		arg.UtxoMaxAmount,
+		arg.SettlementMinExpiryGap,
+		arg.VtxoNoCsvValidationCutoffDate,
+		arg.MaxTxWeight,
 		arg.UpdatedAt,
 	)
 	return err
