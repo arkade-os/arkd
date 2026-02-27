@@ -118,15 +118,15 @@ type Config struct {
 	UnlockerFilePath string // file unlocker
 	UnlockerPassword string // env unlocker
 
-	RoundMinParticipantsCount   int64
-	RoundMaxParticipantsCount   int64
-	UtxoMaxAmount               int64
-	UtxoMinAmount               int64
-	VtxoMaxAmount               int64
-	VtxoMinAmount               int64
-	SettlementMinExpiryGap      int64
-	MaxTxWeight                 uint64
-	AssetTxMaxWeightRatio float64
+	RoundMinParticipantsCount int64
+	RoundMaxParticipantsCount int64
+	UtxoMaxAmount             int64
+	UtxoMinAmount             int64
+	VtxoMaxAmount             int64
+	VtxoMinAmount             int64
+	SettlementMinExpiryGap    int64
+	MaxTxWeight               uint64
+	AssetTxMaxWeightRatio     float64
 
 	EnablePprof bool
 
@@ -253,7 +253,7 @@ var (
 	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
-	defaultAssetTxMaxWeightRatio   = 0.5
+	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
 )
@@ -407,7 +407,7 @@ func LoadConfig() (*Config, error) {
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
-		AssetTxMaxWeightRatio:   viper.GetFloat64(AssetTxMaxWeightRatio),
+		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
 	}, nil
