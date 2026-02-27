@@ -169,7 +169,7 @@ func NewService(
 
 	ctx, cancel := context.WithCancel(ctx)
 
-	svc := &service{
+	return &service{
 		network:                   network,
 		signerPubkey:              signerPubkey,
 		batchExpiry:               vtxoTreeExpiry,
@@ -212,9 +212,7 @@ func NewService(
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 		feeManager:                    feeManager,
-	}
-
-	return svc, nil
+	}, nil
 }
 
 func (s *service) Start() error {

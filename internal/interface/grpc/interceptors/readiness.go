@@ -41,7 +41,7 @@ func (r *ReadinessService) MarkAppServiceStopped() {
 }
 
 func (r *ReadinessService) Check(ctx context.Context, fullMethod string) error {
-	if r == nil || !isProtectedServiceMethod(fullMethod) {
+	if r == nil || !isPublicServiceMethod(fullMethod) {
 		return nil
 	}
 	// We need both checks:
@@ -51,26 +51,26 @@ func (r *ReadinessService) Check(ctx context.Context, fullMethod string) error {
 		return status.Error(codes.Unavailable, "server not ready")
 	}
 	if r.wallet == nil {
-		return protectedServiceUnavailableErr(fullMethod)
+		return publicServiceUnavailableErr(fullMethod)
 	}
 
 	walletStatus, err := r.wallet.Status(ctx)
 	if err != nil {
-		return protectedServiceUnavailableErr(fullMethod)
+		return publicServiceUnavailableErr(fullMethod)
 	}
 	if !walletStatus.IsInitialized() || !walletStatus.IsUnlocked() || !walletStatus.IsSynced() {
-		return protectedServiceUnavailableErr(fullMethod)
+		return publicServiceUnavailableErr(fullMethod)
 	}
 
 	return nil
 }
 
-func isProtectedServiceMethod(fullMethod string) bool {
+func isPublicServiceMethod(fullMethod string) bool {
 	return strings.HasPrefix(fullMethod, arkServiceMethodPrefix) ||
 		strings.HasPrefix(fullMethod, indexerServiceMethodPrefix)
 }
 
-func protectedServiceUnavailableErr(fullMethod string) error {
+func publicServiceUnavailableErr(fullMethod string) error {
 	msg := arkServiceNotReadyMsg
 	if strings.HasPrefix(fullMethod, indexerServiceMethodPrefix) {
 		msg = indexerServiceNotReadyMsg

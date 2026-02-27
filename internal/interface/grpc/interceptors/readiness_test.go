@@ -22,7 +22,7 @@ func TestUnaryReadinessHandler(t *testing.T) {
 
 		called := false
 		_, err := interceptor(
-			context.Background(),
+			t.Context(),
 			nil,
 			&grpc.UnaryServerInfo{FullMethod: "/ark.v1.ArkService/GetInfo"},
 			func(ctx context.Context, req any) (any, error) {
@@ -39,7 +39,7 @@ func TestUnaryReadinessHandler(t *testing.T) {
 
 		called := false
 		_, err := interceptor(
-			context.Background(),
+			t.Context(),
 			nil,
 			&grpc.UnaryServerInfo{FullMethod: "/ark.v1.ArkService/GetInfo"},
 			func(ctx context.Context, req any) (any, error) {
@@ -65,7 +65,7 @@ func TestStreamReadinessHandler(t *testing.T) {
 		called := false
 		err := interceptor(
 			nil,
-			&testServerStream{ctx: context.Background()},
+			&testServerStream{ctx: t.Context()},
 			&grpc.StreamServerInfo{FullMethod: "/ark.v1.IndexerService/GetAsset"},
 			func(srv any, ss grpc.ServerStream) error {
 				called = true
@@ -82,7 +82,7 @@ func TestStreamReadinessHandler(t *testing.T) {
 		called := false
 		err := interceptor(
 			nil,
-			&testServerStream{ctx: context.Background()},
+			&testServerStream{ctx: t.Context()},
 			&grpc.StreamServerInfo{FullMethod: "/ark.v1.IndexerService/GetAsset"},
 			func(srv any, ss grpc.ServerStream) error {
 				called = true
@@ -97,25 +97,25 @@ func TestStreamReadinessHandler(t *testing.T) {
 }
 
 func TestReadinessServiceCheck(t *testing.T) {
-	t.Run("ignores non protected methods", func(t *testing.T) {
+	t.Run("ignores non public methods", func(t *testing.T) {
 		r := NewReadinessService(nil)
-		require.NoError(t, r.Check(context.Background(), "/ark.v1.WalletService/Lock"))
+		require.NoError(t, r.Check(t.Context(), "/ark.v1.WalletService/Lock"))
 	})
 
 	t.Run("app not started returns unavailable", func(t *testing.T) {
 		r := NewReadinessService(&fakeWalletProvider{
 			status: fakeWalletStatus{initialized: true, unlocked: true, synced: true},
 		})
-		err := r.Check(context.Background(), "/ark.v1.ArkService/GetInfo")
+		err := r.Check(t.Context(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.Unavailable, st.Code())
 	})
 
-	t.Run("wallet status error returns unavailable", func(t *testing.T) {
+	t.Run("wallet status error returns failed precondition", func(t *testing.T) {
 		r := NewReadinessService(&fakeWalletProvider{err: status.Error(codes.Internal, "boom")})
 		r.MarkAppServiceStarted()
-		err := r.Check(context.Background(), "/ark.v1.ArkService/GetInfo")
+		err := r.Check(t.Context(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.FailedPrecondition, st.Code())
@@ -126,18 +126,18 @@ func TestReadinessServiceCheck(t *testing.T) {
 			status: fakeWalletStatus{initialized: true, unlocked: false, synced: false},
 		})
 		r.MarkAppServiceStarted()
-		err := r.Check(context.Background(), "/ark.v1.IndexerService/GetAsset")
+		err := r.Check(t.Context(), "/ark.v1.IndexerService/GetAsset")
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.FailedPrecondition, st.Code())
 	})
 
-	t.Run("ready wallet allows protected methods", func(t *testing.T) {
+	t.Run("ready wallet allows public methods", func(t *testing.T) {
 		r := NewReadinessService(&fakeWalletProvider{
 			status: fakeWalletStatus{initialized: true, unlocked: true, synced: true},
 		})
 		r.MarkAppServiceStarted()
-		require.NoError(t, r.Check(context.Background(), "/ark.v1.ArkService/GetInfo"))
+		require.NoError(t, r.Check(t.Context(), "/ark.v1.ArkService/GetInfo"))
 	})
 }
 

@@ -26,7 +26,7 @@ type grpcClient struct {
 	connMu *sync.RWMutex
 }
 
-func NewClient(serverUrl string, _ bool) (indexer.Indexer, error) {
+func NewClient(serverUrl string) (indexer.Indexer, error) {
 	if len(serverUrl) <= 0 {
 		return nil, fmt.Errorf("missing server url")
 	}
