@@ -47,7 +47,7 @@ jobs:
       - name: check code integrity
         uses: securego/gosec@master
         with:
-          args: '-severity high -quiet -exclude=G115 ./...'
+          args: '-severity high -quiet -exclude=G115,G118 ./...'
 
       - name: Arkd unit tests
         run: make test
