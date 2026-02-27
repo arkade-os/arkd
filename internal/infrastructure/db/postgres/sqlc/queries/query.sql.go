@@ -473,12 +473,12 @@ WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > $1
-  AND ($2::bigint <= 0 OR expires_at < $2)
+  AND ($2 <= 0 OR expires_at < $2)
 `
 
 type SelectExpiringLiquidityAmountParams struct {
 	After  int64
-	Before int64
+	Before interface{}
 }
 
 func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectExpiringLiquidityAmountParams) (int64, error) {

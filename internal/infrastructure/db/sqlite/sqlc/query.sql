@@ -263,13 +263,13 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkeys'))
     AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER));
 
 -- name: SelectExpiringLiquidityAmount :one
-SELECT CAST(COALESCE(SUM(amount), 0) AS INTEGER) AS amount
+SELECT COALESCE(SUM(amount), 0) AS amount
 FROM vtxo
 WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > sqlc.arg('after')
-  AND (CAST(sqlc.arg('before') AS INTEGER) <= 0 OR expires_at < sqlc.arg('before'));
+  AND (sqlc.arg('before') <= 0 OR expires_at < sqlc.arg('before'));
 
 -- name: SelectRecoverableLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0) AS amount

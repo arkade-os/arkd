@@ -489,23 +489,23 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 }
 
 const selectExpiringLiquidityAmount = `-- name: SelectExpiringLiquidityAmount :one
-SELECT CAST(COALESCE(SUM(amount), 0) AS INTEGER) AS amount
+SELECT COALESCE(SUM(amount), 0) AS amount
 FROM vtxo
 WHERE swept = false
   AND spent = false
   AND unrolled = false
   AND expires_at > ?1
-  AND (CAST(?2 AS INTEGER) <= 0 OR expires_at < ?2)
+  AND (?2 <= 0 OR expires_at < ?2)
 `
 
 type SelectExpiringLiquidityAmountParams struct {
 	After  int64
-	Before int64
+	Before interface{}
 }
 
-func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectExpiringLiquidityAmountParams) (int64, error) {
+func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectExpiringLiquidityAmountParams) (interface{}, error) {
 	row := q.db.QueryRowContext(ctx, selectExpiringLiquidityAmount, arg.After, arg.Before)
-	var amount int64
+	var amount interface{}
 	err := row.Scan(&amount)
 	return amount, err
 }
