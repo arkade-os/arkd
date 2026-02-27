@@ -335,7 +335,7 @@ func (m *markerRepository) GetVtxosByArkTxid(
 	ctx context.Context,
 	arkTxid string,
 ) ([]domain.Vtxo, error) {
-	rows, err := m.querier.SelectVtxosByArkTxid(ctx, arkTxid)
+	rows, err := m.querier.SelectVtxosByArkTxid(ctx, sql.NullString{String: arkTxid, Valid: arkTxid != ""})
 	if err != nil {
 		return nil, err
 	}

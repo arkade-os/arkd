@@ -598,6 +598,49 @@ func (q *Queries) SelectIntentByTxid(ctx context.Context, txid sql.NullString) (
 	return i, err
 }
 
+const selectIntentReceiversByRoundId = `-- name: SelectIntentReceiversByRoundId :many
+SELECT intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message, intent_with_receivers_vw.txid
+FROM intent_with_receivers_vw
+WHERE intent_with_receivers_vw.round_id = ?1
+`
+
+type SelectIntentReceiversByRoundIdRow struct {
+	IntentWithReceiversVw IntentWithReceiversVw
+}
+
+func (q *Queries) SelectIntentReceiversByRoundId(ctx context.Context, roundID sql.NullString) ([]SelectIntentReceiversByRoundIdRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectIntentReceiversByRoundId, roundID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectIntentReceiversByRoundIdRow
+	for rows.Next() {
+		var i SelectIntentReceiversByRoundIdRow
+		if err := rows.Scan(
+			&i.IntentWithReceiversVw.IntentID,
+			&i.IntentWithReceiversVw.Pubkey,
+			&i.IntentWithReceiversVw.OnchainAddress,
+			&i.IntentWithReceiversVw.Amount,
+			&i.IntentWithReceiversVw.ID,
+			&i.IntentWithReceiversVw.RoundID,
+			&i.IntentWithReceiversVw.Proof,
+			&i.IntentWithReceiversVw.Message,
+			&i.IntentWithReceiversVw.Txid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
 SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
 `
@@ -1375,23 +1418,17 @@ func (q *Queries) SelectRoundVtxoTreeLeaves(ctx context.Context, commitmentTxid 
 const selectRoundWithId = `-- name: SelectRoundWithId :many
 SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason,
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message, round_intents_vw.txid,
-    round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
-    intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message, intent_with_receivers_vw.txid,
-    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.depth, intent_with_inputs_vw.markers, intent_with_inputs_vw.commitments, intent_with_inputs_vw.swept, intent_with_inputs_vw.asset_id, intent_with_inputs_vw.asset_amount, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message, intent_with_inputs_vw.intent_txid
+    round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
-LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
-LEFT OUTER JOIN intent_with_inputs_vw ON round_intents_vw.id=intent_with_inputs_vw.intent_id
 WHERE round.id = ?1
 `
 
 type SelectRoundWithIdRow struct {
-	Round                 Round
-	RoundIntentsVw        RoundIntentsVw
-	RoundTxsVw            RoundTxsVw
-	IntentWithReceiversVw IntentWithReceiversVw
-	IntentWithInputsVw    IntentWithInputsVw
+	Round          Round
+	RoundIntentsVw RoundIntentsVw
+	RoundTxsVw     RoundTxsVw
 }
 
 func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRoundWithIdRow, error) {
@@ -1426,41 +1463,6 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 			&i.RoundTxsVw.Type,
 			&i.RoundTxsVw.Position,
 			&i.RoundTxsVw.Children,
-			&i.IntentWithReceiversVw.IntentID,
-			&i.IntentWithReceiversVw.Pubkey,
-			&i.IntentWithReceiversVw.OnchainAddress,
-			&i.IntentWithReceiversVw.Amount,
-			&i.IntentWithReceiversVw.ID,
-			&i.IntentWithReceiversVw.RoundID,
-			&i.IntentWithReceiversVw.Proof,
-			&i.IntentWithReceiversVw.Message,
-			&i.IntentWithReceiversVw.Txid,
-			&i.IntentWithInputsVw.Txid,
-			&i.IntentWithInputsVw.Vout,
-			&i.IntentWithInputsVw.Pubkey,
-			&i.IntentWithInputsVw.Amount,
-			&i.IntentWithInputsVw.ExpiresAt,
-			&i.IntentWithInputsVw.CreatedAt,
-			&i.IntentWithInputsVw.CommitmentTxid,
-			&i.IntentWithInputsVw.SpentBy,
-			&i.IntentWithInputsVw.Spent,
-			&i.IntentWithInputsVw.Unrolled,
-			&i.IntentWithInputsVw.Preconfirmed,
-			&i.IntentWithInputsVw.SettledBy,
-			&i.IntentWithInputsVw.ArkTxid,
-			&i.IntentWithInputsVw.IntentID,
-			&i.IntentWithInputsVw.UpdatedAt,
-			&i.IntentWithInputsVw.Depth,
-			&i.IntentWithInputsVw.Markers,
-			&i.IntentWithInputsVw.Commitments,
-			&i.IntentWithInputsVw.Swept,
-			&i.IntentWithInputsVw.AssetID,
-			&i.IntentWithInputsVw.AssetAmount,
-			&i.IntentWithInputsVw.ID,
-			&i.IntentWithInputsVw.RoundID,
-			&i.IntentWithInputsVw.Proof,
-			&i.IntentWithInputsVw.Message,
-			&i.IntentWithInputsVw.IntentTxid,
 		); err != nil {
 			return nil, err
 		}
@@ -1478,25 +1480,19 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 const selectRoundWithTxid = `-- name: SelectRoundWithTxid :many
 SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason,
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message, round_intents_vw.txid,
-    round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
-    intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message, intent_with_receivers_vw.txid,
-    intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.depth, intent_with_inputs_vw.markers, intent_with_inputs_vw.commitments, intent_with_inputs_vw.swept, intent_with_inputs_vw.asset_id, intent_with_inputs_vw.asset_amount, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message, intent_with_inputs_vw.intent_txid
+    round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
-LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
-LEFT OUTER JOIN intent_with_inputs_vw ON round_intents_vw.id=intent_with_inputs_vw.intent_id
 WHERE round.id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = ?1 AND type = 'commitment'
 )
 `
 
 type SelectRoundWithTxidRow struct {
-	Round                 Round
-	RoundIntentsVw        RoundIntentsVw
-	RoundTxsVw            RoundTxsVw
-	IntentWithReceiversVw IntentWithReceiversVw
-	IntentWithInputsVw    IntentWithInputsVw
+	Round          Round
+	RoundIntentsVw RoundIntentsVw
+	RoundTxsVw     RoundTxsVw
 }
 
 func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]SelectRoundWithTxidRow, error) {
@@ -1531,41 +1527,6 @@ func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]Selec
 			&i.RoundTxsVw.Type,
 			&i.RoundTxsVw.Position,
 			&i.RoundTxsVw.Children,
-			&i.IntentWithReceiversVw.IntentID,
-			&i.IntentWithReceiversVw.Pubkey,
-			&i.IntentWithReceiversVw.OnchainAddress,
-			&i.IntentWithReceiversVw.Amount,
-			&i.IntentWithReceiversVw.ID,
-			&i.IntentWithReceiversVw.RoundID,
-			&i.IntentWithReceiversVw.Proof,
-			&i.IntentWithReceiversVw.Message,
-			&i.IntentWithReceiversVw.Txid,
-			&i.IntentWithInputsVw.Txid,
-			&i.IntentWithInputsVw.Vout,
-			&i.IntentWithInputsVw.Pubkey,
-			&i.IntentWithInputsVw.Amount,
-			&i.IntentWithInputsVw.ExpiresAt,
-			&i.IntentWithInputsVw.CreatedAt,
-			&i.IntentWithInputsVw.CommitmentTxid,
-			&i.IntentWithInputsVw.SpentBy,
-			&i.IntentWithInputsVw.Spent,
-			&i.IntentWithInputsVw.Unrolled,
-			&i.IntentWithInputsVw.Preconfirmed,
-			&i.IntentWithInputsVw.SettledBy,
-			&i.IntentWithInputsVw.ArkTxid,
-			&i.IntentWithInputsVw.IntentID,
-			&i.IntentWithInputsVw.UpdatedAt,
-			&i.IntentWithInputsVw.Depth,
-			&i.IntentWithInputsVw.Markers,
-			&i.IntentWithInputsVw.Commitments,
-			&i.IntentWithInputsVw.Swept,
-			&i.IntentWithInputsVw.AssetID,
-			&i.IntentWithInputsVw.AssetAmount,
-			&i.IntentWithInputsVw.ID,
-			&i.IntentWithInputsVw.RoundID,
-			&i.IntentWithInputsVw.Proof,
-			&i.IntentWithInputsVw.Message,
-			&i.IntentWithInputsVw.IntentTxid,
 		); err != nil {
 			return nil, err
 		}
@@ -1998,6 +1959,66 @@ func (q *Queries) SelectVtxoChainByMarker(ctx context.Context, markerID sql.Null
 	return items, nil
 }
 
+const selectVtxoInputsByRoundId = `-- name: SelectVtxoInputsByRoundId :many
+SELECT intent_with_inputs_vw.txid, intent_with_inputs_vw.vout, intent_with_inputs_vw.pubkey, intent_with_inputs_vw.amount, intent_with_inputs_vw.expires_at, intent_with_inputs_vw.created_at, intent_with_inputs_vw.commitment_txid, intent_with_inputs_vw.spent_by, intent_with_inputs_vw.spent, intent_with_inputs_vw.unrolled, intent_with_inputs_vw.preconfirmed, intent_with_inputs_vw.settled_by, intent_with_inputs_vw.ark_txid, intent_with_inputs_vw.intent_id, intent_with_inputs_vw.updated_at, intent_with_inputs_vw.depth, intent_with_inputs_vw.markers, intent_with_inputs_vw.commitments, intent_with_inputs_vw.swept, intent_with_inputs_vw.asset_id, intent_with_inputs_vw.asset_amount, intent_with_inputs_vw.id, intent_with_inputs_vw.round_id, intent_with_inputs_vw.proof, intent_with_inputs_vw.message, intent_with_inputs_vw.intent_txid
+FROM intent_with_inputs_vw
+WHERE intent_with_inputs_vw.round_id = ?1
+`
+
+type SelectVtxoInputsByRoundIdRow struct {
+	IntentWithInputsVw IntentWithInputsVw
+}
+
+func (q *Queries) SelectVtxoInputsByRoundId(ctx context.Context, roundID sql.NullString) ([]SelectVtxoInputsByRoundIdRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxoInputsByRoundId, roundID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxoInputsByRoundIdRow
+	for rows.Next() {
+		var i SelectVtxoInputsByRoundIdRow
+		if err := rows.Scan(
+			&i.IntentWithInputsVw.Txid,
+			&i.IntentWithInputsVw.Vout,
+			&i.IntentWithInputsVw.Pubkey,
+			&i.IntentWithInputsVw.Amount,
+			&i.IntentWithInputsVw.ExpiresAt,
+			&i.IntentWithInputsVw.CreatedAt,
+			&i.IntentWithInputsVw.CommitmentTxid,
+			&i.IntentWithInputsVw.SpentBy,
+			&i.IntentWithInputsVw.Spent,
+			&i.IntentWithInputsVw.Unrolled,
+			&i.IntentWithInputsVw.Preconfirmed,
+			&i.IntentWithInputsVw.SettledBy,
+			&i.IntentWithInputsVw.ArkTxid,
+			&i.IntentWithInputsVw.IntentID,
+			&i.IntentWithInputsVw.UpdatedAt,
+			&i.IntentWithInputsVw.Depth,
+			&i.IntentWithInputsVw.Markers,
+			&i.IntentWithInputsVw.Commitments,
+			&i.IntentWithInputsVw.Swept,
+			&i.IntentWithInputsVw.AssetID,
+			&i.IntentWithInputsVw.AssetAmount,
+			&i.IntentWithInputsVw.ID,
+			&i.IntentWithInputsVw.RoundID,
+			&i.IntentWithInputsVw.Proof,
+			&i.IntentWithInputsVw.Message,
+			&i.IntentWithInputsVw.IntentTxid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxoPubKeysByCommitmentTxid = `-- name: SelectVtxoPubKeysByCommitmentTxid :many
 SELECT DISTINCT v.pubkey
 FROM vtxo_vw v
@@ -2043,7 +2064,7 @@ type SelectVtxosByArkTxidRow struct {
 }
 
 // Get all VTXOs created by a specific ark tx (offchain tx)
-func (q *Queries) SelectVtxosByArkTxid(ctx context.Context, arkTxid string) ([]SelectVtxosByArkTxidRow, error) {
+func (q *Queries) SelectVtxosByArkTxid(ctx context.Context, arkTxid sql.NullString) ([]SelectVtxosByArkTxidRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectVtxosByArkTxid, arkTxid)
 	if err != nil {
 		return nil, err

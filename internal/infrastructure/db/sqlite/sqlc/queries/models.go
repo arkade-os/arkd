@@ -79,9 +79,9 @@ type IntentWithInputsVw struct {
 	Depth          sql.NullInt64
 	Markers        sql.NullString
 	Commitments    interface{}
-	Swept          sql.NullInt64
-	AssetID        sql.NullString
-	AssetAmount    sql.NullString
+	Swept          int64
+	AssetID        string
+	AssetAmount    string
 	ID             sql.NullString
 	RoundID        sql.NullString
 	Proof          sql.NullString

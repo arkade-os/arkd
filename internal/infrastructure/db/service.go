@@ -667,6 +667,11 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				continue
 			}
 
+			// at that point, we should only have valid taproot script
+			if len(out.PkScript) != 34 {
+				continue
+			}
+
 			outpoint := domain.Outpoint{
 				Txid: txid,
 				VOut: uint32(outIndex),

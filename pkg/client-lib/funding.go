@@ -278,7 +278,10 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 		closeFn()
 	}()
 
-	event := <-eventCh
+	event, ok := <-eventCh
+	if !ok {
+		return nil, fmt.Errorf("event chan closed")
+	}
 
 	if event.Err != nil {
 		return nil, event.Err

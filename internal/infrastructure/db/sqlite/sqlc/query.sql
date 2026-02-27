@@ -128,30 +128,32 @@ WHERE txid = @txid AND vout = @vout;
 -- name: SelectRoundWithId :many
 SELECT sqlc.embed(round),
     sqlc.embed(round_intents_vw),
-    sqlc.embed(round_txs_vw),
-    sqlc.embed(intent_with_receivers_vw),
-    sqlc.embed(intent_with_inputs_vw)
+    sqlc.embed(round_txs_vw)
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
-LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
-LEFT OUTER JOIN intent_with_inputs_vw ON round_intents_vw.id=intent_with_inputs_vw.intent_id
 WHERE round.id = @id;
 
 -- name: SelectRoundWithTxid :many
 SELECT sqlc.embed(round),
     sqlc.embed(round_intents_vw),
-    sqlc.embed(round_txs_vw),
-    sqlc.embed(intent_with_receivers_vw),
-    sqlc.embed(intent_with_inputs_vw)
+    sqlc.embed(round_txs_vw)
 FROM round
 LEFT OUTER JOIN round_intents_vw ON round.id=round_intents_vw.round_id
 LEFT OUTER JOIN round_txs_vw ON round.id=round_txs_vw.round_id
-LEFT OUTER JOIN intent_with_receivers_vw ON round_intents_vw.id=intent_with_receivers_vw.intent_id
-LEFT OUTER JOIN intent_with_inputs_vw ON round_intents_vw.id=intent_with_inputs_vw.intent_id
 WHERE round.id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = @txid AND type = 'commitment'
 );
+
+-- name: SelectIntentReceiversByRoundId :many
+SELECT sqlc.embed(intent_with_receivers_vw)
+FROM intent_with_receivers_vw
+WHERE intent_with_receivers_vw.round_id = @round_id;
+
+-- name: SelectVtxoInputsByRoundId :many
+SELECT sqlc.embed(intent_with_inputs_vw)
+FROM intent_with_inputs_vw
+WHERE intent_with_inputs_vw.round_id = @round_id;
 
 -- name: SelectSweepableRounds :many
 SELECT txid FROM round_with_commitment_tx_vw r 

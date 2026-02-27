@@ -183,7 +183,7 @@ func (v *vtxoRepository) GetVtxos(
 		}
 
 		if len(res) == 0 {
-			return nil, nil
+			continue
 		}
 
 		rows := make([]queries.VtxoVw, 0, len(res))
@@ -197,7 +197,7 @@ func (v *vtxoRepository) GetVtxos(
 		}
 
 		if len(result) == 0 {
-			return nil, fmt.Errorf("vtxo not found")
+			continue
 		}
 
 		vtxos = append(vtxos, result[0])
