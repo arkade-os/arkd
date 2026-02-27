@@ -126,6 +126,23 @@ service AdminService {
       body: "*"
     };
   }
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/settings"
+    };
+  }
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/settings"
+      body: "*"
+    };
+  }
+  rpc ClearSettings(ClearSettingsRequest) returns (ClearSettingsResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/settings/clear"
+      body: "*"
+    };
+  }
 }
 
 message GetScheduledSweepRequest {}
@@ -360,3 +377,36 @@ message SweepResponse {
   string txid = 1;
   string hex = 2;
 }
+
+message Settings {
+  int64 ban_threshold = 1;
+  int64 ban_duration = 2;
+  int64 unilateral_exit_delay = 3;
+  int64 public_unilateral_exit_delay = 4;
+  int64 checkpoint_exit_delay = 5;
+  int64 boarding_exit_delay = 6;
+  int64 vtxo_tree_expiry = 7;
+  int64 round_min_participants_count = 8;
+  int64 round_max_participants_count = 9;
+  int64 vtxo_min_amount = 10;
+  int64 vtxo_max_amount = 11;
+  int64 utxo_min_amount = 12;
+  int64 utxo_max_amount = 13;
+  int64 settlement_min_expiry_gap = 14;
+  int64 vtxo_no_csv_validation_cutoff_date = 15;
+  int64 max_tx_weight = 16;
+  int64 updated_at = 17;
+}
+
+message GetSettingsRequest {}
+message GetSettingsResponse {
+  Settings settings = 1;
+}
+
+message UpdateSettingsRequest {
+  Settings settings = 1;
+}
+message UpdateSettingsResponse {}
+
+message ClearSettingsRequest {}
+message ClearSettingsResponse {}

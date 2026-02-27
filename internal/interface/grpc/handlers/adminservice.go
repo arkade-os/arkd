@@ -552,6 +552,84 @@ func (a *adminHandler) ClearIntentFees(
 	return &arkv1.ClearIntentFeesResponse{}, nil
 }
 
+func (a *adminHandler) GetSettings(
+	ctx context.Context, _ *arkv1.GetSettingsRequest,
+) (*arkv1.GetSettingsResponse, error) {
+	settings, err := a.adminService.GetSettings(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	var protoSettings *arkv1.Settings
+	if settings != nil {
+		protoSettings = &arkv1.Settings{
+			BanThreshold:                  settings.BanThreshold,
+			BanDuration:                   settings.BanDuration,
+			UnilateralExitDelay:           settings.UnilateralExitDelay,
+			PublicUnilateralExitDelay:     settings.PublicUnilateralExitDelay,
+			CheckpointExitDelay:           settings.CheckpointExitDelay,
+			BoardingExitDelay:             settings.BoardingExitDelay,
+			VtxoTreeExpiry:                settings.VtxoTreeExpiry,
+			RoundMinParticipantsCount:     settings.RoundMinParticipantsCount,
+			RoundMaxParticipantsCount:     settings.RoundMaxParticipantsCount,
+			VtxoMinAmount:                 settings.VtxoMinAmount,
+			VtxoMaxAmount:                 settings.VtxoMaxAmount,
+			UtxoMinAmount:                 settings.UtxoMinAmount,
+			UtxoMaxAmount:                 settings.UtxoMaxAmount,
+			SettlementMinExpiryGap:        settings.SettlementMinExpiryGap,
+			VtxoNoCsvValidationCutoffDate: settings.VtxoNoCsvValidationCutoffDate,
+			MaxTxWeight:                   settings.MaxTxWeight,
+			UpdatedAt:                     settings.UpdatedAt.Unix(),
+		}
+	}
+
+	return &arkv1.GetSettingsResponse{Settings: protoSettings}, nil
+}
+
+func (a *adminHandler) UpdateSettings(
+	ctx context.Context, req *arkv1.UpdateSettingsRequest,
+) (*arkv1.UpdateSettingsResponse, error) {
+	s := req.GetSettings()
+	if s == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing settings")
+	}
+
+	settings := domain.Settings{
+		BanThreshold:                  s.GetBanThreshold(),
+		BanDuration:                   s.GetBanDuration(),
+		UnilateralExitDelay:           s.GetUnilateralExitDelay(),
+		PublicUnilateralExitDelay:     s.GetPublicUnilateralExitDelay(),
+		CheckpointExitDelay:           s.GetCheckpointExitDelay(),
+		BoardingExitDelay:             s.GetBoardingExitDelay(),
+		VtxoTreeExpiry:                s.GetVtxoTreeExpiry(),
+		RoundMinParticipantsCount:     s.GetRoundMinParticipantsCount(),
+		RoundMaxParticipantsCount:     s.GetRoundMaxParticipantsCount(),
+		VtxoMinAmount:                 s.GetVtxoMinAmount(),
+		VtxoMaxAmount:                 s.GetVtxoMaxAmount(),
+		UtxoMinAmount:                 s.GetUtxoMinAmount(),
+		UtxoMaxAmount:                 s.GetUtxoMaxAmount(),
+		SettlementMinExpiryGap:        s.GetSettlementMinExpiryGap(),
+		VtxoNoCsvValidationCutoffDate: s.GetVtxoNoCsvValidationCutoffDate(),
+		MaxTxWeight:                   s.GetMaxTxWeight(),
+	}
+
+	if err := a.adminService.UpdateSettings(ctx, settings); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.UpdateSettingsResponse{}, nil
+}
+
+func (a *adminHandler) ClearSettings(
+	ctx context.Context, _ *arkv1.ClearSettingsRequest,
+) (*arkv1.ClearSettingsResponse, error) {
+	if err := a.adminService.ClearSettings(ctx); err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.ClearSettingsResponse{}, nil
+}
+
 func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, error) {
 	var expiresAt int64
 	if conviction.GetExpiresAt() != nil {

@@ -188,6 +188,7 @@ func TestService(t *testing.T) {
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
 			testFeeRepository(t, svc)
+			testSettingsRepository(t, svc)
 
 			svc.Close()
 		})
@@ -1824,6 +1825,97 @@ func testFeeRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, "", updatedFees.OnchainOutputFee)
 		require.Equal(t, "", updatedFees.OffchainOutputFee)
 	})
+}
+
+func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_settings_repository", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Settings()
+
+		// Get returns nil when no settings exist
+		settings, err := repo.Get(ctx)
+		require.NoError(t, err)
+		require.Nil(t, settings)
+
+		now := time.Now().Truncate(time.Second)
+		expected := domain.Settings{
+			BanThreshold:                  3,
+			BanDuration:                   3600,
+			UnilateralExitDelay:           512,
+			PublicUnilateralExitDelay:     256,
+			CheckpointExitDelay:           128,
+			BoardingExitDelay:             64,
+			VtxoTreeExpiry:                1024,
+			RoundMinParticipantsCount:     2,
+			RoundMaxParticipantsCount:     128,
+			VtxoMinAmount:                 1000,
+			VtxoMaxAmount:                 100000000,
+			UtxoMinAmount:                 5000,
+			UtxoMaxAmount:                 500000000,
+			SettlementMinExpiryGap:        7200,
+			VtxoNoCsvValidationCutoffDate: 1700000000,
+			MaxTxWeight:                   400000,
+			UpdatedAt:                     now,
+		}
+
+		// Upsert inserts new settings
+		err = repo.Upsert(ctx, expected)
+		require.NoError(t, err)
+
+		got, err := repo.Get(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assertSettingsEqual(t, expected, *got)
+
+		// Upsert updates existing settings
+		expected.BanThreshold = 5
+		expected.BanDuration = 7200
+		expected.RoundMaxParticipantsCount = 256
+		expected.VtxoMinAmount = 2000
+		expected.MaxTxWeight = 500000
+		expected.UpdatedAt = now.Add(100 * time.Second)
+
+		err = repo.Upsert(ctx, expected)
+		require.NoError(t, err)
+
+		got, err = repo.Get(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assertSettingsEqual(t, expected, *got)
+
+		// Clear removes all settings
+		err = repo.Clear(ctx)
+		require.NoError(t, err)
+
+		settings, err = repo.Get(ctx)
+		require.NoError(t, err)
+		require.Nil(t, settings)
+
+		// No error if trying to clear already cleared settings
+		err = repo.Clear(ctx)
+		require.NoError(t, err)
+	})
+}
+
+func assertSettingsEqual(t *testing.T, expected, actual domain.Settings) {
+	t.Helper()
+	assert.Equal(t, expected.BanThreshold, actual.BanThreshold, "BanThreshold not equal")
+	assert.Equal(t, expected.BanDuration, actual.BanDuration, "BanDuration not equal")
+	assert.Equal(t, expected.UnilateralExitDelay, actual.UnilateralExitDelay, "UnilateralExitDelay not equal")
+	assert.Equal(t, expected.PublicUnilateralExitDelay, actual.PublicUnilateralExitDelay, "PublicUnilateralExitDelay not equal")
+	assert.Equal(t, expected.CheckpointExitDelay, actual.CheckpointExitDelay, "CheckpointExitDelay not equal")
+	assert.Equal(t, expected.BoardingExitDelay, actual.BoardingExitDelay, "BoardingExitDelay not equal")
+	assert.Equal(t, expected.VtxoTreeExpiry, actual.VtxoTreeExpiry, "VtxoTreeExpiry not equal")
+	assert.Equal(t, expected.RoundMinParticipantsCount, actual.RoundMinParticipantsCount, "RoundMinParticipantsCount not equal")
+	assert.Equal(t, expected.RoundMaxParticipantsCount, actual.RoundMaxParticipantsCount, "RoundMaxParticipantsCount not equal")
+	assert.Equal(t, expected.VtxoMinAmount, actual.VtxoMinAmount, "VtxoMinAmount not equal")
+	assert.Equal(t, expected.VtxoMaxAmount, actual.VtxoMaxAmount, "VtxoMaxAmount not equal")
+	assert.Equal(t, expected.UtxoMinAmount, actual.UtxoMinAmount, "UtxoMinAmount not equal")
+	assert.Equal(t, expected.UtxoMaxAmount, actual.UtxoMaxAmount, "UtxoMaxAmount not equal")
+	assert.Equal(t, expected.SettlementMinExpiryGap, actual.SettlementMinExpiryGap, "SettlementMinExpiryGap not equal")
+	assert.Equal(t, expected.VtxoNoCsvValidationCutoffDate, actual.VtxoNoCsvValidationCutoffDate, "VtxoNoCsvValidationCutoffDate not equal")
+	assert.Equal(t, expected.MaxTxWeight, actual.MaxTxWeight, "MaxTxWeight not equal")
+	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
 }
 
 func assertScheduledSessionEqual(t *testing.T, expected, actual domain.ScheduledSession) {

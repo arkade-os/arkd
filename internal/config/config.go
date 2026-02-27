@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/application"
+	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
@@ -162,8 +164,6 @@ var (
 	WalletAddr                           = "WALLET_ADDR"
 	SignerAddr                           = "SIGNER_ADDR"
 	SessionDuration                      = "SESSION_DURATION"
-	BanDuration                          = "BAN_DURATION"
-	BanThreshold                         = "BAN_THRESHOLD"
 	Port                                 = "PORT"
 	AdminPort                            = "ADMIN_PORT"
 	EventDbType                          = "EVENT_DB_TYPE"
@@ -177,11 +177,6 @@ var (
 	RedisUrl                             = "REDIS_URL"
 	RedisTxNumOfRetries                  = "REDIS_NUM_OF_RETRIES"
 	LogLevel                             = "LOG_LEVEL"
-	VtxoTreeExpiry                       = "VTXO_TREE_EXPIRY"
-	UnilateralExitDelay                  = "UNILATERAL_EXIT_DELAY"
-	PublicUnilateralExitDelay            = "PUBLIC_UNILATERAL_EXIT_DELAY"
-	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
-	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
 	EsploraURL                           = "ESPLORA_URL"
 	AlertManagerURL                      = "ALERT_MANAGER_URL"
 	NoMacaroons                          = "NO_MACAROONS"
@@ -201,26 +196,13 @@ var (
 	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
 	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
 	PyroscopeServerURL                   = "PYROSCOPE_SERVER_URL"
-	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
-	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
-	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
-	VtxoMaxAmount                        = "VTXO_MAX_AMOUNT"
-	UtxoMinAmount                        = "UTXO_MIN_AMOUNT"
-	VtxoMinAmount                        = "VTXO_MIN_AMOUNT"
 	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
-	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
-	// Max transaction weight accepted by the ark server
-	MaxTxWeight = "MAX_TX_WEIGHT"
-	// Skip CSV validation for vtxos created before this date
-	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
-	EnablePprof                   = "ENABLE_PPROF"
+	EnablePprof                          = "ENABLE_PPROF"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
-	defaultBanDuration         = 10 * defaultSessionDuration
-	defaultBanThreshold        = 3
 	DefaultPort                = 7070
 	DefaultAdminPort           = 7071
 	defaultDbType              = "postgres"
@@ -231,27 +213,14 @@ var (
 	defaultRedisTxNumOfRetries = 10
 	defaultEsploraURL          = "https://blockstream.info/api"
 	defaultLogLevel            = 4
-	defaultVtxoTreeExpiry      = 604672  // 7 days
-	defaultUnilateralExitDelay = 86400   // 24 hours
-	defaultCheckpointExitDelay = 86400   // 24 hours
-	defaultBoardingExitDelay   = 7776000 // 3 months
 	defaultNoMacaroons         = false
 	defaultNoTLS               = true
-	defaultUtxoMaxAmount       = -1 // -1 means no limit (default), 0 means boarding not allowed
-	defaultUtxoMinAmount       = -1 // -1 means native dust limit (default)
-	defaultVtxoMinAmount       = -1 // -1 means native dust limit (default)
-	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
 	defaultAllowCSVBlockType   = false
 
-	defaultRoundMaxParticipantsCount     = 128
-	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10 // seconds
-	defaultHeartbeatInterval             = 60 // seconds
-	defaultRoundReportServiceEnabled     = false
-	defaultSettlementMinExpiryGap        = 0 // disabled by default
-	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
-	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
-	defaultEnablePprof                   = false
+	defaultOtelPushInterval          = 10 // seconds
+	defaultHeartbeatInterval         = 60 // seconds
+	defaultRoundReportServiceEnabled = false
+	defaultEnablePprof               = false
 )
 
 func LoadConfig() (*Config, error) {
@@ -265,33 +234,17 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(SessionDuration, defaultSessionDuration)
-	viper.SetDefault(BanDuration, defaultBanDuration)
-	viper.SetDefault(BanThreshold, defaultBanThreshold)
-	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
 	viper.SetDefault(SchedulerType, defaultSchedulerType)
 	viper.SetDefault(EventDbType, defaultEventDbType)
 	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
-	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
-	viper.SetDefault(PublicUnilateralExitDelay, defaultUnilateralExitDelay)
-	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
-	viper.SetDefault(BoardingExitDelay, defaultBoardingExitDelay)
-	viper.SetDefault(RoundMaxParticipantsCount, defaultRoundMaxParticipantsCount)
-	viper.SetDefault(RoundMinParticipantsCount, defaultRoundMinParticipantsCount)
-	viper.SetDefault(UtxoMaxAmount, defaultUtxoMaxAmount)
-	viper.SetDefault(UtxoMinAmount, defaultUtxoMinAmount)
-	viper.SetDefault(VtxoMaxAmount, defaultVtxoMaxAmount)
-	viper.SetDefault(VtxoMinAmount, defaultVtxoMinAmount)
 	viper.SetDefault(LiveStoreType, defaultLiveStoreType)
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
 	viper.SetDefault(AllowCSVBlockType, defaultAllowCSVBlockType)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
-	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
-	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
-	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 
 	if err := initDatadir(); err != nil {
@@ -345,8 +298,6 @@ func LoadConfig() (*Config, error) {
 		WalletAddr:                viper.GetString(WalletAddr),
 		SignerAddr:                signerAddr,
 		SessionDuration:           viper.GetInt64(SessionDuration),
-		BanDuration:               viper.GetInt64(BanDuration),
-		BanThreshold:              viper.GetInt64(BanThreshold),
 		Port:                      viper.GetUint32(Port),
 		AdminPort:                 adminPort,
 		EventDbType:               viper.GetString(EventDbType),
@@ -363,11 +314,6 @@ func LoadConfig() (*Config, error) {
 		EventDbUrl:                eventDbUrl,
 		PostgresAutoCreateDB:      viper.GetBool(PostgresAutoCreateDB),
 		LogLevel:                  viper.GetInt(LogLevel),
-		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
-		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
-		PublicUnilateralExitDelay: determineLocktimeType(viper.GetInt64(PublicUnilateralExitDelay)),
-		CheckpointExitDelay:       determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
-		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
 		EsploraURL:                viper.GetString(EsploraURL),
 		AlertManagerURL:           viper.GetString(AlertManagerURL),
 		NoMacaroons:               viper.GetBool(NoMacaroons),
@@ -392,18 +338,9 @@ func LoadConfig() (*Config, error) {
 		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
 		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
 
-		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
-		RoundMinParticipantsCount:     viper.GetInt64(RoundMinParticipantsCount),
-		UtxoMaxAmount:                 viper.GetInt64(UtxoMaxAmount),
-		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
-		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
-		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
-		AllowCSVBlockType:             allowCSVBlockType,
-		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
-		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
-		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
-		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
-		EnablePprof:                   viper.GetBool(EnablePprof),
+		AllowCSVBlockType:         allowCSVBlockType,
+		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
+		EnablePprof:               viper.GetBool(EnablePprof),
 	}, nil
 }
 
@@ -425,6 +362,54 @@ func determineLocktimeType(locktime int64) arklib.RelativeLocktime {
 	}
 
 	return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(locktime)}
+}
+
+func (c *Config) loadSettings() error {
+	ctx := context.Background()
+	settings, err := c.repo.Settings().Get(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get settings: %w", err)
+	}
+	if settings == nil {
+		settings = &domain.Settings{
+			BanThreshold:              3,
+			BanDuration:               300,     // 10 * 30s
+			VtxoTreeExpiry:            604672,  // ~7 days
+			UnilateralExitDelay:       86400,   // 24 hours
+			PublicUnilateralExitDelay: 86400,   // 24 hours
+			CheckpointExitDelay:       86400,   // 24 hours
+			BoardingExitDelay:         7776000, // 3 months
+			RoundMinParticipantsCount: 1,
+			RoundMaxParticipantsCount: 128,
+			UtxoMaxAmount:             -1,
+			UtxoMinAmount:             -1,
+			VtxoMaxAmount:             -1,
+			VtxoMinAmount:             -1,
+			MaxTxWeight:               int64(0.01 * bitcoinBlockWeight),
+			UpdatedAt:                 time.Now(),
+		}
+		if err := c.repo.Settings().Upsert(ctx, *settings); err != nil {
+			return fmt.Errorf("failed to seed default settings: %w", err)
+		}
+	}
+
+	c.BanThreshold = settings.BanThreshold
+	c.BanDuration = settings.BanDuration
+	c.VtxoTreeExpiry = determineLocktimeType(settings.VtxoTreeExpiry)
+	c.UnilateralExitDelay = determineLocktimeType(settings.UnilateralExitDelay)
+	c.PublicUnilateralExitDelay = determineLocktimeType(settings.PublicUnilateralExitDelay)
+	c.CheckpointExitDelay = determineLocktimeType(settings.CheckpointExitDelay)
+	c.BoardingExitDelay = determineLocktimeType(settings.BoardingExitDelay)
+	c.RoundMinParticipantsCount = settings.RoundMinParticipantsCount
+	c.RoundMaxParticipantsCount = settings.RoundMaxParticipantsCount
+	c.VtxoMinAmount = settings.VtxoMinAmount
+	c.VtxoMaxAmount = settings.VtxoMaxAmount
+	c.UtxoMinAmount = settings.UtxoMinAmount
+	c.UtxoMaxAmount = settings.UtxoMaxAmount
+	c.SettlementMinExpiryGap = settings.SettlementMinExpiryGap
+	c.VtxoNoCsvValidationCutoffDate = settings.VtxoNoCsvValidationCutoffDate
+	c.MaxTxWeight = uint64(settings.MaxTxWeight)
+	return nil
 }
 
 func (c *Config) Validate() error {
@@ -464,6 +449,14 @@ func (c *Config) Validate() error {
 	if c.SessionDuration < 2 {
 		return fmt.Errorf("invalid session duration, must be at least 2 seconds")
 	}
+
+	if err := c.repoManager(); err != nil {
+		return err
+	}
+	if err := c.loadSettings(); err != nil {
+		return err
+	}
+
 	if c.BanDuration < 1 {
 		return fmt.Errorf("invalid ban duration, must be at least 1 second")
 	}
@@ -576,9 +569,6 @@ func (c *Config) Validate() error {
 		)
 	}
 
-	if err := c.repoManager(); err != nil {
-		return err
-	}
 	if err := c.feeManager(); err != nil {
 		return err
 	}
