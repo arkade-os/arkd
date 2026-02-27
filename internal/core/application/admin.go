@@ -572,7 +572,9 @@ func (a *adminService) Sweep(
 	log.Infof("sweep transaction %s broadcasted", txid)
 
 	if len(batchInputs) > 0 {
-		go a.saveBatchSweptEvents(batchInputs, batchRounds, batchVtxoTrees, txid, txhex)
+		go a.saveBatchSweptEvents(
+			context.WithoutCancel(ctx), batchInputs, batchRounds, batchVtxoTrees, txid, txhex,
+		)
 	}
 
 	return
@@ -641,13 +643,12 @@ func (a *adminService) getScheduledSweep(
 }
 
 func (a *adminService) saveBatchSweptEvents(
+	ctx context.Context,
 	inputsByCommitmentTxid map[string][]ports.TxInput,
 	batchesByCommitmentTxid map[string]*domain.Round,
 	treesByCommitmentTxid map[string]*tree.TxTree,
 	txid, txhex string,
 ) {
-	ctx := context.Background()
-
 	for commitmentTxid, batchInputsList := range inputsByCommitmentTxid {
 		round := batchesByCommitmentTxid[commitmentTxid]
 

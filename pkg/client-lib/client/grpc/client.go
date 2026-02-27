@@ -18,27 +18,21 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 )
 
-const (
-	initialDelay       = 5 * time.Second
-	maxDelay           = 60 * time.Second
-	multiplier         = 2.0
-	cloudflare524Error = "524"
-)
-
 type grpcClient struct {
-	conn             *grpc.ClientConn
-	connMu           *sync.RWMutex
-	monitoringCancel context.CancelFunc
-	listenerId       string
+	conn       *grpc.ClientConn
+	connMu     *sync.RWMutex
+	listenerMu *sync.RWMutex
+	listenerId string
 }
 
-func NewClient(serverUrl string, withMonitorConn bool) (client.TransportClient, error) {
+func NewClient(serverUrl string) (client.TransportClient, error) {
 	if len(serverUrl) <= 0 {
 		return nil, fmt.Errorf("missing server url")
 	}
@@ -58,6 +52,15 @@ func NewClient(serverUrl string, withMonitorConn bool) (client.TransportClient, 
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithDisableServiceConfig(),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff: backoff.Config{
+				BaseDelay:  1 * time.Second,
+				Multiplier: 1.6,
+				Jitter:     0.2,
+				MaxDelay:   10 * time.Second,
+			},
+			MinConnectTimeout: 3 * time.Second,
+		}),
 	}
 
 	conn, err := grpc.NewClient(serverUrl, options...)
@@ -66,25 +69,10 @@ func NewClient(serverUrl string, withMonitorConn bool) (client.TransportClient, 
 	}
 
 	client := &grpcClient{
-		conn:   conn,
-		connMu: &sync.RWMutex{},
-	}
-
-	if withMonitorConn {
-		ctx, cancel := context.WithCancel(context.Background())
-		client.monitoringCancel = cancel
-
-		go utils.MonitorGrpcConn(ctx, conn, func(ctx context.Context) error {
-			// Wait for the server to be actually ready for requests
-			if err := client.waitForServerReady(ctx); err != nil {
-				return fmt.Errorf("server not ready after reconnection: %w", err)
-			}
-
-			// TODO: trigger any application-level state refresh here
-			// e.g., resubscribe to streams, refresh cache, etc.
-
-			return nil
-		})
+		conn:       conn,
+		connMu:     &sync.RWMutex{},
+		listenerMu: &sync.RWMutex{},
+		listenerId: "",
 	}
 
 	return client, nil
@@ -274,9 +262,11 @@ func (a *grpcClient) GetEventStream(
 	}
 
 	eventsCh := make(chan client.BatchEventChannel)
+	streamMu := sync.Mutex{}
 
 	go func() {
 		defer close(eventsCh)
+		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
 
 		send := func(ev client.BatchEventChannel) bool {
 			select {
@@ -288,40 +278,60 @@ func (a *grpcClient) GetEventStream(
 		}
 
 		for {
-			resp, err := stream.Recv()
+			streamMu.Lock()
+			currentStream := stream
+			streamMu.Unlock()
+
+			resp, err := currentStream.Recv()
 			if err != nil {
-				if err == io.EOF {
-					send(client.BatchEventChannel{Err: client.ErrConnectionClosedByServer})
+				shouldRetry, retryDelay := utils.ShouldReconnect(err)
+				if !shouldRetry {
+					send(client.BatchEventChannel{Err: err})
 					return
 				}
-				st, ok := status.FromError(err)
-				if ok {
-					switch st.Code() {
-					case codes.Canceled:
-						return
-					case codes.Unknown:
-						errMsg := st.Message()
-						// Check if it's a 524 error during stream reading
-						if strings.Contains(errMsg, cloudflare524Error) {
-							stream, err = a.svc().GetEventStream(ctx, req)
-							if err != nil {
-								send(client.BatchEventChannel{Err: err})
-								return
-							}
 
-							continue
-						}
-					}
+				if err == io.EOF {
+					log.Debug("event stream closed by server; reconnecting")
 				}
 
-				send(client.BatchEventChannel{Err: err})
-				return
+				a.setListenerID("")
+
+				sleepDuration := max(retryDelay, backoffDelay)
+				log.Debugf("event stream error, reconnecting in %v: %v", sleepDuration, err)
+
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(sleepDuration):
+				}
+
+				newStream, dialErr := a.svc().GetEventStream(ctx, req)
+				if dialErr != nil {
+					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
+					if !shouldRetryDial {
+						send(client.BatchEventChannel{Err: dialErr})
+						return
+					}
+					backoffDelay = min(
+						time.Duration(float64(backoffDelay)*utils.GrpcReconnectConfig.Multiplier),
+						utils.GrpcReconnectConfig.MaxDelay,
+					)
+					log.Debugf("event stream reconnect failed, retrying: %v", dialErr)
+					continue
+				}
+
+				streamMu.Lock()
+				stream = newStream
+				streamMu.Unlock()
+				backoffDelay = utils.GrpcReconnectConfig.InitialDelay
+				continue
 			}
+
+			backoffDelay = utils.GrpcReconnectConfig.InitialDelay
 
 			switch resp.Event.(type) {
 			case *arkv1.GetEventStreamResponse_StreamStarted:
-				event := resp.Event.(*arkv1.GetEventStreamResponse_StreamStarted)
-				a.listenerId = event.StreamStarted.Id
+				a.setListenerID(resp.Event.(*arkv1.GetEventStreamResponse_StreamStarted).StreamStarted.Id)
 			default:
 			}
 
@@ -332,7 +342,6 @@ func (a *grpcClient) GetEventStream(
 			}
 
 			if ev == nil {
-				// heartbeat, skip
 				continue
 			}
 
@@ -343,10 +352,12 @@ func (a *grpcClient) GetEventStream(
 	}()
 
 	closeFn := func() {
+		cancel()
+		streamMu.Lock()
+		defer streamMu.Unlock()
 		if err := stream.CloseSend(); err != nil {
 			log.Warnf("failed to close event stream: %s", err)
 		}
-		cancel()
 	}
 
 	return eventsCh, closeFn, nil
@@ -426,9 +437,11 @@ func (c *grpcClient) GetTransactionsStream(
 	}
 
 	eventsCh := make(chan client.TransactionEvent)
+	streamMu := sync.Mutex{}
 
 	go func() {
 		defer close(eventsCh)
+		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
 
 		send := func(ev client.TransactionEvent) bool {
 			select {
@@ -440,34 +453,64 @@ func (c *grpcClient) GetTransactionsStream(
 		}
 
 		for {
-			resp, err := stream.Recv()
+			streamMu.Lock()
+			currentStream := stream
+			streamMu.Unlock()
+
+			resp, err := currentStream.Recv()
 			if err != nil {
-				if err == io.EOF {
-					send(client.TransactionEvent{Err: client.ErrConnectionClosedByServer})
+				shouldRetry, retryDelay := utils.ShouldReconnect(err)
+				if !shouldRetry {
+					send(client.TransactionEvent{Err: err})
 					return
 				}
-				st, ok := status.FromError(err)
-				if ok {
-					switch st.Code() {
-					case codes.Canceled:
-						return
-					case codes.Unknown:
-						errMsg := st.Message()
-						// Check if it's a 524 error during stream reading
-						if strings.Contains(errMsg, cloudflare524Error) {
-							stream, err = c.svc().GetTransactionsStream(ctx, req)
-							if err != nil {
-								send(client.TransactionEvent{Err: err})
-								return
-							}
 
-							continue
-						}
-					}
+				if err == io.EOF {
+					log.Debug("transactions stream closed by server; reconnecting")
 				}
-				send(client.TransactionEvent{Err: err})
-				return
+
+				sleepDuration := max(retryDelay, backoffDelay)
+				if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
+					log.Debugf(
+						"transactions stream server reachable but not ready yet, retrying in %v: %v",
+						sleepDuration,
+						err,
+					)
+				} else {
+					log.Debugf("transactions stream error, reconnecting in %v: %v", sleepDuration, err)
+				}
+
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(sleepDuration):
+				}
+
+				newStream, dialErr := c.svc().GetTransactionsStream(ctx, req)
+				if dialErr != nil {
+					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
+					if !shouldRetryDial {
+						send(client.TransactionEvent{Err: dialErr})
+						return
+					}
+					backoffDelay = min(
+						time.Duration(float64(backoffDelay)*utils.GrpcReconnectConfig.Multiplier),
+						utils.GrpcReconnectConfig.MaxDelay,
+					)
+					log.Debugf("transactions stream reconnect failed, retrying: %v", dialErr)
+					continue
+				} else {
+					log.Debug("transactions stream transport reconnected; waiting for server readiness")
+				}
+
+				streamMu.Lock()
+				stream = newStream
+				streamMu.Unlock()
+				backoffDelay = utils.GrpcReconnectConfig.InitialDelay
+				continue
 			}
+
+			backoffDelay = utils.GrpcReconnectConfig.InitialDelay
 
 			switch tx := resp.GetData().(type) {
 			case *arkv1.GetTransactionsStreamResponse_CommitmentTx:
@@ -486,8 +529,13 @@ func (c *grpcClient) GetTransactionsStream(
 			case *arkv1.GetTransactionsStreamResponse_ArkTx:
 				checkpointTxs := make(map[types.Outpoint]client.TxData)
 				for k, v := range tx.ArkTx.CheckpointTxs {
-					// nolint
-					out, _ := wire.NewOutPointFromString(k)
+					out, parseErr := wire.NewOutPointFromString(k)
+					if parseErr != nil {
+						send(client.TransactionEvent{
+							Err: fmt.Errorf("invalid checkpoint outpoint %q: %w", k, parseErr),
+						})
+						return
+					}
 					checkpointTxs[types.Outpoint{
 						Txid: out.Hash.String(),
 						VOut: out.Index,
@@ -514,10 +562,12 @@ func (c *grpcClient) GetTransactionsStream(
 	}()
 
 	closeFn := func() {
+		cancel()
+		streamMu.Lock()
+		defer streamMu.Unlock()
 		if err := stream.CloseSend(); err != nil {
 			log.Warnf("failed to close transaction stream: %v", err)
 		}
-		cancel()
 	}
 
 	return eventsCh, closeFn, nil
@@ -526,12 +576,13 @@ func (c *grpcClient) GetTransactionsStream(
 func (c *grpcClient) ModifyStreamTopics(
 	ctx context.Context, addTopics, removeTopics []string,
 ) (addedTopics, removedTopics, allTopics []string, err error) {
-	if c.listenerId == "" {
+	listenerID := c.getListenerID()
+	if listenerID == "" {
 		return nil, nil, nil, fmt.Errorf("listenerId is not set; cannot modify stream topics")
 	}
 
 	req := &arkv1.UpdateStreamTopicsRequest{
-		StreamId: c.listenerId,
+		StreamId: listenerID,
 		TopicsChange: &arkv1.UpdateStreamTopicsRequest_Modify{
 			Modify: &arkv1.ModifyTopics{
 				AddTopics:    addTopics,
@@ -550,12 +601,13 @@ func (c *grpcClient) ModifyStreamTopics(
 func (c *grpcClient) OverwriteStreamTopics(
 	ctx context.Context, topics []string,
 ) (addedTopics, removedTopics, allTopics []string, err error) {
-	if c.listenerId == "" {
+	listenerID := c.getListenerID()
+	if listenerID == "" {
 		return nil, nil, nil, fmt.Errorf("listenerId is not set; cannot overwrite stream topics")
 	}
 
 	req := &arkv1.UpdateStreamTopicsRequest{
-		StreamId: c.listenerId,
+		StreamId: listenerID,
 		TopicsChange: &arkv1.UpdateStreamTopicsRequest_Overwrite{
 			Overwrite: &arkv1.OverwriteTopics{
 				Topics: topics,
@@ -571,9 +623,6 @@ func (c *grpcClient) OverwriteStreamTopics(
 }
 
 func (c *grpcClient) Close() {
-	if c.monitoringCancel != nil {
-		c.monitoringCancel()
-	}
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 	// nolint:errcheck
@@ -587,38 +636,18 @@ func (a *grpcClient) svc() arkv1.ArkServiceClient {
 	return arkv1.NewArkServiceClient(a.conn)
 }
 
-func (c *grpcClient) waitForServerReady(ctx context.Context) error {
-	delay := initialDelay
-	attempt := 0
+func (a *grpcClient) getListenerID() string {
+	a.listenerMu.RLock()
+	defer a.listenerMu.RUnlock()
 
-	// Create a temporary client to test the server
-	testClient := arkv1.NewArkServiceClient(c.conn)
+	return a.listenerId
+}
 
-	for {
-		attempt++
+func (a *grpcClient) setListenerID(id string) {
+	a.listenerMu.Lock()
+	defer a.listenerMu.Unlock()
 
-		// Use a short timeout for each ping attempt
-		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_, err := testClient.GetInfo(pingCtx, &arkv1.GetInfoRequest{})
-		cancel()
-
-		if err == nil {
-			// Server responded successfully
-			log.Debugf("connection restored after %d attempt(s)", attempt)
-			return nil
-		}
-
-		log.Debugf("connection not ready (attempt %d), retrying in %v: %v\n", attempt, delay, err)
-
-		// Wait with exponential backoff before retrying
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
-			// Increase delay for next attempt
-			delay = min(time.Duration(float64(delay)*multiplier), maxDelay)
-		}
-	}
+	a.listenerId = id
 }
 
 func parseFees(fees *arkv1.FeeInfo) (types.FeeInfo, error) {
