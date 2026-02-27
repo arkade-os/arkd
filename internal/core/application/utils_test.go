@@ -15,11 +15,11 @@ func TestMaxAssetsPerVtxo(t *testing.T) {
 		threshold   float64
 		expected    int
 	}{
-		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.5, expected: 111},
-		{maxTxWeight: 0.1 * bitcoinBlockWeight, threshold: 0.5, expected: 1111},
-		{maxTxWeight: 0.5 * bitcoinBlockWeight, threshold: 0.5, expected: 5556},
-		{maxTxWeight: bitcoinBlockWeight, threshold: 0.5, expected: 11111},
-		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.25, expected: 56},
+		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.5, expected: 110},
+		{maxTxWeight: 0.1 * bitcoinBlockWeight, threshold: 0.5, expected: 1110},
+		{maxTxWeight: 0.5 * bitcoinBlockWeight, threshold: 0.5, expected: 5555},
+		{maxTxWeight: bitcoinBlockWeight, threshold: 0.5, expected: 11110},
+		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.25, expected: 55},
 		{maxTxWeight: 0, threshold: 0.5, expected: 0},
 	}
 
