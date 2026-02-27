@@ -49,7 +49,6 @@ type service struct {
 
 	txLock                 *sync.RWMutex
 	verbose                bool
-	withMonitorConn        bool
 	withFinalizePendingTxs bool
 }
 
@@ -115,11 +114,11 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 		client.explorer = explorerSvc
 	}
 
-	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl, client.withMonitorConn)
+	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup transport client: %s", err)
 	}
-	indexerSvc, err := grpcindexer.NewClient(cfgData.ServerUrl, client.withMonitorConn)
+	indexerSvc, err := grpcindexer.NewClient(cfgData.ServerUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup indexer: %s", err)
 	}
@@ -173,11 +172,11 @@ func LoadArkClientWithWallet(
 		client.explorer = explorerSvc
 	}
 
-	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl, client.withMonitorConn)
+	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup transport client: %s", err)
 	}
-	indexerSvc, err := grpcindexer.NewClient(cfgData.ServerUrl, client.withMonitorConn)
+	indexerSvc, err := grpcindexer.NewClient(cfgData.ServerUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup indexer: %s", err)
 	}

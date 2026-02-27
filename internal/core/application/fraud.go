@@ -42,9 +42,7 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 			return fmt.Errorf("failed to broadcast checkpoint tx: %s", err)
 		}
 
-		go func() {
-			ctx := context.Background()
-
+		go func(ctx context.Context) {
 			blockTimestamp, err := waitForConfirmation(
 				ctx,
 				ptx.UnsignedTx.TxID(),
@@ -66,7 +64,7 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 			); err != nil {
 				log.Errorf("failed to schedule checkpoint sweep: %s", err)
 			}
-		}()
+		}(context.WithoutCancel(ctx))
 		return nil
 	}
 

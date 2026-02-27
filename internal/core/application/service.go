@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -35,6 +36,7 @@ import (
 )
 
 type service struct {
+	started atomic.Bool
 	// services
 	wallet         ports.WalletService
 	signer         ports.SignerService
@@ -67,6 +69,8 @@ type service struct {
 	vtxoMaxAmount             int64
 	vtxoMinAmount             int64
 	allowCSVBlockType         bool
+	checkpointExitDelay       arklib.RelativeLocktime
+	maxTxWeight               uint64
 
 	// fees
 	feeManager ports.FeeManager
@@ -107,7 +111,7 @@ func NewService(
 	vtxoTreeExpiry, unilateralExitDelay, publicUnilateralExitDelay,
 	boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
-	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
+	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64, maxTxWeight uint64,
 	network arklib.Network,
 	allowCSVBlockType bool,
 	noteUriPrefix string,
@@ -164,23 +168,6 @@ func NewService(
 		vtxoMinAmount, utxoMinAmount, int64(dustAmount),
 	)
 
-	forfeitPubkey, err := wallet.GetForfeitPubkey(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
-	}
-
-	checkpointClosure := &script.CSVMultisigClosure{
-		Locktime: checkpointExitDelay,
-		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{forfeitPubkey},
-		},
-	}
-
-	checkpointTapscript, err := checkpointClosure.Script()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
-	}
-
 	roundReportSvc := reportSvc
 	if roundReportSvc == nil {
 		roundReportSvc = roundReportUnimplemented{}
@@ -188,10 +175,9 @@ func NewService(
 
 	ctx, cancel := context.WithCancel(ctx)
 
-	svc := &service{
+	return &service{
 		network:                   network,
 		signerPubkey:              signerPubkey,
-		forfeitPubkey:             forfeitPubkey,
 		batchExpiry:               vtxoTreeExpiry,
 		sessionDuration:           time.Duration(sessionDuration) * time.Second,
 		banDuration:               time.Duration(banDuration) * time.Second,
@@ -199,6 +185,8 @@ func NewService(
 		unilateralExitDelay:       unilateralExitDelay,
 		publicUnilateralExitDelay: publicUnilateralExitDelay,
 		allowCSVBlockType:         allowCSVBlockType,
+		checkpointExitDelay:       checkpointExitDelay,
+		maxTxWeight:               maxTxWeight,
 		wallet:                    wallet,
 		signer:                    signer,
 		repoManager:               repoManager,
@@ -225,25 +213,86 @@ func NewService(
 		ctx:                           ctx,
 		wg:                            &sync.WaitGroup{},
 		offchainTxMu:                  &sync.Mutex{},
-		checkpointTapscript:           checkpointTapscript,
 		roundReportSvc:                roundReportSvc,
 		alerts:                        alerts,
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 		feeManager:                    feeManager,
+	}, nil
+}
+
+func (s *service) Start() error {
+	if !s.started.CompareAndSwap(false, true) {
+		return fmt.Errorf("service already started")
 	}
-	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
-	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, svc.chainParams())
+
+	ctx := context.Background()
+	dustAmount, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
-	svc.forfeitAddress = forfeitAddr.String()
+	s.vtxoMinAmount, s.utxoMinAmount = resolveMinAmounts(
+		s.vtxoMinAmount, s.utxoMinAmount, int64(dustAmount),
+	)
 
-	repoManager.Events().RegisterEventsHandler(
+	forfeitPubkey, err := s.wallet.GetForfeitPubkey(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
+	}
+	s.forfeitPubkey = forfeitPubkey
+
+	checkpointClosure := &script.CSVMultisigClosure{
+		Locktime: s.checkpointExitDelay,
+		MultisigClosure: script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{forfeitPubkey},
+		},
+	}
+
+	checkpointTapscript, err := checkpointClosure.Script()
+	if err != nil {
+		return fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
+	}
+	s.checkpointTapscript = checkpointTapscript
+
+	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
+	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, s.chainParams())
+	if err != nil {
+		return err
+	}
+	s.forfeitAddress = forfeitAddr.String()
+
+	s.registerEventHandlers()
+
+	log.Debug("starting restore watching vtxos...")
+	if err := s.restoreWatchingVtxos(); err != nil {
+		return fmt.Errorf("failed to restore watching vtxos: %s", err)
+	}
+
+	go s.listenToScannerNotifications()
+
+	log.Debug("starting sweeper service...")
+	ctx, cancel := context.WithCancel(ctx)
+	s.sweeperCancel = cancel
+	go func() {
+		if err := s.sweeper.start(ctx); err != nil {
+			log.WithError(err).Warn("failed to start sweeper")
+			return
+		}
+		log.Info("sweeper service started")
+	}()
+
+	log.Debug("starting app service...")
+	s.wg.Add(1)
+	go s.start()
+	return nil
+}
+
+func (s *service) registerEventHandlers() {
+	s.repoManager.Events().RegisterEventsHandler(
 		domain.RoundTopic, func(events []domain.Event) {
 			round := domain.NewRoundFromEvents(events)
-			go svc.propagateEvents(context.Background(), round)
+			go s.propagateEvents(context.Background(), round)
 
 			lastEvent := events[len(events)-1]
 			if lastEvent.GetType() == domain.EventTypeBatchSwept {
@@ -258,7 +307,7 @@ func NewService(
 					Type:       SweepTxType,
 					SweptVtxos: sweptVtxosOutpoints,
 				}
-				svc.propagateTransactionEvent(txEvent)
+				s.propagateTransactionEvent(txEvent)
 				return
 			}
 
@@ -266,7 +315,7 @@ func NewService(
 				return
 			}
 
-			spentVtxos := svc.getSpentVtxos(round.Intents)
+			spentVtxos := s.getSpentVtxos(round.Intents)
 			newVtxos := getNewVtxosFromRound(round)
 
 			// commitment tx event
@@ -277,21 +326,21 @@ func NewService(
 				SpendableVtxos: newVtxos,
 			}
 
-			svc.propagateTransactionEvent(txEvent)
+			s.propagateTransactionEvent(txEvent)
 
 			go func() {
-				if err := svc.startWatchingVtxos(newVtxos); err != nil {
+				if err := s.startWatchingVtxos(newVtxos); err != nil {
 					log.WithError(err).Warn("failed to start watching vtxos")
 				}
 			}()
 
 			if lastEvent := events[len(events)-1]; lastEvent.GetType() != domain.EventTypeBatchSwept {
-				go svc.scheduleSweepBatchOutput(round)
+				go s.scheduleSweepBatchOutput(round)
 			}
 		},
 	)
 
-	repoManager.Events().RegisterEventsHandler(
+	s.repoManager.Events().RegisterEventsHandler(
 		domain.OffchainTxTopic, func(events []domain.Event) {
 			offchainTx := domain.NewOffchainTxFromEvents(events)
 
@@ -305,7 +354,7 @@ func NewService(
 				return
 			}
 
-			spentVtxos, err := svc.repoManager.Vtxos().GetVtxos(
+			spentVtxos, err := s.repoManager.Vtxos().GetVtxos(
 				context.Background(), spentVtxoKeys,
 			)
 			if err != nil {
@@ -330,38 +379,15 @@ func NewService(
 				CheckpointTxs:  checkpointTxsByOutpoint,
 			}
 
-			svc.propagateTransactionEvent(txEvent)
+			s.propagateTransactionEvent(txEvent)
 
 			go func() {
-				if err := svc.startWatchingVtxos(newVtxos); err != nil {
+				if err := s.startWatchingVtxos(newVtxos); err != nil {
 					log.WithError(err).Warn("failed to start watching vtxos")
 				}
 			}()
 		},
 	)
-
-	// if err := svc.restoreWatchingVtxos(); err != nil {
-	// 	return nil, fmt.Errorf("failed to restore watching vtxos: %s", err)
-	// }
-	go svc.listenToScannerNotifications()
-	return svc, nil
-}
-
-func (s *service) Start() errors.Error {
-	log.Debug("starting sweeper service...")
-	ctx, cancel := context.WithCancel(context.Background())
-	s.sweeperCancel = cancel
-	go func() {
-		if err := s.sweeper.start(ctx); err != nil {
-			log.WithError(err).Warn("failed to start sweeper")
-		}
-		log.Info("sweeper service started")
-	}()
-
-	log.Debug("starting app service...")
-	s.wg.Add(1)
-	go s.start()
-	return nil
 }
 
 func (s *service) Stop() {
@@ -369,7 +395,9 @@ func (s *service) Stop() {
 
 	s.stop()
 	s.wg.Wait()
-	s.sweeperCancel()
+	if s.sweeperCancel != nil {
+		s.sweeperCancel()
+	}
 	s.sweeper.stop()
 
 	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
@@ -977,6 +1005,15 @@ func (s *service) SubmitOffchainTx(
 					MinAmount:   int(dust),
 				})
 			}
+		} else {
+			// all output with amount > dust must be valid taproot scripts
+			scriptClass := txscript.GetScriptClass(out.PkScript)
+			if scriptClass != txscript.WitnessV1TaprootTy {
+				return nil, errors.MALFORMED_ARK_TX.New(
+					"output #%d has amount greater than dust but is not a taproot pkscript",
+					outIndex,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
 		}
 
 		outputs = append(outputs, out)
@@ -1043,6 +1080,29 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("failed to sign ark tx: %w", err).
 			WithMetadata(map[string]any{
 				"ark_tx": signedArkTx,
+			})
+	}
+
+	txHex, err := s.builder.FinalizeAndExtract(fullySignedArkTx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to finalize ark tx: %w", err).
+			WithMetadata(map[string]any{
+				"ark_tx": fullySignedArkTx,
+			})
+	}
+	var arkTx wire.MsgTx
+	if err := arkTx.Deserialize(hex.NewDecoder(strings.NewReader(txHex))); err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to deserialize ark tx: %w", err).
+			WithMetadata(map[string]any{
+				"ark_tx": txHex,
+			})
+	}
+	weight := computeWeight(&arkTx)
+	if weight > s.maxTxWeight {
+		return nil, errors.TX_TOO_LARGE.New("ark tx weight is too high: %d", weight).
+			WithMetadata(errors.TxTooLargeMetadata{
+				Weight:    int(weight),
+				MaxWeight: int(s.maxTxWeight),
 			})
 	}
 
@@ -1708,6 +1768,30 @@ func (s *service) RegisterIntent(
 			})
 	}
 
+	signedProofPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedProof), true)
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to create psbt from signed proof: %w", err).
+			WithMetadata(map[string]any{
+				"signed_proof": signedProof,
+			})
+	}
+
+	finalizedProofTx, err := intent.Proof{Packet: *signedProofPtx}.FinalizeAndExtract()
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
+			WithMetadata(map[string]any{
+				"proof": proof.UnsignedTx.TxID(),
+			})
+	}
+	weight := computeWeight(finalizedProofTx)
+	if weight > s.maxTxWeight {
+		return "", errors.TX_TOO_LARGE.New("proof weight is too high: %d", weight).
+			WithMetadata(errors.TxTooLargeMetadata{
+				Weight:    int(weight),
+				MaxWeight: int(s.maxTxWeight),
+			})
+	}
+
 	// reject if proof does not specify outputs
 	// TODO remove if blinded credentials are supported
 	if !proof.ContainsOutputs() {
@@ -1979,7 +2063,7 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 			WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
 	}
 
-	go s.checkForfeitsAndBoardingSigsSent(round.CommitmentTxid)
+	go s.checkForfeitsAndBoardingSigsSent(context.WithoutCancel(ctx), round.CommitmentTxid)
 
 	return nil
 }
@@ -2018,7 +2102,7 @@ func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx strin
 			WithMetadata(map[string]any{"signed_commitment_tx": signedCommitmentTx})
 	}
 
-	go s.checkForfeitsAndBoardingSigsSent(round.CommitmentTxid)
+	go s.checkForfeitsAndBoardingSigsSent(context.WithoutCancel(ctx), round.CommitmentTxid)
 
 	return nil
 }
@@ -2084,6 +2168,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMinAmount:        s.vtxoMinAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
+		MaxTxWeight:          int64(s.maxTxWeight),
 		Fees: FeeInfo{
 			IntentFees: *currIntentFees,
 		},
@@ -3617,8 +3702,7 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 	}
 }
 
-func (s *service) checkForfeitsAndBoardingSigsSent(commitmentTxid string) {
-	ctx := context.Background()
+func (s *service) checkForfeitsAndBoardingSigsSent(ctx context.Context, commitmentTxid string) {
 	// NOTE: This assumes users submit all their signatures in one shot, and whatever
 	// we get from the cache are all required sigs to finalize the boarding inputs
 	// once we also sign them
@@ -3668,6 +3752,49 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 	}
 
 	return s.scanner.WatchScripts(context.Background(), scripts)
+}
+
+func (s *service) restoreWatchingVtxos() error {
+	ctx := context.Background()
+
+	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
+	if err != nil {
+		return err
+	}
+
+	total := len(commitmentTxIds)
+	lastMilestone := 0
+	scripts := make([]string, 0)
+	for i, commitmentTxId := range commitmentTxIds {
+		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
+		if err != nil {
+			return err
+		}
+
+		for _, key := range tapKeys {
+			// skip if the key is not a valid x-only hex encoded pubkey
+			if len(key) != 64 {
+				continue
+			}
+			scripts = append(scripts, fmt.Sprintf("5120%s", key))
+		}
+
+		if milestone := (i + 1) * 100 / total / 10; milestone > lastMilestone {
+			lastMilestone = milestone
+			log.Debugf("restore watching vtxos: %d%%...", milestone*10)
+		}
+	}
+
+	if len(scripts) <= 0 {
+		return nil
+	}
+
+	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
+		return err
+	}
+
+	log.Debugf("restored watching %d vtxo scripts", len(scripts))
+	return nil
 }
 
 func (s *service) stopWatchingVtxos(tapkeys []string) {
