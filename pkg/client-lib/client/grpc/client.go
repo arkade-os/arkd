@@ -278,11 +278,20 @@ func (a *grpcClient) GetEventStream(
 	go func() {
 		defer close(eventsCh)
 
+		send := func(ev client.BatchEventChannel) bool {
+			select {
+			case eventsCh <- ev:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
 				if err == io.EOF {
-					eventsCh <- client.BatchEventChannel{Err: client.ErrConnectionClosedByServer}
+					send(client.BatchEventChannel{Err: client.ErrConnectionClosedByServer})
 					return
 				}
 				st, ok := status.FromError(err)
@@ -296,7 +305,7 @@ func (a *grpcClient) GetEventStream(
 						if strings.Contains(errMsg, cloudflare524Error) {
 							stream, err = a.svc().GetEventStream(ctx, req)
 							if err != nil {
-								eventsCh <- client.BatchEventChannel{Err: err}
+								send(client.BatchEventChannel{Err: err})
 								return
 							}
 
@@ -305,7 +314,7 @@ func (a *grpcClient) GetEventStream(
 					}
 				}
 
-				eventsCh <- client.BatchEventChannel{Err: err}
+				send(client.BatchEventChannel{Err: err})
 				return
 			}
 
@@ -318,7 +327,7 @@ func (a *grpcClient) GetEventStream(
 
 			ev, err := event{resp}.toBatchEvent()
 			if err != nil {
-				eventsCh <- client.BatchEventChannel{Err: err}
+				send(client.BatchEventChannel{Err: err})
 				return
 			}
 
@@ -327,7 +336,9 @@ func (a *grpcClient) GetEventStream(
 				continue
 			}
 
-			eventsCh <- client.BatchEventChannel{Event: ev}
+			if !send(client.BatchEventChannel{Event: ev}) {
+				return
+			}
 		}
 	}()
 
@@ -419,11 +430,20 @@ func (c *grpcClient) GetTransactionsStream(
 	go func() {
 		defer close(eventsCh)
 
+		send := func(ev client.TransactionEvent) bool {
+			select {
+			case eventsCh <- ev:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
 				if err == io.EOF {
-					eventsCh <- client.TransactionEvent{Err: client.ErrConnectionClosedByServer}
+					send(client.TransactionEvent{Err: client.ErrConnectionClosedByServer})
 					return
 				}
 				st, ok := status.FromError(err)
@@ -437,7 +457,7 @@ func (c *grpcClient) GetTransactionsStream(
 						if strings.Contains(errMsg, cloudflare524Error) {
 							stream, err = c.svc().GetTransactionsStream(ctx, req)
 							if err != nil {
-								eventsCh <- client.TransactionEvent{Err: err}
+								send(client.TransactionEvent{Err: err})
 								return
 							}
 
@@ -445,13 +465,13 @@ func (c *grpcClient) GetTransactionsStream(
 						}
 					}
 				}
-				eventsCh <- client.TransactionEvent{Err: err}
+				send(client.TransactionEvent{Err: err})
 				return
 			}
 
 			switch tx := resp.GetData().(type) {
 			case *arkv1.GetTransactionsStreamResponse_CommitmentTx:
-				eventsCh <- client.TransactionEvent{
+				if !send(client.TransactionEvent{
 					CommitmentTx: &client.TxNotification{
 						TxData: client.TxData{
 							Txid: tx.CommitmentTx.GetTxid(),
@@ -460,6 +480,8 @@ func (c *grpcClient) GetTransactionsStream(
 						SpentVtxos:     vtxos(tx.CommitmentTx.SpentVtxos).toVtxos(),
 						SpendableVtxos: vtxos(tx.CommitmentTx.SpendableVtxos).toVtxos(),
 					},
+				}) {
+					return
 				}
 			case *arkv1.GetTransactionsStreamResponse_ArkTx:
 				checkpointTxs := make(map[types.Outpoint]client.TxData)
@@ -474,7 +496,7 @@ func (c *grpcClient) GetTransactionsStream(
 						Tx:   v.GetTx(),
 					}
 				}
-				eventsCh <- client.TransactionEvent{
+				if !send(client.TransactionEvent{
 					ArkTx: &client.TxNotification{
 						TxData: client.TxData{
 							Txid: tx.ArkTx.GetTxid(),
@@ -484,6 +506,8 @@ func (c *grpcClient) GetTransactionsStream(
 						SpendableVtxos: vtxos(tx.ArkTx.SpendableVtxos).toVtxos(),
 						CheckpointTxs:  checkpointTxs,
 					},
+				}) {
+					return
 				}
 			}
 		}
