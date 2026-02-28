@@ -8,6 +8,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
@@ -107,6 +108,48 @@ func TestPacket(t *testing.T) {
 				})
 			}
 		})
+	})
+
+	t.Run("trailing TLV bytes", func(t *testing.T) {
+		// The OP_RETURN TLV stream may contain additional records after the
+		// asset data (e.g. type 0x01 Introspector Packet). The asset parser
+		// should read only the asset groups and tolerate trailing bytes.
+		for _, v := range fixtures.Valid.NewPacketFromTxOut {
+			t.Run(v.Name, func(t *testing.T) {
+				origScript, err := hex.DecodeString(v.Script)
+				require.NoError(t, err)
+
+				origPacket, err := asset.NewPacketFromScript(origScript)
+				require.NoError(t, err)
+
+				// Append a fake TLV record (type 0x01) directly to the script's
+				// data push by decoding, extending, and re-encoding.
+				trailingTLV := []byte{0x01, 0xde, 0xad, 0xbe, 0xef}
+
+				// Extract the raw OP_RETURN data using the tokenizer.
+				tokenizer := txscript.MakeScriptTokenizer(0, origScript)
+				tokenizer.Next() // skip OP_RETURN opcode
+				var rawData []byte
+				for tokenizer.Next() {
+					rawData = append(rawData, tokenizer.Data()...)
+				}
+				require.NoError(t, tokenizer.Err())
+
+				// Rebuild script with extended data (original data + trailing TLV).
+				extended := append(rawData, trailingTLV...)
+				extScript, err := txscript.NewScriptBuilder().
+					AddOp(txscript.OP_RETURN).AddData(extended).Script()
+				require.NoError(t, err)
+
+				// Must still be recognized as a valid asset packet.
+				require.True(t, asset.IsAssetPacket(extScript))
+
+				// Must parse without error despite trailing TLV bytes.
+				parsed, err := asset.NewPacketFromScript(extScript)
+				require.NoError(t, err)
+				require.Equal(t, len(origPacket), len(parsed))
+			})
+		}
 	})
 
 	t.Run("invalid", func(t *testing.T) {

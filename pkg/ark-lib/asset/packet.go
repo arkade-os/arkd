@@ -176,7 +176,9 @@ func (p Packet) serialize(w io.Writer) error {
 	return nil
 }
 
-// newPacketFromReader deserializes a Packet from the reader, ensuring all bytes are consumed.
+// newPacketFromReader deserializes a Packet from the reader.
+// Trailing bytes are tolerated because the OP_RETURN TLV stream may contain
+// additional records (e.g. type 0x01 Introspector Packet) after the asset data.
 func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
@@ -189,11 +191,6 @@ func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 			return nil, err
 		}
 		assets = append(assets, *ag)
-	}
-
-	// Make sure we read the entire packet with no extra bytes left
-	if r.Len() > 0 {
-		return nil, fmt.Errorf("invalid packet length, left %d unknown bytes to read", r.Len())
 	}
 
 	packet := Packet(assets)
