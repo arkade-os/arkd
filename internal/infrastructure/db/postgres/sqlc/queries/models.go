@@ -156,6 +156,7 @@ type Round struct {
 	Swept              bool
 	VtxoTreeExpiration int64
 	FailReason         sql.NullString
+	CollectedFees      int64
 }
 
 type RoundIntentsVw struct {

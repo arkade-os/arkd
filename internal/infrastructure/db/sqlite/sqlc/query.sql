@@ -1,10 +1,10 @@
 -- name: UpsertRound :exec
 INSERT INTO round (
     id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
-    stage_code, connector_address, version, swept, vtxo_tree_expiration
+    stage_code, connector_address, version, swept, vtxo_tree_expiration, collected_fees
 ) VALUES (
     @id, @starting_timestamp, @ending_timestamp, @ended, @failed, @fail_reason,
-    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration
+    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration, @collected_fees
 )
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
@@ -16,7 +16,8 @@ ON CONFLICT(id) DO UPDATE SET
     connector_address = EXCLUDED.connector_address,
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
-    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration;
+    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration,
+    collected_fees = EXCLUDED.collected_fees;
 
 -- name: UpsertTx :exec
 INSERT INTO tx (tx, round_id, type, position, txid, children)
@@ -437,6 +438,14 @@ VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
 -- name: InsertVtxoAssetProjection :exec
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES (@asset_id, @txid, @vout, @amount);
+
+-- name: SelectCollectedFees :one
+SELECT CAST(COALESCE(SUM(collected_fees), 0) AS INTEGER) AS collected_fees
+FROM round
+WHERE ended = true
+  AND failed = false
+  AND (CAST(sqlc.arg('after') AS INTEGER) <= 0 OR starting_timestamp > sqlc.arg('after'))
+  AND (CAST(sqlc.arg('before') AS INTEGER) <= 0 OR starting_timestamp < sqlc.arg('before'));
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));

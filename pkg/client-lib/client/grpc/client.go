@@ -268,6 +268,15 @@ func (a *grpcClient) GetEventStream(
 		defer close(eventsCh)
 		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
 
+		send := func(ev client.BatchEventChannel) bool {
+			select {
+			case eventsCh <- ev:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		for {
 			streamMu.Lock()
 			currentStream := stream
@@ -277,11 +286,7 @@ func (a *grpcClient) GetEventStream(
 			if err != nil {
 				shouldRetry, retryDelay := utils.ShouldReconnect(err)
 				if !shouldRetry {
-					select {
-					case <-ctx.Done():
-						return
-					case eventsCh <- client.BatchEventChannel{Err: err}:
-					}
+					send(client.BatchEventChannel{Err: err})
 					return
 				}
 
@@ -304,11 +309,7 @@ func (a *grpcClient) GetEventStream(
 				if dialErr != nil {
 					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
 					if !shouldRetryDial {
-						select {
-						case <-ctx.Done():
-							return
-						case eventsCh <- client.BatchEventChannel{Err: dialErr}:
-						}
+						send(client.BatchEventChannel{Err: dialErr})
 						return
 					}
 					backoffDelay = min(
@@ -336,11 +337,7 @@ func (a *grpcClient) GetEventStream(
 
 			ev, err := event{resp}.toBatchEvent()
 			if err != nil {
-				select {
-				case <-ctx.Done():
-					return
-				case eventsCh <- client.BatchEventChannel{Err: err}:
-				}
+				send(client.BatchEventChannel{Err: err})
 				return
 			}
 
@@ -348,10 +345,8 @@ func (a *grpcClient) GetEventStream(
 				continue
 			}
 
-			select {
-			case <-ctx.Done():
+			if !send(client.BatchEventChannel{Event: ev}) {
 				return
-			case eventsCh <- client.BatchEventChannel{Event: ev}:
 			}
 		}
 	}()
@@ -448,6 +443,15 @@ func (c *grpcClient) GetTransactionsStream(
 		defer close(eventsCh)
 		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
 
+		send := func(ev client.TransactionEvent) bool {
+			select {
+			case eventsCh <- ev:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		for {
 			streamMu.Lock()
 			currentStream := stream
@@ -457,11 +461,7 @@ func (c *grpcClient) GetTransactionsStream(
 			if err != nil {
 				shouldRetry, retryDelay := utils.ShouldReconnect(err)
 				if !shouldRetry {
-					select {
-					case <-ctx.Done():
-						return
-					case eventsCh <- client.TransactionEvent{Err: err}:
-					}
+					send(client.TransactionEvent{Err: err})
 					return
 				}
 
@@ -490,11 +490,7 @@ func (c *grpcClient) GetTransactionsStream(
 				if dialErr != nil {
 					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
 					if !shouldRetryDial {
-						select {
-						case <-ctx.Done():
-							return
-						case eventsCh <- client.TransactionEvent{Err: dialErr}:
-						}
+						send(client.TransactionEvent{Err: dialErr})
 						return
 					}
 					backoffDelay = min(
@@ -518,7 +514,7 @@ func (c *grpcClient) GetTransactionsStream(
 
 			switch tx := resp.GetData().(type) {
 			case *arkv1.GetTransactionsStreamResponse_CommitmentTx:
-				eventsCh <- client.TransactionEvent{
+				if !send(client.TransactionEvent{
 					CommitmentTx: &client.TxNotification{
 						TxData: client.TxData{
 							Txid: tx.CommitmentTx.GetTxid(),
@@ -527,19 +523,17 @@ func (c *grpcClient) GetTransactionsStream(
 						SpentVtxos:     vtxos(tx.CommitmentTx.SpentVtxos).toVtxos(),
 						SpendableVtxos: vtxos(tx.CommitmentTx.SpendableVtxos).toVtxos(),
 					},
+				}) {
+					return
 				}
 			case *arkv1.GetTransactionsStreamResponse_ArkTx:
 				checkpointTxs := make(map[types.Outpoint]client.TxData)
 				for k, v := range tx.ArkTx.CheckpointTxs {
 					out, parseErr := wire.NewOutPointFromString(k)
 					if parseErr != nil {
-						select {
-						case <-ctx.Done():
-							return
-						case eventsCh <- client.TransactionEvent{
+						send(client.TransactionEvent{
 							Err: fmt.Errorf("invalid checkpoint outpoint %q: %w", k, parseErr),
-						}:
-						}
+						})
 						return
 					}
 					checkpointTxs[types.Outpoint{
@@ -550,10 +544,7 @@ func (c *grpcClient) GetTransactionsStream(
 						Tx:   v.GetTx(),
 					}
 				}
-				select {
-				case <-ctx.Done():
-					return
-				case eventsCh <- client.TransactionEvent{
+				if !send(client.TransactionEvent{
 					ArkTx: &client.TxNotification{
 						TxData: client.TxData{
 							Txid: tx.ArkTx.GetTxid(),
@@ -563,7 +554,8 @@ func (c *grpcClient) GetTransactionsStream(
 						SpendableVtxos: vtxos(tx.ArkTx.SpendableVtxos).toVtxos(),
 						CheckpointTxs:  checkpointTxs,
 					},
-				}:
+				}) {
+					return
 				}
 			}
 		}

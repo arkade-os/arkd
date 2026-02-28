@@ -555,6 +555,24 @@ func updateIntentFees(intentFees intentFees) error {
 	return nil
 }
 
+type collectedFeesResponse struct {
+	CollectedFees uint64 `json:"collectedFees,string"`
+}
+
+func getCollectedFees(after, before int64) (uint64, error) {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/fees/collected?after=%d&before=%d", adminUrl, after, before)
+	resp, err := get[collectedFeesResponse](adminHttpClient, url, "collected fees")
+	if err != nil {
+		return 0, fmt.Errorf("failed to get collected fees: %w", err)
+	}
+
+	return resp.CollectedFees, nil
+}
+
 func clearIntentFees() error {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,

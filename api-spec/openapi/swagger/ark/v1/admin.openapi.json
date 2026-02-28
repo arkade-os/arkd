@@ -311,6 +311,56 @@
         }
       }
     },
+    "/v1/admin/fees/collected": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetCollectedFees",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Unix timestamp (UTC, exclusive). Only include rounds starting after this time. 0 means no lower bound.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Unix timestamp (UTC, exclusive). Only include rounds starting before this time. 0 means no upper bound.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCollectedFeesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/intentFees": {
       "get": {
         "tags": [
@@ -1086,6 +1136,33 @@
             "items": {
               "$ref": "#/components/schemas/Conviction"
             }
+          }
+        }
+      },
+      "GetCollectedFeesRequest": {
+        "title": "GetCollectedFeesRequest",
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Unix timestamp (UTC, exclusive). Only include rounds starting after this time. 0 means no lower bound.",
+            "format": "int64"
+          },
+          "before": {
+            "type": "integer",
+            "description": "Unix timestamp (UTC, exclusive). Only include rounds starting before this time. 0 means no upper bound.",
+            "format": "int64"
+          }
+        }
+      },
+      "GetCollectedFeesResponse": {
+        "title": "GetCollectedFeesResponse",
+        "type": "object",
+        "properties": {
+          "collectedFees": {
+            "type": "integer",
+            "description": "Total collected fees in satoshis.",
+            "format": "uint64"
           }
         }
       },

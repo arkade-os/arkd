@@ -74,8 +74,8 @@ func (s *service) getBatchStats(
 		a.OnchainFees = totalIn - totalOut
 	}
 
+	a.CollectedFees = calculateCollectedFees(round, a.BoardingInputAmount)
 	for _, intent := range round.Intents {
-		a.CollectedFees += intent.TotalInputAmount() + a.BoardingInputAmount - intent.TotalOutputAmount()
 		a.ForfeitCount += len(intent.Inputs)
 		a.ForfeitAmount += intent.TotalInputAmount()
 		for _, receiver := range intent.Receivers {
@@ -116,4 +116,32 @@ func (s *service) getBatchStats(
 	a.Duration = duration
 	a.IntentsCount = len(round.Intents)
 	return
+}
+
+// calculateCollectedFees computes the total fees (sats) collected by the coordinator for a given round.
+func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uint64 {
+	totalIn := boardingInputAmount
+	totalOut := uint64(0)
+	for _, intent := range round.Intents {
+		totalIn += intent.TotalInputAmount()
+		totalOut += intent.TotalOutputAmount()
+	}
+	if totalOut >= totalIn {
+		return 0
+	}
+	return totalIn - totalOut
+}
+
+// calculateBoardingInputAmount computes the total amount (sats) of boarding inputs in a PSBT.
+func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
+	boardingInputAmount := uint64(0)
+	for _, input := range ptx.Inputs {
+		if input.WitnessUtxo == nil {
+			continue
+		}
+		if len(input.TaprootLeafScript) > 0 {
+			boardingInputAmount += uint64(input.WitnessUtxo.Value)
+		}
+	}
+	return boardingInputAmount
 }

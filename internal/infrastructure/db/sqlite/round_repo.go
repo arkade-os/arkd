@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -77,6 +78,9 @@ func (r *roundRepository) GetRoundIds(
 }
 
 func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Round) error {
+	if round.CollectedFees > uint64(math.MaxInt64) {
+		return fmt.Errorf("collected_fees %d overflows int64", round.CollectedFees)
+	}
 	txBody := func(querierWithTx *queries.Queries) error {
 		if err := querierWithTx.UpsertRound(
 			ctx,
@@ -91,6 +95,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				ConnectorAddress:   round.ConnectorAddress,
 				Version:            int64(round.Version),
 				Swept:              round.Swept,
+				CollectedFees:      int64(round.CollectedFees),
 				FailReason: sql.NullString{
 					String: round.FailReason, Valid: len(round.FailReason) > 0,
 				},
@@ -511,6 +516,22 @@ func (r *roundRepository) GetIntentByTxid(
 	}, nil
 }
 
+func (r *roundRepository) GetCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	fees, err := r.querier.SelectCollectedFees(ctx, queries.SelectCollectedFeesParams{
+		After:  after,
+		Before: before,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if fees < 0 {
+		return 0, fmt.Errorf("data integrity issue: got negative collected_fees %d", fees)
+	}
+	return uint64(fees), nil
+}
+
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),
@@ -550,6 +571,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				Swept:              v.round.Swept,
 				Intents:            make(map[string]domain.Intent),
 				VtxoTreeExpiration: v.round.VtxoTreeExpiration,
+				CollectedFees:      uint64(v.round.CollectedFees),
 				FailReason:         v.round.FailReason.String,
 			}
 		}
