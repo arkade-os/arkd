@@ -35,7 +35,11 @@ func (e AssetPacketNotFoundError) Error() string {
 type Packet []AssetGroup
 
 // NewPacket creates a validated Packet from the given asset groups.
+// At least one group is required when constructing a new packet.
 func NewPacket(assets []AssetGroup) (Packet, error) {
+	if len(assets) == 0 {
+		return nil, fmt.Errorf("missing assets")
+	}
 	p := Packet(assets)
 	if err := p.validate(); err != nil {
 		return nil, err
@@ -131,12 +135,10 @@ func (p Packet) String() string {
 	return hex.EncodeToString(buf)
 }
 
-// validate checks that the packet is non-empty, all groups are valid, and control asset
-// group index references are within bounds.
+// validate checks that all groups are valid and control asset group index
+// references are within bounds. An empty packet is considered valid because
+// the OP_RETURN TLV stream may contain only non-asset records.
 func (p Packet) validate() error {
-	if len(p) <= 0 {
-		return fmt.Errorf("missing assets")
-	}
 	seen := make(map[AssetId]struct{})
 	for _, asset := range p {
 		if asset.AssetId != nil {
