@@ -137,10 +137,19 @@ func (p Packet) validate() error {
 	if len(p) <= 0 {
 		return fmt.Errorf("missing assets")
 	}
+	seen := make(map[AssetId]struct{})
 	for _, asset := range p {
+		if asset.AssetId != nil {
+			if _, ok := seen[*asset.AssetId]; ok {
+				return fmt.Errorf("duplicate asset group for asset %s", asset.AssetId)
+			}
+			seen[*asset.AssetId] = struct{}{}
+		}
+
 		if err := asset.validate(); err != nil {
 			return err
 		}
+
 		if asset.ControlAsset != nil && asset.ControlAsset.Type == AssetRefByGroup &&
 			int(asset.ControlAsset.GroupIndex) >= len(p) {
 			return fmt.Errorf(
