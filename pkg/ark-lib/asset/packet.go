@@ -35,7 +35,11 @@ func (e AssetPacketNotFoundError) Error() string {
 type Packet []AssetGroup
 
 // NewPacket creates a validated Packet from the given asset groups.
+// At least one group is required when constructing a new packet.
 func NewPacket(assets []AssetGroup) (Packet, error) {
+	if len(assets) == 0 {
+		return nil, fmt.Errorf("missing assets")
+	}
 	p := Packet(assets)
 	if err := p.validate(); err != nil {
 		return nil, err
@@ -131,12 +135,10 @@ func (p Packet) String() string {
 	return hex.EncodeToString(buf)
 }
 
-// validate checks that the packet is non-empty, all groups are valid, and control asset
-// group index references are within bounds.
+// validate checks that all groups are valid and control asset group index
+// references are within bounds. An empty packet is considered valid because
+// the OP_RETURN TLV stream may contain only non-asset records.
 func (p Packet) validate() error {
-	if len(p) <= 0 {
-		return fmt.Errorf("missing assets")
-	}
 	seen := make(map[AssetId]struct{})
 	for _, asset := range p {
 		if asset.AssetId != nil {
@@ -176,8 +178,24 @@ func (p Packet) serialize(w io.Writer) error {
 	return nil
 }
 
-// newPacketFromReader deserializes a Packet from the reader, ensuring all bytes are consumed.
+// newPacketFromReader deserializes a Packet from the reader.
+// Trailing bytes are tolerated because the OP_RETURN TLV stream may contain
+// additional records (e.g. type 0x01 Introspector Packet) after the asset data.
 func newPacketFromReader(r *bytes.Reader) (Packet, error) {
+	packet, err := parseAssetGroups(r)
+	if err != nil {
+		return nil, err
+	}
+	if err := packet.validate(); err != nil {
+		return nil, err
+	}
+	return packet, nil
+}
+
+// parseAssetGroups reads the varint group count and each asset group from the
+// reader. It performs structural deserialization only — logical validation
+// (e.g. group index bounds) is left to the caller.
+func parseAssetGroups(r *bytes.Reader) (Packet, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
 		return nil, err
@@ -190,21 +208,16 @@ func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 		}
 		assets = append(assets, *ag)
 	}
-
-	// Make sure we read the entire packet with no extra bytes left
-	if r.Len() > 0 {
-		return nil, fmt.Errorf("invalid packet length, left %d unknown bytes to read", r.Len())
-	}
-
-	packet := Packet(assets)
-	if err := packet.validate(); err != nil {
-		return nil, err
-	}
-	return packet, nil
+	return Packet(assets), nil
 }
 
-// rawPacketFromScript extracts the raw packet bytes from an OP_RETURN script
-// after validating the magic prefix and asset marker.
+// rawPacketFromScript extracts the raw asset packet bytes from an OP_RETURN
+// script. The OP_RETURN TLV stream begins with the ARK magic ("ARK") followed
+// by one or more self-delimiting type+value records. The asset record is
+// identified by the MarkerAssetPayload (0x00) type byte, which may appear at
+// any position in the stream (not necessarily first). The function scans for
+// the marker and trial-parses to distinguish real markers from identical byte
+// values embedded inside other records.
 func rawPacketFromScript(script []byte) ([]byte, error) {
 	if len(script) <= 0 {
 		return nil, fmt.Errorf("missing output script")
@@ -236,31 +249,53 @@ func rawPacketFromScript(script []byte) ([]byte, error) {
 		return nil, fmt.Errorf("missing OP_RETURN data")
 	}
 
-	r := bytes.NewReader(payload)
-
-	buf := make([]byte, len(ArkadeMagic))
-	if _, err := r.Read(buf); err != nil {
-		return nil, err
+	if len(payload) < len(ArkadeMagic) {
+		return nil, fmt.Errorf("invalid script length")
 	}
-	if !bytes.Equal(buf, ArkadeMagic) {
-		return nil, fmt.Errorf("invalid magic prefix, got %x want %x", buf, ArkadeMagic)
+	if !bytes.Equal(payload[:len(ArkadeMagic)], ArkadeMagic) {
+		return nil, fmt.Errorf("invalid magic prefix, got %x want %x",
+			payload[:len(ArkadeMagic)], ArkadeMagic)
 	}
 
-	if r.Len() <= 0 {
+	tlvData := payload[len(ArkadeMagic):]
+	if len(tlvData) == 0 {
 		return nil, fmt.Errorf("invalid script length")
 	}
 
-	marker, err := r.ReadByte()
-	if err != nil {
-		return nil, err
-	}
-	if marker != MarkerAssetPayload {
-		return nil, fmt.Errorf("invalid asset marker, got %d want %d", marker, MarkerAssetPayload)
+	// Scan for the asset marker byte. It may not be the first record in the
+	// stream, so we try each candidate position and trial-parse to confirm.
+	// Prefer non-empty candidates: a 0x00 byte embedded in another record's
+	// value may accidentally parse as count=0 (empty packet). If that happens
+	// we save it as a fallback and keep scanning for a non-empty match.
+	var emptyFallback []byte
+	for i := range tlvData {
+		if tlvData[i] != MarkerAssetPayload {
+			continue
+		}
+		candidate := tlvData[i+1:]
+		if len(candidate) == 0 {
+			continue
+		}
+		// Trial-parse: only structural parsing here — logical validation
+		// (e.g. group index bounds) happens later in the caller.
+		pkt, err := parseAssetGroups(bytes.NewReader(candidate))
+		if err != nil {
+			continue
+		}
+		if len(pkt) > 0 {
+			// Non-empty: this is definitely the real asset marker.
+			return candidate, nil
+		}
+		// count=0: could be a genuine empty asset record, or a false
+		// positive from a 0x00 byte inside a preceding TLV record's value.
+		// Save as fallback and keep scanning for a non-empty record.
+		if emptyFallback == nil {
+			emptyFallback = candidate
+		}
 	}
 
-	if r.Len() <= 0 {
-		return nil, fmt.Errorf("missing packet data")
+	if emptyFallback != nil {
+		return emptyFallback, nil
 	}
-
-	return payload[len(ArkadeMagic)+1:], nil
+	return nil, fmt.Errorf("asset marker not found in TLV stream")
 }
