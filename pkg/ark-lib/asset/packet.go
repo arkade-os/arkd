@@ -264,7 +264,11 @@ func rawPacketFromScript(script []byte) ([]byte, error) {
 
 	// Scan for the asset marker byte. It may not be the first record in the
 	// stream, so we try each candidate position and trial-parse to confirm.
-	for i := 0; i < len(tlvData); i++ {
+	// Prefer non-empty candidates: a 0x00 byte embedded in another record's
+	// value may accidentally parse as count=0 (empty packet). If that happens
+	// we save it as a fallback and keep scanning for a non-empty match.
+	var emptyFallback []byte
+	for i := range tlvData {
 		if tlvData[i] != MarkerAssetPayload {
 			continue
 		}
@@ -272,14 +276,26 @@ func rawPacketFromScript(script []byte) ([]byte, error) {
 		if len(candidate) == 0 {
 			continue
 		}
-		// Trial-parse: if the candidate bytes form structurally valid asset
-		// groups the marker is real; otherwise the 0x00 byte is part of
-		// another record. Only structural parsing is done here — logical
-		// validation (e.g. group index bounds) happens later in the caller.
-		if _, err := parseAssetGroups(bytes.NewReader(candidate)); err == nil {
+		// Trial-parse: only structural parsing here — logical validation
+		// (e.g. group index bounds) happens later in the caller.
+		pkt, err := parseAssetGroups(bytes.NewReader(candidate))
+		if err != nil {
+			continue
+		}
+		if len(pkt) > 0 {
+			// Non-empty: this is definitely the real asset marker.
 			return candidate, nil
+		}
+		// count=0: could be a genuine empty asset record, or a false
+		// positive from a 0x00 byte inside a preceding TLV record's value.
+		// Save as fallback and keep scanning for a non-empty record.
+		if emptyFallback == nil {
+			emptyFallback = candidate
 		}
 	}
 
+	if emptyFallback != nil {
+		return emptyFallback, nil
+	}
 	return nil, fmt.Errorf("asset marker not found in TLV stream")
 }
