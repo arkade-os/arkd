@@ -182,6 +182,20 @@ func (p Packet) serialize(w io.Writer) error {
 // Trailing bytes are tolerated because the OP_RETURN TLV stream may contain
 // additional records (e.g. type 0x01 Introspector Packet) after the asset data.
 func newPacketFromReader(r *bytes.Reader) (Packet, error) {
+	packet, err := parseAssetGroups(r)
+	if err != nil {
+		return nil, err
+	}
+	if err := packet.validate(); err != nil {
+		return nil, err
+	}
+	return packet, nil
+}
+
+// parseAssetGroups reads the varint group count and each asset group from the
+// reader. It performs structural deserialization only — logical validation
+// (e.g. group index bounds) is left to the caller.
+func parseAssetGroups(r *bytes.Reader) (Packet, error) {
 	count, err := deserializeVarUint(r)
 	if err != nil {
 		return nil, err
@@ -194,16 +208,16 @@ func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 		}
 		assets = append(assets, *ag)
 	}
-
-	packet := Packet(assets)
-	if err := packet.validate(); err != nil {
-		return nil, err
-	}
-	return packet, nil
+	return Packet(assets), nil
 }
 
-// rawPacketFromScript extracts the raw packet bytes from an OP_RETURN script
-// after validating the magic prefix and asset marker.
+// rawPacketFromScript extracts the raw asset packet bytes from an OP_RETURN
+// script. The OP_RETURN TLV stream begins with the ARK magic ("ARK") followed
+// by one or more self-delimiting type+value records. The asset record is
+// identified by the MarkerAssetPayload (0x00) type byte, which may appear at
+// any position in the stream (not necessarily first). The function scans for
+// the marker and trial-parses to distinguish real markers from identical byte
+// values embedded inside other records.
 func rawPacketFromScript(script []byte) ([]byte, error) {
 	if len(script) <= 0 {
 		return nil, fmt.Errorf("missing output script")
@@ -235,31 +249,37 @@ func rawPacketFromScript(script []byte) ([]byte, error) {
 		return nil, fmt.Errorf("missing OP_RETURN data")
 	}
 
-	r := bytes.NewReader(payload)
-
-	buf := make([]byte, len(ArkadeMagic))
-	if _, err := r.Read(buf); err != nil {
-		return nil, err
+	if len(payload) < len(ArkadeMagic) {
+		return nil, fmt.Errorf("invalid script length")
 	}
-	if !bytes.Equal(buf, ArkadeMagic) {
-		return nil, fmt.Errorf("invalid magic prefix, got %x want %x", buf, ArkadeMagic)
+	if !bytes.Equal(payload[:len(ArkadeMagic)], ArkadeMagic) {
+		return nil, fmt.Errorf("invalid magic prefix, got %x want %x",
+			payload[:len(ArkadeMagic)], ArkadeMagic)
 	}
 
-	if r.Len() <= 0 {
+	tlvData := payload[len(ArkadeMagic):]
+	if len(tlvData) == 0 {
 		return nil, fmt.Errorf("invalid script length")
 	}
 
-	marker, err := r.ReadByte()
-	if err != nil {
-		return nil, err
-	}
-	if marker != MarkerAssetPayload {
-		return nil, fmt.Errorf("invalid asset marker, got %d want %d", marker, MarkerAssetPayload)
+	// Scan for the asset marker byte. It may not be the first record in the
+	// stream, so we try each candidate position and trial-parse to confirm.
+	for i := 0; i < len(tlvData); i++ {
+		if tlvData[i] != MarkerAssetPayload {
+			continue
+		}
+		candidate := tlvData[i+1:]
+		if len(candidate) == 0 {
+			continue
+		}
+		// Trial-parse: if the candidate bytes form structurally valid asset
+		// groups the marker is real; otherwise the 0x00 byte is part of
+		// another record. Only structural parsing is done here — logical
+		// validation (e.g. group index bounds) happens later in the caller.
+		if _, err := parseAssetGroups(bytes.NewReader(candidate)); err == nil {
+			return candidate, nil
+		}
 	}
 
-	if r.Len() <= 0 {
-		return nil, fmt.Errorf("missing packet data")
-	}
-
-	return payload[len(ArkadeMagic)+1:], nil
+	return nil, fmt.Errorf("asset marker not found in TLV stream")
 }

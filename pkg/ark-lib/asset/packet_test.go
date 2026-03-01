@@ -136,7 +136,9 @@ func TestPacket(t *testing.T) {
 				require.NoError(t, tokenizer.Err())
 
 				// Rebuild script with extended data (original data + trailing TLV).
-				extended := append(rawData, trailingTLV...)
+				extended := make([]byte, len(rawData)+len(trailingTLV))
+				copy(extended, rawData)
+				copy(extended[len(rawData):], trailingTLV)
 				extScript, err := txscript.NewScriptBuilder().
 					AddOp(txscript.OP_RETURN).AddData(extended).Script()
 				require.NoError(t, err)
@@ -146,6 +148,51 @@ func TestPacket(t *testing.T) {
 
 				// Must parse without error despite trailing TLV bytes.
 				parsed, err := asset.NewPacketFromScript(extScript)
+				require.NoError(t, err)
+				require.Equal(t, len(origPacket), len(parsed))
+			})
+		}
+	})
+
+	t.Run("arbitrary TLV record order", func(t *testing.T) {
+		// The asset marker (0x00) may appear at any position after the ARK
+		// magic, not necessarily first.  For example an Introspector record
+		// (type 0x01) could precede the asset data.
+		for _, v := range fixtures.Valid.NewPacketFromTxOut {
+			t.Run(v.Name, func(t *testing.T) {
+				origScript, err := hex.DecodeString(v.Script)
+				require.NoError(t, err)
+
+				origPacket, err := asset.NewPacketFromScript(origScript)
+				require.NoError(t, err)
+
+				// Extract raw OP_RETURN payload.
+				tokenizer := txscript.MakeScriptTokenizer(0, origScript)
+				tokenizer.Next() // skip OP_RETURN opcode
+				var rawData []byte
+				for tokenizer.Next() {
+					rawData = append(rawData, tokenizer.Data()...)
+				}
+				require.NoError(t, tokenizer.Err())
+
+				// rawData = ARK + 0x00 + <asset groups>.
+				// Rearrange to: ARK + 0x01 <fake introspector> + 0x00 + <asset groups>.
+				magic := rawData[:len(asset.ArkadeMagic)]
+				assetRecord := rawData[len(asset.ArkadeMagic):] // 0x00 + groups
+
+				fakeIntrospector := []byte{0x01, 0xca, 0xfe}
+				reordered := make([]byte, 0, len(magic)+len(fakeIntrospector)+len(assetRecord))
+				reordered = append(reordered, magic...)
+				reordered = append(reordered, fakeIntrospector...)
+				reordered = append(reordered, assetRecord...)
+
+				reorderedScript, err := txscript.NewScriptBuilder().
+					AddOp(txscript.OP_RETURN).AddData(reordered).Script()
+				require.NoError(t, err)
+
+				require.True(t, asset.IsAssetPacket(reorderedScript))
+
+				parsed, err := asset.NewPacketFromScript(reorderedScript)
 				require.NoError(t, err)
 				require.Equal(t, len(origPacket), len(parsed))
 			})
