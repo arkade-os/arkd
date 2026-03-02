@@ -3,10 +3,10 @@ package asset
 import (
 	"bytes"
 	"context"
-	errs "errors"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -30,19 +30,13 @@ type AssetSource interface {
 // ValidateAssetTransaction validates that the asset packet embedded in the transaction
 // is consistent with the transaction inputs/outputs and the given prevout asset map.
 func ValidateAssetTransaction(
-	ctx context.Context, tx *wire.MsgTx, assetPrevouts map[int][]Asset, assetSrc AssetSource,
+	ctx context.Context, tx *wire.MsgTx, packet Packet, assetPrevouts map[int][]Asset, assetSrc AssetSource,
 ) errors.Error {
-	packet, err := NewPacketFromTx(tx)
-	if err != nil {
-		if errs.Is(err, AssetPacketNotFoundError{tx.TxID()}) {
-			if len(assetPrevouts) > 0 {
-				return errors.ASSET_VALIDATION_FAILED.New(
-					"asset packet not found in tx %s", tx.TxID(),
-				)
-			}
-			return nil
-		}
-		return errors.ASSET_VALIDATION_FAILED.New("failed to get asset packet from tx: %w", err)
+	// reject transaction spending asset vtxos without asset packet
+	if len(packet) == 0 && len(assetPrevouts) > 0 {
+		return errors.ASSET_VALIDATION_FAILED.New(
+			"asset packet not found in tx %s", tx.TxID(),
+		)
 	}
 
 	// verify that every asset in the prevouts is present in the packet
@@ -206,14 +200,15 @@ func validateGroupOutputs(arkTx *wire.MsgTx, assetID string, grp AssetGroup) err
 		return nil
 	}
 
-	assetPacketIndex, anchorIndex := -1, -1
+	anchorIndex := -1
+	opReturnOutputIndex := make(map[int]struct{})
 	for outputIndex, output := range arkTx.TxOut {
 		if bytes.Equal(output.PkScript, txutils.ANCHOR_PKSCRIPT) {
 			anchorIndex = outputIndex
 			continue
 		}
-		if IsAssetPacket(output.PkScript) {
-			assetPacketIndex = outputIndex
+		if bytes.HasPrefix(output.PkScript, []byte{txscript.OP_RETURN}) {
+			opReturnOutputIndex[outputIndex] = struct{}{}
 		}
 	}
 
@@ -237,9 +232,9 @@ func validateGroupOutputs(arkTx *wire.MsgTx, assetID string, grp AssetGroup) err
 		}
 
 		// verify referenced output is not the packet itself
-		if vout == assetPacketIndex {
+		if _, ok := opReturnOutputIndex[vout]; ok {
 			return errors.ASSET_OUTPUT_INVALID.New(
-				"asset output vout %d is a packet output",
+				"asset output vout %d is OP_RETURN", // TODO allow subdust output holding asset ?
 				vout,
 			).WithMetadata(errors.AssetOutputMetadata{OutputIndex: vout, AssetID: assetID})
 		}

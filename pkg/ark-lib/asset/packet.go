@@ -7,29 +7,9 @@ import (
 	"io"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
 )
 
-var (
-	// ArkadeMagic is the 3-byte magic prefix ("ARK") that identifies an asset packet in a
-	// OP_RETURN output.
-	ArkadeMagic = []byte{0x41, 0x52, 0x4B} // "ARK"
-	// MarkerAssetPayload is the marker byte that follows ArkadeMagic and indicates an asset
-	// payload.
-	MarkerAssetPayload = byte(0)
-)
-
-// AssetPacketNotFoundError is returned when a transaction does not contain an asset packet.
-type AssetPacketNotFoundError struct {
-	// Txid is the transaction ID that was expected to contain an asset packet.
-	Txid string
-}
-
-// Error implements the error interface.
-func (e AssetPacketNotFoundError) Error() string {
-	return fmt.Sprintf("asset packet not found in tx %s", e.Txid)
-}
+const PacketType = uint8(0)
 
 // Packet represents a list of AssetGroup entries embedded in a transaction's OP_RETURN output.
 type Packet []AssetGroup
@@ -43,44 +23,24 @@ func NewPacket(assets []AssetGroup) (Packet, error) {
 	return p, nil
 }
 
-// NewPacketFromTx extracts and deserializes a Packet from the first OP_RETURN output
-// in the transaction that contains an asset packet.
-func NewPacketFromTx(tx *wire.MsgTx) (Packet, error) {
-	for _, out := range tx.TxOut {
-		if IsAssetPacket(out.PkScript) {
-			return NewPacketFromTxOut(*out)
-		}
-	}
-	return nil, AssetPacketNotFoundError{Txid: tx.TxID()}
-}
-
-// NewPacketFromTxOut deserializes a Packet from a transaction output's script.
-func NewPacketFromTxOut(txOut wire.TxOut) (Packet, error) {
-	return NewPacketFromScript(txOut.PkScript)
-}
-
-// NewPacketFromScript deserializes a Packet from a raw OP_RETURN script.
-func NewPacketFromScript(script []byte) (Packet, error) {
-	rawPacket, err := rawPacketFromScript(script)
-	if err != nil {
-		return nil, err
-	}
-	return newPacketFromReader(bytes.NewReader(rawPacket))
-}
-
-// NewPacketFromString parses a hex-encoded OP_RETURN script into a Packet.
+// NewPacketFromString parses a hex-encoded packet.
 func NewPacketFromString(s string) (Packet, error) {
+	if len(s) == 0 {
+		return nil, fmt.Errorf("missing packet data")
+	}
 	buf, err := hex.DecodeString(s)
 	if err != nil {
-		return nil, fmt.Errorf("invalid output script format, must be hex")
+		return nil, fmt.Errorf("invalid packet format, must be hex")
 	}
-	return NewPacketFromScript(buf)
+	return NewPacketFromBytes(buf)
 }
 
-// IsAssetPacket returns whether the given script is a valid OP_RETURN containing an asset packet.
-func IsAssetPacket(script []byte) bool {
-	_, err := rawPacketFromScript(script)
-	return err == nil
+func NewPacketFromBytes(buf []byte) (Packet, error) {
+	return newPacketFromReader(bytes.NewReader(buf))
+}
+
+func (p Packet) Type() uint8 {
+	return PacketType
 }
 
 // LeafTxPacket converts the packet into its batch-leaf form where each group's inputs
@@ -93,38 +53,21 @@ func (p Packet) LeafTxPacket(intentTxid chainhash.Hash) Packet {
 	return batchLeafPacket
 }
 
-// TxOut serializes the packet into a zero-value OP_RETURN transaction output.
-func (p Packet) TxOut() (*wire.TxOut, error) {
-	script, err := p.Serialize()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build output script: %w", (err))
-	}
-	return wire.NewTxOut(0, script), nil
-}
-
-// Serialize encodes the packet as a complete OP_RETURN script (magic + marker + groups).
+// Serialize encodes the packet as raw bytes.
 func (p Packet) Serialize() ([]byte, error) {
 	if len(p) <= 0 {
 		return nil, nil
 	}
 
 	w := bytes.NewBuffer(nil)
-	if err := serializeSlice(w, ArkadeMagic); err != nil {
-		return nil, fmt.Errorf("failed to serialize magic prefix: %w", err)
-	}
-	if err := w.WriteByte(MarkerAssetPayload); err != nil {
-		return nil, fmt.Errorf("failed to serialize asset marker: %w", err)
-	}
-
 	if err := p.serialize(w); err != nil {
 		return nil, fmt.Errorf("failed to serialize packet: %w", err)
 	}
 
-	data := w.Bytes()
-	return txscript.NewScriptBuilder().AddOp(txscript.OP_RETURN).AddData(data).Script()
+	return w.Bytes(), nil
 }
 
-// String returns the hex-encoded representation of the serialized packet script.
+// String returns the hex-encoded representation of the serialized packet.
 func (p Packet) String() string {
 	// nolint
 	buf, _ := p.Serialize()
@@ -201,66 +144,4 @@ func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 		return nil, err
 	}
 	return packet, nil
-}
-
-// rawPacketFromScript extracts the raw packet bytes from an OP_RETURN script
-// after validating the magic prefix and asset marker.
-func rawPacketFromScript(script []byte) ([]byte, error) {
-	if len(script) <= 0 {
-		return nil, fmt.Errorf("missing output script")
-	}
-	if !bytes.HasPrefix(script, []byte{txscript.OP_RETURN}) {
-		return nil, fmt.Errorf("OP_RETURN not found in output script")
-	}
-
-	tokenizer := txscript.MakeScriptTokenizer(0, script)
-	if !tokenizer.Next() {
-		if err := tokenizer.Err(); err != nil {
-			return nil, fmt.Errorf("invalid OP_RETURN output script: %w", err)
-		}
-		return nil, fmt.Errorf("invalid OP_RETURN output script")
-	}
-
-	var payload []byte
-	for tokenizer.Next() {
-		data := tokenizer.Data()
-		if len(data) <= 0 {
-			return nil, fmt.Errorf("missing OP_RETURN data")
-		}
-		payload = append(payload, data...)
-	}
-	if err := tokenizer.Err(); err != nil {
-		return nil, fmt.Errorf("invalid OP_RETURN output script: %w", err)
-	}
-	if len(payload) <= 0 {
-		return nil, fmt.Errorf("missing OP_RETURN data")
-	}
-
-	r := bytes.NewReader(payload)
-
-	buf := make([]byte, len(ArkadeMagic))
-	if _, err := r.Read(buf); err != nil {
-		return nil, err
-	}
-	if !bytes.Equal(buf, ArkadeMagic) {
-		return nil, fmt.Errorf("invalid magic prefix, got %x want %x", buf, ArkadeMagic)
-	}
-
-	if r.Len() <= 0 {
-		return nil, fmt.Errorf("invalid script length")
-	}
-
-	marker, err := r.ReadByte()
-	if err != nil {
-		return nil, err
-	}
-	if marker != MarkerAssetPayload {
-		return nil, fmt.Errorf("invalid asset marker, got %d want %d", marker, MarkerAssetPayload)
-	}
-
-	if r.Len() <= 0 {
-		return nil, fmt.Errorf("missing packet data")
-	}
-
-	return payload[len(ArkadeMagic)+1:], nil
 }
