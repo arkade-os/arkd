@@ -879,6 +879,13 @@ func (c *Config) adminService() error {
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		func(ctx context.Context, settings domain.Settings) error {
+			// Propagate settings to the running app service.
+			if c.svc != nil {
+				return c.svc.UpdateSettings(settings)
+			}
+			return nil
+		},
 	)
 	return nil
 }

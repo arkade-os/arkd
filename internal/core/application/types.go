@@ -62,6 +62,7 @@ type Service interface {
 		ctx context.Context,
 		txid string,
 	) (*domain.Intent, errors.Error)
+	UpdateSettings(settings domain.Settings) error
 }
 
 type ServiceInfo struct {

@@ -64,12 +64,15 @@ type adminService struct {
 
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
+
+	onSettingsUpdated func(context.Context, domain.Settings) error
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
+	onSettingsUpdated func(context.Context, domain.Settings) error,
 ) AdminService {
 	return &adminService{
 		walletSvc:                 walletSvc,
@@ -80,6 +83,7 @@ func NewAdminService(
 		feeManager:                feeManager,
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
+		onSettingsUpdated:         onSettingsUpdated,
 	}
 }
 
@@ -599,7 +603,13 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 
 func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Settings) error {
 	settings.UpdatedAt = time.Now()
-	return a.repoManager.Settings().Upsert(ctx, settings)
+	if err := a.repoManager.Settings().Upsert(ctx, settings); err != nil {
+		return err
+	}
+	if a.onSettingsUpdated != nil {
+		return a.onSettingsUpdated(ctx, settings)
+	}
+	return nil
 }
 
 func (a *adminService) ClearSettings(ctx context.Context) error {

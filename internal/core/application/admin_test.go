@@ -17,7 +17,7 @@ func TestAdminService_Settings(t *testing.T) {
 	repo := &mockRepoManager{
 		settingsRepo: &mockSettingsRepository{},
 	}
-	svc := application.NewAdminService(nil, repo, nil, nil, ports.UnixTime, nil, 1, 128)
+	svc := application.NewAdminService(nil, repo, nil, nil, ports.UnixTime, nil, 1, 128, nil)
 
 	ctx := context.Background()
 
