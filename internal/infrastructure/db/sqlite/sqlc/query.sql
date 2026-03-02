@@ -437,11 +437,12 @@ WHERE txid = @txid;
 -- Marker queries
 
 -- name: UpsertMarker :exec
-INSERT INTO marker (id, depth, parent_markers)
-VALUES (@id, @depth, @parent_markers)
+INSERT INTO marker (id, depth, parent_markers, created_at)
+VALUES (@id, @depth, @parent_markers, @created_at)
 ON CONFLICT(id) DO UPDATE SET
     depth = EXCLUDED.depth,
-    parent_markers = EXCLUDED.parent_markers;
+    parent_markers = EXCLUDED.parent_markers,
+    created_at = EXCLUDED.created_at;
 
 -- name: SelectMarker :one
 SELECT * FROM marker WHERE id = @id;

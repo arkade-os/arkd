@@ -137,6 +137,24 @@
           }
         }
       },
+      "InputRateLimitInfo": {
+        "title": "InputRateLimitInfo",
+        "type": "object",
+        "properties": {
+          "cooldownSecs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "depth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "markerDepth": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "Intent": {
         "title": "Intent",
         "type": "object",

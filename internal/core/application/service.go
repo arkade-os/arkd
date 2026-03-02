@@ -78,6 +78,11 @@ type service struct {
 	// fees
 	feeManager ports.FeeManager
 
+	// rate limiting
+	rateLimitEnabled         bool
+	rateLimitMaxVelocity     float64
+	rateLimitMaxCooldownSecs int64
+
 	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
 	vtxoNoCsvValidationCutoffTime time.Time
 
@@ -124,6 +129,7 @@ func NewService(
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
 	vtxoNoCsvValidationCutoffTime time.Time,
+	rateLimitEnabled bool, rateLimitMaxVelocity float64, rateLimitMaxCooldownSecs int64,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -215,6 +221,9 @@ func NewService(
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 		feeManager:                    feeManager,
+		rateLimitEnabled:              rateLimitEnabled,
+		rateLimitMaxVelocity:          rateLimitMaxVelocity,
+		rateLimitMaxCooldownSecs:      rateLimitMaxCooldownSecs,
 	}, nil
 }
 
@@ -553,6 +562,10 @@ func (s *service) SubmitOffchainTx(
 				VtxoOutpoints: vtxoOutpoints,
 				GotVtxos:      gotVtxos,
 			})
+	}
+
+	if rateLimitErr := s.checkRateLimit(ctx, spentVtxos); rateLimitErr != nil {
+		return nil, rateLimitErr
 	}
 
 	for _, vtxo := range spentVtxos {
@@ -2186,6 +2199,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		MaxTxWeight:          int64(s.maxTxWeight),
+		RateLimitEnabled:     s.rateLimitEnabled,
 		Fees: FeeInfo{
 			IntentFees: *currIntentFees,
 		},

@@ -28,6 +28,7 @@ type markerDTO struct {
 	ID              string
 	Depth           uint32
 	ParentMarkerIDs []string
+	CreatedAt       int64
 }
 
 type sweptMarkerDTO struct {
@@ -118,6 +119,7 @@ func (r *markerRepository) AddMarker(ctx context.Context, marker domain.Marker) 
 		ID:              marker.ID,
 		Depth:           marker.Depth,
 		ParentMarkerIDs: marker.ParentMarkerIDs,
+		CreatedAt:       marker.CreatedAt,
 	}
 
 	err := r.markerStore.Upsert(marker.ID, dto)
@@ -149,6 +151,7 @@ func (r *markerRepository) GetMarker(ctx context.Context, id string) (*domain.Ma
 		ID:              dto.ID,
 		Depth:           dto.Depth,
 		ParentMarkerIDs: dto.ParentMarkerIDs,
+		CreatedAt:       dto.CreatedAt,
 	}, nil
 }
 
@@ -168,6 +171,7 @@ func (r *markerRepository) GetMarkersByDepth(
 			ID:              dto.ID,
 			Depth:           dto.Depth,
 			ParentMarkerIDs: dto.ParentMarkerIDs,
+			CreatedAt:       dto.CreatedAt,
 		})
 	}
 	return markers, nil
@@ -190,6 +194,7 @@ func (r *markerRepository) GetMarkersByDepthRange(
 			ID:              dto.ID,
 			Depth:           dto.Depth,
 			ParentMarkerIDs: dto.ParentMarkerIDs,
+			CreatedAt:       dto.CreatedAt,
 		})
 	}
 	return markers, nil
@@ -496,6 +501,7 @@ func (r *markerRepository) CreateRootMarkersForVtxos(
 			ID:              markerID,
 			Depth:           0,
 			ParentMarkerIDs: nil,
+			CreatedAt:       time.Now().Unix(),
 		}); err != nil {
 			return fmt.Errorf("failed to create marker for vtxo %s: %w", markerID, err)
 		}

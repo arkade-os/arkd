@@ -53,6 +53,7 @@ func (m *markerRepository) AddMarker(ctx context.Context, marker domain.Marker) 
 			RawMessage: parentMarkersJSON,
 			Valid:      true,
 		},
+		CreatedAt: marker.CreatedAt,
 	})
 }
 
@@ -310,6 +311,7 @@ func (m *markerRepository) CreateRootMarkersForVtxos(
 					RawMessage: []byte("[]"),
 					Valid:      true,
 				},
+				CreatedAt: time.Now().Unix(),
 			}); err != nil {
 				return fmt.Errorf("failed to create marker for vtxo %s: %w", markerID, err)
 			}
@@ -343,7 +345,10 @@ func (m *markerRepository) GetVtxosByArkTxid(
 	ctx context.Context,
 	arkTxid string,
 ) ([]domain.Vtxo, error) {
-	rows, err := m.querier.SelectVtxosByArkTxid(ctx, arkTxid)
+	rows, err := m.querier.SelectVtxosByArkTxid(
+		ctx,
+		sql.NullString{String: arkTxid, Valid: arkTxid != ""},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -412,6 +417,7 @@ func rowToMarker(row queries.Marker) (domain.Marker, error) {
 		ID:              row.ID,
 		Depth:           uint32(row.Depth),
 		ParentMarkerIDs: parentMarkerIDs,
+		CreatedAt:       row.CreatedAt,
 	}, nil
 }
 

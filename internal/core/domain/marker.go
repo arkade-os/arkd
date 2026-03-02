@@ -14,6 +14,8 @@ type Marker struct {
 	Depth uint32
 	// ParentMarkerIDs is a list of marker IDs that this marker descends from
 	ParentMarkerIDs []string
+	// CreatedAt is the Unix timestamp (seconds) when this marker was created
+	CreatedAt int64
 }
 
 // IsAtMarkerBoundary returns true if the given depth is at a marker boundary.

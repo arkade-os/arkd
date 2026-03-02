@@ -680,18 +680,23 @@ func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSe
 }
 
 const selectMarker = `-- name: SelectMarker :one
-SELECT id, depth, parent_markers FROM marker WHERE id = ?1
+SELECT id, depth, parent_markers, created_at FROM marker WHERE id = ?1
 `
 
 func (q *Queries) SelectMarker(ctx context.Context, id string) (Marker, error) {
 	row := q.db.QueryRowContext(ctx, selectMarker, id)
 	var i Marker
-	err := row.Scan(&i.ID, &i.Depth, &i.ParentMarkers)
+	err := row.Scan(
+		&i.ID,
+		&i.Depth,
+		&i.ParentMarkers,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
 const selectMarkersByDepth = `-- name: SelectMarkersByDepth :many
-SELECT id, depth, parent_markers FROM marker WHERE depth = ?1
+SELECT id, depth, parent_markers, created_at FROM marker WHERE depth = ?1
 `
 
 func (q *Queries) SelectMarkersByDepth(ctx context.Context, depth int64) ([]Marker, error) {
@@ -703,7 +708,12 @@ func (q *Queries) SelectMarkersByDepth(ctx context.Context, depth int64) ([]Mark
 	var items []Marker
 	for rows.Next() {
 		var i Marker
-		if err := rows.Scan(&i.ID, &i.Depth, &i.ParentMarkers); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Depth,
+			&i.ParentMarkers,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -718,7 +728,7 @@ func (q *Queries) SelectMarkersByDepth(ctx context.Context, depth int64) ([]Mark
 }
 
 const selectMarkersByDepthRange = `-- name: SelectMarkersByDepthRange :many
-SELECT id, depth, parent_markers FROM marker WHERE depth >= ?1 AND depth <= ?2 ORDER BY depth
+SELECT id, depth, parent_markers, created_at FROM marker WHERE depth >= ?1 AND depth <= ?2 ORDER BY depth
 `
 
 type SelectMarkersByDepthRangeParams struct {
@@ -735,7 +745,12 @@ func (q *Queries) SelectMarkersByDepthRange(ctx context.Context, arg SelectMarke
 	var items []Marker
 	for rows.Next() {
 		var i Marker
-		if err := rows.Scan(&i.ID, &i.Depth, &i.ParentMarkers); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Depth,
+			&i.ParentMarkers,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -750,7 +765,7 @@ func (q *Queries) SelectMarkersByDepthRange(ctx context.Context, arg SelectMarke
 }
 
 const selectMarkersByIds = `-- name: SelectMarkersByIds :many
-SELECT id, depth, parent_markers FROM marker WHERE id IN (/*SLICE:ids*/?)
+SELECT id, depth, parent_markers, created_at FROM marker WHERE id IN (/*SLICE:ids*/?)
 `
 
 func (q *Queries) SelectMarkersByIds(ctx context.Context, ids []string) ([]Marker, error) {
@@ -772,7 +787,12 @@ func (q *Queries) SelectMarkersByIds(ctx context.Context, ids []string) ([]Marke
 	var items []Marker
 	for rows.Next() {
 		var i Marker
-		if err := rows.Scan(&i.ID, &i.Depth, &i.ParentMarkers); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Depth,
+			&i.ParentMarkers,
+			&i.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2569,22 +2589,29 @@ func (q *Queries) UpsertIntent(ctx context.Context, arg UpsertIntentParams) erro
 
 const upsertMarker = `-- name: UpsertMarker :exec
 
-INSERT INTO marker (id, depth, parent_markers)
-VALUES (?1, ?2, ?3)
+INSERT INTO marker (id, depth, parent_markers, created_at)
+VALUES (?1, ?2, ?3, ?4)
 ON CONFLICT(id) DO UPDATE SET
     depth = EXCLUDED.depth,
-    parent_markers = EXCLUDED.parent_markers
+    parent_markers = EXCLUDED.parent_markers,
+    created_at = EXCLUDED.created_at
 `
 
 type UpsertMarkerParams struct {
 	ID            string
 	Depth         int64
 	ParentMarkers sql.NullString
+	CreatedAt     int64
 }
 
 // Marker queries
 func (q *Queries) UpsertMarker(ctx context.Context, arg UpsertMarkerParams) error {
-	_, err := q.db.ExecContext(ctx, upsertMarker, arg.ID, arg.Depth, arg.ParentMarkers)
+	_, err := q.db.ExecContext(ctx, upsertMarker,
+		arg.ID,
+		arg.Depth,
+		arg.ParentMarkers,
+		arg.CreatedAt,
+	)
 	return err
 }
 

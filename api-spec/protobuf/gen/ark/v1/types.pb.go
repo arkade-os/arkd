@@ -1570,6 +1570,66 @@ func (x *ErrorDetails) GetMetadata() map[string]string {
 	return nil
 }
 
+type InputRateLimitInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Depth         int32                  `protobuf:"varint,1,opt,name=depth,proto3" json:"depth,omitempty"`
+	MarkerDepth   int32                  `protobuf:"varint,2,opt,name=marker_depth,json=markerDepth,proto3" json:"marker_depth,omitempty"`
+	CooldownSecs  int64                  `protobuf:"varint,3,opt,name=cooldown_secs,json=cooldownSecs,proto3" json:"cooldown_secs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InputRateLimitInfo) Reset() {
+	*x = InputRateLimitInfo{}
+	mi := &file_ark_v1_types_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InputRateLimitInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InputRateLimitInfo) ProtoMessage() {}
+
+func (x *InputRateLimitInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_types_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InputRateLimitInfo.ProtoReflect.Descriptor instead.
+func (*InputRateLimitInfo) Descriptor() ([]byte, []int) {
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *InputRateLimitInfo) GetDepth() int32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
+}
+
+func (x *InputRateLimitInfo) GetMarkerDepth() int32 {
+	if x != nil {
+		return x.MarkerDepth
+	}
+	return 0
+}
+
+func (x *InputRateLimitInfo) GetCooldownSecs() int64 {
+	if x != nil {
+		return x.CooldownSecs
+	}
+	return 0
+}
+
 var File_ark_v1_types_proto protoreflect.FileDescriptor
 
 const file_ark_v1_types_proto_rawDesc = "" +
@@ -1708,7 +1768,11 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\bmetadata\x18\x04 \x03(\v2\".ark.v1.ErrorDetails.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01By\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"r\n" +
+	"\x12InputRateLimitInfo\x12\x14\n" +
+	"\x05depth\x18\x01 \x01(\x05R\x05depth\x12!\n" +
+	"\fmarker_depth\x18\x02 \x01(\x05R\vmarkerDepth\x12#\n" +
+	"\rcooldown_secs\x18\x03 \x01(\x03R\fcooldownSecsBy\n" +
 	"\n" +
 	"com.ark.v1B\n" +
 	"TypesProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
@@ -1725,7 +1789,7 @@ func file_ark_v1_types_proto_rawDescGZIP() []byte {
 	return file_ark_v1_types_proto_rawDescData
 }
 
-var file_ark_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_ark_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_ark_v1_types_proto_goTypes = []any{
 	(*Outpoint)(nil),                  // 0: ark.v1.Outpoint
 	(*Input)(nil),                     // 1: ark.v1.Input
@@ -1752,11 +1816,12 @@ var file_ark_v1_types_proto_goTypes = []any{
 	(*Heartbeat)(nil),                 // 22: ark.v1.Heartbeat
 	(*StreamStartedEvent)(nil),        // 23: ark.v1.StreamStartedEvent
 	(*ErrorDetails)(nil),              // 24: ark.v1.ErrorDetails
-	nil,                               // 25: ark.v1.TxNotification.CheckpointTxsEntry
-	nil,                               // 26: ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
-	nil,                               // 27: ark.v1.TreeNoncesEvent.NoncesEntry
-	nil,                               // 28: ark.v1.TreeTxEvent.ChildrenEntry
-	nil,                               // 29: ark.v1.ErrorDetails.MetadataEntry
+	(*InputRateLimitInfo)(nil),        // 25: ark.v1.InputRateLimitInfo
+	nil,                               // 26: ark.v1.TxNotification.CheckpointTxsEntry
+	nil,                               // 27: ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
+	nil,                               // 28: ark.v1.TreeNoncesEvent.NoncesEntry
+	nil,                               // 29: ark.v1.TreeTxEvent.ChildrenEntry
+	nil,                               // 30: ark.v1.ErrorDetails.MetadataEntry
 }
 var file_ark_v1_types_proto_depIdxs = []int32{
 	0,  // 0: ark.v1.Input.outpoint:type_name -> ark.v1.Outpoint
@@ -1765,13 +1830,13 @@ var file_ark_v1_types_proto_depIdxs = []int32{
 	3,  // 3: ark.v1.Vtxo.assets:type_name -> ark.v1.Asset
 	2,  // 4: ark.v1.TxNotification.spent_vtxos:type_name -> ark.v1.Vtxo
 	2,  // 5: ark.v1.TxNotification.spendable_vtxos:type_name -> ark.v1.Vtxo
-	25, // 6: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
+	26, // 6: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
 	9,  // 7: ark.v1.ScheduledSession.fees:type_name -> ark.v1.FeeInfo
 	10, // 8: ark.v1.FeeInfo.intent_fee:type_name -> ark.v1.IntentFeeInfo
-	26, // 9: ark.v1.TreeNoncesAggregatedEvent.tree_nonces:type_name -> ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
-	27, // 10: ark.v1.TreeNoncesEvent.nonces:type_name -> ark.v1.TreeNoncesEvent.NoncesEntry
-	28, // 11: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
-	29, // 12: ark.v1.ErrorDetails.metadata:type_name -> ark.v1.ErrorDetails.MetadataEntry
+	27, // 9: ark.v1.TreeNoncesAggregatedEvent.tree_nonces:type_name -> ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
+	28, // 10: ark.v1.TreeNoncesEvent.nonces:type_name -> ark.v1.TreeNoncesEvent.NoncesEntry
+	29, // 11: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
+	30, // 12: ark.v1.ErrorDetails.metadata:type_name -> ark.v1.ErrorDetails.MetadataEntry
 	4,  // 13: ark.v1.TxNotification.CheckpointTxsEntry.value:type_name -> ark.v1.TxData
 	14, // [14:14] is the sub-list for method output_type
 	14, // [14:14] is the sub-list for method input_type
@@ -1791,7 +1856,7 @@ func file_ark_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_types_proto_rawDesc), len(file_ark_v1_types_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   30,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

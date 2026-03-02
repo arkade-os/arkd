@@ -105,6 +105,7 @@ type Marker struct {
 	ID            string
 	Depth         int64
 	ParentMarkers sql.NullString
+	CreatedAt     int64
 }
 
 type OffchainTx struct {

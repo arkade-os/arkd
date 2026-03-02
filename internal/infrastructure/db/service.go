@@ -637,6 +637,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				ID:              newMarkerID,
 				Depth:           newDepth,
 				ParentMarkerIDs: parentMarkerIDs,
+				CreatedAt:       time.Now().Unix(),
 			}
 			if err := s.markerStore.AddMarker(ctx, marker); err != nil {
 				log.WithError(err).Warn("failed to create marker for chained vtxo")
@@ -688,6 +689,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					ID:              dustMarkerID,
 					Depth:           newDepth,
 					ParentMarkerIDs: markerIDs,
+					CreatedAt:       time.Now().Unix(),
 				}); err != nil {
 					log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
 				} else {

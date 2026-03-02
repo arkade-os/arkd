@@ -868,6 +868,9 @@
           "network": {
             "type": "string"
           },
+          "rateLimitEnabled": {
+            "type": "boolean"
+          },
           "scheduledSession": {
             "$ref": "#/components/schemas/ScheduledSession"
           },

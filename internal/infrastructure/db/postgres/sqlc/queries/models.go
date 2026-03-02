@@ -82,7 +82,7 @@ type IntentWithInputsVw struct {
 	Depth          sql.NullInt32
 	Markers        pqtype.NullRawMessage
 	Commitments    []byte
-	Swept          sql.NullBool
+	Swept          bool
 	AssetID        sql.NullString
 	AssetAmount    sql.NullString
 	ID             sql.NullString
@@ -108,6 +108,7 @@ type Marker struct {
 	ID            string
 	Depth         int32
 	ParentMarkers pqtype.NullRawMessage
+	CreatedAt     int64
 }
 
 type MarketHour struct {

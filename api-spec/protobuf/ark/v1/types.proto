@@ -163,3 +163,9 @@ message ErrorDetails {
   string message = 3;
   map<string, string> metadata = 4;
 }
+
+message InputRateLimitInfo {
+  int32 depth = 1;
+  int32 marker_depth = 2;
+  int64 cooldown_secs = 3;
+}

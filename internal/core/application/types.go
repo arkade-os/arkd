@@ -81,6 +81,7 @@ type ServiceInfo struct {
 	CheckpointTapscript  string
 	Fees                 FeeInfo
 	MaxTxWeight          int64
+	RateLimitEnabled     bool
 }
 
 type NextScheduledSession struct {
