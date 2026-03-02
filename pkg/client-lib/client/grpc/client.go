@@ -269,6 +269,16 @@ func (a *grpcClient) GetEventStream(
 		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
 
 		send := func(ev client.BatchEventChannel) bool {
+			if ev.Err != nil {
+				// Terminal error: best-effort delivery even if ctx is cancelled,
+				// so consumers always learn why the stream ended.
+				select {
+				case eventsCh <- ev:
+					return true
+				case <-time.After(5 * time.Second):
+					return false
+				}
+			}
 			select {
 			case eventsCh <- ev:
 				return true
