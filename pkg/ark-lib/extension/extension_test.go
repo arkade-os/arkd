@@ -52,6 +52,11 @@ func TestExtension(t *testing.T) {
 					require.NoError(t, err)
 					require.Equal(t, v.Hex, hex.EncodeToString(got))
 					require.True(t, extension.IsExtension(got))
+
+					txout, err := ext.TxOut()
+					require.NoError(t, err)
+					require.NotNil(t, txout)
+					require.Equal(t, got, txout.PkScript)
 				})
 			}
 		})
