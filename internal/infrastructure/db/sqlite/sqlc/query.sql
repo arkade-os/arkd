@@ -48,11 +48,11 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at
+    spent_by, spent, unrolled, preconfirmed, expires_at, created_at, updated_at, depth, markers
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+    @spent_by, @spent, @unrolled, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)), @depth, @markers
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -62,11 +62,12 @@ VALUES (
     spent_by = EXCLUDED.spent_by,
     spent = EXCLUDED.spent,
     unrolled = EXCLUDED.unrolled,
-    swept = EXCLUDED.swept,
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER));
+    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)),
+    depth = EXCLUDED.depth,
+    markers = EXCLUDED.markers;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
@@ -115,9 +116,6 @@ UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)) WHERE txid = @txid AND vout = @vout;
-
--- name: UpdateVtxoSweptIfNotSwept :execrows
-UPDATE vtxo SET swept = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)) WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
@@ -262,19 +260,25 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE pubkey IN (sqlc.slice('pubkeys'))
     AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER));
 
 -- name: SelectExpiringLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0) AS amount
-FROM vtxo
-WHERE swept = false
-  AND spent = false
-  AND unrolled = false
-  AND expires_at > sqlc.arg('after')
-  AND (sqlc.arg('before') <= 0 OR expires_at < sqlc.arg('before'));
+SELECT COALESCE(SUM(v.amount), 0) AS amount
+FROM vtxo v
+WHERE NOT EXISTS (
+        SELECT 1 FROM swept_marker sm
+        JOIN json_each(v.markers) j ON j.value = sm.marker_id
+    )
+  AND v.spent = false
+  AND v.unrolled = false
+  AND v.expires_at > sqlc.arg('after')
+  AND (sqlc.arg('before') <= 0 OR v.expires_at < sqlc.arg('before'));
 
 -- name: SelectRecoverableLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0) AS amount
-FROM vtxo
-WHERE swept = true
-  AND spent = false;
+SELECT COALESCE(SUM(v.amount), 0) AS amount
+FROM vtxo v
+WHERE EXISTS (
+        SELECT 1 FROM swept_marker sm
+        JOIN json_each(v.markers) j ON j.value = sm.marker_id
+    )
+  AND v.spent = false;
 
 -- name: SelectOffchainTx :many
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
@@ -429,6 +433,92 @@ VALUES ('', '', '', '');
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
+
+-- Marker queries
+
+-- name: UpsertMarker :exec
+INSERT INTO marker (id, depth, parent_markers)
+VALUES (@id, @depth, @parent_markers)
+ON CONFLICT(id) DO UPDATE SET
+    depth = EXCLUDED.depth,
+    parent_markers = EXCLUDED.parent_markers;
+
+-- name: SelectMarker :one
+SELECT * FROM marker WHERE id = @id;
+
+-- name: SelectMarkersByDepth :many
+SELECT * FROM marker WHERE depth = @depth;
+
+-- name: SelectMarkersByDepthRange :many
+SELECT * FROM marker WHERE depth >= @min_depth AND depth <= @max_depth ORDER BY depth;
+
+-- name: SelectMarkersByIds :many
+SELECT * FROM marker WHERE id IN (sqlc.slice('ids'));
+
+-- name: InsertSweptMarker :exec
+INSERT INTO swept_marker (marker_id, swept_at)
+VALUES (@marker_id, @swept_at)
+ON CONFLICT(marker_id) DO NOTHING;
+
+
+-- name: SelectSweptMarker :one
+SELECT * FROM swept_marker WHERE marker_id = @marker_id;
+
+-- name: SelectSweptMarkersByIds :many
+SELECT * FROM swept_marker WHERE marker_id IN (sqlc.slice('marker_ids'));
+
+-- name: IsMarkerSwept :one
+SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swept;
+
+-- name: GetDescendantMarkerIds :many
+-- Recursively get a marker and all its descendants (markers whose parent_markers contain it)
+-- Uses json_each instead of LIKE to avoid false positives with special characters (%, _)
+WITH RECURSIVE descendant_markers(id) AS (
+    -- Base case: the marker being swept
+    SELECT marker.id FROM marker WHERE marker.id = @root_marker_id
+    UNION ALL
+    -- Recursive case: find markers whose parent_markers JSON array contains any descendant
+    SELECT m.id FROM marker m
+    INNER JOIN descendant_markers dm ON EXISTS (
+        SELECT 1 FROM json_each(m.parent_markers) j WHERE j.value = dm.id
+    )
+)
+SELECT descendant_markers.id AS marker_id FROM descendant_markers
+WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm);
+
+-- name: UpdateVtxoMarkers :exec
+UPDATE vtxo SET markers = @markers WHERE txid = @txid AND vout = @vout;
+
+-- name: SelectVtxosByMarkerId :many
+-- Find VTXOs whose markers JSON array contains the given marker_id.
+-- Uses LIKE because sqlc cannot parse json_each with view columns.
+-- Safe for txid:vout format marker IDs (no special characters).
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers LIKE '%"' || @marker_id || '"%';
+
+-- name: CountUnsweptVtxosByMarkerId :one
+-- Count VTXOs whose markers JSON array contains the given marker_id and are not swept.
+-- Uses LIKE because sqlc cannot parse json_each with view columns.
+SELECT COUNT(*) FROM vtxo_vw WHERE markers LIKE '%"' || @marker_id || '"%' AND swept = false;
+
+-- Chain traversal queries for GetVtxoChain optimization
+
+-- name: SelectVtxosByDepthRange :many
+-- Get all VTXOs within a depth range, useful for filling gaps between markers
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE depth >= @min_depth AND depth <= @max_depth
+ORDER BY depth DESC;
+
+-- name: SelectVtxosByArkTxid :many
+-- Get all VTXOs created by a specific ark tx (offchain tx)
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE ark_txid = @ark_txid;
+
+-- name: SelectVtxoChainByMarker :many
+-- Get VTXOs whose markers array contains the given marker_id.
+-- For multiple markers, call this multiple times and deduplicate in Go.
+-- Uses LIKE because sqlc cannot parse json_each with view columns.
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE markers LIKE '%"' || @marker_id || '"%'
+ORDER BY vtxo_vw.depth DESC;
 
 -- name: InsertAsset :exec
 INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)

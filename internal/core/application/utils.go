@@ -268,14 +268,17 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 			}
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
+			outpoint := domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)}
 			vtxos = append(vtxos, domain.Vtxo{
-				Outpoint:           domain.Outpoint{Txid: tx.UnsignedTx.TxID(), VOut: uint32(i)},
+				Outpoint:           outpoint,
 				PubKey:             vtxoPubkey,
 				Amount:             uint64(out.Value),
 				CommitmentTxids:    []string{round.CommitmentTxid},
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          createdAt,
 				ExpiresAt:          expireAt,
+				Depth:              0,
+				MarkerIDs:          []string{outpoint.String()},
 				Assets:             assets[uint32(i)],
 			})
 		}

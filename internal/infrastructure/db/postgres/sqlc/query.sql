@@ -48,11 +48,11 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at
+    spent_by, spent, unrolled, preconfirmed, expires_at, created_at, updated_at, depth, markers
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    @spent_by, @spent, @unrolled, @preconfirmed, @expires_at, @created_at, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, @depth, @markers
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -62,11 +62,12 @@ VALUES (
     spent_by = EXCLUDED.spent_by,
     spent = EXCLUDED.spent,
     unrolled = EXCLUDED.unrolled,
-    swept = EXCLUDED.swept,
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT;
+    updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+    depth = EXCLUDED.depth,
+    markers = EXCLUDED.markers;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
@@ -115,9 +116,6 @@ UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout;
-
--- name: UpdateVtxoSweptIfNotSwept :execrows
-UPDATE vtxo SET swept = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
@@ -256,19 +254,25 @@ WHERE vtxo_vw.pubkey = ANY($1::varchar[])
     AND (@before::bigint = 0 OR vtxo_vw.updated_at <= @before::bigint);
 
 -- name: SelectExpiringLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0)::bigint AS amount
-FROM vtxo
-WHERE swept = false
-  AND spent = false
-  AND unrolled = false
-  AND expires_at > @after
-  AND (@before <= 0 OR expires_at < @before);
+SELECT COALESCE(SUM(v.amount), 0)::bigint AS amount
+FROM vtxo v
+WHERE NOT EXISTS (
+        SELECT 1 FROM swept_marker sm
+        WHERE v.markers @> jsonb_build_array(sm.marker_id)
+    )
+  AND v.spent = false
+  AND v.unrolled = false
+  AND v.expires_at > @after
+  AND (@before <= 0 OR v.expires_at < @before);
 
 -- name: SelectRecoverableLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0)::bigint AS amount
-FROM vtxo
-WHERE swept = true
-  AND spent = false;
+SELECT COALESCE(SUM(v.amount), 0)::bigint AS amount
+FROM vtxo v
+WHERE EXISTS (
+        SELECT 1 FROM swept_marker sm
+        WHERE v.markers @> jsonb_build_array(sm.marker_id)
+    )
+  AND v.spent = false;
 
 -- name: SelectOffchainTx :many
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
@@ -424,6 +428,90 @@ VALUES ('', '', '', '');
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
+
+-- Marker queries
+
+-- name: UpsertMarker :exec
+INSERT INTO marker (id, depth, parent_markers)
+VALUES (@id, @depth, @parent_markers)
+ON CONFLICT(id) DO UPDATE SET
+    depth = EXCLUDED.depth,
+    parent_markers = EXCLUDED.parent_markers;
+
+-- name: SelectMarker :one
+SELECT * FROM marker WHERE id = @id;
+
+-- name: SelectMarkersByDepth :many
+SELECT * FROM marker WHERE depth = @depth;
+
+-- name: SelectMarkersByDepthRange :many
+SELECT * FROM marker WHERE depth >= @min_depth AND depth <= @max_depth ORDER BY depth;
+
+-- name: SelectMarkersByIds :many
+SELECT * FROM marker WHERE id = ANY(@ids::text[]);
+
+-- name: InsertSweptMarker :exec
+INSERT INTO swept_marker (marker_id, swept_at)
+VALUES (@marker_id, @swept_at)
+ON CONFLICT(marker_id) DO NOTHING;
+
+-- name: BulkInsertSweptMarkers :exec
+INSERT INTO swept_marker (marker_id, swept_at)
+SELECT unnest(@marker_ids::text[]), @swept_at
+ON CONFLICT(marker_id) DO NOTHING;
+
+-- name: SelectSweptMarker :one
+SELECT * FROM swept_marker WHERE marker_id = @marker_id;
+
+-- name: SelectSweptMarkersByIds :many
+SELECT * FROM swept_marker WHERE marker_id = ANY(@marker_ids::text[]);
+
+-- name: IsMarkerSwept :one
+SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swept;
+
+-- name: GetDescendantMarkerIds :many
+-- Recursively get a marker and all its descendants (markers whose parent_markers contain it)
+WITH RECURSIVE descendant_markers(id) AS (
+    -- Base case: the marker being swept
+    SELECT marker.id FROM marker WHERE marker.id = @root_marker_id
+    UNION ALL
+    -- Recursive case: find markers whose parent_markers jsonb array contains any descendant
+    SELECT m.id FROM marker m
+    INNER JOIN descendant_markers dm ON (
+        m.parent_markers @> jsonb_build_array(dm.id)
+    )
+)
+SELECT descendant_markers.id AS marker_id FROM descendant_markers
+WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm);
+
+-- name: UpdateVtxoMarkers :exec
+UPDATE vtxo SET markers = @markers::jsonb WHERE txid = @txid AND vout = @vout;
+
+-- name: SelectVtxosByMarkerId :many
+-- Find VTXOs whose markers JSONB array contains the given marker_id
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT);
+
+-- name: CountUnsweptVtxosByMarkerId :one
+-- Count VTXOs whose markers JSONB array contains the given marker_id and are not swept
+SELECT COUNT(*) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT) AND swept = false;
+
+-- Chain traversal queries for GetVtxoChain optimization
+
+-- name: SelectVtxosByDepthRange :many
+-- Get all VTXOs within a depth range, useful for filling gaps between markers
+SELECT * FROM vtxo_vw
+WHERE depth >= @min_depth AND depth <= @max_depth
+ORDER BY depth DESC;
+
+-- name: SelectVtxosByArkTxid :many
+-- Get all VTXOs created by a specific ark tx (offchain tx)
+SELECT * FROM vtxo_vw WHERE ark_txid = @ark_txid;
+
+-- name: SelectVtxoChainByMarker :many
+-- Get VTXOs whose markers JSONB array contains any of the given marker IDs
+SELECT * FROM vtxo_vw
+WHERE markers ?| @marker_ids::TEXT[]
+ORDER BY depth DESC;
 
 -- name: InsertAsset :exec
 INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)

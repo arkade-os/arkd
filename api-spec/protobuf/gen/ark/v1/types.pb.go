@@ -141,6 +141,7 @@ type Vtxo struct {
 	SettledBy       string                 `protobuf:"bytes,12,opt,name=settled_by,json=settledBy,proto3" json:"settled_by,omitempty"`
 	ArkTxid         string                 `protobuf:"bytes,13,opt,name=ark_txid,json=arkTxid,proto3" json:"ark_txid,omitempty"`
 	Assets          []*Asset               `protobuf:"bytes,14,rep,name=assets,proto3" json:"assets,omitempty"`
+	Depth           uint32                 `protobuf:"varint,15,opt,name=depth,proto3" json:"depth,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -271,6 +272,13 @@ func (x *Vtxo) GetAssets() []*Asset {
 		return x.Assets
 	}
 	return nil
+}
+
+func (x *Vtxo) GetDepth() uint32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
 }
 
 type Asset struct {
@@ -1572,7 +1580,7 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\"l\n" +
 	"\x05Input\x12,\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x10.ark.v1.OutpointR\boutpoint\x125\n" +
-	"\ftaproot_tree\x18\x02 \x01(\v2\x12.ark.v1.TapscriptsR\vtaprootTree\"\xc9\x03\n" +
+	"\ftaproot_tree\x18\x02 \x01(\v2\x12.ark.v1.TapscriptsR\vtaprootTree\"\xdf\x03\n" +
 	"\x04Vtxo\x12,\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x10.ark.v1.OutpointR\boutpoint\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\x12\x16\n" +
@@ -1592,7 +1600,8 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\n" +
 	"settled_by\x18\f \x01(\tR\tsettledBy\x12\x19\n" +
 	"\bark_txid\x18\r \x01(\tR\aarkTxid\x12%\n" +
-	"\x06assets\x18\x0e \x03(\v2\r.ark.v1.AssetR\x06assets\":\n" +
+	"\x06assets\x18\x0e \x03(\v2\r.ark.v1.AssetR\x06assets\x12\x14\n" +
+	"\x05depth\x18\x0f \x01(\rR\x05depth\":\n" +
 	"\x05Asset\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\",\n" +
