@@ -128,6 +128,7 @@ type Config struct {
 	VtxoMinAmount             int64
 	SettlementMinExpiryGap    int64
 	MaxTxWeight               uint64
+	AssetTxMaxWeightRatio     float64
 
 	EnablePprof bool
 
@@ -199,7 +200,9 @@ var (
 	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
-	EnablePprof                          = "ENABLE_PPROF"
+	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
+	AssetTxMaxWeightRatio = "ASSET_TX_MAX_WEIGHT_RATIO"
+	EnablePprof           = "ENABLE_PPROF"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -220,6 +223,7 @@ var (
 	defaultOtelPushInterval          = 10 // seconds
 	defaultHeartbeatInterval         = 60 // seconds
 	defaultRoundReportServiceEnabled = false
+	defaultAssetTxMaxWeightRatio     = 0.5
 	defaultEnablePprof               = false
 )
 
@@ -245,6 +249,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
+	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 
 	if err := initDatadir(); err != nil {
@@ -340,6 +345,7 @@ func LoadConfig() (*Config, error) {
 
 		AllowCSVBlockType:         allowCSVBlockType,
 		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
+		AssetTxMaxWeightRatio:     viper.GetFloat64(AssetTxMaxWeightRatio),
 		EnablePprof:               viper.GetBool(EnablePprof),
 	}, nil
 }
@@ -577,6 +583,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf(
 			"max tx weight can't exceed bitcoin block weight (%d)",
 			bitcoinBlockWeight,
+		)
+	}
+
+	if c.AssetTxMaxWeightRatio <= 0 || c.AssetTxMaxWeightRatio >= 1 {
+		return fmt.Errorf(
+			"asset tx max weight ratio must be between 0 and 1 (exclusive), got %f",
+			c.AssetTxMaxWeightRatio,
 		)
 	}
 
@@ -842,7 +855,7 @@ func (c *Config) appService() error {
 		c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
-		c.BanDuration, c.BanThreshold, c.MaxTxWeight,
+		c.BanDuration, c.BanThreshold, c.MaxTxWeight, c.AssetTxMaxWeightRatio,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
