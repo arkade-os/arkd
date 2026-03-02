@@ -64,6 +64,7 @@ type service struct {
 	boardingExitDelay         arklib.RelativeLocktime
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
+	dustAmount                uint64
 	utxoMaxAmount             int64
 	utxoMinAmount             int64
 	vtxoMaxAmount             int64
@@ -160,14 +161,6 @@ func NewService(
 		return nil, fmt.Errorf("failed to generate ephemeral key: %s", err)
 	}
 
-	dustAmount, err := wallet.GetDustAmount(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dust amount: %s", err)
-	}
-	vtxoMinAmount, utxoMinAmount = resolveMinAmounts(
-		vtxoMinAmount, utxoMinAmount, int64(dustAmount),
-	)
-
 	roundReportSvc := reportSvc
 	if roundReportSvc == nil {
 		roundReportSvc = roundReportUnimplemented{}
@@ -232,6 +225,7 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
+	s.dustAmount = dustAmount
 	s.vtxoMinAmount, s.utxoMinAmount = resolveMinAmounts(
 		s.vtxoMinAmount, s.utxoMinAmount, int64(dustAmount),
 	)
@@ -982,7 +976,7 @@ func (s *service) SubmitOffchainTx(
 				})
 			}
 		}
-		if out.Value < s.vtxoMinAmount && !script.IsSubDustScript(out.PkScript) {
+		if out.Value < s.vtxoMinAmount {
 			return nil, errors.AMOUNT_TOO_LOW.New(
 				"output #%d amount is lower than min vtxo amount: %d",
 				outIndex, s.vtxoMinAmount,
@@ -1886,14 +1880,14 @@ func (s *service) RegisterIntent(
 					})
 				}
 			}
-			if amount < uint64(s.vtxoMinAmount) {
+			if amount < s.dustAmount {
 				return "", errors.AMOUNT_TOO_LOW.New(
 					"output %d amount is lower than min vtxo amount: %d",
-					outputIndex, s.vtxoMinAmount,
+					outputIndex, s.dustAmount,
 				).WithMetadata(errors.AmountTooLowMetadata{
 					OutputIndex: outputIndex,
 					Amount:      int(amount),
-					MinAmount:   int(s.vtxoMinAmount),
+					MinAmount:   int(s.dustAmount),
 				})
 			}
 
