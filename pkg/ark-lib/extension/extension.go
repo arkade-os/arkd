@@ -24,9 +24,6 @@ type Extension []Packet
 // OP_RETURN <magic_bytes> <tlv_packets>
 func (e Extension) Serialize() ([]byte, error) {
 	w := bytes.NewBuffer(nil)
-	if err := w.WriteByte(txscript.OP_RETURN); err != nil {
-		return nil, fmt.Errorf("failed to write OP_RETURN: %w", err)
-	}
 	
 	if _, err := w.Write(ArkadeMagic); err != nil {
 		return nil, fmt.Errorf("failed to write magic prefix: %w", err)
@@ -49,7 +46,35 @@ func (e Extension) Serialize() ([]byte, error) {
 		}
 	}
 
-	return w.Bytes(), nil
+	return opReturnScript(w.Bytes()), nil
+}
+
+// opReturnScript builds an OP_RETURN script with an arbitrary-length data push,
+// bypassing txscript.ScriptBuilder which caps elements at 520 bytes.
+func opReturnScript(data []byte) []byte {
+	n := len(data)
+	var script []byte
+	switch {
+	case n <= 75:
+		script = make([]byte, 0, 2+n)
+		script = append(script, txscript.OP_RETURN, byte(n))
+	case n <= 255:
+		script = make([]byte, 0, 3+n)
+		script = append(script, txscript.OP_RETURN, txscript.OP_PUSHDATA1, byte(n))
+	case n <= 65535:
+		l := [2]byte{}
+		binary.LittleEndian.PutUint16(l[:], uint16(n))
+		script = make([]byte, 0, 4+n)
+		script = append(script, txscript.OP_RETURN, txscript.OP_PUSHDATA2)
+		script = append(script, l[:]...)
+	default:
+		l := [4]byte{}
+		binary.LittleEndian.PutUint32(l[:], uint32(n))
+		script = make([]byte, 0, 6+n)
+		script = append(script, txscript.OP_RETURN, txscript.OP_PUSHDATA4)
+		script = append(script, l[:]...)
+	}
+	return append(script, data...)
 }
 
 // TxOut serializes the extension and returns it as an unspendable OP_RETURN transaction output.
@@ -72,11 +97,17 @@ func (e Extension) GetAssetPacket() asset.Packet {
 }
 
 // IsExtension reports whether script is an ark extension blob,
-// i.e. starts with OP_RETURN followed by the ArkadeMagic prefix.
+// i.e. starts with OP_RETURN followed by a data push whose payload begins with ArkadeMagic.
 func IsExtension(script []byte) bool {
-	return len(script) > len(ArkadeMagic) &&
-		script[0] == txscript.OP_RETURN &&
-		bytes.Equal(script[1:1+len(ArkadeMagic)], ArkadeMagic)
+	tokenizer := txscript.MakeScriptTokenizer(0, script)
+	if !tokenizer.Next() || tokenizer.Opcode() != txscript.OP_RETURN {
+		return false
+	}
+	if !tokenizer.Next() {
+		return false
+	}
+	data := tokenizer.Data()
+	return len(data) >= len(ArkadeMagic) && bytes.Equal(data[:len(ArkadeMagic)], ArkadeMagic)
 }
 
 // ErrExtensionNotFound is returned by NewExtensionFromTx when no extension output is present.
@@ -92,22 +123,27 @@ func NewExtensionFromTx(tx *wire.MsgTx) (Extension, error) {
 	return nil, ErrExtensionNotFound
 }
 
-// NewExtensionFromBytes read from raw [OP_RETURN][MAGIC][PACKET][PACKET][PACKET].. bytes
+// NewExtensionFromBytes reads from raw [OP_RETURN][push_opcode][MAGIC][PACKET].. bytes.
 func NewExtensionFromBytes(data []byte) (Extension, error) {
-	r := bytes.NewReader(data)
+	tokenizer := txscript.MakeScriptTokenizer(0, data)
 
-	// first byte should be OP_RETURN
-	firstByte, err := r.ReadByte()
-	if err != nil {
-		return nil, fmt.Errorf("missing OP_RETURN: %w", err)
+	if !tokenizer.Next() {
+		return nil, fmt.Errorf("missing OP_RETURN: %w", io.EOF)
 	}
-	if firstByte != txscript.OP_RETURN {
-		return nil, fmt.Errorf("expected OP_RETURN, got %d", firstByte)
+	if tokenizer.Opcode() != txscript.OP_RETURN {
+		return nil, fmt.Errorf("expected OP_RETURN, got %d", tokenizer.Opcode())
 	}
+
+	if !tokenizer.Next() {
+		return nil, fmt.Errorf("missing magic prefix: %w", io.EOF)
+	}
+
+	payload := tokenizer.Data()
+	pr := bytes.NewReader(payload)
 
 	// read magic prefix
 	magicPrefix := make([]byte, len(ArkadeMagic))
-	if _, err := io.ReadFull(r, magicPrefix); err != nil {
+	if _, err := io.ReadFull(pr, magicPrefix); err != nil {
 		return nil, fmt.Errorf("missing magic prefix: %w", err)
 	}
 	if !bytes.Equal(magicPrefix, ArkadeMagic) {
@@ -116,9 +152,9 @@ func NewExtensionFromBytes(data []byte) (Extension, error) {
 
 	extension := make(Extension, 0)
 
-	for r.Len() > 0 {
-		packetType, _ := r.ReadByte() // r.Len() > 0, so can't fail
-		packetData, err := deserializeVarSlice(r)
+	for pr.Len() > 0 {
+		packetType, _ := pr.ReadByte() // pr.Len() > 0, so can't fail
+		packetData, err := deserializeVarSlice(pr)
 		if err != nil {
 			return nil, fmt.Errorf("missing packet data: %w", err)
 		}
@@ -146,7 +182,6 @@ func NewExtensionFromBytes(data []byte) (Extension, error) {
 
 	return extension, nil
 }
-
 
 // return to known packet (asset.Packet) or fallback to UnknownPacket
 func parsePacket(packetType uint8, packetData []byte) (Packet, error) {

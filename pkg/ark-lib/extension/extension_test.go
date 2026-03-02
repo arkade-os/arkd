@@ -51,6 +51,7 @@ func TestExtension(t *testing.T) {
 					got, err := ext.Serialize()
 					require.NoError(t, err)
 					require.Equal(t, v.Hex, hex.EncodeToString(got))
+					require.True(t, extension.IsExtension(got))
 				})
 			}
 		})
