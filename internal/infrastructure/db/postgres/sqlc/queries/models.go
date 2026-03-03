@@ -82,7 +82,7 @@ type IntentWithInputsVw struct {
 	Depth          sql.NullInt32
 	Markers        pqtype.NullRawMessage
 	Commitments    []byte
-	Swept          bool
+	Swept          sql.NullBool
 	AssetID        sql.NullString
 	AssetAmount    sql.NullString
 	ID             sql.NullString
