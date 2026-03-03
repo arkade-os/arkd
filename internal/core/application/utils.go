@@ -13,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -25,7 +26,7 @@ import (
 
 var (
 	// asset packet overhead: OP_RETURN(1) + push_data(1) + magic_bytes + marker(1) + varuint_count(1)
-	assetPacketOverheadWU uint64 = (1 + 1 + uint64(len(asset.ArkadeMagic)) + 1 + 1) * 4
+	assetPacketOverheadWU uint64 = (1 + 1 + uint64(len(extension.ArkadeMagic)) + 1 + 1) * 4
 
 	// ref group weight
 	refAssetId, _ = asset.NewAssetId(
@@ -147,7 +148,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
-			asset.IsAssetPacket(out.PkScript) {
+			extension.IsExtension(out.PkScript) {
 			continue
 		}
 		outs = append(outs, domain.Vtxo{
@@ -257,7 +258,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 		vtxos := make([]domain.Vtxo, 0)
 		for i, out := range tx.UnsignedTx.TxOut {
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
-				asset.IsAssetPacket(out.PkScript) {
+				extension.IsExtension(out.PkScript) {
 				continue
 			}
 
@@ -287,21 +288,28 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 }
 
 func getAssetsFromTx(ptx *psbt.Packet) (map[uint32][]domain.AssetDenomination, error) {
-	assets, err := asset.NewPacketFromTx(ptx.UnsignedTx)
+	ext, err := extension.NewExtensionFromTx(ptx.UnsignedTx)
 	if err != nil {
-		if errors.Is(err, asset.AssetPacketNotFoundError{Txid: ptx.UnsignedTx.TxID()}) {
+		if errors.Is(err, extension.ErrExtensionNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
 
+	return getAssetsDenominations(ext.GetAssetPacket(), ptx.UnsignedTx.TxID())
+}
+
+func getAssetsDenominations(
+	packet asset.Packet,
+	txid string,
+) (map[uint32][]domain.AssetDenomination, error) {
 	assetDenominations := make(map[uint32][]domain.AssetDenomination)
-	for grpIndex, ast := range assets {
+	for grpIndex, ast := range packet {
 		for _, out := range ast.Outputs {
 			var assetId string
 			// In case of issuance, the asset id is empty and we derive it from the txid and vout
 			if ast.AssetId == nil {
-				id, err := asset.NewAssetId(ptx.UnsignedTx.TxID(), uint16(grpIndex))
+				id, err := asset.NewAssetId(txid, uint16(grpIndex))
 				if err != nil {
 					return nil, fmt.Errorf("failed to compute asset id: %s", err)
 				}
