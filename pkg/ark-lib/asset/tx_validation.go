@@ -143,6 +143,11 @@ func validateIssuance(ctx context.Context, packet Packet, grp AssetGroup, assetS
 	}
 
 	if grp.ControlAsset.Type == AssetRefByID {
+		if assetSrc == nil {
+			return errors.ASSET_VALIDATION_FAILED.New("asset source is nil, cannot validate issuance by id").
+				WithMetadata(errors.AssetValidationMetadata{AssetID: grp.ControlAsset.AssetId.String()})
+		}
+
 		// by id means the control asset is an existing asset, so we need to check if it exists
 		if !assetSrc.AssetExists(ctx, grp.ControlAsset.AssetId.String()) {
 			return errors.ASSET_VALIDATION_FAILED.New("control asset %s does not exist", grp.ControlAsset.AssetId.String()).
