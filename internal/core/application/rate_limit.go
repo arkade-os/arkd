@@ -9,6 +9,30 @@ import (
 	"github.com/arkade-os/arkd/pkg/errors"
 )
 
+// checkRateLimit enforces velocity-based rate limiting on off-chain transaction
+// chains to prevent griefing attacks where an attacker rapidly deepens chains
+// cheaply, then broadcasts old state to force expensive on-chain checkpoints.
+//
+// Algorithm (per input VTXO):
+//
+//  1. Skip if rate limiting is disabled globally.
+//  2. Skip if the VTXO has no MarkerIDs (batch VTXOs at depth 0).
+//  3. Look up markers by the VTXO's MarkerIDs; skip if none found.
+//  4. Select the youngest marker (highest depth) among them — this is the
+//     most recent checkpoint in the VTXO's ancestry.
+//  5. Skip if vtxo.Depth <= marker.Depth (no chain growth since the marker).
+//  6. Compute velocity:
+//     depthDelta = vtxo.Depth - marker.Depth
+//     timeDelta  = now - marker.CreatedAt   (seconds)
+//     velocity   = depthDelta / timeDelta   (depths per second)
+//  7. If velocity > maxVelocity, the input is rejected. The cooldown tells
+//     the caller how long to wait before retrying:
+//     cooldown = ceil(depthDelta / maxVelocity) - timeDelta
+//     cooldown = min(cooldown, maxCooldownSecs)
+//
+// If any input is rate-limited, the entire transaction is rejected with a
+// RATE_LIMITED error containing per-input metadata (depth, marker depth,
+// cooldown seconds).
 func (s *service) checkRateLimit(
 	ctx context.Context, spentVtxos []domain.Vtxo,
 ) errors.Error {
