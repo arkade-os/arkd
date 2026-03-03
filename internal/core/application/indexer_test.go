@@ -6,12 +6,21 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/stretchr/testify/require"
 )
+
+func newTestIndexer(mockSigner *mockSignerService) *indexerService {
+	return &indexerService{
+		signer:       mockSigner,
+		signerPubkey: schnorr.SerializePubKey(mockSigner.publicKey),
+		authTokenTTL: defaultAuthTokenTTL,
+	}
+}
 
 type fixtures struct {
 	AuthTokenTests    authTokenTestFixtures `json:"auth_token_tests"`
@@ -114,10 +123,7 @@ func TestCreateAndValidateAuthToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create indexer service
-	indexer := &indexerService{
-		signer:       mockSigner,
-		signerPubkey: schnorr.SerializePubKey(mockSigner.publicKey),
-	}
+	indexer := newTestIndexer(mockSigner)
 
 	for _, tc := range f.AuthTokenTests.TestCases {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -132,7 +138,7 @@ func TestCreateAndValidateAuthToken(t *testing.T) {
 			require.NotEmpty(t, token)
 
 			// Validate the token we just created
-			valid, err := indexer.validateAuthToken(token)
+			_, valid, err := indexer.validateAuthToken(token)
 			require.NoError(t, err)
 			require.Equal(t, tc.ShouldValidate, valid, "token validation mismatch")
 		})
@@ -147,14 +153,11 @@ func TestValidateAuthToken_Invalid(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create indexer service
-	indexer := &indexerService{
-		signer:       mockSigner,
-		signerPubkey: schnorr.SerializePubKey(mockSigner.publicKey),
-	}
+	indexer := newTestIndexer(mockSigner)
 
 	for _, tc := range f.InvalidTokenTests {
 		t.Run(tc.Name, func(t *testing.T) {
-			valid, err := indexer.validateAuthToken(tc.Token)
+			_, valid, err := indexer.validateAuthToken(tc.Token)
 			require.NoError(t, err)
 			require.Equal(t, tc.ShouldValidate, valid)
 		})
@@ -176,15 +179,13 @@ func TestValidateAuthToken_WrongSigner(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create indexer with signer1
-	indexer1 := &indexerService{
-		signer:       mockSigner1,
-		signerPubkey: schnorr.SerializePubKey(mockSigner1.publicKey),
-	}
+	indexer1 := newTestIndexer(mockSigner1)
 
 	// Create indexer with signer2's pubkey (simulates wrong signer)
 	indexer2 := &indexerService{
 		signer:       mockSigner1,
 		signerPubkey: schnorr.SerializePubKey(mockSigner2.publicKey),
+		authTokenTTL: defaultAuthTokenTTL,
 	}
 
 	outpoint := Outpoint{
@@ -197,12 +198,12 @@ func TestValidateAuthToken_WrongSigner(t *testing.T) {
 	require.NoError(t, err)
 
 	// Validate with signer1's pubkey - should pass
-	valid, err := indexer1.validateAuthToken(token)
+	_, valid, err := indexer1.validateAuthToken(token)
 	require.NoError(t, err)
 	require.True(t, valid, "token should be valid with correct signer")
 
 	// Validate with signer2's pubkey - should fail
-	valid, err = indexer2.validateAuthToken(token)
+	_, valid, err = indexer2.validateAuthToken(token)
 	require.NoError(t, err)
 	require.False(t, valid, "token should be invalid with wrong signer pubkey")
 }
@@ -216,10 +217,7 @@ func TestAuthTokenDeterminism(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create indexer service
-	indexer := &indexerService{
-		signer:       mockSigner,
-		signerPubkey: schnorr.SerializePubKey(mockSigner.publicKey),
-	}
+	indexer := newTestIndexer(mockSigner)
 
 	outpoint := Outpoint{
 		Txid: "0000000000000000000000000000000000000000000000000000000000000001",
@@ -234,11 +232,81 @@ func TestAuthTokenDeterminism(t *testing.T) {
 	require.NoError(t, err)
 
 	// Both tokens should be valid
-	valid1, err := indexer.validateAuthToken(token1)
+	_, valid1, err := indexer.validateAuthToken(token1)
 	require.NoError(t, err)
 	require.True(t, valid1)
 
-	valid2, err := indexer.validateAuthToken(token2)
+	_, valid2, err := indexer.validateAuthToken(token2)
 	require.NoError(t, err)
 	require.True(t, valid2)
+}
+
+func TestAuthTokenExpiry(t *testing.T) {
+	f := loadFixtures(t)
+	ctx := context.Background()
+
+	// Create mock signer
+	mockSigner, err := newMockSignerService(f.AuthTokenTests.PrivateKeyHex)
+	require.NoError(t, err)
+
+	// Create indexer service
+	indexer := newTestIndexer(mockSigner)
+
+	outpoint := Outpoint{
+		Txid: "0000000000000000000000000000000000000000000000000000000000000001",
+		VOut: 0,
+	}
+
+	// Create a token with a timestamp in the past (beyond TTL)
+	expiredTime := time.Now().Add(-(defaultAuthTokenTTL + time.Minute))
+	token, err := indexer.createAuthTokenWithTimestamp(ctx, outpoint, expiredTime)
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+
+	// Validate should return false due to expiry
+	_, valid, err := indexer.validateAuthToken(token)
+	require.NoError(t, err)
+	require.False(t, valid, "expired token should not be valid")
+
+	// Create a fresh token - should be valid
+	freshToken, err := indexer.createAuthToken(ctx, outpoint)
+	require.NoError(t, err)
+
+	_, valid, err = indexer.validateAuthToken(freshToken)
+	require.NoError(t, err)
+	require.True(t, valid, "fresh token should be valid")
+}
+
+func TestAuthTokenOutpointExtraction(t *testing.T) {
+	f := loadFixtures(t)
+	ctx := context.Background()
+
+	// Create mock signer
+	mockSigner, err := newMockSignerService(f.AuthTokenTests.PrivateKeyHex)
+	require.NoError(t, err)
+
+	// Create indexer service
+	indexer := newTestIndexer(mockSigner)
+
+	for _, tc := range f.AuthTokenTests.TestCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			outpoint := Outpoint{
+				Txid: tc.Outpoint.Txid,
+				VOut: tc.Outpoint.Vout,
+			}
+
+			// Create auth token
+			token, err := indexer.createAuthToken(ctx, outpoint)
+			require.NoError(t, err)
+
+			// Validate and extract outpoint
+			extractedOutpoint, valid, err := indexer.validateAuthToken(token)
+			require.NoError(t, err)
+			require.True(t, valid)
+
+			// Verify extracted outpoint matches the original
+			require.Equal(t, outpoint.Txid, extractedOutpoint.Txid, "txid mismatch")
+			require.Equal(t, outpoint.VOut, extractedOutpoint.VOut, "vout mismatch")
+		})
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -29,6 +30,8 @@ const (
 	maxPageSizeSpendableVtxos = 100
 	maxPageSizeVtxoChain      = 100
 	maxPageSizeVirtualTxs     = 100
+
+	defaultAuthTokenTTL = 5 * time.Minute
 )
 
 type TxExposure string
@@ -81,6 +84,7 @@ type indexerService struct {
 	wallet       ports.WalletService
 	signerPubkey []byte
 	txExposure   string
+	authTokenTTL time.Duration
 }
 
 func NewIndexerService(
@@ -88,6 +92,7 @@ func NewIndexerService(
 	signer ports.SignerService,
 	wallet ports.WalletService,
 	txExposure string,
+	authTokenExpirySec int64,
 ) (IndexerService, error) {
 	// validate txExposure
 	switch TxExposure(txExposure) {
@@ -100,12 +105,19 @@ func NewIndexerService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get signer pubkey: %w", err)
 	}
+
+	ttl := defaultAuthTokenTTL
+	if authTokenExpirySec > 0 {
+		ttl = time.Duration(authTokenExpirySec) * time.Second
+	}
+
 	return &indexerService{
 		repoManager:  repoManager,
 		signer:       signer,
 		wallet:       wallet,
 		signerPubkey: schnorr.SerializePubKey(pubkey),
 		txExposure:   txExposure,
+		authTokenTTL: ttl,
 	}, nil
 }
 
@@ -310,8 +322,50 @@ func (i *indexerService) GetVtxosByOutpoint(
 func (i *indexerService) GetVtxoChain(
 	ctx context.Context, vtxoKey Outpoint, intentForProof Intent, page *Page,
 ) (*VtxoChainResp, error) {
+	chain, err := i.buildVtxoChain(ctx, vtxoKey)
+	if err != nil {
+		return nil, err
+	}
+
+	authToken := ""
+
+	switch TxExposure(i.txExposure) {
+	case TxExposurePublic: // no need to do anything
+	case TxExposureWithheld:
+		// validate the intent proof/message to allow access to the full chain
+		if err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
+			// withheld: swallow error, proceed without auth token
+			break
+		}
+		authToken, err = i.createAuthToken(ctx, vtxoKey)
+		if err != nil {
+			return nil, err
+		}
+	case TxExposurePrivate:
+		// validate the intent proof/message to allow access to the full chain
+		if err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
+			return nil, err
+		}
+		authToken, err = i.createAuthToken(ctx, vtxoKey)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
+	}
+
+	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
+	return &VtxoChainResp{
+		Chain:     txChain,
+		Page:      pageResp,
+		AuthToken: authToken,
+	}, nil
+}
+
+// buildVtxoChain builds the full chain of transactions for a given vtxo outpoint.
+func (i *indexerService) buildVtxoChain(ctx context.Context, outpoint Outpoint) ([]ChainTx, error) {
 	chain := make([]ChainTx, 0)
-	nextVtxos := []domain.Outpoint{vtxoKey}
+	nextVtxos := []domain.Outpoint{outpoint}
 	visited := make(map[string]bool)
 
 	for len(nextVtxos) > 0 {
@@ -437,35 +491,31 @@ func (i *indexerService) GetVtxoChain(
 		nextVtxos = newNextVtxos
 	}
 
-	authToken := ""
-	var err error
+	return chain, nil
+}
 
-	switch TxExposure(i.txExposure) {
-	case TxExposurePublic: // no need to do anything
-	case TxExposureWithheld, TxExposurePrivate:
-		// validate the intent proof/message to allow access to the full chain
-		err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof)
-		if err != nil {
-			if TxExposure(i.txExposure) == TxExposurePrivate {
-				return nil, err
-			}
-			// withheld: swallow error, proceed without auth token
-		} else {
-			authToken, err = i.createAuthToken(ctx, vtxoKey)
-			if err != nil {
-				return nil, err
-			}
-		}
-	default:
-		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
+// validateTxidsAgainstChain checks that all requested txids belong to the vtxo chain
+// rooted at the given outpoint.
+func (i *indexerService) validateTxidsAgainstChain(
+	ctx context.Context, outpoint Outpoint, txids []string,
+) error {
+	chain, err := i.buildVtxoChain(ctx, outpoint)
+	if err != nil {
+		return fmt.Errorf("failed to build vtxo chain for outpoint binding: %w", err)
 	}
 
-	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
-	return &VtxoChainResp{
-		Chain:     txChain,
-		Page:      pageResp,
-		AuthToken: authToken,
-	}, nil
+	chainTxids := make(map[string]struct{}, len(chain))
+	for _, tx := range chain {
+		chainTxids[tx.Txid] = struct{}{}
+	}
+
+	for _, txid := range txids {
+		if _, ok := chainTxids[txid]; !ok {
+			return fmt.Errorf("txid %s is not part of the authenticated vtxo chain", txid)
+		}
+	}
+
+	return nil
 }
 
 // similar flow in DeleteIntentsByProof inside internal/core/application/service.go
@@ -652,9 +702,15 @@ func (i *indexerService) GetVirtualTxs(
 		isValid := false
 		// optional auth token can be passed, if it was lets check if valid
 		if authToken != "" {
-			isValid, err = i.validateAuthToken(authToken)
+			var tokenOutpoint Outpoint
+			tokenOutpoint, isValid, err = i.validateAuthToken(authToken)
 			if err != nil {
 				return nil, err
+			}
+			if isValid {
+				if err := i.validateTxidsAgainstChain(ctx, tokenOutpoint, txids); err != nil {
+					return nil, err
+				}
 			}
 		}
 		txs, err = i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
@@ -696,12 +752,15 @@ func (i *indexerService) GetVirtualTxs(
 			return nil, fmt.Errorf("auth token is required for private exposure")
 		}
 		// require valid auth token to proceed
-		isValid, err := i.validateAuthToken(authToken)
+		tokenOutpoint, isValid, err := i.validateAuthToken(authToken)
 		if err != nil {
 			return nil, err
 		}
 		if !isValid {
 			return nil, fmt.Errorf("invalid auth token for private exposure")
+		}
+		if err := i.validateTxidsAgainstChain(ctx, tokenOutpoint, txids); err != nil {
+			return nil, err
 		}
 		txs, err = i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
 		if err != nil {
@@ -774,17 +833,24 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 }
 
 // createAuthToken creates a signed auth token for accessing virtual txs.
-// Format: base64(outpoint_txid|outpoint_vout|signature)
+// Format: base64(outpoint_txid(32)|outpoint_vout(4)|timestamp(8)|signature(64))
 func (i *indexerService) createAuthToken(ctx context.Context, outpoint Outpoint) (string, error) {
-	// Build message: txid (32 bytes) + vout (4 bytes)
+	return i.createAuthTokenWithTimestamp(ctx, outpoint, time.Now())
+}
+
+func (i *indexerService) createAuthTokenWithTimestamp(
+	ctx context.Context, outpoint Outpoint, ts time.Time,
+) (string, error) {
+	// Build message: txid (32 bytes) + vout (4 bytes) + timestamp (8 bytes)
 	txidBytes, err := hex.DecodeString(outpoint.Txid)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode txid: %w", err)
 	}
 
-	msg := make([]byte, 32+4)
+	msg := make([]byte, 32+4+8)
 	copy(msg[0:32], txidBytes)
 	binary.BigEndian.PutUint32(msg[32:36], outpoint.VOut)
+	binary.BigEndian.PutUint64(msg[36:44], uint64(ts.Unix()))
 
 	// Sign the message
 	sig, err := i.signer.SignMessage(ctx, msg)
@@ -801,36 +867,53 @@ func (i *indexerService) createAuthToken(ctx context.Context, outpoint Outpoint)
 }
 
 // validateAuthToken validates a signed auth token.
-// Returns true if the signature is valid.
-func (i *indexerService) validateAuthToken(authToken string) (bool, error) {
+// Returns the outpoint encoded in the token and true if the signature is valid and the token has not expired.
+func (i *indexerService) validateAuthToken(authToken string) (Outpoint, bool, error) {
 	if authToken == "" {
-		return false, nil
+		return Outpoint{}, false, nil
 	}
 
 	tokenBytes, err := base64.StdEncoding.DecodeString(authToken)
 	if err != nil {
-		return false, nil // Invalid base64, treat as invalid token
+		return Outpoint{}, false, nil // Invalid base64, treat as invalid token
 	}
 
-	// Token format: msg (36 bytes) + schnorr signature (64 bytes)
-	if len(tokenBytes) != 36+64 {
-		return false, nil
+	// Token format: msg (44 bytes: txid 32 + vout 4 + timestamp 8) + schnorr signature (64 bytes)
+	if len(tokenBytes) != 44+64 {
+		return Outpoint{}, false, nil
 	}
 
-	msg := tokenBytes[0:36]
-	sigBytes := tokenBytes[36:]
+	msg := tokenBytes[0:44]
+	sigBytes := tokenBytes[44:]
+
+	// Extract timestamp and check expiry
+	tsSec := binary.BigEndian.Uint64(msg[36:44])
+	tokenTime := time.Unix(int64(tsSec), 0)
+	if time.Since(tokenTime) > i.authTokenTTL {
+		return Outpoint{}, false, nil
+	}
 
 	// Verify schnorr signature
 	msgHash := chainhash.HashB(msg)
 	sig, err := schnorr.ParseSignature(sigBytes)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse signature: %w", err)
+		return Outpoint{}, false, fmt.Errorf("failed to parse signature: %w", err)
 	}
 
 	pubkey, err := schnorr.ParsePubKey(i.signerPubkey)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse signer pubkey: %w", err)
+		return Outpoint{}, false, fmt.Errorf("failed to parse signer pubkey: %w", err)
 	}
 
-	return sig.Verify(msgHash, pubkey), nil
+	if !sig.Verify(msgHash, pubkey) {
+		return Outpoint{}, false, nil
+	}
+
+	// Extract outpoint from token
+	outpoint := Outpoint{
+		Txid: hex.EncodeToString(msg[0:32]),
+		VOut: binary.BigEndian.Uint32(msg[32:36]),
+	}
+
+	return outpoint, true, nil
 }

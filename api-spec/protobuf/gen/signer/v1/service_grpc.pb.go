@@ -36,7 +36,6 @@ type SignerServiceClient interface {
 	GetPubkey(ctx context.Context, in *GetPubkeyRequest, opts ...grpc.CallOption) (*GetPubkeyResponse, error)
 	SignTransaction(ctx context.Context, in *SignTransactionRequest, opts ...grpc.CallOption) (*SignTransactionResponse, error)
 	SignTransactionTapscript(ctx context.Context, in *SignTransactionTapscriptRequest, opts ...grpc.CallOption) (*SignTransactionTapscriptResponse, error)
-	// SignMessage is gRPC-only (no HTTP gateway) to prevent unauthenticated access
 	SignMessage(ctx context.Context, in *SignMessageRequest, opts ...grpc.CallOption) (*SignMessageResponse, error)
 }
 
@@ -108,7 +107,6 @@ type SignerServiceServer interface {
 	GetPubkey(context.Context, *GetPubkeyRequest) (*GetPubkeyResponse, error)
 	SignTransaction(context.Context, *SignTransactionRequest) (*SignTransactionResponse, error)
 	SignTransactionTapscript(context.Context, *SignTransactionTapscriptRequest) (*SignTransactionTapscriptResponse, error)
-	// SignMessage is gRPC-only (no HTTP gateway) to prevent unauthenticated access
 	SignMessage(context.Context, *SignMessageRequest) (*SignMessageResponse, error)
 }
 

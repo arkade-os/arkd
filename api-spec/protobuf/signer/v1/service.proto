@@ -28,8 +28,12 @@ service SignerService {
       body: "*"
     };
   }
-  // SignMessage is gRPC-only (no HTTP gateway) to prevent unauthenticated access
-  rpc SignMessage(SignMessageRequest) returns (SignMessageResponse) {}
+  rpc SignMessage(SignMessageRequest) returns (SignMessageResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/sign-message"
+      body: "*"
+    };
+  }
 }
 
 message GetStatusRequest {}

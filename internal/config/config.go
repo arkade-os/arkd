@@ -132,8 +132,9 @@ type Config struct {
 	SettlementMinExpiryGap    int64
 	MaxTxWeight               uint64
 
-	EnablePprof       bool
-	IndexerTxExposure string
+	EnablePprof            bool
+	IndexerTxExposure      string
+	IndexerAuthTokenExpiry int64
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -223,6 +224,7 @@ var (
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
 	IndexerTxExposure             = "INDEXER_TX_EXPOSURE"
+	IndexerAuthTokenExpiry        = "INDEXER_AUTH_TOKEN_EXPIRY"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -260,6 +262,7 @@ var (
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
 	defaultIndexerTxExposure             = "public"
+	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
 )
 
 func LoadConfig() (*Config, error) {
@@ -302,6 +305,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 	viper.SetDefault(IndexerTxExposure, defaultIndexerTxExposure)
+	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -414,6 +418,7 @@ func LoadConfig() (*Config, error) {
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
 		IndexerTxExposure:             viper.GetString(IndexerTxExposure),
+		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
 	}, nil
 }
 
@@ -586,6 +591,10 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	if c.IndexerAuthTokenExpiry <= 0 {
+		return fmt.Errorf("indexer auth token expiry must be greater than 0")
+	}
+
 	if c.MaxTxWeight > bitcoinBlockWeight {
 		return fmt.Errorf(
 			"max tx weight can't exceed bitcoin block weight (%d)",
@@ -661,7 +670,9 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 			return nil, err
 		}
 	}
-	return application.NewIndexerService(c.repo, c.signer, c.wallet, c.IndexerTxExposure)
+	return application.NewIndexerService(
+		c.repo, c.signer, c.wallet, c.IndexerTxExposure, c.IndexerAuthTokenExpiry,
+	)
 }
 
 func (c *Config) SignerService() (ports.SignerService, error) {
