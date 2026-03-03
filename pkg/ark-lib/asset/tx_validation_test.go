@@ -26,8 +26,8 @@ func TestTxValidation(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		for _, v := range fixtures.Valid {
 			t.Run(v.Name, func(t *testing.T) {
-				tx, assetPrevouts, assetSrc := parseTxFixture(t, v)
-				err := asset.ValidateAssetTransaction(ctx, tx, assetPrevouts, assetSrc)
+				tx, packet, assetPrevouts, assetSrc := parseTxFixture(t, v)
+				err := asset.ValidateAssetTransaction(ctx, tx, packet, assetPrevouts, assetSrc)
 				require.NoError(t, err)
 			})
 		}
@@ -36,8 +36,8 @@ func TestTxValidation(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		for _, v := range fixtures.Invalid {
 			t.Run(v.Name, func(t *testing.T) {
-				tx, assetPrevouts, assetSrc := parseTxFixture(t, v.txFixture)
-				err := asset.ValidateAssetTransaction(ctx, tx, assetPrevouts, assetSrc)
+				tx, packet, assetPrevouts, assetSrc := parseTxFixture(t, v.txFixture)
+				err := asset.ValidateAssetTransaction(ctx, tx, packet, assetPrevouts, assetSrc)
 				require.Error(t, err)
 				require.ErrorContains(t, err, v.ExpectedError)
 			})
@@ -46,7 +46,7 @@ func TestTxValidation(t *testing.T) {
 }
 
 func parseTxFixture(t *testing.T, fixture txFixture) (
-	*wire.MsgTx, map[int][]asset.Asset, asset.AssetSource,
+	*wire.MsgTx, asset.Packet, map[int][]asset.Asset, asset.AssetSource,
 ) {
 	var tx wire.MsgTx
 	err := tx.Deserialize(hex.NewDecoder(strings.NewReader(fixture.Tx)))
@@ -62,17 +62,20 @@ func parseTxFixture(t *testing.T, fixture txFixture) (
 		}
 		assetPrevouts[inputIndex] = assetTxs
 	}
-	controlAssets := make(map[string]string)
-	for assetID, controlAssetID := range fixture.ControlAssets {
-		controlAssets[assetID] = controlAssetID
+
+	packet := make(asset.Packet, 0)
+	if len(fixture.Packet) > 0 {
+		packet, err = asset.NewPacketFromString(fixture.Packet)
+		require.NoError(t, err)
 	}
 
-	return &tx, assetPrevouts, &assetSrc{controlAssets, fixture.ExistingAssets}
+	return &tx, packet, assetPrevouts, &assetSrc{fixture.ControlAssets, fixture.ExistingAssets}
 }
 
 type txFixture struct {
 	Name     string `json:"name"`
 	Tx       string `json:"tx"`
+	Packet 	 string `json:"packet"`
 	Prevouts map[int][]struct {
 		AssetID string `json:"assetId"`
 		Amount  uint64 `json:"amount"`

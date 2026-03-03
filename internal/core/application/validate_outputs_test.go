@@ -404,7 +404,7 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.description, func(t *testing.T) {
-			outputs, err := validateOffchainTxOutputs(
+			outputs, _, err := validateOffchainTxOutputs(
 				tc.txOuts, tc.dust,
 				tc.vtxoMaxAmount, tc.vtxoMinOffchainTxAmount,
 				"signed-tx-hex", "test-txid",
