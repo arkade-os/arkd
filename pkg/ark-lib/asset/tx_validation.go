@@ -39,6 +39,30 @@ func ValidateAssetTransaction(
 		)
 	}
 
+	if len(packet) > 0 {
+		serializedPacket, err := packet.Serialize()
+		if err != nil {
+			return errors.ASSET_VALIDATION_FAILED.Wrap(err)
+		}
+
+		found := false
+
+		for _, out := range tx.TxOut {
+			if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
+				found = bytes.Contains(out.PkScript, serializedPacket) 
+				if found {
+					break
+				}
+			}
+		}
+
+		if !found {
+			return errors.ASSET_VALIDATION_FAILED.New(
+				"asset packet not found in extension output for tx %s", tx.TxID(),
+			)
+		}
+	}
+
 	// verify that every asset in the prevouts is present in the packet
 	if err := validateInputAssets(assetPrevouts, packet); err != nil {
 		return err

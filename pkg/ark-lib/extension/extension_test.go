@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
@@ -99,6 +100,48 @@ func TestExtension(t *testing.T) {
 			}
 		})
 	})
+
+	t.Run("GetAssetPacket", func(t *testing.T) {
+		t.Run("found", func(t *testing.T) {
+			for _, v := range fixtures.GetAssetPacket.Found {
+				t.Run(v.Name, func(t *testing.T) {
+					data, err := hex.DecodeString(v.Hex)
+					require.NoError(t, err)
+
+					ext, err := extension.NewExtensionFromBytes(data)
+					require.NoError(t, err)
+
+					ap := ext.GetAssetPacket()
+					require.NotNil(t, ap)
+					require.Equal(t, asset.PacketType, ap.Type())
+
+					got, err := ap.Serialize()
+					require.NoError(t, err)
+					require.Equal(t, v.ExpectedAssetPacketHex, hex.EncodeToString(got))
+				})
+			}
+		})
+
+		t.Run("not found", func(t *testing.T) {
+			for _, v := range fixtures.GetAssetPacket.NotFound {
+				t.Run(v.Name, func(t *testing.T) {
+					if v.Hex == "" {
+						var ext extension.Extension
+						require.Nil(t, ext.GetAssetPacket())
+						return
+					}
+
+					data, err := hex.DecodeString(v.Hex)
+					require.NoError(t, err)
+
+					ext, err := extension.NewExtensionFromBytes(data)
+					require.NoError(t, err)
+
+					require.Nil(t, ext.GetAssetPacket())
+				})
+			}
+		})
+	})
 }
 
 func TestNewExtensionFromTx(t *testing.T) {
@@ -186,4 +229,15 @@ type extensionFixtures struct {
 			ExpectedError string `json:"expectedError"`
 		} `json:"newExtensionFromBytes"`
 	} `json:"invalid"`
+	GetAssetPacket struct {
+		Found []struct {
+			Name                  string `json:"name"`
+			Hex                   string `json:"hex"`
+			ExpectedAssetPacketHex string `json:"expectedAssetPacketHex"`
+		} `json:"found"`
+		NotFound []struct {
+			Name string `json:"name"`
+			Hex  string `json:"hex"`
+		} `json:"notFound"`
+	} `json:"getAssetPacket"`
 }
