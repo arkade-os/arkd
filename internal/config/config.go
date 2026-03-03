@@ -224,7 +224,7 @@ var (
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
 	IndexerTxExposure             = "INDEXER_TX_EXPOSURE"
-	IndexerAuthTokenExpiry        = "INDEXER_AUTH_TOKEN_EXPIRY"
+	IndexerAuthTokenExpiry        = "INDEXER_AUTH_TOKEN_EXPIRY" // #nosec G101
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
