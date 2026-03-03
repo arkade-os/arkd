@@ -30,12 +30,6 @@ type IntentIndex struct {
 	IntentId string
 }
 
-type IntentProofIndex struct {
-	Proof    string
-	RoundId  string
-	IntentId string
-}
-
 func NewArkRepository(config ...interface{}) (ArkRepository, error) {
 	if len(config) != 2 {
 		return nil, fmt.Errorf("invalid config")
@@ -308,8 +302,6 @@ func (r *arkRepository) addOrUpdateRound(
 		// do not fail the whole round upsert if intent index upsert fails
 		// nolint:errcheck
 		r.upsertIntentIndex(ctx, it.Txid, rnd.Id, it.Id)
-		// nolint:errcheck
-		r.upsertIntentProofIndex(ctx, it.Proof, rnd.Id, it.Id)
 	}
 	return nil
 }
@@ -577,42 +569,6 @@ func (r arkRepository) GetIntentByTxid(ctx context.Context, txid string) (*domai
 	return nil, nil
 }
 
-func (r arkRepository) GetIntentsByProof(
-	ctx context.Context,
-	proof string,
-) ([]*domain.Intent, error) {
-	var indexes []IntentProofIndex
-	var err error
-	if ctx.Value("tx") != nil {
-		tx := ctx.Value("tx").(*badger.Txn)
-		err = r.store.TxFind(tx, &indexes, badgerhold.Where("Proof").Eq(proof))
-	} else {
-		err = r.store.Find(&indexes, badgerhold.Where("Proof").Eq(proof))
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	var intents []*domain.Intent
-	for _, idx := range indexes {
-		round, err := r.GetRoundWithId(ctx, idx.RoundId)
-		if err != nil {
-			return nil, err
-		}
-		if round == nil {
-			continue
-		}
-		for _, in := range round.Intents {
-			if in.Id == idx.IntentId {
-				i := in
-				intents = append(intents, &i)
-				break
-			}
-		}
-	}
-	return intents, nil
-}
-
 func (r *arkRepository) upsertIntentIndex(
 	ctx context.Context,
 	txid, roundId, intentId string,
@@ -623,17 +579,4 @@ func (r *arkRepository) upsertIntentIndex(
 		return r.store.TxUpsert(tx, txid, idx)
 	}
 	return r.store.Upsert(txid, idx)
-}
-
-func (r *arkRepository) upsertIntentProofIndex(
-	ctx context.Context,
-	proof, roundId, intentId string,
-) error {
-	key := fmt.Sprintf("%s/%s", proof, intentId)
-	idx := IntentProofIndex{Proof: proof, RoundId: roundId, IntentId: intentId}
-	if ctx.Value("tx") != nil {
-		tx := ctx.Value("tx").(*badger.Txn)
-		return r.store.TxUpsert(tx, key, idx)
-	}
-	return r.store.Upsert(key, idx)
 }
