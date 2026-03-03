@@ -6,13 +6,16 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/errors"
-	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 )
 
 func (s *service) validateAssetTransaction(
-	ctx context.Context, tx *wire.MsgTx, inputAssets map[int][]domain.AssetDenomination,
+	ctx context.Context,
+	tx *wire.MsgTx,
+	ext extension.Extension,
+	inputAssets map[int][]domain.AssetDenomination,
 	ignoreMissingAssetPackets bool,
 ) errors.Error {
 	assetsPrevout := make(map[int][]asset.Asset)
@@ -24,8 +27,10 @@ func (s *service) validateAssetTransaction(
 		assetsPrevout[inputIndex] = assetTxs
 	}
 
+	assetPacket := ext.GetAssetPacket()
+
 	if err := asset.ValidateAssetTransaction(
-		ctx, tx, assetsPrevout, assetSource{s.repoManager.Assets()},
+		ctx, tx, assetPacket, assetsPrevout, assetSource{s.repoManager.Assets()},
 	); err != nil {
 		// When the flag is set, suppress only the "asset packet not found"
 		// branch of ASSET_VALIDATION_FAILED and let all other errors through.
@@ -37,12 +42,9 @@ func (s *service) validateAssetTransaction(
 		return err
 	}
 
-	// getAssetsFromTx returns nil when no asset packet is present (e.g. when
-	// ignoreMissingAssetPackets caused the early return above). The loop below
-	// handles a nil map gracefully by simply not iterating.
-	assets, err := getAssetsFromTx(&psbt.Packet{UnsignedTx: tx})
+	assets, err := getAssetsDenominations(assetPacket, tx.TxID())
 	if err != nil {
-		return nil
+		return errors.INTERNAL_ERROR.Wrap(err)
 	}
 
 	for vout, denominations := range assets {
