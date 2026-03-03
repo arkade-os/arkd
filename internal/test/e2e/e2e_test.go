@@ -4197,10 +4197,7 @@ func TestFee(t *testing.T) {
 }
 
 func TestCollectedFees(t *testing.T) {
-	// Record timestamp before rounds so we can query fees in this window.
-	startTime := time.Now().Unix()
-
-	// Configure 1% input fees so rounds generate non-zero collected fees.
+	// Save and clear fees so funding rounds don't collect fees.
 	originalFees, err := getIntentFees()
 	require.NoError(t, err)
 
@@ -4211,6 +4208,24 @@ func TestCollectedFees(t *testing.T) {
 		}
 	})
 
+	require.NoError(t, clearIntentFees())
+
+	ctx := t.Context()
+	alice := setupArkSDK(t)
+	bob := setupArkSDK(t)
+
+	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+	_, bobOffchainAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	// Fund Alice onchain (no round triggered) and Bob offchain (round triggered,
+	// but no fees configured yet so collected fees stay zero).
+	faucetOnchain(t, aliceBoardingAddr, 0.001)
+	faucetOffchain(t, bob, 0.001)
+	time.Sleep(6 * time.Second)
+
+	// Configure 1% input fees so the next round generates non-zero collected fees.
 	fees := intentFees{
 		IntentOffchainInputFeeProgram:  "0.01 * amount",
 		IntentOnchainInputFeeProgram:   "0.01 * amount",
@@ -4220,34 +4235,42 @@ func TestCollectedFees(t *testing.T) {
 	err = updateIntentFees(fees)
 	require.NoError(t, err)
 
-	ctx := t.Context()
-	alice := setupArkSDK(t)
+	// Record timestamp after funding so only the fee-bearing round is in window.
+	startTime := time.Now().Unix()
 
-	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
-	require.NoError(t, err)
-
-	// Fund Alice and settle a round.
-	faucetOnchain(t, aliceBoardingAddr, 0.001)
-	time.Sleep(6 * time.Second)
-
+	// Alice (boarding / onchain input) and Bob (renewal / offchain input) settle together.
 	wg := &sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(4)
 
-	var incomingErr error
+	var aliceIncomingErr error
 	go func() {
-		_, incomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+		_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
 		wg.Done()
 	}()
 
-	var settleErr error
+	var bobIncomingErr error
 	go func() {
-		_, settleErr = alice.Settle(ctx)
+		_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr)
+		wg.Done()
+	}()
+
+	var aliceSettleErr error
+	go func() {
+		_, aliceSettleErr = alice.Settle(ctx)
+		wg.Done()
+	}()
+
+	var bobSettleErr error
+	go func() {
+		_, bobSettleErr = bob.Settle(ctx)
 		wg.Done()
 	}()
 
 	wg.Wait()
-	require.NoError(t, incomingErr)
-	require.NoError(t, settleErr)
+	require.NoError(t, aliceIncomingErr)
+	require.NoError(t, bobIncomingErr)
+	require.NoError(t, aliceSettleErr)
+	require.NoError(t, bobSettleErr)
 
 	time.Sleep(time.Second)
 
@@ -4255,7 +4278,12 @@ func TestCollectedFees(t *testing.T) {
 	endTime := time.Now().Unix() + 10
 	collectedFees, err := getCollectedFees(startTime-1, endTime)
 	require.NoError(t, err)
-	require.NotZero(t, collectedFees, "expected non-zero collected fees after a round with 1%% input fees")
+
+	// Alice's boarding input: 100,000 sats × 1% = 1,000 sats
+	// Bob's offchain input:   100,000 sats × 1% = 1,000 sats
+	// Total expected: 2,000 sats
+	require.Equal(t, uint64(2000), collectedFees,
+		"collected fees should equal sum of onchain and offchain input fees")
 
 	// Query with a future window — should return zero.
 	futureFees, err := getCollectedFees(endTime, 0)

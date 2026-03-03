@@ -516,7 +516,7 @@ func testEndFinalization(t *testing.T) {
 
 			event, ok := events[0].(domain.RoundFinalized)
 			require.True(t, ok)
-			require.Equal(t, uint64(42000), event.CollectedFees)
+			require.Equal(t, uint64(42000), event.Fees)
 		})
 
 		t.Run("invalid", func(t *testing.T) {

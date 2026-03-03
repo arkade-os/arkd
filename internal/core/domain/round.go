@@ -196,7 +196,7 @@ func (r *Round) EndFinalization(
 		},
 		ForfeitTxs:        forfeitTxs,
 		FinalCommitmentTx: finalCommitmentTx,
-		CollectedFees:     collectedFees,
+		Fees:              collectedFees,
 		Timestamp:         time.Now().Unix(),
 	}
 	r.raise(event)
@@ -293,7 +293,7 @@ func (r *Round) on(event Event, replayed bool) {
 		r.ForfeitTxs = append([]ForfeitTx{}, e.ForfeitTxs...)
 		r.EndingTimestamp = e.Timestamp
 		r.CommitmentTx = e.FinalCommitmentTx
-		r.CollectedFees = e.CollectedFees
+		r.CollectedFees = e.Fees
 	case RoundFailed:
 		r.Stage.Failed = true
 		r.FailReason = e.Reason

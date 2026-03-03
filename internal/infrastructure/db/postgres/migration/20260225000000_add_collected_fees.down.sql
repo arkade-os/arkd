@@ -1,1 +1,1 @@
-ALTER TABLE round DROP COLUMN collected_fees;
+ALTER TABLE round DROP COLUMN fees;

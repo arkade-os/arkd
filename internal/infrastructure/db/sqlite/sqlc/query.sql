@@ -1,10 +1,10 @@
 -- name: UpsertRound :exec
 INSERT INTO round (
     id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
-    stage_code, connector_address, version, swept, vtxo_tree_expiration, collected_fees
+    stage_code, connector_address, version, swept, vtxo_tree_expiration, fees
 ) VALUES (
     @id, @starting_timestamp, @ending_timestamp, @ended, @failed, @fail_reason,
-    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration, @collected_fees
+    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration, @fees
 )
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
@@ -17,7 +17,7 @@ ON CONFLICT(id) DO UPDATE SET
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
     vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration,
-    collected_fees = EXCLUDED.collected_fees;
+    fees = EXCLUDED.fees;
 
 -- name: UpsertTx :exec
 INSERT INTO tx (tx, round_id, type, position, txid, children)
@@ -440,7 +440,7 @@ INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES (@asset_id, @txid, @vout, @amount);
 
 -- name: SelectCollectedFees :one
-SELECT CAST(COALESCE(SUM(collected_fees), 0) AS INTEGER) AS collected_fees
+SELECT CAST(COALESCE(SUM(fees), 0) AS INTEGER) AS fees
 FROM round
 WHERE ended = true
   AND failed = false

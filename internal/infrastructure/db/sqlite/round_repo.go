@@ -95,7 +95,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				ConnectorAddress:   round.ConnectorAddress,
 				Version:            int64(round.Version),
 				Swept:              round.Swept,
-				CollectedFees:      int64(round.CollectedFees),
+				Fees:               int64(round.CollectedFees),
 				FailReason: sql.NullString{
 					String: round.FailReason, Valid: len(round.FailReason) > 0,
 				},
@@ -571,7 +571,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				Swept:              v.round.Swept,
 				Intents:            make(map[string]domain.Intent),
 				VtxoTreeExpiration: v.round.VtxoTreeExpiration,
-				CollectedFees:      uint64(v.round.CollectedFees),
+				CollectedFees:      uint64(v.round.Fees),
 				FailReason:         v.round.FailReason.String,
 			}
 		}

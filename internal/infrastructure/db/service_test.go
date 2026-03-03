@@ -700,7 +700,7 @@ func testCollectedFeesRepository(t *testing.T, svc ports.RepoManager) {
 						Type: domain.EventTypeRoundFinalized,
 					},
 					FinalCommitmentTx: emptyTx,
-					CollectedFees:     tc.fee,
+					Fees:              tc.fee,
 					Timestamp:         tc.ts + 10,
 				},
 			})
@@ -783,7 +783,7 @@ func testCollectedFeesRepository(t *testing.T, svc ports.RepoManager) {
 					Type: domain.EventTypeRoundFinalized,
 				},
 				FinalCommitmentTx: emptyTx,
-				CollectedFees:     8888,
+				Fees:              8888,
 				Timestamp:         410,
 			},
 			domain.RoundFailed{
