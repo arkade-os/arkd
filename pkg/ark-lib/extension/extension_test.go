@@ -99,6 +99,23 @@ func TestExtension(t *testing.T) {
 				})
 			}
 		})
+
+		t.Run("Serialize", func(t *testing.T) {
+			for _, v := range fixtures.Invalid.Serialize {
+				t.Run(v.Name, func(t *testing.T) {
+					ext := make(extension.Extension, v.PacketCount)
+
+					got, err := ext.Serialize()
+					require.Error(t, err)
+					require.ErrorContains(t, err, v.ExpectedError)
+					require.Nil(t, got)
+
+					txout, err := ext.TxOut()
+					require.Error(t, err)
+					require.Nil(t, txout)
+				})
+			}
+		})
 	})
 
 	t.Run("GetAssetPacket", func(t *testing.T) {
@@ -228,6 +245,11 @@ type extensionFixtures struct {
 			Hex           string `json:"hex"`
 			ExpectedError string `json:"expectedError"`
 		} `json:"newExtensionFromBytes"`
+		Serialize []struct {
+			Name          string `json:"name"`
+			PacketCount   int    `json:"packetCount"`
+			ExpectedError string `json:"expectedError"`
+		} `json:"serialize"`
 	} `json:"invalid"`
 	GetAssetPacket struct {
 		Found []struct {

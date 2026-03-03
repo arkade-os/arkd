@@ -23,8 +23,12 @@ type Extension []Packet
 // Serialize the extension as a complete OP_RETURN script
 // OP_RETURN <magic_bytes> <tlv_packets>
 func (e Extension) Serialize() ([]byte, error) {
+	if len(e) == 0 {
+		return nil, fmt.Errorf("cannot serialize empty extension: missing packets")
+	}
+
 	w := bytes.NewBuffer(nil)
-	
+
 	if _, err := w.Write(ArkadeMagic); err != nil {
 		return nil, fmt.Errorf("failed to write magic prefix: %w", err)
 	}

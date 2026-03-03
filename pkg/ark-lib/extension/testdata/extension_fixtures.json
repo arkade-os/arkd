@@ -36,6 +36,13 @@
                 "hex": "6a2341524b000e01020200000001010000c0de810a000e01020200000001010000c0de810a",
                 "expectedError": "duplicate packet type 0"
             }
+        ],
+        "serialize": [
+            {
+                "name": "empty extension (no packets)",
+                "packetCount": 0,
+                "expectedError": "missing packets"
+            }
         ]
     },
     "isExtension": {
