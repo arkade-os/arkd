@@ -293,6 +293,11 @@ message UpdateStreamTopicsResponse {
 message SubmitTxRequest {
   string signed_ark_tx = 1;
   repeated string checkpoint_txs = 2;
+  // When true, missing asset packets (OP_RETURN) are silently skipped instead
+  // of causing an ASSET_VALIDATION_FAILED error. Other asset-validation errors
+  // are still enforced. The resulting transaction outputs will have no asset
+  // metadata recorded (Assets=nil on the new VTXOs).
+  bool ignore_missing_asset_packets = 3;
 }
 message SubmitTxResponse {
   string ark_txid = 1;

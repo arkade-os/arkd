@@ -436,6 +436,7 @@ func (s *service) Stop() {
 
 func (s *service) SubmitOffchainTx(
 	ctx context.Context, unsignedCheckpointTxs []string, signedArkTx string,
+	ignoreMissingAssetPackets bool,
 ) (acceptedTx *AcceptedOffchainTx, structErr errors.Error) {
 	arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedArkTx), true)
 	if err != nil {
@@ -939,7 +940,7 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
 	}
 
-	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, assetInputs); err != nil {
+	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, assetInputs, ignoreMissingAssetPackets); err != nil {
 		return nil, err
 	}
 
@@ -1944,7 +1945,8 @@ func (s *service) RegisterIntent(
 				})
 		}
 
-		if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs); err != nil {
+		// ignoreMissingAssetPackets=false: intent validation must always be strict
+		if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs, false); err != nil {
 			return "", err
 		}
 

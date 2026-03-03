@@ -1211,6 +1211,10 @@
               "type": "string"
             }
           },
+          "ignoreMissingAssetPackets": {
+            "type": "boolean",
+            "description": "When true, missing asset packets (OP_RETURN) are silently skipped instead\nof causing an ASSET_VALIDATION_FAILED error. Other asset-validation errors\nare still enforced. The resulting transaction outputs will have no asset\nmetadata recorded (Assets=nil on the new VTXOs)."
+          },
           "signedArkTx": {
             "type": "string"
           }
