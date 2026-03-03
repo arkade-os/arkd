@@ -30,7 +30,8 @@ type AssetSource interface {
 // ValidateAssetTransaction validates that the asset packet embedded in the transaction
 // is consistent with the transaction inputs/outputs and the given prevout asset map.
 func ValidateAssetTransaction(
-	ctx context.Context, tx *wire.MsgTx, packet Packet, assetPrevouts map[int][]Asset, assetSrc AssetSource,
+	ctx context.Context,
+	tx *wire.MsgTx, packet Packet, assetPrevouts map[int][]Asset, assetSrc AssetSource,
 ) errors.Error {
 	// reject transaction spending asset vtxos without asset packet
 	if len(packet) == 0 && len(assetPrevouts) > 0 {
@@ -110,7 +111,9 @@ func validateReissuance(
 	ctx context.Context, packet Packet, group AssetGroup, assetSrc AssetSource,
 ) errors.Error {
 	if assetSrc == nil {
-		return errors.ASSET_VALIDATION_FAILED.New("control asset source is nil, cannot validate reissuance")
+		return errors.ASSET_VALIDATION_FAILED.New(
+			"control asset source is nil, cannot validate reissuance",
+		)
 	}
 
 	assetID := group.AssetId.String()
@@ -137,7 +140,9 @@ func validateReissuance(
 // validateIssuance validates the control asset of an issuance group.
 // If a control asset is present and referenced by group index, it must be issued
 // in the same transaction.
-func validateIssuance(ctx context.Context, packet Packet, grp AssetGroup, assetSrc AssetSource) errors.Error {
+func validateIssuance(
+	ctx context.Context, packet Packet, grp AssetGroup, assetSrc AssetSource,
+) errors.Error {
 	if grp.ControlAsset == nil {
 		return nil
 	}
@@ -145,8 +150,11 @@ func validateIssuance(ctx context.Context, packet Packet, grp AssetGroup, assetS
 	if grp.ControlAsset.Type == AssetRefByID {
 		// by id means the control asset is an existing asset, so we need to check if it exists
 		if !assetSrc.AssetExists(ctx, grp.ControlAsset.AssetId.String()) {
-			return errors.ASSET_VALIDATION_FAILED.New("control asset %s does not exist", grp.ControlAsset.AssetId.String()).
-				WithMetadata(errors.AssetValidationMetadata{AssetID: grp.ControlAsset.AssetId.String()})
+			return errors.ASSET_VALIDATION_FAILED.New(
+				"control asset %s does not exist", grp.ControlAsset.AssetId.String(),
+			).WithMetadata(errors.AssetValidationMetadata{
+				AssetID: grp.ControlAsset.AssetId.String(),
+			})
 		}
 
 		return nil
@@ -244,7 +252,10 @@ func validateGroupOutputs(arkTx *wire.MsgTx, assetID string, grp AssetGroup) err
 			return errors.ASSET_OUTPUT_INVALID.New(
 				"asset output vout %d out of range (%d outputs)",
 				vout, len(arkTx.TxOut),
-			).WithMetadata(errors.AssetOutputMetadata{OutputIndex: int(assetOut.Vout), AssetID: assetID})
+			).WithMetadata(errors.AssetOutputMetadata{
+				OutputIndex: int(assetOut.Vout),
+				AssetID:     assetID,
+			})
 		}
 
 		// verify referenced output is not the P2A output
@@ -279,20 +290,29 @@ func validateGroupInputs(
 	for i, input := range grp.Inputs {
 		if input.Type == AssetInputTypeIntent {
 			return errors.ASSET_INPUT_INVALID.New("unexpected asset input type: %s", input.Type).
-				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
+				WithMetadata(errors.AssetInputMetadata{
+					InputIndex: int(input.Vin), AssetID: assetID,
+				})
 		}
 
 		if int(input.Vin) >= len(arkTx.TxIn) {
 			return errors.ASSET_INPUT_INVALID.New(
 				"asset input index out of range: %d (%d inputs)", input.Vin, len(arkTx.TxIn)).
-				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
+				WithMetadata(errors.AssetInputMetadata{
+					InputIndex: int(input.Vin),
+					AssetID:    assetID,
+				})
 		}
 
 		assets, ok := inputAssets[int(input.Vin)]
 		if !ok {
 			return errors.ASSET_INPUT_INVALID.New(
-				"asset input %d references input %d which does not contain any assets", i, int(input.Vin)).
-				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
+				"asset input %d references input %d which does not contain any assets",
+				i, int(input.Vin),
+			).WithMetadata(errors.AssetInputMetadata{
+				InputIndex: int(input.Vin),
+				AssetID:    assetID,
+			})
 		}
 
 		// verify vtxo holds the referenced asset, and amount matches
@@ -301,9 +321,12 @@ func validateGroupInputs(
 			if asst.AssetId == assetID {
 				if asst.Amount != input.Amount {
 					return errors.ASSET_INPUT_INVALID.New(
-						"asset input %d references input with asset %s but amount mismatch: %d != %d",
-						i, asst.AssetId, asst.Amount, input.Amount).
-						WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
+						"asset input %d references input with asset %s but amount mismatch: "+
+							"%d != %d", i, asst.AssetId, asst.Amount, input.Amount).
+						WithMetadata(errors.AssetInputMetadata{
+							InputIndex: int(input.Vin),
+							AssetID:    assetID,
+						})
 				}
 
 				vtxoHasAsset = true
@@ -316,7 +339,10 @@ func validateGroupInputs(
 				"asset input %d references input with asset %s but asset not found in tx input %d",
 				i, assetID, int(input.Vin),
 			).
-				WithMetadata(errors.AssetInputMetadata{InputIndex: int(input.Vin), AssetID: assetID})
+				WithMetadata(errors.AssetInputMetadata{
+					InputIndex: int(input.Vin),
+					AssetID:    assetID,
+				})
 		}
 	}
 

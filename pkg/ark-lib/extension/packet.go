@@ -7,7 +7,7 @@ type Packet interface {
 
 type UnknownPacket struct {
 	PacketType uint8
-	Data []byte
+	Data       []byte
 }
 
 func (p UnknownPacket) Type() uint8 {

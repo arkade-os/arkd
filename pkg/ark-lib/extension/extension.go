@@ -24,22 +24,22 @@ type Extension []Packet
 // OP_RETURN <magic_bytes> <tlv_packets>
 func (e Extension) Serialize() ([]byte, error) {
 	w := bytes.NewBuffer(nil)
-	
+
 	if _, err := w.Write(ArkadeMagic); err != nil {
 		return nil, fmt.Errorf("failed to write magic prefix: %w", err)
 	}
 
 	for _, packet := range e {
-		packetBytes, err := packet.Serialize();
+		packetBytes, err := packet.Serialize()
 		if err != nil {
 			return nil, fmt.Errorf("failed to serialize packet: %w", err)
 		}
 
-		// packet type 
+		// packet type
 		if err := w.WriteByte(packet.Type()); err != nil {
 			return nil, fmt.Errorf("failed to write packet type: %w", err)
 		}
-		
+
 		// packet data (varint length prefix followed by the raw bytes)
 		if err := serializeVarSlice(w, packetBytes); err != nil {
 			return nil, fmt.Errorf("failed to write packet: %w", err)
@@ -153,7 +153,9 @@ func NewExtensionFromBytes(data []byte) (Extension, error) {
 	extension := make(Extension, 0)
 
 	for pr.Len() > 0 {
-		packetType, _ := pr.ReadByte() // pr.Len() > 0, so can't fail
+		// pr.Len() > 0, so can't fail
+		//nolint
+		packetType, _ := pr.ReadByte()
 		packetData, err := deserializeVarSlice(pr)
 		if err != nil {
 			return nil, fmt.Errorf("missing packet data: %w", err)
@@ -189,7 +191,7 @@ func parsePacket(packetType uint8, packetData []byte) (Packet, error) {
 	case asset.PacketType:
 		return asset.NewPacketFromBytes(packetData)
 	default:
-		return UnknownPacket{packetType,packetData}, nil
+		return UnknownPacket{packetType, packetData}, nil
 	}
 }
 

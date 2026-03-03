@@ -187,9 +187,9 @@
                 "expectedError": "missing packet data"
             },
             {
-                "name": "invalid hex",
+                "name": "invalid format",
                 "script": "invalid",
-                "expectedError": "invalid packet format, must be hex"
+                "expectedError": "invalid packet format"
             },
             {
                 "name": "invalid group index",

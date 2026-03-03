@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
+// PacketType is the fixed type identifier for the asset packet format 0x00.
 const PacketType = uint8(0)
 
 // Packet represents a list of AssetGroup entries embedded in a transaction's OP_RETURN output.
