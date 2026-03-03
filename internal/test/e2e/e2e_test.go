@@ -5202,8 +5202,8 @@ func TestSubmitTxIgnoreMissingAssetPackets(t *testing.T) {
 
 		// Verify no asset packet output exists in the transaction.
 		for _, out := range ptx.UnsignedTx.TxOut {
-			require.False(t, asset.IsAssetPacket(out.PkScript),
-				"the test transaction must NOT contain an asset packet output")
+			_, err := asset.NewPacketFromBytes(out.PkScript)
+			require.Error(t, err)
 		}
 
 		explorer, err := mempool_explorer.NewExplorer(
@@ -5232,7 +5232,7 @@ func TestSubmitTxIgnoreMissingAssetPackets(t *testing.T) {
 
 		_, err := arkSvc.SubmitTx(t.Context(), &arkv1.SubmitTxRequest{
 			SignedArkTx:               signedTx,
-			CheckpointTxs:            checkpoints,
+			CheckpointTxs:             checkpoints,
 			IgnoreMissingAssetPackets: false,
 		})
 		require.Error(t, err, "SubmitTx should fail when flag is false and asset packet is missing")
@@ -5246,12 +5246,16 @@ func TestSubmitTxIgnoreMissingAssetPackets(t *testing.T) {
 
 		resp, err := arkSvc.SubmitTx(t.Context(), &arkv1.SubmitTxRequest{
 			SignedArkTx:               signedTx,
-			CheckpointTxs:            checkpoints,
+			CheckpointTxs:             checkpoints,
 			IgnoreMissingAssetPackets: true,
 		})
 		require.NoError(t, err, "SubmitTx should succeed when flag is true")
 		require.NotEmpty(t, resp.GetArkTxid(), "response should contain ark txid")
 		require.NotEmpty(t, resp.GetFinalArkTx(), "response should contain final ark tx")
-		require.NotEmpty(t, resp.GetSignedCheckpointTxs(), "response should contain signed checkpoints")
+		require.NotEmpty(
+			t,
+			resp.GetSignedCheckpointTxs(),
+			"response should contain signed checkpoints",
+		)
 	})
 }
