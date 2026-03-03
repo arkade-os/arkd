@@ -1962,7 +1962,9 @@ func (s *service) RegisterIntent(
 	}
 
 	// validate assets
-	if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, ext, assetInputs, false); err != nil {
+	if err := s.validateAssetTransaction(
+		ctx, proof.UnsignedTx, ext, assetInputs, false,
+	); err != nil {
 		return "", err
 	}
 
