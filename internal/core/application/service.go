@@ -1749,6 +1749,13 @@ func (s *service) RegisterIntent(
 				)
 			}
 
+			if output.Value != 0 {
+				return "", errors.INVALID_INTENT_PSBT.New(
+					"extension output #%d has non-zero value (%d)",
+					outputIndex, output.Value,
+				)
+			}
+
 			ext, err = extension.NewExtensionFromBytes(output.PkScript)
 			if err != nil {
 				return "", errors.INVALID_INTENT_PROOF.New(
@@ -4274,6 +4281,14 @@ func validateOffchainTxOutputs(
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
 			foundExtension = true
+
+			if out.Value != 0 {
+				return nil, nil, errors.MALFORMED_ARK_TX.New(
+					"extension OP_RETURN output #%d has non-zero value (%d)",
+					outIndex, out.Value,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+
 			outputs = append(outputs, out)
 
 			var err error
