@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -15,6 +16,7 @@ func (s *service) validateAssetTransaction(
 	tx *wire.MsgTx,
 	ext extension.Extension,
 	inputAssets map[int][]domain.AssetDenomination,
+	ignoreMissingAssetPackets bool,
 ) errors.Error {
 	assetsPrevout := make(map[int][]asset.Asset)
 	for inputIndex, assets := range inputAssets {
@@ -30,6 +32,13 @@ func (s *service) validateAssetTransaction(
 	if err := asset.ValidateAssetTransaction(
 		ctx, tx, assetPacket, assetsPrevout, assetSource{s.repoManager.Assets()},
 	); err != nil {
+		// When the flag is set, suppress only the "asset packet not found"
+		// branch of ASSET_VALIDATION_FAILED and let all other errors through.
+		if ignoreMissingAssetPackets &&
+			err.CodeName() == "ASSET_VALIDATION_FAILED" &&
+			strings.Contains(err.Error(), "asset packet not found") {
+			return nil
+		}
 		return err
 	}
 

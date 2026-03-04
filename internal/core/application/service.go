@@ -435,7 +435,10 @@ func (s *service) Stop() {
 }
 
 func (s *service) SubmitOffchainTx(
-	ctx context.Context, unsignedCheckpointTxs []string, signedArkTx string,
+	ctx context.Context,
+	unsignedCheckpointTxs []string,
+	signedArkTx string,
+	ignoreMissingAssetPackets bool,
 ) (acceptedTx *AcceptedOffchainTx, structErr errors.Error) {
 	arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedArkTx), true)
 	if err != nil {
@@ -1036,7 +1039,9 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// validate assets
-	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, ext, assetInputs); err != nil {
+	if err := s.validateAssetTransaction(
+		ctx, arkPtx.UnsignedTx, ext, assetInputs, ignoreMissingAssetPackets,
+	); err != nil {
 		return nil, err
 	}
 
@@ -1957,7 +1962,9 @@ func (s *service) RegisterIntent(
 	}
 
 	// validate assets
-	if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, ext, assetInputs); err != nil {
+	if err := s.validateAssetTransaction(
+		ctx, proof.UnsignedTx, ext, assetInputs, false,
+	); err != nil {
 		return "", err
 	}
 
