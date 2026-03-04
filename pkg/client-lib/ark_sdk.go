@@ -5,12 +5,21 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 )
 
 var Version string
 
 type ArkClient interface {
+	Wallet() wallet.WalletService
+	Transport() client.TransportClient
+	Indexer() indexer.Indexer
+	Explorer() explorer.Explorer
+
 	GetVersion() string
 	GetConfigData(ctx context.Context) (*types.Config, error)
 	Init(ctx context.Context, args InitArgs) error
