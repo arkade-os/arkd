@@ -196,6 +196,250 @@ func TestGetSubscription(t *testing.T) {
 		require.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
+	t.Run("new flow sends heartbeat when idle", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		svc.heartbeat = 50 * time.Millisecond // short heartbeat for test speed
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		stream := newMockGetSubscriptionServer(ctx)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(&arkv1.GetSubscriptionRequest{}, stream)
+		}()
+
+		// First message: SubscriptionStartedEvent.
+		msg := stream.recv(t, time.Second)
+		require.NotNil(t, msg.GetSubscriptionStarted())
+
+		// Second message should be a heartbeat (no events pushed).
+		msg = stream.recv(t, time.Second)
+		require.NotNil(t, msg.GetHeartbeat())
+
+		cancel()
+
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+	})
+
+	t.Run("new flow update scripts mid-stream", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		stream := newMockGetSubscriptionServer(ctx)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{Scripts: []string{testScript1}},
+				stream,
+			)
+		}()
+
+		// Receive the SubscriptionStartedEvent to get the subscription ID.
+		msg := stream.recv(t, time.Second)
+		subId := msg.GetSubscriptionStarted().GetSubscriptionId()
+		require.NotEmpty(t, subId)
+
+		// Update scripts: add testScript2 via UpdateSubscriptionScripts.
+		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: subId,
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{
+						AddScripts: []string{testScript2},
+					},
+				},
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetAllScripts())
+
+		// Push an event via the broker channel.
+		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err)
+
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{
+					Txid: "abc123",
+				},
+			},
+		}
+
+		got := stream.recv(t, time.Second)
+		require.Equal(t, "abc123", got.GetEvent().GetTxid())
+
+		cancel()
+
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+	})
+
+	t.Run("new flow heartbeat resets after event", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		svc.heartbeat = 80 * time.Millisecond
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		stream := newMockGetSubscriptionServer(ctx)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{Scripts: []string{testScript1}},
+				stream,
+			)
+		}()
+
+		msg := stream.recv(t, time.Second)
+		subId := msg.GetSubscriptionStarted().GetSubscriptionId()
+		require.NotEmpty(t, subId)
+
+		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err)
+
+		// Send an event at ~60ms, well before the 80ms heartbeat fires.
+		time.Sleep(60 * time.Millisecond)
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{Txid: "evt1"},
+			},
+		}
+
+		got := stream.recv(t, time.Second)
+		require.Equal(t, "evt1", got.GetEvent().GetTxid())
+
+		// The heartbeat timer was reset by the event. Next message should be
+		// a heartbeat ~80ms after the event, not ~20ms.
+		got = stream.recv(t, time.Second)
+		require.NotNil(t, got.GetHeartbeat())
+
+		cancel()
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+	})
+
+	t.Run("old flow listener preserved with timeout on disconnect", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		svc.subscriptionTimeoutDuration = 500 * time.Millisecond
+
+		// Create subscription via old flow.
+		subResp, err := svc.SubscribeForScripts(context.Background(),
+			&arkv1.SubscribeForScriptsRequest{Scripts: []string{testScript1}},
+		)
+		require.NoError(t, err)
+		subId := subResp.GetSubscriptionId()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		stream := newMockGetSubscriptionServer(ctx)
+
+		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+				stream,
+			)
+		}()
+
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{Txid: "x"},
+			},
+		}
+		stream.recv(t, time.Second) // consume event
+
+		// Disconnect stream.
+		cancel()
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+
+		// Listener should still exist (timeout not yet expired).
+		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err)
+
+		// After the timeout fires, listener should be cleaned up.
+		time.Sleep(600 * time.Millisecond)
+		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
+		require.Error(t, err)
+	})
+
+	t.Run("old flow listener removed on disconnect when no scripts", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		// Create subscription then unsubscribe from all scripts.
+		subResp, err := svc.SubscribeForScripts(context.Background(),
+			&arkv1.SubscribeForScriptsRequest{Scripts: []string{testScript1}},
+		)
+		require.NoError(t, err)
+		subId := subResp.GetSubscriptionId()
+
+		_, err = svc.UnsubscribeForScripts(context.Background(),
+			&arkv1.UnsubscribeForScriptsRequest{SubscriptionId: subId},
+		)
+		require.NoError(t, err)
+
+		// Re-register the listener (UnsubscribeForScripts with empty scripts
+		// removes the listener entirely, so re-create it with no topics).
+		listener := newListener[*arkv1.GetSubscriptionResponse](subId, nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		stream := newMockGetSubscriptionServer(ctx)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+				stream,
+			)
+		}()
+
+		// Give the handler a moment to enter the select loop then disconnect.
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+
+		// Listener should be removed immediately (no scripts → no timeout).
+		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
+		require.Error(t, err)
+	})
+
 	t.Run("old flow existing subscription_id works", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
@@ -331,7 +575,148 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		require.ElementsMatch(t, []string{testScript1, testScript3}, resp.GetAllScripts())
 	})
 
-	t.Run("unknown subscription_id returns NotFound", func(t *testing.T) {
+	t.Run("overwrite with invalid scripts returns InvalidArgument", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
+		svc.scriptSubsHandler.pushListener(listener)
+
+		_, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "test-sub",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Overwrite{
+					Overwrite: &arkv1.OverwriteScripts{
+						Scripts: []string{"invalidhex"},
+					},
+				},
+			},
+		)
+		require.Error(t, err)
+
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("modify with invalid add scripts returns InvalidArgument", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
+		svc.scriptSubsHandler.pushListener(listener)
+
+		_, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "test-sub",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{
+						AddScripts: []string{"notvalid"},
+					},
+				},
+			},
+		)
+		require.Error(t, err)
+
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("modify add only", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
+		svc.scriptSubsHandler.pushListener(listener)
+
+		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "test-sub",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{
+						AddScripts: []string{testScript2},
+					},
+				},
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{testScript2}, resp.GetScriptsAdded())
+		require.Empty(t, resp.GetScriptsRemoved())
+		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetAllScripts())
+	})
+
+	t.Run("modify remove only", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"test-sub", []string{testScript1, testScript2},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "test-sub",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{
+						RemoveScripts: []string{testScript2},
+					},
+				},
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, resp.GetScriptsAdded())
+		require.ElementsMatch(t, []string{testScript2}, resp.GetScriptsRemoved())
+		require.ElementsMatch(t, []string{testScript1}, resp.GetAllScripts())
+	})
+
+	t.Run("overwrite with empty scripts clears all", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"test-sub", []string{testScript1, testScript2},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "test-sub",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Overwrite{
+					Overwrite: &arkv1.OverwriteScripts{
+						Scripts: []string{},
+					},
+				},
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, resp.GetAllScripts())
+	})
+
+	t.Run("modify with empty add and remove returns InvalidArgument", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
+		svc.scriptSubsHandler.pushListener(listener)
+
+		_, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "test-sub",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{},
+				},
+			},
+		)
+		require.Error(t, err)
+
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("unknown subscription_id overwrite returns NotFound", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 
@@ -350,5 +735,68 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.NotFound, st.Code())
+	})
+
+	t.Run("unknown subscription_id modify returns NotFound", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		_, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "nonexistent-id",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{
+						AddScripts: []string{testScript1},
+					},
+				},
+			},
+		)
+		require.Error(t, err)
+
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.NotFound, st.Code())
+	})
+
+	t.Run("modify remove unknown subscription_id returns NotFound", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		_, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "nonexistent-id",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{
+						RemoveScripts: []string{testScript1},
+					},
+				},
+			},
+		)
+		require.Error(t, err)
+
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.NotFound, st.Code())
+	})
+
+	t.Run("adding duplicate scripts is idempotent", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
+		svc.scriptSubsHandler.pushListener(listener)
+
+		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "test-sub",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{
+						AddScripts: []string{testScript1, testScript2},
+					},
+				},
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetAllScripts())
 	})
 }
