@@ -4197,7 +4197,12 @@ func TestFee(t *testing.T) {
 }
 
 func TestCollectedFees(t *testing.T) {
-	// Save and clear fees so funding rounds don't collect fees.
+	// Record timestamp before any rounds so every round in this test falls
+	// inside the query window.
+	startTime := time.Now().Unix()
+
+	// Save and clear fees so the funding round (faucetOffchain) doesn't
+	// collect fees — only the final settle round should.
 	originalFees, err := getIntentFees()
 	require.NoError(t, err)
 
@@ -4234,9 +4239,6 @@ func TestCollectedFees(t *testing.T) {
 	}
 	err = updateIntentFees(fees)
 	require.NoError(t, err)
-
-	// Record timestamp after funding so only the fee-bearing round is in window.
-	startTime := time.Now().Unix()
 
 	// Alice (boarding / onchain input) and Bob (renewal / offchain input) settle together.
 	wg := &sync.WaitGroup{}
