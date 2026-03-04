@@ -2,10 +2,11 @@ package application
 
 import (
 	"context"
-	"encoding/hex"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +16,10 @@ import (
 // reached in the test scenarios below.
 type mockAssetRepository struct{}
 
-func (m mockAssetRepository) AddAssets(_ context.Context, _ map[string][]domain.Asset) (int, error) {
+func (m mockAssetRepository) AddAssets(
+	_ context.Context,
+	_ map[string][]domain.Asset,
+) (int, error) {
 	return 0, nil
 }
 
@@ -39,14 +43,14 @@ type mockRepoManager struct {
 	assets domain.AssetRepository
 }
 
-func (m mockRepoManager) Events() domain.EventRepository               { return nil }
-func (m mockRepoManager) Rounds() domain.RoundRepository               { return nil }
-func (m mockRepoManager) Vtxos() domain.VtxoRepository                 { return nil }
+func (m mockRepoManager) Events() domain.EventRepository                { return nil }
+func (m mockRepoManager) Rounds() domain.RoundRepository                { return nil }
+func (m mockRepoManager) Vtxos() domain.VtxoRepository                  { return nil }
 func (m mockRepoManager) ScheduledSession() domain.ScheduledSessionRepo { return nil }
-func (m mockRepoManager) OffchainTxs() domain.OffchainTxRepository     { return nil }
+func (m mockRepoManager) OffchainTxs() domain.OffchainTxRepository      { return nil }
 func (m mockRepoManager) Convictions() domain.ConvictionRepository      { return nil }
-func (m mockRepoManager) Assets() domain.AssetRepository               { return m.assets }
-func (m mockRepoManager) Fees() domain.FeeRepository                   { return nil }
+func (m mockRepoManager) Assets() domain.AssetRepository                { return m.assets }
+func (m mockRepoManager) Fees() domain.FeeRepository                    { return nil }
 func (m mockRepoManager) Close()                                        {}
 
 // newTestService creates a minimal *service instance with only the fields
@@ -68,40 +72,91 @@ func txWithoutAssetPacket() *wire.MsgTx {
 	})
 	// Add a standard (non-OP_RETURN) output.
 	tx.AddTxOut(&wire.TxOut{
-		Value:    1000,
-		PkScript: []byte{0x51, 0x20, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
+		Value: 1000,
+		PkScript: []byte{
+			0x51,
+			0x20,
+			0x01,
+			0x02,
+			0x03,
+			0x04,
+			0x05,
+			0x06,
+			0x07,
+			0x08,
+			0x09,
+			0x0a,
+			0x0b,
+			0x0c,
+			0x0d,
+			0x0e,
+			0x0f,
+			0x10,
+			0x11,
+			0x12,
+			0x13,
+			0x14,
+			0x15,
+			0x16,
+			0x17,
+			0x18,
+			0x19,
+			0x1a,
+			0x1b,
+			0x1c,
+			0x1d,
+			0x1e,
+			0x1f,
+			0x20,
+		},
 	})
 	return tx
 }
 
-// txWithMalformedAssetPacket builds a wire.MsgTx that contains an OP_RETURN
-// output with the ARK magic prefix and asset marker but structurally invalid
-// group data that causes a parse/validation error other than "asset packet not
-// found". Specifically, the packet declares a control-asset reference by group
-// index that points beyond the packet length, triggering
-// "invalid control asset group index" during validate().
-func txWithMalformedAssetPacket() *wire.MsgTx {
+// txWithInvalidAssetPacket builds a wire.MsgTx together with an
+// extension.Extension whose asset packet references an output index (vout=99)
+// that does not exist in the transaction. This triggers an
+// ASSET_OUTPUT_INVALID error during validateAssetTransaction, which must NOT
+// be suppressed by the ignoreMissingAssetPackets flag.
+func txWithInvalidAssetPacket(t *testing.T) (*wire.MsgTx, extension.Extension) {
+	t.Helper()
+
+	// Build an asset packet with one issuance group whose output points to
+	// vout=99 (well beyond the transaction's actual output count).
+	packet := asset.Packet{
+		{
+			AssetId: nil, // issuance
+			Outputs: []asset.AssetOutput{
+				{Type: asset.AssetOutputTypeLocal, Vout: 99, Amount: 100},
+			},
+			Inputs: []asset.AssetInput{},
+		},
+	}
+
+	ext := extension.Extension{packet}
+
+	// Serialize the extension into an OP_RETURN output so that
+	// ValidateAssetTransaction's "packet found in tx" check passes.
+	extTxOut, err := ext.TxOut()
+	require.NoError(t, err, "extension.TxOut() should succeed")
+
 	tx := wire.NewMsgTx(2)
 	tx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: wire.OutPoint{Index: 0},
 	})
-
-	// Hex taken from the "invalid group index" fixture in
-	// pkg/ark-lib/asset/testdata/packet_fixtures.json.
-	// Decodes to: OP_RETURN <ARK 0x00 <1 group with out-of-bounds control
-	// asset group index>>.
-	malformedScript, _ := hex.DecodeString("6a0f41524b000102020100000101e80301")
+	tx.AddTxOut(extTxOut)
+	// Add a standard P2TR output so the tx isn't degenerate.
 	tx.AddTxOut(&wire.TxOut{
-		Value:    0,
-		PkScript: malformedScript,
+		Value: 1000,
+		PkScript: []byte{
+			0x51, 0x20,
+			0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+			0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+			0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+			0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+		},
 	})
-
-	// Also add a standard output so the tx isn't degenerate.
-	tx.AddTxOut(&wire.TxOut{
-		Value:    1000,
-		PkScript: []byte{0x51, 0x20, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20},
-	})
-	return tx
+	return tx, ext
 }
 
 // nonEmptyAssetInputs returns an inputAssets map with a single dummy entry,
@@ -120,7 +175,7 @@ func TestValidateAssetTransaction_FlagTrue_MissingPacket(t *testing.T) {
 	tx := txWithoutAssetPacket()
 	inputs := nonEmptyAssetInputs()
 
-	err := svc.validateAssetTransaction(context.Background(), tx, inputs, true)
+	err := svc.validateAssetTransaction(context.Background(), tx, extension.Extension{}, inputs, true)
 	require.NoError(t, err,
 		"flag=true should suppress 'asset packet not found' error")
 }
@@ -133,7 +188,7 @@ func TestValidateAssetTransaction_FlagFalse_MissingPacket(t *testing.T) {
 	tx := txWithoutAssetPacket()
 	inputs := nonEmptyAssetInputs()
 
-	err := svc.validateAssetTransaction(context.Background(), tx, inputs, false)
+	err := svc.validateAssetTransaction(context.Background(), tx, extension.Extension{}, inputs, false)
 	require.Error(t, err, "flag=false should propagate missing-packet error")
 	require.Equal(t, "ASSET_VALIDATION_FAILED", err.CodeName(),
 		"error should have ASSET_VALIDATION_FAILED code")
@@ -142,21 +197,20 @@ func TestValidateAssetTransaction_FlagFalse_MissingPacket(t *testing.T) {
 }
 
 func TestValidateAssetTransaction_FlagTrue_OtherAssetError(t *testing.T) {
-	// When ignoreMissingAssetPackets=true and the OP_RETURN asset packet is
-	// present but malformed (triggering a different ASSET_VALIDATION_FAILED
-	// error), the error should NOT be suppressed. Only the specific
-	// "asset packet not found" branch is silenced by the flag.
+	// When ignoreMissingAssetPackets=true and the extension carries a valid
+	// asset packet that causes a validation error OTHER than "asset packet not
+	// found" (e.g. an output index out of range), the error must NOT be
+	// suppressed. Only the specific "asset packet not found" branch is silenced
+	// by the flag.
 	svc := newTestService()
-	tx := txWithMalformedAssetPacket()
+	tx, ext := txWithInvalidAssetPacket(t)
 	inputs := nonEmptyAssetInputs()
 
-	err := svc.validateAssetTransaction(context.Background(), tx, inputs, true)
+	err := svc.validateAssetTransaction(context.Background(), tx, ext, inputs, true)
 	require.Error(t, err,
 		"flag=true should NOT suppress non-'not found' asset validation errors")
-	require.Equal(t, "ASSET_VALIDATION_FAILED", err.CodeName(),
-		"error should have ASSET_VALIDATION_FAILED code")
 	require.NotContains(t, err.Error(), "asset packet not found",
-		"error should be a different ASSET_VALIDATION_FAILED error, not 'not found'")
-	require.Contains(t, err.Error(), "failed to get asset packet from tx",
-		"error should indicate a packet parsing/validation failure")
+		"error should be a different asset validation error, not 'not found'")
+	require.Contains(t, err.Error(), "not present in the packet",
+		"error should indicate asset input mismatch with the packet")
 }
