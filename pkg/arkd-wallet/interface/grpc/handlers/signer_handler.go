@@ -60,3 +60,13 @@ func (h *signerHandler) SignTransactionTapscript(
 	}
 	return &signerv1.SignTransactionTapscriptResponse{SignedTx: tx}, nil
 }
+
+func (h *signerHandler) SignMessage(
+	ctx context.Context, req *signerv1.SignMessageRequest,
+) (*signerv1.SignMessageResponse, error) {
+	signature, err := h.wallet.SignMessage(ctx, req.GetMessage())
+	if err != nil {
+		return nil, err
+	}
+	return &signerv1.SignMessageResponse{Signature: signature}, nil
+}
