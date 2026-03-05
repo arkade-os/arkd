@@ -17,11 +17,11 @@ import (
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
 	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -661,9 +661,9 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
 		createdDustMarkerIDs := make([]string, 0)
 		for outIndex, out := range outs {
-			// ignore anchors
+			// ignore anchor and extension
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
-				asset.IsAssetPacket(out.PkScript) {
+				extension.IsExtension(out.PkScript) {
 				continue
 			}
 
@@ -801,9 +801,9 @@ func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domai
 		}
 
 		for i, out := range outs {
-			// ignore anchors
+			// ignore anchor and extension
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
-				asset.IsAssetPacket(out.PkScript) {
+				extension.IsExtension(out.PkScript) {
 				continue
 			}
 
@@ -883,30 +883,28 @@ func (s *service) sweepVtxosWithMarkers(
 func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
 	[]domain.Asset, map[uint32][]domain.AssetDenomination, error,
 ) {
-	assets := make(asset.Packet, 0)
+	assetPacket := make(asset.Packet, 0)
 	for _, out := range txOuts {
-		if asset.IsAssetPacket(out.PkScript) {
-			packet, err := asset.NewPacketFromTxOut(wire.TxOut{
-				Value:    int64(out.Amount),
-				PkScript: out.PkScript,
-			})
+		if extension.IsExtension(out.PkScript) {
+			ext, err := extension.NewExtensionFromBytes(out.PkScript)
 			if err != nil {
 				return nil, nil, err
 			}
-			assets = packet
+
+			assetPacket = ext.GetAssetPacket()
 			break
 		}
 	}
 
-	if len(assets) <= 0 {
+	if len(assetPacket) <= 0 {
 		return nil, nil, nil
 	}
 
 	getAssetId := func(groupIndex uint16) (string, error) {
-		if groupIndex >= uint16(len(assets)) {
+		if groupIndex >= uint16(len(assetPacket)) {
 			return "", fmt.Errorf("group index %d out of range", groupIndex)
 		}
-		group := assets[groupIndex]
+		group := assetPacket[groupIndex]
 		if group.IsIssuance() {
 			id, err := asset.NewAssetId(txid, groupIndex)
 			if err != nil {
@@ -920,7 +918,7 @@ func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
 
 	issuances := make([]domain.Asset, 0)
 	assetDenominations := make(map[uint32][]domain.AssetDenomination)
-	for grpIndex, ast := range assets {
+	for grpIndex, ast := range assetPacket {
 		for _, out := range ast.Outputs {
 			assetId := ""
 

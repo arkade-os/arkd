@@ -16,7 +16,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -950,15 +950,12 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
 	}
 
-	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, assetInputs); err != nil {
-		return nil, err
-	}
-
-	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
+	outputs := make([]*wire.TxOut, 0) // outputs excluding the P2A
 	foundAnchor := false
 	foundOpReturn := false
 	var rebuiltArkTx *psbt.Packet
 	var rebuiltCheckpointTxs []*psbt.Packet
+	ext := make(extension.Extension, 0)
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
@@ -980,9 +977,17 @@ func (s *service) SubmitOffchainTx(
 			}
 			foundOpReturn = true
 
-			// if the OP_RETURN is asset packet, add it to outputs list and skip other checks related to vtxo
-			if asset.IsAssetPacket(out.PkScript) {
+			// if the OP_RETURN is extension, decode it and add it to outputs list
+			// skip other checks related to vtxo output
+			if extension.IsExtension(out.PkScript) {
 				outputs = append(outputs, out)
+
+				ext, err = extension.NewExtensionFromBytes(out.PkScript)
+				if err != nil {
+					return nil, errors.MALFORMED_ARK_TX.New(
+						"tx %s has malformed extension output %x", txid, out.PkScript,
+					).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+				}
 				continue
 			}
 		}
@@ -1039,6 +1044,11 @@ func (s *service) SubmitOffchainTx(
 	if !foundAnchor {
 		return nil, errors.MALFORMED_ARK_TX.New("missing anchor output in ark tx %s", txid).
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+	}
+
+	// validate assets
+	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, ext, assetInputs); err != nil {
+		return nil, err
 	}
 
 	// recompute all txs (checkpoint txs + ark tx)
@@ -1819,14 +1829,27 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	hasOffChainReceiver, hasAssetPacket := false, false
+	hasOffChainReceiver := false
 	receivers := make([]domain.Receiver, 0)
 	onchainOutputs := make([]wire.TxOut, 0)
 	offchainOutputs := make([]wire.TxOut, 0)
+	ext := make(extension.Extension, 0)
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
-		if asset.IsAssetPacket(output.PkScript) {
-			hasAssetPacket = true
+		if extension.IsExtension(output.PkScript) {
+			if len(ext) > 0 {
+				return "", errors.INVALID_INTENT_PSBT.New(
+					"intent proof has several extension outputs",
+				)
+			}
+
+			ext, err = extension.NewExtensionFromBytes(output.PkScript)
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"invalid extension output %x",
+					output.PkScript,
+				)
+			}
 			continue
 		}
 
@@ -1944,23 +1967,16 @@ func (s *service) RegisterIntent(
 		}
 	}
 
+	// validate assets
+	if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, ext, assetInputs); err != nil {
+		return "", err
+	}
+
 	leafTxPacket := ""
-	if hasAssetPacket {
-		intentPacket, err := asset.NewPacketFromTx(proof.UnsignedTx)
-		if err != nil {
-			return "", errors.INVALID_INTENT_PROOF.New("invalid asset packet: %w", err).
-				WithMetadata(errors.InvalidIntentProofMetadata{
-					Proof:   signedProof,
-					Message: encodedMessage,
-				})
-		}
-
-		if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs); err != nil {
-			return "", err
-		}
-
-		// disable issuance
-		if hasIssuance(intentPacket) {
+	intentAssetPacket := ext.GetAssetPacket()
+	if len(intentAssetPacket) > 0 {
+		// disable issuance in settlement
+		if hasIssuance(intentAssetPacket) {
 			return "", errors.INVALID_INTENT_PROOF.New("intent contains asset issuance").
 				WithMetadata(errors.InvalidIntentProofMetadata{
 					Proof:   signedProof,
@@ -1968,7 +1984,7 @@ func (s *service) RegisterIntent(
 				})
 		}
 
-		leafTxPacket = intentPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
+		leafTxPacket = intentAssetPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
 	}
 
 	intent, err := domain.NewIntent(
