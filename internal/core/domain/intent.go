@@ -14,7 +14,7 @@ type Intent struct {
 	Message   string
 	Txid      string
 	// asset packet that should be added to vtxo tree leaf transaction (hex format)
-	LeafTxPacket string
+	LeafTxAssetPacket string
 }
 
 func NewIntent(
@@ -23,12 +23,12 @@ func NewIntent(
 	leafTxPacket string,
 ) (*Intent, error) {
 	intent := &Intent{
-		Id:           uuid.New().String(),
-		Inputs:       inputs,
-		Proof:        proof,
-		Message:      message,
-		Txid:         proofTxid,
-		LeafTxPacket: leafTxPacket,
+		Id:                uuid.New().String(),
+		Inputs:            inputs,
+		Proof:             proof,
+		Message:           message,
+		Txid:              proofTxid,
+		LeafTxAssetPacket: leafTxPacket,
 	}
 	if err := intent.validate(true); err != nil {
 		return nil, err

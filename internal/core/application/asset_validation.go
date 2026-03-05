@@ -5,13 +5,16 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/errors"
-	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 )
 
 func (s *service) validateAssetTransaction(
-	ctx context.Context, tx *wire.MsgTx, inputAssets map[int][]domain.AssetDenomination,
+	ctx context.Context,
+	tx *wire.MsgTx,
+	ext extension.Extension,
+	inputAssets map[int][]domain.AssetDenomination,
 ) errors.Error {
 	assetsPrevout := make(map[int][]asset.Asset)
 	for inputIndex, assets := range inputAssets {
@@ -22,16 +25,17 @@ func (s *service) validateAssetTransaction(
 		assetsPrevout[inputIndex] = assetTxs
 	}
 
+	assetPacket := ext.GetAssetPacket()
+
 	if err := asset.ValidateAssetTransaction(
-		ctx, tx, assetsPrevout, assetSource{s.repoManager.Assets()},
+		ctx, tx, assetPacket, assetsPrevout, assetSource{s.repoManager.Assets()},
 	); err != nil {
 		return err
 	}
 
-	// assets cannot be nil because we ran the ValidateAssetTransaction first
-	assets, err := getAssetsFromTx(&psbt.Packet{UnsignedTx: tx})
+	assets, err := getAssetsDenominations(assetPacket, tx.TxID())
 	if err != nil {
-		return nil
+		return errors.INTERNAL_ERROR.Wrap(err)
 	}
 
 	for vout, denominations := range assets {

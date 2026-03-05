@@ -7,7 +7,7 @@ go 1.25.7
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.3
-	google.golang.org/grpc v1.76.0
+	google.golang.org/grpc v1.79.1
 )
 
 require (
@@ -19,6 +19,7 @@ require (
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
-	golang.org/x/crypto v0.40.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 )

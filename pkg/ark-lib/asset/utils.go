@@ -85,7 +85,7 @@ func deserializeVarSlice(r *bytes.Reader) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.Len() < int(l) {
+	if l > uint64(r.Len()) {
 		return nil, io.EOF
 	}
 	buf := make([]byte, l)

@@ -1,9 +1,10 @@
 package ports
 
 import (
+	"context"
+
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/btcsuite/btcd/wire"
-	"golang.org/x/net/context"
 )
 
 type VtxoWithValue struct {
