@@ -294,6 +294,72 @@ func (s *service) Start() error {
 	return nil
 }
 
+const minAllowedSequence = 512
+
+func toRelativeLocktime(locktime int64) arklib.RelativeLocktime {
+	if locktime >= minAllowedSequence {
+		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: uint32(locktime)}
+	}
+	return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(locktime)}
+}
+
+func (s *service) UpdateSettings(settings domain.Settings) error {
+	s.banDuration = time.Duration(settings.BanDuration) * time.Second
+	s.banThreshold = settings.BanThreshold
+	s.unilateralExitDelay = toRelativeLocktime(settings.UnilateralExitDelay)
+	s.publicUnilateralExitDelay = toRelativeLocktime(settings.PublicUnilateralExitDelay)
+	s.checkpointExitDelay = toRelativeLocktime(settings.CheckpointExitDelay)
+	s.boardingExitDelay = toRelativeLocktime(settings.BoardingExitDelay)
+	s.batchExpiry = toRelativeLocktime(settings.VtxoTreeExpiry)
+	s.roundMinParticipantsCount = settings.RoundMinParticipantsCount
+	s.roundMaxParticipantsCount = settings.RoundMaxParticipantsCount
+	s.vtxoMinAmount = settings.VtxoMinAmount
+	s.vtxoMaxAmount = settings.VtxoMaxAmount
+	s.utxoMinAmount = settings.UtxoMinAmount
+	s.utxoMaxAmount = settings.UtxoMaxAmount
+	s.settlementMinExpiryGap = time.Duration(settings.SettlementMinExpiryGap) * time.Second
+	s.vtxoNoCsvValidationCutoffTime = time.Unix(settings.VtxoNoCsvValidationCutoffDate, 0)
+	s.maxTxWeight = uint64(settings.MaxTxWeight)
+
+	// Recalculate dust-derived values.
+	ctx := context.Background()
+	dustAmount, err := s.wallet.GetDustAmount(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dust amount: %s", err)
+	}
+
+	vtxoMinSettlementAmount := s.vtxoMinAmount
+	vtxoMinOffchainTxAmount := s.vtxoMinAmount
+	if vtxoMinSettlementAmount < int64(dustAmount) {
+		vtxoMinSettlementAmount = int64(dustAmount)
+	}
+	if vtxoMinOffchainTxAmount == -1 {
+		vtxoMinOffchainTxAmount = int64(dustAmount)
+	}
+	if s.utxoMinAmount < int64(dustAmount) {
+		s.utxoMinAmount = int64(dustAmount)
+	}
+	s.vtxoMinSettlementAmount = vtxoMinSettlementAmount
+	s.vtxoMinOffchainTxAmount = vtxoMinOffchainTxAmount
+
+	// Recalculate checkpoint tapscript if forfeit pubkey is already set.
+	if s.forfeitPubkey != nil {
+		checkpointClosure := &script.CSVMultisigClosure{
+			Locktime: s.checkpointExitDelay,
+			MultisigClosure: script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{s.forfeitPubkey},
+			},
+		}
+		checkpointTapscript, err := checkpointClosure.Script()
+		if err != nil {
+			return fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
+		}
+		s.checkpointTapscript = checkpointTapscript
+	}
+
+	return nil
+}
+
 func (s *service) registerEventHandlers() {
 	s.repoManager.Events().RegisterEventsHandler(
 		domain.RoundTopic, func(events []domain.Event) {

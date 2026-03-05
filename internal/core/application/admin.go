@@ -49,6 +49,9 @@ type AdminService interface {
 	) (string, string, error)
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
+	GetSettings(ctx context.Context) (*domain.Settings, error)
+	UpdateSettings(ctx context.Context, settings domain.Settings) error
+	ClearSettings(ctx context.Context) error
 }
 
 type adminService struct {
@@ -61,12 +64,15 @@ type adminService struct {
 
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
+
+	onSettingsUpdated func(context.Context, domain.Settings) error
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
+	onSettingsUpdated func(context.Context, domain.Settings) error,
 ) AdminService {
 	return &adminService{
 		walletSvc:                 walletSvc,
@@ -77,6 +83,7 @@ func NewAdminService(
 		feeManager:                feeManager,
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
+		onSettingsUpdated:         onSettingsUpdated,
 	}
 }
 
@@ -588,6 +595,25 @@ func (a *adminService) GetExpiringLiquidity(
 
 func (a *adminService) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
 	return a.repoManager.Vtxos().GetRecoverableLiquidity(ctx)
+}
+
+func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error) {
+	return a.repoManager.Settings().Get(ctx)
+}
+
+func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Settings) error {
+	settings.UpdatedAt = time.Now()
+	if err := a.repoManager.Settings().Upsert(ctx, settings); err != nil {
+		return err
+	}
+	if a.onSettingsUpdated != nil {
+		return a.onSettingsUpdated(ctx, settings)
+	}
+	return nil
+}
+
+func (a *adminService) ClearSettings(ctx context.Context) error {
+	return a.repoManager.Settings().Clear(ctx)
 }
 
 func (a *adminService) getScheduledSweep(
