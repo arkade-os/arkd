@@ -130,6 +130,10 @@ type Config struct {
 
 	EnablePprof bool
 
+	RateLimitEnabled         bool
+	RateLimitMaxVelocity     float64
+	RateLimitMaxCooldownSecs int64
+
 	fee            ports.FeeManager
 	repo           ports.RepoManager
 	svc            application.Service
@@ -219,6 +223,9 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
+	RateLimitEnabled              = "RATE_LIMIT_ENABLED"
+	RateLimitMaxVelocity          = "RATE_LIMIT_MAX_VELOCITY"
+	RateLimitMaxCooldownSecs      = "RATE_LIMIT_MAX_COOLDOWN_SECS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -256,6 +263,9 @@ var (
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultRateLimitEnabled              = true
+	defaultRateLimitMaxVelocity          = 0.28
+	defaultRateLimitMaxCooldownSecs      = int64(3600)
 )
 
 func LoadConfig() (*Config, error) {
@@ -298,6 +308,9 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(RateLimitEnabled, defaultRateLimitEnabled)
+	viper.SetDefault(RateLimitMaxVelocity, defaultRateLimitMaxVelocity)
+	viper.SetDefault(RateLimitMaxCooldownSecs, defaultRateLimitMaxCooldownSecs)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -410,6 +423,9 @@ func LoadConfig() (*Config, error) {
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		RateLimitEnabled:              viper.GetBool(RateLimitEnabled),
+		RateLimitMaxVelocity:          viper.GetFloat64(RateLimitMaxVelocity),
+		RateLimitMaxCooldownSecs:      viper.GetInt64(RateLimitMaxCooldownSecs),
 	}, nil
 }
 
@@ -860,6 +876,7 @@ func (c *Config) appService() error {
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
+		c.RateLimitEnabled, c.RateLimitMaxVelocity, c.RateLimitMaxCooldownSecs,
 	)
 	if err != nil {
 		return err

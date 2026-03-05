@@ -29,6 +29,7 @@ message Vtxo {
   string settled_by = 12;
   string ark_txid = 13;
   repeated Asset assets = 14;
+  uint32 depth = 15;
 }
 
 message Asset {
@@ -161,4 +162,10 @@ message ErrorDetails {
   string name = 2;
   string message = 3;
   map<string, string> metadata = 4;
+}
+
+message InputRateLimitInfo {
+  int32 depth = 1;
+  int32 marker_depth = 2;
+  int64 cooldown_secs = 3;
 }

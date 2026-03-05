@@ -1,0 +1,1 @@
+ALTER TABLE marker DROP COLUMN IF EXISTS created_at;
