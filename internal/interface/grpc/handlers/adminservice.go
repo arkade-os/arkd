@@ -439,6 +439,30 @@ func (a *adminHandler) BanScript(
 	return &arkv1.BanScriptResponse{}, nil
 }
 
+func (a *adminHandler) GetCollectedFees(
+	ctx context.Context, req *arkv1.GetCollectedFeesRequest,
+) (*arkv1.GetCollectedFeesResponse, error) {
+	after := req.GetAfter()
+	before := req.GetBefore()
+
+	if after < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid after (must be >= 0)")
+	}
+	if before < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid before (must be >= 0)")
+	}
+	if before > 0 && after >= before {
+		return nil, status.Error(codes.InvalidArgument, "invalid range")
+	}
+
+	fees, err := a.adminService.GetCollectedFees(ctx, after, before)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetCollectedFeesResponse{CollectedFees: fees}, nil
+}
+
 func (a *adminHandler) Sweep(
 	ctx context.Context, req *arkv1.SweepRequest,
 ) (*arkv1.SweepResponse, error) {

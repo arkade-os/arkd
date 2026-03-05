@@ -25,6 +25,7 @@ type RoundRepository interface {
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
 	GetRoundsWithCommitmentTxids(ctx context.Context, txids []string) (map[string]any, error)
 	GetIntentByTxid(ctx context.Context, txid string) (*Intent, error)
+	GetCollectedFees(ctx context.Context, after, before int64) (uint64, error)
 	Close()
 }
 
