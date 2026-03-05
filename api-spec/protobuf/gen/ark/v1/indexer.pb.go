@@ -2174,7 +2174,8 @@ type GetSubscriptionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// If empty, server creates a new subscription automatically.
 	SubscriptionId string `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
-	// Optional: scripts to subscribe to on stream creation (used when subscription_id is empty).
+	// Optional: scripts to subscribe to on stream creation.
+	// Only used when subscription_id is empty; ignored otherwise.
 	Scripts       []string `protobuf:"bytes,2,rep,name=scripts,proto3" json:"scripts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

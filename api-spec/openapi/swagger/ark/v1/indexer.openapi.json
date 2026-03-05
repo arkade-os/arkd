@@ -444,7 +444,7 @@
           {
             "name": "scripts",
             "in": "query",
-            "description": "Optional: scripts to subscribe to on stream creation (used when subscription_id is empty).",
+            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
             "style": "simple",
             "schema": {
               "minItems": 1,
@@ -992,7 +992,7 @@
         "properties": {
           "scripts": {
             "type": "array",
-            "description": "Optional: scripts to subscribe to on stream creation (used when subscription_id is empty).",
+            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
             "items": {
               "type": "string"
             }
