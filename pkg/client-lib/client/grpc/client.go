@@ -304,6 +304,10 @@ func (a *grpcClient) GetEventStream(
 				if dialErr != nil {
 					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
 					if !shouldRetryDial {
+						st, ok := status.FromError(err)
+						if ok && st.Code() == codes.Canceled {
+							return
+						}
 						select {
 						case <-ctx.Done():
 							return
@@ -457,6 +461,10 @@ func (c *grpcClient) GetTransactionsStream(
 			if err != nil {
 				shouldRetry, retryDelay := utils.ShouldReconnect(err)
 				if !shouldRetry {
+					st, ok := status.FromError(err)
+					if ok && st.Code() == codes.Canceled {
+						return
+					}
 					select {
 					case <-ctx.Done():
 						return
