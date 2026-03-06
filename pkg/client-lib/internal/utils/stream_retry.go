@@ -12,19 +12,46 @@ type grpcClientStream interface {
 	CloseSend() error
 }
 
+// ReconnectingStreamConfig defines how to open, read and map a server stream
+// into domain events while handling reconnects in a shared generic loop.
+//
+// Required fields: Open, Recv, HandleResp, ErrorEvent.
+// Optional callbacks are used for connection lifecycle events, hooks and logs.
+//
+// Type parameters:
+//   - S is the concrete gRPC client stream type (must implement CloseSend),
+//     for example arkv1.ArkService_GetEventStreamClient.
+//   - R is the raw message type returned by stream.Recv(),
+//     for example *arkv1.GetEventStreamResponse.
+//   - E is the final event type emitted on the output channel,
+//     for example client.BatchEventChannel.
 type ReconnectingStreamConfig[S grpcClientStream, R any, E any] struct {
-	Open            func(context.Context) (S, error)
-	Recv            func(S) (R, error)
-	HandleResp      func(context.Context, chan<- E, R) error
-	ErrorEvent      func(error) E
+	// Open creates a new stream instance. Called once at startup and again after
+	// retryable failures while reconnecting.
+	Open func(context.Context) (S, error)
+	// Recv reads one response from the current stream instance.
+	Recv func(S) (R, error)
+	// HandleResp maps one response into domain events and writes them to eventsCh.
+	// Returning an error terminates the stream and emits ErrorEvent.
+	HandleResp func(context.Context, chan<- E, R) error
+	// ErrorEvent maps terminal errors into the stream event type.
+	ErrorEvent func(error) E
+	// ConnectionEvent maps DISCONNECTED/RECONNECTED lifecycle transitions into
+	// the stream event type. Optional.
 	ConnectionEvent func(ReconnectingStreamStateEvent) E
 
-	OnServerClosed       func()
+	// OnServerClosed runs when Recv returns io.EOF.
+	OnServerClosed func()
+	// OnRetryableRecvError runs for every retryable receive error before sleep.
 	OnRetryableRecvError func(error)
-	OnReconnectSuccess   func()
-	LogRetry             func(error, time.Duration)
-	LogReconnectFailed   func(error)
-	LogCloseError        func(error)
+	// OnReconnectSuccess runs after a stream reopen succeeds.
+	OnReconnectSuccess func()
+	// LogRetry logs receive-side retry attempts with their sleep duration.
+	LogRetry func(error, time.Duration)
+	// LogReconnectFailed logs failed reopen attempts.
+	LogReconnectFailed func(error)
+	// LogCloseError logs CloseSend errors from the returned close function.
+	LogCloseError func(error)
 }
 
 type ReconnectingStreamState string
@@ -41,25 +68,82 @@ type ReconnectingStreamStateEvent struct {
 	Err            error
 }
 
+// StartReconnectingStream opens a stream, continuously receives messages and
+// emits mapped events to a channel until context cancelation or a terminal
+// error.
+//
+// Retryable receive/open errors are handled with backoff and reopen attempts.
+// When ConnectionEvent is provided, DISCONNECTED/RECONNECTED lifecycle events
+// are emitted around reconnect windows.
+//
+// It returns the event channel, a close function, and an initialization error
+// if the initial stream open fails.
+//
+// Type parameters:
+//   - S: concrete stream type used by Open/Recv.
+//   - R: raw response type read from the stream.
+//   - E: output event type written to the returned channel.
+//
+// Example:
+//
+//	eventsCh, closeFn, err := StartReconnectingStream(
+//		ctx,
+//		ReconnectingStreamConfig[
+//			arkv1.ArkService_GetTransactionsStreamClient,
+//			*arkv1.GetTransactionsStreamResponse,
+//			client.TransactionEvent,
+//		]{
+//			Open: func(ctx context.Context) (arkv1.ArkService_GetTransactionsStreamClient, error) {
+//				return svc.GetTransactionsStream(ctx, &arkv1.GetTransactionsStreamRequest{})
+//			},
+//			Recv: func(s arkv1.ArkService_GetTransactionsStreamClient) (*arkv1.GetTransactionsStreamResponse, error) {
+//				return s.Recv()
+//			},
+//			HandleResp: func(
+//				ctx context.Context,
+//				out chan<- client.TransactionEvent,
+//				resp *arkv1.GetTransactionsStreamResponse,
+//			) error {
+//				// map response and send out one or more domain events
+//				return nil
+//			},
+//			ErrorEvent: func(err error) client.TransactionEvent {
+//				return client.TransactionEvent{Err: err}
+//			},
+//		},
+//	)
+//	if err != nil {
+//		return err
+//	}
+//	defer closeFn()
+//
+//	for ev := range eventsCh {
+//		_ = ev
+//	}
 func StartReconnectingStream[S grpcClientStream, R any, E any](
 	ctx context.Context,
 	cfg ReconnectingStreamConfig[S, R, E],
 ) (<-chan E, func(), error) {
+	// Validate mandatory callbacks before starting worker goroutine.
 	if cfg.Open == nil || cfg.Recv == nil || cfg.HandleResp == nil || cfg.ErrorEvent == nil {
 		return nil, nil, fmt.Errorf("invalid reconnecting stream config")
 	}
 
+	// Tie stream lifetime to a derived cancelable context.
 	ctx, cancel := context.WithCancel(ctx)
 
+	// Open the initial stream eagerly and fail fast on startup errors.
 	stream, err := cfg.Open(ctx)
 	if err != nil {
 		cancel()
 		return nil, nil, err
 	}
 
+	// Shared output channel and guarded stream pointer used by recv and closeFn.
 	eventsCh := make(chan E)
 	streamMu := sync.Mutex{}
 
+	// Emit terminal errors unless the context is already done.
 	sendTerminalErr := func(err error) bool {
 		select {
 		case <-ctx.Done():
@@ -69,6 +153,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 		}
 	}
 
+	// Emit optional connection lifecycle events unless the context is done.
 	sendConnectionEvent := func(event ReconnectingStreamStateEvent) bool {
 		if cfg.ConnectionEvent == nil {
 			return true
@@ -81,31 +166,38 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 		}
 	}
 
+	// Worker goroutine: receive loop + reconnect loop.
 	go func() {
 		defer close(eventsCh)
+		// Backoff used for failed reopen attempts.
 		backoffDelay := GrpcReconnectConfig.InitialDelay
+		// Tracks a single disconnect window to avoid duplicate DISCONNECTED events.
 		disconnectedAt := time.Time{}
 		isDisconnected := false
 
 		for {
+			// Read current stream pointer under lock.
 			streamMu.Lock()
 			currentStream := stream
 			streamMu.Unlock()
 
 			resp, err := cfg.Recv(currentStream)
 			if err != nil {
+				// Classify receive errors as retryable/non-retryable.
 				shouldRetry, retryDelay := ShouldReconnect(err)
 				if !shouldRetry {
 					sendTerminalErr(err)
 					return
 				}
 
+				// Fire optional retry hooks.
 				if err == io.EOF && cfg.OnServerClosed != nil {
 					cfg.OnServerClosed()
 				}
 				if cfg.OnRetryableRecvError != nil {
 					cfg.OnRetryableRecvError(err)
 				}
+				// Emit DISCONNECTED once per outage window.
 				if !isDisconnected {
 					disconnectedAt = time.Now()
 					isDisconnected = true
@@ -118,6 +210,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 					}
 				}
 
+				// Sleep before reopen attempt using max(classifier delay, backoff).
 				sleepDuration := max(retryDelay, backoffDelay)
 				if cfg.LogRetry != nil {
 					cfg.LogRetry(err, sleepDuration)
@@ -129,8 +222,10 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				case <-time.After(sleepDuration):
 				}
 
+				// Attempt to reopen stream on same context.
 				newStream, dialErr := cfg.Open(ctx)
 				if dialErr != nil {
+					// Reopen failed: either terminate or backoff and retry.
 					shouldRetryDial, _ := ShouldReconnect(dialErr)
 					if !shouldRetryDial {
 						sendTerminalErr(dialErr)
@@ -147,10 +242,12 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 					continue
 				}
 
+				// Reopen succeeded: swap stream and reset backoff.
 				streamMu.Lock()
 				stream = newStream
 				streamMu.Unlock()
 				backoffDelay = GrpcReconnectConfig.InitialDelay
+				// Emit RECONNECTED once after successful reopen.
 				if isDisconnected {
 					reconnectedAt := time.Now()
 					if !sendConnectionEvent(ReconnectingStreamStateEvent{
@@ -169,8 +266,10 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				continue
 			}
 
+			// Any successful receive resets dial backoff state.
 			backoffDelay = GrpcReconnectConfig.InitialDelay
 
+			// Convert response into domain events.
 			if err := cfg.HandleResp(ctx, eventsCh, resp); err != nil {
 				sendTerminalErr(err)
 				return
@@ -178,6 +277,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 		}
 	}()
 
+	// Returned close function cancels loop and closes the latest stream.
 	closeFn := func() {
 		cancel()
 		streamMu.Lock()
