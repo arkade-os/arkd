@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -102,7 +103,22 @@ type ScriptEvent struct {
 	NewVtxos      []types.Vtxo
 	SpentVtxos    []types.Vtxo
 	CheckpointTxs map[string]TxData
+	Connection    *StreamConnectionEvent
 	Err           error
+}
+
+type StreamConnectionState string
+
+const (
+	StreamConnectionStateDisconnected StreamConnectionState = "DISCONNECTED"
+	StreamConnectionStateReconnected  StreamConnectionState = "RECONNECTED"
+)
+
+type StreamConnectionEvent struct {
+	State          StreamConnectionState
+	At             time.Time
+	DisconnectedAt time.Time
+	Err            error
 }
 
 type PageRequest struct {
