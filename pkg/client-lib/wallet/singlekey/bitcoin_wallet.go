@@ -126,6 +126,10 @@ func (w *bitcoinWallet) NewAddress(
 func (w *bitcoinWallet) NewAddresses(
 	ctx context.Context, _ bool, num int,
 ) ([]string, []types.Address, []types.Address, error) {
+	if num <= 0 {
+		num = 1
+	}
+
 	offchainAddr, boardingAddr, err := w.getArkAddresses(ctx)
 	if err != nil {
 		return nil, nil, nil, err
@@ -133,7 +137,7 @@ func (w *bitcoinWallet) NewAddresses(
 
 	offchainAddrs := make([]types.Address, 0, num)
 	boardingAddrs := make([]types.Address, 0, num)
-	for i := 0; i < num; i++ {
+	for range num {
 		encodedOffchainAddr, err := offchainAddr.Address.EncodeV0()
 		if err != nil {
 			return nil, nil, nil, err
@@ -150,7 +154,7 @@ func (w *bitcoinWallet) NewAddresses(
 	}
 
 	onchainAddrs := make([]string, 0, num)
-	for i := 0; i < num; i++ {
+	for range num {
 		onchainAddr, err := w.getP2TRAddress(ctx)
 		if err != nil {
 			return nil, nil, nil, err
