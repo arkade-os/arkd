@@ -46,7 +46,7 @@ func NewBitcoinWallet(
 
 func (w *bitcoinWallet) GetAddresses(
 	ctx context.Context,
-) ([]string, []wallet.TapscriptsAddress, []wallet.TapscriptsAddress, []wallet.TapscriptsAddress, error) {
+) ([]string, []types.Address, []types.Address, []types.Address, error) {
 	offchainAddr, boardingAddr, err := w.getArkAddresses(ctx)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -72,19 +72,19 @@ func (w *bitcoinWallet) GetAddresses(
 		return nil, nil, nil, nil, err
 	}
 
-	offchainAddrs := []wallet.TapscriptsAddress{
+	offchainAddrs := []types.Address{
 		{
 			Tapscripts: offchainAddr.Tapscripts,
 			Address:    encodedOffchainAddr,
 		},
 	}
-	boardingAddrs := []wallet.TapscriptsAddress{
+	boardingAddrs := []types.Address{
 		{
 			Tapscripts: boardingAddr.Tapscripts,
 			Address:    boardingAddr.Address,
 		},
 	}
-	redemptionAddrs := []wallet.TapscriptsAddress{
+	redemptionAddrs := []types.Address{
 		{
 			Tapscripts: offchainAddr.Tapscripts,
 			Address:    redemptionAddr.EncodeAddress(),
@@ -101,7 +101,7 @@ func (w *bitcoinWallet) GetAddresses(
 
 func (w *bitcoinWallet) NewAddress(
 	ctx context.Context, _ bool,
-) (string, *wallet.TapscriptsAddress, *wallet.TapscriptsAddress, error) {
+) (string, *types.Address, *types.Address, error) {
 	offchainAddr, boardingAddr, err := w.getArkAddresses(ctx)
 	if err != nil {
 		return "", nil, nil, err
@@ -117,7 +117,7 @@ func (w *bitcoinWallet) NewAddress(
 		return "", nil, nil, err
 	}
 
-	return onchainAddr.EncodeAddress(), &wallet.TapscriptsAddress{
+	return onchainAddr.EncodeAddress(), &types.Address{
 		Tapscripts: offchainAddr.Tapscripts,
 		Address:    encodedOffchainAddr,
 	}, boardingAddr, nil
@@ -125,25 +125,25 @@ func (w *bitcoinWallet) NewAddress(
 
 func (w *bitcoinWallet) NewAddresses(
 	ctx context.Context, _ bool, num int,
-) ([]string, []wallet.TapscriptsAddress, []wallet.TapscriptsAddress, error) {
+) ([]string, []types.Address, []types.Address, error) {
 	offchainAddr, boardingAddr, err := w.getArkAddresses(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	offchainAddrs := make([]wallet.TapscriptsAddress, 0, num)
-	boardingAddrs := make([]wallet.TapscriptsAddress, 0, num)
+	offchainAddrs := make([]types.Address, 0, num)
+	boardingAddrs := make([]types.Address, 0, num)
 	for i := 0; i < num; i++ {
 		encodedOffchainAddr, err := offchainAddr.Address.EncodeV0()
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		offchainAddrs = append(offchainAddrs, wallet.TapscriptsAddress{
+		offchainAddrs = append(offchainAddrs, types.Address{
 			Tapscripts: offchainAddr.Tapscripts,
 			Address:    encodedOffchainAddr,
 		})
-		boardingAddrs = append(boardingAddrs, wallet.TapscriptsAddress{
+		boardingAddrs = append(boardingAddrs, types.Address{
 			Tapscripts: boardingAddr.Tapscripts,
 			Address:    boardingAddr.Address,
 		})
@@ -480,7 +480,7 @@ func (w *bitcoinWallet) getArkAddresses(
 	ctx context.Context,
 ) (
 	*addressWithTapscripts,
-	*wallet.TapscriptsAddress,
+	*types.Address,
 	error,
 ) {
 	if w.walletData == nil {
@@ -540,7 +540,7 @@ func (w *bitcoinWallet) getArkAddresses(
 			Address:    *offchainAddress,
 			Tapscripts: tapscripts,
 		},
-		&wallet.TapscriptsAddress{
+		&types.Address{
 			Tapscripts: boardingTapscripts,
 			Address:    boardingAddr.EncodeAddress(),
 		},

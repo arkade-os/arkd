@@ -5,16 +5,12 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
 
 const (
 	SingleKeyWallet = "singlekey"
 )
-
-type TapscriptsAddress struct {
-	Tapscripts []string
-	Address    string
-}
 
 type WalletService interface {
 	GetType() string
@@ -24,14 +20,14 @@ type WalletService interface {
 	IsLocked() bool
 	GetAddresses(ctx context.Context) (
 		onchainAddresses []string,
-		offchainAddresses, boardingAddresses, redemptionAddresses []TapscriptsAddress, err error,
+		offchainAddresses, boardingAddresses, redemptionAddresses []types.Address, err error,
 	)
 	NewAddress(ctx context.Context, change bool) (
-		onchainAddr string, offchainAddr, boardingAddr *TapscriptsAddress, err error,
+		onchainAddr string, offchainAddr, boardingAddr *types.Address, err error,
 	)
 	NewAddresses(ctx context.Context, change bool, num int) (
 		onchainAddresses []string,
-		offchainAddresses, boardingAddresses []TapscriptsAddress, err error,
+		offchainAddresses, boardingAddresses []types.Address, err error,
 	)
 	SignTransaction(
 		ctx context.Context, explorerSvc explorer.Explorer, tx string,
