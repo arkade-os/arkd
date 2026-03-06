@@ -6,6 +6,7 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
+	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
@@ -25,7 +26,7 @@ func (a *service) Init(ctx context.Context, args InitArgs) error {
 		return err
 	}
 
-	return a.init(ctx, args.parse(), walletSvc)
+	return a.init(ctx, args.parse(), walletSvc, args.Explorer)
 }
 
 func (a *service) InitWithWallet(ctx context.Context, args InitWithWalletArgs) error {
@@ -39,10 +40,12 @@ func (a *service) InitWithWallet(ctx context.Context, args InitWithWalletArgs) e
 		return err
 	}
 
-	return a.init(ctx, args.parse(), args.Wallet)
+	return a.init(ctx, args.parse(), args.Wallet, args.Explorer)
 }
 
-func (a *service) init(ctx context.Context, args args, walletSvc wallet.WalletService) error {
+func (a *service) init(
+	ctx context.Context, args args, walletSvc wallet.WalletService, explorerSvc explorer.Explorer,
+) error {
 	clientSvc, err := grpcclient.NewClient(args.serverUrl)
 	if err != nil {
 		return fmt.Errorf("failed to setup client: %s", err)
@@ -58,7 +61,6 @@ func (a *service) init(ctx context.Context, args args, walletSvc wallet.WalletSe
 		return fmt.Errorf("failed to setup indexer: %s", err)
 	}
 
-	explorerSvc := a.explorer
 	if explorerSvc == nil {
 		explorerOpts := []mempool_explorer.Option{
 			mempool_explorer.WithTracker(false),
@@ -137,6 +139,7 @@ type InitArgs struct {
 	Seed        string
 	Password    string
 	ExplorerURL string
+	Explorer    explorer.Explorer
 }
 
 func (a InitArgs) validate() error {
@@ -150,6 +153,10 @@ func (a InitArgs) validate() error {
 		)
 	}
 
+	if a.Explorer == nil && len(a.ExplorerURL) <= 0 {
+		return fmt.Errorf("missing explorer or explorer url")
+	}
+
 	if len(a.ServerUrl) <= 0 {
 		return fmt.Errorf("missing server url")
 	}
@@ -161,20 +168,27 @@ func (a InitArgs) validate() error {
 }
 
 func (a InitArgs) parse() args {
-	return args{a.WalletType, a.ServerUrl, a.Seed, a.Password, a.ExplorerURL}
+	explorerURL := a.ExplorerURL
+	if a.Explorer != nil {
+		explorerURL = a.Explorer.BaseUrl()
+	}
+	return args{a.WalletType, a.ServerUrl, a.Seed, a.Password, explorerURL}
 }
 
 type InitWithWalletArgs struct {
-	Wallet      wallet.WalletService
-	ServerUrl   string
-	Seed        string
-	Password    string
-	ExplorerURL string
+	Wallet    wallet.WalletService
+	Explorer  explorer.Explorer
+	ServerUrl string
+	Seed      string
+	Password  string
 }
 
 func (a InitWithWalletArgs) validate() error {
 	if a.Wallet == nil {
 		return fmt.Errorf("missing wallet")
+	}
+	if a.Explorer == nil {
+		return fmt.Errorf("missing explorer")
 	}
 
 	if len(a.ServerUrl) <= 0 {
@@ -187,7 +201,7 @@ func (a InitWithWalletArgs) validate() error {
 }
 
 func (a InitWithWalletArgs) parse() args {
-	return args{a.Wallet.GetType(), a.ServerUrl, a.Seed, a.Password, a.ExplorerURL}
+	return args{a.Wallet.GetType(), a.ServerUrl, a.Seed, a.Password, a.Explorer.BaseUrl()}
 }
 
 type args struct {

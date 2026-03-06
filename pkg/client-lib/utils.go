@@ -638,14 +638,14 @@ func computeVSize(tx *wire.MsgTx) lntypes.VByte {
 
 func registerIntentMessage(
 	assetInputs map[int][]types.Asset, outputs []types.Receiver, cosignersPublicKeys []string,
-) (string, []*wire.TxOut, error) {
+) (string, []*wire.TxOut, extension.Extension, error) {
 	outputsTxOut := make([]*wire.TxOut, 0)
 	onchainOutputsIndexes := make([]int, 0)
 
 	for i, output := range outputs {
 		txOut, isOnchain, err := output.ToTxOut()
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 
 		if isOnchain {
@@ -655,15 +655,17 @@ func registerIntentMessage(
 		outputsTxOut = append(outputsTxOut, txOut)
 	}
 
+	var ext extension.Extension
 	if len(assetInputs) > 0 {
 		assetPacket, err := createAssetPacket(assetInputs, outputs, nil)
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 
-		assetPacketOutput, err := extension.Extension{assetPacket}.TxOut()
+		ext = extension.Extension{assetPacket}
+		assetPacketOutput, err := ext.TxOut()
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 		outputsTxOut = append(outputsTxOut, assetPacketOutput)
 	}
@@ -676,10 +678,10 @@ func registerIntentMessage(
 		CosignersPublicKeys:  cosignersPublicKeys,
 	}.Encode()
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	return message, outputsTxOut, nil
+	return message, outputsTxOut, ext, nil
 }
 
 func selectedCoinsToAssetInputs(selectedCoins []types.VtxoWithTapTree) map[int][]types.Asset {

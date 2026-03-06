@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
@@ -32,7 +33,9 @@ type ArkClient interface {
 	Reset(ctx context.Context)
 	Stop()
 	// ** Funding **
-	Receive(ctx context.Context) (onchainAddr, offchainAddr, boardingAddr string, err error)
+	Receive(
+		ctx context.Context,
+	) (onchainAddr string, offchainAddr, boardingAddr *types.Address, err error)
 	GetAddresses(ctx context.Context) (
 		onchainAddresses, offchainAddresses, boardingAddresses, redemptionAddresses []string,
 		err error,
@@ -45,24 +48,24 @@ type ArkClient interface {
 	IssueAsset(
 		ctx context.Context, amount uint64, controlAsset types.ControlAsset,
 		metadata []asset.Metadata, opts ...SendOption,
-	) (string, []asset.AssetId, error)
+	) (*IssueAssetRes, error)
 	ReissueAsset(
 		ctx context.Context, assetId string, amount uint64, opts ...SendOption,
-	) (string, error)
+	) (*ReissueAssetRes, error)
 	BurnAsset(
 		ctx context.Context, assetID string, amount uint64, opts ...SendOption,
-	) (string, error)
+	) (*BurnAssetRes, error)
 	// ** Offchain txs **
 	SendOffChain(
 		ctx context.Context, receivers []types.Receiver, opts ...SendOption,
-	) (string, error)
+	) (*SendOffChainRes, error)
 	FinalizePendingTxs(ctx context.Context, createdAfter *time.Time) ([]string, error)
 	// ** Batch session **
-	Settle(ctx context.Context, opts ...SettleOption) (string, error)
+	Settle(ctx context.Context, opts ...SettleOption) (*SettleRes, error)
 	CollaborativeExit(
 		ctx context.Context, addr string, amount uint64, opts ...SettleOption,
-	) (string, error)
-	RedeemNotes(ctx context.Context, notes []string, opts ...SettleOption) (string, error)
+	) (*CollaborativeExitRes, error)
+	RedeemNotes(ctx context.Context, notes []string, opts ...SettleOption) (*RedeemNotesRes, error)
 	RegisterIntent(
 		ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
 		outputs []types.Receiver, cosignersPublicKeys []string,
@@ -71,8 +74,55 @@ type ArkClient interface {
 		ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
 	) error
 	// ** Unroll **
-	Unroll(ctx context.Context, opts ...UnrollOption) error
+	Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes, error)
 	CompleteUnroll(ctx context.Context, to string) (string, error)
 	OnboardAgainAllExpiredBoardings(ctx context.Context) (string, error)
 	WithdrawFromAllExpiredBoardings(ctx context.Context, to string) (string, error)
+}
+
+type ReissueAssetRes = OffchainTxRes
+
+type BurnAssetRes = OffchainTxRes
+
+type SendOffChainRes = OffchainTxRes
+
+type FinalizePendingTxsRes = []OffchainTxRes
+
+type SettleRes = BatchTxRes
+
+type CollaborativeExitRes = BatchTxRes
+
+type RedeemNotesRes = BatchTxRes
+
+type UnrollRes struct {
+	ParentTx   string
+	ParentTxid string
+	ChildTx    string
+	ChildTxid  string
+}
+
+type IssueAssetRes struct {
+	OffchainTxRes
+	IssuedAssets []asset.AssetId
+}
+
+type BatchTxRes struct {
+	CommitmentTxid string
+	CommitmentTx   string
+	IntentTx       string
+	ForfeitTxs     []string
+	VtxoInputs     []types.Vtxo
+	UtxoInputs     []types.Utxo
+	VtxoOutputs    []types.Vtxo
+	UtxoOutputs    []types.Receiver
+	Extension      extension.Extension
+}
+
+type OffchainTxRes struct {
+	Txid        string
+	Tx          string
+	Checkpoints []string
+	Inputs      []types.Vtxo
+	Outputs     []types.Receiver
+	Extension   extension.Extension
 }

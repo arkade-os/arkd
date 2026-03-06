@@ -1,7 +1,9 @@
 package arksdk
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -9,13 +11,13 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -23,15 +25,15 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (a *service) Settle(ctx context.Context, opts ...SettleOption) (string, error) {
+func (a *service) Settle(ctx context.Context, opts ...SettleOption) (*SettleRes, error) {
 	if err := a.safeCheck(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	options := newDefaultSettleOptions()
 	for _, opt := range opts {
 		if err := opt(options); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	if options.expiryThreshold <= 0 {
@@ -43,12 +45,12 @@ func (a *service) Settle(ctx context.Context, opts ...SettleOption) (string, err
 
 	info, err := a.client.GetInfo(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	feeEstimator, err := arkfee.New(info.Fees.IntentFees)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// coinselect all available boarding utxos and vtxos
@@ -61,7 +63,7 @@ func (a *service) Settle(ctx context.Context, opts ...SettleOption) (string, err
 		},
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	return a.joinBatchWithRetry(ctx, nil, outputs, *options, vtxos, boardingUtxos)
@@ -69,9 +71,9 @@ func (a *service) Settle(ctx context.Context, opts ...SettleOption) (string, err
 
 func (a *service) RedeemNotes(
 	ctx context.Context, notes []string, opts ...SettleOption,
-) (string, error) {
+) (*RedeemNotesRes, error) {
 	if err := a.safeCheck(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	amount := uint64(0)
@@ -79,24 +81,24 @@ func (a *service) RedeemNotes(
 	options := newDefaultSettleOptions()
 	for _, opt := range opts {
 		if err := opt(options); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
 	for _, vStr := range notes {
 		v, err := note.NewNoteFromString(vStr)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		amount += uint64(v.Value)
 	}
 
 	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(offchainAddrs) <= 0 {
-		return "", fmt.Errorf("no funds detected")
+		return nil, fmt.Errorf("no funds detected")
 	}
 
 	receiversOutput := []types.Receiver{{
@@ -109,19 +111,19 @@ func (a *service) RedeemNotes(
 
 func (a *service) CollaborativeExit(
 	ctx context.Context, addr string, amount uint64, opts ...SettleOption,
-) (string, error) {
+) (*CollaborativeExitRes, error) {
 	if err := a.safeCheck(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if a.UtxoMaxAmount == 0 {
-		return "", fmt.Errorf("operation not allowed by the server")
+		return nil, fmt.Errorf("operation not allowed by the server")
 	}
 
 	options := newDefaultSettleOptions()
 	for _, opt := range opts {
 		if err := opt(options); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 	if options.expiryThreshold <= 0 {
@@ -130,7 +132,7 @@ func (a *service) CollaborativeExit(
 
 	netParams := utils.ToBitcoinNetwork(a.Network)
 	if _, err := btcutil.DecodeAddress(addr, &netParams); err != nil {
-		return "", fmt.Errorf("invalid onchain address")
+		return nil, fmt.Errorf("invalid onchain address")
 	}
 
 	a.txLock.Lock()
@@ -142,24 +144,24 @@ func (a *service) CollaborativeExit(
 	}
 	spendableVtxos, err := a.getSpendableVtxos(ctx, getVtxosOpts)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	balance := uint64(0)
 	for _, vtxo := range spendableVtxos {
 		balance += vtxo.Amount
 	}
 	if balance < amount {
-		return "", fmt.Errorf("not enough funds to cover amount %d", amount)
+		return nil, fmt.Errorf("not enough funds to cover amount %d", amount)
 	}
 	// send all case: substract fees from exited amount
 	info, err := a.client.GetInfo(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	feeEstimator, err := arkfee.New(info.Fees.IntentFees)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	receivers := []types.Receiver{{To: addr, Amount: amount}}
@@ -173,7 +175,7 @@ func (a *service) CollaborativeExit(
 		},
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	return a.joinBatchWithRetry(ctx, nil, outputs, *options, vtxos, boardingUtxos)
@@ -199,7 +201,7 @@ func (a *service) RegisterIntent(
 		return "", err
 	}
 
-	proofTx, message, err := a.makeRegisterIntent(
+	proofTx, message, _, err := a.makeRegisterIntent(
 		inputs, assetInputs, tapLeaves, outputs, cosignersPublicKeys, arkFields,
 	)
 	if err != nil {
@@ -347,7 +349,7 @@ func (a *service) getFundsToSettle(
 }
 
 func (a *service) getClaimableBoardingUtxos(
-	_ context.Context, boardingAddrs []wallet.TapscriptsAddress, opts *getVtxosFilter,
+	_ context.Context, boardingAddrs []types.Address, opts *getVtxosFilter,
 ) ([]types.Utxo, error) {
 	claimable := make([]types.Utxo, 0)
 	for _, addr := range boardingAddrs {
@@ -402,17 +404,17 @@ func (a *service) getClaimableBoardingUtxos(
 func (a *service) joinBatchWithRetry(
 	ctx context.Context, notes []string, outputs []types.Receiver, options settleOptions,
 	selectedCoins []types.VtxoWithTapTree, selectedBoardingCoins []types.Utxo,
-) (string, error) {
+) (*BatchTxRes, error) {
 	inputs, exitLeaves, arkFields, assetInputs, err := toIntentInputs(
 		selectedBoardingCoins, selectedCoins, notes,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	signerSessions, signerPubKeys, err := a.handleOptions(options, inputs, notes)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	deleteIntent := func() {
@@ -433,21 +435,21 @@ func (a *service) joinBatchWithRetry(
 	retryCount := 0
 	var batchErr error
 	for retryCount < maxRetry {
-		proofTx, message, err := a.makeRegisterIntent(
+		proofTx, message, ext, err := a.makeRegisterIntent(
 			inputs, assetInputs, exitLeaves, outputs, signerPubKeys, arkFields,
 		)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		intentID, err := a.client.RegisterIntent(ctx, proofTx, message)
 		if err != nil {
-			return "", fmt.Errorf("failed to register intent: %w", err)
+			return nil, fmt.Errorf("failed to register intent: %w", err)
 		}
 
 		log.Debugf("registered inputs and outputs with request id: %s", intentID)
 
-		commitmentTxid, err := a.handleBatchEvents(
+		commitmentTxid, commitmentTx, batchExpiry, forfeitTxs, vtxoTree, err := a.handleBatchEvents(
 			ctx, intentID, selectedCoins, notes, selectedBoardingCoins, outputs, signerSessions,
 			options.eventsCh, options.cancelCh,
 		)
@@ -460,10 +462,81 @@ func (a *service) joinBatchWithRetry(
 			continue
 		}
 
-		return commitmentTxid, nil
+		ins := make([]types.Vtxo, 0, len(selectedCoins))
+		for _, c := range selectedCoins {
+			ins = append(ins, c.Vtxo)
+		}
+		vtxoOuts := make([]types.Vtxo, 0, len(outputs))
+		utxoOuts := make([]types.Receiver, 0, len(outputs))
+
+		now := time.Now()
+		var leaves []*psbt.Packet
+		if vtxoTree != nil {
+			leaves = vtxoTree.Leaves()
+		}
+		for _, output := range outputs {
+			if output.IsOnchain() {
+				utxoOuts = append(utxoOuts, output)
+				continue
+			}
+
+			for _, leaf := range leaves {
+				txOut, _, err := output.ToTxOut()
+				if err != nil {
+					return nil, err
+				}
+				for i, out := range leaf.UnsignedTx.TxOut {
+					if bytes.Equal(txOut.PkScript, out.PkScript) {
+						ext, _ := extension.NewExtensionFromTx(leaf.UnsignedTx)
+						var assets []types.Asset
+						if len(ext) > 0 {
+							packet := ext.GetAssetPacket()
+							if len(packet) > 0 {
+								for _, asset := range packet {
+									for _, assetOut := range asset.Outputs {
+										if assetOut.Vout == uint16(i) {
+											assets = append(assets, types.Asset{
+												AssetId: asset.AssetId.String(),
+												Amount:  assetOut.Amount,
+											})
+											break
+										}
+									}
+								}
+							}
+						}
+						vtxoOuts = append(vtxoOuts, types.Vtxo{
+							Outpoint: types.Outpoint{
+								Txid: leaf.UnsignedTx.TxID(),
+								VOut: uint32(i),
+							},
+							Script:          hex.EncodeToString(out.PkScript),
+							Amount:          uint64(out.Value),
+							CommitmentTxids: []string{commitmentTxid},
+							ExpiresAt:       now.Add(batchExpiry),
+							CreatedAt:       now,
+							Assets:          assets,
+						})
+						break
+					}
+				}
+			}
+		}
+
+		return &BatchTxRes{
+			CommitmentTxid: commitmentTxid,
+			CommitmentTx:   commitmentTx,
+			IntentTx:       proofTx,
+			ForfeitTxs:     forfeitTxs,
+			VtxoInputs:     ins,
+			UtxoInputs:     selectedBoardingCoins,
+			VtxoOutputs:    vtxoOuts,
+			UtxoOutputs:    utxoOuts,
+			Extension:      ext,
+		}, nil
 	}
 
-	return "", fmt.Errorf("reached max attempt of retries, last batch error: %s", batchErr)
+	return nil, fmt.Errorf("reached max attempt of retries, last batch error: %s", batchErr)
 }
 
 func (a *service) handleOptions(
@@ -508,16 +581,16 @@ func (a *service) handleBatchEvents(
 	intentId string, vtxos []types.VtxoWithTapTree, notes []string, boardingUtxos []types.Utxo,
 	receivers []types.Receiver, signerSessions []tree.SignerSession,
 	replayEventsCh chan<- any, cancelCh <-chan struct{},
-) (string, error) {
+) (string, string, time.Duration, []string, *tree.TxTree, error) {
 	topics := make([]string, 0)
 	for _, n := range notes {
 		parsedNote, err := note.NewNoteFromString(n)
 		if err != nil {
-			return "", err
+			return "", "", -1, nil, nil, err
 		}
 		outpoint, _, err := parsedNote.IntentProofInput()
 		if err != nil {
-			return "", err
+			return "", "", -1, nil, nil, err
 		}
 		topics = append(topics, outpoint.String())
 	}
@@ -555,9 +628,9 @@ func (a *service) handleBatchEvents(
 	eventsCh, close, err := a.client.GetEventStream(ctx, topics)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return "", fmt.Errorf("connection closed by server")
+			return "", "", -1, nil, nil, fmt.Errorf("connection closed by server")
 		}
-		return "", err
+		return "", "", -1, nil, nil, err
 	}
 	defer close()
 
@@ -565,25 +638,25 @@ func (a *service) handleBatchEvents(
 		a, intentId, vtxos, boardingUtxos, receivers, signerSessions,
 	)
 
-	commitmentTxid, err := JoinBatchSession(ctx, eventsCh, batchEventsHandler, options...)
-	if err != nil {
-		return "", err
-	}
-
-	return commitmentTxid, nil
+	return JoinBatchSession(ctx, eventsCh, batchEventsHandler, options...)
 }
 
 func (a *service) makeRegisterIntent(
 	inputs []intent.Input, assetInputs map[int][]types.Asset,
 	leafProofs []*arklib.TaprootMerkleProof, outputs []types.Receiver,
 	cosignersPublicKeys []string, arkFields [][]*psbt.Unknown,
-) (string, string, error) {
-	message, outputsTxOut, err := registerIntentMessage(assetInputs, outputs, cosignersPublicKeys)
+) (string, string, extension.Extension, error) {
+	message, outputsTxOut, ext, err := registerIntentMessage(assetInputs, outputs, cosignersPublicKeys)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 
-	return a.makeIntent(message, inputs, outputsTxOut, leafProofs, arkFields)
+	proof, message, err := a.makeIntent(message, inputs, outputsTxOut, leafProofs, arkFields)
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	return proof, message, ext, nil
 }
 
 func (a *service) makeGetPendingTxIntent(
