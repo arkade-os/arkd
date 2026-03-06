@@ -127,6 +127,15 @@ service IndexerService {
         disable_chunked_transfer: true
         disable_websockets: true
       }
+      additional_bindings: [
+        {
+          get: "/v1/indexer/script/subscription"
+          stream: {
+            disable_chunked_transfer: true
+            disable_websockets: true
+          }
+        }
+      ]
     };
   };
 

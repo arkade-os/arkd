@@ -409,6 +409,9 @@ func (h *indexerService) GetSubscription(
 	if len(subscriptionId) == 0 {
 		// New single-connection flow: create subscription inline.
 		scripts := request.GetScripts()
+		if len(scripts) > 10 {
+			return status.Error(codes.InvalidArgument, "too many scripts, maximum is 10")
+		}
 		if len(scripts) > 0 {
 			var err error
 			scripts, err = parseScripts(scripts)
@@ -449,7 +452,10 @@ func (h *indexerService) GetSubscription(
 
 		var err error
 		scriptCh, err = h.scriptSubsHandler.getListenerChannel(subscriptionId)
-		if err != nil && !strings.Contains(err.Error(), "listener not found") {
+		if err != nil {
+			if strings.Contains(err.Error(), "listener not found") {
+				return status.Error(codes.NotFound, err.Error())
+			}
 			return status.Error(codes.Internal, err.Error())
 		}
 	}

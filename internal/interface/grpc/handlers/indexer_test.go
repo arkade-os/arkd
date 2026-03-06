@@ -315,8 +315,7 @@ func TestGetSubscription(t *testing.T) {
 		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
 		require.NoError(t, err)
 
-		// Send an event at ~60ms, well before the 80ms heartbeat fires.
-		time.Sleep(60 * time.Millisecond)
+		// Send an event before the heartbeat fires.
 		ch <- &arkv1.GetSubscriptionResponse{
 			Data: &arkv1.GetSubscriptionResponse_Event{
 				Event: &arkv1.IndexerSubscriptionEvent{Txid: "evt1"},
@@ -387,9 +386,10 @@ func TestGetSubscription(t *testing.T) {
 		require.NoError(t, err)
 
 		// After the timeout fires, listener should be cleaned up.
-		time.Sleep(600 * time.Millisecond)
-		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
-		require.Error(t, err)
+		require.Eventually(t, func() bool {
+			_, err := svc.scriptSubsHandler.getListenerChannel(subId)
+			return err != nil
+		}, 2*time.Second, 50*time.Millisecond)
 	})
 
 	t.Run("old flow listener removed on disconnect when no scripts", func(t *testing.T) {

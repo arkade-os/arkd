@@ -549,6 +549,9 @@ func (a *grpcClient) GetSubscription(
 		if err := stream.CloseSend(); err != nil {
 			log.Warnf("failed to close subscription stream: %v", err)
 		}
+		// Clear cached subscription ID so subsequent Modify/Overwrite calls
+		// fail fast locally instead of acting on a stale ID.
+		a.setSubscriptionID("")
 	}
 
 	return eventsCh, closeFn, nil

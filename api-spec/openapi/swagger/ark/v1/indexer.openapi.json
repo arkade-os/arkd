@@ -424,6 +424,60 @@
         }
       }
     },
+    "/v1/indexer/script/subscription": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetSubscription is a server-side streaming RPC which allows clients to receive real-time\nnotifications on transactions related to the subscribed vtxo scripts.\nThe subscription can be created or updated by using the SubscribeForScripts and\nUnsubscribeForScripts RPCs.",
+        "operationId": "IndexerService_GetSubscription2",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "query",
+            "description": "If empty, server creates a new subscription automatically.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scripts",
+            "in": "query",
+            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response. (streaming responses)",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/indexer/script/subscription/{subscription_id}": {
       "get": {
         "tags": [
