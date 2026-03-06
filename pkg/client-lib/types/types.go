@@ -60,6 +60,11 @@ type DeprecatedSigner struct {
 	CutoffDate time.Time
 }
 
+type Address struct {
+	Tapscripts []string
+	Address    string
+}
+
 type Outpoint struct {
 	Txid string
 	VOut uint32

@@ -12,24 +12,25 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 )
 
-func (a *service) Receive(ctx context.Context) (string, string, string, error) {
+func (a *service) Receive(ctx context.Context) (
+	onchainAddr string, offchainAddr, boardingAddr *types.Address, err error,
+) {
 	if a.wallet == nil {
-		return "", "", "", fmt.Errorf("wallet not initialized")
+		return "", nil, nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddr, offchainAddr, boardingAddr, err := a.wallet.NewAddress(ctx, false)
+	onchainAddr, offchainAddr, boardingAddr, err = a.wallet.NewAddress(ctx, false)
 	if err != nil {
-		return "", "", "", err
+		return "", nil, nil, err
 	}
 
 	if a.UtxoMaxAmount == 0 {
-		boardingAddr.Address = ""
+		boardingAddr = nil
 	}
 
-	return onchainAddr, offchainAddr.Address, boardingAddr.Address, nil
+	return onchainAddr, offchainAddr, boardingAddr, nil
 }
 
 func (a *service) GetAddresses(
@@ -44,7 +45,7 @@ func (a *service) GetAddresses(
 		return nil, nil, nil, nil, err
 	}
 
-	toStringList := func(l []wallet.TapscriptsAddress) []string {
+	toStringList := func(l []types.Address) []string {
 		res := make([]string, 0, len(l))
 		for _, v := range l {
 			res = append(res, v.Address)

@@ -187,6 +187,22 @@ func LoadArkClientWithWallet(
 	return client, nil
 }
 
+func (a *service) Wallet() wallet.WalletService {
+	return a.wallet
+}
+
+func (a *service) Transport() client.TransportClient {
+	return a.client
+}
+
+func (a *service) Indexer() indexer.Indexer {
+	return a.indexer
+}
+
+func (a *service) Explorer() explorer.Explorer {
+	return a.explorer
+}
+
 func (a *service) GetVersion() string {
 	return Version
 }
