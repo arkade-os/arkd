@@ -17,10 +17,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 )
 
 type grpcClient struct {
@@ -455,10 +453,6 @@ func (a *grpcClient) GetSubscription(
 			if err != nil {
 				shouldRetry, retryDelay := utils.ShouldReconnect(err)
 				if !shouldRetry {
-					st, ok := status.FromError(err)
-					if ok && st.Code() == codes.Canceled {
-						return
-					}
 					select {
 					case <-ctx.Done():
 					case eventsCh <- indexer.ScriptEvent{Err: err}:
