@@ -491,6 +491,9 @@ func (w *bitcoinWallet) getArkAddresses(
 	if err != nil {
 		return nil, nil, err
 	}
+	if data == nil {
+		return nil, nil, fmt.Errorf("config store not initialized")
+	}
 
 	netParams := utils.ToBitcoinNetwork(data.Network)
 
