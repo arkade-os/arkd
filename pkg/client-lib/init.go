@@ -168,27 +168,29 @@ func (a InitArgs) validate() error {
 }
 
 func (a InitArgs) parse() args {
-	explorerURL := a.ExplorerURL
+	explorerUrl := a.ExplorerURL
 	if a.Explorer != nil {
-		explorerURL = a.Explorer.BaseUrl()
+		explorerUrl = a.Explorer.BaseUrl()
 	}
-	return args{a.WalletType, a.ServerUrl, a.Seed, a.Password, explorerURL}
+	return args{a.WalletType, a.ServerUrl, a.Seed, a.Password, explorerUrl}
 }
 
 type InitWithWalletArgs struct {
-	Wallet    wallet.WalletService
-	Explorer  explorer.Explorer
-	ServerUrl string
-	Seed      string
-	Password  string
+	Wallet      wallet.WalletService
+	ServerUrl   string
+	Seed        string
+	Password    string
+	ExplorerURL string
+	Explorer    explorer.Explorer
 }
 
 func (a InitWithWalletArgs) validate() error {
 	if a.Wallet == nil {
 		return fmt.Errorf("missing wallet")
 	}
-	if a.Explorer == nil {
-		return fmt.Errorf("missing explorer")
+
+	if a.Explorer == nil && len(a.ExplorerURL) <= 0 {
+		return fmt.Errorf("missing explorer or explorer url")
 	}
 
 	if len(a.ServerUrl) <= 0 {
@@ -201,7 +203,11 @@ func (a InitWithWalletArgs) validate() error {
 }
 
 func (a InitWithWalletArgs) parse() args {
-	return args{a.Wallet.GetType(), a.ServerUrl, a.Seed, a.Password, a.Explorer.BaseUrl()}
+	explorerUrl := a.ExplorerURL
+	if a.Explorer != nil {
+		explorerUrl = a.Explorer.BaseUrl()
+	}
+	return args{a.Wallet.GetType(), a.ServerUrl, a.Seed, a.Password, explorerUrl}
 }
 
 type args struct {
