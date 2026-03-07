@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
@@ -87,8 +88,23 @@ type DeprecatedSigner struct {
 }
 
 type BatchEventChannel struct {
-	Event any
-	Err   error
+	Event      any
+	Connection *StreamConnectionEvent
+	Err        error
+}
+
+type StreamConnectionState string
+
+const (
+	StreamConnectionStateDisconnected StreamConnectionState = "DISCONNECTED"
+	StreamConnectionStateReconnected  StreamConnectionState = "RECONNECTED"
+)
+
+type StreamConnectionEvent struct {
+	State          StreamConnectionState
+	At             time.Time
+	DisconnectedAt time.Time
+	Err            error
 }
 
 type BatchFinalizationEvent struct {
@@ -152,6 +168,7 @@ type BatchStartedEvent struct {
 type TransactionEvent struct {
 	CommitmentTx *TxNotification
 	ArkTx        *TxNotification
+	Connection   *StreamConnectionEvent
 	Err          error
 }
 

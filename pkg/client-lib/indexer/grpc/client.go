@@ -3,7 +3,6 @@ package indexer
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"time"
@@ -426,80 +425,28 @@ func (a *grpcClient) GetBatchSweepTxs(
 func (a *grpcClient) GetSubscription(
 	ctx context.Context, subscriptionId string,
 ) (<-chan indexer.ScriptEvent, func(), error) {
-	ctx, cancel := context.WithCancel(ctx)
-
 	req := &arkv1.GetSubscriptionRequest{
 		SubscriptionId: subscriptionId,
 	}
 
-	stream, err := a.svc().GetSubscription(ctx, req)
-	if err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	eventsCh := make(chan indexer.ScriptEvent)
-	streamMu := sync.Mutex{}
-
-	go func() {
-		defer close(eventsCh)
-		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
-
-		for {
-			streamMu.Lock()
-			currentStream := stream
-			streamMu.Unlock()
-
-			resp, err := currentStream.Recv()
-			if err != nil {
-				shouldRetry, retryDelay := utils.ShouldReconnect(err)
-				if !shouldRetry {
-					select {
-					case <-ctx.Done():
-					case eventsCh <- indexer.ScriptEvent{Err: err}:
-					}
-					return
-				}
-
-				if err == io.EOF {
-					log.Debug("indexer subscription stream closed by server; reconnecting")
-				}
-
-				sleepDuration := max(retryDelay, backoffDelay)
-				log.Debugf("subscription stream error, reconnecting in %v: %v", sleepDuration, err)
-
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(sleepDuration):
-				}
-
-				newStream, dialErr := a.svc().GetSubscription(ctx, req)
-				if dialErr != nil {
-					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
-					if !shouldRetryDial {
-						select {
-						case <-ctx.Done():
-						case eventsCh <- indexer.ScriptEvent{Err: dialErr}:
-						}
-						return
-					}
-					backoffDelay = min(
-						time.Duration(float64(backoffDelay)*utils.GrpcReconnectConfig.Multiplier),
-						utils.GrpcReconnectConfig.MaxDelay,
-					)
-					log.Debugf("subscription stream reconnect failed, retrying: %v", dialErr)
-					continue
-				}
-
-				streamMu.Lock()
-				stream = newStream
-				streamMu.Unlock()
-				backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-				continue
-			}
-
-			backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-
+	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
+		arkv1.IndexerService_GetSubscriptionClient,
+		*arkv1.GetSubscriptionResponse,
+		indexer.ScriptEvent,
+	]{
+		Open: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
+			return a.svc().GetSubscription(ctx, req)
+		},
+		Recv: func(
+			stream arkv1.IndexerService_GetSubscriptionClient,
+		) (*arkv1.GetSubscriptionResponse, error) {
+			return stream.Recv()
+		},
+		HandleResp: func(
+			ctx context.Context,
+			eventsCh chan<- indexer.ScriptEvent,
+			resp *arkv1.GetSubscriptionResponse,
+		) error {
 			var checkpointTxs map[string]indexer.TxData
 			var event *arkv1.IndexerSubscriptionEvent
 			switch data := resp.GetData().(type) {
@@ -515,30 +462,50 @@ func (a *grpcClient) GetSubscription(
 					}
 				}
 			}
-			if event != nil {
-				eventsCh <- indexer.ScriptEvent{
-					Txid:          event.GetTxid(),
-					Tx:            event.GetTx(),
-					Scripts:       event.GetScripts(),
-					NewVtxos:      newIndexerVtxos(event.GetNewVtxos()),
-					SpentVtxos:    newIndexerVtxos(event.GetSpentVtxos()),
-					CheckpointTxs: checkpointTxs,
-				}
+			if event == nil {
+				return nil
 			}
 
-		}
-	}()
-
-	closeFn := func() {
-		cancel()
-		streamMu.Lock()
-		defer streamMu.Unlock()
-		if err := stream.CloseSend(); err != nil {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case eventsCh <- indexer.ScriptEvent{
+				Txid:          event.GetTxid(),
+				Tx:            event.GetTx(),
+				Scripts:       event.GetScripts(),
+				NewVtxos:      newIndexerVtxos(event.GetNewVtxos()),
+				SpentVtxos:    newIndexerVtxos(event.GetSpentVtxos()),
+				CheckpointTxs: checkpointTxs,
+			}:
+				return nil
+			}
+		},
+		ErrorEvent: func(err error) indexer.ScriptEvent {
+			return indexer.ScriptEvent{Err: err}
+		},
+		ConnectionEvent: func(event utils.ReconnectingStreamStateEvent) indexer.ScriptEvent {
+			return indexer.ScriptEvent{
+				Connection: &indexer.StreamConnectionEvent{
+					State:          toIndexerStreamConnectionState(event.State),
+					At:             event.At,
+					DisconnectedAt: event.DisconnectedAt,
+					Err:            event.Err,
+				},
+			}
+		},
+		OnServerClosed: func() {
+			log.Debug("indexer subscription stream closed by server; reconnecting")
+		},
+		LogRetry: func(err error, sleepDuration time.Duration) {
+			log.Debugf("subscription stream error, reconnecting in %v: %v", sleepDuration, err)
+		},
+		LogReconnectFailed: func(err error) {
+			log.Debugf("subscription stream reconnect failed, retrying: %v", err)
+		},
+		LogCloseError: func(err error) {
 			log.Warnf("failed to close subscription stream: %v", err)
-		}
-	}
-
-	return eventsCh, closeFn, nil
+		},
+	})
 }
 
 func (a *grpcClient) SubscribeForScripts(
@@ -613,6 +580,19 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 	a.connMu.RLock()
 	defer a.connMu.RUnlock()
 	return arkv1.NewIndexerServiceClient(a.conn)
+}
+
+func toIndexerStreamConnectionState(
+	state utils.ReconnectingStreamState,
+) indexer.StreamConnectionState {
+	switch state {
+	case utils.ReconnectingStreamStateDisconnected:
+		return indexer.StreamConnectionStateDisconnected
+	case utils.ReconnectingStreamStateReconnected:
+		return indexer.StreamConnectionStateReconnected
+	default:
+		return indexer.StreamConnectionState(state)
+	}
 }
 
 func parsePage(page *arkv1.IndexerPageResponse) *indexer.PageResponse {

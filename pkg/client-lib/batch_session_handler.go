@@ -128,6 +128,9 @@ func JoinBatchSession(
 			if notify.Err != nil {
 				return "", "", -1, nil, nil, notify.Err
 			}
+			if notify.Connection != nil {
+				continue
+			}
 
 			if options.replayEventsCh != nil {
 				go func() {

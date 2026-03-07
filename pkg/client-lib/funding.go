@@ -279,15 +279,20 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 		closeFn()
 	}()
 
-	event, ok := <-eventCh
-	if !ok {
-		return nil, fmt.Errorf("event chan closed")
-	}
+	for {
+		event, ok := <-eventCh
+		if !ok {
+			return nil, fmt.Errorf("event chan closed")
+		}
+		if event.Connection != nil {
+			continue
+		}
 
-	if event.Err != nil {
-		return nil, event.Err
+		if event.Err != nil {
+			return nil, event.Err
+		}
+		return event.NewVtxos, nil
 	}
-	return event.NewVtxos, nil
 }
 
 func (a *service) getOffchainBalance(ctx context.Context) (
