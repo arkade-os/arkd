@@ -504,8 +504,8 @@ func (a *grpcClient) GetSubscription(
 		},
 		ConnectionEvent: func(event utils.ReconnectingStreamStateEvent) indexer.ScriptEvent {
 			return indexer.ScriptEvent{
-				Connection: &indexer.StreamConnectionEvent{
-					State:          toIndexerStreamConnectionState(event.State),
+				Connection: &types.StreamConnectionEvent{
+					State:          toStreamConnectionState(event.State),
 					At:             event.At,
 					DisconnectedAt: event.DisconnectedAt,
 					Err:            event.Err,
@@ -608,16 +608,16 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 	return arkv1.NewIndexerServiceClient(a.conn)
 }
 
-func toIndexerStreamConnectionState(
+func toStreamConnectionState(
 	state utils.ReconnectingStreamState,
-) indexer.StreamConnectionState {
+) types.StreamConnectionState {
 	switch state {
 	case utils.ReconnectingStreamStateDisconnected:
-		return indexer.StreamConnectionStateDisconnected
+		return types.StreamConnectionStateDisconnected
 	case utils.ReconnectingStreamStateReconnected:
-		return indexer.StreamConnectionStateReconnected
+		return types.StreamConnectionStateReconnected
 	default:
-		return indexer.StreamConnectionState(state)
+		return types.StreamConnectionState(state)
 	}
 }
 

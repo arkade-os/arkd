@@ -10,8 +10,8 @@ import (
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
-	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -103,9 +103,9 @@ func TestGetTransactionsStreamEmitsConnectionLifecycleEvents(t *testing.T) {
 
 			if event.Connection != nil {
 				switch event.Connection.State {
-				case client.StreamConnectionStateDisconnected:
+				case types.StreamConnectionStateDisconnected:
 					disconnectedAt = event.Connection.At
-				case client.StreamConnectionStateReconnected:
+				case types.StreamConnectionStateReconnected:
 					reconnectedAt = event.Connection.At
 				}
 			}
