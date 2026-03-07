@@ -29,9 +29,10 @@ type grpcClientStream interface {
 //   - E is the final event type emitted on the output channel,
 //     for example client.BatchEventChannel.
 type ReconnectingStreamConfig[S grpcClientStream, R any, E any] struct {
-	// Open creates a new stream instance. Called once at startup and again after
-	// retryable failures while reconnecting.
-	Open func(context.Context) (S, error)
+	// Connect creates a new stream instance. Called once at startup
+	Connect func(context.Context) (S, error)
+	// Reconnect creates a new stream instance after retryable failures while reconnecting.
+	Reconnect func(context.Context) (S, error)
 	// Recv reads one response from the current stream instance.
 	Recv func(S) (*R, error)
 	// HandleResp maps one response into domain events and writes them to eventsCh.
@@ -129,7 +130,8 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	cfg ReconnectingStreamConfig[S, R, E],
 ) (<-chan E, func(), error) {
 	// Validate mandatory callbacks before starting worker goroutine.
-	if cfg.Open == nil || cfg.Recv == nil || cfg.HandleResp == nil || cfg.ErrorEvent == nil {
+	if cfg.Connect == nil || cfg.Reconnect == nil || cfg.Recv == nil ||
+		cfg.HandleResp == nil || cfg.ErrorEvent == nil {
 		return nil, nil, fmt.Errorf("invalid reconnecting stream config")
 	}
 
@@ -137,7 +139,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	ctx, cancel := context.WithCancel(ctx)
 
 	// Open the initial stream eagerly and fail fast on startup errors.
-	stream, err := cfg.Open(ctx)
+	stream, err := cfg.Connect(ctx)
 	if err != nil {
 		cancel()
 		return nil, nil, err
@@ -207,6 +209,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 			} else {
 				resp, err = cfg.Recv(currentStream)
 			}
+			fmt.Println("AAAAAA", resp, err)
 			if err != nil {
 				// Classify receive errors as retryable/non-retryable.
 				shouldRetry, retryDelay := ShouldReconnect(err)
@@ -253,7 +256,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				}
 
 				// Attempt to reopen stream on same context.
-				newStream, dialErr := cfg.Open(ctx)
+				newStream, dialErr := cfg.Reconnect(ctx)
 				if dialErr != nil {
 					// Reopen failed: either terminate or backoff and retry.
 					shouldRetryDial, _ := ShouldReconnect(dialErr)
