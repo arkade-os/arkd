@@ -209,7 +209,6 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 			} else {
 				resp, err = cfg.Recv(currentStream)
 			}
-			fmt.Println("AAAAAA", resp, err)
 			if err != nil {
 				// Classify receive errors as retryable/non-retryable.
 				shouldRetry, retryDelay := ShouldReconnect(err)

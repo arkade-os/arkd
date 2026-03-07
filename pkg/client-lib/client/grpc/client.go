@@ -299,7 +299,7 @@ func (a *grpcClient) GetEventStream(
 		},
 		ConnectionEvent: func(event utils.ReconnectingStreamStateEvent) client.BatchEventChannel {
 			return client.BatchEventChannel{
-				Connection: &client.StreamConnectionEvent{
+				Connection: &types.StreamConnectionEvent{
 					State:          toClientStreamConnectionState(event.State),
 					At:             event.At,
 					DisconnectedAt: event.DisconnectedAt,
@@ -474,7 +474,7 @@ func (c *grpcClient) GetTransactionsStream(
 		},
 		ConnectionEvent: func(event utils.ReconnectingStreamStateEvent) client.TransactionEvent {
 			return client.TransactionEvent{
-				Connection: &client.StreamConnectionEvent{
+				Connection: &types.StreamConnectionEvent{
 					State:          toClientStreamConnectionState(event.State),
 					At:             event.At,
 					DisconnectedAt: event.DisconnectedAt,
@@ -587,14 +587,14 @@ func (a *grpcClient) setListenerID(id string) {
 
 func toClientStreamConnectionState(
 	state utils.ReconnectingStreamState,
-) client.StreamConnectionState {
+) types.StreamConnectionState {
 	switch state {
 	case utils.ReconnectingStreamStateDisconnected:
-		return client.StreamConnectionStateDisconnected
+		return types.StreamConnectionStateDisconnected
 	case utils.ReconnectingStreamStateReconnected:
-		return client.StreamConnectionStateReconnected
+		return types.StreamConnectionStateReconnected
 	default:
-		return client.StreamConnectionState(state)
+		return types.StreamConnectionState(state)
 	}
 }
 

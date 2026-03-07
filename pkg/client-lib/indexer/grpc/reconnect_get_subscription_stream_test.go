@@ -11,6 +11,7 @@ import (
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -50,6 +51,15 @@ func (s *testIndexerStreamServer) GetSubscription(
 
 	<-stream.Context().Done()
 	return stream.Context().Err()
+}
+
+func (s *testIndexerStreamServer) SubscribeForScripts(
+	_ context.Context,
+	req *arkv1.SubscribeForScriptsRequest,
+) (*arkv1.SubscribeForScriptsResponse, error) {
+	return &arkv1.SubscribeForScriptsResponse{
+		SubscriptionId: "id",
+	}, nil
 }
 
 func (s *testIndexerStreamServer) GetVtxos(
@@ -103,8 +113,9 @@ func TestSubscriptionLifecycleEventsAndDeltaFetchByTimestamp(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	c := &grpcClient{
-		conn:   conn,
-		connMu: &sync.RWMutex{},
+		conn:    conn,
+		connMu:  &sync.RWMutex{},
+		scripts: newScriptsCache(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -133,15 +144,17 @@ func TestSubscriptionLifecycleEventsAndDeltaFetchByTimestamp(t *testing.T) {
 
 			if event.Connection != nil {
 				switch event.Connection.State {
-				case indexer.StreamConnectionStateDisconnected:
+				case types.StreamConnectionStateDisconnected:
 					disconnectedAt = event.Connection.At
-				case indexer.StreamConnectionStateReconnected:
+				case types.StreamConnectionStateReconnected:
 					reconnectedAt = event.Connection.At
 				}
 			}
 
-			if event.Data.Txid == "subscription-tx-2" {
-				seenSecondTx = true
+			if event.Data != nil {
+				if event.Data.Txid == "subscription-tx-2" {
+					seenSecondTx = true
+				}
 			}
 
 			if !disconnectedAt.IsZero() && !reconnectedAt.IsZero() && seenSecondTx {
