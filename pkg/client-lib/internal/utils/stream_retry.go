@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc/status"
 )
 
 type grpcClientStream interface {
@@ -181,6 +184,13 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 			currentStream := stream
 			streamMu.Unlock()
 
+			// notReadyMessage is used to determine wether to send a connection event because when
+			// the connection is re-established, there can be a brief moment where the server is
+			// locked and it will return an error with code Unavailable and message
+			// "service not ready".
+			// In such case, we prevent sending repeated disconnected/reconnected events to not be
+			// too noisy.
+			notReadyMessage := ""
 			resp, err := cfg.Recv(currentStream)
 			if err != nil {
 				// Classify receive errors as retryable/non-retryable.
@@ -201,12 +211,17 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				if !isDisconnected {
 					disconnectedAt = time.Now()
 					isDisconnected = true
-					if !sendConnectionEvent(ReconnectingStreamStateEvent{
-						State: ReconnectingStreamStateDisconnected,
-						At:    disconnectedAt,
-						Err:   err,
-					}) {
-						return
+					if st, ok := status.FromError(err); ok {
+						notReadyMessage = st.Message()
+					}
+					if !strings.Contains(notReadyMessage, "not ready") {
+						if !sendConnectionEvent(ReconnectingStreamStateEvent{
+							State: ReconnectingStreamStateDisconnected,
+							At:    disconnectedAt,
+							Err:   err,
+						}) {
+							return
+						}
 					}
 				}
 
@@ -250,12 +265,14 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				// Emit RECONNECTED once after successful reopen.
 				if isDisconnected {
 					reconnectedAt := time.Now()
-					if !sendConnectionEvent(ReconnectingStreamStateEvent{
-						State:          ReconnectingStreamStateReconnected,
-						At:             reconnectedAt,
-						DisconnectedAt: disconnectedAt,
-					}) {
-						return
+					if !strings.Contains(notReadyMessage, "not ready") {
+						if !sendConnectionEvent(ReconnectingStreamStateEvent{
+							State:          ReconnectingStreamStateReconnected,
+							At:             reconnectedAt,
+							DisconnectedAt: disconnectedAt,
+						}) {
+							return
+						}
 					}
 					disconnectedAt = time.Time{}
 					isDisconnected = false
