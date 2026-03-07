@@ -439,8 +439,12 @@ func (a *grpcClient) GetSubscription(
 		},
 		Recv: func(
 			stream arkv1.IndexerService_GetSubscriptionClient,
-		) (*arkv1.GetSubscriptionResponse, error) {
-			return stream.Recv()
+		) (**arkv1.GetSubscriptionResponse, error) {
+			st, err := stream.Recv()
+			if err != nil {
+				return nil, err
+			}
+			return &st, nil
 		},
 		HandleResp: func(
 			ctx context.Context,
