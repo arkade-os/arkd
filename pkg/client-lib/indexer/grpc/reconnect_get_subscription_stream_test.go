@@ -140,7 +140,7 @@ func TestSubscriptionLifecycleEventsAndDeltaFetchByTimestamp(t *testing.T) {
 				}
 			}
 
-			if event.Txid == "subscription-tx-2" {
+			if event.Data.Txid == "subscription-tx-2" {
 				seenSecondTx = true
 			}
 

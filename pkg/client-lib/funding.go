@@ -291,7 +291,7 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 		if event.Err != nil {
 			return nil, event.Err
 		}
-		return event.NewVtxos, nil
+		return event.Data.NewVtxos, nil
 	}
 }
 

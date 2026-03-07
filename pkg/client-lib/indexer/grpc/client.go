@@ -23,6 +23,8 @@ import (
 type grpcClient struct {
 	conn   *grpc.ClientConn
 	connMu *sync.RWMutex
+	// TODO: drop me in https://github.com/arkade-os/arkd/pull/951
+	scripts *scriptsCache
 }
 
 func NewClient(serverUrl string) (indexer.Indexer, error) {
@@ -62,8 +64,9 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 	}
 
 	client := &grpcClient{
-		conn:   conn,
-		connMu: &sync.RWMutex{},
+		conn:    conn,
+		connMu:  &sync.RWMutex{},
+		scripts: newScriptsCache(),
 	}
 
 	return client, nil
@@ -425,22 +428,36 @@ func (a *grpcClient) GetBatchSweepTxs(
 func (a *grpcClient) GetSubscription(
 	ctx context.Context, subscriptionId string,
 ) (<-chan indexer.ScriptEvent, func(), error) {
-	req := &arkv1.GetSubscriptionRequest{
-		SubscriptionId: subscriptionId,
-	}
-
 	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
 		arkv1.IndexerService_GetSubscriptionClient,
 		*arkv1.GetSubscriptionResponse,
 		indexer.ScriptEvent,
 	]{
-		Open: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
-			return a.svc().GetSubscription(ctx, req)
+		Connect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
+			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: subscriptionId,
+			})
+		},
+		Reconnect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
+			scripts := a.scripts.get()
+			resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
+				Scripts: scripts,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: resp.GetSubscriptionId(),
+			})
 		},
 		Recv: func(
 			stream arkv1.IndexerService_GetSubscriptionClient,
-		) (*arkv1.GetSubscriptionResponse, error) {
-			return stream.Recv()
+		) (**arkv1.GetSubscriptionResponse, error) {
+			st, err := stream.Recv()
+			if err != nil {
+				return nil, err
+			}
+			return &st, nil
 		},
 		HandleResp: func(
 			ctx context.Context,
@@ -470,12 +487,14 @@ func (a *grpcClient) GetSubscription(
 			case <-ctx.Done():
 				return ctx.Err()
 			case eventsCh <- indexer.ScriptEvent{
-				Txid:          event.GetTxid(),
-				Tx:            event.GetTx(),
-				Scripts:       event.GetScripts(),
-				NewVtxos:      newIndexerVtxos(event.GetNewVtxos()),
-				SpentVtxos:    newIndexerVtxos(event.GetSpentVtxos()),
-				CheckpointTxs: checkpointTxs,
+				Data: &indexer.ScriptEventData{
+					Txid:          event.GetTxid(),
+					Tx:            event.GetTx(),
+					Scripts:       event.GetScripts(),
+					NewVtxos:      newIndexerVtxos(event.GetNewVtxos()),
+					SpentVtxos:    newIndexerVtxos(event.GetSpentVtxos()),
+					CheckpointTxs: checkpointTxs,
+				},
 			}:
 				return nil
 			}
@@ -522,6 +541,9 @@ func (a *grpcClient) SubscribeForScripts(
 	if err != nil {
 		return "", err
 	}
+
+	a.scripts.add(scripts)
+
 	return resp.GetSubscriptionId(), nil
 }
 
@@ -534,10 +556,14 @@ func (a *grpcClient) UnsubscribeForScripts(
 	if len(subscriptionId) > 0 {
 		req.SubscriptionId = subscriptionId
 	}
+
 	_, err := a.svc().UnsubscribeForScripts(ctx, req)
 	if err != nil {
 		return err
 	}
+
+	a.scripts.remove(scripts)
+
 	return nil
 }
 

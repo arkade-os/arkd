@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc/status"
 )
 
 type grpcClientStream interface {
@@ -26,11 +29,12 @@ type grpcClientStream interface {
 //   - E is the final event type emitted on the output channel,
 //     for example client.BatchEventChannel.
 type ReconnectingStreamConfig[S grpcClientStream, R any, E any] struct {
-	// Open creates a new stream instance. Called once at startup and again after
-	// retryable failures while reconnecting.
-	Open func(context.Context) (S, error)
+	// Connect creates a new stream instance. Called once at startup
+	Connect func(context.Context) (S, error)
+	// Reconnect creates a new stream instance after retryable failures while reconnecting.
+	Reconnect func(context.Context) (S, error)
 	// Recv reads one response from the current stream instance.
-	Recv func(S) (R, error)
+	Recv func(S) (*R, error)
 	// HandleResp maps one response into domain events and writes them to eventsCh.
 	// Returning an error terminates the stream and emits ErrorEvent.
 	HandleResp func(context.Context, chan<- E, R) error
@@ -59,6 +63,7 @@ type ReconnectingStreamState string
 const (
 	ReconnectingStreamStateDisconnected ReconnectingStreamState = "DISCONNECTED"
 	ReconnectingStreamStateReconnected  ReconnectingStreamState = "RECONNECTED"
+	ReconnectingStreamStateReady        ReconnectingStreamState = "READY"
 )
 
 type ReconnectingStreamStateEvent struct {
@@ -125,7 +130,8 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	cfg ReconnectingStreamConfig[S, R, E],
 ) (<-chan E, func(), error) {
 	// Validate mandatory callbacks before starting worker goroutine.
-	if cfg.Open == nil || cfg.Recv == nil || cfg.HandleResp == nil || cfg.ErrorEvent == nil {
+	if cfg.Connect == nil || cfg.Reconnect == nil || cfg.Recv == nil ||
+		cfg.HandleResp == nil || cfg.ErrorEvent == nil {
 		return nil, nil, fmt.Errorf("invalid reconnecting stream config")
 	}
 
@@ -133,7 +139,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	ctx, cancel := context.WithCancel(ctx)
 
 	// Open the initial stream eagerly and fail fast on startup errors.
-	stream, err := cfg.Open(ctx)
+	stream, err := cfg.Connect(ctx)
 	if err != nil {
 		cancel()
 		return nil, nil, err
@@ -169,19 +175,41 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	// Worker goroutine: receive loop + reconnect loop.
 	go func() {
 		defer close(eventsCh)
+		var resp *R
 		// Backoff used for failed reopen attempts.
 		backoffDelay := GrpcReconnectConfig.InitialDelay
 		// Tracks a single disconnect window to avoid duplicate DISCONNECTED events.
 		disconnectedAt := time.Time{}
 		isDisconnected := false
-
+		// firstSeen is used to filter out all reconnect/disconnect back and fort that can happen
+		// once the server is up again but not yet unlocked. With firstSeen we make sure to notify
+		// and log only once the "disconnected" and "reconnected" updated.
+		firstSeen := true
 		for {
 			// Read current stream pointer under lock.
 			streamMu.Lock()
 			currentStream := stream
 			streamMu.Unlock()
 
-			resp, err := cfg.Recv(currentStream)
+			// notReadyMessage is used to determine wether to send a connection event because when
+			// the connection is re-established, there can be a brief moment where the server is
+			// locked and it will return an error with code Unavailable and message
+			// "service not ready".
+			// In such case, we prevent sending repeated disconnected/reconnected events to not be
+			// too noisy.
+			notReadyMessage := ""
+			if firstSeen {
+				// The very first time we try to receive from the stream we make sure the operation
+				// returns by adding a fallback timeout. This because once the stream is opened,
+				// it can stay queiet up until a minute (hearthbeat). Thus, to ensure we notify the
+				// connection is ready (the stream is opened), the very first time we wait up until
+				// 2 seconds and if we didn't receive anything from the stream we assume the stream
+				// is open.
+				resp, err = timedOutRecv(cfg.Recv, currentStream)
+			} else {
+				resp, err = cfg.Recv(currentStream)
+			}
+			fmt.Println("AAAAAA", resp, err)
 			if err != nil {
 				// Classify receive errors as retryable/non-retryable.
 				shouldRetry, retryDelay := ShouldReconnect(err)
@@ -201,12 +229,17 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				if !isDisconnected {
 					disconnectedAt = time.Now()
 					isDisconnected = true
-					if !sendConnectionEvent(ReconnectingStreamStateEvent{
-						State: ReconnectingStreamStateDisconnected,
-						At:    disconnectedAt,
-						Err:   err,
-					}) {
-						return
+					if st, ok := status.FromError(err); ok {
+						notReadyMessage = st.Message()
+					}
+					if !strings.Contains(notReadyMessage, "not ready") {
+						if !sendConnectionEvent(ReconnectingStreamStateEvent{
+							State: ReconnectingStreamStateDisconnected,
+							At:    disconnectedAt,
+							Err:   err,
+						}) {
+							return
+						}
 					}
 				}
 
@@ -223,7 +256,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				}
 
 				// Attempt to reopen stream on same context.
-				newStream, dialErr := cfg.Open(ctx)
+				newStream, dialErr := cfg.Reconnect(ctx)
 				if dialErr != nil {
 					// Reopen failed: either terminate or backoff and retry.
 					shouldRetryDial, _ := ShouldReconnect(dialErr)
@@ -242,6 +275,25 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 					continue
 				}
 
+				// Try to receeive from the stream with a timeout (2 seconds) to ensure the server
+				// is online and also unlocked.
+				recvResp, recvErr := timedOutRecv(cfg.Recv, currentStream)
+				if recvErr == nil {
+					if !sendConnectionEvent(ReconnectingStreamStateEvent{
+						State: ReconnectingStreamStateReady,
+						At:    time.Now(),
+					}) {
+						return
+					}
+
+					if recvResp != nil {
+						if err := cfg.HandleResp(ctx, eventsCh, *recvResp); err != nil {
+							sendTerminalErr(err)
+							return
+						}
+					}
+				}
+
 				// Reopen succeeded: swap stream and reset backoff.
 				streamMu.Lock()
 				stream = newStream
@@ -250,15 +302,18 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				// Emit RECONNECTED once after successful reopen.
 				if isDisconnected {
 					reconnectedAt := time.Now()
-					if !sendConnectionEvent(ReconnectingStreamStateEvent{
-						State:          ReconnectingStreamStateReconnected,
-						At:             reconnectedAt,
-						DisconnectedAt: disconnectedAt,
-					}) {
-						return
+					if !strings.Contains(notReadyMessage, "not ready") {
+						if !sendConnectionEvent(ReconnectingStreamStateEvent{
+							State:          ReconnectingStreamStateReconnected,
+							At:             reconnectedAt,
+							DisconnectedAt: disconnectedAt,
+						}) {
+							return
+						}
 					}
 					disconnectedAt = time.Time{}
 					isDisconnected = false
+					firstSeen = true
 				}
 				if cfg.OnReconnectSuccess != nil {
 					cfg.OnReconnectSuccess()
@@ -266,13 +321,28 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				continue
 			}
 
+			// Only the first time send a notification that the stream is ready just before
+			// handling the response.
+			if firstSeen {
+				if !sendConnectionEvent(ReconnectingStreamStateEvent{
+					State: ReconnectingStreamStateReady,
+					At:    time.Now(),
+				}) {
+					return
+				}
+				firstSeen = false
+			}
+
 			// Any successful receive resets dial backoff state.
 			backoffDelay = GrpcReconnectConfig.InitialDelay
 
-			// Convert response into domain events.
-			if err := cfg.HandleResp(ctx, eventsCh, resp); err != nil {
-				sendTerminalErr(err)
-				return
+			// resp can be nil if recv timed out, in that case we just skip handling the response
+			if resp != nil {
+				// Convert response into domain events.
+				if err := cfg.HandleResp(ctx, eventsCh, *resp); err != nil {
+					sendTerminalErr(err)
+					return
+				}
 			}
 		}
 	}()
@@ -288,4 +358,25 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	}
 
 	return eventsCh, closeFn, nil
+}
+
+func timedOutRecv[S grpcClientStream, R any](recv func(S) (*R, error), s S) (*R, error) {
+	type result struct {
+		resp *R
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		resp, err := recv(s)
+		ch <- result{resp, err}
+	}()
+	select {
+	case <-time.After(2 * time.Second):
+		return nil, nil // timeout: server is ready but quiet
+	case r := <-ch:
+		if r.err != nil {
+			return nil, r.err
+		}
+		return r.resp, nil
+	}
 }
