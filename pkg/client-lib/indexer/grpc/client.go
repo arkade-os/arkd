@@ -13,7 +13,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -511,18 +510,6 @@ func (a *grpcClient) GetSubscription(
 					Err:            event.Err,
 				},
 			}
-		},
-		OnServerClosed: func() {
-			log.Debug("indexer subscription stream closed by server; reconnecting")
-		},
-		LogRetry: func(err error, sleepDuration time.Duration) {
-			log.Debugf("subscription stream error, reconnecting in %v: %v", sleepDuration, err)
-		},
-		LogReconnectFailed: func(err error) {
-			log.Debugf("subscription stream reconnect failed, retrying: %v", err)
-		},
-		LogCloseError: func(err error) {
-			log.Warnf("failed to close subscription stream: %v", err)
 		},
 	})
 }

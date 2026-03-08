@@ -15,13 +15,10 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/wire"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 )
 
 type grpcClient struct {
@@ -307,20 +304,8 @@ func (a *grpcClient) GetEventStream(
 				},
 			}
 		},
-		OnServerClosed: func() {
-			log.Debug("event stream closed by server; reconnecting")
-		},
-		OnRetryableRecvError: func(error) {
+		OnDisconnect: func(error) {
 			a.setListenerID("")
-		},
-		LogRetry: func(err error, sleepDuration time.Duration) {
-			log.Debugf("event stream error, reconnecting in %v: %v", sleepDuration, err)
-		},
-		LogReconnectFailed: func(err error) {
-			log.Debugf("event stream reconnect failed, retrying: %v", err)
-		},
-		LogCloseError: func(err error) {
-			log.Warnf("failed to close event stream: %s", err)
 		},
 	})
 }
@@ -481,29 +466,6 @@ func (c *grpcClient) GetTransactionsStream(
 					Err:            event.Err,
 				},
 			}
-		},
-		OnServerClosed: func() {
-			log.Debug("transactions stream closed by server; reconnecting")
-		},
-		OnReconnectSuccess: func() {
-			log.Debug("transactions stream transport reconnected; waiting for server readiness")
-		},
-		LogRetry: func(err error, sleepDuration time.Duration) {
-			if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
-				log.Debugf(
-					"transactions stream server reachable but not ready yet, retrying in %v: %v",
-					sleepDuration,
-					err,
-				)
-				return
-			}
-			log.Debugf("transactions stream error, reconnecting in %v: %v", sleepDuration, err)
-		},
-		LogReconnectFailed: func(err error) {
-			log.Debugf("transactions stream reconnect failed, retrying: %v", err)
-		},
-		LogCloseError: func(err error) {
-			log.Warnf("failed to close transaction stream: %v", err)
 		},
 	})
 }
