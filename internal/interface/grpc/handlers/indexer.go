@@ -409,9 +409,6 @@ func (h *indexerService) GetSubscription(
 	if len(subscriptionId) == 0 {
 		// New single-connection flow: create subscription inline.
 		scripts := request.GetScripts()
-		if len(scripts) > 10 {
-			return status.Error(codes.InvalidArgument, "too many scripts, maximum is 10")
-		}
 		if len(scripts) > 0 {
 			var err error
 			scripts, err = parseScripts(scripts)
