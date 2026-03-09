@@ -413,6 +413,12 @@ func request_IndexerService_UnsubscribeForScripts_0(ctx context.Context, marshal
 
 }
 
+var (
+	query_params_IndexerService_GetSubscription_0 = gateway.QueryParameterParseOptions{
+		Filter: trie.New("subscription_id", "subscriptionId"),
+	}
+)
+
 func request_IndexerService_GetSubscription_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (IndexerService_GetSubscriptionClient, gateway.ServerMetadata, error) {
 	var protoReq GetSubscriptionRequest
 	var metadata gateway.ServerMetadata
@@ -433,6 +439,13 @@ func request_IndexerService_GetSubscription_0(ctx context.Context, marshaler gat
 		return nil, metadata, gateway.ErrPathParameterTypeMismatch{Err: err, Name: "subscription_id"}
 	}
 
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_IndexerService_GetSubscription_0); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+
 	stream, err := client.GetSubscription(ctx, &protoReq)
 	if err != nil {
 		return nil, metadata, err
@@ -443,6 +456,49 @@ func request_IndexerService_GetSubscription_0(ctx context.Context, marshaler gat
 	}
 	metadata.HeaderMD = header
 	return stream, metadata, nil
+
+}
+
+var (
+	query_params_IndexerService_GetSubscription_1 = gateway.QueryParameterParseOptions{
+		Filter: trie.New(),
+	}
+)
+
+func request_IndexerService_GetSubscription_1(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (IndexerService_GetSubscriptionClient, gateway.ServerMetadata, error) {
+	var protoReq GetSubscriptionRequest
+	var metadata gateway.ServerMetadata
+
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_IndexerService_GetSubscription_1); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+
+	stream, err := client.GetSubscription(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+
+}
+
+func request_IndexerService_UpdateSubscriptionScripts_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq UpdateSubscriptionScriptsRequest
+	var metadata gateway.ServerMetadata
+
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+		return nil, metadata, gateway.ErrMarshal{Err: err, Inbound: true}
+	}
+
+	msg, err := client.UpdateSubscriptionScripts(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
 
 }
 
@@ -779,6 +835,60 @@ func RegisterIndexerServiceHandlerClient(ctx context.Context, mux *gateway.Serve
 			MethodSupportsChunkedTransfer: false,
 		})
 
+	})
+
+	mux.HandleWithParams("GET", "/v1/indexer/script/subscription", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/GetSubscription", gateway.WithHTTPPathPattern("/v1/indexer/script/subscription"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_IndexerService_GetSubscription_1(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		if mux.IsSSE(req) {
+			mux.ForwardResponseStreamSSE(annotatedContext, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() })
+			return
+		}
+
+		mux.HTTPError(ctx, outboundMarshaler, w, req, gateway.ErrStreamingMethodNotAllowed{
+			MethodSupportsWebsocket:       false,
+			MethodSupportsSSE:             true,
+			MethodSupportsChunkedTransfer: false,
+		})
+
+	})
+
+	mux.HandleWithParams("POST", "/v1/indexer/script/updateScripts", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/UpdateSubscriptionScripts", gateway.WithHTTPPathPattern("/v1/indexer/script/updateScripts"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_IndexerService_UpdateSubscriptionScripts_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
 	})
 
 }

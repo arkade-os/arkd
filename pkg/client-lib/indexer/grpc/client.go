@@ -22,8 +22,10 @@ import (
 )
 
 type grpcClient struct {
-	conn   *grpc.ClientConn
-	connMu *sync.RWMutex
+	conn           *grpc.ClientConn
+	connMu         *sync.RWMutex
+	subscriptionMu *sync.RWMutex
+	subscriptionId string
 }
 
 func NewClient(serverUrl string) (indexer.Indexer, error) {
@@ -63,8 +65,9 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 	}
 
 	client := &grpcClient{
-		conn:   conn,
-		connMu: &sync.RWMutex{},
+		conn:           conn,
+		connMu:         &sync.RWMutex{},
+		subscriptionMu: &sync.RWMutex{},
 	}
 
 	return client, nil
@@ -424,12 +427,13 @@ func (a *grpcClient) GetBatchSweepTxs(
 }
 
 func (a *grpcClient) GetSubscription(
-	ctx context.Context, subscriptionId string,
+	ctx context.Context, subscriptionId string, scripts ...string,
 ) (<-chan indexer.ScriptEvent, func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	req := &arkv1.GetSubscriptionRequest{
 		SubscriptionId: subscriptionId,
+		Scripts:        scripts,
 	}
 
 	stream, err := a.svc().GetSubscription(ctx, req)
@@ -463,6 +467,12 @@ func (a *grpcClient) GetSubscription(
 				if err == io.EOF {
 					log.Debug("indexer subscription stream closed by server; reconnecting")
 				}
+
+				// Clear stale ID so concurrent ModifySubscriptionScripts /
+				// OverwriteSubscriptionScripts calls fail fast instead of using an
+				// ID the server no longer recognizes. A fresh ID will arrive via
+				// SubscriptionStartedEvent after reconnect.
+				a.setSubscriptionID("")
 
 				sleepDuration := max(retryDelay, backoffDelay)
 				log.Debugf("subscription stream error, reconnecting in %v: %v", sleepDuration, err)
@@ -503,6 +513,9 @@ func (a *grpcClient) GetSubscription(
 			var checkpointTxs map[string]indexer.TxData
 			var event *arkv1.IndexerSubscriptionEvent
 			switch data := resp.GetData().(type) {
+			case *arkv1.GetSubscriptionResponse_SubscriptionStarted:
+				a.setSubscriptionID(data.SubscriptionStarted.GetSubscriptionId())
+				continue
 			case *arkv1.GetSubscriptionResponse_Event:
 				event = data.Event
 				if len(event.GetCheckpointTxs()) > 0 {
@@ -536,6 +549,9 @@ func (a *grpcClient) GetSubscription(
 		if err := stream.CloseSend(); err != nil {
 			log.Warnf("failed to close subscription stream: %v", err)
 		}
+		// Clear cached subscription ID so subsequent Modify/Overwrite calls
+		// fail fast locally instead of acting on a stale ID.
+		a.setSubscriptionID("")
 	}
 
 	return eventsCh, closeFn, nil
@@ -600,6 +616,69 @@ func (a *grpcClient) GetAsset(ctx context.Context, assetID string) (
 		ControlAssetId: resp.GetControlAsset(),
 		Metadata:       metadata,
 	}, nil
+}
+
+func (a *grpcClient) ModifySubscriptionScripts(
+	ctx context.Context, addScripts, removeScripts []string,
+) (scriptsAdded, scriptsRemoved, allScripts []string, err error) {
+	subID := a.getSubscriptionID()
+	if subID == "" {
+		return nil, nil, nil, fmt.Errorf("subscriptionId is not set; cannot modify subscription scripts")
+	}
+
+	req := &arkv1.UpdateSubscriptionScriptsRequest{
+		SubscriptionId: subID,
+		ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+			Modify: &arkv1.ModifyScripts{
+				AddScripts:    addScripts,
+				RemoveScripts: removeScripts,
+			},
+		},
+	}
+	resp, err := a.svc().UpdateSubscriptionScripts(ctx, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return resp.GetScriptsAdded(), resp.GetScriptsRemoved(), resp.GetAllScripts(), nil
+}
+
+func (a *grpcClient) OverwriteSubscriptionScripts(
+	ctx context.Context, scripts []string,
+) (scriptsAdded, scriptsRemoved, allScripts []string, err error) {
+	subID := a.getSubscriptionID()
+	if subID == "" {
+		return nil, nil, nil, fmt.Errorf("subscriptionId is not set; cannot overwrite subscription scripts")
+	}
+
+	req := &arkv1.UpdateSubscriptionScriptsRequest{
+		SubscriptionId: subID,
+		ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Overwrite{
+			Overwrite: &arkv1.OverwriteScripts{
+				Scripts: scripts,
+			},
+		},
+	}
+	resp, err := a.svc().UpdateSubscriptionScripts(ctx, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return resp.GetScriptsAdded(), resp.GetScriptsRemoved(), resp.GetAllScripts(), nil
+}
+
+func (a *grpcClient) getSubscriptionID() string {
+	a.subscriptionMu.RLock()
+	defer a.subscriptionMu.RUnlock()
+
+	return a.subscriptionId
+}
+
+func (a *grpcClient) setSubscriptionID(id string) {
+	a.subscriptionMu.Lock()
+	defer a.subscriptionMu.Unlock()
+
+	a.subscriptionId = id
 }
 
 func (a *grpcClient) Close() {
