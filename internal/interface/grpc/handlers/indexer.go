@@ -535,22 +535,29 @@ func (h *indexerService) UpdateSubscriptionScripts(
 		if len(modify.GetAddScripts()) <= 0 && len(modify.GetRemoveScripts()) <= 0 {
 			return nil, status.Error(codes.InvalidArgument, "missing scripts to add or remove")
 		}
+		var addScripts, removeScripts []string
 		if len(modify.GetAddScripts()) > 0 {
-			scripts, err := parseScripts(modify.GetAddScripts())
+			var err error
+			addScripts, err = parseScripts(modify.GetAddScripts())
 			if err != nil {
 				return nil, status.Error(codes.InvalidArgument, err.Error())
 			}
+		}
+		if len(modify.GetRemoveScripts()) > 0 {
+			var err error
+			removeScripts, err = parseScripts(modify.GetRemoveScripts())
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+		if len(addScripts) > 0 {
 			if err := h.scriptSubsHandler.addTopics(
-				req.GetSubscriptionId(), scripts,
+				req.GetSubscriptionId(), addScripts,
 			); err != nil {
 				return nil, status.Error(codes.NotFound, err.Error())
 			}
 		}
-		if len(modify.GetRemoveScripts()) > 0 {
-			removeScripts, err := parseScripts(modify.GetRemoveScripts())
-			if err != nil {
-				return nil, status.Error(codes.InvalidArgument, err.Error())
-			}
+		if len(removeScripts) > 0 {
 			if err := h.scriptSubsHandler.removeTopics(
 				req.GetSubscriptionId(), removeScripts,
 			); err != nil {
