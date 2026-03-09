@@ -261,7 +261,7 @@ func (a *grpcClient) GetEventStream(
 		return nil, nil, err
 	}
 
-	eventsCh := make(chan client.BatchEventChannel)
+	eventsCh := make(chan client.BatchEventChannel, 1)
 	streamMu := sync.Mutex{}
 
 	go func() {
