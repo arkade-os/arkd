@@ -547,8 +547,12 @@ func (h *indexerService) UpdateSubscriptionScripts(
 			}
 		}
 		if len(modify.GetRemoveScripts()) > 0 {
+			removeScripts, err := parseScripts(modify.GetRemoveScripts())
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
 			if err := h.scriptSubsHandler.removeTopics(
-				req.GetSubscriptionId(), modify.GetRemoveScripts(),
+				req.GetSubscriptionId(), removeScripts,
 			); err != nil {
 				return nil, status.Error(codes.NotFound, err.Error())
 			}

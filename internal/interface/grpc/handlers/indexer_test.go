@@ -623,6 +623,30 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		require.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
+	t.Run("modify with invalid remove scripts returns InvalidArgument", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
+		svc.scriptSubsHandler.pushListener(listener)
+
+		_, err := svc.UpdateSubscriptionScripts(context.Background(),
+			&arkv1.UpdateSubscriptionScriptsRequest{
+				SubscriptionId: "test-sub",
+				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
+					Modify: &arkv1.ModifyScripts{
+						RemoveScripts: []string{"notvalid"},
+					},
+				},
+			},
+		)
+		require.Error(t, err)
+
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
 	t.Run("modify add only", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
