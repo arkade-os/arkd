@@ -296,7 +296,9 @@ func (a *grpcClient) GetEventStream(
 			if err != nil {
 				shouldRetry, retryDelay := utils.ShouldReconnect(err)
 				if !shouldRetry {
-					send(client.BatchEventChannel{Err: err})
+					if !send(client.BatchEventChannel{Err: err}) {
+						log.Warnf("terminal batch error delivery timed out: %v", err)
+					}
 					return
 				}
 
@@ -319,7 +321,9 @@ func (a *grpcClient) GetEventStream(
 				if dialErr != nil {
 					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
 					if !shouldRetryDial {
-						send(client.BatchEventChannel{Err: dialErr})
+						if !send(client.BatchEventChannel{Err: dialErr}) {
+							log.Warnf("terminal batch error delivery timed out: %v", dialErr)
+						}
 						return
 					}
 					backoffDelay = min(
@@ -347,7 +351,9 @@ func (a *grpcClient) GetEventStream(
 
 			ev, err := event{resp}.toBatchEvent()
 			if err != nil {
-				send(client.BatchEventChannel{Err: err})
+				if !send(client.BatchEventChannel{Err: err}) {
+					log.Warnf("terminal batch error delivery timed out: %v", err)
+				}
 				return
 			}
 
@@ -446,7 +452,7 @@ func (c *grpcClient) GetTransactionsStream(
 		return nil, nil, err
 	}
 
-	eventsCh := make(chan client.TransactionEvent)
+	eventsCh := make(chan client.TransactionEvent, 1)
 	streamMu := sync.Mutex{}
 
 	go func() {
@@ -454,6 +460,16 @@ func (c *grpcClient) GetTransactionsStream(
 		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
 
 		send := func(ev client.TransactionEvent) bool {
+			if ev.Err != nil {
+				// Terminal error: best-effort delivery even if ctx is cancelled,
+				// so consumers always learn why the stream ended.
+				select {
+				case eventsCh <- ev:
+					return true
+				case <-time.After(5 * time.Second):
+					return false
+				}
+			}
 			select {
 			case eventsCh <- ev:
 				return true
@@ -471,7 +487,9 @@ func (c *grpcClient) GetTransactionsStream(
 			if err != nil {
 				shouldRetry, retryDelay := utils.ShouldReconnect(err)
 				if !shouldRetry {
-					send(client.TransactionEvent{Err: err})
+					if !send(client.TransactionEvent{Err: err}) {
+						log.Warnf("terminal transaction error delivery timed out: %v", err)
+					}
 					return
 				}
 
@@ -500,7 +518,9 @@ func (c *grpcClient) GetTransactionsStream(
 				if dialErr != nil {
 					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
 					if !shouldRetryDial {
-						send(client.TransactionEvent{Err: dialErr})
+						if !send(client.TransactionEvent{Err: dialErr}) {
+							log.Warnf("terminal transaction error delivery timed out: %v", dialErr)
+						}
 						return
 					}
 					backoffDelay = min(
@@ -541,9 +561,11 @@ func (c *grpcClient) GetTransactionsStream(
 				for k, v := range tx.ArkTx.CheckpointTxs {
 					out, parseErr := wire.NewOutPointFromString(k)
 					if parseErr != nil {
-						send(client.TransactionEvent{
+						if !send(client.TransactionEvent{
 							Err: fmt.Errorf("invalid checkpoint outpoint %q: %w", k, parseErr),
-						})
+						}) {
+							log.Warnf("terminal transaction error delivery timed out: %v", parseErr)
+						}
 						return
 					}
 					checkpointTxs[types.Outpoint{
