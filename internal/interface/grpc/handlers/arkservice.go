@@ -38,7 +38,12 @@ type handler struct {
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewAppServiceHandler(version string, service application.Service, heartbeat int64, ds digestStore) service {
+func NewAppServiceHandler(
+	version string,
+	service application.Service,
+	heartbeat int64,
+	ds digestStore,
+) service {
 	h := &handler{
 		version:                     version,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
