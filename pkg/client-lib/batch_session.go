@@ -251,7 +251,7 @@ func (a *service) getFundsToSettle(
 	}
 
 	vtxos := opts.vtxos
-	if len(vtxos) <= 0 {
+	if len(opts.vtxos) <= 0 && len(opts.utxos) <= 0 {
 		spendableVtxos, err := a.getSpendableVtxos(ctx, &opts)
 		if err != nil {
 			return nil, nil, nil, err
@@ -275,7 +275,7 @@ func (a *service) getFundsToSettle(
 	}
 
 	boardingUtxos := opts.utxos
-	if len(boardingUtxos) <= 0 {
+	if len(opts.vtxos) <= 0 && len(opts.utxos) <= 0 {
 		boardingUtxos, err = a.getClaimableBoardingUtxos(ctx, boardingAddrs, nil)
 		if err != nil {
 			return nil, nil, nil, err
