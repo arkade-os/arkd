@@ -455,3 +455,11 @@ type VtxoWithTooManyAssetsMetadata struct {
 	AssetCount int `json:"asset_count"`
 	MaxAssets  int `json:"max_assets"`
 }
+
+type SdkVersionMetadata struct {
+	ClientVersion string `json:"client_version"`
+	MinVersion    string `json:"min_version"`
+	Method        string `json:"method"`
+}
+
+var SDK_VERSION_TOO_OLD = Code[SdkVersionMetadata]{48, "SDK_VERSION_TOO_OLD", grpccodes.FailedPrecondition}
