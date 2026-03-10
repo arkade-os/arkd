@@ -14,6 +14,13 @@ import (
 
 const testMethod = "/ark.v1.ArkService/TestMethod"
 
+func TestBuildBreakingChanges_NoAnnotatedMethods(t *testing.T) {
+	// No proto methods currently carry the min_sdk_version option,
+	// so the map should be empty.
+	got := buildBreakingChanges()
+	require.Empty(t, got)
+}
+
 func withBreakingChange(t *testing.T, minVersion string, fn func()) {
 	t.Helper()
 	breakingChanges[testMethod] = BreakingChange{

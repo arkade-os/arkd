@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package ark.v1;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.MethodOptions {
+  // min_sdk_version specifies the minimum SDK version required to call this
+  // RPC. The value must be a valid semver string (e.g. "0.9.0"). Clients
+  // sending an X-Ark-Sdk-Version header below this version will receive an
+  // SDK_VERSION_TOO_OLD error.
+  optional string min_sdk_version = 50000;
+}

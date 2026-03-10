@@ -2,12 +2,18 @@ package interceptors
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/coreos/go-semver/semver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 // BreakingChange defines a minimum SDK version required for a given gRPC method.
@@ -17,12 +23,55 @@ type BreakingChange struct {
 }
 
 // breakingChanges maps gRPC full method names to their minimum required SDK version.
-var breakingChanges = map[string]BreakingChange{
-	// Example (uncomment when a breaking change is introduced):
-	// "/ark.v1.ArkService/RegisterIntent": {
-	//     MinVersion: *semver.New("0.9.0"),
-	//     Message:    "RegisterIntent request format changed in v0.9.0",
-	// },
+// Populated at init time by scanning proto method options.
+var breakingChanges map[string]BreakingChange
+
+func init() {
+	breakingChanges = buildBreakingChanges()
+}
+
+// buildBreakingChanges discovers min_sdk_version annotations on all registered
+// gRPC methods via proto reflection and returns the corresponding map.
+func buildBreakingChanges() map[string]BreakingChange {
+	out := make(map[string]BreakingChange)
+
+	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
+		services := fd.Services()
+		for i := 0; i < services.Len(); i++ {
+			sd := services.Get(i)
+			methods := sd.Methods()
+			for j := 0; j < methods.Len(); j++ {
+				md := methods.Get(j)
+				opts, ok := md.Options().(*descriptorpb.MethodOptions)
+				if !ok || opts == nil {
+					continue
+				}
+
+				if !proto.HasExtension(opts, arkv1.E_MinSdkVersion) {
+					continue
+				}
+
+				ver := proto.GetExtension(opts, arkv1.E_MinSdkVersion).(string)
+				parsed, err := semver.NewVersion(ver)
+				if err != nil {
+					continue
+				}
+
+				// Build the gRPC full method name: /<package>.<service>/<method>
+				fullMethod := fmt.Sprintf("/%s/%s",
+					sd.FullName(), md.Name())
+
+				out[fullMethod] = BreakingChange{
+					MinVersion: *parsed,
+					Message: fmt.Sprintf("%s requires SDK version >= %s",
+						md.Name(), ver),
+				}
+			}
+		}
+		return true
+	})
+
+	return out
 }
 
 const sdkVersionHeader = "x-ark-sdk-version"
