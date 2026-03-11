@@ -126,6 +126,79 @@ func TestResolveMinAmounts(t *testing.T) {
 	}
 }
 
+func TestCheckUnrolledVtxoExpiry(t *testing.T) {
+	now := parseTime(t, "2023-10-10 12:00:00")
+	sessionDuration := 30 * time.Second
+	customMargin := 5 * time.Minute
+
+	tests := []struct {
+		description                 string
+		unrolledVtxoMinExpiryMargin time.Duration
+		csvExpiresAt                time.Time
+		expectErr                   bool
+	}{
+		{
+			description:                 "margin=0, CSV expires after session duration",
+			unrolledVtxoMinExpiryMargin: 0,
+			csvExpiresAt:                now.Add(1 * time.Minute),
+			expectErr:                   false,
+		},
+		{
+			description:                 "margin=0, CSV expires within session duration",
+			unrolledVtxoMinExpiryMargin: 0,
+			csvExpiresAt:                now.Add(10 * time.Second),
+			expectErr:                   true,
+		},
+		{
+			description:                 "margin=0, CSV expires exactly at session duration boundary",
+			unrolledVtxoMinExpiryMargin: 0,
+			csvExpiresAt:                now.Add(sessionDuration),
+			expectErr:                   false,
+		},
+		{
+			description:                 "custom margin, CSV expires after margin",
+			unrolledVtxoMinExpiryMargin: customMargin,
+			csvExpiresAt:                now.Add(10 * time.Minute),
+			expectErr:                   false,
+		},
+		{
+			description:                 "custom margin, CSV expires within margin",
+			unrolledVtxoMinExpiryMargin: customMargin,
+			csvExpiresAt:                now.Add(2 * time.Minute),
+			expectErr:                   true,
+		},
+		{
+			description:                 "custom margin, CSV expires exactly at margin boundary",
+			unrolledVtxoMinExpiryMargin: customMargin,
+			csvExpiresAt:                now.Add(customMargin),
+			expectErr:                   false,
+		},
+		{
+			description:                 "custom margin overrides session duration",
+			unrolledVtxoMinExpiryMargin: customMargin,
+			csvExpiresAt:                now.Add(1 * time.Minute),
+			expectErr:                   true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.description, func(t *testing.T) {
+			svc := &service{
+				sessionDuration:             sessionDuration,
+				unrolledVtxoMinExpiryMargin: tc.unrolledVtxoMinExpiryMargin,
+			}
+
+			err := svc.checkUnrolledVtxoExpiry(tc.csvExpiresAt, now)
+			if tc.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "unrolled vtxo CSV expires too soon")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func parseTime(t *testing.T, value string) time.Time {
 	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
 	require.NoError(t, err)
