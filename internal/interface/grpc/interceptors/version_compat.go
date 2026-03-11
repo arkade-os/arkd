@@ -26,19 +26,40 @@ type BreakingChange struct {
 // Populated at init time by scanning proto method options.
 var breakingChanges map[string]BreakingChange
 
+// serviceMinVersions maps gRPC service full names (e.g. "ark.v1.ArkService")
+// to a global minimum SDK version for all methods in that service.
+// Populated at init time by scanning proto service options.
+var serviceMinVersions map[string]BreakingChange
+
 func init() {
-	breakingChanges = buildBreakingChanges()
+	serviceMinVersions, breakingChanges = buildVersionMaps()
 }
 
-// buildBreakingChanges discovers min_sdk_version annotations on all registered
-// gRPC methods via proto reflection and returns the corresponding map.
-func buildBreakingChanges() map[string]BreakingChange {
-	out := make(map[string]BreakingChange)
+// buildVersionMaps discovers service_min_sdk_version and min_sdk_version
+// annotations on all registered gRPC services and methods via proto reflection.
+func buildVersionMaps() (map[string]BreakingChange, map[string]BreakingChange) {
+	svcMap := make(map[string]BreakingChange)
+	methodMap := make(map[string]BreakingChange)
 
 	protoregistry.GlobalFiles.RangeFiles(func(fd protoreflect.FileDescriptor) bool {
 		services := fd.Services()
 		for i := 0; i < services.Len(); i++ {
 			sd := services.Get(i)
+
+			// Check service-level min_sdk_version.
+			svcOpts, ok := sd.Options().(*descriptorpb.ServiceOptions)
+			if ok && svcOpts != nil && proto.HasExtension(svcOpts, arkv1.E_ServiceMinSdkVersion) {
+				ver := proto.GetExtension(svcOpts, arkv1.E_ServiceMinSdkVersion).(string)
+				if parsed, err := semver.NewVersion(ver); err == nil {
+					svcMap[string(sd.FullName())] = BreakingChange{
+						MinVersion: *parsed,
+						Message: fmt.Sprintf("service %s requires SDK version >= %s",
+							sd.Name(), ver),
+					}
+				}
+			}
+
+			// Check method-level min_sdk_version.
 			methods := sd.Methods()
 			for j := 0; j < methods.Len(); j++ {
 				md := methods.Get(j)
@@ -61,7 +82,7 @@ func buildBreakingChanges() map[string]BreakingChange {
 				fullMethod := fmt.Sprintf("/%s/%s",
 					sd.FullName(), md.Name())
 
-				out[fullMethod] = BreakingChange{
+				methodMap[fullMethod] = BreakingChange{
 					MinVersion: *parsed,
 					Message: fmt.Sprintf("%s requires SDK version >= %s",
 						md.Name(), ver),
@@ -71,14 +92,35 @@ func buildBreakingChanges() map[string]BreakingChange {
 		return true
 	})
 
-	return out
+	return svcMap, methodMap
 }
 
 const sdkVersionHeader = "x-ark-sdk-version"
 
+// serviceName extracts the service full name from a gRPC full method string.
+// For example, "/ark.v1.ArkService/GetInfo" returns "ark.v1.ArkService".
+func serviceName(fullMethod string) string {
+	// fullMethod is "/<service>/<method>"
+	name := strings.TrimPrefix(fullMethod, "/")
+	if idx := strings.LastIndex(name, "/"); idx >= 0 {
+		return name[:idx]
+	}
+	return name
+}
+
 func checkVersionCompat(ctx context.Context, fullMethod string) error {
-	bc, ok := breakingChanges[fullMethod]
-	if !ok {
+	// Find the tightest constraint: pick whichever is higher between the
+	// service-level and method-level minimum.
+	var bc *BreakingChange
+	if svc, ok := serviceMinVersions[serviceName(fullMethod)]; ok {
+		bc = &svc
+	}
+	if method, ok := breakingChanges[fullMethod]; ok {
+		if bc == nil || bc.MinVersion.LessThan(method.MinVersion) {
+			bc = &method
+		}
+	}
+	if bc == nil {
 		return nil
 	}
 

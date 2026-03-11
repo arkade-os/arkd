@@ -23,14 +23,33 @@ const (
 
 var file_ark_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
-		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtendedType:  (*descriptorpb.ServiceOptions)(nil),
 		ExtensionType: (*string)(nil),
 		Field:         50000,
+		Name:          "ark.v1.service_min_sdk_version",
+		Tag:           "bytes,50000,opt,name=service_min_sdk_version",
+		Filename:      "ark/v1/options.proto",
+	},
+	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*string)(nil),
+		Field:         50001,
 		Name:          "ark.v1.min_sdk_version",
-		Tag:           "bytes,50000,opt,name=min_sdk_version",
+		Tag:           "bytes,50001,opt,name=min_sdk_version",
 		Filename:      "ark/v1/options.proto",
 	},
 }
+
+// Extension fields to descriptorpb.ServiceOptions.
+var (
+	// min_sdk_version specifies the minimum SDK version required to call any
+	// RPC in this service. The value must be a valid semver string (e.g. "0.9.0").
+	// Clients sending an X-Ark-Sdk-Version header below this version will
+	// receive an SDK_VERSION_TOO_OLD error for every method in this service.
+	//
+	// optional string service_min_sdk_version = 50000;
+	E_ServiceMinSdkVersion = &file_ark_v1_options_proto_extTypes[0]
+)
 
 // Extension fields to descriptorpb.MethodOptions.
 var (
@@ -39,28 +58,31 @@ var (
 	// sending an X-Ark-Sdk-Version header below this version will receive an
 	// SDK_VERSION_TOO_OLD error.
 	//
-	// optional string min_sdk_version = 50000;
-	E_MinSdkVersion = &file_ark_v1_options_proto_extTypes[0]
+	// optional string min_sdk_version = 50001;
+	E_MinSdkVersion = &file_ark_v1_options_proto_extTypes[1]
 )
 
 var File_ark_v1_options_proto protoreflect.FileDescriptor
 
 const file_ark_v1_options_proto_rawDesc = "" +
 	"\n" +
-	"\x14ark/v1/options.proto\x12\x06ark.v1\x1a google/protobuf/descriptor.proto:K\n" +
-	"\x0fmin_sdk_version\x12\x1e.google.protobuf.MethodOptions\x18І\x03 \x01(\tR\rminSdkVersion\x88\x01\x01B{\n" +
+	"\x14ark/v1/options.proto\x12\x06ark.v1\x1a google/protobuf/descriptor.proto:[\n" +
+	"\x17service_min_sdk_version\x12\x1f.google.protobuf.ServiceOptions\x18І\x03 \x01(\tR\x14serviceMinSdkVersion\x88\x01\x01:K\n" +
+	"\x0fmin_sdk_version\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\tR\rminSdkVersion\x88\x01\x01B{\n" +
 	"\n" +
 	"com.ark.v1B\fOptionsProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 
 var file_ark_v1_options_proto_goTypes = []any{
-	(*descriptorpb.MethodOptions)(nil), // 0: google.protobuf.MethodOptions
+	(*descriptorpb.ServiceOptions)(nil), // 0: google.protobuf.ServiceOptions
+	(*descriptorpb.MethodOptions)(nil),  // 1: google.protobuf.MethodOptions
 }
 var file_ark_v1_options_proto_depIdxs = []int32{
-	0, // 0: ark.v1.min_sdk_version:extendee -> google.protobuf.MethodOptions
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	0, // [0:1] is the sub-list for extension extendee
+	0, // 0: ark.v1.service_min_sdk_version:extendee -> google.protobuf.ServiceOptions
+	1, // 1: ark.v1.min_sdk_version:extendee -> google.protobuf.MethodOptions
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	0, // [0:2] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
 }
 
@@ -76,7 +98,7 @@ func file_ark_v1_options_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_options_proto_rawDesc), len(file_ark_v1_options_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   0,
-			NumExtensions: 1,
+			NumExtensions: 2,
 			NumServices:   0,
 		},
 		GoTypes:           file_ark_v1_options_proto_goTypes,
