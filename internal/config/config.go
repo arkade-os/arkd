@@ -118,15 +118,16 @@ type Config struct {
 	UnlockerFilePath string // file unlocker
 	UnlockerPassword string // env unlocker
 
-	RoundMinParticipantsCount int64
-	RoundMaxParticipantsCount int64
-	UtxoMaxAmount             int64
-	UtxoMinAmount             int64
-	VtxoMaxAmount             int64
-	VtxoMinAmount             int64
-	SettlementMinExpiryGap    int64
-	MaxTxWeight               uint64
-	AssetTxMaxWeightRatio     float64
+	RoundMinParticipantsCount   int64
+	RoundMaxParticipantsCount   int64
+	UtxoMaxAmount               int64
+	UtxoMinAmount               int64
+	VtxoMaxAmount               int64
+	VtxoMinAmount               int64
+	SettlementMinExpiryGap      int64
+	UnrolledVtxoMinExpiryMargin int64
+	MaxTxWeight                 uint64
+	AssetTxMaxWeightRatio       float64
 
 	EnablePprof bool
 
@@ -212,6 +213,9 @@ var (
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
+	// 0 means fallback to session duration.
+	UnrolledVtxoMinExpiryMargin = "UNROLLED_VTXO_MIN_EXPIRY_MARGIN"
 	// Max transaction weight accepted by the ark server
 	MaxTxWeight = "MAX_TX_WEIGHT"
 	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
@@ -252,6 +256,7 @@ var (
 	defaultHeartbeatInterval             = 60 // seconds
 	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
+	defaultUnrolledVtxoMinExpiryMargin   = 0 // 0 means fallback to sessionDuration
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
@@ -294,6 +299,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
+	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
@@ -406,6 +412,7 @@ func LoadConfig() (*Config, error) {
 		AllowCSVBlockType:             allowCSVBlockType,
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
+		UnrolledVtxoMinExpiryMargin:   viper.GetInt64(UnrolledVtxoMinExpiryMargin),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
@@ -859,6 +866,7 @@ func (c *Config) appService() error {
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
+		c.UnrolledVtxoMinExpiryMargin,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
 	)
 	if err != nil {
