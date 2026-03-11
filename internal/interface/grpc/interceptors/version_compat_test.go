@@ -3,26 +3,86 @@ package interceptors
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"testing"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/coreos/go-semver/semver"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 const testMethod = "/ark.v1.ArkService/TestMethod"
 const testService = "ark.v1.ArkService"
 
-// Integration tests: verify buildVersionMaps picks up real proto annotations
-// from test_version_compat.proto (TestVersionService).
-
+// Integration test constants – these match the synthetic descriptor
+// registered in TestMain.
 const (
 	testVersionSvc     = "ark.v1.TestVersionService"
 	breakingMethodFull = "/ark.v1.TestVersionService/BreakingMethod"
 	stableMethodFull   = "/ark.v1.TestVersionService/StableMethod"
 )
+
+func TestMain(m *testing.M) {
+	// Build a synthetic proto file descriptor with both service-level and
+	// method-level version annotations, so integration tests can exercise
+	// buildVersionMaps against real proto reflection without polluting the
+	// public ark.v1 proto package.
+	svcOpts := &descriptorpb.ServiceOptions{}
+	proto.SetExtension(svcOpts, arkv1.E_ServiceMinSdkVersion, "1.0.0")
+
+	methodOpts := &descriptorpb.MethodOptions{}
+	proto.SetExtension(methodOpts, arkv1.E_MinSdkVersion, "2.0.0")
+
+	fdp := &descriptorpb.FileDescriptorProto{
+		Name:       proto.String("test_version_compat.proto"),
+		Package:    proto.String("ark.v1"),
+		Syntax:     proto.String("proto3"),
+		Dependency: []string{"ark/v1/options.proto", "ark/v1/service.proto"},
+		Service: []*descriptorpb.ServiceDescriptorProto{
+			{
+				Name:    proto.String("TestVersionService"),
+				Options: svcOpts,
+				Method: []*descriptorpb.MethodDescriptorProto{
+					{
+						Name:       proto.String("BreakingMethod"),
+						InputType:  proto.String(".ark.v1.GetInfoRequest"),
+						OutputType: proto.String(".ark.v1.GetInfoResponse"),
+						Options:    methodOpts,
+					},
+					{
+						Name:       proto.String("StableMethod"),
+						InputType:  proto.String(".ark.v1.GetInfoRequest"),
+						OutputType: proto.String(".ark.v1.GetInfoResponse"),
+					},
+				},
+			},
+		},
+	}
+
+	fd, err := protodesc.NewFile(fdp, protoregistry.GlobalFiles)
+	if err != nil {
+		panic(fmt.Sprintf("failed to build test file descriptor: %v", err))
+	}
+	if err := protoregistry.GlobalFiles.RegisterFile(fd); err != nil {
+		panic(fmt.Sprintf("failed to register test file descriptor: %v", err))
+	}
+
+	// Rebuild the version maps so they include the synthetic service.
+	serviceMinVersions, breakingChanges = buildVersionMaps()
+
+	os.Exit(m.Run())
+}
+
+// Integration tests: verify buildVersionMaps picks up real proto annotations
+// from the synthetic TestVersionService descriptor.
 
 func TestBuildVersionMaps_ServiceAnnotation(t *testing.T) {
 	svcMap, _ := buildVersionMaps()
@@ -122,6 +182,8 @@ func TestIntegration_BreakingMethod_AboveBoth(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, called)
 }
+
+// Unit tests using injected map entries.
 
 func withBreakingChange(t *testing.T, minVersion string, fn func()) {
 	t.Helper()
@@ -320,7 +382,7 @@ func TestStreamVersionCompat_PassesThrough(t *testing.T) {
 	})
 }
 
-// Service-level minimum version tests.
+// Service-level minimum version tests (injected).
 
 func TestServiceMinVersion_BelowMinimum(t *testing.T) {
 	withServiceMinVersion(t, "1.0.0", func() {

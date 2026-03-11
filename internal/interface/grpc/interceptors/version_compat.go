@@ -50,12 +50,17 @@ func buildVersionMaps() (map[string]BreakingChange, map[string]BreakingChange) {
 			svcOpts, ok := sd.Options().(*descriptorpb.ServiceOptions)
 			if ok && svcOpts != nil && proto.HasExtension(svcOpts, arkv1.E_ServiceMinSdkVersion) {
 				ver := proto.GetExtension(svcOpts, arkv1.E_ServiceMinSdkVersion).(string)
-				if parsed, err := semver.NewVersion(ver); err == nil {
-					svcMap[string(sd.FullName())] = BreakingChange{
-						MinVersion: *parsed,
-						Message: fmt.Sprintf("service %s requires SDK version >= %s",
-							sd.Name(), ver),
-					}
+				parsed, err := semver.NewVersion(ver)
+				if err != nil {
+					panic(fmt.Sprintf(
+						"invalid service_min_sdk_version %q on %s: %v",
+						ver, sd.FullName(), err,
+					))
+				}
+				svcMap[string(sd.FullName())] = BreakingChange{
+					MinVersion: *parsed,
+					Message: fmt.Sprintf("service %s requires SDK version >= %s",
+						sd.Name(), ver),
 				}
 			}
 
@@ -75,7 +80,10 @@ func buildVersionMaps() (map[string]BreakingChange, map[string]BreakingChange) {
 				ver := proto.GetExtension(opts, arkv1.E_MinSdkVersion).(string)
 				parsed, err := semver.NewVersion(ver)
 				if err != nil {
-					continue
+					panic(fmt.Sprintf(
+						"invalid min_sdk_version %q on %s/%s: %v",
+						ver, sd.FullName(), md.Name(), err,
+					))
 				}
 
 				// Build the gRPC full method name: /<package>.<service>/<method>
