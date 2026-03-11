@@ -61,11 +61,11 @@ type ArkClient interface {
 	) (*SendOffChainRes, error)
 	FinalizePendingTxs(ctx context.Context, createdAfter *time.Time) ([]string, error)
 	// ** Batch session **
-	Settle(ctx context.Context, opts ...SettleOption) (*SettleRes, error)
+	Settle(ctx context.Context, opts ...BatchSessionOption) (*SettleRes, error)
 	CollaborativeExit(
-		ctx context.Context, addr string, amount uint64, opts ...SettleOption,
+		ctx context.Context, addr string, amount uint64, opts ...BatchSessionOption,
 	) (*CollaborativeExitRes, error)
-	RedeemNotes(ctx context.Context, notes []string, opts ...SettleOption) (*RedeemNotesRes, error)
+	RedeemNotes(ctx context.Context, notes []string, opts ...BatchSessionOption) (*RedeemNotesRes, error)
 	RegisterIntent(
 		ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
 		outputs []types.Receiver, cosignersPublicKeys []string,

@@ -615,7 +615,7 @@ func (a *service) handleBatchEvents(
 		}
 	}
 
-	options := []BatchSessionOption{WithCancel(cancelCh)}
+	options := []BatchEventHandlerOption{WithCancel(cancelCh)}
 
 	if skipVtxoTreeSigning {
 		options = append(options, WithSkipVtxoTreeSigning())

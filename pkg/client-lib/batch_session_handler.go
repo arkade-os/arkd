@@ -74,21 +74,21 @@ type BatchEventsHandler interface {
 	) error
 }
 
-type BatchSessionOption func(*options)
+type BatchEventHandlerOption func(*options)
 
-func WithSkipVtxoTreeSigning() BatchSessionOption {
+func WithSkipVtxoTreeSigning() BatchEventHandlerOption {
 	return func(o *options) {
 		o.signVtxoTree = false
 	}
 }
 
-func WithReplay(ch chan<- any) BatchSessionOption {
+func WithReplay(ch chan<- any) BatchEventHandlerOption {
 	return func(o *options) {
 		o.replayEventsCh = ch
 	}
 }
 
-func WithCancel(cancelCh <-chan struct{}) BatchSessionOption {
+func WithCancel(cancelCh <-chan struct{}) BatchEventHandlerOption {
 	return func(o *options) {
 		o.cancelCh = cancelCh
 	}
@@ -96,7 +96,7 @@ func WithCancel(cancelCh <-chan struct{}) BatchSessionOption {
 
 func JoinBatchSession(
 	ctx context.Context, eventsCh <-chan client.BatchEventChannel,
-	eventsHandler BatchEventsHandler, opts ...BatchSessionOption,
+	eventsHandler BatchEventsHandler, opts ...BatchEventHandlerOption,
 ) (string, string, time.Duration, []string, *tree.TxTree, error) {
 	options := newOptions()
 
