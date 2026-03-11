@@ -457,10 +457,12 @@ func (a *service) joinBatchWithRetry(
 			options.eventsCh, options.cancelCh,
 		)
 		if err != nil {
-			deleteIntent()
-			log.WithError(err).Warn("batch failed, retrying...")
-			retryCount++
-			time.Sleep(100 * time.Millisecond)
+			if retryCount < maxRetry-1 {
+				time.Sleep(100 * time.Millisecond)
+				deleteIntent()
+				log.WithError(err).Warn("batch failed, retrying...")
+				retryCount++
+			}
 			batchErr = err
 			continue
 		}
