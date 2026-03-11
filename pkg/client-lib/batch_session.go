@@ -25,7 +25,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (a *service) Settle(ctx context.Context, opts ...SettleOption) (*SettleRes, error) {
+func (a *service) Settle(ctx context.Context, opts ...BatchSessionOption) (*SettleRes, error) {
 	if err := a.safeCheck(); err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (a *service) Settle(ctx context.Context, opts ...SettleOption) (*SettleRes,
 }
 
 func (a *service) RedeemNotes(
-	ctx context.Context, notes []string, opts ...SettleOption,
+	ctx context.Context, notes []string, opts ...BatchSessionOption,
 ) (*RedeemNotesRes, error) {
 	if err := a.safeCheck(); err != nil {
 		return nil, err
@@ -110,7 +110,7 @@ func (a *service) RedeemNotes(
 }
 
 func (a *service) CollaborativeExit(
-	ctx context.Context, addr string, amount uint64, opts ...SettleOption,
+	ctx context.Context, addr string, amount uint64, opts ...BatchSessionOption,
 ) (*CollaborativeExitRes, error) {
 	if err := a.safeCheck(); err != nil {
 		return nil, err
@@ -402,7 +402,7 @@ func (a *service) getClaimableBoardingUtxos(
 }
 
 func (a *service) joinBatchWithRetry(
-	ctx context.Context, notes []string, outputs []types.Receiver, options settleOptions,
+	ctx context.Context, notes []string, outputs []types.Receiver, options batchSessionOptions,
 	selectedCoins []types.VtxoWithTapTree, selectedBoardingCoins []types.Utxo,
 ) (*BatchTxRes, error) {
 	inputs, exitLeaves, arkFields, assetInputs, err := toIntentInputs(
@@ -431,7 +431,10 @@ func (a *service) joinBatchWithRetry(
 		}
 	}
 
-	maxRetry := 3
+	maxRetry := 1
+	if options.retryNum > 0 {
+		maxRetry = options.retryNum
+	}
 	retryCount := 0
 	var batchErr error
 	for retryCount < maxRetry {
@@ -540,7 +543,7 @@ func (a *service) joinBatchWithRetry(
 }
 
 func (a *service) handleOptions(
-	options settleOptions, inputs []intent.Input, notesInputs []string,
+	options batchSessionOptions, inputs []intent.Input, notesInputs []string,
 ) ([]tree.SignerSession, []string, error) {
 	sessions := make([]tree.SignerSession, 0)
 	sessions = append(sessions, options.extraSignerSessions...)
