@@ -170,7 +170,7 @@ func TestStartReconnectingStream(t *testing.T) {
 	// RED: currently fails because L267 calls timedOutRecv with currentStream
 	// (the old broken stream) instead of newStream, producing a spurious extra
 	// READY between DISCONNECTED and RECONNECTED.
-	t.Run("emits correct Connection event qequence after reconnection", func(t *testing.T) {
+	t.Run("emits correct Connection event sequence after reconnection", func(t *testing.T) {
 		saved := GrpcReconnectConfig
 		GrpcReconnectConfig.InitialDelay = 0
 		defer func() { GrpcReconnectConfig = saved }()
