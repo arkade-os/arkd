@@ -380,12 +380,12 @@ func settle(ctx *cli.Context) error {
 		return err
 	}
 
-	txID, err := arkSdkClient.Settle(ctx.Context)
+	res, err := arkSdkClient.Settle(ctx.Context)
 	if err != nil {
 		return err
 	}
 	return printJSON(map[string]interface{}{
-		"txid": txID,
+		"txid": res.CommitmentTxid,
 	})
 }
 
@@ -431,7 +431,7 @@ func send(ctx *cli.Context) error {
 		return err
 	}
 
-	return sendBitcoin(ctx, receivers)
+	return sendOffchain(ctx, receivers)
 }
 
 func balance(ctx *cli.Context) error {
@@ -461,7 +461,8 @@ func redeem(ctx *cli.Context) error {
 	}
 
 	if force {
-		return arkSdkClient.Unroll(ctx.Context)
+		_, err := arkSdkClient.Unroll(ctx.Context)
+		return err
 	}
 
 	if complete {
@@ -477,14 +478,14 @@ func redeem(ctx *cli.Context) error {
 	if amount == 0 {
 		return fmt.Errorf("missing amount")
 	}
-	txID, err := arkSdkClient.CollaborativeExit(
+	res, err := arkSdkClient.CollaborativeExit(
 		ctx.Context, address, amount,
 	)
 	if err != nil {
 		return err
 	}
 	return printJSON(map[string]interface{}{
-		"txid": txID,
+		"txid": res.CommitmentTxid,
 	})
 }
 
@@ -497,12 +498,12 @@ func recoverVtxos(ctx *cli.Context) error {
 		return err
 	}
 
-	txid, err := arkSdkClient.Settle(ctx.Context)
+	res, err := arkSdkClient.Settle(ctx.Context)
 	if err != nil {
 		return err
 	}
 	return printJSON(map[string]interface{}{
-		"txid": txid,
+		"txid": res.CommitmentTxid,
 	})
 }
 
@@ -517,12 +518,12 @@ func redeemNotes(ctx *cli.Context) error {
 		return err
 	}
 
-	txID, err := arkSdkClient.RedeemNotes(ctx.Context, notes)
+	res, err := arkSdkClient.RedeemNotes(ctx.Context, notes)
 	if err != nil {
 		return err
 	}
 	return printJSON(map[string]interface{}{
-		"txid": txID,
+		"txid": res.CommitmentTxid,
 	})
 }
 
@@ -575,7 +576,7 @@ func issue(ctx *cli.Context) error {
 		controlAssetPolicy = types.NewControlAsset{Amount: controlAssetAmount}
 	}
 
-	arkTxid, assetIds, err := arkSdkClient.IssueAsset(
+	res, err := arkSdkClient.IssueAsset(
 		ctx.Context, amount, controlAssetPolicy, metadataList,
 	)
 	if err != nil {
@@ -583,13 +584,13 @@ func issue(ctx *cli.Context) error {
 	}
 
 	resControlAssetId := controlAssetId
-	assetId := assetIds[0].String()
-	if len(assetIds) == 2 {
-		resControlAssetId = assetIds[0].String()
-		assetId = assetIds[1].String()
+	assetId := res.IssuedAssets[0].String()
+	if len(res.IssuedAssets) == 2 {
+		resControlAssetId = res.IssuedAssets[0].String()
+		assetId = res.IssuedAssets[1].String()
 	}
 	return printJSON(map[string]any{
-		"txid":             arkTxid,
+		"txid":             res.Txid,
 		"asset_id":         assetId,
 		"control_asset_id": resControlAssetId,
 	})
@@ -614,12 +615,12 @@ func reissue(ctx *cli.Context) error {
 		return err
 	}
 
-	arkTxid, err := arkSdkClient.ReissueAsset(ctx.Context, assetId, amount)
+	res, err := arkSdkClient.ReissueAsset(ctx.Context, assetId, amount)
 	if err != nil {
 		return err
 	}
 	return printJSON(map[string]any{
-		"txid": arkTxid,
+		"txid": res.Txid,
 	})
 }
 
@@ -642,12 +643,12 @@ func burn(ctx *cli.Context) error {
 		return err
 	}
 
-	arkTxid, err := arkSdkClient.BurnAsset(ctx.Context, assetId, amount)
+	res, err := arkSdkClient.BurnAsset(ctx.Context, assetId, amount)
 	if err != nil {
 		return err
 	}
 	return printJSON(map[string]any{
-		"txid": arkTxid,
+		"txid": res.Txid,
 	})
 }
 
@@ -739,7 +740,7 @@ func parseReceivers(receveirsJSON string) ([]types.Receiver, error) {
 	return receivers, nil
 }
 
-func sendBitcoin(ctx *cli.Context, receivers []types.Receiver) error {
+func sendOffchain(ctx *cli.Context, receivers []types.Receiver) error {
 	var onchainReceivers, offchainReceivers []types.Receiver
 
 	for _, receiver := range receivers {
@@ -751,20 +752,20 @@ func sendBitcoin(ctx *cli.Context, receivers []types.Receiver) error {
 	}
 
 	if len(onchainReceivers) > 0 {
-		txid, err := arkSdkClient.CollaborativeExit(
+		res, err := arkSdkClient.CollaborativeExit(
 			ctx.Context, onchainReceivers[0].To, onchainReceivers[0].Amount,
 		)
 		if err != nil {
 			return err
 		}
-		return printJSON(map[string]string{"txid": txid})
+		return printJSON(map[string]string{"txid": res.CommitmentTxid})
 	}
 
-	arkTxid, err := arkSdkClient.SendOffChain(ctx.Context, offchainReceivers)
+	res, err := arkSdkClient.SendOffChain(ctx.Context, offchainReceivers)
 	if err != nil {
 		return err
 	}
-	return printJSON(map[string]string{"txid": arkTxid})
+	return printJSON(map[string]string{"txid": res.Txid})
 }
 
 func readPassword(ctx *cli.Context) ([]byte, error) {

@@ -50,6 +50,21 @@ func (c Config) CheckpointExitPath() []byte {
 	return buf
 }
 
+type StreamConnectionState string
+
+const (
+	StreamConnectionStateDisconnected StreamConnectionState = "DISCONNECTED"
+	StreamConnectionStateReconnected  StreamConnectionState = "RECONNECTED"
+	StreamConnectionStateReady        StreamConnectionState = "READY"
+)
+
+type StreamConnectionEvent struct {
+	State          StreamConnectionState
+	At             time.Time
+	DisconnectedAt time.Time
+	Err            error
+}
+
 type FeeInfo struct {
 	IntentFees arkfee.Config
 	TxFeeRate  float64
@@ -58,6 +73,11 @@ type FeeInfo struct {
 type DeprecatedSigner struct {
 	PubKey     *btcec.PublicKey
 	CutoffDate time.Time
+}
+
+type Address struct {
+	Tapscripts []string
+	Address    string
 }
 
 type Outpoint struct {

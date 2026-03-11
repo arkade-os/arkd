@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -40,22 +41,22 @@ func (h *delegateBatchEventsHandler) OnStreamStarted(
 
 func (h *delegateBatchEventsHandler) OnBatchStarted(
 	ctx context.Context, event client.BatchStartedEvent,
-) (bool, error) {
+) (bool, time.Duration, error) {
 	buf := sha256.Sum256([]byte(h.intentId))
 	hashedIntentId := hex.EncodeToString(buf[:])
 
 	for _, hash := range event.HashedIntentIds {
 		if hash == hashedIntentId {
 			if err := h.client.ConfirmRegistration(ctx, h.intentId); err != nil {
-				return false, err
+				return false, -1, err
 			}
 			h.cacheBatchId = event.Id
 			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
-			return false, nil
+			return false, time.Duration(event.BatchExpiry) * time.Second, nil
 		}
 	}
 
-	return true, nil
+	return true, -1, nil
 }
 
 func (h *delegateBatchEventsHandler) OnBatchFinalized(
@@ -167,15 +168,15 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	event client.BatchFinalizationEvent,
 	vtxoTree *tree.TxTree,
 	connectorTree *tree.TxTree,
-) error {
+) ([]string, error) {
 	forfeitPtx, err := psbt.NewFromRawBytes(strings.NewReader(h.partialForfeitTx), true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	updater, err := psbt.NewUpdater(forfeitPtx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// add the connector input to the forfeit tx
@@ -196,12 +197,12 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	})
 
 	if err := updater.AddInSighashType(txscript.SigHashDefault, 0); err != nil {
-		return err
+		return nil, err
 	}
 
 	encodedForfeitTx, err := updater.Upsbt.B64Encode()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// sign the forfeit tx
@@ -211,18 +212,21 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 		encodedForfeitTx,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return h.client.SubmitSignedForfeitTxs(
+	if err := h.client.SubmitSignedForfeitTxs(
 		ctx, []string{signedForfeitTx}, "",
-	)
+	); err != nil {
+		return nil, err
+	}
+	return []string{signedForfeitTx}, nil
 }
 
 type customBatchEventsHandler struct {
 	onStreamStarted        func(ctx context.Context, event client.StreamStartedEvent) error
-	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, error)
-	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) error
+	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, time.Duration, error)
+	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) ([]string, error)
 	onBatchFinalized       func(ctx context.Context, event client.BatchFinalizedEvent) error
 	onBatchFailed          func(ctx context.Context, event client.BatchFailedEvent) error
 	onTreeTxEvent          func(ctx context.Context, event client.TreeTxEvent) error
@@ -244,11 +248,11 @@ func (h *customBatchEventsHandler) OnStreamStarted(
 func (h *customBatchEventsHandler) OnBatchStarted(
 	ctx context.Context,
 	event client.BatchStartedEvent,
-) (bool, error) {
+) (bool, time.Duration, error) {
 	if h.onBatchStarted != nil {
 		return h.onBatchStarted(ctx, event)
 	}
-	return false, nil
+	return false, -1, nil
 }
 
 func (h *customBatchEventsHandler) OnBatchFinalization(
@@ -256,11 +260,11 @@ func (h *customBatchEventsHandler) OnBatchFinalization(
 	event client.BatchFinalizationEvent,
 	vtxoTree *tree.TxTree,
 	connectorTree *tree.TxTree,
-) error {
+) ([]string, error) {
 	if h.onBatchFinalization != nil {
 		return h.onBatchFinalization(ctx, event, vtxoTree, connectorTree)
 	}
-	return nil
+	return nil, nil
 }
 
 func (h *customBatchEventsHandler) OnBatchFinalized(
