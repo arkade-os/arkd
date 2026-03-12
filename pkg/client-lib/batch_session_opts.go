@@ -73,7 +73,7 @@ func WithRetries(num int) BatchSessionOption {
 		if o.retryNum > 0 {
 			return fmt.Errorf("retry num already set")
 		}
-		if num <= 0 {
+		if num <= 0 || num > maxRetries {
 			return fmt.Errorf("retry num must be in range [1, %d]", maxRetries)
 		}
 		o.retryNum = num

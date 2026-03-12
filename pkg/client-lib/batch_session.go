@@ -461,8 +461,8 @@ func (a *service) joinBatchWithRetry(
 				time.Sleep(100 * time.Millisecond)
 				deleteIntent()
 				log.WithError(err).Warn("batch failed, retrying...")
-				retryCount++
 			}
+			retryCount++
 			batchErr = err
 			continue
 		}
