@@ -365,8 +365,8 @@ func receive(ctx *cli.Context) error {
 		return err
 	}
 	return printJSON(map[string]interface{}{
-		"boarding_address": boardingAddr,
-		"offchain_address": offchainAddr,
+		"boarding_address": boardingAddr.Address,
+		"offchain_address": offchainAddr.Address,
 		"onchain_address":  onchainAddr,
 	})
 }
