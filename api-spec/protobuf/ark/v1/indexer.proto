@@ -3,6 +3,7 @@ syntax = "proto3";
 package ark.v1;
 
 import "meshapi/gateway/annotations.proto";
+import "ark/v1/types.proto";
 
 service IndexerService {
   // GetCommitmentTx returns information about a specific commitment transaction identified by the
@@ -210,15 +211,19 @@ message GetVtxosResponse {
 message GetVtxoChainRequest {
   IndexerOutpoint outpoint = 1;
   IndexerPageRequest page = 2;
+  Intent intent = 3;
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
   IndexerPageResponse page = 2;
+  string auth_token = 3;
 }
 
 message GetVirtualTxsRequest {
   repeated string txids = 1;
   IndexerPageRequest page = 2;
+  string auth_token = 3;
+
 }
 
 message GetVirtualTxsResponse {
