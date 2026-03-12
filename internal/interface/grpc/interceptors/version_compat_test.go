@@ -187,21 +187,35 @@ func TestIntegration_BreakingMethod_AboveBoth(t *testing.T) {
 
 func withBreakingChange(t *testing.T, minVersion string, fn func()) {
 	t.Helper()
+	prev, existed := breakingChanges[testMethod]
 	breakingChanges[testMethod] = BreakingChange{
 		MinVersion: *semver.New(minVersion),
 		Message:    "TestMethod changed in v" + minVersion,
 	}
-	defer delete(breakingChanges, testMethod)
+	defer func() {
+		if existed {
+			breakingChanges[testMethod] = prev
+		} else {
+			delete(breakingChanges, testMethod)
+		}
+	}()
 	fn()
 }
 
 func withServiceMinVersion(t *testing.T, minVersion string, fn func()) {
 	t.Helper()
+	prev, existed := serviceMinVersions[testService]
 	serviceMinVersions[testService] = BreakingChange{
 		MinVersion: *semver.New(minVersion),
 		Message:    "service ArkService requires SDK version >= " + minVersion,
 	}
-	defer delete(serviceMinVersions, testService)
+	defer func() {
+		if existed {
+			serviceMinVersions[testService] = prev
+		} else {
+			delete(serviceMinVersions, testService)
+		}
+	}()
 	fn()
 }
 
