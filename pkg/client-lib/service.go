@@ -333,13 +333,13 @@ func (a *service) getVtxos(
 	}
 
 	for _, vtxo := range resp.Vtxos {
-		if vtxo.IsRecoverable() {
-			spendableVtxos = append(spendableVtxos, vtxo)
+		if vtxo.Spent || vtxo.Unrolled {
+			spentVtxos = append(spentVtxos, vtxo)
 			continue
 		}
 
-		if vtxo.Spent || vtxo.Unrolled {
-			spentVtxos = append(spentVtxos, vtxo)
+		if vtxo.IsRecoverable() {
+			spendableVtxos = append(spendableVtxos, vtxo)
 			continue
 		}
 
