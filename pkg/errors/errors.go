@@ -455,3 +455,9 @@ type VtxoWithTooManyAssetsMetadata struct {
 	AssetCount int `json:"asset_count"`
 	MaxAssets  int `json:"max_assets"`
 }
+
+type DigestMismatchMetadata struct {
+	CurrentDigest string `json:"current_digest"`
+}
+
+var DIGEST_MISMATCH = Code[DigestMismatchMetadata]{48, "DIGEST_MISMATCH", grpccodes.FailedPrecondition}

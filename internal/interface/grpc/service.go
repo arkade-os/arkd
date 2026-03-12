@@ -264,10 +264,11 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	)
 
 	s.readinessSvc = interceptors.NewReadinessService(s.appConfig.WalletService())
+	digestSvc := interceptors.NewDigestService()
 
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc),
-		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc),
+		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, digestSvc),
+		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, digestSvc),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
@@ -287,7 +288,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to create app service: %w", err)
 	}
-	appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
+	appHandler := handlers.NewAppServiceHandler(
+		s.version,
+		appSvc,
+		s.config.HeartbeatInterval,
+		digestSvc,
+	)
 	eventsCh := appSvc.GetIndexerTxChannel(ctx)
 	subscriptionTimeoutDuration := time.Minute
 	indexerHandler := handlers.NewIndexerService(
@@ -344,6 +350,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		switch key {
 		case "X-Macaroon":
 			return "macaroon", true
+		case "X-Ark-Digest":
+			return "x-ark-digest", true
 		default:
 			return key, false
 		}
