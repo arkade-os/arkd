@@ -312,13 +312,8 @@ func (a *grpcClient) GetVtxos(
 		return nil, err
 	}
 
-	vtxos := make([]types.Vtxo, 0, len(resp.GetVtxos()))
-	for _, vtxo := range resp.GetVtxos() {
-		vtxos = append(vtxos, newIndexerVtxo(vtxo))
-	}
-
 	return &indexer.VtxosResponse{
-		Vtxos: vtxos,
+		Vtxos: newIndexerVtxos(resp.GetVtxos()),
 		Page:  parsePage(resp.GetPage()),
 	}, nil
 }

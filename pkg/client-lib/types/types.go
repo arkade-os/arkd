@@ -118,7 +118,7 @@ func (v Vtxo) String() string {
 }
 
 func (v Vtxo) IsRecoverable() bool {
-	return v.Swept && !v.Spent
+	return (v.Swept || !time.Now().Before(v.ExpiresAt)) && !v.Spent
 }
 
 func (v Vtxo) Address(server *btcec.PublicKey, net arklib.Network) (string, error) {
