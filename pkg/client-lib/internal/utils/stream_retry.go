@@ -171,16 +171,37 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	reconnectCfg := GrpcReconnectConfig
 
 	// Shared output channel and guarded stream pointer used by recv and closeFn.
-	eventsCh := make(chan E)
+	// Buffer of 1 prevents the sender from blocking when the consumer is
+	// momentarily busy processing the previous event.
+	eventsCh := make(chan E, 1)
 	streamMu := sync.Mutex{}
 
-	// Emit terminal errors unless the context is already done.
+	// Emit terminal errors with best-effort delivery:
+	// try immediate send; if context is still active, wait up to 5 seconds.
+	// If context is already canceled, skip waiting to avoid teardown stalls.
 	sendTerminalErr := func(err error) bool {
+		// Fast path: immediate delivery.
 		select {
-		case <-ctx.Done():
-			return false
 		case eventsCh <- cfg.ErrorEvent(err):
 			return true
+		default:
+		}
+
+		// If caller context is already canceled, most consumers stop draining.
+		// Avoid a fixed teardown stall.
+		if ctx.Err() != nil {
+			return false
+		}
+
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		select {
+		case eventsCh <- cfg.ErrorEvent(err):
+			return true
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return false
 		}
 	}
 
