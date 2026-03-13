@@ -11,5 +11,6 @@ type RepoManager interface {
 	Convictions() domain.ConvictionRepository
 	Assets() domain.AssetRepository
 	Fees() domain.FeeRepository
+	Settings() domain.SettingsRepository
 	Close()
 }

@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ban_threshold BIGINT NOT NULL DEFAULT 0,
+    ban_duration BIGINT NOT NULL DEFAULT 0,
+    unilateral_exit_delay BIGINT NOT NULL DEFAULT 0,
+    public_unilateral_exit_delay BIGINT NOT NULL DEFAULT 0,
+    checkpoint_exit_delay BIGINT NOT NULL DEFAULT 0,
+    boarding_exit_delay BIGINT NOT NULL DEFAULT 0,
+    vtxo_tree_expiry BIGINT NOT NULL DEFAULT 0,
+    round_min_participants_count BIGINT NOT NULL DEFAULT 0,
+    round_max_participants_count BIGINT NOT NULL DEFAULT 0,
+    vtxo_min_amount BIGINT NOT NULL DEFAULT 0,
+    vtxo_max_amount BIGINT NOT NULL DEFAULT 0,
+    utxo_min_amount BIGINT NOT NULL DEFAULT 0,
+    utxo_max_amount BIGINT NOT NULL DEFAULT 0,
+    settlement_min_expiry_gap BIGINT NOT NULL DEFAULT 0,
+    vtxo_no_csv_validation_cutoff_date BIGINT NOT NULL DEFAULT 0,
+    max_tx_weight BIGINT NOT NULL DEFAULT 0,
+    updated_at BIGINT NOT NULL
+);

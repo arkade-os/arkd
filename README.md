@@ -55,7 +55,9 @@ In this documentation, you'll learn how to install and use `arkd`, a Bitcoin ser
 
 ### Configuration Options
 
-The `arkd` server can be configured using environment variables.
+The `arkd` server can be configured using environment variables and the admin settings API.
+
+#### Environment Variables
 
 | Environment Variable                | Description                                                                     | Default                        |
 |-------------------------------------|---------------------------------------------------------------------------------|--------------------------------|
@@ -73,9 +75,6 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_LIVE_STORE_TYPE`              | Cache service type (redis, inmemory)                                            | `redis`                        |
 | `ARKD_REDIS_URL`                    | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis`             | -                              |
 | `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts       | -                              |
-| `ARKD_VTXO_TREE_EXPIRY`             | VTXO tree expiry in seconds                                                     | `604672` (7 days)              |
-| `ARKD_UNILATERAL_EXIT_DELAY`        | Unilateral exit delay in seconds                                                | `86400` (24 hours)             |
-| `ARKD_BOARDING_EXIT_DELAY`          | Boarding exit delay in seconds                                                  | `7776000` (3 months)           |
 | `ARKD_ESPLORA_URL`                  | Esplora API URL                                                                 | `https://blockstream.info/api` |
 | `ARKD_WALLET_ADDR`                  | The arkd wallet address to connect to in the form `host:port`                   | -                              |
 | `ARKD_SIGNER_ADDR`                  | The signer address to connect to in the form `host:port`                        | value of `ARKD_WALLET_ADDR`    |
@@ -84,16 +83,7 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_UNLOCKER_TYPE`                | Wallet unlocker type (env, file) to enable auto-unlock                          | -                              |
 | `ARKD_UNLOCKER_FILE_PATH`           | Path to unlocker file                                                           | -                              |
 | `ARKD_UNLOCKER_PASSWORD`            | Wallet unlocker password                                                        | -                              |
-| `ARKD_ROUND_MAX_PARTICIPANTS_COUNT` | Maximum number of participants per round                                        | `128`                          |
-| `ARKD_ROUND_MIN_PARTICIPANTS_COUNT` | Minimum number of participants per round                                        | `1`                            |
-| `ARKD_UTXO_MAX_AMOUNT`              | The maximum allowed amount for boarding or collaborative exit                   | `-1` (unset)                   |
-| `ARKD_UTXO_MIN_AMOUNT`              | The minimum allowed amount for boarding or collaborative exit                   | `-1` (dust)                    |
-| `ARKD_VTXO_MAX_AMOUNT`              | The maximum allowed amount for vtxos                                            | `-1` (unset)                   |
-| `ARKD_VTXO_MIN_AMOUNT`              | The minimum allowed amount for vtxos                                            | `-1` (dust)                    |
-| `ARKD_BAN_DURATION`                | Ban duration in seconds                                                         | `300` (5 minutes)              |
-| `ARKD_BAN_THRESHOLD`               | Number of crimes to trigger a ban                                               | `3`                            |
 | `ARKD_SCHEDULER_TYPE`              | Scheduler type (gocron, block)                                                 | `gocron`                       |
-| `ARKD_CHECKPOINT_EXIT_DELAY`       | Checkpoint exit delay in seconds                                                | `86400` (24 hours)             |
 | `ARKD_TLS_EXTRA_IP`                | Extra IP addresses for TLS (comma-separated)                                   | -                              |
 | `ARKD_TLS_EXTRA_DOMAIN`            | Extra domains for TLS (comma-separated)                                         | -                              |
 | `ARKD_NOTE_URI_PREFIX`             | Note URI prefix                                                                 | -                              |
@@ -108,6 +98,27 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_ALLOW_CSV_BLOCK_TYPE`        | Allow CSV block type                                                            | `false`                        |
 | `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
 | `ARKD_ROUND_REPORT_ENABLED`        | Enable round report service                                                     | `false`                        |
+
+#### Admin Settings (via `POST /v1/admin/settings`)
+
+The following settings are persisted in the database and managed via the admin API. Default values are seeded on first startup.
+
+| Setting                           | Description                                                  | Default                        |
+|-----------------------------------|--------------------------------------------------------------|--------------------------------|
+| `vtxo_tree_expiry`                | VTXO tree expiry (blocks or seconds depending on scheduler)  | `604672` (gocron) / `20` (block) |
+| `unilateral_exit_delay`           | Unilateral exit delay in seconds                             | `86400` (24 hours)             |
+| `public_unilateral_exit_delay`    | Public unilateral exit delay in seconds                      | `86400` (24 hours)             |
+| `checkpoint_exit_delay`           | Checkpoint exit delay (blocks or seconds)                    | `86400` (gocron) / `10` (block) |
+| `boarding_exit_delay`             | Boarding exit delay in seconds                               | `7776000` (3 months)           |
+| `round_min_participants_count`    | Minimum number of participants per round                     | `1`                            |
+| `round_max_participants_count`    | Maximum number of participants per round                     | `128`                          |
+| `vtxo_min_amount`                 | Minimum allowed amount for vtxos                             | `-1` (dust)                    |
+| `vtxo_max_amount`                 | Maximum allowed amount for vtxos                             | `-1` (unset)                   |
+| `utxo_min_amount`                 | Minimum allowed amount for boarding or collaborative exit    | `-1` (dust)                    |
+| `utxo_max_amount`                 | Maximum allowed amount for boarding or collaborative exit    | `-1` (unset)                   |
+| `ban_duration`                    | Ban duration in seconds                                      | `300` (5 minutes)              |
+| `ban_threshold`                   | Number of crimes to trigger a ban                            | `3`                            |
+| `max_tx_weight`                   | Max transaction weight                                       | `40000`                        |
 
 ## Provisioning
 
