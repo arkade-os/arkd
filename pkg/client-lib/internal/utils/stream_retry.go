@@ -180,10 +180,27 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	// already cancelled, wait up to 5 seconds so consumers always learn why
 	// the stream ended.
 	sendTerminalErr := func(err error) bool {
+		// Fast path: immediate delivery.
 		select {
 		case eventsCh <- cfg.ErrorEvent(err):
 			return true
-		case <-time.After(5 * time.Second):
+		default:
+		}
+
+		// If caller context is already canceled, most consumers stop draining.
+		// Avoid a fixed teardown stall.
+		if ctx.Err() != nil {
+			return false
+		}
+
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		select {
+		case eventsCh <- cfg.ErrorEvent(err):
+			return true
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
 			return false
 		}
 	}
