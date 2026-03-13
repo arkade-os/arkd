@@ -4284,7 +4284,7 @@ func TestCollectedFees(t *testing.T) {
 	// Alice's boarding input: 100,000 sats × 1% = 1,000 sats
 	// Bob's offchain input:   100,000 sats × 1% = 1,000 sats
 	// Total expected: 2,000 sats
-	require.Equal(t, uint64(2000), collectedFees,
+	require.Equal(t, 2000, int(collectedFees),
 		"collected fees should equal sum of onchain and offchain input fees")
 
 	// Query with a future window — should return zero.

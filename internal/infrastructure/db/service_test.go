@@ -182,7 +182,6 @@ func TestService(t *testing.T) {
 			// records are added before the asset ones, and vtxos are added after assets.
 			testEventRepository(t, svc)
 			testRoundRepository(t, svc)
-			testCollectedFeesRepository(t, svc)
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
@@ -655,9 +654,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// - second round has no vtxo tree
 		require.Empty(t, sweepableRounds)
 	})
-}
 
-func testCollectedFeesRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_collected_fees", func(t *testing.T) {
 		ctx := context.Background()
 		repo := svc.Rounds()
@@ -665,7 +662,7 @@ func testCollectedFeesRepository(t *testing.T, svc ports.RepoManager) {
 		// No fees collected yet for a fresh time range.
 		fees, err := repo.GetCollectedFees(ctx, 0, 0)
 		require.NoError(t, err)
-		require.Equal(t, uint64(0), fees)
+		require.Equal(t, 0, int(fees))
 
 		// Create three completed rounds at timestamps 100, 200, 300 with
 		// collected fees 1000, 2000, 3000 respectively.
@@ -736,27 +733,27 @@ func testCollectedFeesRepository(t *testing.T, svc ports.RepoManager) {
 		// Rounds at ts 100, 200, 300 all have starting_timestamp > 0.
 		fees, err = repo.GetCollectedFees(ctx, 0, 0)
 		require.NoError(t, err)
-		require.Equal(t, uint64(1000+2000+3000), fees)
+		require.Equal(t, 6000, int(fees))
 
 		// Only rounds starting after 100 (exclusive): ts 200, 300.
 		fees, err = repo.GetCollectedFees(ctx, 100, 0)
 		require.NoError(t, err)
-		require.Equal(t, uint64(2000+3000), fees)
+		require.Equal(t, 5000, int(fees))
 
 		// Rounds starting after 100 and before 300 (both exclusive): ts 200 only.
 		fees, err = repo.GetCollectedFees(ctx, 100, 300)
 		require.NoError(t, err)
-		require.Equal(t, uint64(2000), fees)
+		require.Equal(t, 2000, int(fees))
 
 		// Range that includes all three: after 0, before 999.
 		fees, err = repo.GetCollectedFees(ctx, 0, 999)
 		require.NoError(t, err)
-		require.Equal(t, uint64(1000+2000+3000), fees)
+		require.Equal(t, 6000, int(fees))
 
 		// Range that includes none: after 300 with no upper bound.
 		fees, err = repo.GetCollectedFees(ctx, 300, 0)
 		require.NoError(t, err)
-		require.Equal(t, uint64(0), fees)
+		require.Equal(t, 0, int(fees))
 
 		// Create a round that was finalized then failed (ended+failed).
 		// Its collected fees should NOT be included in totals.
@@ -801,7 +798,7 @@ func testCollectedFeesRepository(t *testing.T, svc ports.RepoManager) {
 		// Totals should still be 6000, not 6000+8888.
 		fees, err = repo.GetCollectedFees(ctx, 0, 0)
 		require.NoError(t, err)
-		require.Equal(t, uint64(1000+2000+3000), fees)
+		require.Equal(t, 6000, int(fees))
 	})
 }
 

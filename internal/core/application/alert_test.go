@@ -26,20 +26,20 @@ func TestCalculateCollectedFees(t *testing.T) {
 
 	t.Run("no_intents_no_boarding", func(t *testing.T) {
 		round := makeRound(nil)
-		require.Equal(t, uint64(0), calculateCollectedFees(round, 0))
+		require.Equal(t, 0, int(calculateCollectedFees(round, 0)))
 	})
 
 	t.Run("no_intents_with_boarding", func(t *testing.T) {
 		// boarding input with no intents means all boarding goes to fees
 		round := makeRound(nil)
-		require.Equal(t, uint64(5000), calculateCollectedFees(round, 5000))
+		require.Equal(t, 5000, int(calculateCollectedFees(round, 5000)))
 	})
 
 	t.Run("single_intent_no_fee", func(t *testing.T) {
 		round := makeRound(map[string]domain.Intent{
 			"a": makeIntent([]uint64{10000}, []uint64{10000}),
 		})
-		require.Equal(t, uint64(0), calculateCollectedFees(round, 0))
+		require.Equal(t, 0, int(calculateCollectedFees(round, 0)))
 	})
 
 	t.Run("single_intent_with_fee", func(t *testing.T) {
@@ -47,7 +47,7 @@ func TestCalculateCollectedFees(t *testing.T) {
 		round := makeRound(map[string]domain.Intent{
 			"a": makeIntent([]uint64{10000}, []uint64{9800}),
 		})
-		require.Equal(t, uint64(200), calculateCollectedFees(round, 0))
+		require.Equal(t, 200, int(calculateCollectedFees(round, 0)))
 	})
 
 	t.Run("boarding_counted_once_not_per_intent", func(t *testing.T) {
@@ -61,7 +61,7 @@ func TestCalculateCollectedFees(t *testing.T) {
 			"a": makeIntent([]uint64{10000}, []uint64{9900}),
 			"b": makeIntent([]uint64{10000}, []uint64{9900}),
 		})
-		require.Equal(t, uint64(5200), calculateCollectedFees(round, 5000))
+		require.Equal(t, 5200, int(calculateCollectedFees(round, 5000)))
 	})
 
 	t.Run("multiple_inputs_and_outputs", func(t *testing.T) {
@@ -72,7 +72,7 @@ func TestCalculateCollectedFees(t *testing.T) {
 		round := makeRound(map[string]domain.Intent{
 			"a": makeIntent([]uint64{3000, 7000}, []uint64{4000, 5000}),
 		})
-		require.Equal(t, uint64(2000), calculateCollectedFees(round, 1000))
+		require.Equal(t, 2000, int(calculateCollectedFees(round, 1000)))
 	})
 
 	t.Run("output_exceeds_input_returns_zero", func(t *testing.T) {
@@ -80,6 +80,6 @@ func TestCalculateCollectedFees(t *testing.T) {
 		round := makeRound(map[string]domain.Intent{
 			"a": makeIntent([]uint64{1000}, []uint64{2000}),
 		})
-		require.Equal(t, uint64(0), calculateCollectedFees(round, 0))
+		require.Equal(t, 0, int(calculateCollectedFees(round, 0)))
 	})
 }
