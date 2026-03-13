@@ -369,7 +369,7 @@ func TestUnilateralExit(t *testing.T) {
 // offchain.
 func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	ctx := t.Context()
-	alice, walletSvc, _, _ := setupArkSDKwithPublicKey(t)
+	alice := setupArkSDK(t)
 
 	// Fund Alice offchain + small onchain amount for unroll fees
 	faucet(t, alice, 0.00021)
@@ -384,7 +384,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	require.Empty(t, balance.OnchainBalance.LockedAmount)
 
 	// Unroll: moves VTXOs onchain
-	err = alice.Unroll(ctx)
+	_, err = alice.Unroll(ctx)
 	require.NoError(t, err)
 
 	err = generateBlocks(1)
@@ -411,16 +411,12 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	}
 	require.NotZero(t, unrolledVtxo.Amount, "expected an unrolled VTXO")
 
-	// Get the offchain address tapscripts from the wallet so we can
-	// present the unrolled VTXO as a boarding input.
-	_, offchainAddrs, _, _, err := walletSvc.GetAddresses(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, offchainAddrs)
-
+	// Receive returns *types.Address which carries Tapscripts — use them
+	// to present the unrolled VTXO as a boarding input.
 	boardingUtxo := types.Utxo{
 		Outpoint:   unrolledVtxo.Outpoint,
 		Amount:     unrolledVtxo.Amount,
-		Tapscripts: offchainAddrs[0].Tapscripts,
+		Tapscripts: offchainAddr.Tapscripts,
 	}
 
 	// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
@@ -428,15 +424,15 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	wg.Add(1)
 	var incomingErr error
 	go func() {
-		_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+		_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 		wg.Done()
 	}()
 
-	commitmentTx, err := alice.Settle(ctx,
+	res, err := alice.Settle(ctx,
 		arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, commitmentTx)
+	require.NotEmpty(t, res.CommitmentTxid)
 
 	wg.Wait()
 	require.NoError(t, incomingErr)
