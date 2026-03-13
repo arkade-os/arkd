@@ -63,8 +63,10 @@ message SignTransactionTapscriptResponse {
 }
 
 message SignMessageRequest {
+  // hex-encoded message to sign
   string message = 1;
 }
 message SignMessageResponse {
+  // hex-encoded Schnorr signature
   string signature = 1;
 }

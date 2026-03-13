@@ -229,7 +229,8 @@
         "type": "object",
         "properties": {
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "hex-encoded message to sign"
           }
         }
       },
@@ -238,7 +239,8 @@
         "type": "object",
         "properties": {
           "signature": {
-            "type": "string"
+            "type": "string",
+            "description": "hex-encoded Schnorr signature"
           }
         }
       },

@@ -125,7 +125,7 @@ func request_IndexerService_GetConnectors_0(ctx context.Context, marshaler gatew
 
 var (
 	query_params_IndexerService_GetVtxoTree_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("vout", "batch_outpoint.txid", "batch_outpoint.vout", "txid"),
+		Filter: trie.New("txid", "vout", "batch_outpoint.txid", "batch_outpoint.vout"),
 	}
 )
 

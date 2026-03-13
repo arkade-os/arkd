@@ -375,8 +375,9 @@ func (x *SignTransactionTapscriptResponse) GetSignedTx() string {
 }
 
 type SignMessageRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// hex-encoded message to sign
+	Message       string `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -419,8 +420,9 @@ func (x *SignMessageRequest) GetMessage() string {
 }
 
 type SignMessageResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Signature     string                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// hex-encoded Schnorr signature
+	Signature     string `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
