@@ -360,6 +360,90 @@ func TestUnilateralExit(t *testing.T) {
 	})
 }
 
+// TestUnrolledVtxoRejoinBatch verifies that an unrolled VTXO can rejoin the
+// Ark via the collaborative path. Alice funds herself offchain, unrolls her
+// VTXOs on-chain, then calls Settle(WithFunds(...)) passing the unrolled VTXO
+// as a boarding input. The server recognises the outpoint as an unrolled VTXO,
+// validates it with the unilateral exit delay, checks the CSV expiry margin,
+// and accepts it into the batch. After settlement Alice's funds are back
+// offchain.
+func TestUnrolledVtxoRejoinBatch(t *testing.T) {
+	ctx := t.Context()
+	alice := setupArkSDK(t)
+
+	// Fund Alice offchain + small onchain amount for unroll fees
+	faucet(t, alice, 0.00021)
+	time.Sleep(5 * time.Second)
+
+	_, offchainAddr, _, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	balance, err := alice.Balance(ctx)
+	require.NoError(t, err)
+	require.NotZero(t, balance.OffchainBalance.Total)
+	require.Empty(t, balance.OnchainBalance.LockedAmount)
+
+	// Unroll: moves VTXOs onchain
+	_, err = alice.Unroll(ctx)
+	require.NoError(t, err)
+
+	err = generateBlocks(1)
+	require.NoError(t, err)
+	time.Sleep(10 * time.Second)
+
+	// Verify funds moved from offchain to onchain (locked)
+	balance, err = alice.Balance(ctx)
+	require.NoError(t, err)
+	require.Zero(t, balance.OffchainBalance.Total)
+	require.NotEmpty(t, balance.OnchainBalance.LockedAmount)
+	require.NotZero(t, balance.OnchainBalance.LockedAmount[0].Amount)
+
+	// Find the unrolled VTXO in the spent list
+	_, spentVtxos, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+
+	var unrolledVtxo types.Vtxo
+	for _, v := range spentVtxos {
+		if v.Unrolled && !v.Spent {
+			unrolledVtxo = v
+			break
+		}
+	}
+	require.NotZero(t, unrolledVtxo.Amount, "expected an unrolled VTXO")
+
+	// Receive returns *types.Address which carries Tapscripts — use them
+	// to present the unrolled VTXO as a boarding input.
+	boardingUtxo := types.Utxo{
+		Outpoint:   unrolledVtxo.Outpoint,
+		Amount:     unrolledVtxo.Amount,
+		Tapscripts: offchainAddr.Tapscripts,
+	}
+
+	// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var incomingErr error
+	go func() {
+		_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+		wg.Done()
+	}()
+
+	res, err := alice.Settle(ctx,
+		arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, res.CommitmentTxid)
+
+	wg.Wait()
+	require.NoError(t, incomingErr)
+	time.Sleep(time.Second)
+
+	// Alice has offchain funds again
+	balance, err = alice.Balance(ctx)
+	require.NoError(t, err)
+	require.NotZero(t, balance.OffchainBalance.Total)
+}
+
 func TestCollaborativeExit(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		// In this test Alice sends to Bob's onchain address by producing a (VTXO) change
