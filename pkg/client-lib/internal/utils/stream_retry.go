@@ -176,9 +176,9 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	eventsCh := make(chan E, 1)
 	streamMu := sync.Mutex{}
 
-	// Emit terminal errors with best-effort delivery: even if the context is
-	// already cancelled, wait up to 5 seconds so consumers always learn why
-	// the stream ended.
+	// Emit terminal errors with best-effort delivery:
+	// try immediate send; if context is still active, wait up to 5 seconds.
+	// If context is already canceled, skip waiting to avoid teardown stalls.
 	sendTerminalErr := func(err error) bool {
 		// Fast path: immediate delivery.
 		select {
