@@ -4284,7 +4284,7 @@ func TestCollectedFees(t *testing.T) {
 
 	// Fund Alice onchain (no round triggered) and Bob offchain (round triggered,
 	// but no fees configured yet so collected fees stay zero).
-	faucetOnchain(t, aliceBoardingAddr, 0.001)
+	faucetOnchain(t, aliceBoardingAddr.Address, 0.001)
 	faucetOffchain(t, bob, 0.001)
 	time.Sleep(6 * time.Second)
 
@@ -4304,13 +4304,13 @@ func TestCollectedFees(t *testing.T) {
 
 	var aliceIncomingErr error
 	go func() {
-		_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+		_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
 		wg.Done()
 	}()
 
 	var bobIncomingErr error
 	go func() {
-		_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr)
+		_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
 		wg.Done()
 	}()
 
