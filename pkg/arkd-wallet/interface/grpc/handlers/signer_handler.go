@@ -2,9 +2,12 @@ package handlers
 
 import (
 	"context"
+	"encoding/hex"
 
 	signerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/signer/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type signerHandler struct {
@@ -64,9 +67,13 @@ func (h *signerHandler) SignTransactionTapscript(
 func (h *signerHandler) SignMessage(
 	ctx context.Context, req *signerv1.SignMessageRequest,
 ) (*signerv1.SignMessageResponse, error) {
-	signature, err := h.wallet.SignMessage(ctx, req.GetMessage())
+	message, err := hex.DecodeString(req.GetMessage())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid message hex: %s", err)
+	}
+	signature, err := h.wallet.SignMessage(ctx, message)
 	if err != nil {
 		return nil, err
 	}
-	return &signerv1.SignMessageResponse{Signature: signature}, nil
+	return &signerv1.SignMessageResponse{Signature: hex.EncodeToString(signature)}, nil
 }

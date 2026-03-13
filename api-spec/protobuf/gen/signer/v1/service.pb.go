@@ -376,7 +376,7 @@ func (x *SignTransactionTapscriptResponse) GetSignedTx() string {
 
 type SignMessageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Message       []byte                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
+	Message       string                 `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -411,16 +411,16 @@ func (*SignMessageRequest) Descriptor() ([]byte, []int) {
 	return file_signer_v1_service_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *SignMessageRequest) GetMessage() []byte {
+func (x *SignMessageRequest) GetMessage() string {
 	if x != nil {
 		return x.Message
 	}
-	return nil
+	return ""
 }
 
 type SignMessageResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Signature     []byte                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+	Signature     string                 `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -455,11 +455,11 @@ func (*SignMessageResponse) Descriptor() ([]byte, []int) {
 	return file_signer_v1_service_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *SignMessageResponse) GetSignature() []byte {
+func (x *SignMessageResponse) GetSignature() string {
 	if x != nil {
 		return x.Signature
 	}
-	return nil
+	return ""
 }
 
 var File_signer_v1_service_proto protoreflect.FileDescriptor
@@ -486,9 +486,9 @@ const file_signer_v1_service_proto_rawDesc = "" +
 	" SignTransactionTapscriptResponse\x12\x1b\n" +
 	"\tsigned_tx\x18\x01 \x01(\tR\bsignedTx\".\n" +
 	"\x12SignMessageRequest\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\fR\amessage\"3\n" +
+	"\amessage\x18\x01 \x01(\tR\amessage\"3\n" +
 	"\x13SignMessageResponse\x12\x1c\n" +
-	"\tsignature\x18\x01 \x01(\fR\tsignature2\xbf\x04\n" +
+	"\tsignature\x18\x01 \x01(\tR\tsignature2\xbf\x04\n" +
 	"\rSignerService\x12W\n" +
 	"\tGetStatus\x12\x1b.signer.v1.GetStatusRequest\x1a\x1c.signer.v1.GetStatusResponse\"\x0f\xb2J\f\x12\n" +
 	"/v1/status\x12W\n" +

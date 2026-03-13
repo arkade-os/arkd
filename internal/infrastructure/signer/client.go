@@ -104,10 +104,14 @@ func (c *signerClient) SignMessage(
 	ctx context.Context, message []byte,
 ) ([]byte, error) {
 	resp, err := c.client.SignMessage(ctx, &signerv1.SignMessageRequest{
-		Message: message,
+		Message: hex.EncodeToString(message),
 	})
 	if err != nil {
 		return nil, err
 	}
-	return resp.GetSignature(), nil
+	sig, err := hex.DecodeString(resp.GetSignature())
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signature hex: %w", err)
+	}
+	return sig, nil
 }

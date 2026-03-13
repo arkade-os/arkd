@@ -229,8 +229,7 @@
         "type": "object",
         "properties": {
           "message": {
-            "type": "string",
-            "format": "byte"
+            "type": "string"
           }
         }
       },
@@ -239,8 +238,7 @@
         "type": "object",
         "properties": {
           "signature": {
-            "type": "string",
-            "format": "byte"
+            "type": "string"
           }
         }
       },
