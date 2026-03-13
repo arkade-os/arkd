@@ -229,6 +229,7 @@
         "type": "object",
         "properties": {
           "message": {
+            "pattern": "^(?:[0-9a-fA-F]{2})*$",
             "type": "string",
             "description": "hex-encoded message to sign"
           }
@@ -239,6 +240,9 @@
         "type": "object",
         "properties": {
           "signature": {
+            "pattern": "^[0-9a-fA-F]{128}$",
+            "maxLength": 128,
+            "minLength": 128,
             "type": "string",
             "description": "hex-encoded Schnorr signature"
           }

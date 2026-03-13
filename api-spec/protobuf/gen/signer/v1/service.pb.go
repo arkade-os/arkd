@@ -486,11 +486,11 @@ const file_signer_v1_service_proto_rawDesc = "" +
 	"partial_tx\x18\x01 \x01(\tR\tpartialTx\x12#\n" +
 	"\rinput_indexes\x18\x02 \x03(\x05R\finputIndexes\"?\n" +
 	" SignTransactionTapscriptResponse\x12\x1b\n" +
-	"\tsigned_tx\x18\x01 \x01(\tR\bsignedTx\".\n" +
-	"\x12SignMessageRequest\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\"3\n" +
-	"\x13SignMessageResponse\x12\x1c\n" +
-	"\tsignature\x18\x01 \x01(\tR\tsignature2\xbf\x04\n" +
+	"\tsigned_tx\x18\x01 \x01(\tR\bsignedTx\"J\n" +
+	"\x12SignMessageRequest\x124\n" +
+	"\amessage\x18\x01 \x01(\tB\x1a\xbaJ\x17b\x15^(?:[0-9a-fA-F]{2})*$R\amessage\"T\n" +
+	"\x13SignMessageResponse\x12=\n" +
+	"\tsignature\x18\x01 \x01(\tB\x1f\xbaJ\x1cb\x12^[0-9a-fA-F]{128}$\xa0\x01\x80\x01\xa8\x01\x80\x01R\tsignature2\xbf\x04\n" +
 	"\rSignerService\x12W\n" +
 	"\tGetStatus\x12\x1b.signer.v1.GetStatusRequest\x1a\x1c.signer.v1.GetStatusResponse\"\x0f\xb2J\f\x12\n" +
 	"/v1/status\x12W\n" +
