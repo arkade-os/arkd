@@ -126,6 +126,11 @@ func TestResolveMinAmounts(t *testing.T) {
 	}
 }
 
+// TestCheckUnrolledVtxoExpiry verifies the expiry margin gate that decides
+// whether an unrolled VTXO's remaining CSV time is long enough to safely
+// rejoin a batch. When no custom margin is configured (margin=0) the
+// session duration is used as the fallback. A custom margin overrides the
+// session duration entirely.
 func TestCheckUnrolledVtxoExpiry(t *testing.T) {
 	now := parseTime(t, "2023-10-10 12:00:00")
 	sessionDuration := 30 * time.Second
