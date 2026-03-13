@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -49,7 +50,9 @@ func GetEventStreamTopics(
 }
 
 type BatchEventsHandler interface {
-	OnBatchStarted(ctx context.Context, event client.BatchStartedEvent) (bool, error)
+	OnBatchStarted(
+		ctx context.Context, event client.BatchStartedEvent,
+	) (bool, time.Duration, error)
 	OnBatchFinalized(ctx context.Context, event client.BatchFinalizedEvent) error
 	OnBatchFailed(ctx context.Context, event client.BatchFailedEvent) error
 	OnTreeTxEvent(ctx context.Context, event client.TreeTxEvent) error
@@ -65,27 +68,27 @@ type BatchEventsHandler interface {
 	OnBatchFinalization(
 		ctx context.Context,
 		event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree,
-	) error
+	) ([]string, error)
 	OnStreamStarted(
 		ctx context.Context, event client.StreamStartedEvent,
 	) error
 }
 
-type BatchSessionOption func(*options)
+type BatchEventHandlerOption func(*options)
 
-func WithSkipVtxoTreeSigning() BatchSessionOption {
+func WithSkipVtxoTreeSigning() BatchEventHandlerOption {
 	return func(o *options) {
 		o.signVtxoTree = false
 	}
 }
 
-func WithReplay(ch chan<- any) BatchSessionOption {
+func WithReplay(ch chan<- any) BatchEventHandlerOption {
 	return func(o *options) {
 		o.replayEventsCh = ch
 	}
 }
 
-func WithCancel(cancelCh <-chan struct{}) BatchSessionOption {
+func WithCancel(cancelCh <-chan struct{}) BatchEventHandlerOption {
 	return func(o *options) {
 		o.cancelCh = cancelCh
 	}
@@ -93,8 +96,8 @@ func WithCancel(cancelCh <-chan struct{}) BatchSessionOption {
 
 func JoinBatchSession(
 	ctx context.Context, eventsCh <-chan client.BatchEventChannel,
-	eventsHandler BatchEventsHandler, opts ...BatchSessionOption,
-) (string, error) {
+	eventsHandler BatchEventsHandler, opts ...BatchEventHandlerOption,
+) (string, string, time.Duration, []string, *tree.TxTree, error) {
 	options := newOptions()
 
 	for _, opt := range opts {
@@ -109,19 +112,24 @@ func JoinBatchSession(
 	flatConnectorTree := make([]tree.TxTreeNode, 0)
 
 	var vtxoTree, connectorTree *tree.TxTree
-
+	var forfeitTxs []string
+	var batchExpiry time.Duration
+	var commitmentTx string
 	for {
 		select {
 		case <-options.cancelCh:
-			return "", fmt.Errorf("canceled")
+			return "", "", -1, nil, nil, fmt.Errorf("canceled")
 		case <-ctx.Done():
-			return "", fmt.Errorf("context done %s", ctx.Err())
+			return "", "", -1, nil, nil, fmt.Errorf("context done %s", ctx.Err())
 		case notify, ok := <-eventsCh:
 			if !ok {
-				return "", fmt.Errorf("event stream closed")
+				return "", "", -1, nil, nil, fmt.Errorf("event stream closed")
 			}
 			if notify.Err != nil {
-				return "", notify.Err
+				return "", "", -1, nil, nil, notify.Err
+			}
+			if notify.Connection != nil {
+				continue
 			}
 
 			if options.replayEventsCh != nil {
@@ -137,13 +145,13 @@ func JoinBatchSession(
 			case client.StreamStartedEvent:
 				streamStartedEvent := event.(client.StreamStartedEvent)
 				if err := eventsHandler.OnStreamStarted(ctx, streamStartedEvent); err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 			case client.BatchStartedEvent:
 				e := event.(client.BatchStartedEvent)
-				skip, err := eventsHandler.OnBatchStarted(ctx, e)
+				skip, expiry, err := eventsHandler.OnBatchStarted(ctx, e)
 				if err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 				if !skip {
 					step++
@@ -152,6 +160,7 @@ func JoinBatchSession(
 					if !options.signVtxoTree {
 						step = treeNoncesAggregated
 					}
+					batchExpiry = expiry
 					continue
 				}
 			case client.BatchFinalizedEvent:
@@ -160,14 +169,14 @@ func JoinBatchSession(
 				}
 				event := event.(client.BatchFinalizedEvent)
 				if err := eventsHandler.OnBatchFinalized(ctx, event); err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
-				return event.Txid, nil
+				return event.Txid, commitmentTx, batchExpiry, forfeitTxs, vtxoTree, nil
 			// the batch session failed, return error only if we joined.
 			case client.BatchFailedEvent:
 				e := event.(client.BatchFailedEvent)
 				if err := eventsHandler.OnBatchFailed(ctx, e); err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 				continue
 			// we received a tree tx event msg, let's update the vtxo/connector tree.
@@ -179,7 +188,7 @@ func JoinBatchSession(
 				treeTxEvent := event.(client.TreeTxEvent)
 
 				if err := eventsHandler.OnTreeTxEvent(ctx, treeTxEvent); err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 
 				if treeTxEvent.BatchIndex == 0 {
@@ -194,16 +203,16 @@ func JoinBatchSession(
 					continue
 				}
 				if vtxoTree == nil {
-					return "", fmt.Errorf("vtxo tree not initialized")
+					return "", "", -1, nil, nil, fmt.Errorf("vtxo tree not initialized")
 				}
 
 				event := event.(client.TreeSignatureEvent)
 				if err := eventsHandler.OnTreeSignatureEvent(ctx, event); err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 
 				if err := addSignatureToTxTree(event, vtxoTree); err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 				continue
 			// the musig2 session started, let's send our nonces.
@@ -215,13 +224,13 @@ func JoinBatchSession(
 				var err error
 				vtxoTree, err = tree.NewTxTree(flatVtxoTree)
 				if err != nil {
-					return "", fmt.Errorf("failed to create branch of vtxo tree: %s", err)
+					return "", "", -1, nil, nil, fmt.Errorf("failed to create branch of vtxo tree: %s", err)
 				}
 
 				event := event.(client.TreeSigningStartedEvent)
 				skip, err := eventsHandler.OnTreeSigningStarted(ctx, event, vtxoTree)
 				if err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 
 				if !skip {
@@ -237,7 +246,7 @@ func JoinBatchSession(
 				event := event.(client.TreeNoncesAggregatedEvent)
 				signed, err := eventsHandler.OnTreeNoncesAggregated(ctx, event)
 				if err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 
 				if signed {
@@ -254,7 +263,7 @@ func JoinBatchSession(
 				event := event.(client.TreeNoncesEvent)
 				signed, err := eventsHandler.OnTreeNonces(ctx, event)
 				if err != nil {
-					return "", err
+					return "", "", -1, nil, nil, err
 				}
 				if signed {
 					step++
@@ -266,21 +275,26 @@ func JoinBatchSession(
 				}
 
 				if options.signVtxoTree && vtxoTree == nil {
-					return "", fmt.Errorf("vtxo tree not initialized")
+					return "", "", -1, nil, nil, fmt.Errorf("vtxo tree not initialized")
 				}
 
 				if len(flatConnectorTree) > 0 {
 					var err error
 					connectorTree, err = tree.NewTxTree(flatConnectorTree)
 					if err != nil {
-						return "", fmt.Errorf("failed to create branch of connector tree: %s", err)
+						return "", "", -1, nil, nil, fmt.Errorf("failed to create branch of connector tree: %s", err)
 					}
 				}
 
 				event := event.(client.BatchFinalizationEvent)
-				if err := eventsHandler.OnBatchFinalization(ctx, event, vtxoTree, connectorTree); err != nil {
-					return "", err
+				txs, err := eventsHandler.OnBatchFinalization(
+					ctx, event, vtxoTree, connectorTree,
+				)
+				if err != nil {
+					return "", "", -1, nil, nil, err
 				}
+				forfeitTxs = txs
+				commitmentTx = event.Tx
 
 				log.Debug("done.")
 				log.Debug("waiting for batch finalization...")
@@ -385,22 +399,22 @@ func (h *defaultBatchEventsHandler) OnStreamStarted(
 
 func (h *defaultBatchEventsHandler) OnBatchStarted(
 	ctx context.Context, event client.BatchStartedEvent,
-) (bool, error) {
+) (bool, time.Duration, error) {
 	buf := sha256.Sum256([]byte(h.intentId))
 	hashedIntentId := hex.EncodeToString(buf[:])
 
 	for _, hash := range event.HashedIntentIds {
 		if hash == hashedIntentId {
 			if err := h.client.ConfirmRegistration(ctx, h.intentId); err != nil {
-				return false, err
+				return false, -1, err
 			}
 			h.batchSessionId = event.Id
 			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
-			return false, nil
+			return false, time.Duration(event.BatchExpiry) * time.Second, nil
 		}
 	}
 	log.Debug("intent id not found in batch proposal, waiting for next one...")
-	return true, nil
+	return true, -1, nil
 }
 
 func (h *defaultBatchEventsHandler) OnBatchFinalized(
@@ -591,10 +605,10 @@ func (h *defaultBatchEventsHandler) OnTreeNoncesAggregated(
 
 func (h *defaultBatchEventsHandler) OnBatchFinalization(
 	ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree,
-) error {
+) ([]string, error) {
 	log.Debug("vtxo and connector trees fully signed, sending forfeit transactions...")
 	if err := h.validateVtxoTree(event, vtxoTree, connectorTree); err != nil {
-		return fmt.Errorf("failed to verify vtxo tree: %s", err)
+		return nil, fmt.Errorf("failed to verify vtxo tree: %s", err)
 	}
 
 	var forfeits []string
@@ -608,7 +622,7 @@ func (h *defaultBatchEventsHandler) OnBatchFinalization(
 			ctx, vtxos, connectorTree.Leaves(),
 		)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		forfeits = signedForfeits
@@ -618,36 +632,36 @@ func (h *defaultBatchEventsHandler) OnBatchFinalization(
 	if len(h.boardingUtxos) > 0 {
 		commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(event.Tx), true)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		for _, boardingUtxo := range h.boardingUtxos {
 			boardingVtxoScript, err := script.ParseVtxoScript(boardingUtxo.Tapscripts)
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			forfeitClosures := boardingVtxoScript.ForfeitClosures()
 			if len(forfeitClosures) <= 0 {
-				return fmt.Errorf("no forfeit closures found")
+				return nil, fmt.Errorf("no forfeit closures found")
 			}
 
 			forfeitClosure := forfeitClosures[0]
 
 			forfeitScript, err := forfeitClosure.Script()
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			_, taprootTree, err := boardingVtxoScript.TapTree()
 			if err != nil {
-				return err
+				return nil, err
 			}
 
 			forfeitLeaf := txscript.NewBaseTapLeaf(forfeitScript)
 			forfeitProof, err := taprootTree.GetTaprootMerkleProof(forfeitLeaf.TapHash())
 			if err != nil {
-				return fmt.Errorf(
+				return nil, fmt.Errorf(
 					"failed to get taproot merkle proof for boarding utxo: %s", err,
 				)
 			}
@@ -673,12 +687,12 @@ func (h *defaultBatchEventsHandler) OnBatchFinalization(
 
 		b64, err := commitmentPtx.B64Encode()
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		signedCommitmentTx, err = h.wallet.SignTransaction(ctx, h.explorer, b64)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -686,11 +700,11 @@ func (h *defaultBatchEventsHandler) OnBatchFinalization(
 		if err := h.client.SubmitSignedForfeitTxs(
 			ctx, forfeits, signedCommitmentTx,
 		); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return forfeits, nil
 }
 
 func (h *defaultBatchEventsHandler) vtxosToForfeit() []types.VtxoWithTapTree {
