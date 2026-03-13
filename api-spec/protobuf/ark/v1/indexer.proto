@@ -210,10 +210,12 @@ message GetVtxosResponse {
 message GetVtxoChainRequest {
   IndexerOutpoint outpoint = 1;
   IndexerPageRequest page = 2;
+  string page_token = 3;
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
   IndexerPageResponse page = 2;
+  string next_page_token = 3;
 }
 
 message GetVirtualTxsRequest {
@@ -282,6 +284,7 @@ message IndexerVtxo {
   string settled_by = 12;
   string ark_txid = 13;
   repeated IndexerAsset assets = 14;
+  uint32 depth = 15;
 }
 
 message IndexerAsset {
