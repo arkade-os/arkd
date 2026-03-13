@@ -91,6 +91,18 @@ func (w *bitcoinWallet) GetAddresses(
 		},
 	}
 
+	// Append persisted custom boarding addresses
+	customDescriptors, err := w.walletStore.GetBoardingDescriptors()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	for _, d := range customDescriptors {
+		boardingAddrs = append(boardingAddrs, types.Address{
+			Tapscripts: d.Tapscripts,
+			Address:    d.Address,
+		})
+	}
+
 	onchainAddr, err := w.getP2TRAddress(ctx)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -163,6 +175,55 @@ func (w *bitcoinWallet) NewAddresses(
 	}
 
 	return onchainAddrs, offchainAddrs, boardingAddrs, nil
+}
+
+func (w *bitcoinWallet) NewBoardingAddress(
+	ctx context.Context, vtxoScript script.VtxoScript,
+) (*types.Address, error) {
+	if w.walletData == nil {
+		return nil, fmt.Errorf("wallet not initialized")
+	}
+
+	data, err := w.configStore.GetData(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
+		return nil, fmt.Errorf("config store not initialized")
+	}
+
+	netParams := utils.ToBitcoinNetwork(data.Network)
+
+	tapKey, _, err := vtxoScript.TapTree()
+	if err != nil {
+		return nil, err
+	}
+
+	addr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(tapKey),
+		&netParams,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	tapscripts, err := vtxoScript.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	descriptor := walletstore.BoardingDescriptor{
+		Address:    addr.EncodeAddress(),
+		Tapscripts: tapscripts,
+	}
+	if err := w.walletStore.AddBoardingDescriptor(descriptor); err != nil {
+		return nil, err
+	}
+
+	return &types.Address{
+		Address:    addr.EncodeAddress(),
+		Tapscripts: tapscripts,
+	}, nil
 }
 
 func (s *bitcoinWallet) SignTransaction(

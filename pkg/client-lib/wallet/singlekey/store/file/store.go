@@ -23,6 +23,11 @@ type walletData struct {
 	PubKey          string `json:"pubkey"`
 }
 
+type boardingDescriptor struct {
+	Address    string   `json:"address"`
+	Tapscripts []string `json:"tapscripts"`
+}
+
 func (d walletData) isEmpty() bool {
 	return d == walletData{}
 }
@@ -97,6 +102,93 @@ func (s *fileStore) GetWallet() (*walletstore.WalletData, error) {
 
 	data := wd.decode()
 	return &data, nil
+}
+
+func (s *fileStore) AddBoardingDescriptor(descriptor walletstore.BoardingDescriptor) error {
+	file, err := os.ReadFile(s.filePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+	}
+
+	currentData := map[string]any{}
+	if len(file) > 0 {
+		if err := json.Unmarshal(file, &currentData); err != nil {
+			return fmt.Errorf("failed to read file store: %s", err)
+		}
+	}
+
+	descriptors := make([]boardingDescriptor, 0)
+	if raw, ok := currentData["boarding_descriptors"]; ok {
+		buf, err := json.Marshal(raw)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(buf, &descriptors); err != nil {
+			return err
+		}
+	}
+
+	for _, d := range descriptors {
+		if d.Address == descriptor.Address {
+			return nil
+		}
+	}
+
+	descriptors = append(descriptors, boardingDescriptor{
+		Address:    descriptor.Address,
+		Tapscripts: descriptor.Tapscripts,
+	})
+
+	currentData["boarding_descriptors"] = descriptors
+
+	jsonString, err := json.Marshal(currentData)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.filePath, jsonString, 0755)
+}
+
+func (s *fileStore) GetBoardingDescriptors() ([]walletstore.BoardingDescriptor, error) {
+	file, err := os.ReadFile(s.filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	currentData := map[string]any{}
+	if len(file) > 0 {
+		if err := json.Unmarshal(file, &currentData); err != nil {
+			return nil, fmt.Errorf("failed to read file store: %s", err)
+		}
+	}
+
+	raw, ok := currentData["boarding_descriptors"]
+	if !ok {
+		return nil, nil
+	}
+
+	buf, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var descriptors []boardingDescriptor
+	if err := json.Unmarshal(buf, &descriptors); err != nil {
+		return nil, err
+	}
+
+	result := make([]walletstore.BoardingDescriptor, 0, len(descriptors))
+	for _, d := range descriptors {
+		result = append(result, walletstore.BoardingDescriptor{
+			Address:    d.Address,
+			Tapscripts: d.Tapscripts,
+		})
+	}
+	return result, nil
 }
 
 func (s *fileStore) open() (*walletData, error) {

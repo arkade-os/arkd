@@ -7,8 +7,9 @@ import (
 )
 
 type inmemoryStore struct {
-	data *walletstore.WalletData
-	lock *sync.RWMutex
+	data                *walletstore.WalletData
+	boardingDescriptors []walletstore.BoardingDescriptor
+	lock                *sync.RWMutex
 }
 
 func NewWalletStore() (walletstore.WalletStore, error) {
@@ -29,4 +30,27 @@ func (s *inmemoryStore) GetWallet() (*walletstore.WalletData, error) {
 	defer s.lock.RUnlock()
 
 	return s.data, nil
+}
+
+func (s *inmemoryStore) AddBoardingDescriptor(descriptor walletstore.BoardingDescriptor) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	for _, d := range s.boardingDescriptors {
+		if d.Address == descriptor.Address {
+			return nil
+		}
+	}
+
+	s.boardingDescriptors = append(s.boardingDescriptors, descriptor)
+	return nil
+}
+
+func (s *inmemoryStore) GetBoardingDescriptors() ([]walletstore.BoardingDescriptor, error) {
+	s.lock.RLock()
+	defer s.lock.RUnlock()
+
+	result := make([]walletstore.BoardingDescriptor, len(s.boardingDescriptors))
+	copy(result, s.boardingDescriptors)
+	return result, nil
 }

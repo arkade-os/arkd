@@ -8,7 +8,14 @@ type WalletData struct {
 	PubKey          *btcec.PublicKey
 }
 
+type BoardingDescriptor struct {
+	Address    string
+	Tapscripts []string
+}
+
 type WalletStore interface {
 	AddWallet(data WalletData) error
 	GetWallet() (*WalletData, error)
+	AddBoardingDescriptor(descriptor BoardingDescriptor) error
+	GetBoardingDescriptors() ([]BoardingDescriptor, error)
 }
