@@ -120,6 +120,11 @@ service AdminService {
       get: "/v1/admin/liquidity/recoverable"
     };
   }
+  rpc GetCollectedFees(GetCollectedFeesRequest) returns (GetCollectedFeesResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/fees/collected"
+    };
+  }
   rpc Sweep(SweepRequest) returns (SweepResponse) {
     option (meshapi.gateway.http) = {
       post: "/v1/admin/sweep"
@@ -350,6 +355,14 @@ message GetExpiringLiquidityResponse {
 message GetRecoverableLiquidityRequest {}
 message GetRecoverableLiquidityResponse {
   uint64 amount = 1;
+}
+
+message GetCollectedFeesRequest {
+  int64 after = 1; // Unix timestamp (UTC, exclusive). Only include rounds starting after this time. 0 means no lower bound.
+  int64 before = 2; // Unix timestamp (UTC, exclusive). Only include rounds starting before this time. 0 means no upper bound.
+}
+message GetCollectedFeesResponse {
+  uint64 collected_fees = 1; // Total collected fees in satoshis.
 }
 
 message SweepRequest {
