@@ -1400,8 +1400,13 @@ type SubmitTxRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SignedArkTx   string                 `protobuf:"bytes,1,opt,name=signed_ark_tx,json=signedArkTx,proto3" json:"signed_ark_tx,omitempty"`
 	CheckpointTxs []string               `protobuf:"bytes,2,rep,name=checkpoint_txs,json=checkpointTxs,proto3" json:"checkpoint_txs,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// When true, missing asset packets (OP_RETURN) are silently skipped instead
+	// of causing an ASSET_VALIDATION_FAILED error. Other asset-validation errors
+	// are still enforced. The resulting transaction outputs will have no asset
+	// metadata recorded (Assets=nil on the new VTXOs).
+	IgnoreMissingAssetPackets bool `protobuf:"varint,3,opt,name=ignore_missing_asset_packets,json=ignoreMissingAssetPackets,proto3" json:"ignore_missing_asset_packets,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *SubmitTxRequest) Reset() {
@@ -1446,6 +1451,13 @@ func (x *SubmitTxRequest) GetCheckpointTxs() []string {
 		return x.CheckpointTxs
 	}
 	return nil
+}
+
+func (x *SubmitTxRequest) GetIgnoreMissingAssetPackets() bool {
+	if x != nil {
+		return x.IgnoreMissingAssetPackets
+	}
+	return false
 }
 
 type SubmitTxResponse struct {
@@ -2048,10 +2060,11 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\ftopics_added\x18\x01 \x03(\tR\vtopicsAdded\x12%\n" +
 	"\x0etopics_removed\x18\x02 \x03(\tR\rtopicsRemoved\x12\x1d\n" +
 	"\n" +
-	"all_topics\x18\x03 \x03(\tR\tallTopics\"\\\n" +
+	"all_topics\x18\x03 \x03(\tR\tallTopics\"\x9d\x01\n" +
 	"\x0fSubmitTxRequest\x12\"\n" +
 	"\rsigned_ark_tx\x18\x01 \x01(\tR\vsignedArkTx\x12%\n" +
-	"\x0echeckpoint_txs\x18\x02 \x03(\tR\rcheckpointTxs\"\x83\x01\n" +
+	"\x0echeckpoint_txs\x18\x02 \x03(\tR\rcheckpointTxs\x12?\n" +
+	"\x1cignore_missing_asset_packets\x18\x03 \x01(\bR\x19ignoreMissingAssetPackets\"\x83\x01\n" +
 	"\x10SubmitTxResponse\x12\x19\n" +
 	"\bark_txid\x18\x01 \x01(\tR\aarkTxid\x12 \n" +
 	"\ffinal_ark_tx\x18\x02 \x01(\tR\n" +
