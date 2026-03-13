@@ -111,8 +111,9 @@ type Config struct {
 	PyroscopeServerURL                        string
 	RoundReportServiceEnabled                 bool
 
-	EsploraURL      string
-	AlertManagerURL string
+	EsploraURL        string
+	AlertManagerURL   string
+	ArkadeExplorerURL string
 
 	UnlockerType     string
 	UnlockerFilePath string // file unlocker
@@ -185,6 +186,7 @@ var (
 	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
 	EsploraURL                           = "ESPLORA_URL"
 	AlertManagerURL                      = "ALERT_MANAGER_URL"
+	ArkadeExplorerURL                    = "ARKADE_EXPLORER_URL"
 	NoMacaroons                          = "NO_MACAROONS"
 	NoTLS                                = "NO_TLS"
 	TLSExtraIP                           = "TLS_EXTRA_IP"
@@ -233,6 +235,7 @@ var (
 	defaultLiveStoreType       = "redis"
 	defaultRedisTxNumOfRetries = 10
 	defaultEsploraURL          = "https://blockstream.info/api"
+	defaultArkadeExplorerURL   = "https://arkade.space"
 	defaultLogLevel            = 4
 	defaultVtxoTreeExpiry      = 604672  // 7 days
 	defaultUnilateralExitDelay = 86400   // 24 hours
@@ -279,6 +282,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(PublicUnilateralExitDelay, defaultUnilateralExitDelay)
 	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
+	viper.SetDefault(ArkadeExplorerURL, defaultArkadeExplorerURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
 	viper.SetDefault(BoardingExitDelay, defaultBoardingExitDelay)
 	viper.SetDefault(RoundMaxParticipantsCount, defaultRoundMaxParticipantsCount)
@@ -375,6 +379,7 @@ func LoadConfig() (*Config, error) {
 		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
 		EsploraURL:                viper.GetString(EsploraURL),
 		AlertManagerURL:           viper.GetString(AlertManagerURL),
+		ArkadeExplorerURL:         viper.GetString(ArkadeExplorerURL),
 		NoMacaroons:               viper.GetBool(NoMacaroons),
 		TLSExtraIPs:               viper.GetStringSlice(TLSExtraIP),
 		TLSExtraDomains:           viper.GetStringSlice(TLSExtraDomain),
@@ -918,7 +923,7 @@ func (c *Config) alertsService() error {
 		return nil
 	}
 
-	alerts, err := alertsmanager.NewService(c.AlertManagerURL, c.EsploraURL)
+	alerts, err := alertsmanager.NewService(c.AlertManagerURL, c.ArkadeExplorerURL)
 	if err != nil {
 		return err
 	}
