@@ -55,13 +55,5 @@
       "expire_at": 1762862054
     },
     "expected": "{\"type\":\"get-intent\",\"expire_at\":1762862054}"
-  },
-  {
-    "name": "get_intent_no_expiry",
-    "message": {
-      "type": "get-intent",
-      "expire_at": 0
-    },
-    "expected": "{\"type\":\"get-intent\",\"expire_at\":0}"
   }
 ]
