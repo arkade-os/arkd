@@ -583,7 +583,7 @@ func maxAssetsPerVtxo(maxTxWeight uint64, spendingWeightThreshold float64) int {
 }
 
 // calculateCollectedFees computes the total fees (sats) collected by the coordinator for a given round.
-func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uint64 {
+func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) int64 {
 	totalIn := boardingInputAmount
 	totalOut := uint64(0)
 	for _, intent := range round.Intents {
@@ -593,7 +593,7 @@ func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uin
 	if totalOut >= totalIn {
 		return 0
 	}
-	return totalIn - totalOut
+	return int64(totalIn - totalOut)
 }
 
 // calculateBoardingInputAmount computes the total amount (sats) of boarding inputs in a PSBT.

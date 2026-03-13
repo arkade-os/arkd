@@ -57,7 +57,7 @@ func (a *adminHandler) GetRoundDetails(
 		ForfeitedAmount:  convertSatsToBTCStr(details.ForfeitedAmount),
 		TotalVtxosAmount: convertSatsToBTCStr(details.TotalVtxosAmount),
 		TotalExitAmount:  convertSatsToBTCStr(details.TotalExitAmount),
-		TotalFeeAmount:   convertSatsToBTCStr(details.FeesAmount),
+		TotalFeeAmount:   convertSatsToBTCStr(uint64(details.FeesAmount)),
 		InputsVtxos:      details.InputVtxos,
 		OutputsVtxos:     details.OutputVtxos,
 		ExitAddresses:    details.ExitAddresses,
@@ -460,7 +460,7 @@ func (a *adminHandler) GetCollectedFees(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	return &arkv1.GetCollectedFeesResponse{CollectedFees: fees}, nil
+	return &arkv1.GetCollectedFeesResponse{CollectedFees: uint64(fees)}, nil
 }
 
 func (a *adminHandler) Sweep(

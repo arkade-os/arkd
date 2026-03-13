@@ -126,7 +126,7 @@ func (r *arkRepository) GetRoundStats(
 
 func (r *arkRepository) GetCollectedFees(
 	ctx context.Context, after, before int64,
-) (uint64, error) {
+) (int64, error) {
 	query := badgerhold.Where("Stage.Ended").Eq(true).
 		And("Stage.Failed").Eq(false)
 	if after > 0 {
@@ -139,7 +139,7 @@ func (r *arkRepository) GetCollectedFees(
 	if err != nil {
 		return 0, err
 	}
-	var total uint64
+	var total int64
 	for _, round := range rounds {
 		total += round.CollectedFees
 	}

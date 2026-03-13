@@ -91,7 +91,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				ConnectorAddress:   round.ConnectorAddress,
 				Version:            int32(round.Version),
 				Swept:              round.Swept,
-				Fees:               int64(round.CollectedFees),
+				Fees:               round.CollectedFees,
 				FailReason: sql.NullString{
 					String: round.FailReason, Valid: len(round.FailReason) > 0,
 				},
@@ -448,7 +448,7 @@ func (r *roundRepository) GetIntentByTxid(
 }
 func (r *roundRepository) GetCollectedFees(
 	ctx context.Context, after, before int64,
-) (uint64, error) {
+) (int64, error) {
 	fees, err := r.querier.SelectCollectedFees(ctx, queries.SelectCollectedFeesParams{
 		After:  after,
 		Before: before,
@@ -456,10 +456,7 @@ func (r *roundRepository) GetCollectedFees(
 	if err != nil {
 		return 0, err
 	}
-	if fees < 0 {
-		return 0, fmt.Errorf("data integrity issue: got negative collected_fees %d", fees)
-	}
-	return uint64(fees), nil
+	return fees, nil
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
@@ -501,7 +498,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				Swept:              v.round.Swept,
 				Intents:            make(map[string]domain.Intent),
 				VtxoTreeExpiration: v.round.VtxoTreeExpiration,
-				CollectedFees:      uint64(v.round.Fees),
+				CollectedFees:      v.round.Fees,
 				FailReason:         v.round.FailReason.String,
 			}
 		}

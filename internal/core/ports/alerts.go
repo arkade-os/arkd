@@ -32,7 +32,7 @@ type BatchFinalizedAlert struct {
 	ForfeitCount                        int
 	ForfeitAmount                       uint64
 	OnchainFees                         uint64
-	CollectedFees                       uint64
+	CollectedFees                       int64
 }
 
 type Alerts interface {

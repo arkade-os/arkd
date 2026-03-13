@@ -668,7 +668,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// collected fees 1000, 2000, 3000 respectively.
 		for _, tc := range []struct {
 			ts  int64
-			fee uint64
+			fee int64
 		}{
 			{100, 1000},
 			{200, 2000},
