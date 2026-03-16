@@ -412,7 +412,7 @@ func (h *defaultBatchEventsHandler) OnBatchStarted(
 			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 			expiry := time.Duration(event.BatchExpiry) * time.Second
 			if h.batchExpiry.Type == arklib.LocktimeTypeBlock {
-				expiry = time.Duration(event.BatchExpiry) * arklib.SECONDS_PER_BLOCK
+				expiry = time.Duration(event.BatchExpiry*arklib.SECONDS_PER_BLOCK) * time.Second
 			}
 			return false, expiry, nil
 		}
