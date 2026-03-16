@@ -14,27 +14,19 @@ import (
 )
 
 type signMessageFixtures struct {
-	TestKeys []testKey              `json:"test_keys"`
-	Valid    []signMessageTestCase  `json:"valid"`
-	Invalid  []signMessageInvalidCase `json:"invalid"`
-}
-
-type testKey struct {
-	Name          string `json:"name"`
-	PrivateKeyHex string `json:"private_key_hex"`
-	PublicKeyHex  string `json:"public_key_hex"`
+	Valid   []signMessageTestCase    `json:"valid"`
+	Invalid []signMessageInvalidCase `json:"invalid"`
 }
 
 type signMessageTestCase struct {
-	Name       string `json:"name"`
-	MessageHex string `json:"message_hex"`
-	KeyName    string `json:"key_name"`
+	Name          string `json:"name"`
+	MessageHex    string `json:"message_hex"`
+	PrivateKeyHex string `json:"private_key_hex"`
 }
 
 type signMessageInvalidCase struct {
 	Name          string `json:"name"`
 	MessageHex    string `json:"message_hex"`
-	KeyName       string `json:"key_name"`
 	ExpectedError string `json:"expected_error"`
 }
 
@@ -50,20 +42,6 @@ func loadSignMessageFixtures(t *testing.T) *signMessageFixtures {
 	return &f
 }
 
-func getTestKey(t *testing.T, fixtures *signMessageFixtures, keyName string) *btcec.PrivateKey {
-	t.Helper()
-	for _, k := range fixtures.TestKeys {
-		if k.Name == keyName {
-			privKeyBytes, err := hex.DecodeString(k.PrivateKeyHex)
-			require.NoError(t, err)
-			privKey, _ := btcec.PrivKeyFromBytes(privKeyBytes)
-			return privKey
-		}
-	}
-	t.Fatalf("test key not found: %s", keyName)
-	return nil
-}
-
 func TestSignMessage(t *testing.T) {
 	fixtures := loadSignMessageFixtures(t)
 	ctx := context.Background()
@@ -71,7 +49,9 @@ func TestSignMessage(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		for _, tc := range fixtures.Valid {
 			t.Run(tc.Name, func(t *testing.T) {
-				privKey := getTestKey(t, fixtures, tc.KeyName)
+				privKeyBytes, err := hex.DecodeString(tc.PrivateKeyHex)
+				require.NoError(t, err)
+				privKey, _ := btcec.PrivKeyFromBytes(privKeyBytes)
 
 				w := &wallet{
 					WalletOptions: WalletOptions{
