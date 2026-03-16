@@ -1,5 +1,7 @@
 package domain
 
+import "fmt"
+
 // MarkerInterval is the depth interval at which markers are created.
 // VTXOs at depth 0, 100, 200, etc. create new markers.
 const MarkerInterval = 100
@@ -16,9 +18,29 @@ type Marker struct {
 	ParentMarkerIDs []string
 }
 
-// IsAtMarkerBoundary returns true if the given depth is at a marker boundary.
-func IsAtMarkerBoundary(depth uint32) bool {
+// isAtMarkerBoundary returns true if the given depth is at a marker boundary.
+func isAtMarkerBoundary(depth uint32) bool {
 	return depth%MarkerInterval == 0
+}
+
+// NewMarker computes marker information for a new offchain transaction.
+// If the depth is at a marker boundary, it returns a new Marker and the marker IDs
+// to assign to the child VTXOs (just the new marker ID).
+// Otherwise, it returns nil and the inherited parent marker IDs.
+func NewMarker(txid string, depth uint32, parentMarkerIDs []string) (*Marker, []string) {
+	if isAtMarkerBoundary(depth) {
+		id := fmt.Sprintf("%s:marker:%d", txid, depth)
+		marker := &Marker{
+			ID:              id,
+			Depth:           depth,
+			ParentMarkerIDs: parentMarkerIDs,
+		}
+		return marker, []string{id}
+	}
+	if len(parentMarkerIDs) > 0 {
+		return nil, parentMarkerIDs
+	}
+	return nil, nil
 }
 
 // SweptMarker records when a marker (and all VTXOs it covers) was swept.

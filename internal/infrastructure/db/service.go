@@ -581,73 +581,24 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			return
 		}
 
-		// Get spent VTXO outpoints from checkpoint txs to calculate depth
-		spentOutpoints := make([]domain.Outpoint, 0)
-		for _, tx := range offchainTx.CheckpointTxs {
-			_, ins, _, err := s.txDecoder.DecodeTx(tx)
-			if err != nil {
-				log.WithError(err).Warn("failed to decode checkpoint tx for depth calculation")
-				continue
-			}
-			spentOutpoints = append(spentOutpoints, ins...)
-		}
+		// Depth and parent marker IDs are carried by the OffchainTxAccepted event,
+		// computed in SubmitOffchainTx from the spent VTXOs.
+		newDepth := offchainTx.Depth
+		parentMarkerIDs := offchainTx.ParentMarkerIDs
 
-		// Get spent VTXOs to calculate new depth
-		var newDepth uint32
-		var parentMarkerIDs []string
-		depthKnown := true
-		if len(spentOutpoints) > 0 {
-			spentVtxos, err := s.vtxoStore.GetVtxos(ctx, spentOutpoints)
-			if err != nil {
-				log.WithError(err).
-					Warn("failed to get spent vtxos for depth calculation, skipping marker creation")
-				// Continue with depth 0 but mark as unknown to avoid creating misleading root markers
-				depthKnown = false
-			} else {
-				// Calculate depth: max(parent depths) + 1
-				var maxDepth uint32
-				parentMarkerSet := make(map[string]struct{})
-				for _, v := range spentVtxos {
-					if v.Depth > maxDepth {
-						maxDepth = v.Depth
-					}
-					// Collect ALL parent marker IDs for marker linking
-					for _, markerID := range v.MarkerIDs {
-						if markerID != "" {
-							parentMarkerSet[markerID] = struct{}{}
-						}
-					}
-				}
-				newDepth = maxDepth + 1
-				// Convert parent marker set to slice
-				for id := range parentMarkerSet {
-					parentMarkerIDs = append(parentMarkerIDs, id)
-				}
-			}
-		}
-
-		// Create marker if at boundary depth, or inherit ALL parent markers
-		// Skip marker creation if depth is unknown (GetVtxos failed) to avoid misleading root markers
+		// Create marker if at boundary depth, or inherit parent markers
 		var markerIDs []string
-
-		if depthKnown && domain.IsAtMarkerBoundary(newDepth) {
-			// Create marker ID from the first output (the ark tx id + first vtxo vout)
-			newMarkerID := fmt.Sprintf("%s:marker:%d", txid, newDepth)
-			marker := domain.Marker{
-				ID:              newMarkerID,
-				Depth:           newDepth,
-				ParentMarkerIDs: parentMarkerIDs,
-			}
-			if err := s.markerStore.AddMarker(ctx, marker); err != nil {
+		marker, ids := domain.NewMarker(txid, newDepth, parentMarkerIDs)
+		if marker != nil {
+			if err := s.markerStore.AddMarker(ctx, *marker); err != nil {
 				log.WithError(err).Warn("failed to create marker for chained vtxo")
 				// Continue without marker - non-fatal
 			} else {
-				log.Debugf("created marker %s at depth %d", newMarkerID, newDepth)
-				markerIDs = []string{newMarkerID}
+				log.Debugf("created marker %s at depth %d", marker.ID, newDepth)
+				markerIDs = ids
 			}
-		} else if len(parentMarkerIDs) > 0 {
-			// Inherit ALL markers from parents at non-boundary depth
-			markerIDs = parentMarkerIDs
+		} else {
+			markerIDs = ids
 		}
 
 		issuances, assets, err := getAssetsFromTxOuts(txid, outs)
