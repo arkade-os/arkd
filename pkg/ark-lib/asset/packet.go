@@ -88,6 +88,9 @@ func (p Packet) validate() error {
 	if len(p) <= 0 {
 		return fmt.Errorf("missing assets")
 	}
+	if uint64(len(p)) > MaxAssetGroupCount {
+		return fmt.Errorf("invalid asset group count, max=%d, got=%d", MaxAssetGroupCount, len(p))
+	}
 	seen := make(map[AssetId]struct{})
 	for _, asset := range p {
 		if asset.AssetId != nil {
