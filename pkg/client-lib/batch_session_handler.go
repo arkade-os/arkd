@@ -410,7 +410,11 @@ func (h *defaultBatchEventsHandler) OnBatchStarted(
 			}
 			h.batchSessionId = event.Id
 			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
-			return false, time.Duration(event.BatchExpiry) * time.Second, nil
+			expiry := time.Duration(event.BatchExpiry) * time.Second
+			if h.batchExpiry.Type == arklib.LocktimeTypeBlock {
+				expiry = time.Duration(event.BatchExpiry) * arklib.SECONDS_PER_BLOCK
+			}
+			return false, expiry, nil
 		}
 	}
 	log.Debug("intent id not found in batch proposal, waiting for next one...")
