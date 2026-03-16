@@ -1156,9 +1156,32 @@ func (s *service) SubmitOffchainTx(
 		signedCheckpointTxsMap[rebuiltCheckpointTx.UnsignedTx.TxID()] = signedCheckpointTx
 	}
 
+	// Compute depth and parent markers from spent VTXOs for the accepted event.
+	var maxDepth uint32
+	parentMarkerSet := make(map[string]struct{})
+	for _, v := range spentVtxos {
+		if v.Depth > maxDepth {
+			maxDepth = v.Depth
+		}
+		for _, markerID := range v.MarkerIDs {
+			if markerID != "" {
+				parentMarkerSet[markerID] = struct{}{}
+			}
+		}
+	}
+	var newDepth uint32
+	if len(spentVtxos) > 0 {
+		newDepth = maxDepth + 1
+	}
+	parentMarkerIDs := make([]string, 0, len(parentMarkerSet))
+	for id := range parentMarkerSet {
+		parentMarkerIDs = append(parentMarkerIDs, id)
+	}
+
 	change, err := offchainTx.Accept(
 		fullySignedArkTx, signedCheckpointTxsMap,
 		commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiration,
+		newDepth, parentMarkerIDs,
 	)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to accept offchain tx: %w", err).

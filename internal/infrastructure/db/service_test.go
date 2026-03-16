@@ -2803,7 +2803,7 @@ func testMarkerCreationAtBoundaryDepth(t *testing.T, svc ports.RepoManager) {
 
 		// Simulate offchain tx: child at depth 100 (marker boundary)
 		newDepth := uint32(100)
-		require.True(t, domain.IsAtMarkerBoundary(newDepth))
+		require.True(t, newDepth%domain.MarkerInterval == 0)
 
 		// Collect parent markers (mimics service logic)
 		parentMarkerIDs := parentVtxo.MarkerIDs
@@ -2896,7 +2896,7 @@ func testMarkerInheritanceAtNonBoundary(t *testing.T, svc ports.RepoManager) {
 
 		// Child at depth 51 (NOT a boundary) should inherit both parent markers
 		newDepth := uint32(51)
-		require.False(t, domain.IsAtMarkerBoundary(newDepth))
+		require.False(t, newDepth%domain.MarkerInterval == 0)
 
 		inheritedMarkers := []string{markerA, markerB}
 		childVtxo := domain.Vtxo{
