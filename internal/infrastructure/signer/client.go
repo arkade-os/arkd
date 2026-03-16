@@ -113,5 +113,8 @@ func (c *signerClient) SignMessage(
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode signature hex: %w", err)
 	}
+	if len(sig) != 64 {
+		return nil, fmt.Errorf("invalid signature length: expected 64 bytes, got %d", len(sig))
+	}
 	return sig, nil
 }
