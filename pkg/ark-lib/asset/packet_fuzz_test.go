@@ -1,11 +1,11 @@
 package asset_test
 
 import (
-	"bytes"
 	"encoding/hex"
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/stretchr/testify/require"
 )
 
 func FuzzNewPacketFromBytes(f *testing.F) {
@@ -40,25 +40,17 @@ func FuzzNewPacketFromBytes(f *testing.F) {
 
 		// If parsing succeeded, serialization should succeed.
 		serialized, err := pkt.Serialize()
-		if err != nil {
-			t.Fatalf("serialize failed after successful parse: %v", err)
-		}
+		require.NoError(t, err)
 
 		// Re-parsing serialized bytes should also succeed.
 		pkt2, err := asset.NewPacketFromBytes(serialized)
-		if err != nil {
-			t.Fatalf("re-parse failed after serialize: %v", err)
-		}
+		require.NoError(t, err)
 
 		reserialized, err := pkt2.Serialize()
-		if err != nil {
-			t.Fatalf("re-serialize failed after re-parse: %v", err)
-		}
+		require.NoError(t, err)
 
 		// Canonical serialized bytes should be stable across parse/serialize cycles.
-		if !bytes.Equal(serialized, reserialized) {
-			t.Fatalf("non-stable roundtrip: pkt=%x pkt2=%x", serialized, reserialized)
-		}
+		require.Equalf(t, serialized, reserialized, "non-stable roundtrip: pkt=%x pkt2=%x", serialized, reserialized)
 	})
 }
 
