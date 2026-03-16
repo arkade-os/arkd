@@ -1,6 +1,7 @@
 package asset_test
 
 import (
+	"bytes"
 	"encoding/hex"
 	"testing"
 
@@ -49,9 +50,14 @@ func FuzzNewPacketFromBytes(f *testing.F) {
 			t.Fatalf("re-parse failed after serialize: %v", err)
 		}
 
-		// Canonical string form should be stable across parse/serialize cycles.
-		if pkt.String() != pkt2.String() {
-			t.Fatalf("non-stable roundtrip: pkt=%s pkt2=%s", pkt.String(), pkt2.String())
+		reserialized, err := pkt2.Serialize()
+		if err != nil {
+			t.Fatalf("re-serialize failed after re-parse: %v", err)
+		}
+
+		// Canonical serialized bytes should be stable across parse/serialize cycles.
+		if !bytes.Equal(serialized, reserialized) {
+			t.Fatalf("non-stable roundtrip: pkt=%x pkt2=%x", serialized, reserialized)
 		}
 	})
 }
