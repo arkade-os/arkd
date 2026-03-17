@@ -28,12 +28,6 @@ service SignerService {
       body: "*"
     };
   }
-  rpc SignMessage(SignMessageRequest) returns (SignMessageResponse) {
-    option (meshapi.gateway.http) = {
-      post: "/v1/sign-message"
-      body: "*"
-    };
-  }
 }
 
 message GetStatusRequest {}
@@ -60,11 +54,4 @@ message SignTransactionTapscriptRequest {
 }
 message SignTransactionTapscriptResponse {
   string signed_tx = 1;
-}
-
-message SignMessageRequest {
-  bytes message = 1;
-}
-message SignMessageResponse {
-  bytes signature = 1;
 }

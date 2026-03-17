@@ -46,7 +46,6 @@ type WalletService interface {
 	// Withdraw both main and connectors account funds
 	WithdrawAll(ctx context.Context, destinationAddress string) (string, error)
 	LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) error
-	SignMessage(ctx context.Context, message []byte) ([]byte, error)
 	Close()
 }
 

@@ -17,9 +17,11 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
@@ -80,8 +82,8 @@ type IndexerService interface {
 
 type indexerService struct {
 	repoManager  ports.RepoManager
-	signer       ports.SignerService
 	wallet       ports.WalletService
+	privkey      *btcec.PrivateKey
 	signerPubkey []byte
 	txExposure   string
 	authTokenTTL time.Duration
@@ -89,8 +91,8 @@ type indexerService struct {
 
 func NewIndexerService(
 	repoManager ports.RepoManager,
-	signer ports.SignerService,
 	wallet ports.WalletService,
+	privkey *btcec.PrivateKey,
 	txExposure string,
 	authTokenExpirySec int64,
 ) (IndexerService, error) {
@@ -100,11 +102,6 @@ func NewIndexerService(
 	default:
 		return nil, fmt.Errorf("invalid tx exposure value: %q", txExposure)
 	}
-	// set signerPubkey at initialization since it's needed for auth token generation and validation, and signer is guaranteed to be available at this point
-	pubkey, err := signer.GetPubkey(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get signer pubkey: %w", err)
-	}
 
 	ttl := defaultAuthTokenTTL
 	if authTokenExpirySec > 0 {
@@ -113,9 +110,9 @@ func NewIndexerService(
 
 	return &indexerService{
 		repoManager:  repoManager,
-		signer:       signer,
 		wallet:       wallet,
-		signerPubkey: schnorr.SerializePubKey(pubkey),
+		privkey:      privkey,
+		signerPubkey: schnorr.SerializePubKey(privkey.PubKey()),
 		txExposure:   txExposure,
 		authTokenTTL: ttl,
 	}, nil
@@ -337,7 +334,7 @@ func (i *indexerService) GetVtxoChain(
 			// withheld: swallow error, proceed without auth token
 			break
 		}
-		authToken, err = i.createAuthToken(ctx, vtxoKey)
+		authToken, err = i.createAuthToken(vtxoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -346,7 +343,7 @@ func (i *indexerService) GetVtxoChain(
 		if err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
 			return nil, err
 		}
-		authToken, err = i.createAuthToken(ctx, vtxoKey)
+		authToken, err = i.createAuthToken(vtxoKey)
 		if err != nil {
 			return nil, err
 		}
@@ -658,7 +655,7 @@ func (i *indexerService) ValidateIntentWithProof(
 		}
 	}
 
-	signedProof, err := i.signer.SignTransactionTapscript(ctx, intentForProof.Proof, nil)
+	signedProof, err := i.signTransactionTapscript(intentForProof.Proof)
 	if err != nil {
 		return errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
 			WithMetadata(map[string]any{
@@ -834,12 +831,12 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 
 // createAuthToken creates a signed auth token for accessing virtual txs.
 // Format: base64(outpoint_txid(32)|outpoint_vout(4)|timestamp(8)|signature(64))
-func (i *indexerService) createAuthToken(ctx context.Context, outpoint Outpoint) (string, error) {
-	return i.createAuthTokenWithTimestamp(ctx, outpoint, time.Now())
+func (i *indexerService) createAuthToken(outpoint Outpoint) (string, error) {
+	return i.createAuthTokenWithTimestamp(outpoint, time.Now())
 }
 
 func (i *indexerService) createAuthTokenWithTimestamp(
-	ctx context.Context, outpoint Outpoint, ts time.Time,
+	outpoint Outpoint, ts time.Time,
 ) (string, error) {
 	// Build message: txid (32 bytes) + vout (4 bytes) + timestamp (8 bytes)
 	txidBytes, err := hex.DecodeString(outpoint.Txid)
@@ -853,15 +850,17 @@ func (i *indexerService) createAuthTokenWithTimestamp(
 	binary.BigEndian.PutUint64(msg[36:44], uint64(ts.Unix()))
 
 	// Sign the message
-	sig, err := i.signer.SignMessage(ctx, msg)
+	msgHash := chainhash.HashB(msg)
+	sig, err := schnorr.Sign(i.privkey, msgHash)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign auth token: %w", err)
 	}
+	sigBytes := sig.Serialize()
 
 	// Combine message + signature and encode as base64
-	token := make([]byte, len(msg)+len(sig))
+	token := make([]byte, len(msg)+len(sigBytes))
 	copy(token[0:len(msg)], msg)
-	copy(token[len(msg):], sig)
+	copy(token[len(msg):], sigBytes)
 
 	return base64.StdEncoding.EncodeToString(token), nil
 }
@@ -916,4 +915,59 @@ func (i *indexerService) validateAuthToken(authToken string) (Outpoint, bool, er
 	}
 
 	return outpoint, true, nil
+}
+
+// signTransactionTapscript signs all tapscript inputs of a PSBT using the indexer's private key.
+func (i *indexerService) signTransactionTapscript(partialTx string) (string, error) {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(partialTx), true)
+	if err != nil {
+		return "", err
+	}
+
+	prevouts := make(map[wire.OutPoint]*wire.TxOut)
+	for inputIndex, input := range ptx.Inputs {
+		prevOutpoint := ptx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint
+		if input.WitnessUtxo != nil {
+			prevouts[prevOutpoint] = input.WitnessUtxo
+		}
+	}
+
+	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
+	txSigHashes := txscript.NewTxSigHashes(ptx.UnsignedTx, prevoutFetcher)
+
+	for inputIndex, input := range ptx.Inputs {
+		if input.WitnessUtxo == nil {
+			continue
+		}
+		if !txscript.IsPayToTaproot(input.WitnessUtxo.PkScript) {
+			continue
+		}
+		if len(input.TaprootLeafScript) == 0 {
+			continue
+		}
+
+		tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
+
+		signature, err := txscript.RawTxInTapscriptSignature(
+			ptx.UnsignedTx, txSigHashes, inputIndex, input.WitnessUtxo.Value,
+			input.WitnessUtxo.PkScript, tapLeaf, input.SighashType, i.privkey,
+		)
+		if err != nil {
+			return "", err
+		}
+
+		leafHash := tapLeaf.TapHash()
+
+		ptx.Inputs[inputIndex].TaprootScriptSpendSig = append(
+			ptx.Inputs[inputIndex].TaprootScriptSpendSig,
+			&psbt.TaprootScriptSpendSig{
+				Signature:   signature[:64],
+				XOnlyPubKey: schnorr.SerializePubKey(i.privkey.PubKey()),
+				LeafHash:    leafHash[:],
+				SigHash:     input.SighashType,
+			},
+		)
+	}
+
+	return ptx.B64Encode()
 }

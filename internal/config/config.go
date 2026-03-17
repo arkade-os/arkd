@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,6 +25,7 @@ import (
 	fileunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/file"
 	walletclient "github.com/arkade-os/arkd/internal/infrastructure/wallet"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -135,6 +137,9 @@ type Config struct {
 	EnablePprof            bool
 	IndexerTxExposure      string
 	IndexerAuthTokenExpiry int64
+	// IndexerSigningKey is a hex-encoded private key used by the indexer to sign
+	// auth tokens and intent proofs. SENSITIVE: must never be logged.
+	IndexerSigningKey string
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -156,6 +161,9 @@ func (c *Config) String() string {
 	clone := *c
 	if clone.UnlockerPassword != "" {
 		clone.UnlockerPassword = "••••••"
+	}
+	if clone.IndexerSigningKey != "" {
+		clone.IndexerSigningKey = "••••••"
 	}
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
@@ -225,6 +233,8 @@ var (
 	EnablePprof                   = "ENABLE_PPROF"
 	IndexerTxExposure             = "INDEXER_TX_EXPOSURE"
 	IndexerAuthTokenExpiry        = "INDEXER_AUTH_TOKEN_EXPIRY" // #nosec G101
+	// IndexerSigningKey is a hex-encoded private key. SENSITIVE: never log this value.
+	IndexerSigningKey = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -419,6 +429,7 @@ func LoadConfig() (*Config, error) {
 		EnablePprof:                   viper.GetBool(EnablePprof),
 		IndexerTxExposure:             viper.GetString(IndexerTxExposure),
 		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
+		IndexerSigningKey:             viper.GetString(IndexerSigningKey),
 	}, nil
 }
 
@@ -665,13 +676,18 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 			return nil, err
 		}
 	}
-	if c.signer == nil {
-		if err := c.signerService(); err != nil {
-			return nil, err
+
+	var privkey *btcec.PrivateKey
+	if c.IndexerSigningKey != "" {
+		keyBytes, err := hex.DecodeString(c.IndexerSigningKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode indexer signing key: %w", err)
 		}
+		privkey, _ = btcec.PrivKeyFromBytes(keyBytes)
 	}
+
 	return application.NewIndexerService(
-		c.repo, c.signer, c.wallet, c.IndexerTxExposure, c.IndexerAuthTokenExpiry,
+		c.repo, c.wallet, privkey, c.IndexerTxExposure, c.IndexerAuthTokenExpiry,
 	)
 }
 
