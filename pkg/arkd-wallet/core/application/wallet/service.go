@@ -74,6 +74,8 @@ func (w *wallet) GetReadyUpdate(ctx context.Context) <-chan bool {
 				return
 			case w.readyCh <- true:
 				return
+			default:
+				log.Warn("could not send event for ready update, channel full")
 			}
 		}()
 	}
@@ -165,7 +167,11 @@ func (w *wallet) Lock(ctx context.Context) error {
 	if w.keyMgr == nil {
 		return fmt.Errorf("wallet is already locked")
 	}
-	w.readyCh <- false
+	select {
+	case w.readyCh <- false:
+	default:
+		log.Warn("could not send event for ready update, channel full")
+	}
 	w.keyMgr = nil
 	return nil
 }
