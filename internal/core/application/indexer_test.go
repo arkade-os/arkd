@@ -1038,3 +1038,81 @@ func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
 	// not for B or C individually — they were already in the cache.
 	vtxoRepo.AssertNumberOfCalls(t, "GetVtxos", 1)
 }
+
+// TestGetVtxoChain_PreloadReducesDBCalls builds a 500-VTXO preconfirmed chain
+// with markers every 100 VTXOs and verifies that preloading reduces GetVtxos
+// calls from ~500 (one per VTXO) to 1 (the initial frontier fetch).
+func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
+	const chainLen = 500
+	const markersCount = chainLen / int(domain.MarkerInterval) // 5
+
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	ctx := context.Background()
+
+	// Generate txids and VTXOs grouped by marker bucket.
+	txids := make([]string, chainLen)
+	vtxos := make([]domain.Vtxo, chainLen)
+	for i := 0; i < chainLen; i++ {
+		txids[i] = fmt.Sprintf("%064x", i)
+		markerID := fmt.Sprintf("m-%d", i/int(domain.MarkerInterval))
+		vtxos[i] = domain.Vtxo{
+			Outpoint:     domain.Outpoint{Txid: txids[i], VOut: 0},
+			Preconfirmed: true,
+			ExpiresAt:    int64(1000 + i),
+			MarkerIDs:    []string{markerID},
+		}
+	}
+
+	// Preload: GetVtxos for frontier (single call).
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txids[0], VOut: 0}}).
+		Return([]domain.Vtxo{vtxos[0]}, nil)
+
+	// Preload: marker chain m-0 → m-1 → m-2 → m-3 → m-4.
+	for m := 0; m < markersCount; m++ {
+		mid := fmt.Sprintf("m-%d", m)
+		batch := vtxos[m*int(domain.MarkerInterval) : (m+1)*int(domain.MarkerInterval)]
+
+		markerRepo.On("GetVtxoChainByMarkers", ctx, []string{mid}).
+			Return(batch, nil)
+
+		var parentIDs []string
+		if m+1 < markersCount {
+			parentIDs = []string{fmt.Sprintf("m-%d", m+1)}
+		}
+		markerRepo.On("GetMarkersByIds", ctx, []string{mid}).
+			Return([]domain.Marker{
+				{ID: mid, Depth: uint32(m * int(domain.MarkerInterval)), ParentMarkerIDs: parentIDs},
+			}, nil)
+	}
+
+	// Marker window (won't be called — all cache hits from preload).
+	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+		Return([]domain.Vtxo{}, nil).Maybe()
+
+	// Offchain tx: each vtxo_i has a checkpoint pointing to vtxo_{i+1}.
+	for i := 0; i < chainLen-1; i++ {
+		cp := makeCheckpointPSBT(t, txids[i+1], 0)
+		offchainTxRepo.On("GetOffchainTx", ctx, txids[i]).
+			Return(&domain.OffchainTx{
+				CheckpointTxs: map[string]string{fmt.Sprintf("cp-%d", i): cp},
+			}, nil)
+	}
+	// Terminal VTXO (no checkpoints).
+	offchainTxRepo.On("GetOffchainTx", ctx, txids[chainLen-1]).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+
+	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txids[0], VOut: 0}, nil, "")
+	require.NoError(t, err)
+
+	// Each non-terminal VTXO produces 2 items (ark + checkpoint), terminal produces 1.
+	expectedItems := (chainLen-1)*2 + 1
+	require.Equal(t, expectedItems, len(resp.Chain))
+
+	// Key assertion: GetVtxos called only 1 time (preload frontier fetch).
+	// Without preloading this would be ~500 individual DB calls.
+	vtxoRepo.AssertNumberOfCalls(t, "GetVtxos", 1)
+
+	// Marker-based preload: 5 bulk fetches + 5 marker lookups = 10 total queries.
+	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", markersCount)
+	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", markersCount)
+}
