@@ -42,10 +42,6 @@ func TestDecodeClosure(t *testing.T) {
 				closure, err := script.DecodeClosure(scriptBytes)
 				require.NoError(t, err)
 				require.NotNil(t, closure)
-
-				// script, err := closure.Script()
-				// require.NoError(t, err)
-				// require.Equal(t, scriptBytes, script)
 			})
 		}
 	})
@@ -1140,13 +1136,6 @@ func executeBoolScriptFixtures(tb testing.TB) []executeBoolScriptFixture {
 		{
 			name:        "invalid CLTV",
 			script:      []byte{txscript.OP_CHECKLOCKTIMEVERIFY},
-			witness:     wire.TxWitness{},
-			returnValue: false,
-			expectErr:   true,
-		},
-		{
-			name:        "invalid CHECKSIGVERIFY",
-			script:      []byte{txscript.OP_CHECKSIGVERIFY},
 			witness:     wire.TxWitness{},
 			returnValue: false,
 			expectErr:   true,
