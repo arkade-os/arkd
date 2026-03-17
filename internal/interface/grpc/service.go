@@ -263,7 +263,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 	)
 
-	s.readinessSvc = interceptors.NewReadinessService()
+	s.readinessSvc = interceptors.NewReadinessService(ctx)
 	s.readinessSvc.ListenToWalletState(func() <-chan bool {
 		ch, err := s.appConfig.WalletService().GetReadyUpdate(context.Background())
 		if err != nil {

@@ -14,7 +14,7 @@ import (
 
 func TestUnaryReadinessHandler(t *testing.T) {
 	t.Run("passes when checker allows", func(t *testing.T) {
-		readiness := NewReadinessService()
+		readiness := NewReadinessService(t.Context())
 		readiness.walletReady.Store(true)
 		readiness.MarkAppServiceStarted()
 		interceptor := unaryReadinessHandler(readiness)
@@ -34,7 +34,7 @@ func TestUnaryReadinessHandler(t *testing.T) {
 	})
 
 	t.Run("blocks when checker denies", func(t *testing.T) {
-		interceptor := unaryReadinessHandler(NewReadinessService())
+		interceptor := unaryReadinessHandler(NewReadinessService(t.Context()))
 
 		called := false
 		_, err := interceptor(
@@ -55,7 +55,7 @@ func TestUnaryReadinessHandler(t *testing.T) {
 
 func TestStreamReadinessHandler(t *testing.T) {
 	t.Run("passes when checker allows", func(t *testing.T) {
-		readiness := NewReadinessService()
+		readiness := NewReadinessService(t.Context())
 		readiness.walletReady.Store(true)
 		readiness.MarkAppServiceStarted()
 		interceptor := streamReadinessHandler(readiness)
@@ -75,7 +75,7 @@ func TestStreamReadinessHandler(t *testing.T) {
 	})
 
 	t.Run("blocks when checker denies", func(t *testing.T) {
-		interceptor := streamReadinessHandler(NewReadinessService())
+		interceptor := streamReadinessHandler(NewReadinessService(t.Context()))
 
 		called := false
 		err := interceptor(
@@ -96,12 +96,12 @@ func TestStreamReadinessHandler(t *testing.T) {
 
 func TestReadinessServiceCheck(t *testing.T) {
 	t.Run("ignores non public methods", func(t *testing.T) {
-		r := NewReadinessService()
+		r := NewReadinessService(t.Context())
 		require.NoError(t, r.Check(t.Context(), "/ark.v1.WalletService/Lock"))
 	})
 
 	t.Run("app not started returns unavailable", func(t *testing.T) {
-		r := NewReadinessService()
+		r := NewReadinessService(t.Context())
 		r.walletReady.Store(true)
 		err := r.Check(t.Context(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
@@ -110,7 +110,7 @@ func TestReadinessServiceCheck(t *testing.T) {
 	})
 
 	t.Run("wallet not ready returns failed precondition", func(t *testing.T) {
-		r := NewReadinessService()
+		r := NewReadinessService(t.Context())
 		r.MarkAppServiceStarted()
 		err := r.Check(t.Context(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
@@ -119,7 +119,7 @@ func TestReadinessServiceCheck(t *testing.T) {
 	})
 
 	t.Run("wallet not ready returns failed precondition for indexer", func(t *testing.T) {
-		r := NewReadinessService()
+		r := NewReadinessService(t.Context())
 		r.MarkAppServiceStarted()
 		err := r.Check(t.Context(), "/ark.v1.IndexerService/GetAsset")
 		st, ok := status.FromError(err)
@@ -128,14 +128,14 @@ func TestReadinessServiceCheck(t *testing.T) {
 	})
 
 	t.Run("ready wallet allows public methods", func(t *testing.T) {
-		r := NewReadinessService()
+		r := NewReadinessService(t.Context())
 		r.walletReady.Store(true)
 		r.MarkAppServiceStarted()
 		require.NoError(t, r.Check(t.Context(), "/ark.v1.ArkService/GetInfo"))
 	})
 
 	t.Run("listen to wallet state updates atomic", func(t *testing.T) {
-		r := NewReadinessService()
+		r := NewReadinessService(t.Context())
 		ch := make(chan bool, 1)
 		r.ListenToWalletState(func() <-chan bool { return ch })
 
@@ -157,7 +157,7 @@ func TestReadinessServiceCheck(t *testing.T) {
 	})
 
 	t.Run("listen to wallet state handles channel close and reconnect", func(t *testing.T) {
-		r := NewReadinessService()
+		r := NewReadinessService(t.Context())
 		r.walletReady.Store(true)
 
 		ch1 := make(chan bool)
@@ -191,7 +191,7 @@ func TestReadinessServiceCheck(t *testing.T) {
 	})
 
 	t.Run("MarkAppServiceStopped stops listener goroutine", func(t *testing.T) {
-		r := NewReadinessService()
+		r := NewReadinessService(t.Context())
 		ch := make(chan bool, 1)
 		r.ListenToWalletState(func() <-chan bool { return ch })
 

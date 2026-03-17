@@ -28,8 +28,8 @@ type ReadinessService struct {
 	cancel                  context.CancelFunc
 }
 
-func NewReadinessService() *ReadinessService {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewReadinessService(ctx context.Context) *ReadinessService {
+	ctx, cancel := context.WithCancel(ctx)
 	return &ReadinessService{ctx: ctx, cancel: cancel}
 }
 
