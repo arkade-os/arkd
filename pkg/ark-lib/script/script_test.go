@@ -1063,23 +1063,45 @@ func TestCLTVMultisigClosure(t *testing.T) {
 }
 
 func TestExecuteBoolScript(t *testing.T) {
+	testCases := executeBoolScriptFixtures(t)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			valid, err := script.EvaluateScriptToBool(tc.script, tc.witness)
+
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tc.returnValue, valid)
+		})
+	}
+}
+
+type executeBoolScriptFixture struct {
+	name        string
+	script      []byte
+	witness     wire.TxWitness
+	returnValue bool
+	expectErr   bool
+}
+
+func executeBoolScriptFixtures(tb testing.TB) []executeBoolScriptFixture {
+	tb.Helper()
+
 	// Generate two random byte slices for coinflip
 	rand1 := make([]byte, 16)
 	_, err := rand.Read(rand1)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	hash1 := sha256.Sum256(rand1)
 
 	rand2 := make([]byte, 15)
 	_, err = rand.Read(rand2)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	testCases := []struct {
-		name        string
-		script      []byte
-		witness     wire.TxWitness
-		returnValue bool
-		expectErr   bool
-	}{
+	return []executeBoolScriptFixture{
 		{
 			name:        "True",
 			script:      []byte{txscript.OP_TRUE},
@@ -1163,20 +1185,6 @@ func TestExecuteBoolScript(t *testing.T) {
 			returnValue: false,
 			expectErr:   false,
 		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			valid, err := script.EvaluateScriptToBool(tc.script, tc.witness)
-
-			if tc.expectErr {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, tc.returnValue, valid)
-		})
 	}
 }
 

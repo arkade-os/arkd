@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,5 +37,25 @@ func FuzzDecodeClosure(f *testing.F) {
 
 		_, err = closureRoundTrip.Script()
 		require.NoErrorf(t, err, "roundtrip closure serialization failed: %v", err)
+	})
+}
+
+func FuzzEvaluateScriptToBool(f *testing.F) {
+	for _, fixture := range executeBoolScriptFixtures(f) {
+		hasWitness := len(fixture.witness) > 0
+		witnessItem := []byte{}
+		if hasWitness {
+			witnessItem = fixture.witness[0]
+		}
+		f.Add(fixture.script, witnessItem, hasWitness)
+	}
+
+	f.Fuzz(func(t *testing.T, scriptBytes []byte, witnessItem []byte, hasWitness bool) {
+		witness := wire.TxWitness{}
+		if hasWitness {
+			witness = wire.TxWitness{witnessItem}
+		}
+
+		_, _ = script.EvaluateScriptToBool(scriptBytes, witness)
 	})
 }
