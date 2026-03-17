@@ -64,12 +64,11 @@ type service struct {
 	boardingExitDelay         arklib.RelativeLocktime
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
+	dustAmount                uint64
 	utxoMaxAmount             int64
 	utxoMinAmount             int64
 	vtxoMaxAmount             int64
 	vtxoMinAmount             int64
-	vtxoMinSettlementAmount   int64
-	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 	checkpointExitDelay       arklib.RelativeLocktime
 	maxTxWeight               uint64
@@ -229,18 +228,10 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
-	var vtxoMinSettlementAmount, vtxoMinOffchainTxAmount = s.vtxoMinAmount, s.vtxoMinAmount
-	if vtxoMinSettlementAmount < int64(dustAmount) {
-		vtxoMinSettlementAmount = int64(dustAmount)
-	}
-	if vtxoMinOffchainTxAmount == -1 {
-		vtxoMinOffchainTxAmount = int64(dustAmount)
-	}
-	if s.utxoMinAmount < int64(dustAmount) {
-		s.utxoMinAmount = int64(dustAmount)
-	}
-	s.vtxoMinSettlementAmount = vtxoMinSettlementAmount
-	s.vtxoMinOffchainTxAmount = vtxoMinOffchainTxAmount
+	s.dustAmount = dustAmount
+	s.vtxoMinAmount, s.utxoMinAmount = resolveMinAmounts(
+		s.vtxoMinAmount, s.utxoMinAmount, int64(dustAmount),
+	)
 
 	forfeitPubkey, err := s.wallet.GetForfeitPubkey(ctx)
 	if err != nil {
@@ -993,14 +984,14 @@ func (s *service) SubmitOffchainTx(
 				})
 			}
 		}
-		if out.Value < s.vtxoMinOffchainTxAmount {
+		if out.Value < s.vtxoMinAmount {
 			return nil, errors.AMOUNT_TOO_LOW.New(
 				"output #%d amount is lower than min vtxo amount: %d",
-				outIndex, s.vtxoMinOffchainTxAmount,
+				outIndex, s.vtxoMinAmount,
 			).WithMetadata(errors.AmountTooLowMetadata{
 				OutputIndex: outIndex,
-				Amount:      int(s.vtxoMinOffchainTxAmount),
-				MinAmount:   int(s.vtxoMinOffchainTxAmount),
+				Amount:      int(out.Value),
+				MinAmount:   int(s.vtxoMinAmount),
 			})
 		}
 
@@ -1915,14 +1906,14 @@ func (s *service) RegisterIntent(
 					})
 				}
 			}
-			if amount < uint64(s.vtxoMinSettlementAmount) {
+			if amount < s.dustAmount {
 				return "", errors.AMOUNT_TOO_LOW.New(
 					"output %d amount is lower than min vtxo amount: %d",
-					outputIndex, s.vtxoMinSettlementAmount,
+					outputIndex, s.dustAmount,
 				).WithMetadata(errors.AmountTooLowMetadata{
 					OutputIndex: outputIndex,
 					Amount:      int(amount),
-					MinAmount:   int(s.vtxoMinSettlementAmount),
+					MinAmount:   int(s.dustAmount),
 				})
 			}
 
@@ -2187,7 +2178,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		NextScheduledSession: nextScheduledSession,
 		UtxoMinAmount:        s.utxoMinAmount,
 		UtxoMaxAmount:        s.utxoMaxAmount,
-		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
+		VtxoMinAmount:        s.vtxoMinAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		MaxTxWeight:          int64(s.maxTxWeight),
