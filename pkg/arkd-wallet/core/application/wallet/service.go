@@ -729,7 +729,7 @@ func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) er
 
 func (w *wallet) SignMessage(ctx context.Context, message []byte) ([]byte, error) {
 	if w.SignerKey == nil {
-		return nil, fmt.Errorf("signer key not loaded")
+		return nil, ErrSignerDisabled
 	}
 
 	msgHash := chainhash.HashB(message)

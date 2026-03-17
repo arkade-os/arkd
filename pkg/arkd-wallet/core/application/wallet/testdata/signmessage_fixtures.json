@@ -35,7 +35,7 @@
     {
       "name": "no_signer_key",
       "message_hex": "48656c6c6f20576f726c64",
-      "expected_error": "signer key not loaded"
+      "expected_error": "signer not enabled"
     }
   ]
 }
