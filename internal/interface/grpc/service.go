@@ -263,7 +263,15 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 	)
 
-	s.readinessSvc = interceptors.NewReadinessService(s.appConfig.WalletService())
+	s.readinessSvc = interceptors.NewReadinessService(ctx)
+	s.readinessSvc.ListenToWalletState(func() <-chan bool {
+		ch, err := s.appConfig.WalletService().GetReadyUpdate(context.Background())
+		if err != nil {
+			log.WithError(err).Error("failed to get wallet ready update stream")
+			return nil
+		}
+		return ch
+	})
 
 	grpcConfig := []grpc.ServerOption{
 		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc),
