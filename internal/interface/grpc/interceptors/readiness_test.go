@@ -3,8 +3,8 @@ package interceptors
 import (
 	"context"
 	"testing"
+	"time"
 
-	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -14,9 +14,8 @@ import (
 
 func TestUnaryReadinessHandler(t *testing.T) {
 	t.Run("passes when checker allows", func(t *testing.T) {
-		readiness := NewReadinessService(&fakeWalletProvider{
-			status: fakeWalletStatus{initialized: true, unlocked: true, synced: true},
-		})
+		readiness := NewReadinessService()
+		readiness.walletReady.Store(true)
 		readiness.MarkAppServiceStarted()
 		interceptor := unaryReadinessHandler(readiness)
 
@@ -35,7 +34,7 @@ func TestUnaryReadinessHandler(t *testing.T) {
 	})
 
 	t.Run("blocks when checker denies", func(t *testing.T) {
-		interceptor := unaryReadinessHandler(NewReadinessService(nil))
+		interceptor := unaryReadinessHandler(NewReadinessService())
 
 		called := false
 		_, err := interceptor(
@@ -56,9 +55,8 @@ func TestUnaryReadinessHandler(t *testing.T) {
 
 func TestStreamReadinessHandler(t *testing.T) {
 	t.Run("passes when checker allows", func(t *testing.T) {
-		readiness := NewReadinessService(&fakeWalletProvider{
-			status: fakeWalletStatus{initialized: true, unlocked: true, synced: true},
-		})
+		readiness := NewReadinessService()
+		readiness.walletReady.Store(true)
 		readiness.MarkAppServiceStarted()
 		interceptor := streamReadinessHandler(readiness)
 
@@ -77,7 +75,7 @@ func TestStreamReadinessHandler(t *testing.T) {
 	})
 
 	t.Run("blocks when checker denies", func(t *testing.T) {
-		interceptor := streamReadinessHandler(NewReadinessService(nil))
+		interceptor := streamReadinessHandler(NewReadinessService())
 
 		called := false
 		err := interceptor(
@@ -98,22 +96,21 @@ func TestStreamReadinessHandler(t *testing.T) {
 
 func TestReadinessServiceCheck(t *testing.T) {
 	t.Run("ignores non public methods", func(t *testing.T) {
-		r := NewReadinessService(nil)
+		r := NewReadinessService()
 		require.NoError(t, r.Check(t.Context(), "/ark.v1.WalletService/Lock"))
 	})
 
 	t.Run("app not started returns unavailable", func(t *testing.T) {
-		r := NewReadinessService(&fakeWalletProvider{
-			status: fakeWalletStatus{initialized: true, unlocked: true, synced: true},
-		})
+		r := NewReadinessService()
+		r.walletReady.Store(true)
 		err := r.Check(t.Context(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.Unavailable, st.Code())
 	})
 
-	t.Run("wallet status error returns failed precondition", func(t *testing.T) {
-		r := NewReadinessService(&fakeWalletProvider{err: status.Error(codes.Internal, "boom")})
+	t.Run("wallet not ready returns failed precondition", func(t *testing.T) {
+		r := NewReadinessService()
 		r.MarkAppServiceStarted()
 		err := r.Check(t.Context(), "/ark.v1.ArkService/GetInfo")
 		st, ok := status.FromError(err)
@@ -121,10 +118,8 @@ func TestReadinessServiceCheck(t *testing.T) {
 		require.Equal(t, codes.FailedPrecondition, st.Code())
 	})
 
-	t.Run("locked or syncing wallet returns failed precondition", func(t *testing.T) {
-		r := NewReadinessService(&fakeWalletProvider{
-			status: fakeWalletStatus{initialized: true, unlocked: false, synced: false},
-		})
+	t.Run("wallet not ready returns failed precondition for indexer", func(t *testing.T) {
+		r := NewReadinessService()
 		r.MarkAppServiceStarted()
 		err := r.Check(t.Context(), "/ark.v1.IndexerService/GetAsset")
 		st, ok := status.FromError(err)
@@ -133,11 +128,88 @@ func TestReadinessServiceCheck(t *testing.T) {
 	})
 
 	t.Run("ready wallet allows public methods", func(t *testing.T) {
-		r := NewReadinessService(&fakeWalletProvider{
-			status: fakeWalletStatus{initialized: true, unlocked: true, synced: true},
-		})
+		r := NewReadinessService()
+		r.walletReady.Store(true)
 		r.MarkAppServiceStarted()
 		require.NoError(t, r.Check(t.Context(), "/ark.v1.ArkService/GetInfo"))
+	})
+
+	t.Run("listen to wallet state updates atomic", func(t *testing.T) {
+		r := NewReadinessService()
+		ch := make(chan bool, 1)
+		r.ListenToWalletState(func() <-chan bool { return ch })
+
+		ch <- true
+		require.Eventually(
+			t,
+			func() bool { return r.walletReady.Load() },
+			100*time.Millisecond,
+			5*time.Millisecond,
+		)
+
+		ch <- false
+		require.Eventually(
+			t,
+			func() bool { return !r.walletReady.Load() },
+			100*time.Millisecond,
+			5*time.Millisecond,
+		)
+	})
+
+	t.Run("listen to wallet state handles channel close and reconnect", func(t *testing.T) {
+		r := NewReadinessService()
+		r.walletReady.Store(true)
+
+		ch1 := make(chan bool)
+		ch2 := make(chan bool, 1)
+		calls := 0
+		r.ListenToWalletState(func() <-chan bool {
+			calls++
+			if calls == 1 {
+				return ch1
+			}
+			return ch2
+		})
+
+		// Close first channel — should set walletReady to false and reconnect.
+		close(ch1)
+		require.Eventually(
+			t,
+			func() bool { return !r.walletReady.Load() },
+			100*time.Millisecond,
+			5*time.Millisecond,
+		)
+
+		// Second channel should be active — send true.
+		ch2 <- true
+		require.Eventually(
+			t,
+			func() bool { return r.walletReady.Load() },
+			100*time.Millisecond,
+			5*time.Millisecond,
+		)
+	})
+
+	t.Run("MarkAppServiceStopped stops listener goroutine", func(t *testing.T) {
+		r := NewReadinessService()
+		ch := make(chan bool, 1)
+		r.ListenToWalletState(func() <-chan bool { return ch })
+
+		ch <- true
+		require.Eventually(
+			t,
+			func() bool { return r.walletReady.Load() },
+			100*time.Millisecond,
+			5*time.Millisecond,
+		)
+
+		r.MarkAppServiceStopped()
+		require.Eventually(
+			t,
+			func() bool { return !r.walletReady.Load() },
+			100*time.Millisecond,
+			5*time.Millisecond,
+		)
 	})
 }
 
@@ -145,36 +217,9 @@ type testServerStream struct {
 	ctx context.Context
 }
 
-func (s *testServerStream) SetHeader(_ metadata.MD) error { return nil }
-
+func (s *testServerStream) SetHeader(_ metadata.MD) error  { return nil }
 func (s *testServerStream) SendHeader(_ metadata.MD) error { return nil }
-
-func (s *testServerStream) SetTrailer(_ metadata.MD) {}
-
-func (s *testServerStream) Context() context.Context { return s.ctx }
-
-func (s *testServerStream) SendMsg(any) error { return nil }
-
-func (s *testServerStream) RecvMsg(any) error { return nil }
-
-type fakeWalletProvider struct {
-	status fakeWalletStatus
-	err    error
-}
-
-func (f *fakeWalletProvider) Status(context.Context) (ports.WalletStatus, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.status, nil
-}
-
-type fakeWalletStatus struct {
-	initialized bool
-	unlocked    bool
-	synced      bool
-}
-
-func (s fakeWalletStatus) IsInitialized() bool { return s.initialized }
-func (s fakeWalletStatus) IsUnlocked() bool    { return s.unlocked }
-func (s fakeWalletStatus) IsSynced() bool      { return s.synced }
+func (s *testServerStream) SetTrailer(_ metadata.MD)       {}
+func (s *testServerStream) Context() context.Context       { return s.ctx }
+func (s *testServerStream) SendMsg(any) error              { return nil }
+func (s *testServerStream) RecvMsg(any) error              { return nil }

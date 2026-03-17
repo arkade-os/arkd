@@ -56,15 +56,15 @@ type wallet struct {
 
 	locker  *outpointLocker
 	keyMgr  *keyManager
-	isReady chan struct{}
+	readyCh chan bool
 }
 
 // New creates a new WalletService service
 func New(opts WalletOptions) application.WalletService {
-	return &wallet{opts, newOutpointLocker(time.Minute), nil, make(chan struct{})}
+	return &wallet{opts, newOutpointLocker(time.Minute), nil, make(chan bool)}
 }
 
-func (w *wallet) GetReadyUpdate(ctx context.Context) <-chan struct{} {
+func (w *wallet) GetReadyUpdate(ctx context.Context) <-chan bool {
 	isUnlocked := w.keyMgr != nil
 
 	if isUnlocked {
@@ -72,13 +72,13 @@ func (w *wallet) GetReadyUpdate(ctx context.Context) <-chan struct{} {
 			select {
 			case <-ctx.Done():
 				return
-			case w.isReady <- struct{}{}:
+			case w.readyCh <- true:
 				return
 			}
 		}()
 	}
 
-	return w.isReady
+	return w.readyCh
 }
 
 func (w *wallet) GenSeed(ctx context.Context) (string, error) {
@@ -150,7 +150,7 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 		// To not send the notification immediately after unlocking
 		<-time.After(500 * time.Millisecond)
 		select {
-		case w.isReady <- struct{}{}:
+		case w.readyCh <- true:
 		default:
 			log.Warn("could not send event for ready update, channel full")
 		}
@@ -165,7 +165,7 @@ func (w *wallet) Lock(ctx context.Context) error {
 	if w.keyMgr == nil {
 		return fmt.Errorf("wallet is already locked")
 	}
-
+	w.readyCh <- false
 	w.keyMgr = nil
 	return nil
 }
@@ -731,7 +731,7 @@ func (w *wallet) Close() {
 	// nolint:errcheck
 	w.Nbxplorer.Close()
 	w.keyMgr = nil
-	close(w.isReady)
+	close(w.readyCh)
 	w.SeedRepository.Close()
 }
 

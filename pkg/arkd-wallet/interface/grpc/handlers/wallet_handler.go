@@ -507,11 +507,14 @@ func (h *walletHandler) listenToReadyUpdate(ctx context.Context) {
 				log.WithError(ctx.Err()).Error("ready update channel closed unexpectedly")
 			}
 			return
-		case <-ch:
+		case ready, ok := <-ch:
+			if !ok {
+				return
+			}
 			for _, l := range h.readyListeners.getListenersCopy() {
 				go func(listener *listener[*arkwalletv1.GetReadyUpdateResponse]) {
 					select {
-					case listener.ch <- &arkwalletv1.GetReadyUpdateResponse{Ready: true}:
+					case listener.ch <- &arkwalletv1.GetReadyUpdateResponse{Ready: ready}:
 					default:
 						log.Warnf("could not forward ready update to listener %s", listener.id)
 					}
