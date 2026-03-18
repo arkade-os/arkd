@@ -653,18 +653,22 @@ func (a *adminService) ClearSettings(ctx context.Context) error {
 	a.settingsMu.Lock()
 	defer a.settingsMu.Unlock()
 
-	if err := a.repoManager.Settings().Clear(ctx); err != nil {
-		return err
-	}
 	defaults := a.defaultSettings
-	defaults.UpdatedAt = time.Now()
-	if err := a.repoManager.Settings().Upsert(ctx, defaults); err != nil {
-		return err
-	}
+
+	// Apply to the running service before persisting so that if live-apply
+	// fails we don't leave inconsistent state in the DB.
 	if a.onSettingsUpdated != nil {
 		if err := a.onSettingsUpdated(ctx, defaults); err != nil {
 			return err
 		}
+	}
+
+	if err := a.repoManager.Settings().Clear(ctx); err != nil {
+		return err
+	}
+	defaults.UpdatedAt = time.Now()
+	if err := a.repoManager.Settings().Upsert(ctx, defaults); err != nil {
+		return err
 	}
 	a.roundMinParticipantsCount = defaults.RoundMinParticipantsCount
 	a.roundMaxParticipantsCount = defaults.RoundMaxParticipantsCount

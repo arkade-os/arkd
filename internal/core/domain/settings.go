@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -83,6 +84,33 @@ func (s Settings) Validate() error {
 	}
 	if s.MaxTxWeight <= 0 {
 		return &ErrInvalidSettings{"max tx weight must be greater than 0"}
+	}
+	if s.UnilateralExitDelay > math.MaxUint32 {
+		return &ErrInvalidSettings{"unilateral exit delay exceeds maximum uint32 value"}
+	}
+	if s.BoardingExitDelay > math.MaxUint32 {
+		return &ErrInvalidSettings{"boarding exit delay exceeds maximum uint32 value"}
+	}
+	if s.VtxoTreeExpiry > math.MaxUint32 {
+		return &ErrInvalidSettings{"vtxo tree expiry exceeds maximum uint32 value"}
+	}
+	if s.VtxoMinAmount < -1 {
+		return &ErrInvalidSettings{"vtxo min amount must be -1 (dust) or positive"}
+	}
+	if s.VtxoMaxAmount < -1 {
+		return &ErrInvalidSettings{"vtxo max amount must be -1 (unset) or positive"}
+	}
+	if s.UtxoMinAmount < -1 {
+		return &ErrInvalidSettings{"utxo min amount must be -1 (dust) or positive"}
+	}
+	if s.UtxoMaxAmount < -1 {
+		return &ErrInvalidSettings{"utxo max amount must be -1 (unset) or positive"}
+	}
+	if s.VtxoMinAmount != -1 && s.VtxoMaxAmount != -1 && s.VtxoMinAmount > s.VtxoMaxAmount {
+		return &ErrInvalidSettings{"vtxo min amount must be <= vtxo max amount"}
+	}
+	if s.UtxoMinAmount != -1 && s.UtxoMaxAmount != -1 && s.UtxoMinAmount > s.UtxoMaxAmount {
+		return &ErrInvalidSettings{"utxo min amount must be <= utxo max amount"}
 	}
 	return nil
 }
