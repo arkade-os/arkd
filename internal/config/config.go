@@ -128,7 +128,8 @@ type Config struct {
 	MaxTxWeight               uint64
 	AssetTxMaxWeightRatio     float64
 
-	EnablePprof bool
+	EnablePprof          bool
+	MaxConcurrentStreams uint32
 
 	RateLimitEnabled         bool
 	RateLimitMaxVelocity     float64
@@ -226,6 +227,7 @@ var (
 	RateLimitEnabled              = "RATE_LIMIT_ENABLED"
 	RateLimitMaxVelocity          = "RATE_LIMIT_MAX_VELOCITY"
 	RateLimitMaxCooldownSecs      = "RATE_LIMIT_MAX_COOLDOWN_SECS"
+	MaxConcurrentStreams          = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -266,6 +268,7 @@ var (
 	defaultRateLimitEnabled              = true
 	defaultRateLimitMaxVelocity          = 0.28
 	defaultRateLimitMaxCooldownSecs      = int64(3600)
+	defaultMaxConcurrentStreams          = uint32(1000)
 )
 
 func LoadConfig() (*Config, error) {
@@ -311,6 +314,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RateLimitEnabled, defaultRateLimitEnabled)
 	viper.SetDefault(RateLimitMaxVelocity, defaultRateLimitMaxVelocity)
 	viper.SetDefault(RateLimitMaxCooldownSecs, defaultRateLimitMaxCooldownSecs)
+	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -426,6 +430,7 @@ func LoadConfig() (*Config, error) {
 		RateLimitEnabled:              viper.GetBool(RateLimitEnabled),
 		RateLimitMaxVelocity:          viper.GetFloat64(RateLimitMaxVelocity),
 		RateLimitMaxCooldownSecs:      viper.GetInt64(RateLimitMaxCooldownSecs),
+		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
 	}, nil
 }
 
@@ -603,6 +608,10 @@ func (c *Config) Validate() error {
 			"asset tx max weight ratio must be between 0 and 1 (exclusive), got %f",
 			c.AssetTxMaxWeightRatio,
 		)
+	}
+
+	if c.MaxConcurrentStreams == 0 {
+		return fmt.Errorf("max concurrent streams must be greater than 0")
 	}
 
 	if err := c.repoManager(); err != nil {
@@ -892,9 +901,17 @@ func (c *Config) adminService() error {
 		unit = ports.BlockHeight
 	}
 
+	onInfoChange := func() {
+		if c.svc == nil {
+			return
+		}
+		c.svc.RefreshInfoCache()
+	}
+
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		onInfoChange,
 	)
 	return nil
 }
