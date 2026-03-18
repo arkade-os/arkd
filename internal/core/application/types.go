@@ -67,6 +67,7 @@ type Service interface {
 		proof intent.Proof,
 		message intent.GetIntentMessage,
 	) ([]*domain.Intent, errors.Error)
+	RefreshInfoCache()
 }
 
 type ServiceInfo struct {

@@ -126,8 +126,10 @@ type Config struct {
 	VtxoMinAmount             int64
 	SettlementMinExpiryGap    int64
 	MaxTxWeight               uint64
+	AssetTxMaxWeightRatio     float64
 
-	EnablePprof bool
+	EnablePprof          bool
+	MaxConcurrentStreams uint32
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -213,9 +215,12 @@ var (
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Max transaction weight accepted by the ark server
 	MaxTxWeight = "MAX_TX_WEIGHT"
+	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
+	AssetTxMaxWeightRatio = "ASSET_TX_MAX_WEIGHT_RATIO"
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
+	MaxConcurrentStreams          = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -250,8 +255,10 @@ var (
 	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0 // disabled by default
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
+	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultMaxConcurrentStreams          = uint32(1000)
 )
 
 func LoadConfig() (*Config, error) {
@@ -291,8 +298,10 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
+	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -402,8 +411,10 @@ func LoadConfig() (*Config, error) {
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
+		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
 	}, nil
 }
 
@@ -574,6 +585,17 @@ func (c *Config) Validate() error {
 			"max tx weight can't exceed bitcoin block weight (%d)",
 			bitcoinBlockWeight,
 		)
+	}
+
+	if c.AssetTxMaxWeightRatio <= 0 || c.AssetTxMaxWeightRatio >= 1 {
+		return fmt.Errorf(
+			"asset tx max weight ratio must be between 0 and 1 (exclusive), got %f",
+			c.AssetTxMaxWeightRatio,
+		)
+	}
+
+	if c.MaxConcurrentStreams == 0 {
+		return fmt.Errorf("max concurrent streams must be greater than 0")
 	}
 
 	if err := c.repoManager(); err != nil {
@@ -841,7 +863,7 @@ func (c *Config) appService() error {
 		c.BoardingExitDelay, c.CheckpointExitDelay,
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
-		c.BanDuration, c.BanThreshold, c.MaxTxWeight,
+		c.BanDuration, c.BanThreshold, c.MaxTxWeight, c.AssetTxMaxWeightRatio,
 		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
@@ -862,9 +884,17 @@ func (c *Config) adminService() error {
 		unit = ports.BlockHeight
 	}
 
+	onInfoChange := func() {
+		if c.svc == nil {
+			return
+		}
+		c.svc.RefreshInfoCache()
+	}
+
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		onInfoChange,
 	)
 	return nil
 }

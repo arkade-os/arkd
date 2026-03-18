@@ -24,14 +24,16 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) (err error) {
+var ErrWaitingForConfirmation = fmt.Errorf("waiting for confirmation(s), please retry later")
+
+func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes, error) {
 	if err := a.safeCheck(); err != nil {
-		return err
+		return nil, err
 	}
 	options := newDefaultUnrollOptions()
 	for _, opt := range opts {
 		if err := opt(options); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -39,15 +41,16 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) (err error) 
 	defer a.txLock.Unlock()
 
 	vtxos := options.vtxos
+	var err error
 	if len(vtxos) <= 0 {
 		vtxos, err = a.getSpendableVtxos(ctx, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	if len(vtxos) == 0 {
-		return fmt.Errorf("no vtxos to unroll")
+		return nil, fmt.Errorf("no vtxos to unroll")
 	}
 
 	totalVtxosAmount := uint64(0)
@@ -61,7 +64,7 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) (err error) 
 
 	redeemBranches, err := a.getRedeemBranches(ctx, vtxos)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	isWaitingForConfirmation := false
@@ -78,7 +81,7 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) (err error) 
 				continue
 			}
 
-			return err
+			return nil, err
 		}
 
 		if _, ok := transactionsMap[nextTx]; !ok {
@@ -89,33 +92,40 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) (err error) 
 
 	if len(transactions) == 0 {
 		if isWaitingForConfirmation {
-			return fmt.Errorf("waiting for confirmation(s), please retry later")
+			return nil, ErrWaitingForConfirmation
 		}
 
-		return nil
+		return nil, nil
 	}
 
+	res := make([]UnrollRes, 0, len(transactions))
 	for _, parent := range transactions {
 		var parentTx wire.MsgTx
 		if err := parentTx.Deserialize(hex.NewDecoder(strings.NewReader(parent))); err != nil {
-			return err
+			return nil, err
 		}
 
-		child, err := a.bumpAnchorTx(ctx, &parentTx)
+		childTxid, child, err := a.bumpAnchorTx(ctx, &parentTx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// broadcast the package (parent + child)
 		packageResponse, err := a.explorer.Broadcast(parent, child)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
+		res = append(res, UnrollRes{
+			ParentTx:   parent,
+			ParentTxid: parentTx.TxID(),
+			ChildTx:    child,
+			ChildTxid:  childTxid,
+		})
 		log.Debugf("package broadcasted: %s", packageResponse)
 	}
 
-	return nil
+	return res, nil
 }
 
 func (a *service) CompleteUnroll(ctx context.Context, to string) (string, error) {
@@ -170,10 +180,10 @@ func (a *service) OnboardAgainAllExpiredBoardings(ctx context.Context) (string, 
 
 // bumpAnchorTx builds and signs a transaction bumping the fees for a given tx with P2A output.
 // Makes use of the onchain P2TR account to select UTXOs to pay fees for parent.
-func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string, error) {
+func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string, string, error) {
 	anchor, err := txutils.FindAnchorOutpoint(parent)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// estimate for the size of the bump transaction
@@ -192,14 +202,14 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 	packageSize := childVSize + computeVSize(parent)
 	feeRate, err := a.explorer.GetFeeRate()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
 
 	addresses, _, _, _, err := a.wallet.GetAddresses(ctx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	selectedCoins := make([]explorer.Utxo, 0)
@@ -208,7 +218,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 	for _, addr := range addresses {
 		utxos, err := a.explorer.GetUtxos(addr)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 
 		for _, utxo := range utxos {
@@ -222,19 +232,19 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 	}
 
 	if amountToSelect > 0 {
-		return "", fmt.Errorf("not enough funds to select %d", amountToSelect)
+		return "", "", fmt.Errorf("not enough funds to select %d", amountToSelect)
 	}
 
 	changeAmount := selectedAmount - fees
 
 	newAddr, _, _, err := a.wallet.NewAddress(ctx, true)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	pkScript, err := toOutputScript(newAddr, a.Network)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	inputs := []*wire.OutPoint{anchor}
@@ -251,7 +261,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 	for _, utxo := range selectedCoins {
 		txid, err := chainhash.NewHashFromStr(utxo.Txid)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		inputs = append(inputs, &wire.OutPoint{
 			Hash:  *txid,
@@ -262,43 +272,43 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 
 	ptx, err := psbt.New(inputs, outputs, 3, 0, sequences)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
 
 	b64, err := ptx.B64Encode()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	tx, err := a.wallet.SignTransaction(ctx, a.explorer, b64)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	signedPtx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	for inIndex := range signedPtx.Inputs[1:] {
 		if _, err := psbt.MaybeFinalize(signedPtx, inIndex+1); err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 
 	childTx, err := txutils.ExtractWithAnchors(signedPtx)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	var serializedTx bytes.Buffer
 	if err := childTx.Serialize(&serializedTx); err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return hex.EncodeToString(serializedTx.Bytes()), nil
+	return childTx.TxID(), hex.EncodeToString(serializedTx.Bytes()), nil
 }
 
 func (a *service) completeUnroll(ctx context.Context, to string) (string, error) {

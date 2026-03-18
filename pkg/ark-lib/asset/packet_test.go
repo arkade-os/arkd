@@ -8,7 +8,6 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,13 +36,9 @@ func TestPacket(t *testing.T) {
 					got, err := packet.Serialize()
 					require.NoError(t, err)
 					require.NotEmpty(t, got)
-					gotTxOut, err := packet.TxOut()
-					require.NoError(t, err)
-					require.NotNil(t, gotTxOut)
-					require.Equal(t, v.ExpectedAmount, gotTxOut.Value)
-					require.Equal(t, v.ExpectedScript, hex.EncodeToString(gotTxOut.PkScript))
+					require.Equal(t, v.Expected, hex.EncodeToString(got))
 
-					testPacket, err := asset.NewPacketFromString(v.ExpectedScript)
+					testPacket, err := asset.NewPacketFromString(v.Expected)
 					require.NoError(t, err)
 					require.Equal(t, asset.Packet(assets), testPacket)
 				})
@@ -60,32 +55,6 @@ func TestPacket(t *testing.T) {
 					require.NoError(t, err)
 					require.NotEmpty(t, got)
 					require.Equal(t, v.Script, packet.String())
-				})
-			}
-		})
-		t.Run("NewPacketFromTxOut", func(t *testing.T) {
-			for _, v := range fixtures.Valid.NewPacketFromTxOut {
-				t.Run(v.Name, func(t *testing.T) {
-					script, err := hex.DecodeString(v.Script)
-					require.NoError(t, err)
-					require.NotNil(t, script)
-					require.True(t, asset.IsAssetPacket(script))
-
-					packet, err := asset.NewPacketFromTxOut(wire.TxOut{
-						PkScript: script,
-						Value:    v.Amount},
-					)
-					require.NoError(t, err)
-					require.NotNil(t, packet)
-
-					got, err := packet.Serialize()
-					require.NoError(t, err)
-					require.NotEmpty(t, got)
-					require.Equal(t, v.Script, packet.String())
-
-					testPacket, err := asset.NewPacketFromString(v.Script)
-					require.NoError(t, err)
-					require.Equal(t, packet, testPacket)
 				})
 			}
 		})
@@ -137,23 +106,6 @@ func TestPacket(t *testing.T) {
 				})
 			}
 		})
-		t.Run("NewPacketFromTxOut", func(t *testing.T) {
-			for _, v := range fixtures.Invalid.NewPacketFromTxOut {
-				t.Run(v.Name, func(t *testing.T) {
-					script, err := hex.DecodeString(v.Script)
-					require.NoError(t, err)
-
-					packet, err := asset.NewPacketFromTxOut(wire.TxOut{
-						PkScript: script,
-						Value:    v.Amount,
-					})
-					require.Error(t, err)
-					require.ErrorContains(t, err, v.ExpectedError)
-					require.Nil(t, packet)
-					require.False(t, asset.IsAssetPacket(script))
-				})
-			}
-		})
 	})
 }
 
@@ -162,19 +114,12 @@ type packetFixtures struct {
 		NewPacket []struct {
 			Name           string                    `json:"name"`
 			Assets         []packetValidationFixture `json:"assets"`
-			ExpectedAmount int64                     `json:"expectedAmount"`
-			ExpectedScript string                    `json:"expectedScript"`
+			Expected 			 string                    `json:"expected"`
 		} `json:"newPacket"`
 		NewPacketFromString []struct {
 			Name   string `json:"name"`
 			Script string `json:"script"`
 		} `json:"newPacketFromString"`
-		NewPacketFromTxOut []struct {
-			Name     string `json:"name"`
-			Script   string `json:"script"`
-			Amount   int64  `json:"amount"`
-			Expected bool   `json:"expected"`
-		} `json:"newPacketFromTxOut"`
 		LeafTxPacket []struct {
 			Name                 string `json:"name"`
 			Script               string `json:"script"`
@@ -193,12 +138,6 @@ type packetFixtures struct {
 			Script        string `json:"script"`
 			ExpectedError string `json:"expectedError"`
 		} `json:"newPacketFromString"`
-		NewPacketFromTxOut []struct {
-			Name          string `json:"name"`
-			Script        string `json:"script"`
-			Amount        int64  `json:"amount"`
-			ExpectedError string `json:"expectedError"`
-		} `json:"newPacketFromTxOut"`
 	} `json:"invalid"`
 }
 

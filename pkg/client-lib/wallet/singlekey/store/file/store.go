@@ -108,7 +108,7 @@ func (s *fileStore) open() (*walletData, error) {
 		if err := s.write(&walletData{}); err != nil {
 			return nil, fmt.Errorf("failed to initialize file store: %s", err)
 		}
-		return nil, nil
+		return &walletData{}, nil
 	}
 
 	data := &walletData{}

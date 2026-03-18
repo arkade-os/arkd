@@ -14,6 +14,7 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
@@ -197,9 +198,13 @@ func validateOffchainReceiver(vtxoTree *tree.TxTree, receiver types.Receiver) er
 }
 
 func validateAssetOutputs(tx *wire.MsgTx, outputIndex int, receiver types.Receiver) error {
-	assetPacket, err := asset.NewPacketFromTx(tx)
+	ext, err := extension.NewExtensionFromTx(tx)
 	if err != nil {
 		return err
+	}
+	assetPacket := ext.GetAssetPacket()
+	if len(assetPacket) == 0 {
+		return fmt.Errorf("no asset packet found in transaction")
 	}
 
 	// For each expected asset, verify the asset group exists and contains the correct output
@@ -633,14 +638,14 @@ func computeVSize(tx *wire.MsgTx) lntypes.VByte {
 
 func registerIntentMessage(
 	assetInputs map[int][]types.Asset, outputs []types.Receiver, cosignersPublicKeys []string,
-) (string, []*wire.TxOut, error) {
+) (string, []*wire.TxOut, extension.Extension, error) {
 	outputsTxOut := make([]*wire.TxOut, 0)
 	onchainOutputsIndexes := make([]int, 0)
 
 	for i, output := range outputs {
 		txOut, isOnchain, err := output.ToTxOut()
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 
 		if isOnchain {
@@ -650,15 +655,17 @@ func registerIntentMessage(
 		outputsTxOut = append(outputsTxOut, txOut)
 	}
 
+	var ext extension.Extension
 	if len(assetInputs) > 0 {
 		assetPacket, err := createAssetPacket(assetInputs, outputs, nil)
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 
-		assetPacketOutput, err := assetPacket.TxOut()
+		ext = extension.Extension{assetPacket}
+		assetPacketOutput, err := ext.TxOut()
 		if err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 		outputsTxOut = append(outputsTxOut, assetPacketOutput)
 	}
@@ -671,10 +678,10 @@ func registerIntentMessage(
 		CosignersPublicKeys:  cosignersPublicKeys,
 	}.Encode()
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	return message, outputsTxOut, nil
+	return message, outputsTxOut, ext, nil
 }
 
 func selectedCoinsToAssetInputs(selectedCoins []types.VtxoWithTapTree) map[int][]types.Asset {
@@ -777,7 +784,7 @@ func addAssetPacket(ptx *psbt.Packet, assetPacket asset.Packet) error {
 		return nil
 	}
 
-	packetOut, err := assetPacket.TxOut()
+	packetOut, err := extension.Extension{assetPacket}.TxOut()
 	if err != nil {
 		return err
 	}
