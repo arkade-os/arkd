@@ -9,6 +9,15 @@ import (
 
 const MinAllowedSequence = 512
 
+// ErrInvalidSettings is returned when settings fail validation.
+type ErrInvalidSettings struct {
+	Reason string
+}
+
+func (e *ErrInvalidSettings) Error() string {
+	return fmt.Sprintf("invalid settings: %s", e.Reason)
+}
+
 // ToRelativeLocktime converts a raw locktime value to a typed RelativeLocktime.
 // Values >= MinAllowedSequence (512) are interpreted as seconds (BIP68
 // time-based relative locktimes use 512-second granularity units), while values
@@ -43,35 +52,37 @@ type Settings struct {
 
 func (s Settings) Validate() error {
 	if s.UnilateralExitDelay <= 0 {
-		return fmt.Errorf("unilateral exit delay must be greater than 0")
+		return &ErrInvalidSettings{"unilateral exit delay must be greater than 0"}
 	}
 	if s.BoardingExitDelay <= 0 {
-		return fmt.Errorf("boarding exit delay must be greater than 0")
+		return &ErrInvalidSettings{"boarding exit delay must be greater than 0"}
 	}
 	if s.VtxoTreeExpiry <= 0 {
-		return fmt.Errorf("vtxo tree expiry must be greater than 0")
+		return &ErrInvalidSettings{"vtxo tree expiry must be greater than 0"}
 	}
 	if s.BanDuration < 1 {
-		return fmt.Errorf("ban duration must be at least 1")
+		return &ErrInvalidSettings{"ban duration must be at least 1"}
 	}
 	if s.RoundMinParticipantsCount < 1 {
-		return fmt.Errorf("round min participants count must be at least 1")
+		return &ErrInvalidSettings{"round min participants count must be at least 1"}
 	}
 	if s.RoundMaxParticipantsCount < s.RoundMinParticipantsCount {
-		return fmt.Errorf(
+		return &ErrInvalidSettings{
 			"round max participants count must be >= round min participants count",
-		)
+		}
 	}
 	if s.PublicUnilateralExitDelay < s.UnilateralExitDelay {
-		return fmt.Errorf(
+		return &ErrInvalidSettings{
 			"public unilateral exit delay must be >= unilateral exit delay",
-		)
+		}
 	}
 	if s.UnilateralExitDelay == s.BoardingExitDelay {
-		return fmt.Errorf("unilateral exit delay and boarding exit delay must be different")
+		return &ErrInvalidSettings{
+			"unilateral exit delay and boarding exit delay must be different",
+		}
 	}
 	if s.MaxTxWeight <= 0 {
-		return fmt.Errorf("max tx weight must be greater than 0")
+		return &ErrInvalidSettings{"max tx weight must be greater than 0"}
 	}
 	return nil
 }

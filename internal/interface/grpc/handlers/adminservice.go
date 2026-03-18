@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -614,7 +615,8 @@ func (a *adminHandler) UpdateSettings(
 	}
 
 	if err := a.adminService.UpdateSettings(ctx, settings); err != nil {
-		if strings.Contains(err.Error(), "invalid settings:") {
+		var validationErr *domain.ErrInvalidSettings
+		if errors.As(err, &validationErr) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())

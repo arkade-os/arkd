@@ -624,7 +624,7 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 
 func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Settings) error {
 	if err := settings.Validate(); err != nil {
-		return fmt.Errorf("invalid settings: %w", err)
+		return err
 	}
 
 	a.settingsMu.Lock()
