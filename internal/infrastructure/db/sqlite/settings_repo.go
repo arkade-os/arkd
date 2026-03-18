@@ -63,6 +63,8 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 	}, nil
 }
 
+// Upsert inserts or updates the singleton settings row. The ID field defaults
+// to 0 (Go zero value) which is used as the fixed singleton key via ON CONFLICT(id).
 func (r *settingsRepository) Upsert(
 	ctx context.Context, settings domain.Settings,
 ) error {
