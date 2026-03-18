@@ -1323,6 +1323,53 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Equal(t, recoverableBefore+uint64(111), recoverableAfter)
 	})
+
+	t.Run("test_get_vtxos_with_multiple_pubkeys", func(t *testing.T) {
+		ctx := t.Context()
+
+		pk1 := randomString(32)
+		pk2 := randomString(32)
+		cmtTxid := randomString(32)
+
+		vtxosToAdd := []domain.Vtxo{
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+				PubKey:             pk1,
+				Amount:             1000,
+				RootCommitmentTxid: cmtTxid,
+				CommitmentTxids:    []string{cmtTxid},
+			},
+			{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+				PubKey:             pk2,
+				Amount:             2000,
+				RootCommitmentTxid: cmtTxid,
+				CommitmentTxids:    []string{cmtTxid},
+			},
+		}
+		err := svc.Vtxos().AddVtxos(ctx, vtxosToAdd)
+		require.NoError(t, err)
+
+		// Single pubkey should return 1 vtxo.
+		got, err := svc.Vtxos().GetAllVtxosWithPubKeys(ctx, []string{pk1}, 0, 0)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, pk1, got[0].PubKey)
+
+		got, err = svc.Vtxos().GetAllVtxosWithPubKeys(ctx, []string{pk2}, 0, 0)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, pk2, got[0].PubKey)
+
+		// Multiple pubkeys should return vtxos for both.
+		got, err = svc.Vtxos().GetAllVtxosWithPubKeys(ctx, []string{pk1, pk2}, 0, 0)
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+
+		gotPubkeys := map[string]bool{got[0].PubKey: true, got[1].PubKey: true}
+		require.True(t, gotPubkeys[pk1], "expected vtxo with pubkey pk1")
+		require.True(t, gotPubkeys[pk2], "expected vtxo with pubkey pk2")
+	})
 }
 
 func testScheduledSessionRepository(t *testing.T, svc ports.RepoManager) {

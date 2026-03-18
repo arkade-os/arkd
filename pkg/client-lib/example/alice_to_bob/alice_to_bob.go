@@ -53,12 +53,12 @@ func main() {
 	defer aliceArkClient.Lock(ctx)
 
 	log.Info("alice is acquiring onchain funds...")
-	_, _, boardingAddress, err := aliceArkClient.Receive(ctx)
+	_, _, boardingAddr, err := aliceArkClient.Receive(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if _, err := runCommand("nigiri", "faucet", boardingAddress); err != nil {
+	if _, err := runCommand("nigiri", "faucet", boardingAddr.Address); err != nil {
 		log.Fatal(err)
 	}
 
@@ -110,7 +110,7 @@ func main() {
 	log.Infof("bob offchain balance: %d", bobBalance.OffchainBalance.Total)
 
 	amount := uint64(1000)
-	receivers := []types.Receiver{{To: bobOffchainAddr, Amount: amount}}
+	receivers := []types.Receiver{{To: bobOffchainAddr.Address, Amount: amount}}
 
 	fmt.Println("")
 	log.Infof("alice is sending %d sats to bob offchain...", amount)

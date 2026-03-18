@@ -3,7 +3,6 @@ package indexer
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -26,6 +24,8 @@ type grpcClient struct {
 	connMu         *sync.RWMutex
 	subscriptionMu *sync.RWMutex
 	subscriptionId string
+	// TODO: drop me in https://github.com/arkade-os/arkd/pull/951
+	scripts *scriptsCache
 }
 
 func NewClient(serverUrl string) (indexer.Indexer, error) {
@@ -68,6 +68,7 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 		conn:           conn,
 		connMu:         &sync.RWMutex{},
 		subscriptionMu: &sync.RWMutex{},
+		scripts:        newScriptsCache(),
 	}
 
 	return client, nil
@@ -314,13 +315,8 @@ func (a *grpcClient) GetVtxos(
 		return nil, err
 	}
 
-	vtxos := make([]types.Vtxo, 0, len(resp.GetVtxos()))
-	for _, vtxo := range resp.GetVtxos() {
-		vtxos = append(vtxos, newIndexerVtxo(vtxo))
-	}
-
 	return &indexer.VtxosResponse{
-		Vtxos: vtxos,
+		Vtxos: newIndexerVtxos(resp.GetVtxos()),
 		Page:  parsePage(resp.GetPage()),
 	}, nil
 }
@@ -429,93 +425,49 @@ func (a *grpcClient) GetBatchSweepTxs(
 func (a *grpcClient) GetSubscription(
 	ctx context.Context, subscriptionId string, scripts ...string,
 ) (<-chan indexer.ScriptEvent, func(), error) {
-	ctx, cancel := context.WithCancel(ctx)
-
-	req := &arkv1.GetSubscriptionRequest{
-		SubscriptionId: subscriptionId,
-		Scripts:        scripts,
-	}
-
-	stream, err := a.svc().GetSubscription(ctx, req)
-	if err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	eventsCh := make(chan indexer.ScriptEvent)
-	streamMu := sync.Mutex{}
-
-	go func() {
-		defer close(eventsCh)
-		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
-
-		for {
-			streamMu.Lock()
-			currentStream := stream
-			streamMu.Unlock()
-
-			resp, err := currentStream.Recv()
+	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
+		arkv1.IndexerService_GetSubscriptionClient,
+		*arkv1.GetSubscriptionResponse,
+		indexer.ScriptEvent,
+	]{
+		Connect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
+			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: subscriptionId,
+				Scripts:        scripts,
+			})
+		},
+		Reconnect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
+			scripts := a.scripts.get()
+			resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
+				Scripts: scripts,
+			})
 			if err != nil {
-				shouldRetry, retryDelay := utils.ShouldReconnect(err)
-				if !shouldRetry {
-					select {
-					case <-ctx.Done():
-					case eventsCh <- indexer.ScriptEvent{Err: err}:
-					}
-					return
-				}
-
-				if err == io.EOF {
-					log.Debug("indexer subscription stream closed by server; reconnecting")
-				}
-
-				// Clear stale ID so concurrent ModifySubscriptionScripts /
-				// OverwriteSubscriptionScripts calls fail fast instead of using an
-				// ID the server no longer recognizes. A fresh ID will arrive via
-				// SubscriptionStartedEvent after reconnect.
-				a.setSubscriptionID("")
-
-				sleepDuration := max(retryDelay, backoffDelay)
-				log.Debugf("subscription stream error, reconnecting in %v: %v", sleepDuration, err)
-
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(sleepDuration):
-				}
-
-				newStream, dialErr := a.svc().GetSubscription(ctx, req)
-				if dialErr != nil {
-					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
-					if !shouldRetryDial {
-						select {
-						case <-ctx.Done():
-						case eventsCh <- indexer.ScriptEvent{Err: dialErr}:
-						}
-						return
-					}
-					backoffDelay = min(
-						time.Duration(float64(backoffDelay)*utils.GrpcReconnectConfig.Multiplier),
-						utils.GrpcReconnectConfig.MaxDelay,
-					)
-					log.Debugf("subscription stream reconnect failed, retrying: %v", dialErr)
-					continue
-				}
-
-				streamMu.Lock()
-				stream = newStream
-				streamMu.Unlock()
-				backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-				continue
+				return nil, err
 			}
-
-			backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-
+			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: resp.GetSubscriptionId(),
+			})
+		},
+		Recv: func(
+			stream arkv1.IndexerService_GetSubscriptionClient,
+		) (**arkv1.GetSubscriptionResponse, error) {
+			st, err := stream.Recv()
+			if err != nil {
+				return nil, err
+			}
+			return &st, nil
+		},
+		HandleResp: func(
+			ctx context.Context,
+			eventsCh chan<- indexer.ScriptEvent,
+			resp *arkv1.GetSubscriptionResponse,
+		) error {
 			var checkpointTxs map[string]indexer.TxData
 			var event *arkv1.IndexerSubscriptionEvent
 			switch data := resp.GetData().(type) {
 			case *arkv1.GetSubscriptionResponse_SubscriptionStarted:
 				a.setSubscriptionID(data.SubscriptionStarted.GetSubscriptionId())
-				continue
+				return nil
 			case *arkv1.GetSubscriptionResponse_Event:
 				event = data.Event
 				if len(event.GetCheckpointTxs()) > 0 {
@@ -528,33 +480,40 @@ func (a *grpcClient) GetSubscription(
 					}
 				}
 			}
-			if event != nil {
-				eventsCh <- indexer.ScriptEvent{
+			if event == nil {
+				return nil
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case eventsCh <- indexer.ScriptEvent{
+				Data: &indexer.ScriptEventData{
 					Txid:          event.GetTxid(),
 					Tx:            event.GetTx(),
 					Scripts:       event.GetScripts(),
 					NewVtxos:      newIndexerVtxos(event.GetNewVtxos()),
 					SpentVtxos:    newIndexerVtxos(event.GetSpentVtxos()),
 					CheckpointTxs: checkpointTxs,
-				}
+				},
+			}:
+				return nil
 			}
-
-		}
-	}()
-
-	closeFn := func() {
-		cancel()
-		streamMu.Lock()
-		defer streamMu.Unlock()
-		if err := stream.CloseSend(); err != nil {
-			log.Warnf("failed to close subscription stream: %v", err)
-		}
-		// Clear cached subscription ID so subsequent Modify/Overwrite calls
-		// fail fast locally instead of acting on a stale ID.
-		a.setSubscriptionID("")
-	}
-
-	return eventsCh, closeFn, nil
+		},
+		ErrorEvent: func(err error) indexer.ScriptEvent {
+			return indexer.ScriptEvent{Err: err}
+		},
+		ConnectionEvent: func(event utils.ReconnectingStreamStateEvent) indexer.ScriptEvent {
+			return indexer.ScriptEvent{
+				Connection: &types.StreamConnectionEvent{
+					State:          toStreamConnectionState(event.State),
+					At:             event.At,
+					DisconnectedAt: event.DisconnectedAt,
+					Err:            event.Err,
+				},
+			}
+		},
+	})
 }
 
 func (a *grpcClient) SubscribeForScripts(
@@ -571,6 +530,9 @@ func (a *grpcClient) SubscribeForScripts(
 	if err != nil {
 		return "", err
 	}
+
+	a.scripts.add(scripts)
+
 	return resp.GetSubscriptionId(), nil
 }
 
@@ -583,10 +545,14 @@ func (a *grpcClient) UnsubscribeForScripts(
 	if len(subscriptionId) > 0 {
 		req.SubscriptionId = subscriptionId
 	}
+
 	_, err := a.svc().UnsubscribeForScripts(ctx, req)
 	if err != nil {
 		return err
 	}
+
+	a.scripts.remove(scripts)
+
 	return nil
 }
 
@@ -692,6 +658,19 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 	a.connMu.RLock()
 	defer a.connMu.RUnlock()
 	return arkv1.NewIndexerServiceClient(a.conn)
+}
+
+func toStreamConnectionState(
+	state utils.ReconnectingStreamState,
+) types.StreamConnectionState {
+	switch state {
+	case utils.ReconnectingStreamStateDisconnected:
+		return types.StreamConnectionStateDisconnected
+	case utils.ReconnectingStreamStateReconnected:
+		return types.StreamConnectionStateReconnected
+	default:
+		return types.StreamConnectionState(state)
+	}
 }
 
 func parsePage(page *arkv1.IndexerPageResponse) *indexer.PageResponse {
