@@ -298,12 +298,26 @@ func (s *service) UpdateSettings(settings domain.Settings) error {
 	// Warn when exit delay parameters change — existing VTXOs have the old
 	// values baked into their scripts, so changes only affect future rounds.
 	newUnilateral := domain.ToRelativeLocktime(settings.UnilateralExitDelay)
+	newPublicUnilateral := domain.ToRelativeLocktime(settings.PublicUnilateralExitDelay)
+	newCheckpoint := domain.ToRelativeLocktime(settings.CheckpointExitDelay)
 	newBoarding := domain.ToRelativeLocktime(settings.BoardingExitDelay)
 	newExpiry := domain.ToRelativeLocktime(settings.VtxoTreeExpiry)
 	if s.unilateralExitDelay != newUnilateral {
 		log.Warnf(
 			"unilateral exit delay changed from %d to %d — only affects future rounds",
 			s.unilateralExitDelay.Value, newUnilateral.Value,
+		)
+	}
+	if s.publicUnilateralExitDelay != newPublicUnilateral {
+		log.Warnf(
+			"public unilateral exit delay changed from %d to %d — only affects future rounds",
+			s.publicUnilateralExitDelay.Value, newPublicUnilateral.Value,
+		)
+	}
+	if s.checkpointExitDelay != newCheckpoint {
+		log.Warnf(
+			"checkpoint exit delay changed from %d to %d — only affects future rounds",
+			s.checkpointExitDelay.Value, newCheckpoint.Value,
 		)
 	}
 	if s.boardingExitDelay != newBoarding {
@@ -322,8 +336,8 @@ func (s *service) UpdateSettings(settings domain.Settings) error {
 	s.banDuration = time.Duration(settings.BanDuration) * time.Second
 	s.banThreshold = settings.BanThreshold
 	s.unilateralExitDelay = newUnilateral
-	s.publicUnilateralExitDelay = domain.ToRelativeLocktime(settings.PublicUnilateralExitDelay)
-	s.checkpointExitDelay = domain.ToRelativeLocktime(settings.CheckpointExitDelay)
+	s.publicUnilateralExitDelay = newPublicUnilateral
+	s.checkpointExitDelay = newCheckpoint
 	s.boardingExitDelay = newBoarding
 	s.batchExpiry = newExpiry
 	s.roundMinParticipantsCount = settings.RoundMinParticipantsCount

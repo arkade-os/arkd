@@ -8,7 +8,11 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 )
 
-const MinAllowedSequence = 512
+const (
+	MinAllowedSequence = 512
+	// MaxSatoshis is the maximum number of satoshis that can ever exist (21M BTC).
+	MaxSatoshis = 21_000_000 * 1e8
+)
 
 // ErrInvalidSettings is returned when settings fail validation.
 type ErrInvalidSettings struct {
@@ -61,6 +65,9 @@ func (s Settings) Validate() error {
 	if s.VtxoTreeExpiry <= 0 {
 		return &ErrInvalidSettings{"vtxo tree expiry must be greater than 0"}
 	}
+	if s.BanThreshold < 1 {
+		return &ErrInvalidSettings{"ban threshold must be at least 1"}
+	}
 	if s.BanDuration < 1 {
 		return &ErrInvalidSettings{"ban duration must be at least 1"}
 	}
@@ -94,17 +101,17 @@ func (s Settings) Validate() error {
 	if s.VtxoTreeExpiry > math.MaxUint32 {
 		return &ErrInvalidSettings{"vtxo tree expiry exceeds maximum uint32 value"}
 	}
-	if s.VtxoMinAmount < -1 {
-		return &ErrInvalidSettings{"vtxo min amount must be -1 (dust) or positive"}
+	if s.VtxoMinAmount < -1 || s.VtxoMinAmount > MaxSatoshis {
+		return &ErrInvalidSettings{"vtxo min amount must be -1 (dust) or between 0 and 21M BTC"}
 	}
-	if s.VtxoMaxAmount < -1 {
-		return &ErrInvalidSettings{"vtxo max amount must be -1 (unset) or positive"}
+	if s.VtxoMaxAmount < -1 || s.VtxoMaxAmount > MaxSatoshis {
+		return &ErrInvalidSettings{"vtxo max amount must be -1 (unset) or between 0 and 21M BTC"}
 	}
-	if s.UtxoMinAmount < -1 {
-		return &ErrInvalidSettings{"utxo min amount must be -1 (dust) or positive"}
+	if s.UtxoMinAmount < -1 || s.UtxoMinAmount > MaxSatoshis {
+		return &ErrInvalidSettings{"utxo min amount must be -1 (dust) or between 0 and 21M BTC"}
 	}
-	if s.UtxoMaxAmount < -1 {
-		return &ErrInvalidSettings{"utxo max amount must be -1 (unset) or positive"}
+	if s.UtxoMaxAmount < -1 || s.UtxoMaxAmount > MaxSatoshis {
+		return &ErrInvalidSettings{"utxo max amount must be -1 (unset) or between 0 and 21M BTC"}
 	}
 	if s.VtxoMinAmount != -1 && s.VtxoMaxAmount != -1 && s.VtxoMinAmount > s.VtxoMaxAmount {
 		return &ErrInvalidSettings{"vtxo min amount must be <= vtxo max amount"}

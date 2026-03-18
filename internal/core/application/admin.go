@@ -663,9 +663,6 @@ func (a *adminService) ClearSettings(ctx context.Context) error {
 		}
 	}
 
-	if err := a.repoManager.Settings().Clear(ctx); err != nil {
-		return err
-	}
 	defaults.UpdatedAt = time.Now()
 	if err := a.repoManager.Settings().Upsert(ctx, defaults); err != nil {
 		return err
