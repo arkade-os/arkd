@@ -128,7 +128,8 @@ type Config struct {
 	MaxTxWeight               uint64
 	AssetTxMaxWeightRatio     float64
 
-	EnablePprof bool
+	EnablePprof          bool
+	MaxConcurrentStreams uint32
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -219,6 +220,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
+	MaxConcurrentStreams          = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -256,6 +258,7 @@ var (
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultMaxConcurrentStreams          = uint32(1000)
 )
 
 func LoadConfig() (*Config, error) {
@@ -298,6 +301,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -410,6 +414,7 @@ func LoadConfig() (*Config, error) {
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
 	}, nil
 }
 
@@ -587,6 +592,10 @@ func (c *Config) Validate() error {
 			"asset tx max weight ratio must be between 0 and 1 (exclusive), got %f",
 			c.AssetTxMaxWeightRatio,
 		)
+	}
+
+	if c.MaxConcurrentStreams == 0 {
+		return fmt.Errorf("max concurrent streams must be greater than 0")
 	}
 
 	if err := c.repoManager(); err != nil {
