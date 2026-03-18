@@ -939,6 +939,7 @@ func (s *service) SubmitOffchainTx(
 
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the P2A
 	foundAnchor := false
+	foundExtension := false
 	var rebuiltArkTx *psbt.Packet
 	var rebuiltCheckpointTxs []*psbt.Packet
 	ext := make(extension.Extension, 0)
@@ -957,6 +958,12 @@ func (s *service) SubmitOffchainTx(
 		// if the OP_RETURN is extension, decode it and add it to outputs list
 		// skip other checks related to vtxo output
 		if extension.IsExtension(out.PkScript) {
+			if foundExtension {
+				return nil, errors.MALFORMED_ARK_TX.New(
+					"tx %s has multiple extension outputs", txid,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			foundExtension = true
 			outputs = append(outputs, out)
 
 			ext, err = extension.NewExtensionFromBytes(out.PkScript)
