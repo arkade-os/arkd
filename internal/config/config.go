@@ -594,6 +594,10 @@ func (c *Config) Validate() error {
 		)
 	}
 
+	if c.MaxConcurrentStreams == 0 {
+		return fmt.Errorf("max concurrent streams must be greater than 0")
+	}
+
 	if err := c.repoManager(); err != nil {
 		return err
 	}
