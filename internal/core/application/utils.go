@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -20,6 +22,26 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
+)
+
+var (
+	// asset packet overhead: OP_RETURN(1) + push_data(1) + magic_bytes + marker(1) + varuint_count(1)
+	assetPacketOverheadWU uint64 = (1 + 1 + uint64(len(extension.ArkadeMagic)) + 1 + 1) * 4
+
+	// ref group weight
+	refAssetId, _ = asset.NewAssetId(
+		"0100000000000000000000000000000000000000000000000000000000000000", 0,
+	)
+	// we assume that to spend an asset, we need to transfer it to at least 1 output.
+	// the minimum group size is 1 input + 1 output + asset Id (not an issuance)
+	refGroup = asset.AssetGroup{
+		AssetId: refAssetId,
+		Inputs:  []asset.AssetInput{{Type: asset.AssetInputTypeLocal, Vin: 0, Amount: 1}},
+		Outputs: []asset.AssetOutput{{Type: asset.AssetOutputTypeLocal, Vout: 0, Amount: 1}},
+	}
+	groupBytes, _ = refGroup.Serialize()
+	// group is in OP_RETURN, so weight = bytes * 4
+	refGroupWeight = uint64(len(groupBytes)) * 4 // 180 WU
 )
 
 // onchainOutputs iterates over all the nodes' outputs in the vtxo tree and checks their onchain state
@@ -126,7 +148,7 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	outs := make([]domain.Vtxo, 0, len(ptx.UnsignedTx.TxOut))
 	for outIndex, out := range ptx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
-			asset.IsAssetPacket(out.PkScript) {
+			extension.IsExtension(out.PkScript) {
 			continue
 		}
 		outs = append(outs, domain.Vtxo{
@@ -236,7 +258,7 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 		vtxos := make([]domain.Vtxo, 0)
 		for i, out := range tx.UnsignedTx.TxOut {
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
-				asset.IsAssetPacket(out.PkScript) {
+				extension.IsExtension(out.PkScript) {
 				continue
 			}
 
@@ -266,22 +288,28 @@ func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
 }
 
 func getAssetsFromTx(ptx *psbt.Packet) (map[uint32][]domain.AssetDenomination, error) {
-	assets, err := asset.NewPacketFromTx(ptx.UnsignedTx)
-	// TODO: Move to !errors.Is(err, asset.ErrAssetPacketNotFound)
+	ext, err := extension.NewExtensionFromTx(ptx.UnsignedTx)
 	if err != nil {
-		if strings.Contains(err.Error(), "packet not found") {
+		if errors.Is(err, extension.ErrExtensionNotFound) {
 			return nil, nil
 		}
 		return nil, err
 	}
 
+	return getAssetsDenominations(ext.GetAssetPacket(), ptx.UnsignedTx.TxID())
+}
+
+func getAssetsDenominations(
+	packet asset.Packet,
+	txid string,
+) (map[uint32][]domain.AssetDenomination, error) {
 	assetDenominations := make(map[uint32][]domain.AssetDenomination)
-	for grpIndex, ast := range assets {
+	for grpIndex, ast := range packet {
 		for _, out := range ast.Outputs {
 			var assetId string
 			// In case of issuance, the asset id is empty and we derive it from the txid and vout
 			if ast.AssetId == nil {
-				id, err := asset.NewAssetId(ptx.UnsignedTx.TxID(), uint16(grpIndex))
+				id, err := asset.NewAssetId(txid, uint16(grpIndex))
 				if err != nil {
 					return nil, fmt.Errorf("failed to compute asset id: %s", err)
 				}
@@ -519,6 +547,22 @@ func waitForConfirmation(
 	}
 }
 
+// resolveMinAmounts defaults negative min amounts to the dust limit.
+// vtxoMinAmount uses negative values as a sentinel for "unset" (sub-dust
+// offchain VTXOs are intentionally supported via OP_RETURN scripts).
+// utxoMinAmount is always clamped to at least dust.
+func resolveMinAmounts(
+	vtxoMinAmount, utxoMinAmount, dustAmount int64,
+) (int64, int64) {
+	if vtxoMinAmount < 0 {
+		vtxoMinAmount = dustAmount
+	}
+	if utxoMinAmount < dustAmount {
+		utxoMinAmount = dustAmount
+	}
+	return vtxoMinAmount, utxoMinAmount
+}
+
 // validateTimeRange validates time range values. A zero value means unbounded and is allowed.
 func validateTimeRange(after, before int64) error {
 	if after < 0 || before < 0 {
@@ -534,4 +578,22 @@ func computeWeight(tx *wire.MsgTx) uint64 {
 	baseSize := tx.SerializeSizeStripped()
 	totalSize := tx.SerializeSize()
 	return uint64((baseSize * 3) + totalSize)
+}
+
+// maxAssetsPerVtxo computes the maximum number of asset groups (unique assets)
+// that a VTXO can hold while remaining spendable within maxTxWeight.
+// The spendingWeightThreshold parameter controls the fraction of maxTxWeight
+// reserved for the asset packet.
+func maxAssetsPerVtxo(maxTxWeight uint64, spendingWeightThreshold float64) int {
+	if maxTxWeight == 0 {
+		return 0
+	}
+
+	maxPacketWU := uint64(float64(maxTxWeight) * spendingWeightThreshold)
+	if maxPacketWU <= assetPacketOverheadWU {
+		return 0
+	}
+
+	availableWU := maxPacketWU - assetPacketOverheadWU
+	return int(availableWU / refGroupWeight)
 }
