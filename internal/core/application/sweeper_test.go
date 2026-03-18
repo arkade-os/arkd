@@ -37,7 +37,7 @@ func (m *mockWalletService) GetTransaction(ctx context.Context, txid string) (st
 }
 
 // Stub implementations for unused WalletService methods
-func (m *mockWalletService) GetReadyUpdate(ctx context.Context) (<-chan struct{}, error) {
+func (m *mockWalletService) GetReadyUpdate(ctx context.Context) (<-chan bool, error) {
 	return nil, nil
 }
 func (m *mockWalletService) GenSeed(ctx context.Context) (string, error) { return "", nil }
