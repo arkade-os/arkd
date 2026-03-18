@@ -195,6 +195,26 @@
                 "name": "invalid group index",
                 "script": "0102020100000101e80301",
                 "expectedError": "invalid control asset group index"
+            },
+            {
+                "name": "asset group count exceeds max",
+                "script": "e907",
+                "expectedError": "invalid asset group count"
+            },
+            {
+                "name": "nested input count exceeds max",
+                "script": "0100e907",
+                "expectedError": "invalid asset input count"
+            },
+            {
+                "name": "nested output count exceeds max",
+                "script": "010000e907",
+                "expectedError": "invalid asset output count"
+            },
+            {
+                "name": "nested metadata count exceeds max",
+                "script": "0104e907",
+                "expectedError": "invalid asset metadata list count"
             }
         ]
     }

@@ -128,6 +128,9 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("failed to parse checkpoint tx: %s", err)
 		}
+		if len(checkpointPtx.UnsignedTx.TxIn) == 0 {
+			return "", nil, nil, fmt.Errorf("invalid checkpoint tx: missing inputs")
+		}
 		ins = append(ins, domain.Outpoint{
 			Txid: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String(),
 			VOut: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index,
@@ -150,6 +153,13 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
 			extension.IsExtension(out.PkScript) {
 			continue
+		}
+		if len(out.PkScript) < 2 {
+			return "", nil, nil, fmt.Errorf(
+				"invalid output script at index %d: script too short (%d bytes)",
+				outIndex,
+				len(out.PkScript),
+			)
 		}
 		outs = append(outs, domain.Vtxo{
 			Outpoint: domain.Outpoint{
@@ -545,6 +555,22 @@ func waitForConfirmation(
 			}
 		}
 	}
+}
+
+// resolveMinAmounts defaults negative min amounts to the dust limit.
+// vtxoMinAmount uses negative values as a sentinel for "unset" (sub-dust
+// offchain VTXOs are intentionally supported via OP_RETURN scripts).
+// utxoMinAmount is always clamped to at least dust.
+func resolveMinAmounts(
+	vtxoMinAmount, utxoMinAmount, dustAmount int64,
+) (int64, int64) {
+	if vtxoMinAmount < 0 {
+		vtxoMinAmount = dustAmount
+	}
+	if utxoMinAmount < dustAmount {
+		utxoMinAmount = dustAmount
+	}
+	return vtxoMinAmount, utxoMinAmount
 }
 
 // validateTimeRange validates time range values. A zero value means unbounded and is allowed.

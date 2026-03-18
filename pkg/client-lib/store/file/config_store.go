@@ -113,7 +113,7 @@ func (s *configStore) open() (*storeData, error) {
 		if err := s.write(&storeData{}); err != nil {
 			return nil, fmt.Errorf("failed to initialize store: %s", err)
 		}
-		return nil, nil
+		return &storeData{}, nil
 	}
 
 	data := &storeData{}
