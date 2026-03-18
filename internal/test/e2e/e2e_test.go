@@ -4542,6 +4542,107 @@ func TestAsset(t *testing.T) {
 		_, ok := aliceBalance.AssetBalances[assetId]
 		require.False(t, ok)
 	})
+
+	// This test ensures that an offchain tx can have both a regular asset output
+	// and a subdust output (multiple OP_RETURN in the same tx)
+	t.Run("asset and subdust", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+
+		faucetOffchain(t, alice, 0.002)
+
+		res, err := alice.IssueAsset(ctx, 5_000, nil, nil)
+		require.NoError(t, err)
+		assetId := res.IssuedAssets[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		_, bobAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+
+		// tx with a regular asset output greater than dust + a subdust output
+		// it  
+		_, err = alice.SendOffChain(ctx, []types.Receiver{
+			{To: bobAddr.Address, Amount: 400, Assets: []types.Asset{
+				{AssetId: assetId, Amount: 1_200},
+			}},
+			{To: bobAddr.Address, Amount: 100},
+		})
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		bobAssetVtxos := listVtxosWithAsset(t, bob, assetId)
+		require.Len(t, bobAssetVtxos, 1)
+		requireVtxoHasAsset(t, bobAssetVtxos[0], assetId, 1_200)
+	})
+
+	// This test ensures that an asset on a subdust output survives settlement
+	t.Run("asset subdust settle", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+
+		faucetOffchain(t, alice, 0.002)
+
+		res, err := alice.IssueAsset(ctx, 5_000, nil, nil)
+		require.NoError(t, err)
+		assetId := res.IssuedAssets[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		_, bobAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+
+		// send asset to Bob with a subdust sat amount (100 sats)
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To: bobAddr.Address, Amount: 100,
+			Assets: []types.Asset{{AssetId: assetId, Amount: 1_200}},
+		}})
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		requireVtxoHasAsset(t, listVtxosWithAsset(t, bob, assetId)[0], assetId, 1_200)
+
+		// send more to bob so he can settle
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingErr error
+		go func() {
+			_, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddr.Address)
+			wg.Done()
+		}()
+
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To: bobAddr.Address, Amount: 1000,
+		}})
+		require.NoError(t, err)
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
+
+		var aliceErr, bobErr error
+		wg = &sync.WaitGroup{}
+		wg.Go(func() { _, aliceErr = alice.Settle(ctx) })
+		wg.Go(func() { _, bobErr = bob.Settle(ctx) })
+		wg.Wait()
+		require.NoError(t, aliceErr)
+		require.NoError(t, bobErr)
+
+		time.Sleep(2 * time.Second)
+
+		// asset must survive settlement
+		bobBalance, err := bob.Balance(ctx)
+		require.NoError(t, err)
+		assetBalance, ok := bobBalance.AssetBalances[assetId]
+		require.True(t, ok)
+		require.Equal(t, 1_200, int(assetBalance))
+	})
 }
 
 // TestTxListenerChurn verifies that the gRPC transaction stream fanout is
