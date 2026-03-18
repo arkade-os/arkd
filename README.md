@@ -99,26 +99,34 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
 | `ARKD_ROUND_REPORT_ENABLED`        | Enable round report service                                                     | `false`                        |
 
-#### Admin Settings (via `POST /v1/admin/settings`)
+#### Admin Settings
 
 The following settings are persisted in the database and managed via the admin API. Default values are seeded on first startup.
 
-| Setting                           | Description                                                  | Default                        |
-|-----------------------------------|--------------------------------------------------------------|--------------------------------|
-| `vtxo_tree_expiry`                | VTXO tree expiry (blocks or seconds depending on scheduler)  | `604672` (gocron) / `20` (block) |
-| `unilateral_exit_delay`           | Unilateral exit delay in seconds                             | `86400` (24 hours)             |
-| `public_unilateral_exit_delay`    | Public unilateral exit delay in seconds                      | `86400` (24 hours)             |
-| `checkpoint_exit_delay`           | Checkpoint exit delay (blocks or seconds)                    | `86400` (gocron) / `10` (block) |
-| `boarding_exit_delay`             | Boarding exit delay in seconds                               | `7776000` (3 months)           |
-| `round_min_participants_count`    | Minimum number of participants per round                     | `1`                            |
-| `round_max_participants_count`    | Maximum number of participants per round                     | `128`                          |
-| `vtxo_min_amount`                 | Minimum allowed amount for vtxos                             | `-1` (dust)                    |
-| `vtxo_max_amount`                 | Maximum allowed amount for vtxos                             | `-1` (unset)                   |
-| `utxo_min_amount`                 | Minimum allowed amount for boarding or collaborative exit    | `-1` (dust)                    |
-| `utxo_max_amount`                 | Maximum allowed amount for boarding or collaborative exit    | `-1` (unset)                   |
-| `ban_duration`                    | Ban duration in seconds                                      | `300` (5 minutes)              |
-| `ban_threshold`                   | Number of crimes to trigger a ban                            | `3`                            |
-| `max_tx_weight`                   | Max transaction weight                                       | `40000`                        |
+| Endpoint                          | Method | Description                              |
+|-----------------------------------|--------|------------------------------------------|
+| `/v1/admin/settings`              | GET    | Retrieve current settings                |
+| `/v1/admin/settings`              | POST   | Update settings (full replace)           |
+| `/v1/admin/settings/clear`        | POST   | Reset settings to defaults               |
+
+| Setting                              | Description                                                  | Default                        |
+|--------------------------------------|--------------------------------------------------------------|--------------------------------|
+| `vtxo_tree_expiry`                   | VTXO tree expiry (blocks or seconds depending on scheduler)  | `604672` (gocron) / `20` (block) |
+| `unilateral_exit_delay`              | Unilateral exit delay in seconds                             | `86400` (24 hours)             |
+| `public_unilateral_exit_delay`       | Public unilateral exit delay in seconds                      | `86400` (24 hours)             |
+| `checkpoint_exit_delay`              | Checkpoint exit delay (blocks or seconds)                    | `86400` (gocron) / `10` (block) |
+| `boarding_exit_delay`                | Boarding exit delay in seconds                               | `7776000` (3 months)           |
+| `round_min_participants_count`       | Minimum number of participants per round                     | `1`                            |
+| `round_max_participants_count`       | Maximum number of participants per round                     | `128`                          |
+| `vtxo_min_amount`                    | Minimum allowed amount for vtxos                             | `-1` (dust)                    |
+| `vtxo_max_amount`                    | Maximum allowed amount for vtxos                             | `-1` (unset)                   |
+| `utxo_min_amount`                    | Minimum allowed amount for boarding or collaborative exit    | `-1` (dust)                    |
+| `utxo_max_amount`                    | Maximum allowed amount for boarding or collaborative exit    | `-1` (unset)                   |
+| `ban_duration`                       | Ban duration in seconds                                      | `300` (5 minutes)              |
+| `ban_threshold`                      | Number of crimes to trigger a ban                            | `3`                            |
+| `max_tx_weight`                      | Max transaction weight                                       | `40000`                        |
+| `settlement_min_expiry_gap`          | Minimum gap between settlement and VTXO expiry in seconds    | `0`                            |
+| `vtxo_no_csv_validation_cutoff_date` | Unix timestamp after which CSV validation is enforced        | `0` (disabled)                 |
 
 ## Provisioning
 

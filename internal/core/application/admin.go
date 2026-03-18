@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -65,6 +66,7 @@ type adminService struct {
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
 
+	settingsMu        sync.Mutex
 	defaultSettings   domain.Settings
 	onSettingsUpdated func(context.Context, domain.Settings) error
 	onInfoChange      func()
@@ -624,20 +626,33 @@ func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Setti
 	if err := settings.Validate(); err != nil {
 		return fmt.Errorf("invalid settings: %w", err)
 	}
-	settings.UpdatedAt = time.Now()
-	if err := a.repoManager.Settings().Upsert(ctx, settings); err != nil {
-		return err
-	}
+
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+
+	// Apply to the running service before persisting so that if live-apply
+	// fails we don't leave invalid settings in the DB.
 	if a.onSettingsUpdated != nil {
 		if err := a.onSettingsUpdated(ctx, settings); err != nil {
 			return err
 		}
 	}
+
+	settings.UpdatedAt = time.Now()
+	if err := a.repoManager.Settings().Upsert(ctx, settings); err != nil {
+		return err
+	}
+
+	a.roundMinParticipantsCount = settings.RoundMinParticipantsCount
+	a.roundMaxParticipantsCount = settings.RoundMaxParticipantsCount
 	a.onInfoChange()
 	return nil
 }
 
 func (a *adminService) ClearSettings(ctx context.Context) error {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+
 	if err := a.repoManager.Settings().Clear(ctx); err != nil {
 		return err
 	}
@@ -651,6 +666,8 @@ func (a *adminService) ClearSettings(ctx context.Context) error {
 			return err
 		}
 	}
+	a.roundMinParticipantsCount = defaults.RoundMinParticipantsCount
+	a.roundMaxParticipantsCount = defaults.RoundMaxParticipantsCount
 	a.onInfoChange()
 	return nil
 }

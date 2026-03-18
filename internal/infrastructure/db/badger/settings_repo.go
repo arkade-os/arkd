@@ -68,7 +68,11 @@ func (r *settingsRepository) Upsert(
 		if errors.Is(err, badger.ErrConflict) {
 			attempts := 1
 			for errors.Is(err, badger.ErrConflict) && attempts <= maxRetries {
-				time.Sleep(100 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(100 * time.Millisecond):
+				}
 				err = r.store.Upsert(settingsKey, &settings)
 				attempts++
 			}

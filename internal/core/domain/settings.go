@@ -9,6 +9,11 @@ import (
 
 const MinAllowedSequence = 512
 
+// ToRelativeLocktime converts a raw locktime value to a typed RelativeLocktime.
+// Values >= MinAllowedSequence (512) are interpreted as seconds (BIP68
+// time-based relative locktimes use 512-second granularity units), while values
+// < 512 are interpreted as blocks. Config validation enforces that time-based
+// values are multiples of 512.
 func ToRelativeLocktime(locktime int64) arklib.RelativeLocktime {
 	if locktime >= MinAllowedSequence {
 		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: uint32(locktime)}
@@ -64,6 +69,9 @@ func (s Settings) Validate() error {
 	}
 	if s.UnilateralExitDelay == s.BoardingExitDelay {
 		return fmt.Errorf("unilateral exit delay and boarding exit delay must be different")
+	}
+	if s.MaxTxWeight <= 0 {
+		return fmt.Errorf("max tx weight must be greater than 0")
 	}
 	return nil
 }

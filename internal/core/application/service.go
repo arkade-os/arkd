@@ -292,6 +292,8 @@ func (s *service) Start() error {
 	return nil
 }
 
+// UpdateSettings applies new settings to the running service. It is called by
+// the admin service under settingsMu and must not be called concurrently.
 func (s *service) UpdateSettings(settings domain.Settings) error {
 	s.banDuration = time.Duration(settings.BanDuration) * time.Second
 	s.banThreshold = settings.BanThreshold
