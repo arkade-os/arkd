@@ -17,7 +17,26 @@ func TestAdminService_Settings(t *testing.T) {
 	repo := &mockRepoManager{
 		settingsRepo: &mockSettingsRepository{},
 	}
-	svc := application.NewAdminService(nil, repo, nil, nil, ports.UnixTime, nil, 1, 128, nil)
+	defaults := domain.Settings{
+		BanThreshold:              3,
+		BanDuration:               300,
+		VtxoTreeExpiry:            604672,
+		UnilateralExitDelay:       86400,
+		PublicUnilateralExitDelay: 86400,
+		CheckpointExitDelay:       86400,
+		BoardingExitDelay:         7776000,
+		RoundMinParticipantsCount: 1,
+		RoundMaxParticipantsCount: 128,
+		UtxoMaxAmount:             -1,
+		UtxoMinAmount:             -1,
+		VtxoMaxAmount:             -1,
+		VtxoMinAmount:             -1,
+		MaxTxWeight:               40000,
+	}
+	svc := application.NewAdminService(
+		nil, repo, nil, nil, ports.UnixTime, nil, 1, 128,
+		defaults, nil, func() {},
+	)
 
 	ctx := context.Background()
 
@@ -113,18 +132,26 @@ func TestAdminService_Settings(t *testing.T) {
 		assert.Equal(t, int64(7200), got.SettlementMinExpiryGap)
 	})
 
-	t.Run("clear removes settings", func(t *testing.T) {
+	t.Run("clear resets settings to defaults", func(t *testing.T) {
 		err := svc.ClearSettings(ctx)
 		require.NoError(t, err)
 
 		got, err := svc.GetSettings(ctx)
 		require.NoError(t, err)
-		require.Nil(t, got)
+		require.NotNil(t, got)
+		assert.Equal(t, defaults.BanThreshold, got.BanThreshold)
+		assert.Equal(t, defaults.BanDuration, got.BanDuration)
+		assert.Equal(t, defaults.RoundMaxParticipantsCount, got.RoundMaxParticipantsCount)
 	})
 
-	t.Run("clear on empty is idempotent", func(t *testing.T) {
+	t.Run("clear on defaults is idempotent", func(t *testing.T) {
 		err := svc.ClearSettings(ctx)
 		require.NoError(t, err)
+
+		got, err := svc.GetSettings(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, defaults.BanThreshold, got.BanThreshold)
 	})
 }
 

@@ -614,6 +614,9 @@ func (a *adminHandler) UpdateSettings(
 	}
 
 	if err := a.adminService.UpdateSettings(ctx, settings); err != nil {
+		if strings.Contains(err.Error(), "invalid settings:") {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 

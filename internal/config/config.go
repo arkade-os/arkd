@@ -32,7 +32,6 @@ import (
 )
 
 const (
-	minAllowedSequence = 512
 	bitcoinBlockWeight = 4_000_000
 )
 
@@ -368,11 +367,7 @@ func makeDirectoryIfNotExists(path string) error {
 }
 
 func determineLocktimeType(locktime int64) arklib.RelativeLocktime {
-	if locktime >= minAllowedSequence {
-		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: uint32(locktime)}
-	}
-
-	return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(locktime)}
+	return domain.ToRelativeLocktime(locktime)
 }
 
 func (c *Config) defaultSettings() *domain.Settings {
@@ -504,11 +499,11 @@ func (c *Config) Validate() error {
 		}
 
 		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
-		if c.VtxoTreeExpiry.Value%minAllowedSequence != 0 {
-			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % minAllowedSequence
+		if c.VtxoTreeExpiry.Value%domain.MinAllowedSequence != 0 {
+			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % domain.MinAllowedSequence
 			log.Infof(
 				"vtxo tree expiry must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.VtxoTreeExpiry,
+				domain.MinAllowedSequence, c.VtxoTreeExpiry,
 			)
 		}
 	}
@@ -522,47 +517,47 @@ func (c *Config) Validate() error {
 
 	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
 		return fmt.Errorf(
-			"invalid unilateral exit delay, must at least %d", minAllowedSequence,
+			"invalid unilateral exit delay, must at least %d", domain.MinAllowedSequence,
 		)
 	}
 
 	if c.BoardingExitDelay.Type == arklib.LocktimeTypeBlock {
 		return fmt.Errorf(
-			"invalid boarding exit delay, must at least %d", minAllowedSequence,
+			"invalid boarding exit delay, must at least %d", domain.MinAllowedSequence,
 		)
 	}
 
 	if c.CheckpointExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.CheckpointExitDelay.Value%minAllowedSequence != 0 {
-			c.CheckpointExitDelay.Value -= c.CheckpointExitDelay.Value % minAllowedSequence
+		if c.CheckpointExitDelay.Value%domain.MinAllowedSequence != 0 {
+			c.CheckpointExitDelay.Value -= c.CheckpointExitDelay.Value % domain.MinAllowedSequence
 			log.Infof(
 				"checkpoint exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.CheckpointExitDelay,
+				domain.MinAllowedSequence, c.CheckpointExitDelay,
 			)
 		}
 	}
 
-	if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
-		c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % minAllowedSequence
+	if c.UnilateralExitDelay.Value%domain.MinAllowedSequence != 0 {
+		c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % domain.MinAllowedSequence
 		log.Infof(
 			"unilateral exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.UnilateralExitDelay,
+			domain.MinAllowedSequence, c.UnilateralExitDelay,
 		)
 	}
 
-	if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
-		c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
+	if c.PublicUnilateralExitDelay.Value%domain.MinAllowedSequence != 0 {
+		c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % domain.MinAllowedSequence
 		log.Infof(
 			"public unilateral exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.PublicUnilateralExitDelay.Value,
+			domain.MinAllowedSequence, c.PublicUnilateralExitDelay.Value,
 		)
 	}
 
-	if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
-		c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
+	if c.BoardingExitDelay.Value%domain.MinAllowedSequence != 0 {
+		c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % domain.MinAllowedSequence
 		log.Infof(
 			"boarding exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.BoardingExitDelay,
+			domain.MinAllowedSequence, c.BoardingExitDelay,
 		)
 	}
 
@@ -881,7 +876,7 @@ func (c *Config) appService() error {
 
 func (c *Config) adminService() error {
 	unit := ports.UnixTime
-	if c.VtxoTreeExpiry.Value < minAllowedSequence {
+	if c.VtxoTreeExpiry.Value < domain.MinAllowedSequence {
 		unit = ports.BlockHeight
 	}
 
@@ -895,6 +890,7 @@ func (c *Config) adminService() error {
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		*c.defaultSettings(),
 		func(ctx context.Context, settings domain.Settings) error {
 			// Propagate settings to the running app service.
 			if c.svc != nil {

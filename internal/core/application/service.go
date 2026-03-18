@@ -292,23 +292,14 @@ func (s *service) Start() error {
 	return nil
 }
 
-const minAllowedSequence = 512
-
-func toRelativeLocktime(locktime int64) arklib.RelativeLocktime {
-	if locktime >= minAllowedSequence {
-		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: uint32(locktime)}
-	}
-	return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(locktime)}
-}
-
 func (s *service) UpdateSettings(settings domain.Settings) error {
 	s.banDuration = time.Duration(settings.BanDuration) * time.Second
 	s.banThreshold = settings.BanThreshold
-	s.unilateralExitDelay = toRelativeLocktime(settings.UnilateralExitDelay)
-	s.publicUnilateralExitDelay = toRelativeLocktime(settings.PublicUnilateralExitDelay)
-	s.checkpointExitDelay = toRelativeLocktime(settings.CheckpointExitDelay)
-	s.boardingExitDelay = toRelativeLocktime(settings.BoardingExitDelay)
-	s.batchExpiry = toRelativeLocktime(settings.VtxoTreeExpiry)
+	s.unilateralExitDelay = domain.ToRelativeLocktime(settings.UnilateralExitDelay)
+	s.publicUnilateralExitDelay = domain.ToRelativeLocktime(settings.PublicUnilateralExitDelay)
+	s.checkpointExitDelay = domain.ToRelativeLocktime(settings.CheckpointExitDelay)
+	s.boardingExitDelay = domain.ToRelativeLocktime(settings.BoardingExitDelay)
+	s.batchExpiry = domain.ToRelativeLocktime(settings.VtxoTreeExpiry)
 	s.roundMinParticipantsCount = settings.RoundMinParticipantsCount
 	s.roundMaxParticipantsCount = settings.RoundMaxParticipantsCount
 	s.vtxoMinAmount = settings.VtxoMinAmount

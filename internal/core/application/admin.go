@@ -65,6 +65,7 @@ type adminService struct {
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
 
+	defaultSettings   domain.Settings
 	onSettingsUpdated func(context.Context, domain.Settings) error
 	onInfoChange      func()
 }
@@ -73,6 +74,7 @@ func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
+	defaultSettings domain.Settings,
 	onSettingsUpdated func(context.Context, domain.Settings) error,
 	onInfoChange func(),
 ) AdminService {
@@ -85,6 +87,7 @@ func NewAdminService(
 		feeManager:                feeManager,
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
+		defaultSettings:           defaultSettings,
 		onSettingsUpdated:         onSettingsUpdated,
 		onInfoChange:              onInfoChange,
 	}
@@ -618,6 +621,9 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 }
 
 func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Settings) error {
+	if err := settings.Validate(); err != nil {
+		return fmt.Errorf("invalid settings: %w", err)
+	}
 	settings.UpdatedAt = time.Now()
 	if err := a.repoManager.Settings().Upsert(ctx, settings); err != nil {
 		return err
@@ -634,6 +640,16 @@ func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Setti
 func (a *adminService) ClearSettings(ctx context.Context) error {
 	if err := a.repoManager.Settings().Clear(ctx); err != nil {
 		return err
+	}
+	defaults := a.defaultSettings
+	defaults.UpdatedAt = time.Now()
+	if err := a.repoManager.Settings().Upsert(ctx, defaults); err != nil {
+		return err
+	}
+	if a.onSettingsUpdated != nil {
+		if err := a.onSettingsUpdated(ctx, defaults); err != nil {
+			return err
+		}
 	}
 	a.onInfoChange()
 	return nil
