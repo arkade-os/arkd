@@ -414,6 +414,9 @@ func applyJitter(d time.Duration, jitter float64) time.Duration {
 	if jitter <= 0 {
 		return d
 	}
+	if jitter >= 1.0 {
+		jitter = 0.999
+	}
 
 	randomFactor := 2.0*rand.Float64()-1.0 // [-1, +1] factor
 	jitterFactor := 1.0 + jitter*randomFactor
