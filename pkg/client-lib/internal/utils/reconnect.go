@@ -33,6 +33,8 @@ func ShouldReconnect(err error) (bool, time.Duration) {
 		switch {
 		case strings.Contains(msg, "429"): // rate limited
 			return true, 30 * time.Second
+		case strings.Contains(msg, "404"): // not found, maybe redeployment
+			return true, 30 * time.Second
 		default:
 			return true, time.Second
 		}
