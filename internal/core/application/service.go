@@ -939,7 +939,6 @@ func (s *service) SubmitOffchainTx(
 
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the P2A
 	foundAnchor := false
-	foundOpReturn := false
 	var rebuiltArkTx *psbt.Packet
 	var rebuiltCheckpointTxs []*psbt.Packet
 	ext := make(extension.Extension, 0)
@@ -955,28 +954,18 @@ func (s *service) SubmitOffchainTx(
 			continue
 		}
 
-		// verify we don't have multiple OP_RETURN outputs
-		if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
-			if foundOpReturn {
+		// if the OP_RETURN is extension, decode it and add it to outputs list
+		// skip other checks related to vtxo output
+		if extension.IsExtension(out.PkScript) {
+			outputs = append(outputs, out)
+
+			ext, err = extension.NewExtensionFromBytes(out.PkScript)
+			if err != nil {
 				return nil, errors.MALFORMED_ARK_TX.New(
-					"tx %s has multiple op return outputs", txid,
+					"tx %s has malformed extension output %x", txid, out.PkScript,
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
-			foundOpReturn = true
-
-			// if the OP_RETURN is extension, decode it and add it to outputs list
-			// skip other checks related to vtxo output
-			if extension.IsExtension(out.PkScript) {
-				outputs = append(outputs, out)
-
-				ext, err = extension.NewExtensionFromBytes(out.PkScript)
-				if err != nil {
-					return nil, errors.MALFORMED_ARK_TX.New(
-						"tx %s has malformed extension output %x", txid, out.PkScript,
-					).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-				}
-				continue
-			}
+			continue
 		}
 
 		if s.vtxoMaxAmount >= 0 {
