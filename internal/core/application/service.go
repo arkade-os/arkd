@@ -2170,7 +2170,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		BoardingExitDelay:    int64(s.boardingExitDelay.Value),
 		SessionDuration:      int64(s.sessionDuration.Seconds()),
 		Network:              s.network.Name,
-		Dust:                 cached.dust,
+		Dust:                 s.dustAmount,
 		ForfeitAddress:       s.forfeitAddress,
 		NextScheduledSession: nextScheduledSession,
 		UtxoMinAmount:        s.utxoMinAmount,
@@ -4340,7 +4340,6 @@ func (s *service) loadInfo() (*infoData, error) {
 	}
 
 	return &infoData{
-		dust:             s.dustAmount,
 		scheduledSession: scheduledSessionConfig,
 		intentFees:       *intentFees,
 	}, nil

@@ -7,7 +7,6 @@ import (
 )
 
 type infoData struct {
-	dust             uint64
 	scheduledSession *domain.ScheduledSession
 	intentFees       domain.IntentFees
 }
