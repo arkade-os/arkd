@@ -35,15 +35,16 @@ func startAction(_ *cli.Context) error {
 	}
 
 	svcConfig := grpcservice.Config{
-		Datadir:           cfg.Datadir,
-		Port:              cfg.Port,
-		AdminPort:         cfg.AdminPort,
-		NoTLS:             cfg.NoTLS,
-		NoMacaroons:       cfg.NoMacaroons,
-		TLSExtraIPs:       cfg.TLSExtraIPs,
-		TLSExtraDomains:   cfg.TLSExtraDomains,
-		HeartbeatInterval: cfg.HeartbeatInterval,
-		EnablePprof:       cfg.EnablePprof,
+		Datadir:              cfg.Datadir,
+		Port:                 cfg.Port,
+		AdminPort:            cfg.AdminPort,
+		NoTLS:                cfg.NoTLS,
+		NoMacaroons:          cfg.NoMacaroons,
+		TLSExtraIPs:          cfg.TLSExtraIPs,
+		TLSExtraDomains:      cfg.TLSExtraDomains,
+		HeartbeatInterval:    cfg.HeartbeatInterval,
+		EnablePprof:          cfg.EnablePprof,
+		MaxConcurrentStreams: cfg.MaxConcurrentStreams,
 	}
 
 	svc, err := grpcservice.NewService(Version, svcConfig, cfg)

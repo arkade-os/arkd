@@ -16,7 +16,7 @@ var (
 
 type WalletService interface {
 	BlockchainScanner
-	GetReadyUpdate(ctx context.Context) (<-chan struct{}, error)
+	GetReadyUpdate(ctx context.Context) (<-chan bool, error)
 	GenSeed(ctx context.Context) (string, error)
 	Create(ctx context.Context, seed, password string) error
 	Restore(ctx context.Context, seed, password string) error

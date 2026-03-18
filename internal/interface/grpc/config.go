@@ -11,15 +11,16 @@ import (
 )
 
 type Config struct {
-	Datadir           string
-	Port              uint32
-	AdminPort         uint32
-	NoTLS             bool
-	NoMacaroons       bool
-	TLSExtraIPs       []string
-	TLSExtraDomains   []string
-	HeartbeatInterval int64
-	EnablePprof       bool
+	Datadir              string
+	Port                 uint32
+	AdminPort            uint32
+	NoTLS                bool
+	NoMacaroons          bool
+	TLSExtraIPs          []string
+	TLSExtraDomains      []string
+	HeartbeatInterval    int64
+	EnablePprof          bool
+	MaxConcurrentStreams uint32
 }
 
 func (c Config) Validate() error {

@@ -2,6 +2,7 @@ package arksdk
 
 import (
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 )
 
 type ServiceOption func(*service)
@@ -12,12 +13,15 @@ func WithVerbose() ServiceOption {
 	}
 }
 
-// WithRefreshDb enables periodic refresh of the db when WithTransactionFeed is set
-func WithExplorer(svc explorer.Explorer) ServiceOption {
+func WithExplorer(explorer explorer.Explorer) ServiceOption {
 	return func(c *service) {
-		if svc != nil {
-			c.explorer = svc
-		}
+		c.explorer = explorer
+	}
+}
+
+func WithWallet(wallet wallet.WalletService) ServiceOption {
+	return func(c *service) {
+		c.wallet = wallet
 	}
 }
 

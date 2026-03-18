@@ -214,6 +214,11 @@
                 "name": "invalid length",
                 "serializedHex": "01013101",
                 "expectedError": "invalid metadata length"
+            },
+            {
+                "name": "metadata list count exceeds max",
+                "serializedHex": "e907",
+                "expectedError": "invalid asset metadata list count"
             }
         ]
     }

@@ -136,6 +136,11 @@
                 "name": "duplicated outputs",
                 "serializedHex": "0201000090030100008827",
                 "expectedError": "all outputs must have unique vout"
+            },
+            {
+                "name": "output count exceeds max",
+                "serializedHex": "e907",
+                "expectedError": "invalid asset output count"
             }
         ]
     }

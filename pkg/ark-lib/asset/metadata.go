@@ -190,6 +190,9 @@ func newMetadataListFromReader(r *bytes.Reader) (MetadataList, error) {
 	if err != nil {
 		return nil, err
 	}
+	if count > MaxAssetMetadataListCount {
+		return nil, fmt.Errorf("invalid asset metadata list count, max=%d, got=%d", MaxAssetMetadataListCount, count)
+	}
 
 	l := make(MetadataList, 0, count)
 	for range count {

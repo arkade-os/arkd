@@ -12,10 +12,12 @@ var GrpcReconnectConfig = struct {
 	InitialDelay time.Duration
 	MaxDelay     time.Duration
 	Multiplier   float64
+	Jitter       float64
 }{
 	InitialDelay: 1 * time.Second,
 	MaxDelay:     10 * time.Second,
 	Multiplier:   2.0,
+	Jitter:       0.2, // + or - 20% randomness
 }
 
 const grpcHTTPFallbackError = "unexpected HTTP status code received from server"
@@ -27,7 +29,15 @@ func ShouldReconnect(err error) (bool, time.Duration) {
 	// During arkd restart/shutdown windows, gRPC calls may briefly hit the HTTP gateway
 	// on the same port and return a plain HTTP response (e.g. 200 with no gRPC content-type).
 	if strings.Contains(err.Error(), grpcHTTPFallbackError) {
-		return true, time.Second
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "429"): // rate limited
+			return true, 30 * time.Second
+		case strings.Contains(msg, "404"): // not found, maybe redeployment
+			return true, 30 * time.Second
+		default:
+			return true, time.Second
+		}
 	}
 
 	st, ok := status.FromError(err)

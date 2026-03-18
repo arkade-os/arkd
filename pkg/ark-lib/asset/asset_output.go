@@ -212,6 +212,9 @@ func newAssetOutputsFromReader(r *bytes.Reader) (AssetOutputs, error) {
 	if count == 0 {
 		return nil, nil
 	}
+	if count > MaxAssetOutputCount {
+		return nil, fmt.Errorf("invalid asset output count, max=%d, got=%d", MaxAssetOutputCount, count)
+	}
 
 	outputs := make(AssetOutputs, 0, count)
 	for range count {

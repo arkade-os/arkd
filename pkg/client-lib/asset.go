@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -14,18 +15,18 @@ import (
 func (a *service) IssueAsset(
 	ctx context.Context, amount uint64, controlAsset types.ControlAsset,
 	metadata []asset.Metadata, opts ...SendOption,
-) (string, []asset.AssetId, error) {
+) (*IssueAssetRes, error) {
 	if err := a.safeCheck(); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	if amount == 0 {
-		return "", nil, fmt.Errorf("amount must be > 0")
+		return nil, fmt.Errorf("amount must be > 0")
 	}
 
 	a.txLock.Lock()
@@ -52,12 +53,12 @@ func (a *service) IssueAsset(
 		ctx, []types.Receiver{receiver}, opts...,
 	)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(baseArkTx), true)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	assetGroups := make([]asset.AssetGroup, 0)
@@ -69,14 +70,14 @@ func (a *service) IssueAsset(
 		changeReceiver,
 	)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	switch ca := controlAsset.(type) {
 	case types.NewControlAsset:
 		controlAssetOutput, err := asset.NewAssetOutput(0, ca.Amount)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		controlAssetGroup, err := asset.NewAssetGroup(
 			nil,
@@ -86,7 +87,7 @@ func (a *service) IssueAsset(
 			metadata,
 		)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 
 		assetGroups = append(assetGroups, *controlAssetGroup)
@@ -97,7 +98,7 @@ func (a *service) IssueAsset(
 	case types.ExistingControlAsset:
 		controlAssetId, err := asset.NewAssetIdFromString(ca.ID)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		assetRef = &asset.AssetRef{
 			Type:    asset.AssetRefByID,
@@ -107,7 +108,7 @@ func (a *service) IssueAsset(
 
 	issuedAssetOutput, err := asset.NewAssetOutput(0, amount)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	issuedAssetGroup, err := asset.NewAssetGroup(
@@ -118,52 +119,52 @@ func (a *service) IssueAsset(
 		metadata,
 	)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	assetGroups = append(assetGroups, *issuedAssetGroup)
 
 	assetPacket, err := asset.NewPacket(append(assetGroups, packet...))
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	arkTx, err := arkPtx.B64Encode()
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	arkTxid, signedArkTx, signedCheckpointTxs, err := a.client.SubmitTx(
 		ctx, signedArkTx, checkpointTxs,
 	)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	// validate and verify transactions returned by the server
 	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
-	txid, err := a.finalizeTx(ctx, client.AcceptedOffchainTx{
+	txid, checkpointTxs, err := a.finalizeTx(ctx, client.AcceptedOffchainTx{
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
 	})
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 
 	assetIds := make([]asset.AssetId, 0)
@@ -171,7 +172,7 @@ func (a *service) IssueAsset(
 	if _, ok := controlAsset.(types.NewControlAsset); ok {
 		assetId, err := asset.NewAssetId(txid, groupIdx)
 		if err != nil {
-			return "", nil, err
+			return nil, err
 		}
 		assetIds = append(assetIds, *assetId)
 		groupIdx++
@@ -179,36 +180,70 @@ func (a *service) IssueAsset(
 
 	assetId, err := asset.NewAssetId(txid, groupIdx)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	assetIds = append(assetIds, *assetId)
 
-	return txid, assetIds, nil
+	// Add assets info to receiver and returns as outputs together with the optional change
+	for groupIndex, assetGroup := range assetGroups {
+		// we know there's only one output per asset
+		output := assetGroup.Outputs[0]
+		//nolint
+		assetId, _ := asset.NewAssetId(txid, uint16(groupIndex))
+
+		receiver.Assets = append(receiver.Assets, types.Asset{
+			AssetId: assetId.String(),
+			Amount:  output.Amount,
+		})
+	}
+
+	ins := make([]types.Vtxo, 0, len(selectedCoins))
+	for _, c := range selectedCoins {
+		ins = append(ins, c.Vtxo)
+	}
+
+	outs := make([]types.Receiver, 0)
+	outs = append(outs, receiver)
+	if changeReceiver != nil {
+		outs = append(outs, *changeReceiver)
+	}
+
+	return &IssueAssetRes{
+		OffchainTxRes: OffchainTxRes{
+			Txid:        txid,
+			Tx:          signedArkTx,
+			Checkpoints: checkpointTxs,
+			Inputs:      ins,
+			Outputs:     outs,
+			Extension:   extension.Extension{assetPacket},
+		},
+		IssuedAssets: assetIds,
+	}, nil
 }
 
 func (a *service) ReissueAsset(
 	ctx context.Context, assetId string, amount uint64, opts ...SendOption,
-) (string, error) {
+) (*ReissueAssetRes, error) {
 	if err := a.safeCheck(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if amount == 0 {
-		return "", fmt.Errorf("amount must be > 0")
+		return nil, fmt.Errorf("amount must be > 0")
 	}
 
 	controlAssetId, err := a.getControlAssetId(ctx, assetId)
 	if err != nil {
-		return "", fmt.Errorf("failed to get control asset: %w", err)
+		return nil, fmt.Errorf("failed to get control asset: %w", err)
 	}
 
 	if len(controlAssetId) == 0 {
-		return "", fmt.Errorf("%s can't be reissued, no control asset", assetId)
+		return nil, fmt.Errorf("%s can't be reissued, no control asset", assetId)
 	}
 
 	a.txLock.Lock()
@@ -230,12 +265,12 @@ func (a *service) ReissueAsset(
 		ctx, receivers, opts...,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(baseArkTx), true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// create the asset packet for the local control asset inputs and receiver
@@ -243,17 +278,17 @@ func (a *service) ReissueAsset(
 		selectedCoinsToAssetInputs(selectedCoins), receivers, changeReceiver,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if len(assetPacket) == 0 {
-		return "", fmt.Errorf("failed to create asset packet")
+		return nil, fmt.Errorf("failed to create asset packet")
 	}
 
 	// add the reissued asset output to the asset packet
 	issuedAssetOutput, err := asset.NewAssetOutput(0, amount)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// it may be possible some assetId are already in the tx,
@@ -274,14 +309,14 @@ func (a *service) ReissueAsset(
 	if groupIndex == -1 {
 		reissueAssetId, err := asset.NewAssetIdFromString(assetId)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 
 		issuedAssetGroup, err := asset.NewAssetGroup(
 			reissueAssetId, nil, nil, []asset.AssetOutput{*issuedAssetOutput}, nil,
 		)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		assetPacket = append(assetPacket, *issuedAssetGroup)
 	} else {
@@ -290,59 +325,87 @@ func (a *service) ReissueAsset(
 	}
 
 	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkTx, err := arkPtx.B64Encode()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkTxid, signedArkTx, signedCheckpointTxs, err := a.client.SubmitTx(
 		ctx, signedArkTx, checkpointTxs,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// validate and verify transactions returned by the server
 	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return a.finalizeTx(ctx, client.AcceptedOffchainTx{
+	txid, checkpointTxs, err := a.finalizeTx(ctx, client.AcceptedOffchainTx{
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	ins := make([]types.Vtxo, 0, len(selectedCoins))
+	for _, c := range selectedCoins {
+		ins = append(ins, c.Vtxo)
+	}
+
+	receiver.Assets = append(receiver.Assets, types.Asset{
+		AssetId: assetId,
+		Amount:  amount,
+	})
+
+	outs := make([]types.Receiver, 0)
+	outs = append(outs, receiver)
+	if changeReceiver != nil {
+		outs = append(outs, *changeReceiver)
+	}
+
+	return &ReissueAssetRes{
+		Txid:        txid,
+		Tx:          signedArkTx,
+		Checkpoints: checkpointTxs,
+		Inputs:      ins,
+		Outputs:     outs,
+		Extension:   extension.Extension{assetPacket},
+	}, nil
 }
 
 func (a *service) BurnAsset(
 	ctx context.Context, assetId string, amount uint64, opts ...SendOption,
-) (string, error) {
+) (*BurnAssetRes, error) {
 	if err := a.safeCheck(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if amount == 0 {
-		return "", fmt.Errorf("amount must be > 0")
+		return nil, fmt.Errorf("amount must be > 0")
 	}
 
 	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(offchainAddrs) <= 0 {
-		return "", fmt.Errorf("no offchain addresses")
+		return nil, fmt.Errorf("no offchain addresses")
 	}
 
 	a.txLock.Lock()
@@ -362,12 +425,12 @@ func (a *service) BurnAsset(
 		ctx, receivers, opts...,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(baseArkTx), true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// before creating the packet, remove the asset from the receivers in order to burn it
@@ -383,44 +446,67 @@ func (a *service) BurnAsset(
 		selectedCoinsToAssetInputs(selectedCoins), receivers, nil,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkTx, err := arkPtx.B64Encode()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkTxid, signedArkTx, signedCheckpointTxs, err := a.client.SubmitTx(
 		ctx, signedArkTx, checkpointTxs,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// validate and verify transactions returned by the server
 	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return a.finalizeTx(ctx, client.AcceptedOffchainTx{
+	txid, checkpointTxs, err := a.finalizeTx(ctx, client.AcceptedOffchainTx{
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	ins := make([]types.Vtxo, 0, len(selectedCoins))
+	for _, c := range selectedCoins {
+		ins = append(ins, c.Vtxo)
+	}
+	outs := []types.Receiver{
+		{To: receivers[0].To, Amount: burnReceiver.Amount, Assets: receivers[0].Assets},
+	}
+	if changeReceiver != nil {
+		outs = append(outs, types.Receiver{To: changeReceiver.To, Amount: changeReceiver.Amount})
+	}
+
+	return &BurnAssetRes{
+		Txid:        txid,
+		Tx:          signedArkTx,
+		Checkpoints: checkpointTxs,
+		Inputs:      ins,
+		Outputs:     outs,
+		Extension:   extension.Extension{assetPacket},
+	}, nil
 }
 
 func (a *service) getControlAssetId(ctx context.Context, assetId string) (string, error) {

@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
-	"github.com/arkade-os/arkd/internal/core/ports"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -23,17 +22,49 @@ const (
 	indexerServiceNotReadyMsg = "indexer service not ready: wallet is locked or syncing"
 )
 
-type WalletReadinessStatusProvider interface {
-	Status(ctx context.Context) (ports.WalletStatus, error)
-}
-
 type ReadinessService struct {
-	wallet     WalletReadinessStatusProvider
-	appStarted atomic.Bool
+	walletReady, appStarted atomic.Bool
+	ctx                     context.Context
+	cancel                  context.CancelFunc
 }
 
-func NewReadinessService(wallet WalletReadinessStatusProvider) *ReadinessService {
-	return &ReadinessService{wallet: wallet}
+func NewReadinessService(ctx context.Context) *ReadinessService {
+	ctx, cancel := context.WithCancel(ctx)
+	return &ReadinessService{ctx: ctx, cancel: cancel}
+}
+
+func (r *ReadinessService) ListenToWalletState(connect func() <-chan bool) {
+	go func() {
+		for {
+			ch := connect()
+			if ch == nil {
+				r.walletReady.Store(false)
+				return
+			}
+			if !r.listenUntilClosed(ch) {
+				return
+			}
+			// channel was closed, mark not ready and reconnect
+			r.walletReady.Store(false)
+		}
+	}()
+}
+
+// listenUntilClosed reads from ch until it closes or the context is canceled.
+// Returns true if ch was closed (should reconnect), false if stopped.
+func (r *ReadinessService) listenUntilClosed(ch <-chan bool) bool {
+	for {
+		select {
+		case <-r.ctx.Done():
+			r.walletReady.Store(false)
+			return false
+		case ready, ok := <-ch:
+			if !ok {
+				return true
+			}
+			r.walletReady.Store(ready)
+		}
+	}
 }
 
 func (r *ReadinessService) MarkAppServiceStarted() {
@@ -41,31 +72,20 @@ func (r *ReadinessService) MarkAppServiceStarted() {
 }
 
 func (r *ReadinessService) MarkAppServiceStopped() {
+	r.cancel()
 	r.appStarted.Store(false)
 }
 
-func (r *ReadinessService) Check(ctx context.Context, fullMethod string) error {
+func (r *ReadinessService) Check(_ context.Context, fullMethod string) error {
 	if r == nil || !isPublicServiceMethod(fullMethod) {
 		return nil
 	}
-	// We need both checks:
-	// 1) appStarted gates the Ark backend lifecycle (startup/shutdown races, start failures),
-	// 2) wallet.Status() gates the current runtime condition (locked/syncing after backend started).
 	if !r.appStarted.Load() {
 		return status.Error(codes.Unavailable, "server not ready")
 	}
-	if r.wallet == nil {
+	if !r.walletReady.Load() {
 		return publicServiceUnavailableErr(fullMethod)
 	}
-
-	walletStatus, err := r.wallet.Status(ctx)
-	if err != nil {
-		return publicServiceUnavailableErr(fullMethod)
-	}
-	if !walletStatus.IsInitialized() || !walletStatus.IsUnlocked() || !walletStatus.IsSynced() {
-		return publicServiceUnavailableErr(fullMethod)
-	}
-
 	return nil
 }
 

@@ -16,12 +16,12 @@ type mockedWallet struct {
 	mock.Mock
 }
 
-func (m *mockedWallet) GetReadyUpdate(ctx context.Context) (<-chan struct{}, error) {
+func (m *mockedWallet) GetReadyUpdate(ctx context.Context) (<-chan bool, error) {
 	args := m.Called(ctx)
 
-	var res chan struct{}
+	var res chan bool
 	if a := args.Get(0); a != nil {
-		res = a.(chan struct{})
+		res = a.(chan bool)
 	}
 	return res, args.Error(1)
 }

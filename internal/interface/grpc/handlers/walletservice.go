@@ -131,8 +131,8 @@ func (a *walletInitHandler) listenWhenReady() {
 		return
 	}
 
-	for range ch {
-		if a.onReady != nil {
+	for ready := range ch {
+		if ready && a.onReady != nil {
 			a.onReady()
 		}
 	}

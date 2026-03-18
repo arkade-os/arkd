@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
@@ -107,6 +108,9 @@ func isTimeoutError(err error) bool {
 		return true
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, syscall.ECONNRESET) {
 		return true
 	}
 

@@ -96,13 +96,18 @@ type TxData struct {
 }
 
 type ScriptEvent struct {
+	Data       *ScriptEventData
+	Connection *types.StreamConnectionEvent
+	Err        error
+}
+
+type ScriptEventData struct {
 	Txid          string
 	Tx            string
 	Scripts       []string
 	NewVtxos      []types.Vtxo
 	SpentVtxos    []types.Vtxo
 	CheckpointTxs map[string]TxData
-	Err           error
 }
 
 type PageRequest struct {

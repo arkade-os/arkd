@@ -40,8 +40,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const adminUrl = "http://127.0.0.1:7071"
-const serverUrl = "127.0.0.1:7070"
+const (
+	adminUrl    = "http://127.0.0.1:7071"
+	serverUrl   = "127.0.0.1:7070"
+	explorerUrl = "http://127.0.0.1:3000"
+)
 
 func generateBlocks(n int) error {
 	_, err := runCommand("nigiri", "rpc", "--generate", fmt.Sprintf("%d", n))
@@ -273,10 +276,11 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	err = client.Init(t.Context(), arksdk.InitArgs{
-		WalletType: arksdk.SingleKeyWallet,
-		ServerUrl:  serverUrl,
-		Password:   password,
-		Seed:       privkeyHex,
+		WalletType:  arksdk.SingleKeyWallet,
+		ServerUrl:   serverUrl,
+		Password:    password,
+		Seed:        privkeyHex,
+		ExplorerURL: explorerUrl,
 	})
 	require.NoError(t, err)
 
@@ -346,10 +350,11 @@ func setupArkSDKwithPublicKey(
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	err = client.InitWithWallet(t.Context(), arksdk.InitWithWalletArgs{
-		Wallet:    wallet,
-		ServerUrl: serverUrl,
-		Password:  password,
-		Seed:      privkeyHex,
+		Wallet:      wallet,
+		ServerUrl:   serverUrl,
+		Password:    password,
+		Seed:        privkeyHex,
+		ExplorerURL: explorerUrl,
 	})
 	require.NoError(t, err)
 
@@ -423,7 +428,7 @@ func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types
 	var incomingFunds []types.Vtxo
 	var incomingErr error
 	go func() {
-		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr)
+		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr.Address)
 		wg.Done()
 	}()
 
@@ -453,7 +458,7 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 	var incomingFunds []types.Vtxo
 	var incomingErr error
 	go func() {
-		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr)
+		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr.Address)
 		wg.Done()
 	}()
 
@@ -476,12 +481,12 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 		wg.Done()
 	}()
 
-	txid, err = client.SendOffChain(t.Context(), []types.Receiver{{
+	res, err := client.SendOffChain(t.Context(), []types.Receiver{{
 		To:     addr,
 		Amount: uint64(amount * 1e8),
 	}})
 	require.NoError(t, err)
-	require.NotEmpty(t, txid)
+	require.NotEmpty(t, res.Txid)
 
 	wg.Wait()
 	require.NoError(t, incomingErr)

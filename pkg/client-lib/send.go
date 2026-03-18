@@ -9,6 +9,7 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
@@ -21,9 +22,9 @@ import (
 
 func (a *service) SendOffChain(
 	ctx context.Context, receivers []types.Receiver, opts ...SendOption,
-) (string, error) {
+) (*SendOffChainRes, error) {
 	if err := a.safeCheck(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	a.txLock.Lock()
@@ -33,56 +34,77 @@ func (a *service) SendOffChain(
 		ctx, receivers, opts...,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(baseArkTx), true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	assetPacket, err := createAssetPacket(
 		selectedCoinsToAssetInputs(selectedCoins), receivers, changeReceiver,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkTx, err := arkPtx.B64Encode()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	arkTxid, signedArkTx, signedCheckpointTxs, err := a.client.SubmitTx(
 		ctx, signedArkTx, checkpointTxs,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// validate and verify transactions returned by the server
 	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return a.finalizeTx(ctx, client.AcceptedOffchainTx{
+	txid, checkpointTxs, err := a.finalizeTx(ctx, client.AcceptedOffchainTx{
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	ins := make([]types.Vtxo, 0, len(selectedCoins))
+	for _, c := range selectedCoins {
+		ins = append(ins, c.Vtxo)
+	}
+	outs := make([]types.Receiver, 0)
+	if changeReceiver != nil {
+		outs = append(outs, *changeReceiver)
+	}
+
+	return &SendOffChainRes{
+		Txid:        txid,
+		Tx:          signedArkTx,
+		Checkpoints: checkpointTxs,
+		Inputs:      ins,
+		Outputs:     outs,
+		Extension:   extension.Extension{assetPacket},
+	}, nil
 }
 
 func (a *service) FinalizePendingTxs(
@@ -424,7 +446,7 @@ func (a *service) finalizePendingTxs(
 		}
 
 		for _, tx := range pendingTxs {
-			txid, err := a.finalizeTx(ctx, tx)
+			txid, _, err := a.finalizeTx(ctx, tx)
 			if err != nil {
 				log.WithError(err).Errorf("failed to finalize pending tx: %s", tx.Txid)
 				continue
@@ -438,20 +460,20 @@ func (a *service) finalizePendingTxs(
 
 func (a *service) finalizeTx(
 	ctx context.Context, acceptedTx client.AcceptedOffchainTx,
-) (string, error) {
+) (string, []string, error) {
 	finalCheckpoints := make([]string, 0, len(acceptedTx.SignedCheckpointTxs))
 
 	for _, checkpoint := range acceptedTx.SignedCheckpointTxs {
 		signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, checkpoint)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		finalCheckpoints = append(finalCheckpoints, signedTx)
 	}
 
 	if err := a.client.FinalizeTx(ctx, acceptedTx.Txid, finalCheckpoints); err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	return acceptedTx.Txid, nil
+	return acceptedTx.Txid, finalCheckpoints, nil
 }

@@ -315,6 +315,9 @@ func newAssetInputsFromReader(r *bytes.Reader) (AssetInputs, error) {
 	if count == 0 {
 		return nil, nil
 	}
+	if count > MaxAssetInputCount {
+		return nil, fmt.Errorf("invalid asset input count, max=%d, got=%d", MaxAssetInputCount, count)
+	}
 
 	inputs := make(AssetInputs, 0, count)
 	for range count {

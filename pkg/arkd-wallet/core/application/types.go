@@ -15,7 +15,7 @@ const (
 )
 
 type WalletService interface {
-	GetReadyUpdate(ctx context.Context) <-chan struct{}
+	GetReadyUpdate(ctx context.Context) <-chan bool
 	GenSeed(ctx context.Context) (string, error)
 	Create(ctx context.Context, seed, password string) error
 	Restore(ctx context.Context, seed, password string) error

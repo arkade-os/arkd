@@ -12,6 +12,13 @@ import (
 // PacketType is the fixed type identifier for the asset packet format 0x00.
 const PacketType = uint8(0)
 
+const (
+	MaxAssetGroupCount        = uint64(1000)
+	MaxAssetInputCount        = uint64(1000)
+	MaxAssetOutputCount       = uint64(1000)
+	MaxAssetMetadataListCount = uint64(1000)
+)
+
 // Packet represents a list of AssetGroup entries embedded in a transaction's OP_RETURN output.
 type Packet []AssetGroup
 
@@ -81,6 +88,9 @@ func (p Packet) validate() error {
 	if len(p) <= 0 {
 		return fmt.Errorf("missing assets")
 	}
+	if uint64(len(p)) > MaxAssetGroupCount {
+		return fmt.Errorf("invalid asset group count, max=%d, got=%d", MaxAssetGroupCount, len(p))
+	}
 	seen := make(map[AssetId]struct{})
 	for _, asset := range p {
 		if asset.AssetId != nil {
@@ -126,6 +136,11 @@ func newPacketFromReader(r *bytes.Reader) (Packet, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	if count > MaxAssetGroupCount {
+		return nil, fmt.Errorf("invalid asset group count, max=%d, got=%d", MaxAssetGroupCount, count)
+	}
+
 	assets := make([]AssetGroup, 0, count)
 	for range count {
 		ag, err := newAssetGroupFromReader(r)
