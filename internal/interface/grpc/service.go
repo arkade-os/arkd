@@ -205,10 +205,14 @@ func (s *service) stop() {
 
 	// Close gateway reverse-proxy client connections.
 	if s.unaryConn != nil {
-		s.unaryConn.Close()
+		if err := s.unaryConn.Close(); err != nil {
+			log.Warn("failed to close unary transport connection")
+		}
 	}
 	if s.streamConn != nil {
-		s.streamConn.Close()
+		if err := s.streamConn.Close(); err != nil {
+			log.Warn("failed to close stream transport connection")
+		}
 	}
 }
 
@@ -365,7 +369,9 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		s.config.gatewayAddress(), gatewayOpts,
 	)
 	if err != nil {
-		unaryConn.Close()
+		if err := unaryConn.Close(); err != nil {
+			log.Warn("failed to close unary transport connection")
+		}
 		return err
 	}
 	s.unaryConn = unaryConn
