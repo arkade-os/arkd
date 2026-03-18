@@ -26,6 +26,12 @@ func ReadTxWitness(witnessSerialized []byte) (wire.TxWitness, error) {
 		return nil, err
 	}
 
+	remainingBytes := r.Len()
+	// Each witness item needs at least a 1-byte length prefix, so count cannot exceed remaining bytes.
+	if witCount > uint64(remainingBytes) {
+		return nil, fmt.Errorf("invalid witness count: %d exceeds remaining bytes: %d", witCount, remainingBytes)
+	}
+
 	// read each witness item
 	witness := make(wire.TxWitness, witCount)
 	for i := range witCount {

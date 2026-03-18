@@ -159,11 +159,11 @@ func (o *orchestrator) onboard(t *testing.T) {
 			go func(id int, client arksdk.ArkClient, note []string) {
 				defer wg.Done()
 
-				txid, err := client.RedeemNotes(context.Background(), note)
+				res, err := client.RedeemNotes(context.Background(), note)
 				require.NoError(t, err, "client %d failed to redeem note", id)
 
 				t.Logf("Client %d redeemd a note", i)
-				chCommitmentTx <- txid
+				chCommitmentTx <- res.CommitmentTxid
 			}(i, client, note)
 		}
 	}()
@@ -189,11 +189,11 @@ func (o *orchestrator) settle(t *testing.T) string {
 			go func(id int, client arksdk.ArkClient) {
 				defer wg.Done()
 
-				txid, err := client.Settle(context.Background())
+				res, err := client.Settle(context.Background())
 				require.NoError(t, err, "client %d failed to settle funds", id)
 
 				t.Logf("Client %d settled funds", i)
-				chCommitmentTx <- txid
+				chCommitmentTx <- res.CommitmentTxid
 			}(i, client)
 		}
 	}()

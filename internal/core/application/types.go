@@ -63,6 +63,7 @@ type Service interface {
 		txid string,
 	) (*domain.Intent, errors.Error)
 	UpdateSettings(settings domain.Settings) error
+	RefreshInfoCache()
 }
 
 type ServiceInfo struct {

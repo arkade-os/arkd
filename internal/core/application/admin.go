@@ -66,6 +66,7 @@ type adminService struct {
 	roundMaxParticipantsCount int64
 
 	onSettingsUpdated func(context.Context, domain.Settings) error
+	onInfoChange      func()
 }
 
 func NewAdminService(
@@ -73,6 +74,7 @@ func NewAdminService(
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
 	onSettingsUpdated func(context.Context, domain.Settings) error,
+	onInfoChange func(),
 ) AdminService {
 	return &adminService{
 		walletSvc:                 walletSvc,
@@ -84,6 +86,7 @@ func NewAdminService(
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
 		onSettingsUpdated:         onSettingsUpdated,
+		onInfoChange:              onInfoChange,
 	}
 }
 
@@ -316,11 +319,16 @@ func (s *adminService) UpdateScheduledSessionConfig(
 		return fmt.Errorf("failed to upsert scheduled session: %w", err)
 	}
 
+	s.onInfoChange()
 	return nil
 }
 
 func (s *adminService) ClearScheduledSessionConfig(ctx context.Context) error {
-	return s.repoManager.ScheduledSession().Clear(ctx)
+	if err := s.repoManager.ScheduledSession().Clear(ctx); err != nil {
+		return err
+	}
+	s.onInfoChange()
+	return nil
 }
 
 func (s *adminService) ListIntents(
@@ -400,12 +408,20 @@ func (s *adminService) UpdateIntentFees(
 	if err := s.feeManager.Validate(fees); err != nil {
 		return err
 	}
-	return s.repoManager.Fees().UpdateIntentFees(ctx, fees)
+	if err := s.repoManager.Fees().UpdateIntentFees(ctx, fees); err != nil {
+		return err
+	}
+	s.onInfoChange()
+	return nil
 }
 
 // Zeroes out fees
 func (s *adminService) ClearIntentFees(ctx context.Context) error {
-	return s.repoManager.Fees().ClearIntentFees(ctx)
+	if err := s.repoManager.Fees().ClearIntentFees(ctx); err != nil {
+		return err
+	}
+	s.onInfoChange()
+	return nil
 }
 
 // Conviction management methods
@@ -607,13 +623,20 @@ func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Setti
 		return err
 	}
 	if a.onSettingsUpdated != nil {
-		return a.onSettingsUpdated(ctx, settings)
+		if err := a.onSettingsUpdated(ctx, settings); err != nil {
+			return err
+		}
 	}
+	a.onInfoChange()
 	return nil
 }
 
 func (a *adminService) ClearSettings(ctx context.Context) error {
-	return a.repoManager.Settings().Clear(ctx)
+	if err := a.repoManager.Settings().Clear(ctx); err != nil {
+		return err
+	}
+	a.onInfoChange()
+	return nil
 }
 
 func (a *adminService) getScheduledSweep(

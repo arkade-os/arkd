@@ -130,7 +130,8 @@ type Config struct {
 	MaxTxWeight               uint64
 	AssetTxMaxWeightRatio     float64
 
-	EnablePprof bool
+	EnablePprof          bool
+	MaxConcurrentStreams uint32
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -203,6 +204,7 @@ var (
 	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
 	AssetTxMaxWeightRatio = "ASSET_TX_MAX_WEIGHT_RATIO"
 	EnablePprof           = "ENABLE_PPROF"
+	MaxConcurrentStreams  = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -225,6 +227,7 @@ var (
 	defaultRoundReportServiceEnabled = false
 	defaultAssetTxMaxWeightRatio     = 0.5
 	defaultEnablePprof               = false
+	defaultMaxConcurrentStreams      = uint32(1000)
 )
 
 func LoadConfig() (*Config, error) {
@@ -251,6 +254,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -347,6 +351,7 @@ func LoadConfig() (*Config, error) {
 		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
 		AssetTxMaxWeightRatio:     viper.GetFloat64(AssetTxMaxWeightRatio),
 		EnablePprof:               viper.GetBool(EnablePprof),
+		MaxConcurrentStreams:      viper.GetUint32(MaxConcurrentStreams),
 	}, nil
 }
 
@@ -591,6 +596,10 @@ func (c *Config) Validate() error {
 			"asset tx max weight ratio must be between 0 and 1 (exclusive), got %f",
 			c.AssetTxMaxWeightRatio,
 		)
+	}
+
+	if c.MaxConcurrentStreams == 0 {
+		return fmt.Errorf("max concurrent streams must be greater than 0")
 	}
 
 	if err := c.feeManager(); err != nil {
@@ -876,6 +885,13 @@ func (c *Config) adminService() error {
 		unit = ports.BlockHeight
 	}
 
+	onInfoChange := func() {
+		if c.svc == nil {
+			return
+		}
+		c.svc.RefreshInfoCache()
+	}
+
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
@@ -886,6 +902,7 @@ func (c *Config) adminService() error {
 			}
 			return nil
 		},
+		onInfoChange,
 	)
 	return nil
 }

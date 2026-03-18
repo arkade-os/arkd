@@ -194,8 +194,10 @@ run-simulation:
 	@sleep 30
 	@bash -c '\
 		CLIENTS="$${CLIENTS:-5}"; \
-		echo "Running batch settlement test with $$CLIENTS clients..."; \
-		go test -v -count=1 -timeout 1200s github.com/arkade-os/arkd/test/e2e -run TestBatchSettleMultipleClients -args -smoke -num-clients=$$CLIENTS; \
+		MIN="$${MIN:-$$CLIENTS}"; \
+		MAX="$${MAX:-128}"; \
+		echo "Running batch settlement test with $$CLIENTS clients (MIN=$$MIN, MAX=$$MAX)..."; \
+		go test -v -count=1 -timeout 1200s github.com/arkade-os/arkd/internal/test/e2e -run TestBatchSettleMultipleClients -args -smoke -num-clients=$$CLIENTS; \
 	'
 	@echo "Test completed. Docker environment will remain running."
 	@echo "Run 'make docker-stop' to shut down the environment when finished."

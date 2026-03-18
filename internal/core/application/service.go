@@ -16,7 +16,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -46,6 +46,7 @@ type service struct {
 	cache          ports.LiveStore
 	sweeper        *sweeper
 	sweeperCancel  context.CancelFunc
+	infoCache      *infoCache
 	roundReportSvc RoundReportService
 	alerts         ports.Alerts
 
@@ -64,12 +65,11 @@ type service struct {
 	boardingExitDelay         arklib.RelativeLocktime
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
+	dustAmount                uint64
 	utxoMaxAmount             int64
 	utxoMinAmount             int64
 	vtxoMaxAmount             int64
 	vtxoMinAmount             int64
-	vtxoMinSettlementAmount   int64
-	vtxoMinOffchainTxAmount   int64
 	allowCSVBlockType         bool
 	checkpointExitDelay       arklib.RelativeLocktime
 	maxTxWeight               uint64
@@ -171,7 +171,7 @@ func NewService(
 
 	ctx, cancel := context.WithCancel(ctx)
 
-	return &service{
+	svc := &service{
 		network:                   network,
 		signerPubkey:              signerPubkey,
 		batchExpiry:               vtxoTreeExpiry,
@@ -215,7 +215,9 @@ func NewService(
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 		feeManager:                    feeManager,
-	}, nil
+	}
+	svc.infoCache = newInfoCache(svc.loadInfo)
+	return svc, nil
 }
 
 func (s *service) Start() error {
@@ -229,18 +231,10 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
-	var vtxoMinSettlementAmount, vtxoMinOffchainTxAmount = s.vtxoMinAmount, s.vtxoMinAmount
-	if vtxoMinSettlementAmount < int64(dustAmount) {
-		vtxoMinSettlementAmount = int64(dustAmount)
-	}
-	if vtxoMinOffchainTxAmount == -1 {
-		vtxoMinOffchainTxAmount = int64(dustAmount)
-	}
-	if s.utxoMinAmount < int64(dustAmount) {
-		s.utxoMinAmount = int64(dustAmount)
-	}
-	s.vtxoMinSettlementAmount = vtxoMinSettlementAmount
-	s.vtxoMinOffchainTxAmount = vtxoMinOffchainTxAmount
+	s.dustAmount = dustAmount
+	s.vtxoMinAmount, s.utxoMinAmount = resolveMinAmounts(
+		s.vtxoMinAmount, s.utxoMinAmount, int64(dustAmount),
+	)
 
 	forfeitPubkey, err := s.wallet.GetForfeitPubkey(ctx)
 	if err != nil {
@@ -267,6 +261,10 @@ func (s *service) Start() error {
 		return err
 	}
 	s.forfeitAddress = forfeitAddr.String()
+
+	if err := s.infoCache.refresh(); err != nil {
+		log.WithError(err).Warn("failed to initialize info cache")
+	}
 
 	s.registerEventHandlers()
 
@@ -328,19 +326,9 @@ func (s *service) UpdateSettings(settings domain.Settings) error {
 		return fmt.Errorf("failed to get dust amount: %s", err)
 	}
 
-	vtxoMinSettlementAmount := s.vtxoMinAmount
-	vtxoMinOffchainTxAmount := s.vtxoMinAmount
-	if vtxoMinSettlementAmount < int64(dustAmount) {
-		vtxoMinSettlementAmount = int64(dustAmount)
-	}
-	if vtxoMinOffchainTxAmount == -1 {
-		vtxoMinOffchainTxAmount = int64(dustAmount)
-	}
-	if s.utxoMinAmount < int64(dustAmount) {
-		s.utxoMinAmount = int64(dustAmount)
-	}
-	s.vtxoMinSettlementAmount = vtxoMinSettlementAmount
-	s.vtxoMinOffchainTxAmount = vtxoMinOffchainTxAmount
+	s.vtxoMinAmount, s.utxoMinAmount = resolveMinAmounts(
+		s.vtxoMinAmount, s.utxoMinAmount, int64(dustAmount),
+	)
 
 	// Recalculate checkpoint tapscript if forfeit pubkey is already set.
 	if s.forfeitPubkey != nil {
@@ -1005,15 +993,12 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
 	}
 
-	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, assetInputs); err != nil {
-		return nil, err
-	}
-
-	outputs := make([]*wire.TxOut, 0) // outputs excluding the anchor
+	outputs := make([]*wire.TxOut, 0) // outputs excluding the P2A
 	foundAnchor := false
-	foundOpReturn := false
+	foundExtension := false
 	var rebuiltArkTx *psbt.Packet
 	var rebuiltCheckpointTxs []*psbt.Packet
+	ext := make(extension.Extension, 0)
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
@@ -1026,20 +1011,24 @@ func (s *service) SubmitOffchainTx(
 			continue
 		}
 
-		// verify we don't have multiple OP_RETURN outputs
-		if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
-			if foundOpReturn {
+		// if the OP_RETURN is extension, decode it and add it to outputs list
+		// skip other checks related to vtxo output
+		if extension.IsExtension(out.PkScript) {
+			if foundExtension {
 				return nil, errors.MALFORMED_ARK_TX.New(
-					"tx %s has multiple op return outputs", txid,
+					"tx %s has multiple extension outputs", txid,
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
-			foundOpReturn = true
+			foundExtension = true
+			outputs = append(outputs, out)
 
-			// if the OP_RETURN is asset packet, add it to outputs list and skip other checks related to vtxo
-			if asset.IsAssetPacket(out.PkScript) {
-				outputs = append(outputs, out)
-				continue
+			ext, err = extension.NewExtensionFromBytes(out.PkScript)
+			if err != nil {
+				return nil, errors.MALFORMED_ARK_TX.New(
+					"tx %s has malformed extension output %x", txid, out.PkScript,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
+			continue
 		}
 
 		if s.vtxoMaxAmount >= 0 {
@@ -1054,14 +1043,14 @@ func (s *service) SubmitOffchainTx(
 				})
 			}
 		}
-		if out.Value < s.vtxoMinOffchainTxAmount {
+		if out.Value < s.vtxoMinAmount {
 			return nil, errors.AMOUNT_TOO_LOW.New(
 				"output #%d amount is lower than min vtxo amount: %d",
-				outIndex, s.vtxoMinOffchainTxAmount,
+				outIndex, s.vtxoMinAmount,
 			).WithMetadata(errors.AmountTooLowMetadata{
 				OutputIndex: outIndex,
-				Amount:      int(s.vtxoMinOffchainTxAmount),
-				MinAmount:   int(s.vtxoMinOffchainTxAmount),
+				Amount:      int(out.Value),
+				MinAmount:   int(s.vtxoMinAmount),
 			})
 		}
 
@@ -1094,6 +1083,11 @@ func (s *service) SubmitOffchainTx(
 	if !foundAnchor {
 		return nil, errors.MALFORMED_ARK_TX.New("missing anchor output in ark tx %s", txid).
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+	}
+
+	// validate assets
+	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, ext, assetInputs); err != nil {
+		return nil, err
 	}
 
 	// recompute all txs (checkpoint txs + ark tx)
@@ -1874,14 +1868,27 @@ func (s *service) RegisterIntent(
 			})
 	}
 
-	hasOffChainReceiver, hasAssetPacket := false, false
+	hasOffChainReceiver := false
 	receivers := make([]domain.Receiver, 0)
 	onchainOutputs := make([]wire.TxOut, 0)
 	offchainOutputs := make([]wire.TxOut, 0)
+	ext := make(extension.Extension, 0)
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
-		if asset.IsAssetPacket(output.PkScript) {
-			hasAssetPacket = true
+		if extension.IsExtension(output.PkScript) {
+			if len(ext) > 0 {
+				return "", errors.INVALID_INTENT_PSBT.New(
+					"intent proof has several extension outputs",
+				)
+			}
+
+			ext, err = extension.NewExtensionFromBytes(output.PkScript)
+			if err != nil {
+				return "", errors.INVALID_INTENT_PROOF.New(
+					"invalid extension output %x",
+					output.PkScript,
+				)
+			}
 			continue
 		}
 
@@ -1958,14 +1965,14 @@ func (s *service) RegisterIntent(
 					})
 				}
 			}
-			if amount < uint64(s.vtxoMinSettlementAmount) {
+			if amount < s.dustAmount {
 				return "", errors.AMOUNT_TOO_LOW.New(
 					"output %d amount is lower than min vtxo amount: %d",
-					outputIndex, s.vtxoMinSettlementAmount,
+					outputIndex, s.dustAmount,
 				).WithMetadata(errors.AmountTooLowMetadata{
 					OutputIndex: outputIndex,
 					Amount:      int(amount),
-					MinAmount:   int(s.vtxoMinSettlementAmount),
+					MinAmount:   int(s.dustAmount),
 				})
 			}
 
@@ -1999,23 +2006,16 @@ func (s *service) RegisterIntent(
 		}
 	}
 
+	// validate assets
+	if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, ext, assetInputs); err != nil {
+		return "", err
+	}
+
 	leafTxPacket := ""
-	if hasAssetPacket {
-		intentPacket, err := asset.NewPacketFromTx(proof.UnsignedTx)
-		if err != nil {
-			return "", errors.INVALID_INTENT_PROOF.New("invalid asset packet: %w", err).
-				WithMetadata(errors.InvalidIntentProofMetadata{
-					Proof:   signedProof,
-					Message: encodedMessage,
-				})
-		}
-
-		if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, assetInputs); err != nil {
-			return "", err
-		}
-
-		// disable issuance
-		if hasIssuance(intentPacket) {
+	intentAssetPacket := ext.GetAssetPacket()
+	if len(intentAssetPacket) > 0 {
+		// disable issuance in settlement
+		if hasIssuance(intentAssetPacket) {
 			return "", errors.INVALID_INTENT_PROOF.New("intent contains asset issuance").
 				WithMetadata(errors.InvalidIntentProofMetadata{
 					Proof:   signedProof,
@@ -2023,7 +2023,7 @@ func (s *service) RegisterIntent(
 				})
 		}
 
-		leafTxPacket = intentPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
+		leafTxPacket = intentAssetPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
 	}
 
 	intent, err := domain.NewIntent(
@@ -2193,36 +2193,26 @@ func (s *service) GetIndexerTxChannel(ctx context.Context) <-chan TransactionEve
 }
 
 func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
+	cached, err := s.infoCache.get()
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get cached info: %w", err)
+	}
+
 	signerPubkey := hex.EncodeToString(s.signerPubkey.SerializeCompressed())
 	forfeitPubkey := hex.EncodeToString(s.forfeitPubkey.SerializeCompressed())
 
-	dust, err := s.wallet.GetDustAmount(ctx)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to get dust amount: %w", err)
-	}
-
-	scheduledSessionConfig, err := s.repoManager.ScheduledSession().Get(ctx)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to get market hour config from db: %w", err)
-	}
-
 	var nextScheduledSession *NextScheduledSession
-	if scheduledSessionConfig != nil {
+	if cached.scheduledSession != nil {
 		scheduledSessionNextStart, scheduledSessionNextEnd := calcNextScheduledSession(
-			time.Now(), scheduledSessionConfig.StartTime, scheduledSessionConfig.EndTime,
-			scheduledSessionConfig.Period,
+			time.Now(), cached.scheduledSession.StartTime, cached.scheduledSession.EndTime,
+			cached.scheduledSession.Period,
 		)
 		nextScheduledSession = &NextScheduledSession{
 			StartTime: scheduledSessionNextStart,
 			EndTime:   scheduledSessionNextEnd,
-			Period:    scheduledSessionConfig.Period,
-			Duration:  scheduledSessionConfig.Duration,
+			Period:    cached.scheduledSession.Period,
+			Duration:  cached.scheduledSession.Duration,
 		}
-	}
-
-	currIntentFees, err := s.repoManager.Fees().GetIntentFees(ctx)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)
 	}
 
 	return &ServiceInfo{
@@ -2232,19 +2222,26 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		BoardingExitDelay:    int64(s.boardingExitDelay.Value),
 		SessionDuration:      int64(s.sessionDuration.Seconds()),
 		Network:              s.network.Name,
-		Dust:                 dust,
+		Dust:                 s.dustAmount,
 		ForfeitAddress:       s.forfeitAddress,
 		NextScheduledSession: nextScheduledSession,
 		UtxoMinAmount:        s.utxoMinAmount,
 		UtxoMaxAmount:        s.utxoMaxAmount,
-		VtxoMinAmount:        s.vtxoMinOffchainTxAmount,
+		VtxoMinAmount:        s.vtxoMinAmount,
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		MaxTxWeight:          int64(s.maxTxWeight),
 		Fees: FeeInfo{
-			IntentFees: *currIntentFees,
+			IntentFees: cached.intentFees,
 		},
 	}, nil
+}
+
+// RefreshInfoCache is called by the admin service to trigger update of the info data.
+func (s *service) RefreshInfoCache() {
+	if err := s.infoCache.refresh(); err != nil {
+		log.WithError(err).Warn("failed to refresh info cache")
+	}
 }
 
 // DeleteIntentsByProof deletes transaction intents matching the proof of ownership.
@@ -4379,4 +4376,23 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
+}
+
+func (s *service) loadInfo() (*infoData, error) {
+	ctx := context.Background()
+
+	scheduledSessionConfig, err := s.repoManager.ScheduledSession().Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scheduled session config: %w", err)
+	}
+
+	intentFees, err := s.repoManager.Fees().GetIntentFees(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get intent fees: %w", err)
+	}
+
+	return &infoData{
+		scheduledSession: scheduledSessionConfig,
+		intentFees:       *intentFees,
+	}, nil
 }

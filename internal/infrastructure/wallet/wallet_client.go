@@ -176,8 +176,8 @@ func (w *walletDaemonClient) IsTransactionConfirmed(
 	}, nil
 }
 
-func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{}, error) {
-	ch := make(chan struct{})
+func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan bool, error) {
+	ch := make(chan bool)
 	stream, err := w.client.GetReadyUpdate(ctx, &arkwalletv1.GetReadyUpdateRequest{})
 	if err != nil {
 		return nil, err
@@ -198,9 +198,7 @@ func (w *walletDaemonClient) GetReadyUpdate(ctx context.Context) (<-chan struct{
 				return
 			}
 
-			if resp.GetReady() {
-				ch <- struct{}{}
-			}
+			ch <- resp.GetReady()
 		}
 	}()
 	return ch, nil
