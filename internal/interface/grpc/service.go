@@ -56,6 +56,7 @@ type service struct {
 	pyroscopeShutdown func() error
 	unaryConn         *grpc.ClientConn
 	streamConn        *grpc.ClientConn
+	adminConn         *grpc.ClientConn
 }
 
 func NewService(
@@ -212,6 +213,11 @@ func (s *service) stop() {
 	if s.streamConn != nil {
 		if err := s.streamConn.Close(); err != nil {
 			log.Warn("failed to close stream transport connection")
+		}
+	}
+	if s.adminConn != nil {
+		if err := s.adminConn.Close(); err != nil {
+			log.Warn("failed to close admin transport connection")
 		}
 	}
 }
@@ -435,8 +441,17 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 			s.config.adminGatewayAddress(), gatewayOpts,
 		)
 		if err != nil {
+			if closeErr := s.unaryConn.Close(); closeErr != nil {
+				log.Warn("failed to close unary transport connection")
+			}
+			s.unaryConn = nil
+			if closeErr := s.streamConn.Close(); closeErr != nil {
+				log.Warn("failed to close stream transport connection")
+			}
+			s.streamConn = nil
 			return err
 		}
+		s.adminConn = adminConn
 
 		// Create admin gateway mux
 		adminGwmux := gateway.NewServeMux(
