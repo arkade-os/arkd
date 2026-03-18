@@ -46,6 +46,7 @@ type service struct {
 	cache          ports.LiveStore
 	sweeper        *sweeper
 	sweeperCancel  context.CancelFunc
+	infoCache      *infoCache
 	roundReportSvc RoundReportService
 	alerts         ports.Alerts
 
@@ -170,7 +171,7 @@ func NewService(
 
 	ctx, cancel := context.WithCancel(ctx)
 
-	return &service{
+	svc := &service{
 		network:                   network,
 		signerPubkey:              signerPubkey,
 		batchExpiry:               vtxoTreeExpiry,
@@ -214,7 +215,9 @@ func NewService(
 		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
 		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
 		feeManager:                    feeManager,
-	}, nil
+	}
+	svc.infoCache = newInfoCache(svc.loadInfo)
+	return svc, nil
 }
 
 func (s *service) Start() error {
@@ -258,6 +261,10 @@ func (s *service) Start() error {
 		return err
 	}
 	s.forfeitAddress = forfeitAddr.String()
+
+	if err := s.infoCache.refresh(); err != nil {
+		log.WithError(err).Warn("failed to initialize info cache")
+	}
 
 	s.registerEventHandlers()
 
@@ -2134,36 +2141,26 @@ func (s *service) GetIndexerTxChannel(ctx context.Context) <-chan TransactionEve
 }
 
 func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
+	cached, err := s.infoCache.get()
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get cached info: %w", err)
+	}
+
 	signerPubkey := hex.EncodeToString(s.signerPubkey.SerializeCompressed())
 	forfeitPubkey := hex.EncodeToString(s.forfeitPubkey.SerializeCompressed())
 
-	dust, err := s.wallet.GetDustAmount(ctx)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to get dust amount: %w", err)
-	}
-
-	scheduledSessionConfig, err := s.repoManager.ScheduledSession().Get(ctx)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to get market hour config from db: %w", err)
-	}
-
 	var nextScheduledSession *NextScheduledSession
-	if scheduledSessionConfig != nil {
+	if cached.scheduledSession != nil {
 		scheduledSessionNextStart, scheduledSessionNextEnd := calcNextScheduledSession(
-			time.Now(), scheduledSessionConfig.StartTime, scheduledSessionConfig.EndTime,
-			scheduledSessionConfig.Period,
+			time.Now(), cached.scheduledSession.StartTime, cached.scheduledSession.EndTime,
+			cached.scheduledSession.Period,
 		)
 		nextScheduledSession = &NextScheduledSession{
 			StartTime: scheduledSessionNextStart,
 			EndTime:   scheduledSessionNextEnd,
-			Period:    scheduledSessionConfig.Period,
-			Duration:  scheduledSessionConfig.Duration,
+			Period:    cached.scheduledSession.Period,
+			Duration:  cached.scheduledSession.Duration,
 		}
-	}
-
-	currIntentFees, err := s.repoManager.Fees().GetIntentFees(ctx)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to get intent fee info from db: %w", err)
 	}
 
 	return &ServiceInfo{
@@ -2173,7 +2170,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		BoardingExitDelay:    int64(s.boardingExitDelay.Value),
 		SessionDuration:      int64(s.sessionDuration.Seconds()),
 		Network:              s.network.Name,
-		Dust:                 dust,
+		Dust:                 cached.dust,
 		ForfeitAddress:       s.forfeitAddress,
 		NextScheduledSession: nextScheduledSession,
 		UtxoMinAmount:        s.utxoMinAmount,
@@ -2183,9 +2180,16 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		MaxTxWeight:          int64(s.maxTxWeight),
 		Fees: FeeInfo{
-			IntentFees: *currIntentFees,
+			IntentFees: cached.intentFees,
 		},
 	}, nil
+}
+
+// RefreshInfoCache is called by the admin service to trigger update of the info data.
+func (s *service) RefreshInfoCache() {
+	if err := s.infoCache.refresh(); err != nil {
+		log.WithError(err).Warn("failed to refresh info cache")
+	}
 }
 
 // DeleteIntentsByProof deletes transaction intents matching the proof of ownership.
@@ -4320,4 +4324,24 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
+}
+
+func (s *service) loadInfo() (*infoData, error) {
+	ctx := context.Background()
+
+	scheduledSessionConfig, err := s.repoManager.ScheduledSession().Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scheduled session config: %w", err)
+	}
+
+	intentFees, err := s.repoManager.Fees().GetIntentFees(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get intent fees: %w", err)
+	}
+
+	return &infoData{
+		dust:             s.dustAmount,
+		scheduledSession: scheduledSessionConfig,
+		intentFees:       *intentFees,
+	}, nil
 }

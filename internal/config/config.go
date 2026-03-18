@@ -875,9 +875,17 @@ func (c *Config) adminService() error {
 		unit = ports.BlockHeight
 	}
 
+	onInfoChange := func() {
+		if c.svc == nil {
+			return
+		}
+		c.svc.RefreshInfoCache()
+	}
+
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		onInfoChange,
 	)
 	return nil
 }
