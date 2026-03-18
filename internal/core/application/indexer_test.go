@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -859,6 +860,29 @@ func TestGetVtxoChain_PageSizeRespected(t *testing.T) {
 	require.NotEmpty(t, resp.NextPageToken)
 }
 
+// matchIDs returns a mock.MatchedBy matcher that matches a []string argument
+// containing exactly the given IDs, regardless of order. This avoids flakes from
+// non-deterministic map iteration in preloadVtxosByMarkers.
+func matchIDs(expected ...string) interface{} {
+	sorted := make([]string, len(expected))
+	copy(sorted, expected)
+	sort.Strings(sorted)
+	return mock.MatchedBy(func(ids []string) bool {
+		if len(ids) != len(sorted) {
+			return false
+		}
+		cp := make([]string, len(ids))
+		copy(cp, ids)
+		sort.Strings(cp)
+		for i := range cp {
+			if cp[i] != sorted[i] {
+				return false
+			}
+		}
+		return true
+	})
+}
+
 // TestPreloadVtxosByMarkers_WalksMarkerChain verifies that preloadVtxosByMarkers
 // follows the marker DAG upward and populates the cache with all discovered VTXOs.
 func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
@@ -873,30 +897,30 @@ func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
 	}
 
 	// GetVtxoChainByMarkers returns VTXOs for each marker level.
-	markerRepo.On("GetVtxoChainByMarkers", ctx, []string{"marker-200"}).
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-200")).
 		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-200a", VOut: 0}, Amount: 200},
 			{Outpoint: domain.Outpoint{Txid: "vtxo-200b", VOut: 0}, Amount: 201},
 		}, nil)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, []string{"marker-100"}).
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-100")).
 		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-100a", VOut: 0}, Amount: 300},
 		}, nil)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, []string{"marker-0"}).
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-0")).
 		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-0a", VOut: 0}, Amount: 400},
 		}, nil)
 
 	// GetMarkersByIds returns marker objects with parent pointers.
-	markerRepo.On("GetMarkersByIds", ctx, []string{"marker-200"}).
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-200")).
 		Return([]domain.Marker{
 			{ID: "marker-200", Depth: 200, ParentMarkerIDs: []string{"marker-100"}},
 		}, nil)
-	markerRepo.On("GetMarkersByIds", ctx, []string{"marker-100"}).
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-100")).
 		Return([]domain.Marker{
 			{ID: "marker-100", Depth: 100, ParentMarkerIDs: []string{"marker-0"}},
 		}, nil)
-	markerRepo.On("GetMarkersByIds", ctx, []string{"marker-0"}).
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-0")).
 		Return([]domain.Marker{
 			{ID: "marker-0", Depth: 0, ParentMarkerIDs: nil},
 		}, nil)
@@ -930,20 +954,20 @@ func TestPreloadVtxosByMarkers_NoCycleLoop(t *testing.T) {
 	}
 
 	// marker-A -> marker-B -> marker-A (cycle)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, []string{"marker-A"}).
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-A")).
 		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-a", VOut: 0}, Amount: 100},
 		}, nil)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, []string{"marker-B"}).
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-B")).
 		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-b", VOut: 0}, Amount: 200},
 		}, nil)
 
-	markerRepo.On("GetMarkersByIds", ctx, []string{"marker-A"}).
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-A")).
 		Return([]domain.Marker{
 			{ID: "marker-A", Depth: 0, ParentMarkerIDs: []string{"marker-B"}},
 		}, nil)
-	markerRepo.On("GetMarkersByIds", ctx, []string{"marker-B"}).
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-B")).
 		Return([]domain.Marker{
 			{ID: "marker-B", Depth: 0, ParentMarkerIDs: []string{"marker-A"}},
 		}, nil)
@@ -996,15 +1020,15 @@ func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
 		Return([]domain.Vtxo{vtxoA}, nil)
 
 	// Preload via marker chain: marker-200 -> marker-100 -> marker-0 (no parent).
-	markerRepo.On("GetVtxoChainByMarkers", ctx, []string{"marker-200"}).
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-200")).
 		Return([]domain.Vtxo{vtxoA, vtxoB}, nil)
-	markerRepo.On("GetMarkersByIds", ctx, []string{"marker-200"}).
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-200")).
 		Return([]domain.Marker{
 			{ID: "marker-200", Depth: 200, ParentMarkerIDs: []string{"marker-100"}},
 		}, nil)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, []string{"marker-100"}).
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-100")).
 		Return([]domain.Vtxo{vtxoB, vtxoC}, nil)
-	markerRepo.On("GetMarkersByIds", ctx, []string{"marker-100"}).
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-100")).
 		Return([]domain.Marker{
 			{ID: "marker-100", Depth: 100, ParentMarkerIDs: nil},
 		}, nil)
@@ -1031,8 +1055,8 @@ func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
 	require.Equal(t, 5, len(resp.Chain)) // A(ark+cp) + B(ark+cp) + C(ark)
 
 	// GetVtxoChainByMarkers should have been called (preload path used).
-	markerRepo.AssertCalled(t, "GetVtxoChainByMarkers", ctx, []string{"marker-200"})
-	markerRepo.AssertCalled(t, "GetVtxoChainByMarkers", ctx, []string{"marker-100"})
+	markerRepo.AssertCalled(t, "GetVtxoChainByMarkers", ctx, matchIDs("marker-200"))
+	markerRepo.AssertCalled(t, "GetVtxoChainByMarkers", ctx, matchIDs("marker-100"))
 
 	// GetVtxos should only be called once (for the initial preload fetch),
 	// not for B or C individually — they were already in the cache.
@@ -1072,14 +1096,14 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 		mid := fmt.Sprintf("m-%d", m)
 		batch := vtxos[m*int(domain.MarkerInterval) : (m+1)*int(domain.MarkerInterval)]
 
-		markerRepo.On("GetVtxoChainByMarkers", ctx, []string{mid}).
+		markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs(mid)).
 			Return(batch, nil)
 
 		var parentIDs []string
 		if m+1 < markersCount {
 			parentIDs = []string{fmt.Sprintf("m-%d", m+1)}
 		}
-		markerRepo.On("GetMarkersByIds", ctx, []string{mid}).
+		markerRepo.On("GetMarkersByIds", ctx, matchIDs(mid)).
 			Return([]domain.Marker{
 				{ID: mid, Depth: uint32(m * int(domain.MarkerInterval)), ParentMarkerIDs: parentIDs},
 			}, nil)
