@@ -108,14 +108,17 @@ func NewIndexerService(
 		ttl = time.Duration(authTokenExpirySec) * time.Second
 	}
 
-	return &indexerService{
+	svc := &indexerService{
 		repoManager:  repoManager,
 		wallet:       wallet,
 		privkey:      privkey,
-		signerPubkey: schnorr.SerializePubKey(privkey.PubKey()),
 		txExposure:   txExposure,
 		authTokenTTL: ttl,
-	}, nil
+	}
+	if privkey != nil {
+		svc.signerPubkey = schnorr.SerializePubKey(privkey.PubKey())
+	}
+	return svc, nil
 }
 
 func (i *indexerService) GetCommitmentTxInfo(
