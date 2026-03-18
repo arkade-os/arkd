@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -312,7 +313,10 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				// Inner reconnect loop: stay here until a new stream is open.
 				// We never continue the outer loop with the old dead recvCh.
 				for {
-					sleepDuration := max(retryDelay, backoffDelay)
+					sleepDuration := applyJitter(
+						max(retryDelay, backoffDelay),
+						reconnectCfg.Jitter,
+					)
 					select {
 					case <-ctx.Done():
 						return
@@ -402,4 +406,16 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	}
 
 	return eventsCh, closeFn, nil
+}
+
+// applyJitter adds ±jitter randomness to a duration.
+// with jitter = 0.2, d get + or - 20%
+func applyJitter(d time.Duration, jitter float64) time.Duration {
+	if jitter <= 0 {
+		return d
+	}
+
+	randomFactor := 2.0*rand.Float64()-1.0 // [-1, +1] factor
+	jitterFactor := 1.0 + jitter*randomFactor
+	return time.Duration(float64(d) * jitterFactor)
 }

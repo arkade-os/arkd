@@ -54,6 +54,8 @@ type service struct {
 	macaroonSvc       *macaroons.Service
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func() error
+	unaryConn         *grpc.ClientConn
+	streamConn        *grpc.ClientConn
 }
 
 func NewService(
@@ -199,6 +201,14 @@ func (s *service) stop() {
 	}
 	if s.adminGrpcSrvr != nil {
 		s.adminGrpcSrvr.Stop()
+	}
+
+	// Close gateway reverse-proxy client connections.
+	if s.unaryConn != nil {
+		s.unaryConn.Close()
+	}
+	if s.streamConn != nil {
+		s.streamConn.Close()
 	}
 }
 
@@ -355,8 +365,11 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		s.config.gatewayAddress(), gatewayOpts,
 	)
 	if err != nil {
+		unaryConn.Close()
 		return err
 	}
+	s.unaryConn = unaryConn
+	s.streamConn = streamConn
 	conn := &splitConn{unary: unaryConn, stream: streamConn}
 
 	customMatcher := func(key string) (string, bool) {
