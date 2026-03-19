@@ -60,7 +60,7 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.14.0
 	go.opentelemetry.io/otel/sdk/metric v1.40.0
 	go.opentelemetry.io/otel/trace v1.40.0
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.3
 	gopkg.in/macaroon-bakery.v2 v2.3.0
 	gopkg.in/macaroon.v2 v2.1.0
 	modernc.org/sqlite v1.33.1
