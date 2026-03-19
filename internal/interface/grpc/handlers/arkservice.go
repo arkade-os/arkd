@@ -72,6 +72,7 @@ func (h *handler) GetInfo(
 		VtxoMaxAmount:       info.VtxoMaxAmount,
 		CheckpointTapscript: info.CheckpointTapscript,
 		MaxTxWeight:         info.MaxTxWeight,
+		MaxOpReturnOutputs:  info.MaxOpReturnOutputs,
 		RateLimitEnabled:    info.RateLimitEnabled,
 		Fees:                fees(info.Fees).toProto(),
 	}
