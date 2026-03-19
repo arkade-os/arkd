@@ -517,7 +517,8 @@ func (i *indexerService) ensureVtxosCached(
 
 			windowVtxos, err := i.repoManager.Markers().GetVtxosByMarker(ctx, markerID)
 			if err != nil {
-				log.WithError(err).Warnf("failed to load marker window %s, falling back to per-VTXO lookups", markerID)
+				log.WithError(err).
+					Warnf("failed to load marker window %s, falling back to per-VTXO lookups", markerID)
 				continue
 			}
 			for _, wv := range windowVtxos {
