@@ -216,7 +216,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
-	MaxConcurrentStreams  = "MAX_CONCURRENT_STREAMS"
+	MaxConcurrentStreams          = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -234,18 +234,13 @@ var (
 	defaultNoTLS               = true
 	defaultAllowCSVBlockType   = false
 
-	defaultRoundMaxParticipantsCount     = 128
-	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10 // seconds
-	defaultHeartbeatInterval             = 60 // seconds
-	defaultRoundReportServiceEnabled     = false
-	defaultSettlementMinExpiryGap        = 0 // disabled by default
-	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
-	defaultAssetTxMaxWeightRatio         = 0.5
-	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
-	defaultEnablePprof                   = false
-	defaultMaxConcurrentStreams          = uint32(1000)
-	defaultMaxOpReturnOuts               = uint32(3)
+	defaultOtelPushInterval          = 10 // seconds
+	defaultHeartbeatInterval         = 60 // seconds
+	defaultRoundReportServiceEnabled = false
+	defaultAssetTxMaxWeightRatio     = 0.5
+	defaultEnablePprof               = false
+	defaultMaxConcurrentStreams      = uint32(1000)
+	defaultMaxOpReturnOuts           = uint32(3)
 )
 
 func LoadConfig() (*Config, error) {
