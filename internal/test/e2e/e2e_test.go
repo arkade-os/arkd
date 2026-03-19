@@ -3515,7 +3515,11 @@ func TestBan(t *testing.T) {
 				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
 				root := sweepTapTree.RootNode.TapHash()
 
-				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					root.CloneBytes(),
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3524,7 +3528,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -3625,7 +3634,11 @@ func TestBan(t *testing.T) {
 				// use a fake sweep to create invalid signatures
 				fakeSweepTapHash := sha256.Sum256([]byte("random_sweep_tap_hash"))
 
-				if err := signerSession.Init(fakeSweepTapHash[:], batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					fakeSweepTapHash[:],
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3634,7 +3647,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -3765,7 +3783,11 @@ func TestBan(t *testing.T) {
 				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
 				root := sweepTapTree.RootNode.TapHash()
 
-				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					root.CloneBytes(),
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3774,7 +3796,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -3911,7 +3938,11 @@ func TestBan(t *testing.T) {
 				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
 				root := sweepTapTree.RootNode.TapHash()
 
-				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					root.CloneBytes(),
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3920,7 +3951,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -4122,7 +4158,11 @@ func TestBan(t *testing.T) {
 				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
 				root := sweepTapTree.RootNode.TapHash()
 
-				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					root.CloneBytes(),
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -4131,7 +4171,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 

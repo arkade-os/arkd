@@ -192,6 +192,7 @@ message GetInfoResponse {
   string digest = 19;
   int64 max_tx_weight = 20;
   int64 max_op_return_outputs = 21;
+  bool rate_limit_enabled = 22;
 }
 
 message RegisterIntentRequest {

@@ -455,3 +455,15 @@ type VtxoWithTooManyAssetsMetadata struct {
 	AssetCount int `json:"asset_count"`
 	MaxAssets  int `json:"max_assets"`
 }
+
+type RateLimitMetadata struct {
+	Inputs map[string]InputRateLimitInfoMeta `json:"inputs"`
+}
+
+type InputRateLimitInfoMeta struct {
+	Depth        int   `json:"depth"`
+	MarkerDepth  int   `json:"marker_depth"`
+	CooldownSecs int64 `json:"cooldown_secs"`
+}
+
+var RATE_LIMITED = Code[RateLimitMetadata]{48, "RATE_LIMITED", grpccodes.ResourceExhausted}

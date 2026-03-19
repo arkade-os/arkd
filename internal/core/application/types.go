@@ -83,6 +83,7 @@ type ServiceInfo struct {
 	Fees                 FeeInfo
 	MaxTxWeight          int64
 	MaxOpReturnOutputs   int64
+	RateLimitEnabled     bool
 }
 
 type NextScheduledSession struct {
@@ -136,8 +137,13 @@ type TeleportAsset struct {
 }
 
 type VtxoChainResp struct {
-	Chain []ChainTx
-	Page  PageResp
+	Chain         []ChainTx
+	Page          PageResp
+	NextPageToken string
+}
+
+type vtxoChainCursor struct {
+	Frontier []Outpoint `json:"frontier"`
 }
 
 type VOut int
