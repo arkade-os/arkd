@@ -4689,7 +4689,6 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, err)
 
 		// tx with a regular asset output greater than dust + a subdust output
-		// it
 		_, err = alice.SendOffChain(ctx, []types.Receiver{
 			{To: bobAddr.Address, Amount: 400, Assets: []types.Asset{
 				{AssetId: assetId, Amount: 1_200},
