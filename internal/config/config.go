@@ -134,6 +134,7 @@ type Config struct {
 	SettlementMinExpiryGap    int64
 	MaxTxWeight               uint64
 	AssetTxMaxWeightRatio     float64
+	MaxOpReturnOutputs        uint32
 
 	EnablePprof            bool
 	IndexerTxExposure      string
@@ -228,6 +229,7 @@ var (
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	MaxOpReturnOutputs                   = "MAX_OP_RETURN_OUTS"
 	// Max transaction weight accepted by the ark server
 	MaxTxWeight = "MAX_TX_WEIGHT"
 	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
@@ -280,6 +282,7 @@ var (
 	defaultIndexerTxExposure             = "public"
 	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
 	defaultMaxConcurrentStreams          = uint32(1000)
+	defaultMaxOpReturnOuts               = uint32(3)
 )
 
 func LoadConfig() (*Config, error) {
@@ -325,6 +328,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(IndexerTxExposure, defaultIndexerTxExposure)
 	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
+	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -441,6 +445,8 @@ func LoadConfig() (*Config, error) {
 		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
 		IndexerSigningKey:             viper.GetString(IndexerSigningKey),
 		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
+		// Default to 1 if set to 0
+		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
 	}, nil
 }
 
@@ -922,7 +928,7 @@ func (c *Config) appService() error {
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
-		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
+		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0), c.MaxOpReturnOutputs,
 	)
 	if err != nil {
 		return err

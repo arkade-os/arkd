@@ -74,6 +74,7 @@ type service struct {
 	checkpointExitDelay       arklib.RelativeLocktime
 	maxTxWeight               uint64
 	maxAssetsPerVtxo          int
+	maxOpReturnOutputs        uint32
 
 	// fees
 	feeManager ports.FeeManager
@@ -124,6 +125,7 @@ func NewService(
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
 	settlementMinExpiryGap int64,
 	vtxoNoCsvValidationCutoffTime time.Time,
+	maxOpReturnOutputs uint32,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -184,6 +186,7 @@ func NewService(
 		checkpointExitDelay:       checkpointExitDelay,
 		maxTxWeight:               maxTxWeight,
 		maxAssetsPerVtxo:          maxAssetsPerVtxo(maxTxWeight, assetTxMaxWeightRatio),
+		maxOpReturnOutputs:        maxOpReturnOutputs,
 		wallet:                    wallet,
 		signer:                    signer,
 		repoManager:               repoManager,
@@ -939,10 +942,11 @@ func (s *service) SubmitOffchainTx(
 
 	outputs := make([]*wire.TxOut, 0) // outputs excluding the P2A
 	foundAnchor := false
-	foundOpReturn := false
+	foundExtension := false
 	var rebuiltArkTx *psbt.Packet
 	var rebuiltCheckpointTxs []*psbt.Packet
 	ext := make(extension.Extension, 0)
+	opRetCount := 0
 
 	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
@@ -955,28 +959,28 @@ func (s *service) SubmitOffchainTx(
 			continue
 		}
 
-		// verify we don't have multiple OP_RETURN outputs
-		if bytes.HasPrefix(out.PkScript, []byte{txscript.OP_RETURN}) {
-			if foundOpReturn {
+		if len(out.PkScript) > 0 && out.PkScript[0] == txscript.OP_RETURN {
+			opRetCount++
+		}
+
+		// if the OP_RETURN is extension, decode it and add it to outputs list
+		// skip other checks related to vtxo output
+		if extension.IsExtension(out.PkScript) {
+			if foundExtension {
 				return nil, errors.MALFORMED_ARK_TX.New(
-					"tx %s has multiple op return outputs", txid,
+					"tx %s has multiple extension outputs", txid,
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
-			foundOpReturn = true
+			foundExtension = true
+			outputs = append(outputs, out)
 
-			// if the OP_RETURN is extension, decode it and add it to outputs list
-			// skip other checks related to vtxo output
-			if extension.IsExtension(out.PkScript) {
-				outputs = append(outputs, out)
-
-				ext, err = extension.NewExtensionFromBytes(out.PkScript)
-				if err != nil {
-					return nil, errors.MALFORMED_ARK_TX.New(
-						"tx %s has malformed extension output %x", txid, out.PkScript,
-					).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-				}
-				continue
+			ext, err = extension.NewExtensionFromBytes(out.PkScript)
+			if err != nil {
+				return nil, errors.MALFORMED_ARK_TX.New(
+					"tx %s has malformed extension output %x", txid, out.PkScript,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
+			continue
 		}
 
 		if s.vtxoMaxAmount >= 0 {
@@ -1031,6 +1035,12 @@ func (s *service) SubmitOffchainTx(
 	if !foundAnchor {
 		return nil, errors.MALFORMED_ARK_TX.New("missing anchor output in ark tx %s", txid).
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+	}
+
+	if opRetCount > int(s.maxOpReturnOutputs) {
+		return nil, errors.MALFORMED_ARK_TX.New(
+			"tx has %d OP_RETURN outputs, max %d are allowed", opRetCount, s.maxOpReturnOutputs,
+		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
 	// validate assets
@@ -2179,6 +2189,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		VtxoMaxAmount:        s.vtxoMaxAmount,
 		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
 		MaxTxWeight:          int64(s.maxTxWeight),
+		MaxOpReturnOutputs:   int64(s.maxOpReturnOutputs),
 		Fees: FeeInfo{
 			IntentFees: cached.intentFees,
 		},
