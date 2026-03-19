@@ -129,6 +129,8 @@ func (a *grpcClient) GetInfo(ctx context.Context) (*client.Info, error) {
 		VtxoMaxAmount:             resp.GetVtxoMaxAmount(),
 		CheckpointTapscript:       resp.GetCheckpointTapscript(),
 		DeprecatedSignerPubKeys:   deprecatedSigners,
+		MaxTxWeight:               resp.GetMaxTxWeight(),
+		MaxOpReturnOutputs:        resp.GetMaxOpReturnOutputs(),
 		Fees:                      fees,
 		ServiceStatus:             resp.GetServiceStatus(),
 		Digest:                    resp.GetDigest(),
