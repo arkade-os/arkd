@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -516,6 +517,7 @@ func (i *indexerService) ensureVtxosCached(
 
 			windowVtxos, err := i.repoManager.Markers().GetVtxosByMarker(ctx, markerID)
 			if err != nil {
+				log.WithError(err).Warnf("failed to load marker window %s, falling back to per-VTXO lookups", markerID)
 				continue
 			}
 			for _, wv := range windowVtxos {
