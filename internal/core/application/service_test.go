@@ -199,6 +199,7 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 		wantErrContains         string
 		wantOutputCount         int
 		wantAmount              int // expected Amount in AmountTooLowMetadata (only checked when wantErrCode == AMOUNT_TOO_LOW)
+		maxOpReturnOutputs      uint32
 	}{
 		{
 			description: "valid: anchor + regular output",
@@ -333,9 +334,10 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 			dust:                    testDust,
 			vtxoMaxAmount:           -1,
 			vtxoMinOffchainTxAmount: 0,
+			maxOpReturnOutputs:      1,
 			wantErr:                 true,
 			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "multiple op return",
+			wantErrContains:         "OP_RETURN outputs, max",
 		},
 		{
 			description: "reject: regular output exceeds max amount",
@@ -498,9 +500,10 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 			dust:                    testDust,
 			vtxoMaxAmount:           -1,
 			vtxoMinOffchainTxAmount: 0,
+			maxOpReturnOutputs:      1,
 			wantErr:                 true,
 			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "multiple op return",
+			wantErrContains:         "OP_RETURN outputs, max",
 		},
 		// Empty txOuts → missing anchor
 		{
@@ -579,10 +582,14 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.description, func(t *testing.T) {
+			maxOpRet := tc.maxOpReturnOutputs
+			if maxOpRet == 0 {
+				maxOpRet = 3
+			}
 			outputs, _, err := validateOffchainTxOutputs(
 				tc.txOuts, tc.dust,
 				tc.vtxoMaxAmount, tc.vtxoMinOffchainTxAmount,
-				"signed-tx-hex", "test-txid",
+				int64(maxOpRet), "signed-tx-hex", "test-txid",
 			)
 
 			if tc.wantErr {
