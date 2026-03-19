@@ -128,6 +128,9 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("failed to parse checkpoint tx: %s", err)
 		}
+		if len(checkpointPtx.UnsignedTx.TxIn) == 0 {
+			return "", nil, nil, fmt.Errorf("invalid checkpoint tx: missing inputs")
+		}
 		ins = append(ins, domain.Outpoint{
 			Txid: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String(),
 			VOut: checkpointPtx.UnsignedTx.TxIn[0].PreviousOutPoint.Index,
@@ -150,6 +153,13 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
 			extension.IsExtension(out.PkScript) {
 			continue
+		}
+		if len(out.PkScript) < 2 {
+			return "", nil, nil, fmt.Errorf(
+				"invalid output script at index %d: script too short (%d bytes)",
+				outIndex,
+				len(out.PkScript),
+			)
 		}
 		outs = append(outs, domain.Vtxo{
 			Outpoint: domain.Outpoint{

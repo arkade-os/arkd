@@ -861,6 +861,10 @@
           "forfeitPubkey": {
             "type": "string"
           },
+          "maxOpReturnOutputs": {
+            "type": "integer",
+            "format": "int64"
+          },
           "maxTxWeight": {
             "type": "integer",
             "format": "int64"

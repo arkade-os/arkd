@@ -128,6 +128,7 @@ type Config struct {
 	UnrolledVtxoMinExpiryMargin int64
 	MaxTxWeight                 uint64
 	AssetTxMaxWeightRatio       float64
+	MaxOpReturnOutputs          uint32
 
 	EnablePprof          bool
 	MaxConcurrentStreams uint32
@@ -216,7 +217,8 @@ var (
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
 	// 0 means fallback to session duration.
-	UnrolledVtxoMinExpiryMargin = "UNROLLED_VTXO_MIN_EXPIRY_MARGIN"
+	UnrolledVtxoMinExpiryMargin          = "UNROLLED_VTXO_MIN_EXPIRY_MARGIN"
+	MaxOpReturnOutputs                   = "MAX_OP_RETURN_OUTS"
 	// Max transaction weight accepted by the ark server
 	MaxTxWeight = "MAX_TX_WEIGHT"
 	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
@@ -264,6 +266,7 @@ var (
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
 	defaultMaxConcurrentStreams          = uint32(1000)
+	defaultMaxOpReturnOuts               = uint32(3)
 )
 
 func LoadConfig() (*Config, error) {
@@ -308,6 +311,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
+	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -422,6 +426,8 @@ func LoadConfig() (*Config, error) {
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
 		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
+		// Default to 1 if set to 0
+		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
 	}, nil
 }
 
@@ -876,7 +882,7 @@ func (c *Config) appService() error {
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
 		c.UnrolledVtxoMinExpiryMargin,
-		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
+		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0), c.MaxOpReturnOutputs,
 	)
 	if err != nil {
 		return err
