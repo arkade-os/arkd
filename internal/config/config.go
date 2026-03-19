@@ -128,6 +128,7 @@ type Config struct {
 	SettlementMinExpiryGap    int64
 	MaxTxWeight               uint64
 	AssetTxMaxWeightRatio     float64
+	MaxOpReturnOutputs        uint32
 
 	EnablePprof          bool
 	MaxConcurrentStreams uint32
@@ -197,12 +198,24 @@ var (
 	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
 	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
 	PyroscopeServerURL                   = "PYROSCOPE_SERVER_URL"
+	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
+	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
+	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
+	VtxoMaxAmount                        = "VTXO_MAX_AMOUNT"
+	UtxoMinAmount                        = "UTXO_MIN_AMOUNT"
+	VtxoMinAmount                        = "VTXO_MIN_AMOUNT"
 	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
+	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	MaxOpReturnOutputs                   = "MAX_OP_RETURN_OUTS"
+	// Max transaction weight accepted by the ark server
+	MaxTxWeight = "MAX_TX_WEIGHT"
 	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
 	AssetTxMaxWeightRatio = "ASSET_TX_MAX_WEIGHT_RATIO"
-	EnablePprof           = "ENABLE_PPROF"
+	// Skip CSV validation for vtxos created before this date
+	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
+	EnablePprof                   = "ENABLE_PPROF"
 	MaxConcurrentStreams  = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
@@ -221,12 +234,18 @@ var (
 	defaultNoTLS               = true
 	defaultAllowCSVBlockType   = false
 
-	defaultOtelPushInterval          = 10 // seconds
-	defaultHeartbeatInterval         = 60 // seconds
-	defaultRoundReportServiceEnabled = false
-	defaultAssetTxMaxWeightRatio     = 0.5
-	defaultEnablePprof               = false
-	defaultMaxConcurrentStreams      = uint32(1000)
+	defaultRoundMaxParticipantsCount     = 128
+	defaultRoundMinParticipantsCount     = 1
+	defaultOtelPushInterval              = 10 // seconds
+	defaultHeartbeatInterval             = 60 // seconds
+	defaultRoundReportServiceEnabled     = false
+	defaultSettlementMinExpiryGap        = 0 // disabled by default
+	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
+	defaultAssetTxMaxWeightRatio         = 0.5
+	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
+	defaultEnablePprof                   = false
+	defaultMaxConcurrentStreams          = uint32(1000)
+	defaultMaxOpReturnOuts               = uint32(3)
 )
 
 func LoadConfig() (*Config, error) {
@@ -254,6 +273,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
+	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -346,11 +366,22 @@ func LoadConfig() (*Config, error) {
 		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
 		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
 
-		AllowCSVBlockType:         allowCSVBlockType,
-		RoundReportServiceEnabled: viper.GetBool(RoundReportServiceEnabled),
-		AssetTxMaxWeightRatio:     viper.GetFloat64(AssetTxMaxWeightRatio),
-		EnablePprof:               viper.GetBool(EnablePprof),
-		MaxConcurrentStreams:      viper.GetUint32(MaxConcurrentStreams),
+		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
+		RoundMinParticipantsCount:     viper.GetInt64(RoundMinParticipantsCount),
+		UtxoMaxAmount:                 viper.GetInt64(UtxoMaxAmount),
+		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
+		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
+		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
+		AllowCSVBlockType:             allowCSVBlockType,
+		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
+		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
+		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
+		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
+		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
+		EnablePprof:                   viper.GetBool(EnablePprof),
+		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
+		// Default to 1 if set to 0
+		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
 	}, nil
 }
 
@@ -864,7 +895,7 @@ func (c *Config) appService() error {
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
-		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
+		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0), c.MaxOpReturnOutputs,
 	)
 	if err != nil {
 		return err
