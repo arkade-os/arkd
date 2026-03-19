@@ -1022,6 +1022,132 @@ func TestOffchainTx(t *testing.T) {
 		require.Equal(t, txid, incomingFunds[0].Txid)
 	})
 
+	// In this test, we ensure that a tx with too many OP_RETURN outputs gets rejected.
+	// The server is configured with a max of 3 OP_RETURN outputs, so submitting 4 should fail.
+	t.Run("too many op return outputs", func(t *testing.T) {
+		ctx := t.Context()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(func() { arkSvc.Close() })
+
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		// Use alice's address script as the normal taproot output
+		addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		taprootPkScript, err := addr.GetPkScript()
+		require.NoError(t, err)
+
+		// Generate a random key for the sub-dust OP_RETURN outputs
+		randKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		subDustPkScript, err := script.SubDustScript(randKey.PubKey())
+		require.NoError(t, err)
+
+		const numOpRetOutputs = 4
+		const subDustAmount = int64(100)
+		taprootAmount := int64(vtxo.Amount) - numOpRetOutputs*subDustAmount
+
+		outputs := make([]*wire.TxOut, 0, numOpRetOutputs+1)
+		for range numOpRetOutputs {
+			outputs = append(outputs, &wire.TxOut{
+				Value:    subDustAmount,
+				PkScript: subDustPkScript,
+			})
+		}
+		outputs = append(outputs, &wire.TxOut{
+			Value:    taprootAmount,
+			PkScript: taprootPkScript,
+		})
+
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			outputs,
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := aliceWallet.SignTransaction(
+			ctx,
+			explorer,
+			encodedArkTx,
+		)
+		require.NoError(t, err)
+
+		txid, finalArkTx, signedCheckpoints, err := arkSvc.SubmitTx(
+			ctx, signedArkTx, encodedCheckpoints,
+		)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "tx has 4 OP_RETURN outputs")
+		require.Empty(t, txid)
+		require.Empty(t, finalArkTx)
+		require.Empty(t, signedCheckpoints)
+	})
+
 	// In this test, we ensure that a tx with a too big size gets rejected.
 	// TODO: move to unit tests and add also one for RegisterIntent
 	t.Run("invalid tx size", func(t *testing.T) {
@@ -4563,7 +4689,6 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, err)
 
 		// tx with a regular asset output greater than dust + a subdust output
-		// it  
 		_, err = alice.SendOffChain(ctx, []types.Receiver{
 			{To: bobAddr.Address, Amount: 400, Assets: []types.Asset{
 				{AssetId: assetId, Amount: 1_200},
