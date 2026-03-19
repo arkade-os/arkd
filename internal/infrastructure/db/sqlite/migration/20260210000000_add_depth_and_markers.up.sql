@@ -63,7 +63,7 @@ UPDATE vtxo SET markers = '["' || txid || ':' || vout || '"]';
 INSERT OR IGNORE INTO swept_marker (marker_id, swept_at)
 SELECT
     v.txid || ':' || v.vout,
-    strftime('%s', 'now')
+    strftime('%s', 'now') * 1000
 FROM vtxo v
 WHERE v.swept = 1;
 
