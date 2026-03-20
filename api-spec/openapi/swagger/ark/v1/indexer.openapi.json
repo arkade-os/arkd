@@ -1011,7 +1011,7 @@
         "type": "object",
         "properties": {
           "intent": {
-            "$ref": "#/components/schemas/Intent"
+            "$ref": "#/components/schemas/IndexerIntent"
           },
           "outpoint": {
             "$ref": "#/components/schemas/IndexerOutpoint"
@@ -1230,6 +1230,18 @@
         "title": "IndexerHeartbeat",
         "type": "object"
       },
+      "IndexerIntent": {
+        "title": "IndexerIntent",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
+          }
+        }
+      },
       "IndexerNode": {
         "title": "IndexerNode",
         "type": "object",
@@ -1437,18 +1449,6 @@
             "type": "string"
           },
           "spentBy": {
-            "type": "string"
-          }
-        }
-      },
-      "Intent": {
-        "title": "Intent",
-        "type": "object",
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "proof": {
             "type": "string"
           }
         }

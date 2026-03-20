@@ -3,8 +3,6 @@ syntax = "proto3";
 package ark.v1;
 
 import "meshapi/gateway/annotations.proto";
-import "ark/v1/types.proto";
-
 service IndexerService {
   // GetCommitmentTx returns information about a specific commitment transaction identified by the
   // provided txid.
@@ -211,7 +209,7 @@ message GetVtxosResponse {
 message GetVtxoChainRequest {
   IndexerOutpoint outpoint = 1;
   IndexerPageRequest page = 2;
-  Intent intent = 3;
+  IndexerIntent intent = 3;
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
@@ -326,6 +324,11 @@ enum IndexerChainedTxType {
   INDEXER_CHAINED_TX_TYPE_ARK = 2;
   INDEXER_CHAINED_TX_TYPE_TREE = 3;
   INDEXER_CHAINED_TX_TYPE_CHECKPOINT = 4;
+}
+
+message IndexerIntent {
+  string proof = 1;
+  string message = 2;
 }
 
 message IndexerPageRequest {

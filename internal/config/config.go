@@ -619,7 +619,7 @@ func (c *Config) Validate() error {
 		)
 	}
 
-	if c.IndexerAuthTokenExpiry <= 0 {
+	if c.IndexerTxExposure != "public" && c.IndexerAuthTokenExpiry <= 0 {
 		return fmt.Errorf("indexer auth token expiry must be greater than 0")
 	}
 
