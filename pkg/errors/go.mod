@@ -7,7 +7,7 @@ go 1.26.1
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.3
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.3
 )
 
 require (
