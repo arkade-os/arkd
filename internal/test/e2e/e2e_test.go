@@ -2615,16 +2615,14 @@ func TestReactToFraud(t *testing.T) {
 
 			// make sure the vtxo of bob is not redeemed
 			// the checkpoint is not the bob's virtual tx
-			opt := &indexer.GetVtxosRequestOption{}
 			bobScript, err := script.P2TRScript(bobAddr.VtxoTapKey)
 			require.NoError(t, err)
 			require.NotEmpty(t, bobScript)
-			// nolint
-			opt.WithScripts([]string{hex.EncodeToString(bobScript)})
-			// nolint
-			opt.WithSpentOnly()
 
-			resp, err := indexerSvc.GetVtxos(ctx, *opt)
+			resp, err := indexerSvc.GetVtxos(ctx,
+				indexer.WithScripts([]string{hex.EncodeToString(bobScript)}),
+				indexer.WithSpentOnly(),
+			)
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			require.Len(t, resp.Vtxos, 1)
