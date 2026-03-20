@@ -2642,7 +2642,10 @@ func TestSweep(t *testing.T) {
 	// the timelock to claim the liquidity back expires
 	t.Run("batch", func(t *testing.T) {
 		alice, transport := setupArkSDKWithTransport(t)
-		defer alice.Stop()
+		t.Cleanup(func() {
+			alice.Stop()
+			transport.Close()
+		})
 
 		ctx := t.Context()
 
@@ -2683,9 +2686,14 @@ func TestSweep(t *testing.T) {
 		sweepCh := make(chan *client.TxNotification, 1)
 		go func() {
 			for ev := range txStream {
-				if ev.SweepTx != nil {
-					sweepCh <- ev.SweepTx
-					return
+				if ev.SweepTx == nil {
+					continue
+				}
+				for _, swept := range ev.SweepTx.SweptVtxos {
+					if swept.Txid == vtxo.Txid && swept.VOut == vtxo.VOut {
+						sweepCh <- ev.SweepTx
+						return
+					}
 				}
 			}
 		}()
@@ -2704,16 +2712,6 @@ func TestSweep(t *testing.T) {
 		require.NotEmpty(t, sweepEvent.Txid)
 		require.NotEmpty(t, sweepEvent.Tx)
 		require.NotEmpty(t, sweepEvent.SweptVtxos)
-
-		// verify the swept vtxo outpoint is in the notification
-		found := false
-		for _, swept := range sweepEvent.SweptVtxos {
-			if swept.Txid == vtxo.Txid && swept.VOut == vtxo.VOut {
-				found = true
-				break
-			}
-		}
-		require.True(t, found)
 
 		spendable, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
