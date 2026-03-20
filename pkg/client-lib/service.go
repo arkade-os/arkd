@@ -322,12 +322,7 @@ func (a *service) getVtxos(
 		}
 		scripts = append(scripts, hex.EncodeToString(vtxoScript))
 	}
-	opt := indexer.GetVtxosRequestOption{}
-	if err = opt.WithScripts(scripts); err != nil {
-		return
-	}
-
-	resp, err := a.indexer.GetVtxos(ctx, opt)
+	resp, err := a.indexer.GetVtxos(ctx, indexer.WithScripts(scripts))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -442,12 +437,7 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 		}
 		scripts = append(scripts, hex.EncodeToString(vtxoScript))
 	}
-	opt := indexer.GetVtxosRequestOption{}
-	opt.WithPendingOnly()
-	if err = opt.WithScripts(scripts); err != nil {
-		return nil, err
-	}
-	resp, err := a.indexer.GetVtxos(ctx, opt)
+	resp, err := a.indexer.GetVtxos(ctx, indexer.WithPendingOnly(), indexer.WithScripts(scripts))
 	if err != nil {
 		return nil, err
 	}
