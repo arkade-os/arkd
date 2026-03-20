@@ -227,13 +227,11 @@ func (t txEvent) toProto() *arkv1.TxNotification {
 	}
 
 	sweptVtxos := make([]*arkv1.Outpoint, 0, len(t.SweptVtxos))
-	if len(t.SweptVtxos) > 0 {
-		for _, outpoint := range t.SweptVtxos {
-			sweptVtxos = append(sweptVtxos, &arkv1.Outpoint{
-				Txid: outpoint.Txid,
-				Vout: outpoint.VOut,
-			})
-		}
+	for _, outpoint := range t.SweptVtxos {
+		sweptVtxos = append(sweptVtxos, &arkv1.Outpoint{
+			Txid: outpoint.Txid,
+			Vout: outpoint.VOut,
+		})
 	}
 
 	return &arkv1.TxNotification{
