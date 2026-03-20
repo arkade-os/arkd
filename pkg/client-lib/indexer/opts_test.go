@@ -28,6 +28,25 @@ func TestWithPage(t *testing.T) {
 	})
 }
 
+func TestWithVtxosPage(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			page *indexer.PageRequest
+		}{
+			{name: "size and index", page: &indexer.PageRequest{Size: 10, Index: 2}},
+			{name: "zero index", page: &indexer.PageRequest{Size: 5, Index: 0}},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				o, err := indexer.ApplyGetVtxosOptions(indexer.WithVtxosPage(tc.page))
+				require.NoError(t, err)
+				require.Equal(t, tc.page, o.Page)
+			})
+		}
+	})
+}
+
 func TestWithScripts(t *testing.T) {
 	scripts := []string{"script1", "script2"}
 

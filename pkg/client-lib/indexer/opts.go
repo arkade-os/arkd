@@ -88,6 +88,13 @@ func WithPendingOnly() GetVtxosOption {
 	}
 }
 
+func WithVtxosPage(page *PageRequest) GetVtxosOption {
+	return func(o *getVtxosOption) error {
+		o.Page = page
+		return nil
+	}
+}
+
 func WithTimeRange(before, after int64) GetVtxosOption {
 	return func(o *getVtxosOption) error {
 		if o.After > 0 || o.Before > 0 {
