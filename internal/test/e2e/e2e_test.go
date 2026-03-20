@@ -2711,6 +2711,9 @@ func TestSweep(t *testing.T) {
 		require.NotEmpty(t, sweepEvent.Tx)
 		require.NotEmpty(t, sweepEvent.SweptVtxos)
 
+		// give time to indexer to update its state
+		time.Sleep(5 * time.Second)
+
 		spendable, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
 		require.Len(t, spendable, 1)
