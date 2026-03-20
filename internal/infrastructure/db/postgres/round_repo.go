@@ -445,6 +445,7 @@ func (r *roundRepository) GetIntentByTxid(
 		Message: intent.Message.String,
 	}, nil
 }
+
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),

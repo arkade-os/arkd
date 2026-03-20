@@ -32,174 +32,7 @@ const (
 
 func TestDecodeClosure(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		fixtures := []struct {
-			name   string
-			script string
-		}{
-			{
-				name: "multisig closure 1 key",
-				script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "multisig closure 2 keys",
-				script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig closure 1 key",
-				script: sequenceExample +
-					fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig closure 2 pub keys",
-				script: sequenceExample +
-					fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 1 pub key",
-				script: exampleLocktime +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 2 pub keys",
-				script: exampleLocktime +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 1 byte locktime",
-				script: fmt.Sprintf("%x", txscript.OP_1) +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 2 byte locktime",
-				script: "02abcd" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 3 byte locktime",
-				script: "03aabbcc" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 4 byte locktime",
-				script: "04fff6adaa" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 5 byte locktime",
-				script: "05efae91fff6" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure 6 byte locktime",
-				script: "06efae91fff6af" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "multisig closure with condition 2 nums that add up to 8",
-				script: fmt.Sprintf("%x", txscript.OP_5) +
-					fmt.Sprintf("%x", txscript.OP_3) +
-					fmt.Sprintf("%x", txscript.OP_2DUP) +
-					fmt.Sprintf("%x", txscript.OP_ADD) +
-					fmt.Sprintf("%x", txscript.OP_8) +
-					fmt.Sprintf("%x", txscript.OP_EQUALVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_SUB) +
-					fmt.Sprintf("%x", txscript.OP_2) +
-					fmt.Sprintf("%x", txscript.OP_EQUAL) +
-					fmt.Sprintf("%x", txscript.OP_VERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "multisig closure with condition verify secret against hash",
-				script: fmt.Sprintf("%x", txscript.OP_1) +
-					fmt.Sprintf("%x", txscript.OP_HASH160) +
-					fmt.Sprintf("%x", txscript.OP_DATA_20) +
-					exHash +
-					fmt.Sprintf("%x", txscript.OP_EQUAL) +
-					fmt.Sprintf("%x", txscript.OP_VERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig closure with condition verify secret against hash",
-				script: fmt.Sprintf("%x", txscript.OP_1) +
-					fmt.Sprintf("%x", txscript.OP_HASH160) +
-					fmt.Sprintf("%x", txscript.OP_DATA_20) +
-					exHash +
-					fmt.Sprintf("%x", txscript.OP_EQUAL) +
-					fmt.Sprintf("%x", txscript.OP_VERIFY) +
-					sequenceExample +
-					fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-		}
+		fixtures := validDecodeClosureVectors()
 
 		for _, f := range fixtures {
 			t.Run(f.name, func(t *testing.T) {
@@ -214,209 +47,7 @@ func TestDecodeClosure(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		fixtures := []struct {
-			name   string
-			script string
-		}{
-			{
-				name: "multisig closure missing OP_CHECKSIG",
-				script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2,
-			},
-			{
-				name: "multisig closure missing OP_DATA_32 for first pubkey",
-				script: exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "multisig closure OP_DATA_32 for second pubkey",
-				script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig closure missing sequence",
-				script: fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig closure missing OP_CHECKSEQUENCEVERIFY",
-				script: sequenceExample +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig closure disabled timelock sequence",
-				script: disabledSequenceExample +
-					fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure missing locktime",
-				script: fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure missing OP_CHECKLOCKTIMEVERIFY",
-				script: exampleLocktime +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure invalid 1 byte locktime (not minimal)",
-				script: "010f00" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure invalid small int locktime (not minimal)",
-				script: "010f" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "cltv multisig closure invalid 7 bytes locktime",
-				script: "070001000010101010" +
-					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "multisig closure with condition missing OP_VERIFY",
-				script: fmt.Sprintf("%x", txscript.OP_1) +
-					fmt.Sprintf("%x", txscript.OP_HASH160) +
-					fmt.Sprintf("%x", txscript.OP_DATA_20) +
-					exHash +
-					fmt.Sprintf("%x", txscript.OP_EQUAL) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig closure with condition missing OP_VERIFY",
-				script: fmt.Sprintf("%x", txscript.OP_1) +
-					fmt.Sprintf("%x", txscript.OP_HASH160) +
-					fmt.Sprintf("%x", txscript.OP_DATA_20) +
-					exHash +
-					fmt.Sprintf("%x", txscript.OP_EQUAL) +
-					sequenceExample +
-					fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig with condition missing sequence",
-				script: fmt.Sprintf("%x", txscript.OP_1) +
-					fmt.Sprintf("%x", txscript.OP_HASH160) +
-					fmt.Sprintf("%x", txscript.OP_DATA_20) +
-					exHash +
-					fmt.Sprintf("%x", txscript.OP_EQUAL) +
-					fmt.Sprintf("%x", txscript.OP_VERIFY) +
-					fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig with condition missing OP_CHECKSEQUENCEVERIFY",
-				script: fmt.Sprintf("%x", txscript.OP_1) +
-					fmt.Sprintf("%x", txscript.OP_HASH160) +
-					fmt.Sprintf("%x", txscript.OP_DATA_20) +
-					exHash +
-					fmt.Sprintf("%x", txscript.OP_EQUAL) +
-					fmt.Sprintf("%x", txscript.OP_VERIFY) +
-					sequenceExample +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-			{
-				name: "csv multisig with condition disabled timelock sequence",
-				script: fmt.Sprintf("%x", txscript.OP_1) +
-					fmt.Sprintf("%x", txscript.OP_HASH160) +
-					fmt.Sprintf("%x", txscript.OP_DATA_20) +
-					exHash +
-					fmt.Sprintf("%x", txscript.OP_EQUAL) +
-					fmt.Sprintf("%x", txscript.OP_VERIFY) +
-					disabledSequenceExample +
-					fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DROP) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey1 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
-					fmt.Sprintf("%x", txscript.OP_DATA_32) +
-					exPubKey2 +
-					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-			},
-		}
+		fixtures := invalidDecodeClosureVectors()
 
 		for _, f := range fixtures {
 			t.Run(f.name, func(t *testing.T) {
@@ -428,6 +59,402 @@ func TestDecodeClosure(t *testing.T) {
 			})
 		}
 	})
+}
+
+type decodeClosureFixture struct {
+	name   string
+	script string
+}
+
+// extracted as a helper function in order to seed fuzz test
+func validDecodeClosureVectors() []decodeClosureFixture {
+	return []decodeClosureFixture{
+		{
+			name: "multisig closure 1 key",
+			script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "multisig closure 2 keys",
+			script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure 1 key",
+			script: sequenceExample +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure 2 pub keys",
+			script: sequenceExample +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure OP_0 sequence",
+			script: fmt.Sprintf("%02x", txscript.OP_0) +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure OP_1 sequence",
+			script: fmt.Sprintf("%02x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure 1 pub key",
+			script: exampleLocktime +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure 2 pub keys",
+			script: exampleLocktime +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure 1 byte locktime",
+			script: fmt.Sprintf("%x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure 2 byte locktime",
+			script: "02abcd" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure 3 byte locktime",
+			script: "03aabbcc" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure 4 byte locktime",
+			script: "04fff6adaa" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure 5 byte locktime",
+			script: "05efae91fff6" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure 6 byte locktime",
+			script: "06efae91fff6af" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "multisig closure with condition 2 nums that add up to 8",
+			script: fmt.Sprintf("%x", txscript.OP_5) +
+				fmt.Sprintf("%x", txscript.OP_3) +
+				fmt.Sprintf("%x", txscript.OP_2DUP) +
+				fmt.Sprintf("%x", txscript.OP_ADD) +
+				fmt.Sprintf("%x", txscript.OP_8) +
+				fmt.Sprintf("%x", txscript.OP_EQUALVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_SUB) +
+				fmt.Sprintf("%x", txscript.OP_2) +
+				fmt.Sprintf("%x", txscript.OP_EQUAL) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "multisig closure with condition verify secret against hash",
+			script: fmt.Sprintf("%x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_HASH160) +
+				fmt.Sprintf("%x", txscript.OP_DATA_20) +
+				exHash +
+				fmt.Sprintf("%x", txscript.OP_EQUAL) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure with condition verify secret against hash",
+			script: fmt.Sprintf("%x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_HASH160) +
+				fmt.Sprintf("%x", txscript.OP_DATA_20) +
+				exHash +
+				fmt.Sprintf("%x", txscript.OP_EQUAL) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				sequenceExample +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+	}
+}
+
+// extracted as a helper function in order to seed fuzz test
+func invalidDecodeClosureVectors() []decodeClosureFixture {
+	return []decodeClosureFixture{
+		{
+			name: "multisig closure missing OP_CHECKSIG",
+			script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2,
+		},
+		{
+			name: "multisig closure missing OP_DATA_32 for first pubkey",
+			script: exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "multisig closure OP_DATA_32 for second pubkey",
+			script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure missing sequence",
+			script: fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure missing OP_CHECKSEQUENCEVERIFY",
+			script: sequenceExample +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure disabled timelock sequence",
+			script: disabledSequenceExample +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure missing locktime",
+			script: fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure missing OP_CHECKLOCKTIMEVERIFY",
+			script: exampleLocktime +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure invalid 1 byte locktime (not minimal)",
+			script: "010f00" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure invalid small int locktime (not minimal)",
+			script: "010f" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure invalid 7 bytes locktime",
+			script: "070001000010101010" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "multisig closure with condition missing OP_VERIFY",
+			script: fmt.Sprintf("%x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_HASH160) +
+				fmt.Sprintf("%x", txscript.OP_DATA_20) +
+				exHash +
+				fmt.Sprintf("%x", txscript.OP_EQUAL) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure with condition missing OP_VERIFY",
+			script: fmt.Sprintf("%x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_HASH160) +
+				fmt.Sprintf("%x", txscript.OP_DATA_20) +
+				exHash +
+				fmt.Sprintf("%x", txscript.OP_EQUAL) +
+				sequenceExample +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig with condition missing sequence",
+			script: fmt.Sprintf("%x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_HASH160) +
+				fmt.Sprintf("%x", txscript.OP_DATA_20) +
+				exHash +
+				fmt.Sprintf("%x", txscript.OP_EQUAL) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig with condition missing OP_CHECKSEQUENCEVERIFY",
+			script: fmt.Sprintf("%x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_HASH160) +
+				fmt.Sprintf("%x", txscript.OP_DATA_20) +
+				exHash +
+				fmt.Sprintf("%x", txscript.OP_EQUAL) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				sequenceExample +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig with condition disabled timelock sequence",
+			script: fmt.Sprintf("%x", txscript.OP_1) +
+				fmt.Sprintf("%x", txscript.OP_HASH160) +
+				fmt.Sprintf("%x", txscript.OP_DATA_20) +
+				exHash +
+				fmt.Sprintf("%x", txscript.OP_EQUAL) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				disabledSequenceExample +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIGVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey2 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+	}
 }
 
 func TestRoundTripCSV(t *testing.T) {
@@ -1032,23 +1059,45 @@ func TestCLTVMultisigClosure(t *testing.T) {
 }
 
 func TestExecuteBoolScript(t *testing.T) {
+	testCases := executeBoolScriptFixtures(t)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			valid, err := script.EvaluateScriptToBool(tc.script, tc.witness)
+
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tc.returnValue, valid)
+		})
+	}
+}
+
+type executeBoolScriptFixture struct {
+	name        string
+	script      []byte
+	witness     wire.TxWitness
+	returnValue bool
+	expectErr   bool
+}
+
+func executeBoolScriptFixtures(tb testing.TB) []executeBoolScriptFixture {
+	tb.Helper()
+
 	// Generate two random byte slices for coinflip
 	rand1 := make([]byte, 16)
 	_, err := rand.Read(rand1)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	hash1 := sha256.Sum256(rand1)
 
 	rand2 := make([]byte, 15)
 	_, err = rand.Read(rand2)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	testCases := []struct {
-		name        string
-		script      []byte
-		witness     wire.TxWitness
-		returnValue bool
-		expectErr   bool
-	}{
+	return []executeBoolScriptFixture{
 		{
 			name:        "True",
 			script:      []byte{txscript.OP_TRUE},
@@ -1092,13 +1141,6 @@ func TestExecuteBoolScript(t *testing.T) {
 			expectErr:   true,
 		},
 		{
-			name:        "invalid CHECKSIGVERIFY",
-			script:      []byte{txscript.OP_CHECKSIGVERIFY},
-			witness:     wire.TxWitness{},
-			returnValue: false,
-			expectErr:   true,
-		},
-		{
 			name:        "invalid zero elements on the stack",
 			script:      []byte{txscript.OP_TRUE, txscript.OP_VERIFY},
 			witness:     wire.TxWitness{},
@@ -1132,20 +1174,6 @@ func TestExecuteBoolScript(t *testing.T) {
 			returnValue: false,
 			expectErr:   false,
 		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			valid, err := script.EvaluateScriptToBool(tc.script, tc.witness)
-
-			if tc.expectErr {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, tc.returnValue, valid)
-		})
 	}
 }
 

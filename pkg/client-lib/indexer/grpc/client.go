@@ -104,14 +104,17 @@ func (a *grpcClient) GetCommitmentTx(
 }
 
 func (a *grpcClient) GetVtxoTree(
-	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.RequestOption,
+	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.PageOption,
 ) (*indexer.VtxoTreeResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -143,8 +146,13 @@ func (a *grpcClient) GetVtxoTree(
 }
 
 func (a *grpcClient) GetFullVtxoTree(
-	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.RequestOption,
+	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.PageOption,
 ) ([]tree.TxTreeNode, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := a.GetVtxoTree(ctx, batchOutpoint, opts...)
 	if err != nil {
 		return nil, err
@@ -152,11 +160,11 @@ func (a *grpcClient) GetFullVtxoTree(
 
 	var allTxs indexer.TxNodes = resp.Tree
 	for resp.Page != nil && resp.Page.Next != resp.Page.Total {
-		opt := indexer.RequestOption{}
-		opt.WithPage(&indexer.PageRequest{
-			Index: resp.Page.Next,
-		})
-		resp, err = a.GetVtxoTree(ctx, batchOutpoint, opts...)
+		nextPage := &indexer.PageRequest{Index: resp.Page.Next}
+		if o.Page != nil {
+			nextPage.Size = o.Page.Size
+		}
+		resp, err = a.GetVtxoTree(ctx, batchOutpoint, indexer.WithPage(nextPage))
 		if err != nil {
 			return nil, err
 		}
@@ -176,14 +184,17 @@ func (a *grpcClient) GetFullVtxoTree(
 }
 
 func (a *grpcClient) GetVtxoTreeLeaves(
-	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.RequestOption,
+	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.PageOption,
 ) (*indexer.VtxoTreeLeavesResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -215,14 +226,17 @@ func (a *grpcClient) GetVtxoTreeLeaves(
 }
 
 func (a *grpcClient) GetForfeitTxs(
-	ctx context.Context, txid string, opts ...indexer.RequestOption,
+	ctx context.Context, txid string, opts ...indexer.PageOption,
 ) (*indexer.ForfeitTxsResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -243,14 +257,17 @@ func (a *grpcClient) GetForfeitTxs(
 }
 
 func (a *grpcClient) GetConnectors(
-	ctx context.Context, txid string, opts ...indexer.RequestOption,
+	ctx context.Context, txid string, opts ...indexer.PageOption,
 ) (*indexer.ConnectorsResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -279,31 +296,33 @@ func (a *grpcClient) GetConnectors(
 }
 
 func (a *grpcClient) GetVtxos(
-	ctx context.Context, opts ...indexer.GetVtxosRequestOption,
+	ctx context.Context, opts ...indexer.GetVtxosOption,
 ) (*indexer.VtxosResponse, error) {
-	if len(opts) <= 0 {
+	o, err := indexer.ApplyGetVtxosOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+	if len(o.Scripts) == 0 && len(o.Outpoints) == 0 {
 		return nil, fmt.Errorf("missing opts")
 	}
-	opt := opts[0]
 
 	var page *arkv1.IndexerPageRequest
-	if opt.GetPage() != nil {
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
-	after, before := opt.GetTimeRange()
 	req := &arkv1.GetVtxosRequest{
-		Scripts:         opt.GetScripts(),
-		Outpoints:       opt.GetOutpoints(),
-		SpendableOnly:   opt.GetSpendableOnly(),
-		SpentOnly:       opt.GetSpentOnly(),
-		RecoverableOnly: opt.GetRecoverableOnly(),
-		PendingOnly:     opt.GetPendingOnly(),
-		After:           after,
-		Before:          before,
+		Scripts:         o.Scripts,
+		Outpoints:       o.FormattedOutpoints(),
+		SpendableOnly:   o.SpendableOnly,
+		SpentOnly:       o.SpentOnly,
+		RecoverableOnly: o.RecoverableOnly,
+		PendingOnly:     o.PendingOnly,
+		After:           o.After,
+		Before:          o.Before,
 		Page:            page,
 	}
 
@@ -319,14 +338,17 @@ func (a *grpcClient) GetVtxos(
 }
 
 func (a *grpcClient) GetVtxoChain(
-	ctx context.Context, outpoint types.Outpoint, opts ...indexer.RequestOption,
+	ctx context.Context, outpoint types.Outpoint, opts ...indexer.PageOption,
 ) (*indexer.VtxoChainResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -374,14 +396,17 @@ func (a *grpcClient) GetVtxoChain(
 }
 
 func (a *grpcClient) GetVirtualTxs(
-	ctx context.Context, txids []string, opts ...indexer.RequestOption,
+	ctx context.Context, txids []string, opts ...indexer.PageOption,
 ) (*indexer.VirtualTxsResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 

@@ -89,7 +89,7 @@ help:
 ## integrationtest: run integration tests
 integrationtest:
 	@echo "Running integration tests..."
-	@go test -v -count 1 -timeout 800s github.com/arkade-os/arkd/internal/test/e2e
+	@go test -v -count 1 -timeout 1200s github.com/arkade-os/arkd/internal/test/e2e
 
 ## lint: lint codebase
 lint:

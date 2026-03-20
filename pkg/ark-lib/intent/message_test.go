@@ -76,6 +76,11 @@ func parseMessageFixtures(t *testing.T) []messageFixture {
 			err := estimateFeeMsg.Decode(string(jsonFixture.Message))
 			require.NoError(t, err)
 			msg = &estimateFeeMsg
+		case intent.IntentMessageTypeGetIntent:
+			var getIntentMsg intent.GetIntentMessage
+			err := getIntentMsg.Decode(string(jsonFixture.Message))
+			require.NoError(t, err)
+			msg = &getIntentMsg
 		default:
 			t.Fatalf("unknown message type: %s", baseMsg.Type)
 		}

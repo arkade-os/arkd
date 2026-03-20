@@ -352,7 +352,12 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 
 	var sequence []byte
 	if txscript.IsSmallInt(tokenizer.Opcode()) {
-		sequence = []byte{tokenizer.Opcode()}
+		if tokenizer.Opcode() == txscript.OP_0 {
+			// minimal encoding for a zero scriptnum is an empty slice
+			sequence = []byte{}
+		} else {
+			sequence = []byte{tokenizer.Opcode()}
+		}
 	} else {
 		sequence = tokenizer.Data()
 	}

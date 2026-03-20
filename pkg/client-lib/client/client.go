@@ -75,6 +75,8 @@ type Info struct {
 	VtxoMinAmount             int64
 	VtxoMaxAmount             int64
 	CheckpointTapscript       string
+	MaxTxWeight               int64
+	MaxOpReturnOutputs        int64
 	Fees                      types.FeeInfo
 	DeprecatedSignerPubKeys   []DeprecatedSigner
 	ServiceStatus             map[string]string

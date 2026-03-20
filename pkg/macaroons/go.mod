@@ -11,7 +11,7 @@ require (
 	github.com/btcsuite/btcwallet v0.16.10-0.20240718224643-db3a4a2543bd
 	github.com/btcsuite/btcwallet/walletdb v1.4.2
 	github.com/stretchr/testify v1.11.1
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.3
 	gopkg.in/macaroon-bakery.v2 v2.3.0
 	gopkg.in/macaroon.v2 v2.1.0
 )

@@ -299,7 +299,7 @@ func (a *service) safeCheck() error {
 }
 
 func (a *service) getVtxos(
-	ctx context.Context,
+	ctx context.Context, extraOpts ...indexer.GetVtxosOption,
 ) (spendableVtxos, spentVtxos []types.Vtxo, err error) {
 	if a.wallet == nil {
 		return nil, nil, ErrNotInitialized
@@ -322,12 +322,8 @@ func (a *service) getVtxos(
 		}
 		scripts = append(scripts, hex.EncodeToString(vtxoScript))
 	}
-	opt := indexer.GetVtxosRequestOption{}
-	if err = opt.WithScripts(scripts); err != nil {
-		return
-	}
-
-	resp, err := a.indexer.GetVtxos(ctx, opt)
+	opts := append([]indexer.GetVtxosOption{indexer.WithScripts(scripts)}, extraOpts...)
+	resp, err := a.indexer.GetVtxos(ctx, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -442,12 +438,7 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 		}
 		scripts = append(scripts, hex.EncodeToString(vtxoScript))
 	}
-	opt := indexer.GetVtxosRequestOption{}
-	opt.WithPendingOnly()
-	if err = opt.WithScripts(scripts); err != nil {
-		return nil, err
-	}
-	resp, err := a.indexer.GetVtxos(ctx, opt)
+	resp, err := a.indexer.GetVtxos(ctx, indexer.WithPendingOnly(), indexer.WithScripts(scripts))
 	if err != nil {
 		return nil, err
 	}
