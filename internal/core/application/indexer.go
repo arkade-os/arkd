@@ -949,6 +949,8 @@ func (i *indexerService) signTransactionTapscript(partialTx string) (string, err
 			continue
 		}
 
+		// Use the first leaf script — PSBT inputs in this context always have
+		// a single tapscript leaf (the VTXO covenant script).
 		tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
 
 		signature, err := txscript.RawTxInTapscriptSignature(

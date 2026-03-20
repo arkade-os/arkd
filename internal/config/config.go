@@ -623,6 +623,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("indexer auth token expiry must be greater than 0")
 	}
 
+	if c.IndexerTxExposure != "public" && c.IndexerSigningKey == "" {
+		return fmt.Errorf(
+			"indexer signing key is required when tx exposure is %q",
+			c.IndexerTxExposure,
+		)
+	}
+
 	if c.MaxTxWeight > bitcoinBlockWeight {
 		return fmt.Errorf(
 			"max tx weight can't exceed bitcoin block weight (%d)",
