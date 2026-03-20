@@ -292,6 +292,17 @@ func (i *indexerService) GetVtxoChain(
 	vtxoCache := make(map[string]domain.Vtxo)
 	loadedMarkers := make(map[string]bool)
 
+	// Eagerly preload VTXOs by walking the marker DAG upward.
+	if i.repoManager.Markers() != nil {
+		startVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
+		if err != nil {
+			return nil, err
+		}
+		if err := i.preloadVtxosByMarkers(ctx, startVtxos, vtxoCache); err != nil {
+			return nil, err
+		}
+	}
+
 	for len(nextVtxos) > 0 {
 		if err := i.ensureVtxosCached(ctx, nextVtxos, vtxoCache, loadedMarkers); err != nil {
 			return nil, err
@@ -473,6 +484,65 @@ func decodeChainCursor(token string) ([]domain.Outpoint, error) {
 		outpoints[i] = domain.Outpoint(op)
 	}
 	return outpoints, nil
+}
+
+// preloadVtxosByMarkers bulk-fetches VTXOs by walking the marker DAG upward
+// from the markers of startVtxos. This reduces DB round-trips from O(chain_length)
+// to O(chain_length / MarkerInterval).
+func (i *indexerService) preloadVtxosByMarkers(
+	ctx context.Context,
+	startVtxos []domain.Vtxo,
+	cache map[string]domain.Vtxo,
+) error {
+	markerRepo := i.repoManager.Markers()
+
+	// Seed cache and collect initial marker IDs.
+	currentMarkerIDs := make(map[string]bool)
+	for _, v := range startVtxos {
+		cache[v.Outpoint.String()] = v
+		for _, mid := range v.MarkerIDs {
+			currentMarkerIDs[mid] = true
+		}
+	}
+
+	visited := make(map[string]bool)
+
+	for len(currentMarkerIDs) > 0 {
+		ids := make([]string, 0, len(currentMarkerIDs))
+		for id := range currentMarkerIDs {
+			ids = append(ids, id)
+			visited[id] = true
+		}
+
+		// Bulk-fetch all VTXOs tagged with these markers.
+		vtxos, err := markerRepo.GetVtxoChainByMarkers(ctx, ids)
+		if err != nil {
+			return err
+		}
+		for _, v := range vtxos {
+			if _, ok := cache[v.Outpoint.String()]; !ok {
+				cache[v.Outpoint.String()] = v
+			}
+		}
+
+		// Get marker objects to find parent markers.
+		markers, err := markerRepo.GetMarkersByIds(ctx, ids)
+		if err != nil {
+			return err
+		}
+
+		nextMarkerIDs := make(map[string]bool)
+		for _, m := range markers {
+			for _, pid := range m.ParentMarkerIDs {
+				if !visited[pid] {
+					nextMarkerIDs[pid] = true
+				}
+			}
+		}
+		currentMarkerIDs = nextMarkerIDs
+	}
+
+	return nil
 }
 
 // ensureVtxosCached loads the given outpoints into the cache if not already present.
