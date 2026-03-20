@@ -2677,8 +2677,8 @@ func TestSweep(t *testing.T) {
 		t.Cleanup(streamCancel)
 
 		txStream, closeStream, err := transport.GetTransactionsStream(streamCtx)
-		t.Cleanup(closeStream)
 		require.NoError(t, err)
+		t.Cleanup(closeStream)
 
 		var sweepEvent *client.TxNotification
 		sweepCh := make(chan *client.TxNotification, 1)
