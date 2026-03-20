@@ -24,8 +24,6 @@ type grpcClient struct {
 	connMu         *sync.RWMutex
 	subscriptionMu *sync.RWMutex
 	subscriptionId string
-	// TODO: drop me in https://github.com/arkade-os/arkd/pull/951
-	scripts *scriptsCache
 }
 
 func NewClient(serverUrl string) (indexer.Indexer, error) {
@@ -68,7 +66,6 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 		conn:           conn,
 		connMu:         &sync.RWMutex{},
 		subscriptionMu: &sync.RWMutex{},
-		scripts:        newScriptsCache(),
 	}
 
 	return client, nil
@@ -437,15 +434,9 @@ func (a *grpcClient) GetSubscription(
 			})
 		},
 		Reconnect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
-			scripts := a.scripts.get()
-			resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
-				Scripts: scripts,
-			})
-			if err != nil {
-				return nil, err
-			}
 			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
-				SubscriptionId: resp.GetSubscriptionId(),
+				SubscriptionId: subscriptionId,
+				Scripts:        scripts,
 			})
 		},
 		Recv: func(
@@ -531,8 +522,6 @@ func (a *grpcClient) SubscribeForScripts(
 		return "", err
 	}
 
-	a.scripts.add(scripts)
-
 	return resp.GetSubscriptionId(), nil
 }
 
@@ -550,8 +539,6 @@ func (a *grpcClient) UnsubscribeForScripts(
 	if err != nil {
 		return err
 	}
-
-	a.scripts.remove(scripts)
 
 	return nil
 }
