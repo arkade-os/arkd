@@ -148,6 +148,11 @@ func (a *grpcClient) GetVtxoTree(
 func (a *grpcClient) GetFullVtxoTree(
 	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.PageOption,
 ) ([]tree.TxTreeNode, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := a.GetVtxoTree(ctx, batchOutpoint, opts...)
 	if err != nil {
 		return nil, err
@@ -155,11 +160,11 @@ func (a *grpcClient) GetFullVtxoTree(
 
 	var allTxs indexer.TxNodes = resp.Tree
 	for resp.Page != nil && resp.Page.Next != resp.Page.Total {
-		resp, err = a.GetVtxoTree(ctx, batchOutpoint, indexer.WithPage(
-			&indexer.PageRequest{
-				Index: resp.Page.Next,
-			},
-		))
+		nextPage := &indexer.PageRequest{Index: resp.Page.Next}
+		if o.Page != nil {
+			nextPage.Size = o.Page.Size
+		}
+		resp, err = a.GetVtxoTree(ctx, batchOutpoint, indexer.WithPage(nextPage))
 		if err != nil {
 			return nil, err
 		}
