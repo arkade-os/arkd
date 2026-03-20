@@ -970,6 +970,9 @@
           },
           "heartbeat": {
             "$ref": "#/components/schemas/Heartbeat"
+          },
+          "sweepTx": {
+            "$ref": "#/components/schemas/TxNotification"
           }
         }
       },
@@ -1386,6 +1389,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "sweptVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outpoint"
             }
           },
           "tx": {

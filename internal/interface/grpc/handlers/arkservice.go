@@ -660,6 +660,12 @@ func (h *handler) listenToTxEvents() {
 					ArkTx: txEvent(event).toProto(),
 				},
 			}
+		case application.SweepTxType:
+			msg = &arkv1.GetTransactionsStreamResponse{
+				Data: &arkv1.GetTransactionsStreamResponse_SweepTx{
+					SweepTx: txEvent(event).toProto(),
+				},
+			}
 		}
 
 		if msg != nil {
