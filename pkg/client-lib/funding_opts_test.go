@@ -58,6 +58,16 @@ func TestWithTimeRange(t *testing.T) {
 				expectError: "missing time range",
 			},
 			{
+				name:        "negative before",
+				opts:        []arksdk.ListVtxosOption{arksdk.WithTimeRange(-1, 1000)},
+				expectError: "negative time bound",
+			},
+			{
+				name:        "negative after",
+				opts:        []arksdk.ListVtxosOption{arksdk.WithTimeRange(1000, -1)},
+				expectError: "negative time bound",
+			},
+			{
 				name:        "before less than after",
 				opts:        []arksdk.ListVtxosOption{arksdk.WithTimeRange(1000, 2000)},
 				expectError: "before must be greater than after",

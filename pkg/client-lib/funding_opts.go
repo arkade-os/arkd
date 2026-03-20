@@ -9,7 +9,10 @@ func WithTimeRange(before, after int64) ListVtxosOption {
 		if o.After > 0 || o.Before > 0 {
 			return fmt.Errorf("time range already set")
 		}
-		if before <= 0 && after <= 0 {
+		if before < 0 || after < 0 {
+			return fmt.Errorf("negative time bound")
+		}
+		if before == 0 && after == 0 {
 			return fmt.Errorf("missing time range")
 		}
 		if before > 0 && after > 0 && before <= after {
