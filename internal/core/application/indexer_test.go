@@ -21,20 +21,20 @@ func newTestIndexer(privkey *btcec.PrivateKey) *indexerService {
 }
 
 type fixtures struct {
-	AuthTokenTests    authTokenTestFixtures `json:"auth_token_tests"`
-	InvalidTokenTests []invalidTokenTest    `json:"invalid_token_tests"`
+	AuthToken authTokenFixtures `json:"auth_token"`
 }
 
-type authTokenTestFixtures struct {
-	PrivateKeyHex string              `json:"private_key_hex"`
-	PublicKeyHex  string              `json:"public_key_hex"`
-	TestCases     []authTokenTestCase `json:"test_cases"`
+type authTokenFixtures struct {
+	PrivateKeyHex string             `json:"private_key_hex"`
+	PublicKeyHex  string             `json:"public_key_hex"`
+	Valid         []validTokenTest   `json:"valid"`
+	Invalid       []invalidTokenTest `json:"invalid"`
 }
 
-type authTokenTestCase struct {
-	Name           string          `json:"name"`
-	Outpoint       outpointFixture `json:"outpoint"`
-	ShouldValidate bool            `json:"should_validate"`
+type validTokenTest struct {
+	Name          string          `json:"name"`
+	Outpoint      outpointFixture `json:"outpoint"`
+	ExpectedToken string          `json:"expected_token"`
 }
 
 type outpointFixture struct {
@@ -43,9 +43,8 @@ type outpointFixture struct {
 }
 
 type invalidTokenTest struct {
-	Name           string `json:"name"`
-	Token          string `json:"token"`
-	ShouldValidate bool   `json:"should_validate"`
+	Name  string `json:"name"`
+	Token string `json:"token"`
 }
 
 func privkeyFromHex(privKeyHex string) (*btcec.PrivateKey, error) {
@@ -68,58 +67,49 @@ func loadFixtures(t *testing.T) *fixtures {
 	return &f
 }
 
-func TestCreateAndValidateAuthToken(t *testing.T) {
+// fixedTimestamp is used for deterministic token generation in tests.
+// Uses 2100-01-01 00:00:00 UTC to ensure tokens never expire during tests.
+var fixedTimestamp = time.Unix(4102444800, 0)
+
+func TestAuthToken(t *testing.T) {
 	f := loadFixtures(t)
 
-	privkey, err := privkeyFromHex(f.AuthTokenTests.PrivateKeyHex)
+	privkey, err := privkeyFromHex(f.AuthToken.PrivateKeyHex)
 	require.NoError(t, err)
 
 	indexer := newTestIndexer(privkey)
 
-	for _, tc := range f.AuthTokenTests.TestCases {
+	for _, tc := range f.AuthToken.Valid {
 		t.Run(tc.Name, func(t *testing.T) {
 			outpoint := Outpoint{
 				Txid: tc.Outpoint.Txid,
 				VOut: tc.Outpoint.Vout,
 			}
 
-			token, err := indexer.createAuthToken(outpoint)
+			token, err := indexer.createAuthTokenWithTimestamp(outpoint, fixedTimestamp)
 			require.NoError(t, err)
-			require.NotEmpty(t, token)
+			require.Equal(t, tc.ExpectedToken, token)
 
 			_, valid, err := indexer.validateAuthToken(token)
 			require.NoError(t, err)
-			require.Equal(t, tc.ShouldValidate, valid, "token validation mismatch")
+			require.True(t, valid, "token validation mismatch")
 		})
 	}
-}
 
-func TestValidateAuthToken_Invalid(t *testing.T) {
-	f := loadFixtures(t)
-
-	privkey, err := privkeyFromHex(f.AuthTokenTests.PrivateKeyHex)
-	require.NoError(t, err)
-
-	indexer := newTestIndexer(privkey)
-
-	for _, tc := range f.InvalidTokenTests {
+	for _, tc := range f.AuthToken.Invalid {
 		t.Run(tc.Name, func(t *testing.T) {
 			_, valid, err := indexer.validateAuthToken(tc.Token)
 			require.NoError(t, err)
-			require.Equal(t, tc.ShouldValidate, valid)
+			require.False(t, valid)
 		})
 	}
 }
 
 func TestValidateAuthToken_WrongSigner(t *testing.T) {
-	f := loadFixtures(t)
-
-	privkey1, err := privkeyFromHex(f.AuthTokenTests.PrivateKeyHex)
+	privkey1, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	privkey2, err := privkeyFromHex(
-		"0000000000000000000000000000000000000000000000000000000000000002",
-	)
+	privkey2, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	indexer1 := newTestIndexer(privkey1)
@@ -151,9 +141,7 @@ func TestValidateAuthToken_WrongSigner(t *testing.T) {
 }
 
 func TestAuthTokenDeterminism(t *testing.T) {
-	f := loadFixtures(t)
-
-	privkey, err := privkeyFromHex(f.AuthTokenTests.PrivateKeyHex)
+	privkey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	indexer := newTestIndexer(privkey)
@@ -179,9 +167,7 @@ func TestAuthTokenDeterminism(t *testing.T) {
 }
 
 func TestAuthTokenExpiry(t *testing.T) {
-	f := loadFixtures(t)
-
-	privkey, err := privkeyFromHex(f.AuthTokenTests.PrivateKeyHex)
+	privkey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	indexer := newTestIndexer(privkey)
@@ -209,29 +195,23 @@ func TestAuthTokenExpiry(t *testing.T) {
 }
 
 func TestAuthTokenOutpointExtraction(t *testing.T) {
-	f := loadFixtures(t)
-
-	privkey, err := privkeyFromHex(f.AuthTokenTests.PrivateKeyHex)
+	privkey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	indexer := newTestIndexer(privkey)
 
-	for _, tc := range f.AuthTokenTests.TestCases {
-		t.Run(tc.Name, func(t *testing.T) {
-			outpoint := Outpoint{
-				Txid: tc.Outpoint.Txid,
-				VOut: tc.Outpoint.Vout,
-			}
-
-			token, err := indexer.createAuthToken(outpoint)
-			require.NoError(t, err)
-
-			extractedOutpoint, valid, err := indexer.validateAuthToken(token)
-			require.NoError(t, err)
-			require.True(t, valid)
-
-			require.Equal(t, outpoint.Txid, extractedOutpoint.Txid, "txid mismatch")
-			require.Equal(t, outpoint.VOut, extractedOutpoint.VOut, "vout mismatch")
-		})
+	outpoint := Outpoint{
+		Txid: "0000000000000000000000000000000000000000000000000000000000000001",
+		VOut: 0,
 	}
+
+	token, err := indexer.createAuthToken(outpoint)
+	require.NoError(t, err)
+
+	extractedOutpoint, valid, err := indexer.validateAuthToken(token)
+	require.NoError(t, err)
+	require.True(t, valid)
+
+	require.Equal(t, outpoint.Txid, extractedOutpoint.Txid, "txid mismatch")
+	require.Equal(t, outpoint.VOut, extractedOutpoint.VOut, "vout mismatch")
 }
