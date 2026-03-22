@@ -1,0 +1,75 @@
+{
+  "valid_proof": "cHNidP8BALICAAAAAv/d70xPgEdsEq2xvJnXiBtJrEQAkZYVSWdwarEJCZe9AAAAAAAAAAAA9PRZ58PC4lJAJ7VEYtMMUC1E+poh/Gxo+0TNqvgh27wAAAAAAAAAAAAC6AMAAAAAAAAiUSC53+wMdwD72qU3mUE5FijgQ6Yt0XUhysD5ptE7PlTmuqyGAQAAAAAAIlEgmPgUCMQCRH0hhxoDwH31/dD86/v/CCHc+HlYPNZQMvoAAAAAAAEBKwAAAAAAAAAAIlEgud/sDHcA+9qlN5lBORYo4EOmLdF1IcrA+abYOz5U5soBAwQBAAAAAAEBK+gDAAAAAAAAIlEgud/sDHcA+9qlN5lBORYo4EOmLdF1IcrA+abYOz5U5soBAwQBAAAAAAAA",
+  "parse_get_intent": {
+    "valid": [
+      {
+        "name": "with_expiry",
+        "message": "{\"type\":\"get-intent\",\"expire_at\":1762862054}",
+        "expected_type": "get-intent",
+        "expected_expire_at": 1762862054
+      },
+      {
+        "name": "no_expiry",
+        "message": "{\"type\":\"get-intent\",\"expire_at\":0}",
+        "expected_type": "get-intent",
+        "expected_expire_at": 0
+      }
+    ],
+    "invalid": [
+      {
+        "name": "nil_intent",
+        "proof": null,
+        "message": null,
+        "expected_error": "missing intent"
+      },
+      {
+        "name": "missing_proof",
+        "proof": "",
+        "message": "{\"type\":\"get-intent\",\"expire_at\":1762862054}",
+        "expected_error": "missing intent proof"
+      },
+      {
+        "name": "invalid_proof",
+        "proof": "not-a-valid-psbt",
+        "message": "{\"type\":\"get-intent\",\"expire_at\":1762862054}",
+        "expected_error": "failed to parse intent proof tx"
+      },
+      {
+        "name": "missing_message",
+        "proof": "USE_VALID_PROOF",
+        "message": "",
+        "expected_error": "missing message"
+      },
+      {
+        "name": "wrong_message_type",
+        "proof": "USE_VALID_PROOF",
+        "message": "{\"type\":\"delete\",\"expire_at\":1762862054}",
+        "expected_error": "invalid get-intent message"
+      },
+      {
+        "name": "invalid_message_json",
+        "proof": "USE_VALID_PROOF",
+        "message": "not json",
+        "expected_error": "invalid get-intent message"
+      }
+    ]
+  },
+  "parse_delete_intent": {
+    "valid": [
+      {
+        "name": "with_expiry",
+        "message": "{\"type\":\"delete\",\"expire_at\":1762862054}",
+        "expected_type": "delete",
+        "expected_expire_at": 1762862054
+      }
+    ],
+    "invalid": [
+      {
+        "name": "wrong_message_type",
+        "proof": "USE_VALID_PROOF",
+        "message": "{\"type\":\"get-intent\",\"expire_at\":1762862054}",
+        "expected_error": "invalid delete intent message"
+      }
+    ]
+  }
+}

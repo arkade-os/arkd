@@ -62,12 +62,15 @@ type adminService struct {
 
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
+
+	onInfoChange func()
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
+	onInfoChange func(),
 ) AdminService {
 	return &adminService{
 		walletSvc:                 walletSvc,
@@ -78,6 +81,7 @@ func NewAdminService(
 		feeManager:                feeManager,
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
+		onInfoChange:              onInfoChange,
 	}
 }
 
@@ -309,11 +313,16 @@ func (s *adminService) UpdateScheduledSessionConfig(
 		return fmt.Errorf("failed to upsert scheduled session: %w", err)
 	}
 
+	s.onInfoChange()
 	return nil
 }
 
 func (s *adminService) ClearScheduledSessionConfig(ctx context.Context) error {
-	return s.repoManager.ScheduledSession().Clear(ctx)
+	if err := s.repoManager.ScheduledSession().Clear(ctx); err != nil {
+		return err
+	}
+	s.onInfoChange()
+	return nil
 }
 
 func (s *adminService) ListIntents(
@@ -393,12 +402,20 @@ func (s *adminService) UpdateIntentFees(
 	if err := s.feeManager.Validate(fees); err != nil {
 		return err
 	}
-	return s.repoManager.Fees().UpdateIntentFees(ctx, fees)
+	if err := s.repoManager.Fees().UpdateIntentFees(ctx, fees); err != nil {
+		return err
+	}
+	s.onInfoChange()
+	return nil
 }
 
 // Zeroes out fees
 func (s *adminService) ClearIntentFees(ctx context.Context) error {
-	return s.repoManager.Fees().ClearIntentFees(ctx)
+	if err := s.repoManager.Fees().ClearIntentFees(ctx); err != nil {
+		return err
+	}
+	s.onInfoChange()
+	return nil
 }
 
 // Conviction management methods

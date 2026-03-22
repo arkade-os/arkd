@@ -320,7 +320,7 @@ func (r *arkRepository) addOrUpdateRound(
 		}
 		return err
 	}
-	// upsert intent index for each intent with a txid
+	// upsert intent indexes for each intent
 	for _, it := range rnd.Intents {
 		// do not fail the whole round upsert if intent index upsert fails
 		// nolint:errcheck

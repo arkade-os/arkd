@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
@@ -171,16 +172,37 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	reconnectCfg := GrpcReconnectConfig
 
 	// Shared output channel and guarded stream pointer used by recv and closeFn.
-	eventsCh := make(chan E)
+	// Buffer of 1 prevents the sender from blocking when the consumer is
+	// momentarily busy processing the previous event.
+	eventsCh := make(chan E, 1)
 	streamMu := sync.Mutex{}
 
-	// Emit terminal errors unless the context is already done.
+	// Emit terminal errors with best-effort delivery:
+	// try immediate send; if context is still active, wait up to 5 seconds.
+	// If context is already canceled, skip waiting to avoid teardown stalls.
 	sendTerminalErr := func(err error) bool {
+		// Fast path: immediate delivery.
 		select {
-		case <-ctx.Done():
-			return false
 		case eventsCh <- cfg.ErrorEvent(err):
 			return true
+		default:
+		}
+
+		// If caller context is already canceled, most consumers stop draining.
+		// Avoid a fixed teardown stall.
+		if ctx.Err() != nil {
+			return false
+		}
+
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		select {
+		case eventsCh <- cfg.ErrorEvent(err):
+			return true
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return false
 		}
 	}
 
@@ -291,7 +313,10 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 				// Inner reconnect loop: stay here until a new stream is open.
 				// We never continue the outer loop with the old dead recvCh.
 				for {
-					sleepDuration := max(retryDelay, backoffDelay)
+					sleepDuration := applyJitter(
+						max(retryDelay, backoffDelay),
+						reconnectCfg.Jitter,
+					)
 					select {
 					case <-ctx.Done():
 						return
@@ -381,4 +406,19 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 	}
 
 	return eventsCh, closeFn, nil
+}
+
+// applyJitter adds ±jitter randomness to a duration.
+// with jitter = 0.2, d get + or - 20%
+func applyJitter(d time.Duration, jitter float64) time.Duration {
+	if jitter <= 0 {
+		return d
+	}
+	if jitter >= 1.0 {
+		jitter = 0.999
+	}
+
+	randomFactor := 2.0*rand.Float64()-1.0 // [-1, +1] factor
+	jitterFactor := 1.0 + jitter*randomFactor
+	return time.Duration(float64(d) * jitterFactor)
 }

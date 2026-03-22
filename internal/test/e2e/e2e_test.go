@@ -1022,6 +1022,132 @@ func TestOffchainTx(t *testing.T) {
 		require.Equal(t, txid, incomingFunds[0].Txid)
 	})
 
+	// In this test, we ensure that a tx with too many OP_RETURN outputs gets rejected.
+	// The server is configured with a max of 3 OP_RETURN outputs, so submitting 4 should fail.
+	t.Run("too many op return outputs", func(t *testing.T) {
+		ctx := t.Context()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(func() { arkSvc.Close() })
+
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		// Use alice's address script as the normal taproot output
+		addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		taprootPkScript, err := addr.GetPkScript()
+		require.NoError(t, err)
+
+		// Generate a random key for the sub-dust OP_RETURN outputs
+		randKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		subDustPkScript, err := script.SubDustScript(randKey.PubKey())
+		require.NoError(t, err)
+
+		const numOpRetOutputs = 4
+		const subDustAmount = int64(100)
+		taprootAmount := int64(vtxo.Amount) - numOpRetOutputs*subDustAmount
+
+		outputs := make([]*wire.TxOut, 0, numOpRetOutputs+1)
+		for range numOpRetOutputs {
+			outputs = append(outputs, &wire.TxOut{
+				Value:    subDustAmount,
+				PkScript: subDustPkScript,
+			})
+		}
+		outputs = append(outputs, &wire.TxOut{
+			Value:    taprootAmount,
+			PkScript: taprootPkScript,
+		})
+
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			outputs,
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := aliceWallet.SignTransaction(
+			ctx,
+			explorer,
+			encodedArkTx,
+		)
+		require.NoError(t, err)
+
+		txid, finalArkTx, signedCheckpoints, err := arkSvc.SubmitTx(
+			ctx, signedArkTx, encodedCheckpoints,
+		)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "tx has 4 OP_RETURN outputs")
+		require.Empty(t, txid)
+		require.Empty(t, finalArkTx)
+		require.Empty(t, signedCheckpoints)
+	})
+
 	// In this test, we ensure that a tx with a too big size gets rejected.
 	// TODO: move to unit tests and add also one for RegisterIntent
 	t.Run("invalid tx size", func(t *testing.T) {
@@ -2489,16 +2615,14 @@ func TestReactToFraud(t *testing.T) {
 
 			// make sure the vtxo of bob is not redeemed
 			// the checkpoint is not the bob's virtual tx
-			opt := &indexer.GetVtxosRequestOption{}
 			bobScript, err := script.P2TRScript(bobAddr.VtxoTapKey)
 			require.NoError(t, err)
 			require.NotEmpty(t, bobScript)
-			// nolint
-			opt.WithScripts([]string{hex.EncodeToString(bobScript)})
-			// nolint
-			opt.WithSpentOnly()
 
-			resp, err := indexerSvc.GetVtxos(ctx, *opt)
+			resp, err := indexerSvc.GetVtxos(ctx,
+				indexer.WithScripts([]string{hex.EncodeToString(bobScript)}),
+				indexer.WithSpentOnly(),
+			)
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			require.Len(t, resp.Vtxos, 1)
@@ -4638,6 +4762,106 @@ func TestAsset(t *testing.T) {
 
 		_, ok := aliceBalance.AssetBalances[assetId]
 		require.False(t, ok)
+	})
+
+	// This test ensures that an offchain tx can have both a regular asset output
+	// and a subdust output (multiple OP_RETURN in the same tx)
+	t.Run("asset and subdust", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+
+		faucetOffchain(t, alice, 0.002)
+
+		res, err := alice.IssueAsset(ctx, 5_000, nil, nil)
+		require.NoError(t, err)
+		assetId := res.IssuedAssets[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		_, bobAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+
+		// tx with a regular asset output greater than dust + a subdust output
+		_, err = alice.SendOffChain(ctx, []types.Receiver{
+			{To: bobAddr.Address, Amount: 400, Assets: []types.Asset{
+				{AssetId: assetId, Amount: 1_200},
+			}},
+			{To: bobAddr.Address, Amount: 100},
+		})
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		bobAssetVtxos := listVtxosWithAsset(t, bob, assetId)
+		require.Len(t, bobAssetVtxos, 1)
+		requireVtxoHasAsset(t, bobAssetVtxos[0], assetId, 1_200)
+	})
+
+	// This test ensures that an asset on a subdust output survives settlement
+	t.Run("asset subdust settle", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+
+		faucetOffchain(t, alice, 0.002)
+
+		res, err := alice.IssueAsset(ctx, 5_000, nil, nil)
+		require.NoError(t, err)
+		assetId := res.IssuedAssets[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		_, bobAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+
+		// send asset to Bob with a subdust sat amount (100 sats)
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To: bobAddr.Address, Amount: 100,
+			Assets: []types.Asset{{AssetId: assetId, Amount: 1_200}},
+		}})
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		requireVtxoHasAsset(t, listVtxosWithAsset(t, bob, assetId)[0], assetId, 1_200)
+
+		// send more to bob so he can settle
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingErr error
+		go func() {
+			_, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddr.Address)
+			wg.Done()
+		}()
+
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To: bobAddr.Address, Amount: 1000,
+		}})
+		require.NoError(t, err)
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
+
+		var aliceErr, bobErr error
+		wg = &sync.WaitGroup{}
+		wg.Go(func() { _, aliceErr = alice.Settle(ctx) })
+		wg.Go(func() { _, bobErr = bob.Settle(ctx) })
+		wg.Wait()
+		require.NoError(t, aliceErr)
+		require.NoError(t, bobErr)
+
+		time.Sleep(2 * time.Second)
+
+		// asset must survive settlement
+		bobBalance, err := bob.Balance(ctx)
+		require.NoError(t, err)
+		assetBalance, ok := bobBalance.AssetBalances[assetId]
+		require.True(t, ok)
+		require.Equal(t, 1_200, int(assetBalance))
 	})
 }
 

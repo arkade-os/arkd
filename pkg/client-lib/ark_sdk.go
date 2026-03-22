@@ -41,7 +41,7 @@ type ArkClient interface {
 		err error,
 	)
 	Balance(ctx context.Context) (*Balance, error)
-	ListVtxos(ctx context.Context) (spendable, spent []types.Vtxo, err error)
+	ListVtxos(ctx context.Context, opts ...ListVtxosOption) (spendable, spent []types.Vtxo, err error)
 	GetTransactionHistory(ctx context.Context) ([]types.Transaction, error)
 	NotifyIncomingFunds(ctx context.Context, address string) ([]types.Vtxo, error)
 	// ** Assets **
