@@ -531,23 +531,38 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 			vtxoMinOffchainTxAmount: 0,
 			wantOutputCount:         1,
 		},
-		// Extension OP_RETURN can have any value
+		// Extension OP_RETURN must have value == 0
+		{
+			description: "reject: extension OP_RETURN with non-zero value",
+			txOuts: []*wire.TxOut{
+				anchor,
+				{Value: 1000, PkScript: testExtensionScript(t)},
+			},
+			dust:                    testDust,
+			vtxoMaxAmount:           -1,
+			vtxoMinOffchainTxAmount: 0,
+			wantErr:                 true,
+			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
+			wantErrContains:         "extension OP_RETURN output",
+		},
+		{
+			description: "reject: extension OP_RETURN with value == 1",
+			txOuts: []*wire.TxOut{
+				anchor,
+				{Value: 1, PkScript: testExtensionScript(t)},
+			},
+			dust:                    testDust,
+			vtxoMaxAmount:           -1,
+			vtxoMinOffchainTxAmount: 0,
+			wantErr:                 true,
+			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
+			wantErrContains:         "extension OP_RETURN output",
+		},
 		{
 			description: "valid: extension OP_RETURN with zero value",
 			txOuts: []*wire.TxOut{
 				anchor,
 				{Value: 0, PkScript: testExtensionScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		{
-			description: "valid: extension OP_RETURN with non-zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testExtensionScript(t)},
 			},
 			dust:                    testDust,
 			vtxoMaxAmount:           -1,
