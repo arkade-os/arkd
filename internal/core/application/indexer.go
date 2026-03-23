@@ -21,9 +21,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -712,24 +710,6 @@ func (i *indexerService) validateIntentProof(
 		}
 	}
 
-	signedProof, err := i.signTransactionTapscript(intentForProof.Proof)
-	if err != nil {
-		return errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
-			WithMetadata(map[string]any{
-				"proof": proof.UnsignedTx.TxID(),
-			})
-	}
-	if err := intent.Verify(signedProof, intentForProof.Message); err != nil {
-		log.
-			WithField("signedProof", signedProof).
-			WithField("encodedMessage", intentForProof.Message).
-			Tracef("failed to verify intent proof: %s", err)
-		return errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
-			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
-				Message: intentForProof.Message,
-			})
-	}
 	return nil
 }
 
@@ -976,61 +956,4 @@ func (i *indexerService) validateAuthToken(authToken string) (Outpoint, bool, er
 	}
 
 	return outpoint, true, nil
-}
-
-// signTransactionTapscript signs all tapscript inputs of a PSBT using the indexer's private key.
-func (i *indexerService) signTransactionTapscript(partialTx string) (string, error) {
-	ptx, err := psbt.NewFromRawBytes(strings.NewReader(partialTx), true)
-	if err != nil {
-		return "", err
-	}
-
-	prevouts := make(map[wire.OutPoint]*wire.TxOut)
-	for inputIndex, input := range ptx.Inputs {
-		prevOutpoint := ptx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint
-		if input.WitnessUtxo != nil {
-			prevouts[prevOutpoint] = input.WitnessUtxo
-		}
-	}
-
-	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
-	txSigHashes := txscript.NewTxSigHashes(ptx.UnsignedTx, prevoutFetcher)
-
-	for inputIndex, input := range ptx.Inputs {
-		if input.WitnessUtxo == nil {
-			continue
-		}
-		if !txscript.IsPayToTaproot(input.WitnessUtxo.PkScript) {
-			continue
-		}
-		if len(input.TaprootLeafScript) == 0 {
-			continue
-		}
-
-		// Use the first leaf script — PSBT inputs in this context always have
-		// a single tapscript leaf (the VTXO covenant script).
-		tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
-
-		signature, err := txscript.RawTxInTapscriptSignature(
-			ptx.UnsignedTx, txSigHashes, inputIndex, input.WitnessUtxo.Value,
-			input.WitnessUtxo.PkScript, tapLeaf, input.SighashType, i.privkey,
-		)
-		if err != nil {
-			return "", err
-		}
-
-		leafHash := tapLeaf.TapHash()
-
-		ptx.Inputs[inputIndex].TaprootScriptSpendSig = append(
-			ptx.Inputs[inputIndex].TaprootScriptSpendSig,
-			&psbt.TaprootScriptSpendSig{
-				Signature:   signature[:64],
-				XOnlyPubKey: schnorr.SerializePubKey(i.privkey.PubKey()),
-				LeafHash:    leafHash[:],
-				SigHash:     input.SighashType,
-			},
-		)
-	}
-
-	return ptx.B64Encode()
 }
