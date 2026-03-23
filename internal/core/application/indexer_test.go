@@ -15,7 +15,7 @@ import (
 func newTestIndexer(privkey *btcec.PrivateKey) *indexerService {
 	return &indexerService{
 		privkey:      privkey,
-		signerPubkey: schnorr.SerializePubKey(privkey.PubKey()),
+		authPubkey: schnorr.SerializePubKey(privkey.PubKey()),
 		authTokenTTL: defaultAuthTokenTTL,
 	}
 }
@@ -121,7 +121,7 @@ func TestValidateAuthToken_WrongSigner(t *testing.T) {
 	// Create indexer with privkey1 for signing but privkey2's pubkey for validation
 	indexer2 := &indexerService{
 		privkey:      privkey1,
-		signerPubkey: schnorr.SerializePubKey(privkey2.PubKey()),
+		authPubkey: schnorr.SerializePubKey(privkey2.PubKey()),
 		authTokenTTL: defaultAuthTokenTTL,
 	}
 

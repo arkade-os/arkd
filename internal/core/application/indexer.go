@@ -91,7 +91,8 @@ type indexerService struct {
 	repoManager  ports.RepoManager
 	wallet       ports.WalletService
 	privkey      *btcec.PrivateKey
-	signerPubkey []byte
+	authPubkey   []byte // indexer's own key, used for auth token signing/verification
+	signerPubkey []byte // server's signing key, used for stripping arkd signatures from PSBTs
 	txExposure   string
 	authTokenTTL time.Duration
 }
@@ -100,6 +101,7 @@ func NewIndexerService(
 	repoManager ports.RepoManager,
 	wallet ports.WalletService,
 	privkey *btcec.PrivateKey,
+	signerPubkey *btcec.PublicKey,
 	txExposure string,
 	authTokenExpirySec int64,
 ) (IndexerService, error) {
@@ -123,7 +125,10 @@ func NewIndexerService(
 		authTokenTTL: ttl,
 	}
 	if privkey != nil {
-		svc.signerPubkey = schnorr.SerializePubKey(privkey.PubKey())
+		svc.authPubkey = schnorr.SerializePubKey(privkey.PubKey())
+	}
+	if signerPubkey != nil {
+		svc.signerPubkey = schnorr.SerializePubKey(signerPubkey)
 	}
 	return svc, nil
 }
@@ -337,6 +342,8 @@ func (i *indexerService) GetVtxoChain(
 	authToken := ""
 
 	switch TxExposure(i.txExposure) {
+	case TxExposurePublic:
+		// ignore intent, return chain without auth token
 	case TxExposureWithheld:
 		// validate the intent proof/message to allow access to the full chain
 		if err = i.validateIntentProof(ctx, vtxoKey, intentForProof); err != nil {
@@ -371,7 +378,16 @@ func (i *indexerService) GetVtxoChain(
 func (i *indexerService) GetVtxoChainByOutpoint(
 	ctx context.Context, vtxoKey Outpoint, page *Page,
 ) (*VtxoChainResp, error) {
-	return i.getVtxoChain(ctx, vtxoKey, page)
+	switch TxExposure(i.txExposure) {
+	case TxExposurePublic, TxExposureWithheld:
+		// public: no auth needed
+		// withheld: allow without intent, but no auth token is returned
+		return i.getVtxoChain(ctx, vtxoKey, page)
+	case TxExposurePrivate:
+		return nil, fmt.Errorf("intent is required for private exposure")
+	default:
+		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
+	}
 }
 
 func (i *indexerService) getVtxoChain(
@@ -717,6 +733,8 @@ func (i *indexerService) GetVirtualTxs(
 	ctx context.Context, authToken string, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
 	switch TxExposure(i.txExposure) {
+	case TxExposurePublic:
+		return i.getVirtualTxs(ctx, txids, page)
 	case TxExposureWithheld:
 		isValid := false
 		var err error
@@ -771,7 +789,24 @@ func (i *indexerService) GetVirtualTxs(
 func (i *indexerService) GetVirtualTxsByIds(
 	ctx context.Context, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
-	return i.getVirtualTxs(ctx, txids, page)
+	switch TxExposure(i.txExposure) {
+	case TxExposurePublic:
+		return i.getVirtualTxs(ctx, txids, page)
+	case TxExposureWithheld:
+		// allow without auth token, but strip arkd signatures
+		resp, err := i.getVirtualTxs(ctx, txids, page)
+		if err != nil {
+			return nil, err
+		}
+		if err := i.stripArkdSignatures(resp.Txs); err != nil {
+			return nil, err
+		}
+		return resp, nil
+	case TxExposurePrivate:
+		return nil, fmt.Errorf("auth token is required for private exposure")
+	default:
+		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
+	}
 }
 
 func (i *indexerService) getVirtualTxs(
@@ -940,7 +975,7 @@ func (i *indexerService) validateAuthToken(authToken string) (Outpoint, bool, er
 		return Outpoint{}, false, fmt.Errorf("failed to parse signature: %w", err)
 	}
 
-	pubkey, err := schnorr.ParsePubKey(i.signerPubkey)
+	pubkey, err := schnorr.ParsePubKey(i.authPubkey)
 	if err != nil {
 		return Outpoint{}, false, fmt.Errorf("failed to parse signer pubkey: %w", err)
 	}

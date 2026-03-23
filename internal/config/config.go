@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -140,7 +141,9 @@ type Config struct {
 	IndexerTxExposure      string
 	IndexerAuthTokenExpiry int64
 	// IndexerSigningKey is a hex-encoded private key used by the indexer to sign
-	// auth tokens and intent proofs. SENSITIVE: must never be logged.
+	// auth tokens. This is separate from the server's main signing key.
+	// Rotating this key invalidates all outstanding auth tokens.
+	// SENSITIVE: must never be logged.
 	IndexerSigningKey    string
 	MaxConcurrentStreams uint32
 
@@ -711,6 +714,11 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 			return nil, err
 		}
 	}
+	if c.signer == nil {
+		if err := c.signerService(); err != nil {
+			return nil, err
+		}
+	}
 
 	var privkey *btcec.PrivateKey
 	if c.IndexerSigningKey != "" {
@@ -721,8 +729,14 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 		privkey, _ = btcec.PrivKeyFromBytes(keyBytes)
 	}
 
+	signerPubkey, err := c.signer.GetPubkey(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server signing pubkey: %w", err)
+	}
+
 	return application.NewIndexerService(
-		c.repo, c.wallet, privkey, c.IndexerTxExposure, c.IndexerAuthTokenExpiry,
+		c.repo, c.wallet, privkey, signerPubkey,
+		c.IndexerTxExposure, c.IndexerAuthTokenExpiry,
 	)
 }
 

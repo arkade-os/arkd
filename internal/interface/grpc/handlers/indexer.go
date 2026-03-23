@@ -381,14 +381,7 @@ func (e *indexerService) GetVirtualTxs(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	var resp *application.VirtualTxsResp
-
-	authToken := request.GetAuthToken()
-	if authToken != "" {
-		resp, err = e.indexerSvc.GetVirtualTxs(ctx, authToken, txids, page)
-	} else {
-		resp, err = e.indexerSvc.GetVirtualTxsByIds(ctx, txids, page)
-	}
+	resp, err := e.indexerSvc.GetVirtualTxs(ctx, request.GetAuthToken(), txids, page)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
