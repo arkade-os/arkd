@@ -79,30 +79,34 @@ func TestAuthToken(t *testing.T) {
 
 	indexer := newTestIndexer(privkey)
 
-	for _, tc := range f.AuthToken.Valid {
-		t.Run(tc.Name, func(t *testing.T) {
-			outpoint := Outpoint{
-				Txid: tc.Outpoint.Txid,
-				VOut: tc.Outpoint.Vout,
-			}
+	t.Run("valid", func(t *testing.T) {
+		for _, tc := range f.AuthToken.Valid {
+			t.Run(tc.Name, func(t *testing.T) {
+				outpoint := Outpoint{
+					Txid: tc.Outpoint.Txid,
+					VOut: tc.Outpoint.Vout,
+				}
 
-			token, err := indexer.createAuthTokenWithTimestamp(outpoint, fixedTimestamp)
-			require.NoError(t, err)
-			require.Equal(t, tc.ExpectedToken, token)
+				token, err := indexer.createAuthTokenWithTimestamp(outpoint, fixedTimestamp)
+				require.NoError(t, err)
+				require.Equal(t, tc.ExpectedToken, token)
 
-			_, valid, err := indexer.validateAuthToken(token)
-			require.NoError(t, err)
-			require.True(t, valid, "token validation mismatch")
-		})
-	}
+				_, valid, err := indexer.validateAuthToken(token)
+				require.NoError(t, err)
+				require.True(t, valid, "token validation mismatch")
+			})
+		}
+	})
 
-	for _, tc := range f.AuthToken.Invalid {
-		t.Run(tc.Name, func(t *testing.T) {
-			_, valid, err := indexer.validateAuthToken(tc.Token)
-			require.NoError(t, err)
-			require.False(t, valid)
-		})
-	}
+	t.Run("invalid", func(t *testing.T) {
+		for _, tc := range f.AuthToken.Invalid {
+			t.Run(tc.Name, func(t *testing.T) {
+				_, valid, err := indexer.validateAuthToken(tc.Token)
+				require.NoError(t, err)
+				require.False(t, valid)
+			})
+		}
+	})
 }
 
 func TestValidateAuthToken_WrongSigner(t *testing.T) {

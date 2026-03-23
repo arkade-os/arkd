@@ -66,13 +66,22 @@ type IndexerService interface {
 	) (*GetVtxosResp, error)
 	GetVtxoChain(
 		ctx context.Context,
-		vtxoKey Outpoint,
 		intent Intent,
+		page *Page,
+	) (*VtxoChainResp, error)
+	GetVtxoChainByOutpoint(
+		ctx context.Context,
+		vtxoKey Outpoint,
 		page *Page,
 	) (*VtxoChainResp, error)
 	GetVirtualTxs(
 		ctx context.Context,
 		authToken string,
+		txids []string,
+		page *Page,
+	) (*VirtualTxsResp, error)
+	GetVirtualTxsByIds(
+		ctx context.Context,
 		txids []string,
 		page *Page,
 	) (*VirtualTxsResp, error)
@@ -320,9 +329,9 @@ func (i *indexerService) GetVtxosByOutpoint(
 }
 
 func (i *indexerService) GetVtxoChain(
-	ctx context.Context, vtxoKey Outpoint, intentForProof Intent, page *Page,
+	ctx context.Context, intentForProof Intent, page *Page,
 ) (*VtxoChainResp, error) {
-	chain, err := i.buildVtxoChain(ctx, vtxoKey)
+	vtxoKey, err := i.extractOutpointFromIntent(intentForProof)
 	if err != nil {
 		return nil, err
 	}
@@ -330,10 +339,9 @@ func (i *indexerService) GetVtxoChain(
 	authToken := ""
 
 	switch TxExposure(i.txExposure) {
-	case TxExposurePublic: // no need to do anything
 	case TxExposureWithheld:
 		// validate the intent proof/message to allow access to the full chain
-		if err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
+		if err = i.validateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
 			// withheld: swallow error, proceed without auth token
 			break
 		}
@@ -343,7 +351,7 @@ func (i *indexerService) GetVtxoChain(
 		}
 	case TxExposurePrivate:
 		// validate the intent proof/message to allow access to the full chain
-		if err = i.ValidateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
+		if err = i.validateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
 			return nil, err
 		}
 		authToken, err = i.createAuthToken(vtxoKey)
@@ -354,11 +362,57 @@ func (i *indexerService) GetVtxoChain(
 		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
 	}
 
+	resp, err := i.getVtxoChain(ctx, vtxoKey, page)
+	if err != nil {
+		return nil, err
+	}
+	resp.AuthToken = authToken
+	return resp, nil
+}
+
+func (i *indexerService) GetVtxoChainByOutpoint(
+	ctx context.Context, vtxoKey Outpoint, page *Page,
+) (*VtxoChainResp, error) {
+	return i.getVtxoChain(ctx, vtxoKey, page)
+}
+
+func (i *indexerService) getVtxoChain(
+	ctx context.Context, vtxoKey Outpoint, page *Page,
+) (*VtxoChainResp, error) {
+	chain, err := i.buildVtxoChain(ctx, vtxoKey)
+	if err != nil {
+		return nil, err
+	}
+
 	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
 	return &VtxoChainResp{
-		Chain:     txChain,
-		Page:      pageResp,
-		AuthToken: authToken,
+		Chain: txChain,
+		Page:  pageResp,
+	}, nil
+}
+
+// extractOutpointFromIntent parses the intent proof and returns the first vtxo outpoint.
+func (i *indexerService) extractOutpointFromIntent(
+	intentForProof Intent,
+) (Outpoint, error) {
+	if intentForProof.Proof == "" {
+		return Outpoint{}, fmt.Errorf("intent proof is required")
+	}
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(intentForProof.Proof), true)
+	if err != nil {
+		return Outpoint{}, fmt.Errorf("failed to parse proof tx: %s", err)
+	}
+	if ptx == nil {
+		return Outpoint{}, fmt.Errorf("proof PSBT is nil")
+	}
+	proof := intent.Proof{Packet: *ptx}
+	outpoints := proof.GetOutpoints()
+	if len(outpoints) == 0 {
+		return Outpoint{}, fmt.Errorf("no outpoints found in intent proof")
+	}
+	return Outpoint{
+		Txid: outpoints[0].Hash.String(),
+		VOut: outpoints[0].Index,
 	}, nil
 }
 
@@ -519,7 +573,7 @@ func (i *indexerService) validateTxidsAgainstChain(
 }
 
 // similar flow in DeleteIntentsByProof inside internal/core/application/service.go
-func (i *indexerService) ValidateIntentWithProof(
+func (i *indexerService) validateIntentWithProof(
 	ctx context.Context,
 	vtxoKey Outpoint,
 	intentForProof Intent,
@@ -682,24 +736,10 @@ func (i *indexerService) ValidateIntentWithProof(
 func (i *indexerService) GetVirtualTxs(
 	ctx context.Context, authToken string, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
-	var err error
-	var txs []string
-	var virtualTxs []string
-	var reps PageResp
-	// depending on the exposure level, we may need to validate the auth token and/or remove arkd signatures from the virtual txs.
-	// We can prevent griefing attacks by stripping arkd signatures from the virtual txs for users without valid auth tokens,
-	//  as they won't be able to construct the full broadcastable transaction without arkd signatures.
-	// turn into TxExposure enum
 	switch TxExposure(i.txExposure) {
-	case TxExposurePublic:
-		// no need to validate auth
-		txs, err = i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
-		if err != nil {
-			return nil, err
-		}
-		virtualTxs, reps = paginate(txs, page, maxPageSizeVirtualTxs)
 	case TxExposureWithheld:
 		isValid := false
+		var err error
 		// optional auth token can be passed, if it was lets check if valid
 		if authToken != "" {
 			var tokenOutpoint Outpoint
@@ -713,40 +753,20 @@ func (i *indexerService) GetVirtualTxs(
 				}
 			}
 		}
-		txs, err = i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
+
+		resp, err := i.getVirtualTxs(ctx, txids, page)
 		if err != nil {
 			return nil, err
 		}
-		virtualTxs, reps = paginate(txs, page, maxPageSizeVirtualTxs)
 
 		// if no auth token or invalid auth token, remove from each PSBT the signature of arkd
 		// so user cannot construct the full broadcastable txn
 		if !isValid {
-			for idx := range virtualTxs {
-				ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[idx]), true)
-				if err != nil {
-					return nil, fmt.Errorf("failed to deserialize virtual tx: %s", err)
-				}
-
-				// remove arkd taproot script spend signatures from each input
-				for j := range ptx.Inputs {
-					newSigs := make([]*psbt.TaprootScriptSpendSig, 0)
-					for _, sig := range ptx.Inputs[j].TaprootScriptSpendSig {
-						// if the signature is not from arkd, keep it, otherwise remove it
-						if !bytes.Equal(sig.XOnlyPubKey, i.signerPubkey) {
-							newSigs = append(newSigs, sig)
-						}
-					}
-					ptx.Inputs[j].TaprootScriptSpendSig = newSigs
-				}
-
-				var b bytes.Buffer
-				if err := ptx.Serialize(&b); err != nil {
-					return nil, fmt.Errorf("failed to serialize virtual tx: %s", err)
-				}
-				virtualTxs[idx] = base64.StdEncoding.EncodeToString(b.Bytes())
+			if err := i.stripArkdSignatures(resp.Txs); err != nil {
+				return nil, err
 			}
 		}
+		return resp, nil
 	case TxExposurePrivate:
 		if authToken == "" {
 			return nil, fmt.Errorf("auth token is required for private exposure")
@@ -762,19 +782,57 @@ func (i *indexerService) GetVirtualTxs(
 		if err := i.validateTxidsAgainstChain(ctx, tokenOutpoint, txids); err != nil {
 			return nil, err
 		}
-		txs, err = i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
-		if err != nil {
-			return nil, err
-		}
-		virtualTxs, reps = paginate(txs, page, maxPageSizeVirtualTxs)
+		return i.getVirtualTxs(ctx, txids, page)
 	default:
 		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
 	}
+}
 
+func (i *indexerService) GetVirtualTxsByIds(
+	ctx context.Context, txids []string, page *Page,
+) (*VirtualTxsResp, error) {
+	return i.getVirtualTxs(ctx, txids, page)
+}
+
+func (i *indexerService) getVirtualTxs(
+	ctx context.Context, txids []string, page *Page,
+) (*VirtualTxsResp, error) {
+	txs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
+	if err != nil {
+		return nil, err
+	}
+	virtualTxs, reps := paginate(txs, page, maxPageSizeVirtualTxs)
 	return &VirtualTxsResp{
 		Txs:  virtualTxs,
 		Page: reps,
 	}, nil
+}
+
+func (i *indexerService) stripArkdSignatures(virtualTxs []string) error {
+	for idx := range virtualTxs {
+		ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[idx]), true)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize virtual tx: %s", err)
+		}
+
+		// remove arkd taproot script spend signatures from each input
+		for j := range ptx.Inputs {
+			newSigs := make([]*psbt.TaprootScriptSpendSig, 0)
+			for _, sig := range ptx.Inputs[j].TaprootScriptSpendSig {
+				if !bytes.Equal(sig.XOnlyPubKey, i.signerPubkey) {
+					newSigs = append(newSigs, sig)
+				}
+			}
+			ptx.Inputs[j].TaprootScriptSpendSig = newSigs
+		}
+
+		var b bytes.Buffer
+		if err := ptx.Serialize(&b); err != nil {
+			return fmt.Errorf("failed to serialize virtual tx: %s", err)
+		}
+		virtualTxs[idx] = base64.StdEncoding.EncodeToString(b.Bytes())
+	}
+	return nil
 }
 
 func (i *indexerService) GetBatchSweepTxs(

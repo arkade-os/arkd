@@ -316,25 +316,26 @@ func (e *indexerService) GetVtxos(
 func (e *indexerService) GetVtxoChain(
 	ctx context.Context, request *arkv1.GetVtxoChainRequest,
 ) (*arkv1.GetVtxoChainResponse, error) {
-	outpoint, err := parseOutpoint(request.GetOutpoint())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	page, err := parsePage(request.GetPage())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	intent := application.Intent{}
-	// intent is optional depending on arkd config for indexer exposure
+	var resp *application.VtxoChainResp
+
 	if request.GetIntent() != nil {
-		intent = application.Intent{
+		intent := application.Intent{
 			Proof:   request.GetIntent().GetProof(),
 			Message: request.GetIntent().GetMessage(),
 		}
+		resp, err = e.indexerSvc.GetVtxoChain(ctx, intent, page)
+	} else {
+		outpoint, parseErr := parseOutpoint(request.GetOutpoint())
+		if parseErr != nil {
+			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
+		}
+		resp, err = e.indexerSvc.GetVtxoChainByOutpoint(ctx, *outpoint, page)
 	}
-
-	resp, err := e.indexerSvc.GetVtxoChain(ctx, *outpoint, intent, page)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
@@ -380,7 +381,14 @@ func (e *indexerService) GetVirtualTxs(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resp, err := e.indexerSvc.GetVirtualTxs(ctx, request.GetAuthToken(), txids, page)
+	var resp *application.VirtualTxsResp
+
+	authToken := request.GetAuthToken()
+	if authToken != "" {
+		resp, err = e.indexerSvc.GetVirtualTxs(ctx, authToken, txids, page)
+	} else {
+		resp, err = e.indexerSvc.GetVirtualTxsByIds(ctx, txids, page)
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
