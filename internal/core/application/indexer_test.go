@@ -860,6 +860,32 @@ func TestGetVtxoChain_PageSizeRespected(t *testing.T) {
 	require.NotEmpty(t, resp.NextPageToken)
 }
 
+// matchOutpoints returns a mock.MatchedBy matcher that matches a []domain.Outpoint
+// argument containing exactly the given outpoints, regardless of order.
+func matchOutpoints(expected ...domain.Outpoint) interface{} {
+	sorted := make([]string, len(expected))
+	for i, op := range expected {
+		sorted[i] = op.String()
+	}
+	sort.Strings(sorted)
+	return mock.MatchedBy(func(ops []domain.Outpoint) bool {
+		if len(ops) != len(sorted) {
+			return false
+		}
+		cp := make([]string, len(ops))
+		for i, op := range ops {
+			cp[i] = op.String()
+		}
+		sort.Strings(cp)
+		for i := range cp {
+			if cp[i] != sorted[i] {
+				return false
+			}
+		}
+		return true
+	})
+}
+
 // matchIDs returns a mock.MatchedBy matcher that matches a []string argument
 // containing exactly the given IDs, regardless of order. This avoids flakes from
 // non-deterministic map iteration in preloadVtxosByMarkers.
@@ -1139,4 +1165,250 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 	// Marker-based preload: 5 bulk fetches + 5 marker lookups = 10 total queries.
 	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", markersCount)
 	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", markersCount)
+}
+
+// TestGetVtxoChain_Fanout verifies that a VTXO with 2 checkpoints pointing
+// to different parents correctly traverses both branches.
+//
+//	A --(cp1)--> B
+//	A --(cp2)--> C
+func TestGetVtxoChain_Fanout(t *testing.T) {
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	ctx := context.Background()
+
+	txidA := strings.Repeat("a", 64)
+	txidB := strings.Repeat("b", 64)
+	txidC := strings.Repeat("c", 64)
+
+	vtxoA := domain.Vtxo{Outpoint: domain.Outpoint{Txid: txidA, VOut: 0}, Preconfirmed: true, ExpiresAt: 1000}
+	vtxoB := domain.Vtxo{Outpoint: domain.Outpoint{Txid: txidB, VOut: 0}, Preconfirmed: true, ExpiresAt: 2000}
+	vtxoC := domain.Vtxo{Outpoint: domain.Outpoint{Txid: txidC, VOut: 0}, Preconfirmed: true, ExpiresAt: 3000}
+
+	// Preload frontier fetch
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{vtxoA.Outpoint}).
+		Return([]domain.Vtxo{vtxoA}, nil)
+	// ensureVtxosCached for B and C (order-independent)
+	vtxoRepo.On("GetVtxos", ctx, matchOutpoints(vtxoB.Outpoint, vtxoC.Outpoint)).
+		Return([]domain.Vtxo{vtxoB, vtxoC}, nil)
+
+	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+		Return([]domain.Vtxo{}, nil).Maybe()
+
+	// A has 2 checkpoints: one to B, one to C
+	cpB := makeCheckpointPSBT(t, txidB, 0)
+	cpC := makeCheckpointPSBT(t, txidC, 0)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB, "cp-c": cpC}}, nil)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+
+	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	require.NoError(t, err)
+
+	// A: ark + 2 checkpoints = 3. B: ark = 1. C: ark = 1. Total: 5.
+	require.Equal(t, 5, len(resp.Chain))
+
+	// A is always the first ark tx
+	require.Equal(t, txidA, resp.Chain[0].Txid)
+	require.Equal(t, IndexerChainedTxTypeArk, resp.Chain[0].Type)
+	require.Len(t, resp.Chain[0].Spends, 2)
+
+	// Count chain item types
+	arkCount, cpCount := 0, 0
+	for _, item := range resp.Chain {
+		switch item.Type {
+		case IndexerChainedTxTypeArk:
+			arkCount++
+		case IndexerChainedTxTypeCheckpoint:
+			cpCount++
+		}
+	}
+	require.Equal(t, 3, arkCount)
+	require.Equal(t, 2, cpCount)
+}
+
+// TestGetVtxoChain_Diamond verifies that two paths converging on the same
+// ancestor VTXO only process that ancestor once.
+//
+//	A --(cp1)--> B --(cp)--> D
+//	A --(cp2)--> C --(cp)--> D  (same D)
+func TestGetVtxoChain_Diamond(t *testing.T) {
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	ctx := context.Background()
+
+	txidA := strings.Repeat("a", 64)
+	txidB := strings.Repeat("b", 64)
+	txidC := strings.Repeat("c", 64)
+	txidD := strings.Repeat("d", 64)
+
+	vtxoA := domain.Vtxo{Outpoint: domain.Outpoint{Txid: txidA, VOut: 0}, Preconfirmed: true, ExpiresAt: 1000}
+	vtxoB := domain.Vtxo{Outpoint: domain.Outpoint{Txid: txidB, VOut: 0}, Preconfirmed: true, ExpiresAt: 2000}
+	vtxoC := domain.Vtxo{Outpoint: domain.Outpoint{Txid: txidC, VOut: 0}, Preconfirmed: true, ExpiresAt: 3000}
+	vtxoD := domain.Vtxo{Outpoint: domain.Outpoint{Txid: txidD, VOut: 0}, Preconfirmed: true, ExpiresAt: 4000}
+
+	// Preload frontier
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{vtxoA.Outpoint}).
+		Return([]domain.Vtxo{vtxoA}, nil)
+	// B and C fetched together (order varies due to map iteration)
+	vtxoRepo.On("GetVtxos", ctx, matchOutpoints(vtxoB.Outpoint, vtxoC.Outpoint)).
+		Return([]domain.Vtxo{vtxoB, vtxoC}, nil)
+	// D appears as [D, D] because both B and C point to it before D is visited.
+	vtxoRepo.On("GetVtxos", ctx, mock.MatchedBy(func(ops []domain.Outpoint) bool {
+		for _, op := range ops {
+			if op.String() != vtxoD.Outpoint.String() {
+				return false
+			}
+		}
+		return len(ops) > 0
+	})).Return([]domain.Vtxo{vtxoD}, nil)
+
+	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+		Return([]domain.Vtxo{}, nil).Maybe()
+
+	// A fans out to B and C
+	cpB := makeCheckpointPSBT(t, txidB, 0)
+	cpC := makeCheckpointPSBT(t, txidC, 0)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB, "cp-c": cpC}}, nil)
+
+	// B converges to D
+	cpBD := makeCheckpointPSBT(t, txidD, 0)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-bd": cpBD}}, nil)
+
+	// C converges to same D
+	cpCD := makeCheckpointPSBT(t, txidD, 0)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-cd": cpCD}}, nil)
+
+	// D is terminal
+	offchainTxRepo.On("GetOffchainTx", ctx, txidD).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+
+	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	require.NoError(t, err)
+
+	// A: ark + 2cp = 3. B: ark + 1cp = 2. C: ark + 1cp = 2. D: ark = 1. Total: 8.
+	require.Equal(t, 8, len(resp.Chain))
+
+	// D must appear exactly once despite convergence from B and C.
+	dCount := 0
+	for _, item := range resp.Chain {
+		if item.Txid == txidD {
+			dCount++
+		}
+	}
+	require.Equal(t, 1, dCount, "converged VTXO D should appear exactly once")
+}
+
+// TestGetVtxoChain_MarkerBoundaryStart verifies that a chain starting exactly
+// at marker boundary depth 0 preloads correctly (no parents to walk).
+func TestGetVtxoChain_MarkerBoundaryStart(t *testing.T) {
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	ctx := context.Background()
+
+	txidA := strings.Repeat("a", 64)
+	txidB := strings.Repeat("b", 64)
+
+	vtxoA := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: txidA, VOut: 0}, Preconfirmed: true,
+		ExpiresAt: 1000, MarkerIDs: []string{"m-0"},
+	}
+	vtxoB := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: txidB, VOut: 0}, Preconfirmed: true,
+		ExpiresAt: 2000, MarkerIDs: []string{"m-0"},
+	}
+
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{vtxoA.Outpoint}).
+		Return([]domain.Vtxo{vtxoA}, nil)
+
+	// Preload: marker m-0 at depth 0 with no parents.
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("m-0")).
+		Return([]domain.Vtxo{vtxoA, vtxoB}, nil)
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("m-0")).
+		Return([]domain.Marker{
+			{ID: "m-0", Depth: 0, ParentMarkerIDs: nil},
+		}, nil)
+	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+		Return([]domain.Vtxo{}, nil).Maybe()
+
+	cpB := makeCheckpointPSBT(t, txidB, 0)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+
+	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	require.NoError(t, err)
+	require.Equal(t, 3, len(resp.Chain)) // A(ark) + cp + B(ark)
+
+	// Both VTXOs were preloaded via marker — only the frontier fetch needed.
+	vtxoRepo.AssertNumberOfCalls(t, "GetVtxos", 1)
+}
+
+// TestGetVtxoChain_OverlappingMarkers verifies correct deduplication when a
+// VTXO has multiple markers and one marker is both directly attached AND
+// a parent of another marker.
+//
+//	A (markers: m-a, m-b) -> B (marker: m-b) -> C (no markers)
+//	m-a has parent m-b, so m-b is already visited when discovered as parent.
+func TestGetVtxoChain_OverlappingMarkers(t *testing.T) {
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	ctx := context.Background()
+
+	txidA := strings.Repeat("a", 64)
+	txidB := strings.Repeat("b", 64)
+	txidC := strings.Repeat("c", 64)
+
+	vtxoA := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: txidA, VOut: 0}, Preconfirmed: true,
+		ExpiresAt: 1000, MarkerIDs: []string{"m-a", "m-b"},
+	}
+	vtxoB := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: txidB, VOut: 0}, Preconfirmed: true,
+		ExpiresAt: 2000, MarkerIDs: []string{"m-b"},
+	}
+	vtxoC := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: txidC, VOut: 0}, Preconfirmed: true,
+		ExpiresAt: 3000,
+	}
+
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{vtxoA.Outpoint}).
+		Return([]domain.Vtxo{vtxoA}, nil)
+
+	// Preload: m-a and m-b fetched together. m-a's parent m-b is already visited.
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("m-a", "m-b")).
+		Return([]domain.Vtxo{vtxoA, vtxoB}, nil)
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("m-a", "m-b")).
+		Return([]domain.Marker{
+			{ID: "m-a", Depth: 200, ParentMarkerIDs: []string{"m-b"}},
+			{ID: "m-b", Depth: 100, ParentMarkerIDs: nil},
+		}, nil)
+	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+		Return([]domain.Vtxo{}, nil).Maybe()
+
+	// C not in any marker group — cache miss triggers DB fetch.
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{vtxoC.Outpoint}).
+		Return([]domain.Vtxo{vtxoC}, nil)
+
+	cpB := makeCheckpointPSBT(t, txidB, 0)
+	cpC := makeCheckpointPSBT(t, txidC, 0)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-c": cpC}}, nil)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+
+	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	require.NoError(t, err)
+	require.Equal(t, 5, len(resp.Chain))
+
+	// 1 preload frontier + 1 for C (cache miss). A and B were preloaded via markers.
+	vtxoRepo.AssertNumberOfCalls(t, "GetVtxos", 2)
+	// Only 1 batch of marker fetches (m-a + m-b together; m-b's parent already visited).
+	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
+	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 1)
 }
