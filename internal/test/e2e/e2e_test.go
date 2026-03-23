@@ -2639,8 +2639,11 @@ func TestSweep(t *testing.T) {
 	// This test ensures the server is capable of sweeping a batch output once
 	// the timelock to claim the liquidity back expires
 	t.Run("batch", func(t *testing.T) {
-		alice := setupArkSDK(t)
-		defer alice.Stop()
+		alice, transport := setupArkSDKWithTransport(t)
+		t.Cleanup(func() {
+			alice.Stop()
+			transport.Close()
+		})
 
 		ctx := t.Context()
 
@@ -2668,12 +2671,48 @@ func TestSweep(t *testing.T) {
 		require.Len(t, incominFunds, 1)
 		vtxo := incominFunds[0]
 
+		// open transaction stream before triggering sweep
+		// we'll listen to it in background in order to catch the sweep event
+		streamCtx, streamCancel := context.WithCancel(ctx)
+		t.Cleanup(streamCancel)
+
+		txStream, closeStream, err := transport.GetTransactionsStream(streamCtx)
+		require.NoError(t, err)
+		t.Cleanup(closeStream)
+
+		var sweepEvent *client.TxNotification
+		sweepCh := make(chan *client.TxNotification, 1)
+		go func() {
+			for ev := range txStream {
+				if ev.SweepTx == nil {
+					continue
+				}
+				for _, swept := range ev.SweepTx.SweptVtxos {
+					if swept.Txid == vtxo.Txid && swept.VOut == vtxo.VOut {
+						sweepCh <- ev.SweepTx
+						return
+					}
+				}
+			}
+		}()
+
 		// Generate 30 blocks to expire the batch output
 		err = generateBlocks(30)
 		require.NoError(t, err)
 
-		// Wait for server to process the sweep
-		time.Sleep(20 * time.Second)
+		// wait for sweep event from the stream
+		select {
+		case sweepEvent = <-sweepCh:
+		case <-time.After(40 * time.Second):
+			t.Fatal("timed out waiting for sweep tx event on stream")
+		}
+
+		require.NotEmpty(t, sweepEvent.Txid)
+		require.NotEmpty(t, sweepEvent.Tx)
+		require.NotEmpty(t, sweepEvent.SweptVtxos)
+
+		// give time to indexer to update its state
+		time.Sleep(5 * time.Second)
 
 		spendable, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
