@@ -341,7 +341,7 @@ func (i *indexerService) GetVtxoChain(
 	switch TxExposure(i.txExposure) {
 	case TxExposureWithheld:
 		// validate the intent proof/message to allow access to the full chain
-		if err = i.validateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
+		if err = i.validateIntentProof(ctx, vtxoKey, intentForProof); err != nil {
 			// withheld: swallow error, proceed without auth token
 			break
 		}
@@ -351,7 +351,7 @@ func (i *indexerService) GetVtxoChain(
 		}
 	case TxExposurePrivate:
 		// validate the intent proof/message to allow access to the full chain
-		if err = i.validateIntentWithProof(ctx, vtxoKey, intentForProof); err != nil {
+		if err = i.validateIntentProof(ctx, vtxoKey, intentForProof); err != nil {
 			return nil, err
 		}
 		authToken, err = i.createAuthToken(vtxoKey)
@@ -573,7 +573,7 @@ func (i *indexerService) validateTxidsAgainstChain(
 }
 
 // similar flow in DeleteIntentsByProof inside internal/core/application/service.go
-func (i *indexerService) validateIntentWithProof(
+func (i *indexerService) validateIntentProof(
 	ctx context.Context,
 	vtxoKey Outpoint,
 	intentForProof Intent,
