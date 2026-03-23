@@ -1749,13 +1749,6 @@ func (s *service) RegisterIntent(
 				)
 			}
 
-			if output.Value != 0 {
-				return "", errors.INVALID_INTENT_PSBT.New(
-					"extension output #%d has non-zero value (%d)",
-					outputIndex, output.Value,
-				)
-			}
-
 			ext, err = extension.NewExtensionFromBytes(output.PkScript)
 			if err != nil {
 				return "", errors.INVALID_INTENT_PROOF.New(
@@ -4282,13 +4275,6 @@ func validateOffchainTxOutputs(
 			}
 			foundExtension = true
 
-			if out.Value != 0 {
-				return nil, nil, errors.MALFORMED_ARK_TX.New(
-					"extension OP_RETURN output #%d has non-zero value (%d)",
-					outIndex, out.Value,
-				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-			}
-
 			outputs = append(outputs, out)
 
 			var err error
@@ -4310,6 +4296,16 @@ func validateOffchainTxOutputs(
 						"subdust OP_RETURN output #%d has value (%d) >= dust limit (%d)",
 						outIndex, out.Value, dust,
 					).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+				}
+				if out.Value < vtxoMinOffchainTxAmount {
+					return nil, nil, errors.AMOUNT_TOO_LOW.New(
+						"output #%d amount is lower than min vtxo amount: %d",
+						outIndex, vtxoMinOffchainTxAmount,
+					).WithMetadata(errors.AmountTooLowMetadata{
+						OutputIndex: outIndex,
+						Amount:      int(out.Value),
+						MinAmount:   int(vtxoMinOffchainTxAmount),
+					})
 				}
 				outputs = append(outputs, out)
 				continue

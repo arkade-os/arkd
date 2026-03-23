@@ -379,9 +379,9 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 			wantErrCode:             errors.AMOUNT_TOO_LOW.Code,
 			wantErrContains:         "below dust limit",
 		},
-		// Subdust outputs skip min/max amount checks
+		// Subdust outputs are subject to min amount check
 		{
-			description: "valid: subdust output is not subject to min amount check",
+			description: "reject: subdust output below min amount",
 			txOuts: []*wire.TxOut{
 				anchor,
 				{Value: 100, PkScript: testSubdustScript(t)},
@@ -389,7 +389,10 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 			dust:                    testDust,
 			vtxoMaxAmount:           -1,
 			vtxoMinOffchainTxAmount: 1000,
-			wantOutputCount:         1,
+			wantErr:                 true,
+			wantErrCode:             errors.AMOUNT_TOO_LOW.Code,
+			wantErrContains:         "lower than min vtxo amount",
+			wantAmount:              100,
 		},
 		{
 			description: "valid: anchor only, no other outputs",
@@ -528,38 +531,23 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 			vtxoMinOffchainTxAmount: 0,
 			wantOutputCount:         1,
 		},
-		// Extension OP_RETURN must have value == 0
-		{
-			description: "reject: extension OP_RETURN with non-zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testExtensionScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "extension OP_RETURN output",
-		},
-		{
-			description: "reject: extension OP_RETURN with value == 1",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1, PkScript: testExtensionScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "extension OP_RETURN output",
-		},
+		// Extension OP_RETURN can have any value
 		{
 			description: "valid: extension OP_RETURN with zero value",
 			txOuts: []*wire.TxOut{
 				anchor,
 				{Value: 0, PkScript: testExtensionScript(t)},
+			},
+			dust:                    testDust,
+			vtxoMaxAmount:           -1,
+			vtxoMinOffchainTxAmount: 0,
+			wantOutputCount:         1,
+		},
+		{
+			description: "valid: extension OP_RETURN with non-zero value",
+			txOuts: []*wire.TxOut{
+				anchor,
+				{Value: 1000, PkScript: testExtensionScript(t)},
 			},
 			dust:                    testDust,
 			vtxoMaxAmount:           -1,
