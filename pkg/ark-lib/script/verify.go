@@ -146,6 +146,15 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 			)
 		}
 
+		// BIP341: validate the parity bit against the computed output key's Y parity.
+		computedKeyIsOdd := taprootKey.SerializeCompressed()[0] == 0x03
+		if controlBlock.OutputKeyYIsOdd != computedKeyIsOdd {
+			return nil, fmt.Errorf(
+				"invalid control block parity for input %d: expected odd=%v, got odd=%v",
+				inputIndex, computedKeyIsOdd, controlBlock.OutputKeyYIsOdd,
+			)
+		}
+
 		// skip if not signed
 		if len(input.TaprootScriptSpendSig) == 0 {
 			continue

@@ -122,23 +122,103 @@ func TestBuildCommitmentTx(t *testing.T) {
 	}
 }
 
-func randomInput() []ports.TxInput {
-	txid := randomHex(32)
-	input := ports.TxInput{
-		Txid:   txid,
-		Index:  0,
-		Script: "a914ea9f486e82efb3dd83a69fd96e3f0113757da03c87",
-		Value:  1000,
-	}
+func TestVerifyVtxoTapscriptSigs(t *testing.T) {
+	signerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
 
-	return []ports.TxInput{input}
-}
+	builder := txbuilder.NewTxBuilder(
+		wallet, &staticSigner{pubkey: signerKey.PubKey()},
+		arklib.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
+	)
 
-func randomHex(len int) string {
-	buf := make([]byte, len)
-	// nolint
-	rand.Read(buf)
-	return hex.EncodeToString(buf)
+	t.Run("valid", func(t *testing.T) {
+		t.Run("input without taproot leaf script is skipped", func(t *testing.T) {
+			setup := newSingleKeyVtxoSetup(t, signerKey)
+			tx := buildTx(t, setup, nil)
+			tx.Inputs[0].TaprootLeafScript = nil
+
+			ok, ptx, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, tx), false)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.NotNil(t, ptx)
+		})
+
+		t.Run("signed input accepted with mustIncludeSignerSig=false", func(t *testing.T) {
+			// 2-of-2 closure (closureKey + signerKey): signer is pre-marked, only closureKey needs to sign.
+			setup := newTwoKeyVtxoSetup(t, signerKey)
+			packet := buildTx(t, setup, nil)
+
+			sig := makeVtxoSig(t, setup.closureKey, packet, setup.leaf)
+			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
+
+			ok, ptx, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), false)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.NotNil(t, ptx)
+		})
+
+		t.Run("all keys signed accepted with mustIncludeSignerSig=true", func(t *testing.T) {
+			// 2-of-2 closure: both keys must sign when signer is not pre-marked.
+			setup := newTwoKeyVtxoSetup(t, signerKey)
+			packet := buildTx(t, setup, nil)
+
+			sig1 := makeVtxoSig(t, setup.closureKey, packet, setup.leaf)
+			sig2 := makeVtxoSig(t, setup.signerKey, packet, setup.leaf)
+			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig1, sig2}
+
+			ok, ptx, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), true)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.NotNil(t, ptx)
+		})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Run("wrong parity bit in control block", func(t *testing.T) {
+			setup := newSingleKeyVtxoSetup(t, signerKey)
+			corrupted := make([]byte, len(setup.cbBytes))
+			copy(corrupted, setup.cbBytes)
+			corrupted[0] ^= 0x01
+
+			_, _, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, buildTx(t, setup, corrupted)), false)
+			require.Error(t, err)
+		})
+
+		t.Run("wrong x-coordinate from tampered merkle path", func(t *testing.T) {
+			setup := newSingleKeyVtxoSetup(t, signerKey)
+			fakeNode := make([]byte, 32)
+			_, err := rand.Read(fakeNode)
+			require.NoError(t, err)
+
+			corrupted := append(append([]byte{}, setup.cbBytes...), fakeNode...)
+			_, _, err = builder.VerifyVtxoTapscriptSigs(encodeTx(t, buildTx(t, setup, corrupted)), false)
+			require.Error(t, err)
+		})
+
+		t.Run("invalid signature", func(t *testing.T) {
+			setup := newSingleKeyVtxoSetup(t, signerKey)
+			packet := buildTx(t, setup, nil)
+
+			sig := makeVtxoSig(t, setup.closureKey, packet, setup.leaf)
+			sig.Signature[0] ^= 0xff
+			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
+
+			_, _, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), false)
+			require.Error(t, err)
+		})
+
+		t.Run("missing signer signature when mustIncludeSignerSig=true", func(t *testing.T) {
+			// 2-of-2 closure: signer is not pre-marked and doesn't sign → error.
+			setup := newTwoKeyVtxoSetup(t, signerKey)
+			packet := buildTx(t, setup, nil)
+
+			sig := makeVtxoSig(t, setup.closureKey, packet, setup.leaf)
+			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
+
+			_, _, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), true)
+			require.Error(t, err)
+		})
+	})
 }
 
 type commitmentTxFixtures struct {

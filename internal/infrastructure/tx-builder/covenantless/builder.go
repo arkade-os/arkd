@@ -164,6 +164,11 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 			return false, nil, fmt.Errorf("invalid control block for input %d", index)
 		}
 
+		computedKeyIsOdd := tapKeyFromControlBlock.SerializeCompressed()[0] == 0x03
+		if controlBlock.OutputKeyYIsOdd != computedKeyIsOdd {
+			return false, nil, fmt.Errorf("invalid control block parity for input %d", index)
+		}
+
 		for _, tapScriptSig := range input.TaprootScriptSpendSig {
 			sig, err := schnorr.ParseSignature(tapScriptSig.Signature)
 			if err != nil {

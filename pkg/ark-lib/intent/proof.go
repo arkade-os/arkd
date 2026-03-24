@@ -411,6 +411,11 @@ func verifyNoteInput(
 		return fmt.Errorf("invalid control block for note input %d", inputIndex)
 	}
 
+	computedKeyIsOdd := taprootKey.SerializeCompressed()[0] == 0x03
+	if controlBlock.OutputKeyYIsOdd != computedKeyIsOdd {
+		return fmt.Errorf("invalid control block parity for note input %d", inputIndex)
+	}
+
 	// decode the note closure to extract the expected preimage hash
 	var noteClosure note.NoteClosure
 	valid, err := noteClosure.Decode(tapscriptLeaf.Script)
