@@ -141,8 +141,8 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 		expectedTaprootKey := prevout.PkScript[2:]
 
 		if !bytes.Equal(serializedTaprootKey, expectedTaprootKey) {
-			return nil, fmt.Errorf("invalid control block for input %d: expected tapkey %x, got %x",
-				inputIndex, serializedTaprootKey, expectedTaprootKey,
+			return nil, fmt.Errorf("invalid control block for input %d: expected tapkey %x (from prevout), got %x (computed)",
+				inputIndex, expectedTaprootKey, serializedTaprootKey,
 			)
 		}
 
