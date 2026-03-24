@@ -53,7 +53,7 @@ type Input struct {
 }
 
 // Verify takes an encoded b64 proof tx and a message to validate the proof
-// signerPubkey is excluded from signature verification (e.g. the ASP key that hasn't co-signed yet)
+// signerPubkey is excluded from signature verification
 func Verify(proofB64, message string, signerPubkey *secp256k1.PublicKey) error {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(proofB64), true)
 	if err != nil {
