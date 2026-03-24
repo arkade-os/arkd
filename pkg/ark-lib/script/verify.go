@@ -101,6 +101,31 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 				// initialize to false = not signed
 				expectedSigners[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
+		case *ConditionCSVMultisigClosure:
+			witnessFields, err := txutils.GetArkPsbtFields(
+				tx, inputIndex, txutils.ConditionWitnessField,
+			)
+			if err != nil {
+				return nil, err
+			}
+			witness := make(wire.TxWitness, 0)
+			if len(witnessFields) > 0 {
+				witness = witnessFields[0]
+			}
+
+			result, err := EvaluateScriptToBool(c.Condition, witness)
+			if err != nil {
+				return nil, err
+			}
+
+			if !result {
+				return nil, fmt.Errorf("condition not met for input %d", inputIndex)
+			}
+
+			for _, key := range c.PubKeys {
+				// initialize to false = not signed
+				expectedSigners[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
+			}
 		}
 
 		// taproot leaf script must match the witness utxo pkscript
