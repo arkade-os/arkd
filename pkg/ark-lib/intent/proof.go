@@ -2,16 +2,19 @@ package intent
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 var (
@@ -49,7 +52,8 @@ type Input struct {
 }
 
 // Verify takes an encoded b64 proof tx and a message to validate the proof
-func Verify(proofB64, message string) error {
+// signerPubkey is excluded from signature verification (e.g. the ASP key that hasn't co-signed yet)
+func Verify(proofB64, message string, signerPubkey *secp256k1.PublicKey) error {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(proofB64), true)
 	if err != nil {
 		return fmt.Errorf("failed to parse proof tx: %s", err)
@@ -95,32 +99,12 @@ func Verify(proofB64, message string) error {
 		return ErrInvalidTxWrongOutputIndex
 	}
 
-	tx, err := proof.FinalizeAndExtract()
-	if err != nil {
-		return err
+	var skip []*secp256k1.PublicKey
+	if signerPubkey != nil {
+		skip = append(skip, signerPubkey)
 	}
-
-	txSigHashes := txscript.NewTxSigHashes(tx, prevoutFetcher)
-	sigCache := txscript.NewSigCache(1000)
-
-	for i, input := range tx.TxIn {
-		prevout := prevoutFetcher.FetchPrevOutput(input.PreviousOutPoint)
-		if prevout == nil {
-			return ErrPrevoutNotFound
-		}
-
-		engine, err := txscript.NewEngine(
-			prevout.PkScript, tx, i, txscript.StandardVerifyFlags,
-			sigCache, txSigHashes, prevout.Value, prevoutFetcher,
-		)
-		if err != nil {
-			return fmt.Errorf("invalid intent proof: failed to create script engine for input %d: %w", i, err)
-		}
-
-		if err := engine.Execute(); err != nil {
-			return fmt.Errorf("invalid intent proof: failed to execute script for input %d: %w", i, err)
-		}
-
+	if _, err := script.VerifyTapscriptSigs(ptx, prevoutFetcher, skip); err != nil {
+		return fmt.Errorf("invalid intent proof: %w", err)
 	}
 
 	return nil
@@ -208,7 +192,7 @@ func (p Proof) ContainsOutputs() bool {
 	return true
 }
 
-func (p Proof) FinalizeAndExtract() (*wire.MsgTx, error) {
+func (p Proof) FinalizeAndExtract(signer *secp256k1.PublicKey) (*wire.MsgTx, error) {
 	if len(p.Inputs) < 2 {
 		return nil, ErrInvalidTxNumberOfInputs
 	}
@@ -230,7 +214,16 @@ func (p Proof) FinalizeAndExtract() (*wire.MsgTx, error) {
 	// in order to have the condition witness also in the first "fake" proof input
 	ptx.Inputs[0].Unknowns = ptx.Inputs[1].Unknowns
 
+	// we add fakeSignerSignature to make the finalization possible
+	// the signer is never signing intent proof but we need the finalization to estimate the right tx weight
+	fakeSignerSig := psbt.TaprootScriptSpendSig{
+		XOnlyPubKey: schnorr.SerializePubKey(signer),
+		Signature: []byte{0x00, 0x00},
+	}
+
 	for i := range p.Inputs {
+		ptx.Inputs[i].TaprootScriptSpendSig = append(ptx.Inputs[i].TaprootScriptSpendSig, &fakeSignerSig)
+
 		if err := finalizeInput(ptx, i); err != nil {
 			return nil, err
 		}
@@ -348,39 +341,11 @@ func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 		return nil
 	}
 
-	// check if the input is a note first
-	var noteClosure note.NoteClosure
-	valid, err := noteClosure.Decode(in.TaprootLeafScript[0].Script)
-	if valid && err == nil {
-		arkConditionWitnessFields, err := txutils.GetArkPsbtFields(
-			ptx, inputIndex, txutils.ConditionWitnessField,
-		)
-		if err != nil {
-			return err
+	if err := note.FinalizeNoteClosure(ptx, inputIndex, in.TaprootLeafScript[0]); err != nil {
+		if errors.Is(err, note.ErrInvalidNoteScript) {
+			// if it's not a note, finalize as vtxo script
+			return script.FinalizeVtxoScript(ptx, inputIndex)
 		}
-
-		if len(arkConditionWitnessFields) != 1 || len(arkConditionWitnessFields[0]) == 0 {
-			return fmt.Errorf("invalid condition witness, expected 1 witness for note vtxo")
-		}
-
-		witness, err := noteClosure.Witness(in.TaprootLeafScript[0].ControlBlock, map[string][]byte{
-			"preimage": arkConditionWitnessFields[0][0],
-		})
-		if err != nil {
-			return err
-		}
-
-		var witnessBuf bytes.Buffer
-		if err := psbt.WriteTxWitness(&witnessBuf, witness); err != nil {
-			return err
-		}
-
-		ptx.Inputs[inputIndex].FinalScriptWitness = witnessBuf.Bytes()
-		return nil
-	}
-
-	// if it's not a note, finalize as vtxo script
-	if err := script.FinalizeVtxoScript(ptx, inputIndex); err != nil {
 		return err
 	}
 

@@ -60,7 +60,7 @@ func TestVerifyIntent(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		for _, fixture := range validFixtures {
 			t.Run(fixture.Name, func(t *testing.T) {
-				err := intent.Verify(fixture.Proof, fixture.Message)
+				err := intent.Verify(fixture.Proof, fixture.Message, nil)
 				require.NoError(t, err)
 			})
 		}
@@ -69,7 +69,7 @@ func TestVerifyIntent(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		for _, fixture := range invalidFixtures {
 			t.Run(fixture.Name, func(t *testing.T) {
-				err := intent.Verify(fixture.Proof, fixture.Message)
+				err := intent.Verify(fixture.Proof, fixture.Message, nil)
 				require.Error(t, err)
 				require.ErrorContains(t, err, fixture.ExpectedError)
 			})
