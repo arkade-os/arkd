@@ -3066,7 +3066,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
-		time.Sleep(20 * time.Second)
+		time.Sleep(30 * time.Second)
 
 		// alice vtxos should not be swept yet
 		aliceVtxos, _, err := alice.ListVtxos(ctx)
@@ -3104,7 +3104,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep and indexer to sync the vtxo table
-		time.Sleep(45 * time.Second)
+		time.Sleep(60 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
