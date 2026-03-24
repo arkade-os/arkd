@@ -10,12 +10,12 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
 var (
@@ -54,7 +54,7 @@ type Input struct {
 
 // Verify takes an encoded b64 proof tx and a message to validate the proof
 // signerPubkey is excluded from signature verification (e.g. the ASP key that hasn't co-signed yet)
-func Verify(proofB64, message string, signerPubkey *secp256k1.PublicKey) error {
+func Verify(proofB64, message string, signerPubkey *btcec.PublicKey) error {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(proofB64), true)
 	if err != nil {
 		return fmt.Errorf("failed to parse proof tx: %s", err)
@@ -100,7 +100,7 @@ func Verify(proofB64, message string, signerPubkey *secp256k1.PublicKey) error {
 		return ErrInvalidTxWrongOutputIndex
 	}
 
-	var skip []*secp256k1.PublicKey
+	var skip []*btcec.PublicKey
 	if signerPubkey != nil {
 		skip = append(skip, signerPubkey)
 	}
@@ -218,7 +218,7 @@ func (p Proof) ContainsOutputs() bool {
 	return true
 }
 
-func (p Proof) FinalizeAndExtract(signer *secp256k1.PublicKey) (*wire.MsgTx, error) {
+func (p Proof) FinalizeAndExtract(signer *btcec.PublicKey) (*wire.MsgTx, error) {
 	if len(p.Inputs) < 2 {
 		return nil, ErrInvalidTxNumberOfInputs
 	}
