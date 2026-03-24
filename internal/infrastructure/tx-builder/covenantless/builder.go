@@ -21,7 +21,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -1060,7 +1059,7 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 	ins, err := script.VerifyTapscriptSigs(
 		ptx,
 		prevoutFetcher,
-		[]*secp256k1.PublicKey{signerPubkey},
+		[]*btcec.PublicKey{signerPubkey},
 	)
 	if err != nil {
 		return nil, err

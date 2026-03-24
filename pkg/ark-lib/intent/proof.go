@@ -53,7 +53,7 @@ type Input struct {
 }
 
 // Verify takes an encoded b64 proof tx and a message to validate the proof
-// signerPubkey is excluded from signature verification (e.g. the ASP key that hasn't co-signed yet)
+// signerPubkey, if not nil, makes the signer signature be excluded from the tx verification
 func Verify(proofB64, message string, signerPubkey *btcec.PublicKey) error {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(proofB64), true)
 	if err != nil {
@@ -244,7 +244,7 @@ func (p Proof) FinalizeAndExtract(signer *btcec.PublicKey) (*wire.MsgTx, error) 
 	// the signer is never signing intent proof but we need the finalization to estimate the right tx weight
 	fakeSignerSig := psbt.TaprootScriptSpendSig{
 		XOnlyPubKey: schnorr.SerializePubKey(signer),
-		Signature: make([]byte, 64),
+		Signature:   make([]byte, 64),
 	}
 
 	for i := range p.Inputs {
