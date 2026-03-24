@@ -52,7 +52,7 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 		tapscriptLeaf := input.TaprootLeafScript[0]
 
 		// ignore notes (OP_SHA256 <32-byte hash> OP_EQUAL)
-		if isNoteClosureScript(tapscriptLeaf.Script) {
+		if IsNoteClosureScript(tapscriptLeaf.Script) {
 			continue
 		}
 
@@ -203,8 +203,8 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 	return
 }
 
-// isNoteClosureScript returns true if the script is a note closure: OP_SHA256 <32 bytes> OP_EQUAL.
-func isNoteClosureScript(script []byte) bool {
+// IsNoteClosureScript returns true if the script is a note closure: OP_SHA256 <32 bytes> OP_EQUAL.
+func IsNoteClosureScript(script []byte) bool {
 	return len(script) == 35 &&
 		script[0] == txscript.OP_SHA256 &&
 		script[1] == txscript.OP_DATA_32 &&

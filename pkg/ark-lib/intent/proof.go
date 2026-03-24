@@ -2,6 +2,7 @@ package intent
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -103,8 +104,33 @@ func Verify(proofB64, message string, signerPubkey *secp256k1.PublicKey) error {
 	if signerPubkey != nil {
 		skip = append(skip, signerPubkey)
 	}
-	if _, err := script.VerifyTapscriptSigs(ptx, prevoutFetcher, skip); err != nil {
+	signedInputs, err := script.VerifyTapscriptSigs(ptx, prevoutFetcher, skip)
+	if err != nil {
 		return fmt.Errorf("invalid intent proof: %w", err)
+	}
+
+	// Ensure every ownership input (index 1+) was actually validated.
+	// VerifyTapscriptSigs silently skips unsigned inputs, so we must check
+	// that no applicable input slipped through without a signature.
+	signedSet := make(map[int]struct{}, len(signedInputs))
+	for _, idx := range signedInputs {
+		signedSet[idx] = struct{}{}
+	}
+	for i := 1; i < len(ptx.Inputs); i++ {
+		if _, ok := signedSet[i]; ok {
+			continue
+		}
+		// Note closures use hash-locks, not signatures — verify the
+		// preimage and control block instead.
+		in := ptx.Inputs[i]
+		if len(in.TaprootLeafScript) == 1 &&
+			script.IsNoteClosureScript(in.TaprootLeafScript[0].Script) {
+			if err := verifyNoteInput(ptx, i, prevoutFetcher); err != nil {
+				return fmt.Errorf("invalid intent proof: %w", err)
+			}
+			continue
+		}
+		return fmt.Errorf("missing signature for input %d", i)
 	}
 
 	return nil
@@ -347,6 +373,75 @@ func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 			return script.FinalizeVtxoScript(ptx, inputIndex)
 		}
 		return err
+	}
+
+	return nil
+}
+
+// verifyNoteInput verifies a note closure input by checking the control block
+// against the prevout and validating that the provided preimage hashes to the
+// value embedded in the script.
+func verifyNoteInput(
+	ptx *psbt.Packet, inputIndex int, prevoutFetcher txscript.PrevOutputFetcher,
+) error {
+	in := ptx.Inputs[inputIndex]
+	tapscriptLeaf := in.TaprootLeafScript[0]
+
+	// verify the control block matches the prevout pkscript
+	prevout := prevoutFetcher.FetchPrevOutput(
+		ptx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint,
+	)
+	if prevout == nil {
+		return fmt.Errorf("prevout not found for note input %d", inputIndex)
+	}
+
+	controlBlock, err := txscript.ParseControlBlock(tapscriptLeaf.ControlBlock)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to parse control block for note input %d: %w", inputIndex, err,
+		)
+	}
+
+	rootHash := controlBlock.RootHash(tapscriptLeaf.Script)
+	unspendableKey := script.UnspendableKey()
+	taprootKey := txscript.ComputeTaprootOutputKey(unspendableKey, rootHash[:])
+	expectedTaprootKey := prevout.PkScript[2:]
+
+	if !bytes.Equal(schnorr.SerializePubKey(taprootKey), expectedTaprootKey) {
+		return fmt.Errorf("invalid control block for note input %d", inputIndex)
+	}
+
+	// decode the note closure to extract the expected preimage hash
+	var noteClosure note.NoteClosure
+	valid, err := noteClosure.Decode(tapscriptLeaf.Script)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to decode note closure for input %d: %w", inputIndex, err,
+		)
+	}
+	if !valid {
+		return fmt.Errorf("invalid note closure script for input %d", inputIndex)
+	}
+
+	// retrieve the preimage from the PSBT condition witness field
+	conditionWitnessFields, err := txutils.GetArkPsbtFields(
+		ptx, inputIndex, txutils.ConditionWitnessField,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to get condition witness for note input %d: %w", inputIndex, err,
+		)
+	}
+
+	if len(conditionWitnessFields) != 1 || len(conditionWitnessFields[0]) == 0 {
+		return fmt.Errorf("missing preimage for note input %d", inputIndex)
+	}
+
+	preimage := conditionWitnessFields[0][0]
+	preimageHash := sha256.Sum256(preimage)
+
+	if preimageHash != noteClosure.PreimageHash {
+		return fmt.Errorf("invalid preimage for note input %d", inputIndex)
 	}
 
 	return nil
