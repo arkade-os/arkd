@@ -244,7 +244,7 @@ func (p Proof) FinalizeAndExtract(signer *btcec.PublicKey) (*wire.MsgTx, error) 
 	// the signer is never signing intent proof but we need the finalization to estimate the right tx weight
 	fakeSignerSig := psbt.TaprootScriptSpendSig{
 		XOnlyPubKey: schnorr.SerializePubKey(signer),
-		Signature: []byte{0x00, 0x00},
+		Signature: make([]byte, 64),
 	}
 
 	for i := range p.Inputs {
