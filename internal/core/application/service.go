@@ -1784,9 +1784,7 @@ func (s *service) RegisterIntent(
 
 	finalizedProofTx, err := intent.Proof{
 		Packet: *signedProofPtx,
-	}.FinalizeAndExtract(
-		s.signerPubkey,
-	)
+	}.FinalizeAndExtract(s.signerPubkey)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
 			WithMetadata(map[string]any{
