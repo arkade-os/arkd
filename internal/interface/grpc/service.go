@@ -57,6 +57,7 @@ type service struct {
 	unaryConn         *grpc.ClientConn
 	streamConn        *grpc.ClientConn
 	adminConn         *grpc.ClientConn
+	seedDigest        func(context.Context)
 }
 
 func NewService(
@@ -243,6 +244,10 @@ func (s *service) startAppServices() error {
 		s.readinessSvc.MarkAppServiceStarted()
 	}
 
+	if s.seedDigest != nil {
+		s.seedDigest(context.Background())
+	}
+
 	log.Info("ark and indexer services are now ready")
 	return nil
 }
@@ -322,6 +327,11 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		s.config.HeartbeatInterval,
 		digestSvc,
 	)
+	s.seedDigest = func(ctx context.Context) {
+		if _, err := appHandler.GetInfo(ctx, &arkv1.GetInfoRequest{}); err != nil {
+			log.WithError(err).Warn("failed to seed digest on startup")
+		}
+	}
 	eventsCh := appSvc.GetIndexerTxChannel(ctx)
 	subscriptionTimeoutDuration := time.Minute
 	indexerHandler := handlers.NewIndexerService(
