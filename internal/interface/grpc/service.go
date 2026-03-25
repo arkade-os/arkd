@@ -329,7 +329,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	)
 	s.seedDigest = func(ctx context.Context) {
 		if _, err := appHandler.GetInfo(ctx, &arkv1.GetInfoRequest{}); err != nil {
-			log.WithError(err).Warn("failed to seed digest on startup")
+			log.WithError(err).Warn("failed to seed digest on startup, digest validation will be disabled until a client calls GetInfo")
 		}
 	}
 	eventsCh := appSvc.GetIndexerTxChannel(ctx)
