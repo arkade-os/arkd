@@ -9,7 +9,11 @@ import (
 // UnaryInterceptor returns the unary interceptor.
 // serverVersion is the arkd build version (e.g. "v1.2.3"); only its major
 // component is used for SDK compatibility checks.
-func UnaryInterceptor(svc *macaroons.Service, readiness *ReadinessService, serverVersion string) grpc.ServerOption {
+func UnaryInterceptor(
+	svc *macaroons.Service,
+	readiness *ReadinessService,
+	serverVersion string,
+) grpc.ServerOption {
 	major, _ := parseMajorVersion(serverVersion)
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
 		unaryPanicRecoveryInterceptor(),
@@ -24,7 +28,11 @@ func UnaryInterceptor(svc *macaroons.Service, readiness *ReadinessService, serve
 // StreamInterceptor returns the stream interceptor with a logrus log.
 // serverVersion is the arkd build version (e.g. "v1.2.3"); only its major
 // component is used for SDK compatibility checks.
-func StreamInterceptor(svc *macaroons.Service, readiness *ReadinessService, serverVersion string) grpc.ServerOption {
+func StreamInterceptor(
+	svc *macaroons.Service,
+	readiness *ReadinessService,
+	serverVersion string,
+) grpc.ServerOption {
 	major, _ := parseMajorVersion(serverVersion)
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
 		streamPanicRecoveryInterceptor(),

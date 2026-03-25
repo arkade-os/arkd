@@ -159,6 +159,25 @@ func TestUnaryVersionCompat_UnparsableServerVersion(t *testing.T) {
 	require.True(t, called)
 }
 
+func TestUnaryVersionCompat_EmptyServerVersion(t *testing.T) {
+	// When no version is set via ldflags, Version is "". parseMajorVersion
+	// fails, major defaults to 0, and all clients are allowed through.
+	major, _ := parseMajorVersion("")
+	interceptor := unaryVersionCompatHandler(major, "")
+	called := false
+	_, err := interceptor(
+		ctxWithVersion("0.1.0"),
+		nil,
+		&grpc.UnaryServerInfo{FullMethod: testMethod},
+		func(ctx context.Context, req any) (any, error) {
+			called = true
+			return "ok", nil
+		},
+	)
+	require.NoError(t, err)
+	require.True(t, called)
+}
+
 func TestStreamVersionCompat_BelowMajor(t *testing.T) {
 	interceptor := streamVersionCompatHandler(2, "2.0.0")
 	called := false
