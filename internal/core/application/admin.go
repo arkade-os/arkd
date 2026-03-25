@@ -623,12 +623,24 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 }
 
 func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Settings) error {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+
+	// Merge with current settings so callers can send only the fields they
+	// want to change (zero-valued fields inherit the existing value).
+	current, err := a.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current settings: %w", err)
+	}
+	// nil means no settings exist yet (first boot) so then skip merge 
+	// so caller's full settings are used as-is.
+	if current != nil {
+		settings = settings.Merge(*current)
+	}
+
 	if err := settings.Validate(); err != nil {
 		return err
 	}
-
-	a.settingsMu.Lock()
-	defer a.settingsMu.Unlock()
 
 	// Apply to the running service before persisting so that if live-apply
 	// fails we don't leave invalid settings in the DB.

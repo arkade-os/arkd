@@ -144,6 +144,30 @@ func TestSettings_Validate(t *testing.T) {
 		}
 	})
 
+	t.Run("merge fills zero fields from other", func(t *testing.T) {
+		current := validSettings()
+		partial := Settings{BanThreshold: 10}
+		merged := partial.Merge(current)
+
+		assert.Equal(t, int64(10), merged.BanThreshold)
+		assert.Equal(t, current.BanDuration, merged.BanDuration)
+		assert.Equal(t, current.UnilateralExitDelay, merged.UnilateralExitDelay)
+		assert.Equal(t, current.BoardingExitDelay, merged.BoardingExitDelay)
+		assert.Equal(t, current.VtxoTreeExpiry, merged.VtxoTreeExpiry)
+		assert.Equal(t, current.MaxTxWeight, merged.MaxTxWeight)
+		require.NoError(t, merged.Validate())
+	})
+
+	t.Run("merge preserves all set fields", func(t *testing.T) {
+		current := validSettings()
+		full := validSettings()
+		full.BanThreshold = 99
+		merged := full.Merge(current)
+
+		assert.Equal(t, int64(99), merged.BanThreshold)
+		assert.Equal(t, full.BanDuration, merged.BanDuration)
+	})
+
 	t.Run("min exceeds max", func(t *testing.T) {
 		t.Run("vtxo", func(t *testing.T) {
 			s := validSettings()

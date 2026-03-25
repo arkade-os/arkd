@@ -132,6 +132,28 @@ func TestAdminService_Settings(t *testing.T) {
 		assert.Equal(t, int64(7200), got.SettlementMinExpiryGap)
 	})
 
+	t.Run("partial update only changes provided fields", func(t *testing.T) {
+		// Get current state after the full update above.
+		before, err := svc.GetSettings(ctx)
+		require.NoError(t, err)
+
+		// Send only BanThreshold — everything else is zero.
+		partial := domain.Settings{BanThreshold: 99}
+		err = svc.UpdateSettings(ctx, partial)
+		require.NoError(t, err)
+
+		got, err := svc.GetSettings(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, int64(99), got.BanThreshold)
+		// Other fields unchanged.
+		assert.Equal(t, before.BanDuration, got.BanDuration)
+		assert.Equal(t, before.UnilateralExitDelay, got.UnilateralExitDelay)
+		assert.Equal(t, before.BoardingExitDelay, got.BoardingExitDelay)
+		assert.Equal(t, before.VtxoTreeExpiry, got.VtxoTreeExpiry)
+		assert.Equal(t, before.MaxTxWeight, got.MaxTxWeight)
+	})
+
 	t.Run("clear resets settings to defaults", func(t *testing.T) {
 		err := svc.ClearSettings(ctx)
 		require.NoError(t, err)

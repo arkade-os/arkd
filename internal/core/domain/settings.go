@@ -128,6 +128,61 @@ func (s Settings) Validate() error {
 	return nil
 }
 
+// Merge returns a copy of s where any zero-valued field is replaced by the
+// corresponding value from other. This allows callers to send only the fields
+// they want to change.
+func (s Settings) Merge(other Settings) Settings {
+	if s.BanThreshold == 0 {
+		s.BanThreshold = other.BanThreshold
+	}
+	if s.BanDuration == 0 {
+		s.BanDuration = other.BanDuration
+	}
+	if s.UnilateralExitDelay == 0 {
+		s.UnilateralExitDelay = other.UnilateralExitDelay
+	}
+	if s.PublicUnilateralExitDelay == 0 {
+		s.PublicUnilateralExitDelay = other.PublicUnilateralExitDelay
+	}
+	if s.CheckpointExitDelay == 0 {
+		s.CheckpointExitDelay = other.CheckpointExitDelay
+	}
+	if s.BoardingExitDelay == 0 {
+		s.BoardingExitDelay = other.BoardingExitDelay
+	}
+	if s.VtxoTreeExpiry == 0 {
+		s.VtxoTreeExpiry = other.VtxoTreeExpiry
+	}
+	if s.RoundMinParticipantsCount == 0 {
+		s.RoundMinParticipantsCount = other.RoundMinParticipantsCount
+	}
+	if s.RoundMaxParticipantsCount == 0 {
+		s.RoundMaxParticipantsCount = other.RoundMaxParticipantsCount
+	}
+	if s.VtxoMinAmount == 0 {
+		s.VtxoMinAmount = other.VtxoMinAmount
+	}
+	if s.VtxoMaxAmount == 0 {
+		s.VtxoMaxAmount = other.VtxoMaxAmount
+	}
+	if s.UtxoMinAmount == 0 {
+		s.UtxoMinAmount = other.UtxoMinAmount
+	}
+	if s.UtxoMaxAmount == 0 {
+		s.UtxoMaxAmount = other.UtxoMaxAmount
+	}
+	if s.SettlementMinExpiryGap == 0 {
+		s.SettlementMinExpiryGap = other.SettlementMinExpiryGap
+	}
+	if s.VtxoNoCsvValidationCutoffDate == 0 {
+		s.VtxoNoCsvValidationCutoffDate = other.VtxoNoCsvValidationCutoffDate
+	}
+	if s.MaxTxWeight == 0 {
+		s.MaxTxWeight = other.MaxTxWeight
+	}
+	return s
+}
+
 func NewSettings(
 	banThreshold, banDuration,
 	unilateralExitDelay, publicUnilateralExitDelay,
