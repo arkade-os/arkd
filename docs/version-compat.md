@@ -51,7 +51,7 @@ service remains compatible with older clients. This has not been implemented yet
 When a client is rejected the gRPC status contains:
 
 - **Code**: maps to `BUILD_VERSION_TOO_OLD`
-- **Message**: human-readable, e.g. `server requires major build version >= 2`
+- **Message**: human-readable, e.g. `server requires build version header >= 2`
 - **Metadata fields**:
   - `client_version` -- the version string sent by the client
   - `min_version` -- the server's build version
