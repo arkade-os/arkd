@@ -595,6 +595,8 @@ func (i *indexerService) validateIntentProof(
 	if intentForProof.Proof == "" || intentForProof.Message == "" {
 		return fmt.Errorf("intent proof and message are required for private exposure")
 	}
+	// Message content is not validated here. Ownership is proved by the PSBT
+	// structure (inputs must reference real VTXOs with matching scripts/values).
 	// validate proof
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(intentForProof.Proof), true)
 	if err != nil {
