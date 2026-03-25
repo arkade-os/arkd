@@ -632,7 +632,7 @@ func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Setti
 	if err != nil {
 		return fmt.Errorf("failed to get current settings: %w", err)
 	}
-	// nil means no settings exist yet (first boot) so then skip merge 
+	// nil means no settings exist yet (first boot) so then skip merge
 	// so caller's full settings are used as-is.
 	if current != nil {
 		settings = settings.Merge(*current)
