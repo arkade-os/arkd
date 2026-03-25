@@ -6,13 +6,13 @@ import (
 	"strconv"
 	"strings"
 
-	arkerrors "github.com/arkade-os/arkd/pkg/errors"
+	errors "github.com/arkade-os/arkd/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
-const sdkVersionHeader = "x-ark-sdk-version"
+const buildVersionHeader = "x-build-version"
 
 // parseMajorVersion extracts the major version component from a semver string.
 // Accepts formats like "1.0.0", "v1.0.0", or just "1".
@@ -34,7 +34,7 @@ func checkVersionCompat(
 		return nil
 	}
 
-	vals := md.Get(sdkVersionHeader)
+	vals := md.Get(buildVersionHeader)
 	if len(vals) == 0 {
 		return nil
 	}
@@ -46,11 +46,11 @@ func checkVersionCompat(
 	}
 
 	if clientMajor < serverMajor {
-		log.Debugf("rejecting request: client SDK major version %d below server major version %d",
+		log.Debugf("rejecting request: build version header %d below server major version %d",
 			clientMajor, serverMajor)
-		return arkerrors.SDK_VERSION_TOO_OLD.
-			New("server requires SDK major version >= %d", serverMajor).
-			WithMetadata(arkerrors.SdkVersionMetadata{
+		return errors.BUILD_VERSION_TOO_OLD.
+			New("server requires build version header >= %d", serverMajor).
+			WithMetadata(errors.BuildVersionMetadata{
 				ClientVersion: vals[0],
 				MinVersion:    serverVersion,
 			})

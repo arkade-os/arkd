@@ -388,8 +388,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		switch key {
 		case "X-Macaroon":
 			return "macaroon", true
-		case "X-Ark-Sdk-Version":
-			return "x-ark-sdk-version", true
+		case "X-Build-Version":
+			return "x-build-version", true
 		default:
 			return key, false
 		}
