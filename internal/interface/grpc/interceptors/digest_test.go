@@ -116,6 +116,15 @@ func TestDigestServiceCheckDigest(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.FailedPrecondition, st.Code())
+
+		details := st.Details()
+		require.Len(t, details, 1)
+
+		errDetails, ok := details[0].(*arkv1.ErrorDetails)
+		require.True(t, ok)
+		require.Equal(t, int32(49), errDetails.Code)
+		require.Equal(t, "DIGEST_MISMATCH", errDetails.Name)
+		require.Equal(t, "current-digest", errDetails.Metadata["current_digest"])
 	})
 
 	t.Run("reflects updated digest", func(t *testing.T) {

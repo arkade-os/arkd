@@ -53,7 +53,7 @@ func TestDigestValidation(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		// Handler rejects the empty request as InvalidArgument, not FailedPrecondition.
-		require.NotEqual(t, codes.FailedPrecondition, st.Code(),
+		require.Equal(t, codes.InvalidArgument, st.Code(),
 			"expected a handler error, not a digest mismatch")
 	})
 
@@ -104,6 +104,14 @@ func TestDigestValidation(t *testing.T) {
 			st, ok := status.FromError(err)
 			require.True(t, ok)
 			require.Equal(t, codes.FailedPrecondition, st.Code())
+
+			details := st.Details()
+			require.NotEmpty(t, details)
+
+			errDetails, ok := details[0].(*arkv1.ErrorDetails)
+			require.True(t, ok)
+			require.Equal(t, "DIGEST_MISMATCH", errDetails.Name)
+			require.Equal(t, digest, errDetails.Metadata["current_digest"])
 			return
 		}
 
@@ -114,5 +122,13 @@ func TestDigestValidation(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.FailedPrecondition, st.Code())
+
+		details := st.Details()
+		require.NotEmpty(t, details)
+
+		errDetails, ok := details[0].(*arkv1.ErrorDetails)
+		require.True(t, ok)
+		require.Equal(t, "DIGEST_MISMATCH", errDetails.Name)
+		require.Equal(t, digest, errDetails.Metadata["current_digest"])
 	})
 }
