@@ -14,7 +14,7 @@ import (
 )
 
 // Version will be set during build time
-var Version string
+var Version string = "0.9.0"
 
 const (
 	macaroonDir  = "macaroons"
