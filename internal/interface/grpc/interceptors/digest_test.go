@@ -100,7 +100,7 @@ func TestDigestServiceCheckDigest(t *testing.T) {
 
 		errDetails, ok := details[0].(*arkv1.ErrorDetails)
 		require.True(t, ok)
-		require.Equal(t, int32(48), errDetails.Code)
+		require.Equal(t, int32(49), errDetails.Code)
 		require.Equal(t, "DIGEST_MISMATCH", errDetails.Name)
 		require.Equal(t, "current-digest", errDetails.Metadata["current_digest"])
 	})
