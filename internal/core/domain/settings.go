@@ -89,6 +89,9 @@ func (s Settings) Validate() error {
 			"unilateral exit delay and boarding exit delay must be different",
 		}
 	}
+	if s.CheckpointExitDelay <= 0 {
+		return &ErrInvalidSettings{"checkpoint exit delay must be greater than 0"}
+	}
 	if s.MaxTxWeight <= 0 {
 		return &ErrInvalidSettings{"max tx weight must be greater than 0"}
 	}
@@ -100,6 +103,9 @@ func (s Settings) Validate() error {
 	}
 	if s.VtxoTreeExpiry > math.MaxUint32 {
 		return &ErrInvalidSettings{"vtxo tree expiry exceeds maximum uint32 value"}
+	}
+	if s.CheckpointExitDelay > math.MaxUint32 {
+		return &ErrInvalidSettings{"checkpoint exit delay exceeds maximum uint32 value"}
 	}
 	if s.VtxoMinAmount < -1 || s.VtxoMinAmount > MaxSatoshis {
 		return &ErrInvalidSettings{"vtxo min amount must be -1 (dust) or between 0 and 21M BTC"}

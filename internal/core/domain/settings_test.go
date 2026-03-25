@@ -42,6 +42,16 @@ func TestSettings_Validate(t *testing.T) {
 		assert.Contains(t, validationErr.Reason, "ban threshold")
 	})
 
+	t.Run("checkpoint exit delay must be > 0", func(t *testing.T) {
+		s := validSettings()
+		s.CheckpointExitDelay = 0
+		err := s.Validate()
+		require.Error(t, err)
+		var validationErr *ErrInvalidSettings
+		require.ErrorAs(t, err, &validationErr)
+		assert.Contains(t, validationErr.Reason, "checkpoint exit delay")
+	})
+
 	t.Run("amount lower bound", func(t *testing.T) {
 		tests := []struct {
 			name  string
@@ -116,6 +126,9 @@ func TestSettings_Validate(t *testing.T) {
 			}},
 			{"vtxo tree expiry", func(s *Settings) {
 				s.VtxoTreeExpiry = math.MaxUint32 + 1
+			}},
+			{"checkpoint exit delay", func(s *Settings) {
+				s.CheckpointExitDelay = math.MaxUint32 + 1
 			}},
 		}
 		for _, tt := range tests {
