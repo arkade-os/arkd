@@ -57,8 +57,20 @@ func (a *service) GetAddresses(
 		toStringList(boardingAddrs), toStringList(redemptionAddrs), nil
 }
 
-func (a *service) ListVtxos(ctx context.Context) ([]types.Vtxo, []types.Vtxo, error) {
-	return a.getVtxos(ctx)
+func (a *service) ListVtxos(
+	ctx context.Context, opts ...ListVtxosOption,
+) ([]types.Vtxo, []types.Vtxo, error) {
+	o, err := ApplyListVtxosOptions(opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var indexerOpts []indexer.GetVtxosOption
+	if o.Before > 0 || o.After > 0 {
+		indexerOpts = append(indexerOpts, indexer.WithTimeRange(o.Before, o.After))
+	}
+
+	return a.getVtxos(ctx, indexerOpts...)
 }
 
 func (a *service) Balance(ctx context.Context) (*Balance, error) {
@@ -534,10 +546,7 @@ func (i *service) vtxosToTxs(
 		vtxo := getVtxo(resultedVtxos, vtxosBySpentBy[sb])
 		if resultedAmount == 0 {
 			// send all: fetch the created vtxo to source creation and expiration timestamps
-			opts := &indexer.GetVtxosRequestOption{}
-			// nolint
-			opts.WithOutpoints([]types.Outpoint{{Txid: sb, VOut: 0}})
-			resp, err := i.indexer.GetVtxos(ctx, *opts)
+			resp, err := i.indexer.GetVtxos(ctx, indexer.WithOutpoints([]types.Outpoint{{Txid: sb, VOut: 0}}))
 			if err != nil {
 				return nil, err
 			}

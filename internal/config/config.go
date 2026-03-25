@@ -112,8 +112,9 @@ type Config struct {
 	PyroscopeServerURL                        string
 	RoundReportServiceEnabled                 bool
 
-	EsploraURL      string
-	AlertManagerURL string
+	EsploraURL        string
+	AlertManagerURL   string
+	ArkadeExplorerURL string
 
 	UnlockerType     string
 	UnlockerFilePath string // file unlocker
@@ -181,6 +182,7 @@ var (
 	LogLevel                             = "LOG_LEVEL"
 	EsploraURL                           = "ESPLORA_URL"
 	AlertManagerURL                      = "ALERT_MANAGER_URL"
+	ArkadeExplorerURL                    = "ARKADE_EXPLORER_URL"
 	NoMacaroons                          = "NO_MACAROONS"
 	NoTLS                                = "NO_TLS"
 	TLSExtraIP                           = "TLS_EXTRA_IP"
@@ -229,6 +231,7 @@ var (
 	defaultLiveStoreType       = "redis"
 	defaultRedisTxNumOfRetries = 10
 	defaultEsploraURL          = "https://blockstream.info/api"
+	defaultArkadeExplorerURL   = "https://arkade.space"
 	defaultLogLevel            = 4
 	defaultNoMacaroons         = false
 	defaultNoTLS               = true
@@ -258,6 +261,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(EventDbType, defaultEventDbType)
 	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
+	viper.SetDefault(ArkadeExplorerURL, defaultArkadeExplorerURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
 	viper.SetDefault(LiveStoreType, defaultLiveStoreType)
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
@@ -339,6 +343,7 @@ func LoadConfig() (*Config, error) {
 		LogLevel:                  viper.GetInt(LogLevel),
 		EsploraURL:                viper.GetString(EsploraURL),
 		AlertManagerURL:           viper.GetString(AlertManagerURL),
+		ArkadeExplorerURL:         viper.GetString(ArkadeExplorerURL),
 		NoMacaroons:               viper.GetBool(NoMacaroons),
 		TLSExtraIPs:               viper.GetStringSlice(TLSExtraIP),
 		TLSExtraDomains:           viper.GetStringSlice(TLSExtraDomain),
@@ -965,7 +970,7 @@ func (c *Config) alertsService() error {
 		return nil
 	}
 
-	alerts, err := alertsmanager.NewService(c.AlertManagerURL, c.EsploraURL)
+	alerts, err := alertsmanager.NewService(c.AlertManagerURL, c.ArkadeExplorerURL)
 	if err != nil {
 		return err
 	}
