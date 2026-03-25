@@ -3015,8 +3015,14 @@ func (x *GetSettingsResponse) GetSettings() *Settings {
 }
 
 type UpdateSettingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Settings      *Settings              `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Settings *Settings              `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	// Specifies which settings fields to update. If non-empty, only the
+	// listed fields are written from the request; all other fields remain
+	// unchanged. If empty, every field in the settings message is written
+	// as-is — fields not set in the request default to 0, so callers must
+	// populate all fields. Use snake_case field names (e.g. "ban_threshold").
+	UpdateFields  []string `protobuf:"bytes,2,rep,name=update_fields,json=updateFields,proto3" json:"update_fields,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3054,6 +3060,13 @@ func (*UpdateSettingsRequest) Descriptor() ([]byte, []int) {
 func (x *UpdateSettingsRequest) GetSettings() *Settings {
 	if x != nil {
 		return x.Settings
+	}
+	return nil
+}
+
+func (x *UpdateSettingsRequest) GetUpdateFields() []string {
+	if x != nil {
+		return x.UpdateFields
 	}
 	return nil
 }
@@ -3353,9 +3366,10 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"updated_at\x18\x11 \x01(\x03R\tupdatedAt\"\x14\n" +
 	"\x12GetSettingsRequest\"C\n" +
 	"\x13GetSettingsResponse\x12,\n" +
-	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"E\n" +
+	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"j\n" +
 	"\x15UpdateSettingsRequest\x12,\n" +
-	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"\x18\n" +
+	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\x12#\n" +
+	"\rupdate_fields\x18\x02 \x03(\tR\fupdateFields\"\x18\n" +
 	"\x16UpdateSettingsResponse\"\x16\n" +
 	"\x14ClearSettingsRequest\"\x17\n" +
 	"\x15ClearSettingsResponse*\xb6\x02\n" +

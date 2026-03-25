@@ -614,7 +614,7 @@ func (a *adminHandler) UpdateSettings(
 		MaxTxWeight:                   s.GetMaxTxWeight(),
 	}
 
-	if err := a.adminService.UpdateSettings(ctx, settings); err != nil {
+	if err := a.adminService.UpdateSettings(ctx, settings, req.GetUpdateFields()); err != nil {
 		var validationErr *domain.ErrInvalidSettings
 		if errors.As(err, &validationErr) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())

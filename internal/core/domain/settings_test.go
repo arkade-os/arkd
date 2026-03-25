@@ -144,10 +144,10 @@ func TestSettings_Validate(t *testing.T) {
 		}
 	})
 
-	t.Run("merge fills zero fields from other", func(t *testing.T) {
+	t.Run("merge with mask updates only listed fields", func(t *testing.T) {
 		current := validSettings()
 		partial := Settings{BanThreshold: 10}
-		merged := partial.Merge(current)
+		merged := partial.Merge(current, []string{"ban_threshold"})
 
 		assert.Equal(t, int64(10), merged.BanThreshold)
 		assert.Equal(t, current.BanDuration, merged.BanDuration)
@@ -158,11 +158,22 @@ func TestSettings_Validate(t *testing.T) {
 		require.NoError(t, merged.Validate())
 	})
 
-	t.Run("merge preserves all set fields", func(t *testing.T) {
+	t.Run("merge with mask allows setting field to zero", func(t *testing.T) {
+		current := validSettings()
+		current.SettlementMinExpiryGap = 3600
+		update := Settings{SettlementMinExpiryGap: 0}
+		merged := update.Merge(current, []string{"settlement_min_expiry_gap"})
+
+		assert.Equal(t, int64(0), merged.SettlementMinExpiryGap)
+		// Other fields unchanged.
+		assert.Equal(t, current.BanThreshold, merged.BanThreshold)
+	})
+
+	t.Run("merge with empty mask replaces all fields", func(t *testing.T) {
 		current := validSettings()
 		full := validSettings()
 		full.BanThreshold = 99
-		merged := full.Merge(current)
+		merged := full.Merge(current, nil)
 
 		assert.Equal(t, int64(99), merged.BanThreshold)
 		assert.Equal(t, full.BanDuration, merged.BanDuration)

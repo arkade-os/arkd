@@ -1864,6 +1864,13 @@
         "properties": {
           "settings": {
             "$ref": "#/components/schemas/Settings"
+          },
+          "updateFields": {
+            "type": "array",
+            "description": "Specifies which settings fields to update. If non-empty, only the\nlisted fields are written from the request; all other fields remain\nunchanged. If empty, every field in the settings message is written\nas-is — fields not set in the request default to 0, so callers must\npopulate all fields. Use snake_case field names (e.g. \"ban_threshold\").",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

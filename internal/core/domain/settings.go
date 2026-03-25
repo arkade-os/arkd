@@ -128,59 +128,73 @@ func (s Settings) Validate() error {
 	return nil
 }
 
-// Merge returns a copy of s where any zero-valued field is replaced by the
-// corresponding value from other. This allows callers to send only the fields
-// they want to change.
-func (s Settings) Merge(other Settings) Settings {
-	if s.BanThreshold == 0 {
-		s.BanThreshold = other.BanThreshold
+// Merge combines the receiver (incoming request) with stored settings
+// according to updateFields. If non-empty, only the listed
+// fields are written from the request; all other fields remain as stored.
+// If updateFields is empty, every field from the request is written as-is —
+// fields not set in the request default to 0, so callers must populate all
+// fields. Field names use snake_case matching the proto field names.
+func (s Settings) Merge(stored Settings, updateFields []string) Settings {
+	if len(updateFields) == 0 {
+		s.UpdatedAt = stored.UpdatedAt
+		return s
 	}
-	if s.BanDuration == 0 {
-		s.BanDuration = other.BanDuration
+
+	fields := make(map[string]struct{}, len(updateFields))
+	for _, f := range updateFields {
+		fields[f] = struct{}{}
 	}
-	if s.UnilateralExitDelay == 0 {
-		s.UnilateralExitDelay = other.UnilateralExitDelay
+
+	result := stored
+	if _, ok := fields["ban_threshold"]; ok {
+		result.BanThreshold = s.BanThreshold
 	}
-	if s.PublicUnilateralExitDelay == 0 {
-		s.PublicUnilateralExitDelay = other.PublicUnilateralExitDelay
+	if _, ok := fields["ban_duration"]; ok {
+		result.BanDuration = s.BanDuration
 	}
-	if s.CheckpointExitDelay == 0 {
-		s.CheckpointExitDelay = other.CheckpointExitDelay
+	if _, ok := fields["unilateral_exit_delay"]; ok {
+		result.UnilateralExitDelay = s.UnilateralExitDelay
 	}
-	if s.BoardingExitDelay == 0 {
-		s.BoardingExitDelay = other.BoardingExitDelay
+	if _, ok := fields["public_unilateral_exit_delay"]; ok {
+		result.PublicUnilateralExitDelay = s.PublicUnilateralExitDelay
 	}
-	if s.VtxoTreeExpiry == 0 {
-		s.VtxoTreeExpiry = other.VtxoTreeExpiry
+	if _, ok := fields["checkpoint_exit_delay"]; ok {
+		result.CheckpointExitDelay = s.CheckpointExitDelay
 	}
-	if s.RoundMinParticipantsCount == 0 {
-		s.RoundMinParticipantsCount = other.RoundMinParticipantsCount
+	if _, ok := fields["boarding_exit_delay"]; ok {
+		result.BoardingExitDelay = s.BoardingExitDelay
 	}
-	if s.RoundMaxParticipantsCount == 0 {
-		s.RoundMaxParticipantsCount = other.RoundMaxParticipantsCount
+	if _, ok := fields["vtxo_tree_expiry"]; ok {
+		result.VtxoTreeExpiry = s.VtxoTreeExpiry
 	}
-	if s.VtxoMinAmount == 0 {
-		s.VtxoMinAmount = other.VtxoMinAmount
+	if _, ok := fields["round_min_participants_count"]; ok {
+		result.RoundMinParticipantsCount = s.RoundMinParticipantsCount
 	}
-	if s.VtxoMaxAmount == 0 {
-		s.VtxoMaxAmount = other.VtxoMaxAmount
+	if _, ok := fields["round_max_participants_count"]; ok {
+		result.RoundMaxParticipantsCount = s.RoundMaxParticipantsCount
 	}
-	if s.UtxoMinAmount == 0 {
-		s.UtxoMinAmount = other.UtxoMinAmount
+	if _, ok := fields["vtxo_min_amount"]; ok {
+		result.VtxoMinAmount = s.VtxoMinAmount
 	}
-	if s.UtxoMaxAmount == 0 {
-		s.UtxoMaxAmount = other.UtxoMaxAmount
+	if _, ok := fields["vtxo_max_amount"]; ok {
+		result.VtxoMaxAmount = s.VtxoMaxAmount
 	}
-	if s.SettlementMinExpiryGap == 0 {
-		s.SettlementMinExpiryGap = other.SettlementMinExpiryGap
+	if _, ok := fields["utxo_min_amount"]; ok {
+		result.UtxoMinAmount = s.UtxoMinAmount
 	}
-	if s.VtxoNoCsvValidationCutoffDate == 0 {
-		s.VtxoNoCsvValidationCutoffDate = other.VtxoNoCsvValidationCutoffDate
+	if _, ok := fields["utxo_max_amount"]; ok {
+		result.UtxoMaxAmount = s.UtxoMaxAmount
 	}
-	if s.MaxTxWeight == 0 {
-		s.MaxTxWeight = other.MaxTxWeight
+	if _, ok := fields["settlement_min_expiry_gap"]; ok {
+		result.SettlementMinExpiryGap = s.SettlementMinExpiryGap
 	}
-	return s
+	if _, ok := fields["vtxo_no_csv_validation_cutoff_date"]; ok {
+		result.VtxoNoCsvValidationCutoffDate = s.VtxoNoCsvValidationCutoffDate
+	}
+	if _, ok := fields["max_tx_weight"]; ok {
+		result.MaxTxWeight = s.MaxTxWeight
+	}
+	return result
 }
 
 func NewSettings(

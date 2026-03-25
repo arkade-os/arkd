@@ -64,7 +64,7 @@ func TestAdminService_Settings(t *testing.T) {
 			VtxoMinAmount:             -1,
 			MaxTxWeight:               40000,
 		}
-		err := svc.UpdateSettings(ctx, input)
+		err := svc.UpdateSettings(ctx, input, nil)
 		require.NoError(t, err)
 
 		got, err := svc.GetSettings(ctx)
@@ -118,7 +118,7 @@ func TestAdminService_Settings(t *testing.T) {
 			MaxTxWeight:               80000,
 			SettlementMinExpiryGap:    7200,
 		}
-		err := svc.UpdateSettings(ctx, updated)
+		err := svc.UpdateSettings(ctx, updated, nil)
 		require.NoError(t, err)
 
 		got, err := svc.GetSettings(ctx)
@@ -137,9 +137,9 @@ func TestAdminService_Settings(t *testing.T) {
 		before, err := svc.GetSettings(ctx)
 		require.NoError(t, err)
 
-		// Send only BanThreshold — everything else is zero.
+		// Send only BanThreshold via update mask.
 		partial := domain.Settings{BanThreshold: 99}
-		err = svc.UpdateSettings(ctx, partial)
+		err = svc.UpdateSettings(ctx, partial, []string{"ban_threshold"})
 		require.NoError(t, err)
 
 		got, err := svc.GetSettings(ctx)

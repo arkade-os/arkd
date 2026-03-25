@@ -51,7 +51,7 @@ type AdminService interface {
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
 	GetSettings(ctx context.Context) (*domain.Settings, error)
-	UpdateSettings(ctx context.Context, settings domain.Settings) error
+	UpdateSettings(ctx context.Context, settings domain.Settings, updateFields []string) error
 	ClearSettings(ctx context.Context) error
 }
 
@@ -622,12 +622,19 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 	return a.repoManager.Settings().Get(ctx)
 }
 
-func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Settings) error {
+func (a *adminService) UpdateSettings(
+	ctx context.Context,
+	settings domain.Settings,
+	updateFields []string,
+) error {
 	a.settingsMu.Lock()
 	defer a.settingsMu.Unlock()
 
-	// Merge with current settings so callers can send only the fields they
-	// want to change (zero-valued fields inherit the existing value).
+	// Merge the request with stored settings. When updateFields is provided,
+	// only the listed fields are written from the request; the rest stay as
+	// they were. When updateFields is empty, every field from the request is
+	// written as-is. Fields not set in the request default to 0 so callers
+	// must populate all fields.
 	current, err := a.repoManager.Settings().Get(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get current settings: %w", err)
@@ -635,7 +642,7 @@ func (a *adminService) UpdateSettings(ctx context.Context, settings domain.Setti
 	// nil means no settings exist yet (first boot) so then skip merge
 	// so caller's full settings are used as-is.
 	if current != nil {
-		settings = settings.Merge(*current)
+		settings = settings.Merge(*current, updateFields)
 	}
 
 	if err := settings.Validate(); err != nil {

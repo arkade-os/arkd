@@ -405,6 +405,12 @@ message GetSettingsResponse {
 
 message UpdateSettingsRequest {
   Settings settings = 1;
+  // Specifies which settings fields to update. If non-empty, only the
+  // listed fields are written from the request; all other fields remain
+  // unchanged. If empty, every field in the settings message is written
+  // as-is. Fields not set in the request default to 0, so callers must
+  // populate all fields. Use snake_case field names (e.g. "ban_threshold").
+  repeated string update_fields = 2;
 }
 message UpdateSettingsResponse {}
 
