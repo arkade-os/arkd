@@ -144,10 +144,11 @@ func TestSettings_Validate(t *testing.T) {
 		}
 	})
 
-	t.Run("merge with mask updates only listed fields", func(t *testing.T) {
+	t.Run("merge with update_fields updates only listed fields", func(t *testing.T) {
 		current := validSettings()
 		partial := Settings{BanThreshold: 10}
-		merged := partial.Merge(current, []string{"ban_threshold"})
+		merged, err := partial.Merge(current, []string{"ban_threshold"})
+		require.NoError(t, err)
 
 		assert.Equal(t, int64(10), merged.BanThreshold)
 		assert.Equal(t, current.BanDuration, merged.BanDuration)
@@ -158,25 +159,63 @@ func TestSettings_Validate(t *testing.T) {
 		require.NoError(t, merged.Validate())
 	})
 
-	t.Run("merge with mask allows setting field to zero", func(t *testing.T) {
+	t.Run("merge with update_fields allows setting field to zero", func(t *testing.T) {
 		current := validSettings()
 		current.SettlementMinExpiryGap = 3600
 		update := Settings{SettlementMinExpiryGap: 0}
-		merged := update.Merge(current, []string{"settlement_min_expiry_gap"})
+		merged, err := update.Merge(current, []string{"settlement_min_expiry_gap"})
+		require.NoError(t, err)
 
 		assert.Equal(t, int64(0), merged.SettlementMinExpiryGap)
 		// Other fields unchanged.
 		assert.Equal(t, current.BanThreshold, merged.BanThreshold)
 	})
 
-	t.Run("merge with empty mask replaces all fields", func(t *testing.T) {
+	t.Run("merge with empty update_fields replaces all fields", func(t *testing.T) {
 		current := validSettings()
 		full := validSettings()
 		full.BanThreshold = 99
-		merged := full.Merge(current, nil)
+		merged, err := full.Merge(current, nil)
+		require.NoError(t, err)
 
 		assert.Equal(t, int64(99), merged.BanThreshold)
 		assert.Equal(t, full.BanDuration, merged.BanDuration)
+	})
+
+	t.Run("merge rejects unknown update_fields", func(t *testing.T) {
+		current := validSettings()
+		_, err := current.Merge(current, []string{"ban_threshol"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `unknown update field: "ban_threshol"`)
+	})
+
+	t.Run("merge rejects duplicate update_fields", func(t *testing.T) {
+		current := validSettings()
+		_, err := current.Merge(current, []string{"ban_threshold", "ban_threshold"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `duplicate update field: "ban_threshold"`)
+	})
+
+	t.Run("validUpdateFields matches Settings struct", func(t *testing.T) {
+		expected := map[string]struct{}{
+			"ban_threshold":                      {},
+			"ban_duration":                       {},
+			"unilateral_exit_delay":              {},
+			"public_unilateral_exit_delay":       {},
+			"checkpoint_exit_delay":              {},
+			"boarding_exit_delay":                {},
+			"vtxo_tree_expiry":                   {},
+			"round_min_participants_count":       {},
+			"round_max_participants_count":       {},
+			"vtxo_min_amount":                    {},
+			"vtxo_max_amount":                    {},
+			"utxo_min_amount":                    {},
+			"utxo_max_amount":                    {},
+			"settlement_min_expiry_gap":          {},
+			"vtxo_no_csv_validation_cutoff_date": {},
+			"max_tx_weight":                      {},
+		}
+		assert.Equal(t, expected, validUpdateFields)
 	})
 
 	t.Run("min exceeds max", func(t *testing.T) {

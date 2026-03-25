@@ -642,7 +642,11 @@ func (a *adminService) UpdateSettings(
 	// nil means no settings exist yet (first boot) so then skip merge
 	// so caller's full settings are used as-is.
 	if current != nil {
-		settings = settings.Merge(*current, updateFields)
+		var mergeErr error
+		settings, mergeErr = settings.Merge(*current, updateFields)
+		if mergeErr != nil {
+			return mergeErr
+		}
 	}
 
 	if err := settings.Validate(); err != nil {

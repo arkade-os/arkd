@@ -3,7 +3,10 @@ package domain
 import (
 	"fmt"
 	"math"
+	"reflect"
+	"strings"
 	"time"
+	"unicode"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 )
@@ -128,20 +131,59 @@ func (s Settings) Validate() error {
 	return nil
 }
 
+// validUpdateFields is the set of snake_case field names accepted by Merge,
+// built from the Settings struct fields (excluding UpdatedAt).
+var validUpdateFields = buildValidUpdateFields()
+
+func buildValidUpdateFields() map[string]struct{} {
+	t := reflect.TypeOf(Settings{})
+	fields := make(map[string]struct{}, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		name := t.Field(i).Name
+		if name == "UpdatedAt" {
+			continue
+		}
+		fields[camelToSnake(name)] = struct{}{}
+	}
+	return fields
+}
+
+func camelToSnake(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if unicode.IsUpper(r) {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(unicode.ToLower(r))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // Merge combines the receiver (incoming request) with stored settings
 // according to updateFields. If non-empty, only the listed
 // fields are written from the request; all other fields remain as stored.
 // If updateFields is empty, every field from the request is written as-is —
 // fields not set in the request default to 0, so callers must populate all
 // fields. Field names use snake_case matching the proto field names.
-func (s Settings) Merge(stored Settings, updateFields []string) Settings {
+// Returns an error if any field name in updateFields is not recognized.
+func (s Settings) Merge(stored Settings, updateFields []string) (Settings, error) {
 	if len(updateFields) == 0 {
 		s.UpdatedAt = stored.UpdatedAt
-		return s
+		return s, nil
 	}
 
 	fields := make(map[string]struct{}, len(updateFields))
 	for _, f := range updateFields {
+		if _, ok := validUpdateFields[f]; !ok {
+			return Settings{}, fmt.Errorf("unknown update field: %q", f)
+		}
+		if _, dup := fields[f]; dup {
+			return Settings{}, fmt.Errorf("duplicate update field: %q", f)
+		}
 		fields[f] = struct{}{}
 	}
 
@@ -194,7 +236,7 @@ func (s Settings) Merge(stored Settings, updateFields []string) Settings {
 	if _, ok := fields["max_tx_weight"]; ok {
 		result.MaxTxWeight = s.MaxTxWeight
 	}
-	return result
+	return result, nil
 }
 
 func NewSettings(
