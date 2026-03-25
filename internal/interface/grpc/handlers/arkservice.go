@@ -83,6 +83,7 @@ func (h *handler) GetInfo(
 		VtxoMaxAmount:       info.VtxoMaxAmount,
 		CheckpointTapscript: info.CheckpointTapscript,
 		MaxTxWeight:         info.MaxTxWeight,
+		MaxOpReturnOutputs:  info.MaxOpReturnOutputs,
 		Fees:                fees(info.Fees).toProto(),
 	}
 	buf, errJSON := json.Marshal(resp)
@@ -672,6 +673,12 @@ func (h *handler) listenToTxEvents() {
 					ArkTx: txEvent(event).toProto(),
 				},
 			}
+		case application.SweepTxType:
+			msg = &arkv1.GetTransactionsStreamResponse{
+				Data: &arkv1.GetTransactionsStreamResponse_SweepTx{
+					SweepTx: txEvent(event).toProto(),
+				},
+			}
 		}
 
 		if msg != nil {
@@ -698,28 +705,43 @@ func (h *handler) listenToTxEvents() {
 func (h *handler) GetIntent(
 	ctx context.Context, req *arkv1.GetIntentRequest,
 ) (*arkv1.GetIntentResponse, error) {
-	var err error
-	var intent *domain.Intent
-
 	switch filter := req.GetFilter().(type) {
 	case *arkv1.GetIntentRequest_Txid:
-		intent, err = h.svc.GetIntentByTxid(ctx, filter.Txid)
-
+		intent, err := h.svc.GetIntentByTxid(ctx, filter.Txid)
+		if err != nil {
+			return nil, err
+		}
+		if intent == nil {
+			return nil, arkdErrors.INTENT_NOT_FOUND.New("intent not found")
+		}
+		protoIntent := &arkv1.Intent{
+			Proof:   intent.Proof,
+			Message: intent.Message,
+		}
+		return &arkv1.GetIntentResponse{
+			Intent:  protoIntent,
+			Intents: []*arkv1.Intent{protoIntent},
+		}, nil
+	case *arkv1.GetIntentRequest_Intent:
+		proof, message, err := parseGetIntent(filter.Intent)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		intents, svcErr := h.svc.GetIntentByProofs(ctx, *proof, *message)
+		if svcErr != nil {
+			return nil, svcErr
+		}
+		protoIntents := make([]*arkv1.Intent, 0, len(intents))
+		for _, i := range intents {
+			protoIntents = append(protoIntents, &arkv1.Intent{
+				Proof:   i.Proof,
+				Message: i.Message,
+			})
+		}
+		return &arkv1.GetIntentResponse{Intents: protoIntents}, nil
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown intent filter provided")
 	}
-
-	if err != nil {
-		return nil, err
-	}
-	if intent == nil {
-		return nil, arkdErrors.INTENT_NOT_FOUND.New("intent not found")
-	}
-
-	return &arkv1.GetIntentResponse{Intent: &arkv1.Intent{
-		Proof:   intent.Proof,
-		Message: intent.Message,
-	}}, nil
 }
 
 type eventWithTopics struct {

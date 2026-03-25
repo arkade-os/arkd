@@ -204,7 +204,7 @@ type OffchainTxInsufficientFeeMetadata struct {
 }
 
 type TxTooLargeMetadata struct {
-	Weight int `json:"weight"`
+	Weight    int `json:"weight"`
 	MaxWeight int `json:"max_weight"`
 }
 
@@ -456,8 +456,19 @@ type VtxoWithTooManyAssetsMetadata struct {
 	MaxAssets  int `json:"max_assets"`
 }
 
+type BuildVersionMetadata struct {
+	ClientVersion string `json:"client_version"`
+	MinVersion    string `json:"min_version"`
+}
+
+var BUILD_VERSION_TOO_OLD = Code[BuildVersionMetadata]{
+	48,
+	"BUILD_VERSION_TOO_OLD",
+	grpccodes.FailedPrecondition,
+}
+
 type DigestMismatchMetadata struct {
 	CurrentDigest string `json:"current_digest"`
 }
 
-var DIGEST_MISMATCH = Code[DigestMismatchMetadata]{48, "DIGEST_MISMATCH", grpccodes.FailedPrecondition}
+var DIGEST_MISMATCH = Code[DigestMismatchMetadata]{49, "DIGEST_MISMATCH", grpccodes.FailedPrecondition}

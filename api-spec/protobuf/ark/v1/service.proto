@@ -165,6 +165,10 @@ service ArkService {
   rpc GetIntent(GetIntentRequest) returns (GetIntentResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/intent"
+      additional_bindings {
+        post: "/v1/intent"
+        body: "*"
+      }
     };
   }
 }
@@ -191,6 +195,7 @@ message GetInfoResponse {
   map<string, string> service_status = 18;
   string digest = 19;
   int64 max_tx_weight = 20;
+  int64 max_op_return_outputs = 21;
 }
 
 message RegisterIntentRequest {
@@ -321,15 +326,21 @@ message GetTransactionsStreamResponse {
     TxNotification commitment_tx = 1;
     TxNotification ark_tx = 2;
     Heartbeat heartbeat = 3;
+    TxNotification sweep_tx = 4;
   }
 }
 
 message GetIntentRequest {
   oneof filter {
-      string txid = 1;
-    }
+    string txid = 1;
+    Intent intent = 2;
+  }
 }
 
+// The repeated intents field is always populated with the matching results.
+// The singular intent field is only set for backward compatibility when the
+// request uses the txid filter, in which case it mirrors intents[0].
 message GetIntentResponse {
   Intent intent = 1;
+  repeated Intent intents = 2;
 }

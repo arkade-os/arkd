@@ -75,6 +75,8 @@ type Info struct {
 	VtxoMinAmount             int64
 	VtxoMaxAmount             int64
 	CheckpointTapscript       string
+	MaxTxWeight               int64
+	MaxOpReturnOutputs        int64
 	Fees                      types.FeeInfo
 	DeprecatedSignerPubKeys   []DeprecatedSigner
 	ServiceStatus             map[string]string
@@ -153,6 +155,7 @@ type BatchStartedEvent struct {
 type TransactionEvent struct {
 	CommitmentTx *TxNotification
 	ArkTx        *TxNotification
+	SweepTx      *TxNotification
 	Connection   *types.StreamConnectionEvent
 	Err          error
 }
@@ -167,4 +170,5 @@ type TxNotification struct {
 	SpentVtxos     []types.Vtxo
 	SpendableVtxos []types.Vtxo
 	CheckpointTxs  map[types.Outpoint]TxData
+	SweptVtxos     []types.Outpoint
 }

@@ -295,8 +295,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	digestSvc := interceptors.NewDigestService()
 
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, digestSvc),
-		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, digestSvc),
+		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, s.version, digestSvc),
+		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, s.version, digestSvc),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
@@ -396,6 +396,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 			return "macaroon", true
 		case "X-Ark-Digest":
 			return "x-ark-digest", true
+		case "X-Build-Version":
+			return "x-build-version", true
 		default:
 			return key, false
 		}
