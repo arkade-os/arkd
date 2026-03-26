@@ -56,7 +56,7 @@ func checkVersionCompat(
 	minAllowedVersion := fmt.Sprintf("%d.%d.0", serverMajor, serverMinor)
 	if clientMajor < serverMajor {
 		log.Debugf(
-			"rejecting request: build version header %s below server major version %s",
+			"rejecting request: build version header %d below server major version %d",
 			clientMajor, serverMajor,
 		)
 		return errors.BUILD_VERSION_TOO_OLD.
