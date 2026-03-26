@@ -13,59 +13,92 @@ import (
 
 const testMethod = "/ark.v1.ArkService/TestMethod"
 
+func TestParseVersion(t *testing.T) {
+	testCases := []struct {
+		input     string
+		wantMajor int64
+		wantMinor int64
+	}{
+		{"1.0.0", 1, 0},
+		{"v2.3.4", 2, 3},
+		{"0.9.0", 0, 9},
+		{"10.0.0", 10, 0},
+		{"3", 3, 0},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			gotMajor, gotMinor, err := parseVersion(tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantMajor, gotMajor)
+			require.Equal(t, tc.wantMinor, gotMinor)
+		})
+	}
+
+	for _, bad := range []string{"abc", ""} {
+		_, _, err := parseVersion(bad)
+		require.Error(t, err)
+	}
+}
+
 func TestUnaryVersionCompat(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		testCases := []struct {
 			description   string
-			serverMajor   int64
 			serverVersion string
 			ctx           context.Context
 		}{
 			{
 				description:   "no header passes through",
-				serverMajor:   2,
 				serverVersion: "2.0.0",
 				ctx:           context.Background(),
 			},
 			{
 				description:   "same major version",
-				serverMajor:   2,
 				serverVersion: "2.0.0",
 				ctx:           ctxWithVersion("2.0.0"),
 			},
 			{
 				description:   "higher client major version",
-				serverMajor:   2,
 				serverVersion: "2.0.0",
 				ctx:           ctxWithVersion("3.1.0"),
 			},
 			{
-				description:   "minor and patch differences ignored on same major",
-				serverMajor:   2,
+				description:   "same minor version",
+				serverVersion: "2.1.0",
+				ctx:           ctxWithVersion("2.1.0"),
+			},
+			{
+				description:   "higher client minor version",
+				serverVersion: "2.0.0",
+				ctx:           ctxWithVersion("2.1.0"),
+			},
+			{
+				description:   "higher patch version",
 				serverVersion: "2.5.0",
-				ctx:           ctxWithVersion("2.0.0"),
+				ctx:           ctxWithVersion("2.5.1"),
+			},
+			{
+				description:   "lower patch version",
+				serverVersion: "2.5.1",
+				ctx:           ctxWithVersion("2.5.0"),
 			},
 			{
 				description:   "malformed client version passes through",
-				serverMajor:   2,
 				serverVersion: "2.0.0",
 				ctx:           ctxWithVersion("not-a-version"),
 			},
 			{
 				description:   "empty header value passes through",
-				serverMajor:   2,
 				serverVersion: "2.0.0",
 				ctx:           ctxWithVersion(""),
 			},
 			{
 				description:   "unparsable server version allows all clients",
-				serverMajor:   0,
 				serverVersion: "unknown",
 				ctx:           ctxWithVersion("0.1.0"),
 			},
 			{
 				description:   "empty server version allows all clients",
-				serverMajor:   0,
 				serverVersion: "",
 				ctx:           ctxWithVersion("0.1.0"),
 			},
@@ -73,7 +106,9 @@ func TestUnaryVersionCompat(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.description, func(t *testing.T) {
-				interceptor := unaryVersionCompatHandler(tc.serverMajor, tc.serverVersion)
+				major, minor, _ := parseVersion(tc.serverVersion)
+
+				interceptor := unaryVersionCompatHandler(major, minor, tc.serverVersion)
 				called := false
 				_, err := interceptor(
 					tc.ctx,
@@ -91,29 +126,38 @@ func TestUnaryVersionCompat(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
+		serverVersion := "2.1.0"
+		major, minor, err := parseVersion(serverVersion)
+		require.NoError(t, err)
+		require.Equal(t, int64(2), major)
+		require.Equal(t, int64(1), minor)
+
 		testCases := []struct {
-			description     string
-			clientVersion   string
-			expectedVersion string
-			expectedMin     string
+			description   string
+			clientVersion string
 		}{
 			{
-				description:     "client major below server major",
-				clientVersion:   "1.9.9",
-				expectedVersion: "1.9.9",
-				expectedMin:     "2.0.0",
+				description:   "client major below server major",
+				clientVersion: "1.9.9",
 			},
 			{
-				description:     "client major below server major with v prefix",
-				clientVersion:   "v1.8.0",
-				expectedVersion: "v1.8.0",
-				expectedMin:     "2.0.0",
+				description:   "client major below server major with v prefix",
+				clientVersion: "v1.8.0",
+			},
+			{
+				description:   "client minor below server minor",
+				clientVersion: "2.0.0",
+			},
+			{
+				description:   "client minor below server minor with v prefix",
+				clientVersion: "v2.0.0",
 			},
 		}
 
 		for _, tc := range testCases {
 			t.Run(tc.description, func(t *testing.T) {
-				interceptor := unaryVersionCompatHandler(2, "2.0.0")
+				require.NoError(t, err)
+				interceptor := unaryVersionCompatHandler(major, minor, serverVersion)
 				called := false
 				_, err := interceptor(
 					ctxWithVersion(tc.clientVersion),
@@ -131,50 +175,59 @@ func TestUnaryVersionCompat(t *testing.T) {
 				require.True(t, errors.As(err, &sdkErr))
 				require.Equal(t, arkerrors.BUILD_VERSION_TOO_OLD.Code, sdkErr.Code())
 				meta := sdkErr.Metadata()
-				require.Equal(t, tc.expectedVersion, meta["client_version"])
-				require.Equal(t, tc.expectedMin, meta["min_version"])
+				require.Equal(t, tc.clientVersion, meta["client_version"])
+				require.Equal(t, serverVersion, meta["min_version"])
 			})
 		}
 	})
 }
 
 func TestStreamVersionCompat(t *testing.T) {
+	serverVersion := "2.1.1"
+	expectedVersion := "2.1.0"
+	major, minor, err := parseVersion(serverVersion)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), major)
+	require.Equal(t, int64(1), minor)
+
 	t.Run("valid", func(t *testing.T) {
 		testCases := []struct {
-			description   string
-			serverMajor   int64
-			serverVersion string
-			ctx           context.Context
+			description string
+			ctx         context.Context
 		}{
 			{
-				description:   "no header passes through",
-				serverMajor:   2,
-				serverVersion: "2.0.0",
-				ctx:           context.Background(),
+				description: "no header passes through",
+				ctx:         context.Background(),
 			},
 			{
-				description:   "same major version passes through",
-				serverMajor:   2,
-				serverVersion: "2.0.0",
-				ctx:           ctxWithVersion("2.0.0"),
+				description: "same major version passes through",
+				ctx:         ctxWithVersion("2.1.1"),
 			},
 			{
-				description:   "higher client major version",
-				serverMajor:   2,
-				serverVersion: "2.0.0",
-				ctx:           ctxWithVersion("3.0.0"),
+				description: "higher client major version",
+				ctx:         ctxWithVersion("3.0.0"),
 			},
 			{
-				description:   "malformed client version passes through",
-				serverMajor:   2,
-				serverVersion: "2.0.0",
-				ctx:           ctxWithVersion("not-a-version"),
+				description: "same minor version passes through",
+				ctx:         ctxWithVersion("2.1.1"),
+			},
+			{
+				description: "higher patch version",
+				ctx:         ctxWithVersion("2.1.5"),
+			},
+			{
+				description: "lower patch version",
+				ctx:         ctxWithVersion("2.1.0"),
+			},
+			{
+				description: "malformed client version passes through",
+				ctx:         ctxWithVersion("not-a-version"),
 			},
 		}
 
 		for _, tc := range testCases {
 			t.Run(tc.description, func(t *testing.T) {
-				interceptor := streamVersionCompatHandler(tc.serverMajor, tc.serverVersion)
+				interceptor := streamVersionCompatHandler(major, minor, serverVersion)
 				called := false
 				err := interceptor(
 					nil,
@@ -193,28 +246,30 @@ func TestStreamVersionCompat(t *testing.T) {
 
 	t.Run("invalid", func(t *testing.T) {
 		testCases := []struct {
-			description     string
-			clientVersion   string
-			expectedVersion string
-			expectedMin     string
+			description   string
+			clientVersion string
 		}{
 			{
-				description:     "client major below server major",
-				clientVersion:   "1.7.0",
-				expectedVersion: "1.7.0",
-				expectedMin:     "2.0.0",
+				description:   "client major below server major",
+				clientVersion: "1.7.0",
 			},
 			{
-				description:     "client major below server major with v prefix",
-				clientVersion:   "v1.8.0",
-				expectedVersion: "v1.8.0",
-				expectedMin:     "2.0.0",
+				description:   "client major below server major with v prefix",
+				clientVersion: "v1.8.0",
+			},
+			{
+				description:   "client minor below server minor",
+				clientVersion: "2.0.0",
+			},
+			{
+				description:   "client minor below server minor with v prefix",
+				clientVersion: "v2.0.0",
 			},
 		}
 
 		for _, tc := range testCases {
 			t.Run(tc.description, func(t *testing.T) {
-				interceptor := streamVersionCompatHandler(2, "2.0.0")
+				interceptor := streamVersionCompatHandler(major, minor, serverVersion)
 				called := false
 				err := interceptor(
 					nil,
@@ -232,36 +287,11 @@ func TestStreamVersionCompat(t *testing.T) {
 				require.True(t, errors.As(err, &sdkErr))
 				require.Equal(t, arkerrors.BUILD_VERSION_TOO_OLD.Code, sdkErr.Code())
 				meta := sdkErr.Metadata()
-				require.Equal(t, tc.expectedVersion, meta["client_version"])
-				require.Equal(t, tc.expectedMin, meta["min_version"])
+				require.Equal(t, tc.clientVersion, meta["client_version"])
+				require.Equal(t, expectedVersion, meta["min_version"])
 			})
 		}
 	})
-}
-
-func TestParseMajorVersion(t *testing.T) {
-	testCases := []struct {
-		input string
-		want  int64
-	}{
-		{"1.0.0", 1},
-		{"v2.3.4", 2},
-		{"0.9.0", 0},
-		{"10.0.0", 10},
-		{"3", 3},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
-			got, err := parseMajorVersion(tc.input)
-			require.NoError(t, err)
-			require.Equal(t, tc.want, got)
-		})
-	}
-
-	for _, bad := range []string{"abc", ""} {
-		_, err := parseMajorVersion(bad)
-		require.Error(t, err)
-	}
 }
 
 func ctxWithVersion(version string) context.Context {
