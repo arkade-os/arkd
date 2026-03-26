@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/txscript"
@@ -271,12 +272,14 @@ func validateGroupOutputs(arkTx *wire.MsgTx, assetID string, grp AssetGroup) err
 			).WithMetadata(errors.AssetOutputMetadata{OutputIndex: vout, AssetID: assetID})
 		}
 
-		// verify referenced output is not the packet itself
+		// verify referenced output is not a non-subdust OP_RETURN (e.g. the packet itself)
 		if _, ok := opReturnOutputIndex[vout]; ok {
-			return errors.ASSET_OUTPUT_INVALID.New(
-				"asset output vout %d is OP_RETURN", // TODO allow subdust output holding asset ?
-				vout,
-			).WithMetadata(errors.AssetOutputMetadata{OutputIndex: vout, AssetID: assetID})
+			if !script.IsSubDustScript(arkTx.TxOut[vout].PkScript) {
+				return errors.ASSET_OUTPUT_INVALID.New(
+					"asset output vout %d is OP_RETURN",
+					vout,
+				).WithMetadata(errors.AssetOutputMetadata{OutputIndex: vout, AssetID: assetID})
+			}
 		}
 	}
 

@@ -111,8 +111,9 @@ type Config struct {
 	PyroscopeServerURL                        string
 	RoundReportServiceEnabled                 bool
 
-	EsploraURL      string
-	AlertManagerURL string
+	EsploraURL        string
+	AlertManagerURL   string
+	ArkadeExplorerURL string
 
 	UnlockerType     string
 	UnlockerFilePath string // file unlocker
@@ -127,8 +128,10 @@ type Config struct {
 	SettlementMinExpiryGap    int64
 	MaxTxWeight               uint64
 	AssetTxMaxWeightRatio     float64
+	MaxOpReturnOutputs        uint32
 
-	EnablePprof bool
+	EnablePprof          bool
+	MaxConcurrentStreams uint32
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -185,6 +188,7 @@ var (
 	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
 	EsploraURL                           = "ESPLORA_URL"
 	AlertManagerURL                      = "ALERT_MANAGER_URL"
+	ArkadeExplorerURL                    = "ARKADE_EXPLORER_URL"
 	NoMacaroons                          = "NO_MACAROONS"
 	NoTLS                                = "NO_TLS"
 	TLSExtraIP                           = "TLS_EXTRA_IP"
@@ -212,6 +216,7 @@ var (
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	MaxOpReturnOutputs                   = "MAX_OP_RETURN_OUTS"
 	// Max transaction weight accepted by the ark server
 	MaxTxWeight = "MAX_TX_WEIGHT"
 	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
@@ -219,6 +224,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
+	MaxConcurrentStreams          = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -233,6 +239,7 @@ var (
 	defaultLiveStoreType       = "redis"
 	defaultRedisTxNumOfRetries = 10
 	defaultEsploraURL          = "https://blockstream.info/api"
+	defaultArkadeExplorerURL   = "https://arkade.space"
 	defaultLogLevel            = 4
 	defaultVtxoTreeExpiry      = 604672  // 7 days
 	defaultUnilateralExitDelay = 86400   // 24 hours
@@ -256,6 +263,8 @@ var (
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultMaxConcurrentStreams          = uint32(1000)
+	defaultMaxOpReturnOuts               = uint32(3)
 )
 
 func LoadConfig() (*Config, error) {
@@ -279,6 +288,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(PublicUnilateralExitDelay, defaultUnilateralExitDelay)
 	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
+	viper.SetDefault(ArkadeExplorerURL, defaultArkadeExplorerURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
 	viper.SetDefault(BoardingExitDelay, defaultBoardingExitDelay)
 	viper.SetDefault(RoundMaxParticipantsCount, defaultRoundMaxParticipantsCount)
@@ -298,6 +308,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
+	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -375,6 +387,7 @@ func LoadConfig() (*Config, error) {
 		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
 		EsploraURL:                viper.GetString(EsploraURL),
 		AlertManagerURL:           viper.GetString(AlertManagerURL),
+		ArkadeExplorerURL:         viper.GetString(ArkadeExplorerURL),
 		NoMacaroons:               viper.GetBool(NoMacaroons),
 		TLSExtraIPs:               viper.GetStringSlice(TLSExtraIP),
 		TLSExtraDomains:           viper.GetStringSlice(TLSExtraDomain),
@@ -410,6 +423,9 @@ func LoadConfig() (*Config, error) {
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
+		// Default to 1 if set to 0
+		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
 	}, nil
 }
 
@@ -587,6 +603,10 @@ func (c *Config) Validate() error {
 			"asset tx max weight ratio must be between 0 and 1 (exclusive), got %f",
 			c.AssetTxMaxWeightRatio,
 		)
+	}
+
+	if c.MaxConcurrentStreams == 0 {
+		return fmt.Errorf("max concurrent streams must be greater than 0")
 	}
 
 	if err := c.repoManager(); err != nil {
@@ -859,7 +879,7 @@ func (c *Config) appService() error {
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
-		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0),
+		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0), c.MaxOpReturnOutputs,
 	)
 	if err != nil {
 		return err
@@ -875,9 +895,17 @@ func (c *Config) adminService() error {
 		unit = ports.BlockHeight
 	}
 
+	onInfoChange := func() {
+		if c.svc == nil {
+			return
+		}
+		c.svc.RefreshInfoCache()
+	}
+
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		onInfoChange,
 	)
 	return nil
 }
@@ -918,7 +946,7 @@ func (c *Config) alertsService() error {
 		return nil
 	}
 
-	alerts, err := alertsmanager.NewService(c.AlertManagerURL, c.EsploraURL)
+	alerts, err := alertsmanager.NewService(c.AlertManagerURL, c.ArkadeExplorerURL)
 	if err != nil {
 		return err
 	}

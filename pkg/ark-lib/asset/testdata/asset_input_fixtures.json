@@ -219,6 +219,11 @@
                 "name": "duplicated inputs",
                 "serializedHex": "0201000088270100008827",
                 "expectedError": "all inputs must have unique vin"
+            },
+            {
+                "name": "input count exceeds max",
+                "serializedHex": "e907",
+                "expectedError": "invalid asset input count"
             }
         ]
     }

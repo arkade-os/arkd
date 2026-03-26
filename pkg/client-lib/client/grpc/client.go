@@ -129,6 +129,8 @@ func (a *grpcClient) GetInfo(ctx context.Context) (*client.Info, error) {
 		VtxoMaxAmount:             resp.GetVtxoMaxAmount(),
 		CheckpointTapscript:       resp.GetCheckpointTapscript(),
 		DeprecatedSignerPubKeys:   deprecatedSigners,
+		MaxTxWeight:               resp.GetMaxTxWeight(),
+		MaxOpReturnOutputs:        resp.GetMaxOpReturnOutputs(),
 		Fees:                      fees,
 		ServiceStatus:             resp.GetServiceStatus(),
 		Digest:                    resp.GetDigest(),
@@ -446,6 +448,30 @@ func (c *grpcClient) GetTransactionsStream(
 						SpentVtxos:     vtxos(tx.ArkTx.SpentVtxos).toVtxos(),
 						SpendableVtxos: vtxos(tx.ArkTx.SpendableVtxos).toVtxos(),
 						CheckpointTxs:  checkpointTxs,
+					},
+				}:
+					return nil
+				}
+			case *arkv1.GetTransactionsStreamResponse_SweepTx:
+				sweptVtxos := make([]types.Outpoint, 0, len(tx.SweepTx.SweptVtxos))
+				for _, o := range tx.SweepTx.SweptVtxos {
+					sweptVtxos = append(sweptVtxos, types.Outpoint{
+						Txid: o.GetTxid(),
+						VOut: o.GetVout(),
+					})
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case eventsCh <- client.TransactionEvent{
+					SweepTx: &client.TxNotification{
+						TxData: client.TxData{
+							Txid: tx.SweepTx.GetTxid(),
+							Tx:   tx.SweepTx.GetTx(),
+						},
+						SpentVtxos:     vtxos(tx.SweepTx.SpentVtxos).toVtxos(),
+						SpendableVtxos: vtxos(tx.SweepTx.SpendableVtxos).toVtxos(),
+						SweptVtxos:     sweptVtxos,
 					},
 				}:
 					return nil
