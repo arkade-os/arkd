@@ -14,7 +14,7 @@ import (
 
 const buildVersionHeader = "x-build-version"
 
-// parseVersion extracts the major version component from a semver string.
+// parseVersion extracts the major and minior version components from a semver string.
 // Accepts formats like "1.0.0", "v1.0.0", or just "1".
 func parseVersion(ver string) (int64, int64, error) {
 	ver = strings.TrimPrefix(ver, "v")
