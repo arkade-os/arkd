@@ -78,6 +78,11 @@ func TestUnaryVersionCompat(t *testing.T) {
 				ctx:           ctxWithVersion("2.5.1"),
 			},
 			{
+				description:   "lower patch version",
+				serverVersion: "2.5.1",
+				ctx:           ctxWithVersion("2.5.0"),
+			},
+			{
 				description:   "malformed client version passes through",
 				serverVersion: "2.0.0",
 				ctx:           ctxWithVersion("not-a-version"),
@@ -178,7 +183,7 @@ func TestUnaryVersionCompat(t *testing.T) {
 }
 
 func TestStreamVersionCompat(t *testing.T) {
-	serverVersion := "2.1.0"
+	serverVersion := "2.1.1"
 	major, minor, err := parseVersion(serverVersion)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), major)
@@ -195,7 +200,7 @@ func TestStreamVersionCompat(t *testing.T) {
 			},
 			{
 				description: "same major version passes through",
-				ctx:         ctxWithVersion("2.1.0"),
+				ctx:         ctxWithVersion("2.1.1"),
 			},
 			{
 				description: "higher client major version",
@@ -203,11 +208,15 @@ func TestStreamVersionCompat(t *testing.T) {
 			},
 			{
 				description: "same minor version passes through",
-				ctx:         ctxWithVersion("2.1.0"),
+				ctx:         ctxWithVersion("2.1.1"),
 			},
 			{
 				description: "higher patch version",
 				ctx:         ctxWithVersion("2.1.5"),
+			},
+			{
+				description: "lower patch version",
+				ctx:         ctxWithVersion("2.1.0"),
 			},
 			{
 				description: "malformed client version passes through",

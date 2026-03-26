@@ -53,7 +53,6 @@ func checkVersionCompat(
 		return nil
 	}
 
-	fmt.Println("AAAAA", clientMajor, serverMajor, clientMinor, serverMinor)
 	if clientMajor < serverMajor {
 		log.Debugf(
 			"rejecting request: build version header %d below server major version %d",
