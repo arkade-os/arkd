@@ -192,6 +192,15 @@ func (w *bitcoinWallet) NewBoardingAddress(
 		return nil, fmt.Errorf("config store not initialized")
 	}
 
+	// Validate here (not just in the service layer) so that direct callers of
+	// WalletService.NewBoardingAddress cannot persist a script with an exit
+	// delay below the configured floor.
+	if err := vtxoScript.Validate(
+		data.SignerPubKey, data.BoardingExitDelay, false,
+	); err != nil {
+		return nil, fmt.Errorf("invalid boarding vtxo script: %w", err)
+	}
+
 	netParams := utils.ToBitcoinNetwork(data.Network)
 
 	tapKey, _, err := vtxoScript.TapTree()
@@ -212,12 +221,19 @@ func (w *bitcoinWallet) NewBoardingAddress(
 		return nil, err
 	}
 
-	descriptor := walletstore.BoardingDescriptor{
-		Address:    addr.EncodeAddress(),
-		Tapscripts: tapscripts,
-	}
-	if err := w.walletStore.AddBoardingDescriptor(descriptor); err != nil {
+	// Skip persisting if this matches the built-in default boarding address.
+	_, defaultBoarding, err := w.getArkAddresses(ctx)
+	if err != nil {
 		return nil, err
+	}
+	if addr.EncodeAddress() != defaultBoarding.Address {
+		descriptor := walletstore.BoardingDescriptor{
+			Address:    addr.EncodeAddress(),
+			Tapscripts: tapscripts,
+		}
+		if err := w.walletStore.AddBoardingDescriptor(descriptor); err != nil {
+			return nil, err
+		}
 	}
 
 	return &types.Address{

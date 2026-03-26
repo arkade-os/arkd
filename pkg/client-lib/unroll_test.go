@@ -14,9 +14,12 @@ import (
 )
 
 func TestAddInputsPerUtxoScript(t *testing.T) {
-	signerKey, _ := btcec.NewPrivateKey()
-	ownerKey1, _ := btcec.NewPrivateKey()
-	ownerKey2, _ := btcec.NewPrivateKey()
+	signerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	ownerKey1, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	ownerKey2, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
 
 	exitDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
 

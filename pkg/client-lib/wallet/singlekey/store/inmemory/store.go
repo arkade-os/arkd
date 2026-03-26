@@ -42,7 +42,7 @@ func (s *inmemoryStore) AddBoardingDescriptor(descriptor walletstore.BoardingDes
 		}
 	}
 
-	s.boardingDescriptors = append(s.boardingDescriptors, descriptor)
+	s.boardingDescriptors = append(s.boardingDescriptors, cloneDescriptor(descriptor))
 	return nil
 }
 
@@ -50,7 +50,18 @@ func (s *inmemoryStore) GetBoardingDescriptors() ([]walletstore.BoardingDescript
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 
-	result := make([]walletstore.BoardingDescriptor, len(s.boardingDescriptors))
-	copy(result, s.boardingDescriptors)
+	result := make([]walletstore.BoardingDescriptor, 0, len(s.boardingDescriptors))
+	for _, d := range s.boardingDescriptors {
+		result = append(result, cloneDescriptor(d))
+	}
 	return result, nil
+}
+
+func cloneDescriptor(d walletstore.BoardingDescriptor) walletstore.BoardingDescriptor {
+	ts := make([]string, len(d.Tapscripts))
+	copy(ts, d.Tapscripts)
+	return walletstore.BoardingDescriptor{
+		Address:    d.Address,
+		Tapscripts: ts,
+	}
 }

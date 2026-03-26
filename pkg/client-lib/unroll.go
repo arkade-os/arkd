@@ -554,7 +554,7 @@ func (a *service) addInputs(
 
 		vtxoScript, err := script.ParseVtxoScript(utxo.Tapscripts)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to parse vtxo script for %s:%d: %w", utxo.Txid, utxo.VOut, err)
 		}
 
 		exitClosures := vtxoScript.ExitClosures()

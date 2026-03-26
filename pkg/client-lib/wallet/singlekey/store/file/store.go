@@ -147,7 +147,7 @@ func (s *fileStore) AddBoardingDescriptor(descriptor walletstore.BoardingDescrip
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.filePath, jsonString, 0755)
+	return os.WriteFile(s.filePath, jsonString, 0600)
 }
 
 func (s *fileStore) GetBoardingDescriptors() ([]walletstore.BoardingDescriptor, error) {
@@ -231,7 +231,7 @@ func (s *fileStore) write(data *walletData) error {
 		return err
 	}
 
-	err = os.WriteFile(s.filePath, jsonString, 0755)
+	err = os.WriteFile(s.filePath, jsonString, 0600)
 	if err != nil {
 		return err
 	}
