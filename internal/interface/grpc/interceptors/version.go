@@ -18,7 +18,7 @@ const buildVersionHeader = "x-build-version"
 // Accepts formats like "1.0.0", "v1.0.0", or just "1".
 func parseVersion(ver string) (int64, int64, error) {
 	ver = strings.TrimPrefix(ver, "v")
-	parts := strings.SplitN(ver, ".", -1)
+	parts := strings.Split(ver, ".")
 	major, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		return 0, 0, fmt.Errorf("cannot parse major version from %q: %w", ver, err)
@@ -102,7 +102,9 @@ func streamVersionCompatHandler(
 		srv interface{}, ss grpc.ServerStream,
 		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
-		if err := checkVersionCompat(ss.Context(), serverMajor, serverMinor, serverVersion); err != nil {
+		if err := checkVersionCompat(
+			ss.Context(), serverMajor, serverMinor, serverVersion,
+		); err != nil {
 			return err
 		}
 		return handler(srv, ss)
