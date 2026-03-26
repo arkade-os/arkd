@@ -184,6 +184,7 @@ func TestUnaryVersionCompat(t *testing.T) {
 
 func TestStreamVersionCompat(t *testing.T) {
 	serverVersion := "2.1.1"
+	expectedVersion := "2.1.0"
 	major, minor, err := parseVersion(serverVersion)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), major)
@@ -287,7 +288,7 @@ func TestStreamVersionCompat(t *testing.T) {
 				require.Equal(t, arkerrors.BUILD_VERSION_TOO_OLD.Code, sdkErr.Code())
 				meta := sdkErr.Metadata()
 				require.Equal(t, tc.clientVersion, meta["client_version"])
-				require.Equal(t, serverVersion, meta["min_version"])
+				require.Equal(t, expectedVersion, meta["min_version"])
 			})
 		}
 	})
