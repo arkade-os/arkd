@@ -381,7 +381,15 @@ func (e *indexerService) GetVirtualTxs(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	resp, err := e.indexerSvc.GetVirtualTxs(ctx, request.GetAuthToken(), txids, page)
+	var intent application.Intent
+	if reqIntent := request.GetIntent(); reqIntent != nil {
+		intent = application.Intent{
+			Proof:   reqIntent.GetProof(),
+			Message: reqIntent.GetMessage(),
+		}
+	}
+
+	resp, err := e.indexerSvc.GetVirtualTxs(ctx, request.GetAuthToken(), intent, txids, page)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}

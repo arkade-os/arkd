@@ -75,6 +75,7 @@ type IndexerService interface {
 	GetVirtualTxs(
 		ctx context.Context,
 		authToken string,
+		intent Intent,
 		txids []string,
 		page *Page,
 	) (*VirtualTxsResp, error)
@@ -732,25 +733,18 @@ func (i *indexerService) validateIntentProof(
 }
 
 func (i *indexerService) GetVirtualTxs(
-	ctx context.Context, authToken string, txids []string, page *Page,
+	ctx context.Context, authToken string, intent Intent, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
 	switch TxExposure(i.txExposure) {
 	case TxExposurePublic:
 		return i.getVirtualTxs(ctx, txids, page)
 	case TxExposureWithheld:
 		isValid := false
-		var err error
-		// optional auth token can be passed, if it was lets check if valid
-		if authToken != "" {
-			var tokenOutpoint Outpoint
-			tokenOutpoint, isValid, err = i.validateAuthToken(authToken)
-			if err != nil {
+		outpoint, validatedVia := i.resolveAuth(ctx, authToken, intent)
+		if validatedVia != "" {
+			isValid = true
+			if err := i.validateTxidsAgainstChain(ctx, outpoint, txids); err != nil {
 				return nil, err
-			}
-			if isValid {
-				if err := i.validateTxidsAgainstChain(ctx, tokenOutpoint, txids); err != nil {
-					return nil, err
-				}
 			}
 		}
 
@@ -759,7 +753,7 @@ func (i *indexerService) GetVirtualTxs(
 			return nil, err
 		}
 
-		// if no auth token or invalid auth token, remove from each PSBT the signature of arkd
+		// if no valid auth, remove from each PSBT the signature of arkd
 		// so user cannot construct the full broadcastable txn
 		if !isValid {
 			if err := i.stripArkdSignatures(resp.Txs); err != nil {
@@ -768,24 +762,56 @@ func (i *indexerService) GetVirtualTxs(
 		}
 		return resp, nil
 	case TxExposurePrivate:
-		if authToken == "" {
-			return nil, fmt.Errorf("auth token is required for private exposure")
+		if authToken == "" && intent.Proof == "" {
+			return nil, fmt.Errorf("auth token or intent is required for private exposure")
 		}
-		// require valid auth token to proceed
-		tokenOutpoint, isValid, err := i.validateAuthToken(authToken)
-		if err != nil {
-			return nil, err
+		outpoint, validatedVia := i.resolveAuth(ctx, authToken, intent)
+		if validatedVia == "" {
+			return nil, fmt.Errorf("invalid auth token or intent for private exposure")
 		}
-		if !isValid {
-			return nil, fmt.Errorf("invalid auth token for private exposure")
-		}
-		if err := i.validateTxidsAgainstChain(ctx, tokenOutpoint, txids); err != nil {
+		if err := i.validateTxidsAgainstChain(ctx, outpoint, txids); err != nil {
 			return nil, err
 		}
 		return i.getVirtualTxs(ctx, txids, page)
 	default:
 		return nil, fmt.Errorf("invalid exposure value: %s", i.txExposure)
 	}
+}
+
+// validateIntentForVirtualTxs extracts the outpoint from the intent and validates the proof.
+func (i *indexerService) validateIntentForVirtualTxs(
+	ctx context.Context, intent Intent,
+) (Outpoint, error) {
+	outpoint, err := i.extractOutpointFromIntent(intent)
+	if err != nil {
+		return Outpoint{}, err
+	}
+	if err := i.validateIntentProof(ctx, outpoint, intent); err != nil {
+		return Outpoint{}, err
+	}
+	return outpoint, nil
+}
+
+// resolveAuth accepts either an auth token or an intent to prove ownership.
+// They are not mutually exclusive: if both are provided, the auth token is
+// tried first and the intent is only evaluated when the token is missing or invalid.
+// Returns the validated outpoint and which method succeeded ("token", "intent", or "").
+func (i *indexerService) resolveAuth(
+	ctx context.Context, authToken string, intent Intent,
+) (Outpoint, string) {
+	if authToken != "" {
+		outpoint, isValid, err := i.validateAuthToken(authToken)
+		if err == nil && isValid {
+			return outpoint, "token"
+		}
+	}
+	if intent.Proof != "" {
+		outpoint, err := i.validateIntentForVirtualTxs(ctx, intent)
+		if err == nil {
+			return outpoint, "intent"
+		}
+	}
+	return Outpoint{}, ""
 }
 
 func (i *indexerService) GetVirtualTxsByIds(

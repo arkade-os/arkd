@@ -2,10 +2,12 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/stretchr/testify/require"
@@ -27,6 +29,12 @@ func (m *mockRoundRepo) GetTxsWithTxids(
 		}
 	}
 	return result, nil
+}
+
+func (m *mockRoundRepo) GetRoundVtxoTree(
+	_ context.Context, txid string,
+) (tree.FlatTxTree, error) {
+	return nil, fmt.Errorf("not implemented in mock")
 }
 
 type mockRepoManager struct {
@@ -66,13 +74,13 @@ func TestGetVirtualTxs_PublicExposure(t *testing.T) {
 	indexer := newTestIndexerWithExposure(privkey, "public", repo)
 
 	t.Run("no token returns txs", func(t *testing.T) {
-		resp, err := indexer.GetVirtualTxs(context.Background(), "", testTxids, nil)
+		resp, err := indexer.GetVirtualTxs(context.Background(), "", Intent{}, testTxids, nil)
 		require.NoError(t, err)
 		require.Len(t, resp.Txs, 1)
 	})
 
 	t.Run("with token still returns txs", func(t *testing.T) {
-		resp, err := indexer.GetVirtualTxs(context.Background(), "sometoken", testTxids, nil)
+		resp, err := indexer.GetVirtualTxs(context.Background(), "sometoken", Intent{}, testTxids, nil)
 		require.NoError(t, err)
 		require.Len(t, resp.Txs, 1)
 	})
@@ -94,15 +102,15 @@ func TestGetVirtualTxs_PrivateExposure(t *testing.T) {
 	indexer := newTestIndexerWithExposure(privkey, "private", repo)
 
 	t.Run("no token returns error", func(t *testing.T) {
-		_, err := indexer.GetVirtualTxs(context.Background(), "", testTxids, nil)
+		_, err := indexer.GetVirtualTxs(context.Background(), "", Intent{}, testTxids, nil)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "auth token is required")
+		require.Contains(t, err.Error(), "auth token or intent is required")
 	})
 
 	t.Run("invalid token returns error", func(t *testing.T) {
-		_, err := indexer.GetVirtualTxs(context.Background(), "badtoken", testTxids, nil)
+		_, err := indexer.GetVirtualTxs(context.Background(), "badtoken", Intent{}, testTxids, nil)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid auth token")
+		require.Contains(t, err.Error(), "invalid auth token or intent")
 	})
 }
 
@@ -121,13 +129,13 @@ func TestGetVirtualTxs_WithheldExposure(t *testing.T) {
 	indexer := newTestIndexerWithExposure(privkey, "withheld", repo)
 
 	t.Run("no token does not error", func(t *testing.T) {
-		resp, err := indexer.GetVirtualTxs(context.Background(), "", nil, nil)
+		resp, err := indexer.GetVirtualTxs(context.Background(), "", Intent{}, nil, nil)
 		require.NoError(t, err)
 		require.Empty(t, resp.Txs)
 	})
 
 	t.Run("invalid token does not error", func(t *testing.T) {
-		resp, err := indexer.GetVirtualTxs(context.Background(), "badtoken", nil, nil)
+		resp, err := indexer.GetVirtualTxs(context.Background(), "badtoken", Intent{}, nil, nil)
 		require.NoError(t, err)
 		require.Empty(t, resp.Txs)
 	})

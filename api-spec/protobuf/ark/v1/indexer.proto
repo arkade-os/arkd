@@ -220,8 +220,13 @@ message GetVtxoChainResponse {
 message GetVirtualTxsRequest {
   repeated string txids = 1;
   IndexerPageRequest page = 2;
+  // Either auth_token or intent can be provided to prove ownership.
+  // If both are provided, auth_token is tried first and intent is used as fallback.
+  // Auth token obtained from a prior GetVtxoChain call.
   string auth_token = 3;
-
+  // Intent proof that directly proves ownership of the transaction inputs,
+  // avoiding the need to call GetVtxoChain first.
+  IndexerIntent intent = 4;
 }
 
 message GetVirtualTxsResponse {
