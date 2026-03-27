@@ -36,6 +36,7 @@ type Service interface {
 	GetInfo(ctx context.Context) (*ServiceInfo, errors.Error)
 	SubmitOffchainTx(
 		ctx context.Context, checkpointTxs []string, signedArkTx string,
+		ignoreMissingAssetPackets bool,
 	) (tx *AcceptedOffchainTx, err errors.Error)
 	FinalizeOffchainTx(ctx context.Context, txid string, finalCheckpoints []string) errors.Error
 	GetPendingOffchainTxs(

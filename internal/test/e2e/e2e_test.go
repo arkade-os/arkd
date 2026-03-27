@@ -17,7 +17,9 @@ import (
 	"testing"
 	"time"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -43,6 +45,8 @@ import (
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
@@ -5424,4 +5428,165 @@ func TestEventListenerChurn(t *testing.T) {
 			return
 		}
 	}
+}
+
+// TestSubmitTxIgnoreMissingAssetPackets verifies the ignore_missing_asset_packets
+// flag on the SubmitTx RPC. When a transaction spends VTXOs that carry assets
+// but does NOT embed an OP_RETURN asset packet:
+//   - flag=false (default): the server must reject with ASSET_VALIDATION_FAILED
+//   - flag=true:            the server must accept the transaction
+func TestSubmitTxIgnoreMissingAssetPackets(t *testing.T) {
+	// ----- Direct gRPC client to call SubmitTx with the new flag -----------
+	conn, err := grpc.NewClient(
+		serverUrl,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	arkSvc := arkv1.NewArkServiceClient(conn)
+
+	// buildAssetVtxoAndSignNoPacket creates a fresh client, issues an asset,
+	// and builds+signs an offchain tx spending the asset VTXO without an
+	// OP_RETURN asset packet.
+	buildAssetVtxoAndSignNoPacket := func(t *testing.T) (signedArkTx string, checkpoints []string) {
+		t.Helper()
+		ctx := t.Context()
+
+		alice, aliceWallet, _, grpcTransport := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { grpcTransport.Close() })
+
+		faucetOffchain(t, alice, 0.002)
+
+		// Issue an asset so Alice owns a VTXO with asset denominations.
+		_, assetIds, err := alice.IssueAsset(ctx, 5_000, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, assetIds, 1)
+		assetId := assetIds[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		assetVtxos := listVtxosWithAsset(t, alice, assetId)
+		require.NotEmpty(t, assetVtxos, "should own at least one asset VTXO")
+		assetVtxo := assetVtxos[0]
+		t.Logf("Asset VTXO: %s:%d  amount=%d  assets=%v",
+			assetVtxo.Txid, assetVtxo.VOut, assetVtxo.Amount, assetVtxo.Assets)
+
+		// Get server checkpoint tapscript.
+		serverParams, err := grpcTransport.GetInfo(ctx)
+		require.NoError(t, err)
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		// Derive Alice's offchain address info.
+		_, offchainAddrs, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddrs)
+
+		aliceAddr, err := arklib.DecodeAddressV0(offchainAddrs[0].Address)
+		require.NoError(t, err)
+		alicePkScript, err := script.P2TRScript(aliceAddr.VtxoTapKey)
+		require.NoError(t, err)
+
+		// Resolve forfeit closure for signing.
+		vtxoScript, err := script.ParseVtxoScript(offchainAddrs[0].Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.NotEmpty(t, forfeitClosures)
+		forfeitScriptBytes, err := forfeitClosures[0].Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(forfeitScriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(assetVtxo.Txid)
+		require.NoError(t, err)
+
+		vtxoInput := offchain.VtxoInput{
+			Outpoint: &wire.OutPoint{
+				Hash:  *vtxoHash,
+				Index: assetVtxo.VOut,
+			},
+			Tapscript: &waddrmgr.Tapscript{
+				RevealedScript: merkleProof.Script,
+				ControlBlock:   ctrlBlock,
+			},
+			Amount:             int64(assetVtxo.Amount),
+			RevealedTapscripts: offchainAddrs[0].Tapscripts,
+		}
+
+		// Build the offchain tx WITHOUT an asset packet.
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{vtxoInput},
+			[]*wire.TxOut{{
+				Value:    int64(assetVtxo.Amount),
+				PkScript: alicePkScript,
+			}},
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		// Verify no asset packet output exists in the transaction.
+		for _, out := range ptx.UnsignedTx.TxOut {
+			_, err := asset.NewPacketFromBytes(out.PkScript)
+			require.Error(t, err)
+		}
+
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		encoded, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signed, err := aliceWallet.SignTransaction(ctx, explorer, encoded)
+		require.NoError(t, err)
+
+		cps := make([]string, 0, len(checkpointsPtx))
+		for _, cp := range checkpointsPtx {
+			enc, err := cp.B64Encode()
+			require.NoError(t, err)
+			cps = append(cps, enc)
+		}
+		return signed, cps
+	}
+
+	// ----- Negative case: flag=false must reject -----------------------------
+	t.Run("reject_when_flag_false", func(t *testing.T) {
+		signedTx, checkpoints := buildAssetVtxoAndSignNoPacket(t)
+
+		_, err := arkSvc.SubmitTx(t.Context(), &arkv1.SubmitTxRequest{
+			SignedArkTx:               signedTx,
+			CheckpointTxs:             checkpoints,
+			IgnoreMissingAssetPackets: false,
+		})
+		require.Error(t, err, "SubmitTx should fail when flag is false and asset packet is missing")
+		require.Contains(t, err.Error(), "asset packet not found",
+			"error should mention missing asset packet")
+	})
+
+	// ----- Positive case: flag=true must accept ------------------------------
+	t.Run("accept_when_flag_true", func(t *testing.T) {
+		signedTx, checkpoints := buildAssetVtxoAndSignNoPacket(t)
+
+		resp, err := arkSvc.SubmitTx(t.Context(), &arkv1.SubmitTxRequest{
+			SignedArkTx:               signedTx,
+			CheckpointTxs:             checkpoints,
+			IgnoreMissingAssetPackets: true,
+		})
+		require.NoError(t, err, "SubmitTx should succeed when flag is true")
+		require.NotEmpty(t, resp.GetArkTxid(), "response should contain ark txid")
+		require.NotEmpty(t, resp.GetFinalArkTx(), "response should contain final ark tx")
+		require.NotEmpty(
+			t,
+			resp.GetSignedCheckpointTxs(),
+			"response should contain signed checkpoints",
+		)
+	})
 }

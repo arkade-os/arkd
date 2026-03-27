@@ -361,6 +361,7 @@ func (h *handler) SubmitTx(
 
 	tx, err := h.svc.SubmitOffchainTx(
 		ctx, req.GetCheckpointTxs(), req.GetSignedArkTx(),
+		req.GetIgnoreMissingAssetPackets(),
 	)
 	if err != nil {
 		return nil, err
