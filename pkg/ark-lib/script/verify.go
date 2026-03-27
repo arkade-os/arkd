@@ -261,7 +261,7 @@ func executeConditionScript(
 	script []byte, witness wire.TxWitness,
 ) error {
 	skip := inputIndex == 0 && isIntent(tx, prvFetcher) 
-	if (skip) {
+	if skip {
 		return nil
 	}
 
