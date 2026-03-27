@@ -528,6 +528,14 @@
             }
           },
           {
+            "name": "authToken",
+            "in": "query",
+            "description": "Either auth_token or intent can be provided to prove ownership.\nIf both are provided, auth_token is tried first and intent is used as fallback.\nAuth token obtained from a prior GetVtxoChain call.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -541,6 +549,20 @@
             "schema": {
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -607,6 +629,20 @@
             "schema": {
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -956,6 +992,14 @@
         "title": "GetVirtualTxsRequest",
         "type": "object",
         "properties": {
+          "authToken": {
+            "type": "string",
+            "description": "Either auth_token or intent can be provided to prove ownership.\nIf both are provided, auth_token is tried first and intent is used as fallback.\nAuth token obtained from a prior GetVtxoChain call."
+          },
+          "intent": {
+            "$ref": "#/components/schemas/IndexerIntent",
+            "description": "Intent proof that directly proves ownership of the transaction inputs,\navoiding the need to call GetVtxoChain first."
+          },
           "page": {
             "$ref": "#/components/schemas/IndexerPageRequest"
           },
@@ -986,6 +1030,9 @@
         "title": "GetVtxoChainRequest",
         "type": "object",
         "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/IndexerIntent"
+          },
           "outpoint": {
             "$ref": "#/components/schemas/IndexerOutpoint"
           },
@@ -998,6 +1045,9 @@
         "title": "GetVtxoChainResponse",
         "type": "object",
         "properties": {
+          "authToken": {
+            "type": "string"
+          },
           "chain": {
             "type": "array",
             "items": {
@@ -1199,6 +1249,18 @@
       "IndexerHeartbeat": {
         "title": "IndexerHeartbeat",
         "type": "object"
+      },
+      "IndexerIntent": {
+        "title": "IndexerIntent",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
+          }
+        }
       },
       "IndexerNode": {
         "title": "IndexerNode",

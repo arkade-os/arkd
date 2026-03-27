@@ -733,6 +733,7 @@ func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) er
 	return nil
 }
 
+
 func (w *wallet) Close() {
 	// nolint:errcheck
 	w.Nbxplorer.Close()

@@ -3,7 +3,6 @@ syntax = "proto3";
 package ark.v1;
 
 import "meshapi/gateway/annotations.proto";
-
 service IndexerService {
   // GetCommitmentTx returns information about a specific commitment transaction identified by the
   // provided txid.
@@ -210,15 +209,24 @@ message GetVtxosResponse {
 message GetVtxoChainRequest {
   IndexerOutpoint outpoint = 1;
   IndexerPageRequest page = 2;
+  IndexerIntent intent = 3;
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
   IndexerPageResponse page = 2;
+  string auth_token = 3;
 }
 
 message GetVirtualTxsRequest {
   repeated string txids = 1;
   IndexerPageRequest page = 2;
+  // Either auth_token or intent can be provided to prove ownership.
+  // If both are provided, auth_token is tried first and intent is used as fallback.
+  // Auth token obtained from a prior GetVtxoChain call.
+  string auth_token = 3;
+  // Intent proof that directly proves ownership of the transaction inputs,
+  // avoiding the need to call GetVtxoChain first.
+  IndexerIntent intent = 4;
 }
 
 message GetVirtualTxsResponse {
@@ -321,6 +329,11 @@ enum IndexerChainedTxType {
   INDEXER_CHAINED_TX_TYPE_ARK = 2;
   INDEXER_CHAINED_TX_TYPE_TREE = 3;
   INDEXER_CHAINED_TX_TYPE_CHECKPOINT = 4;
+}
+
+message IndexerIntent {
+  string proof = 1;
+  string message = 2;
 }
 
 message IndexerPageRequest {
