@@ -466,3 +466,9 @@ var BUILD_VERSION_TOO_OLD = Code[BuildVersionMetadata]{
 	"BUILD_VERSION_TOO_OLD",
 	grpccodes.FailedPrecondition,
 }
+
+type DigestMismatchMetadata struct {
+	CurrentDigest string `json:"current_digest"`
+}
+
+var DIGEST_MISMATCH = Code[DigestMismatchMetadata]{49, "DIGEST_MISMATCH", grpccodes.FailedPrecondition}
