@@ -14,6 +14,8 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -70,7 +72,8 @@ func TestVerifyIntent(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		for _, fixture := range validFixtures {
 			t.Run(fixture.Name, func(t *testing.T) {
-				err := intent.Verify(fixture.Proof, fixture.Message, nil)
+				skip := parseSkipKeys(t, fixture.SkipKeys)
+				err := intent.Verify(fixture.Proof, fixture.Message, skip)
 				require.NoError(t, err)
 			})
 		}
@@ -79,7 +82,8 @@ func TestVerifyIntent(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		for _, fixture := range invalidFixtures {
 			t.Run(fixture.Name, func(t *testing.T) {
-				err := intent.Verify(fixture.Proof, fixture.Message, nil)
+				skip := parseSkipKeys(t, fixture.SkipKeys)
+				err := intent.Verify(fixture.Proof, fixture.Message, skip)
 				require.Error(t, err)
 				require.ErrorContains(t, err, fixture.ExpectedError)
 			})
@@ -319,10 +323,11 @@ func parseProofFixtures(t *testing.T) ([]proofFixture, []invalidProofFixture) {
 }
 
 type verifyFixture struct {
-	Name          string `json:"name"`
-	Proof         string `json:"proof"`
-	Message       string `json:"message"`
-	ExpectedError string `json:"expected_error"`
+	Name          string   `json:"name"`
+	Proof         string   `json:"proof"`
+	Message       string   `json:"message"`
+	SkipKeys      []string `json:"skip_keys,omitempty"`
+	ExpectedError string   `json:"expected_error"`
 }
 
 type verifyFixturesJSON struct {
@@ -339,6 +344,22 @@ func parseVerifyFixtures(t *testing.T) ([]verifyFixture, []verifyFixture) {
 	require.NoError(t, err)
 
 	return jsonData.Valid, jsonData.Invalid
+}
+
+func parseSkipKeys(t *testing.T, keys []string) []*btcec.PublicKey {
+	t.Helper()
+	if len(keys) == 0 {
+		return nil
+	}
+	result := make([]*btcec.PublicKey, 0, len(keys))
+	for _, k := range keys {
+		b, err := hex.DecodeString(k)
+		require.NoError(t, err)
+		pk, err := schnorr.ParsePubKey(b)
+		require.NoError(t, err)
+		result = append(result, pk)
+	}
+	return result
 }
 
 type noteClosureSetup struct {
