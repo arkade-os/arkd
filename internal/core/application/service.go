@@ -1372,7 +1372,11 @@ func (s *service) GetPendingOffchainTxs(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	if err := intent.Verify(encodedProof, encodedMessage, s.signerPubkey); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
 			WithField("proof", encodedProof).
 			WithField("message", encodedMessage).
@@ -1671,7 +1675,11 @@ func (s *service) RegisterIntent(
 		}
 	}
 
-	if err := intent.Verify(encodedProof, encodedMessage, s.signerPubkey); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
 			WithField("proof", encodedProof).
 			WithField("message", encodedMessage).
@@ -4182,7 +4190,11 @@ func (s *service) verifyIntentProofAndFindMatches(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	if err := intent.Verify(encodedProof, encodedMessage, s.signerPubkey); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
 			WithField("proof", encodedProof).
 			WithField("message", encodedMessage).

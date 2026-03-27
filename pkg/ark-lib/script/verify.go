@@ -88,13 +88,8 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 				witness = witnessFields[0]
 			}
 
-			result, err := EvaluateScriptToBool(c.Condition, witness)
-			if err != nil {
+			if err := executeConditionScript(inputIndex, tx, prevoutFetcher, c.Condition, witness); err != nil {
 				return nil, err
-			}
-
-			if !result {
-				return nil, fmt.Errorf("condition not met for input %d", inputIndex)
 			}
 
 			for _, key := range c.PubKeys {
@@ -113,13 +108,8 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 				witness = witnessFields[0]
 			}
 
-			result, err := EvaluateScriptToBool(c.Condition, witness)
-			if err != nil {
+			if err := executeConditionScript(inputIndex, tx, prevoutFetcher, c.Condition, witness); err != nil {
 				return nil, err
-			}
-
-			if !result {
-				return nil, fmt.Errorf("condition not met for input %d", inputIndex)
 			}
 
 			for _, key := range c.PubKeys {
@@ -243,4 +233,44 @@ func IsNoteClosureScript(script []byte) bool {
 		script[0] == txscript.OP_SHA256 &&
 		script[1] == txscript.OP_DATA_32 &&
 		script[34] == txscript.OP_EQUAL
+}
+
+func isIntent(ptx *psbt.Packet, prevFetcher txscript.PrevOutputFetcher) bool {
+	if ptx.UnsignedTx.Version != 2 {
+		return false
+	}
+
+	if len(ptx.UnsignedTx.TxIn) < 2 {
+		return false
+	}
+
+	prevout0 := prevFetcher.FetchPrevOutput(ptx.UnsignedTx.TxIn[0].PreviousOutPoint)
+	prevout1 := prevFetcher.FetchPrevOutput(ptx.UnsignedTx.TxIn[1].PreviousOutPoint)
+	if prevout0 == nil || prevout1 == nil {
+		return false
+	}
+
+	return bytes.Equal(prevout0.PkScript, prevout1.PkScript)
+}
+
+// we skip evaluating condition for the input 0 of intent proof.
+// it is safe because we know that intent has the same on input 1.
+// it avoids duplication of the witness and evaluating twice the same boolean script.
+func executeConditionScript(
+	inputIndex int, tx *psbt.Packet, prvFetcher txscript.PrevOutputFetcher,
+	script []byte, witness wire.TxWitness,
+) error {
+	skip := inputIndex == 0 && isIntent(tx, prvFetcher) 
+	if skip {
+		return nil
+	}
+
+	result, err := EvaluateScriptToBool(script, witness)
+	if err != nil {
+		return err
+	}
+	if !result {
+		return fmt.Errorf("condition not met for input %d", inputIndex)
+	}
+	return nil
 }
