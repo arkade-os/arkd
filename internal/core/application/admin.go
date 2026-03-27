@@ -49,6 +49,7 @@ type AdminService interface {
 	) (string, string, error)
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
+	GetCollectedFees(ctx context.Context, after, before int64) (int64, error)
 }
 
 type adminService struct {
@@ -101,7 +102,6 @@ func (a *adminService) GetRoundDetails(
 	inputVtxos := make([]string, 0)
 	outputVtxos := make([]string, 0)
 	for _, intent := range round.Intents {
-		// TODO: Add fees amount
 		totalForfeitAmount += intent.TotalInputAmount()
 
 		for _, receiver := range intent.Receivers {
@@ -135,7 +135,7 @@ func (a *adminService) GetRoundDetails(
 		TotalVtxosAmount: totalVtxosAmount,
 		TotalExitAmount:  totalExitAmount,
 		ExitAddresses:    exitAddresses,
-		FeesAmount:       0,
+		FeesAmount:       round.CollectedFees,
 		InputVtxos:       inputVtxos,
 		OutputVtxos:      outputVtxos,
 		StartedAt:        round.StartingTimestamp,
@@ -607,6 +607,12 @@ func (a *adminService) GetRecoverableLiquidity(ctx context.Context) (uint64, err
 	return a.repoManager.Vtxos().GetRecoverableLiquidity(ctx)
 }
 
+func (a *adminService) GetCollectedFees(
+	ctx context.Context, after, before int64,
+) (int64, error) {
+	return a.repoManager.Rounds().GetCollectedFees(ctx, after, before)
+}
+
 func (a *adminService) getScheduledSweep(
 	ctx context.Context, commitmentTxid string,
 ) (*ScheduledSweep, error) {
@@ -778,7 +784,7 @@ type RoundDetails struct {
 	ForfeitedAmount  uint64
 	TotalVtxosAmount uint64
 	TotalExitAmount  uint64
-	FeesAmount       uint64
+	FeesAmount       int64
 	InputVtxos       []string
 	OutputVtxos      []string
 	ExitAddresses    []string

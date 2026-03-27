@@ -607,3 +607,32 @@ func maxAssetsPerVtxo(maxTxWeight uint64, spendingWeightThreshold float64) int {
 	availableWU := maxPacketWU - assetPacketOverheadWU
 	return int(availableWU / refGroupWeight)
 }
+
+// calculateCollectedFees computes the total fees (sats) collected by the coordinator for a given round.
+func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) int64 {
+	totalIn := boardingInputAmount
+	totalOut := uint64(0)
+	for _, intent := range round.Intents {
+		totalIn += intent.TotalInputAmount()
+		totalOut += intent.TotalOutputAmount()
+	}
+	if totalOut >= totalIn {
+		return 0
+	}
+	return int64(totalIn - totalOut)
+}
+
+// calculateBoardingInputAmount computes the total amount (sats) of boarding inputs in a PSBT.
+func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
+	boardingInputAmount := uint64(0)
+	for _, input := range ptx.Inputs {
+		if input.WitnessUtxo == nil {
+			continue
+		}
+		// TODO fragile, it may fail if arkd-wallet uses TaprootLeafScript in the future
+		if len(input.TaprootLeafScript) > 0 {
+			boardingInputAmount += uint64(input.WitnessUtxo.Value)
+		}
+	}
+	return boardingInputAmount
+}
