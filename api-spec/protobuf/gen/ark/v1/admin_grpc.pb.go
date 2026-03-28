@@ -41,6 +41,9 @@ const (
 	AdminService_GetExpiringLiquidity_FullMethodName         = "/ark.v1.AdminService/GetExpiringLiquidity"
 	AdminService_GetRecoverableLiquidity_FullMethodName      = "/ark.v1.AdminService/GetRecoverableLiquidity"
 	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
+	AdminService_GetSettings_FullMethodName                  = "/ark.v1.AdminService/GetSettings"
+	AdminService_UpdateSettings_FullMethodName               = "/ark.v1.AdminService/UpdateSettings"
+	AdminService_ClearSettings_FullMethodName                = "/ark.v1.AdminService/ClearSettings"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -69,6 +72,9 @@ type AdminServiceClient interface {
 	GetExpiringLiquidity(ctx context.Context, in *GetExpiringLiquidityRequest, opts ...grpc.CallOption) (*GetExpiringLiquidityResponse, error)
 	GetRecoverableLiquidity(ctx context.Context, in *GetRecoverableLiquidityRequest, opts ...grpc.CallOption) (*GetRecoverableLiquidityResponse, error)
 	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
+	GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error)
+	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error)
+	ClearSettings(ctx context.Context, in *ClearSettingsRequest, opts ...grpc.CallOption) (*ClearSettingsResponse, error)
 }
 
 type adminServiceClient struct {
@@ -299,6 +305,36 @@ func (c *adminServiceClient) Sweep(ctx context.Context, in *SweepRequest, opts .
 	return out, nil
 }
 
+func (c *adminServiceClient) GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSettingsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSettingsResponse)
+	err := c.cc.Invoke(ctx, AdminService_UpdateSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) ClearSettings(ctx context.Context, in *ClearSettingsRequest, opts ...grpc.CallOption) (*ClearSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClearSettingsResponse)
+	err := c.cc.Invoke(ctx, AdminService_ClearSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility.
@@ -325,6 +361,9 @@ type AdminServiceServer interface {
 	GetExpiringLiquidity(context.Context, *GetExpiringLiquidityRequest) (*GetExpiringLiquidityResponse, error)
 	GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error)
 	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
+	GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error)
+	UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error)
+	ClearSettings(context.Context, *ClearSettingsRequest) (*ClearSettingsResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have
@@ -399,6 +438,15 @@ func (UnimplementedAdminServiceServer) GetRecoverableLiquidity(context.Context, 
 }
 func (UnimplementedAdminServiceServer) Sweep(context.Context, *SweepRequest) (*SweepResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Sweep not implemented")
+}
+func (UnimplementedAdminServiceServer) GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSettings not implemented")
+}
+func (UnimplementedAdminServiceServer) UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateSettings not implemented")
+}
+func (UnimplementedAdminServiceServer) ClearSettings(context.Context, *ClearSettingsRequest) (*ClearSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearSettings not implemented")
 }
 func (UnimplementedAdminServiceServer) testEmbeddedByValue() {}
 
@@ -816,6 +864,60 @@ func _AdminService_Sweep_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetSettings(ctx, req.(*GetSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_UpdateSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).UpdateSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_UpdateSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).UpdateSettings(ctx, req.(*UpdateSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_ClearSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClearSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ClearSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ClearSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ClearSettings(ctx, req.(*ClearSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -910,6 +1012,18 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Sweep",
 			Handler:    _AdminService_Sweep_Handler,
+		},
+		{
+			MethodName: "GetSettings",
+			Handler:    _AdminService_GetSettings_Handler,
+		},
+		{
+			MethodName: "UpdateSettings",
+			Handler:    _AdminService_UpdateSettings_Handler,
+		},
+		{
+			MethodName: "ClearSettings",
+			Handler:    _AdminService_ClearSettings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

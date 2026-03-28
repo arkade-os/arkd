@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -49,6 +50,9 @@ type AdminService interface {
 	) (string, string, error)
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
+	GetSettings(ctx context.Context) (*domain.Settings, error)
+	UpdateSettings(ctx context.Context, settings domain.Settings, updateFields []string) error
+	ClearSettings(ctx context.Context) error
 }
 
 type adminService struct {
@@ -62,13 +66,18 @@ type adminService struct {
 	roundMinParticipantsCount int64
 	roundMaxParticipantsCount int64
 
-	onInfoChange func()
+	settingsMu        sync.Mutex
+	defaultSettings   domain.Settings
+	onSettingsUpdated func(context.Context, domain.Settings) error
+	onInfoChange      func()
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 	roundMinParticipantsCount, roundMaxParticipantsCount int64,
+	defaultSettings domain.Settings,
+	onSettingsUpdated func(context.Context, domain.Settings) error,
 	onInfoChange func(),
 ) AdminService {
 	return &adminService{
@@ -80,6 +89,8 @@ func NewAdminService(
 		feeManager:                feeManager,
 		roundMinParticipantsCount: roundMinParticipantsCount,
 		roundMaxParticipantsCount: roundMaxParticipantsCount,
+		defaultSettings:           defaultSettings,
+		onSettingsUpdated:         onSettingsUpdated,
 		onInfoChange:              onInfoChange,
 	}
 }
@@ -605,6 +616,84 @@ func (a *adminService) GetExpiringLiquidity(
 
 func (a *adminService) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
 	return a.repoManager.Vtxos().GetRecoverableLiquidity(ctx)
+}
+
+func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error) {
+	return a.repoManager.Settings().Get(ctx)
+}
+
+func (a *adminService) UpdateSettings(
+	ctx context.Context,
+	settings domain.Settings,
+	updateFields []string,
+) error {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+
+	// Merge the request with stored settings. When updateFields is provided,
+	// only the listed fields are written from the request; the rest stay as
+	// they were. When updateFields is empty, every field from the request is
+	// written as-is. Fields not set in the request default to 0 so callers
+	// must populate all fields.
+	current, err := a.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current settings: %w", err)
+	}
+	// nil means no settings exist yet (first boot) so then skip merge
+	// so caller's full settings are used as-is.
+	if current != nil {
+		var mergeErr error
+		settings, mergeErr = settings.Merge(*current, updateFields)
+		if mergeErr != nil {
+			return mergeErr
+		}
+	}
+
+	if err := settings.Validate(); err != nil {
+		return err
+	}
+
+	// Apply to the running service before persisting so that if live-apply
+	// fails we don't leave invalid settings in the DB.
+	if a.onSettingsUpdated != nil {
+		if err := a.onSettingsUpdated(ctx, settings); err != nil {
+			return err
+		}
+	}
+
+	settings.UpdatedAt = time.Now()
+	if err := a.repoManager.Settings().Upsert(ctx, settings); err != nil {
+		return err
+	}
+
+	a.roundMinParticipantsCount = settings.RoundMinParticipantsCount
+	a.roundMaxParticipantsCount = settings.RoundMaxParticipantsCount
+	a.onInfoChange()
+	return nil
+}
+
+func (a *adminService) ClearSettings(ctx context.Context) error {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+
+	defaults := a.defaultSettings
+
+	// Apply to the running service before persisting so that if live-apply
+	// fails we don't leave inconsistent state in the DB.
+	if a.onSettingsUpdated != nil {
+		if err := a.onSettingsUpdated(ctx, defaults); err != nil {
+			return err
+		}
+	}
+
+	defaults.UpdatedAt = time.Now()
+	if err := a.repoManager.Settings().Upsert(ctx, defaults); err != nil {
+		return err
+	}
+	a.roundMinParticipantsCount = defaults.RoundMinParticipantsCount
+	a.roundMaxParticipantsCount = defaults.RoundMaxParticipantsCount
+	a.onInfoChange()
+	return nil
 }
 
 func (a *adminService) getScheduledSweep(
