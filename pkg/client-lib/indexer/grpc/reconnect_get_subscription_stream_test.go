@@ -115,7 +115,6 @@ func TestSubscriptionLifecycleEventsAndDeltaFetchByTimestamp(t *testing.T) {
 	c := &grpcClient{
 		conn:    conn,
 		connMu:  &sync.RWMutex{},
-		scripts: newScriptsCache(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)

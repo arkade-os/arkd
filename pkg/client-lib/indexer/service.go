@@ -37,7 +37,9 @@ type Indexer interface {
 		ctx context.Context, subscriptionId string, scripts []string,
 	) (string, error)
 	UnsubscribeForScripts(ctx context.Context, subscriptionId string, scripts []string) error
-	GetSubscription(ctx context.Context, subscriptionId string) (<-chan ScriptEvent, func(), error)
+	GetSubscription(ctx context.Context, subscriptionId string, scripts ...string) (<-chan ScriptEvent, func(), error)
+	ModifySubscriptionScripts(ctx context.Context, addScripts, removeScripts []string) (scriptsAdded, scriptsRemoved, allScripts []string, err error)
+	OverwriteSubscriptionScripts(ctx context.Context, scripts []string) (scriptsAdded, scriptsRemoved, allScripts []string, err error)
 	GetAsset(ctx context.Context, assetID string) (*AssetInfo, error)
 
 	Close()
