@@ -99,3 +99,22 @@ func (c *signerClient) SignTransactionTapscript(
 	}
 	return resp.GetSignedTx(), nil
 }
+
+func (c *signerClient) SignMessage(
+	ctx context.Context, message []byte,
+) ([]byte, error) {
+	resp, err := c.client.SignMessage(ctx, &signerv1.SignMessageRequest{
+		Message: hex.EncodeToString(message),
+	})
+	if err != nil {
+		return nil, err
+	}
+	sig, err := hex.DecodeString(resp.GetSignature())
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signature hex: %w", err)
+	}
+	if len(sig) != 64 {
+		return nil, fmt.Errorf("invalid signature length: expected 64 bytes, got %d", len(sig))
+	}
+	return sig, nil
+}
