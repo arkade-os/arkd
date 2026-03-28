@@ -3,6 +3,7 @@ package wallet
 import (
 	"context"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
@@ -29,6 +30,7 @@ type WalletService interface {
 		onchainAddresses []string,
 		offchainAddresses, boardingAddresses []types.Address, err error,
 	)
+	NewBoardingAddress(ctx context.Context, vtxoScript script.VtxoScript) (*types.Address, error)
 	SignTransaction(
 		ctx context.Context, explorerSvc explorer.Explorer, tx string,
 	) (signedTx string, err error)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
@@ -36,6 +37,7 @@ type ArkClient interface {
 	Receive(
 		ctx context.Context,
 	) (onchainAddr string, offchainAddr, boardingAddr *types.Address, err error)
+	NewBoardingAddress(ctx context.Context, vtxoScript script.VtxoScript) (*types.Address, error)
 	GetAddresses(ctx context.Context) (
 		onchainAddresses, offchainAddresses, boardingAddresses, redemptionAddresses []string,
 		err error,

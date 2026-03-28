@@ -14,6 +14,22 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
 
+func (a *service) NewBoardingAddress(
+	ctx context.Context, vtxoScript script.VtxoScript,
+) (*types.Address, error) {
+	if err := a.safeCheck(); err != nil {
+		return nil, err
+	}
+
+	if err := vtxoScript.Validate(
+		a.SignerPubKey, a.BoardingExitDelay, false,
+	); err != nil {
+		return nil, fmt.Errorf("invalid boarding vtxo script: %w", err)
+	}
+
+	return a.wallet.NewBoardingAddress(ctx, vtxoScript)
+}
+
 func (a *service) Receive(ctx context.Context) (
 	onchainAddr string, offchainAddr, boardingAddr *types.Address, err error,
 ) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/store/inmemory"
 	sdktypes "github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
@@ -146,4 +147,87 @@ func TestWallet(t *testing.T) {
 			require.False(t, locked)
 		})
 	}
+}
+
+func TestNewBoardingAddress(t *testing.T) {
+	ctx := context.Background()
+	signerKey, _ := btcec.NewPrivateKey()
+	boardingDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
+	password := "password"
+
+	testStoreData := sdktypes.Config{
+		ServerUrl:           "127.0.0.1:7070",
+		SignerPubKey:        signerKey.PubKey(),
+		WalletType:          wallet.SingleKeyWallet,
+		Network:             arklib.BitcoinRegTest,
+		SessionDuration:     10,
+		UnilateralExitDelay: arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512},
+		Dust:                1000,
+		BoardingExitDelay:   boardingDelay,
+		ForfeitAddress:      "bcrt1qzvqj",
+	}
+
+	store, err := inmemorystore.NewConfigStore()
+	require.NoError(t, err)
+	err = store.AddData(ctx, testStoreData)
+	require.NoError(t, err)
+
+	walletStore, err := inmemorywalletstore.NewWalletStore()
+	require.NoError(t, err)
+
+	walletSvc, err := singlekeywallet.NewBitcoinWallet(store, walletStore)
+	require.NoError(t, err)
+
+	_, err = walletSvc.Create(ctx, password, "")
+	require.NoError(t, err)
+
+	_, err = walletSvc.Unlock(ctx, password)
+	require.NoError(t, err)
+
+	// Baseline: GetAddresses returns exactly 1 default boarding address.
+	_, _, boardingAddrs, _, err := walletSvc.GetAddresses(ctx)
+	require.NoError(t, err)
+	require.Len(t, boardingAddrs, 1)
+	defaultBoardingAddr := boardingAddrs[0].Address
+
+	// Create a custom boarding script using a second owner key.
+	ownerKey2, _ := btcec.NewPrivateKey()
+	customScript := script.NewDefaultVtxoScript(
+		ownerKey2.PubKey(), signerKey.PubKey(), boardingDelay,
+	)
+
+	addr, err := walletSvc.NewBoardingAddress(ctx, customScript)
+	require.NoError(t, err)
+	require.NotEmpty(t, addr.Address)
+	require.NotEmpty(t, addr.Tapscripts)
+	require.NotEqual(t, defaultBoardingAddr, addr.Address)
+
+	// GetAddresses now returns 2 boarding addresses (default + custom).
+	_, _, boardingAddrs, _, err = walletSvc.GetAddresses(ctx)
+	require.NoError(t, err)
+	require.Len(t, boardingAddrs, 2)
+	require.Equal(t, defaultBoardingAddr, boardingAddrs[0].Address)
+	require.Equal(t, addr.Address, boardingAddrs[1].Address)
+
+	// Adding the same script again is a no-op (deduplication).
+	addr2, err := walletSvc.NewBoardingAddress(ctx, customScript)
+	require.NoError(t, err)
+	require.Equal(t, addr.Address, addr2.Address)
+
+	_, _, boardingAddrs, _, err = walletSvc.GetAddresses(ctx)
+	require.NoError(t, err)
+	require.Len(t, boardingAddrs, 2)
+
+	// Adding a third distinct script produces 3 boarding addresses.
+	ownerKey3, _ := btcec.NewPrivateKey()
+	customScript2 := script.NewDefaultVtxoScript(
+		ownerKey3.PubKey(), signerKey.PubKey(), boardingDelay,
+	)
+	addr3, err := walletSvc.NewBoardingAddress(ctx, customScript2)
+	require.NoError(t, err)
+	require.NotEqual(t, addr.Address, addr3.Address)
+
+	_, _, boardingAddrs, _, err = walletSvc.GetAddresses(ctx)
+	require.NoError(t, err)
+	require.Len(t, boardingAddrs, 3)
 }

@@ -531,19 +531,8 @@ func (a *service) getExpiredBoardingUtxos(
 }
 
 func (a *service) addInputs(
-	ctx context.Context, updater *psbt.Updater, utxos []types.Utxo,
+	_ context.Context, updater *psbt.Updater, utxos []types.Utxo,
 ) error {
-	// TODO works only with single-key wallet
-	_, offchain, _, err := a.wallet.NewAddress(ctx, false)
-	if err != nil {
-		return err
-	}
-
-	vtxoScript, err := script.ParseVtxoScript(offchain.Tapscripts)
-	if err != nil {
-		return err
-	}
-
 	for _, utxo := range utxos {
 		previousHash, err := chainhash.NewHashFromStr(utxo.Txid)
 		if err != nil {
@@ -562,6 +551,11 @@ func (a *service) addInputs(
 			},
 			Sequence: sequence,
 		})
+
+		vtxoScript, err := script.ParseVtxoScript(utxo.Tapscripts)
+		if err != nil {
+			return fmt.Errorf("failed to parse vtxo script for %s:%d: %w", utxo.Txid, utxo.VOut, err)
+		}
 
 		exitClosures := vtxoScript.ExitClosures()
 		if len(exitClosures) <= 0 {
