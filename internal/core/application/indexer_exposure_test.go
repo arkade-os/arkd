@@ -824,8 +824,8 @@ func TestStripArkdSignatures(t *testing.T) {
 	require.NoError(t, err)
 	otherXOnly := schnorr.SerializePubKey(otherKey.PubKey())
 
-	// buildPSBT creates a base64 PSBT with the given TaprootScriptSpendSigs on input 0.
-	buildPSBT := func(t *testing.T, sigs []*psbt.TaprootScriptSpendSig) string {
+	// buildOffchainTx creates a base64 PSBT with TaprootScriptSpendSigs mocking a virtual tx
+	buildOffchainTx := func(t *testing.T, sigs []*psbt.TaprootScriptSpendSig) string {
 		t.Helper()
 		ptx, err := psbt.New(
 			[]*wire.OutPoint{{Hash: chainhash.Hash{0x01}, Index: 0}},
@@ -839,12 +839,35 @@ func TestStripArkdSignatures(t *testing.T) {
 		return base64.StdEncoding.EncodeToString(buf.Bytes())
 	}
 
+	// buildTreeTx creates a base64 PSBT with TaprootKeySpendSig mocking a tree tx
+	buildTreeTx := func(t *testing.T, keySig []byte) string {
+		t.Helper()
+		ptx, err := psbt.New(
+			[]*wire.OutPoint{{Hash: chainhash.Hash{0x01}, Index: 0}},
+			[]*wire.TxOut{{Value: 1000, PkScript: []byte{txscript.OP_TRUE}}},
+			2, 0, []uint32{wire.MaxTxInSequenceNum},
+		)
+		require.NoError(t, err)
+		ptx.Inputs[0].TaprootKeySpendSig = keySig
+		var buf bytes.Buffer
+		require.NoError(t, ptx.Serialize(&buf))
+		return base64.StdEncoding.EncodeToString(buf.Bytes())
+	}
+
 	// sigsFrom decodes a base64 PSBT and returns the TaprootScriptSpendSigs on input 0.
 	sigsFrom := func(t *testing.T, b64 string) []*psbt.TaprootScriptSpendSig {
 		t.Helper()
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 		require.NoError(t, err)
 		return ptx.Inputs[0].TaprootScriptSpendSig
+	}
+
+	// keySigFrom decodes a base64 PSBT and returns the TaprootKeySpendSig on input 0.
+	keySigFrom := func(t *testing.T, b64 string) []byte {
+		t.Helper()
+		ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
+		require.NoError(t, err)
+		return ptx.Inputs[0].TaprootKeySpendSig
 	}
 
 	indexer := &indexerService{signerPubkey: signerXOnly}
@@ -857,10 +880,16 @@ func TestStripArkdSignatures(t *testing.T) {
 		})
 
 		t.Run("no sigs passes through unchanged", func(t *testing.T) {
-			b64 := buildPSBT(t, nil)
+			b64 := buildOffchainTx(t, nil)
 			txs := []string{b64}
 			require.NoError(t, indexer.stripSignerSignatures(txs))
 			require.Empty(t, sigsFrom(t, txs[0]))
+		})
+
+		t.Run("strips sigs from tree tx", func(t *testing.T) {
+			txs := []string{buildTreeTx(t, make([]byte, 64))}
+			require.NoError(t, indexer.stripSignerSignatures(txs))
+			require.Empty(t, keySigFrom(t, txs[0]))
 		})
 
 		t.Run("strips signer sig and keeps other party sig", func(t *testing.T) {
@@ -874,7 +903,7 @@ func TestStripArkdSignatures(t *testing.T) {
 				LeafHash:    make([]byte, 32),
 				Signature:   make([]byte, 64),
 			}
-			txs := []string{buildPSBT(t, []*psbt.TaprootScriptSpendSig{signerSig, otherSig})}
+			txs := []string{buildOffchainTx(t, []*psbt.TaprootScriptSpendSig{signerSig, otherSig})}
 			require.NoError(t, indexer.stripSignerSignatures(txs))
 			sigs := sigsFrom(t, txs[0])
 			require.Len(t, sigs, 1)
