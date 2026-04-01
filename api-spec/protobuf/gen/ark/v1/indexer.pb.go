@@ -850,10 +850,16 @@ func (x *GetVtxosResponse) GetPage() *IndexerPageResponse {
 }
 
 type GetVtxoChainRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Outpoint      *IndexerOutpoint       `protobuf:"bytes,1,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
-	Page          *IndexerPageRequest    `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
-	Intent        *IndexerIntent         `protobuf:"bytes,3,opt,name=intent,proto3" json:"intent,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Outpoint *IndexerOutpoint       `protobuf:"bytes,1,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
+	Page     *IndexerPageRequest    `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	// Either auth_token or intent can be provided to prove ownership.
+	//
+	// Types that are valid to be assigned to Auth:
+	//
+	//	*GetVtxoChainRequest_Intent
+	//	*GetVtxoChainRequest_Token
+	Auth          isGetVtxoChainRequest_Auth `protobuf_oneof:"auth"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -902,18 +908,56 @@ func (x *GetVtxoChainRequest) GetPage() *IndexerPageRequest {
 	return nil
 }
 
-func (x *GetVtxoChainRequest) GetIntent() *IndexerIntent {
+func (x *GetVtxoChainRequest) GetAuth() isGetVtxoChainRequest_Auth {
 	if x != nil {
-		return x.Intent
+		return x.Auth
 	}
 	return nil
 }
 
+func (x *GetVtxoChainRequest) GetIntent() *IndexerIntent {
+	if x != nil {
+		if x, ok := x.Auth.(*GetVtxoChainRequest_Intent); ok {
+			return x.Intent
+		}
+	}
+	return nil
+}
+
+func (x *GetVtxoChainRequest) GetToken() string {
+	if x != nil {
+		if x, ok := x.Auth.(*GetVtxoChainRequest_Token); ok {
+			return x.Token
+		}
+	}
+	return ""
+}
+
+type isGetVtxoChainRequest_Auth interface {
+	isGetVtxoChainRequest_Auth()
+}
+
+type GetVtxoChainRequest_Intent struct {
+	// Intent that directly proves ownership of the vtxo. If passed, the outpoint field is ignored.
+	Intent *IndexerIntent `protobuf:"bytes,3,opt,name=intent,proto3,oneof"`
+}
+
+type GetVtxoChainRequest_Token struct {
+	// Valid auth_token can also be used if the ownership has already been proved.
+	// A valid token obtained from GetVirtualTxs rpc can be recycled for this request.
+	Token string `protobuf:"bytes,4,opt,name=token,proto3,oneof"`
+}
+
+func (*GetVtxoChainRequest_Intent) isGetVtxoChainRequest_Auth() {}
+
+func (*GetVtxoChainRequest_Token) isGetVtxoChainRequest_Auth() {}
+
 type GetVtxoChainResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Chain         []*IndexerChain        `protobuf:"bytes,1,rep,name=chain,proto3" json:"chain,omitempty"`
-	Page          *IndexerPageResponse   `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
-	AuthToken     string                 `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Chain []*IndexerChain        `protobuf:"bytes,1,rep,name=chain,proto3" json:"chain,omitempty"`
+	Page  *IndexerPageResponse   `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	// Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
+	AuthToken     string `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -974,12 +1018,12 @@ type GetVirtualTxsRequest struct {
 	Txids []string               `protobuf:"bytes,1,rep,name=txids,proto3" json:"txids,omitempty"`
 	Page  *IndexerPageRequest    `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	// Either auth_token or intent can be provided to prove ownership.
-	// If both are provided, auth_token is tried first and intent is used as fallback.
-	// Auth token obtained from a prior GetVtxoChain call.
-	AuthToken string `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
-	// Intent proof that directly proves ownership of the transaction inputs,
-	// avoiding the need to call GetVtxoChain first.
-	Intent        *IndexerIntent `protobuf:"bytes,4,opt,name=intent,proto3" json:"intent,omitempty"`
+	//
+	// Types that are valid to be assigned to Auth:
+	//
+	//	*GetVirtualTxsRequest_Intent
+	//	*GetVirtualTxsRequest_Token
+	Auth          isGetVirtualTxsRequest_Auth `protobuf_oneof:"auth"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1028,24 +1072,57 @@ func (x *GetVirtualTxsRequest) GetPage() *IndexerPageRequest {
 	return nil
 }
 
-func (x *GetVirtualTxsRequest) GetAuthToken() string {
+func (x *GetVirtualTxsRequest) GetAuth() isGetVirtualTxsRequest_Auth {
 	if x != nil {
-		return x.AuthToken
-	}
-	return ""
-}
-
-func (x *GetVirtualTxsRequest) GetIntent() *IndexerIntent {
-	if x != nil {
-		return x.Intent
+		return x.Auth
 	}
 	return nil
 }
 
+func (x *GetVirtualTxsRequest) GetIntent() *IndexerIntent {
+	if x != nil {
+		if x, ok := x.Auth.(*GetVirtualTxsRequest_Intent); ok {
+			return x.Intent
+		}
+	}
+	return nil
+}
+
+func (x *GetVirtualTxsRequest) GetToken() string {
+	if x != nil {
+		if x, ok := x.Auth.(*GetVirtualTxsRequest_Token); ok {
+			return x.Token
+		}
+	}
+	return ""
+}
+
+type isGetVirtualTxsRequest_Auth interface {
+	isGetVirtualTxsRequest_Auth()
+}
+
+type GetVirtualTxsRequest_Intent struct {
+	// Intent that directly proves ownership of the transaction inputs.
+	// If passed, the txids field is ignored.
+	Intent *IndexerIntent `protobuf:"bytes,3,opt,name=intent,proto3,oneof"`
+}
+
+type GetVirtualTxsRequest_Token struct {
+	// Valid auth_token can also be used if the ownership has already been proved.
+	// A valid token obtained from GetVtxoChain rpc can be recycled for this request.
+	Token string `protobuf:"bytes,4,opt,name=token,proto3,oneof"`
+}
+
+func (*GetVirtualTxsRequest_Intent) isGetVirtualTxsRequest_Auth() {}
+
+func (*GetVirtualTxsRequest_Token) isGetVirtualTxsRequest_Auth() {}
+
 type GetVirtualTxsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Txs           []string               `protobuf:"bytes,1,rep,name=txs,proto3" json:"txs,omitempty"`
-	Page          *IndexerPageResponse   `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Txs   []string               `protobuf:"bytes,1,rep,name=txs,proto3" json:"txs,omitempty"`
+	Page  *IndexerPageResponse   `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	// Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
+	AuthToken     string `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1092,6 +1169,13 @@ func (x *GetVirtualTxsResponse) GetPage() *IndexerPageResponse {
 		return x.Page
 	}
 	return nil
+}
+
+func (x *GetVirtualTxsResponse) GetAuthToken() string {
+	if x != nil {
+		return x.AuthToken
+	}
+	return ""
 }
 
 type GetAssetRequest struct {
@@ -2623,25 +2707,29 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x06before\x18\t \x01(\x03R\x06before\"n\n" +
 	"\x10GetVtxosResponse\x12)\n" +
 	"\x05vtxos\x18\x01 \x03(\v2\x13.ark.v1.IndexerVtxoR\x05vtxos\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xa9\x01\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xcb\x01\n" +
 	"\x13GetVtxoChainRequest\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12.\n" +
-	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12-\n" +
-	"\x06intent\x18\x03 \x01(\v2\x15.ark.v1.IndexerIntentR\x06intent\"\x92\x01\n" +
+	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12/\n" +
+	"\x06intent\x18\x03 \x01(\v2\x15.ark.v1.IndexerIntentH\x00R\x06intent\x12\x16\n" +
+	"\x05token\x18\x04 \x01(\tH\x00R\x05tokenB\x06\n" +
+	"\x04auth\"\x92\x01\n" +
 	"\x14GetVtxoChainResponse\x12*\n" +
 	"\x05chain\x18\x01 \x03(\v2\x14.ark.v1.IndexerChainR\x05chain\x12/\n" +
 	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\x12\x1d\n" +
 	"\n" +
-	"auth_token\x18\x03 \x01(\tR\tauthToken\"\xaa\x01\n" +
+	"auth_token\x18\x03 \x01(\tR\tauthToken\"\xad\x01\n" +
 	"\x14GetVirtualTxsRequest\x12\x14\n" +
 	"\x05txids\x18\x01 \x03(\tR\x05txids\x12.\n" +
-	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12\x1d\n" +
-	"\n" +
-	"auth_token\x18\x03 \x01(\tR\tauthToken\x12-\n" +
-	"\x06intent\x18\x04 \x01(\v2\x15.ark.v1.IndexerIntentR\x06intent\"Z\n" +
+	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12/\n" +
+	"\x06intent\x18\x03 \x01(\v2\x15.ark.v1.IndexerIntentH\x00R\x06intent\x12\x16\n" +
+	"\x05token\x18\x04 \x01(\tH\x00R\x05tokenB\x06\n" +
+	"\x04auth\"y\n" +
 	"\x15GetVirtualTxsResponse\x12\x10\n" +
 	"\x03txs\x18\x01 \x03(\tR\x03txs\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\",\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\x12\x1d\n" +
+	"\n" +
+	"auth_token\x18\x03 \x01(\tR\tauthToken\",\n" +
 	"\x0fGetAssetRequest\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\"\x86\x01\n" +
 	"\x10GetAssetResponse\x12\x19\n" +
@@ -2919,6 +3007,14 @@ func init() { file_ark_v1_indexer_proto_init() }
 func file_ark_v1_indexer_proto_init() {
 	if File_ark_v1_indexer_proto != nil {
 		return
+	}
+	file_ark_v1_indexer_proto_msgTypes[12].OneofWrappers = []any{
+		(*GetVtxoChainRequest_Intent)(nil),
+		(*GetVtxoChainRequest_Token)(nil),
+	}
+	file_ark_v1_indexer_proto_msgTypes[14].OneofWrappers = []any{
+		(*GetVirtualTxsRequest_Intent)(nil),
+		(*GetVirtualTxsRequest_Token)(nil),
 	}
 	file_ark_v1_indexer_proto_msgTypes[27].OneofWrappers = []any{
 		(*IndexerTxHistoryRecord_CommitmentTxid)(nil),

@@ -13,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -324,17 +325,17 @@ func (e *indexerService) GetVtxoChain(
 	var resp *application.VtxoChainResp
 
 	if request.GetIntent() != nil {
-		intent := application.Intent{
-			Proof:   request.GetIntent().GetProof(),
-			Message: request.GetIntent().GetMessage(),
+		intent, parseErr := parseIndexerIntent(request.GetIntent())
+		if parseErr != nil {
+			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		resp, err = e.indexerSvc.GetVtxoChain(ctx, intent, page)
+		resp, err = e.indexerSvc.GetVtxoChainByIntent(ctx, *intent, page)
 	} else {
 		outpoint, parseErr := parseOutpoint(request.GetOutpoint())
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		resp, err = e.indexerSvc.GetVtxoChainByOutpoint(ctx, *outpoint, page)
+		resp, err = e.indexerSvc.GetVtxoChain(ctx, request.GetToken(), *outpoint, page)
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
@@ -372,24 +373,25 @@ func (e *indexerService) GetVtxoChain(
 func (e *indexerService) GetVirtualTxs(
 	ctx context.Context, request *arkv1.GetVirtualTxsRequest,
 ) (*arkv1.GetVirtualTxsResponse, error) {
-	txids, err := parseTxids(request.GetTxids())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	page, err := parsePage(request.GetPage())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	var intent application.Intent
-	if reqIntent := request.GetIntent(); reqIntent != nil {
-		intent = application.Intent{
-			Proof:   reqIntent.GetProof(),
-			Message: reqIntent.GetMessage(),
+	var resp *application.VirtualTxsResp
+	if request.GetIntent() != nil {
+		intent, parseErr := parseIndexerIntent(request.GetIntent())
+		if parseErr != nil {
+			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
+		resp, err = e.indexerSvc.GetVirtualTxsByIntent(ctx, *intent, page)
+	} else {
+		txids, parseErr := parseTxids(request.GetTxids())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
+		}
+		resp, err = e.indexerSvc.GetVirtualTxs(ctx, request.GetToken(), txids, page)
 	}
-
-	resp, err := e.indexerSvc.GetVirtualTxs(ctx, request.GetAuthToken(), intent, txids, page)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
@@ -774,4 +776,22 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		ArkTxid:         vtxo.ArkTxid,
 		Assets:          assets,
 	}
+}
+
+func parseIndexerIntent(i *arkv1.IndexerIntent) (*application.Intent, error) {
+	if i == nil {
+		return nil, nil
+	}
+	proof := i.GetProof()
+	if len(proof) <= 0 {
+		return nil, fmt.Errorf("missing intent proof")
+	}
+	if _, err := psbt.NewFromRawBytes(strings.NewReader(proof), true); err != nil {
+		return nil, fmt.Errorf("failed to parse intent proof tx: %s", err)
+	}
+	message := i.GetMessage()
+	if message == "" {
+		return nil, fmt.Errorf("missing intent message")
+	}
+	return &application.Intent{Proof: proof, Message: message}, nil
 }

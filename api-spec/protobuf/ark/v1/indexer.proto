@@ -209,11 +209,19 @@ message GetVtxosResponse {
 message GetVtxoChainRequest {
   IndexerOutpoint outpoint = 1;
   IndexerPageRequest page = 2;
-  IndexerIntent intent = 3;
+  // Either auth_token or intent can be provided to prove ownership.
+  oneof auth {
+    // Intent that directly proves ownership of the vtxo. If passed, the outpoint field is ignored.
+    IndexerIntent intent = 3;
+    // Valid auth_token can also be used if the ownership has already been proved.
+    // A valid token obtained from GetVirtualTxs rpc can be recycled for this request.
+    string token = 4;
+  }
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
   IndexerPageResponse page = 2;
+  // Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
   string auth_token = 3;
 }
 
@@ -221,17 +229,21 @@ message GetVirtualTxsRequest {
   repeated string txids = 1;
   IndexerPageRequest page = 2;
   // Either auth_token or intent can be provided to prove ownership.
-  // If both are provided, auth_token is tried first and intent is used as fallback.
-  // Auth token obtained from a prior GetVtxoChain call.
-  string auth_token = 3;
-  // Intent proof that directly proves ownership of the transaction inputs,
-  // avoiding the need to call GetVtxoChain first.
-  IndexerIntent intent = 4;
+  oneof auth {
+    // Intent that directly proves ownership of the transaction inputs.
+    // If passed, the txids field is ignored.
+    IndexerIntent intent = 3;
+    // Valid auth_token can also be used if the ownership has already been proved.
+    // A valid token obtained from GetVtxoChain rpc can be recycled for this request.
+    string token = 4;
+  }
 }
 
 message GetVirtualTxsResponse {
   repeated string txs = 1;
   IndexerPageResponse page = 2;
+  // Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
+  string auth_token = 3;
 }
 
 message GetAssetRequest {
