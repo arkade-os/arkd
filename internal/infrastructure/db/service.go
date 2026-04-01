@@ -521,7 +521,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 		log.Debugf("spent %d vtxos", len(spentVtxos))
 	case offchainTx.IsFinalized():
-		txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
+		txid, ins, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
 		if err != nil {
 			log.WithError(err).Warn("failed to decode ark tx")
 			return
@@ -531,6 +531,23 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		if err != nil {
 			log.WithError(err).Warn("failed to get assets from tx")
 			return
+		}
+
+		txSwept := false
+		// if the tx is expired at finalization step, it may be possible the new outputs should be marked swept
+		// it depends if the inputs are swept or not
+		if offchainTx.ExpiryTimestamp > 0 &&
+			time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0)) {
+			inputVtxos, err := s.vtxoStore.GetVtxos(ctx, ins)
+			// if an error happened, we assume the vtxo is swept. it should never happen but it's to avoid skipping adding vtxo to db
+			txSwept = err != nil
+
+			for _, inputVtxo := range inputVtxos {
+				if inputVtxo.Swept {
+					txSwept = true
+					break
+				}
+			}
 		}
 
 		// once the offchain tx is finalized, the user signed the checkpoint txs
@@ -548,7 +565,10 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				continue
 			}
 
-			isDust := script.IsSubDustScript(out.PkScript)
+			outputSwept := txSwept
+			if !outputSwept {
+				outputSwept = script.IsSubDustScript(out.PkScript)
+			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
 				Outpoint: domain.Outpoint{
@@ -565,7 +585,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-				Swept:  isDust,
+				Swept:  outputSwept,
 				Assets: assets[uint32(outIndex)],
 			})
 		}
