@@ -407,6 +407,7 @@ func (i *indexerService) GetVirtualTxs(
 	var valid bool
 	switch i.txExposure {
 	case exposurePublic:
+		valid = true
 		// Nothing to do
 	case exposureWithheld:
 		// Auth token is optional, and if it's invalid fallback to stripping the signer sigs
