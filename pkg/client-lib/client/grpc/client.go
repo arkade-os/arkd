@@ -452,6 +452,30 @@ func (c *grpcClient) GetTransactionsStream(
 				}:
 					return nil
 				}
+			case *arkv1.GetTransactionsStreamResponse_SweepTx:
+				sweptVtxos := make([]types.Outpoint, 0, len(tx.SweepTx.SweptVtxos))
+				for _, o := range tx.SweepTx.SweptVtxos {
+					sweptVtxos = append(sweptVtxos, types.Outpoint{
+						Txid: o.GetTxid(),
+						VOut: o.GetVout(),
+					})
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case eventsCh <- client.TransactionEvent{
+					SweepTx: &client.TxNotification{
+						TxData: client.TxData{
+							Txid: tx.SweepTx.GetTxid(),
+							Tx:   tx.SweepTx.GetTx(),
+						},
+						SpentVtxos:     vtxos(tx.SweepTx.SpentVtxos).toVtxos(),
+						SpendableVtxos: vtxos(tx.SweepTx.SpendableVtxos).toVtxos(),
+						SweptVtxos:     sweptVtxos,
+					},
+				}:
+					return nil
+				}
 			default:
 				return nil
 			}

@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	serverUrl  = "127.0.0.1:7070"
-	password   = "password"
-	walletType = arksdk.SingleKeyWallet
+	serverUrl   = "127.0.0.1:7070"
+	explorerUrl = "http://127.0.0.1:3000"
+	password    = "password"
+	walletType  = arksdk.SingleKeyWallet
 )
 
 func main() {
@@ -146,14 +147,12 @@ func main() {
 
 	fmt.Println("")
 	log.Info("bob is settling the received funds...")
-	bobRes, err := bobArkClient.Settle(ctx)
+	res, err = bobArkClient.Settle(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Infof("bob settled the received funds in commitment tx %s", bobRes.CommitmentTxid)
-
-	time.Sleep(500 * time.Second)
+	log.Infof("bob settled the received funds in commitment tx %s", res.CommitmentTxid)
 }
 
 func setupArkClient() (arksdk.ArkClient, error) {
@@ -164,15 +163,16 @@ func setupArkClient() (arksdk.ArkClient, error) {
 		return nil, fmt.Errorf("failed to setup app data store: %s", err)
 	}
 
-	client, err := arksdk.NewArkClient(appDataStore)
+	client, err := arksdk.NewArkClient(appDataStore, arksdk.WithVerbose())
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup ark client: %s", err)
 	}
 
 	if err := client.Init(context.Background(), arksdk.InitArgs{
-		WalletType: walletType,
-		ServerUrl:  serverUrl,
-		Password:   password,
+		WalletType:  walletType,
+		ServerUrl:   serverUrl,
+		Password:    password,
+		ExplorerURL: explorerUrl,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to initialize wallet: %s", err)
 	}

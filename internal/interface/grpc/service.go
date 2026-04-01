@@ -294,8 +294,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	})
 
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc),
-		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc),
+		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, s.version),
+		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, s.version),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
@@ -392,6 +392,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		switch key {
 		case "X-Macaroon":
 			return "macaroon", true
+		case "X-Build-Version":
+			return "x-build-version", true
 		default:
 			return key, false
 		}

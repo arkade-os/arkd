@@ -167,11 +167,11 @@ func TestSubscriptionLifecycleEventsAndDeltaFetchByTimestamp(t *testing.T) {
 				after := disconnectedAt.Add(-100 * time.Millisecond).UnixMilli()
 				before := reconnectedAt.Add(100 * time.Millisecond).UnixMilli()
 
-				var opts indexer.GetVtxosRequestOption
-				require.NoError(t, opts.WithScripts([]string{"0014deadbeef"}))
-				require.NoError(t, opts.WithTimeRange(before, after))
-
-				resp, getErr := c.GetVtxos(ctx, opts)
+				opts := []indexer.GetVtxosOption{
+					indexer.WithScripts([]string{"0014deadbeef"}),
+					indexer.WithTimeRange(before, after),
+				}
+				resp, getErr := c.GetVtxos(ctx, opts...)
 				require.NoError(t, getErr)
 				require.Len(t, resp.Vtxos, 1)
 				require.Equal(t, "delta-vtxo-txid", resp.Vtxos[0].Txid)
