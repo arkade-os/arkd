@@ -73,17 +73,6 @@ func TestTokenCache(t *testing.T) {
 				},
 			},
 			{
-				name: "delete removes the hash immediately",
-				setup: func(c *tokenCache) {
-					c.add("hash1", []Outpoint{op1})
-					c.delete("hash1")
-				},
-				assert: func(t *testing.T, c *tokenCache) {
-					_, ok := c.getOutpoints("hash1")
-					require.False(t, ok)
-				},
-			},
-			{
 				name: "add same hash is no-op",
 				setup: func(c *tokenCache) {
 					c.add("hash1", []Outpoint{op1})

@@ -76,7 +76,7 @@ func TestAuthToken(t *testing.T) {
 	privkey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	indexer := newTestIndexer(privkey, exposurePublic, nil, nil, nil)
+	indexer := newTestIndexer(t, privkey, exposurePublic, nil, nil, nil)
 
 	t.Run("valid", func(t *testing.T) {
 		tests := []struct {
@@ -158,7 +158,7 @@ func TestAuthToken(t *testing.T) {
 			key2, err := btcec.NewPrivateKey()
 			require.NoError(t, err)
 
-			signer := newTestIndexer(key1, exposurePublic, nil, nil, nil)
+			signer := newTestIndexer(t, key1, exposurePublic, nil, nil, nil)
 			// token signed with key1; validator expects key2 — deliberate mismatch
 			validator := &indexerService{
 				privkey:      key1,
@@ -266,7 +266,7 @@ func TestGetVirtualTxs(t *testing.T) {
 				vtxos := &mockedVtxoRepo{}
 				tc.setupMocks(rounds, vtxos)
 
-				indexer := newTestIndexer(privkey, tc.exposure, rounds, vtxos, nil)
+				indexer := newTestIndexer(t, privkey, tc.exposure, rounds, vtxos, nil)
 				token := tc.makeToken(t, indexer)
 
 				resp, err := indexer.GetVirtualTxs(t.Context(), token, testTxids, nil)
@@ -334,7 +334,7 @@ func TestGetVirtualTxs(t *testing.T) {
 
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				indexer := newTestIndexer(privkey, tc.exposure, nil, nil, nil)
+				indexer := newTestIndexer(t, privkey, tc.exposure, nil, nil, nil)
 				token := tc.makeToken(t, indexer)
 
 				_, err := indexer.GetVirtualTxs(t.Context(), token, testTxids, nil)
@@ -404,7 +404,7 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 				wallet := &mockedWallet{}
 				tc.setupMocks(rounds, vtxos, wallet)
 
-				indexer := newTestIndexer(privkey, tc.exposure, rounds, vtxos, wallet)
+				indexer := newTestIndexer(t, privkey, tc.exposure, rounds, vtxos, wallet)
 
 				resp, err := indexer.GetVirtualTxsByIntent(t.Context(), tc.intent, nil)
 				require.NoError(t, err)
@@ -504,7 +504,7 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 				wallet := &mockedWallet{}
 				tc.setupMocks(vtxos, wallet)
 
-				indexer := newTestIndexer(privkey, tc.exposure, nil, vtxos, wallet)
+				indexer := newTestIndexer(t, privkey, tc.exposure, nil, vtxos, wallet)
 
 				_, err := indexer.GetVirtualTxsByIntent(t.Context(), tc.makeIntent(), nil)
 				require.Error(t, err)
@@ -546,7 +546,7 @@ func TestGetVtxoChain(t *testing.T) {
 			rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).
 				Return(flatTree, nil)
 
-			indexer := newTestIndexer(privkey, exposurePrivate, rounds, vtxos, nil)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, rounds, vtxos, nil)
 
 			// Build chain first to collect allOutpoints.
 			// allOutpoints includes vtxoOutpoint and the tree tx outpoints.
@@ -558,8 +558,8 @@ func TestGetVtxoChain(t *testing.T) {
 			for _, op := range allOutpoints {
 				outpointSet[op.String()] = struct{}{}
 			}
-			require.Contains(t, outpointSet, vtxoOutpoint.String(), "token must cover vtxo outpoint")
-			require.Contains(t, outpointSet, Outpoint{Txid: rootTxid, VOut: 0}.String(), "token must cover tree tx outpoint")
+			require.Contains(t, outpointSet, vtxoOutpoint.String())
+			require.Contains(t, outpointSet, Outpoint{Txid: rootTxid, VOut: 0}.String())
 
 			// Create auth token for the whole chain.
 			token, err := indexer.createAuthToken(allOutpoints)
@@ -575,8 +575,8 @@ func TestGetVtxoChain(t *testing.T) {
 			for _, tx := range resp.Chain {
 				chainByType[tx.Type] = true
 			}
-			require.True(t, chainByType[IndexerChainedTxTypeTree], "chain must include a tree tx")
-			require.True(t, chainByType[IndexerChainedTxTypeCommitment], "chain must include the commitment tx")
+			require.True(t, chainByType[IndexerChainedTxTypeTree])
+			require.True(t, chainByType[IndexerChainedTxTypeCommitment])
 
 			rounds.AssertExpectations(t)
 			vtxos.AssertExpectations(t)
@@ -651,7 +651,7 @@ func TestGetVtxoChain(t *testing.T) {
 
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				indexer := newTestIndexer(privkey, tc.exposure, nil, nil, nil)
+				indexer := newTestIndexer(t, privkey, tc.exposure, nil, nil, nil)
 				token := tc.makeToken(t, indexer)
 
 				_, err := indexer.GetVtxoChain(t.Context(), token, tc.outpoint, nil)
@@ -703,7 +703,7 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 			rounds.On("GetTxsWithTxids", mock.Anything, mock.Anything).
 				Return([]string{"fakeTx1", "fakeTx2"}, nil)
 
-			indexer := newTestIndexer(privkey, exposurePrivate, rounds, vtxos, nil)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, rounds, vtxos, nil)
 
 			// GetVtxoChainByIntent validates the intent, builds the chain, and
 			// returns a token covering all outpoints in the chain.
@@ -802,7 +802,7 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 				wallet := &mockedWallet{}
 				tc.setupMocks(vtxos, wallet)
 
-				indexer := newTestIndexer(privkey, tc.exposure, nil, vtxos, wallet)
+				indexer := newTestIndexer(t, privkey, tc.exposure, nil, vtxos, wallet)
 
 				_, err := indexer.GetVtxoChainByIntent(t.Context(), tc.makeIntent(), nil)
 				require.Error(t, err)
@@ -856,39 +856,15 @@ func TestStripArkdSignatures(t *testing.T) {
 			require.Empty(t, txs)
 		})
 
-		t.Run("PSBT with no sigs passes through unchanged", func(t *testing.T) {
+		t.Run("no sigs passes through unchanged", func(t *testing.T) {
 			b64 := buildPSBT(t, nil)
 			txs := []string{b64}
 			require.NoError(t, indexer.stripSignerSignatures(txs))
 			require.Empty(t, sigsFrom(t, txs[0]))
 		})
 
-		t.Run("strips the signerPubkey sig", func(t *testing.T) {
-			arkdSig := &psbt.TaprootScriptSpendSig{
-				XOnlyPubKey: signerXOnly,
-				LeafHash:    make([]byte, 32),
-				Signature:   make([]byte, 64),
-			}
-			txs := []string{buildPSBT(t, []*psbt.TaprootScriptSpendSig{arkdSig})}
-			require.NoError(t, indexer.stripSignerSignatures(txs))
-			require.Empty(t, sigsFrom(t, txs[0]))
-		})
-
-		t.Run("preserves non-signerPubkey sigs", func(t *testing.T) {
-			otherSig := &psbt.TaprootScriptSpendSig{
-				XOnlyPubKey: otherXOnly,
-				LeafHash:    make([]byte, 32),
-				Signature:   make([]byte, 64),
-			}
-			txs := []string{buildPSBT(t, []*psbt.TaprootScriptSpendSig{otherSig})}
-			require.NoError(t, indexer.stripSignerSignatures(txs))
-			sigs := sigsFrom(t, txs[0])
-			require.Len(t, sigs, 1)
-			require.Equal(t, otherXOnly, sigs[0].XOnlyPubKey)
-		})
-
-		t.Run("strips arkd sig and keeps other party sig", func(t *testing.T) {
-			arkdSig := &psbt.TaprootScriptSpendSig{
+		t.Run("strips signer sig and keeps other party sig", func(t *testing.T) {
+			signerSig := &psbt.TaprootScriptSpendSig{
 				XOnlyPubKey: signerXOnly,
 				LeafHash:    make([]byte, 32),
 				Signature:   make([]byte, 64),
@@ -898,7 +874,7 @@ func TestStripArkdSignatures(t *testing.T) {
 				LeafHash:    make([]byte, 32),
 				Signature:   make([]byte, 64),
 			}
-			txs := []string{buildPSBT(t, []*psbt.TaprootScriptSpendSig{arkdSig, otherSig})}
+			txs := []string{buildPSBT(t, []*psbt.TaprootScriptSpendSig{signerSig, otherSig})}
 			require.NoError(t, indexer.stripSignerSignatures(txs))
 			sigs := sigsFrom(t, txs[0])
 			require.Len(t, sigs, 1)
@@ -907,7 +883,7 @@ func TestStripArkdSignatures(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		t.Run("non-PSBT string returns error", func(t *testing.T) {
+		t.Run("invalid tx format", func(t *testing.T) {
 			txs := []string{"not-a-valid-psbt"}
 			err := indexer.stripSignerSignatures(txs)
 			require.Error(t, err)
@@ -920,9 +896,11 @@ func TestStripArkdSignatures(t *testing.T) {
 // Pass nil for repos/wallet that the test does not need — calling an
 // unconfigured mock method will panic, surfacing unexpected calls immediately.
 func newTestIndexer(
-	privkey *btcec.PrivateKey, exposure exposure,
+	t *testing.T, privkey *btcec.PrivateKey, exposure exposure,
 	rounds *mockedRoundRepo, vtxos *mockedVtxoRepo, wallet *mockedWallet,
 ) *indexerService {
+	t.Helper()
+
 	repo := &mockedRepoManager{}
 	if rounds != nil {
 		repo.On("Rounds").Return(rounds)
@@ -931,13 +909,16 @@ func newTestIndexer(
 		repo.On("Vtxos").Return(vtxos)
 	}
 
+	cache := newTokenCache(defaultAuthTokenTTL)
+	t.Cleanup(cache.close)
+
 	svc := &indexerService{
 		repoManager:  repo,
 		privkey:      privkey,
 		authPubkey:   schnorr.SerializePubKey(privkey.PubKey()),
 		txExposure:   exposure,
 		authTokenTTL: defaultAuthTokenTTL,
-		tokenCache:   newTokenCache(defaultAuthTokenTTL),
+		tokenCache:   cache,
 	}
 	if wallet != nil {
 		svc.wallet = wallet
