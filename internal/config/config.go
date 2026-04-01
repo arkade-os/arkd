@@ -138,7 +138,7 @@ type Config struct {
 	MaxOpReturnOutputs        uint32
 
 	EnablePprof            bool
-	IndexerTxExposure      string
+	IndexerExposure        string
 	IndexerAuthTokenExpiry int64
 	// IndexerSigningKey is a hex-encoded private key used by the indexer to sign
 	// auth tokens. This is separate from the server's main signing key.
@@ -240,7 +240,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
-	IndexerTxExposure             = "INDEXER_TX_EXPOSURE"
+	IndexerExposure               = "INDEXER_EXPOSURE"
 	IndexerAuthTokenExpiry        = "INDEXER_AUTH_TOKEN_EXPIRY" // #nosec G101
 	// IndexerSigningKey is a hex-encoded private key. SENSITIVE: never log this value.
 	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
@@ -282,7 +282,7 @@ var (
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
-	defaultIndexerTxExposure             = "public"
+	defaultIndexerExposure               = "public"
 	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
 	defaultMaxConcurrentStreams          = uint32(1000)
 	defaultMaxOpReturnOuts               = uint32(3)
@@ -328,7 +328,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
-	viper.SetDefault(IndexerTxExposure, defaultIndexerTxExposure)
+	viper.SetDefault(IndexerExposure, defaultIndexerExposure)
 	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
@@ -444,7 +444,7 @@ func LoadConfig() (*Config, error) {
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
-		IndexerTxExposure:             viper.GetString(IndexerTxExposure),
+		IndexerExposure:               viper.GetString(IndexerExposure),
 		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
 		IndexerSigningKey:             viper.GetString(IndexerSigningKey),
 		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
@@ -615,21 +615,21 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
 
-	if !supportedIndexerTxExposures.supports(c.IndexerTxExposure) {
+	if !supportedIndexerTxExposures.supports(c.IndexerExposure) {
 		return fmt.Errorf(
-			"indexer txn exposure type not supported, please select one of: %s",
+			"indexer exposure type not supported, please select one of: %s",
 			supportedIndexerTxExposures,
 		)
 	}
 
-	if c.IndexerTxExposure != "public" && c.IndexerAuthTokenExpiry <= 0 {
+	if c.IndexerExposure != "public" && c.IndexerAuthTokenExpiry <= 0 {
 		return fmt.Errorf("indexer auth token expiry must be greater than 0")
 	}
 
-	if c.IndexerTxExposure != "public" && c.IndexerSigningKey == "" {
+	if c.IndexerExposure != "public" && c.IndexerSigningKey == "" {
 		return fmt.Errorf(
 			"indexer signing key is required when tx exposure is %q",
-			c.IndexerTxExposure,
+			c.IndexerExposure,
 		)
 	}
 
@@ -735,8 +735,7 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 	}
 
 	return application.NewIndexerService(
-		c.repo, c.wallet, privkey, signerPubkey,
-		c.IndexerTxExposure, c.IndexerAuthTokenExpiry,
+		c.repo, c.wallet, privkey, signerPubkey, c.IndexerExposure, c.IndexerAuthTokenExpiry,
 	)
 }
 
