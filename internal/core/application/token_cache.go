@@ -48,6 +48,7 @@ func (c *tokenCache) sweep() {
 	}
 }
 
+// nolint
 func (c *tokenCache) close() {
 	close(c.stop)
 }
@@ -67,13 +68,6 @@ func (c *tokenCache) add(hash string, outpoints []Outpoint) {
 	for _, outpoint := range outpoints {
 		c.outpointsByHash[hash][outpoint] = expiresAt
 	}
-}
-
-func (c *tokenCache) delete(hash string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	delete(c.outpointsByHash, hash)
 }
 
 func (c *tokenCache) getOutpoints(hash string) (map[string]struct{}, bool) {
