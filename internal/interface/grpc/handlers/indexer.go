@@ -325,7 +325,7 @@ func (e *indexerService) GetVtxoChain(
 	var resp *application.VtxoChainResp
 
 	if request.GetIntent() != nil {
-		intent, parseErr := parseIndexerIntent(request.GetIntent())
+		intent, parseErr := parseIndexerIntentProof(request.GetIntent())
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
@@ -380,7 +380,7 @@ func (e *indexerService) GetVirtualTxs(
 
 	var resp *application.VirtualTxsResp
 	if request.GetIntent() != nil {
-		intent, parseErr := parseIndexerIntent(request.GetIntent())
+		intent, parseErr := parseIndexerIntentProof(request.GetIntent())
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
@@ -393,7 +393,7 @@ func (e *indexerService) GetVirtualTxs(
 		resp, err = e.indexerSvc.GetVirtualTxs(ctx, request.GetToken(), txids, page)
 	}
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &arkv1.GetVirtualTxsResponse{
@@ -778,7 +778,7 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 	}
 }
 
-func parseIndexerIntent(i *arkv1.IndexerIntent) (*application.Intent, error) {
+func parseIndexerIntentProof(i *arkv1.IndexerIntent) (*application.Intent, error) {
 	if i == nil {
 		return nil, nil
 	}
@@ -789,9 +789,5 @@ func parseIndexerIntent(i *arkv1.IndexerIntent) (*application.Intent, error) {
 	if _, err := psbt.NewFromRawBytes(strings.NewReader(proof), true); err != nil {
 		return nil, fmt.Errorf("failed to parse intent proof tx: %s", err)
 	}
-	message := i.GetMessage()
-	if message == "" {
-		return nil, fmt.Errorf("missing intent message")
-	}
-	return &application.Intent{Proof: proof, Message: message}, nil
+	return &application.Intent{Proof: proof}, nil
 }
