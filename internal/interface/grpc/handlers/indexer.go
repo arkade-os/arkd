@@ -387,7 +387,7 @@ func (e *indexerService) GetVirtualTxs(
 		resp, err = e.indexerSvc.GetVirtualTxsByIntent(ctx, *intent, page)
 	} else {
 		txids, parseErr := parseTxids(request.GetTxids())
-		if err != nil {
+		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
 		resp, err = e.indexerSvc.GetVirtualTxs(ctx, request.GetToken(), txids, page)
