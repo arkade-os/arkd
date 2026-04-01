@@ -76,12 +76,12 @@ func main() {
 	log.Infof("alice offchain balance: %d", aliceBalance.OffchainBalance.Total)
 
 	log.Infof("alice is settling the onboard funds...")
-	txid, err := aliceArkClient.Settle(ctx)
+	res, err := aliceArkClient.Settle(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Infof("alice settled the onboard funds in commitment tx %s", txid)
+	log.Infof("alice settled the onboard funds in commitment tx %s", res.CommitmentTxid)
 
 	fmt.Println("")
 	log.Info("bob is setting up his ark wallet...")
@@ -146,12 +146,12 @@ func main() {
 
 	fmt.Println("")
 	log.Info("bob is settling the received funds...")
-	commitmentTxid, err := bobArkClient.Settle(ctx)
+	bobRes, err := bobArkClient.Settle(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Infof("bob settled the received funds in commitment tx %s", commitmentTxid)
+	log.Infof("bob settled the received funds in commitment tx %s", bobRes.CommitmentTxid)
 
 	time.Sleep(500 * time.Second)
 }
